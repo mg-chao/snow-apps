@@ -1,6 +1,6 @@
 {
     "files.exclude": {
-        "**/src-tauri": false,
+        "**/src-tauri": true,
     },
     "typescript.tsdk": "node_modules\\typescript\\lib",
     "i18n-ally.localesPaths": [
