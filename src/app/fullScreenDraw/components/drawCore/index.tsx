@@ -149,8 +149,8 @@ const DrawCoreComponent: React.FC<{
     const excalidrawAppStateStoreRef = useRef<ExcalidrawAppStateStore>(undefined);
     const excalidrawAppStateStoreValue = useRef<
         | {
-              appState: Partial<AppState>;
-          }
+            appState: Partial<AppState>;
+        }
         | undefined
     >(undefined);
     useEffect(() => {
