@@ -19,9 +19,15 @@ _注意：软件正在快速迭代中，Bug 和使用问题难以避免。且因
 
 ### 安装
 
-> Windows 用户可以使用该 [scoop bucket](https://github.com/jinzhongjia/scoop-bucket) 安装
+在 [Github Releases](https://github.com/mg-chao/snow-shot/releases) 选择适合当前操作系统的版本下载，下载完成后安装即可。
 
-通过 [Release](https://github.com/mg-chao/snow-shot/releases) 下载安装即可
+Windows 用户可以在 [Snow Shot 官网](https://snowshot.top/) 加速下载。
+
+##### 社区链接
+
+以下下载链接和安装方案由社区提供，但并不保证版本未经修改。
+
+- Scoop Bucket: https://github.com/jinzhongjia/scoop-bucket
 
 ### 功能展示
 
