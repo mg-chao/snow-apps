@@ -20,7 +20,7 @@ _注意：软件正在快速迭代中，Bug 和使用问题难以避免。且因
 
 
 ## ⭐ 如果你感觉有所帮助不妨给我们点击star支持一下~
-<img width="1632" height="441" alt="Snow Shot" src="https://github.com/user-attachments/assets/c4cb1863-fc7a-4974-9488-ee75e0d16144" />
+<img width="1000" height="247" alt="Click Star" src="/docs/imgs/guide-star.webp" />
 
 ### 安装
 
