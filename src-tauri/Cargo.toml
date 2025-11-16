@@ -103,10 +103,13 @@ snow-shot-webview = { workspace = true }
 snow-shot-http-services = { workspace = true }
 snow-shot-tauri-commands-http-service = { workspace = true }
 snow-shot-global-state = { workspace = true }
+gemini-rust = "1.5.1"
 
 # workspace 依赖
 tokio = { workspace = true }
 log = { workspace = true }
+futures = { workspace = true }
+tokio-util = { workspace = true }
 
 # tauri 相关
 tauri = { workspace = true, features = [

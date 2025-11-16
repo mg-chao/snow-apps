@@ -16,6 +16,7 @@ import type { Conversation } from "@ant-design/x/es/conversations";
 import type { SenderRef } from "@ant-design/x/es/sender";
 import type { MessageInfo } from "@ant-design/x/es/use-x-chat";
 import { useSearch } from "@tanstack/react-router";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
 	Button,
@@ -56,6 +57,7 @@ import urlJoin from "url-join";
 import { EventListenerContext } from "@/components/eventListener";
 import { HotkeysMenu } from "@/components/hotkeysMenu";
 import { BotIcon, SidebarIcon, ThinkingIcon } from "@/components/icons";
+import { isGeminiModel, toGeminiModelPath } from "@/constants/chatModels";
 import { AntdContext } from "@/contexts/antdContext";
 import { AppContext } from "@/contexts/appContext";
 import {
@@ -99,6 +101,24 @@ import type {
 type BubbleDataType = AntdBubbleDataType & {
 	flow_config?: ChatMessageFlowConfig;
 };
+
+type AgentRequest = Parameters<typeof useXAgent<BubbleDataType>>[0]["request"];
+type AgentCallbacks = AgentRequest extends (
+	input: unknown,
+	callbacks: infer C,
+) => unknown
+	? C
+	: undefined;
+
+type GeminiStreamPayload =
+	| {
+			type: "chunk";
+			content?: string;
+			reasoningContent?: string;
+	  }
+	| { type: "done" }
+	| { type: "error"; message: string }
+	| { type: "aborted" };
 
 const getMessageContent = (
 	msg: ChatMessage | BubbleDataType,
@@ -438,6 +458,137 @@ const Chat = () => {
 		},
 		[supportedModelsRef],
 	);
+	const sendWithGemini = useCallback(
+		(
+			messagesPayload: BubbleDataType[] | undefined,
+			callbacks?: AgentCallbacks,
+		) => {
+			const modelId = selectedModelRef.current;
+			if (!modelId) {
+				const error = new Error(
+					intl.formatMessage({ id: "tools.chat.noSelectedModel" }),
+				);
+				callbacks?.onError?.(error);
+				return Promise.reject(error);
+			}
+
+			const settings = getAppSettings();
+			const apiKey =
+				settings[AppSettingsGroup.FunctionChat].geminiApiKey?.trim();
+			if (!apiKey) {
+				const tip = intl.formatMessage({
+					id: "tools.chat.geminiApiKeyMissing",
+				});
+				message.error(tip);
+				const error = new Error(tip);
+				callbacks?.onError?.(error);
+				return Promise.reject(error);
+			}
+
+			const formattedMessages = (messagesPayload ?? [])
+				.map((item) => ({
+					role: item.role ?? "user",
+					content: getMessageContent(item, true),
+				}))
+				.filter((item) => item.content.trim().length > 0);
+
+			if (formattedMessages.length === 0) {
+				const error = new Error("Message is empty");
+				callbacks?.onError?.(error);
+				return Promise.reject(error);
+			}
+
+			const requestId = `gemini-${Date.now()}-${Math.random()
+				.toString(36)
+				.slice(2)}`;
+			const channel = new Channel<GeminiStreamPayload>();
+			const responseChunks: { data: string }[] = [];
+			const abortController = new AbortController();
+
+			callbacks?.onStream?.(abortController);
+			abortController.signal.addEventListener("abort", () => {
+				invoke("gemini_cancel_stream", { requestId }).catch((error) => {
+					appError("[gemini_cancel_stream] invoke error", error);
+				});
+			});
+
+			const requestPayload = {
+				model: toGeminiModelPath(modelId),
+				apiKey,
+				temperature: settings[AppSettingsGroup.SystemChat].temperature,
+				maxOutputTokens: settings[AppSettingsGroup.SystemChat].maxTokens,
+				thinking: {
+					enabled: enableThinkingRef.current,
+					includeThoughts: enableThinkingRef.current,
+					budgetTokens:
+						settings[AppSettingsGroup.SystemChat].thinkingBudgetTokens,
+				},
+				messages: formattedMessages,
+			};
+
+			return new Promise<void>((resolve, reject) => {
+				let finished = false;
+
+				channel.onmessage = (payload) => {
+					if (finished) {
+						return;
+					}
+
+					if (payload.type === "chunk") {
+						if (!payload.content?.length && !payload.reasoningContent?.length) {
+							return;
+						}
+						const delta: Record<string, string> = {};
+						if (payload.content) {
+							delta.content = payload.content;
+						}
+						if (payload.reasoningContent) {
+							delta.reasoning_content = payload.reasoningContent;
+						}
+						const chunk = {
+							data: JSON.stringify({
+								choices: [
+									{
+										delta,
+									},
+								],
+							}),
+						};
+						responseChunks.push(chunk);
+						callbacks?.onUpdate?.(chunk);
+					} else if (payload.type === "done") {
+						finished = true;
+						callbacks?.onSuccess?.(responseChunks);
+						resolve();
+					} else if (payload.type === "aborted") {
+						finished = true;
+						const abortError = new DOMException("Aborted", "AbortError");
+						callbacks?.onError?.(abortError);
+						reject(abortError);
+					} else if (payload.type === "error") {
+						finished = true;
+						const error = new Error(payload.message);
+						callbacks?.onError?.(error);
+						reject(error);
+					}
+				};
+
+				invoke("gemini_generate_content_stream", {
+					requestId,
+					request: requestPayload,
+					channel,
+				}).catch((error) => {
+					finished = true;
+					appError("[gemini_generate_content_stream] invoke error", error);
+					const err = error instanceof Error ? error : new Error(String(error));
+					callbacks?.onError?.(err);
+					reject(err);
+				});
+			});
+		},
+		[enableThinkingRef, getAppSettings, intl, message, selectedModelRef],
+	);
+
 	const modelAgentConfig: Parameters<typeof useXAgent<BubbleDataType>>[0] =
 		useMemo(() => {
 			return {
@@ -509,6 +660,10 @@ const Chat = () => {
 						}
 					});
 
+					if (isGeminiModel(selectedModelRef.current)) {
+						return sendWithGemini(newInputMessages, callbacks);
+					}
+
 					const customModelRequest = getCustomModelRequest(
 						selectedModelRef.current,
 					);
@@ -547,6 +702,7 @@ const Chat = () => {
 		}, [
 			getAppSettings,
 			getCustomModelRequest,
+			sendWithGemini,
 			selectedModelRef,
 			intl,
 			message,

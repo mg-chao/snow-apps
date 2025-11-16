@@ -375,6 +375,7 @@ export type AppSettingsData = {
 		/** 关闭窗口时自动创建新会话 */
 		autoCreateNewSessionOnCloseWindow: boolean;
 		chatApiConfigList: ChatApiConfig[];
+		geminiApiKey: string;
 	};
 	[AppSettingsGroup.FunctionOcr]: {
 		/** 文本识别模型 */

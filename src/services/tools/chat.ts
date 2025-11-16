@@ -1,3 +1,4 @@
+import { builtinChatModels, normalizeModelName } from "@/constants/chatModels";
 import { withCache } from "@/utils/cache";
 import { serviceFetch } from ".";
 
@@ -14,13 +15,30 @@ export const getChatModels = async () => {
 	});
 };
 
+const mergeBuiltinModels = (list: ChatModel[] = []) => {
+	const merged: ChatModel[] = list.map((item) => ({ ...item }));
+	const existingModels = new Set(
+		merged.map((item) => normalizeModelName(item.model)),
+	);
+
+	for (const model of builtinChatModels) {
+		if (!existingModels.has(model.model)) {
+			merged.push({ ...model });
+		}
+	}
+
+	return merged;
+};
+
 // 内部函数：获取聊天模型数据
 const fetchChatModels = async (): Promise<ChatModel[] | undefined> => {
 	const resp = await getChatModels();
-	if (resp.success()) {
-		return resp.data ?? [];
+	const data = resp.success();
+	if (data) {
+		return mergeBuiltinModels(data ?? []);
 	}
-	return undefined;
+
+	return mergeBuiltinModels([]);
 };
 
 export const getChatModelsWithCache = withCache(fetchChatModels, {

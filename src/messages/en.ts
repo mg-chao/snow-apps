@@ -183,6 +183,8 @@ export const en = {
 	"tools.chat.session.clear.tip": "Confirm to clear all sessions?",
 	"tools.chat.reasoner": "Reasoning",
 	"tools.chat.custom": "Custom",
+	"tools.chat.geminiApiKeyMissing":
+		"Please configure the Gemini API Key in Settings → Functions → AI Chat first.",
 	"tools.translation.type": "Translation Service",
 	"tools.translation.domain": "Translation Domain",
 	"tools.translation.type.youdao": "Youdao Translate",
@@ -197,6 +199,9 @@ export const en = {
 	"settings.chatSettings.thinkingBudgetTokens": "Thinking Budget Tokens",
 	"settings.chatSettings.thinkingBudgetTokens.tip":
 		'For reasoning modes like Claude models, the thinking budget determines the maximum number of tokens for their internal reasoning process. Note: The thinking budget tokens cannot be less than "Max Tokens", therefore if this value is effective, the "Max Tokens" may be determined by the server',
+	"settings.functionSettings.chatSettings.geminiApiKey": "Gemini API Key",
+	"settings.functionSettings.chatSettings.geminiApiKey.tip":
+		"Stored locally and used to call Gemini models directly from Snow Shot.",
 	"about.title": "Snow Shot",
 	"about.subtitle":
 		"A tool software designed with simplicity and elegance as the concept ❄️",

@@ -811,6 +811,11 @@ const AppSettingsContextProviderCore: React.FC<{
 							}))
 						: (prevSettings?.chatApiConfigList ??
 							defaultAppSettingsData[group].chatApiConfigList),
+					geminiApiKey:
+						typeof newSettings?.geminiApiKey === "string"
+							? newSettings.geminiApiKey
+							: (prevSettings?.geminiApiKey ??
+								defaultAppSettingsData[group].geminiApiKey),
 					autoCreateNewSessionOnCloseWindow:
 						typeof newSettings?.autoCreateNewSessionOnCloseWindow === "boolean"
 							? newSettings.autoCreateNewSessionOnCloseWindow

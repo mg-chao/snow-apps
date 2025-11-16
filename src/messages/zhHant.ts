@@ -177,6 +177,8 @@ export const zhHant = {
 	"tools.chat.session.clear.tip": "確定要清空所有對話嗎？",
 	"tools.chat.reasoner": "推理",
 	"tools.chat.custom": "自訂",
+	"tools.chat.geminiApiKeyMissing":
+		"請先在「設定 → 功能 → AI 對話」中設定 Gemini API 金鑰。",
 	"tools.translation.type": "翻譯服務",
 	"tools.translation.domain": "翻譯領域",
 	"tools.translation.type.youdao": "有道翻譯",
@@ -191,6 +193,9 @@ export const zhHant = {
 	"settings.chatSettings.thinkingBudgetTokens": "思考預算 Token 數",
 	"settings.chatSettings.thinkingBudgetTokens.tip":
 		'對於如 Claude 模型的推理模式，思考預算決定其內部推理過程的最大 Token 數。注意，思考預算 Token 數不能小於"最大 Token 數"，所以如果該值有效，"最大 Token 數字"可能由伺服器決定',
+	"settings.functionSettings.chatSettings.geminiApiKey": "Gemini API 金鑰",
+	"settings.functionSettings.chatSettings.geminiApiKey.tip":
+		"僅儲存在本機，供 Snow Shot 直接呼叫 Gemini 模型。",
 	"about.title": "Snow Shot",
 	"about.subtitle": "以簡潔優雅作為理念設計的工具軟體 ❄️",
 	"about.version": "版本",

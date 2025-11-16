@@ -1872,6 +1872,27 @@ export const FunctionSettingsPage = () => {
 									</ProFormList>
 								</Col>
 							</Row>
+
+							<Row gutter={token.marginLG}>
+								<Col span={12}>
+									<ProFormText.Password
+										name="geminiApiKey"
+										label={
+											<IconLabel
+												label={
+													<FormattedMessage id="settings.functionSettings.chatSettings.geminiApiKey" />
+												}
+												tooltipTitle={
+													<FormattedMessage id="settings.functionSettings.chatSettings.geminiApiKey.tip" />
+												}
+											/>
+										}
+										fieldProps={{
+											autoComplete: "off",
+										}}
+									/>
+								</Col>
+							</Row>
 						</ProForm>
 					</Spin>
 				</>

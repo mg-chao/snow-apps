@@ -135,6 +135,7 @@ export const defaultAppSettingsData: AppSettingsData = {
 		autoCreateNewSession: true,
 		autoCreateNewSessionOnCloseWindow: true,
 		chatApiConfigList: [],
+		geminiApiKey: "",
 	},
 	[AppSettingsGroup.FunctionTranslation]: {
 		optimizeAiTranslationLayout: true,

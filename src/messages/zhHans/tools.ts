@@ -36,6 +36,8 @@ export const tools = {
 	"tools.chat.session.clear.tip": "确定要清空所有对话吗？",
 	"tools.chat.reasoner": "推理",
 	"tools.chat.custom": "自定义",
+	"tools.chat.geminiApiKeyMissing":
+		"请先在“设置→功能→AI 对话”中配置 Gemini API 密钥",
 	"tools.chat.official": "Snow Shot",
 	"tools.chat.thinking": "推理模式",
 	"tools.translation.type": "翻译服务",

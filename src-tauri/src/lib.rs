@@ -2,6 +2,7 @@ pub mod core;
 pub mod file;
 pub mod global_state;
 pub mod hot_load_page;
+pub mod gemini;
 pub mod http_services;
 pub mod listen_key;
 pub mod ocr;
@@ -11,6 +12,7 @@ pub mod scroll_screenshot;
 pub mod video_record;
 pub mod webview;
 
+use crate::gemini::GeminiRequestManager;
 use snow_shot_app_services::listen_mouse_service;
 use snow_shot_tauri_commands_core::{FullScreenDrawWindowLabels, VideoRecordWindowLabels};
 use std::sync::Arc;
@@ -71,6 +73,7 @@ pub fn run() {
     let plugin_service = Arc::new(plugin_service::PluginService::new());
 
     let capture_state = Mutex::new(CaptureState { capturing: false });
+    let gemini_request_manager = GeminiRequestManager::default();
 
     let full_screen_draw_window_labels = Mutex::new(Option::<FullScreenDrawWindowLabels>::None);
     let video_record_window_label = Mutex::new(Option::<VideoRecordWindowLabels>::None);
@@ -228,6 +231,7 @@ pub fn run() {
         .manage(video_record_window_label)
         .manage(capture_state)
         .manage(read_clipboard_state)
+        .manage(gemini_request_manager)
         .invoke_handler(tauri::generate_handler![
             screenshot::capture_current_monitor,
             screenshot::capture_all_monitors,
@@ -325,6 +329,8 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             core::write_image_pixels_to_clipboard_with_shared_buffer,
             http_services::upload_to_s3,
+            gemini::gemini_generate_content_stream,
+            gemini::gemini_cancel_stream,
             hot_load_page::hot_load_page_init,
             hot_load_page::hot_load_page_add_page,
             global_state::set_capture_state,

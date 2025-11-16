@@ -181,6 +181,9 @@ export const settings = {
 		"支持视觉理解",
 	"settings.functionSettings.chatSettings.apiConfig.supportVision.tip":
 		"启用后，该模型将可用于视觉理解，将图片转化为 HTML 等格式的内容",
+	"settings.functionSettings.chatSettings.geminiApiKey": "Gemini API 密钥",
+	"settings.functionSettings.chatSettings.geminiApiKey.tip":
+		"该密钥仅保存在本地，用于 Snow Shot 直接调用 Gemini 模型",
 	"settings.functionSettings.screenshotSettings": "截图",
 	"settings.functionSettings.screenshotSettings.findChildrenElements":
 		"查找窗口子元素",
