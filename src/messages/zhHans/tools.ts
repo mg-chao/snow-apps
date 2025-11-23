@@ -5,7 +5,7 @@ export const tools = {
 	"tools.translation.language.auto": "自动识别语言",
 	"tools.translation.language.english": "英语",
 	"tools.translation.language.simplifiedChinese": "简体中文",
-	"tools.translation.language.traditionalChinese": "繁体中文",
+	"tools.translation.language.traditionalChinese": "繁體中文",
 	"tools.translation.language.spanish": "西班牙语",
 	"tools.translation.language.french": "法语",
 	"tools.translation.language.arabic": "阿拉伯语",

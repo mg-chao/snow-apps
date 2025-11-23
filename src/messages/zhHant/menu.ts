@@ -1,0 +1,17 @@
+export const menu = {
+	"menu.functions": "快速功能",
+	"menu.screenshot": "截圖",
+	"menu.settings": "設定",
+	"menu.settings.generalSettings": "介面設定",
+	"menu.settings.functionSettings": "功能設定",
+	"menu.settings.hotKeySettings": "快捷鍵設定",
+	"menu.settings.systemSettings": "系統設定",
+	"menu.tools": "工具箱",
+	"menu.tools.translation": "翻譯",
+	"menu.tools.chat": "AI 對話",
+	"menu.tools.captureHistory": "截圖歷史",
+	"menu.personalization": "個人化",
+	"menu.personalization.plugins": "擴充功能",
+	"menu.personalization.appearance": "外觀配色",
+	"menu.about": "關於",
+};

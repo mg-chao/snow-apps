@@ -412,7 +412,7 @@ export const GeneralSettingsPage = () => {
 							>
 								<Select>
 									<Option value={AppSettingsLanguage.EN}>English</Option>
-									<Option value={AppSettingsLanguage.ZHHant}>繁体中文</Option>
+									<Option value={AppSettingsLanguage.ZHHant}>繁體中文</Option>
 									<Option value={AppSettingsLanguage.ZHHans}>简体中文</Option>
 								</Select>
 							</Form.Item>

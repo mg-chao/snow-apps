@@ -1,0 +1,18 @@
+export const about = {
+	"about.title": "Snow Shot",
+	"about.subtitle": "簡單優雅的工具軟體 ❄️",
+	"about.version": "版本",
+	"about.author": "作者: mg-chao",
+	"about.license.title": "📄 開源授權",
+	"about.license.description": "本專案採用雙重授權模式：",
+	"about.license.nonCommercial": "非商用情境：",
+	"about.license.nonCommercialType": "適用於 Apache v2.0 授權",
+	"about.license.commercial": "商用情境：",
+	"about.license.commercialType": "適用於 GPL v3 授權",
+	"about.contact.title": "📞 問題回饋與聯繫",
+	"about.contact.github": "GitHub Issue",
+	"about.contact.bilibili": "B站 3N0W",
+	"about.contact.email": "郵件: chao@mgchao.top",
+	"about.contact.qqGroup": "QQ 交流群: 974311403",
+	"about.newVersion": "新版本",
+};
