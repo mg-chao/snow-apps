@@ -208,6 +208,7 @@ export const KeyButton: React.FC<{
 			<Modal
 				title={<FormattedMessage id="settings.keyConfig" values={{ title }} />}
 				open={open}
+				keyboard={false}
 				onCancel={() => {
 					onCancel?.();
 					setOpen(false);
