@@ -177,6 +177,12 @@ export const zhHant = {
 	"tools.chat.session.clear.tip": "確定要清空所有對話嗎？",
 	"tools.chat.reasoner": "推理",
 	"tools.chat.custom": "自訂",
+	"settings.functionSettings.chatSettings.preset.quickSetup":
+		"快速配置預設",
+	"settings.functionSettings.chatSettings.preset.minimax.m2_7":
+		"MiniMax M2.7",
+	"settings.functionSettings.chatSettings.preset.minimax.m2_7_highspeed":
+		"MiniMax M2.7 極速版",
 	"tools.translation.type": "翻譯服務",
 	"tools.translation.domain": "翻譯領域",
 	"tools.translation.type.youdao": "有道翻譯",

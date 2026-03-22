@@ -183,6 +183,12 @@ export const en = {
 	"tools.chat.session.clear.tip": "Confirm to clear all sessions?",
 	"tools.chat.reasoner": "Reasoning",
 	"tools.chat.custom": "Custom",
+	"settings.functionSettings.chatSettings.preset.quickSetup":
+		"Quick Setup Presets",
+	"settings.functionSettings.chatSettings.preset.minimax.m2_7":
+		"MiniMax M2.7",
+	"settings.functionSettings.chatSettings.preset.minimax.m2_7_highspeed":
+		"MiniMax M2.7 Highspeed",
 	"tools.translation.type": "Translation Service",
 	"tools.translation.domain": "Translation Domain",
 	"tools.translation.type.youdao": "Youdao Translate",

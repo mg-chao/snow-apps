@@ -181,6 +181,12 @@ export const settings = {
 		"支持视觉理解",
 	"settings.functionSettings.chatSettings.apiConfig.supportVision.tip":
 		"启用后，该模型将可用于视觉理解，将图片转化为 HTML 等格式的内容",
+	"settings.functionSettings.chatSettings.preset.quickSetup":
+		"快速配置预设",
+	"settings.functionSettings.chatSettings.preset.minimax.m2_7":
+		"MiniMax M2.7",
+	"settings.functionSettings.chatSettings.preset.minimax.m2_7_highspeed":
+		"MiniMax M2.7 极速版",
 	"settings.functionSettings.screenshotSettings": "截图",
 	"settings.functionSettings.screenshotSettings.findChildrenElements":
 		"查找窗口子元素",

@@ -14,6 +14,7 @@ import {
 	Col,
 	ColorPicker,
 	Divider,
+	Dropdown,
 	Flex,
 	Form,
 	Row,
@@ -80,6 +81,7 @@ import {
 	getImageSaveDirectory,
 	getVideoRecordSaveDirectory,
 } from "@/utils/file";
+import { chatApiPresets } from "@/constants/components/chatPresets";
 import { TestChat } from "./components/testChat";
 import { TranslationConfig } from "./components/translationConfig";
 
@@ -1870,6 +1872,56 @@ export const FunctionSettingsPage = () => {
 											)}
 										</Row>
 									</ProFormList>
+									<Dropdown
+										menu={{
+											items: chatApiPresets.map((preset) => ({
+												key: preset.id,
+												label: intl.formatMessage({
+													id: preset.labelKey,
+												}),
+											})),
+											onClick: (info) => {
+												const preset = chatApiPresets.find(
+													(p) => p.id === info.key,
+												);
+												if (preset) {
+													const currentList =
+														functionForm.getFieldValue(
+															"chatApiConfigList",
+														) ?? [];
+													const newList = [
+														...currentList,
+														{
+															api_uri: preset.api_uri,
+															api_key: "",
+															api_model: preset.api_model,
+															model_name: preset.model_name,
+															support_thinking:
+																preset.support_thinking,
+															support_vision:
+																preset.support_vision,
+														},
+													];
+													functionForm.setFieldsValue({
+														chatApiConfigList: newList,
+													});
+													updateAppSettings(
+														AppSettingsGroup.FunctionChat,
+														{ chatApiConfigList: newList },
+														true,
+														true,
+														true,
+														true,
+														false,
+													);
+												}
+											},
+										}}
+									>
+										<Typography.Link>
+											<FormattedMessage id="settings.functionSettings.chatSettings.preset.quickSetup" />
+										</Typography.Link>
+									</Dropdown>
 								</Col>
 							</Row>
 						</ProForm>
