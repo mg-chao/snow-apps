@@ -222,4 +222,5 @@ export const zhHant = {
 	"common.permission.error.description":
 		"請在開啟應用正常運行所必要的「錄屏與系統錄音」和「輔助功能」權限",
 	"common.permission.error.goToSettings": "前往授權",
+	"settings.hotKeySettings.fixedContent.fixedContentShowBorder": "顯示邊框",
 };

@@ -414,6 +414,7 @@ export const settings = {
 	"settings.hotKeySettings.fixedContent.setOpacity.seventyFive": "75%",
 	"settings.hotKeySettings.fixedContent.setOpacity.hundred": "100%",
 	"settings.hotKeySettings.fixedContent.fixedContentAlwaysOnTop": "置顶窗口",
+	"settings.hotKeySettings.fixedContent.fixedContentShowBorder": "显示边框",
 	"settings.hotKeySettings.fixedContent.fixedContentCloseWindow": "关闭窗口",
 	"settings.hotKeySettings.fixedContent.fixedContentCopyToClipboard":
 		"复制到剪贴板",

@@ -247,4 +247,5 @@ export const en = {
 		"Horizontal",
 	"settings.functionSettings.videoRecordSettings.keyDisplayDirection.vertical":
 		"Vertical",
+	"settings.hotKeySettings.fixedContent.fixedContentShowBorder": "Show Border",
 };
