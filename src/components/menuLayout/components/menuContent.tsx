@@ -8,7 +8,7 @@ import { Button, Layout, Space, theme } from "antd";
 import { Header } from "antd/es/layout/layout";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import RSC from "react-scrollbars-custom";
-import { PageNav, type PageNavActionType } from "@/components/pageNav";
+import { PageNav } from "@/components/pageNav";
 import type { RouteMapItem } from "@/types/components/menuLayout";
 
 const { Content } = Layout;
@@ -28,7 +28,6 @@ const MenuContentCore: React.FC<{
 		return routeTabsMap[pathname] ?? routeTabsMap["/"] ?? [];
 	}, [pathname, routeTabsMap]);
 
-	const pageNavActionRef = useRef<PageNavActionType | null>(null);
 	const contentRef = useRef<HTMLDivElement>(null);
 
 	const [currentPlatform, setCurrentPlatform] = useState<
@@ -79,14 +78,8 @@ const MenuContentCore: React.FC<{
 					<div data-tauri-drag-region className="app-tauri-drag-region"></div>
 					<div data-tauri-drag-region className="app-tauri-drag-region"></div>
 					<div className="center">
-						<PageNav tabItems={tabItems} actionRef={pageNavActionRef} />
-						<RSC
-							onScroll={(e) => {
-								if ("scrollTop" in e && typeof e.scrollTop === "number") {
-									pageNavActionRef.current?.updateActiveKey(e.scrollTop);
-								}
-							}}
-						>
+						<PageNav tabItems={tabItems} />
+						<RSC>
 							<div ref={contentRef} className="content-container">
 								{children}
 							</div>

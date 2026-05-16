@@ -22,6 +22,7 @@ import {
 import {
 	PLUGIN_ID_AI_CHAT,
 	PLUGIN_ID_FFMPEG,
+	PLUGIN_ID_RAPID_OCR,
 	PLUGIN_ID_TRANSLATE,
 } from "@/constants/pluginService";
 import { AppContext } from "@/contexts/appContext";
@@ -374,6 +375,10 @@ const MenuLayoutCore: React.FC<{ children: React.ReactNode }> = ({
 
 							if (item.key === "chatSettings") {
 								return isReadyStatus?.(PLUGIN_ID_AI_CHAT);
+							}
+
+							if (item.key === "ocrSettings") {
+								return isReadyStatus?.(PLUGIN_ID_RAPID_OCR);
 							}
 
 							return true;
