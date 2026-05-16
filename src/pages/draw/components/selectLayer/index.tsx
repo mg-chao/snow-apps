@@ -73,10 +73,12 @@ import {
 	drawSelectRect,
 	EDGE_DETECTION_TOLERANCE,
 	getDragModeFromMousePosition,
+	getDragModeFromMousePositionProjection,
 	getMaskBackgroundColor,
 	limitRect,
 	positoinInRect,
 	SelectState,
+	snapRectToMousePosition,
 } from "./extra";
 
 export type SelectRectParams = {
@@ -932,6 +934,39 @@ const SelectLayerCore: React.FC<SelectLayerProps> = ({ actionRef }) => {
 					return;
 				}
 
+				// 投影模式：开启 dragSelectRectFromOutside、未按"整体移动选区"快捷键、
+				// 且鼠标点在选区外部时，立即把最近的边/顶点 snap 到鼠标位置，再进入 Drag。
+				const useProjectionDrag =
+					getAppSettings()[AppSettingsGroup.FunctionScreenshot]
+						.dragSelectRectFromOutside &&
+					!isHotkeyPressed(
+						getAppSettings()[AppSettingsGroup.DrawToolbarKeyEvent][
+							DrawToolbarKeyEventKey.DragSelectRect
+						].hotKey,
+					) &&
+					!positoinInRect(selectRect, mousePosition);
+
+				if (useProjectionDrag) {
+					const projDragMode = getDragModeFromMousePositionProjection(
+						selectRect,
+						mousePosition,
+					);
+					if (projDragMode !== DragMode.All) {
+						const snapped = snapRectToMousePosition(
+							projDragMode,
+							selectRect,
+							mousePosition,
+						);
+						setSelectRect(snapped, true, true);
+						dragModeRef.current = projDragMode;
+						dragRectRef.current = snapped;
+						changeCursor(convertDragModeToCursor(projDragMode));
+						setSelectState(SelectState.Drag);
+						dragAllSelectRectMousePositionRef.current = undefined;
+						return;
+					}
+				}
+
 				// 改变状态为拖动
 				setSelectState(SelectState.Drag);
 				updateDragMode(mousePosition);
@@ -941,11 +976,14 @@ const SelectLayerCore: React.FC<SelectLayerProps> = ({ actionRef }) => {
 		},
 		[
 			drawToolbarActionRef,
+			getAppSettings,
 			getCaptureStep,
 			getDrawState,
 			getSelectRect,
+			setSelectRect,
 			setSelectState,
 			updateDragMode,
+			changeCursor,
 		],
 	);
 

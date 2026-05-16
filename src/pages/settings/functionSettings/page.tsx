@@ -773,6 +773,22 @@ export const FunctionSettingsPage = () => {
 								layout="horizontal"
 							/>
 						</Col>
+						<Col span={12}>
+							<ProFormSwitch
+								label={
+									<IconLabel
+										label={
+											<FormattedMessage id="settings.functionSettings.screenshotSettings.dragSelectRectFromOutside" />
+										}
+										tooltipTitle={
+											<FormattedMessage id="settings.functionSettings.screenshotSettings.dragSelectRectFromOutside.tip" />
+										}
+									/>
+								}
+								name="dragSelectRectFromOutside"
+								layout="horizontal"
+							/>
+						</Col>
 					</Row>
 
 					{isReadyStatus?.(PLUGIN_ID_RAPID_OCR) && (

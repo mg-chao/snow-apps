@@ -222,4 +222,8 @@ export const zhHant = {
 	"common.permission.error.description":
 		"請在開啟應用正常運行所必要的「錄屏與系統錄音」和「輔助功能」權限",
 	"common.permission.error.goToSettings": "前往授權",
+	"settings.functionSettings.screenshotSettings.dragSelectRectFromOutside":
+		"選區外快速拖拽",
+	"settings.functionSettings.screenshotSettings.dragSelectRectFromOutside.tip":
+		"開啟後，可以直接透過點擊來改變選區位置。",
 };

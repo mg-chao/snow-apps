@@ -405,6 +405,8 @@ export type AppSettingsData = {
 	[AppSettingsGroup.FunctionScreenshot]: {
 		/** 选取窗口子元素 */
 		findChildrenElements: boolean;
+		/** 在选区外部点击时，按投影模式直接 snap 对应边或顶点（默认关闭，沿用 8px 边带逻辑） */
+		dragSelectRectFromOutside: boolean;
 		/** 截图快捷键提示 */
 		shortcutCanleTip: boolean;
 		/** 复制后自动保存文件 */

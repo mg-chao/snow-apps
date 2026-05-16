@@ -912,8 +912,15 @@ const AppSettingsContextProviderCore: React.FC<{
 						: (prevSettings?.findChildrenElements ??
 							defaultAppSettingsData[group].findChildrenElements);
 
+				const dragSelectRectFromOutside =
+					typeof newSettings?.dragSelectRectFromOutside === "boolean"
+						? newSettings.dragSelectRectFromOutside
+						: (prevSettings?.dragSelectRectFromOutside ??
+							defaultAppSettingsData[group].dragSelectRectFromOutside);
+
 				settings = {
 					findChildrenElements,
+					dragSelectRectFromOutside,
 					shortcutCanleTip:
 						typeof newSettings?.shortcutCanleTip === "boolean"
 							? newSettings.shortcutCanleTip

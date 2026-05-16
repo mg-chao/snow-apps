@@ -230,6 +230,7 @@ Priority order (highest to lowest):
 	},
 	[AppSettingsGroup.FunctionScreenshot]: {
 		findChildrenElements: true,
+		dragSelectRectFromOutside: false,
 		shortcutCanleTip: false,
 		autoSaveOnCopy: false,
 		doubleClickAction: DoubleClickAction.Copy,

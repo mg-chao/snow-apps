@@ -184,6 +184,10 @@ export const settings = {
 	"settings.functionSettings.screenshotSettings": "截图",
 	"settings.functionSettings.screenshotSettings.findChildrenElements":
 		"查找窗口子元素",
+	"settings.functionSettings.screenshotSettings.dragSelectRectFromOutside":
+		"选区外快速拖拽",
+	"settings.functionSettings.screenshotSettings.dragSelectRectFromOutside.tip":
+		"开启后，可以直接通过点击来改变选区位置。",
 	"settings.functionSettings.screenshotSettings.colorPickerShowMode":
 		"颜色拾取器模式",
 	"settings.functionSettings.screenshotSettings.beyondSelectRect":

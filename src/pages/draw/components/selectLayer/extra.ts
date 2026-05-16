@@ -391,6 +391,99 @@ export const getDragModeFromMousePosition = (
 	}
 };
 
+// 投影模式 hit-test：将整个 viewport 外部映射为 8 个 snap 区域
+// 鼠标在 rect 内部仍返回 DragMode.All（保留"拖整体"语义）
+export const getDragModeFromMousePositionProjection = (
+	selectRect: ElementRect,
+	mousePosition: MousePosition,
+) => {
+	const {
+		min_x: rectMinX,
+		min_y: rectMinY,
+		max_x: rectMaxX,
+		max_y: rectMaxY,
+	} = selectRect;
+	const { mouseX, mouseY } = mousePosition;
+
+	let position = 0;
+	// 位掩码 0b[top, right, bottom, left]
+	if (mouseY < rectMinY) position |= 0b1000;
+	if (mouseX > rectMaxX) position |= 0b0100;
+	if (mouseY > rectMaxY) position |= 0b0010;
+	if (mouseX < rectMinX) position |= 0b0001;
+
+	switch (position) {
+		case 0b1001:
+			return DragMode.TopLeft;
+		case 0b1100:
+			return DragMode.TopRight;
+		case 0b0011:
+			return DragMode.BottomLeft;
+		case 0b0110:
+			return DragMode.BottomRight;
+		case 0b1000:
+			return DragMode.Top;
+		case 0b0010:
+			return DragMode.Bottom;
+		case 0b0001:
+			return DragMode.Left;
+		case 0b0100:
+			return DragMode.Right;
+		default:
+			return DragMode.All; // 鼠标在 rect 内部
+	}
+};
+
+// 把指定 edge/vertex 立即 snap 到鼠标位置，返回新 rect
+export const snapRectToMousePosition = (
+	dragMode: DragMode,
+	rect: ElementRect,
+	mousePosition: MousePosition,
+): ElementRect => {
+	const { mouseX, mouseY } = mousePosition;
+	const next = { ...rect };
+	switch (dragMode) {
+		case DragMode.TopLeft:
+			next.min_x = mouseX;
+			next.min_y = mouseY;
+			break;
+		case DragMode.TopRight:
+			next.max_x = mouseX;
+			next.min_y = mouseY;
+			break;
+		case DragMode.BottomRight:
+			next.max_x = mouseX;
+			next.max_y = mouseY;
+			break;
+		case DragMode.BottomLeft:
+			next.min_x = mouseX;
+			next.max_y = mouseY;
+			break;
+		case DragMode.Top:
+			next.min_y = mouseY;
+			break;
+		case DragMode.Right:
+			next.max_x = mouseX;
+			break;
+		case DragMode.Bottom:
+			next.max_y = mouseY;
+			break;
+		case DragMode.Left:
+			next.min_x = mouseX;
+			break;
+		default:
+			break;
+	}
+	// 翻转保护：snap 后保证 min <= max
+	if (next.min_x > next.max_x) {
+		[next.min_x, next.max_x] = [next.max_x, next.min_x];
+	}
+	if (next.min_y > next.max_y) {
+		[next.min_y, next.max_y] = [next.max_y, next.min_y];
+	}
+	return next;
+};
+
 // 最小尺寸常量提升到函数外部
 const MIN_RECT_SIZE = 1;
 

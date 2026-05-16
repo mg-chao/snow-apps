@@ -247,4 +247,8 @@ export const en = {
 		"Horizontal",
 	"settings.functionSettings.videoRecordSettings.keyDisplayDirection.vertical":
 		"Vertical",
+	"settings.functionSettings.screenshotSettings.dragSelectRectFromOutside":
+		"Quick Drag from Outside Selection",
+	"settings.functionSettings.screenshotSettings.dragSelectRectFromOutside.tip":
+		"When enabled, you can change the selection position by clicking directly.",
 };
