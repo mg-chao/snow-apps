@@ -13,6 +13,15 @@ export type ChatApiPreset = Omit<ChatApiConfig, "api_key"> & {
  */
 export const chatApiPresets: ChatApiPreset[] = [
 	{
+		id: "minimax-m3",
+		labelKey: "settings.functionSettings.chatSettings.preset.minimax.m3",
+		api_uri: "https://api.minimax.io/v1/",
+		api_model: "MiniMax-M3",
+		model_name: "MiniMax M3",
+		support_thinking: true,
+		support_vision: true,
+	},
+	{
 		id: "minimax-m2.7",
 		labelKey: "settings.functionSettings.chatSettings.preset.minimax.m2_7",
 		api_uri: "https://api.minimax.io/v1/",

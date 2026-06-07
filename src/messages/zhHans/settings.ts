@@ -183,6 +183,8 @@ export const settings = {
 		"启用后，该模型将可用于视觉理解，将图片转化为 HTML 等格式的内容",
 	"settings.functionSettings.chatSettings.preset.quickSetup":
 		"快速配置预设",
+	"settings.functionSettings.chatSettings.preset.minimax.m3":
+		"MiniMax M3",
 	"settings.functionSettings.chatSettings.preset.minimax.m2_7":
 		"MiniMax M2.7",
 	"settings.functionSettings.chatSettings.preset.minimax.m2_7_highspeed":

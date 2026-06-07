@@ -185,6 +185,8 @@ export const en = {
 	"tools.chat.custom": "Custom",
 	"settings.functionSettings.chatSettings.preset.quickSetup":
 		"Quick Setup Presets",
+	"settings.functionSettings.chatSettings.preset.minimax.m3":
+		"MiniMax M3",
 	"settings.functionSettings.chatSettings.preset.minimax.m2_7":
 		"MiniMax M2.7",
 	"settings.functionSettings.chatSettings.preset.minimax.m2_7_highspeed":

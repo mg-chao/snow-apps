@@ -47,6 +47,16 @@ describe("chatApiPresets", () => {
 		}
 	});
 
+	it("should contain MiniMax M3 preset as the default (first) entry with vision and thinking support", () => {
+		const m3 = chatApiPresets.find((p) => p.id === "minimax-m3");
+		expect(m3).toBeDefined();
+		expect(m3!.api_model).toBe("MiniMax-M3");
+		expect(m3!.support_thinking).toBe(true);
+		expect(m3!.support_vision).toBe(true);
+		// M3 should be first in the list (the default preset)
+		expect(chatApiPresets[0].id).toBe("minimax-m3");
+	});
+
 	it("should contain MiniMax M2.7 preset with thinking support", () => {
 		const m27 = chatApiPresets.find((p) => p.id === "minimax-m2.7");
 		expect(m27).toBeDefined();
