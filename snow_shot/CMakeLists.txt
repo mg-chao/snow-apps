@@ -744,6 +744,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/services/screenshotcontroller.cpp
     src/presentation/services/screenshotexportcoordinator.cpp
     src/presentation/services/screenshotmessageservice.cpp
+    src/presentation/services/screenshotlifecycleperfinstrumentation.cpp
     src/presentation/services/screenshothistoryservice.cpp
     src/presentation/services/screenshotdisplayconfigurationobserver.cpp
     src/presentation/services/screenshotexportservice.cpp
@@ -2888,6 +2889,22 @@ target_compile_definitions(snow_shot PRIVATE
 )
 
 if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
+    # This interactive, hardware-sensitive benchmark intentionally is not
+    # registered with CTest. Run it explicitly through its PowerShell driver.
+    add_executable(snow-shot-screenshot-lifecycle-performance-benchmark
+        tests/screenshot_lifecycle_performance_benchmark.cpp
+    )
+    target_link_libraries(snow-shot-screenshot-lifecycle-performance-benchmark PRIVATE
+        Qt6::Core
+        ole32
+        oleaut32
+        psapi
+        Uiautomationcore
+        user32
+    )
+    target_compile_definitions(
+        snow-shot-screenshot-lifecycle-performance-benchmark PRIVATE NOMINMAX)
+
     add_executable(snow-shot-pin-to-screen-performance-benchmark
         tests/screenshot_pin_to_screen_performance_benchmark.cpp
     )
@@ -2908,6 +2925,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
 
     target_compile_definitions(snow_shot PRIVATE
         SNOW_SHOT_PIN_PERF_INSTRUMENTATION=1
+        SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION=1
     )
 endif()
 

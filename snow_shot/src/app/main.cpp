@@ -8,6 +8,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "../presentation/pinned/screenshotpintoperfinstrumentation.h"
+#include "../presentation/services/screenshotlifecycleperfinstrumentation.h"
 
 #include "icon_registry.h"
 #include "locale/locale.h"
@@ -18,6 +19,7 @@
 #include <QDebug>
 #include <QRegularExpression>
 #include <QString>
+#include <QTimer>
 
 int main(int argc, char* argv[]) {
     QCoreApplication::setOrganizationName(QStringLiteral("SnowShot"));
@@ -46,6 +48,10 @@ int main(int argc, char* argv[]) {
 #if defined(SNOW_SHOT_PIN_PERF_INSTRUMENTATION)
     snow_shot::presentation::pin_perf::configureTrace(
         qEnvironmentVariable("SNOW_SHOT_PIN_PERF_TRACE"));
+#endif
+#if defined(SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION)
+    snow_shot::presentation::screenshot_lifecycle_perf::configureTrace(
+        qEnvironmentVariable("SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_TRACE"));
 #endif
     snow_shot::app::SingleInstanceCoordinator singleInstance;
     const snow_shot::app::SingleInstanceResult instanceResult =
@@ -83,6 +89,11 @@ int main(int argc, char* argv[]) {
             applicationController.handleLaunchRequest(arguments);
         });
     applicationController.start();
+#if defined(SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION)
+    QTimer::singleShot(0, &app, []() {
+        snow_shot::presentation::screenshot_lifecycle_perf::appReady();
+    });
+#endif
     if (!QApplication::arguments().contains(QStringLiteral("--autostart")) &&
         QApplication::arguments().contains(QStringLiteral("--show-main-window"))) {
         applicationController.showMainWindow();

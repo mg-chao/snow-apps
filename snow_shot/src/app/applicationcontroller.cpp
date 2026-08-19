@@ -7,6 +7,7 @@
 #include "snow_shot/presentation/systemtraycontroller.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "../presentation/services/screenshotlifecycleperfinstrumentation.h"
 
 #include <QApplication>
 #include <QJsonArray>
@@ -28,6 +29,9 @@ const QString kE2eAllowOverlayCaptureArgument =
     QStringLiteral("--e2e-allow-overlay-capture");
 const QString kE2eImmediateCaptureCancelArgument =
     QStringLiteral("--e2e-immediate-capture-cancel");
+#if defined(SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION)
+const QString kE2eStartScreenshotArgument = QStringLiteral("--e2e-start-screenshot");
+#endif
 
 QStringList stringList(const QJsonValue& value) {
     QStringList result;
@@ -263,6 +267,16 @@ void ApplicationController::handleLaunchRequest(const QStringList& arguments) {
         }
         return;
     }
+#if defined(SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION)
+    if (QApplication::arguments().contains(kE2eAllowOverlayCaptureArgument) &&
+        arguments.contains(kE2eStartScreenshotArgument)) {
+        if (ScreenshotController* controller = m_impl->ensureScreenshotController()) {
+            presentation::screenshot_lifecycle_perf::beginCapture();
+            controller->startCapture();
+        }
+        return;
+    }
+#endif
     m_impl->showMainWindow();
 }
 } // namespace snow_shot::app

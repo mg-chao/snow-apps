@@ -49,6 +49,7 @@
 #include "snow_shot/presentation/screenrecordingcontroller.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "../pinned/screenshotpintoperfinstrumentation.h"
+#include "screenshotlifecycleperfinstrumentation.h"
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
@@ -82,6 +83,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <dwmapi.h>
 #include <mmsystem.h>
 #endif
 
@@ -953,6 +955,13 @@ void ScreenshotController::Impl::startHistoryEdit(const QString& recordId) {
 }
 
 void ScreenshotController::Impl::handleCapturePresented() {
+#if defined(SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION) && \
+    (defined(Q_OS_WIN) || defined(_WIN32))
+    if (snow_shot::presentation::screenshot_lifecycle_perf::captureActive()) {
+        static_cast<void>(DwmFlush());
+        snow_shot::presentation::screenshot_lifecycle_perf::capturePresented();
+    }
+#endif
     if (!m_pendingHistoryEditRecordId.isEmpty()) {
         const QString recordId = std::exchange(m_pendingHistoryEditRecordId, QString());
         if (m_historyService != nullptr) {
@@ -3367,6 +3376,9 @@ void ScreenshotController::scheduleIdleImplementationRelease(Impl* implementatio
             return;
         }
         m_impl.reset();
+#if defined(SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION)
+        snow_shot::presentation::screenshot_lifecycle_perf::captureReleased();
+#endif
     });
 }
 
