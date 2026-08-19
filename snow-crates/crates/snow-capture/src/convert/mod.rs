@@ -39,6 +39,10 @@ pub fn warmup() {
     parallel::warmup_pool(CONVERSION_PARALLEL_MAX_WORKERS);
 }
 
+pub(crate) fn release_pool() {
+    parallel::release_pool();
+}
+
 #[inline]
 pub(crate) fn with_conversion_pool<F>(max_workers: usize, job: F)
 where

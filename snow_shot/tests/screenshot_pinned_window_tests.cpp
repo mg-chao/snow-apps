@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
+#include "snow_shot/presentation/screenshotselectionexportuiservices.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/storage/settingsadapters.h"
 
@@ -168,6 +169,27 @@ void require(bool condition, const char* message) {
     if (!condition) {
         throw std::runtime_error(message);
     }
+}
+
+int pinnedWindowCount() {
+    const auto topLevelWidgets = QApplication::topLevelWidgets();
+    return static_cast<int>(std::count_if(
+        topLevelWidgets.cbegin(), topLevelWidgets.cend(),
+        [](QWidget* widget) { return qobject_cast<ScreenshotPinnedWindow*>(widget) != nullptr; }));
+}
+
+void selectionExportUiServicesDoesNotPrewarmPinnedWindow(SnowCanvasRuntime& sourceRuntime) {
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    const int initialPinnedWindowCount = pinnedWindowCount();
+    {
+        ScreenshotSelectionExportUiServices services(sourceRuntime);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        require(pinnedWindowCount() == initialPinnedWindowCount,
+                "constructing selection export UI services prewarmed a pinned window");
+    }
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    require(pinnedWindowCount() == initialPinnedWindowCount,
+            "destroying idle selection export UI services changed the pinned-window count");
 }
 
 QGraphicsTextItem* formattedTextItem(QGraphicsView* layer) {
@@ -2978,6 +3000,10 @@ int main(int argc, char* argv[]) {
     try {
         SnowCanvasRuntime sourceRuntime;
         require(sourceRuntime.isValid(), "source runtime creation failed");
+        if (app.arguments().contains(QStringLiteral("--pool-lazy-only"))) {
+            selectionExportUiServicesDoesNotPrewarmPinnedWindow(sourceRuntime);
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--large-edit-only"))) {
             pinnedLargeImageRemainsOpenWhenEnteringDrawingMode(sourceRuntime);
             return 0;

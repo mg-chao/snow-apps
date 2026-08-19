@@ -48,7 +48,6 @@ ScreenshotCaptureWorkflow::ScreenshotCaptureWorkflow(ScreenshotCaptureWorkflowCo
     : m_context(std::move(context)), m_state(m_context.state) {
     m_context.runtime.setEventSink(this);
 }
-
 ScreenshotCaptureWorkflow::~ScreenshotCaptureWorkflow() {
     m_context.runtime.setEventSink(nullptr);
 }
@@ -116,7 +115,6 @@ void ScreenshotCaptureWorkflow::cancelCapture() {
 }
 
 void ScreenshotCaptureWorkflow::clearCapturePresentationReadiness() {
-    m_preparedPresentationSessionId = 0;
     m_capturedPresentationSessionId = 0;
     m_initialSmartSelectionPendingSessionId = 0;
     m_initialSmartSelectionResolvedSessionId = 0;
@@ -180,11 +178,14 @@ void ScreenshotCaptureWorkflow::releaseIdleResources(quint64 sessionId) {
     }
 
     m_state.sessionState = ScreenshotSessionState::Releasing;
-    m_context.runtime.releaseSelectorCache();
+    m_context.runtime.destroySelectorService();
     m_context.runtime.hideOverlayWindows(m_context.displaySession);
-    clearDisplays();
-    m_context.runtime.releaseIdleResourcesAsync(sessionId);
-    initializeIdleResources(sessionId);
+    if (m_context.presentation.hideToolbar) {
+        m_context.presentation.hideToolbar();
+    }
+    destroyDisplayPool();
+    m_context.runtime.shutdownCaptureWorker();
+    m_state.sessionState = ScreenshotSessionState::IdleCold;
 }
 
 void ScreenshotCaptureWorkflow::releaseResourcesForExternalInvalidation() {
@@ -217,57 +218,14 @@ void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
             ScreenshotCaptureRequest{sessionId, m_state.layoutDirty, m_focusedWindowHandle});
         return;
     }
-    const bool preCapturePrepared =
-        m_context.runtime.preparePreCaptureOverlayWindows(m_context.displaySession);
+
+    static_cast<void>(
+        m_context.runtime.preparePreCaptureOverlayWindows(m_context.displaySession));
     // Once Snow Shot's windows are excluded, start native acquisition at
-    // once. The capture worker can initialize lazy GPU resources while the
-    // UI thread prepares selector and presentation state.
+    // once. Selector and canvas initialization wait for a validated capture
+    // result so cancellation can remain a lightweight path.
     m_context.runtime.captureAsync(
         ScreenshotCaptureRequest{sessionId, m_state.layoutDirty, m_focusedWindowHandle});
-    if (sessionId != m_state.sessionId || !m_state.captureInProgress) {
-        return;
-    }
-    if (preCapturePrepared) {
-        m_canvasRuntimeClean = false;
-
-        // Build the selector snapshot for this capture after overlay exclusions
-        // are known, so the frame and initial smart selection use the same layout.
-        m_context.runtime.startWorkflowRefresh();
-    }
-    const bool presentationBegun = preCapturePrepared && beginCapturePresentation(sessionId);
-    if (presentationBegun) {
-        prepareOverlayPresentation(sessionId);
-    }
-}
-
-bool ScreenshotCaptureWorkflow::beginCapturePresentation(quint64 sessionId) {
-    if (capturePresentationPrepared(sessionId) || sessionId != m_state.sessionId ||
-        !m_state.captureInProgress || !m_context.displaySession.hasActiveDisplays()) {
-        return false;
-    }
-
-    m_context.geometry.clear();
-    m_context.geometry.rebuild(m_context.displaySession);
-    if (m_context.geometry.isEmpty()) {
-        return false;
-    }
-
-    m_state.sessionState = ScreenshotSessionState::OverlayVisible;
-    enterOverlaySelectionModeAtCursor();
-    return true;
-}
-
-void ScreenshotCaptureWorkflow::prepareOverlayPresentation(quint64 sessionId) {
-    if (sessionId != m_state.sessionId || !m_state.captureInProgress ||
-        !m_context.displaySession.hasActiveDisplays()) {
-        return;
-    }
-
-    m_preparedPresentationSessionId = sessionId;
-    m_context.runtime.prepareDisplayModels(m_context.displaySession);
-    if (m_context.presentation.updateOverlayState) {
-        m_context.presentation.updateOverlayState();
-    }
 }
 
 void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCaptureResult& result) {
@@ -287,7 +245,6 @@ void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCapture
     m_context.focusedWindowCaptured(result.focusedWindow);
     m_focusedWindowHandle = 0;
 
-    const bool presentationPrepared = capturePresentationPrepared(sessionId);
     m_context.geometry.clear();
     ScreenshotCaptureDisplayModelReconciler::applySnapshots(m_context.displaySession,
                                                             result.displays);
@@ -308,10 +265,8 @@ void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCapture
         }
         return;
     }
-    if (!presentationPrepared || m_context.interaction.inactive()) {
-        m_state.sessionState = ScreenshotSessionState::OverlayVisible;
-        enterOverlaySelectionModeAtCursor();
-    }
+    m_state.sessionState = ScreenshotSessionState::OverlayVisible;
+    enterOverlaySelectionModeAtCursor();
 
     m_context.runtime.applyDisplayModels(m_context.displaySession);
     m_canvasRuntimeClean = false;
@@ -428,8 +383,4 @@ void ScreenshotCaptureWorkflow::resetCanvasRuntimeState() {
     }
     m_context.runtime.clearOverlayCanvases(m_context.displaySession);
     m_canvasRuntimeClean = true;
-}
-
-bool ScreenshotCaptureWorkflow::capturePresentationPrepared(quint64 sessionId) const {
-    return m_preparedPresentationSessionId == sessionId;
 }

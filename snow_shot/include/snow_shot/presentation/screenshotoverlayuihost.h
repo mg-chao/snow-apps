@@ -70,12 +70,18 @@ class ScreenshotOverlayUiHost final {
     void showSelectionToolbar();
     void raiseSelectionToolbar();
     void detachOverlayTransientUi(ScreenshotOverlayWindow* overlay);
+    // Retires capture-scoped widgets through deleteLater(). Their public
+    // handles are cleared immediately so a subsequent capture recreates them.
+    void releaseUiResources();
     void destroyUiResources();
 
   private:
+    void disconnectToolbarCanvas();
+
     ScreenshotToolbarCommandSink* m_toolbarCommands = nullptr;
     ScreenshotSelectionToolbarCommandSink* m_selectionToolbarCommands = nullptr;
     QObjectCleanupHandler m_ownedWidgets;
+    QObjectCleanupHandler m_retiredWidgets;
     QPointer<ScreenshotToolbarWindow> m_toolbar;
     QPointer<SnowCanvasWidget> m_toolbarStyleCanvas;
     QMetaObject::Connection m_toolbarStyleConnection;

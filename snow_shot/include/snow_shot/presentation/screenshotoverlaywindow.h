@@ -72,6 +72,10 @@ class ScreenshotOverlayWindow final : public QWidget {
     void clearPresentationFrame();
     void restorePresentationCanvas();
     void showPreparedFrame();
+    // Drops the platform window and its backing store without deleting this
+    // QObject. Pool teardown can therefore reclaim the full-screen surface
+    // even when cancellation originates from an event handled by this widget.
+    void releaseNativeSurface();
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override;

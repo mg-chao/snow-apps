@@ -92,12 +92,20 @@ void ScreenshotCaptureCoordinator::releaseIdleResourcesAsync(quint64 requestId) 
 void ScreenshotCaptureCoordinator::shutdown() {
     cancelActiveCapture();
     if (m_thread == nullptr) {
+        delete m_worker;
         m_worker = nullptr;
         return;
     }
 
+    // The worker has no parent and its event loop is about to stop. Disconnect
+    // the deferred-delete hook and destroy it explicitly after the thread has
+    // joined, otherwise the native session can outlive the stopped worker.
+    if (m_worker != nullptr) {
+        QObject::disconnect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
+    }
     m_thread->quit();
     m_thread->wait();
+    delete m_worker;
     delete m_thread;
     m_thread = nullptr;
     m_worker = nullptr;

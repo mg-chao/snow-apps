@@ -822,6 +822,21 @@ void mainTextTranslationButtonUsesTranslationPresentation() {
     require(!translation->busy(),
             "the main translation control should stop loading when streaming completes");
 }
+
+void nativeSurfaceReleaseKeepsTheToolbarObjectUsableForDeferredDeletion() {
+    ScreenshotFloatingToolPaletteWindow window(testToolbarOptions());
+    window.show();
+    QApplication::processEvents();
+    static_cast<void>(window.winId());
+    require(window.internalWinId() != 0 && window.testAttribute(Qt::WA_WState_Created),
+            "the toolbar teardown test must begin with a live native window");
+
+    window.releaseNativeSurface();
+    require(window.internalWinId() == 0 && !window.testAttribute(Qt::WA_WState_Created),
+            "toolbar retirement must synchronously release its native window");
+    require(!window.isVisible(),
+            "native surface release must leave the still-live toolbar object hidden");
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -834,6 +849,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--toolbar-size-only"))) {
             screenshotToolbarSizeMultiplierSurvivesCaptureReset();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--native-surface-release-only"))) {
+            nativeSurfaceReleaseKeepsTheToolbarObjectUsableForDeferredDeletion();
             return 0;
         }
         logicalDragMovesWithoutRefreshingGeometry();

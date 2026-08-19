@@ -105,6 +105,8 @@ void ScreenshotOverlayPool::deleteOverlay(ScreenshotOverlayWindow* overlay) cons
     }
 
     detachOverlayUi(overlay);
-    overlay->hide();
+    m_shortcutManager.removeScopeWindow(overlay);
+    overlay->releaseNativeSurface();
+    m_retiredOverlays.add(overlay);
     overlay->deleteLater();
 }

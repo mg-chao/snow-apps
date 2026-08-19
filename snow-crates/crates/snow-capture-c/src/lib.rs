@@ -840,6 +840,16 @@ fn write_window_frame_info_v1(
     Ok(())
 }
 
+/// Releases the process-wide worker pool used by pixel conversion.
+///
+/// Conversions already in progress retain the pool until they finish. Callers
+/// that need its threads to exit promptly should first stop and join capture
+/// work that can perform conversion.
+#[unsafe(no_mangle)]
+pub extern "C" fn snow_capture_release_conversion_pool() {
+    snow_capture::release_conversion_pool();
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn snow_capture_desktop_session_create(
     config: *const SnowCaptureDesktopSessionConfig,
@@ -1076,6 +1086,16 @@ pub unsafe extern "C" fn snow_capture_cancellation_token_cancel(
     if !token.is_null() {
         unsafe { &*token }.canceled.store(true, Ordering::Release);
     }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_cancellation_token_is_canceled(
+    token: *const SnowCaptureCancellationTokenImpl,
+) -> u8 {
+    if token.is_null() {
+        return 0;
+    }
+    u8::from(unsafe { &*token }.canceled.load(Ordering::Acquire))
 }
 
 #[unsafe(no_mangle)]
@@ -2585,8 +2605,16 @@ mod tests {
 
     #[test]
     fn cancellation_token_is_thread_safe_and_sticky() {
+        assert_eq!(
+            unsafe { snow_capture_cancellation_token_is_canceled(ptr::null()) },
+            0
+        );
         let token = snow_capture_cancellation_token_create();
         assert!(!token.is_null());
+        assert_eq!(
+            unsafe { snow_capture_cancellation_token_is_canceled(token) },
+            0
+        );
         let state = unsafe { &*token }.canceled.clone();
         let token_address = token as usize;
         let cancel = std::thread::spawn(move || unsafe {
@@ -2596,6 +2624,10 @@ mod tests {
         });
         cancel.join().expect("cancel thread should complete");
         assert!(state.load(Ordering::Acquire));
+        assert_eq!(
+            unsafe { snow_capture_cancellation_token_is_canceled(token) },
+            1
+        );
         unsafe { snow_capture_cancellation_token_destroy(token) };
     }
 

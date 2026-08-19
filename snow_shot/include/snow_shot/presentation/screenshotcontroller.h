@@ -76,7 +76,12 @@ class ScreenshotController : public QObject {
   private:
     struct Impl;
 
+    Impl& ensureImpl();
+    quint64 nextOperationGeneration();
+    void scheduleIdleImplementationRelease(Impl* implementation);
+
     std::unique_ptr<Impl> m_impl;
+    quint64 m_operationGeneration = 0;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTCONTROLLER_H

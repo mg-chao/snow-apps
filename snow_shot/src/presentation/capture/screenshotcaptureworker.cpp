@@ -130,8 +130,22 @@ void ScreenshotCaptureWorker::capture(
     SnowCaptureCancellationToken* cancellationToken) {
     ScreenshotCaptureResult captureResult;
     captureResult.requestId = request.requestId;
+    const auto canceled = [cancellationToken]() {
+        return cancellationToken != nullptr &&
+               snow_capture_cancellation_token_is_canceled(cancellationToken) != 0;
+    };
+    if (canceled()) {
+        captureResult.errorMessage = QStringLiteral("Screenshot capture canceled");
+        postCaptureResult(coordinator, std::move(captureResult));
+        return;
+    }
     if (!ensureSession()) {
         captureResult.errorMessage = nativeCaptureError("Failed to create desktop capture session");
+        postCaptureResult(coordinator, std::move(captureResult));
+        return;
+    }
+    if (canceled()) {
+        captureResult.errorMessage = QStringLiteral("Screenshot capture canceled");
         postCaptureResult(coordinator, std::move(captureResult));
         return;
     }

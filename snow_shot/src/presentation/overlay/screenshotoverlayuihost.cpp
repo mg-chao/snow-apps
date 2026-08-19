@@ -341,26 +341,7 @@ void ScreenshotOverlayUiHost::attachToolbarToOverlay(ScreenshotOverlayWindow* ov
         return;
     }
 
-    if (m_toolbarStyleConnection) {
-        if (m_toolbarStyleCanvas != nullptr) {
-            m_toolbarStyleCanvas->endTextStylePopupInteraction(toolbarWindow);
-        }
-        QObject::disconnect(m_toolbarStyleConnection);
-        m_toolbarStyleConnection = {};
-    }
-    if (m_toolbarHistoryConnection) {
-        QObject::disconnect(m_toolbarHistoryConnection);
-        m_toolbarHistoryConnection = {};
-    }
-    if (m_toolbarStylePopupBeginConnection) {
-        QObject::disconnect(m_toolbarStylePopupBeginConnection);
-        m_toolbarStylePopupBeginConnection = {};
-    }
-    if (m_toolbarStylePopupEndConnection) {
-        QObject::disconnect(m_toolbarStylePopupEndConnection);
-        m_toolbarStylePopupEndConnection = {};
-    }
-    m_toolbarStyleCanvas = nullptr;
+    disconnectToolbarCanvas();
     toolbarWindow->setOwnerWindow(overlay);
 
     if (overlay == nullptr || overlay->canvas() == nullptr) {
@@ -712,23 +693,8 @@ void ScreenshotOverlayUiHost::detachOverlayTransientUi(ScreenshotOverlayWindow* 
         m_selectionToolbar->setWindowFlags(Qt::FramelessWindowHint);
     }
 
-    if (m_toolbarStyleCanvas == overlay->canvas() && m_toolbarStyleConnection) {
-        m_toolbarStyleCanvas->endTextStylePopupInteraction(m_toolbar.data());
-        QObject::disconnect(m_toolbarStyleConnection);
-        m_toolbarStyleConnection = {};
-        if (m_toolbarHistoryConnection) {
-            QObject::disconnect(m_toolbarHistoryConnection);
-            m_toolbarHistoryConnection = {};
-        }
-        if (m_toolbarStylePopupBeginConnection) {
-            QObject::disconnect(m_toolbarStylePopupBeginConnection);
-            m_toolbarStylePopupBeginConnection = {};
-        }
-        if (m_toolbarStylePopupEndConnection) {
-            QObject::disconnect(m_toolbarStylePopupEndConnection);
-            m_toolbarStylePopupEndConnection = {};
-        }
-        m_toolbarStyleCanvas = nullptr;
+    if (m_toolbarStyleCanvas == overlay->canvas()) {
+        disconnectToolbarCanvas();
     }
     if (m_toolbar != nullptr && m_toolbar->parentWidget() == overlay) {
         m_toolbar->hide();
@@ -744,7 +710,7 @@ void ScreenshotOverlayUiHost::detachOverlayTransientUi(ScreenshotOverlayWindow* 
     }
 }
 
-void ScreenshotOverlayUiHost::destroyUiResources() {
+void ScreenshotOverlayUiHost::disconnectToolbarCanvas() {
     if (m_toolbarStyleConnection) {
         if (m_toolbarStyleCanvas != nullptr) {
             m_toolbarStyleCanvas->endTextStylePopupInteraction(m_toolbar.data());
@@ -765,6 +731,45 @@ void ScreenshotOverlayUiHost::destroyUiResources() {
         m_toolbarStylePopupEndConnection = {};
     }
     m_toolbarStyleCanvas = nullptr;
+}
+
+void ScreenshotOverlayUiHost::releaseUiResources() {
+    disconnectToolbarCanvas();
+
+    if (m_toolbar != nullptr) {
+        m_toolbar->releaseNativeSurface();
+    }
+    if (m_selectionToolbar != nullptr) {
+        m_selectionToolbar->hide();
+    }
+    if (m_colorPicker != nullptr) {
+        m_colorPicker->resetForNewCapture();
+    }
+    hideShortcutHints();
+
+    const auto retireWidget = [this](QWidget* widget) {
+        if (widget == nullptr) {
+            return;
+        }
+        widget->hide();
+        widget->setEnabled(false);
+        m_ownedWidgets.remove(widget);
+        m_retiredWidgets.add(widget);
+        widget->deleteLater();
+    };
+    retireWidget(m_toolbar.data());
+    retireWidget(m_selectionToolbar.data());
+    retireWidget(m_colorPicker.data());
+    retireWidget(m_shortcutHints.data());
+
+    m_toolbar = nullptr;
+    m_selectionToolbar = nullptr;
+    m_colorPicker = nullptr;
+    m_shortcutHints = nullptr;
+}
+
+void ScreenshotOverlayUiHost::destroyUiResources() {
+    disconnectToolbarCanvas();
 
     if (m_toolbar != nullptr) {
         m_toolbar->hide();
@@ -775,13 +780,12 @@ void ScreenshotOverlayUiHost::destroyUiResources() {
     }
 
     if (m_colorPicker != nullptr) {
-        m_colorPicker->hidePicker();
+        m_colorPicker->resetForNewCapture();
     }
-    if (m_shortcutHints != nullptr) {
-        m_shortcutHints->hide();
-    }
+    hideShortcutHints();
 
     m_ownedWidgets.clear();
+    m_retiredWidgets.clear();
     m_toolbar = nullptr;
     m_selectionToolbar = nullptr;
     m_colorPicker = nullptr;

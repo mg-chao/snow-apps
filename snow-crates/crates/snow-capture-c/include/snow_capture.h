@@ -187,6 +187,11 @@ typedef struct SnowCaptureRecordingExportConfig {
     uint8_t reserved[32];
 } SnowCaptureRecordingExportConfig;
 
+/* Releases the process-wide pixel-conversion worker pool. Conversions already
+ * in progress retain the pool until they finish. Stop and join capture work
+ * first when the worker threads must exit promptly. */
+void snow_capture_release_conversion_pool(void);
+
 SnowCaptureDesktopSession* snow_capture_desktop_session_create(
     const SnowCaptureDesktopSessionConfig* config);
 void snow_capture_desktop_session_destroy(SnowCaptureDesktopSession* session);
@@ -210,6 +215,8 @@ SnowCaptureScreenshotResult* snow_capture_desktop_session_capture_v1(
  * alive until every capture call that references it has returned. */
 SnowCaptureCancellationToken* snow_capture_cancellation_token_create(void);
 void snow_capture_cancellation_token_cancel(SnowCaptureCancellationToken* token);
+uint8_t snow_capture_cancellation_token_is_canceled(
+    const SnowCaptureCancellationToken* token);
 void snow_capture_cancellation_token_destroy(SnowCaptureCancellationToken* token);
 
 /* Pointers returned through frame-info structures remain valid until the

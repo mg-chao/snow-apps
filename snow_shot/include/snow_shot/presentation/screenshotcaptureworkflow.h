@@ -68,8 +68,6 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     void cleanupActiveSessionForRestart();
     void releaseResourcesForExternalInvalidation();
     void beginCapturePreparation(quint64 sessionId);
-    [[nodiscard]] bool beginCapturePresentation(quint64 sessionId);
-    void prepareOverlayPresentation(quint64 sessionId);
     void finishCapturePreparation(const ScreenshotCaptureResult& result);
     void showCapturePresentationWhenReady(quint64 sessionId);
     void enterOverlaySelectionModeAtCursor();
@@ -78,11 +76,9 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     void prewarmOverlayPool();
     void initializeIdleResources(quint64 requestId);
     void resetCanvasRuntimeState();
-    [[nodiscard]] bool capturePresentationPrepared(quint64 sessionId) const;
 
     ScreenshotCaptureWorkflowContext m_context;
     ScreenshotCaptureState& m_state;
-    quint64 m_preparedPresentationSessionId = 0;
     quint64 m_capturedPresentationSessionId = 0;
     quint64 m_initialSmartSelectionPendingSessionId = 0;
     quint64 m_initialSmartSelectionResolvedSessionId = 0;

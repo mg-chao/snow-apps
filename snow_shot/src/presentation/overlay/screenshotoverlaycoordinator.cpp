@@ -67,7 +67,12 @@ void ScreenshotOverlayCoordinator::clearDisplays(ScreenshotDisplaySession& displ
 }
 
 void ScreenshotOverlayCoordinator::destroyDisplayPool(ScreenshotDisplaySession& displaySession) {
+    // UI widgets can be children/native children of an overlay. Retire them
+    // before the pool releases its HWNDs so detach logic cannot recreate a
+    // top-level toolbar window during teardown.
+    m_uiHost.releaseUiResources();
     m_overlayPool.destroyDisplayPool(displaySession);
+    m_overlayMaintenancePending = false;
 }
 
 void ScreenshotOverlayCoordinator::resetForNewCapture(ScreenshotDisplaySession& displaySession) {

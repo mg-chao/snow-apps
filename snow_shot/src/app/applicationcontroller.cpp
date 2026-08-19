@@ -24,6 +24,10 @@ const QString kTrayCustomIconKey = QStringLiteral("tray/custom_icon");
 const QString kTrayLeftClickActionKey = QStringLiteral("tray/left_click_action");
 const QString kTrayMenuOptionsKey = QStringLiteral("tray/menu_options");
 const QString kScreenshotDelaySecondsKey = QStringLiteral("screenshot/delay_seconds");
+const QString kE2eAllowOverlayCaptureArgument =
+    QStringLiteral("--e2e-allow-overlay-capture");
+const QString kE2eImmediateCaptureCancelArgument =
+    QStringLiteral("--e2e-immediate-capture-cancel");
 
 QStringList stringList(const QJsonValue& value) {
     QStringList result;
@@ -101,11 +105,6 @@ class ApplicationController::Impl {
 
         systemTray.show();
         globalShortcutManager.initialize();
-        QTimer::singleShot(0, &q, [this]() {
-            if (ScreenshotController* controller = ensureScreenshotController()) {
-                controller->prewarmResources();
-            }
-        });
     }
 
     ScreenshotController* ensureScreenshotController() {
@@ -254,6 +253,14 @@ void ApplicationController::showMainWindow() {
 
 void ApplicationController::handleLaunchRequest(const QStringList& arguments) {
     if (arguments.contains(QStringLiteral("--autostart"))) {
+        return;
+    }
+    if (QApplication::arguments().contains(kE2eAllowOverlayCaptureArgument) &&
+        arguments.contains(kE2eImmediateCaptureCancelArgument)) {
+        if (ScreenshotController* controller = m_impl->ensureScreenshotController()) {
+            controller->startCapture();
+            QTimer::singleShot(0, controller, &ScreenshotController::cancelCapture);
+        }
         return;
     }
     m_impl->showMainWindow();

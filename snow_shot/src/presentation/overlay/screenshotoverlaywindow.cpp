@@ -410,6 +410,20 @@ void ScreenshotOverlayWindow::showPreparedFrame() {
     }
 }
 
+void ScreenshotOverlayWindow::releaseNativeSurface() {
+    hide();
+    setUpdatesEnabled(false);
+    if (m_canvas != nullptr) {
+        m_canvas->setInteractionEnabled(false);
+        m_canvas->setUpdatesEnabled(false);
+    }
+
+    // QWidget::deleteLater() is required when Escape/cancel is dispatched by
+    // this overlay. destroy() keeps the QObject valid while immediately
+    // releasing the HWND, child platform windows, and QBackingStore.
+    destroy(true, true);
+}
+
 void ScreenshotOverlayWindow::initializeScreenshotSurface() {
     // Keep the native surface mode stable after winId/show. Runtime toggling of
     // WA_TranslucentBackground is unreliable for top-level layered windows on Windows.

@@ -208,7 +208,7 @@ fn try_alloc_large_pages(size: usize) -> Option<LargePageAlloc> {
 
     let aligned_size = (size + large_page_size - 1) & !(large_page_size - 1);
 
-    let ptr = unsafe {
+    let mut ptr = unsafe {
         VirtualAlloc(
             None,
             aligned_size,
@@ -217,8 +217,22 @@ fn try_alloc_large_pages(size: usize) -> Option<LargePageAlloc> {
         )
     };
 
+    // Most desktop processes do not hold SeLockMemoryPrivilege, so the large-page
+    // request normally fails. Keep the same explicit VirtualAlloc/VirtualFree
+    // ownership for that case instead of falling back to a Vec whose freed
+    // multi-megabyte segments remain committed in the process heap.
     if ptr.is_null() {
-        return None;
+        const ALLOCATION_GRANULARITY: usize = 64 * 1024;
+        let regular_size = (size + ALLOCATION_GRANULARITY - 1) & !(ALLOCATION_GRANULARITY - 1);
+        ptr = unsafe { VirtualAlloc(None, regular_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
+        if ptr.is_null() {
+            return None;
+        }
+        return Some(LargePageAlloc {
+            ptr: ptr as *mut u8,
+            len: 0,
+            capacity: regular_size,
+        });
     }
 
     Some(LargePageAlloc {

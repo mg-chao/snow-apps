@@ -248,6 +248,13 @@ void ScreenshotFloatingToolPaletteWindow::setOwnerWindow(QWidget* owner) {
     }
 }
 
+void ScreenshotFloatingToolPaletteWindow::releaseNativeSurface() {
+    cancelDrag();
+    hide();
+    setUpdatesEnabled(false);
+    destroy(true, true);
+}
+
 void ScreenshotFloatingToolPaletteWindow::setTransientOwnerWindow(QWidget* owner) {
     m_transientOwnerWindow = owner;
 

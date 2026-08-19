@@ -31,6 +31,7 @@
 #include <QObject>
 #include <QPainter>
 #include <QPaintEvent>
+#include <QPointer>
 #include <QRegion>
 #include <QScreen>
 #include <QScrollBar>
@@ -2948,10 +2949,37 @@ void resettingDisplaySessionEditingStateResetsEveryCanvas() {
                 reusableCanvas->canvasTool() == SnowCanvasTool::Select,
             "resetting display editing state must include active and reusable canvases");
 }
+
+void overlayNativeSurfaceIsReleasedBeforeDeferredObjectDeletion() {
+    NoopOverlayEventSink eventSink;
+    auto* overlay = new ScreenshotOverlayWindow(eventSink, new SnowCanvasWidget);
+    overlay->resize(640, 360);
+    overlay->show();
+    QApplication::processEvents();
+    static_cast<void>(overlay->winId());
+
+    require(overlay->internalWinId() != 0 && overlay->testAttribute(Qt::WA_WState_Created),
+            "the teardown test must begin with a live native overlay surface");
+
+    QPointer<ScreenshotOverlayWindow> guard(overlay);
+    overlay->releaseNativeSurface();
+    require(guard != nullptr,
+            "native surface release must keep the event receiver alive until deferred deletion");
+    require(overlay->internalWinId() == 0 && !overlay->testAttribute(Qt::WA_WState_Created),
+            "native surface release must synchronously destroy the platform window");
+
+    overlay->deleteLater();
+    QCoreApplication::sendPostedEvents(overlay, QEvent::DeferredDelete);
+    require(guard == nullptr, "the retired overlay must still support normal deferred deletion");
+}
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--overlay-native-surface-release"))) {
+        overlayNativeSurfaceIsReleasedBeforeDeferredObjectDeletion();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--large-image-slice-rendering"))) {
         largeRasterSourceExtentsRenderWithoutFixedPointWrap();
         smoothLargeImageChunkBoundariesRemainPixelEquivalent();

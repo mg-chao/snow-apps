@@ -38,6 +38,9 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     ScreenshotToolPaletteHost* paletteHost() const;
     void setOwnerWindow(QWidget* owner);
     void setTransientOwnerWindow(QWidget* owner);
+    // Releases the platform window while leaving this QObject alive for safe
+    // deferred deletion from toolbar-triggered commands.
+    void releaseNativeSurface();
     void setPlacementContext(QScreen* screen, const QRect& logicalBounds,
                              const QRect& physicalBounds = QRect());
     void setStyleToolbarAboveMain(bool above);

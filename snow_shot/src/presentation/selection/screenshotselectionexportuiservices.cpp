@@ -36,9 +36,7 @@ void applyPinRuntimeSettings(ScreenshotPinnedWindow::Config* config) {
 
 class ScreenshotPinnedWindowPool final : public QObject {
   public:
-    explicit ScreenshotPinnedWindowPool(QObject* parent = nullptr) : QObject(parent) {
-        scheduleReplenish();
-    }
+    explicit ScreenshotPinnedWindowPool(QObject* parent = nullptr) : QObject(parent) {}
 
     ~ScreenshotPinnedWindowPool() override {
         if (m_spare != nullptr) {
@@ -78,7 +76,9 @@ class ScreenshotPinnedWindowPool final : public QObject {
         }
 
         SNOW_SHOT_PIN_PERF_COUNTER(usedSpare ? "shell.hit" : "shell.miss", 1);
-        scheduleReplenish();
+        if (window != nullptr) {
+            scheduleReplenish();
+        }
         return window;
     }
 

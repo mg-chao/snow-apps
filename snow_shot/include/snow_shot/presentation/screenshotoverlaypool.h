@@ -3,6 +3,7 @@
 
 #include "snow_shot/presentation/screenshottypes.h"
 
+#include <QObjectCleanupHandler>
 #include <QVector>
 
 #include <functional>
@@ -42,6 +43,7 @@ class ScreenshotOverlayPool final {
     SnowCanvasRuntime& m_canvasRuntime;
     snow_shot::presentation::WindowShortcutManager& m_shortcutManager;
     ScreenshotOverlayPoolCallbacks m_callbacks;
+    mutable QObjectCleanupHandler m_retiredOverlays;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTOVERLAYPOOL_H

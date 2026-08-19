@@ -1750,6 +1750,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenshotselectiongeometry.h
         include/snow_shot/presentation/screenshotselectionmodel.h
         include/snow_shot/presentation/screenshotselectionparams.h
+        include/snow_shot/presentation/screenshotselectionexportuiservices.h
         include/snow_shot/network/snowshotapiclient.h
         include/snow_shot/presentation/screenshottoolpalette.h
         include/snow_shot/presentation/screenshottoolpalettehost.h
@@ -1773,6 +1774,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/selection/screenshotselectiongeometry.cpp
         src/presentation/selection/screenshotselectionmodel.cpp
         src/presentation/selection/screenshotselectionparams.cpp
+        src/presentation/selection/screenshotselectionexportuiservices.cpp
         src/network/snowshotapiclient.cpp
         src/presentation/pinned/screenshotpinnededitcontroller.cpp
         src/presentation/pinned/screenshotpinnedcopyservice.cpp
@@ -1830,6 +1832,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(
         NAME snow-shot-pinned-toolbar-parity-tests
         COMMAND snow-shot-pinned-window-tests --toolbar-parity-only
+    )
+    add_test(
+        NAME snow-shot-pinned-window-pool-lazy-tests
+        COMMAND snow-shot-pinned-window-tests --pool-lazy-only
     )
     if(WIN32)
         add_test(
