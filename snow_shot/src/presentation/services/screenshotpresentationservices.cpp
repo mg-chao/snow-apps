@@ -101,17 +101,17 @@ void ScreenshotPresentationServices::prepareInitialOverlayState() {
     const QRectF selection = m_context.selection.normalizedSelection();
     m_smartSelectionTransition.seed(selection, smartFraming);
     presentSelectionOverlay(selection);
+    synchronizeSelectionToolbar(selection);
 }
 
 void ScreenshotPresentationServices::updateOverlayState() {
     const bool smartFraming = m_context.interaction.intelligentSelecting();
-    const ScreenshotToolbarPresentationState toolbarState = toolbarPresentationState();
-    m_context.toolbarPresenter.updateSelectionToolbarState(toolbarState, !smartFraming);
     const bool selectionChanged =
         m_smartSelectionTransition.update(m_context.selection.normalizedSelection(), smartFraming);
     if (!selectionChanged) {
         presentOverlayState(m_smartSelectionTransition.displayedSelection());
     }
+    synchronizeSelectionToolbar(m_smartSelectionTransition.displayedSelection());
 }
 
 void ScreenshotPresentationServices::presentSelectionFrame(const QRectF& selection) {
@@ -122,7 +122,14 @@ void ScreenshotPresentationServices::presentSelectionFrame(const QRectF& selecti
 
     ScreenshotToolbarPresentationState toolbarState = toolbarPresentationState();
     toolbarState.selectionCanvas = selection;
-    m_context.toolbarPresenter.moveSelectionToolbar(toolbarState);
+    static_cast<void>(m_context.toolbarPresenter.moveSelectionToolbar(toolbarState));
+}
+
+void ScreenshotPresentationServices::synchronizeSelectionToolbar(
+    const QRectF& displayedSelection) {
+    ScreenshotToolbarPresentationState toolbarState = toolbarPresentationState();
+    toolbarState.selectionCanvas = displayedSelection;
+    m_context.toolbarPresenter.updateSelectionToolbarState(toolbarState);
 }
 
 void ScreenshotPresentationServices::presentOverlayState(const QRectF& selection) const {

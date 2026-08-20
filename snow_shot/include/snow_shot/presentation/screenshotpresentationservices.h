@@ -66,6 +66,7 @@ class ScreenshotPresentationServices final {
     void presentSelectionFrame(const QRectF& selection);
     void presentSelectionOverlay(const QRectF& selection) const;
     void presentOverlayState(const QRectF& selection) const;
+    void synchronizeSelectionToolbar(const QRectF& displayedSelection);
     [[nodiscard]] ScreenshotToolbarPresentationState toolbarPresentationState() const;
 
     ScreenshotPresentationServicesContext m_context;

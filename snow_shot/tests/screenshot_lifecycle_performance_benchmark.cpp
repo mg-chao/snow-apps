@@ -858,6 +858,12 @@ CaptureMeasurement runCapture(const BenchmarkConfiguration& configuration,
     require(measurement.presentationNanoseconds > 0,
             "screenshot presentation duration was not recorded");
 
+    ComPtr<IUIAutomationElement> initialSelectionToolbar = waitForVisibleElement(
+        automation, primary.processId(), QStringLiteral("screenshotSelectionToolbarPanel"),
+        primary, configuration.timeoutMilliseconds);
+    require(initialSelectionToolbar.get() != nullptr,
+            "selection toolbar did not appear with the first smart-selection frame");
+
     // Foreground negotiation can be delayed by unrelated windows on a desktop
     // running the benchmark. Mouse selection activates the overlay itself, so
     // keep keyboard-focus readiness as a reported metric rather than a gate.
