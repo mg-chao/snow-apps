@@ -10,6 +10,9 @@ param(
     [int]$StabilityWindow = 20,
     [int]$StabilityRangeKiB = 1024,
     [int]$TimeoutMilliseconds = 90000,
+    [int]$MaximumFirstScreenshotMilliseconds = 128,
+    [int]$MaximumPrivateWorkingSetMiB = 18,
+    [int]$MaximumPrivateWorkingSetDeltaMiB = 2,
     [int]$CountdownSeconds = 5,
     [switch]$SelfTest
 )
@@ -39,8 +42,17 @@ if ($TimeoutMilliseconds -le $BaselineMinimumWaitMilliseconds -or
     $TimeoutMilliseconds -le $PostEndMinimumWaitMilliseconds) {
     throw "TimeoutMilliseconds must exceed both minimum memory waits"
 }
-if (!(Test-Path (Join-Path $QtBin "Qt6Core.dll"))) {
-    throw "Qt runtime not found in QtBin: $QtBin"
+if ($MaximumFirstScreenshotMilliseconds -le 0) {
+    throw "MaximumFirstScreenshotMilliseconds must be positive"
+}
+if ($MaximumPrivateWorkingSetMiB -le 0) {
+    throw "MaximumPrivateWorkingSetMiB must be positive"
+}
+if ($MaximumPrivateWorkingSetDeltaMiB -lt 0) {
+    throw "MaximumPrivateWorkingSetDeltaMiB must be nonnegative"
+}
+if (![string]::IsNullOrWhiteSpace($QtBin)) {
+    $QtBin = (Resolve-Path -LiteralPath $QtBin).Path
 }
 
 & powershell -NoProfile -ExecutionPolicy Bypass -File `
@@ -76,11 +88,39 @@ $savedPluginPath = $env:QT_QPA_PLATFORM_PLUGIN_PATH
 $savedCommit = $env:SNOW_SHOT_PERF_GIT_COMMIT
 $savedDirty = $env:SNOW_SHOT_PERF_GIT_DIRTY
 $cursor = [System.Windows.Forms.Cursor]::Position
+$qtBinPath = $null
+$qtPlatformPluginPath = $null
 try {
-    $qtRoot = Split-Path $QtBin -Parent
-    $env:PATH = "$QtBin;$env:PATH"
+    if (![string]::IsNullOrWhiteSpace($QtBin)) {
+        if (Test-Path -LiteralPath (Join-Path $QtBin "Qt6Core.dll")) {
+            $qtBinPath = $QtBin
+        } else {
+            Write-Warning (
+                "QtBin does not contain Qt6Core.dll; assuming a static Qt build and continuing: " +
+                $QtBin
+            )
+        }
+    }
+    if ($null -eq $qtBinPath) {
+        $stagedQtCore = Join-Path (Split-Path $application -Parent) "Qt6Core.dll"
+        if (Test-Path -LiteralPath $stagedQtCore) {
+            $qtBinPath = Split-Path $application -Parent
+        }
+    }
+    if ($null -ne $qtBinPath) {
+        $env:PATH = "$qtBinPath;$env:PATH"
+        $qtRoot = Split-Path $qtBinPath -Parent
+        $candidatePluginPath = Join-Path $qtRoot "plugins\platforms"
+        if (Test-Path -LiteralPath $candidatePluginPath) {
+            $qtPlatformPluginPath = $candidatePluginPath
+        }
+    }
     $env:QT_QPA_PLATFORM = "windows"
-    $env:QT_QPA_PLATFORM_PLUGIN_PATH = Join-Path $qtRoot "plugins\platforms"
+    if ($null -ne $qtPlatformPluginPath) {
+        $env:QT_QPA_PLATFORM_PLUGIN_PATH = $qtPlatformPluginPath
+    } else {
+        Remove-Item Env:QT_QPA_PLATFORM_PLUGIN_PATH -ErrorAction SilentlyContinue
+    }
     $env:SNOW_SHOT_PERF_GIT_COMMIT = (& git -C $workspace rev-parse HEAD).Trim()
     $env:SNOW_SHOT_PERF_GIT_DIRTY = if (
         [string]::IsNullOrWhiteSpace((& git -C $workspace status --porcelain))
@@ -108,7 +148,10 @@ try {
         "--post-end-min-wait-ms", $PostEndMinimumWaitMilliseconds.ToString(),
         "--stability-window", $StabilityWindow.ToString(),
         "--stability-range-kib", $StabilityRangeKiB.ToString(),
-        "--timeout-ms", $TimeoutMilliseconds.ToString()
+        "--timeout-ms", $TimeoutMilliseconds.ToString(),
+        "--max-first-screenshot-ms", $MaximumFirstScreenshotMilliseconds.ToString(),
+        "--max-private-working-set-mib", $MaximumPrivateWorkingSetMiB.ToString(),
+        "--max-private-working-set-delta-mib", $MaximumPrivateWorkingSetDeltaMiB.ToString()
     )
     if ($SelfTest) { $arguments += "--self-test" }
     & $benchmark @arguments

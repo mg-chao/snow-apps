@@ -109,6 +109,11 @@ class ApplicationController::Impl {
 
         systemTray.show();
         globalShortcutManager.initialize();
+        QTimer::singleShot(0, &q, [this]() {
+            if (ScreenshotController* controller = ensureScreenshotController()) {
+                controller->prewarmResources();
+            }
+        });
     }
 
     ScreenshotController* ensureScreenshotController() {

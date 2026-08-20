@@ -7,6 +7,7 @@ namespace snow_shot::presentation::screenshot_lifecycle_perf {
 void configureTrace(const QString& path);
 void appReady();
 void beginCapture();
+void mark(const QString& event);
 [[nodiscard]] bool captureActive();
 void capturePresented();
 void captureReleased();

@@ -8,6 +8,7 @@
 #include "snow_shot/presentation/screenshotinteractionstate.h"
 #include "snow_shot/presentation/screenshotselectionmodel.h"
 #include "snow_shot/presentation/screenshottoolcommandworkflowports.h"
+#include "../services/screenshotlifecycleperfinstrumentation.h"
 
 #include <QCursor>
 #include <QDebug>
@@ -210,6 +211,8 @@ void ScreenshotCaptureWorkflow::handleDisplayConfigurationChanged() {
 }
 
 void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.capture_prepare_begin"));
     if (!m_context.runtime.captureWorkerCreated()) {
         m_context.runtime.ensureCaptureWorker();
     }
@@ -221,6 +224,8 @@ void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
 
     static_cast<void>(
         m_context.runtime.preparePreCaptureOverlayWindows(m_context.displaySession));
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.overlay_exclusions_ready"));
     // Once Snow Shot's windows are excluded, start native acquisition at
     // once. Selector and canvas initialization wait for a validated capture
     // result so cancellation can remain a lightweight path.
@@ -241,6 +246,8 @@ void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCapture
         cancelCapture();
         return;
     }
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.result_received"));
 
     m_context.focusedWindowCaptured(result.focusedWindow);
     m_focusedWindowHandle = 0;
@@ -248,6 +255,8 @@ void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCapture
     m_context.geometry.clear();
     ScreenshotCaptureDisplayModelReconciler::applySnapshots(m_context.displaySession,
                                                             result.displays);
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.display_models_applied"));
 
     if (!m_context.displaySession.hasActiveDisplays()) {
         cancelCapture();
@@ -267,12 +276,11 @@ void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCapture
     }
     m_state.sessionState = ScreenshotSessionState::OverlayVisible;
     enterOverlaySelectionModeAtCursor();
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.interaction_ready"));
 
     m_context.runtime.applyDisplayModels(m_context.displaySession);
     m_canvasRuntimeClean = false;
-    if (m_context.presentation.updateOverlayState) {
-        m_context.presentation.updateOverlayState();
-    }
 
     m_capturedPresentationSessionId = sessionId;
     showCapturePresentationWhenReady(sessionId);
@@ -284,23 +292,32 @@ void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 session
         !m_context.displaySession.hasActiveDisplays()) {
         return;
     }
-    if (m_initialSmartSelectionPendingSessionId == sessionId &&
-        m_initialSmartSelectionResolvedSessionId != sessionId) {
-        return;
-    }
-
     m_visiblePresentationSessionId = sessionId;
 
-    // The desktop frame and initial smart-selection result have both arrived.
-    // Reveal only this complete first frame, avoiding a visible selection jump
-    // while keeping capture and selection work fully asynchronous.
+    // Native pixels are the only prerequisite for the first frame. Smart
+    // selection refines the already-visible overlay when its asynchronous
+    // hit-test finishes; blocking on it makes the screenshot command feel
+    // stalled even though the captured desktop is ready to display.
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.show_begin"));
     m_context.runtime.showOverlayWindows(m_context.displaySession,
                                          ScreenshotOverlayShowMode::CapturedImage);
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.show_complete"));
     if (m_context.presentation.updateColorPicker) {
         m_context.presentation.updateColorPicker();
     }
     if (m_context.presentation.capturePresented) {
         m_context.presentation.capturePresented();
+    }
+    // Toolbar, shortcut hints, and selection decoration are refinement work.
+    // Give external input a brief chance to reach the freshly activated canvas
+    // before running this cold-start-heavy pass, while carrying the session ID
+    // so a canceled capture cannot apply stale state later.
+    if (m_context.presentation.deferOverlayState) {
+        m_context.presentation.deferOverlayState(sessionId);
+    } else if (m_context.presentation.updateOverlayState) {
+        m_context.presentation.updateOverlayState();
     }
     if (!m_context.runtime.selectorReady() && !m_context.runtime.selectorRefreshInFlight()) {
         m_context.runtime.startWorkflowRefresh();

@@ -7,6 +7,7 @@
 #include "snow_shot/presentation/screenshotintelligentselectionmodel.h"
 #include "snow_shot/presentation/screenshotselectionlimits.h"
 #include "snow_shot/presentation/screenshotselectionmodel.h"
+#include "../services/screenshotlifecycleperfinstrumentation.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/storage/settingsadapters.h"
 
@@ -188,6 +189,8 @@ void ScreenshotOverlayInputHandler::handleMousePress(ScreenshotOverlayWindow* ov
 void ScreenshotOverlayInputHandler::beginSelectionDrag(ScreenshotOverlayWindow* overlay,
                                                        const QPointF& virtualPosition,
                                                        ScreenshotSelectionDragMode dragMode) {
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("interaction.selection_drag_begin"));
     if (dragMode == ScreenshotSelectionDragMode::None) {
         return;
     }
@@ -380,6 +383,8 @@ void ScreenshotOverlayInputHandler::handleIntelligentSelectionRelease(
 void ScreenshotOverlayInputHandler::finishSelectionDrag(ScreenshotOverlayWindow* overlay,
                                                         const QPointF& localPosition,
                                                         const QPointF& virtualPosition) {
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("interaction.selection_drag_finish"));
     if (m_keepSelectionAspectRatioShortcut && m_context.interaction.dragging()) {
         m_aspectShortcutUsedForSelectionDrag = true;
     }
@@ -633,6 +638,8 @@ void ScreenshotOverlayInputHandler::setIntelligentSelectionIndex(int index) {
 }
 
 void ScreenshotOverlayInputHandler::confirmSelection() {
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("interaction.selection_confirm_begin"));
     if (m_context.interaction.dragging()) {
         return;
     }
@@ -646,6 +653,8 @@ void ScreenshotOverlayInputHandler::confirmSelection() {
     m_context.intelligentSelection.clearPress();
     m_context.actions.updateOverlayState();
     m_context.actions.showToolbar();
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("interaction.selection_toolbar_requested"));
     m_context.actions.selectionConfirmed();
 }
 

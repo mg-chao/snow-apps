@@ -14,6 +14,7 @@
 #include "snow_shot/presentation/screenshottoolbarpresentationstatefactory.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "screenshotlifecycleperfinstrumentation.h"
 
 #include <QCursor>
 
@@ -34,7 +35,11 @@ void ScreenshotPresentationServices::hideMainToolbar() {
 }
 
 void ScreenshotPresentationServices::showToolbar() {
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.toolbar_show_begin"));
     m_context.toolbarPresenter.showToolbar(toolbarPresentationState());
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.toolbar_show_complete"));
 }
 
 void ScreenshotPresentationServices::showSelectionToolbar() {

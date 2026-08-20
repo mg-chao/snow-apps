@@ -91,6 +91,11 @@ class SnowCanvasWidget : public QWidget {
     // Custom renderer passes and background clearing remain active.
     [[nodiscard]] bool canvasContentVisible() const;
     void setCanvasContentVisible(bool visible);
+    [[nodiscard]] bool retainedSceneCacheEnabled() const;
+    void setRetainedSceneCacheEnabled(bool enabled);
+    // Releases renderer-owned caches while preserving the canvas runtime,
+    // interaction state, and display model.
+    void releaseRetainedRenderResources();
     bool clearBackgroundEnabled() const;
     void setClearBackgroundEnabled(bool enabled);
 

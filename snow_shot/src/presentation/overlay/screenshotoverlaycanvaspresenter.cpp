@@ -9,6 +9,7 @@
 #include <QScreen>
 #include <QTimer>
 #include <QVector>
+#include <QWindow>
 
 #include <cstdint>
 #include <utility>
@@ -31,6 +32,7 @@ void ScreenshotOverlayCanvasPresenter::clearOverlayCanvas(ScreenshotOverlayWindo
     overlay->canvas()->cancelActiveTextEditing();
     overlay->canvas()->unsetCursor();
     overlay->clearPresentationFrame();
+    overlay->canvas()->releaseRetainedRenderResources();
 }
 
 namespace {
@@ -115,11 +117,29 @@ void raiseOverlayWindow(ScreenshotOverlayWindow& overlay) {
 }
 
 void activateAndFocusOverlayWindow(ScreenshotOverlayWindow& overlay) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    // QWidget::activateWindow() performs a foreground-window negotiation on
+    // Windows. That negotiation can block on the compositor for a frame or
+    // more, even though the overlay is already raised and receives pointer
+    // input. Complete the request after the first frame has been flushed.
+    QTimer::singleShot(0, &overlay, [&overlay]() {
+        if (!overlay.isVisible()) {
+            return;
+        }
+        if (QWindow* handle = overlay.windowHandle(); handle != nullptr) {
+            static_cast<void>(handle->requestActivate());
+        }
+        if (SnowCanvasWidget* canvas = overlay.canvas(); canvas != nullptr &&
+            canvas->isVisible()) {
+            canvas->setFocus(Qt::OtherFocusReason);
+        }
+    });
+#else
     overlay.activateWindow();
-
     if (overlay.canvas() != nullptr) {
         overlay.canvas()->setFocus(Qt::OtherFocusReason);
     }
+#endif
     overlay.commitInitialSelectionCursor();
 }
 
@@ -188,8 +208,7 @@ void showCapturedImageOverlayNow(ScreenshotOverlayWindow& overlay) {
     if (!overlay.isVisible()) {
         showOverlayWindow(overlay);
     }
-    raiseOverlayWindow(overlay);
-    scheduleOverlayActivation(&overlay);
+    activateOverlayWindow(overlay);
 }
 
 void showCapturedImageOverlayDeferred(ScreenshotOverlayWindow* overlay) {

@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 
 #include "snow_shot/presentation/screenshotmessageservice.h"
+#include "../services/screenshotlifecycleperfinstrumentation.h"
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
 #include "snow_shot/presentation/screenshotoverlayeventsink.h"
 #include "snow_shot/presentation/screenshotscrollingthumbnailwidget.h"
@@ -53,6 +54,10 @@ ScreenshotOverlayWindow::ScreenshotOverlayWindow(ScreenshotOverlayEventSink& eve
     if (m_canvas != nullptr) {
         m_screenshotRenderer = std::make_unique<ScreenshotCanvasRenderer>(*m_canvas);
         m_canvas->setCustomRenderer(m_screenshotRenderer.get());
+        // Screenshot overlays repaint an entire captured desktop and are torn
+        // down after the interaction. Retaining another full-screen raster in
+        // the scene tile cache only adds cold-path work and resident memory.
+        m_canvas->setRetainedSceneCacheEnabled(false);
         m_canvas->setWatermarkRenderArea(QRectF());
         m_canvas->setSpotlightRenderArea(QRectF());
         m_canvas->setWheelZoomEnabled(false);
@@ -388,12 +393,20 @@ void ScreenshotOverlayWindow::showPreparedFrame() {
         setWindowOpacity(0.0);
     }
 
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.show_window_begin"));
     show();
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.show_window_complete"));
     // show() queues a normal update, but a translucent native window can be
     // composited from its previous backing surface first. Commit the prepared
     // frame synchronously before making the window opaque.
     repaint();
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.show_repaint_complete"));
     QCoreApplication::sendPostedEvents(this, QEvent::UpdateRequest);
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.show_posted_events_complete"));
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
     if (QGuiApplication::platformName() == QStringLiteral("windows")) {
@@ -404,10 +417,14 @@ void ScreenshotOverlayWindow::showPreparedFrame() {
         }
     }
 #endif
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.show_redraw_complete"));
 
     if (concealFirstPaint) {
         setWindowOpacity(previousOpacity);
     }
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.show_window_end"));
 }
 
 void ScreenshotOverlayWindow::releaseNativeSurface() {

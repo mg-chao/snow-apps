@@ -1,6 +1,7 @@
 #include "screenshotcaptureworker.h"
 
 #include "snow_shot/presentation/screenshotcapturecoordinator.h"
+#include "../services/screenshotlifecycleperfinstrumentation.h"
 
 #include "snow_capture.h"
 
@@ -68,8 +69,11 @@ QImage imageFromFrameLease(SnowCaptureFrameLease* lease, const std::uint8_t* rgb
         return {};
     }
 
+    // Desktop captures are opaque. Marking the wrapped RGBA surface as RGBX lets
+    // Qt use its opaque image path when the full-screen overlay is composited,
+    // avoiding an unnecessary alpha blend for every pixel.
     QImage image(rgbaBytes, static_cast<int>(width), static_cast<int>(height),
-                 static_cast<int>(strideBytes), QImage::Format_RGBA8888, &releaseFrameLease, lease);
+                 static_cast<int>(strideBytes), QImage::Format_RGBX8888, &releaseFrameLease, lease);
     if (image.isNull()) {
         snow_capture_frame_lease_release(lease);
     }
@@ -130,6 +134,8 @@ void ScreenshotCaptureWorker::capture(
     SnowCaptureCancellationToken* cancellationToken) {
     ScreenshotCaptureResult captureResult;
     captureResult.requestId = request.requestId;
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("capture.worker_enter"));
     const auto canceled = [cancellationToken]() {
         return cancellationToken != nullptr &&
                snow_capture_cancellation_token_is_canceled(cancellationToken) != 0;
@@ -144,6 +150,8 @@ void ScreenshotCaptureWorker::capture(
         postCaptureResult(coordinator, std::move(captureResult));
         return;
     }
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("capture.session_ready"));
     if (canceled()) {
         captureResult.errorMessage = QStringLiteral("Screenshot capture canceled");
         postCaptureResult(coordinator, std::move(captureResult));
@@ -164,6 +172,8 @@ void ScreenshotCaptureWorker::capture(
         postCaptureResult(coordinator, std::move(captureResult));
         return;
     }
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("capture.native_complete"));
 
     const size_t count = snow_capture_screenshot_result_display_count(nativeResult);
     captureResult.displays.reserve(static_cast<int>(count));
@@ -230,6 +240,8 @@ void ScreenshotCaptureWorker::capture(
     }
     captureResult.succeeded = valid;
     snow_capture_screenshot_result_destroy(nativeResult);
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("capture.result_marshaled"));
     postCaptureResult(coordinator, std::move(captureResult));
 }
 
@@ -240,6 +252,7 @@ bool ScreenshotCaptureWorker::ensureSession() {
 
     SnowCaptureDesktopSessionConfig config{};
     config.capture_retry_count = 1;
+    config.capture_backend = SNOW_CAPTURE_BACKEND_GDI;
     m_session = snow_capture_desktop_session_create(&config);
     if (m_session == nullptr) {
         qWarning("Failed to create desktop capture session: %s", snow_capture_last_error_message());

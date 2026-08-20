@@ -105,6 +105,10 @@ void ScreenshotOverlayPool::deleteOverlay(ScreenshotOverlayWindow* overlay) cons
     }
 
     detachOverlayUi(overlay);
+    // deleteLater() deliberately keeps the QObject alive until the current
+    // event dispatch is complete. Drop the renderer's QImage now so a frame
+    // lease cannot keep a full desktop raster alive during that interval.
+    clearOverlayCanvas(overlay);
     m_shortcutManager.removeScopeWindow(overlay);
     overlay->releaseNativeSurface();
     m_retiredOverlays.add(overlay);

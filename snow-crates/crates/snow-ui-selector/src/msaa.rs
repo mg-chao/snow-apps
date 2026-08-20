@@ -38,7 +38,8 @@ pub(crate) struct MsaaBackend {
 }
 
 struct MsaaWorker {
-    requests: Sender<MsaaRequest>,
+    requests: Option<Sender<MsaaRequest>>,
+    join: Option<thread::JoinHandle<()>>,
 }
 
 enum MsaaRequest {
@@ -58,11 +59,14 @@ struct MsaaWorkerState {
 impl MsaaWorker {
     fn spawn() -> Option<Self> {
         let (requests, receiver) = unbounded();
-        thread::Builder::new()
+        let join = thread::Builder::new()
             .name("snow-msaa-hit-test".into())
             .spawn(move || run_msaa_worker(receiver))
             .ok()?;
-        Some(Self { requests })
+        Some(Self {
+            requests: Some(requests),
+            join: Some(join),
+        })
     }
 
     fn hit_test(
@@ -74,6 +78,8 @@ impl MsaaWorker {
         let (response, receiver) = bounded(1);
         if self
             .requests
+            .as_ref()
+            .ok_or(crossbeam_channel::RecvTimeoutError::Disconnected)?
             .send(MsaaRequest::HitTest {
                 hwnd: hwnd.0 as isize,
                 point,
@@ -85,6 +91,18 @@ impl MsaaWorker {
             return Err(crossbeam_channel::RecvTimeoutError::Disconnected);
         }
         receiver.recv_timeout(MSAA_REQUEST_TIMEOUT)
+    }
+}
+
+impl Drop for MsaaWorker {
+    fn drop(&mut self) {
+        // Dropping the last sender lets the worker leave its receive loop and
+        // uninitialize its COM apartment. Keep the handle so service teardown
+        // does not leave an accessibility thread (and its COM heap) detached.
+        self.requests.take();
+        if let Some(join) = self.join.take() {
+            let _ = join.join();
+        }
     }
 }
 

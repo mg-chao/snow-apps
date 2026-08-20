@@ -917,6 +917,17 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                         m_presentationServices->colorPickerContext());
                 },
                 [this]() { handleCapturePresented(); },
+                [this](quint64 sessionId) {
+                    QTimer::singleShot(75, &owner, [this, sessionId]() {
+                        if (m_captureState.sessionId != sessionId ||
+                            m_interaction.inactive() || m_presentationServices == nullptr) {
+                            return;
+                        }
+                        m_presentationServices->updateOverlayState();
+                        snow_shot::presentation::screenshot_lifecycle_perf::mark(
+                            QStringLiteral("presentation.overlay_state_ready"));
+                    });
+                },
             },
             [this]() {
                 m_pendingHistoryEditRecordId.clear();
@@ -3375,10 +3386,17 @@ void ScreenshotController::scheduleIdleImplementationRelease(Impl* implementatio
             !guardedImplementation->canReleaseAfterCancel()) {
             return;
         }
-        m_impl.reset();
-#if defined(SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION)
-        snow_shot::presentation::screenshot_lifecycle_perf::captureReleased();
+        QTimer::singleShot(0, this, [this]() {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+            // Overlay widgets may use deleteLater() while cancellation is
+            // dispatched from the overlay itself. Drain that destruction
+            // before publishing the release synchronization marker.
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 #endif
+#if defined(SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION)
+            snow_shot::presentation::screenshot_lifecycle_perf::captureReleased();
+#endif
+        });
     });
 }
 

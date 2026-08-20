@@ -13,6 +13,7 @@
 #include <QJsonObject>
 #include <QSysInfo>
 #include <QTemporaryDir>
+#include <QStringList>
 #include <QVector>
 
 #include <Windows.h>
@@ -41,6 +42,9 @@ using namespace std::chrono_literals;
 
 constexpr qint64 kBytesPerKibibyte = 1024;
 constexpr qint64 kBytesPerMebibyte = 1024 * 1024;
+constexpr qint64 kDefaultMaximumFirstScreenshotMilliseconds = 128;
+constexpr qint64 kDefaultMaximumPrivateWorkingSetMebibytes = 18;
+constexpr qint64 kDefaultMaximumPrivateWorkingSetDeltaMebibytes = 2;
 
 void require(bool condition, const char* message) {
     if (!condition) {
@@ -377,7 +381,27 @@ void clickElement(IUIAutomationElement& element) {
     sendMouse(x, y, MOUSEEVENTF_LEFTUP);
 }
 
-qint64 privateWorkingSetBytes(HANDLE process) {
+enum class PrivateWorkingSetMethod {
+    ProcessMemoryCountersEx2,
+    QueryWorkingSet,
+};
+
+const char* privateWorkingSetMethodName(PrivateWorkingSetMethod method) {
+    switch (method) {
+    case PrivateWorkingSetMethod::ProcessMemoryCountersEx2:
+        return "PROCESS_MEMORY_COUNTERS_EX2.PrivateWorkingSetSize";
+    case PrivateWorkingSetMethod::QueryWorkingSet:
+        return "QueryWorkingSet.Shared==0 fallback";
+    }
+    return "unknown";
+}
+
+struct PrivateWorkingSetSample {
+    qint64 bytes = 0;
+    PrivateWorkingSetMethod method = PrivateWorkingSetMethod::QueryWorkingSet;
+};
+
+PrivateWorkingSetSample queryWorkingSetPrivateBytes(HANDLE process) {
     require(process != nullptr, "process handle is unavailable");
 
     PROCESS_MEMORY_COUNTERS counters{};
@@ -408,12 +432,36 @@ qint64 privateWorkingSetBytes(HANDLE process) {
             const quint64 result = privatePages * pageSize;
             require(result <= static_cast<quint64>(std::numeric_limits<qint64>::max()),
                     "private working set exceeds the supported range");
-            return static_cast<qint64>(result);
+            return PrivateWorkingSetSample{static_cast<qint64>(result),
+                                           PrivateWorkingSetMethod::QueryWorkingSet};
         }
         require(GetLastError() == ERROR_BAD_LENGTH, "QueryWorkingSet failed");
         capacity *= 2;
     }
     throw std::runtime_error("QueryWorkingSet buffer did not converge");
+}
+
+PrivateWorkingSetSample privateWorkingSet(HANDLE process) {
+    require(process != nullptr, "process handle is unavailable");
+
+#if defined(NTDDI_VERSION) && defined(NTDDI_WIN10_CU) && (NTDDI_VERSION >= NTDDI_WIN10_CU)
+    // PROCESS_MEMORY_COUNTERS_EX2 is the native private-working-set value on
+    // Windows 10 CU and later. Older Windows versions reject this larger
+    // structure, so retain the page-enumeration fallback below.
+    PROCESS_MEMORY_COUNTERS_EX2 counters{};
+    counters.cb = sizeof(counters);
+    if (GetProcessMemoryInfo(process, reinterpret_cast<PPROCESS_MEMORY_COUNTERS>(&counters),
+                             sizeof(counters)) != FALSE &&
+        counters.PrivateWorkingSetSize > 0) {
+        require(counters.PrivateWorkingSetSize <=
+                    static_cast<SIZE_T>(std::numeric_limits<qint64>::max()),
+                "private working set exceeds the supported range");
+        return PrivateWorkingSetSample{static_cast<qint64>(counters.PrivateWorkingSetSize),
+                                       PrivateWorkingSetMethod::ProcessMemoryCountersEx2};
+    }
+#endif
+
+    return queryWorkingSetPrivateBytes(process);
 }
 
 bool stableWindow(const std::deque<qint64>& values, int requiredSamples, qint64 maximumRangeBytes) {
@@ -429,6 +477,7 @@ struct StableMemorySample {
     qint64 peakBytes = 0;
     qint64 rangeBytes = 0;
     qint64 elapsedMilliseconds = 0;
+    PrivateWorkingSetMethod method = PrivateWorkingSetMethod::QueryWorkingSet;
 };
 
 StableMemorySample waitForStableMemory(const ChildProcess& process, int minimumWaitMilliseconds,
@@ -438,8 +487,11 @@ StableMemorySample waitForStableMemory(const ChildProcess& process, int minimumW
     const auto deadline = started + std::chrono::milliseconds(timeoutMilliseconds);
     std::deque<qint64> window;
     qint64 peakBytes = 0;
+    PrivateWorkingSetMethod method = PrivateWorkingSetMethod::QueryWorkingSet;
     while (process.alive() && std::chrono::steady_clock::now() < deadline) {
-        const qint64 currentBytes = privateWorkingSetBytes(process.handle());
+        const PrivateWorkingSetSample current = privateWorkingSet(process.handle());
+        const qint64 currentBytes = current.bytes;
+        method = current.method;
         peakBytes = std::max(peakBytes, currentBytes);
         window.push_back(currentBytes);
         while (window.size() > static_cast<size_t>(windowSamples)) {
@@ -452,7 +504,8 @@ StableMemorySample waitForStableMemory(const ChildProcess& process, int minimumW
         if (elapsed >= minimumWaitMilliseconds &&
             stableWindow(window, windowSamples, maximumRangeBytes)) {
             const auto [minimum, maximum] = std::minmax_element(window.cbegin(), window.cend());
-            return StableMemorySample{currentBytes, peakBytes, *maximum - *minimum, elapsed};
+            return StableMemorySample{currentBytes, peakBytes, *maximum - *minimum, elapsed,
+                                      method};
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(pollMilliseconds));
     }
@@ -547,6 +600,7 @@ QString htmlEscape(QString value) {
 
 QString reportHtml(const QJsonObject& report) {
     const QJsonObject metrics = report.value(QStringLiteral("metrics")).toObject();
+    const QJsonObject acceptance = report.value(QStringLiteral("acceptance")).toObject();
     const auto row = [&metrics](const QString& key, const QString& label, const QString& unit) {
         const QJsonObject values = metrics.value(key).toObject();
         const auto number = [&values, &unit](const char* field) {
@@ -567,10 +621,22 @@ QString reportHtml(const QJsonObject& report) {
             QStringLiteral("Post-end private working set (MiB)"), QStringLiteral("mib")) +
         row(QStringLiteral("private_working_set_delta"),
             QStringLiteral("Private working-set delta (MiB)"), QStringLiteral("mib")) +
+        row(QStringLiteral("private_working_set_absolute_delta"),
+            QStringLiteral("Absolute private working-set delta (MiB)"), QStringLiteral("mib")) +
         row(QStringLiteral("first_screenshot_to_composited_frame"),
             QStringLiteral("First screenshot to composited frame (ms)"), QStringLiteral("ms"));
     const QString embeddedJson =
         htmlEscape(QString::fromUtf8(QJsonDocument(report).toJson(QJsonDocument::Indented)));
+    QString acceptanceSummary;
+    if (!acceptance.isEmpty()) {
+        const bool passed = acceptance.value(QStringLiteral("passed")).toBool();
+        acceptanceSummary =
+            QStringLiteral("<p><strong>Acceptance:</strong> %1 (%2 failed of %3 "
+                           "samples)</p>")
+                .arg(passed ? QStringLiteral("passed") : QStringLiteral("failed"))
+                .arg(acceptance.value(QStringLiteral("failed_sample_count")).toInt())
+                .arg(acceptance.value(QStringLiteral("sample_count")).toInt());
+    }
     return QStringLiteral(
                "<!doctype html><html><head><meta charset=utf-8><title>Snow Shot screenshot "
                "lifecycle performance</title><style>body{font:14px "
@@ -580,10 +646,11 @@ QString reportHtml(const QJsonObject& report) {
                "th{text-align:left;background:#f8f9fa}pre{background:#f8f9fa;padding:16px;overflow:"
                "auto}"
                "</style></head><body><h1>Screenshot lifecycle performance</h1>"
-               "<table><thead><tr><th>Metric</th><th>Min</th><th>Mean</th><th>P50</th><th>P90</th>"
+               "%3<table><thead><tr><th>Metric</th><th>Min</th><th>Mean</th><th>P50</th><th>P90</"
+               "th>"
                "<th>P95</th><th>Max</th></tr></thead><tbody>%1</tbody></table><h2>Report JSON</h2>"
                "<pre>%2</pre></body></html>")
-        .arg(rows, embeddedJson);
+        .arg(rows, embeddedJson, acceptanceSummary);
 }
 
 QJsonObject environmentReport(const QString& appPath, const QVector<MonitorInfo>& displayList) {
@@ -622,6 +689,9 @@ struct BenchmarkConfiguration {
     int stabilityWindowSamples = 20;
     qint64 stabilityRangeBytes = 1024 * 1024;
     int timeoutMilliseconds = 90000;
+    qint64 maximumFirstScreenshotMilliseconds = kDefaultMaximumFirstScreenshotMilliseconds;
+    qint64 maximumPrivateWorkingSetMebibytes = kDefaultMaximumPrivateWorkingSetMebibytes;
+    qint64 maximumPrivateWorkingSetDeltaMebibytes = kDefaultMaximumPrivateWorkingSetDeltaMebibytes;
 };
 
 BenchmarkConfiguration configurationFromParser(const QCommandLineParser& parser) {
@@ -639,6 +709,12 @@ BenchmarkConfiguration configurationFromParser(const QCommandLineParser& parser)
     configuration.stabilityRangeBytes =
         parser.value(QStringLiteral("stability-range-kib")).toLongLong() * kBytesPerKibibyte;
     configuration.timeoutMilliseconds = parser.value(QStringLiteral("timeout-ms")).toInt();
+    configuration.maximumFirstScreenshotMilliseconds =
+        parser.value(QStringLiteral("max-first-screenshot-ms")).toLongLong();
+    configuration.maximumPrivateWorkingSetMebibytes =
+        parser.value(QStringLiteral("max-private-working-set-mib")).toLongLong();
+    configuration.maximumPrivateWorkingSetDeltaMebibytes =
+        parser.value(QStringLiteral("max-private-working-set-delta-mib")).toLongLong();
     return configuration;
 }
 
@@ -659,6 +735,12 @@ void validateConfiguration(const BenchmarkConfiguration& configuration,
     require(configuration.timeoutMilliseconds > configuration.baselineMinimumWaitMilliseconds &&
                 configuration.timeoutMilliseconds > configuration.postEndMinimumWaitMilliseconds,
             "timeout must exceed both minimum memory waits");
+    require(configuration.maximumFirstScreenshotMilliseconds > 0,
+            "maximum first screenshot latency must be positive");
+    require(configuration.maximumPrivateWorkingSetMebibytes > 0,
+            "maximum private working set must be positive");
+    require(configuration.maximumPrivateWorkingSetDeltaMebibytes >= 0,
+            "maximum private working set delta must be nonnegative");
 }
 
 QJsonObject runSample(const BenchmarkConfiguration& configuration, const MonitorInfo& monitor,
@@ -730,6 +812,32 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
 
     const qint64 deltaBytes = postEnd.bytes - baseline.bytes;
+    const qint64 absoluteDeltaBytes = deltaBytes >= 0 ? deltaBytes : -deltaBytes;
+    const qint64 maximumFirstScreenshotNanoseconds =
+        configuration.maximumFirstScreenshotMilliseconds * 1000 * 1000;
+    const qint64 maximumPrivateWorkingSetBytes =
+        configuration.maximumPrivateWorkingSetMebibytes * kBytesPerMebibyte;
+    const qint64 maximumPrivateWorkingSetDeltaBytes =
+        configuration.maximumPrivateWorkingSetDeltaMebibytes * kBytesPerMebibyte;
+    QJsonArray acceptanceFailures;
+    if (elapsedNanoseconds > maximumFirstScreenshotNanoseconds) {
+        acceptanceFailures.append(QStringLiteral("first screenshot latency exceeds %1 ms")
+                                      .arg(configuration.maximumFirstScreenshotMilliseconds));
+    }
+    if (baseline.bytes > maximumPrivateWorkingSetBytes) {
+        acceptanceFailures.append(QStringLiteral("cold-start private working set exceeds %1 MiB")
+                                      .arg(configuration.maximumPrivateWorkingSetMebibytes));
+    }
+    if (postEnd.bytes > maximumPrivateWorkingSetBytes) {
+        acceptanceFailures.append(QStringLiteral("post-end private working set exceeds %1 MiB")
+                                      .arg(configuration.maximumPrivateWorkingSetMebibytes));
+    }
+    if (absoluteDeltaBytes > maximumPrivateWorkingSetDeltaBytes) {
+        acceptanceFailures.append(
+            QStringLiteral("absolute private working-set delta exceeds %1 MiB")
+                .arg(configuration.maximumPrivateWorkingSetDeltaMebibytes));
+    }
+    const bool acceptancePassed = acceptanceFailures.isEmpty();
     QJsonObject record{
         {QStringLiteral("schema_version"), 1},
         {QStringLiteral("iteration"), iteration},
@@ -737,13 +845,31 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
         {QStringLiteral("cold_start_private_working_set_bytes"), baseline.bytes},
         {QStringLiteral("post_end_private_working_set_bytes"), postEnd.bytes},
         {QStringLiteral("private_working_set_delta_bytes"), deltaBytes},
+        {QStringLiteral("private_working_set_absolute_delta_bytes"), absoluteDeltaBytes},
         {QStringLiteral("first_screenshot_elapsed_ns"), elapsedNanoseconds},
+        {QStringLiteral("private_working_set_method"),
+         QString::fromLatin1(privateWorkingSetMethodName(baseline.method))},
+        {QStringLiteral("cold_start_private_working_set_method"),
+         QString::fromLatin1(privateWorkingSetMethodName(baseline.method))},
+        {QStringLiteral("post_end_private_working_set_method"),
+         QString::fromLatin1(privateWorkingSetMethodName(postEnd.method))},
         {QStringLiteral("cold_start_peak_private_working_set_bytes"), baseline.peakBytes},
         {QStringLiteral("post_end_peak_private_working_set_bytes"), postEnd.peakBytes},
         {QStringLiteral("cold_start_stability_range_bytes"), baseline.rangeBytes},
         {QStringLiteral("post_end_stability_range_bytes"), postEnd.rangeBytes},
         {QStringLiteral("cold_start_convergence_ms"), baseline.elapsedMilliseconds},
         {QStringLiteral("post_end_convergence_ms"), postEnd.elapsedMilliseconds},
+        {QStringLiteral("acceptance_passed"), acceptancePassed},
+        {QStringLiteral("acceptance_failure_reasons"), acceptanceFailures},
+        {QStringLiteral("acceptance_thresholds"),
+         QJsonObject{
+             {QStringLiteral("max_first_screenshot_ms"),
+              configuration.maximumFirstScreenshotMilliseconds},
+             {QStringLiteral("max_private_working_set_mib"),
+              configuration.maximumPrivateWorkingSetMebibytes},
+             {QStringLiteral("max_private_working_set_delta_mib"),
+              configuration.maximumPrivateWorkingSetDeltaMebibytes},
+         }},
         {QStringLiteral("monitor"),
          QJsonObject{{QStringLiteral("device"), monitor.deviceName},
                      {QStringLiteral("x"), static_cast<qint64>(monitor.bounds.left)},
@@ -760,6 +886,14 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
               << " MiB, post-end=" << static_cast<double>(postEnd.bytes) / kBytesPerMebibyte
               << " MiB, delta=" << static_cast<double>(deltaBytes) / kBytesPerMebibyte
               << " MiB, first-frame=" << static_cast<double>(elapsedNanoseconds) / 1e6 << " ms\n";
+    if (!acceptancePassed) {
+        QStringList failureReasonText;
+        for (const QJsonValue& failure : std::as_const(acceptanceFailures)) {
+            failureReasonText.push_back(failure.toString());
+        }
+        std::cout << "sample " << iteration << " acceptance failure: "
+                  << failureReasonText.join(QStringLiteral("; ")).toStdString() << '\n';
+    }
     primary.stop();
     return record;
 }
@@ -781,28 +915,83 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
     QVector<double> postEndValues;
     QVector<double> deltaValues;
     QVector<double> durationValues;
+    QVector<double> absoluteDeltaValues;
+    QJsonArray failedSamples;
+    bool allSamplesAccepted = true;
     for (int iteration = 1; iteration <= configuration.samples; ++iteration) {
-        const QJsonObject record = runSample(
-            configuration, displayList.at(configuration.screenIndex), iteration, *automation.get());
+        QJsonObject record;
+        try {
+            record = runSample(configuration, displayList.at(configuration.screenIndex), iteration,
+                               *automation.get());
+        } catch (const std::exception& error) {
+            const QString reason =
+                QStringLiteral("benchmark error: %1").arg(QString::fromLocal8Bit(error.what()));
+            const QJsonArray reasons{reason};
+            record = QJsonObject{
+                {QStringLiteral("schema_version"), 1},
+                {QStringLiteral("iteration"), iteration},
+                {QStringLiteral("acceptance_passed"), false},
+                {QStringLiteral("acceptance_failure_reasons"), reasons},
+                {QStringLiteral("error"), reason},
+            };
+            std::cerr << "sample " << iteration << " failed: " << error.what() << '\n';
+        } catch (...) {
+            const QString reason = QStringLiteral("benchmark error: unknown exception");
+            const QJsonArray reasons{reason};
+            record = QJsonObject{
+                {QStringLiteral("schema_version"), 1},
+                {QStringLiteral("iteration"), iteration},
+                {QStringLiteral("acceptance_passed"), false},
+                {QStringLiteral("acceptance_failure_reasons"), reasons},
+                {QStringLiteral("error"), reason},
+            };
+            std::cerr << "sample " << iteration << " failed: unknown exception\n";
+        }
         rawFile.write(QJsonDocument(record).toJson(QJsonDocument::Compact));
         rawFile.write("\n");
         rawFile.flush();
-        baselineValues.push_back(
-            static_cast<double>(
-                record.value(QStringLiteral("cold_start_private_working_set_bytes")).toInteger()) /
-            kBytesPerMebibyte);
-        postEndValues.push_back(
-            static_cast<double>(
-                record.value(QStringLiteral("post_end_private_working_set_bytes")).toInteger()) /
-            kBytesPerMebibyte);
-        deltaValues.push_back(
-            static_cast<double>(
-                record.value(QStringLiteral("private_working_set_delta_bytes")).toInteger()) /
-            kBytesPerMebibyte);
-        durationValues.push_back(
-            static_cast<double>(
-                record.value(QStringLiteral("first_screenshot_elapsed_ns")).toInteger()) /
-            1e6);
+        if (record.contains(QStringLiteral("cold_start_private_working_set_bytes"))) {
+            baselineValues.push_back(
+                static_cast<double>(
+                    record.value(QStringLiteral("cold_start_private_working_set_bytes"))
+                        .toInteger()) /
+                kBytesPerMebibyte);
+        }
+        if (record.contains(QStringLiteral("post_end_private_working_set_bytes"))) {
+            postEndValues.push_back(
+                static_cast<double>(
+                    record.value(QStringLiteral("post_end_private_working_set_bytes"))
+                        .toInteger()) /
+                kBytesPerMebibyte);
+        }
+        if (record.contains(QStringLiteral("private_working_set_delta_bytes"))) {
+            deltaValues.push_back(
+                static_cast<double>(
+                    record.value(QStringLiteral("private_working_set_delta_bytes")).toInteger()) /
+                kBytesPerMebibyte);
+        }
+        if (record.contains(QStringLiteral("private_working_set_absolute_delta_bytes"))) {
+            absoluteDeltaValues.push_back(
+                static_cast<double>(
+                    record.value(QStringLiteral("private_working_set_absolute_delta_bytes"))
+                        .toInteger()) /
+                kBytesPerMebibyte);
+        }
+        if (record.contains(QStringLiteral("first_screenshot_elapsed_ns"))) {
+            durationValues.push_back(
+                static_cast<double>(
+                    record.value(QStringLiteral("first_screenshot_elapsed_ns")).toInteger()) /
+                1e6);
+        }
+        if (!record.value(QStringLiteral("acceptance_passed")).toBool()) {
+            allSamplesAccepted = false;
+            failedSamples.append(QJsonObject{
+                {QStringLiteral("iteration"), iteration},
+                {QStringLiteral("reasons"),
+                 record.value(QStringLiteral("acceptance_failure_reasons")).toArray()},
+                {QStringLiteral("trace"), record.value(QStringLiteral("trace"))},
+            });
+        }
     }
     rawFile.close();
 
@@ -810,6 +999,7 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
         {QStringLiteral("cold_start_private_working_set"), statistics(baselineValues)},
         {QStringLiteral("post_end_private_working_set"), statistics(postEndValues)},
         {QStringLiteral("private_working_set_delta"), statistics(deltaValues)},
+        {QStringLiteral("private_working_set_absolute_delta"), statistics(absoluteDeltaValues)},
         {QStringLiteral("first_screenshot_to_composited_frame"),
          statistics(durationValues, QStringLiteral("ms"))},
     };
@@ -830,8 +1020,27 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
              {QStringLiteral("stability_range_kib"),
               configuration.stabilityRangeBytes / kBytesPerKibibyte},
              {QStringLiteral("timeout_ms"), configuration.timeoutMilliseconds},
+             {QStringLiteral("max_first_screenshot_ms"),
+              configuration.maximumFirstScreenshotMilliseconds},
+             {QStringLiteral("max_private_working_set_mib"),
+              configuration.maximumPrivateWorkingSetMebibytes},
+             {QStringLiteral("max_private_working_set_delta_mib"),
+              configuration.maximumPrivateWorkingSetDeltaMebibytes},
          }},
         {QStringLiteral("metrics"), metrics},
+        {QStringLiteral("acceptance"),
+         QJsonObject{
+             {QStringLiteral("passed"), allSamplesAccepted},
+             {QStringLiteral("sample_count"), configuration.samples},
+             {QStringLiteral("failed_sample_count"), failedSamples.size()},
+             {QStringLiteral("failed_samples"), failedSamples},
+             {QStringLiteral("max_first_screenshot_ms"),
+              configuration.maximumFirstScreenshotMilliseconds},
+             {QStringLiteral("max_private_working_set_mib"),
+              configuration.maximumPrivateWorkingSetMebibytes},
+             {QStringLiteral("max_private_working_set_delta_mib"),
+              configuration.maximumPrivateWorkingSetDeltaMebibytes},
+         }},
         {QStringLiteral("environment"), environmentReport(configuration.appPath, displayList)},
     };
 
@@ -846,7 +1055,7 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
             "could not create report.html");
     htmlFile.write(reportHtml(report).toUtf8());
     htmlFile.close();
-    return 0;
+    return allSamplesAccepted ? 0 : 2;
 }
 
 bool runSelfTest() {
@@ -874,13 +1083,14 @@ bool runSelfTest() {
                                      QStringLiteral("app_ready"),
             "trace parser self-test failed");
 
-    require(privateWorkingSetBytes(GetCurrentProcess()) > 0,
+    require(privateWorkingSet(GetCurrentProcess()).bytes > 0,
             "private working-set self-test failed");
     const QJsonObject syntheticReport{
         {QStringLiteral("metrics"),
          QJsonObject{{QStringLiteral("cold_start_private_working_set"), statistics(values)},
                      {QStringLiteral("post_end_private_working_set"), statistics(values)},
                      {QStringLiteral("private_working_set_delta"), statistics(values)},
+                     {QStringLiteral("private_working_set_absolute_delta"), statistics(values)},
                      {QStringLiteral("first_screenshot_to_composited_frame"),
                       statistics(values, QStringLiteral("ms"))}}},
     };
@@ -926,6 +1136,18 @@ int main(int argc, char** argv) {
                       QStringLiteral("kibibytes"), QStringLiteral("1024")});
     parser.addOption({QStringLiteral("timeout-ms"), QStringLiteral("per-phase timeout"),
                       QStringLiteral("milliseconds"), QStringLiteral("90000")});
+    parser.addOption({QStringLiteral("max-first-screenshot-ms"),
+                      QStringLiteral("maximum first screenshot latency acceptance threshold"),
+                      QStringLiteral("milliseconds"),
+                      QString::number(kDefaultMaximumFirstScreenshotMilliseconds)});
+    parser.addOption({QStringLiteral("max-private-working-set-mib"),
+                      QStringLiteral("maximum cold/post private working set acceptance threshold"),
+                      QStringLiteral("MiB"),
+                      QString::number(kDefaultMaximumPrivateWorkingSetMebibytes)});
+    parser.addOption({QStringLiteral("max-private-working-set-delta-mib"),
+                      QStringLiteral("maximum absolute cold/post private working-set delta"),
+                      QStringLiteral("MiB"),
+                      QString::number(kDefaultMaximumPrivateWorkingSetDeltaMebibytes)});
     parser.addOption(
         {QStringLiteral("self-test"), QStringLiteral("run benchmark self-tests and exit")});
     parser.process(application);

@@ -21,6 +21,7 @@ struct ScreenshotCapturePresentationCallbacks {
     std::function<void()> updateOverlayState;
     std::function<void()> updateColorPicker;
     std::function<void()> capturePresented;
+    std::function<void(quint64)> deferOverlayState;
 };
 
 struct ScreenshotCaptureWorkflowContext {
