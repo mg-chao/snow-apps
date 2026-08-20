@@ -215,6 +215,12 @@ pub(crate) trait MonitorCapturer: Send {
         Ok(None)
     }
 
+    /// Current desktop-space geometry of this capturer's source, when the
+    /// backend can report it without a separate target-resolution query.
+    fn target_info(&self) -> Option<CaptureTargetInfo> {
+        None
+    }
+
     /// Enable/disable GPU-assisted HDR/F16 conversion paths.
     ///
     /// When disabled, backends should prefer CPU conversion for HDR/F16
@@ -250,6 +256,35 @@ pub(crate) trait CaptureBackend: Send + Sync {
     fn enumerate_monitors(&self) -> CaptureResult<Vec<MonitorId>>;
     fn primary_monitor(&self) -> CaptureResult<MonitorId>;
     fn monitor_layout(&self) -> CaptureResult<MonitorLayout>;
+    fn inspect_primary_monitor(&self) -> CaptureResult<Option<CaptureTargetInfo>> {
+        Ok(None)
+    }
+    fn create_primary_monitor_capturer(&self) -> CaptureResult<PreparedPrimaryCapturer> {
+        for _ in 0..2 {
+            let generation_before = self.display_generation();
+            let layout = self.monitor_layout()?;
+            let geometry = layout
+                .monitors
+                .into_iter()
+                .find(|geometry| geometry.monitor.is_primary())
+                .ok_or(CaptureError::NoPrimaryMonitor)?;
+            let capturer = self.create_monitor_capturer(&geometry.monitor)?;
+            let generation_after = self.display_generation();
+            if generation_before == generation_after {
+                return Ok(PreparedPrimaryCapturer {
+                    capturer,
+                    target_info: CaptureTargetInfo {
+                        origin_x: geometry.x,
+                        origin_y: geometry.y,
+                        width: geometry.width,
+                        height: geometry.height,
+                    },
+                    display_generation: generation_after,
+                });
+            }
+        }
+        Err(CaptureError::MonitorLost)
+    }
     fn inspect_window(&self, _window: &WindowId) -> CaptureResult<CaptureTargetInfo> {
         Err(CaptureError::BackendUnavailable(
             "window inspection is not supported by this backend".into(),
@@ -280,6 +315,12 @@ pub(crate) trait CaptureBackend: Send + Sync {
             "window capture is not supported by this backend".into(),
         ))
     }
+}
+
+pub(crate) struct PreparedPrimaryCapturer {
+    pub capturer: Box<dyn MonitorCapturer>,
+    pub target_info: CaptureTargetInfo,
+    pub display_generation: Option<u64>,
 }
 
 pub(crate) fn backend_for_kind_with_auto_policy(

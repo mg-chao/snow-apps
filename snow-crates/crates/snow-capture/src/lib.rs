@@ -59,5 +59,5 @@ pub fn release_conversion_pool() {
 pub fn capture_once(target: &CaptureTarget) -> CaptureResult<Frame> {
     let system = CaptureSystem::builder().build()?;
     let mut session = system.open_session(target.clone(), CaptureOptions::default())?;
-    session.capture()
+    session.capture_once()
 }

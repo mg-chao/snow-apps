@@ -11,12 +11,12 @@ pub(crate) mod region_pipeline;
 pub(crate) mod surface;
 pub(crate) mod wgc;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::backend::{
     AutoBackendPolicy, CaptureBackend, CaptureBackendKind, CaptureBlitRegion, CaptureMode,
-    CaptureSampleMetadata, MonitorCapturer, WgcUpdateMode,
+    CaptureSampleMetadata, MonitorCapturer, PreparedPrimaryCapturer, WgcUpdateMode,
 };
 use crate::capture_session::CaptureTargetInfo;
 use crate::error::{CaptureError, CaptureResult};
@@ -568,8 +568,42 @@ fn all_backends_failed(
     ))
 }
 
+struct LazyMonitorResolver {
+    inner: Mutex<Option<Arc<monitor::MonitorResolver>>>,
+}
+
+impl LazyMonitorResolver {
+    fn new(initial: Option<Arc<monitor::MonitorResolver>>) -> Self {
+        Self {
+            inner: Mutex::new(initial),
+        }
+    }
+
+    fn get(&self) -> CaptureResult<Arc<monitor::MonitorResolver>> {
+        let mut resolver = self.inner.lock().map_err(|_| {
+            CaptureError::platform(anyhow::anyhow!("monitor resolver mutex was poisoned"))
+        })?;
+        if let Some(resolver) = resolver.as_ref() {
+            return Ok(Arc::clone(resolver));
+        }
+
+        let display_cache = display_change::DisplayInfoCache::new()?;
+        let initialized = Arc::new(monitor::MonitorResolver::with_display_cache(display_cache));
+        *resolver = Some(Arc::clone(&initialized));
+        Ok(initialized)
+    }
+
+    fn get_if_initialized(&self) -> Option<Arc<monitor::MonitorResolver>> {
+        let resolver = match self.inner.lock() {
+            Ok(resolver) => resolver,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        resolver.as_ref().map(Arc::clone)
+    }
+}
+
 pub(crate) struct WindowsBackend {
-    resolver: Arc<monitor::MonitorResolver>,
+    resolver: LazyMonitorResolver,
     kind: CaptureBackendKind,
     auto_policy: AutoBackendPolicy,
     auto_policy_is_explicit: bool,
@@ -581,25 +615,16 @@ impl WindowsBackend {
         auto_policy: AutoBackendPolicy,
         auto_policy_is_explicit: bool,
     ) -> CaptureResult<Self> {
-        let display_cache = display_change::DisplayInfoCache::new()?;
-        let resolver = Arc::new(monitor::MonitorResolver::with_display_cache(display_cache));
+        let resolver = if kind == CaptureBackendKind::Gdi {
+            None
+        } else {
+            let display_cache = display_change::DisplayInfoCache::new()?;
+            Some(Arc::new(monitor::MonitorResolver::with_display_cache(
+                display_cache,
+            )))
+        };
         Ok(Self {
-            resolver,
-            kind,
-            auto_policy,
-            auto_policy_is_explicit,
-        })
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn with_kind_and_policy_for_screenshot(
-        kind: CaptureBackendKind,
-        auto_policy: AutoBackendPolicy,
-        auto_policy_is_explicit: bool,
-    ) -> CaptureResult<Self> {
-        let resolver = Arc::new(monitor::MonitorResolver::new(Duration::from_secs(60)));
-        Ok(Self {
-            resolver,
+            resolver: LazyMonitorResolver::new(resolver),
             kind,
             auto_policy,
             auto_policy_is_explicit,
@@ -611,7 +636,8 @@ impl WindowsBackend {
         kind: CaptureBackendKind,
         monitor: &MonitorId,
     ) -> CaptureResult<Box<dyn MonitorCapturer>> {
-        create_monitor_by_kind(&self.resolver, kind, monitor)
+        let resolver = self.resolver.get()?;
+        create_monitor_by_kind(&resolver, kind, monitor)
     }
 
     fn create_window_by_kind(
@@ -619,12 +645,17 @@ impl WindowsBackend {
         kind: CaptureBackendKind,
         window: &WindowId,
     ) -> CaptureResult<Box<dyn MonitorCapturer>> {
-        create_window_by_kind(&self.resolver, kind, window)
+        if kind == CaptureBackendKind::Gdi {
+            return Ok(Box::new(gdi::WindowsWindowCapturer::new(window)?));
+        }
+        let resolver = self.resolver.get()?;
+        create_window_by_kind(&resolver, kind, window)
     }
 
     fn create_auto_capturer(&self, monitor: &MonitorId) -> CaptureResult<Box<dyn MonitorCapturer>> {
+        let resolver = self.resolver.get()?;
         Ok(Box::new(AutomaticWindowsCapturer::new(
-            self.resolver.clone(),
+            resolver,
             AutoTarget::Monitor(monitor.clone()),
             self.auto_policy.normalized_priority(),
         )))
@@ -634,9 +665,10 @@ impl WindowsBackend {
         &self,
         window: &WindowId,
     ) -> CaptureResult<Box<dyn MonitorCapturer>> {
+        let resolver = self.resolver.get()?;
         let priority = window_auto_priority(&self.auto_policy, self.auto_policy_is_explicit);
         Ok(Box::new(AutomaticWindowsCapturer::new(
-            self.resolver.clone(),
+            resolver,
             AutoTarget::Window(window.clone()),
             priority,
         )))
@@ -657,16 +689,66 @@ fn format_backend_errors(errors: &[(CaptureBackendKind, CaptureError)]) -> Strin
 
 impl CaptureBackend for WindowsBackend {
     fn enumerate_monitors(&self) -> CaptureResult<Vec<MonitorId>> {
-        self.resolver.enumerate_monitors()
+        self.resolver.get()?.enumerate_monitors()
     }
 
     fn primary_monitor(&self) -> CaptureResult<MonitorId> {
-        self.resolver.primary_monitor()
+        self.resolver.get()?.primary_monitor()
     }
 
     fn monitor_layout(&self) -> CaptureResult<MonitorLayout> {
-        let monitors = self.resolver.enumerate_monitors()?;
+        let monitors = self.resolver.get()?.enumerate_monitors()?;
         MonitorLayout::snapshot_from_monitors(monitors)
+    }
+
+    fn inspect_primary_monitor(&self) -> CaptureResult<Option<CaptureTargetInfo>> {
+        if self.kind == CaptureBackendKind::Gdi {
+            return gdi::inspect_primary_monitor().map(Some);
+        }
+        Ok(None)
+    }
+
+    fn create_primary_monitor_capturer(&self) -> CaptureResult<PreparedPrimaryCapturer> {
+        if self.kind == CaptureBackendKind::Gdi {
+            let capturer = gdi::WindowsPrimaryMonitorCapturer::new()?;
+            let target_info = capturer
+                .target_info()
+                .ok_or(CaptureError::NoPrimaryMonitor)?;
+            return Ok(PreparedPrimaryCapturer {
+                capturer: Box::new(capturer),
+                target_info,
+                display_generation: self
+                    .resolver
+                    .get_if_initialized()
+                    .and_then(|resolver| resolver.display_generation()),
+            });
+        }
+
+        for _ in 0..2 {
+            let generation_before = self.display_generation();
+            let monitor = self.resolver.get()?.primary_monitor()?;
+            let layout = MonitorLayout::snapshot_from_monitors(vec![monitor.clone()])?;
+            let geometry = layout
+                .monitors
+                .into_iter()
+                .next()
+                .ok_or(CaptureError::NoPrimaryMonitor)?;
+            let capturer = self.create_monitor_capturer(&monitor)?;
+            let generation_after = self.display_generation();
+            if generation_before == generation_after {
+                return Ok(PreparedPrimaryCapturer {
+                    capturer,
+                    target_info: CaptureTargetInfo {
+                        origin_x: geometry.x,
+                        origin_y: geometry.y,
+                        width: geometry.width,
+                        height: geometry.height,
+                    },
+                    display_generation: generation_after,
+                });
+            }
+        }
+        Err(CaptureError::MonitorLost)
     }
 
     fn inspect_window(&self, window: &WindowId) -> CaptureResult<CaptureTargetInfo> {
@@ -696,11 +778,13 @@ impl CaptureBackend for WindowsBackend {
     }
 
     fn display_generation(&self) -> Option<u64> {
-        self.resolver.display_generation()
+        self.resolver
+            .get_if_initialized()
+            .and_then(|resolver| resolver.display_generation())
     }
 
     fn refresh_display_configuration(&self) -> CaptureResult<()> {
-        self.resolver.refresh_display_configuration()
+        self.resolver.get()?.refresh_display_configuration()
     }
 
     fn create_monitor_capturer(
@@ -804,6 +888,18 @@ mod tests {
             .filter(|candidate| candidate.capturer.is_some())
             .map(|candidate| candidate.kind)
             .collect()
+    }
+
+    #[test]
+    fn explicit_gdi_backend_defers_canonical_monitor_resolver() -> CaptureResult<()> {
+        let backend = WindowsBackend::with_kind_and_policy(
+            CaptureBackendKind::Gdi,
+            AutoBackendPolicy::default(),
+            false,
+        )?;
+
+        assert!(backend.resolver.get_if_initialized().is_none());
+        Ok(())
     }
 
     #[test]

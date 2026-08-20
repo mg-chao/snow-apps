@@ -5,26 +5,27 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Context;
-use windows::Win32::Foundation::{HANDLE, HWND, RECT};
+use windows::Win32::Foundation::{HANDLE, HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CreateCompatibleDC, CreateDCW, CreateDIBSection,
     DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, GetMonitorInfoW, GetWindowDC, HBITMAP, HDC,
-    HGDIOBJ, HMONITOR, MONITORINFO, MONITORINFOEXW, ReleaseDC, SRCCOPY, SelectObject,
+    HGDIOBJ, HMONITOR, MONITOR_DEFAULTTOPRIMARY, MONITORINFO, MONITORINFOEXW, MonitorFromPoint,
+    ReleaseDC, SRCCOPY, SelectObject,
 };
 use windows::Win32::Storage::Xps::{PRINT_WINDOW_FLAGS, PrintWindow};
 use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, IsIconic, IsWindow, IsWindowVisible};
 use windows::core::{PCWSTR, w};
 
 use crate::backend::{CaptureBackendKind, CaptureBlitRegion, CaptureMode, CaptureSampleMetadata};
+use crate::capture_session::CaptureTargetInfo;
 use crate::convert;
 use crate::error::{CaptureError, CaptureResult};
 use crate::frame::Frame;
 use crate::monitor::MonitorId;
 
-use super::com::CoInitGuard;
 use super::monitor::MonitorResolver;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 struct MonitorGeometry {
     handle: HMONITOR,
     left: i32,
@@ -64,6 +65,60 @@ fn geometry_from_handle(handle: HMONITOR) -> CaptureResult<MonitorGeometry> {
     })
 }
 
+#[derive(Clone, PartialEq, Eq)]
+struct PrimaryMonitorBinding {
+    geometry: MonitorGeometry,
+    device_name: [u16; 32],
+}
+
+fn query_primary_monitor_binding() -> CaptureResult<PrimaryMonitorBinding> {
+    let handle = unsafe { MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY) };
+    if handle.0.is_null() {
+        return Err(CaptureError::NoPrimaryMonitor);
+    }
+
+    let mut info = MONITORINFOEXW {
+        monitorInfo: MONITORINFO {
+            cbSize: size_of::<MONITORINFOEXW>() as u32,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    if !unsafe { GetMonitorInfoW(handle, (&mut info as *mut MONITORINFOEXW).cast()) }.as_bool() {
+        return Err(CaptureError::MonitorLost);
+    }
+
+    let rect = info.monitorInfo.rcMonitor;
+    let width = rect.right - rect.left;
+    let height = rect.bottom - rect.top;
+    if width <= 0 || height <= 0 {
+        return Err(CaptureError::platform(anyhow::anyhow!(
+            "primary monitor geometry is invalid ({width}x{height})"
+        )));
+    }
+
+    Ok(PrimaryMonitorBinding {
+        geometry: MonitorGeometry {
+            handle,
+            left: rect.left,
+            top: rect.top,
+            width,
+            height,
+        },
+        device_name: info.szDevice,
+    })
+}
+
+pub(crate) fn inspect_primary_monitor() -> CaptureResult<CaptureTargetInfo> {
+    let binding = query_primary_monitor_binding()?;
+    Ok(CaptureTargetInfo {
+        origin_x: binding.geometry.left,
+        origin_y: binding.geometry.top,
+        width: binding.geometry.width as u32,
+        height: binding.geometry.height as u32,
+    })
+}
+
 fn resolve_geometry(resolver: &MonitorResolver, id: &MonitorId) -> CaptureResult<MonitorGeometry> {
     let resolved = resolver.resolve_monitor(id)?;
     geometry_from_handle(resolved.handle)
@@ -82,10 +137,14 @@ fn create_monitor_screen_dc(handle: HMONITOR) -> CaptureResult<HDC> {
         return Err(CaptureError::MonitorLost);
     }
 
+    create_monitor_screen_dc_for_device(&info.szDevice)
+}
+
+fn create_monitor_screen_dc_for_device(device_name: &[u16]) -> CaptureResult<HDC> {
     let dc = unsafe {
         CreateDCW(
             w!("DISPLAY"),
-            PCWSTR(info.szDevice.as_ptr()),
+            PCWSTR(device_name.as_ptr()),
             PCWSTR::null(),
             None,
         )
@@ -1174,6 +1233,11 @@ impl GdiResources {
 
     fn new_for_monitor(handle: HMONITOR) -> CaptureResult<Self> {
         let screen_dc = create_monitor_screen_dc(handle)?;
+        Self::new_with_screen_dc(screen_dc, true)
+    }
+
+    fn new_for_device(device_name: &[u16]) -> CaptureResult<Self> {
+        let screen_dc = create_monitor_screen_dc_for_device(device_name)?;
         Self::new_with_screen_dc(screen_dc, true)
     }
 
@@ -2441,16 +2505,6 @@ impl GdiResources {
         self.dirty_row_spans.clear();
         self.dirty_span_runs.clear();
     }
-
-    fn release_capture_surface(&mut self) {
-        self.release_window_dc();
-        self.release_bitmap();
-        self.bgra_history = Vec::new();
-        self.dirty_row_flags = Vec::new();
-        self.dirty_row_runs = Vec::new();
-        self.dirty_row_spans = Vec::new();
-        self.dirty_span_runs = Vec::new();
-    }
 }
 
 impl Drop for GdiResources {
@@ -2470,7 +2524,6 @@ impl Drop for GdiResources {
 pub(crate) struct WindowsMonitorCapturer {
     monitor: MonitorId,
     resolver: Arc<MonitorResolver>,
-    _com: CoInitGuard,
     resources: GdiResources,
     monitor_source_dc_local: bool,
     geometry: MonitorGeometry,
@@ -2487,7 +2540,6 @@ unsafe impl Send for WindowsMonitorCapturer {}
 
 impl WindowsMonitorCapturer {
     pub(crate) fn new(monitor: &MonitorId, resolver: Arc<MonitorResolver>) -> CaptureResult<Self> {
-        let com = CoInitGuard::init_multithreaded().map_err(CaptureError::platform)?;
         let geometry = resolve_geometry(&resolver, monitor)?;
         let (resources, monitor_source_dc_local) =
             match GdiResources::new_for_monitor(geometry.handle) {
@@ -2500,7 +2552,6 @@ impl WindowsMonitorCapturer {
         Ok(Self {
             monitor: monitor.clone(),
             resolver,
-            _com: com,
             resources,
             monitor_source_dc_local,
             geometry,
@@ -2658,7 +2709,141 @@ impl crate::backend::MonitorCapturer for WindowsMonitorCapturer {
 
     fn release_capture_access(&mut self) {
         if self.capture_mode == CaptureMode::Snapshot {
-            self.resources.release_capture_surface();
+            self.resources.release_window_dc();
+        }
+    }
+}
+
+pub(crate) struct WindowsPrimaryMonitorCapturer {
+    resources: GdiResources,
+    binding: PrimaryMonitorBinding,
+    monitor_source_dc_local: bool,
+    capture_mode: CaptureMode,
+}
+
+// SAFETY: capture is serialized by CaptureSession, and every GDI handle is
+// used only by the thread currently owning the capturer.
+unsafe impl Send for WindowsPrimaryMonitorCapturer {}
+
+impl WindowsPrimaryMonitorCapturer {
+    pub(crate) fn new() -> CaptureResult<Self> {
+        let binding = query_primary_monitor_binding()?;
+
+        let (resources, monitor_source_dc_local) =
+            match GdiResources::new_for_device(&binding.device_name) {
+                Ok(resources) => (resources, true),
+                Err(_) => (GdiResources::new()?, false),
+            };
+
+        Ok(Self {
+            resources,
+            binding,
+            monitor_source_dc_local,
+            capture_mode: CaptureMode::Snapshot,
+        })
+    }
+
+    fn target_info_for_binding(binding: &PrimaryMonitorBinding) -> CaptureTargetInfo {
+        CaptureTargetInfo {
+            origin_x: binding.geometry.left,
+            origin_y: binding.geometry.top,
+            width: binding.geometry.width as u32,
+            height: binding.geometry.height as u32,
+        }
+    }
+
+    fn source_geometry(&self) -> MonitorGeometry {
+        if self.monitor_source_dc_local {
+            MonitorGeometry {
+                handle: self.binding.geometry.handle,
+                left: 0,
+                top: 0,
+                width: self.binding.geometry.width,
+                height: self.binding.geometry.height,
+            }
+        } else {
+            self.binding.geometry
+        }
+    }
+
+    fn rebind_if_needed(&mut self, binding: PrimaryMonitorBinding) -> CaptureResult<()> {
+        if binding == self.binding {
+            return Ok(());
+        }
+
+        let (resources, monitor_source_dc_local) =
+            match GdiResources::new_for_device(&binding.device_name) {
+                Ok(resources) => (resources, true),
+                Err(_) => (GdiResources::new()?, false),
+            };
+        self.resources = resources;
+        self.binding = binding;
+        self.monitor_source_dc_local = monitor_source_dc_local;
+        Ok(())
+    }
+}
+
+impl crate::backend::MonitorCapturer for WindowsPrimaryMonitorCapturer {
+    fn backend_kind(&self) -> CaptureBackendKind {
+        CaptureBackendKind::Gdi
+    }
+
+    fn capture(&mut self, reuse: Option<Frame>) -> CaptureResult<Frame> {
+        self.capture_with_history_hint(reuse, false)
+    }
+
+    fn capture_with_history_hint(
+        &mut self,
+        reuse: Option<Frame>,
+        destination_has_history: bool,
+    ) -> CaptureResult<Frame> {
+        let binding = query_primary_monitor_binding()?;
+        self.rebind_if_needed(binding)?;
+
+        let captured_binding = self.binding.clone();
+        let capture_time = Instant::now();
+        let captured = self.resources.capture_to_rgba(
+            self.source_geometry(),
+            reuse,
+            self.capture_mode,
+            destination_has_history,
+        );
+        let post_binding = query_primary_monitor_binding();
+        let binding_changed = post_binding
+            .as_ref()
+            .map_or(true, |binding| binding != &captured_binding);
+
+        let mut frame = match captured {
+            Ok(frame) => frame,
+            Err(error) => {
+                if binding_changed {
+                    return Err(CaptureError::MonitorLost);
+                }
+                return Err(error);
+            }
+        };
+        if binding_changed {
+            return Err(CaptureError::MonitorLost);
+        }
+
+        frame
+            .metadata
+            .set_timing(Some(capture_time), crate::frame::query_qpc_now());
+        Ok(frame)
+    }
+
+    fn set_capture_mode(&mut self, mode: CaptureMode) -> CaptureResult<()> {
+        self.capture_mode = mode;
+        Ok(())
+    }
+
+    fn target_info(&self) -> Option<CaptureTargetInfo> {
+        Some(Self::target_info_for_binding(&self.binding))
+    }
+
+    fn release_capture_access(&mut self) {
+        if self.capture_mode == CaptureMode::Snapshot {
+            self.resources.release_window_dc();
         }
     }
 }
@@ -2667,7 +2852,6 @@ use crate::backend::MonitorCapturer;
 use crate::window::WindowId;
 
 pub(crate) struct WindowsWindowCapturer {
-    _com: CoInitGuard,
     resources: GdiResources,
     hwnd: HWND,
     capture_mode: CaptureMode,
@@ -2683,7 +2867,6 @@ unsafe impl Send for WindowsWindowCapturer {}
 
 impl WindowsWindowCapturer {
     pub(crate) fn new(window: &WindowId) -> CaptureResult<Self> {
-        let com = CoInitGuard::init_multithreaded().map_err(CaptureError::platform)?;
         let hwnd = HWND(window.raw_handle() as *mut std::ffi::c_void);
         if hwnd.0.is_null() {
             return Err(CaptureError::InvalidTarget(format!(
@@ -2699,7 +2882,6 @@ impl WindowsWindowCapturer {
         }
         let resources = GdiResources::new()?;
         Ok(Self {
-            _com: com,
             resources,
             hwnd,
             capture_mode: CaptureMode::Snapshot,
@@ -2841,7 +3023,7 @@ impl MonitorCapturer for WindowsWindowCapturer {
 
     fn release_capture_access(&mut self) {
         if self.capture_mode == CaptureMode::Snapshot {
-            self.resources.release_capture_surface();
+            self.resources.release_window_dc();
         }
     }
 }

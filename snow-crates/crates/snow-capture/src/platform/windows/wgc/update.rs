@@ -214,6 +214,7 @@ impl CanonicalSurface {
         system_relative_time_hns: i64,
         capture_time: Instant,
         ordered_next: bool,
+        retain_complete_texture: bool,
     ) -> CaptureResult<ApplyOutcome> {
         if source_desc.SampleDesc.Count != 1 {
             return Err(CaptureError::UnsupportedFormat(format!(
@@ -253,20 +254,26 @@ impl CanonicalSurface {
                 if new_epoch {
                     self.epoch = self.epoch.wrapping_add(1).max(1);
                 }
-                self.ensure_texture(device, source_desc)?;
-                let destination = self.resource.as_ref().ok_or_else(|| {
-                    CaptureError::platform(anyhow::anyhow!(
-                        "WGC canonical texture is missing its resource interface"
-                    ))
-                })?;
-                d3d11::with_texture_resource(
-                    source,
-                    "failed to cast WGC complete surface to ID3D11Resource",
-                    |source_resource| {
-                        unsafe { context.CopyResource(destination, source_resource) };
-                        Ok(())
-                    },
-                )?;
+                if retain_complete_texture {
+                    self.ensure_texture(device, source_desc)?;
+                    let destination = self.resource.as_ref().ok_or_else(|| {
+                        CaptureError::platform(anyhow::anyhow!(
+                            "WGC canonical texture is missing its resource interface"
+                        ))
+                    })?;
+                    d3d11::with_texture_resource(
+                        source,
+                        "failed to cast WGC complete surface to ID3D11Resource",
+                        |source_resource| {
+                            unsafe { context.CopyResource(destination, source_resource) };
+                            Ok(())
+                        },
+                    )?;
+                } else {
+                    self.texture = None;
+                    self.resource = None;
+                    self.desc = None;
+                }
                 self.continuity.establish_complete(
                     identity,
                     system_relative_time_hns,

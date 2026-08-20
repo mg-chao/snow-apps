@@ -39,8 +39,6 @@ impl Default for CaptureOptions {
 pub struct CaptureSystem {
     backend: Arc<dyn CaptureBackend>,
     backend_kind: CaptureBackendKind,
-    auto_backend_policy: AutoBackendPolicy,
-    auto_backend_policy_is_explicit: bool,
 }
 
 impl CaptureSystem {
@@ -77,16 +75,7 @@ impl CaptureSystem {
         target: CaptureTarget,
         options: CaptureOptions,
     ) -> CaptureResult<CaptureSession> {
-        let session_backend = if options.workload == CaptureWorkload::Snapshot {
-            backend::backend_for_kind_with_auto_policy(
-                self.backend_kind,
-                self.auto_backend_policy.clone(),
-                self.auto_backend_policy_is_explicit,
-            )?
-        } else {
-            Arc::clone(&self.backend)
-        };
-        CaptureSession::open_with_backend(target, session_backend, options)
+        CaptureSession::open_with_backend(target, Arc::clone(&self.backend), options)
     }
 }
 
@@ -125,8 +114,6 @@ impl CaptureSystemBuilder {
         Ok(CaptureSystem {
             backend,
             backend_kind: self.backend_kind,
-            auto_backend_policy: self.auto_backend_policy,
-            auto_backend_policy_is_explicit: self.auto_backend_policy_is_explicit,
         })
     }
 }

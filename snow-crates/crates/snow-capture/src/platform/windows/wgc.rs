@@ -21,7 +21,7 @@ use windows::Win32::Graphics::Direct3D11::{
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R16G16B16A16_FLOAT;
 use windows::Win32::Graphics::Dxgi::{
     DXGI_ERROR_ACCESS_LOST, DXGI_ERROR_DEVICE_HUNG, DXGI_ERROR_DEVICE_REMOVED,
-    DXGI_ERROR_DEVICE_RESET, DXGI_ERROR_DRIVER_INTERNAL_ERROR, IDXGIDevice,
+    DXGI_ERROR_DEVICE_RESET, DXGI_ERROR_DRIVER_INTERNAL_ERROR, IDXGIAdapter, IDXGIDevice,
 };
 use windows::Win32::Graphics::Gdi::HMONITOR;
 use windows::Win32::System::WinRT::Direct3D11::{
@@ -56,8 +56,10 @@ const WGC_FRAME_TIMEOUT: Duration = Duration::from_millis(250);
 const WGC_SNAPSHOT_FRESH_WAIT: Duration = Duration::from_millis(2);
 const WGC_CONTINUOUS_FRESH_WAIT: Duration = Duration::from_millis(1);
 const WGC_WORKER_START_TIMEOUT: Duration = Duration::from_secs(10);
-const WGC_SNAPSHOT_WORKER_START_TIMEOUT: Duration = Duration::from_millis(250);
 const WGC_FRAME_POOL_BUFFERS: i32 = 3;
+// The coalesced pending snapshot owns one pool frame until the next request.
+// A spare buffer is required so an idle session can keep replacing it.
+const WGC_SNAPSHOT_FRAME_POOL_BUFFERS: i32 = 2;
 const WGC_ORDERED_QUEUE_CAPACITY: usize = 32;
 const WGC_COMMAND_CAPACITY: usize = 8;
 const WGC_ORDERED_FAULT_LIMIT: u8 = 3;
@@ -122,25 +124,43 @@ fn create_window_capture_item(window: HWND) -> CaptureResult<GraphicsCaptureItem
         .map_err(CaptureError::platform)
 }
 
-pub(crate) fn validate_support() -> CaptureResult<()> {
-    let _com = CoInitGuard::init_multithreaded().map_err(CaptureError::platform)?;
-    super::com::ensure_process_mta_usage().map_err(CaptureError::platform)?;
-    let supported = GraphicsCaptureSession::IsSupported()
-        .context("GraphicsCaptureSession::IsSupported failed")
-        .map_err(CaptureError::platform)?;
-    if supported {
-        Ok(())
-    } else {
-        Err(CaptureError::BackendUnavailable(
-            "Windows Graphics Capture is not supported on this system".into(),
-        ))
-    }
+type WgcD3dDevice = (ID3D11Device, ID3D11DeviceContext);
+
+fn spawn_wgc_device_creation(
+    adapter: Option<IDXGIAdapter>,
+) -> CaptureResult<JoinHandle<CaptureResult<WgcD3dDevice>>> {
+    thread::Builder::new()
+        .name("snow-wgc-device".into())
+        .spawn(move || {
+            match adapter.as_ref() {
+                Some(adapter) => d3d11::create_d3d11_device_for_adapter(adapter, false),
+                None => d3d11::create_d3d11_device_default(false),
+            }
+            .map_err(CaptureError::platform)
+        })
+        .context("failed to spawn WGC device bootstrap thread")
+        .map_err(CaptureError::platform)
 }
 
-#[derive(Clone, Copy)]
+fn join_wgc_device_creation(
+    join: JoinHandle<CaptureResult<WgcD3dDevice>>,
+) -> CaptureResult<WgcD3dDevice> {
+    join.join().map_err(|_| {
+        CaptureError::platform(anyhow::anyhow!("WGC device bootstrap thread panicked"))
+    })?
+}
+
+fn initialize_runtime() -> CaptureResult<()> {
+    let _com = CoInitGuard::init_multithreaded().map_err(CaptureError::platform)?;
+    // Item/session creation is the authoritative support check. Calling
+    // GraphicsCaptureSession::IsSupported here duplicates WinRT startup work.
+    super::com::ensure_process_mta_usage().map_err(CaptureError::platform)
+}
+
+#[derive(Clone)]
 enum WorkerTarget {
     Monitor {
-        adapter_luid: u64,
+        adapter: IDXGIAdapter,
         monitor: usize,
         hdr_metadata: HdrMonitorMetadata,
     },
@@ -177,7 +197,30 @@ enum WorkerCommand {
         mode: WgcUpdateMode,
         response: Sender<CaptureResult<()>>,
     },
+    CloseAccess {
+        response: Sender<CaptureResult<()>>,
+    },
     Shutdown,
+}
+
+#[derive(Clone, Copy)]
+struct WgcWorkerConfig {
+    capture_mode: CaptureMode,
+    gpu_hdr_conversion_enabled: bool,
+    hdr_tonemap_lut_enabled: bool,
+    update_mode: WgcUpdateMode,
+}
+
+impl WgcWorkerConfig {
+    fn frame_pool_buffers(self) -> i32 {
+        if self.capture_mode == CaptureMode::Snapshot
+            && self.update_mode != WgcUpdateMode::OrderedIncremental
+        {
+            WGC_SNAPSHOT_FRAME_POOL_BUFFERS
+        } else {
+            WGC_FRAME_POOL_BUFFERS
+        }
+    }
 }
 
 struct WindowsGraphicsCaptureCapturer {
@@ -186,12 +229,16 @@ struct WindowsGraphicsCaptureCapturer {
 }
 
 impl WindowsGraphicsCaptureCapturer {
-    fn spawn(target: WorkerTarget, startup_timeout: Duration) -> CaptureResult<Self> {
+    fn spawn(
+        target: WorkerTarget,
+        config: WgcWorkerConfig,
+        startup_timeout: Duration,
+    ) -> CaptureResult<Self> {
         let (command_tx, command_rx) = crossbeam_channel::bounded(WGC_COMMAND_CAPACITY);
         let (startup_tx, startup_rx) = crossbeam_channel::bounded(1);
         let join = thread::Builder::new()
             .name("snow-wgc".into())
-            .spawn(move || match WgcWorker::new(target) {
+            .spawn(move || match WgcWorker::new(target, config) {
                 Ok(mut worker) => {
                     let _ = startup_tx.send(Ok(()));
                     worker.run(command_rx);
@@ -290,6 +337,30 @@ impl WindowsGraphicsCaptureCapturer {
             .map_err(|_| CaptureError::WorkerDead)?;
         response_rx.recv().map_err(|_| CaptureError::WorkerDead)?
     }
+
+    fn close_access(&mut self) -> Option<JoinHandle<()>> {
+        let Some(join) = self.join.take() else {
+            return None;
+        };
+        let (response_tx, response_rx) = crossbeam_channel::bounded(1);
+        let access_closed = self
+            .commands
+            .send(WorkerCommand::CloseAccess {
+                response: response_tx,
+            })
+            .is_ok()
+            && matches!(response_rx.recv(), Ok(Ok(())));
+        if !access_closed {
+            // Without an acknowledgement, only joining proves that worker
+            // unwinding has run WgcWorker::drop and closed capture access.
+            let _ = join.join();
+            return None;
+        }
+        // Capture access is already closed. The owner retains this handle so
+        // teardown is outside the snapshot return path but can never outlive
+        // the CaptureSession that loaded this code.
+        Some(join)
+    }
 }
 
 struct PreparedWgcCapturer {
@@ -299,6 +370,7 @@ struct PreparedWgcCapturer {
     gpu_hdr_conversion_enabled: bool,
     hdr_tonemap_lut_enabled: bool,
     update_mode: WgcUpdateMode,
+    retired_workers: Vec<JoinHandle<()>>,
 }
 
 impl PreparedWgcCapturer {
@@ -310,22 +382,35 @@ impl PreparedWgcCapturer {
             gpu_hdr_conversion_enabled: true,
             hdr_tonemap_lut_enabled: true,
             update_mode: WgcUpdateMode::Auto,
+            retired_workers: Vec::new(),
+        }
+    }
+
+    fn reap_finished_workers(&mut self) {
+        let mut index = 0;
+        while index < self.retired_workers.len() {
+            if self.retired_workers[index].is_finished() {
+                let worker = self.retired_workers.swap_remove(index);
+                let _ = worker.join();
+            } else {
+                index += 1;
+            }
         }
     }
 
     fn ensure_active(&mut self) -> CaptureResult<&mut WindowsGraphicsCaptureCapturer> {
+        self.reap_finished_workers();
         if self.active.is_none() {
-            let startup_timeout = if self.capture_mode == CaptureMode::Snapshot {
-                WGC_SNAPSHOT_WORKER_START_TIMEOUT
-            } else {
-                WGC_WORKER_START_TIMEOUT
-            };
-            let mut active = WindowsGraphicsCaptureCapturer::spawn(self.target, startup_timeout)?;
-            active.set_wgc_update_mode(self.update_mode)?;
-            active.set_gpu_hdr_conversion(self.gpu_hdr_conversion_enabled)?;
-            active.set_hdr_tonemap_lut(self.hdr_tonemap_lut_enabled)?;
-            active.set_capture_mode(self.capture_mode)?;
-            self.active = Some(active);
+            self.active = Some(WindowsGraphicsCaptureCapturer::spawn(
+                self.target.clone(),
+                WgcWorkerConfig {
+                    capture_mode: self.capture_mode,
+                    gpu_hdr_conversion_enabled: self.gpu_hdr_conversion_enabled,
+                    hdr_tonemap_lut_enabled: self.hdr_tonemap_lut_enabled,
+                    update_mode: self.update_mode,
+                },
+                WGC_WORKER_START_TIMEOUT,
+            )?);
         }
         self.active.as_mut().ok_or(CaptureError::WorkerDead)
     }
@@ -382,11 +467,24 @@ impl PreparedWgcCapturer {
     }
 
     fn release_capture_access(&mut self) {
-        self.active = None;
+        if let Some(mut active) = self.active.take() {
+            if let Some(worker) = active.close_access() {
+                self.retired_workers.push(worker);
+            }
+        }
     }
 
     fn capture_access_active(&self) -> bool {
         self.active.is_some()
+    }
+}
+
+impl Drop for PreparedWgcCapturer {
+    fn drop(&mut self) {
+        self.release_capture_access();
+        for worker in self.retired_workers.drain(..) {
+            let _ = worker.join();
+        }
     }
 }
 
@@ -462,6 +560,7 @@ struct WgcWorker {
     frame_notifications: Receiver<()>,
     pool_size: SizeInt32,
     pixel_format: DirectXPixelFormat,
+    frame_pool_buffers: i32,
     source_phase: SourcePhase,
     update_mode: WgcUpdateMode,
     ordered_health: OrderedHealth,
@@ -478,30 +577,34 @@ struct WgcWorker {
     pending_complete_snapshot: Option<FramePacket>,
     closed: bool,
     terminal_error: Option<CaptureError>,
+    access_closed: bool,
     _com: CoInitGuard,
 }
 
 impl WgcWorker {
-    fn new(target: WorkerTarget) -> CaptureResult<Self> {
+    fn new(target: WorkerTarget, config: WgcWorkerConfig) -> CaptureResult<Self> {
         let com = CoInitGuard::init_multithreaded().map_err(CaptureError::platform)?;
-        let (device, context, item, hdr_to_sdr) = match target {
+        let (device, context, item, mut hdr_to_sdr) = match target {
             WorkerTarget::Monitor {
-                adapter_luid,
+                adapter,
                 monitor,
                 hdr_metadata,
             } => {
-                let adapter = super::monitor::resolve_adapter_by_luid(adapter_luid)?;
-                let (device, context) = d3d11::create_d3d11_device_for_adapter(&adapter, false)
-                    .map_err(CaptureError::platform)?;
+                let device_creation = spawn_wgc_device_creation(Some(adapter))?;
                 let monitor = HMONITOR(monitor as *mut c_void);
-                let item = create_monitor_capture_item(monitor)?;
+                let item_result = create_monitor_capture_item(monitor);
+                let device_result = join_wgc_device_creation(device_creation);
+                let item = item_result?;
+                let (device, context) = device_result?;
                 (device, context, item, hdr_to_sdr_params(hdr_metadata))
             }
             WorkerTarget::Window { hwnd } => {
-                let (device, context) =
-                    d3d11::create_d3d11_device_default(false).map_err(CaptureError::platform)?;
+                let device_creation = spawn_wgc_device_creation(None)?;
                 let hwnd = HWND(hwnd as *mut c_void);
-                let item = create_window_capture_item(hwnd)?;
+                let item_result = create_window_capture_item(hwnd);
+                let device_result = join_wgc_device_creation(device_creation);
+                let item = item_result?;
+                let (device, context) = device_result?;
                 (device, context, item, None)
             }
         };
@@ -521,10 +624,11 @@ impl WgcWorker {
         } else {
             DirectXPixelFormat::B8G8R8A8UIntNormalized
         };
+        let frame_pool_buffers = config.frame_pool_buffers();
         let frame_pool = Direct3D11CaptureFramePool::CreateFreeThreaded(
             &winrt_device,
             pixel_format,
-            WGC_FRAME_POOL_BUFFERS,
+            frame_pool_buffers,
             pool_size,
         )
         .context("Direct3D11CaptureFramePool::CreateFreeThreaded failed")
@@ -577,6 +681,16 @@ impl WgcWorker {
             .context("GraphicsCaptureSession::StartCapture failed")
             .map_err(CaptureError::platform)?;
 
+        let source_phase =
+            if dirty_regions_supported && config.update_mode == WgcUpdateMode::OrderedIncremental {
+                SourcePhase::BaselineForOrdered
+            } else {
+                SourcePhase::Complete
+            };
+        if let Some(params) = hdr_to_sdr.as_mut() {
+            params.tonemap_use_lut = config.hdr_tonemap_lut_enabled;
+        }
+
         Ok(Self {
             device,
             context,
@@ -590,22 +704,24 @@ impl WgcWorker {
             frame_notifications: notification_rx,
             pool_size,
             pixel_format,
-            source_phase: SourcePhase::Complete,
-            update_mode: WgcUpdateMode::Auto,
+            frame_pool_buffers,
+            source_phase,
+            update_mode: config.update_mode,
             ordered_health: OrderedHealth::default(),
             dirty_regions_supported,
             canonical: CanonicalSurface::new(),
             readback: ReadbackPipeline::new(),
-            capture_mode: CaptureMode::Snapshot,
+            capture_mode: config.capture_mode,
             hdr_to_sdr,
             gpu_tonemapper: None,
             gpu_f16_converter: None,
-            gpu_hdr_conversion_enabled: true,
-            hdr_tonemap_lut_enabled: true,
+            gpu_hdr_conversion_enabled: config.gpu_hdr_conversion_enabled,
+            hdr_tonemap_lut_enabled: config.hdr_tonemap_lut_enabled,
             last_delivery: None,
             pending_complete_snapshot: None,
             closed: false,
             terminal_error: None,
+            access_closed: false,
             _com: com,
         })
     }
@@ -696,6 +812,11 @@ impl WgcWorker {
                 let result = self.configure_update_mode(mode);
                 let _ = response
                     .send(result.map_err(|error| normalize_device_error(&self.device, error)));
+            }
+            WorkerCommand::CloseAccess { response } => {
+                let result = self.close_capture_access();
+                let _ = response.send(result);
+                return false;
             }
             WorkerCommand::Shutdown => return false,
         }
@@ -922,6 +1043,14 @@ impl WgcWorker {
             }
         }
 
+        let direct_complete_snapshot = self.capture_mode == CaptureMode::Snapshot
+            && self.source_phase == SourcePhase::Complete
+            && reported_mode == GraphicsCaptureDirtyRegionMode::ReportOnly
+            && source_desc.Format != DXGI_FORMAT_R16G16B16A16_FLOAT
+            // A region target can change after topology replanning. Retain the
+            // canonical texture so that the current frame can be resubmitted
+            // for the new crop even when WGC has not produced a fresher frame.
+            && supports_textureless_snapshot(self.readback.target());
         let outcome = self.canonical.apply(
             &self.device,
             &self.context,
@@ -932,10 +1061,31 @@ impl WgcWorker {
             packet.system_relative_time_hns,
             packet.received_at,
             ordered_next,
+            !direct_complete_snapshot,
         )?;
         match outcome {
             ApplyOutcome::Updated(metadata) => {
-                self.prefetch_current(&metadata)?;
+                if direct_complete_snapshot {
+                    let target = self.readback.target().ok_or(CaptureError::Timeout)?;
+                    if let Err(error) = self.readback.ensure_submitted(
+                        &self.device,
+                        &self.context,
+                        &texture,
+                        source_desc,
+                        None,
+                        &metadata,
+                        target,
+                    ) {
+                        // Publication and direct submission form one logical
+                        // state transition. Never leave valid metadata behind
+                        // after dropping both its canonical source and slot.
+                        self.canonical.invalidate();
+                        self.invalidate_delivery_pipeline();
+                        return Err(error);
+                    }
+                } else {
+                    self.prefetch_current(&metadata)?;
+                }
                 Ok(FrameProcessing::Updated)
             }
             ApplyOutcome::Duplicate => Ok(FrameProcessing::Ignored),
@@ -955,7 +1105,7 @@ impl WgcWorker {
                 .Recreate(
                     &self.winrt_device,
                     self.pixel_format,
-                    WGC_FRAME_POOL_BUFFERS,
+                    self.frame_pool_buffers,
                     content_size,
                 )
                 .map_err(|error| {
@@ -1250,14 +1400,48 @@ impl WgcWorker {
                     && delivered.generation == canonical.generation
             })
     }
+
+    fn close_capture_access(&mut self) -> CaptureResult<()> {
+        if self.access_closed {
+            return Ok(());
+        }
+        let mut first_error = self.transport.pause_and_clear().err();
+        if let Err(error) = self.frame_pool.RemoveFrameArrived(self.frame_arrived_token) {
+            first_error.get_or_insert_with(|| {
+                map_platform_error(
+                    error,
+                    "Direct3D11CaptureFramePool::RemoveFrameArrived failed during close",
+                )
+            });
+        }
+        if let Err(error) = self.item.RemoveClosed(self.closed_token) {
+            first_error.get_or_insert_with(|| {
+                map_platform_error(
+                    error,
+                    "GraphicsCaptureItem::RemoveClosed failed during close",
+                )
+            });
+        }
+        if let Err(error) = self.session.Close() {
+            first_error.get_or_insert_with(|| {
+                map_platform_error(error, "GraphicsCaptureSession::Close failed")
+            });
+        }
+        if let Err(error) = self.frame_pool.Close() {
+            first_error.get_or_insert_with(|| {
+                map_platform_error(error, "Direct3D11CaptureFramePool::Close failed")
+            });
+        }
+        if first_error.is_none() {
+            self.access_closed = true;
+        }
+        first_error.map_or(Ok(()), Err)
+    }
 }
 
 impl Drop for WgcWorker {
     fn drop(&mut self) {
-        let _ = self.frame_pool.RemoveFrameArrived(self.frame_arrived_token);
-        let _ = self.item.RemoveClosed(self.closed_token);
-        let _ = self.session.Close();
-        let _ = self.frame_pool.Close();
+        let _ = self.close_capture_access();
     }
 }
 
@@ -1280,20 +1464,24 @@ fn nonzero_timestamp(value: i64) -> Option<i64> {
     (value != 0).then_some(value)
 }
 
+fn supports_textureless_snapshot(target: Option<ReadbackTarget>) -> bool {
+    matches!(target, Some(ReadbackTarget::Full))
+}
+
 pub(crate) struct WindowsMonitorCapturer {
     inner: PreparedWgcCapturer,
 }
 
 impl WindowsMonitorCapturer {
     pub(crate) fn new(monitor: &MonitorId, resolver: Arc<MonitorResolver>) -> CaptureResult<Self> {
-        validate_support()?;
+        initialize_runtime()?;
         let resolved = resolver.resolve_monitor(monitor)?;
-        let adapter_luid = resolved.key.adapter_luid;
+        let adapter = resolved.adapter.clone();
         let monitor = resolved.handle.0 as usize;
         let hdr_metadata = resolved.hdr_metadata;
         drop(resolved);
         let inner = PreparedWgcCapturer::new(WorkerTarget::Monitor {
-            adapter_luid,
+            adapter,
             monitor,
             hdr_metadata,
         });
@@ -1365,7 +1553,7 @@ pub(crate) struct WindowsWindowCapturer {
 
 impl WindowsWindowCapturer {
     pub(crate) fn new(window: &WindowId) -> CaptureResult<Self> {
-        validate_support()?;
+        initialize_runtime()?;
         let hwnd = window.raw_handle();
         if hwnd == 0 {
             return Err(CaptureError::InvalidTarget(format!(
@@ -1431,12 +1619,178 @@ impl crate::backend::MonitorCapturer for WindowsWindowCapturer {
 mod tests {
     use super::*;
 
+    const TEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+    fn worker_config(capture_mode: CaptureMode, update_mode: WgcUpdateMode) -> WgcWorkerConfig {
+        WgcWorkerConfig {
+            capture_mode,
+            gpu_hdr_conversion_enabled: true,
+            hdr_tonemap_lut_enabled: true,
+            update_mode,
+        }
+    }
+
     #[test]
     fn default_update_policy_is_complete_surface() {
         assert!(!matches!(
             WgcUpdateMode::default(),
             WgcUpdateMode::OrderedIncremental
         ));
+    }
+
+    #[test]
+    fn snapshot_complete_mode_keeps_one_spare_pool_buffer() {
+        assert_eq!(WGC_SNAPSHOT_FRAME_POOL_BUFFERS, 2);
+        assert_eq!(
+            worker_config(CaptureMode::Snapshot, WgcUpdateMode::Auto).frame_pool_buffers(),
+            WGC_SNAPSHOT_FRAME_POOL_BUFFERS
+        );
+        assert_eq!(
+            worker_config(CaptureMode::Snapshot, WgcUpdateMode::CompleteOnly).frame_pool_buffers(),
+            WGC_SNAPSHOT_FRAME_POOL_BUFFERS
+        );
+        assert_eq!(
+            worker_config(CaptureMode::Snapshot, WgcUpdateMode::OrderedIncremental)
+                .frame_pool_buffers(),
+            WGC_FRAME_POOL_BUFFERS
+        );
+        assert_eq!(
+            worker_config(CaptureMode::Continuous, WgcUpdateMode::CompleteOnly)
+                .frame_pool_buffers(),
+            WGC_FRAME_POOL_BUFFERS
+        );
+    }
+
+    #[test]
+    fn textureless_snapshot_fast_path_is_full_frame_only() {
+        assert!(supports_textureless_snapshot(Some(ReadbackTarget::Full)));
+        assert!(!supports_textureless_snapshot(Some(
+            ReadbackTarget::Region(CaptureBlitRegion {
+                src_x: 1,
+                src_y: 2,
+                width: 3,
+                height: 4,
+                dst_x: 0,
+                dst_y: 0,
+            })
+        )));
+        assert!(!supports_textureless_snapshot(None));
+    }
+
+    #[test]
+    fn close_access_returns_cleanup_handle_after_access_ack() {
+        let (command_tx, command_rx) = crossbeam_channel::bounded(WGC_COMMAND_CAPACITY);
+        let (access_closed_tx, access_closed_rx) = crossbeam_channel::bounded(1);
+        let (release_tail_tx, release_tail_rx) = crossbeam_channel::bounded(1);
+        let (tail_done_tx, tail_done_rx) = crossbeam_channel::bounded(1);
+        let worker = thread::spawn(move || {
+            match command_rx.recv().expect("close command") {
+                WorkerCommand::CloseAccess { response } => {
+                    access_closed_tx.send(()).expect("access-closed marker");
+                    response.send(Ok(())).expect("close acknowledgement");
+                }
+                _ => panic!("unexpected worker command"),
+            }
+            release_tail_rx.recv().expect("cleanup-tail release");
+            tail_done_tx.send(()).expect("cleanup-tail marker");
+        });
+        let capturer = WindowsGraphicsCaptureCapturer {
+            commands: command_tx,
+            join: Some(worker),
+        };
+        let (returned_tx, returned_rx) = crossbeam_channel::bounded(1);
+        let close_call = thread::spawn(move || {
+            let mut capturer = capturer;
+            let cleanup = capturer
+                .close_access()
+                .expect("successful close must return its cleanup handle");
+            returned_tx.send(cleanup).expect("close-return marker");
+        });
+
+        access_closed_rx
+            .recv_timeout(TEST_TIMEOUT)
+            .expect("access closure did not precede the acknowledgement");
+        let cleanup = returned_rx
+            .recv_timeout(TEST_TIMEOUT)
+            .expect("close_access waited for cleanup after capture access was closed");
+        release_tail_tx.send(()).expect("release cleanup tail");
+        tail_done_rx
+            .recv_timeout(TEST_TIMEOUT)
+            .expect("detached cleanup tail did not finish");
+        cleanup.join().expect("cleanup tail panicked");
+        close_call.join().expect("close-access caller panicked");
+    }
+
+    #[test]
+    fn close_access_joins_worker_after_failed_close_acknowledgement() {
+        let (command_tx, command_rx) = crossbeam_channel::bounded(WGC_COMMAND_CAPACITY);
+        let (release_worker_tx, release_worker_rx) = crossbeam_channel::bounded(1);
+        let worker = thread::spawn(move || {
+            match command_rx.recv().expect("close command") {
+                WorkerCommand::CloseAccess { response } => response
+                    .send(Err(CaptureError::platform(anyhow::anyhow!(
+                        "injected close failure"
+                    ))))
+                    .expect("failed-close acknowledgement"),
+                _ => panic!("unexpected worker command"),
+            }
+            release_worker_rx.recv().expect("worker release");
+        });
+        let capturer = WindowsGraphicsCaptureCapturer {
+            commands: command_tx,
+            join: Some(worker),
+        };
+        let (returned_tx, returned_rx) = crossbeam_channel::bounded(1);
+        let close_call = thread::spawn(move || {
+            let mut capturer = capturer;
+            assert!(capturer.close_access().is_none());
+            returned_tx.send(()).expect("close-return marker");
+        });
+
+        assert!(
+            returned_rx.recv_timeout(Duration::from_millis(50)).is_err(),
+            "close_access returned after a failed close acknowledgement but before worker exit"
+        );
+        release_worker_tx.send(()).expect("release worker");
+        returned_rx
+            .recv_timeout(TEST_TIMEOUT)
+            .expect("close_access did not return after worker exit");
+        close_call.join().expect("close-access caller panicked");
+    }
+
+    #[test]
+    fn close_access_joins_worker_when_close_cannot_be_acknowledged() {
+        let (command_tx, command_rx) = crossbeam_channel::bounded(WGC_COMMAND_CAPACITY);
+        drop(command_rx);
+        let (worker_waiting_tx, worker_waiting_rx) = crossbeam_channel::bounded(1);
+        let (release_worker_tx, release_worker_rx) = crossbeam_channel::bounded(1);
+        let worker = thread::spawn(move || {
+            worker_waiting_tx.send(()).expect("worker-waiting marker");
+            release_worker_rx.recv().expect("worker release");
+        });
+        let capturer = WindowsGraphicsCaptureCapturer {
+            commands: command_tx,
+            join: Some(worker),
+        };
+        let (returned_tx, returned_rx) = crossbeam_channel::bounded(1);
+        let close_call = thread::spawn(move || {
+            let mut capturer = capturer;
+            let _ = capturer.close_access();
+            returned_tx.send(()).expect("close-return marker");
+        });
+
+        worker_waiting_rx
+            .recv_timeout(TEST_TIMEOUT)
+            .expect("worker did not reach the teardown gate");
+        assert!(
+            returned_rx.try_recv().is_err(),
+            "close_access returned without an acknowledgement or worker exit"
+        );
+        release_worker_tx.send(()).expect("release worker");
+        returned_rx
+            .recv_timeout(TEST_TIMEOUT)
+            .expect("close_access did not return after worker exit");
+        close_call.join().expect("close-access caller panicked");
     }
 
     #[test]

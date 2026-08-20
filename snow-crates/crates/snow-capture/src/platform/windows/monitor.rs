@@ -257,38 +257,6 @@ fn luid_to_u64(luid: windows::Win32::Foundation::LUID) -> u64 {
     (u64::from(luid.HighPart as u32) << 32) | u64::from(luid.LowPart)
 }
 
-pub(crate) fn resolve_adapter_by_luid(adapter_luid: u64) -> CaptureResult<IDXGIAdapter> {
-    let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1() }
-        .context("CreateDXGIFactory1 failed while resolving a capture adapter")
-        .map_err(CaptureError::platform)?;
-    let mut adapter_index = 0u32;
-    loop {
-        let adapter = match unsafe { factory.EnumAdapters1(adapter_index) } {
-            Ok(adapter) => adapter,
-            Err(error) if error.code() == DXGI_ERROR_NOT_FOUND => {
-                return Err(CaptureError::MonitorLost);
-            }
-            Err(error) => {
-                return Err(CaptureError::platform(anyhow::Error::from(error).context(
-                    format!("EnumAdapters1({adapter_index}) failed while resolving WGC adapter"),
-                )));
-            }
-        };
-        let desc = unsafe { adapter.GetDesc1() }
-            .context("IDXGIAdapter1::GetDesc1 failed while resolving WGC adapter")
-            .map_err(CaptureError::platform)?;
-        if luid_to_u64(desc.AdapterLuid) == adapter_luid {
-            return adapter
-                .cast()
-                .context("failed to cast the resolved WGC adapter to IDXGIAdapter")
-                .map_err(CaptureError::platform);
-        }
-        adapter_index = adapter_index
-            .checked_add(1)
-            .ok_or(CaptureError::MonitorLost)?;
-    }
-}
-
 #[derive(Clone, Copy, Debug, Default)]
 struct DisplayConfigHdrInfo {
     advanced_color_enabled: bool,
