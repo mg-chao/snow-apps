@@ -70,8 +70,8 @@ class ScreenshotOverlayUiHost final {
     void showSelectionToolbar();
     void raiseSelectionToolbar();
     void detachOverlayTransientUi(ScreenshotOverlayWindow* overlay);
-    // Retires capture-scoped widgets through deleteLater(). Their public
-    // handles are cleared immediately so a subsequent capture recreates them.
+    // Detaches the reusable main toolbar before its overlay owner is retired
+    // and releases the remaining capture-scoped widgets through deleteLater().
     void releaseUiResources();
     void destroyUiResources();
 

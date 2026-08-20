@@ -22,6 +22,7 @@ struct ScreenshotCapturePresentationCallbacks {
     std::function<void()> updateColorPicker;
     std::function<void()> capturePresented;
     std::function<void(quint64)> deferOverlayState;
+    std::function<void()> prepareInitialOverlayState;
 };
 
 struct ScreenshotCaptureWorkflowContext {
@@ -54,7 +55,9 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
                           ScreenshotCapturePresentationMode::Overlay,
                       quintptr focusedWindowHandle = 0);
     void cancelCapture();
-    void handleInitialSmartSelectionResolved(quint64 sessionId);
+    [[nodiscard]] bool handleInitialSmartSelectionResult(
+        quint64 sessionId, const QPoint& physicalPoint, bool ok,
+        const QVector<QRectF>& physicalHitRects);
 
     void destroyDisplayPool();
     void destroyUiSelectorService();
@@ -71,7 +74,11 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     void beginCapturePreparation(quint64 sessionId);
     void finishCapturePreparation(const ScreenshotCaptureResult& result);
     void showCapturePresentationWhenReady(quint64 sessionId);
-    void enterOverlaySelectionModeAtCursor();
+    void beginInitialSmartSelection(quint64 sessionId);
+    void resolveInitialSmartSelection(quint64 sessionId, const QPoint& physicalPoint, bool ok,
+                                      const QVector<QRectF>& physicalHitRects);
+    void retryInitialSmartSelection(quint64 sessionId);
+    [[nodiscard]] bool initialSelectorGeometryMatchesCapture() const;
     void handleCapturePrepared(quint64 requestId, bool ok) override;
     void handleCaptureFinished(const ScreenshotCaptureResult& result) override;
     void prewarmOverlayPool();
@@ -84,6 +91,10 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     quint64 m_initialSmartSelectionPendingSessionId = 0;
     quint64 m_initialSmartSelectionResolvedSessionId = 0;
     quint64 m_visiblePresentationSessionId = 0;
+    QPoint m_initialSmartSelectionPoint;
+    QVector<QRectF> m_initialSmartSelectionPhysicalHitRects;
+    QVector<QRect> m_preCapturePhysicalRects;
+    bool m_initialSmartSelectionSucceeded = false;
     ScreenshotCapturePresentationMode m_presentationMode =
         ScreenshotCapturePresentationMode::Overlay;
     quintptr m_focusedWindowHandle = 0;

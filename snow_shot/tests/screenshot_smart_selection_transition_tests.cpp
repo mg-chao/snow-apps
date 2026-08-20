@@ -62,6 +62,20 @@ void subsequentSmartSelectionUsesConfiguredTransition() {
     require(presented == second, "smart selection transition must end at its target");
 }
 
+void seededSmartSelectionDoesNotEmitAndNextChangeAnimates() {
+    int updateCount = 0;
+    ScreenshotSmartSelectionTransition transition([&](const QRectF&) { ++updateCount; });
+    const QRectF initial(10, 20, 80, 60);
+    const QRectF next(20, 30, 90, 70);
+
+    transition.seed(initial, true);
+    require(updateCount == 0 && transition.displayedSelection() == initial &&
+                !transition.isRunning(),
+            "seeding the hidden initial frame must not emit or animate");
+    require(transition.update(next, true) && transition.isRunning(),
+            "the first post-presentation selection change must animate from the seed");
+}
+
 void disabledTransitionPresentsSmartSelectionsDirectly() {
     QRectF presented;
     int updateCount = 0;
@@ -153,6 +167,7 @@ void unchangedSmartSelectionDoesNotEmitAnAnimationUpdate() {
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
     firstSmartSelectionIsPresentedDirectly();
+    seededSmartSelectionDoesNotEmitAndNextChangeAnimates();
     subsequentSmartSelectionUsesConfiguredTransition();
     disabledTransitionPresentsSmartSelectionsDirectly();
     disablingRunningTransitionPresentsItsTargetDirectly();

@@ -36,7 +36,7 @@ class ScreenshotSelectorCoordinator final : public QObject, public ScreenshotSel
 
   signals:
     void refreshFinished(bool ok);
-    void hitTestFinished(bool ok, QVector<QRectF> hitRects);
+    void hitTestFinished(bool ok, QPoint physicalPoint, QVector<QRectF> hitRects);
 
   private:
     void handleRefreshFinished(quint64 requestId, bool ok);
@@ -48,6 +48,7 @@ class ScreenshotSelectorCoordinator final : public QObject, public ScreenshotSel
     bool m_ready = false;
     bool m_refreshInFlight = false;
     bool m_hitTestInFlight = false;
+    QPoint m_inFlightHitTestPoint;
     bool m_hasPendingHitTestPoint = false;
     QPoint m_pendingHitTestPoint;
     ScreenshotSelectorHitTestMode m_pendingHitTestMode =

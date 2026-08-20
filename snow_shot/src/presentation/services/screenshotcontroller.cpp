@@ -813,10 +813,11 @@ void ScreenshotController::Impl::createSelectorWorkflow() {
                 },
                 [this]() { m_presentationServices->hideToolbar(); },
                 [this]() { m_presentationServices->updateOverlayCursors(); },
-                [this](quint64 sessionId) {
-                    if (m_captureWorkflow != nullptr) {
-                        m_captureWorkflow->handleInitialSmartSelectionResolved(sessionId);
-                    }
+                [this](quint64 sessionId, const QPoint& physicalPoint, bool ok,
+                       const QVector<QRectF>& hitRects) {
+                    return m_captureWorkflow != nullptr &&
+                           m_captureWorkflow->handleInitialSmartSelectionResult(
+                               sessionId, physicalPoint, ok, hitRects);
                 },
             },
         });
@@ -928,6 +929,7 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                             QStringLiteral("presentation.overlay_state_ready"));
                     });
                 },
+                [this]() { m_presentationServices->prepareInitialOverlayState(); },
             },
             [this]() {
                 m_pendingHistoryEditRecordId.clear();
@@ -1295,8 +1297,9 @@ void ScreenshotController::Impl::connectSelectorSignals() {
     QObject::connect(m_selectorCoordinator, &ScreenshotSelectorCoordinator::refreshFinished, this,
                      [this](bool ok) { m_selectorWorkflow->handleRefreshFinished(ok); });
     QObject::connect(m_selectorCoordinator, &ScreenshotSelectorCoordinator::hitTestFinished, this,
-                     [this](bool ok, const QVector<QRectF>& hitRects) {
-                         m_selectorWorkflow->handleHitTestFinished(ok, hitRects);
+                     [this](bool ok, const QPoint& physicalPoint,
+                            const QVector<QRectF>& hitRects) {
+                         m_selectorWorkflow->handleHitTestFinished(ok, physicalPoint, hitRects);
                      });
 }
 

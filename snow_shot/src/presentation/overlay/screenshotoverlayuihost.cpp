@@ -341,6 +341,7 @@ void ScreenshotOverlayUiHost::attachToolbarToOverlay(ScreenshotOverlayWindow* ov
     }
 
     disconnectToolbarCanvas();
+    toolbarWindow->setUpdatesEnabled(true);
     toolbarWindow->setOwnerWindow(overlay);
 
     if (overlay == nullptr || overlay->canvas() == nullptr) {
@@ -736,7 +737,12 @@ void ScreenshotOverlayUiHost::releaseUiResources() {
     disconnectToolbarCanvas();
 
     if (m_toolbar != nullptr) {
+        m_toolbar->hide();
+        const Qt::WindowFlags toolbarWindowFlags = m_toolbar->windowFlags();
+        // Destroy before detaching: setOwnerWindow(nullptr) calls winId() and
+        // would create a throwaway native surface during teardown.
         m_toolbar->releaseNativeSurface();
+        m_toolbar->setParent(nullptr, toolbarWindowFlags);
     }
     if (m_selectionToolbar != nullptr) {
         m_selectionToolbar->hide();
@@ -756,12 +762,10 @@ void ScreenshotOverlayUiHost::releaseUiResources() {
         m_retiredWidgets.add(widget);
         widget->deleteLater();
     };
-    retireWidget(m_toolbar.data());
     retireWidget(m_selectionToolbar.data());
     retireWidget(m_colorPicker.data());
     retireWidget(m_shortcutHints.data());
 
-    m_toolbar = nullptr;
     m_selectionToolbar = nullptr;
     m_colorPicker = nullptr;
     m_shortcutHints = nullptr;

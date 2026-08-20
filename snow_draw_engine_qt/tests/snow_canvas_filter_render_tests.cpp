@@ -1,10 +1,13 @@
 #include "snow_canvas_display_item.h"
+#include "snow_canvas_display_cache.h"
+#include "snow_canvas_ffi_handles.h"
 #include "snow_canvas_export.h"
 #include "snow_canvas_filter_render.h"
 #include "snow_canvas_pen_mask_atlas.h"
 #include "snow_canvas_render_geometry.h"
 #include "snow_canvas_renderer.h"
 #include "snow_canvas_tile_cache.h"
+#include "snow_canvas_viewport.h"
 #include "snow_draw_engine_qt/snow_canvas_custom_renderer.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
@@ -1407,12 +1410,101 @@ class PatternBackdropRenderer final : public SnowCanvasCustomRenderer {
     explicit PatternBackdropRenderer(const QImage& image) : m_image(image) {}
 
     void renderBeforeCanvas(QPainter& painter, const SnowCanvasRenderContext& context) override {
+        m_exposures.push_back(context.exposedRegion);
+        painter.save();
+        painter.setClipRegion(context.exposedRegion, Qt::IntersectClip);
         painter.drawImage(QRectF(context.viewportRect), m_image);
+        painter.restore();
+    }
+
+    void clearExposureHistory() {
+        m_exposures.clear();
+    }
+
+    const std::vector<QRegion>& exposureHistory() const {
+        return m_exposures;
     }
 
   private:
     const QImage& m_image;
+    std::vector<QRegion> m_exposures;
 };
+
+void tiledSamplingFiltersMatchAFullCustomBackdropRender() {
+    const QSize size(641, 519);
+    QImage background(size, QImage::Format_ARGB32_Premultiplied);
+    for (int y = 0; y < size.height(); ++y) {
+        auto* line = reinterpret_cast<QRgb*>(background.scanLine(y));
+        for (int x = 0; x < size.width(); ++x) {
+            line[x] = qRgb((x * 31 + y * 7) & 0xff, (x * 3 + y * 43) & 0xff,
+                           (x * 19 + y * 13) & 0xff);
+        }
+    }
+
+    SceneDisplayInfo displayInfo{};
+    displayInfo.surface_width = size.width();
+    displayInfo.surface_height = size.height();
+    displayInfo.camera_zoom = 1.0;
+    PatternBackdropRenderer backdrop(background);
+
+    for (std::uint32_t type : {0u, 1u}) {
+        SnowSceneDisplayItem filter{};
+        filter.kind = SNOW_SCENE_DISPLAY_ITEM_FILTER;
+        filter.width = size.width();
+        filter.height = size.height();
+        filter.filter = snow_filter_render_spec_resolve(type, 0.8);
+        filter.opacity = 1.0;
+        const SnowCanvasSceneItem item(filter);
+
+        QImage reference(size, QImage::Format_ARGB32_Premultiplied);
+        reference.fill(Qt::transparent);
+        {
+            QPainter painter(&reference);
+            const SnowCanvasRenderContext context{
+                reference.rect(), QRegion(reference.rect()), QTransform(), 1.0};
+            snow_canvas_renderer::renderSceneItems(snow_canvas_renderer::SceneRenderRequest{
+                &painter, &displayInfo, &item, 1, QRegion(reference.rect()), nullptr, 0, nullptr,
+                &backdrop, &context});
+        }
+        backdrop.clearExposureHistory();
+
+        QImage tiled(size, QImage::Format_ARGB32_Premultiplied);
+        tiled.fill(Qt::transparent);
+        int cacheNamespace = 0;
+        snow_canvas_tile_cache::clear();
+        {
+            QPainter painter(&tiled);
+            snow_canvas_tile_cache::render(
+                painter, snow_canvas_tile_cache::RenderRequest{
+                             &cacheNamespace,
+                             size,
+                             1.0,
+                             static_cast<std::uint64_t>(type + 1),
+                             1,
+                             {},
+                             QRegion(tiled.rect()),
+                             [&](QPainter& tilePainter, const QRegion& missing) {
+                                 const SnowCanvasRenderContext context{
+                                     tiled.rect(), missing, QTransform(), 1.0};
+                                 snow_canvas_renderer::renderSceneItems(
+                                     snow_canvas_renderer::SceneRenderRequest{
+                                         &tilePainter, &displayInfo, &item, 1, missing, nullptr, 0,
+                                         nullptr, &backdrop, &context});
+                             },
+                         });
+        }
+        require(tiled == reference,
+                type == 0 ? "tiled mosaic must match a full custom-backdrop render"
+                          : "tiled Gaussian blur must match a full custom-backdrop render");
+        require(!backdrop.exposureHistory().empty(),
+                "tiled sampling filters must replay their custom backdrop");
+        for (const QRegion& exposure : backdrop.exposureHistory()) {
+            require(exposure.boundingRect() != tiled.rect(),
+                    "a cached sampling-filter tile must not replay the full backdrop");
+        }
+    }
+    snow_canvas_tile_cache::clear();
+}
 
 void movedFiltersMatchAFullRenderAfterDirtyRectangleUpdate() {
     const QSize logicalSize(257, 173);
@@ -2014,6 +2106,81 @@ void penFilterHoverDrawsAPathContour() {
             "pen-filter hover feedback must not draw the old bounding box");
 }
 
+SnowInputEvent penPointerEvent(SnowPointerEventType type, double x, double y,
+                               std::uint8_t buttons) {
+    SnowInputEvent event{};
+    event.kind = SNOW_INPUT_EVENT_POINTER;
+    event.pointer.pointer_id = 1;
+    event.pointer.event_type = type;
+    event.pointer.device = SNOW_POINTER_DEVICE_PEN;
+    event.pointer.position_x = x;
+    event.pointer.position_y = y;
+    event.pointer.button = type == SNOW_POINTER_EVENT_MOVE ? SNOW_POINTER_BUTTON_NONE
+                                                           : SNOW_POINTER_BUTTON_PRIMARY;
+    event.pointer.buttons = buttons;
+    return event;
+}
+
+void selectedPenFilterOmitsContourFromTheDisplayCache() {
+    ScopedRuntimeHandle runtime;
+    SnowCanvasViewport viewport;
+    require(snow_runtime_create(runtime.outParam()) == SNOW_OK,
+            "selected pen-filter overlay test must create its runtime");
+    require(viewport.create(runtime.get(), snow_canvas_viewport::defaultEngineConfig()),
+            "selected pen-filter overlay test must create its viewport");
+    require(snow_viewport_set_surface_size(runtime.get(), viewport.get(), 120, 120) == SNOW_OK,
+            "selected pen-filter overlay test must set its surface size");
+    require(snow_viewport_set_active_tool(runtime.get(), viewport.get(),
+                                          SNOW_ACTIVE_TOOL_PEN_FILTER) == SNOW_OK,
+            "selected pen-filter overlay test must activate the pen-filter tool");
+
+    SnowInteractionOutput output{};
+    SnowInputEvent down = penPointerEvent(SNOW_POINTER_EVENT_DOWN, 30.0, 60.0, 1);
+    SnowInputEvent move = penPointerEvent(SNOW_POINTER_EVENT_MOVE, 90.0, 60.0, 1);
+    SnowInputEvent up = penPointerEvent(SNOW_POINTER_EVENT_UP, 90.0, 60.0, 0);
+    require(snow_viewport_process_input(runtime.get(), viewport.get(), &down, &output) == SNOW_OK &&
+                snow_viewport_process_input(runtime.get(), viewport.get(), &move, &output) ==
+                    SNOW_OK &&
+                snow_viewport_process_input(runtime.get(), viewport.get(), &up, &output) == SNOW_OK,
+            "selected pen-filter overlay test must commit its stroke");
+
+    SnowCanvasDisplayCache cache;
+    require(cache.sync(runtime.get(), viewport.get()),
+            "selected pen-filter overlay test must synchronize its committed stroke");
+    const SnowCanvasSceneItem* penFilter = nullptr;
+    for (std::uint32_t index = 0; index < cache.sceneItemCount(); ++index) {
+        const SnowCanvasSceneItem& item = cache.sceneItems()[index];
+        if (item.kind == SNOW_SCENE_DISPLAY_ITEM_FILTER && item.is_free_draw != 0) {
+            penFilter = &item;
+            break;
+        }
+    }
+    require(penFilter != nullptr,
+            "selected pen-filter overlay test must expose its committed scene item");
+
+    ScopedChangedViewportList changedViewports;
+    require(snow_viewport_select_element_ex(runtime.get(), viewport.get(), penFilter->element_id,
+                                            changedViewports.outParam()) == SNOW_OK,
+            "selected pen-filter overlay test must select its committed stroke");
+    require(cache.sync(runtime.get(), viewport.get()),
+            "selected pen-filter overlay test must synchronize its selection overlay");
+
+    bool hasSelectionFrame = false;
+    bool hasContour = false;
+    for (std::uint32_t index = 0; index < cache.overlayItemCount(); ++index) {
+        const SnowOverlayDisplayItem& item = cache.overlayItems()[index];
+        if (item.kind == SNOW_OVERLAY_DISPLAY_ITEM_PEN_FILTER_CONTOUR) {
+            hasContour = true;
+        }
+        if (item.kind == SNOW_OVERLAY_DISPLAY_ITEM_DRAW_RECT &&
+            item.rect_kind == SNOW_OVERLAY_RECT_SELECTION_FRAME) {
+            hasSelectionFrame = true;
+        }
+    }
+    require(hasSelectionFrame, "a selected pen filter must retain its selection frame");
+    require(!hasContour, "a selected pen filter must not add an outline contour");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -2029,6 +2196,7 @@ int main(int argc, char** argv) {
     mosaicRenderingIsIndependentOfFilterBounds();
     maskedMosaicMatchesReferenceAcrossCoverageAndOrigins();
     mosaicPlanningCropsDirtyOutputAndBatchesEquivalentBlocks();
+    tiledSamplingFiltersMatchAFullCustomBackdropRender();
     movedFiltersMatchAFullRenderAfterDirtyRectangleUpdate();
     filteredBackgroundIsCompositedOnce();
     emptySceneStillRendersBackgroundOnce();
@@ -2049,5 +2217,6 @@ int main(int argc, char** argv) {
     distantSameEffectFiltersUseIndependentSpatialGroups();
     tileCacheTracksPartialValidityAndGlobalBudget();
     penFilterHoverDrawsAPathContour();
+    selectedPenFilterOmitsContourFromTheDisplayCache();
     return 0;
 }

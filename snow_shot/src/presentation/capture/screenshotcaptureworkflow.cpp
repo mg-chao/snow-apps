@@ -43,6 +43,30 @@ QPoint currentPhysicalCursorPosition(const ScreenshotDisplaySession& displaySess
 
     return geometry.physicalPositionForLogicalPoint(displaySession, QCursor::pos());
 }
+
+QVector<QRect> activePhysicalRects(const ScreenshotDisplaySession& displaySession) {
+    QVector<QRect> rects;
+    rects.reserve(static_cast<int>(displaySession.size()));
+    displaySession.forEachActiveDisplay(
+        [&rects](qsizetype, const CapturedDisplayModel& display) {
+            if (!display.physicalRect.isEmpty()) {
+                rects.push_back(display.physicalRect);
+            }
+        });
+    std::sort(rects.begin(), rects.end(), [](const QRect& left, const QRect& right) {
+        if (left.x() != right.x()) {
+            return left.x() < right.x();
+        }
+        if (left.y() != right.y()) {
+            return left.y() < right.y();
+        }
+        if (left.width() != right.width()) {
+            return left.width() < right.width();
+        }
+        return left.height() < right.height();
+    });
+    return rects;
+}
 } // namespace
 
 ScreenshotCaptureWorkflow::ScreenshotCaptureWorkflow(ScreenshotCaptureWorkflowContext context)
@@ -92,13 +116,24 @@ void ScreenshotCaptureWorkflow::startCapture(
     beginCapturePreparation(sessionId);
 }
 
-void ScreenshotCaptureWorkflow::handleInitialSmartSelectionResolved(quint64 sessionId) {
-    if (sessionId != m_state.sessionId || m_initialSmartSelectionPendingSessionId != sessionId) {
-        return;
+bool ScreenshotCaptureWorkflow::handleInitialSmartSelectionResult(
+    quint64 sessionId, const QPoint& physicalPoint, bool ok,
+    const QVector<QRectF>& physicalHitRects) {
+    if (sessionId != m_state.sessionId || m_initialSmartSelectionPendingSessionId != sessionId ||
+        m_visiblePresentationSessionId == sessionId) {
+        return false;
     }
 
-    m_initialSmartSelectionResolvedSessionId = sessionId;
-    showCapturePresentationWhenReady(sessionId);
+    const QPoint currentPoint =
+        currentPhysicalCursorPosition(m_context.displaySession, m_context.geometry);
+    if (physicalPoint != currentPoint &&
+        m_context.runtime.updateSelectorSelectionAt(currentPoint)) {
+        m_initialSmartSelectionPoint = currentPoint;
+        return true;
+    }
+
+    resolveInitialSmartSelection(sessionId, physicalPoint, ok, physicalHitRects);
+    return true;
 }
 
 void ScreenshotCaptureWorkflow::cancelCapture() {
@@ -120,6 +155,10 @@ void ScreenshotCaptureWorkflow::clearCapturePresentationReadiness() {
     m_initialSmartSelectionPendingSessionId = 0;
     m_initialSmartSelectionResolvedSessionId = 0;
     m_visiblePresentationSessionId = 0;
+    m_initialSmartSelectionPoint = QPoint();
+    m_initialSmartSelectionPhysicalHitRects.clear();
+    m_preCapturePhysicalRects.clear();
+    m_initialSmartSelectionSucceeded = false;
 }
 
 void ScreenshotCaptureWorkflow::resetCaptureModels() {
@@ -222,15 +261,26 @@ void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
         return;
     }
 
-    static_cast<void>(
-        m_context.runtime.preparePreCaptureOverlayWindows(m_context.displaySession));
+    const bool overlaysPrepared =
+        m_context.runtime.preparePreCaptureOverlayWindows(m_context.displaySession);
     snow_shot::presentation::screenshot_lifecycle_perf::mark(
         QStringLiteral("presentation.overlay_exclusions_ready"));
-    // Once Snow Shot's windows are excluded, start native acquisition at
-    // once. Selector and canvas initialization wait for a validated capture
-    // result so cancellation can remain a lightweight path.
+    // Queue acquisition first, then overlap selector work with it. A synchronous
+    // acquisition failure invalidates the session before selector startup.
     m_context.runtime.captureAsync(
         ScreenshotCaptureRequest{sessionId, m_state.layoutDirty, m_focusedWindowHandle});
+    if (sessionId != m_state.sessionId || !m_state.captureInProgress) {
+        return;
+    }
+
+    if (!overlaysPrepared || !m_context.displaySession.hasActiveDisplays()) {
+        resolveInitialSmartSelection(sessionId, {}, false, {});
+        return;
+    }
+
+    m_context.geometry.rebuild(m_context.displaySession);
+    m_preCapturePhysicalRects = activePhysicalRects(m_context.displaySession);
+    beginInitialSmartSelection(sessionId);
 }
 
 void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCaptureResult& result) {
@@ -266,6 +316,8 @@ void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCapture
     m_state.layoutDirty = false;
 
     m_state.captureInProgress = false;
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.capture_pixels_ready"));
     if (m_presentationMode == ScreenshotCapturePresentationMode::Silent) {
         m_state.sessionState = ScreenshotSessionState::OverlayVisible;
         m_capturedPresentationSessionId = sessionId;
@@ -274,15 +326,13 @@ void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCapture
         }
         return;
     }
-    m_state.sessionState = ScreenshotSessionState::OverlayVisible;
-    enterOverlaySelectionModeAtCursor();
-    snow_shot::presentation::screenshot_lifecycle_perf::mark(
-        QStringLiteral("presentation.interaction_ready"));
-
     m_context.runtime.applyDisplayModels(m_context.displaySession);
     m_canvasRuntimeClean = false;
 
     m_capturedPresentationSessionId = sessionId;
+    if (!initialSelectorGeometryMatchesCapture()) {
+        retryInitialSmartSelection(sessionId);
+    }
     showCapturePresentationWhenReady(sessionId);
 }
 
@@ -292,18 +342,56 @@ void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 session
         !m_context.displaySession.hasActiveDisplays()) {
         return;
     }
-    m_visiblePresentationSessionId = sessionId;
+    if (m_initialSmartSelectionResolvedSessionId != sessionId) {
+        return;
+    }
 
-    // Native pixels are the only prerequisite for the first frame. Smart
-    // selection refines the already-visible overlay when its asynchronous
-    // hit-test finishes; blocking on it makes the screenshot command feel
-    // stalled even though the captured desktop is ready to display.
+    const QPoint currentPoint =
+        currentPhysicalCursorPosition(m_context.displaySession, m_context.geometry);
+    if (m_initialSmartSelectionSucceeded && m_initialSmartSelectionPoint != currentPoint) {
+        m_initialSmartSelectionResolvedSessionId = 0;
+        m_initialSmartSelectionSucceeded = false;
+        m_initialSmartSelectionPhysicalHitRects.clear();
+        m_initialSmartSelectionPoint = currentPoint;
+        if (m_context.runtime.updateSelectorSelectionAt(currentPoint)) {
+            return;
+        }
+        resolveInitialSmartSelection(sessionId, currentPoint, false, {});
+        return;
+    }
+
+    bool initialSelectionApplied = false;
+    if (m_initialSmartSelectionSucceeded) {
+        initialSelectionApplied =
+            m_context.runtime.applySelectorHitPath(m_initialSmartSelectionPhysicalHitRects);
+    }
+    if (!initialSelectionApplied) {
+        m_context.runtime.clearSelectorSelection();
+        m_context.interaction.enterOverlayVisible(false);
+    }
+    if (m_context.presentation.prepareInitialOverlayState) {
+        m_context.presentation.prepareInitialOverlayState();
+    } else if (m_context.presentation.updateOverlayState) {
+        m_context.presentation.updateOverlayState();
+    }
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.initial_frame_prepared"));
+
+    m_state.sessionState = ScreenshotSessionState::OverlayVisible;
+    m_visiblePresentationSessionId = sessionId;
+    m_initialSmartSelectionPendingSessionId = 0;
+
+    // Reveal only after captured pixels and the initial smart-selection result
+    // have been committed. Keeping this as one presentation step prevents an
+    // incomplete overlay from being visible while selector work finishes.
     snow_shot::presentation::screenshot_lifecycle_perf::mark(
         QStringLiteral("presentation.show_begin"));
     m_context.runtime.showOverlayWindows(m_context.displaySession,
                                          ScreenshotOverlayShowMode::CapturedImage);
     snow_shot::presentation::screenshot_lifecycle_perf::mark(
         QStringLiteral("presentation.show_complete"));
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.first_complete_smart_frame_presented"));
     if (m_context.presentation.updateColorPicker) {
         m_context.presentation.updateColorPicker();
     }
@@ -316,7 +404,8 @@ void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 session
     m_context.runtime.activateOverlayWindows(m_context.displaySession, []() {
         snow_shot::presentation::screenshot_lifecycle_perf::captureInteractionReady();
     });
-    // Toolbar, shortcut hints, and selection decoration are refinement work.
+    // Toolbar, shortcut hints, guide lines, and color-picker decoration are
+    // refinement work. The initial selection frame is already committed.
     // Give external input a brief chance to reach the freshly activated canvas
     // before running this cold-start-heavy pass, while carrying the session ID
     // so a canceled capture cannot apply stale state later.
@@ -330,7 +419,11 @@ void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 session
     }
 }
 
-void ScreenshotCaptureWorkflow::enterOverlaySelectionModeAtCursor() {
+void ScreenshotCaptureWorkflow::beginInitialSmartSelection(quint64 sessionId) {
+    if (sessionId != m_state.sessionId) {
+        return;
+    }
+
     bool selectorReady = m_context.runtime.selectorReady();
     bool selectorRefreshInFlight = m_context.runtime.selectorRefreshInFlight();
     if (!selectorRefreshInFlight && !selectorReady) {
@@ -344,18 +437,74 @@ void ScreenshotCaptureWorkflow::enterOverlaySelectionModeAtCursor() {
     m_context.intelligentSelection.clearPress();
     m_context.runtime.clearSelectorSelection();
     if (!selectorCanRespond) {
+        resolveInitialSmartSelection(sessionId, {}, false, {});
         return;
     }
 
     if (!m_context.runtime.selectorHitTestInFlight()) {
-        m_initialSmartSelectionPendingSessionId = m_state.sessionId;
-        if (m_context.runtime.updateSelectorSelectionAt(
-                currentPhysicalCursorPosition(m_context.displaySession, m_context.geometry))) {
+        m_initialSmartSelectionPendingSessionId = sessionId;
+        m_initialSmartSelectionPoint =
+            currentPhysicalCursorPosition(m_context.displaySession, m_context.geometry);
+        snow_shot::presentation::screenshot_lifecycle_perf::mark(
+            QStringLiteral("presentation.initial_selection_begin"));
+        if (m_context.runtime.updateSelectorSelectionAt(m_initialSmartSelectionPoint)) {
             return;
         }
-        m_initialSmartSelectionPendingSessionId = 0;
-        showCapturePresentationWhenReady(m_state.sessionId);
+        resolveInitialSmartSelection(sessionId, m_initialSmartSelectionPoint, false, {});
     }
+}
+
+void ScreenshotCaptureWorkflow::resolveInitialSmartSelection(
+    quint64 sessionId, const QPoint& physicalPoint, bool ok,
+    const QVector<QRectF>& physicalHitRects) {
+    if (sessionId != m_state.sessionId) {
+        return;
+    }
+
+    m_initialSmartSelectionPendingSessionId = sessionId;
+    m_initialSmartSelectionResolvedSessionId = sessionId;
+    m_initialSmartSelectionPoint = physicalPoint;
+    m_initialSmartSelectionPhysicalHitRects = physicalHitRects;
+    m_initialSmartSelectionSucceeded = ok && !physicalHitRects.isEmpty();
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.initial_selection_resolved"));
+    showCapturePresentationWhenReady(sessionId);
+}
+
+void ScreenshotCaptureWorkflow::retryInitialSmartSelection(quint64 sessionId) {
+    if (sessionId != m_state.sessionId) {
+        return;
+    }
+
+    m_context.runtime.resetHitTestState();
+    m_initialSmartSelectionResolvedSessionId = 0;
+    m_initialSmartSelectionSucceeded = false;
+    m_initialSmartSelectionPhysicalHitRects.clear();
+    m_preCapturePhysicalRects = activePhysicalRects(m_context.displaySession);
+    m_context.runtime.startWorkflowRefresh();
+    beginInitialSmartSelection(sessionId);
+}
+
+bool ScreenshotCaptureWorkflow::initialSelectorGeometryMatchesCapture() const {
+    if (m_preCapturePhysicalRects != activePhysicalRects(m_context.displaySession)) {
+        return false;
+    }
+    if (m_initialSmartSelectionSucceeded &&
+        m_context.geometry.displayForPhysicalPoint(m_context.displaySession,
+                                                  m_initialSmartSelectionPoint) == nullptr) {
+        return false;
+    }
+    if (m_initialSmartSelectionSucceeded) {
+        const QPointF point(m_initialSmartSelectionPoint);
+        const QRectF physicalBounds = m_context.geometry.physicalBounds();
+        for (const QRectF& hitRect : m_initialSmartSelectionPhysicalHitRects) {
+            if (!hitRect.isValid() || hitRect.isEmpty() || !hitRect.contains(point) ||
+                !hitRect.intersects(physicalBounds)) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 void ScreenshotCaptureWorkflow::handleCapturePrepared(quint64, bool ok) {

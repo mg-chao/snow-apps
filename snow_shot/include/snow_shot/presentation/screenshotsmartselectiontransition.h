@@ -19,6 +19,7 @@ class ScreenshotSmartSelectionTransition final {
     void setEnabled(bool enabled);
     [[nodiscard]] bool enabled() const;
     [[nodiscard]] bool update(const QRectF& selection, bool smartFraming);
+    void seed(const QRectF& selection, bool smartFraming);
     void reset();
 
     [[nodiscard]] bool isRunning() const;

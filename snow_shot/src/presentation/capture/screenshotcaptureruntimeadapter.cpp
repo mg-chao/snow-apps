@@ -133,6 +133,10 @@ bool ScreenshotCaptureRuntimeAdapter::updateSelectorSelectionAt(const QPoint& ph
     return m_context.selectorWorkflow.updateSelectionAt(physicalPoint);
 }
 
+bool ScreenshotCaptureRuntimeAdapter::applySelectorHitPath(const QVector<QRectF>& hitRects) {
+    return m_context.selectorWorkflow.applyHitPath(hitRects);
+}
+
 void ScreenshotCaptureRuntimeAdapter::prewarmDisplayPool(ScreenshotDisplaySession& displaySession,
                                                          int displayCount) {
     m_context.overlayCoordinator.prewarmDisplayPool(displaySession, displayCount);

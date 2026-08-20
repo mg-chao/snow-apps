@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/screenshottypes.h"
 
 #include <QPoint>
+#include <QRectF>
 #include <QVector>
 
 #include <cstdint>
@@ -42,6 +43,7 @@ class ScreenshotCaptureRuntimePort {
     virtual void startWorkflowRefresh() = 0;
     virtual void clearSelectorSelection() = 0;
     [[nodiscard]] virtual bool updateSelectorSelectionAt(const QPoint& physicalPoint) = 0;
+    [[nodiscard]] virtual bool applySelectorHitPath(const QVector<QRectF>& hitRects) = 0;
 
     virtual void prewarmDisplayPool(ScreenshotDisplaySession& displaySession, int displayCount) = 0;
     virtual void ensureToolbar() = 0;

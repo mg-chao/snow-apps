@@ -54,6 +54,7 @@ class ScreenshotPresentationServices final {
     void setQuickSelectionDisabledTools(const QSet<SnowCanvasTool>& tools);
     void reloadConfiguredShortcuts();
 
+    void prepareInitialOverlayState();
     void updateOverlayState();
     void updateOverlayCursors() const;
 
@@ -63,6 +64,7 @@ class ScreenshotPresentationServices final {
 
   private:
     void presentSelectionFrame(const QRectF& selection);
+    void presentSelectionOverlay(const QRectF& selection) const;
     void presentOverlayState(const QRectF& selection) const;
     [[nodiscard]] ScreenshotToolbarPresentationState toolbarPresentationState() const;
 

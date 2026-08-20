@@ -68,14 +68,17 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
         return selectorRefreshActive;
     }
     [[nodiscard]] bool selectorHitTestInFlight() const override {
-        return false;
+        return selectorHitTestActive;
     }
     void releaseSelectorCache() override {
         ++releaseSelectorCacheCalls;
         selectorIsReady = false;
         selectorRefreshActive = false;
     }
-    void resetHitTestState() override {}
+    void resetHitTestState() override {
+        ++resetHitTestStateCalls;
+        selectorHitTestActive = false;
+    }
     void destroySelectorService() override {
         ++destroySelectorServiceCalls;
         selectorIsReady = false;
@@ -86,9 +89,19 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
         selectorIsReady = false;
         selectorRefreshActive = true;
     }
-    void clearSelectorSelection() override {}
-    [[nodiscard]] bool updateSelectorSelectionAt(const QPoint&) override {
-        return false;
+    void clearSelectorSelection() override {
+        ++clearSelectorSelectionCalls;
+    }
+    [[nodiscard]] bool updateSelectorSelectionAt(const QPoint& physicalPoint) override {
+        ++updateSelectorSelectionCalls;
+        lastSelectorPoint = physicalPoint;
+        selectorHitTestActive = selectorRequestStarts;
+        return selectorRequestStarts;
+    }
+    [[nodiscard]] bool applySelectorHitPath(const QVector<QRectF>& hitRects) override {
+        ++applySelectorHitPathCalls;
+        lastAppliedHitPath = hitRects;
+        return selectorHitPathApplies && !hitRects.isEmpty();
     }
 
     void prewarmDisplayPool(ScreenshotDisplaySession&, int) override {}
@@ -110,9 +123,19 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     void applyDisplayModels(ScreenshotDisplaySession&) override {
         ++applyDisplayModelsCalls;
     }
-    [[nodiscard]] bool preparePreCaptureOverlayWindows(ScreenshotDisplaySession&) override {
+    [[nodiscard]] bool
+    preparePreCaptureOverlayWindows(ScreenshotDisplaySession& displaySession) override {
         ++preparePreCaptureOverlayCalls;
-        return true;
+        if (preparePreCaptureOverlaySucceeds && displaySession.isEmpty()) {
+            CapturedDisplayModel display;
+            display.name = QStringLiteral("Primary");
+            display.physicalRect = QRect(0, 0, 64, 48);
+            display.logicalRect = display.physicalRect;
+            display.canvasRect = display.physicalRect;
+            display.active = true;
+            displaySession.appendDisplay(display);
+        }
+        return preparePreCaptureOverlaySucceeds;
     }
     void showOverlayWindows(const ScreenshotDisplaySession&, ScreenshotOverlayShowMode) override {
         ++showOverlayCalls;
@@ -148,6 +171,10 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     int releaseIdleResourcesOrder = 0;
     int lifecycleOperationOrder = 0;
     int startWorkflowRefreshCalls = 0;
+    int resetHitTestStateCalls = 0;
+    int clearSelectorSelectionCalls = 0;
+    int updateSelectorSelectionCalls = 0;
+    int applySelectorHitPathCalls = 0;
     int releaseSelectorCacheCalls = 0;
     int destroySelectorServiceCalls = 0;
     mutable int clearOverlayCanvasCalls = 0;
@@ -164,9 +191,15 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     int shutdownCaptureWorkerCalls = 0;
     bool selectorIsReady = false;
     bool selectorRefreshActive = false;
+    bool selectorHitTestActive = false;
+    bool selectorRequestStarts = false;
+    bool selectorHitPathApplies = true;
+    bool preparePreCaptureOverlaySucceeds = true;
     bool workerCreated = true;
     bool captureWasQueuedBeforeSelectorRefresh = false;
     bool failCaptureSynchronously = false;
+    QPoint lastSelectorPoint;
+    QVector<QRectF> lastAppliedHitPath;
     ScreenshotCaptureRequest lastCaptureRequest;
 };
 
@@ -222,8 +255,8 @@ void idlePrewarmDoesNotInitializeSelector() {
     workflow.startCapture();
     workflow.prewarmResources();
     require(runtime.prewarmToolbarCalls == 1, "active capture must not run idle toolbar prewarm");
-    require(runtime.startWorkflowRefreshCalls == 0 && !runtime.selectorRefreshActive,
-            "capture start must defer selector initialization until pixels arrive");
+    require(runtime.startWorkflowRefreshCalls == 1 && runtime.selectorRefreshActive,
+            "capture start must overlap selector initialization with native acquisition");
 }
 
 void cancelClearsTheReusableCanvasDocument() {
@@ -279,7 +312,7 @@ void cancelClearsTheReusableCanvasDocument() {
             "the next capture must not depend on idle prewarm after cold cancellation");
 }
 
-void captureDefersSelectorInitializationUntilPixelsArrive() {
+void captureStartsSelectorInitializationWhilePixelsAreInFlight() {
     ScreenshotCaptureState state;
     state.sessionState = ScreenshotSessionState::IdlePrepared;
     ScreenshotDisplaySession displaySession;
@@ -296,8 +329,8 @@ void captureDefersSelectorInitializationUntilPixelsArrive() {
 
     require(runtime.captureAllAsyncCalls == 1 &&
                 runtime.captureWasQueuedBeforeSelectorRefresh &&
-                runtime.startWorkflowRefreshCalls == 0 && !runtime.selectorRefreshActive,
-            "capture start must queue native acquisition before selector initialization");
+                runtime.startWorkflowRefreshCalls == 1 && runtime.selectorRefreshActive,
+            "capture start must queue acquisition first and then overlap selector refresh");
 
     CapturedDisplayModel snapshot;
     snapshot.stableId = QStringLiteral("primary");
@@ -309,7 +342,245 @@ void captureDefersSelectorInitializationUntilPixelsArrive() {
     runtime.eventSink->handleCaptureFinished(successfulResult(state.sessionId, snapshot));
 
     require(runtime.startWorkflowRefreshCalls == 1 && runtime.selectorRefreshActive,
-            "validated capture pixels must initialize the selector snapshot");
+            "capture completion must not redundantly restart the selector snapshot");
+}
+
+void presentationWaitsForPixelsAndInitialSelectionInEitherOrder() {
+    CapturedDisplayModel snapshot;
+    snapshot.stableId = QStringLiteral("primary");
+    snapshot.name = QStringLiteral("Primary");
+    snapshot.physicalRect = QRect(0, 0, 64, 48);
+    snapshot.logicalRect = snapshot.physicalRect;
+    snapshot.image = QImage(snapshot.physicalRect.size(), QImage::Format_RGBA8888);
+
+    {
+        ScreenshotCaptureState state;
+        state.sessionState = ScreenshotSessionState::IdlePrepared;
+        ScreenshotDisplaySession displays;
+        ScreenshotGeometryMapper geometry;
+        ScreenshotInteractionState interaction;
+        ScreenshotSelectionModel selection;
+        ScreenshotIntelligentSelectionModel intelligentSelection;
+        CaptureRuntime runtime;
+        runtime.selectorRequestStarts = true;
+        int initialFramePrepared = 0;
+        ScreenshotCaptureWorkflow workflow({
+            state,
+            runtime,
+            geometry,
+            displays,
+            interaction,
+            selection,
+            intelligentSelection,
+            ScreenshotCapturePresentationCallbacks{{}, {}, {}, {}, {},
+                                                   [&initialFramePrepared]() {
+                                                       ++initialFramePrepared;
+                                                   }},
+        });
+
+        workflow.startCapture();
+        runtime.eventSink->handleCaptureFinished(successfulResult(state.sessionId, snapshot));
+        require(runtime.showOverlayCalls == 0 && initialFramePrepared == 0,
+                "pixels-first capture must remain hidden until initial selection resolves");
+
+        const QVector<QRectF> path{QRectF(0, 0, 64, 48)};
+        require(workflow.handleInitialSmartSelectionResult(state.sessionId,
+                                                           runtime.lastSelectorPoint, true, path),
+                "active initial selector result must be consumed by capture workflow");
+        require(runtime.applySelectorHitPathCalls == 1 &&
+                    runtime.lastAppliedHitPath == path && initialFramePrepared == 1 &&
+                    runtime.showOverlayCalls == 1,
+                "pixels-first capture must reveal one complete selected frame");
+        require(!workflow.handleInitialSmartSelectionResult(
+                    state.sessionId, runtime.lastSelectorPoint, true, path),
+                "post-presentation hover results must return to the normal selector workflow");
+    }
+
+    {
+        ScreenshotCaptureState state;
+        state.sessionState = ScreenshotSessionState::IdlePrepared;
+        ScreenshotDisplaySession displays;
+        ScreenshotGeometryMapper geometry;
+        ScreenshotInteractionState interaction;
+        ScreenshotSelectionModel selection;
+        ScreenshotIntelligentSelectionModel intelligentSelection;
+        CaptureRuntime runtime;
+        runtime.selectorRequestStarts = true;
+        auto workflow = makeWorkflow(state, displays, geometry, interaction, selection,
+                                     intelligentSelection, runtime);
+
+        workflow.startCapture();
+        const QVector<QRectF> path{QRectF(0, 0, 64, 48)};
+        require(workflow.handleInitialSmartSelectionResult(state.sessionId,
+                                                           runtime.lastSelectorPoint, true, path),
+                "selection-first result must be retained for the active capture");
+        require(runtime.showOverlayCalls == 0 && runtime.applySelectorHitPathCalls == 0,
+                "selection-first capture must remain hidden until pixels arrive");
+
+        runtime.eventSink->handleCaptureFinished(successfulResult(state.sessionId, snapshot));
+        require(runtime.applySelectorHitPathCalls == 1 && runtime.showOverlayCalls == 1,
+                "selection-first capture must reveal one complete selected frame");
+    }
+}
+
+void initialSelectorFailureResolvesToManualSelection() {
+    ScreenshotCaptureState state;
+    state.sessionState = ScreenshotSessionState::IdlePrepared;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligentSelection;
+    CaptureRuntime runtime;
+    runtime.selectorRequestStarts = true;
+    auto workflow = makeWorkflow(state, displays, geometry, interaction, selection,
+                                 intelligentSelection, runtime);
+
+    workflow.startCapture();
+    require(workflow.handleInitialSmartSelectionResult(state.sessionId,
+                                                       runtime.lastSelectorPoint, false, {}),
+            "failed initial result must still resolve the presentation barrier");
+
+    CapturedDisplayModel snapshot;
+    snapshot.name = QStringLiteral("Primary");
+    snapshot.physicalRect = QRect(0, 0, 64, 48);
+    snapshot.logicalRect = snapshot.physicalRect;
+    snapshot.image = QImage(snapshot.physicalRect.size(), QImage::Format_RGBA8888);
+    runtime.eventSink->handleCaptureFinished(successfulResult(state.sessionId, snapshot));
+
+    require(runtime.showOverlayCalls == 1 && runtime.applySelectorHitPathCalls == 0 &&
+                interaction.manualSelecting(),
+            "selector failure must show once in manual mode instead of deadlocking");
+}
+
+void initialSelectionCoalescesToTheLatestCursorPoint() {
+    ScreenshotCaptureState state;
+    state.sessionState = ScreenshotSessionState::IdlePrepared;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligentSelection;
+    CaptureRuntime runtime;
+    runtime.selectorRequestStarts = true;
+    auto workflow = makeWorkflow(state, displays, geometry, interaction, selection,
+                                 intelligentSelection, runtime);
+
+    workflow.startCapture();
+    const QPoint stalePoint = runtime.lastSelectorPoint + QPoint(1, 0);
+    require(workflow.handleInitialSmartSelectionResult(
+                state.sessionId, stalePoint, true, {QRectF(0, 0, 64, 48)}),
+            "a superseded initial result must be consumed");
+    require(runtime.updateSelectorSelectionCalls == 2 && runtime.showOverlayCalls == 0,
+            "a superseded result must queue the latest point without resolving presentation");
+
+    const QPoint latestPoint = runtime.lastSelectorPoint;
+    require(workflow.handleInitialSmartSelectionResult(
+                state.sessionId, latestPoint, true, {QRectF(0, 0, 64, 48)}),
+            "the latest initial result must be consumed");
+
+    CapturedDisplayModel snapshot;
+    snapshot.name = QStringLiteral("Primary");
+    snapshot.physicalRect = QRect(0, 0, 64, 48);
+    snapshot.logicalRect = snapshot.physicalRect;
+    snapshot.image = QImage(snapshot.physicalRect.size(), QImage::Format_RGBA8888);
+    runtime.eventSink->handleCaptureFinished(successfulResult(state.sessionId, snapshot));
+    require(runtime.showOverlayCalls == 1,
+            "the latest settled cursor result must unlock the complete first frame");
+}
+
+void changedCaptureGeometryInvalidatesTheEarlySelectorResult() {
+    ScreenshotCaptureState state;
+    state.sessionState = ScreenshotSessionState::IdlePrepared;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligentSelection;
+    CaptureRuntime runtime;
+    runtime.selectorRequestStarts = true;
+    auto workflow = makeWorkflow(state, displays, geometry, interaction, selection,
+                                 intelligentSelection, runtime);
+
+    workflow.startCapture();
+    require(workflow.handleInitialSmartSelectionResult(
+                state.sessionId, runtime.lastSelectorPoint, true, {QRectF(0, 0, 64, 48)}),
+            "early selector result must be retained until capture geometry is known");
+
+    CapturedDisplayModel changedSnapshot;
+    changedSnapshot.name = QStringLiteral("Primary");
+    changedSnapshot.physicalRect = QRect(0, 0, 80, 60);
+    changedSnapshot.logicalRect = changedSnapshot.physicalRect;
+    changedSnapshot.image =
+        QImage(changedSnapshot.physicalRect.size(), QImage::Format_RGBA8888);
+    runtime.eventSink->handleCaptureFinished(successfulResult(state.sessionId, changedSnapshot));
+    require(runtime.resetHitTestStateCalls == 1 && runtime.startWorkflowRefreshCalls == 2 &&
+                runtime.showOverlayCalls == 0,
+            "changed final geometry must invalidate the early result and refresh the selector");
+
+    require(workflow.handleInitialSmartSelectionResult(
+                state.sessionId, runtime.lastSelectorPoint, true, {QRectF(0, 0, 80, 60)}),
+            "geometry retry result must be consumed");
+    require(runtime.showOverlayCalls == 1 && runtime.applySelectorHitPathCalls == 1,
+            "geometry retry must reveal exactly one remapped complete frame");
+}
+
+void changedCaptureGeometryInvalidatesAnInFlightSelectorRequest() {
+    ScreenshotCaptureState state;
+    state.sessionState = ScreenshotSessionState::IdlePrepared;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligentSelection;
+    CaptureRuntime runtime;
+    runtime.selectorRequestStarts = true;
+    auto workflow = makeWorkflow(state, displays, geometry, interaction, selection,
+                                 intelligentSelection, runtime);
+
+    workflow.startCapture();
+
+    CapturedDisplayModel changedSnapshot;
+    changedSnapshot.name = QStringLiteral("Primary");
+    changedSnapshot.physicalRect = QRect(0, 0, 80, 60);
+    changedSnapshot.logicalRect = changedSnapshot.physicalRect;
+    changedSnapshot.image =
+        QImage(changedSnapshot.physicalRect.size(), QImage::Format_RGBA8888);
+    runtime.eventSink->handleCaptureFinished(successfulResult(state.sessionId, changedSnapshot));
+
+    require(runtime.resetHitTestStateCalls == 1 && runtime.startWorkflowRefreshCalls == 2 &&
+                runtime.updateSelectorSelectionCalls == 2 && runtime.showOverlayCalls == 0,
+            "changed final geometry must replace an in-flight early selector request");
+
+    require(workflow.handleInitialSmartSelectionResult(
+                state.sessionId, runtime.lastSelectorPoint, true, {QRectF(0, 0, 80, 60)}),
+            "replacement selector result must be consumed");
+    require(runtime.showOverlayCalls == 1 && runtime.applySelectorHitPathCalls == 1,
+            "replacement result must reveal exactly one complete frame");
+}
+
+void canceledCaptureRejectsItsStaleSelectorResult() {
+    ScreenshotCaptureState state;
+    state.sessionState = ScreenshotSessionState::IdlePrepared;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligentSelection;
+    CaptureRuntime runtime;
+    runtime.selectorRequestStarts = true;
+    auto workflow = makeWorkflow(state, displays, geometry, interaction, selection,
+                                 intelligentSelection, runtime);
+
+    workflow.startCapture();
+    const quint64 canceledSession = state.sessionId;
+    const QPoint requestPoint = runtime.lastSelectorPoint;
+    workflow.cancelCapture();
+
+    require(!workflow.handleInitialSmartSelectionResult(
+                canceledSession, requestPoint, true, {QRectF(0, 0, 64, 48)}) &&
+                runtime.showOverlayCalls == 0,
+            "a canceled session must reject stale selector completion");
 }
 
 void canceledCaptureIgnoresStalePixelsWithoutInitializingSelector() {
@@ -338,9 +609,9 @@ void canceledCaptureIgnoresStalePixelsWithoutInitializingSelector() {
 
     runtime.eventSink->handleCaptureFinished(successfulResult(canceledSessionId, snapshot));
 
-    require(runtime.startWorkflowRefreshCalls == 0 && runtime.applyDisplayModelsCalls == 0 &&
+    require(runtime.startWorkflowRefreshCalls == 1 && runtime.applyDisplayModelsCalls == 0 &&
                 runtime.showOverlayCalls == 0,
-            "stale pixels from a canceled capture must not initialize presentation resources");
+            "stale pixels must not restart selector work or initialize presentation resources");
 }
 
 void synchronousCaptureFailureDoesNotRestartSelectorRefresh() {
@@ -396,8 +667,8 @@ void restartingCaptureReleasesPreviousSelectorCache() {
 
     require(runtime.releaseSelectorCacheCalls == 1,
             "starting a new capture must release the previous selector cache");
-    require(runtime.startWorkflowRefreshCalls == 0,
-            "the restarted capture must defer its fresh selector snapshot until pixels arrive");
+    require(runtime.startWorkflowRefreshCalls == 1,
+            "the restarted capture must overlap its fresh selector snapshot with acquisition");
     require(captureTerminatedCalls == 1,
             "restarting a capture must stop features owned by the previous capture");
 }
@@ -710,7 +981,13 @@ void captureSessionsApplyTheCurrentSmartSelectionSetting() {
 int main() {
     idlePrewarmDoesNotInitializeSelector();
     cancelClearsTheReusableCanvasDocument();
-    captureDefersSelectorInitializationUntilPixelsArrive();
+    captureStartsSelectorInitializationWhilePixelsAreInFlight();
+    presentationWaitsForPixelsAndInitialSelectionInEitherOrder();
+    initialSelectorFailureResolvesToManualSelection();
+    initialSelectionCoalescesToTheLatestCursorPoint();
+    changedCaptureGeometryInvalidatesTheEarlySelectorResult();
+    changedCaptureGeometryInvalidatesAnInFlightSelectorRequest();
+    canceledCaptureRejectsItsStaleSelectorResult();
     canceledCaptureIgnoresStalePixelsWithoutInitializingSelector();
     synchronousCaptureFailureDoesNotRestartSelectorRefresh();
     restartingCaptureReleasesPreviousSelectorCache();

@@ -62,6 +62,14 @@ bool ScreenshotSmartSelectionTransition::update(const QRectF& selection, bool sm
     return true;
 }
 
+void ScreenshotSmartSelectionTransition::seed(const QRectF& selection, bool smartFraming) {
+    m_animation.stop();
+    m_displayedSelection = selection;
+    m_targetSelection = selection;
+    m_hasPresentedSmartSelection =
+        smartFraming && selection.isValid() && !selection.isEmpty();
+}
+
 void ScreenshotSmartSelectionTransition::reset() {
     m_animation.stop();
     m_displayedSelection = {};

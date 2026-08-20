@@ -96,6 +96,13 @@ void ScreenshotPresentationServices::reloadConfiguredShortcuts() {
     m_configuredShortcuts = snow_shot::storage::ScreenshotShortcutSettings().allShortcuts();
 }
 
+void ScreenshotPresentationServices::prepareInitialOverlayState() {
+    const bool smartFraming = m_context.interaction.intelligentSelecting();
+    const QRectF selection = m_context.selection.normalizedSelection();
+    m_smartSelectionTransition.seed(selection, smartFraming);
+    presentSelectionOverlay(selection);
+}
+
 void ScreenshotPresentationServices::updateOverlayState() {
     const bool smartFraming = m_context.interaction.intelligentSelecting();
     const ScreenshotToolbarPresentationState toolbarState = toolbarPresentationState();
@@ -119,16 +126,7 @@ void ScreenshotPresentationServices::presentSelectionFrame(const QRectF& selecti
 }
 
 void ScreenshotPresentationServices::presentOverlayState(const QRectF& selection) const {
-    m_context.overlayCoordinator.setSelectionMaskColor(m_context.displaySession,
-                                                       m_uiPreferences.selectionMaskColor);
-    m_context.overlayCoordinator.updateOverlayState(
-        m_context.displaySession, selection, m_context.selection.cornerRadius(),
-        m_context.selection.shadowWidth(), m_context.selection.shadowColor(),
-        m_selectionToolbarHovered,
-        !m_context.interaction.intelligentSelecting() &&
-            m_context.interaction.selectionHandlesVisible(),
-        m_context.interaction.intelligentSelecting(), m_context.interaction.marqueeSelecting(),
-        m_context.interaction.dragging());
+    presentSelectionOverlay(selection);
 
     m_context.overlayCoordinator.updateGuideLinesAtGlobalPosition(
         m_context.displaySession, QCursor::pos(), m_context.interaction.selecting(),
@@ -177,6 +175,19 @@ void ScreenshotPresentationServices::presentOverlayState(const QRectF& selection
     m_context.overlayCoordinator.updateShortcutHints(hintOwner, hintContext,
                                                      m_uiPreferences.shortcutHintOpacity,
                                                      selectionGlobal);
+}
+
+void ScreenshotPresentationServices::presentSelectionOverlay(const QRectF& selection) const {
+    m_context.overlayCoordinator.setSelectionMaskColor(m_context.displaySession,
+                                                       m_uiPreferences.selectionMaskColor);
+    m_context.overlayCoordinator.updateOverlayState(
+        m_context.displaySession, selection, m_context.selection.cornerRadius(),
+        m_context.selection.shadowWidth(), m_context.selection.shadowColor(),
+        m_selectionToolbarHovered,
+        !m_context.interaction.intelligentSelecting() &&
+            m_context.interaction.selectionHandlesVisible(),
+        m_context.interaction.intelligentSelecting(), m_context.interaction.marqueeSelecting(),
+        m_context.interaction.dragging());
 }
 
 void ScreenshotPresentationServices::updateOverlayCursors() const {

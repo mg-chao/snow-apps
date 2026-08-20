@@ -45,6 +45,7 @@ class ScreenshotCaptureRuntimeAdapter final : public ScreenshotCaptureRuntimePor
     void startWorkflowRefresh() override;
     void clearSelectorSelection() override;
     [[nodiscard]] bool updateSelectorSelectionAt(const QPoint& physicalPoint) override;
+    [[nodiscard]] bool applySelectorHitPath(const QVector<QRectF>& hitRects) override;
 
     void prewarmDisplayPool(ScreenshotDisplaySession& displaySession, int displayCount) override;
     void ensureToolbar() override;
