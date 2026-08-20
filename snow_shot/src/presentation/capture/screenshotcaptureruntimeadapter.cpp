@@ -182,6 +182,12 @@ void ScreenshotCaptureRuntimeAdapter::showOverlayWindows(
     m_context.overlayCoordinator.showOverlayWindows(displaySession, mode);
 }
 
+void ScreenshotCaptureRuntimeAdapter::activateOverlayWindows(
+    const ScreenshotDisplaySession& displaySession, std::function<void()> interactionReady) {
+    m_context.overlayCoordinator.activateOverlayWindows(displaySession,
+                                                        std::move(interactionReady));
+}
+
 void ScreenshotCaptureRuntimeAdapter::hideOverlayWindows(
     const ScreenshotDisplaySession& displaySession) {
     m_context.overlayCoordinator.hideOverlayWindows(displaySession);

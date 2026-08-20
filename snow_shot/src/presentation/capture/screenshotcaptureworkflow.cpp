@@ -310,6 +310,12 @@ void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 session
     if (m_context.presentation.capturePresented) {
         m_context.presentation.capturePresented();
     }
+    // Publish the visible frame before the Windows foreground negotiation. The
+    // latter is required for reliable mouse/keyboard routing, but can block on
+    // the compositor for a frame and must not delay screenshot presentation.
+    m_context.runtime.activateOverlayWindows(m_context.displaySession, []() {
+        snow_shot::presentation::screenshot_lifecycle_perf::captureInteractionReady();
+    });
     // Toolbar, shortcut hints, and selection decoration are refinement work.
     // Give external input a brief chance to reach the freshly activated canvas
     // before running this cold-start-heavy pass, while carrying the session ID

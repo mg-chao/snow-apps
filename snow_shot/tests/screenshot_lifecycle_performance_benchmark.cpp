@@ -42,7 +42,7 @@ using namespace std::chrono_literals;
 
 constexpr qint64 kBytesPerKibibyte = 1024;
 constexpr qint64 kBytesPerMebibyte = 1024 * 1024;
-constexpr qint64 kDefaultMaximumFirstScreenshotMilliseconds = 128;
+constexpr qint64 kDefaultMaximumFirstScreenshotMilliseconds = 100;
 constexpr qint64 kDefaultMaximumPrivateWorkingSetMebibytes = 18;
 constexpr qint64 kDefaultMaximumPrivateWorkingSetDeltaMebibytes = 2;
 
@@ -291,6 +291,14 @@ void dragSelection(const RECT& monitor) {
     sendMouse(endX, endY, MOUSEEVENTF_MOVE);
     std::this_thread::sleep_for(40ms);
     sendMouse(endX, endY, MOUSEEVENTF_LEFTUP);
+}
+
+void positionCursorForCapture(const RECT& monitor) {
+    const int width = monitor.right - monitor.left;
+    const int height = monitor.bottom - monitor.top;
+    require(width > 0 && height > 0, "selected monitor has invalid bounds");
+    sendMouse(monitor.left + width / 2, monitor.top + height / 2, MOUSEEVENTF_MOVE);
+    std::this_thread::sleep_for(20ms);
 }
 
 ComPtr<IUIAutomation> createAutomation() {
@@ -774,6 +782,8 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
 
+    positionCursorForCapture(monitor.bounds);
+
     ChildProcess request;
     QStringList requestArguments = baseArguments;
     requestArguments.push_back(QStringLiteral("--e2e-start-screenshot"));
@@ -793,6 +803,14 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
             "screenshot ended before its first frame was presented");
     const qint64 elapsedNanoseconds = presentation.value(QStringLiteral("elapsed_ns")).toInteger();
     require(elapsedNanoseconds > 0, "first screenshot duration was not recorded");
+
+    const QJsonObject interactionReady = waitForTraceEvent(
+        tracePath, primary.processId(),
+        {QStringLiteral("capture_interaction_ready"), QStringLiteral("capture_released")},
+        traceCursor, primary, configuration.timeoutMilliseconds);
+    require(interactionReady.value(QStringLiteral("event")).toString() ==
+                QStringLiteral("capture_interaction_ready"),
+            "screenshot ended before the overlay became interactive");
 
     dragSelection(monitor.bounds);
     ComPtr<IUIAutomationElement> cancelButton = waitForVisibleElement(

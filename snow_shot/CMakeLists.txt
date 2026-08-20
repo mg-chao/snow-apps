@@ -1410,6 +1410,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenshotselectionparams.h
         src/presentation/capture/screenshotcapturedisplaymodelreconciler.cpp
         src/presentation/capture/screenshotcaptureworkflow.cpp
+        src/presentation/services/screenshotlifecycleperfinstrumentation.cpp
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/core/screenshotintelligentselectionmodel.cpp
         src/presentation/core/screenshotinteractionstate.cpp

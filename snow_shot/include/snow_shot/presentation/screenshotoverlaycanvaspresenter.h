@@ -26,6 +26,8 @@ class ScreenshotOverlayCanvasPresenter final {
     void applyDisplayModels(ScreenshotDisplaySession& displaySession) const;
     void showOverlayWindows(const ScreenshotDisplaySession& displaySession,
                             ScreenshotOverlayShowMode mode) const;
+    void activateOverlayWindows(const ScreenshotDisplaySession& displaySession,
+                                std::function<void()> interactionReady) const;
     void updateOverlayState(const ScreenshotDisplaySession& displaySession, const QRectF& selection,
                             int cornerRadius, int shadowWidth, const QColor& shadowColor,
                             bool selectionToolbarHovered, bool selectionHandlesVisible,

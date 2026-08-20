@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
+#include "../services/screenshotlifecycleperfinstrumentation.h"
 
 #include <QCursor>
 #include <QScreen>
@@ -116,55 +117,67 @@ void raiseOverlayWindow(ScreenshotOverlayWindow& overlay) {
     overlay.raise();
 }
 
-void activateAndFocusOverlayWindow(ScreenshotOverlayWindow& overlay) {
+void completeOverlayFocusHandoff(ScreenshotOverlayWindow& overlay,
+                                 std::function<void()> interactionReady,
+                                 int remainingAttempts) {
+    if (!overlay.isVisible()) {
+        return;
+    }
+
+    SnowCanvasWidget* canvas = overlay.canvas();
+    if (canvas != nullptr && canvas->isVisible()) {
+        canvas->setFocus(Qt::OtherFocusReason);
+    }
+    const bool focusReady =
+        overlay.isActiveWindow() &&
+        (canvas == nullptr || !canvas->isVisible() || canvas->hasFocus());
+    if (!interactionReady || focusReady) {
+        if (interactionReady) {
+            interactionReady();
+        }
+        return;
+    }
+    if (remainingAttempts <= 0) {
+        return;
+    }
+
+    QTimer::singleShot(
+        10, &overlay,
+        [&overlay, interactionReady = std::move(interactionReady), remainingAttempts]() mutable {
+            completeOverlayFocusHandoff(overlay, std::move(interactionReady),
+                                        remainingAttempts - 1);
+        });
+}
+
+void activateAndFocusOverlayWindow(ScreenshotOverlayWindow& overlay,
+                                   std::function<void()> interactionReady = {}) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    // QWidget::activateWindow() performs a foreground-window negotiation on
-    // Windows. That negotiation can block on the compositor for a frame or
-    // more, even though the overlay is already raised and receives pointer
-    // input. Complete the request after the first frame has been flushed.
-    QTimer::singleShot(0, &overlay, [&overlay]() {
-        if (!overlay.isVisible()) {
-            return;
-        }
-        if (QWindow* handle = overlay.windowHandle(); handle != nullptr) {
-            static_cast<void>(handle->requestActivate());
-        }
-        if (SnowCanvasWidget* canvas = overlay.canvas(); canvas != nullptr &&
-            canvas->isVisible()) {
-            canvas->setFocus(Qt::OtherFocusReason);
-        }
+    // Foreground negotiation is required for reliable mouse and keyboard
+    // routing, but may synchronously wait on the compositor. Call it only
+    // after the captured image has been published.
+    if (QWindow* handle = overlay.windowHandle(); handle != nullptr) {
+        static_cast<void>(handle->requestActivate());
+    }
+    QTimer::singleShot(0, &overlay,
+                       [&overlay, interactionReady = std::move(interactionReady)]() mutable {
+        completeOverlayFocusHandoff(overlay, std::move(interactionReady), 100);
     });
 #else
     overlay.activateWindow();
     if (overlay.canvas() != nullptr) {
         overlay.canvas()->setFocus(Qt::OtherFocusReason);
     }
+    if (interactionReady) {
+        interactionReady();
+    }
 #endif
     overlay.commitInitialSelectionCursor();
 }
 
-void activateOverlayWindow(ScreenshotOverlayWindow& overlay) {
+void activateOverlayWindow(ScreenshotOverlayWindow& overlay,
+                           std::function<void()> interactionReady = {}) {
     raiseOverlayWindow(overlay);
-    activateAndFocusOverlayWindow(overlay);
-}
-
-void scheduleOverlayActivation(ScreenshotOverlayWindow* overlay) {
-    if (overlay == nullptr) {
-        return;
-    }
-
-    QTimer::singleShot(0, overlay, [overlay]() {
-        if (overlay == nullptr || !overlay->isVisible()) {
-            return;
-        }
-
-        activateAndFocusOverlayWindow(*overlay);
-        QTimer::singleShot(0, overlay, [overlay]() {
-            if (overlay != nullptr && overlay->isVisible()) {
-                overlay->commitInitialSelectionCursor();
-            }
-        });
-    });
+    activateAndFocusOverlayWindow(overlay, std::move(interactionReady));
 }
 
 void showOverlayWindow(ScreenshotOverlayWindow& overlay) {
@@ -208,7 +221,7 @@ void showCapturedImageOverlayNow(ScreenshotOverlayWindow& overlay) {
     if (!overlay.isVisible()) {
         showOverlayWindow(overlay);
     }
-    activateOverlayWindow(overlay);
+    raiseOverlayWindow(overlay);
 }
 
 void showCapturedImageOverlayDeferred(ScreenshotOverlayWindow* overlay) {
@@ -225,7 +238,6 @@ void showCapturedImageOverlayDeferred(ScreenshotOverlayWindow* overlay) {
             showOverlayWindow(*overlay);
         }
         raiseOverlayWindow(*overlay);
-        scheduleOverlayActivation(overlay);
     });
 }
 
@@ -270,6 +282,24 @@ void showOverlayWindowsForDisplaySession(const ScreenshotDisplaySession& display
 void ScreenshotOverlayCanvasPresenter::showOverlayWindows(
     const ScreenshotDisplaySession& displaySession, ScreenshotOverlayShowMode mode) const {
     showOverlayWindowsForDisplaySession(displaySession, mode);
+}
+
+void ScreenshotOverlayCanvasPresenter::activateOverlayWindows(
+    const ScreenshotDisplaySession& displaySession,
+    std::function<void()> interactionReady) const {
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.activate_begin"));
+    const QVector<ActiveOverlayEntry> entries = activeOverlayEntries(displaySession);
+    const qsizetype preferredIndex = preferredOverlayEntryIndex(entries, QCursor::pos());
+    if (preferredIndex >= 0 && preferredIndex < entries.size()) {
+        ScreenshotOverlayWindow& preferredOverlay = *entries.at(preferredIndex).overlay;
+        if (!preferredOverlay.isVisible()) {
+            showOverlayWindow(preferredOverlay);
+        }
+        activateOverlayWindow(preferredOverlay, std::move(interactionReady));
+    }
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.activate_complete"));
 }
 
 namespace {

@@ -10,6 +10,7 @@ void beginCapture();
 void mark(const QString& event);
 [[nodiscard]] bool captureActive();
 void capturePresented();
+void captureInteractionReady();
 void captureReleased();
 } // namespace snow_shot::presentation::screenshot_lifecycle_perf
 

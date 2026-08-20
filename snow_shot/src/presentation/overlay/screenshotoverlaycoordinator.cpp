@@ -13,6 +13,7 @@
 #include <QWidget>
 
 #include <limits>
+#include <utility>
 
 ScreenshotOverlayCoordinator::ScreenshotOverlayCoordinator(ScreenshotOverlayEventSink& eventSink,
                                                            SnowCanvasRuntime& canvasRuntime,
@@ -151,6 +152,11 @@ void ScreenshotOverlayCoordinator::showOverlayWindows(
     const ScreenshotDisplaySession& displaySession, ScreenshotOverlayShowMode mode) {
     flushDeferredOverlayMaintenance(displaySession);
     m_canvasPresenter.showOverlayWindows(displaySession, mode);
+}
+
+void ScreenshotOverlayCoordinator::activateOverlayWindows(
+    const ScreenshotDisplaySession& displaySession, std::function<void()> interactionReady) {
+    m_canvasPresenter.activateOverlayWindows(displaySession, std::move(interactionReady));
 }
 
 void ScreenshotOverlayCoordinator::hideOverlayWindowsImmediately(

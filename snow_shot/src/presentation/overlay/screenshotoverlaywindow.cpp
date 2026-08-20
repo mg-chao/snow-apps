@@ -408,15 +408,10 @@ void ScreenshotOverlayWindow::showPreparedFrame() {
     snow_shot::presentation::screenshot_lifecycle_perf::mark(
         QStringLiteral("presentation.show_posted_events_complete"));
 
-#if defined(Q_OS_WIN) || defined(_WIN32)
-    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
-        const HWND hwnd = reinterpret_cast<HWND>(winId());
-        if (hwnd != nullptr) {
-            static_cast<void>(RedrawWindow(hwnd, nullptr, nullptr,
-                                           RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN));
-        }
-    }
-#endif
+    // Avoid a second native RDW_UPDATENOW/ALLCHILDREN pass here. The prepared
+    // canvas has already been committed through Qt's synchronous repaint and
+    // UpdateRequest processing; the lifecycle probe verifies compositor
+    // visibility before recording the presentation milestone.
     snow_shot::presentation::screenshot_lifecycle_perf::mark(
         QStringLiteral("presentation.show_redraw_complete"));
 

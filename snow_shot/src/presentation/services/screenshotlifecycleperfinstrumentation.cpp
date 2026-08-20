@@ -142,6 +142,16 @@ void capturePresented() {
     flushPendingPhaseEvents();
 }
 
+void captureInteractionReady() {
+    QMutexLocker lock(&traceMutex);
+    if (!activeCapture || !captureWasPresented || !captureTimer.isValid()) {
+        return;
+    }
+    writeSynchronizationEvent(
+        QStringLiteral("capture_interaction_ready"),
+        QJsonObject{{QStringLiteral("elapsed_ns"), captureTimer.nsecsElapsed()}});
+}
+
 void captureReleased() {
     QMutexLocker lock(&traceMutex);
     if (!activeCapture) {
@@ -169,6 +179,7 @@ bool captureActive() {
     return false;
 }
 void capturePresented() {}
+void captureInteractionReady() {}
 void captureReleased() {}
 } // namespace snow_shot::presentation::screenshot_lifecycle_perf
 

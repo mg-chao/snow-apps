@@ -18,6 +18,7 @@
 #include <QVector>
 
 #include <cstdint>
+#include <functional>
 
 class ScreenshotColorPickerWidget;
 class ScreenshotDisplaySession;
@@ -52,6 +53,8 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     [[nodiscard]] bool preparePreCaptureOverlayWindows(ScreenshotDisplaySession& displaySession);
     void showOverlayWindows(const ScreenshotDisplaySession& displaySession,
                             ScreenshotOverlayShowMode mode);
+    void activateOverlayWindows(const ScreenshotDisplaySession& displaySession,
+                                std::function<void()> interactionReady);
     void hideOverlayWindowsImmediately(const ScreenshotDisplaySession& displaySession);
     void hideOverlayWindows(const ScreenshotDisplaySession& displaySession);
     void updateOverlayState(const ScreenshotDisplaySession& displaySession, const QRectF& selection,

@@ -117,6 +117,14 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     void showOverlayWindows(const ScreenshotDisplaySession&, ScreenshotOverlayShowMode) override {
         ++showOverlayCalls;
     }
+    void activateOverlayWindows(const ScreenshotDisplaySession&,
+                                std::function<void()> interactionReady) override {
+        ++activateOverlayCalls;
+        if (interactionReady) {
+            ++interactionReadyCalls;
+            interactionReady();
+        }
+    }
     void hideOverlayWindows(const ScreenshotDisplaySession&) override {
         ++hideOverlayCalls;
     }
@@ -146,6 +154,8 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     int clearDisplayCalls = 0;
     int destroyDisplayPoolCalls = 0;
     int showOverlayCalls = 0;
+    int activateOverlayCalls = 0;
+    int interactionReadyCalls = 0;
     int applyDisplayModelsCalls = 0;
     int preparePreCaptureOverlayCalls = 0;
     int hideOverlayCalls = 0;
@@ -403,6 +413,7 @@ void capturePresentedRunsAfterCapturedOverlayIsShown() {
     CaptureRuntime runtime;
     int capturePresentedCalls = 0;
     int showCallsObservedByCallback = 0;
+    int activationCallsObservedByCallback = 0;
     ScreenshotCaptureWorkflow workflow({
         state,
         runtime,
@@ -415,9 +426,11 @@ void capturePresentedRunsAfterCapturedOverlayIsShown() {
             {},
             {},
             {},
-            [&capturePresentedCalls, &showCallsObservedByCallback, &runtime]() {
+            [&capturePresentedCalls, &showCallsObservedByCallback,
+             &activationCallsObservedByCallback, &runtime]() {
                 ++capturePresentedCalls;
                 showCallsObservedByCallback = runtime.showOverlayCalls;
+                activationCallsObservedByCallback = runtime.activateOverlayCalls;
             },
         },
     });
@@ -436,9 +449,11 @@ void capturePresentedRunsAfterCapturedOverlayIsShown() {
     runtime.eventSink->handleCaptureFinished(result);
     runtime.eventSink->handleCaptureFinished(result);
 
-    require(runtime.showOverlayCalls == 1 && capturePresentedCalls == 1 &&
-                showCallsObservedByCallback == 1,
-            "capture-presented callback must run once after the captured overlay is shown");
+    require(runtime.showOverlayCalls == 1 && runtime.activateOverlayCalls == 1 &&
+                runtime.interactionReadyCalls == 1 && capturePresentedCalls == 1 &&
+                showCallsObservedByCallback == 1 &&
+                activationCallsObservedByCallback == 0,
+            "capture presentation must be reported after show and before input activation");
 }
 
 void silentCaptureNeverPreparesOrShowsOverlays() {

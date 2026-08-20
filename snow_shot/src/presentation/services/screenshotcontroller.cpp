@@ -969,8 +969,12 @@ void ScreenshotController::Impl::handleCapturePresented() {
 #if defined(SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION) && \
     (defined(Q_OS_WIN) || defined(_WIN32))
     if (snow_shot::presentation::screenshot_lifecycle_perf::captureActive()) {
-        static_cast<void>(DwmFlush());
-        snow_shot::presentation::screenshot_lifecycle_perf::capturePresented();
+        // Verify the prepared frame has reached the compositor before recording
+        // the user-visible screenshot milestone. Input activation is measured
+        // separately and must not inflate the image-presentation latency.
+        if (SUCCEEDED(DwmFlush())) {
+            snow_shot::presentation::screenshot_lifecycle_perf::capturePresented();
+        }
     }
 #endif
     if (!m_pendingHistoryEditRecordId.isEmpty()) {

@@ -10,7 +10,7 @@ param(
     [int]$StabilityWindow = 20,
     [int]$StabilityRangeKiB = 1024,
     [int]$TimeoutMilliseconds = 90000,
-    [int]$MaximumFirstScreenshotMilliseconds = 128,
+    [int]$MaximumFirstScreenshotMilliseconds = 100,
     [int]$MaximumPrivateWorkingSetMiB = 18,
     [int]$MaximumPrivateWorkingSetDeltaMiB = 2,
     [int]$CountdownSeconds = 5,
@@ -65,19 +65,10 @@ if ($LASTEXITCODE -ne 0) { throw "The performance configuration failed" }
 if ($LASTEXITCODE -ne 0) { throw "The screenshot lifecycle benchmark build failed" }
 
 $buildRoot = Join-Path $workspace "build\windows-msvc-performance"
-$release = Join-Path $buildRoot "snow_shot\test-bin\Release"
+$release = Join-Path $buildRoot "snow_shot\Release"
 $benchmark = Join-Path $release "snow-shot-screenshot-lifecycle-performance-benchmark.exe"
 $application = Join-Path $release "snow_shot.exe"
-if (!(Test-Path $benchmark)) {
-    $benchmark = (Get-ChildItem -Path $buildRoot -Recurse `
-        -Filter "snow-shot-screenshot-lifecycle-performance-benchmark.exe" |
-        Select-Object -First 1).FullName
-}
-if (!(Test-Path $application)) {
-    $application = (Get-ChildItem -Path $buildRoot -Recurse -Filter "snow_shot.exe" |
-        Select-Object -First 1).FullName
-}
-if (!(Test-Path $benchmark) -or !(Test-Path $application)) {
+if (!(Test-Path -LiteralPath $benchmark) -or !(Test-Path -LiteralPath $application)) {
     throw "Expected screenshot lifecycle benchmark binaries were not produced"
 }
 
