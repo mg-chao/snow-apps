@@ -1716,6 +1716,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/overlay/screenshotselectionshadowrenderer.cpp
         src/presentation/overlay/screenshotoverlaycanvaspresenter.cpp
         src/presentation/overlay/screenshotoverlaywindow.cpp
+        src/presentation/services/screenshotlifecycleperfinstrumentation.cpp
         src/presentation/services/screenshotmessageservice.cpp
         src/presentation/ocr/screenshotocrpresentation.cpp
         src/presentation/ocr/screenshottabledocument.cpp
@@ -1742,6 +1743,19 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
     if(WIN32)
+        add_test(
+            NAME snow-shot-overlay-native-surface-retirement-test
+            COMMAND snow-shot-screenshot-canvas-renderer-tests
+                --overlay-native-surface-retirement
+        )
+        set_tests_properties(snow-shot-overlay-native-surface-retirement-test PROPERTIES
+            LABELS "e2e;interactive;windows"
+            RUN_SERIAL TRUE
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
         add_test(
             NAME snow-shot-scrolling-thumbnail-native-presentation-test
             COMMAND snow-shot-screenshot-canvas-renderer-tests

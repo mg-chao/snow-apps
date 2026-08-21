@@ -234,8 +234,12 @@ adqt::icons::IconRef primaryIcon(const adqt::icons::IconRef& iconRef) {
     return snow_shot::presentation::icons::withPrimaryColor(iconRef, scheme.map.colorPrimary);
 }
 
-QFrame* createPanel(QWidget* parent, const QString& objectName) {
+QFrame* createSecondaryPanel(QWidget* parent, const QString& objectName) {
     auto* panel = new ScreenshotToolbarPanel(parent);
+    // Secondary panels can be materialized while the palette is already visible.
+    // Keep them explicitly hidden throughout construction so adding them to the
+    // live layout cannot briefly expose both rows before tool visibility is applied.
+    panel->hide();
     panel->setObjectName(objectName);
     panel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
@@ -787,7 +791,8 @@ bool ScreenshotToolPalette::secondaryResourcesReady() const {
 }
 
 void ScreenshotToolPalette::ensureSecondaryResources() {
-    if (m_secondaryResourcesReady || !m_options.lazySecondaryResources ||
+    if (m_secondaryResourcesReady || m_releasingSecondaryResources ||
+        !m_options.lazySecondaryResources ||
         !m_options.enableStyleToolbar) {
         return;
     }
@@ -798,10 +803,71 @@ void ScreenshotToolPalette::ensureSecondaryResources() {
     ensureLayoutApplied();
 }
 
+void ScreenshotToolPalette::clearSecondaryResourceBindings() {
+    m_styleEditorBindings.clear();
+    m_styleControlLayouts.clear();
+    m_styleSeparatorFrames.clear();
+    m_panelFrames.clear();
+    m_styleSpacingItems.clear();
+    m_styleMetricRevisions.clear();
+    m_selectionActionControls.clear();
+    m_selectionActionSpacers.clear();
+    m_textActionSpacers.clear();
+    m_tableActionSpacers.clear();
+    m_highlightModeGroups.clear();
+    m_filterModeGroups.clear();
+
+    m_filterEditor = {};
+    m_penFilterEditor = {};
+    m_activeStyleControlsWidget = nullptr;
+    m_activeStyleTool.reset();
+    m_shapeStyleGroupSeparator = nullptr;
+    m_shapeStyleGroupSeparatorLeadingSpacing = nullptr;
+    m_shapeStyleGroupSeparatorTrailingSpacing = nullptr;
+
+    m_selectionOpacityIcon = nullptr;
+    m_selectionOpacitySlider = nullptr;
+    m_textEditButton = nullptr;
+    m_textTranslateButton = nullptr;
+    m_textResetButton = nullptr;
+    m_textSettingsButton = nullptr;
+    m_tableMergeButton = nullptr;
+    m_tableSplitButton = nullptr;
+    m_tableResetButton = nullptr;
+    m_textFormattingSelect = nullptr;
+    m_textPunctuationSelect = nullptr;
+    m_scrollingRecognitionControls = nullptr;
+    m_scrollingVerticalButton = nullptr;
+    m_scrollingHorizontalButton = nullptr;
+
+    m_rectangleStyleControlsWidget = nullptr;
+    m_arrowStyleControlsWidget = nullptr;
+    m_highlightStyleControlsWidget = nullptr;
+    m_penHighlightStyleControlsWidget = nullptr;
+    m_spotlightStyleControlsWidget = nullptr;
+    m_textStyleControlsWidget = nullptr;
+    m_serialNumberStyleControlsWidget = nullptr;
+    m_filterStyleControlsWidget = nullptr;
+    m_penFilterStyleControlsWidget = nullptr;
+    m_watermarkStyleControlsWidget = nullptr;
+    m_spotlightOpacityIcon = nullptr;
+    m_spotlightOpacitySlider = nullptr;
+
+    m_selectActionLayout = nullptr;
+    m_rectangleStyleLayout = nullptr;
+    m_selectActionPanel = nullptr;
+    m_rectangleStylePanel = nullptr;
+    m_styleReserveWidget = nullptr;
+}
+
 void ScreenshotToolPalette::releaseSecondaryResources() {
-    if (!m_options.lazySecondaryResources || !m_secondaryResourcesReady) {
+    if (!m_options.lazySecondaryResources || !m_secondaryResourcesReady ||
+        m_releasingSecondaryResources) {
         return;
     }
+
+    m_releasingSecondaryResources = true;
+    clearActiveTool();
 
     // Break all non-owning bindings before deleting the QWidget subtree. The
     // style model remains alive, so the next materialization starts from the
@@ -809,6 +875,7 @@ void ScreenshotToolPalette::releaseSecondaryResources() {
     m_styleControls->releaseControlBindings();
     m_actionToolbarTargetVisible = false;
     m_styleToolbarTargetVisible = false;
+    m_secondaryResourcesReady = false;
     const QVector<QWidget*> secondaryPanels = {
         m_selectActionPanel,
         m_rectangleStylePanel,
@@ -821,29 +888,11 @@ void ScreenshotToolPalette::releaseSecondaryResources() {
             }
         }
     }
-    m_styleEditorBindings.clear();
-    m_styleControlLayouts.clear();
-    m_styleSeparatorFrames.clear();
-    m_panelFrames.clear();
-    m_styleSpacingItems.clear();
-    m_selectionActionControls.clear();
-    m_selectionActionSpacers.clear();
-    m_textActionSpacers.clear();
-    m_tableActionSpacers.clear();
-    m_highlightModeGroups.clear();
-    m_filterModeGroups.clear();
-    m_filterEditor = {};
-    m_penFilterEditor = {};
-    m_activeStyleControlsWidget = nullptr;
-    m_activeStyleTool.reset();
-    m_shapeStyleGroupSeparator = nullptr;
-    m_shapeStyleGroupSeparatorLeadingSpacing = nullptr;
-    m_shapeStyleGroupSeparatorTrailingSpacing = nullptr;
-    m_selectActionLayout = nullptr;
-    m_rectangleStyleLayout = nullptr;
-    m_selectActionPanel = nullptr;
-    m_rectangleStylePanel = nullptr;
-    m_styleReserveWidget = nullptr;
+
+    // Child destruction can synchronously emit focus and popup notifications.
+    // Publish the fully unmaterialized state first so re-entrant callbacks can
+    // only observe null bindings, never objects partway through destruction.
+    clearSecondaryResourceBindings();
 
     // QObject parent ownership performs the actual destruction. Deleting the
     // panels, rather than the palette, releases their native popup surfaces,
@@ -853,13 +902,13 @@ void ScreenshotToolPalette::releaseSecondaryResources() {
             delete panel;
         }
     }
+    m_releasingSecondaryResources = false;
 
     // Trim only the Ant Design icon cache owned by the toolbar. The next
     // materialization repopulates the icons it actually displays without
     // invalidating unrelated Qt pixmap consumers.
     adqt::icons::trimIconCache(512 * 1024);
 
-    m_secondaryResourcesReady = false;
     markLayoutDirty(true);
     ensureLayoutApplied();
 }
@@ -3720,7 +3769,8 @@ ScreenshotToolPalette::createFilterEditor(const FilterEditorConfig& config) {
 }
 
 void ScreenshotToolPalette::createRectangleStyleToolbar() {
-    m_selectActionPanel = createPanel(this, QStringLiteral("screenshotSelectActionPanel"));
+    m_selectActionPanel =
+        createSecondaryPanel(this, QStringLiteral("screenshotSelectActionPanel"));
     if (auto* frame = qobject_cast<QFrame*>(m_selectActionPanel)) {
         m_panelFrames.push_back(frame);
         updatePanelMetrics(frame);
@@ -3745,7 +3795,8 @@ void ScreenshotToolPalette::createRectangleStyleToolbar() {
         m_selectionActionSpacers.push_back(spacer);
     };
 
-    m_rectangleStylePanel = createPanel(this, QStringLiteral("screenshotRectangleStylePanel"));
+    m_rectangleStylePanel =
+        createSecondaryPanel(this, QStringLiteral("screenshotRectangleStylePanel"));
     if (auto* frame = qobject_cast<QFrame*>(m_rectangleStylePanel)) {
         m_panelFrames.push_back(frame);
         updatePanelMetrics(frame);

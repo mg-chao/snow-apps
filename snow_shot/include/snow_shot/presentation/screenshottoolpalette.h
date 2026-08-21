@@ -301,6 +301,7 @@ class ScreenshotToolPalette final : public QWidget {
     void createMainToolbar(const Options& options);
     void createRectangleStyleToolbar();
     void ensureSecondaryResources();
+    void clearSecondaryResourceBindings();
     [[nodiscard]] bool secondaryResourcesReady() const;
     bool addMainToolButtons(const Options& options, QBoxLayout* layout);
     bool addMainHistoryButtons(const Options& options, QBoxLayout* layout);
@@ -582,6 +583,7 @@ class ScreenshotToolPalette final : public QWidget {
     mutable bool m_layoutDirty = true;
     mutable bool m_rowOrderDirty = true;
     bool m_secondaryResourcesReady = false;
+    bool m_releasingSecondaryResources = false;
 
 #if defined(SNOW_SHOT_TEST_HOOKS)
     quint64 m_layoutCommitCount = 0;

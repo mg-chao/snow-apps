@@ -12,6 +12,7 @@
 #include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QPoint>
+#include <QPointer>
 #include <QRect>
 #include <QScreen>
 #include <QSize>
@@ -119,6 +120,26 @@ class NativeGeometryWarningScope final {
 
     NativeGeometryWarningScope(const NativeGeometryWarningScope&) = delete;
     NativeGeometryWarningScope& operator=(const NativeGeometryWarningScope&) = delete;
+};
+
+class SecondaryToolbarShowObserver final : public QObject {
+  public:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() != QEvent::Show) {
+            return false;
+        }
+
+        const QString objectName = watched->objectName();
+        if (objectName == QStringLiteral("screenshotSelectActionPanel")) {
+            ++actionPanelShowCount;
+        } else if (objectName == QStringLiteral("screenshotRectangleStylePanel")) {
+            ++stylePanelShowCount;
+        }
+        return false;
+    }
+
+    int actionPanelShowCount = 0;
+    int stylePanelShowCount = 0;
 };
 
 class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
@@ -837,6 +858,81 @@ void nativeSurfaceReleaseKeepsTheToolbarObjectUsableForDeferredDeletion() {
     require(!window.isVisible(),
             "native surface release must leave the still-live toolbar object hidden");
 }
+
+void firstSecondaryToolbarOpeningNeverExposesBothPanelTypes() {
+    const auto verifyFirstActivation = [](ScreenshotToolPalette::Tool tool,
+                                          bool expectActionPanel) {
+        NoOpToolbarCommands commands;
+        ScreenshotToolbarWindow window(commands);
+        ScreenshotToolPalette* palette = window.palette();
+        require(palette != nullptr && palette->actionPanel() == nullptr &&
+                    palette->stylePanel() == nullptr,
+                "the screenshot toolbar must begin with lazy secondary resources");
+
+        window.show();
+        QApplication::processEvents();
+
+        SecondaryToolbarShowObserver observer;
+        QApplication::instance()->installEventFilter(&observer);
+        window.setActiveTool(tool);
+        QApplication::processEvents();
+        QApplication::instance()->removeEventFilter(&observer);
+
+        require(palette->actionPanel() != nullptr && palette->stylePanel() != nullptr,
+                "the first secondary-tool activation must materialize both reusable panels");
+        require(observer.actionPanelShowCount == (expectActionPanel ? 1 : 0) &&
+                    observer.stylePanelShowCount == (expectActionPanel ? 0 : 1),
+                "the first secondary-tool activation must never expose the other panel type");
+        require(palette->actionPanel()->isHidden() != expectActionPanel &&
+                    palette->stylePanel()->isHidden() == expectActionPanel,
+                "only the requested secondary panel may remain visible after first activation");
+    };
+
+    verifyFirstActivation(ScreenshotToolPalette::Tool::Shape, false);
+    verifyFirstActivation(ScreenshotToolPalette::Tool::Select, true);
+}
+
+void secondaryToolbarEvictionIsSafeAndReusable() {
+    NoOpToolbarCommands commands;
+    ScreenshotToolbarWindow window(commands);
+    ScreenshotToolPalette* palette = window.palette();
+    require(palette != nullptr && palette->mainPanel() != nullptr,
+            "the reusable screenshot toolbar must retain its main panel");
+    QWidget* const mainPanel = palette->mainPanel();
+
+    for (int cycle = 0; cycle < 2; ++cycle) {
+        window.show();
+        QApplication::processEvents();
+        window.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+        QApplication::processEvents();
+
+        QPointer<QWidget> actionPanel = palette->actionPanel();
+        QPointer<QWidget> stylePanel = palette->stylePanel();
+        require(actionPanel != nullptr && stylePanel != nullptr,
+                "activating a drawing tool must materialize both secondary panels");
+
+        window.releaseIdleResources();
+        QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QApplication::processEvents();
+
+        require(actionPanel.isNull() && stylePanel.isNull(),
+                "ending a capture must destroy the materialized secondary panels");
+        require(palette->actionPanel() == nullptr && palette->stylePanel() == nullptr &&
+                    palette->mainPanel() == mainPanel,
+                "secondary eviction must not leave exposed stale panels or replace the main row");
+
+        // Capture-state callbacks can still arrive while the reusable toolbar is idle.
+        // They must update retained state without touching controls from the retired rows.
+        window.setTextEditingState(true, false, true, true);
+        window.setTextTranslationState(true, false, false, false, false, false);
+        window.setTableEditingState(true, true, true, true, true, true);
+        window.setTextTransformSelections(QStringLiteral("keep"), QStringLiteral("half"));
+        SnowCanvasSpotlightConfig spotlight;
+        spotlight.opacity = 0.42;
+        window.setSpotlightConfig(spotlight);
+        window.resetForNewCapture();
+    }
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -855,6 +951,14 @@ int main(int argc, char* argv[]) {
             nativeSurfaceReleaseKeepsTheToolbarObjectUsableForDeferredDeletion();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--secondary-toolbar-eviction-only"))) {
+            secondaryToolbarEvictionIsSafeAndReusable();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--secondary-toolbar-first-open-only"))) {
+            firstSecondaryToolbarOpeningNeverExposesBothPanelTypes();
+            return 0;
+        }
         logicalDragMovesWithoutRefreshingGeometry();
         physicalDragMovesWithoutRefreshingGeometry();
         physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable();
@@ -867,6 +971,8 @@ int main(int argc, char* argv[]) {
         screenshotToolbarSizeMultiplierSurvivesCaptureReset();
         translateButtonRoutesEveryClickThroughTheToggleCommand();
         mainTextTranslationButtonUsesTranslationPresentation();
+        firstSecondaryToolbarOpeningNeverExposesBothPanelTypes();
+        secondaryToolbarEvictionIsSafeAndReusable();
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

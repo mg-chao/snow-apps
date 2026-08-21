@@ -169,8 +169,11 @@ void ScreenshotOverlayCoordinator::hideOverlayWindowsImmediately(
     // Reset the pooled toolbars before hiding them. Translucent Windows
     // surfaces retain their last composed frame while hidden, so resetting
     // after hide lets the old style/selection row flash on the next show.
-    // Keep the canvas untouched here: pin/copy exports may still consume it
-    // asynchronously after this immediate hide.
+    // Pin/copy exports may still consume the renderer and canvas document after
+    // this call, so their model state must remain intact. The native window is
+    // presentation-only, however, and a hidden translucent HWND retains its last
+    // DWM-composed frame. Retire that surface now so the next capture cannot
+    // expose the previous screenshot before its first repaint.
     m_uiHost.resetToolbarForNewCapture();
     m_uiHost.hideToolbar();
     m_uiHost.hideShortcutHints();
@@ -181,7 +184,7 @@ void ScreenshotOverlayCoordinator::hideOverlayWindowsImmediately(
         }
         overlay->setCanvasClearBackgroundEnabled(false);
         overlay->clearInputPassThroughRect();
-        overlay->hide();
+        overlay->releaseNativeSurface();
     });
     m_overlayMaintenancePending = true;
     SNOW_SHOT_PIN_PERF_MILESTONE("overlay.overlays_hidden");

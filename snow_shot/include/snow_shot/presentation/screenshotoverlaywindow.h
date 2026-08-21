@@ -76,8 +76,9 @@ class ScreenshotOverlayWindow final : public QWidget {
     // platform window for a low-latency restart.
     void hibernateNativeSurface();
     // Drops the platform window and its backing store without deleting this
-    // QObject. Pool teardown can therefore reclaim the full-screen surface
-    // even when cancellation originates from an event handled by this widget.
+    // QObject or its renderer/canvas model. Pool teardown and asynchronous
+    // export exits can therefore retire the composed frame immediately while
+    // keeping the reusable presentation object alive.
     void releaseNativeSurface();
     void restoreNativeSurface();
 

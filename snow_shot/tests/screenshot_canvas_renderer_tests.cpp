@@ -2972,12 +2972,58 @@ void overlayNativeSurfaceIsReleasedBeforeDeferredObjectDeletion() {
     QCoreApplication::sendPostedEvents(overlay, QEvent::DeferredDelete);
     require(guard == nullptr, "the retired overlay must still support normal deferred deletion");
 }
+
+void overlayNativeSurfaceRetirementPreservesReusableRenderState() {
+    NoopOverlayEventSink eventSink;
+    auto* canvas = new SnowCanvasWidget;
+    ScreenshotOverlayWindow overlay(eventSink, canvas);
+    overlay.resize(96, 72);
+
+    QImage capturedImage(96, 72, QImage::Format_ARGB32_Premultiplied);
+    capturedImage.fill(QColor(37, 113, 211));
+    overlay.setScreenshotImage(capturedImage, QRectF(0.0, 0.0, 96.0, 72.0));
+    overlay.setScreenshotMaskVisible(true);
+    overlay.setScreenshotSelection(QRectF(8.0, 6.0, 64.0, 48.0), true, 0);
+
+    ScreenshotCanvasRenderer* renderer = overlay.screenshotRendererForTesting();
+    require(renderer != nullptr, "the retirement test requires an overlay renderer");
+    const std::uint64_t contentRevision = renderer->contentRevision();
+    require(renderer->hasSelection() && renderer->maskVisible(),
+            "the retirement test must begin with reusable render state");
+
+    overlay.show();
+    QApplication::processEvents();
+    require(overlay.internalWinId() != 0 && overlay.testAttribute(Qt::WA_WState_Created),
+            "the retirement test must begin with a live native surface");
+
+    overlay.releaseNativeSurface();
+
+    require(overlay.internalWinId() == 0 && !overlay.testAttribute(Qt::WA_WState_Created),
+            "retiring an export presentation must synchronously drop its native surface");
+    require(renderer->contentRevision() == contentRevision && renderer->hasSelection() &&
+                renderer->maskVisible(),
+            "native-surface retirement must preserve renderer state needed by export");
+    require(canvas->customRenderer() == renderer,
+            "native-surface retirement must preserve the reusable canvas-renderer binding");
+
+    overlay.restoreNativeSurface();
+
+    require(overlay.internalWinId() != 0 && overlay.testAttribute(Qt::WA_WState_Created),
+            "the next capture must be able to recreate the retired native surface");
+    require(renderer->contentRevision() == contentRevision && renderer->hasSelection() &&
+                renderer->maskVisible(),
+            "native-surface restoration must not mutate the retained export state");
+}
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     if (application.arguments().contains(QStringLiteral("--overlay-native-surface-release"))) {
         overlayNativeSurfaceIsReleasedBeforeDeferredObjectDeletion();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--overlay-native-surface-retirement"))) {
+        overlayNativeSurfaceRetirementPreservesReusableRenderState();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--large-image-slice-rendering"))) {
@@ -3081,6 +3127,7 @@ int main(int argc, char** argv) {
     overlayCanvasesAreDisabledUntilCanvasInteractionIsEnabled();
     overlayPresenterRespectsSelectionHandleVisibility();
     resettingDisplaySessionEditingStateResetsEveryCanvas();
+    overlayNativeSurfaceRetirementPreservesReusableRenderState();
     screenshotUiPreferencesNormalizeAndApplyPickerVisibilityPolicies();
     shortcutHintStagesUseTheExactRequiredLines();
     configurableSelectionMaskUsesRequestedPixels();

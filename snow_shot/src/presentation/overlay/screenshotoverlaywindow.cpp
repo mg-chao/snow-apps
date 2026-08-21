@@ -451,9 +451,11 @@ void ScreenshotOverlayWindow::releaseNativeSurface() {
         m_canvas->setUpdatesEnabled(false);
     }
 
-    // QWidget::deleteLater() is required when Escape/cancel is dispatched by
-    // this overlay. destroy() keeps the QObject valid while immediately
-    // releasing the HWND, child platform windows, and QBackingStore.
+    // destroy() releases the HWND, child platform windows, and QBackingStore,
+    // but intentionally leaves the renderer and canvas document untouched.
+    // Besides making deferred QObject deletion safe, this lets an asynchronous
+    // export retain its immutable/model inputs without retaining a stale DWM
+    // frame for the next presentation.
     destroy(true, true);
 }
 

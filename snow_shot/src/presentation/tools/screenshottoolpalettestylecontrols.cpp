@@ -2028,6 +2028,16 @@ void ScreenshotToolPaletteStyleControls::reset() {
 void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     clearTextStylePopupInteractions();
 
+    m_handlingStrokeColorPickerChange = false;
+    m_handlingArrowStrokeColorPickerChange = false;
+    m_handlingTextColorPickerChange = false;
+    m_handlingTextStrokeColorPickerChange = false;
+    m_handlingTextFillColorPickerChange = false;
+    m_handlingHighlightColorPickerChange = false;
+    m_handlingHighlightStrokeColorPickerChange = false;
+    m_handlingPenHighlightColorPickerChange = false;
+    m_handlingSerialNumberColorPickerChange = false;
+    m_handlingSerialNumberFillColorPickerChange = false;
     m_arrowControlsActive = false;
     m_lineControlsActive = false;
     m_freeDrawControlsActive = false;
