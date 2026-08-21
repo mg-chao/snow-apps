@@ -487,6 +487,21 @@ void sendMouse(int x, int y, DWORD flags) {
     require(SendInput(1, &input, sizeof(input)) == 1, "SendInput mouse event failed");
 }
 
+void sendMouseWheel(int x, int y, int delta) {
+    const LONG left = GetSystemMetrics(SM_XVIRTUALSCREEN);
+    const LONG top = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    const LONG width = GetSystemMetrics(SM_CXVIRTUALSCREEN);
+    const LONG height = GetSystemMetrics(SM_CYVIRTUALSCREEN);
+    INPUT input{};
+    input.type = INPUT_MOUSE;
+    input.mi.dx = absoluteCoordinate(x, left, width);
+    input.mi.dy = absoluteCoordinate(y, top, height);
+    input.mi.mouseData = static_cast<DWORD>(delta);
+    input.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_WHEEL | MOUSEEVENTF_ABSOLUTE |
+                       MOUSEEVENTF_VIRTUALDESK;
+    require(SendInput(1, &input, sizeof(input)) == 1, "SendInput mouse wheel event failed");
+}
+
 void clickElement(IUIAutomationElement& element) {
     RECT bounds{};
     require(SUCCEEDED(element.get_CurrentBoundingRectangle(&bounds)) &&
@@ -498,6 +513,15 @@ void clickElement(IUIAutomationElement& element) {
     std::this_thread::sleep_for(25ms);
     sendMouse(x, y, MOUSEEVENTF_LEFTDOWN);
     sendMouse(x, y, MOUSEEVENTF_LEFTUP);
+}
+
+void clickVisibleElement(IUIAutomation& automation, DWORD processId, const QString& automationId,
+                         const ChildProcess& process, int timeoutMilliseconds,
+                         const char* errorMessage) {
+    ComPtr<IUIAutomationElement> element =
+        waitForVisibleElement(automation, processId, automationId, process, timeoutMilliseconds);
+    require(element.get() != nullptr, errorMessage);
+    clickElement(*element.get());
 }
 
 void closeNativeWindow(IUIAutomationElement& element, DWORD expectedProcessId) {
@@ -804,6 +828,10 @@ struct StageValues {
     StableMemorySample mainInterfaceClosed;
     StableMemorySample fixedScreenshot;
     StableMemorySample pinnedWindowClosed;
+    StableMemorySample pinToScreen;
+    StableMemorySample pinToScreenClosed;
+    StableMemorySample screenRecording;
+    StableMemorySample screenRecordingClosed;
     StableMemorySample trayMenu;
     StableMemorySample trayMenuClosed;
     StableMemorySample finalIdle;
@@ -829,6 +857,10 @@ const QStringList& benchmarkStageOrder() {
                                    QStringLiteral("main_interface_closed"),
                                    QStringLiteral("fixed_screenshot"),
                                    QStringLiteral("pinned_window_closed"),
+                                   QStringLiteral("pin_to_screen"),
+                                   QStringLiteral("pin_to_screen_closed"),
+                                   QStringLiteral("screen_recording"),
+                                   QStringLiteral("screen_recording_closed"),
                                    QStringLiteral("tray_menu"),
                                    QStringLiteral("tray_menu_closed"),
                                    QStringLiteral("final_idle")};
@@ -838,6 +870,8 @@ const QStringList& benchmarkStageOrder() {
 const QStringList& reclaimScenarioOrder() {
     static const QStringList names{QStringLiteral("main_interface"),
                                    QStringLiteral("fixed_screenshot"),
+                                   QStringLiteral("pin_to_screen"),
+                                   QStringLiteral("screen_recording"),
                                    QStringLiteral("tray_menu")};
     return names;
 }
@@ -1195,6 +1229,8 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
             .filePath(
                 QStringLiteral("sample-%1-pin.jsonl").arg(iteration, 3, 10, QLatin1Char('0')));
     removeStaleTrace(lifecyclePath, "could not remove the previous lifecycle trace");
+    // Retain the pin trace file and report aliases for consumers of the existing benchmark
+    // schema. The pin-to-screen stage below still records its native-window milestones.
     removeStaleTrace(pinPath, "could not remove the previous pin trace");
     const ScopedEnvironmentVariable lifecycleEnvironment(
         QByteArrayLiteral("SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_TRACE"),
@@ -1271,8 +1307,105 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
         QStringLiteral("main_interface"), stages.coldStart, stages.mainInterfaceClosed,
         configuration.scenarioReclaimToleranceBytes);
 
-    // Pin a fixed 800x800 selection, then close the actual pinned window through its close
-    // control. This ensures the sample includes the asynchronous canvas/runtime teardown.
+    // Exercise the normal screenshot window through every drawing-tool path, then enter a
+    // scrolling capture before ending the screenshot. Keep the selection fixed so memory samples
+    // remain comparable between iterations.
+    positionCursorForCapture(monitor.bounds);
+    forwardCommand(configuration, baseArguments, QStringLiteral("--e2e-start-screenshot"));
+    static_cast<void>(waitForLifecycleEvent(
+        lifecyclePath, primary.processId(), QStringLiteral("first_capture_presented"),
+        lifecycleCursor, primary, configuration.timeoutMilliseconds));
+    static_cast<void>(waitForLifecycleEvent(
+        lifecyclePath, primary.processId(), QStringLiteral("capture_interaction_ready"),
+        lifecycleCursor, primary, configuration.timeoutMilliseconds));
+    dragFixedSelection(monitor.bounds);
+    const char* const drawingToolError = "screenshot drawing tool did not become visible";
+    const auto clickDrawingTool = [&](const QString& automationId) {
+        clickVisibleElement(automation, primary.processId(), automationId, primary,
+                            configuration.timeoutMilliseconds, drawingToolError);
+    };
+    const auto clickGroupedDrawingTool = [&](const QString& triggerId,
+                                             const QString& optionId) {
+        clickDrawingTool(triggerId);
+        clickVisibleElement(automation, primary.processId(), optionId, primary,
+                            configuration.timeoutMilliseconds,
+                            "screenshot drawing-tool option did not become visible");
+    };
+
+    // Shape, pen, text, serial number, filter, eraser, and watermark are standalone toolbar
+    // entries. Arrow/line and highlighter/spotlight are configured as two-option popovers, so
+    // reopen each popover for both options to exercise the actual tool switch.
+    const QStringList standaloneDrawingTools{
+        QStringLiteral("screenshotSelectButton"), QStringLiteral("screenshotShapeButton"),
+        QStringLiteral("screenshotFreeDrawButton"), QStringLiteral("screenshotTextButton"),
+        QStringLiteral("screenshotSerialNumberButton"), QStringLiteral("screenshotFilterButton"),
+        QStringLiteral("screenshotEraserButton"), QStringLiteral("screenshotWatermarkButton")};
+    for (const QString& buttonId : standaloneDrawingTools) {
+        clickDrawingTool(buttonId);
+    }
+    clickGroupedDrawingTool(QStringLiteral("screenshotArrowLineButton"),
+                            QStringLiteral("screenshotDrawingToolGroupOption-arrow"));
+    clickGroupedDrawingTool(QStringLiteral("screenshotArrowLineButton"),
+                            QStringLiteral("screenshotDrawingToolGroupOption-line"));
+    clickGroupedDrawingTool(QStringLiteral("screenshotHighlightButton"),
+                            QStringLiteral("screenshotDrawingToolGroupOption-highlighter"));
+    clickGroupedDrawingTool(QStringLiteral("screenshotHighlightButton"),
+                            QStringLiteral("screenshotDrawingToolGroupOption-spotlight"));
+
+    clickDrawingTool(QStringLiteral("screenshotScrollingScreenshotButton"));
+    require(waitForVisibleElement(automation, primary.processId(),
+                                  QStringLiteral("screenshot-scrolling-thumbnail"), primary,
+                                  configuration.timeoutMilliseconds)
+                    .get() != nullptr,
+            "scrolling screenshot thumbnail did not become visible");
+
+    const int monitorCenterX =
+        monitor.bounds.left + (monitor.bounds.right - monitor.bounds.left) / 2;
+    const int monitorCenterY =
+        monitor.bounds.top + (monitor.bounds.bottom - monitor.bounds.top) / 2;
+    // The scrolling overlay leaves the selected rectangle pass-through, so wheel input at its
+    // center reaches the captured window and drives the native scrolling stream.
+    for (int index = 0; index < 3; ++index) {
+        sendMouseWheel(monitorCenterX, monitorCenterY, -WHEEL_DELTA);
+        std::this_thread::sleep_for(100ms);
+    }
+    stages.fixedScreenshot =
+        waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
+                            configuration.pollMilliseconds, configuration.stabilityWindowSamples,
+                            configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
+
+    clickDrawingTool(QStringLiteral("screenshotCancelButton"));
+    require(waitForElementToDisappear(automation, primary.processId(),
+                                      QStringLiteral("screenshot-scrolling-thumbnail"), primary,
+                                      configuration.timeoutMilliseconds),
+            "scrolling screenshot thumbnail did not close");
+    require(waitForElementToDisappear(automation, primary.processId(),
+                                      QStringLiteral("screenshotSelectionToolbarPanel"), primary,
+                                      configuration.timeoutMilliseconds),
+            "selection toolbar did not close after ending screenshot");
+    require(waitForElementToDisappear(automation, primary.processId(),
+                                      QStringLiteral("screenshotCancelButton"), primary,
+                                      configuration.timeoutMilliseconds),
+            "screenshot toolbar did not close after ending screenshot");
+    static_cast<void>(waitForLifecycleEvent(lifecyclePath, primary.processId(),
+                                            QStringLiteral("capture_released"), lifecycleCursor,
+                                            primary, configuration.timeoutMilliseconds));
+    const QJsonObject screenshotReclaim = waitForLifecycleEvent(
+        lifecyclePath, primary.processId(), QStringLiteral("idle_memory_reclaim_completed"),
+        lifecycleCursor, primary, configuration.timeoutMilliseconds);
+    validateIdleMemoryReclaim(screenshotReclaim, false);
+    // Keep the historical stage name as a report compatibility alias. The sample now represents
+    // the normal screenshot teardown, rather than a pinned-window close.
+    stages.pinnedWindowClosed =
+        waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
+                            configuration.pollMilliseconds, configuration.stabilityWindowSamples,
+                            configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
+    const QJsonObject fixedScreenshotComparison = scenarioReclaimComparison(
+        QStringLiteral("fixed_screenshot"), stages.coldStart, stages.pinnedWindowClosed,
+        configuration.scenarioReclaimToleranceBytes);
+
+    // Pin a separate 800x800 selection, open drawing mode, visit every available drawing tool,
+    // confirm the edit, and close the pinned surface before measuring its reclaim checkpoint.
     positionCursorForCapture(monitor.bounds);
     forwardCommand(configuration, baseArguments, QStringLiteral("--e2e-start-fixed-screenshot"));
     static_cast<void>(waitForLifecycleEvent(
@@ -1283,46 +1416,73 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
         lifecycleCursor, primary, configuration.timeoutMilliseconds));
     dragFixedSelection(monitor.bounds);
     qsizetype pinCursor = 0;
-    const QJsonObject pinRecord =
-        waitForPinTrace(pinPath, primary, pinCursor, configuration.timeoutMilliseconds);
-    Q_UNUSED(pinRecord);
+    static_cast<void>(waitForPinTrace(pinPath, primary, pinCursor,
+                                      configuration.timeoutMilliseconds));
     ComPtr<IUIAutomationElement> pinnedWindow = waitForVisibleElement(
         automation, primary.processId(), QStringLiteral("screenshotPinnedWindow"), primary,
         configuration.timeoutMilliseconds);
     require(pinnedWindow.get() != nullptr, "pinned window did not become visible");
-
-    const int monitorCenterX =
+    const int pinCenterX =
         monitor.bounds.left + (monitor.bounds.right - monitor.bounds.left) / 2;
-    const int monitorCenterY =
+    const int pinCenterY =
         monitor.bounds.top + (monitor.bounds.bottom - monitor.bounds.top) / 2;
-    // Pinned controls are shown while the pointer is inside the pinned surface. The selection
-    // ends near its lower-right edge, so move to the center before enabling drawing mode.
-    sendMouse(monitorCenterX, monitorCenterY, MOUSEEVENTF_MOVE);
-    ComPtr<IUIAutomationElement> pinnedEditButton = waitForVisibleElement(
-        automation, primary.processId(), QStringLiteral("screenshotPinnedEditButton"), primary,
-        configuration.timeoutMilliseconds);
-    require(pinnedEditButton.get() != nullptr,
-            "pinned window drawing button did not become visible");
-    clickElement(*pinnedEditButton.get());
+    sendMouse(pinCenterX, pinCenterY, MOUSEEVENTF_MOVE);
+    clickVisibleElement(automation, primary.processId(),
+                        QStringLiteral("screenshotPinnedEditButton"), primary,
+                        configuration.timeoutMilliseconds,
+                        "pinned drawing button did not become visible");
     require(waitForVisibleElement(automation, primary.processId(),
                                   QStringLiteral("screenshotPinnedDrawingToolbar"), primary,
                                   configuration.timeoutMilliseconds)
                     .get() != nullptr,
             "pinned window did not enter drawing mode");
-    stages.fixedScreenshot =
+    const auto clickPinnedDrawingTool = [&](const QString& buttonId) {
+        clickVisibleElement(automation, primary.processId(), buttonId, primary,
+                            configuration.timeoutMilliseconds,
+                            "pinned drawing tool did not become visible");
+    };
+    const auto clickPinnedDrawingGroupOption = [&](const QString& optionId) {
+        const QString triggerId = optionId.contains(QStringLiteral("arrow")) ||
+                                          optionId.contains(QStringLiteral("line"))
+                                      ? QStringLiteral("screenshotArrowLineButton")
+                                      : QStringLiteral("screenshotHighlightButton");
+        clickVisibleElement(automation, primary.processId(), triggerId, primary,
+                            configuration.timeoutMilliseconds,
+                            "pinned drawing-tool group did not become visible");
+        clickVisibleElement(automation, primary.processId(), optionId, primary,
+                            configuration.timeoutMilliseconds,
+                            "pinned drawing-tool option did not become visible");
+    };
+    clickPinnedDrawingTool(QStringLiteral("screenshotSelectButton"));
+    clickPinnedDrawingTool(QStringLiteral("screenshotShapeButton"));
+    clickPinnedDrawingGroupOption(QStringLiteral("screenshotDrawingToolGroupOption-arrow"));
+    clickPinnedDrawingGroupOption(QStringLiteral("screenshotDrawingToolGroupOption-line"));
+    clickPinnedDrawingTool(QStringLiteral("screenshotFreeDrawButton"));
+    clickPinnedDrawingTool(QStringLiteral("screenshotTextButton"));
+    clickPinnedDrawingTool(QStringLiteral("screenshotSerialNumberButton"));
+    clickPinnedDrawingTool(QStringLiteral("screenshotFilterButton"));
+    clickPinnedDrawingTool(QStringLiteral("screenshotEraserButton"));
+    clickPinnedDrawingTool(QStringLiteral("screenshotWatermarkButton"));
+    clickPinnedDrawingGroupOption(
+        QStringLiteral("screenshotDrawingToolGroupOption-highlighter"));
+    clickPinnedDrawingGroupOption(QStringLiteral("screenshotDrawingToolGroupOption-spotlight"));
+    stages.pinToScreen =
         waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
-
+    clickVisibleElement(automation, primary.processId(),
+                        QStringLiteral("screenshotConfirmButton"), primary,
+                        configuration.timeoutMilliseconds,
+                        "pinned drawing confirmation button did not become visible");
+    require(waitForElementToDisappear(automation, primary.processId(),
+                                      QStringLiteral("screenshotPinnedDrawingToolbar"), primary,
+                                      configuration.timeoutMilliseconds),
+            "pinned drawing mode did not confirm");
     closeNativeWindow(*pinnedWindow.get(), primary.processId());
     require(waitForElementToDisappear(automation, primary.processId(),
                                       QStringLiteral("screenshotPinnedWindow"), primary,
                                       configuration.timeoutMilliseconds),
             "pinned window did not close");
-    require(waitForElementToDisappear(automation, primary.processId(),
-                                      QStringLiteral("screenshotPinnedDrawingToolbar"), primary,
-                                      configuration.timeoutMilliseconds),
-            "pinned drawing toolbar did not close");
     require(waitForElementToDisappear(automation, primary.processId(),
                                       QStringLiteral("screenshotSelectionToolbarPanel"), primary,
                                       configuration.timeoutMilliseconds),
@@ -1330,16 +1490,90 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
     static_cast<void>(waitForLifecycleEvent(lifecyclePath, primary.processId(),
                                             QStringLiteral("capture_released"), lifecycleCursor,
                                             primary, configuration.timeoutMilliseconds));
-    const QJsonObject pinnedWindowReclaim = waitForLifecycleEvent(
+    const QJsonObject pinToScreenReclaim = waitForLifecycleEvent(
         lifecyclePath, primary.processId(), QStringLiteral("idle_memory_reclaim_completed"),
         lifecycleCursor, primary, configuration.timeoutMilliseconds);
-    validateIdleMemoryReclaim(pinnedWindowReclaim, true);
-    stages.pinnedWindowClosed =
+    validateIdleMemoryReclaim(pinToScreenReclaim, true);
+    stages.pinToScreenClosed =
         waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
-    const QJsonObject fixedScreenshotComparison = scenarioReclaimComparison(
-        QStringLiteral("fixed_screenshot"), stages.coldStart, stages.pinnedWindowClosed,
+    const QJsonObject pinToScreenComparison = scenarioReclaimComparison(
+        QStringLiteral("pin_to_screen"), stages.coldStart, stages.pinToScreenClosed,
+        configuration.scenarioReclaimToleranceBytes);
+
+    // Reuse the same 800x800 screenshot gesture to enter screen recording, then exercise the
+    // complete recorder lifecycle before measuring its reclaimed working set.
+    positionCursorForCapture(monitor.bounds);
+    advanceLifecycleCursor(lifecyclePath, lifecycleCursor);
+    forwardCommand(configuration, baseArguments,
+                   QStringLiteral("--e2e-start-screen-recording"));
+    static_cast<void>(waitForLifecycleEvent(
+        lifecyclePath, primary.processId(), QStringLiteral("first_capture_presented"),
+        lifecycleCursor, primary, configuration.timeoutMilliseconds));
+    static_cast<void>(waitForLifecycleEvent(
+        lifecyclePath, primary.processId(), QStringLiteral("capture_interaction_ready"),
+        lifecycleCursor, primary, configuration.timeoutMilliseconds));
+    dragFixedSelection(monitor.bounds);
+    require(waitForVisibleElement(automation, primary.processId(),
+                                  QStringLiteral("screenRecordingAreaWindow"), primary,
+                                  configuration.timeoutMilliseconds)
+                    .get() != nullptr,
+            "screen recording area did not become visible");
+    require(waitForVisibleElement(automation, primary.processId(),
+                                  QStringLiteral("screenRecordingToolbar"), primary,
+                                  configuration.timeoutMilliseconds)
+                    .get() != nullptr,
+            "screen recording toolbar did not become visible");
+    stages.screenRecording =
+        waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
+                            configuration.pollMilliseconds, configuration.stabilityWindowSamples,
+                            configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
+
+    clickVisibleElement(automation, primary.processId(),
+                        QStringLiteral("screenRecordingStartButton"), primary,
+                        configuration.timeoutMilliseconds,
+                        "screen recording start button did not become visible");
+    require(waitForVisibleElement(automation, primary.processId(),
+                                  QStringLiteral("screenRecordingStopButton"), primary,
+                                  configuration.timeoutMilliseconds)
+                    .get() != nullptr,
+            "screen recording did not start");
+    std::this_thread::sleep_for(1s);
+    clickVisibleElement(automation, primary.processId(),
+                        QStringLiteral("screenRecordingStopButton"), primary,
+                        configuration.timeoutMilliseconds,
+                        "screen recording stop button did not become visible");
+    require(waitForVisibleElement(automation, primary.processId(),
+                                  QStringLiteral("screenRecordingStartButton"), primary,
+                                  configuration.timeoutMilliseconds)
+                    .get() != nullptr,
+            "screen recording export did not complete");
+    clickVisibleElement(automation, primary.processId(),
+                        QStringLiteral("screenRecordingCloseButton"), primary,
+                        configuration.timeoutMilliseconds,
+                        "screen recording close button did not become visible");
+    require(waitForElementToDisappear(automation, primary.processId(),
+                                      QStringLiteral("screenRecordingToolbar"), primary,
+                                      configuration.timeoutMilliseconds),
+            "screen recording toolbar did not close");
+    require(waitForElementToDisappear(automation, primary.processId(),
+                                      QStringLiteral("screenRecordingAreaWindow"), primary,
+                                      configuration.timeoutMilliseconds),
+            "screen recording area did not close");
+    static_cast<void>(waitForLifecycleEvent(lifecyclePath, primary.processId(),
+                                            QStringLiteral("capture_released"), lifecycleCursor,
+                                            primary, configuration.timeoutMilliseconds));
+    const QJsonObject screenRecordingReclaim = waitForLifecycleEvent(
+        lifecyclePath, primary.processId(), QStringLiteral("idle_memory_reclaim_completed"),
+        lifecycleCursor, primary, configuration.timeoutMilliseconds);
+    validateIdleMemoryReclaim(screenRecordingReclaim, false);
+    stages.screenRecordingClosed =
+        waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
+                            configuration.pollMilliseconds, configuration.stabilityWindowSamples,
+                            configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
+    const QJsonObject screenRecordingComparison = scenarioReclaimComparison(
+        QStringLiteral("screen_recording"), stages.coldStart, stages.screenRecordingClosed,
         configuration.scenarioReclaimToleranceBytes);
 
     // Open the tray menu only after every screenshot surface has closed. Escape is sent after
@@ -1391,6 +1625,8 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
     const QJsonObject reclaimComparisons{
         {QStringLiteral("main_interface"), mainInterfaceComparison},
         {QStringLiteral("fixed_screenshot"), fixedScreenshotComparison},
+        {QStringLiteral("pin_to_screen"), pinToScreenComparison},
+        {QStringLiteral("screen_recording"), screenRecordingComparison},
         {QStringLiteral("tray_menu"), trayMenuComparison}};
     const QJsonObject record{
         {QStringLiteral("schema_version"), 4},
@@ -1405,6 +1641,10 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
         {QStringLiteral("main_interface_closed"), stageObject(stages.mainInterfaceClosed)},
         {QStringLiteral("fixed_screenshot"), stageObject(stages.fixedScreenshot)},
         {QStringLiteral("pinned_window_closed"), stageObject(stages.pinnedWindowClosed)},
+        {QStringLiteral("pin_to_screen"), stageObject(stages.pinToScreen)},
+        {QStringLiteral("pin_to_screen_closed"), stageObject(stages.pinToScreenClosed)},
+        {QStringLiteral("screen_recording"), stageObject(stages.screenRecording)},
+        {QStringLiteral("screen_recording_closed"), stageObject(stages.screenRecordingClosed)},
         {QStringLiteral("tray_menu"), stageObject(stages.trayMenu)},
         {QStringLiteral("tray_menu_closed"), stageObject(stages.trayMenuClosed)},
         {QStringLiteral("final_idle"), stageObject(stages.finalIdle)},
@@ -1419,6 +1659,13 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
          stages.fixedScreenshot.bytes},
         {QStringLiteral("pinned_window_closed_private_working_set_bytes"),
          stages.pinnedWindowClosed.bytes},
+        {QStringLiteral("pin_to_screen_private_working_set_bytes"), stages.pinToScreen.bytes},
+        {QStringLiteral("pin_to_screen_closed_private_working_set_bytes"),
+         stages.pinToScreenClosed.bytes},
+        {QStringLiteral("screen_recording_private_working_set_bytes"),
+         stages.screenRecording.bytes},
+        {QStringLiteral("screen_recording_closed_private_working_set_bytes"),
+         stages.screenRecordingClosed.bytes},
         {QStringLiteral("tray_menu_private_working_set_bytes"), stages.trayMenu.bytes},
         {QStringLiteral("tray_menu_closed_private_working_set_bytes"), stages.trayMenuClosed.bytes},
         {QStringLiteral("final_idle_private_working_set_bytes"), stages.finalIdle.bytes},
@@ -1430,6 +1677,13 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
          mib(stages.fixedScreenshot.bytes)},
         {QStringLiteral("pinned_window_closed_private_working_set_mib"),
          mib(stages.pinnedWindowClosed.bytes)},
+        {QStringLiteral("pin_to_screen_private_working_set_mib"), mib(stages.pinToScreen.bytes)},
+        {QStringLiteral("pin_to_screen_closed_private_working_set_mib"),
+         mib(stages.pinToScreenClosed.bytes)},
+        {QStringLiteral("screen_recording_private_working_set_mib"),
+         mib(stages.screenRecording.bytes)},
+        {QStringLiteral("screen_recording_closed_private_working_set_mib"),
+         mib(stages.screenRecordingClosed.bytes)},
         {QStringLiteral("tray_menu_private_working_set_mib"), mib(stages.trayMenu.bytes)},
         {QStringLiteral("tray_menu_closed_private_working_set_mib"),
          mib(stages.trayMenuClosed.bytes)},
@@ -1438,26 +1692,40 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
         {QStringLiteral("traces"),
          QJsonObject{{QStringLiteral("lifecycle"), QDir::toNativeSeparators(lifecyclePath)},
                      {QStringLiteral("pin"), QDir::toNativeSeparators(pinPath)},
-                     {QStringLiteral("main_interface_reclaim"), mainInterfaceReclaim},
-                     {QStringLiteral("pinned_window_reclaim"), pinnedWindowReclaim},
-                     {QStringLiteral("final_idle_reclaim"), finalIdleReclaim}}}};
+                      {QStringLiteral("main_interface_reclaim"), mainInterfaceReclaim},
+                      {QStringLiteral("pinned_window_reclaim"), pinToScreenReclaim},
+                      {QStringLiteral("pin_to_screen_reclaim"), pinToScreenReclaim},
+                      {QStringLiteral("screen_recording_reclaim"), screenRecordingReclaim},
+                      {QStringLiteral("final_idle_reclaim"), finalIdleReclaim}}}};
     std::cout << "sample " << iteration << ": cold_start=" << mib(stages.coldStart.bytes)
               << " MiB, main_interface=" << mib(stages.mainInterface.bytes)
               << " MiB, main_interface_closed=" << mib(stages.mainInterfaceClosed.bytes)
               << " MiB, fixed_screenshot=" << mib(stages.fixedScreenshot.bytes)
               << " MiB, pinned_window_closed=" << mib(stages.pinnedWindowClosed.bytes)
+              << " MiB, pin_to_screen=" << mib(stages.pinToScreen.bytes)
+              << " MiB, pin_to_screen_closed=" << mib(stages.pinToScreenClosed.bytes)
+              << " MiB, screen_recording=" << mib(stages.screenRecording.bytes)
+              << " MiB, screen_recording_closed=" << mib(stages.screenRecordingClosed.bytes)
               << " MiB, tray_menu=" << mib(stages.trayMenu.bytes)
               << " MiB, final_idle=" << mib(stages.finalIdle.bytes)
-              << " MiB, reclaimed(main/fixed/tray)="
+              << " MiB, reclaimed(main/fixed/pin/recording/tray)="
               << (mainInterfaceComparison.value(QStringLiteral("within_upper_bound")).toBool()
                       ? "yes"
                       : "no")
               << '/'
-              << (fixedScreenshotComparison.value(QStringLiteral("within_upper_bound")).toBool()
-                      ? "yes"
-                      : "no")
-              << '/'
-              << (trayMenuComparison.value(QStringLiteral("within_upper_bound")).toBool() ? "yes"
+               << (fixedScreenshotComparison.value(QStringLiteral("within_upper_bound")).toBool()
+                       ? "yes"
+                       : "no")
+               << '/'
+               << (pinToScreenComparison.value(QStringLiteral("within_upper_bound")).toBool()
+                       ? "yes"
+                       : "no")
+               << '/'
+               << (screenRecordingComparison.value(QStringLiteral("within_upper_bound")).toBool()
+                       ? "yes"
+                       : "no")
+               << '/'
+               << (trayMenuComparison.value(QStringLiteral("within_upper_bound")).toBool() ? "yes"
                                                                                            : "no")
               << '\n';
     require(primary.stop(), "could not terminate snow_shot after the sample");
@@ -1636,6 +1904,13 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
          metricFor(records, QStringLiteral("fixed_screenshot"))},
         {QStringLiteral("pinned_window_closed"),
          metricFor(records, QStringLiteral("pinned_window_closed"))},
+        {QStringLiteral("pin_to_screen"), metricFor(records, QStringLiteral("pin_to_screen"))},
+        {QStringLiteral("pin_to_screen_closed"),
+         metricFor(records, QStringLiteral("pin_to_screen_closed"))},
+        {QStringLiteral("screen_recording"),
+         metricFor(records, QStringLiteral("screen_recording"))},
+        {QStringLiteral("screen_recording_closed"),
+         metricFor(records, QStringLiteral("screen_recording_closed"))},
         {QStringLiteral("tray_menu"), metricFor(records, QStringLiteral("tray_menu"))},
         {QStringLiteral("tray_menu_closed"),
          metricFor(records, QStringLiteral("tray_menu_closed"))},
@@ -1845,10 +2120,14 @@ bool runSelfTest() {
         "conservative stability-bound comparison self-test failed");
     const auto syntheticRecord = [](const QJsonObject& mainInterface,
                                     const QJsonObject& fixedScreenshot,
+                                    const QJsonObject& pinToScreen,
+                                    const QJsonObject& screenRecording,
                                     const QJsonObject& trayMenu) {
         return QJsonObject{{QStringLiteral("scenario_reclaim_vs_cold_start"),
                             QJsonObject{{QStringLiteral("main_interface"), mainInterface},
                                         {QStringLiteral("fixed_screenshot"), fixedScreenshot},
+                                        {QStringLiteral("pin_to_screen"), pinToScreen},
+                                        {QStringLiteral("screen_recording"), screenRecording},
                                         {QStringLiteral("tray_menu"), trayMenu}}}};
     };
     const QJsonObject passingFixedComparison = scenarioReclaimComparison(
@@ -1857,6 +2136,12 @@ bool runSelfTest() {
     const QJsonObject passingTrayComparison = scenarioReclaimComparison(
         QStringLiteral("tray_menu"), 100 * kBytesPerMebibyte, 101 * kBytesPerMebibyte,
         8 * kBytesPerMebibyte);
+    const QJsonObject passingScreenRecordingComparison = scenarioReclaimComparison(
+        QStringLiteral("screen_recording"), 100 * kBytesPerMebibyte,
+        103 * kBytesPerMebibyte, 8 * kBytesPerMebibyte);
+    const QJsonObject passingPinToScreenComparison = scenarioReclaimComparison(
+        QStringLiteral("pin_to_screen"), 100 * kBytesPerMebibyte,
+        102 * kBytesPerMebibyte, 8 * kBytesPerMebibyte);
     const QJsonObject secondMainComparison = scenarioReclaimComparison(
         QStringLiteral("main_interface"), 100 * kBytesPerMebibyte, 99 * kBytesPerMebibyte,
         8 * kBytesPerMebibyte);
@@ -1866,26 +2151,42 @@ bool runSelfTest() {
     const QJsonObject secondTrayComparison = scenarioReclaimComparison(
         QStringLiteral("tray_menu"), 100 * kBytesPerMebibyte, 100 * kBytesPerMebibyte,
         8 * kBytesPerMebibyte);
+    const QJsonObject secondScreenRecordingComparison = scenarioReclaimComparison(
+        QStringLiteral("screen_recording"), 100 * kBytesPerMebibyte,
+        104 * kBytesPerMebibyte, 8 * kBytesPerMebibyte);
+    const QJsonObject secondPinToScreenComparison = scenarioReclaimComparison(
+        QStringLiteral("pin_to_screen"), 100 * kBytesPerMebibyte,
+        101 * kBytesPerMebibyte, 8 * kBytesPerMebibyte);
     const QJsonObject syntheticSummary = scenarioReclaimSummary(
         QVector<QJsonObject>{syntheticRecord(passingComparison, passingFixedComparison,
+                                              passingPinToScreenComparison,
+                                              passingScreenRecordingComparison,
                                               passingTrayComparison),
                              syntheticRecord(secondMainComparison, secondFixedComparison,
+                                              secondPinToScreenComparison,
+                                              secondScreenRecordingComparison,
                                               secondTrayComparison)},
         8 * kBytesPerMebibyte, 2);
     const QJsonObject incompleteSummary = scenarioReclaimSummary(
         QVector<QJsonObject>{syntheticRecord(passingComparison, passingFixedComparison,
-                                              passingTrayComparison)},
+                                               passingPinToScreenComparison,
+                                               passingScreenRecordingComparison,
+                                               passingTrayComparison)},
         8 * kBytesPerMebibyte, 2);
     const QJsonObject retainedScenarioSummary = scenarioReclaimSummary(
         QVector<QJsonObject>{syntheticRecord(failingComparison, passingFixedComparison,
+                                              passingPinToScreenComparison,
+                                              passingScreenRecordingComparison,
                                               passingTrayComparison),
                              syntheticRecord(secondMainComparison, secondFixedComparison,
+                                              secondPinToScreenComparison,
+                                              secondScreenRecordingComparison,
                                               secondTrayComparison)},
         8 * kBytesPerMebibyte, 2);
     require(
         syntheticSummary.value(QStringLiteral("benchmark_passed")).toBool() &&
             syntheticSummary.value(QStringLiteral("within_upper_bound_comparison_count"))
-                    .toInteger() == 6 &&
+                    .toInteger() == 10 &&
             !incompleteSummary.value(QStringLiteral("complete_sample_set")).toBool() &&
             !incompleteSummary.value(QStringLiteral("benchmark_passed")).toBool() &&
             !retainedScenarioSummary.value(QStringLiteral("benchmark_passed")).toBool() &&
@@ -1903,6 +2204,12 @@ bool runSelfTest() {
                      {QStringLiteral("main_interface_closed"), statistics(QVector<double>{1.5})},
                      {QStringLiteral("fixed_screenshot"), statistics(QVector<double>{4.0})},
                      {QStringLiteral("pinned_window_closed"), statistics(QVector<double>{1.75})},
+                     {QStringLiteral("pin_to_screen"), statistics(QVector<double>{5.0})},
+                     {QStringLiteral("pin_to_screen_closed"),
+                      statistics(QVector<double>{1.8})},
+                     {QStringLiteral("screen_recording"), statistics(QVector<double>{5.0})},
+                     {QStringLiteral("screen_recording_closed"),
+                      statistics(QVector<double>{1.8})},
                      {QStringLiteral("tray_menu"), statistics(QVector<double>{2.0})},
                      {QStringLiteral("tray_menu_closed"), statistics(QVector<double>{1.25})},
                      {QStringLiteral("final_idle"), statistics(QVector<double>{1.25})}}},

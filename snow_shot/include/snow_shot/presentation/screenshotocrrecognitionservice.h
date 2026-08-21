@@ -54,9 +54,7 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
 
   public:
     struct Options {
-        // The worker and its OCR engine are retired after this period without a request.
-        int engineIdleTimeoutMs = 16'000;
-        // Maximum concurrent workers; the pool grows only while queued demand requires it.
+        // Maximum concurrent OCR workers.
         int workerCount = 2;
     };
 

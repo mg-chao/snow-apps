@@ -23,6 +23,7 @@ ScreenshotToolPalette::Options recordingToolbarOptions() {
 
 ScreenRecordingToolbarWindow::ScreenRecordingToolbarWindow(QWidget* parent)
     : ScreenshotFloatingToolPaletteWindow(recordingToolbarOptions(), parent) {
+    setObjectName(QStringLiteral("screenRecordingToolbar"));
     setAttribute(Qt::WA_DeleteOnClose, false);
     prepareForDisplay();
 }

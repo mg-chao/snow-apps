@@ -62,6 +62,8 @@ const QString kE2eOpenInterfaceSettingsArgument =
     QStringLiteral("--e2e-open-interface-settings");
 const QString kE2eStartFixedScreenshotArgument =
     QStringLiteral("--e2e-start-fixed-screenshot");
+const QString kE2eStartScreenRecordingArgument =
+    QStringLiteral("--e2e-start-screen-recording");
 #endif
 
 QStringList stringList(const QJsonValue& value) {
@@ -528,6 +530,15 @@ void ApplicationController::handleLaunchRequest(const QStringList& arguments) {
         if (ScreenshotController* controller = m_impl->ensureScreenshotController()) {
             presentation::screenshot_lifecycle_perf::beginCapture();
             controller->captureAndPinSelection();
+        }
+        return;
+    }
+    if (QApplication::arguments().contains(kE2eAllowOverlayCaptureArgument) &&
+        arguments.contains(kE2eStartScreenRecordingArgument)) {
+        m_impl->beginForegroundOperation();
+        if (ScreenshotController* controller = m_impl->ensureScreenshotController()) {
+            presentation::screenshot_lifecycle_perf::beginCapture();
+            controller->captureAndStartScreenRecording();
         }
         return;
     }

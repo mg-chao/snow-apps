@@ -17,6 +17,7 @@ ScreenRecordingAreaWindow::ScreenRecordingAreaWindow(QWidget* parent)
     : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
                           Qt::WindowDoesNotAcceptFocus | Qt::MSWindowsFixedSizeDialogHint |
                           Qt::NoDropShadowWindowHint) {
+    setObjectName(QStringLiteral("screenRecordingAreaWindow"));
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
     setAttribute(Qt::WA_ShowWithoutActivating, true);

@@ -3120,6 +3120,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
 
     if (options.showSelectTool) {
         m_selectButton = addToolButton("Select elements", custom_outlined_icons::ToolSelect());
+        m_selectButton->setObjectName(QStringLiteral("screenshotSelectButton"));
         addButton(m_selectButton);
         connect(m_selectButton, &adqt::widgets::AdButton::clicked, this, [this]() {
             setActiveTool(Tool::Select);
@@ -3133,6 +3134,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
 
     if (options.showShapeTool) {
         m_shapeButton = addToolButton("Shape", custom_outlined_icons::ToolRectangle());
+        m_shapeButton->setObjectName(QStringLiteral("screenshotShapeButton"));
         addButton(m_shapeButton);
         connect(m_shapeButton, &adqt::widgets::AdButton::clicked, this, [this]() {
             setActiveTool(Tool::Shape);
@@ -3161,6 +3163,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
 
     if (options.showFreeDrawTool) {
         m_freeDrawButton = addToolButton("Pen", custom_outlined_icons::ToolFreeDraw());
+        m_freeDrawButton->setObjectName(QStringLiteral("screenshotFreeDrawButton"));
         addButton(m_freeDrawButton);
         connect(m_freeDrawButton, &adqt::widgets::AdButton::clicked, this, [this]() {
             setActiveTool(Tool::FreeDraw);
@@ -3191,6 +3194,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
 
     if (options.showTextTool) {
         m_textButton = addToolButton("Text", custom_outlined_icons::ToolText());
+        m_textButton->setObjectName(QStringLiteral("screenshotTextButton"));
         addButton(m_textButton);
         connect(m_textButton, &adqt::widgets::AdButton::clicked, this, [this]() {
             setActiveTool(Tool::Text);
@@ -3201,6 +3205,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
     if (options.showSerialNumberTool) {
         m_serialNumberButton =
             addToolButton("Serial number", custom_outlined_icons::ToolSerialNumber());
+        m_serialNumberButton->setObjectName(QStringLiteral("screenshotSerialNumberButton"));
         addButton(m_serialNumberButton);
         connect(m_serialNumberButton, &adqt::widgets::AdButton::clicked, this, [this]() {
             setActiveTool(Tool::SerialNumber);
@@ -3210,6 +3215,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
 
     if (options.showFilterTool) {
         m_filterButton = addToolButton("Filter", custom_outlined_icons::ToolFilter());
+        m_filterButton->setObjectName(QStringLiteral("screenshotFilterButton"));
         addButton(m_filterButton);
         connect(m_filterButton, &adqt::widgets::AdButton::clicked, this, [this]() {
             setActiveTool(Tool::PenFilter);
@@ -3219,6 +3225,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
 
     if (options.showEraserTool) {
         m_eraserButton = addToolButton("Eraser", custom_outlined_icons::ToolEraser());
+        m_eraserButton->setObjectName(QStringLiteral("screenshotEraserButton"));
         addButton(m_eraserButton);
         connect(m_eraserButton, &adqt::widgets::AdButton::clicked, this, [this]() {
             setActiveTool(Tool::Eraser);
@@ -3415,6 +3422,7 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
 
     if (options.showOcrTool) {
         m_ocrButton = addToolButton("Text recognition", custom_outlined_icons::ToolRecognizeText());
+        m_ocrButton->setObjectName(QStringLiteral("screenshotOcrButton"));
         applyScreenshotShortcutTooltip(m_ocrButton, QStringLiteral("Text recognition"),
                                        QStringLiteral("text_recognition"));
         m_ocrButton->setBusyIndicatorPresentation(
@@ -3555,6 +3563,7 @@ void ScreenshotToolPalette::addMainActionButtons(const Options& options, QBoxLay
 
     if ((options.actions & ConfirmAction) != 0) {
         m_confirmButton = addActionButton("Confirm edit", primaryIcon(outlined_icons::Check()));
+        m_confirmButton->setObjectName(QStringLiteral("screenshotConfirmButton"));
         addButton(m_confirmButton);
         connect(m_confirmButton, &adqt::widgets::AdButton::clicked, this,
                 &ScreenshotToolPalette::confirmRequested);
@@ -4247,11 +4256,15 @@ void ScreenshotToolPalette::addRecordingControls(QBoxLayout* layout) {
 
     m_recordStartButton =
         addActionButton("Start recording", primaryIcon(custom_outlined_icons::RecordingStart()));
+    m_recordStartButton->setObjectName(QStringLiteral("screenRecordingStartButton"));
     m_recordStopButton =
         addActionButton("Stop recording", custom_outlined_icons::RecordingStop(), true);
+    m_recordStopButton->setObjectName(QStringLiteral("screenRecordingStopButton"));
     m_recordPauseButton = addActionButton("Pause recording", outlined_icons::Pause());
+    m_recordPauseButton->setObjectName(QStringLiteral("screenRecordingPauseButton"));
     m_recordResumeButton =
         addActionButton("Resume recording", primaryIcon(custom_outlined_icons::RecordingResume()));
+    m_recordResumeButton->setObjectName(QStringLiteral("screenRecordingResumeButton"));
     layout->addWidget(m_recordStartButton);
     layout->addWidget(m_recordStopButton);
     addItemSpacing();
@@ -4269,7 +4282,9 @@ void ScreenshotToolPalette::addRecordingControls(QBoxLayout* layout) {
 
     m_recordMicrophoneButton =
         addActionButton("Record microphone", custom_outlined_icons::RecordingMicrophone());
+    m_recordMicrophoneButton->setObjectName(QStringLiteral("screenRecordingMicrophoneButton"));
     m_recordSystemAudioButton = addActionButton("Record speakers", outlined_icons::Sound());
+    m_recordSystemAudioButton->setObjectName(QStringLiteral("screenRecordingSystemAudioButton"));
     layout->addWidget(m_recordMicrophoneButton);
     addItemSpacing();
     layout->addWidget(m_recordSystemAudioButton);
@@ -4277,10 +4292,15 @@ void ScreenshotToolPalette::addRecordingControls(QBoxLayout* layout) {
     addMainToolbarSeparator();
     m_recordOpenFolderButton =
         addActionButton("Open recording folder", custom_outlined_icons::RecordingFolder());
+    m_recordOpenFolderButton->setObjectName(QStringLiteral("screenRecordingOpenFolderButton"));
     m_recordCloseButton = addActionButton("Close recording", outlined_icons::Close(), true);
+    m_recordCloseButton->setObjectName(QStringLiteral("screenRecordingCloseButton"));
     m_recordCopyAnimatedImageButton =
         addActionButton("Copy animated image", outlined_icons::Gif());
+    m_recordCopyAnimatedImageButton->setObjectName(
+        QStringLiteral("screenRecordingCopyAnimatedImageButton"));
     m_recordCopyVideoButton = addActionButton("Copy video", outlined_icons::Copy());
+    m_recordCopyVideoButton->setObjectName(QStringLiteral("screenRecordingCopyVideoButton"));
     layout->addWidget(m_recordOpenFolderButton);
     addItemSpacing();
     layout->addWidget(m_recordCloseButton);
