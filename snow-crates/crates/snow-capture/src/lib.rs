@@ -8,6 +8,7 @@ pub mod frame;
 pub mod monitor;
 mod platform;
 pub mod region;
+pub mod scrolling;
 pub mod streaming;
 pub mod system;
 pub mod window;
@@ -40,8 +41,10 @@ pub use capture_session::{CaptureSession, CaptureTargetInfo};
 pub use frame::{CaptureEvent, CapturedFrame, ColorSpace, DirtyRect, FrameMetadata};
 pub use monitor::MonitorId;
 pub use region::{CaptureRegion, MonitorLayout};
+pub use scrolling::{ScrollingGovernor, ScrollingGovernorConfig, ScrollingGovernorSignal};
 pub use streaming::{
-    CaptureStream, CaptureStreamConfig, CaptureStreamStats, CaptureStreamStatsSnapshot,
+    CaptureRateControl, CaptureStream, CaptureStreamConfig, CaptureStreamFeedbackSender,
+    CaptureStreamStats, CaptureStreamStatsSnapshot, ScrollingStitchFeedback,
 };
 pub use system::{CaptureOptions, CaptureSystem, CaptureSystemBuilder};
 pub use window::WindowId;

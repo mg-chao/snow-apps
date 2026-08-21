@@ -732,7 +732,6 @@ set(PROJECT_CXX_SOURCES
     src/presentation/capture/screenshotcaptureworker.cpp
     src/presentation/capture/screenshotwindowcapture.cpp
     src/presentation/capture/screenshotcaptureworkflow.cpp
-    src/presentation/capture/adaptivescrollingcapturecadence.h
     src/presentation/capture/latestbridgemailbox.h
     src/presentation/capture/screenshotscrollingcapturecontroller.cpp
     src/presentation/capture/screenshotscrollingthumbnailwidget.cpp
@@ -1686,18 +1685,6 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(
         NAME snow-shot-latest-bridge-mailbox-tests
         COMMAND snow-shot-latest-bridge-mailbox-tests
-    )
-
-    add_executable(snow-shot-scrolling-capture-cadence-tests
-        tests/scrolling_capture_cadence_tests.cpp
-        src/presentation/capture/adaptivescrollingcapturecadence.h
-    )
-    target_include_directories(snow-shot-scrolling-capture-cadence-tests PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src"
-    )
-    add_test(
-        NAME snow-shot-scrolling-capture-cadence-tests
-        COMMAND snow-shot-scrolling-capture-cadence-tests
     )
 
     add_executable(snow-shot-screenshot-canvas-renderer-tests

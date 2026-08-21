@@ -12,8 +12,8 @@ use snow_audio_recorder::{
     AudioTrackDevice,
 };
 use snow_capture::{
-    CaptureEvent, CaptureOptions, CaptureStream, CaptureStreamConfig, CaptureSystem,
-    CaptureWorkload, CapturedFrame,
+    CaptureEvent, CaptureOptions, CaptureRateControl, CaptureStream, CaptureStreamConfig,
+    CaptureSystem, CaptureWorkload, CapturedFrame,
 };
 use snow_core::error::{Classify, ErrorClass};
 use snow_core::recording_clock::RecordingClock;
@@ -201,8 +201,8 @@ impl RecordingSession {
                 target_fps: self.config.fps,
                 buffer_depth: 16,
                 max_consecutive_errors: 30,
-                adaptive_fps: true,
-                min_fps: 10,
+                rate_control: CaptureRateControl::Backpressure { min_fps: 10 },
+                frame_pool_budget_bytes: None,
                 pause_on_resolution_change: false,
             },
         ) {

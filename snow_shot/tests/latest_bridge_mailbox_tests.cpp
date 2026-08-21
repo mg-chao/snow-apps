@@ -196,11 +196,31 @@ void backpressureAvoidsGuaranteedReplacementWork() {
                << "}\n";
     }
 }
+
+void completionReportsPendingAndReplacementPressure() {
+    Mailbox mailbox;
+    mailbox.reset(3);
+    require(mailbox.publish(3, TrackedItem(7, std::make_shared<DestructionCounts>())),
+            "pressure test bridge must wake");
+    auto inFlight = mailbox.take();
+    require(inFlight.has_value(), "pressure test frame must enter flight");
+    auto counts = std::make_shared<DestructionCounts>();
+    require(!mailbox.publish(3, TrackedItem(8, counts)), "pressure test pending frame must coalesce");
+    require(!mailbox.publish(3, TrackedItem(9, counts)), "pressure test latest frame must replace");
+    require(!mailbox.publish(3, TrackedItem(10, counts)), "pressure test latest frame must replace again");
+    const auto completion = mailbox.finishWithFeedback(3);
+    require(completion.hasNext, "completion must preserve the pending bridge");
+    require(completion.pendingDepth == 2,
+            "completion must report bridge plus latest pending depth");
+    require(completion.replacedFrames == 2, "completion must report two replacements");
+    require(counts->values[9] == 1, "replaced frame must be destroyed");
+}
 } // namespace
 
 int main() {
     preservesBridgeAndReplacesLatest();
     resetRejectsStaleGeneration();
     backpressureAvoidsGuaranteedReplacementWork();
+    completionReportsPendingAndReplacementPressure();
     return 0;
 }

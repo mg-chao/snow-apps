@@ -15,6 +15,19 @@ typedef struct SnowCaptureFrameLeaseImpl SnowCaptureFrameLease;
 typedef struct SnowCaptureCancellationTokenImpl SnowCaptureCancellationToken;
 typedef struct SnowCaptureScreenshotResultImpl SnowCaptureScreenshotResult;
 typedef struct SnowCaptureRecordingSessionImpl SnowCaptureRecordingSession;
+typedef struct SnowCaptureRegionStreamImpl SnowCaptureRegionStream;
+typedef struct SnowCaptureRegionStreamFrameImpl SnowCaptureRegionStreamFrame;
+
+typedef enum SnowCaptureRegionStreamEventKind {
+    SNOW_CAPTURE_REGION_STREAM_FRAME = 1,
+    SNOW_CAPTURE_REGION_STREAM_ENDED = 2,
+    SNOW_CAPTURE_REGION_STREAM_ERROR = 3,
+    SNOW_CAPTURE_REGION_STREAM_RESOLUTION_CHANGED = 4,
+} SnowCaptureRegionStreamEventKind;
+
+typedef void (*SnowCaptureRegionStreamCallback)(
+    void* context, SnowCaptureRegionStreamEventKind kind,
+    SnowCaptureRegionStreamFrame* frame);
 
 typedef enum SnowCaptureBackendKind {
     SNOW_CAPTURE_BACKEND_AUTO = 0,
@@ -93,6 +106,45 @@ typedef struct SnowCaptureRegionFrameInfo {
     const uint8_t* rgba_bytes;
     size_t rgba_len;
 } SnowCaptureRegionFrameInfo;
+
+#define SNOW_CAPTURE_REGION_STREAM_CONFIG_VERSION 1u
+
+typedef struct SnowCaptureRegionStreamConfig {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t x;
+    int32_t y;
+    uint32_t width;
+    uint32_t height;
+    size_t capture_retry_count;
+    uint8_t capture_backend;
+    uint8_t reserved[31];
+} SnowCaptureRegionStreamConfig;
+
+typedef struct SnowCaptureRegionStreamFrameInfo {
+    uint32_t width;
+    uint32_t height;
+    uint32_t stride_bytes;
+    uint8_t is_duplicate;
+    uint8_t reserved0[3];
+    const uint8_t* rgba_bytes;
+    size_t rgba_len;
+} SnowCaptureRegionStreamFrameInfo;
+
+#define SNOW_CAPTURE_REGION_STREAM_STITCH_FEEDBACK_VERSION 1u
+
+/* Reports complete serialized stitch-worker service time. Duplicate fast-path
+ * completions set representative to zero; their pending/replacement pressure
+ * is still used for emergency capture backoff. */
+typedef struct SnowCaptureRegionStreamStitchFeedback {
+    uint32_t version;
+    uint32_t struct_size;
+    uint64_t service_time_ns;
+    uint32_t pending_depth;
+    uint32_t replaced_frames;
+    uint8_t representative;
+    uint8_t reserved[7];
+} SnowCaptureRegionStreamStitchFeedback;
 
 /* A native top-level window capture backed by Windows Graphics Capture when
  * the platform supports it. The returned pixel pointer remains valid until
@@ -257,6 +309,29 @@ uint8_t snow_capture_region_session_prepare(SnowCaptureRegionSession* session);
 /* The returned pixel pointer remains valid until the next capture or destroy. */
 uint8_t snow_capture_region_session_capture(SnowCaptureRegionSession* session,
                                             SnowCaptureRegionFrameInfo* out_info);
+
+/* Starts a persistent, bounded region stream. The callback runs on the native
+ * delivery thread and receives ownership of each non-duplicate frame. It must
+ * release the frame with snow_capture_region_stream_frame_destroy after the
+ * pixels are no longer needed. Destroying the stream stops and joins both the
+ * capture and delivery threads before returning. The callback context must
+ * remain valid until destroy returns. Do not destroy the stream from inside
+ * its callback. On an ERROR event, snow_capture_last_error_message is readable
+ * from that callback invocation. */
+SnowCaptureRegionStream* snow_capture_region_stream_create(
+    const SnowCaptureRegionStreamConfig* config,
+    SnowCaptureRegionStreamCallback callback,
+    void* context);
+void snow_capture_region_stream_destroy(SnowCaptureRegionStream* stream);
+/* Returns nonzero when feedback was accepted. On failure,
+ * snow_capture_last_error_message() describes the validation error. */
+uint8_t snow_capture_region_stream_report_stitch_feedback(
+    SnowCaptureRegionStream* stream,
+    const SnowCaptureRegionStreamStitchFeedback* feedback);
+uint8_t snow_capture_region_stream_frame_info(
+    const SnowCaptureRegionStreamFrame* frame,
+    SnowCaptureRegionStreamFrameInfo* out_info);
+void snow_capture_region_stream_frame_destroy(SnowCaptureRegionStreamFrame* frame);
 
 SnowCaptureWindowSession*
 snow_capture_window_session_create(const SnowCaptureWindowSessionConfig* config);

@@ -10,6 +10,12 @@ namespace snow_shot::capture_detail {
 // coalescing all additional producer updates into one replaceable latest frame.
 template <typename Item, typename Generation> class LatestBridgeMailbox {
   public:
+    struct Completion {
+        bool hasNext = false;
+        std::size_t pendingDepth = 0;
+        std::size_t replacedFrames = 0;
+    };
+
     struct Entry {
         Generation generation;
         Item item;
@@ -22,6 +28,7 @@ template <typename Item, typename Generation> class LatestBridgeMailbox {
         m_latest.reset();
         m_inFlightGeneration.reset();
         m_consumerActive = false;
+        m_replacedFrames = 0;
     }
 
     [[nodiscard]] bool publish(Generation generation, Item item) {
@@ -37,6 +44,7 @@ template <typename Item, typename Generation> class LatestBridgeMailbox {
         if (!m_bridge.has_value()) {
             m_bridge.emplace(Entry{generation, std::move(item)});
         } else {
+            ++m_replacedFrames;
             m_latest.emplace(Entry{generation, std::move(item)});
         }
         return false;
@@ -63,16 +71,28 @@ template <typename Item, typename Generation> class LatestBridgeMailbox {
     // Returns true exactly once when a completed consumer must take the next
     // preserved bridge frame.
     [[nodiscard]] bool finish(Generation generation) {
+        return finishWithFeedback(generation).hasNext;
+    }
+
+    // Completes the in-flight item and snapshots pressure accumulated while it
+    // was processed. pendingDepth includes both the preserved bridge and the
+    // replaceable latest item, before the next consumer take promotes either.
+    [[nodiscard]] Completion finishWithFeedback(Generation generation) {
         std::lock_guard lock(m_mutex);
         if (!m_inFlightGeneration.has_value() || generation != *m_inFlightGeneration) {
-            return false;
+            return {};
         }
         m_inFlightGeneration.reset();
+        Completion completion;
+        completion.replacedFrames = std::exchange(m_replacedFrames, 0);
         if (m_bridge.has_value()) {
-            return true;
+            completion.hasNext = true;
+            completion.pendingDepth = static_cast<std::size_t>(m_bridge.has_value()) +
+                                       static_cast<std::size_t>(m_latest.has_value());
+            return completion;
         }
         m_consumerActive = false;
-        return false;
+        return completion;
     }
 
     [[nodiscard]] std::size_t pendingDepth() const {
@@ -95,5 +115,6 @@ template <typename Item, typename Generation> class LatestBridgeMailbox {
     std::optional<Entry> m_bridge;
     std::optional<Entry> m_latest;
     bool m_consumerActive = false;
+    std::size_t m_replacedFrames = 0;
 };
 } // namespace snow_shot::capture_detail

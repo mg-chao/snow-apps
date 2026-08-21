@@ -80,6 +80,7 @@ ScreenshotPinnedEditController::ScreenshotPinnedEditController(
     m_canvas.installEventFilter(this);
     m_canvasColorSamplerWindow = std::make_unique<ScreenshotCanvasColorSamplerWindow>();
     m_toolbarWindow = new ScreenshotFloatingToolPaletteWindow(pinnedEditToolbarOptions());
+    m_toolbarWindow->setObjectName(QStringLiteral("screenshotPinnedDrawingToolbar"));
     m_toolbarWindow->setAttribute(Qt::WA_DeleteOnClose, false);
     m_toolbarWindow->setTransientOwnerWindow(&m_pinnedWindow);
     m_toolbarWindow->setStyleToolbarAboveMain(false);

@@ -1,7 +1,7 @@
 #![allow(clippy::missing_safety_doc)]
 
 use std::cell::RefCell;
-use std::ffi::{CStr, CString, c_char};
+use std::ffi::{CStr, CString, c_char, c_void};
 use std::path::PathBuf;
 use std::ptr;
 use std::sync::{
@@ -10,11 +10,13 @@ use std::sync::{
     mpsc,
 };
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
-use snow_capture::frame::Frame;
+use snow_capture::frame::{CaptureEvent, CapturedFrame, Frame};
 use snow_capture::{
-    CaptureOptions, CaptureRegion, CaptureSession, CaptureSystem, CaptureTarget, CaptureWorkload,
-    MonitorId, MonitorLayout, WgcUpdateMode, WindowId,
+    CaptureOptions, CaptureRateControl, CaptureRegion, CaptureSession, CaptureStream,
+    CaptureStreamConfig, CaptureSystem, CaptureTarget, CaptureWorkload, MonitorId, MonitorLayout,
+    ScrollingGovernorConfig, WgcUpdateMode, WindowId,
     backend::{AutoBackendPolicy, CaptureBackendKind},
 };
 use snow_screen_recorder::{
@@ -34,6 +36,22 @@ pub struct SnowCaptureRegionSessionImpl {
     session: CaptureSession,
     frame: Frame,
 }
+
+pub struct SnowCaptureRegionStreamImpl {
+    stop: Arc<AtomicBool>,
+    feedback: snow_capture::CaptureStreamFeedbackSender,
+    join: Option<JoinHandle<()>>,
+}
+
+pub struct SnowCaptureRegionStreamFrameImpl {
+    frame: CapturedFrame,
+}
+
+pub type RegionStreamCallback = unsafe extern "C" fn(
+    *mut c_void,
+    SnowCaptureRegionStreamEventKind,
+    *mut SnowCaptureRegionStreamFrameImpl,
+);
 
 pub struct SnowCaptureWindowSessionImpl {
     session: CaptureSession,
@@ -106,6 +124,61 @@ pub struct SnowCaptureRegionSessionConfig {
     pub wgc_update_mode: u8,
     pub capture_backend: u8,
     pub reserved: [u8; 30],
+}
+
+#[repr(C)]
+pub struct SnowCaptureRegionStreamConfig {
+    pub version: u32,
+    pub struct_size: u32,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub capture_retry_count: usize,
+    pub capture_backend: u8,
+    pub reserved: [u8; 31],
+}
+
+pub const REGION_STREAM_CONFIG_VERSION: u32 = 1;
+
+#[repr(C)]
+pub struct SnowCaptureRegionStreamStitchFeedback {
+    pub version: u32,
+    pub struct_size: u32,
+    pub service_time_ns: u64,
+    pub pending_depth: u32,
+    pub replaced_frames: u32,
+    pub representative: u8,
+    pub reserved: [u8; 7],
+}
+
+pub const REGION_STREAM_STITCH_FEEDBACK_VERSION: u32 = 1;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct SnowCaptureRegionStreamConfigHeader {
+    version: u32,
+    struct_size: u32,
+}
+
+#[repr(C)]
+pub struct SnowCaptureRegionStreamFrameInfo {
+    pub width: u32,
+    pub height: u32,
+    pub stride_bytes: u32,
+    pub is_duplicate: u8,
+    pub reserved0: [u8; 3],
+    pub rgba_bytes: *const u8,
+    pub rgba_len: usize,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SnowCaptureRegionStreamEventKind {
+    Frame = 1,
+    Ended = 2,
+    Error = 3,
+    ResolutionChanged = 4,
 }
 
 #[repr(C)]
@@ -1461,6 +1534,263 @@ pub unsafe extern "C" fn snow_capture_region_session_capture(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_region_stream_create(
+    config: *const SnowCaptureRegionStreamConfig,
+    callback: Option<RegionStreamCallback>,
+    context: *mut c_void,
+) -> *mut SnowCaptureRegionStreamImpl {
+    if config.is_null() {
+        set_last_error("region stream config is null");
+        return ptr::null_mut();
+    }
+    let header =
+        unsafe { ptr::read_unaligned(config.cast::<SnowCaptureRegionStreamConfigHeader>()) };
+    if header.version != REGION_STREAM_CONFIG_VERSION {
+        set_last_error(format!(
+            "unsupported region stream config version: {}",
+            header.version
+        ));
+        return ptr::null_mut();
+    }
+    if header.struct_size < std::mem::size_of::<SnowCaptureRegionStreamConfig>() as u32 {
+        set_last_error("region stream config is smaller than version 1");
+        return ptr::null_mut();
+    }
+    let config = unsafe { &*config };
+    let Some(callback) = callback else {
+        set_last_error("region stream callback is null");
+        return ptr::null_mut();
+    };
+    let region = match CaptureRegion::new(config.x, config.y, config.width, config.height) {
+        Ok(region) => region,
+        Err(error) => {
+            set_last_error(error);
+            return ptr::null_mut();
+        }
+    };
+    let backend = match parse_capture_backend(config.capture_backend) {
+        Ok(backend) => backend,
+        Err(error) => {
+            set_last_error(error);
+            return ptr::null_mut();
+        }
+    };
+    let system = match CaptureSystem::builder().with_backend_kind(backend).build() {
+        Ok(system) => system,
+        Err(error) => {
+            set_last_error(error);
+            return ptr::null_mut();
+        }
+    };
+    let options = CaptureOptions {
+        workload: CaptureWorkload::Continuous,
+        capture_retry_count: config.capture_retry_count,
+        wgc_update_mode: WgcUpdateMode::OrderedIncremental,
+        ..Default::default()
+    };
+    let session = match system.open_session(CaptureTarget::Region(region), options) {
+        Ok(session) => session,
+        Err(error) => {
+            set_last_error(error);
+            return ptr::null_mut();
+        }
+    };
+    let stream = match CaptureStream::spawn(
+        session,
+        CaptureStreamConfig {
+            target_fps: 30,
+            buffer_depth: 2,
+            max_consecutive_errors: 30,
+            rate_control: CaptureRateControl::Scrolling(ScrollingGovernorConfig::default()),
+            frame_pool_budget_bytes: Some(96 * 1024 * 1024),
+            pause_on_resolution_change: false,
+        },
+    ) {
+        Ok(stream) => stream,
+        Err(error) => {
+            set_last_error(error);
+            return ptr::null_mut();
+        }
+    };
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let stop_thread = Arc::clone(&stop);
+    let feedback_sender = stream.feedback_sender();
+    let context_address = context as usize;
+    let join = match thread::Builder::new()
+        .name("snow-scrolling-delivery".to_owned())
+        .spawn(move || {
+            let callback_context = context_address as *mut c_void;
+            let stream = stream;
+            loop {
+                if stop_thread.load(Ordering::Acquire) {
+                    stream.stop();
+                }
+                match stream.recv_timeout(Duration::from_millis(100)) {
+                    Ok(CaptureEvent::Frame(frame)) => {
+                        if frame.metadata().is_duplicate() {
+                            continue;
+                        }
+                        let event = Box::new(SnowCaptureRegionStreamFrameImpl { frame });
+                        unsafe {
+                            callback(
+                                callback_context,
+                                SnowCaptureRegionStreamEventKind::Frame,
+                                Box::into_raw(event),
+                            );
+                        }
+                    }
+                    Ok(CaptureEvent::ResolutionChanged { .. }) => unsafe {
+                        callback(
+                            callback_context,
+                            SnowCaptureRegionStreamEventKind::ResolutionChanged,
+                            ptr::null_mut(),
+                        );
+                    },
+                    Ok(CaptureEvent::Error(error)) => {
+                        set_last_error(error);
+                        unsafe {
+                            callback(
+                                callback_context,
+                                SnowCaptureRegionStreamEventKind::Error,
+                                ptr::null_mut(),
+                            );
+                        }
+                        break;
+                    }
+                    Ok(CaptureEvent::StreamEnded) => break,
+                    Ok(_) => {}
+                    Err(_) if stop_thread.load(Ordering::Acquire) => break,
+                    Err(_) if stream.is_running() => continue,
+                    Err(_) => {
+                        set_last_error("capture stream disconnected unexpectedly");
+                        unsafe {
+                            callback(
+                                callback_context,
+                                SnowCaptureRegionStreamEventKind::Error,
+                                ptr::null_mut(),
+                            );
+                        }
+                        break;
+                    }
+                }
+            }
+            unsafe {
+                callback(
+                    callback_context,
+                    SnowCaptureRegionStreamEventKind::Ended,
+                    ptr::null_mut(),
+                );
+            }
+        }) {
+        Ok(join) => join,
+        Err(error) => {
+            set_last_error(format!(
+                "failed to start scrolling delivery thread: {error}"
+            ));
+            return ptr::null_mut();
+        }
+    };
+
+    clear_last_error();
+    Box::into_raw(Box::new(SnowCaptureRegionStreamImpl {
+        stop,
+        feedback: feedback_sender,
+        join: Some(join),
+    }))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_region_stream_destroy(
+    stream: *mut SnowCaptureRegionStreamImpl,
+) {
+    if stream.is_null() {
+        return;
+    }
+    let mut stream = unsafe { Box::from_raw(stream) };
+    stream.stop.store(true, Ordering::Release);
+    if let Some(join) = stream.join.take() {
+        let _ = join.join();
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_region_stream_report_stitch_feedback(
+    stream: *mut SnowCaptureRegionStreamImpl,
+    feedback: *const SnowCaptureRegionStreamStitchFeedback,
+) -> u8 {
+    let Some(stream) = (unsafe { stream.as_ref() }) else {
+        set_last_error("region stream is null");
+        return 0;
+    };
+    let Some(feedback) = (unsafe { feedback.as_ref() }) else {
+        set_last_error("stitch feedback is null");
+        return 0;
+    };
+    if feedback.version != REGION_STREAM_STITCH_FEEDBACK_VERSION
+        || feedback.struct_size
+            < std::mem::size_of::<SnowCaptureRegionStreamStitchFeedback>() as u32
+        || feedback.reserved.iter().any(|value| *value != 0)
+        || feedback.representative > 1
+    {
+        set_last_error("invalid scrolling stitch feedback");
+        return 0;
+    }
+    stream
+        .feedback
+        .report_stitch_feedback(snow_capture::ScrollingStitchFeedback {
+            service_time: Duration::from_nanos(feedback.service_time_ns),
+            representative: feedback.representative != 0,
+            pending_depth: feedback.pending_depth as usize,
+            replaced_frames: feedback.replaced_frames,
+        });
+    clear_last_error();
+    1
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_region_stream_frame_info(
+    frame: *const SnowCaptureRegionStreamFrameImpl,
+    out_info: *mut SnowCaptureRegionStreamFrameInfo,
+) -> u8 {
+    let Some(frame) = (unsafe { frame.as_ref() }) else {
+        set_last_error("region stream frame is null");
+        return 0;
+    };
+    let Some(out_info) = (unsafe { out_info.as_mut() }) else {
+        set_last_error("region stream frame out_info is null");
+        return 0;
+    };
+    let stride = match frame.frame.width().checked_mul(4) {
+        Some(stride) => stride,
+        None => {
+            set_last_error("region stream frame stride overflow");
+            return 0;
+        }
+    };
+    *out_info = SnowCaptureRegionStreamFrameInfo {
+        width: frame.frame.width(),
+        height: frame.frame.height(),
+        stride_bytes: stride,
+        is_duplicate: u8::from(frame.frame.metadata().is_duplicate()),
+        reserved0: [0; 3],
+        rgba_bytes: frame.frame.as_rgba_bytes().as_ptr(),
+        rgba_len: frame.frame.as_rgba_bytes().len(),
+    };
+    clear_last_error();
+    1
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_region_stream_frame_destroy(
+    frame: *mut SnowCaptureRegionStreamFrameImpl,
+) {
+    if !frame.is_null() {
+        drop(unsafe { Box::from_raw(frame) });
+    }
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_capture_window_session_create(
     config: *const SnowCaptureWindowSessionConfig,
 ) -> *mut SnowCaptureWindowSessionImpl {
@@ -2476,6 +2806,43 @@ mod tests {
         );
         assert_eq!(
             unsafe { snow_capture_region_session_prepare(ptr::null_mut()) },
+            0
+        );
+    }
+
+    #[test]
+    fn region_stream_abi_rejects_null_handles_and_has_stable_layout() {
+        assert!(
+            unsafe { snow_capture_region_stream_create(ptr::null(), None, ptr::null_mut()) }
+                .is_null()
+        );
+        let mut info = SnowCaptureRegionStreamFrameInfo {
+            width: 0,
+            height: 0,
+            stride_bytes: 0,
+            is_duplicate: 0,
+            reserved0: [0; 3],
+            rgba_bytes: ptr::null(),
+            rgba_len: 0,
+        };
+        assert_eq!(
+            unsafe { snow_capture_region_stream_frame_info(ptr::null(), &mut info) },
+            0
+        );
+        unsafe {
+            snow_capture_region_stream_destroy(ptr::null_mut());
+            snow_capture_region_stream_frame_destroy(ptr::null_mut());
+        }
+        assert_eq!(std::mem::size_of::<SnowCaptureRegionStreamConfig>(), 64);
+        assert_eq!(std::mem::size_of::<SnowCaptureRegionStreamFrameInfo>(), 32);
+        assert_eq!(
+            std::mem::size_of::<SnowCaptureRegionStreamStitchFeedback>(),
+            32
+        );
+        assert_eq!(
+            unsafe {
+                snow_capture_region_stream_report_stitch_feedback(ptr::null_mut(), ptr::null())
+            },
             0
         );
     }

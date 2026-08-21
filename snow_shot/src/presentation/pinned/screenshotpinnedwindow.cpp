@@ -447,6 +447,7 @@ ScreenshotPinnedWindow::ScreenshotPinnedWindow(SnowCanvasRuntime* sourceRuntime,
       m_copyService(std::make_unique<ScreenshotPinnedCopyService>()),
       m_nativeGeometryController(std::make_unique<ScreenshotPinnedNativeGeometryController>()) {
     livePinnedWindows().push_back(QPointer<ScreenshotPinnedWindow>(this));
+    setObjectName(QStringLiteral("screenshotPinnedWindow"));
     setWindowFlags(native::windowFlags());
     setAttribute(Qt::WA_DeleteOnClose, true);
     setAttribute(Qt::WA_TranslucentBackground, true);

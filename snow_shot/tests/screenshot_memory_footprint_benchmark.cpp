@@ -819,7 +819,7 @@ struct BenchmarkConfiguration {
     int stageMinimumWaitMilliseconds = 5000;
     int stabilityWindowSamples = 20;
     qint64 stabilityRangeBytes = kBytesPerMebibyte;
-    qint64 finalIdleToleranceBytes = 3 * kBytesPerMebibyte;
+    qint64 scenarioReclaimToleranceBytes = 3 * kBytesPerMebibyte;
     int timeoutMilliseconds = 90000;
 };
 
@@ -832,6 +832,13 @@ const QStringList& benchmarkStageOrder() {
                                    QStringLiteral("tray_menu"),
                                    QStringLiteral("tray_menu_closed"),
                                    QStringLiteral("final_idle")};
+    return names;
+}
+
+const QStringList& reclaimScenarioOrder() {
+    static const QStringList names{QStringLiteral("main_interface"),
+                                   QStringLiteral("fixed_screenshot"),
+                                   QStringLiteral("tray_menu")};
     return names;
 }
 
@@ -873,40 +880,44 @@ QJsonObject stageObject(const StableMemorySample& sample) {
              QString::fromLatin1(privateWorkingSetMethodName(sample.method))}};
 }
 
-QJsonObject finalIdleComparisonForBounds(qint64 coldStartBytes, qint64 finalIdleBytes,
-                                         qint64 coldStartLowerBoundBytes,
-                                         qint64 finalIdleUpperBoundBytes, qint64 toleranceBytes) {
-    require(coldStartBytes >= 0 && finalIdleBytes >= 0 && coldStartLowerBoundBytes >= 0 &&
-                finalIdleUpperBoundBytes >= 0 && toleranceBytes >= 0,
+QJsonObject scenarioReclaimComparisonForBounds(const QString& scenario, qint64 coldStartBytes,
+                                               qint64 postScenarioBytes,
+                                               qint64 coldStartLowerBoundBytes,
+                                               qint64 postScenarioUpperBoundBytes,
+                                               qint64 toleranceBytes) {
+    require(!scenario.isEmpty(), "memory comparison scenario must not be empty");
+    require(coldStartBytes >= 0 && postScenarioBytes >= 0 && coldStartLowerBoundBytes >= 0 &&
+                postScenarioUpperBoundBytes >= 0 && toleranceBytes >= 0,
             "memory comparison inputs must be nonnegative");
-    const qint64 deltaBytes = finalIdleBytes - coldStartBytes;
+    const qint64 deltaBytes = postScenarioBytes - coldStartBytes;
     const qint64 excessBytes = std::max<qint64>(0, deltaBytes);
-    const qint64 acceptanceDeltaBytes = finalIdleUpperBoundBytes - coldStartLowerBoundBytes;
+    const qint64 acceptanceDeltaBytes = postScenarioUpperBoundBytes - coldStartLowerBoundBytes;
     const qint64 limitBytes =
         coldStartLowerBoundBytes > std::numeric_limits<qint64>::max() - toleranceBytes
             ? std::numeric_limits<qint64>::max()
             : coldStartLowerBoundBytes + toleranceBytes;
-    const bool withinUpperBound = finalIdleUpperBoundBytes <= limitBytes;
+    const bool withinUpperBound = postScenarioUpperBoundBytes <= limitBytes;
     return {
+        {QStringLiteral("scenario"), scenario},
         {QStringLiteral("comparison_kind"),
          QStringLiteral("one_sided_upper_bound_using_stability_bounds")},
         {QStringLiteral("criterion"),
-         QStringLiteral("final_idle_stability_max_bytes <= "
+         QStringLiteral("post_scenario_stability_max_bytes <= "
                         "cold_start_stability_min_bytes + tolerance_bytes")},
         {QStringLiteral("representative"), QStringLiteral("median_of_stability_window")},
         {QStringLiteral("cold_start_bytes"), coldStartBytes},
-        {QStringLiteral("final_idle_bytes"), finalIdleBytes},
+        {QStringLiteral("post_scenario_bytes"), postScenarioBytes},
         {QStringLiteral("delta_bytes"), deltaBytes},
         {QStringLiteral("delta_mib"), static_cast<double>(deltaBytes) / kBytesPerMebibyte},
         {QStringLiteral("excess_bytes"), excessBytes},
         {QStringLiteral("excess_mib"), static_cast<double>(excessBytes) / kBytesPerMebibyte},
         {QStringLiteral("acceptance_cold_start_bytes"), coldStartLowerBoundBytes},
-        {QStringLiteral("acceptance_final_idle_bytes"), finalIdleUpperBoundBytes},
+        {QStringLiteral("acceptance_post_scenario_bytes"), postScenarioUpperBoundBytes},
         {QStringLiteral("acceptance_delta_bytes"), acceptanceDeltaBytes},
         {QStringLiteral("acceptance_delta_mib"),
          static_cast<double>(acceptanceDeltaBytes) / kBytesPerMebibyte},
-        {QStringLiteral("final_to_cold_ratio"),
-         coldStartBytes > 0 ? static_cast<double>(finalIdleBytes) / coldStartBytes : 0.0},
+        {QStringLiteral("post_scenario_to_cold_ratio"),
+         coldStartBytes > 0 ? static_cast<double>(postScenarioBytes) / coldStartBytes : 0.0},
         {QStringLiteral("tolerance_bytes"), toleranceBytes},
         {QStringLiteral("tolerance_mib"), static_cast<double>(toleranceBytes) / kBytesPerMebibyte},
         {QStringLiteral("limit_bytes"), limitBytes},
@@ -914,16 +925,19 @@ QJsonObject finalIdleComparisonForBounds(qint64 coldStartBytes, qint64 finalIdle
         {QStringLiteral("within_tolerance"), withinUpperBound}};
 }
 
-QJsonObject finalIdleComparison(qint64 coldStartBytes, qint64 finalIdleBytes,
-                                qint64 toleranceBytes) {
-    return finalIdleComparisonForBounds(coldStartBytes, finalIdleBytes, coldStartBytes,
-                                        finalIdleBytes, toleranceBytes);
+QJsonObject scenarioReclaimComparison(const QString& scenario, qint64 coldStartBytes,
+                                      qint64 postScenarioBytes, qint64 toleranceBytes) {
+    return scenarioReclaimComparisonForBounds(scenario, coldStartBytes, postScenarioBytes,
+                                              coldStartBytes, postScenarioBytes, toleranceBytes);
 }
 
-QJsonObject finalIdleComparison(const StableMemorySample& coldStart,
-                                const StableMemorySample& finalIdle, qint64 toleranceBytes) {
-    return finalIdleComparisonForBounds(coldStart.bytes, finalIdle.bytes, coldStart.minimumBytes,
-                                        finalIdle.maximumBytes, toleranceBytes);
+QJsonObject scenarioReclaimComparison(const QString& scenario,
+                                      const StableMemorySample& coldStart,
+                                      const StableMemorySample& postScenario,
+                                      qint64 toleranceBytes) {
+    return scenarioReclaimComparisonForBounds(
+        scenario, coldStart.bytes, postScenario.bytes, coldStart.minimumBytes,
+        postScenario.maximumBytes, toleranceBytes);
 }
 
 QJsonObject environmentReport(const QString& appPath, const MonitorInfo& monitor) {
@@ -967,10 +981,10 @@ QJsonObject environmentReport(const QString& appPath, const MonitorInfo& monitor
 
 QString reportHtml(const QJsonObject& report) {
     const QJsonObject metrics = report.value(QStringLiteral("metrics")).toObject();
-    const QJsonObject finalSummary =
-        report.value(QStringLiteral("final_idle_vs_cold_start")).toObject();
+    const QJsonObject reclaimSummary =
+        report.value(QStringLiteral("scenario_reclaim_vs_cold_start")).toObject();
     const QJsonObject deltaStatistics =
-        finalSummary.value(QStringLiteral("delta_mib_statistics")).toObject();
+        reclaimSummary.value(QStringLiteral("delta_mib_statistics")).toObject();
     QString rows;
     QStringList names;
     for (const QJsonValue& value : report.value(QStringLiteral("stage_order")).toArray()) {
@@ -1001,9 +1015,10 @@ QString reportHtml(const QJsonObject& report) {
     }
     const QString embedded =
         QString::fromUtf8(QJsonDocument(report).toJson(QJsonDocument::Indented)).toHtmlEscaped();
-    const bool complete = finalSummary.value(QStringLiteral("complete_sample_set")).toBool();
+    const bool complete = reclaimSummary.value(QStringLiteral("complete_sample_set")).toBool() &&
+                          reclaimSummary.value(QStringLiteral("complete_comparison_set")).toBool();
     const QString acceptance =
-        finalSummary.value(QStringLiteral("benchmark_passed")).toBool()
+        reclaimSummary.value(QStringLiteral("benchmark_passed")).toBool()
             ? QStringLiteral("PASS")
             : (complete ? QStringLiteral("FAIL") : QStringLiteral("INCOMPLETE"));
     const QString p95Delta =
@@ -1017,17 +1032,18 @@ QString reportHtml(const QJsonObject& report) {
                "collapse:collapse;margin:20px 0}th,td{border:1px solid #dadce0;padding:8px 12px}"
                "th{text-align:left;background:#f8f9fa}pre{background:#f8f9fa;padding:16px;"
                "overflow:auto}</style></head><body><h1>Screenshot memory footprint</h1>"
-               "<p><strong>Benchmark: %1</strong> (%2/%3 requested samples completed; %4 of "
-               "those were no more than %5 MiB above cold start using conservative "
-               "stability-window bounds; P95 signed median delta %6)</p>"
+               "<p><strong>Benchmark: %1</strong> (%2/%3 requested samples completed; %4/%5 "
+               "post-scenario reclaim checks were no more than %6 MiB above cold start using "
+               "conservative stability-window bounds; P95 signed median delta %7)</p>"
                "<table><thead><tr><th>Stage</th><th>Min</th><th>Mean</th><th>P50</th><th>P90</th>"
-               "<th>P95</th><th>Max</th></tr></thead><tbody>%7</tbody></table><pre>%8</pre>"
+               "<th>P95</th><th>Max</th></tr></thead><tbody>%8</tbody></table><pre>%9</pre>"
                "</body></html>")
         .arg(acceptance)
-        .arg(finalSummary.value(QStringLiteral("sample_count")).toInteger())
-        .arg(finalSummary.value(QStringLiteral("requested_sample_count")).toInteger())
-        .arg(finalSummary.value(QStringLiteral("within_upper_bound_sample_count")).toInteger())
-        .arg(finalSummary.value(QStringLiteral("tolerance_mib")).toDouble())
+        .arg(reclaimSummary.value(QStringLiteral("sample_count")).toInteger())
+        .arg(reclaimSummary.value(QStringLiteral("requested_sample_count")).toInteger())
+        .arg(reclaimSummary.value(QStringLiteral("within_upper_bound_comparison_count")).toInteger())
+        .arg(reclaimSummary.value(QStringLiteral("requested_comparison_count")).toInteger())
+        .arg(reclaimSummary.value(QStringLiteral("tolerance_mib")).toDouble())
         .arg(p95Delta)
         .arg(rows, embedded);
 }
@@ -1060,7 +1076,7 @@ void addBenchmarkCommandLineOptions(QCommandLineParser& parser) {
                       QStringLiteral("maximum private working-set range"),
                       QStringLiteral("kibibytes"), QStringLiteral("1024")});
     parser.addOption({QStringLiteral("final-idle-tolerance-kib"),
-                      QStringLiteral("maximum final-idle excess over cold start"),
+                      QStringLiteral("maximum post-scenario excess over cold start"),
                       QStringLiteral("kibibytes"), QStringLiteral("3072")});
     parser.addOption({QStringLiteral("timeout-ms"), QStringLiteral("per-stage timeout"),
                       QStringLiteral("milliseconds"), QStringLiteral("90000")});
@@ -1104,9 +1120,9 @@ BenchmarkConfiguration configurationFromParser(const QCommandLineParser& parser)
         integerOption(parser, QStringLiteral("stability-window"));
     configuration.stabilityRangeBytes = nonnegativeKibibytes(
         parser, QStringLiteral("stability-range-kib"), "stability range is invalid or too large");
-    configuration.finalIdleToleranceBytes =
+    configuration.scenarioReclaimToleranceBytes =
         nonnegativeKibibytes(parser, QStringLiteral("final-idle-tolerance-kib"),
-                             "final-idle tolerance is invalid or too large");
+                             "scenario reclaim tolerance is invalid or too large");
     configuration.timeoutMilliseconds = integerOption(parser, QStringLiteral("timeout-ms"));
     return configuration;
 }
@@ -1147,7 +1163,8 @@ void validateConfiguration(const BenchmarkConfiguration& configuration,
     require(configuration.stabilityWindowSamples > 1,
             "stability window must contain at least two samples");
     require(configuration.stabilityRangeBytes > 0, "stability range must be positive");
-    require(configuration.finalIdleToleranceBytes >= 0, "final-idle tolerance must be nonnegative");
+    require(configuration.scenarioReclaimToleranceBytes >= 0,
+            "scenario reclaim tolerance must be nonnegative");
     require(configuration.timeoutMilliseconds > configuration.coldStartMinimumWaitMilliseconds &&
                 configuration.timeoutMilliseconds > configuration.stageMinimumWaitMilliseconds,
             "timeout must exceed both minimum waits");
@@ -1206,26 +1223,53 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
 
-    // Exercise the main-window lifecycle first. Post WM_CLOSE directly to the validated HWND so
-    // unrelated foreground-window changes cannot redirect the close command.
+    // Exercise the main-window lifecycle first, including its two heaviest lazy pages. Post
+    // WM_CLOSE directly to the validated HWND so unrelated foreground-window changes cannot
+    // redirect the close command.
     forwardCommand(configuration, baseArguments, QStringLiteral("--e2e-open-main-interface"));
     ComPtr<IUIAutomationElement> mainWindow =
         waitForVisibleElement(automation, primary.processId(), QStringLiteral("snowShotMainWindow"),
                               primary, configuration.timeoutMilliseconds);
     require(mainWindow.get() != nullptr, "main interface did not become visible");
+    forwardCommand(configuration, baseArguments,
+                   QStringLiteral("--e2e-open-screenshot-history"));
+    require(waitForVisibleElement(automation, primary.processId(),
+                                  QStringLiteral("screenshotHistoryPage"), primary,
+                                  configuration.timeoutMilliseconds)
+                    .get() != nullptr,
+            "screenshot history did not become visible");
+    forwardCommand(configuration, baseArguments,
+                   QStringLiteral("--e2e-open-interface-settings"));
+    require(waitForVisibleElement(automation, primary.processId(),
+                                  QStringLiteral("settings-page-interface-settings"), primary,
+                                  configuration.timeoutMilliseconds)
+                    .get() != nullptr,
+            "interface settings did not become visible");
+    require(waitForElementToDisappear(automation, primary.processId(),
+                                      QStringLiteral("screenshotHistoryPage"), primary,
+                                      configuration.timeoutMilliseconds),
+            "screenshot history remained visible after opening interface settings");
     stages.mainInterface =
         waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
+    advanceLifecycleCursor(lifecyclePath, lifecycleCursor);
     closeNativeWindow(*mainWindow.get(), primary.processId());
     require(waitForElementToDisappear(automation, primary.processId(),
                                       QStringLiteral("snowShotMainWindow"), primary,
                                       configuration.timeoutMilliseconds),
             "main interface did not close");
+    const QJsonObject mainInterfaceReclaim = waitForLifecycleEvent(
+        lifecyclePath, primary.processId(), QStringLiteral("idle_memory_reclaim_completed"),
+        lifecycleCursor, primary, configuration.timeoutMilliseconds);
+    validateIdleMemoryReclaim(mainInterfaceReclaim, false);
     stages.mainInterfaceClosed =
         waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
+    const QJsonObject mainInterfaceComparison = scenarioReclaimComparison(
+        QStringLiteral("main_interface"), stages.coldStart, stages.mainInterfaceClosed,
+        configuration.scenarioReclaimToleranceBytes);
 
     // Pin a fixed 800x800 selection, then close the actual pinned window through its close
     // control. This ensures the sample includes the asynchronous canvas/runtime teardown.
@@ -1242,33 +1286,43 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
     const QJsonObject pinRecord =
         waitForPinTrace(pinPath, primary, pinCursor, configuration.timeoutMilliseconds);
     Q_UNUSED(pinRecord);
-    require(waitForVisibleElement(automation, primary.processId(),
-                                  QStringLiteral("screenshotPinnedBorder"), primary,
-                                  configuration.timeoutMilliseconds)
-                    .get() != nullptr,
-            "pinned window did not become visible");
-    stages.fixedScreenshot =
-        waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
-                            configuration.pollMilliseconds, configuration.stabilityWindowSamples,
-                            configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
+    ComPtr<IUIAutomationElement> pinnedWindow = waitForVisibleElement(
+        automation, primary.processId(), QStringLiteral("screenshotPinnedWindow"), primary,
+        configuration.timeoutMilliseconds);
+    require(pinnedWindow.get() != nullptr, "pinned window did not become visible");
 
     const int monitorCenterX =
         monitor.bounds.left + (monitor.bounds.right - monitor.bounds.left) / 2;
     const int monitorCenterY =
         monitor.bounds.top + (monitor.bounds.bottom - monitor.bounds.top) / 2;
     // Pinned controls are shown while the pointer is inside the pinned surface. The selection
-    // ends near its lower-right edge, so move to the center before looking up the close button.
+    // ends near its lower-right edge, so move to the center before enabling drawing mode.
     sendMouse(monitorCenterX, monitorCenterY, MOUSEEVENTF_MOVE);
-    ComPtr<IUIAutomationElement> pinnedCloseButton = waitForVisibleElement(
-        automation, primary.processId(), QStringLiteral("screenshotPinnedCloseButton"), primary,
+    ComPtr<IUIAutomationElement> pinnedEditButton = waitForVisibleElement(
+        automation, primary.processId(), QStringLiteral("screenshotPinnedEditButton"), primary,
         configuration.timeoutMilliseconds);
-    require(pinnedCloseButton.get() != nullptr,
-            "pinned window close button did not become visible");
-    clickElement(*pinnedCloseButton.get());
+    require(pinnedEditButton.get() != nullptr,
+            "pinned window drawing button did not become visible");
+    clickElement(*pinnedEditButton.get());
+    require(waitForVisibleElement(automation, primary.processId(),
+                                  QStringLiteral("screenshotPinnedDrawingToolbar"), primary,
+                                  configuration.timeoutMilliseconds)
+                    .get() != nullptr,
+            "pinned window did not enter drawing mode");
+    stages.fixedScreenshot =
+        waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
+                            configuration.pollMilliseconds, configuration.stabilityWindowSamples,
+                            configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
+
+    closeNativeWindow(*pinnedWindow.get(), primary.processId());
     require(waitForElementToDisappear(automation, primary.processId(),
-                                      QStringLiteral("screenshotPinnedBorder"), primary,
+                                      QStringLiteral("screenshotPinnedWindow"), primary,
                                       configuration.timeoutMilliseconds),
             "pinned window did not close");
+    require(waitForElementToDisappear(automation, primary.processId(),
+                                      QStringLiteral("screenshotPinnedDrawingToolbar"), primary,
+                                      configuration.timeoutMilliseconds),
+            "pinned drawing toolbar did not close");
     require(waitForElementToDisappear(automation, primary.processId(),
                                       QStringLiteral("screenshotSelectionToolbarPanel"), primary,
                                       configuration.timeoutMilliseconds),
@@ -1284,6 +1338,9 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
         waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
+    const QJsonObject fixedScreenshotComparison = scenarioReclaimComparison(
+        QStringLiteral("fixed_screenshot"), stages.coldStart, stages.pinnedWindowClosed,
+        configuration.scenarioReclaimToleranceBytes);
 
     // Open the tray menu only after every screenshot surface has closed. Escape is sent after
     // focusing the menu so the hide operation is deterministic on a busy desktop.
@@ -1318,6 +1375,9 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
     stages.finalIdle = stages.trayMenuClosed;
+    const QJsonObject trayMenuComparison = scenarioReclaimComparison(
+        QStringLiteral("tray_menu"), stages.coldStart, stages.trayMenuClosed,
+        configuration.scenarioReclaimToleranceBytes);
 
     const auto mib = [](qint64 bytes) { return static_cast<double>(bytes) / kBytesPerMebibyte; };
     QJsonObject monitorReport;
@@ -1328,10 +1388,12 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
                          static_cast<qint64>(monitor.bounds.right - monitor.bounds.left));
     monitorReport.insert(QStringLiteral("height"),
                          static_cast<qint64>(monitor.bounds.bottom - monitor.bounds.top));
-    const QJsonObject finalComparison = finalIdleComparison(stages.coldStart, stages.finalIdle,
-                                                            configuration.finalIdleToleranceBytes);
+    const QJsonObject reclaimComparisons{
+        {QStringLiteral("main_interface"), mainInterfaceComparison},
+        {QStringLiteral("fixed_screenshot"), fixedScreenshotComparison},
+        {QStringLiteral("tray_menu"), trayMenuComparison}};
     const QJsonObject record{
-        {QStringLiteral("schema_version"), 3},
+        {QStringLiteral("schema_version"), 4},
         {QStringLiteral("memory_stage_representative"),
          QStringLiteral("median_of_stability_window")},
         {QStringLiteral("acceptance_uses_conservative_stability_bounds"), true},
@@ -1346,7 +1408,9 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
         {QStringLiteral("tray_menu"), stageObject(stages.trayMenu)},
         {QStringLiteral("tray_menu_closed"), stageObject(stages.trayMenuClosed)},
         {QStringLiteral("final_idle"), stageObject(stages.finalIdle)},
-        {QStringLiteral("final_idle_vs_cold_start"), finalComparison},
+        {QStringLiteral("scenario_reclaim_vs_cold_start"), reclaimComparisons},
+        // Compatibility alias: final idle is the post-tray-menu checkpoint.
+        {QStringLiteral("final_idle_vs_cold_start"), trayMenuComparison},
         {QStringLiteral("cold_start_private_working_set_bytes"), stages.coldStart.bytes},
         {QStringLiteral("main_interface_private_working_set_bytes"), stages.mainInterface.bytes},
         {QStringLiteral("main_interface_closed_private_working_set_bytes"),
@@ -1374,6 +1438,7 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
         {QStringLiteral("traces"),
          QJsonObject{{QStringLiteral("lifecycle"), QDir::toNativeSeparators(lifecyclePath)},
                      {QStringLiteral("pin"), QDir::toNativeSeparators(pinPath)},
+                     {QStringLiteral("main_interface_reclaim"), mainInterfaceReclaim},
                      {QStringLiteral("pinned_window_reclaim"), pinnedWindowReclaim},
                      {QStringLiteral("final_idle_reclaim"), finalIdleReclaim}}}};
     std::cout << "sample " << iteration << ": cold_start=" << mib(stages.coldStart.bytes)
@@ -1382,11 +1447,18 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
               << " MiB, fixed_screenshot=" << mib(stages.fixedScreenshot.bytes)
               << " MiB, pinned_window_closed=" << mib(stages.pinnedWindowClosed.bytes)
               << " MiB, tray_menu=" << mib(stages.trayMenu.bytes)
-              << " MiB, final_idle=" << mib(stages.finalIdle.bytes) << " MiB, final_delta="
-              << finalComparison.value(QStringLiteral("delta_mib")).toDouble()
-              << " MiB, within_upper_bound="
-              << (finalComparison.value(QStringLiteral("within_upper_bound")).toBool() ? "yes"
-                                                                                       : "no")
+              << " MiB, final_idle=" << mib(stages.finalIdle.bytes)
+              << " MiB, reclaimed(main/fixed/tray)="
+              << (mainInterfaceComparison.value(QStringLiteral("within_upper_bound")).toBool()
+                      ? "yes"
+                      : "no")
+              << '/'
+              << (fixedScreenshotComparison.value(QStringLiteral("within_upper_bound")).toBool()
+                      ? "yes"
+                      : "no")
+              << '/'
+              << (trayMenuComparison.value(QStringLiteral("within_upper_bound")).toBool() ? "yes"
+                                                                                           : "no")
               << '\n';
     require(primary.stop(), "could not terminate snow_shot after the sample");
     return record;
@@ -1400,36 +1472,46 @@ QJsonObject metricFor(const QVector<QJsonObject>& records, const QString& stage)
     return statistics(std::move(values));
 }
 
-QJsonObject finalIdleSummary(const QVector<QJsonObject>& records, qint64 toleranceBytes,
-                             qsizetype requestedSampleCount) {
+QJsonObject scenarioComparisonSummary(const QVector<QJsonObject>& records,
+                                      const QString& scenario, qint64 toleranceBytes,
+                                      qsizetype requestedSampleCount) {
+    require(!scenario.isEmpty(), "summary scenario must not be empty");
     require(requestedSampleCount > 0, "requested sample count must be positive");
     QVector<double> deltas;
     deltas.reserve(records.size());
     qsizetype withinUpperBound = 0;
     for (const QJsonObject& record : records) {
         const QJsonObject comparison =
-            record.value(QStringLiteral("final_idle_vs_cold_start")).toObject();
+            record.value(QStringLiteral("scenario_reclaim_vs_cold_start"))
+                .toObject()
+                .value(scenario)
+                .toObject();
+        if (comparison.isEmpty()) {
+            continue;
+        }
         deltas.push_back(comparison.value(QStringLiteral("delta_mib")).toDouble());
         if (comparison.value(QStringLiteral("within_upper_bound")).toBool()) {
             ++withinUpperBound;
         }
     }
-    const bool completeSampleSet = records.size() == requestedSampleCount;
+    const qsizetype comparisonCount = deltas.size();
+    const bool completeSampleSet = comparisonCount == requestedSampleCount;
     const bool allSuccessfulSamplesWithinUpperBound =
-        !records.isEmpty() && withinUpperBound == records.size();
+        comparisonCount > 0 && withinUpperBound == comparisonCount;
     const bool benchmarkPassed = completeSampleSet && allSuccessfulSamplesWithinUpperBound;
     return {
+        {QStringLiteral("scenario"), scenario},
         {QStringLiteral("comparison_kind"),
          QStringLiteral("one_sided_upper_bound_using_stability_bounds")},
         {QStringLiteral("criterion"),
-         QStringLiteral("final_idle_stability_max_bytes <= "
+         QStringLiteral("post_scenario_stability_max_bytes <= "
                         "cold_start_stability_min_bytes + tolerance_bytes")},
         {QStringLiteral("requested_sample_count"), requestedSampleCount},
-        {QStringLiteral("sample_count"), records.size()},
+        {QStringLiteral("sample_count"), comparisonCount},
         {QStringLiteral("within_upper_bound_sample_count"), withinUpperBound},
-        {QStringLiteral("outside_upper_bound_sample_count"), records.size() - withinUpperBound},
+        {QStringLiteral("outside_upper_bound_sample_count"), comparisonCount - withinUpperBound},
         {QStringLiteral("within_tolerance_sample_count"), withinUpperBound},
-        {QStringLiteral("outside_tolerance_sample_count"), records.size() - withinUpperBound},
+        {QStringLiteral("outside_tolerance_sample_count"), comparisonCount - withinUpperBound},
         {QStringLiteral("complete_sample_set"), completeSampleSet},
         {QStringLiteral("all_successful_samples_within_upper_bound"),
          allSuccessfulSamplesWithinUpperBound},
@@ -1440,6 +1522,64 @@ QJsonObject finalIdleSummary(const QVector<QJsonObject>& records, qint64 toleran
         {QStringLiteral("tolerance_bytes"), toleranceBytes},
         {QStringLiteral("tolerance_mib"), static_cast<double>(toleranceBytes) / kBytesPerMebibyte},
         {QStringLiteral("delta_mib_statistics"), statistics(std::move(deltas))}};
+}
+
+QJsonObject scenarioReclaimSummary(const QVector<QJsonObject>& records, qint64 toleranceBytes,
+                                   qsizetype requestedSampleCount) {
+    require(requestedSampleCount > 0, "requested sample count must be positive");
+    QJsonObject scenarios;
+    QVector<double> deltas;
+    qsizetype comparisonCount = 0;
+    qsizetype withinUpperBound = 0;
+    for (const QString& scenario : reclaimScenarioOrder()) {
+        const QJsonObject summary =
+            scenarioComparisonSummary(records, scenario, toleranceBytes, requestedSampleCount);
+        scenarios.insert(scenario, summary);
+        comparisonCount += summary.value(QStringLiteral("sample_count")).toInteger();
+        withinUpperBound +=
+            summary.value(QStringLiteral("within_upper_bound_sample_count")).toInteger();
+        for (const QJsonObject& record : records) {
+            const QJsonObject comparison =
+                record.value(QStringLiteral("scenario_reclaim_vs_cold_start"))
+                    .toObject()
+                    .value(scenario)
+                    .toObject();
+            if (!comparison.isEmpty()) {
+                deltas.push_back(comparison.value(QStringLiteral("delta_mib")).toDouble());
+            }
+        }
+    }
+    const qsizetype requestedComparisonCount =
+        requestedSampleCount * reclaimScenarioOrder().size();
+    const bool completeSampleSet = records.size() == requestedSampleCount;
+    const bool completeComparisonSet = comparisonCount == requestedComparisonCount;
+    const bool allComparisonsWithinUpperBound =
+        comparisonCount > 0 && withinUpperBound == comparisonCount;
+    const bool benchmarkPassed =
+        completeSampleSet && completeComparisonSet && allComparisonsWithinUpperBound;
+    return {
+        {QStringLiteral("comparison_kind"),
+         QStringLiteral("one_sided_upper_bound_using_stability_bounds")},
+        {QStringLiteral("criterion"),
+         QStringLiteral("each post_scenario_stability_max_bytes <= "
+                        "cold_start_stability_min_bytes + tolerance_bytes")},
+        {QStringLiteral("requested_sample_count"), requestedSampleCount},
+        {QStringLiteral("sample_count"), records.size()},
+        {QStringLiteral("requested_comparison_count"), requestedComparisonCount},
+        {QStringLiteral("comparison_count"), comparisonCount},
+        {QStringLiteral("within_upper_bound_comparison_count"), withinUpperBound},
+        {QStringLiteral("outside_upper_bound_comparison_count"),
+         comparisonCount - withinUpperBound},
+        {QStringLiteral("complete_sample_set"), completeSampleSet},
+        {QStringLiteral("complete_comparison_set"), completeComparisonSet},
+        {QStringLiteral("all_comparisons_within_upper_bound"), allComparisonsWithinUpperBound},
+        {QStringLiteral("benchmark_passed"), benchmarkPassed},
+        {QStringLiteral("delta_representative"), QStringLiteral("median_of_stability_window")},
+        {QStringLiteral("acceptance_uses_conservative_stability_bounds"), true},
+        {QStringLiteral("tolerance_bytes"), toleranceBytes},
+        {QStringLiteral("tolerance_mib"), static_cast<double>(toleranceBytes) / kBytesPerMebibyte},
+        {QStringLiteral("delta_mib_statistics"), statistics(std::move(deltas))},
+        {QStringLiteral("scenarios"), scenarios}};
 }
 
 int runBenchmark(const BenchmarkConfiguration& configuration) {
@@ -1471,7 +1611,7 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
             record = runSample(configuration, displayList.at(configuration.screenIndex), iteration,
                                *automation.get());
         } catch (const std::exception& error) {
-            record = {{QStringLiteral("schema_version"), 3},
+            record = {{QStringLiteral("schema_version"), 4},
                       {QStringLiteral("iteration"), iteration},
                       {QStringLiteral("error"), QString::fromLocal8Bit(error.what())}};
             sampleErrors.append(record);
@@ -1500,16 +1640,17 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
         {QStringLiteral("tray_menu_closed"),
          metricFor(records, QStringLiteral("tray_menu_closed"))},
         {QStringLiteral("final_idle"), metricFor(records, QStringLiteral("final_idle"))}};
-    const QJsonObject finalSummary =
-        finalIdleSummary(records, configuration.finalIdleToleranceBytes, configuration.samples);
+    const QJsonObject reclaimSummary = scenarioReclaimSummary(
+        records, configuration.scenarioReclaimToleranceBytes, configuration.samples);
     const bool completeSampleSet = records.size() == configuration.samples;
-    const bool benchmarkPassed = finalSummary.value(QStringLiteral("benchmark_passed")).toBool();
+    const bool benchmarkPassed =
+        reclaimSummary.value(QStringLiteral("benchmark_passed")).toBool();
     const QString benchmarkStatus =
         !completeSampleSet
             ? QStringLiteral("incomplete")
             : (benchmarkPassed ? QStringLiteral("pass") : QStringLiteral("retention_failed"));
     const QJsonObject report{
-        {QStringLiteral("schema_version"), 3},
+        {QStringLiteral("schema_version"), 4},
         {QStringLiteral("benchmark"), QStringLiteral("screenshot_memory_footprint")},
         {QStringLiteral("benchmark_status"), benchmarkStatus},
         {QStringLiteral("generated_utc"),
@@ -1529,11 +1670,18 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
              {QStringLiteral("memory_stage_representative"),
               QStringLiteral("median_of_stability_window")},
              {QStringLiteral("acceptance_uses_conservative_stability_bounds"), true},
+             {QStringLiteral("scenario_reclaim_tolerance_kib"),
+              configuration.scenarioReclaimToleranceBytes / kBytesPerKibibyte},
+             // Retained for command-line and report consumers using the version 3 name.
              {QStringLiteral("final_idle_tolerance_kib"),
-              configuration.finalIdleToleranceBytes / kBytesPerKibibyte},
+              configuration.scenarioReclaimToleranceBytes / kBytesPerKibibyte},
              {QStringLiteral("timeout_ms"), configuration.timeoutMilliseconds}}},
         {QStringLiteral("metrics"), metrics},
-        {QStringLiteral("final_idle_vs_cold_start"), finalSummary},
+        {QStringLiteral("scenario_reclaim_vs_cold_start"), reclaimSummary},
+        {QStringLiteral("final_idle_vs_cold_start"),
+         reclaimSummary.value(QStringLiteral("scenarios"))
+             .toObject()
+             .value(QStringLiteral("tray_menu"))},
         {QStringLiteral("successful_sample_count"), records.size()},
         {QStringLiteral("failed_sample_count"), configuration.samples - records.size()},
         {QStringLiteral("sample_errors"), sampleErrors},
@@ -1617,8 +1765,9 @@ bool runSelfTest() {
     addBenchmarkCommandLineOptions(defaultParser);
     require(defaultParser.parse({QStringLiteral("benchmark-self-test")}),
             "default command-line self-test setup failed");
-    require(configurationFromParser(defaultParser).finalIdleToleranceBytes == 3 * kBytesPerMebibyte,
-            "default final-idle tolerance self-test failed");
+    require(configurationFromParser(defaultParser).scenarioReclaimToleranceBytes ==
+                3 * kBytesPerMebibyte,
+            "default scenario reclaim tolerance self-test failed");
 
     QTemporaryDir temporary;
     require(temporary.isValid(), "trace self-test directory could not be created");
@@ -1662,19 +1811,22 @@ bool runSelfTest() {
     require(failedReclaimRejected, "failed idle-memory reclaim was accepted");
     require(privateWorkingSet(GetCurrentProcess()).bytes > 0,
             "private working-set self-test failed");
-    const QJsonObject passingComparison = finalIdleComparison(
-        100 * kBytesPerMebibyte, 108 * kBytesPerMebibyte, 8 * kBytesPerMebibyte);
-    const QJsonObject failingComparison = finalIdleComparison(
-        100 * kBytesPerMebibyte, 108 * kBytesPerMebibyte + 1, 8 * kBytesPerMebibyte);
-    const QJsonObject belowColdComparison =
-        finalIdleComparison(100 * kBytesPerMebibyte, 60 * kBytesPerMebibyte, 8 * kBytesPerMebibyte);
+    const QJsonObject passingComparison = scenarioReclaimComparison(
+        QStringLiteral("main_interface"), 100 * kBytesPerMebibyte, 108 * kBytesPerMebibyte,
+        8 * kBytesPerMebibyte);
+    const QJsonObject failingComparison = scenarioReclaimComparison(
+        QStringLiteral("main_interface"), 100 * kBytesPerMebibyte,
+        108 * kBytesPerMebibyte + 1, 8 * kBytesPerMebibyte);
+    const QJsonObject belowColdComparison = scenarioReclaimComparison(
+        QStringLiteral("main_interface"), 100 * kBytesPerMebibyte, 60 * kBytesPerMebibyte,
+        8 * kBytesPerMebibyte);
     require(passingComparison.value(QStringLiteral("within_tolerance")).toBool() &&
                 passingComparison.value(QStringLiteral("within_upper_bound")).toBool() &&
                 passingComparison.value(QStringLiteral("delta_mib")).toDouble() == 8.0 &&
                 !failingComparison.value(QStringLiteral("within_tolerance")).toBool() &&
                 belowColdComparison.value(QStringLiteral("within_upper_bound")).toBool() &&
                 belowColdComparison.value(QStringLiteral("delta_mib")).toDouble() == -40.0,
-            "final-idle comparison self-test failed");
+            "scenario reclaim comparison self-test failed");
     StableMemorySample biasedCold;
     biasedCold.bytes = 102;
     biasedCold.minimumBytes = 100;
@@ -1683,31 +1835,67 @@ bool runSelfTest() {
     biasedFinal.bytes = 104;
     biasedFinal.minimumBytes = 102;
     biasedFinal.maximumBytes = 106;
-    const QJsonObject conservativeComparison = finalIdleComparison(biasedCold, biasedFinal, 3);
+    const QJsonObject conservativeComparison = scenarioReclaimComparison(
+        QStringLiteral("main_interface"), biasedCold, biasedFinal, 3);
     require(
         conservativeComparison.value(QStringLiteral("delta_bytes")).toInteger() == 2 &&
             conservativeComparison.value(QStringLiteral("acceptance_delta_bytes")).toInteger() ==
                 6 &&
             !conservativeComparison.value(QStringLiteral("within_upper_bound")).toBool(),
         "conservative stability-bound comparison self-test failed");
-    const QJsonObject syntheticSummary = finalIdleSummary(
-        QVector<QJsonObject>{
-            QJsonObject{{QStringLiteral("final_idle_vs_cold_start"), passingComparison}},
-            QJsonObject{{QStringLiteral("final_idle_vs_cold_start"),
-                         finalIdleComparison(100 * kBytesPerMebibyte, 99 * kBytesPerMebibyte,
-                                             8 * kBytesPerMebibyte)}}},
+    const auto syntheticRecord = [](const QJsonObject& mainInterface,
+                                    const QJsonObject& fixedScreenshot,
+                                    const QJsonObject& trayMenu) {
+        return QJsonObject{{QStringLiteral("scenario_reclaim_vs_cold_start"),
+                            QJsonObject{{QStringLiteral("main_interface"), mainInterface},
+                                        {QStringLiteral("fixed_screenshot"), fixedScreenshot},
+                                        {QStringLiteral("tray_menu"), trayMenu}}}};
+    };
+    const QJsonObject passingFixedComparison = scenarioReclaimComparison(
+        QStringLiteral("fixed_screenshot"), 100 * kBytesPerMebibyte,
+        99 * kBytesPerMebibyte, 8 * kBytesPerMebibyte);
+    const QJsonObject passingTrayComparison = scenarioReclaimComparison(
+        QStringLiteral("tray_menu"), 100 * kBytesPerMebibyte, 101 * kBytesPerMebibyte,
+        8 * kBytesPerMebibyte);
+    const QJsonObject secondMainComparison = scenarioReclaimComparison(
+        QStringLiteral("main_interface"), 100 * kBytesPerMebibyte, 99 * kBytesPerMebibyte,
+        8 * kBytesPerMebibyte);
+    const QJsonObject secondFixedComparison = scenarioReclaimComparison(
+        QStringLiteral("fixed_screenshot"), 100 * kBytesPerMebibyte,
+        102 * kBytesPerMebibyte, 8 * kBytesPerMebibyte);
+    const QJsonObject secondTrayComparison = scenarioReclaimComparison(
+        QStringLiteral("tray_menu"), 100 * kBytesPerMebibyte, 100 * kBytesPerMebibyte,
+        8 * kBytesPerMebibyte);
+    const QJsonObject syntheticSummary = scenarioReclaimSummary(
+        QVector<QJsonObject>{syntheticRecord(passingComparison, passingFixedComparison,
+                                              passingTrayComparison),
+                             syntheticRecord(secondMainComparison, secondFixedComparison,
+                                              secondTrayComparison)},
         8 * kBytesPerMebibyte, 2);
-    const QJsonObject incompleteSummary =
-        finalIdleSummary(QVector<QJsonObject>{QJsonObject{
-                             {QStringLiteral("final_idle_vs_cold_start"), passingComparison}}},
-                         8 * kBytesPerMebibyte, 2);
+    const QJsonObject incompleteSummary = scenarioReclaimSummary(
+        QVector<QJsonObject>{syntheticRecord(passingComparison, passingFixedComparison,
+                                              passingTrayComparison)},
+        8 * kBytesPerMebibyte, 2);
+    const QJsonObject retainedScenarioSummary = scenarioReclaimSummary(
+        QVector<QJsonObject>{syntheticRecord(failingComparison, passingFixedComparison,
+                                              passingTrayComparison),
+                             syntheticRecord(secondMainComparison, secondFixedComparison,
+                                              secondTrayComparison)},
+        8 * kBytesPerMebibyte, 2);
     require(
         syntheticSummary.value(QStringLiteral("benchmark_passed")).toBool() &&
-            syntheticSummary.value(QStringLiteral("within_upper_bound_sample_count")).toInteger() ==
-                2 &&
+            syntheticSummary.value(QStringLiteral("within_upper_bound_comparison_count"))
+                    .toInteger() == 6 &&
             !incompleteSummary.value(QStringLiteral("complete_sample_set")).toBool() &&
-            !incompleteSummary.value(QStringLiteral("benchmark_passed")).toBool(),
-        "final-idle summary self-test failed");
+            !incompleteSummary.value(QStringLiteral("benchmark_passed")).toBool() &&
+            !retainedScenarioSummary.value(QStringLiteral("benchmark_passed")).toBool() &&
+            retainedScenarioSummary.value(QStringLiteral("scenarios"))
+                    .toObject()
+                    .value(QStringLiteral("main_interface"))
+                    .toObject()
+                    .value(QStringLiteral("benchmark_passed"))
+                    .toBool() == false,
+        "scenario reclaim summary self-test failed");
     const QJsonObject syntheticReport{
         {QStringLiteral("metrics"),
          QJsonObject{{QStringLiteral("cold_start"), statistics(QVector<double>{1.0})},
@@ -1719,14 +1907,15 @@ bool runSelfTest() {
                      {QStringLiteral("tray_menu_closed"), statistics(QVector<double>{1.25})},
                      {QStringLiteral("final_idle"), statistics(QVector<double>{1.25})}}},
         {QStringLiteral("stage_order"), QJsonArray::fromStringList(benchmarkStageOrder())},
-        {QStringLiteral("final_idle_vs_cold_start"), syntheticSummary}};
+        {QStringLiteral("scenario_reclaim_vs_cold_start"), syntheticSummary}};
     const QString syntheticHtml = reportHtml(syntheticReport);
     require(
-        syntheticHtml.contains(QStringLiteral("Screenshot memory footprint")) &&
+            syntheticHtml.contains(QStringLiteral("Screenshot memory footprint")) &&
             syntheticHtml.contains(QStringLiteral("Benchmark: PASS")) &&
             syntheticHtml.contains(QStringLiteral("no more than 8 MiB above cold start")) &&
             syntheticHtml.contains(QStringLiteral("final_idle")) &&
-            reportHtml(QJsonObject{{QStringLiteral("final_idle_vs_cold_start"), incompleteSummary}})
+            reportHtml(QJsonObject{{QStringLiteral("scenario_reclaim_vs_cold_start"),
+                                    incompleteSummary}})
                 .contains(QStringLiteral("Benchmark: INCOMPLETE")),
         "HTML report self-test failed");
     std::cout << "screenshot memory footprint benchmark self-tests passed\n";

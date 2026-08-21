@@ -144,6 +144,13 @@ uint8_t snow_stitch_session_reset(SnowStitchSession* session);
 uint8_t snow_stitch_session_push_owned(SnowStitchSession* session,
                                        SnowStitchFrameBuffer** inout_frame,
                                        SnowStitchFrameOutcome* out_outcome);
+/* Copies one packed or strided RGBA viewport directly into the stitcher's
+ * owned input. This avoids the legacy writable frame-pool/freeze round trip. */
+uint8_t snow_stitch_session_push_rgba(SnowStitchSession* session,
+                                      uint32_t width, uint32_t height,
+                                      uint32_t stride_bytes,
+                                      const uint8_t* rgba_bytes, size_t rgba_len,
+                                      SnowStitchFrameOutcome* out_outcome);
 uint8_t snow_stitch_session_copy_rows(const SnowStitchSession* session, uint32_t top, uint32_t rows,
                                       uint8_t* destination, size_t destination_len);
 SnowStitchOwnedImage* snow_stitch_session_materialize_rows(const SnowStitchSession* session,

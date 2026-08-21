@@ -4,8 +4,8 @@ use anyhow::{Context, Result};
 use snow_capture::backend::CaptureBackendKind;
 use snow_capture::frame::CaptureEvent;
 use snow_capture::{
-    CaptureOptions, CaptureStream, CaptureStreamConfig, CaptureSystem, CaptureTarget,
-    CaptureWorkload,
+    CaptureOptions, CaptureRateControl, CaptureStream, CaptureStreamConfig, CaptureSystem,
+    CaptureTarget, CaptureWorkload,
 };
 use snow_core::timestamp::TimestampAnchor;
 
@@ -30,7 +30,7 @@ fn main() -> Result<()> {
         CaptureStreamConfig {
             target_fps: 60,
             buffer_depth: 3,
-            adaptive_fps: true,
+            rate_control: CaptureRateControl::Backpressure { min_fps: 15 },
             ..Default::default()
         },
     )

@@ -56,6 +56,10 @@ const QString kE2eStartScreenshotArgument = QStringLiteral("--e2e-start-screensh
 const QString kE2eOpenTrayMenuArgument = QStringLiteral("--e2e-open-tray-menu");
 const QString kE2eOpenMainInterfaceArgument =
     QStringLiteral("--e2e-open-main-interface");
+const QString kE2eOpenScreenshotHistoryArgument =
+    QStringLiteral("--e2e-open-screenshot-history");
+const QString kE2eOpenInterfaceSettingsArgument =
+    QStringLiteral("--e2e-open-interface-settings");
 const QString kE2eStartFixedScreenshotArgument =
     QStringLiteral("--e2e-start-fixed-screenshot");
 #endif
@@ -505,6 +509,17 @@ void ApplicationController::handleLaunchRequest(const QStringList& arguments) {
     if (QApplication::arguments().contains(kE2eAllowOverlayCaptureArgument) &&
         arguments.contains(kE2eOpenMainInterfaceArgument)) {
         m_impl->showMainWindow();
+        return;
+    }
+    if (QApplication::arguments().contains(kE2eAllowOverlayCaptureArgument) &&
+        arguments.contains(kE2eOpenScreenshotHistoryArgument)) {
+        m_impl->beginForegroundOperation();
+        m_impl->ensureMainWindow().showScreenshotHistory();
+        return;
+    }
+    if (QApplication::arguments().contains(kE2eAllowOverlayCaptureArgument) &&
+        arguments.contains(kE2eOpenInterfaceSettingsArgument)) {
+        m_impl->showInterfaceSettings();
         return;
     }
     if (QApplication::arguments().contains(kE2eAllowOverlayCaptureArgument) &&
