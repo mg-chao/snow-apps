@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
+#include "snow_shot/presentation/screenshotasyncactivitytracker.h"
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -39,7 +40,18 @@ bool processUntil(const std::function<bool()>& predicate, int timeoutMs = 5000) 
     return predicate();
 }
 
+bool waitWithoutProcessingEvents(const std::function<bool()>& predicate, int timeoutMs = 5000) {
+    QElapsedTimer timer;
+    timer.start();
+    while (!predicate() && timer.elapsed() < timeoutMs) {
+        QThread::msleep(1);
+    }
+    return predicate();
+}
+
 void completionRunsOnceOnGuiThread() {
+    require(ScreenshotAsyncActivityTracker::shared().activeActivityCount() == 0,
+            "the coordinator success test started with retained async activity");
     ScreenshotExportCoordinator coordinator;
     QObject receiver;
     QThread* const guiThread = QThread::currentThread();
@@ -57,11 +69,15 @@ void completionRunsOnceOnGuiThread() {
             completionSucceeded = result.succeeded() && QThread::currentThread() == guiThread;
         });
     require(handle.isValid(), "coordinator success job was not admitted");
+    require(ScreenshotAsyncActivityTracker::shared().activeActivityCount() == 1,
+            "an admitted coordinator job did not acquire an activity lease");
     require(processUntil([&completionCount]() { return completionCount == 1; }),
             "coordinator success job did not complete");
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
     require(completionCount == 1 && completionSucceeded && workThread != guiThread,
             "coordinator completion was not exactly once on the GUI thread");
+    require(ScreenshotAsyncActivityTracker::shared().activeActivityCount() == 0,
+            "the coordinator activity lease outlived terminal result disposal");
 }
 
 void cancellationPropagates() {
@@ -113,10 +129,55 @@ void destroyedReceiverSuppressesCompletion() {
             "receiver-lifetime job was not admitted");
     delete receiver;
     release.store(true, std::memory_order_release);
-    require(processUntil([&coordinator]() { return coordinator.pendingJobCount() == 0; }),
+    require(waitWithoutProcessingEvents(
+                [&coordinator]() { return coordinator.pendingJobCount() == 0; }),
             "receiver-lifetime job did not drain");
+    require(ScreenshotAsyncActivityTracker::shared().activeActivityCount() == 1,
+            "worker completion released activity before GUI-terminal result disposal");
+    require(processUntil([]() {
+                return ScreenshotAsyncActivityTracker::shared().activeActivityCount() == 0;
+            }),
+            "destroyed-receiver activity did not release on the GUI terminal turn");
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
     require(completionCount == 0, "destroyed receiver received an export completion");
+}
+
+void overlappingJobsPublishOneIdleTransition() {
+    require(ScreenshotAsyncActivityTracker::shared().activeActivityCount() == 0,
+            "the overlapping-job test started with retained async activity");
+    ScreenshotExportCoordinator coordinator;
+    QObject receiver;
+    QObject idleObserver;
+    std::atomic_bool release{false};
+    int completionCount = 0;
+    int idleCount = 0;
+    ScreenshotAsyncActivityTracker::shared().observeIdle(&idleObserver,
+                                                         [&idleCount]() { ++idleCount; });
+    const auto submit = [&]() {
+        return coordinator.submit(
+            &receiver, ScreenshotExportCoordinator::Priority::Foreground,
+            [&release](const ScreenshotExportCancellation&) {
+                while (!release.load(std::memory_order_acquire)) {
+                    QThread::msleep(1);
+                }
+                return ScreenshotExportTaskResult{};
+            },
+            [&completionCount](ScreenshotExportTaskResult) { ++completionCount; });
+    };
+    const ScreenshotExportJobHandle first = submit();
+    const ScreenshotExportJobHandle second = submit();
+    require(first.isValid() && second.isValid() &&
+                ScreenshotAsyncActivityTracker::shared().activeActivityCount() == 2,
+            "overlapping coordinator jobs did not hold independent activity leases");
+
+    release.store(true, std::memory_order_release);
+    require(processUntil([&]() {
+                return completionCount == 2 && idleCount == 1 &&
+                       ScreenshotAsyncActivityTracker::shared().activeActivityCount() == 0;
+            }),
+            "overlapping coordinator jobs did not publish one terminal idle transition");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    require(idleCount == 1, "the async activity tracker published duplicate idle transitions");
 }
 
 void queueAndWorkerBoundsAreEnforced() {
@@ -217,11 +278,15 @@ void clipboardCommitCancellationIsAsynchronous() {
         });
     require(handle.isValid() && completionCount == 0,
             "clipboard commit did not start asynchronously");
+    require(ScreenshotAsyncActivityTracker::shared().activeActivityCount() == 1,
+            "the clipboard retry did not acquire an async activity lease");
     handle.cancel();
     require(processUntil([&completionCount]() { return completionCount == 1; }),
             "cancelled clipboard commit did not complete");
     require(result.failure == ScreenshotClipboardCommitFailure::Cancelled && result.attempts == 0,
             "clipboard cancellation did not precede its first publication attempt");
+    require(ScreenshotAsyncActivityTracker::shared().activeActivityCount() == 0,
+            "the cancelled clipboard retry retained its activity lease");
 }
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -282,6 +347,7 @@ int main(int argc, char** argv) {
         completionRunsOnceOnGuiThread();
         cancellationPropagates();
         destroyedReceiverSuppressesCompletion();
+        overlappingJobsPublishOneIdleTransition();
         queueAndWorkerBoundsAreEnforced();
         shutdownCancelsAndDrains();
         clipboardCommitCancellationIsAsynchronous();

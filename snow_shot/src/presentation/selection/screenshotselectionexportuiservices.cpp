@@ -36,13 +36,12 @@ void applyPinRuntimeSettings(ScreenshotPinnedWindow::Config* config) {
 
 class ScreenshotPinnedWindowPool final : public QObject {
   public:
-    explicit ScreenshotPinnedWindowPool(QObject* parent = nullptr) : QObject(parent) {}
+    explicit ScreenshotPinnedWindowPool(std::function<void()> windowDestroyed,
+                                        QObject* parent = nullptr)
+        : QObject(parent), m_windowDestroyed(std::move(windowDestroyed)) {}
 
     ~ScreenshotPinnedWindowPool() override {
-        if (m_spare != nullptr) {
-            delete m_spare;
-            m_spare = nullptr;
-        }
+        releaseSpare();
     }
 
     ScreenshotPinnedWindow* acquire(ScreenshotPinnedWindow::RuntimeMode mode,
@@ -76,27 +75,64 @@ class ScreenshotPinnedWindowPool final : public QObject {
         }
 
         SNOW_SHOT_PIN_PERF_COUNTER(usedSpare ? "shell.hit" : "shell.miss", 1);
-        if (window != nullptr) {
-            scheduleReplenish();
-        }
         return window;
     }
 
+    void trackPresentedWindow(ScreenshotPinnedWindow* window) {
+        if (window == nullptr) {
+            return;
+        }
+        ++m_activeWindowCount;
+        QObject::connect(window, &QObject::destroyed, this, [this]() {
+            if (m_activeWindowCount > 0) {
+                --m_activeWindowCount;
+            }
+            // A spare is useful only while another pinned surface is alive. Releasing it as
+            // soon as the last visible window disappears keeps the pool warm for multi-pin
+            // workflows without retaining a hidden native window after the workflow ends.
+            if (m_activeWindowCount == 0) {
+                releaseSpare();
+            }
+            if (m_windowDestroyed) {
+                m_windowDestroyed();
+            }
+        });
+        scheduleReplenish();
+    }
+
+    [[nodiscard]] bool hasLivePresentedWindows() const {
+        return m_activeWindowCount > 0;
+    }
+
   private:
+    void releaseSpare() {
+        m_replenishQueued = false;
+        if (m_spare == nullptr) {
+            return;
+        }
+        ScreenshotPinnedWindow* spare = m_spare.data();
+        m_spare = nullptr;
+        delete spare;
+    }
+
     void scheduleReplenish() {
-        if (m_replenishQueued) {
+        if (m_activeWindowCount == 0 || m_replenishQueued || m_spare != nullptr) {
             return;
         }
         m_replenishQueued = true;
         QTimer::singleShot(0, this, [this]() {
             m_replenishQueued = false;
-            if (m_spare != nullptr) {
+            if (m_activeWindowCount == 0 || m_spare != nullptr) {
                 return;
             }
             auto* spare =
                 new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
             if (!spare->prewarm(QGuiApplication::primaryScreen())) {
-                spare->deleteLater();
+                delete spare;
+                return;
+            }
+            if (m_activeWindowCount == 0) {
+                delete spare;
                 return;
             }
             m_spare = spare;
@@ -105,12 +141,16 @@ class ScreenshotPinnedWindowPool final : public QObject {
 
     QPointer<ScreenshotPinnedWindow> m_spare;
     bool m_replenishQueued = false;
+    int m_activeWindowCount = 0;
+    std::function<void()> m_windowDestroyed;
 };
 
 namespace {
 bool presentPinnedWindowAndSynchronize(ScreenshotPinnedWindow* window,
                                        const ScreenshotPinnedWindow::Config& config,
-                                       const std::function<void()>& showMainWindowRequested) {
+                                       ScreenshotPinnedWindowPool* windowPool,
+                                       const std::function<void()>& showMainWindowRequested,
+                                       const std::function<void()>& pinnedWindowPresented) {
     if (window == nullptr) {
         return false;
     }
@@ -123,6 +163,12 @@ bool presentPinnedWindowAndSynchronize(ScreenshotPinnedWindow* window,
     if (!window->present(config)) {
         window->deleteLater();
         return false;
+    }
+    if (windowPool != nullptr) {
+        windowPool->trackPresentedWindow(window);
+    }
+    if (pinnedWindowPresented) {
+        pinnedWindowPresented();
     }
     SNOW_SHOT_PIN_PERF_COUNTER("window.visible", window->isVisible() ? 1 : 0);
     SNOW_SHOT_PIN_PERF_COUNTER("window.geometry_valid",
@@ -139,14 +185,21 @@ bool presentPinnedWindowAndSynchronize(ScreenshotPinnedWindow* window,
 ScreenshotSelectionExportUiServices::ScreenshotSelectionExportUiServices(
     SnowCanvasRuntime& runtime, ScreenshotOcrRecognitionPort* recognition,
     ScreenshotQrRecognitionPort* qrRecognition, SnowShotApiClient* tableRecognition,
-    std::function<void()> showMainWindowRequested)
+    std::function<void()> showMainWindowRequested, std::function<void()> pinnedWindowPresented,
+    std::function<void()> pinnedWindowDestroyed)
     : m_runtime(runtime), m_recognition(recognition), m_qrRecognition(qrRecognition),
       m_tableRecognition(tableRecognition),
       m_showMainWindowRequested(std::move(showMainWindowRequested)),
-      m_windowPool(std::make_unique<ScreenshotPinnedWindowPool>()) {}
+      m_pinnedWindowPresented(std::move(pinnedWindowPresented)),
+      m_pinnedWindowDestroyed(std::move(pinnedWindowDestroyed)),
+      m_windowPool(std::make_unique<ScreenshotPinnedWindowPool>(m_pinnedWindowDestroyed)) {}
 
 ScreenshotSelectionExportUiServices::~ScreenshotSelectionExportUiServices() {
     cancelClipboardPublication();
+}
+
+bool ScreenshotSelectionExportUiServices::hasLivePresentedWindows() const {
+    return m_windowPool != nullptr && m_windowPool->hasLivePresentedWindows();
 }
 
 bool ScreenshotSelectionExportUiServices::publishClipboard(QObject* receiver,
@@ -213,7 +266,9 @@ bool ScreenshotSelectionExportUiServices::presentPinnedSelection(
     config.formattedTextDocument.reset();
     config.formattedPlainText.clear();
     applyPinRuntimeSettings(&config);
-    return presentPinnedWindowAndSynchronize(pinnedWindow, config, m_showMainWindowRequested);
+    return presentPinnedWindowAndSynchronize(pinnedWindow, config, m_windowPool.get(),
+                                             m_showMainWindowRequested,
+                                             m_pinnedWindowPresented);
 }
 
 bool ScreenshotSelectionExportUiServices::presentPinnedImage(
@@ -256,5 +311,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     config.qrRecognition = m_qrRecognition;
     config.tableRecognition = m_tableRecognition;
     applyPinRuntimeSettings(&config);
-    return presentPinnedWindowAndSynchronize(pinnedWindow, config, m_showMainWindowRequested);
+    return presentPinnedWindowAndSynchronize(pinnedWindow, config, m_windowPool.get(),
+                                             m_showMainWindowRequested,
+                                             m_pinnedWindowPresented);
 }

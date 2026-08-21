@@ -1,5 +1,7 @@
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
 
+#include "snow_shot/presentation/screenshotasyncactivitytracker.h"
+
 #include <QCoreApplication>
 #include <QMetaObject>
 #include <QMutex>
@@ -115,11 +117,14 @@ ScreenshotExportJobHandle ScreenshotExportCoordinator::submit(QObject* receiver,
 
     auto cancellation = std::make_shared<std::atomic_bool>(false);
     auto terminal = std::make_shared<std::atomic_bool>(false);
+    ScreenshotAsyncActivityLease activityLease =
+        ScreenshotAsyncActivityTracker::shared().acquire();
     m_impl->track(cancellation);
     const QPointer<QObject> guardedReceiver(receiver);
     const QPointer<ScreenshotExportCoordinator> guardedCoordinator(this);
     auto runnable =
         QRunnable::create([guardedCoordinator, guardedReceiver, cancellation, terminal,
+                           activityLease = std::move(activityLease),
                            work = std::move(work), completion = std::move(completion)]() mutable {
             ScreenshotExportTaskResult result;
             const ScreenshotExportCancellation token(cancellation);
@@ -145,17 +150,23 @@ ScreenshotExportJobHandle ScreenshotExportCoordinator::submit(QObject* receiver,
             if (guardedCoordinator.isNull()) {
                 return;
             }
+            // Work closures commonly retain the source image. Release them before publishing the
+            // terminal callback; the activity lease remains alive through result delivery.
+            work = {};
             guardedCoordinator->m_impl->pending.fetch_sub(1, std::memory_order_acq_rel);
             auto sharedResult = std::make_shared<ScreenshotExportTaskResult>(std::move(result));
             static_cast<void>(QMetaObject::invokeMethod(
                 guardedCoordinator,
                 [guardedReceiver, terminal, sharedResult,
-                 completion = std::move(completion)]() mutable {
-                    if (terminal->exchange(true, std::memory_order_acq_rel) ||
-                        guardedReceiver.isNull()) {
-                        return;
+                 completion = std::move(completion),
+                 activityLease = std::move(activityLease)]() mutable {
+                    if (!terminal->exchange(true, std::memory_order_acq_rel) &&
+                        !guardedReceiver.isNull()) {
+                        completion(std::move(*sharedResult));
                     }
-                    completion(std::move(*sharedResult));
+                    completion = {};
+                    sharedResult.reset();
+                    activityLease.reset();
                 },
                 Qt::QueuedConnection));
         });

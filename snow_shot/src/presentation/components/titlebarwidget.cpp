@@ -12,7 +12,6 @@
 #include <cmath>
 #include <cstdint>
 
-#include <QApplication>
 #include <QColor>
 #include <QHBoxLayout>
 #include <QPaintEvent>
@@ -24,7 +23,7 @@ namespace {
 namespace outlined_icons = adqt::icons::antd::outlined;
 namespace custom_icons = snow_shot::presentation::icons::custom;
 
-QPixmap renderBrandLogo(int logicalHeight, const QColor& color) {
+QPixmap renderBrandLogo(int logicalHeight, const QColor& color, qreal devicePixelRatio) {
     if (logicalHeight <= 0 || !color.isValid()) {
         return {};
     }
@@ -36,7 +35,6 @@ QPixmap renderBrandLogo(int logicalHeight, const QColor& color) {
         return {};
     }
 
-    const qreal devicePixelRatio = qApp != nullptr ? qApp->devicePixelRatio() : 1.0;
     adqt::icons::IconRenderRequest request;
     request.logicalSize = QSize(logicalWidth, logicalHeight);
     request.devicePixelRatio = devicePixelRatio;
@@ -159,14 +157,18 @@ void TitleBarWidget::paintEvent(QPaintEvent* event) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
 
-    const QPixmap logoPixmap = renderBrandLogo(m_logoHeight, m_logoColor);
-    if (!logoPixmap.isNull()) {
-        const qreal devicePixelRatio =
-            logoPixmap.devicePixelRatio() > 0.0 ? logoPixmap.devicePixelRatio() : 1.0;
+    const qreal devicePixelRatio = devicePixelRatioF();
+    if (m_logoPixmap.isNull() ||
+        !qFuzzyCompare(m_logoPixmap.devicePixelRatio(), devicePixelRatio)) {
+        m_logoPixmap = renderBrandLogo(m_logoHeight, m_logoColor, devicePixelRatio);
+    }
+    if (!m_logoPixmap.isNull()) {
+        const qreal pixmapDevicePixelRatio =
+            m_logoPixmap.devicePixelRatio() > 0.0 ? m_logoPixmap.devicePixelRatio() : 1.0;
         const int logoWidth = static_cast<int>(
-            std::lround(static_cast<qreal>(logoPixmap.width()) / devicePixelRatio));
+            std::lround(static_cast<qreal>(m_logoPixmap.width()) / pixmapDevicePixelRatio));
         const int logoHeight = static_cast<int>(
-            std::lround(static_cast<qreal>(logoPixmap.height()) / devicePixelRatio));
+            std::lround(static_cast<qreal>(m_logoPixmap.height()) / pixmapDevicePixelRatio));
 
         QWidget* topLevelWindow = window();
         const qreal windowCenterX = topLevelWindow != nullptr
@@ -180,7 +182,7 @@ void TitleBarWidget::paintEvent(QPaintEvent* event) {
         painter.drawPixmap(
             QPointF(localCenterX - static_cast<qreal>(logoWidth) / 2.0,
                     (static_cast<qreal>(height()) - static_cast<qreal>(logoHeight)) / 2.0),
-            logoPixmap);
+            m_logoPixmap);
     }
 }
 
@@ -188,7 +190,10 @@ void TitleBarWidget::applyTheme(const snow_shot::presentation::styles::ThemeColo
     QPalette palette = this->palette();
     palette.setColor(QPalette::Window, scheme.map.colorBgContainer);
     setPalette(palette);
-    m_logoColor = scheme.map.colorText;
+    if (m_logoColor != scheme.map.colorText) {
+        m_logoColor = scheme.map.colorText;
+        m_logoPixmap = {};
+    }
 
     refreshWindowControlButtonTheme(m_minimizeButton);
     refreshWindowControlButtonTheme(m_closeButton);

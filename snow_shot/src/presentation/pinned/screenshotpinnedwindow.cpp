@@ -285,6 +285,11 @@ QList<QPointer<ScreenshotPinnedWindow>>& livePinnedWindows() {
     return windows;
 }
 
+QPointer<ScreenshotPinnedWindow>& pinnedFocusLeader() {
+    static QPointer<ScreenshotPinnedWindow> leader;
+    return leader;
+}
+
 QColor& configuredPinnedBorderColor() {
     static QColor color = kDefaultPinnedBorderColor;
     return color;
@@ -744,6 +749,9 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
         m_pointerInside = event->type() == QEvent::Enter;
     } else if (event != nullptr && event->type() == QEvent::Hide) {
         m_pointerInside = false;
+        if (!m_closing) {
+            exitFocusModeIfLeader();
+        }
     }
     const bool scaleMayHaveChanged =
         event != nullptr && event->type() == QEvent::DevicePixelRatioChange;
@@ -1810,6 +1818,7 @@ void ScreenshotPinnedWindow::contextMenuEvent(QContextMenuEvent* event) {
 }
 
 void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
+    exitFocusModeIfLeader();
     m_closing = true;
     invalidatePendingCopy();
     m_fileSaveJob.cancel();
@@ -3719,9 +3728,10 @@ QRect ScreenshotPinnedWindow::nativeRectForLogicalRect(const QRect& logical,
 }
 
 void ScreenshotPinnedWindow::showAllPinnedWindows() {
+    pinnedFocusLeader().clear();
     const auto windows = livePinnedWindows();
     for (const QPointer<ScreenshotPinnedWindow>& window : windows) {
-        if (window != nullptr) {
+        if (window != nullptr && window->m_presented && !window->m_closing) {
             window->show();
             window->raise();
         }
@@ -3729,9 +3739,13 @@ void ScreenshotPinnedWindow::showAllPinnedWindows() {
 }
 
 void ScreenshotPinnedWindow::hideOtherPinnedWindows() {
+    if (!m_presented || m_closing) {
+        return;
+    }
+    pinnedFocusLeader() = this;
     const auto windows = livePinnedWindows();
     for (const QPointer<ScreenshotPinnedWindow>& window : windows) {
-        if (window != nullptr && window != this) {
+        if (window != nullptr && window != this && window->m_presented && !window->m_closing) {
             window->hide();
         }
     }
@@ -3740,19 +3754,35 @@ void ScreenshotPinnedWindow::hideOtherPinnedWindows() {
 }
 
 void ScreenshotPinnedWindow::closeOtherPinnedWindows() {
+    pinnedFocusLeader().clear();
     const auto windows = livePinnedWindows();
     for (const QPointer<ScreenshotPinnedWindow>& window : windows) {
-        if (window != nullptr && window != this) {
+        if (window != nullptr && window != this && window->m_presented && !window->m_closing) {
             window->close();
         }
     }
 }
 
 void ScreenshotPinnedWindow::closeAllPinnedWindows() {
+    pinnedFocusLeader().clear();
     const auto windows = livePinnedWindows();
     for (const QPointer<ScreenshotPinnedWindow>& window : windows) {
-        if (window != nullptr) {
+        if (window != nullptr && window->m_presented && !window->m_closing) {
             window->close();
+        }
+    }
+}
+
+void ScreenshotPinnedWindow::exitFocusModeIfLeader() {
+    if (pinnedFocusLeader() != this) {
+        return;
+    }
+    pinnedFocusLeader().clear();
+    const auto windows = livePinnedWindows();
+    for (const QPointer<ScreenshotPinnedWindow>& window : windows) {
+        if (window != nullptr && window != this && window->m_presented && !window->m_closing) {
+            window->show();
+            window->raise();
         }
     }
 }

@@ -2,6 +2,7 @@
 
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotclipboardservice.h"
+#include "snow_shot/presentation/screenshotasyncactivitytracker.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 
@@ -12,12 +13,15 @@
 
 #include <QList>
 #include <QMetaObject>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QObject>
 #include <QPointer>
 #include <QScreen>
 #include <QThread>
 
 #include <algorithm>
+#include <atomic>
 #include <utility>
 
 namespace {
@@ -203,9 +207,83 @@ class ScreenshotExportWorker final : public QObject {
 };
 } // namespace
 
+struct ScreenshotExportService::PendingRequestState final {
+    PendingRequestState(QObject* completionContext, std::function<void()> becameIdle)
+        : completionContext(completionContext), becameIdle(std::move(becameIdle)) {}
+
+    void requestStarted() noexcept {
+        pending.fetch_add(1, std::memory_order_acq_rel);
+    }
+
+    void requestFinished() {
+        const int previous = pending.fetch_sub(1, std::memory_order_acq_rel);
+        if (previous != 1) {
+            return;
+        }
+
+        QMutexLocker lock(&notificationMutex);
+        const QPointer<QObject> guardedCompletionContext(completionContext);
+        if (guardedCompletionContext.isNull() || !becameIdle) {
+            return;
+        }
+        const auto callback = becameIdle;
+        static_cast<void>(QMetaObject::invokeMethod(
+            guardedCompletionContext,
+            [guardedCompletionContext, callback]() {
+                if (!guardedCompletionContext.isNull()) {
+                    callback();
+                }
+            },
+            Qt::QueuedConnection));
+    }
+
+    [[nodiscard]] bool hasPendingRequests() const noexcept {
+        return pending.load(std::memory_order_acquire) > 0;
+    }
+
+    void disableIdleNotification() {
+        QMutexLocker lock(&notificationMutex);
+        completionContext = nullptr;
+        becameIdle = {};
+    }
+
+    std::atomic_int pending{0};
+    QMutex notificationMutex;
+    QPointer<QObject> completionContext;
+    std::function<void()> becameIdle;
+};
+
+class ScreenshotExportService::PendingRequest final {
+  public:
+    explicit PendingRequest(std::shared_ptr<PendingRequestState> state)
+        : m_state(std::move(state)),
+          m_activityLease(ScreenshotAsyncActivityTracker::shared().acquire()) {
+        m_state->requestStarted();
+    }
+
+    ~PendingRequest() {
+        finish();
+    }
+
+    void finish() {
+        if (m_state == nullptr) {
+            return;
+        }
+        m_activityLease.reset();
+        std::shared_ptr<PendingRequestState> state = std::move(m_state);
+        state->requestFinished();
+    }
+
+  private:
+    std::shared_ptr<PendingRequestState> m_state;
+    ScreenshotAsyncActivityLease m_activityLease;
+};
+
 ScreenshotExportService::ScreenshotExportService(ScreenshotExportServiceContext context)
     : m_context(context), m_thread(std::make_unique<QThread>()),
       m_worker(new ScreenshotExportWorker), m_completionContext(new QObject) {
+    m_pendingRequestState = std::make_shared<PendingRequestState>(
+        m_completionContext, std::move(m_context.becameIdle));
     m_thread->setObjectName(QStringLiteral("ScreenshotExportWorker"));
     m_worker->moveToThread(m_thread.get());
     QObject::connect(m_thread.get(), &QThread::finished, m_worker, &QObject::deleteLater);
@@ -213,13 +291,18 @@ ScreenshotExportService::ScreenshotExportService(ScreenshotExportServiceContext 
 }
 
 ScreenshotExportService::~ScreenshotExportService() {
-    delete m_completionContext;
-    m_completionContext = nullptr;
+    m_pendingRequestState->disableIdleNotification();
     if (m_thread != nullptr) {
         m_thread->quit();
         m_thread->wait();
     }
+    delete m_completionContext;
+    m_completionContext = nullptr;
     m_worker = nullptr;
+}
+
+bool ScreenshotExportService::hasPendingRequests() const noexcept {
+    return m_pendingRequestState != nullptr && m_pendingRequestState->hasPendingRequests();
 }
 
 void ScreenshotExportService::setNextSelectionSourceImage(QImage image) {
@@ -258,6 +341,7 @@ bool ScreenshotExportService::requestSelectionResult(
         SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.failure.empty_input", 1);
         return false;
     }
+    auto pendingRequest = std::make_shared<PendingRequest>(m_pendingRequestState);
     auto* worker = static_cast<ScreenshotExportWorker*>(m_worker);
     const QPointer<QObject> guardedReceiver(receiver);
     const QPointer<QObject> guardedCompletionContext(m_completionContext);
@@ -267,36 +351,55 @@ bool ScreenshotExportService::requestSelectionResult(
         SNOW_SHOT_CLIPBOARD_PERF_SCOPE("export.schedule_worker");
         scheduled = QMetaObject::invokeMethod(
             worker,
-            [worker, guardedReceiver, guardedCompletionContext, documentSession, selection, style,
-             sources, directSourceImage, requestTimer, workerQueueTimer,
-         callback = std::move(callback)]() mutable {
+            [worker, guardedReceiver, guardedCompletionContext,
+             documentSession = std::move(documentSession), selection, style,
+             sources = std::move(sources), directSourceImage = std::move(directSourceImage),
+             requestTimer, workerQueueTimer, pendingRequest,
+             callback = std::move(callback)]() mutable {
             snow_shot::presentation::clipboard_perf::duration(
                 "export.worker_queue_delay", workerQueueTimer.elapsedNanoseconds());
             QImage image = worker->renderSelection(documentSession, selection, style, sources,
                                                    directSourceImage);
-            if (guardedReceiver.isNull() || guardedCompletionContext.isNull()) {
-                SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.failure.receiver_destroyed", 1);
+            documentSession.clear();
+            sources.clear();
+            directSourceImage = {};
+            if (guardedCompletionContext.isNull()) {
+                callback = {};
+                image = {};
+                pendingRequest->finish();
                 return;
             }
             const snow_shot::presentation::clipboard_perf::Stopwatch callbackQueueTimer;
             const bool callbackScheduled = QMetaObject::invokeMethod(
                 guardedCompletionContext,
                 [guardedReceiver, guardedCompletionContext, image = std::move(image),
-                 callback = std::move(callback), requestTimer, callbackQueueTimer]() mutable {
+                 callback = std::move(callback), requestTimer, callbackQueueTimer,
+                 pendingRequest]() mutable {
                     snow_shot::presentation::clipboard_perf::duration(
                         "export.callback_queue_delay", callbackQueueTimer.elapsedNanoseconds());
                     snow_shot::presentation::clipboard_perf::duration(
                         "export.request_to_result", requestTimer.elapsedNanoseconds());
                     if (!guardedReceiver.isNull() && !guardedCompletionContext.isNull()) {
                         callback(std::move(image));
+                    } else {
+                        SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.failure.receiver_destroyed", 1);
                     }
+                    callback = {};
+                    image = {};
+                    pendingRequest->finish();
                 },
                 Qt::QueuedConnection);
             if (!callbackScheduled) {
                 SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.failure.schedule_callback", 1);
+                callback = {};
+                image = {};
+                pendingRequest->finish();
             }
         },
             Qt::QueuedConnection);
+    }
+    if (!scheduled) {
+        pendingRequest->finish();
     }
     SNOW_SHOT_CLIPBOARD_PERF_COUNTER(scheduled ? "export.request_scheduled"
                                                : "export.failure.schedule_worker",
@@ -333,43 +436,63 @@ bool ScreenshotExportService::requestSelectionClipboard(
         return false;
     }
 
+    auto pendingRequest = std::make_shared<PendingRequest>(m_pendingRequestState);
     auto* worker = static_cast<ScreenshotExportWorker*>(m_worker);
     const QPointer<QObject> guardedReceiver(receiver);
     const QPointer<QObject> guardedCompletionContext(m_completionContext);
     const snow_shot::presentation::clipboard_perf::Stopwatch workerQueueTimer;
     const bool scheduled = QMetaObject::invokeMethod(
         worker,
-        [worker, guardedReceiver, guardedCompletionContext, documentSession, selection, style,
-         sources, directSourceImage, requestTimer, workerQueueTimer,
+        [worker, guardedReceiver, guardedCompletionContext,
+         documentSession = std::move(documentSession), selection, style,
+         sources = std::move(sources), directSourceImage = std::move(directSourceImage),
+         requestTimer, workerQueueTimer, pendingRequest,
          callback = std::move(callback)]() mutable {
             snow_shot::presentation::clipboard_perf::duration(
                 "export.worker_queue_delay", workerQueueTimer.elapsedNanoseconds());
             auto result = std::make_shared<ScreenshotSelectionClipboardResult>(
                 worker->prepareSelectionClipboard(documentSession, selection, style, sources,
                                                   directSourceImage));
-            if (guardedReceiver.isNull() || guardedCompletionContext.isNull()) {
-                SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.failure.receiver_destroyed", 1);
+            documentSession.clear();
+            sources.clear();
+            directSourceImage = {};
+            if (guardedCompletionContext.isNull()) {
+                callback = {};
+                result.reset();
+                pendingRequest->finish();
                 return;
             }
             const snow_shot::presentation::clipboard_perf::Stopwatch callbackQueueTimer;
             const bool callbackScheduled = QMetaObject::invokeMethod(
                 guardedCompletionContext,
                 [guardedReceiver, guardedCompletionContext, result,
-                 callback = std::move(callback), requestTimer, callbackQueueTimer]() mutable {
+                 callback = std::move(callback), requestTimer, callbackQueueTimer,
+                 pendingRequest]() mutable {
                     snow_shot::presentation::clipboard_perf::duration(
                         "export.callback_queue_delay", callbackQueueTimer.elapsedNanoseconds());
                     snow_shot::presentation::clipboard_perf::duration(
                         "export.request_to_result", requestTimer.elapsedNanoseconds());
                     if (!guardedReceiver.isNull() && !guardedCompletionContext.isNull()) {
                         callback(std::move(*result));
+                    } else {
+                        SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.failure.receiver_destroyed", 1);
                     }
+                    callback = {};
+                    result.reset();
+                    pendingRequest->finish();
                 },
                 Qt::QueuedConnection);
+            result.reset();
             if (!callbackScheduled) {
                 SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.failure.schedule_callback", 1);
+                callback = {};
+                pendingRequest->finish();
             }
         },
         Qt::QueuedConnection);
+    if (!scheduled) {
+        pendingRequest->finish();
+    }
     SNOW_SHOT_CLIPBOARD_PERF_COUNTER(scheduled ? "export.clipboard_request_scheduled"
                                                : "export.failure.schedule_worker",
                                      1);
@@ -404,16 +527,24 @@ bool ScreenshotExportService::schedulePinnedSelection(
         m_completionContext == nullptr) {
         return false;
     }
+    auto pendingRequest = std::make_shared<PendingRequest>(m_pendingRequestState);
     const QPointer<QObject> guardedReceiver(receiver);
     const QPointer<QObject> guardedCompletionContext(m_completionContext);
-    return QMetaObject::invokeMethod(
+    const bool scheduled = QMetaObject::invokeMethod(
         m_completionContext,
         [guardedReceiver, guardedCompletionContext, request = std::move(request),
-         callback = std::move(callback)]() mutable {
+         callback = std::move(callback), pendingRequest]() mutable {
             SNOW_SHOT_PIN_PERF_SCOPE("export.pin_callback");
             if (!guardedReceiver.isNull() && !guardedCompletionContext.isNull()) {
                 callback(std::move(request));
             }
+            callback = {};
+            request = {};
+            pendingRequest->finish();
         },
         Qt::QueuedConnection);
+    if (!scheduled) {
+        pendingRequest->finish();
+    }
+    return scheduled;
 }

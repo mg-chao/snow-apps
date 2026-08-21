@@ -38,12 +38,16 @@ class SystemTrayController final : public QObject {
     void setMenuOptions(const QStringList& options);
     [[nodiscard]] QStringList menuOptions() const;
     [[nodiscard]] bool shortcutFunctionsDisabled() const;
+#if defined(SNOW_SHOT_SCREENSHOT_MEMORY_FOOTPRINT_INSTRUMENTATION)
+    void showMemoryFootprintTestMenu();
+#endif
 
   signals:
     void screenshotRequested();
     void showMainWindowRequested();
     void quickActionRequested(snow_shot::presentation::GlobalShortcutAction action);
     void shortcutFunctionsDisabledChanged(bool disabled);
+    void transientUiHidden();
     void exitRequested();
 
   private:

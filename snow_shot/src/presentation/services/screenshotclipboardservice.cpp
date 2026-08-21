@@ -1,5 +1,7 @@
 #include "snow_shot/presentation/screenshotclipboardservice.h"
 
+#include "snow_shot/presentation/screenshotasyncactivitytracker.h"
+
 #include "screenshotclipboardperfinstrumentation.h"
 
 #include <QClipboard>
@@ -37,9 +39,10 @@ class ClipboardCommitOperation final : public QObject {
 
     ClipboardCommitOperation(QObject* receiver, std::shared_ptr<std::atomic_bool> cancelled,
                              Attempt attempt,
-                             ScreenshotClipboardService::CommitCompletion completion)
+                             ScreenshotClipboardService::CommitCompletion completion,
+                             ScreenshotAsyncActivityLease activityLease)
         : m_receiver(receiver), m_cancelled(std::move(cancelled)), m_attempt(std::move(attempt)),
-          m_completion(std::move(completion)) {
+          m_completion(std::move(completion)), m_activityLease(std::move(activityLease)) {
         if (receiver != nullptr) {
             connect(receiver, &QObject::destroyed, this, [this]() { finish({}, false); });
         }
@@ -101,6 +104,7 @@ class ClipboardCommitOperation final : public QObject {
         }
         m_completion = {};
         m_attempt = {};
+        m_activityLease.reset();
         deleteLater();
     }
 
@@ -108,6 +112,7 @@ class ClipboardCommitOperation final : public QObject {
     std::shared_ptr<std::atomic_bool> m_cancelled;
     Attempt m_attempt;
     ScreenshotClipboardService::CommitCompletion m_completion;
+    ScreenshotAsyncActivityLease m_activityLease;
     QElapsedTimer m_elapsed;
     int m_attempts = 0;
     bool m_finished = false;
@@ -687,8 +692,9 @@ ScreenshotClipboardService::commit(QClipboard* clipboard, QObject* receiver,
         return ClipboardPublishAttempt{};
     };
 #endif
-    auto* operation = new ClipboardCommitOperation(receiver, cancelled, std::move(attempt),
-                                                   std::move(completion));
+    auto* operation = new ClipboardCommitOperation(
+        receiver, cancelled, std::move(attempt), std::move(completion),
+        ScreenshotAsyncActivityTracker::shared().acquire());
     operation->start();
     return ScreenshotClipboardCommitHandle(std::move(cancelled));
 }

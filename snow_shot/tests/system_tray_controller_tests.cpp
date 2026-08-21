@@ -12,6 +12,7 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileDevice>
 #include <QFileInfo>
@@ -21,9 +22,11 @@
 #include <QString>
 #include <QSystemTrayIcon>
 #include <QTemporaryDir>
+#include <QThread>
 #include <QUuid>
 
 #include <cstdlib>
+#include <functional>
 #include <iostream>
 
 namespace {
@@ -36,6 +39,16 @@ void require(bool condition, const char* message) {
 
 void requireActionText(const QAction* action, const QString& expected, const char* message) {
     require(action != nullptr && action->text() == expected, message);
+}
+
+bool waitUntil(const std::function<bool()>& predicate, int timeoutMs = 3000) {
+    QElapsedTimer timer;
+    timer.start();
+    while (!predicate() && timer.elapsed() < timeoutMs) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(1);
+    }
+    return predicate();
 }
 
 } // namespace
@@ -227,6 +240,20 @@ int main(int argc, char* argv[]) {
     const QStringList defaultMenuOptions = snow_shot::storage::TraySettings().menuOptions();
     controller.setMenuOptions(defaultMenuOptions);
     const QList<QAction*> defaultVisibleActions = visibleActions();
+    int transientUiHiddenCount = 0;
+    QObject::connect(&controller, &snow_shot::presentation::SystemTrayController::transientUiHidden,
+                     [&transientUiHiddenCount]() { ++transientUiHiddenCount; });
+    menu->popupAt(QPoint(100, 100));
+    require(waitUntil([menu]() { return menu->isVisible(); }),
+            "the tray context menu did not become visible for its hide lifecycle test");
+    menu->hide();
+    require(transientUiHiddenCount == 0,
+            "tray transient cleanup was emitted synchronously from aboutToHide");
+    require(waitUntil([&transientUiHiddenCount]() { return transientUiHiddenCount == 1; }),
+            "hiding the tray context menu did not publish deferred transient cleanup");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    require(transientUiHiddenCount == 1,
+            "one tray context-menu hide published transient cleanup more than once");
     auto* screenshotMenuAction = actionForId(QStringLiteral("quick.screenshot"));
     auto* delayedScreenshotMenuAction =
         actionForId(QStringLiteral("quick.screenshot-delay"));

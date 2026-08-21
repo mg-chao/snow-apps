@@ -839,6 +839,14 @@ void screenshotHistoryLifecycleAndIdentityDiff() {
         QStringLiteral("screenshotHistoryEntryDelete"));
     const auto previewImages =
         initialRow->findChildren<adqt::widgets::AdImage*>(QStringLiteral("screenshotHistoryImage"));
+    const auto resultPreview = std::find_if(
+        previewImages.cbegin(), previewImages.cend(), [](const auto* image) {
+            return image != nullptr && image->previewRow() == 0;
+        });
+    const auto displayPreview = std::find_if(
+        previewImages.cbegin(), previewImages.cend(), [](const auto* image) {
+            return image != nullptr && image->previewRow() == 1;
+        });
     QString editedRecordId;
     QObject::connect(&page, &ScreenshotHistoryPageWidget::editRequested, &page,
                      [&editedRecordId](const QString& recordId) { editedRecordId = recordId; });
@@ -852,9 +860,9 @@ void screenshotHistoryLifecycleAndIdentityDiff() {
                 copyButton->mapTo(initialRow, QPoint()).x() <
                     deleteButton->mapTo(initialRow, QPoint()).x(),
             "history actions must place Edit and Copy before Delete");
-    require(previewImages.size() == 2 &&
-                previewImages[0]->altText() == QStringLiteral("Screenshot result") &&
-                previewImages[0]->previewRow() == 0 && previewImages[1]->previewRow() == 1,
+    require(previewImages.size() == 2 && resultPreview != previewImages.cend() &&
+                (*resultPreview)->altText() == QStringLiteral("Screenshot result") &&
+                displayPreview != previewImages.cend(),
             "history preview must place the screenshot result before display images");
     editButton->click();
     require(editedRecordId == record.id, "history Edit did not emit the selected record ID");
@@ -2038,6 +2046,34 @@ void actionsMayExecuteWithoutConfirmation() {
             "an action without confirmation must execute directly");
 }
 
+void contentCardRoutesAreRealizedLazily() {
+    settings::SettingsCatalog catalog = expandedCatalog();
+    require(catalog.validationErrors().isEmpty(), "expanded integration catalog must validate");
+
+    snow_shot::presentation::GlobalShortcutManager shortcutManager;
+    ContentCardWidget content(catalog, shortcutManager);
+    auto* stack = content.findChild<QStackedWidget*>();
+    require(stack != nullptr && stack->count() == catalog.pages().size(),
+            "lazy route construction must preserve one stable stack slot per catalog page");
+    require(content.findChildren<SettingsPageWidget*>().size() == 1,
+            "lazy route construction must realize only the default settings page");
+    require(content.findChild<ScreenshotHistoryPageWidget*>(
+                QStringLiteral("screenshotHistoryPage")) == nullptr,
+            "lazy route construction must leave screenshot history unrealized");
+
+    content.setCurrentRoute(QStringLiteral("/extra"));
+    require(content.currentRoute() == QStringLiteral("/extra") &&
+                content.findChildren<SettingsPageWidget*>().size() == 2 &&
+                content.findChild<adqt::widgets::AdSelect*>(
+                    QStringLiteral("settings-control-extra-item")) != nullptr,
+            "first navigation must realize only the requested settings page");
+
+    content.setCurrentRoute(QStringLiteral("/quick"));
+    content.setCurrentRoute(QStringLiteral("/extra"));
+    require(content.findChildren<SettingsPageWidget*>().size() == 2,
+            "repeated navigation must reuse realized settings pages");
+}
+
 void catalogExpansionUpdatesAllConsumers() {
     settings::SettingsCatalog catalog = expandedCatalog();
     require(catalog.validationErrors().isEmpty(), "expanded integration catalog must validate");
@@ -2059,14 +2095,17 @@ void catalogExpansionUpdatesAllConsumers() {
     auto* search = header.findChild<ApplicationSearchWidget*>(QStringLiteral("globalTopSearchBar"));
     auto* searchSelect =
         search != nullptr ? search->findChild<adqt::widgets::AdSelect*>() : nullptr;
-    require(stack != nullptr && stack->count() == 8,
+    require(stack != nullptr && stack->count() == catalog.pages().size(),
             "route stack must add catalog pages automatically");
+    require(content.findChildren<SettingsPageWidget*>().size() == 1,
+            "main-content construction must realize only the default settings page");
     require(content.findChild<ScreenshotHistoryPageWidget*>(
                 QStringLiteral("screenshotHistoryPage")) == nullptr,
             "main-content construction eagerly instantiated screenshot history");
-    require(menu != nullptr && menu->model() != nullptr && menu->model()->rowCount() == 5,
+    require(menu != nullptr && menu->model() != nullptr &&
+                menu->model()->rowCount() == catalog.navigation().size(),
             "sidebar must add a catalog navigation node automatically");
-    require(searchSelect != nullptr && searchSelect->options().size() == 8,
+    require(searchSelect != nullptr && searchSelect->options().size() == catalog.pages().size(),
             "application search must add every catalog page to its default results");
 
     content.setCurrentRoute(QStringLiteral("/history"));
@@ -2075,6 +2114,8 @@ void catalogExpansionUpdatesAllConsumers() {
                 content.findChild<ScreenshotHistoryPageWidget*>(
                     QStringLiteral("screenshotHistoryPage")) != nullptr,
             "the custom screenshot history route must participate in the shared content stack");
+    require(content.findChildren<SettingsPageWidget*>().size() == 1,
+            "opening history must not realize unrelated settings pages");
 
     content.setCurrentRoute(QStringLiteral("/extra"));
     header.setSections(content.currentSections());
@@ -2090,6 +2131,13 @@ void catalogExpansionUpdatesAllConsumers() {
                 content.findChild<adqt::widgets::AdSelect*>(
                     QStringLiteral("settings-control-extra-item")) != nullptr,
             "content routes, generated page, and item anchors must follow the expanded catalog");
+    require(content.findChildren<SettingsPageWidget*>().size() == 2,
+            "opening a settings route must realize and cache only that route");
+    content.setCurrentRoute(QStringLiteral("/quick"));
+    content.setCurrentRoute(QStringLiteral("/extra"));
+    flushEvents();
+    require(content.findChildren<SettingsPageWidget*>().size() == 2,
+            "revisiting settings routes must reuse their realized pages");
     require(tabs != nullptr && tabs->count() == 1 &&
                 tabs->tabKey(0) == QStringLiteral("extra-section"),
             "header tabs must follow the current generated page sections");
@@ -2522,6 +2570,7 @@ void drawingToolbarEditorPersistsDropsAndRestoresRejectedChanges() {
 
 int main(int argc, char** argv) {
     bool drawingToolbarEditorOnly = false;
+    bool contentCardLazyOnly = false;
     bool screenshotHistoryOnly = false;
     bool settingsLayoutOnly = false;
     bool pinnedShortcutsOnly = false;
@@ -2530,6 +2579,9 @@ int main(int argc, char** argv) {
         if (QString::fromLocal8Bit(argv[argumentIndex]) ==
             QStringLiteral("--drawing-toolbar-editor-only")) {
             drawingToolbarEditorOnly = true;
+        } else if (QString::fromLocal8Bit(argv[argumentIndex]) ==
+                   QStringLiteral("--content-card-lazy-only")) {
+            contentCardLazyOnly = true;
         } else if (QString::fromLocal8Bit(argv[argumentIndex]) ==
                    QStringLiteral("--screenshot-history-only")) {
             screenshotHistoryOnly = true;
@@ -2545,7 +2597,8 @@ int main(int argc, char** argv) {
         }
     }
 #if defined(Q_OS_WIN)
-    if (drawingToolbarEditorOnly || settingsLayoutOnly || pinnedShortcutsOnly ||
+    if (drawingToolbarEditorOnly || contentCardLazyOnly || settingsLayoutOnly ||
+        pinnedShortcutsOnly ||
         screenshotShortcutsOnly) {
         qunsetenv("QT_QPA_PLATFORM");
     } else if (!qEnvironmentVariableIsSet("QT_QPA_PLATFORM")) {
@@ -2567,6 +2620,11 @@ int main(int argc, char** argv) {
 
     if (drawingToolbarEditorOnly) {
         drawingToolbarEditorPersistsDropsAndRestoresRejectedChanges();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (contentCardLazyOnly) {
+        contentCardRoutesAreRealizedLazily();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }

@@ -4,10 +4,12 @@
 #include "snow_shot/presentation/settings/settingscatalog.h"
 
 #include "widgets/context_menu.h"
+#include "icon_registry.h"
 
 #include <QAction>
 #include <QApplication>
 #include <QCoreApplication>
+#include <QCursor>
 #include <QDateTime>
 #include <QFileInfo>
 #include <QHash>
@@ -17,6 +19,8 @@
 #include <QKeySequence>
 #include <QPixmap>
 #include <QSet>
+#include <QTimer>
+#include <QMenu>
 #include <QSystemTrayIcon>
 #include <QVariant>
 
@@ -222,6 +226,16 @@ class SystemTrayController::Impl {
         buildMenu();
         retranslateUi();
         setMenuOptions({});
+
+        QObject::connect(menu.get(), &QMenu::aboutToHide, &q, [this]() {
+            // Native popup teardown can leave icon rasters in the shared renderer until the next
+            // event turn. Trim after the menu has released its transient backing store while
+            // retaining the small baseline cache used by the tray itself.
+            QTimer::singleShot(0, &q, [this]() {
+                adqt::icons::trimIconCache(512 * 1024);
+                emit q.transientUiHidden();
+            });
+        });
 
         trayIcon->setContextMenu(menu.get());
         QObject::connect(trayIcon, &QSystemTrayIcon::activated, &q,
@@ -501,4 +515,13 @@ bool SystemTrayController::shortcutFunctionsDisabled() const {
     return m_impl->disableShortcutFunctionsAction != nullptr &&
            m_impl->disableShortcutFunctionsAction->isChecked();
 }
+
+#if defined(SNOW_SHOT_SCREENSHOT_MEMORY_FOOTPRINT_INSTRUMENTATION)
+void SystemTrayController::showMemoryFootprintTestMenu() {
+    if (m_impl->menu == nullptr) {
+        return;
+    }
+    m_impl->menu->popup(QCursor::pos());
+}
+#endif
 } // namespace snow_shot::presentation

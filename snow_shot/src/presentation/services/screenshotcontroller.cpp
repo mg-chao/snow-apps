@@ -33,6 +33,7 @@
 #include "snow_shot/presentation/screenshotselectionmodel.h"
 #include "snow_shot/presentation/screenshotselectionresizeworkflow.h"
 #include "snow_shot/presentation/screenshotselectionsettingsstore.h"
+#include "snow_shot/presentation/screenshotselectionshadowrenderer.h"
 #include "snow_shot/presentation/screenshotscrollingcapturecontroller.h"
 #include "snow_shot/presentation/screenshotoverlaycoordinator.h"
 #include "snow_shot/presentation/screenshotoverlayinteractionadapter.h"
@@ -62,6 +63,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QHash>
 #include <QProcessEnvironment>
 #include <QPointer>
 #include <QRectF>
@@ -345,8 +347,9 @@ struct ScreenshotController::Impl final : public QObject,
                           std::shared_ptr<std::optional<ScreenshotHistoryEntry>> historyCandidate,
                           bool scrolling);
     void saveScrollingSnapshotForCopy(ScreenshotScrollingSnapshot snapshot, quint64 generation,
-                                      bool copyFileToClipboard,
-                                      snow_shot::storage::CaptureHistorySource historySource);
+                                       bool copyFileToClipboard,
+                                       snow_shot::storage::CaptureHistorySource historySource);
+    void completeBackgroundSave(ScreenshotExportTaskResult result, quint64 generation);
     void completeCopyExport(bool success, quint64 generation,
                             snow_shot::storage::CaptureHistorySource historySource,
                             std::shared_ptr<std::optional<ScreenshotHistoryEntry>> historyCandidate,
@@ -413,11 +416,13 @@ struct ScreenshotController::Impl final : public QObject,
     quint64 m_imageExportGeneration = 0;
     bool m_imageExportInFlight = false;
     ScreenshotExportJobHandle m_exportJob;
-    ScreenshotExportJobHandle m_backgroundSaveJob;
+    QHash<quint64, ScreenshotExportJobHandle> m_backgroundSaveJobs;
     ScreenshotClipboardCommitHandle m_clipboardCommit;
     ScreenshotExportJobHandle m_clipboardPinJob;
     quint64 m_clipboardPinGeneration = 0;
     quint64 m_delayedCaptureGeneration = 0;
+    bool m_delayedCapturePending = false;
+    bool m_screenRecordingOpenPending = false;
     PendingSelectionAction m_pendingSelectionAction = PendingSelectionAction::None;
     snow_shot::storage::CaptureHistorySource m_pendingHistorySource =
         snow_shot::storage::CaptureHistorySource::CopiedToClipboard;
@@ -678,6 +683,13 @@ void ScreenshotController::Impl::createPresentationInfrastructure() {
         &owner);
     m_selectorCoordinator = new ScreenshotSelectorCoordinator(&owner);
     m_screenRecordingController = std::make_unique<ScreenRecordingController>(&owner);
+    QObject::connect(m_screenRecordingController.get(),
+                     &ScreenRecordingController::activeWorkChanged,
+                     this, [this](bool active) {
+                         if (!active) {
+                             owner.retryIdleImplementationRelease();
+                         }
+                     });
     m_selectionSettings = std::make_unique<ScreenshotSelectionSettingsStore>();
     m_presentationServices =
         std::make_unique<ScreenshotPresentationServices>(ScreenshotPresentationServicesContext{
@@ -766,12 +778,27 @@ void ScreenshotController::Impl::createSelectionWorkflows() {
         m_displaySession,
         m_canvasRuntime,
         m_geometry,
+        [controller = QPointer<ScreenshotController>(&owner)]() {
+            if (controller != nullptr) {
+                controller->retryIdleImplementationRelease();
+            }
+        },
     });
     m_selectionExportUiServices = std::make_unique<ScreenshotSelectionExportUiServices>(
         m_canvasRuntime, m_ocrRecognition.get(), m_qrRecognition.get(), m_tableRecognition.get(),
         [controller = QPointer<ScreenshotController>(&owner)]() {
             if (controller != nullptr) {
                 emit controller->showMainWindowRequested();
+            }
+        },
+        [controller = QPointer<ScreenshotController>(&owner)]() {
+            if (controller != nullptr) {
+                controller->requestWorkingSetTrimAfterRelease();
+            }
+        },
+        [controller = QPointer<ScreenshotController>(&owner)]() {
+            if (controller != nullptr) {
+                controller->retryIdleImplementationRelease();
             }
         });
     m_selectionExportWorkflow = std::make_unique<ScreenshotSelectionExportWorkflow>(
@@ -936,9 +963,9 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                 },
                 [this]() { handleCapturePresented(); },
                 [this](quint64 sessionId) {
-                    QTimer::singleShot(75, &owner, [this, sessionId]() {
-                        if (m_captureState.sessionId != sessionId || m_interaction.inactive() ||
-                            m_presentationServices == nullptr) {
+                    QTimer::singleShot(75, this, [this, sessionId]() {
+                        if (m_captureState.sessionId != sessionId ||
+                            m_interaction.inactive() || m_presentationServices == nullptr) {
                             return;
                         }
                         m_presentationServices->updateOverlayState();
@@ -954,6 +981,10 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                 if (m_ocrController != nullptr) {
                     m_ocrController->invalidateSession();
                 }
+                // Capture workflows can be canceled directly by an export completion (for
+                // example after pinning), bypassing Impl::cancelCapture(). Keep the lazy graph
+                // release tied to the workflow's actual termination in both paths.
+                owner.scheduleIdleImplementationRelease(this);
             },
             []() {
                 return snow_shot::storage::ApplicationStorage::instance().smartSelectionEnabled();
@@ -1992,6 +2023,7 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
                 return;
             }
             receiver->m_impl->m_clipboardPinJob = {};
+            receiver->retryIdleImplementationRelease();
             if (!result.succeeded() || !content->has_value() || guardedScreen.isNull()) {
                 if (result.failureStage != ScreenshotExportFailureStage::Cancelled) {
                     receiver->m_impl->m_messages->error(
@@ -2207,8 +2239,6 @@ void ScreenshotController::Impl::cancelCapture() {
     }
     m_exportJob.cancel();
     m_exportJob = {};
-    m_backgroundSaveJob.cancel();
-    m_backgroundSaveJob = {};
     m_clipboardCommit.cancel();
     m_clipboardCommit = {};
     if (m_selectionExportUiServices != nullptr) {
@@ -2457,7 +2487,8 @@ void ScreenshotController::Impl::saveImageForCopy(
     const QString outputFilenameFormat = outputSettings.autoSaveFilenameFormat();
     const QPointer<ScreenshotController> receiver(&owner);
     if (!copyFileToClipboard) {
-        m_backgroundSaveJob = ScreenshotExportCoordinator::shared().submit(
+        const quint64 backgroundSaveGeneration = owner.nextOperationGeneration();
+        ScreenshotExportJobHandle backgroundSaveJob = ScreenshotExportCoordinator::shared().submit(
             &owner, ScreenshotExportCoordinator::Priority::Background,
             [image, outputDirectories, outputFormat,
              outputFilenameFormat](const ScreenshotExportCancellation& cancellation) mutable {
@@ -2477,17 +2508,16 @@ void ScreenshotController::Impl::saveImageForCopy(
                 result.savedPath = saved.path;
                 return result;
             },
-            [receiver](ScreenshotExportTaskResult result) {
-                if (!receiver.isNull() && receiver->m_impl != nullptr && !result.succeeded() &&
-                    result.failureStage != ScreenshotExportFailureStage::Cancelled) {
-                    receiver->m_impl->m_messages->warning(
-                        QString::fromLatin1(kSaveMessageKey),
-                        QCoreApplication::translate("ScreenshotController",
-                                                    "Automatic screenshot saving failed: %1")
-                            .arg(result.error));
+            [receiver, backgroundSaveGeneration](ScreenshotExportTaskResult result) mutable {
+                if (!receiver.isNull() && receiver->m_impl != nullptr) {
+                    receiver->m_impl->completeBackgroundSave(std::move(result),
+                                                             backgroundSaveGeneration);
                 }
             });
-        if (!m_backgroundSaveJob.isValid()) {
+        if (backgroundSaveJob.isValid()) {
+            m_backgroundSaveJobs.insert(backgroundSaveGeneration,
+                                        std::move(backgroundSaveJob));
+        } else {
             m_messages->warning(
                 QString::fromLatin1(kSaveMessageKey),
                 QCoreApplication::translate(
@@ -2629,7 +2659,8 @@ void ScreenshotController::Impl::saveScrollingSnapshotForCopy(
     const QPointer<ScreenshotController> receiver(&owner);
     if (!copyFileToClipboard) {
         const ScreenshotScrollingSnapshot saveSnapshot = snapshot;
-        m_backgroundSaveJob = ScreenshotExportCoordinator::shared().submit(
+        const quint64 backgroundSaveGeneration = owner.nextOperationGeneration();
+        ScreenshotExportJobHandle backgroundSaveJob = ScreenshotExportCoordinator::shared().submit(
             &owner, ScreenshotExportCoordinator::Priority::Background,
             [saveSnapshot, outputDirectories, outputFormat,
              outputFilenameFormat](const ScreenshotExportCancellation& cancellation) mutable {
@@ -2654,17 +2685,16 @@ void ScreenshotController::Impl::saveScrollingSnapshotForCopy(
                 result.savedPath = saved.path;
                 return result;
             },
-            [receiver](ScreenshotExportTaskResult result) {
-                if (!receiver.isNull() && receiver->m_impl != nullptr && !result.succeeded() &&
-                    result.failureStage != ScreenshotExportFailureStage::Cancelled) {
-                    receiver->m_impl->m_messages->warning(
-                        QString::fromLatin1(kSaveMessageKey),
-                        QCoreApplication::translate("ScreenshotController",
-                                                    "Automatic screenshot saving failed: %1")
-                            .arg(result.error));
+            [receiver, backgroundSaveGeneration](ScreenshotExportTaskResult result) mutable {
+                if (!receiver.isNull() && receiver->m_impl != nullptr) {
+                    receiver->m_impl->completeBackgroundSave(std::move(result),
+                                                             backgroundSaveGeneration);
                 }
             });
-        if (!m_backgroundSaveJob.isValid()) {
+        if (backgroundSaveJob.isValid()) {
+            m_backgroundSaveJobs.insert(backgroundSaveGeneration,
+                                        std::move(backgroundSaveJob));
+        } else {
             m_messages->warning(
                 QString::fromLatin1(kSaveMessageKey),
                 QCoreApplication::translate(
@@ -2789,6 +2819,24 @@ void ScreenshotController::Impl::saveScrollingSnapshotForCopy(
     }
 }
 
+void ScreenshotController::Impl::completeBackgroundSave(ScreenshotExportTaskResult result,
+                                                        quint64 generation) {
+    const auto job = m_backgroundSaveJobs.find(generation);
+    if (job == m_backgroundSaveJobs.end()) {
+        return;
+    }
+    m_backgroundSaveJobs.erase(job);
+    if (!result.succeeded() &&
+        result.failureStage != ScreenshotExportFailureStage::Cancelled) {
+        m_messages->warning(
+            QString::fromLatin1(kSaveMessageKey),
+            QCoreApplication::translate("ScreenshotController",
+                                        "Automatic screenshot saving failed: %1")
+                .arg(result.error));
+    }
+    owner.retryIdleImplementationRelease();
+}
+
 void ScreenshotController::Impl::completeCopyExport(
     bool success, quint64 generation, snow_shot::storage::CaptureHistorySource historySource,
     std::shared_ptr<std::optional<ScreenshotHistoryEntry>> historyCandidate, bool scrolling) {
@@ -2847,6 +2895,7 @@ void ScreenshotController::Impl::startScreenRecording() {
     if (physicalRegion.width() < 2 || physicalRegion.height() < 2) {
         return;
     }
+    m_screenRecordingOpenPending = true;
     static_cast<void>(resetCanvasEditingState());
 
     m_ocrController->invalidateSession();
@@ -2854,8 +2903,11 @@ void ScreenshotController::Impl::startScreenRecording() {
     if (m_historyService != nullptr) {
         m_historyService->resetCaptureNavigation();
     }
-    QTimer::singleShot(
-        0, this, [this, physicalRegion]() { m_screenRecordingController->open(physicalRegion); });
+    QTimer::singleShot(0, this, [this, physicalRegion]() {
+        m_screenRecordingOpenPending = false;
+        m_screenRecordingController->open(physicalRegion);
+        owner.retryIdleImplementationRelease();
+    });
 }
 
 void ScreenshotController::Impl::setShapeStyleFromToolbar(const SnowCanvasShapeStyle& style,
@@ -3136,6 +3188,7 @@ bool ScreenshotController::Impl::releaseRetainedIdleResources(
 
 void ScreenshotController::Impl::invalidateDelayedCapture() {
     m_delayedCaptureGeneration = owner.nextOperationGeneration();
+    m_delayedCapturePending = false;
 }
 
 void ScreenshotController::Impl::resetPendingCaptureRequest() {
@@ -3159,11 +3212,18 @@ bool ScreenshotController::Impl::canBeginCapture() const {
 }
 
 bool ScreenshotController::Impl::canReleaseAfterCancel() const {
+    const bool idleSession = m_captureState.sessionState == ScreenshotSessionState::IdleCold ||
+                             m_captureState.sessionState == ScreenshotSessionState::IdlePrepared;
     return !m_captureState.captureInProgress && m_interaction.inactive() &&
-           (m_captureState.sessionState == ScreenshotSessionState::IdleCold ||
-            m_captureState.sessionState == ScreenshotSessionState::IdlePrepared) &&
-           !m_imageExportInFlight && !m_clipboardPinJob.isValid() &&
-           (m_screenRecordingController == nullptr || !m_screenRecordingController->isOpen());
+           idleSession && !m_delayedCapturePending && !m_imageExportInFlight &&
+           m_backgroundSaveJobs.isEmpty() &&
+           !m_clipboardPinJob.isValid() &&
+           !m_screenRecordingOpenPending &&
+           (m_screenRecordingController == nullptr ||
+            !m_screenRecordingController->hasActiveWork()) &&
+           (m_exportService == nullptr || !m_exportService->hasPendingRequests()) &&
+           (m_selectionExportUiServices == nullptr ||
+            !m_selectionExportUiServices->hasLivePresentedWindows());
 }
 
 bool ScreenshotController::Impl::beginCapture(
@@ -3181,8 +3241,6 @@ bool ScreenshotController::Impl::beginCapture(
     invalidateDelayedCapture();
     m_exportJob.cancel();
     m_exportJob = {};
-    m_backgroundSaveJob.cancel();
-    m_backgroundSaveJob = {};
     m_clipboardCommit.cancel();
     m_clipboardCommit = {};
     if (m_selectionExportUiServices != nullptr) {
@@ -3338,8 +3396,10 @@ void ScreenshotController::Impl::shutdown() {
     }
     m_exportJob.cancel();
     m_exportJob = {};
-    m_backgroundSaveJob.cancel();
-    m_backgroundSaveJob = {};
+    for (const ScreenshotExportJobHandle& job : std::as_const(m_backgroundSaveJobs)) {
+        job.cancel();
+    }
+    m_backgroundSaveJobs.clear();
     m_clipboardCommit.cancel();
     m_clipboardCommit = {};
     if (m_selectionExportUiServices != nullptr) {
@@ -3393,6 +3453,10 @@ void ScreenshotController::Impl::shutdown() {
     snow_capture_release_conversion_pool();
     m_overlayCoordinator.reset();
     m_overlayEventAdapter.reset();
+    // The shadow renderer's cache is intentionally thread-local. Impl teardown runs on the GUI
+    // thread where overlay paints occur, so clear that cache while the owning graph is still
+    // being released instead of carrying large selection-sized rasters into the next capture.
+    ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
 }
 
 ScreenshotController::ScreenshotController(QObject* parent) : QObject(parent) {}
@@ -3406,60 +3470,122 @@ ScreenshotController::Impl& ScreenshotController::ensureImpl() {
     return *m_impl;
 }
 
+ScreenshotController::Impl* ScreenshotController::activeCaptureImpl() noexcept {
+    if (m_impl == nullptr || m_impl->m_interaction.inactive()) {
+        return nullptr;
+    }
+    const ScreenshotSessionState state = m_impl->m_captureState.sessionState;
+    if (state == ScreenshotSessionState::OverlayVisible ||
+        state == ScreenshotSessionState::Editing) {
+        return m_impl.get();
+    }
+    return nullptr;
+}
+
+const ScreenshotController::Impl* ScreenshotController::activeCaptureImpl() const noexcept {
+    if (m_impl == nullptr || m_impl->m_interaction.inactive()) {
+        return nullptr;
+    }
+    const ScreenshotSessionState state = m_impl->m_captureState.sessionState;
+    if (state == ScreenshotSessionState::OverlayVisible ||
+        state == ScreenshotSessionState::Editing) {
+        return m_impl.get();
+    }
+    return nullptr;
+}
+
 quint64 ScreenshotController::nextOperationGeneration() {
     return ++m_operationGeneration;
 }
 
 void ScreenshotController::scheduleIdleImplementationRelease(Impl* implementation) {
+    const QPointer<ScreenshotController> guardedController(this);
     const QPointer<Impl> guardedImplementation(implementation);
     const quint64 releaseGeneration = m_operationGeneration;
-    QTimer::singleShot(0, this, [this, guardedImplementation, releaseGeneration]() {
-        if (guardedImplementation.isNull() || m_impl.get() != guardedImplementation.data() ||
+    QTimer::singleShot(0, this,
+                       [guardedController, guardedImplementation, releaseGeneration]() {
+        if (guardedController.isNull() || guardedImplementation.isNull() ||
+            guardedController->m_impl.get() != guardedImplementation.data() ||
+            guardedController->m_operationGeneration != releaseGeneration ||
             !guardedImplementation->canReleaseAfterCancel()) {
             return;
         }
-        QTimer::singleShot(0, this, [this, guardedImplementation, releaseGeneration]() {
+        QTimer::singleShot(0, guardedController,
+                           [guardedController, guardedImplementation, releaseGeneration]() {
 #if defined(Q_OS_WIN) || defined(_WIN32)
             // Overlay widgets may use deleteLater() while cancellation is
             // dispatched from the overlay itself. Drain that destruction
-            // before publishing the release synchronization marker.
+            // before beginning the retained-resource grace period.
             QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 #endif
-#if defined(SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION)
-            snow_shot::presentation::screenshot_lifecycle_perf::captureReleased();
-#endif
+            // Cancellation may be superseded between queued turns; only release the same idle
+            // implementation that passed the first check.
+            if (guardedController.isNull() || guardedImplementation.isNull() ||
+                guardedController->m_impl.get() != guardedImplementation.data() ||
+                guardedController->m_operationGeneration != releaseGeneration ||
+                !guardedImplementation->canReleaseAfterCancel()) {
+                return;
+            }
             constexpr int kIdleResourceReleaseGraceMilliseconds = 750;
             QTimer::singleShot(
-                kIdleResourceReleaseGraceMilliseconds, this,
-                [this, guardedImplementation, releaseGeneration]() {
-                    if (guardedImplementation.isNull() ||
-                        m_impl.get() != guardedImplementation.data() ||
-                        m_operationGeneration != releaseGeneration ||
+                kIdleResourceReleaseGraceMilliseconds, guardedController,
+                [guardedController, guardedImplementation, releaseGeneration]() {
+                    if (guardedController.isNull() || guardedImplementation.isNull() ||
+                        guardedController->m_impl.get() != guardedImplementation.data() ||
+                        guardedController->m_operationGeneration != releaseGeneration ||
                         !guardedImplementation->canReleaseAfterCancel()) {
                         return;
                     }
-                    const auto scheduleHeapCompaction = [this, guardedImplementation,
-                                                         releaseGeneration]() {
+
+                    const auto queueFinalRelease =
+                        [guardedController, guardedImplementation,
+                         releaseGeneration](bool released) {
+                        Q_UNUSED(released);
+                        if (guardedController.isNull()) {
+                            return;
+                        }
                         QTimer::singleShot(
-                            kIdleHeapCompactionGraceMilliseconds, this,
-                            [this, guardedImplementation, releaseGeneration]() {
-                                if (guardedImplementation.isNull() ||
-                                    m_impl.get() != guardedImplementation.data() ||
-                                    m_operationGeneration != releaseGeneration ||
+                            0, guardedController,
+                            [guardedController, guardedImplementation, releaseGeneration]() {
+                                if (guardedController.isNull() ||
+                                    guardedImplementation.isNull() ||
+                                    guardedController->m_impl.get() !=
+                                        guardedImplementation.data() ||
+                                    guardedController->m_operationGeneration != releaseGeneration ||
                                     !guardedImplementation->canReleaseAfterCancel()) {
                                     return;
                                 }
-                                compactIdleProcessHeaps();
+
+                                const bool trimWorkingSet = std::exchange(
+                                    guardedController->m_workingSetTrimAfterRelease, false);
+                                guardedController->m_impl.reset();
+#if defined(SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION)
+                                snow_shot::presentation::screenshot_lifecycle_perf::
+                                    captureReleased();
+#endif
+                                const quint64 postReleaseGeneration =
+                                    guardedController->m_operationGeneration;
+                                emit guardedController->idleResourcesReleased(trimWorkingSet);
+
+                                QTimer::singleShot(
+                                    kIdleHeapCompactionGraceMilliseconds, guardedController,
+                                    [guardedController, postReleaseGeneration]() {
+                                        if (guardedController.isNull() ||
+                                            guardedController->m_impl != nullptr ||
+                                            guardedController->m_operationGeneration !=
+                                                postReleaseGeneration) {
+                                            return;
+                                        }
+                                        compactIdleProcessHeaps();
+                                    });
                             });
                     };
                     const bool scheduled = guardedImplementation->releaseRetainedIdleResources(
-                        [scheduleHeapCompaction](bool released) {
-                            if (released) {
-                                scheduleHeapCompaction();
-                            }
-                        });
+                        [queueFinalRelease](bool released) { queueFinalRelease(released); });
                     if (!scheduled) {
-                        scheduleHeapCompaction();
+                        // Never destroy Impl from inside one of its workflow methods. Queue the
+                        // same final revalidation used by the asynchronous completion path.
+                        queueFinalRelease(false);
                     }
                 });
         });
@@ -3470,79 +3596,115 @@ void ScreenshotController::setUiPreferences(const ScreenshotUiPreferences& prefe
     ensureImpl().applyUiPreferences(preferences);
 }
 
+bool ScreenshotController::hasActiveWork() const {
+    return m_impl != nullptr && !m_impl->canReleaseAfterCancel();
+}
+
 void ScreenshotController::prewarmResources() {
     QTimer::singleShot(0, this, [this]() { ensureImpl().m_captureWorkflow->prewarmResources(); });
 }
 
 void ScreenshotController::startCapture() {
-    static_cast<void>(ensureImpl().beginCapture());
+    Impl& implementation = ensureImpl();
+    static_cast<void>(implementation.beginCapture());
+    scheduleIdleImplementationRelease(&implementation);
 }
 
 void ScreenshotController::startDelayedCapture(int delaySeconds) {
     Impl& implementation = ensureImpl();
     if (!implementation.canBeginCapture()) {
+        scheduleIdleImplementationRelease(&implementation);
         return;
     }
     const int seconds = std::clamp(delaySeconds, 1, 10);
     implementation.m_delayedCaptureGeneration = nextOperationGeneration();
+    implementation.m_delayedCapturePending = true;
     const quint64 generation = implementation.m_delayedCaptureGeneration;
-    Impl* expectedImplementation = &implementation;
+    const QPointer<Impl> expectedImplementation(&implementation);
     QTimer::singleShot(seconds * 1000, this, [this, expectedImplementation, generation]() {
-        if (m_impl.get() != expectedImplementation ||
-            generation != expectedImplementation->m_delayedCaptureGeneration ||
-            !expectedImplementation->canBeginCapture()) {
+        if (expectedImplementation.isNull() || m_impl.get() != expectedImplementation.data() ||
+            generation != expectedImplementation->m_delayedCaptureGeneration) {
+            return;
+        }
+        expectedImplementation->m_delayedCapturePending = false;
+        if (!expectedImplementation->canBeginCapture()) {
+            scheduleIdleImplementationRelease(expectedImplementation.data());
             return;
         }
         startCapture();
     });
+    scheduleIdleImplementationRelease(&implementation);
 }
 
 void ScreenshotController::captureAndPinSelection() {
-    static_cast<void>(ensureImpl().beginCapture(Impl::PendingSelectionAction::Pin));
+    Impl& implementation = ensureImpl();
+    static_cast<void>(implementation.beginCapture(Impl::PendingSelectionAction::Pin));
+    scheduleIdleImplementationRelease(&implementation);
+}
+
+void ScreenshotController::requestWorkingSetTrimAfterRelease() {
+    m_workingSetTrimAfterRelease = true;
+}
+
+void ScreenshotController::retryIdleImplementationRelease() {
+    if (m_impl != nullptr) {
+        scheduleIdleImplementationRelease(m_impl.get());
+    }
 }
 
 void ScreenshotController::captureAndRecognizeText() {
-    static_cast<void>(ensureImpl().beginCapture(Impl::PendingSelectionAction::RecognizeText));
+    Impl& implementation = ensureImpl();
+    static_cast<void>(implementation.beginCapture(Impl::PendingSelectionAction::RecognizeText));
+    scheduleIdleImplementationRelease(&implementation);
 }
 
 void ScreenshotController::captureAndTranslateText() {
+    Impl& implementation = ensureImpl();
     static_cast<void>(
-        ensureImpl().beginCapture(Impl::PendingSelectionAction::RecognizeTextTranslation));
+        implementation.beginCapture(Impl::PendingSelectionAction::RecognizeTextTranslation));
+    scheduleIdleImplementationRelease(&implementation);
 }
 
 void ScreenshotController::captureAndCopySelection() {
-    static_cast<void>(ensureImpl().beginCapture(Impl::PendingSelectionAction::Copy));
+    Impl& implementation = ensureImpl();
+    static_cast<void>(implementation.beginCapture(Impl::PendingSelectionAction::Copy));
+    scheduleIdleImplementationRelease(&implementation);
 }
 
 void ScreenshotController::captureCurrentMonitor() {
     Impl& implementation = ensureImpl();
     if (!implementation.canBeginCapture()) {
+        scheduleIdleImplementationRelease(&implementation);
         return;
     }
 #if defined(Q_OS_WIN) || defined(_WIN32)
     POINT nativeCursor{};
     if (GetCursorPos(&nativeCursor) == FALSE) {
         qWarning("Failed to query the physical cursor position for current-monitor capture");
+        scheduleIdleImplementationRelease(&implementation);
         return;
     }
     const QPoint cursorPosition(nativeCursor.x, nativeCursor.y);
 #else
     const QPoint cursorPosition = QCursor::pos();
 #endif
-    static_cast<void>(
-        implementation.beginCapture(Impl::PendingSelectionAction::Copy,
-                                    snow_shot::storage::CaptureHistorySource::CurrentMonitor,
-                                    Impl::AutomaticSelectionMode::CurrentMonitor, cursorPosition));
+    static_cast<void>(implementation.beginCapture(
+        Impl::PendingSelectionAction::Copy,
+        snow_shot::storage::CaptureHistorySource::CurrentMonitor,
+        Impl::AutomaticSelectionMode::CurrentMonitor, cursorPosition));
+    scheduleIdleImplementationRelease(&implementation);
 }
 
 void ScreenshotController::captureFocusedWindow() {
 #if defined(Q_OS_WIN) || defined(_WIN32)
     Impl& implementation = ensureImpl();
     if (!implementation.canBeginCapture()) {
+        scheduleIdleImplementationRelease(&implementation);
         return;
     }
     const HWND foreground = GetForegroundWindow();
     if (foreground == nullptr) {
+        scheduleIdleImplementationRelease(&implementation);
         return;
     }
     const HWND root = GetAncestor(foreground, GA_ROOT);
@@ -3552,27 +3714,33 @@ void ScreenshotController::captureFocusedWindow() {
     static_cast<void>(implementation.beginCapture(
         Impl::PendingSelectionAction::Copy, snow_shot::storage::CaptureHistorySource::FocusedWindow,
         Impl::AutomaticSelectionMode::FocusedWindow, QPoint(), reinterpret_cast<quintptr>(target)));
+    scheduleIdleImplementationRelease(&implementation);
 #else
     Q_UNUSED(this);
 #endif
 }
 
 void ScreenshotController::captureAndStartScreenRecording() {
-    static_cast<void>(ensureImpl().beginCapture(Impl::PendingSelectionAction::StartVideo));
+    Impl& implementation = ensureImpl();
+    static_cast<void>(implementation.beginCapture(Impl::PendingSelectionAction::StartVideo));
+    scheduleIdleImplementationRelease(&implementation);
 }
 
 void ScreenshotController::startOrStopScreenRecordingAndCopy() {
     Impl& implementation = ensureImpl();
     if (implementation.m_screenRecordingController == nullptr) {
+        scheduleIdleImplementationRelease(&implementation);
         return;
     }
-    if (!implementation.m_screenRecordingController->isOpen()) {
-        captureAndStartScreenRecording();
-    } else if (!implementation.m_screenRecordingController->isRecording()) {
-        implementation.m_screenRecordingController->startRecording();
-    } else {
+    if (implementation.m_screenRecordingController->isRecording()) {
         implementation.m_screenRecordingController->stopRecordingAndCopyVideo();
+    } else if (implementation.m_screenRecordingController->isOpen()) {
+        implementation.m_screenRecordingController->startRecording();
+    } else if (!implementation.m_screenRecordingOpenPending &&
+               !implementation.m_screenRecordingController->hasActiveWork()) {
+        static_cast<void>(implementation.beginCapture(Impl::PendingSelectionAction::StartVideo));
     }
+    scheduleIdleImplementationRelease(&implementation);
 }
 
 void ScreenshotController::editHistoryRecord(const QString& recordId) {
@@ -3580,6 +3748,7 @@ void ScreenshotController::editHistoryRecord(const QString& recordId) {
     implementation.m_imageExportGeneration = nextOperationGeneration();
     implementation.m_imageExportInFlight = false;
     implementation.startHistoryEdit(recordId);
+    scheduleIdleImplementationRelease(&implementation);
 }
 
 void ScreenshotController::cancelCapture() {
@@ -3597,43 +3766,63 @@ void ScreenshotController::pinSelectionToScreen() {
 }
 
 void ScreenshotController::pinClipboardContentToScreen() {
-    ensureImpl().pinClipboardContentToScreen();
+    Impl& implementation = ensureImpl();
+    implementation.pinClipboardContentToScreen();
+    scheduleIdleImplementationRelease(&implementation);
 }
 
 void ScreenshotController::startScreenRecording() {
-    ensureImpl().startScreenRecording();
+    Impl& implementation = ensureImpl();
+    implementation.startScreenRecording();
+    scheduleIdleImplementationRelease(&implementation);
 }
 
 void ScreenshotController::setMoveTool() {
-    ensureImpl().setMoveTool();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setMoveTool();
+    }
 }
 
 void ScreenshotController::setSelectTool() {
-    ensureImpl().setSelectTool();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setSelectTool();
+    }
 }
 
 void ScreenshotController::setShapeTool() {
-    ensureImpl().setShapeTool();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setShapeTool();
+    }
 }
 
 void ScreenshotController::setArrowTool() {
-    ensureImpl().setArrowTool();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setArrowTool();
+    }
 }
 
 void ScreenshotController::setLineTool() {
-    ensureImpl().setLineTool();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setLineTool();
+    }
 }
 
 void ScreenshotController::setFreeDrawTool() {
-    ensureImpl().setFreeDrawTool();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setFreeDrawTool();
+    }
 }
 
 void ScreenshotController::setHighlightTool() {
-    ensureImpl().setHighlightTool();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setHighlightTool();
+    }
 }
 
 void ScreenshotController::setPenHighlightTool() {
-    ensureImpl().setPenHighlightTool();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setPenHighlightTool();
+    }
 }
 
 void ScreenshotController::Impl::setSelectionToolbarHovered(bool hovered) {
@@ -3643,65 +3832,95 @@ void ScreenshotController::Impl::setSelectionToolbarHovered(bool hovered) {
 }
 
 void ScreenshotController::setSpotlightTool() {
-    ensureImpl().setSpotlightTool();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setSpotlightTool();
+    }
 }
 
 void ScreenshotController::setEraserTool() {
-    ensureImpl().setEraserTool();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setEraserTool();
+    }
 }
 
 void ScreenshotController::setFilterTool() {
-    ensureImpl().setFilterTool();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setFilterTool();
+    }
 }
 
 void ScreenshotController::setRectangleFilterTool() {
-    ensureImpl().setRectangleFilterTool();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setRectangleFilterTool();
+    }
 }
 
 void ScreenshotController::setPenFilterTool() {
-    ensureImpl().setPenFilterTool();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setPenFilterTool();
+    }
 }
 
 void ScreenshotController::setWatermarkTool() {
-    ensureImpl().setWatermarkTool();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setWatermarkTool();
+    }
 }
 
 void ScreenshotController::setWatermarkConfigFromToolbar(const SnowCanvasWatermarkConfig& config) {
-    ensureImpl().setWatermarkConfigFromToolbar(config);
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setWatermarkConfigFromToolbar(config);
+    }
 }
 
 void ScreenshotController::setSpotlightConfigFromToolbar(const SnowCanvasSpotlightConfig& config) {
-    ensureImpl().setSpotlightConfigFromToolbar(config);
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setSpotlightConfigFromToolbar(config);
+    }
 }
 
 void ScreenshotController::setTextTool() {
-    ensureImpl().setTextTool();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setTextTool();
+    }
 }
 
 void ScreenshotController::setSerialNumberTool() {
-    ensureImpl().setSerialNumberTool();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setSerialNumberTool();
+    }
 }
 
 void ScreenshotController::decrementSelectedSerialNumbers() {
-    ensureImpl().decrementSelectedSerialNumbers();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->decrementSelectedSerialNumbers();
+    }
 }
 
 void ScreenshotController::incrementSelectedSerialNumbers() {
-    ensureImpl().incrementSelectedSerialNumbers();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->incrementSelectedSerialNumbers();
+    }
 }
 
 void ScreenshotController::createTextForSelectedSerialNumber() {
-    ensureImpl().createTextForSelectedSerialNumber();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->createTextForSelectedSerialNumber();
+    }
 }
 
 SnowCanvasShapeStyle ScreenshotController::currentRectangleStyle() const {
-    const Impl& implementation = const_cast<ScreenshotController*>(this)->ensureImpl();
-    return implementation.m_toolCommandWorkflow->currentRectangleStyle();
+    const Impl* implementation = activeCaptureImpl();
+    return implementation != nullptr
+               ? implementation->m_toolCommandWorkflow->currentRectangleStyle()
+               : SnowCanvasShapeStyle{};
 }
 
 void ScreenshotController::setShapeStyleFromToolbar(const SnowCanvasShapeStyle& style,
                                                     quint32 properties, SnowCanvasShapeKind kind) {
-    ensureImpl().setShapeStyleFromToolbar(style, properties, kind);
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setShapeStyleFromToolbar(style, properties, kind);
+    }
 }
 
 void ScreenshotController::Impl::reorderSelectedElements(SnowCanvasSelectionOrder order) {
@@ -3721,38 +3940,56 @@ void ScreenshotController::Impl::deleteSelectedElements() {
 }
 
 void ScreenshotController::setTextStyleFromToolbar(const SnowCanvasTextStyle& style) {
-    ensureImpl().setTextStyleFromToolbar(style);
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setTextStyleFromToolbar(style);
+    }
 }
 
 void ScreenshotController::setSerialNumberStyleFromToolbar(
     const SnowCanvasSerialNumberStyle& style) {
-    ensureImpl().setSerialNumberStyleFromToolbar(style);
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setSerialNumberStyleFromToolbar(style);
+    }
 }
 
 void ScreenshotController::adjustSelectionFromToolbar(int minDx, int minDy, int maxDx, int maxDy) {
-    ensureImpl().adjustSelectionFromToolbar(minDx, minDy, maxDx, maxDy);
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->adjustSelectionFromToolbar(minDx, minDy, maxDx, maxDy);
+    }
 }
 
 void ScreenshotController::setSelectionCornerRadiusFromToolbar(int radius) {
-    ensureImpl().setSelectionCornerRadiusFromToolbar(radius);
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setSelectionCornerRadiusFromToolbar(radius);
+    }
 }
 
 void ScreenshotController::setSelectionShadowWidthFromToolbar(int shadowWidth) {
-    ensureImpl().setSelectionShadowWidthFromToolbar(shadowWidth);
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->setSelectionShadowWidthFromToolbar(shadowWidth);
+    }
 }
 
 void ScreenshotController::toggleSelectionAspectRatioLockFromToolbar() {
-    ensureImpl().toggleSelectionAspectRatioLockFromToolbar();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->toggleSelectionAspectRatioLockFromToolbar();
+    }
 }
 
 void ScreenshotController::openSelectionResizeModalFromToolbar() {
-    ensureImpl().openSelectionResizeModalFromToolbar();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->openSelectionResizeModalFromToolbar();
+    }
 }
 
 void ScreenshotController::repositionToolbarForContentChange() {
-    ensureImpl().repositionToolbarForContentChange();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->repositionToolbarForContentChange();
+    }
 }
 
 void ScreenshotController::hideColorPickersForScreenshotUi() {
-    ensureImpl().hideColorPickersForScreenshotUi();
+    if (Impl* implementation = activeCaptureImpl()) {
+        implementation->hideColorPickersForScreenshotUi();
+    }
 }

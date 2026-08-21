@@ -209,6 +209,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void hideOtherPinnedWindows();
     void closeOtherPinnedWindows();
     void closeAllPinnedWindows();
+    void exitFocusModeIfLeader();
     [[nodiscard]] std::optional<QPoint> physicalCursorPosition() const;
     bool cursorMovementEnabled() const;
     bool moveCursorOnePixel(snow_shot::platform::PhysicalCursorDirection direction);

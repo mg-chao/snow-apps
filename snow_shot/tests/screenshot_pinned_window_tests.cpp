@@ -178,18 +178,100 @@ int pinnedWindowCount() {
         [](QWidget* widget) { return qobject_cast<ScreenshotPinnedWindow*>(widget) != nullptr; }));
 }
 
-void selectionExportUiServicesDoesNotPrewarmPinnedWindow(SnowCanvasRuntime& sourceRuntime) {
+bool waitUntil(const std::function<bool()>& predicate, int timeoutMs = 3000) {
+    QElapsedTimer timer;
+    timer.start();
+    while (!predicate() && timer.elapsed() < timeoutMs) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QThread::msleep(1);
+    }
+    return predicate();
+}
+
+QRect physicalPinGeometry(QScreen& screen, const QPoint& logicalOffset, const QSize& physicalSize);
+
+void selectionExportUiServicesPinnedWindowPoolLifecycle(SnowCanvasRuntime& sourceRuntime) {
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     const int initialPinnedWindowCount = pinnedWindowCount();
+    require(initialPinnedWindowCount == 0,
+            "the focused pool test started with an unexpected pinned window");
+    int presentedCount = 0;
+    int destroyedCount = 0;
     {
-        ScreenshotSelectionExportUiServices services(sourceRuntime);
+        ScreenshotSelectionExportUiServices services(
+            sourceRuntime, nullptr, nullptr, nullptr, {}, [&presentedCount]() { ++presentedCount; },
+            [&destroyedCount]() { ++destroyedCount; });
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         require(pinnedWindowCount() == initialPinnedWindowCount,
                 "constructing selection export UI services prewarmed a pinned window");
+
+        QScreen* screen = QGuiApplication::primaryScreen();
+        require(screen != nullptr, "the pool lifecycle test requires a primary screen");
+        QImage image(QSize(160, 120), QImage::Format_ARGB32_Premultiplied);
+        image.fill(QColor(47, 113, 211));
+        const QRect nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), image.size());
+        require(services.presentPinnedImage(image, screen, nativeGeometry),
+                "selection export UI services failed to present the pool test image");
+        require(presentedCount == 1,
+                "presenting a pooled pinned window did not publish its callback exactly once");
+
+        const QRect secondNativeGeometry =
+            physicalPinGeometry(*screen, QPoint(240, 180), image.size());
+        require(services.presentPinnedImage(image, screen, secondNativeGeometry),
+                "selection export UI services failed to present the second pool test image");
+        require(presentedCount == 2,
+                "presenting two pooled windows did not publish two callbacks");
+
+        QList<QPointer<ScreenshotPinnedWindow>> activeWindows;
+        const auto topLevelWidgets = QApplication::topLevelWidgets();
+        for (QWidget* widget : topLevelWidgets) {
+            auto* pinnedWindow = qobject_cast<ScreenshotPinnedWindow*>(widget);
+            if (pinnedWindow != nullptr && pinnedWindow->isVisible()) {
+                activeWindows.push_back(pinnedWindow);
+            }
+        }
+        require(activeWindows.size() == 2,
+                "both pooled pinned windows were not visible after presentation");
+        require(waitUntil([initialPinnedWindowCount]() {
+                    return pinnedWindowCount() == initialPinnedWindowCount + 3;
+                }),
+                "the pinned-window pool did not create a hidden spare while a pin was active");
+
+        QPointer<ScreenshotPinnedWindow> focusLeader = activeWindows.at(0);
+        QPointer<ScreenshotPinnedWindow> retainedWindow = activeWindows.at(1);
+        auto* focusMenu = focusLeader->findChild<adqt::widgets::AdContextMenu*>(
+            QStringLiteral("screenshotPinnedFocusMenu"));
+        require(focusMenu != nullptr && focusMenu->actions().size() == 4,
+                "the pool focus-mode fixture could not find the focus menu");
+        focusMenu->actions().at(1)->trigger();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        require(focusLeader->isVisible() && !retainedWindow->isVisible(),
+                "Hide Other Windows did not enter focus mode");
+
+        focusLeader->close();
+        require(waitUntil([&focusLeader, &retainedWindow, &destroyedCount,
+                           initialPinnedWindowCount]() {
+                    return focusLeader.isNull() && retainedWindow != nullptr &&
+                           retainedWindow->isVisible() && destroyedCount == 1 &&
+                           pinnedWindowCount() == initialPinnedWindowCount + 2;
+                }),
+                "closing the focus leader did not restore its retained hidden sibling");
+
+        retainedWindow->close();
+        require(waitUntil([&retainedWindow, &destroyedCount, initialPinnedWindowCount]() {
+                    return retainedWindow.isNull() && destroyedCount == 2 &&
+                           pinnedWindowCount() == initialPinnedWindowCount;
+                }),
+                "closing the last active pin did not destroy it and the hidden spare");
+        require(presentedCount == 2 && destroyedCount == 2,
+                "the pooled pin lifecycle callbacks were not emitted exactly once per window");
     }
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    require(pinnedWindowCount() == initialPinnedWindowCount,
-            "destroying idle selection export UI services changed the pinned-window count");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(pinnedWindowCount() == initialPinnedWindowCount && presentedCount == 2 &&
+                destroyedCount == 2,
+            "destroying idle selection export UI services retained a pinned window or spare");
 }
 
 QGraphicsTextItem* formattedTextItem(QGraphicsView* layer) {
@@ -3001,7 +3083,7 @@ int main(int argc, char* argv[]) {
         SnowCanvasRuntime sourceRuntime;
         require(sourceRuntime.isValid(), "source runtime creation failed");
         if (app.arguments().contains(QStringLiteral("--pool-lazy-only"))) {
-            selectionExportUiServicesDoesNotPrewarmPinnedWindow(sourceRuntime);
+            selectionExportUiServicesPinnedWindowPoolLifecycle(sourceRuntime);
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--large-edit-only"))) {

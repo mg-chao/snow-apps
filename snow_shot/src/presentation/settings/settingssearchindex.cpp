@@ -13,7 +13,8 @@ constexpr const char* PAGES_SOURCE = QT_TRANSLATE_NOOP("SettingsCatalog", "Pages
 
 QString normalized(QString value) {
     value = value.normalized(QString::NormalizationForm_KC).toCaseFolded().trimmed();
-    value.replace(QRegularExpression(QStringLiteral("\\s+")), QStringLiteral(" "));
+    static const QRegularExpression whitespacePattern(QStringLiteral("\\s+"));
+    value.replace(whitespacePattern, QStringLiteral(" "));
     return value;
 }
 
@@ -123,6 +124,33 @@ SettingsSearchIndex::SettingsSearchIndex(const SettingsCatalog& catalog,
 }
 
 void SettingsSearchIndex::rebuild() {
+    rebuildPageEntries();
+    m_entries.clear();
+    m_normalizedEntries.clear();
+    m_detailedIndexBuilt = false;
+}
+
+void SettingsSearchIndex::rebuildPageEntries() {
+    m_pageEntries.clear();
+    m_pageEntries.reserve(m_catalog.pages().size());
+    int order = 0;
+    const QString pages = QCoreApplication::translate("SettingsCatalog", PAGES_SOURCE);
+    for (const SettingsPageDefinition& page : m_catalog.pages()) {
+        m_pageEntries.push_back({
+            QStringLiteral("page:%1").arg(page.id),
+            SettingsSearchNodeKind::Page,
+            {page.id, {}, {}},
+            page.title.translated(),
+            page.description.translated(),
+            pages,
+            {},
+            {},
+            order++,
+        });
+    }
+}
+
+void SettingsSearchIndex::buildDetailedIndex() const {
     m_entries.clear();
     m_normalizedEntries.clear();
     int order = 0;
@@ -188,6 +216,13 @@ void SettingsSearchIndex::rebuild() {
             normalizedList(entry.optionLabels),
         });
     }
+    m_detailedIndexBuilt = true;
+}
+
+void SettingsSearchIndex::ensureDetailedIndex() const {
+    if (!m_detailedIndexBuilt) {
+        buildDetailedIndex();
+    }
 }
 
 void SettingsSearchIndex::setRuntimeValues(SettingsSearchRuntimeValues runtimeValues) {
@@ -199,10 +234,16 @@ void SettingsSearchIndex::setRuntimeValues(SettingsSearchRuntimeValues runtimeVa
 }
 
 const QVector<SettingsSearchEntry>& SettingsSearchIndex::entries() const {
+    ensureDetailedIndex();
     return m_entries;
 }
 
+const QVector<SettingsSearchEntry>& SettingsSearchIndex::pageEntries() const {
+    return m_pageEntries;
+}
+
 QVector<SettingsSearchEntry> SettingsSearchIndex::search(const QString& query) const {
+    ensureDetailedIndex();
     const QString normalizedQuery = normalized(query);
     const QStringList queryTokens = tokens(query);
     if (queryTokens.isEmpty()) {

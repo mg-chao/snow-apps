@@ -8,6 +8,8 @@
 
 #include <memory>
 
+class QEvent;
+
 class ScreenRecordingController final : public QObject {
     Q_OBJECT
 
@@ -18,10 +20,17 @@ class ScreenRecordingController final : public QObject {
     void open(const QRect& physicalRegion);
     bool isOpen() const;
     bool isRecording() const;
+    bool hasActiveWork() const;
     void startRecording();
     void stopRecordingAndCopyVideo();
 
+  signals:
+    void openChanged(bool open);
+    void activeWorkChanged(bool active);
+
   private:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
     struct Impl;
     std::unique_ptr<Impl> m_impl;
 };

@@ -12,6 +12,8 @@
 #include <QSizePolicy>
 #include <QVBoxLayout>
 
+#include <algorithm>
+
 namespace {
 constexpr int GLOBAL_SEARCH_MAX_WIDTH = 400;
 constexpr int GLOBAL_SEARCH_MIN_WIDTH = 280;
@@ -78,6 +80,15 @@ void MainContentHeaderWidget::setSections(
     if (m_tabs == nullptr) {
         return;
     }
+    const bool unchanged = sections.size() == m_sections.size() &&
+                           std::equal(sections.cbegin(), sections.cend(), m_sections.cbegin(),
+                                      [](const auto& first, const auto& second) {
+                                          return first.id == second.id &&
+                                                 first.label == second.label;
+                                      });
+    if (unchanged) {
+        return;
+    }
 
     const QSignalBlocker blocker(m_tabs);
     m_tabs->clear();
@@ -105,8 +116,12 @@ void MainContentHeaderWidget::setCurrentSection(const QString& sectionId) {
         return;
     }
     const int sectionIndex = m_tabs->indexOf(sectionId);
+    const int nextIndex = sectionIndex >= 0 ? sectionIndex : 0;
+    if (m_tabs->currentIndex() == nextIndex) {
+        return;
+    }
     const QSignalBlocker blocker(m_tabs);
-    m_tabs->setCurrentIndex(sectionIndex >= 0 ? sectionIndex : 0);
+    m_tabs->setCurrentIndex(nextIndex);
 }
 
 void MainContentHeaderWidget::applyTheme(

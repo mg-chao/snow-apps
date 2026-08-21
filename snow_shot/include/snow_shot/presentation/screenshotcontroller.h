@@ -17,6 +17,7 @@ class ScreenshotController : public QObject {
     ~ScreenshotController() override;
 
     void setUiPreferences(const ScreenshotUiPreferences& preferences);
+    [[nodiscard]] bool hasActiveWork() const;
 
   public slots:
     void prewarmResources();
@@ -72,16 +73,22 @@ class ScreenshotController : public QObject {
 
   signals:
     void showMainWindowRequested();
+    void idleResourcesReleased(bool trimWorkingSet);
 
   private:
     struct Impl;
 
     Impl& ensureImpl();
+    Impl* activeCaptureImpl() noexcept;
+    const Impl* activeCaptureImpl() const noexcept;
     quint64 nextOperationGeneration();
+    void requestWorkingSetTrimAfterRelease();
+    void retryIdleImplementationRelease();
     void scheduleIdleImplementationRelease(Impl* implementation);
 
     std::unique_ptr<Impl> m_impl;
     quint64 m_operationGeneration = 0;
+    bool m_workingSetTrimAfterRelease = false;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTCONTROLLER_H

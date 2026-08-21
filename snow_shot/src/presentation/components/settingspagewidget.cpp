@@ -101,7 +101,6 @@ class SettingsPageWidget::Impl {
         build();
         connectServices();
         retranslateUi();
-        syncValues();
         applyTheme(colorScheme);
     }
 
@@ -125,6 +124,8 @@ class SettingsPageWidget::Impl {
 
     void build() {
         const auto metric = colorScheme.metricAlias;
+        mainWindowMetric =
+            snow_shot::presentation::styles::buildMainWindowComponentMetricToken(colorScheme);
         q.setObjectName(settings::generatedObjectName(QStringLiteral("settings-page"), page->id));
         q.setAutoFillBackground(false);
 
@@ -538,9 +539,6 @@ class SettingsPageWidget::Impl {
                                          Payload, settings::SettingsShortcutActionDefinition>) {
                     const auto shortcutState = runtimeBindings.shortcutState(payload.shortcutAction);
                     const auto metric = colorScheme.metricAlias;
-                    const auto mainWindowMetric =
-                        snow_shot::presentation::styles::buildMainWindowComponentMetricToken(
-                            colorScheme);
                     ShortcutKeyRowConfig config{
                         definition.title.translated(),
                         payload.iconFactory ? payload.iconFactory() : adqt::icons::IconRef(),
@@ -587,9 +585,6 @@ class SettingsPageWidget::Impl {
                                               ? snow_shot::presentation::GlobalShortcutStatus::Unset
                                               : snow_shot::presentation::GlobalShortcutStatus::Registered;
                     const auto metric = colorScheme.metricAlias;
-                    const auto mainWindowMetric =
-                        snow_shot::presentation::styles::buildMainWindowComponentMetricToken(
-                            colorScheme);
                     ShortcutKeyRowConfig config;
                     config.title = definition.title.translated();
                     config.iconRef = payload.iconFactory ? payload.iconFactory()
@@ -1217,6 +1212,7 @@ class SettingsPageWidget::Impl {
     QVector<RuntimeSection> sections;
     QVector<RuntimeItem> items;
     snow_shot::presentation::styles::ThemeColorScheme colorScheme;
+    snow_shot::presentation::styles::MainWindowComponentMetricToken mainWindowMetric;
     int scrollMarginX = 0;
     int scrollMarginY = 0;
     QString lastVisibleSectionId;

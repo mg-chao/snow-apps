@@ -12,6 +12,8 @@ void mark(const QString& event);
 void capturePresented();
 void captureInteractionReady();
 void captureReleased();
+void idleMemoryReclaimCompleted(bool trimWorkingSet, bool success, int attemptCount,
+                                int nativeErrorCode = 0);
 } // namespace snow_shot::presentation::screenshot_lifecycle_perf
 
 #endif

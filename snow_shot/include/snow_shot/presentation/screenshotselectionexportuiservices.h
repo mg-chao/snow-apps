@@ -22,7 +22,9 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         SnowCanvasRuntime& runtime, ScreenshotOcrRecognitionPort* recognition = nullptr,
         ScreenshotQrRecognitionPort* qrRecognition = nullptr,
         SnowShotApiClient* tableRecognition = nullptr,
-        std::function<void()> showMainWindowRequested = {});
+        std::function<void()> showMainWindowRequested = {},
+        std::function<void()> pinnedWindowPresented = {},
+        std::function<void()> pinnedWindowDestroyed = {});
     ~ScreenshotSelectionExportUiServices() override;
 
     [[nodiscard]] bool publishClipboard(QObject* receiver, ScreenshotClipboardPayload payload,
@@ -38,6 +40,7 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
                                           ScreenshotClipboardOriginalContent originalContent = {});
     [[nodiscard]] bool
     presentPinnedSelection(const ScreenshotPinnedSelectionRequest& request) override;
+    [[nodiscard]] bool hasLivePresentedWindows() const;
 
   private:
     SnowCanvasRuntime& m_runtime;
@@ -45,6 +48,8 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     ScreenshotQrRecognitionPort* m_qrRecognition = nullptr;
     SnowShotApiClient* m_tableRecognition = nullptr;
     std::function<void()> m_showMainWindowRequested;
+    std::function<void()> m_pinnedWindowPresented;
+    std::function<void()> m_pinnedWindowDestroyed;
     std::unique_ptr<ScreenshotPinnedWindowPool> m_windowPool;
     ScreenshotClipboardCommitHandle m_clipboardCommit;
     std::shared_ptr<std::atomic_bool> m_clipboardCompletionEnabled;

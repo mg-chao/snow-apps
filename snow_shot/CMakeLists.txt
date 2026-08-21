@@ -623,6 +623,7 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshotcanvascolorsampler.h
     include/snow_shot/presentation/screenshotcanvascolorsamplerwindow.h
     include/snow_shot/presentation/screenshotcaptureworkflowports.h
+    include/snow_shot/presentation/screenshotasyncactivitytracker.h
     include/snow_shot/presentation/screenshotcanvasrenderer.h
     include/snow_shot/presentation/screenshotclipboardcontent.h
     include/snow_shot/presentation/screenshotclipboardservice.h
@@ -714,6 +715,7 @@ set(PROJECT_HEADERS
 )
 
 set(PROJECT_CXX_SOURCES
+    src/app/idlememoryreclaimpolicy.h
     src/app/applicationcontroller.cpp
     src/app/main.cpp
     src/app/singleinstancecoordinator.cpp
@@ -967,6 +969,16 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_executable(snow-shot-idle-memory-reclaim-policy-tests
+        tests/idle_memory_reclaim_policy_tests.cpp
+        src/app/idlememoryreclaimpolicy.h
+    )
+    target_include_directories(snow-shot-idle-memory-reclaim-policy-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/app"
+    )
+    add_test(NAME snow-shot-idle-memory-reclaim-policy-tests
+             COMMAND snow-shot-idle-memory-reclaim-policy-tests)
+
     add_test(NAME snow-shot-storage-boundary-check
         COMMAND ${CMAKE_COMMAND}
             -DSNOW_SHOT_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
@@ -1013,9 +1025,13 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-screenshot-export-service-tests PRIVATE
         Qt6::Widgets
         snow_draw_engine_qt_canvas
+        onnxruntime::onnxruntime
     )
     if(WIN32)
-        target_link_libraries(snow-shot-screenshot-export-service-tests PRIVATE user32)
+        target_link_libraries(snow-shot-screenshot-export-service-tests PRIVATE
+            PkgConfig::SNOW_SHOT_FFMPEG
+            user32
+        )
     endif()
     add_test(NAME snow-shot-screenshot-export-service-tests
              COMMAND snow-shot-screenshot-export-service-tests)
@@ -1118,6 +1134,13 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_test(NAME snow-shot-page-only-search-results-tests
+             COMMAND snow-shot-settings-catalog-tests --page-only-search-results)
+    set_tests_properties(snow-shot-page-only-search-results-tests PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
     add_executable(snow-shot-settings-page-tests
         tests/settings_page_tests.cpp
         include/snow_shot/presentation/components/contentcardwidget.h
@@ -1134,18 +1157,48 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-settings-page-tests PRIVATE
         snow_shot_settings
         Qt6::Widgets
+        onnxruntime::onnxruntime
     )
     if(WIN32)
-        target_link_libraries(snow-shot-settings-page-tests PRIVATE user32)
+        target_link_libraries(snow-shot-settings-page-tests PRIVATE
+            PkgConfig::SNOW_SHOT_FFMPEG
+            user32
+        )
     endif()
     add_test(NAME snow-shot-settings-page-tests
              COMMAND snow-shot-settings-page-tests)
-    set_tests_properties(snow-shot-settings-page-tests PROPERTIES
-        ENVIRONMENT
-            "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
-        ENVIRONMENT_MODIFICATION
-            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
-    )
+    if(WIN32)
+        set_tests_properties(snow-shot-settings-page-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    else()
+        set_tests_properties(snow-shot-settings-page-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    endif()
+    add_test(NAME snow-shot-content-card-lazy-route-tests
+             COMMAND snow-shot-settings-page-tests --content-card-lazy-only)
+    if(WIN32)
+        set_tests_properties(snow-shot-content-card-lazy-route-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    else()
+        set_tests_properties(snow-shot-content-card-lazy-route-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    endif()
 
     add_executable(snow-shot-selector-policy-tests
         tests/screenshot_selector_policy_tests.cpp
@@ -1814,10 +1867,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow_draw_engine_qt_canvas
         snow_shot_image_codec
         snow_shot_window_shortcuts
+        onnxruntime::onnxruntime
     )
     if(WIN32)
         target_link_libraries(snow-shot-pinned-window-tests PRIVATE
             Qt6::GuiPrivate
+            PkgConfig::SNOW_SHOT_FFMPEG
             comctl32
             dwmapi
             user32
@@ -1902,6 +1957,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-pinned-recognition-priority-tests
         snow-shot-pinned-clipboard-content-tests
         snow-shot-pinned-toolbar-parity-tests
+        snow-shot-pinned-window-pool-lazy-tests
     )
     if(WIN32)
         list(APPEND _snow_shot_pinned_window_test_names
@@ -2804,6 +2860,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     add_executable(snow-shot-history-performance-benchmark
         tests/screenshot_history_performance_benchmark.cpp
         include/snow_shot/presentation/components/contentcardwidget.h
+        src/presentation/services/screenshotclipboardservice.cpp
         src/presentation/components/contentcardwidget.cpp
     )
     target_compile_definitions(snow-shot-history-performance-benchmark PRIVATE
@@ -2813,6 +2870,10 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     target_include_directories(snow-shot-history-performance-benchmark PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
+    set(_snow_shot_history_rust_target snow_shot_rust_ffi)
+    if(TARGET snow_shot_rust_ffi_bundle)
+        set(_snow_shot_history_rust_target snow_shot_rust_ffi_bundle)
+    endif()
     target_link_libraries(snow-shot-history-performance-benchmark PRIVATE
         snow_shot_settings
         snow_shot_storage
@@ -2820,6 +2881,8 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         ant_design_qt
         Qt6::Widgets
         Psapi
+        ${_snow_shot_history_rust_target}
+        PkgConfig::SNOW_SHOT_FFMPEG
     )
 
     # This executable deliberately is not registered with CTest. It publishes
@@ -2933,9 +2996,34 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     )
     target_compile_definitions(snow-shot-pin-to-screen-performance-benchmark PRIVATE NOMINMAX)
 
+    add_executable(snow-shot-screenshot-memory-footprint-benchmark
+        tests/screenshot_memory_footprint_benchmark.cpp
+    )
+    target_link_libraries(snow-shot-screenshot-memory-footprint-benchmark PRIVATE
+        Qt6::Core
+        ole32
+        oleaut32
+        psapi
+        Uiautomationcore
+        user32
+    )
+    target_compile_definitions(
+        snow-shot-screenshot-memory-footprint-benchmark PRIVATE NOMINMAX)
+    if(SNOW_SHOT_BUILD_TESTS)
+        add_test(
+            NAME snow-shot-screenshot-memory-footprint-benchmark-self-test
+            COMMAND snow-shot-screenshot-memory-footprint-benchmark --self-test
+        )
+        set_tests_properties(
+            snow-shot-screenshot-memory-footprint-benchmark-self-test
+            PROPERTIES LABELS "benchmark-self-test"
+        )
+    endif()
+
     target_compile_definitions(snow_shot PRIVATE
         SNOW_SHOT_PIN_PERF_INSTRUMENTATION=1
         SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION=1
+        SNOW_SHOT_SCREENSHOT_MEMORY_FOOTPRINT_INSTRUMENTATION=1
     )
 endif()
 

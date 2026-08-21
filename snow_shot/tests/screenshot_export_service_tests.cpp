@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotdisplaysession.h"
+#include "snow_shot/presentation/screenshotasyncactivitytracker.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/screenshotexportservice.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
@@ -11,9 +12,13 @@
 #include <QObject>
 #include <QTimer>
 
+#include <algorithm>
 #include <cstdlib>
+#include <functional>
 #include <iostream>
+#include <memory>
 #include <utility>
+#include <vector>
 
 struct ScreenshotClipboardPayloadTestAccess {
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -56,7 +61,7 @@ bool hasSamePixels(const QImage& actual, const QImage& expected) {
 
 class ExportFixture final {
   public:
-    ExportFixture()
+    explicit ExportFixture(std::function<void()> becameIdle = {})
         : m_runtime(
               SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasStyleDefaults()}) {
         CapturedDisplayModel display;
@@ -74,6 +79,7 @@ class ExportFixture final {
             m_displays,
             m_runtime,
             m_geometry,
+            std::move(becameIdle),
         });
     }
 
@@ -95,6 +101,30 @@ class ExportFixture final {
     ScreenshotGeometryMapper m_geometry;
     std::unique_ptr<ScreenshotExportService> m_service;
 };
+
+template <typename Predicate>
+bool waitForCondition(Predicate predicate, int timeoutMilliseconds = 5000) {
+    if (predicate()) {
+        return true;
+    }
+
+    QEventLoop loop;
+    QTimer pollTimer;
+    pollTimer.setInterval(1);
+    QObject::connect(&pollTimer, &QTimer::timeout, &loop, [&]() {
+        if (predicate()) {
+            loop.quit();
+        }
+    });
+    QTimer timeout;
+    timeout.setSingleShot(true);
+    timeout.setInterval(timeoutMilliseconds);
+    QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+    pollTimer.start();
+    timeout.start();
+    loop.exec();
+    return predicate();
+}
 
 template <typename ScheduleRequest, typename ResultImage>
 QImage waitForResult(ScheduleRequest scheduleRequest, ResultImage resultImage) {
@@ -200,12 +230,109 @@ void styledClipboardResultRetainsDibV5() {
     require(resultImage.pixelColor(0, 0).alpha() == 0,
             "styled clipboard export did not retain rounded-corner transparency");
 }
+
+void pendingRequestsReachIdleAfterTerminalPayloadDisposal() {
+    const int baselineActivity =
+        ScreenshotAsyncActivityTracker::shared().activeActivityCount();
+    int idleNotifications = 0;
+    bool idleObservedDisposedCallbacks = false;
+    std::vector<std::weak_ptr<int>> callbackLifetimes;
+    ExportFixture fixture([&]() {
+        ++idleNotifications;
+        idleObservedDisposedCallbacks =
+            std::all_of(callbackLifetimes.cbegin(), callbackLifetimes.cend(),
+                        [](const std::weak_ptr<int>& lifetime) { return lifetime.expired(); });
+    });
+    require(fixture.isValid(), "pending-state fixture could not initialize the canvas runtime");
+
+    QObject receiver;
+    int callbacks = 0;
+    bool callbacksObservedPending = true;
+    bool callbacksObservedActivity = true;
+    for (int requestIndex = 0; requestIndex < 2; ++requestIndex) {
+        auto callbackLifetime = std::make_shared<int>(requestIndex);
+        callbackLifetimes.emplace_back(callbackLifetime);
+        fixture.service().setNextSelectionSourceImage(
+            patternedImage(QSize(96 + requestIndex, 64 + requestIndex), 31 + requestIndex));
+        const bool scheduled = fixture.service().requestSelectionResult(
+            QRect(5, 7, 32, 24), ScreenshotResultStyle{}, &receiver,
+            [&, callbackLifetime](QImage image) {
+                require(!image.isNull(), "pending-state export produced no image");
+                callbacksObservedPending =
+                    callbacksObservedPending && fixture.service().hasPendingRequests();
+                callbacksObservedActivity =
+                    callbacksObservedActivity &&
+                    ScreenshotAsyncActivityTracker::shared().activeActivityCount() >
+                        baselineActivity;
+                ++callbacks;
+            });
+        require(scheduled, "pending-state export was not scheduled");
+        callbackLifetime.reset();
+    }
+
+    require(fixture.service().hasPendingRequests(),
+            "accepted exports were not reported as pending");
+    require(ScreenshotAsyncActivityTracker::shared().activeActivityCount() ==
+                baselineActivity + 2,
+            "accepted exports did not retain independent activity leases");
+    require(waitForCondition([&]() {
+                return callbacks == 2 && !fixture.service().hasPendingRequests();
+            }),
+            "accepted exports did not reach their terminal callbacks");
+    require(callbacksObservedPending,
+            "pending state ended before a terminal callback returned");
+    require(callbacksObservedActivity,
+            "activity tracking ended before a terminal callback returned");
+    require(waitForCondition([&]() { return idleNotifications == 1; }),
+            "the final request did not publish one idle transition");
+    require(idleNotifications == 1, "the service published duplicate idle transitions");
+    require(idleObservedDisposedCallbacks,
+            "idle was published before terminal callback captures were disposed");
+    require(ScreenshotAsyncActivityTracker::shared().activeActivityCount() == baselineActivity,
+            "export activity leases remained live after terminal disposal");
+}
+
+void destructionDrainsPendingRequestsWithoutPublishingCallbacks() {
+    const int baselineActivity =
+        ScreenshotAsyncActivityTracker::shared().activeActivityCount();
+    bool callbackInvoked = false;
+    bool idleNotificationInvoked = false;
+    std::weak_ptr<int> callbackLifetime;
+    QObject receiver;
+    {
+        ExportFixture fixture([&idleNotificationInvoked]() { idleNotificationInvoked = true; });
+        require(fixture.isValid(),
+                "teardown fixture could not initialize the canvas runtime");
+        auto lifetime = std::make_shared<int>(1);
+        callbackLifetime = lifetime;
+        fixture.service().setNextSelectionSourceImage(patternedImage(QSize(640, 480), 47));
+        const bool scheduled = fixture.service().requestSelectionResult(
+            QRect(0, 0, 640, 480), ScreenshotResultStyle{}, &receiver,
+            [lifetime, &callbackInvoked](QImage) { callbackInvoked = true; });
+        require(scheduled && fixture.service().hasPendingRequests(),
+                "teardown export was not accepted as pending");
+        require(ScreenshotAsyncActivityTracker::shared().activeActivityCount() ==
+                    baselineActivity + 1,
+                "teardown export did not acquire an activity lease");
+        lifetime.reset();
+    }
+
+    require(!callbackInvoked, "service teardown delivered a queued result callback");
+    require(!idleNotificationInvoked,
+            "service teardown published an idle callback after notifications were disabled");
+    require(callbackLifetime.expired(),
+            "service teardown retained a terminal callback capture");
+    require(ScreenshotAsyncActivityTracker::shared().activeActivityCount() == baselineActivity,
+            "service teardown retained pending async activity");
+}
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     directSourceKeepsFullWgcFrameForResultAndClipboard();
     styledClipboardResultRetainsDibV5();
+    pendingRequestsReachIdleAfterTerminalPayloadDisposal();
+    destructionDrainsPendingRequestsWithoutPublishingCallbacks();
     std::cout << "All screenshot export service tests passed\n";
     return EXIT_SUCCESS;
 }

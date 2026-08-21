@@ -416,18 +416,9 @@ void ApplicationSearchWidget::populateResults(const QString& queryText) {
         return;
     }
 
+    const bool emptyQuery = queryText.trimmed().isEmpty();
     QVector<snow_shot::presentation::settings::SettingsSearchEntry> results =
-        m_index.search(queryText);
-    if (queryText.trimmed().isEmpty()) {
-        results.erase(
-            std::remove_if(
-                results.begin(), results.end(),
-                [](const auto& entry) {
-                    return entry.kind != snow_shot::presentation::settings::
-                                             SettingsSearchNodeKind::Page;
-                }),
-            results.end());
-    }
+        emptyQuery ? m_index.pageEntries() : m_index.search(queryText);
     QVector<adqt::widgets::AdSelect::Option> options;
     options.reserve(results.size());
     m_locationsByValue.clear();

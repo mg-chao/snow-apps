@@ -18,6 +18,7 @@
 #include <QClipboard>
 #include <QDesktopServices>
 #include <QDir>
+#include <QEvent>
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QMimeData>
@@ -233,7 +234,7 @@ struct ScreenRecordingController::Impl {
         if (!region.isValid() || region.isEmpty() || busy) {
             return;
         }
-        if (isOpen()) {
+        if (areaWindow != nullptr && toolbarWindow != nullptr) {
             if (state != ScreenshotToolPalette::RecordingState::Idle) {
                 return;
             }
@@ -245,7 +246,24 @@ struct ScreenRecordingController::Impl {
             toolbarWindow->show();
             areaWindow->raise();
             toolbarWindow->raise();
+            publishState();
             return;
+        }
+        if (state != ScreenshotToolPalette::RecordingState::Idle || startScheduled ||
+            recordingSession != nullptr || exportFuture.valid()) {
+            publishState();
+            return;
+        }
+        // The two recorder surfaces normally share a lifetime, but native teardown can destroy
+        // either one independently. Dispose a surviving orphan before rebuilding the pair so its
+        // pointer and destroyed callback cannot be overwritten by the replacement window.
+        if (toolbarWindow != nullptr) {
+            delete toolbarWindow;
+            toolbarWindow = nullptr;
+        }
+        if (areaWindow != nullptr) {
+            delete areaWindow;
+            areaWindow = nullptr;
         }
 
         physicalRegion = region;
@@ -256,6 +274,16 @@ struct ScreenRecordingController::Impl {
         toolbarWindow->setAttribute(Qt::WA_DeleteOnClose, false);
         areaWindow->setPhysicalRegion(region);
         toolbarWindow->placeForPhysicalRegion(region);
+        areaWindow->installEventFilter(&owner);
+        toolbarWindow->installEventFilter(&owner);
+        QObject::connect(areaWindow, &QObject::destroyed, &owner, [this]() {
+            areaWindow = nullptr;
+            publishState();
+        });
+        QObject::connect(toolbarWindow, &QObject::destroyed, &owner, [this]() {
+            toolbarWindow = nullptr;
+            publishState();
+        });
         connectToolbar();
 
         state = ScreenshotToolPalette::RecordingState::Idle;
@@ -266,11 +294,46 @@ struct ScreenRecordingController::Impl {
         toolbarWindow->show();
         areaWindow->raise();
         toolbarWindow->raise();
+        publishState();
     }
 
     bool isOpen() const {
-        return areaWindow != nullptr && toolbarWindow != nullptr &&
-               (areaWindow->isVisible() || toolbarWindow->isVisible());
+        return (areaWindow != nullptr && areaWindow->isVisible()) ||
+               (toolbarWindow != nullptr && toolbarWindow->isVisible());
+    }
+
+    bool hasActiveWork() const {
+        return isOpen() || busy || startScheduled || recordingSession != nullptr ||
+               exportFuture.valid() || state != ScreenshotToolPalette::RecordingState::Idle;
+    }
+
+    void publishState() {
+        const bool open = isOpen();
+        if (open != openPublished) {
+            openPublished = open;
+            emit owner.openChanged(open);
+        }
+        const bool active = hasActiveWork();
+        if (active != activeWorkPublished) {
+            activeWorkPublished = active;
+            emit owner.activeWorkChanged(active);
+        }
+    }
+
+    void observeWindowEvent(QObject* watched, QEvent* event) {
+        if (event == nullptr || (watched != areaWindow && watched != toolbarWindow)) {
+            return;
+        }
+        switch (event->type()) {
+        case QEvent::Show:
+        case QEvent::Hide:
+        case QEvent::Close:
+        case QEvent::DeferredDelete:
+            QTimer::singleShot(0, &owner, [this]() { publishState(); });
+            break;
+        default:
+            break;
+        }
     }
 
     void connectToolbar() {
@@ -314,19 +377,38 @@ struct ScreenRecordingController::Impl {
             return;
         }
         startScheduled = true;
+        publishState();
         QTimer::singleShot(0, &owner, [this]() {
             startScheduled = false;
             if (state != ScreenshotToolPalette::RecordingState::Idle || busy ||
-                recordingSession != nullptr || !isOpen()) {
+                recordingSession != nullptr) {
+                publishState();
+                return;
+            }
+
+            // Either native recorder surface can be destroyed independently. Repair the pair in
+            // this queued turn so a toolbar-originated Start signal has returned before its
+            // surviving window is replaced, and so a surface lost after scheduling is covered.
+            const bool completeVisiblePair =
+                areaWindow != nullptr && areaWindow->isVisible() && toolbarWindow != nullptr &&
+                toolbarWindow->isVisible();
+            if (!completeVisiblePair) {
+                open(physicalRegion);
+            }
+            if (areaWindow == nullptr || !areaWindow->isVisible() || toolbarWindow == nullptr ||
+                !toolbarWindow->isVisible()) {
+                publishState();
                 return;
             }
             busy = true;
+            publishState();
             syncUi();
             QDir outputDirectory(recordingDirectory());
             QDir workingDirectory(recordingWorkingDirectory());
             if (!outputDirectory.mkpath(QStringLiteral(".")) ||
                 !workingDirectory.mkpath(QStringLiteral("."))) {
                 busy = false;
+                publishState();
                 syncUi();
                 showError(tr("Unable to create the recording directories"));
                 return;
@@ -361,6 +443,7 @@ struct ScreenRecordingController::Impl {
                 }
                 restoreToolbarCaptureVisibility();
                 busy = false;
+                publishState();
                 syncUi();
                 if (areaWindow != nullptr) {
                     areaWindow->show();
@@ -377,6 +460,7 @@ struct ScreenRecordingController::Impl {
             durationMilliseconds = 0;
             state = ScreenshotToolPalette::RecordingState::Recording;
             busy = false;
+            publishState();
             syncUi();
             if (areaWindow != nullptr) {
                 areaWindow->show();
@@ -434,6 +518,7 @@ struct ScreenRecordingController::Impl {
         durationTimer.stop();
         durationMilliseconds = 0;
         busy = true;
+        publishState();
         syncUi();
         const RecordingExportSettings exportSettings =
             recordingExportSettings(animatedImage, captureRegion.size());
@@ -483,6 +568,7 @@ struct ScreenRecordingController::Impl {
 
         if (!ok) {
             showError(error);
+            publishState();
             return;
         }
         if (pendingCopyToClipboard) {
@@ -490,6 +576,8 @@ struct ScreenRecordingController::Impl {
         }
         if (pendingCloseAfter) {
             hideWindows();
+        } else {
+            publishState();
         }
     }
 
@@ -515,6 +603,7 @@ struct ScreenRecordingController::Impl {
         if (areaWindow != nullptr) {
             areaWindow->hide();
         }
+        publishState();
     }
 
     void excludeToolbarFromCapture() {
@@ -602,6 +691,8 @@ struct ScreenRecordingController::Impl {
     bool pendingCloseAfter = false;
     bool toolbarExcludedFromCapture = false;
     bool toolbarHiddenForCapture = false;
+    bool openPublished = false;
+    bool activeWorkPublished = false;
 };
 
 ScreenRecordingController::ScreenRecordingController(QObject* parent)
@@ -619,6 +710,15 @@ bool ScreenRecordingController::isOpen() const {
 
 bool ScreenRecordingController::isRecording() const {
     return m_impl->state != ScreenshotToolPalette::RecordingState::Idle;
+}
+
+bool ScreenRecordingController::hasActiveWork() const {
+    return m_impl->hasActiveWork();
+}
+
+bool ScreenRecordingController::eventFilter(QObject* watched, QEvent* event) {
+    m_impl->observeWindowEvent(watched, event);
+    return QObject::eventFilter(watched, event);
 }
 
 void ScreenRecordingController::startRecording() {

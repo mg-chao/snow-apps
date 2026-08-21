@@ -91,8 +91,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 27 && itemCount == 107,
-            "catalog must contain the expected twenty-seven sections and one hundred seven items");
+    require(sectionCount == 27 && itemCount == 108,
+            "catalog must contain the expected twenty-seven sections and one hundred eight items");
     const auto* functionPage = catalog.page(QStringLiteral("function-settings"));
     const auto* smartSelection =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
@@ -632,7 +632,7 @@ void structuredFallbackIsDeterministic() {
     require(catalog.resolveLocation({QStringLiteral("storage-and-privacy"),
                                      QStringLiteral("missing"), QStringLiteral("missing")}) ==
                 settings::SettingsLocation{
-                    QStringLiteral("storage-and-privacy"), QStringLiteral("history"), {}},
+                    QStringLiteral("storage-and-privacy"), QStringLiteral("screenshots"), {}},
             "invalid section and item locations must fall back within their page");
     require(catalog.resolveLocation({QStringLiteral("storage-and-privacy"),
                                      QStringLiteral("history"), QStringLiteral("missing")}) ==
@@ -695,8 +695,8 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsCatalog());
-    require(index.entries().size() == 136 && index.search(QString()).size() == 136,
-            "search must generate all one hundred thirty-six catalog nodes in catalog order");
+    require(index.entries().size() == 142 && index.search(QString()).size() == 142,
+            "search must generate all one hundred forty-two catalog nodes in catalog order");
 
     int pages = 0;
     int sections = 0;
@@ -723,7 +723,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 7 && sections == 27 && items == 107,
+    require(pages == 7 && sections == 27 && items == 108,
             "search node counts must match catalog page, section, and item counts");
 
     const auto theme = index.search(QStringLiteral("theme"));
@@ -780,6 +780,34 @@ void searchIndexRebuildsLocalizedFields() {
             "removing a translator must remove stale normalized search fields");
 }
 
+void pageOnlySearchResultsPreserveDetailedIndexSemantics() {
+    const settings::SettingsCatalog& catalog = settings::builtInSettingsCatalog();
+    settings::SettingsSearchIndex index(catalog);
+
+    qsizetype expectedEntryCount = 0;
+    for (const auto& page : catalog.pages()) {
+        ++expectedEntryCount;
+        expectedEntryCount += page.sections.size();
+        for (const auto& section : page.sections) {
+            expectedEntryCount += section.items.size();
+        }
+    }
+
+    require(index.pageEntries().size() == catalog.pages().size() &&
+                std::all_of(index.pageEntries().cbegin(), index.pageEntries().cend(),
+                            [](const auto& entry) {
+                                return entry.kind == settings::SettingsSearchNodeKind::Page;
+                            }),
+            "page-only search results must contain every page and no detailed nodes");
+    require(index.entries().size() == expectedEntryCount &&
+                index.search(QString()).size() == expectedEntryCount,
+            "materializing the detailed index must preserve the public empty-search contract");
+    require(!index.search(QStringLiteral("theme")).isEmpty() &&
+                index.search(QStringLiteral("theme")).constFirst().id ==
+                    QStringLiteral("item:interface.theme"),
+            "materializing the detailed index must preserve ranked item search");
+}
+
 void addingCatalogNodesAutomaticallyExpandsSearch() {
     const settings::SettingsCatalog& builtIn = settings::builtInSettingsCatalog();
     QVector<settings::SettingsPageDefinition> pages = builtIn.pages();
@@ -816,7 +844,7 @@ void addingCatalogNodesAutomaticallyExpandsSearch() {
     require(expanded.validationErrors().isEmpty(),
             "a normal additional catalog page must validate without consumer changes");
     settings::SettingsSearchIndex index(expanded);
-    require(index.entries().size() == 139,
+    require(index.entries().size() == 145,
             "adding one page, section, and item must automatically add three search entries");
     require(index.search(QStringLiteral("extra item")).constFirst().location ==
                 settings::SettingsLocation{QStringLiteral("extra-page"),
@@ -828,6 +856,10 @@ void addingCatalogNodesAutomaticallyExpandsSearch() {
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--page-only-search-results"))) {
+        pageOnlySearchResultsPreserveDetailedIndexSemantics();
+        return 0;
+    }
     builtInCatalogIsCompleteAndValid();
     quickFunctionShortcutsHaveStableContracts();
     structuredFallbackIsDeterministic();
