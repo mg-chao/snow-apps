@@ -3428,11 +3428,6 @@ pub(crate) struct WindowsMonitorCapturer {
     _com: super::com::CoInitGuard,
 }
 
-#[inline]
-fn should_defer_output_initialization(mode: CaptureMode) -> bool {
-    mode == CaptureMode::Snapshot
-}
-
 impl WindowsMonitorCapturer {
     pub(crate) fn new(monitor: &MonitorId, resolver: Arc<MonitorResolver>) -> CaptureResult<Self> {
         let com = super::com::CoInitGuard::init_multithreaded().map_err(CaptureError::platform)?;
@@ -3482,9 +3477,6 @@ impl crate::backend::MonitorCapturer for WindowsMonitorCapturer {
     }
 
     fn prewarm_environment(&mut self) -> CaptureResult<()> {
-        if should_defer_output_initialization(self.capture_mode) {
-            return Ok(());
-        }
         self.ensure_output().map(|_| ())
     }
 
@@ -3583,6 +3575,12 @@ impl crate::backend::MonitorCapturer for WindowsMonitorCapturer {
 
     fn release_capture_access(&mut self) {
         if let Some(output) = self.output.as_mut() {
+            output.release_capture_access();
+        }
+    }
+
+    fn release_idle_resources(&mut self) {
+        if let Some(mut output) = self.output.take() {
             output.release_capture_access();
         }
     }
@@ -3910,9 +3908,6 @@ impl crate::backend::MonitorCapturer for WindowsDxgiWindowCapturer {
     }
 
     fn prewarm_environment(&mut self) -> CaptureResult<()> {
-        if should_defer_output_initialization(self.capture_mode) {
-            return Ok(());
-        }
         self.ensure_output().map(|_| ())
     }
 
@@ -3965,6 +3960,12 @@ impl crate::backend::MonitorCapturer for WindowsDxgiWindowCapturer {
         }
     }
 
+    fn release_idle_resources(&mut self) {
+        if let Some(mut output) = self.output.take() {
+            output.release_capture_access();
+        }
+    }
+
     fn capture_access_active(&self) -> bool {
         self.output
             .as_ref()
@@ -3975,12 +3976,6 @@ impl crate::backend::MonitorCapturer for WindowsDxgiWindowCapturer {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn snapshot_output_initialization_is_deferred_but_continuous_is_prepared() {
-        assert!(should_defer_output_initialization(CaptureMode::Snapshot));
-        assert!(!should_defer_output_initialization(CaptureMode::Continuous));
-    }
 
     #[test]
     fn snapshot_acquisition_is_bounded_and_requires_a_presented_frame() {

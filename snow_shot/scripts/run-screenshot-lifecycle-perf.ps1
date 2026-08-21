@@ -6,6 +6,7 @@ param(
     [int]$ScreenIndex = 0,
     [int]$PollMilliseconds = 250,
     [int]$BaselineMinimumWaitMilliseconds = 20000,
+    [int]$InterCaptureWaitMilliseconds = 0,
     [int]$PostEndMinimumWaitMilliseconds = 15000,
     [int]$StabilityWindow = 20,
     [int]$StabilityRangeKiB = 1024,
@@ -32,6 +33,9 @@ if ($ScreenIndex -lt 0) { throw "ScreenIndex must be nonnegative" }
 if ($PollMilliseconds -le 0) { throw "PollMilliseconds must be positive" }
 if ($BaselineMinimumWaitMilliseconds -lt 0) {
     throw "BaselineMinimumWaitMilliseconds must be nonnegative"
+}
+if ($InterCaptureWaitMilliseconds -lt 0) {
+    throw "InterCaptureWaitMilliseconds must be nonnegative"
 }
 if ($PostEndMinimumWaitMilliseconds -lt 0) {
     throw "PostEndMinimumWaitMilliseconds must be nonnegative"
@@ -136,6 +140,7 @@ try {
         "--screen-index", $ScreenIndex.ToString(),
         "--poll-ms", $PollMilliseconds.ToString(),
         "--baseline-min-wait-ms", $BaselineMinimumWaitMilliseconds.ToString(),
+        "--inter-capture-wait-ms", $InterCaptureWaitMilliseconds.ToString(),
         "--post-end-min-wait-ms", $PostEndMinimumWaitMilliseconds.ToString(),
         "--stability-window", $StabilityWindow.ToString(),
         "--stability-range-kib", $StabilityRangeKiB.ToString(),

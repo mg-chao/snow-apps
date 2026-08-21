@@ -44,6 +44,7 @@ ScreenshotToolPalette::Options screenshotToolbarOptions() {
     options.showScreenRecordButton = true;
     options.showScrollingScreenshotTool = true;
     options.showSaveButton = true;
+    options.lazySecondaryResources = true;
     options.separatorBeforeShape = true;
     options.actions = ScreenshotToolPalette::PinAction | ScreenshotToolPalette::CancelAction |
                       ScreenshotToolPalette::CopyAction;
@@ -386,6 +387,17 @@ void ScreenshotToolbarWindow::resetForNewCapture() {
         host->setActiveTool(ScreenshotToolPalette::Tool::Move);
     }
     setHistoryState(SnowCanvasHistoryState{});
+    prepareForDisplay();
+}
+
+void ScreenshotToolbarWindow::releaseIdleResources() {
+    cancelDrag();
+    hide();
+    if (ScreenshotToolPalette* toolPalette = palette()) {
+        toolPalette->clearActiveTool();
+        toolPalette->releaseSecondaryResources();
+    }
+    resetPhysicalSizeInvariant();
     prepareForDisplay();
 }
 

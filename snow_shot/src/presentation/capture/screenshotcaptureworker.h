@@ -17,7 +17,7 @@ class ScreenshotCaptureWorker final : public QObject {
 
     void prepare(quint64 requestId, const QPointer<ScreenshotCaptureCoordinator>& coordinator);
     void refreshLayout(quint64 requestId);
-    void releaseIdleResources(quint64 requestId);
+    [[nodiscard]] bool releaseIdleResources(quint64 requestId);
     void capture(const ScreenshotCaptureRequest& request,
                  const QPointer<ScreenshotCaptureCoordinator>& coordinator,
                  SnowCaptureCancellationToken* cancellationToken);
@@ -26,8 +26,12 @@ class ScreenshotCaptureWorker final : public QObject {
     bool ensureSession();
     bool sessionPrepared() const;
     bool prepareSessionIfNeeded();
+    bool prepareCaptureEnvironment(bool refreshLayout);
     static void postPrepared(quint64 requestId,
                              const QPointer<ScreenshotCaptureCoordinator>& coordinator, bool ok);
+    static void
+    postCaptureEnvironmentReady(quint64 requestId,
+                                const QPointer<ScreenshotCaptureCoordinator>& coordinator, bool ok);
     static void postCaptureResult(const QPointer<ScreenshotCaptureCoordinator>& coordinator,
                                   ScreenshotCaptureResult result);
 

@@ -5,6 +5,7 @@
 
 #include <QObject>
 
+#include <functional>
 #include <memory>
 
 class QThread;
@@ -23,11 +24,13 @@ class ScreenshotCaptureCoordinator final : public QObject {
     void refreshLayoutAsync(quint64 requestId);
     void captureAsync(const ScreenshotCaptureRequest& request);
     void cancelActiveCapture();
-    void releaseIdleResourcesAsync(quint64 requestId);
+    [[nodiscard]] bool releaseIdleResourcesAsync(quint64 requestId,
+                                                 std::function<void(bool released)> completion);
     void shutdown();
 
   signals:
     void prepared(quint64 requestId, bool ok);
+    void captureEnvironmentReady(quint64 requestId, bool ok);
     void captureFinished(ScreenshotCaptureResult result);
 
   private:

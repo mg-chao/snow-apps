@@ -40,6 +40,7 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     }
     void captureAsync(const ScreenshotCaptureRequest& request) override {
         ++captureAllAsyncCalls;
+        captureAsyncOrder = ++lifecycleOperationOrder;
         lastCaptureRequest = request;
         captureWasQueuedBeforeSelectorRefresh = !selectorRefreshActive;
         if (failCaptureSynchronously && eventSink != nullptr) {
@@ -47,14 +48,25 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
             result.requestId = request.requestId;
             result.errorMessage = QStringLiteral("Synchronous capture setup failure");
             eventSink->handleCaptureFinished(result);
+            return;
+        }
+        if (captureEnvironmentReadySynchronously && eventSink != nullptr) {
+            ++captureEnvironmentReadyCalls;
+            captureEnvironmentReadyOrder = ++lifecycleOperationOrder;
+            eventSink->handleCaptureEnvironmentReady(request.requestId, true);
         }
     }
     void cancelActiveCapture() override {
         ++cancelActiveCaptureCalls;
     }
-    void releaseIdleResourcesAsync(quint64) override {
+    bool releaseIdleResourcesAsync(quint64,
+                                   std::function<void(bool released)> completion) override {
         ++releaseIdleResourcesCalls;
         releaseIdleResourcesOrder = ++lifecycleOperationOrder;
+        if (completion) {
+            completion(true);
+        }
+        return true;
     }
     void shutdownCaptureWorker() override {
         ++shutdownCaptureWorkerCalls;
@@ -86,6 +98,7 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     }
     void startWorkflowRefresh() override {
         ++startWorkflowRefreshCalls;
+        startWorkflowRefreshOrder = ++lifecycleOperationOrder;
         selectorIsReady = false;
         selectorRefreshActive = true;
     }
@@ -115,6 +128,9 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     void clearDisplays(ScreenshotDisplaySession&) override {
         ++clearDisplayCalls;
     }
+    void hibernateDisplayPool(ScreenshotDisplaySession&) override {
+        ++hibernateDisplayPoolCalls;
+    }
     void destroyDisplayPool(ScreenshotDisplaySession&) override {
         ++destroyDisplayPoolCalls;
     }
@@ -126,6 +142,7 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     [[nodiscard]] bool
     preparePreCaptureOverlayWindows(ScreenshotDisplaySession& displaySession) override {
         ++preparePreCaptureOverlayCalls;
+        preparePreCaptureOverlayOrder = ++lifecycleOperationOrder;
         if (preparePreCaptureOverlaySucceeds && displaySession.isEmpty()) {
             CapturedDisplayModel display;
             display.name = QStringLiteral("Primary");
@@ -166,11 +183,15 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     int prepareAsyncOrder = 0;
     int ensureCaptureWorkerCalls = 0;
     int captureAllAsyncCalls = 0;
+    int captureAsyncOrder = 0;
+    int captureEnvironmentReadyCalls = 0;
+    int captureEnvironmentReadyOrder = 0;
     int cancelActiveCaptureCalls = 0;
     int releaseIdleResourcesCalls = 0;
     int releaseIdleResourcesOrder = 0;
     int lifecycleOperationOrder = 0;
     int startWorkflowRefreshCalls = 0;
+    int startWorkflowRefreshOrder = 0;
     int resetHitTestStateCalls = 0;
     int clearSelectorSelectionCalls = 0;
     int updateSelectorSelectionCalls = 0;
@@ -179,12 +200,14 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     int destroySelectorServiceCalls = 0;
     mutable int clearOverlayCanvasCalls = 0;
     int clearDisplayCalls = 0;
+    int hibernateDisplayPoolCalls = 0;
     int destroyDisplayPoolCalls = 0;
     int showOverlayCalls = 0;
     int activateOverlayCalls = 0;
     int interactionReadyCalls = 0;
     int applyDisplayModelsCalls = 0;
     int preparePreCaptureOverlayCalls = 0;
+    int preparePreCaptureOverlayOrder = 0;
     int hideOverlayCalls = 0;
     int clearDocumentCalls = 0;
     int prewarmToolbarCalls = 0;
@@ -197,14 +220,14 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     bool preparePreCaptureOverlaySucceeds = true;
     bool workerCreated = true;
     bool captureWasQueuedBeforeSelectorRefresh = false;
+    bool captureEnvironmentReadySynchronously = true;
     bool failCaptureSynchronously = false;
     QPoint lastSelectorPoint;
     QVector<QRectF> lastAppliedHitPath;
     ScreenshotCaptureRequest lastCaptureRequest;
 };
 
-ScreenshotCaptureResult successfulResult(quint64 requestId,
-                                         const CapturedDisplayModel& snapshot) {
+ScreenshotCaptureResult successfulResult(quint64 requestId, const CapturedDisplayModel& snapshot) {
     ScreenshotCaptureResult result;
     result.requestId = requestId;
     result.displays = {snapshot};
@@ -212,12 +235,13 @@ ScreenshotCaptureResult successfulResult(quint64 requestId,
     return result;
 }
 
-ScreenshotCaptureWorkflow
-makeWorkflow(ScreenshotCaptureState& state, ScreenshotDisplaySession& displaySession,
-             ScreenshotGeometryMapper& geometry, ScreenshotInteractionState& interaction,
-             ScreenshotSelectionModel& selection,
-             ScreenshotIntelligentSelectionModel& intelligentSelection, CaptureRuntime& runtime,
-             bool smartSelectionEnabled = true) {
+ScreenshotCaptureWorkflow makeWorkflow(ScreenshotCaptureState& state,
+                                       ScreenshotDisplaySession& displaySession,
+                                       ScreenshotGeometryMapper& geometry,
+                                       ScreenshotInteractionState& interaction,
+                                       ScreenshotSelectionModel& selection,
+                                       ScreenshotIntelligentSelectionModel& intelligentSelection,
+                                       CaptureRuntime& runtime, bool smartSelectionEnabled = true) {
     return ScreenshotCaptureWorkflow({
         state,
         runtime,
@@ -312,6 +336,54 @@ void cancelClearsTheReusableCanvasDocument() {
             "the next capture must not depend on idle prewarm after cold cancellation");
 }
 
+void retainedCancellationHibernatesWithoutRebuildingTheObjectCore() {
+    ScreenshotCaptureState state;
+    state.sessionState = ScreenshotSessionState::Editing;
+    state.captureInProgress = true;
+    ScreenshotDisplaySession displaySession;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotInteractionState interaction;
+    interaction.beginCapture();
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligentSelection;
+    CaptureRuntime runtime;
+
+    ScreenshotCaptureWorkflow workflow({
+        state,
+        runtime,
+        geometry,
+        displaySession,
+        interaction,
+        selection,
+        intelligentSelection,
+        {},
+        {},
+        []() { return true; },
+        {},
+        true,
+    });
+
+    workflow.cancelCapture();
+    require(state.sessionState == ScreenshotSessionState::IdlePrepared &&
+                runtime.destroyDisplayPoolCalls == 0 && runtime.shutdownCaptureWorkerCalls == 0 &&
+                runtime.releaseSelectorCacheCalls == 1,
+            "retained cancellation must preserve the prepared object core");
+
+    bool releaseCompleted = false;
+    require(workflow.releaseRetainedIdleResources(
+                [&releaseCompleted](bool released) { releaseCompleted = released; }),
+            "retained idle release must schedule native resource hibernation");
+    require(releaseCompleted && runtime.hibernateDisplayPoolCalls == 1 &&
+                runtime.releaseIdleResourcesCalls == 1 && runtime.destroyDisplayPoolCalls == 0 &&
+                runtime.shutdownCaptureWorkerCalls == 0 && runtime.workerCreated &&
+                state.sessionState == ScreenshotSessionState::IdlePrepared,
+            "hibernation must release heavyweight payloads without destroying reusable objects");
+
+    workflow.startCapture();
+    require(runtime.ensureCaptureWorkerCalls == 0 && runtime.captureAllAsyncCalls == 1,
+            "capture after hibernation must reuse the existing worker and session objects");
+}
+
 void captureStartsSelectorInitializationWhilePixelsAreInFlight() {
     ScreenshotCaptureState state;
     state.sessionState = ScreenshotSessionState::IdlePrepared;
@@ -327,10 +399,13 @@ void captureStartsSelectorInitializationWhilePixelsAreInFlight() {
 
     workflow.startCapture();
 
-    require(runtime.captureAllAsyncCalls == 1 &&
+    require(runtime.captureAllAsyncCalls == 1 && runtime.captureAsyncOrder > 0 &&
+                runtime.captureEnvironmentReadyOrder > runtime.captureAsyncOrder &&
+                runtime.preparePreCaptureOverlayOrder > runtime.captureEnvironmentReadyOrder &&
+                runtime.startWorkflowRefreshOrder > runtime.captureEnvironmentReadyOrder &&
                 runtime.captureWasQueuedBeforeSelectorRefresh &&
                 runtime.startWorkflowRefreshCalls == 1 && runtime.selectorRefreshActive,
-            "capture start must queue acquisition first and then overlap selector refresh");
+            "capture start must queue acquisition before overlay restoration and selector refresh");
 
     CapturedDisplayModel snapshot;
     snapshot.stableId = QStringLiteral("primary");
@@ -343,6 +418,52 @@ void captureStartsSelectorInitializationWhilePixelsAreInFlight() {
 
     require(runtime.startWorkflowRefreshCalls == 1 && runtime.selectorRefreshActive,
             "capture completion must not redundantly restart the selector snapshot");
+}
+
+void overlayPreparationWaitsForCaptureEnvironmentReadiness() {
+    ScreenshotCaptureState state;
+    state.sessionState = ScreenshotSessionState::IdlePrepared;
+    ScreenshotDisplaySession displaySession;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligentSelection;
+    CaptureRuntime runtime;
+    runtime.captureEnvironmentReadySynchronously = false;
+
+    auto workflow = makeWorkflow(state, displaySession, geometry, interaction, selection,
+                                 intelligentSelection, runtime);
+    workflow.startCapture();
+
+    require(runtime.captureAllAsyncCalls == 1 && runtime.preparePreCaptureOverlayCalls == 0 &&
+                runtime.startWorkflowRefreshCalls == 0,
+            "overlay and selector preparation must wait for the capture environment");
+
+    runtime.eventSink->handleCaptureEnvironmentReady(state.sessionId, true);
+    require(runtime.preparePreCaptureOverlayCalls == 1 && runtime.startWorkflowRefreshCalls == 1,
+            "capture-environment readiness must start overlay and selector preparation");
+}
+
+void staleCaptureEnvironmentReadinessDoesNotRestoreOverlays() {
+    ScreenshotCaptureState state;
+    state.sessionState = ScreenshotSessionState::IdlePrepared;
+    ScreenshotDisplaySession displaySession;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligentSelection;
+    CaptureRuntime runtime;
+    runtime.captureEnvironmentReadySynchronously = false;
+
+    auto workflow = makeWorkflow(state, displaySession, geometry, interaction, selection,
+                                 intelligentSelection, runtime);
+    workflow.startCapture();
+    const quint64 canceledSessionId = state.sessionId;
+    workflow.cancelCapture();
+
+    runtime.eventSink->handleCaptureEnvironmentReady(canceledSessionId, true);
+    require(runtime.preparePreCaptureOverlayCalls == 0 && runtime.startWorkflowRefreshCalls == 0,
+            "stale capture-environment readiness must not restore canceled presentation state");
 }
 
 void presentationWaitsForPixelsAndInitialSelectionInEitherOrder() {
@@ -372,10 +493,8 @@ void presentationWaitsForPixelsAndInitialSelectionInEitherOrder() {
             interaction,
             selection,
             intelligentSelection,
-            ScreenshotCapturePresentationCallbacks{{}, {}, {}, {}, {},
-                                                   [&initialFramePrepared]() {
-                                                       ++initialFramePrepared;
-                                                   }},
+            ScreenshotCapturePresentationCallbacks{
+                {}, {}, {}, {}, {}, [&initialFramePrepared]() { ++initialFramePrepared; }},
         });
 
         workflow.startCapture();
@@ -387,12 +506,11 @@ void presentationWaitsForPixelsAndInitialSelectionInEitherOrder() {
         require(workflow.handleInitialSmartSelectionResult(state.sessionId,
                                                            runtime.lastSelectorPoint, true, path),
                 "active initial selector result must be consumed by capture workflow");
-        require(runtime.applySelectorHitPathCalls == 1 &&
-                    runtime.lastAppliedHitPath == path && initialFramePrepared == 1 &&
-                    runtime.showOverlayCalls == 1,
+        require(runtime.applySelectorHitPathCalls == 1 && runtime.lastAppliedHitPath == path &&
+                    initialFramePrepared == 1 && runtime.showOverlayCalls == 1,
                 "pixels-first capture must reveal one complete selected frame");
-        require(!workflow.handleInitialSmartSelectionResult(
-                    state.sessionId, runtime.lastSelectorPoint, true, path),
+        require(!workflow.handleInitialSmartSelectionResult(state.sessionId,
+                                                            runtime.lastSelectorPoint, true, path),
                 "post-presentation hover results must return to the normal selector workflow");
     }
 
@@ -437,8 +555,8 @@ void initialSelectorFailureResolvesToManualSelection() {
                                  intelligentSelection, runtime);
 
     workflow.startCapture();
-    require(workflow.handleInitialSmartSelectionResult(state.sessionId,
-                                                       runtime.lastSelectorPoint, false, {}),
+    require(workflow.handleInitialSmartSelectionResult(state.sessionId, runtime.lastSelectorPoint,
+                                                       false, {}),
             "failed initial result must still resolve the presentation barrier");
 
     CapturedDisplayModel snapshot;
@@ -468,15 +586,15 @@ void initialSelectionCoalescesToTheLatestCursorPoint() {
 
     workflow.startCapture();
     const QPoint stalePoint = runtime.lastSelectorPoint + QPoint(1, 0);
-    require(workflow.handleInitialSmartSelectionResult(
-                state.sessionId, stalePoint, true, {QRectF(0, 0, 64, 48)}),
+    require(workflow.handleInitialSmartSelectionResult(state.sessionId, stalePoint, true,
+                                                       {QRectF(0, 0, 64, 48)}),
             "a superseded initial result must be consumed");
     require(runtime.updateSelectorSelectionCalls == 2 && runtime.showOverlayCalls == 0,
             "a superseded result must queue the latest point without resolving presentation");
 
     const QPoint latestPoint = runtime.lastSelectorPoint;
-    require(workflow.handleInitialSmartSelectionResult(
-                state.sessionId, latestPoint, true, {QRectF(0, 0, 64, 48)}),
+    require(workflow.handleInitialSmartSelectionResult(state.sessionId, latestPoint, true,
+                                                       {QRectF(0, 0, 64, 48)}),
             "the latest initial result must be consumed");
 
     CapturedDisplayModel snapshot;
@@ -503,23 +621,22 @@ void changedCaptureGeometryInvalidatesTheEarlySelectorResult() {
                                  intelligentSelection, runtime);
 
     workflow.startCapture();
-    require(workflow.handleInitialSmartSelectionResult(
-                state.sessionId, runtime.lastSelectorPoint, true, {QRectF(0, 0, 64, 48)}),
+    require(workflow.handleInitialSmartSelectionResult(state.sessionId, runtime.lastSelectorPoint,
+                                                       true, {QRectF(0, 0, 64, 48)}),
             "early selector result must be retained until capture geometry is known");
 
     CapturedDisplayModel changedSnapshot;
     changedSnapshot.name = QStringLiteral("Primary");
     changedSnapshot.physicalRect = QRect(0, 0, 80, 60);
     changedSnapshot.logicalRect = changedSnapshot.physicalRect;
-    changedSnapshot.image =
-        QImage(changedSnapshot.physicalRect.size(), QImage::Format_RGBA8888);
+    changedSnapshot.image = QImage(changedSnapshot.physicalRect.size(), QImage::Format_RGBA8888);
     runtime.eventSink->handleCaptureFinished(successfulResult(state.sessionId, changedSnapshot));
     require(runtime.resetHitTestStateCalls == 1 && runtime.startWorkflowRefreshCalls == 2 &&
                 runtime.showOverlayCalls == 0,
             "changed final geometry must invalidate the early result and refresh the selector");
 
-    require(workflow.handleInitialSmartSelectionResult(
-                state.sessionId, runtime.lastSelectorPoint, true, {QRectF(0, 0, 80, 60)}),
+    require(workflow.handleInitialSmartSelectionResult(state.sessionId, runtime.lastSelectorPoint,
+                                                       true, {QRectF(0, 0, 80, 60)}),
             "geometry retry result must be consumed");
     require(runtime.showOverlayCalls == 1 && runtime.applySelectorHitPathCalls == 1,
             "geometry retry must reveal exactly one remapped complete frame");
@@ -544,16 +661,15 @@ void changedCaptureGeometryInvalidatesAnInFlightSelectorRequest() {
     changedSnapshot.name = QStringLiteral("Primary");
     changedSnapshot.physicalRect = QRect(0, 0, 80, 60);
     changedSnapshot.logicalRect = changedSnapshot.physicalRect;
-    changedSnapshot.image =
-        QImage(changedSnapshot.physicalRect.size(), QImage::Format_RGBA8888);
+    changedSnapshot.image = QImage(changedSnapshot.physicalRect.size(), QImage::Format_RGBA8888);
     runtime.eventSink->handleCaptureFinished(successfulResult(state.sessionId, changedSnapshot));
 
     require(runtime.resetHitTestStateCalls == 1 && runtime.startWorkflowRefreshCalls == 2 &&
                 runtime.updateSelectorSelectionCalls == 2 && runtime.showOverlayCalls == 0,
             "changed final geometry must replace an in-flight early selector request");
 
-    require(workflow.handleInitialSmartSelectionResult(
-                state.sessionId, runtime.lastSelectorPoint, true, {QRectF(0, 0, 80, 60)}),
+    require(workflow.handleInitialSmartSelectionResult(state.sessionId, runtime.lastSelectorPoint,
+                                                       true, {QRectF(0, 0, 80, 60)}),
             "replacement selector result must be consumed");
     require(runtime.showOverlayCalls == 1 && runtime.applySelectorHitPathCalls == 1,
             "replacement result must reveal exactly one complete frame");
@@ -577,8 +693,8 @@ void canceledCaptureRejectsItsStaleSelectorResult() {
     const QPoint requestPoint = runtime.lastSelectorPoint;
     workflow.cancelCapture();
 
-    require(!workflow.handleInitialSmartSelectionResult(
-                canceledSession, requestPoint, true, {QRectF(0, 0, 64, 48)}) &&
+    require(!workflow.handleInitialSmartSelectionResult(canceledSession, requestPoint, true,
+                                                        {QRectF(0, 0, 64, 48)}) &&
                 runtime.showOverlayCalls == 0,
             "a canceled session must reject stale selector completion");
 }
@@ -631,8 +747,9 @@ void synchronousCaptureFailureDoesNotRestartSelectorRefresh() {
 
     require(!state.captureInProgress && state.sessionState == ScreenshotSessionState::IdleCold,
             "synchronous capture failure must return the workflow to idle");
-    require(runtime.startWorkflowRefreshCalls == 0 && !runtime.selectorRefreshActive,
-            "synchronous capture failure must not restart selector refresh after cleanup");
+    require(runtime.preparePreCaptureOverlayCalls == 0 && runtime.startWorkflowRefreshCalls == 0 &&
+                !runtime.selectorRefreshActive,
+            "synchronous capture failure must not restore overlays or restart selector refresh");
     require(runtime.shutdownCaptureWorkerCalls == 1 && runtime.destroySelectorServiceCalls == 1 &&
                 runtime.destroyDisplayPoolCalls == 1 && runtime.prepareAsyncCalls == 0,
             "synchronous failure cleanup must cold-release capture resources");
@@ -722,8 +839,7 @@ void capturePresentedRunsAfterCapturedOverlayIsShown() {
 
     require(runtime.showOverlayCalls == 1 && runtime.activateOverlayCalls == 1 &&
                 runtime.interactionReadyCalls == 1 && capturePresentedCalls == 1 &&
-                showCallsObservedByCallback == 1 &&
-                activationCallsObservedByCallback == 0,
+                showCallsObservedByCallback == 1 && activationCallsObservedByCallback == 0,
             "capture presentation must be reported after show and before input activation");
 }
 
@@ -912,8 +1028,7 @@ void intelligentSelectionTargetsPreserveElementPathBehavior() {
             "window mode must lock an element path to its outermost window");
 
     selection.beginCaptureSession(true);
-    require(selection.selectionTarget() ==
-                ScreenshotIntelligentSelectionTarget::WindowSubElement,
+    require(selection.selectionTarget() == ScreenshotIntelligentSelectionTarget::WindowSubElement,
             "a new screenshot must discard the preceding screenshot's Tab target mode");
 
     selection.beginCaptureSession(false);
@@ -943,9 +1058,9 @@ void captureSessionsApplyTheCurrentSmartSelectionSetting() {
     ScreenshotSelectionModel enabledSelection;
     ScreenshotIntelligentSelectionModel enabledIntelligentSelection;
     CaptureRuntime enabledRuntime;
-    auto enabledWorkflow = makeWorkflow(
-        enabledState, enabledDisplays, enabledGeometry, enabledInteraction, enabledSelection,
-        enabledIntelligentSelection, enabledRuntime, true);
+    auto enabledWorkflow =
+        makeWorkflow(enabledState, enabledDisplays, enabledGeometry, enabledInteraction,
+                     enabledSelection, enabledIntelligentSelection, enabledRuntime, true);
 
     enabledWorkflow.startCapture();
     require(enabledIntelligentSelection.selectionTarget() ==
@@ -966,13 +1081,13 @@ void captureSessionsApplyTheCurrentSmartSelectionSetting() {
     ScreenshotSelectionModel disabledSelection;
     ScreenshotIntelligentSelectionModel disabledIntelligentSelection;
     CaptureRuntime disabledRuntime;
-    auto disabledWorkflow = makeWorkflow(
-        disabledState, disabledDisplays, disabledGeometry, disabledInteraction, disabledSelection,
-        disabledIntelligentSelection, disabledRuntime, false);
+    auto disabledWorkflow =
+        makeWorkflow(disabledState, disabledDisplays, disabledGeometry, disabledInteraction,
+                     disabledSelection, disabledIntelligentSelection, disabledRuntime, false);
 
     disabledWorkflow.startCapture();
     require(disabledIntelligentSelection.selectionTarget() ==
-                ScreenshotIntelligentSelectionTarget::Window &&
+                    ScreenshotIntelligentSelectionTarget::Window &&
                 !disabledIntelligentSelection.toggleSelectionTarget(),
             "a disabled capture session must stay in window mode");
 }
@@ -981,7 +1096,10 @@ void captureSessionsApplyTheCurrentSmartSelectionSetting() {
 int main() {
     idlePrewarmDoesNotInitializeSelector();
     cancelClearsTheReusableCanvasDocument();
+    retainedCancellationHibernatesWithoutRebuildingTheObjectCore();
     captureStartsSelectorInitializationWhilePixelsAreInFlight();
+    overlayPreparationWaitsForCaptureEnvironmentReadiness();
+    staleCaptureEnvironmentReadinessDoesNotRestoreOverlays();
     presentationWaitsForPixelsAndInitialSelectionInEitherOrder();
     initialSelectorFailureResolvesToManualSelection();
     initialSelectionCoalescesToTheLatestCursorPoint();

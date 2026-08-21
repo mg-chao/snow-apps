@@ -1306,6 +1306,11 @@ impl GdiResources {
         }
     }
 
+    fn release_idle_resources(&mut self) {
+        self.release_window_dc();
+        self.release_bitmap();
+    }
+
     fn acquire_window_dc(&mut self, hwnd: HWND) -> CaptureResult<HDC> {
         if let (Some(owner), Some(window_dc)) = (self.window_dc_owner, self.window_dc)
             && owner == hwnd
@@ -2712,6 +2717,12 @@ impl crate::backend::MonitorCapturer for WindowsMonitorCapturer {
             self.resources.release_window_dc();
         }
     }
+
+    fn release_idle_resources(&mut self) {
+        if self.capture_mode == CaptureMode::Snapshot {
+            self.resources.release_idle_resources();
+        }
+    }
 }
 
 pub(crate) struct WindowsPrimaryMonitorCapturer {
@@ -2844,6 +2855,12 @@ impl crate::backend::MonitorCapturer for WindowsPrimaryMonitorCapturer {
     fn release_capture_access(&mut self) {
         if self.capture_mode == CaptureMode::Snapshot {
             self.resources.release_window_dc();
+        }
+    }
+
+    fn release_idle_resources(&mut self) {
+        if self.capture_mode == CaptureMode::Snapshot {
+            self.resources.release_idle_resources();
         }
     }
 }
@@ -3024,6 +3041,12 @@ impl MonitorCapturer for WindowsWindowCapturer {
     fn release_capture_access(&mut self) {
         if self.capture_mode == CaptureMode::Snapshot {
             self.resources.release_window_dc();
+        }
+    }
+
+    fn release_idle_resources(&mut self) {
+        if self.capture_mode == CaptureMode::Snapshot {
+            self.resources.release_idle_resources();
         }
     }
 }

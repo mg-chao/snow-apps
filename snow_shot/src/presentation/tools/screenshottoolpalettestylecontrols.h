@@ -89,6 +89,10 @@ class ScreenshotToolPaletteStyleControls final : private ScreenshotToolPaletteSt
                                  const ScreenshotToolPaletteButtonMetrics& metrics);
 
     void reset();
+    // Drop widget bindings owned by an evictable secondary toolbar. The
+    // style values themselves live in ScreenshotToolPaletteStyleState and are
+    // intentionally retained for the next lazy materialization.
+    void releaseControlBindings();
     [[nodiscard]] bool stepStrokeWidth(int direction);
     void setLineControlsActive(bool active);
     void setFreeDrawControlsActive(bool active);

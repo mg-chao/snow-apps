@@ -34,9 +34,15 @@ void ScreenshotCaptureRuntimeAdapter::ensureCaptureCoordinator() {
                              m_captureEventSink->handleCapturePrepared(requestId, ok);
                          }
                      });
+    QObject::connect(m_captureCoordinator.get(),
+                     &ScreenshotCaptureCoordinator::captureEnvironmentReady,
+                     m_captureCoordinator.get(), [this](quint64 requestId, bool ok) {
+                         if (m_captureEventSink != nullptr) {
+                             m_captureEventSink->handleCaptureEnvironmentReady(requestId, ok);
+                         }
+                     });
     QObject::connect(m_captureCoordinator.get(), &ScreenshotCaptureCoordinator::captureFinished,
-                     m_captureCoordinator.get(),
-                     [this](const ScreenshotCaptureResult& result) {
+                     m_captureCoordinator.get(), [this](const ScreenshotCaptureResult& result) {
                          if (m_captureEventSink != nullptr) {
                              m_captureEventSink->handleCaptureFinished(result);
                          }
@@ -76,15 +82,18 @@ void ScreenshotCaptureRuntimeAdapter::cancelActiveCapture() {
     }
 }
 
-void ScreenshotCaptureRuntimeAdapter::releaseIdleResourcesAsync(quint64 requestId) {
+bool ScreenshotCaptureRuntimeAdapter::releaseIdleResourcesAsync(
+    quint64 requestId, std::function<void(bool released)> completion) {
     if (m_captureCoordinator == nullptr) {
-        return;
+        return false;
     }
 
-    m_captureCoordinator->releaseIdleResourcesAsync(requestId);
+    const bool scheduled =
+        m_captureCoordinator->releaseIdleResourcesAsync(requestId, std::move(completion));
     // Capture surfaces are the largest transient users of the process. Once their idle release is
     // queued, keep only a small icon working set while the app is between captures.
     adqt::icons::trimIconCache(512 * 1024);
+    return scheduled;
 }
 
 void ScreenshotCaptureRuntimeAdapter::shutdownCaptureWorker() {
@@ -157,6 +166,11 @@ void ScreenshotCaptureRuntimeAdapter::clearOverlayCanvases(
 
 void ScreenshotCaptureRuntimeAdapter::clearDisplays(ScreenshotDisplaySession& displaySession) {
     m_context.overlayCoordinator.clearDisplays(displaySession);
+}
+
+void ScreenshotCaptureRuntimeAdapter::hibernateDisplayPool(
+    ScreenshotDisplaySession& displaySession) {
+    m_context.overlayCoordinator.hibernateDisplayPool(displaySession);
 }
 
 void ScreenshotCaptureRuntimeAdapter::destroyDisplayPool(ScreenshotDisplaySession& displaySession) {

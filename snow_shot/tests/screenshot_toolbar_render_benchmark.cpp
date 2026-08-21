@@ -2049,6 +2049,48 @@ bool runSelfTests() {
         return condition;
     };
     bool passed = true;
+
+    NoOpToolbarCommands commands;
+    ScreenshotToolbarWindow toolbar(commands);
+    ScreenshotToolPalette* palette = toolbar.palette();
+    QWidget* retainedMainPanel = palette != nullptr ? palette->mainPanel() : nullptr;
+    passed &= require(palette != nullptr && retainedMainPanel != nullptr,
+                      "lazy toolbar retained core");
+    passed &= require(palette->stylePanel() == nullptr && palette->actionPanel() == nullptr,
+                      "lazy toolbar cold secondary rows");
+
+    SnowCanvasStyleToolbarState retainedState;
+    retainedState.source = SnowCanvasStyleToolbarSource::DefaultRectangle;
+    retainedState.shapeStyle =
+        snow_shot::presentation::screenshotCanvasStyleDefaults().rectangle;
+    retainedState.shapeStyle.strokeWidth = 17.0;
+    toolbar.setStyleToolbarState(retainedState);
+    toolbar.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    QPointer<QWidget> firstStylePanel = palette->stylePanel();
+    passed &= require(firstStylePanel != nullptr && palette->styleToolbarVisible(),
+                      "style row lazy materialization");
+    passed &= require(qFuzzyCompare(palette->rectangleStyle().strokeWidth + 1.0, 18.0),
+                      "pre-materialization state application");
+
+    toolbar.releaseIdleResources();
+    passed &= require(toolbar.palette() == palette && palette->mainPanel() == retainedMainPanel,
+                      "idle release retained object core");
+    passed &= require(firstStylePanel == nullptr && palette->stylePanel() == nullptr &&
+                          palette->actionPanel() == nullptr,
+                      "idle release secondary eviction");
+
+    toolbar.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    passed &= require(toolbar.palette() == palette && palette->mainPanel() == retainedMainPanel &&
+                          palette->stylePanel() != nullptr && palette->styleToolbarVisible(),
+                      "secondary rematerialization without palette rebuild");
+    passed &= require(qFuzzyCompare(palette->rectangleStyle().strokeWidth + 1.0, 18.0),
+                      "style state retained across eviction");
+    toolbar.releaseIdleResources();
+    toolbar.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    passed &= require(palette->actionPanel() != nullptr && palette->actionToolbarVisible() &&
+                          !palette->styleToolbarVisible(),
+                      "action row lazy materialization");
+
     std::vector<double> values;
     for (int value = 1; value <= 100; ++value) {
         values.push_back(static_cast<double>(value));

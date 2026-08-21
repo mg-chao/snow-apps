@@ -14,7 +14,8 @@ use std::thread::{self, JoinHandle};
 use snow_capture::frame::Frame;
 use snow_capture::{
     CaptureOptions, CaptureRegion, CaptureSession, CaptureSystem, CaptureTarget, CaptureWorkload,
-    MonitorId, MonitorLayout, WgcUpdateMode, WindowId, backend::CaptureBackendKind,
+    MonitorId, MonitorLayout, WgcUpdateMode, WindowId,
+    backend::{AutoBackendPolicy, CaptureBackendKind},
 };
 use snow_screen_recorder::{
     EditingSession, ExportFormat, ExportRequest, RecordingAudioConfig, RecordingAudioTrackConfig,
@@ -227,6 +228,7 @@ struct SnapshotWindowFrame {
 
 enum WorkerCommand {
     Prepare(mpsc::Sender<Result<(), String>>),
+    PrepareCaptureEnvironment(mpsc::Sender<Result<(), String>>),
     Capture(mpsc::Sender<Result<Frame, String>>),
     ReleaseIdleResources(mpsc::Sender<Result<(), String>>),
     ActiveCaptureAccessCount(mpsc::Sender<Result<usize, String>>),
@@ -324,6 +326,30 @@ fn capture_backend_value(kind: CaptureBackendKind) -> u8 {
     }
 }
 
+const DESKTOP_AUTO_BACKEND_POLICY_RESERVED_INDEX: usize = 0;
+const DESKTOP_AUTO_BACKEND_POLICY_LOW_LATENCY_SDR: u8 = 1;
+const LOW_LATENCY_SDR_AUTO_BACKEND_PRIORITY: [CaptureBackendKind; 3] = [
+    CaptureBackendKind::Gdi,
+    CaptureBackendKind::DxgiDuplication,
+    CaptureBackendKind::WindowsGraphicsCapture,
+];
+
+fn desktop_auto_backend_policy(
+    config: &SnowCaptureDesktopSessionConfig,
+    capture_backend: CaptureBackendKind,
+) -> Option<AutoBackendPolicy> {
+    if capture_backend != CaptureBackendKind::Auto
+        || config.reserved[DESKTOP_AUTO_BACKEND_POLICY_RESERVED_INDEX]
+            != DESKTOP_AUTO_BACKEND_POLICY_LOW_LATENCY_SDR
+    {
+        return None;
+    }
+
+    Some(AutoBackendPolicy {
+        priority: LOW_LATENCY_SDR_AUTO_BACKEND_PRIORITY.to_vec(),
+    })
+}
+
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SnowCaptureRecordingExportConfig {
@@ -352,17 +378,27 @@ const RECORDING_EXPORT_CONFIG_V1_SIZE: u32 =
 
 fn default_options(
     config: *const SnowCaptureDesktopSessionConfig,
-) -> Result<(CaptureOptions, CaptureBackendKind), String> {
-    let (capture_retry_count, wgc_update_mode, capture_backend) = if config.is_null() {
-        (1, WgcUpdateMode::Auto, CaptureBackendKind::Auto)
-    } else {
-        let config = unsafe { &*config };
-        (
-            config.capture_retry_count.max(1),
-            parse_wgc_update_mode(config.wgc_update_mode)?,
-            parse_capture_backend(config.capture_backend)?,
-        )
-    };
+) -> Result<
+    (
+        CaptureOptions,
+        CaptureBackendKind,
+        Option<AutoBackendPolicy>,
+    ),
+    String,
+> {
+    let (capture_retry_count, wgc_update_mode, capture_backend, auto_backend_policy) =
+        if config.is_null() {
+            (1, WgcUpdateMode::Auto, CaptureBackendKind::Auto, None)
+        } else {
+            let config = unsafe { &*config };
+            let capture_backend = parse_capture_backend(config.capture_backend)?;
+            (
+                config.capture_retry_count.max(1),
+                parse_wgc_update_mode(config.wgc_update_mode)?,
+                capture_backend,
+                desktop_auto_backend_policy(config, capture_backend),
+            )
+        };
 
     Ok((
         CaptureOptions {
@@ -373,6 +409,7 @@ fn default_options(
             wgc_update_mode,
         },
         capture_backend,
+        auto_backend_policy,
     ))
 }
 
@@ -431,6 +468,16 @@ impl MonitorWorker {
                             let result = match session.as_mut() {
                                 Ok(capture_session) => capture_session
                                     .prewarm_environment()
+                                    .map(|_| ())
+                                    .map_err(|err| err.to_string()),
+                                Err(error) => Err(error.clone()),
+                            };
+                            let _ = reply.send(result);
+                        }
+                        WorkerCommand::PrepareCaptureEnvironment(reply) => {
+                            let result = match session.as_mut() {
+                                Ok(capture_session) => capture_session
+                                    .prepare_capture_environment()
                                     .map(|_| ())
                                     .map_err(|err| err.to_string()),
                                 Err(error) => Err(error.clone()),
@@ -506,6 +553,16 @@ impl MonitorWorker {
         let (tx, rx) = mpsc::channel();
         self.tx
             .send(WorkerCommand::Capture(tx))
+            .map_err(|_| "capture worker is not running".to_owned())?;
+        Ok(rx)
+    }
+
+    fn request_prepare_capture_environment(
+        &self,
+    ) -> Result<mpsc::Receiver<Result<(), String>>, String> {
+        let (tx, rx) = mpsc::channel();
+        self.tx
+            .send(WorkerCommand::PrepareCaptureEnvironment(tx))
             .map_err(|_| "capture worker is not running".to_owned())?;
         Ok(rx)
     }
@@ -854,17 +911,18 @@ pub extern "C" fn snow_capture_release_conversion_pool() {
 pub extern "C" fn snow_capture_desktop_session_create(
     config: *const SnowCaptureDesktopSessionConfig,
 ) -> *mut SnowCaptureDesktopSessionImpl {
-    let (options, capture_backend) = match default_options(config) {
+    let (options, capture_backend, auto_backend_policy) = match default_options(config) {
         Ok(parsed) => parsed,
         Err(error) => {
             set_last_error(error);
             return ptr::null_mut();
         }
     };
-    match CaptureSystem::builder()
-        .with_backend_kind(capture_backend)
-        .build()
-    {
+    let mut system_builder = CaptureSystem::builder().with_backend_kind(capture_backend);
+    if let Some(auto_backend_policy) = auto_backend_policy {
+        system_builder = system_builder.with_auto_backend_policy(auto_backend_policy);
+    }
+    match system_builder.build() {
         Ok(system) => {
             let mut session = SnowCaptureDesktopSessionImpl {
                 system,
@@ -1046,6 +1104,64 @@ pub extern "C" fn snow_capture_desktop_session_release_idle_resources(
 
     clear_last_error();
     session.prepared = false;
+    1
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn snow_capture_desktop_session_prepare_capture_environment(
+    session: *mut SnowCaptureDesktopSessionImpl,
+    refresh_layout: u8,
+) -> u8 {
+    let Some(session) = session_mut(session) else {
+        return 0;
+    };
+
+    if refresh_layout != 0
+        && let Err(error) = rebuild_workers(session)
+    {
+        set_last_error(error);
+        return 0;
+    }
+
+    let receivers = match session
+        .workers
+        .iter()
+        .map(MonitorWorker::request_prepare_capture_environment)
+        .collect::<Result<Vec<_>, _>>()
+    {
+        Ok(receivers) => receivers,
+        Err(error) => {
+            set_last_error(error);
+            return 0;
+        }
+    };
+
+    let mut first_error = None;
+    for receiver in receivers {
+        match receiver.recv() {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
+            Err(_) => {
+                if first_error.is_none() {
+                    first_error = Some(
+                        "capture worker stopped before capture environment was ready".to_owned(),
+                    );
+                }
+            }
+        }
+    }
+
+    if let Some(error) = first_error {
+        set_last_error(error);
+        return 0;
+    }
+
+    clear_last_error();
+    session.prepared = true;
     1
 }
 
@@ -2500,11 +2616,70 @@ mod tests {
             reserved: [0; 30],
         };
 
-        let (options, backend) = default_options(&raw const config).unwrap();
+        let (options, backend, auto_backend_policy) = default_options(&raw const config).unwrap();
 
         assert_eq!(options.capture_retry_count, 2);
         assert_eq!(options.wgc_update_mode, WgcUpdateMode::CompleteOnly);
         assert_eq!(backend, CaptureBackendKind::WindowsGraphicsCapture);
+        assert_eq!(auto_backend_policy, None);
+    }
+
+    #[test]
+    fn desktop_config_selects_low_latency_sdr_auto_backend_order() {
+        let mut reserved = [0; 30];
+        reserved[DESKTOP_AUTO_BACKEND_POLICY_RESERVED_INDEX] =
+            DESKTOP_AUTO_BACKEND_POLICY_LOW_LATENCY_SDR;
+        let config = SnowCaptureDesktopSessionConfig {
+            capture_retry_count: 1,
+            wgc_update_mode: 0,
+            capture_backend: 0,
+            reserved,
+        };
+
+        let (_, backend, auto_backend_policy) = default_options(&raw const config).unwrap();
+
+        assert_eq!(backend, CaptureBackendKind::Auto);
+        assert_eq!(
+            auto_backend_policy,
+            Some(AutoBackendPolicy {
+                priority: LOW_LATENCY_SDR_AUTO_BACKEND_PRIORITY.to_vec(),
+            })
+        );
+    }
+
+    #[test]
+    fn desktop_config_ignores_auto_policy_for_explicit_backend() {
+        let mut reserved = [0; 30];
+        reserved[DESKTOP_AUTO_BACKEND_POLICY_RESERVED_INDEX] =
+            DESKTOP_AUTO_BACKEND_POLICY_LOW_LATENCY_SDR;
+        let config = SnowCaptureDesktopSessionConfig {
+            capture_retry_count: 1,
+            wgc_update_mode: 0,
+            capture_backend: 1,
+            reserved,
+        };
+
+        let (_, backend, auto_backend_policy) = default_options(&raw const config).unwrap();
+
+        assert_eq!(backend, CaptureBackendKind::DxgiDuplication);
+        assert_eq!(auto_backend_policy, None);
+    }
+
+    #[test]
+    fn desktop_config_ignores_unknown_auto_policy_for_forward_compatibility() {
+        let mut reserved = [0; 30];
+        reserved[DESKTOP_AUTO_BACKEND_POLICY_RESERVED_INDEX] = u8::MAX;
+        let config = SnowCaptureDesktopSessionConfig {
+            capture_retry_count: 1,
+            wgc_update_mode: 0,
+            capture_backend: 0,
+            reserved,
+        };
+
+        let (_, backend, auto_backend_policy) = default_options(&raw const config).unwrap();
+
+        assert_eq!(backend, CaptureBackendKind::Auto);
+        assert_eq!(auto_backend_policy, None);
     }
 
     #[test]
@@ -2514,6 +2689,11 @@ mod tests {
             std::mem::size_of::<SnowCaptureDesktopSessionConfig>(),
             pointer_sized_prefix + 32
         );
+        assert_eq!(
+            std::mem::offset_of!(SnowCaptureDesktopSessionConfig, reserved),
+            pointer_sized_prefix + 2
+        );
+        assert_eq!(DESKTOP_AUTO_BACKEND_POLICY_RESERVED_INDEX, 0);
         assert_eq!(
             std::mem::size_of::<SnowCaptureWindowSessionConfig>(),
             pointer_sized_prefix * 2 + 32

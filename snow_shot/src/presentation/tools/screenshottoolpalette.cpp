@@ -13,6 +13,7 @@
 #include "snow_shot/storage/settingsadapters.h"
 
 #include "antd_icons.h"
+#include "icon_registry.h"
 #include "widgets/button.h"
 #include "widgets/radio.h"
 #include "widgets/radio_button_group.h"
@@ -612,7 +613,7 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
         m_styleDefaults);
 
     createMainToolbar(options);
-    if (options.enableStyleToolbar) {
+    if (options.enableStyleToolbar && !options.lazySecondaryResources) {
         createRectangleStyleToolbar();
     }
     updateToolbarGeometry();
@@ -781,6 +782,88 @@ void ScreenshotToolPalette::prepareForDisplay() {
     ensureLayoutApplied();
 }
 
+bool ScreenshotToolPalette::secondaryResourcesReady() const {
+    return m_secondaryResourcesReady;
+}
+
+void ScreenshotToolPalette::ensureSecondaryResources() {
+    if (m_secondaryResourcesReady || !m_options.lazySecondaryResources ||
+        !m_options.enableStyleToolbar) {
+        return;
+    }
+
+    createRectangleStyleToolbar();
+    m_secondaryResourcesReady = true;
+    markLayoutDirty(true);
+    ensureLayoutApplied();
+}
+
+void ScreenshotToolPalette::releaseSecondaryResources() {
+    if (!m_options.lazySecondaryResources || !m_secondaryResourcesReady) {
+        return;
+    }
+
+    // Break all non-owning bindings before deleting the QWidget subtree. The
+    // style model remains alive, so the next materialization starts from the
+    // latest canvas state instead of rebuilding the palette itself.
+    m_styleControls->releaseControlBindings();
+    m_actionToolbarTargetVisible = false;
+    m_styleToolbarTargetVisible = false;
+    const QVector<QWidget*> secondaryPanels = {
+        m_selectActionPanel,
+        m_rectangleStylePanel,
+        m_styleReserveWidget,
+    };
+    if (m_rootLayout != nullptr) {
+        for (QWidget* panel : secondaryPanels) {
+            if (panel != nullptr) {
+                m_rootLayout->removeWidget(panel);
+            }
+        }
+    }
+    m_styleEditorBindings.clear();
+    m_styleControlLayouts.clear();
+    m_styleSeparatorFrames.clear();
+    m_panelFrames.clear();
+    m_styleSpacingItems.clear();
+    m_selectionActionControls.clear();
+    m_selectionActionSpacers.clear();
+    m_textActionSpacers.clear();
+    m_tableActionSpacers.clear();
+    m_highlightModeGroups.clear();
+    m_filterModeGroups.clear();
+    m_filterEditor = {};
+    m_penFilterEditor = {};
+    m_activeStyleControlsWidget = nullptr;
+    m_activeStyleTool.reset();
+    m_shapeStyleGroupSeparator = nullptr;
+    m_shapeStyleGroupSeparatorLeadingSpacing = nullptr;
+    m_shapeStyleGroupSeparatorTrailingSpacing = nullptr;
+    m_selectActionLayout = nullptr;
+    m_rectangleStyleLayout = nullptr;
+    m_selectActionPanel = nullptr;
+    m_rectangleStylePanel = nullptr;
+    m_styleReserveWidget = nullptr;
+
+    // QObject parent ownership performs the actual destruction. Deleting the
+    // panels, rather than the palette, releases their native popup surfaces,
+    // model allocations, and child icon resources deterministically.
+    for (QWidget* panel : secondaryPanels) {
+        if (panel != nullptr) {
+            delete panel;
+        }
+    }
+
+    // Trim only the Ant Design icon cache owned by the toolbar. The next
+    // materialization repopulates the icons it actually displays without
+    // invalidating unrelated Qt pixmap consumers.
+    adqt::icons::trimIconCache(512 * 1024);
+
+    m_secondaryResourcesReady = false;
+    markLayoutDirty(true);
+    ensureLayoutApplied();
+}
+
 bool ScreenshotToolPalette::setShadowMargins(const QMargins& margins) {
     if (m_baseShadowMargins == margins) {
         return false;
@@ -932,6 +1015,9 @@ void ScreenshotToolPalette::setStyleToolbarAboveMain(bool above) {
 }
 
 void ScreenshotToolPalette::setStyleToolbarVisible(bool visible) {
+    if (visible) {
+        ensureSecondaryResources();
+    }
     if (m_rectangleStylePanel == nullptr) {
         return;
     }
@@ -1126,6 +1212,10 @@ void ScreenshotToolPalette::updatePenFilterStrokeWidthControls() {
 
 void ScreenshotToolPalette::setActiveTool(Tool tool) {
     SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.set_active_tool");
+    if (m_options.lazySecondaryResources &&
+        (toolUsesActionToolbar(tool) || toolUsesStyleToolbar(tool))) {
+        ensureSecondaryResources();
+    }
     selectDynamicEntryTool(tool);
     synchronizeFilterModeGroups(tool);
     if (m_activeTool.has_value() && *m_activeTool == tool) {
@@ -4073,19 +4163,28 @@ void ScreenshotToolPalette::createRectangleStyleToolbar() {
     setStyleControlsActive(Tool::Shape);
     updateSerialNumberControls();
 
-    m_styleReserveWidget = new QWidget(this);
-    m_styleReserveWidget->setObjectName(QStringLiteral("screenshotStyleToolbarReserve"));
-    m_styleReserveWidget->setAttribute(Qt::WA_NoSystemBackground, true);
-    m_styleReserveWidget->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-    m_styleReserveWidget->setAutoFillBackground(false);
-    m_styleReserveWidget->setFocusPolicy(Qt::NoFocus);
-    m_styleReserveWidget->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    if (m_styleReserveWidget == nullptr) {
+        m_styleReserveWidget = new QWidget(this);
+        m_styleReserveWidget->setObjectName(QStringLiteral("screenshotStyleToolbarReserve"));
+        m_styleReserveWidget->setAttribute(Qt::WA_NoSystemBackground, true);
+        m_styleReserveWidget->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+        m_styleReserveWidget->setAutoFillBackground(false);
+        m_styleReserveWidget->setFocusPolicy(Qt::NoFocus);
+        m_styleReserveWidget->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    }
 
     if (m_rootLayout != nullptr) {
-        m_rootLayout->addWidget(m_selectActionPanel, 0, Qt::AlignRight);
-        m_rootLayout->addWidget(m_rectangleStylePanel, 0, Qt::AlignRight);
-        m_rootLayout->addWidget(m_styleReserveWidget, 0, Qt::AlignRight);
+        if (m_rootLayout->indexOf(m_selectActionPanel) < 0) {
+            m_rootLayout->addWidget(m_selectActionPanel, 0, Qt::AlignRight);
+        }
+        if (m_rootLayout->indexOf(m_rectangleStylePanel) < 0) {
+            m_rootLayout->addWidget(m_rectangleStylePanel, 0, Qt::AlignRight);
+        }
+        if (m_rootLayout->indexOf(m_styleReserveWidget) < 0) {
+            m_rootLayout->addWidget(m_styleReserveWidget, 0, Qt::AlignRight);
+        }
     }
+    m_secondaryResourcesReady = true;
 }
 
 void ScreenshotToolPalette::addRecordingControls(QBoxLayout* layout) {

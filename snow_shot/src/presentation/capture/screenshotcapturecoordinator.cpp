@@ -80,13 +80,28 @@ void ScreenshotCaptureCoordinator::cancelActiveCapture() {
     }
 }
 
-void ScreenshotCaptureCoordinator::releaseIdleResourcesAsync(quint64 requestId) {
+bool ScreenshotCaptureCoordinator::releaseIdleResourcesAsync(
+    quint64 requestId, std::function<void(bool released)> completion) {
     if (!hasWorker()) {
-        return;
+        return false;
     }
 
-    static_cast<void>(postWorkerTask(
-        [requestId](ScreenshotCaptureWorker& worker) { worker.releaseIdleResources(requestId); }));
+    const QPointer<ScreenshotCaptureCoordinator> coordinator(this);
+    return postWorkerTask([coordinator, requestId, completion = std::move(completion)](
+                              ScreenshotCaptureWorker& worker) mutable {
+        const bool released = worker.releaseIdleResources(requestId);
+        if (coordinator.isNull() || !completion) {
+            return;
+        }
+        QMetaObject::invokeMethod(
+            coordinator,
+            [coordinator, released, completion = std::move(completion)]() mutable {
+                if (!coordinator.isNull()) {
+                    completion(released);
+                }
+            },
+            Qt::QueuedConnection);
+    });
 }
 
 void ScreenshotCaptureCoordinator::shutdown() {

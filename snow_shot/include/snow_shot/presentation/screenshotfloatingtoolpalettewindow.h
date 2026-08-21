@@ -115,6 +115,7 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     };
 
     void updatePaletteGeometryForVisibleContent();
+    void bindDynamicKeyboardEditors();
     void refreshPaletteWindow(bool forceRepaint = false);
     bool handleNativeHitTest(void* message, qintptr* result) const;
     bool isPointInInteractiveContent(const QPoint& localPosition) const;

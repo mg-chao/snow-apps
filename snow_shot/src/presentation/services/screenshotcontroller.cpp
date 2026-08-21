@@ -77,6 +77,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #ifndef NOMINMAX
@@ -91,7 +92,21 @@ namespace {
 constexpr auto kCopyMessageKey = "screenshot-copy";
 constexpr auto kSaveMessageKey = "screenshot-save";
 constexpr auto kPinClipboardMessageKey = "screenshot-pin-clipboard";
+constexpr int kIdleHeapCompactionGraceMilliseconds = 1250;
 #if defined(Q_OS_WIN) || defined(_WIN32)
+void compactIdleProcessHeaps() {
+    DWORD heapCount = GetProcessHeaps(0, nullptr);
+    if (heapCount > 0) {
+        std::vector<HANDLE> heaps(heapCount);
+        heapCount = GetProcessHeaps(heapCount, heaps.data());
+        for (DWORD index = 0; index < heapCount && index < heaps.size(); ++index) {
+            if (heaps[index] != nullptr) {
+                static_cast<void>(HeapCompact(heaps[index], 0));
+            }
+        }
+    }
+}
+
 QString cameraShutterAudioPath() {
     const QString installedPath = QDir(QCoreApplication::applicationDirPath())
                                       .filePath(QStringLiteral("audios/camera_shutter.mp3"));
@@ -145,6 +160,7 @@ void playCameraShutterSound() {
 }
 #else
 void playCameraShutterSound() {}
+void compactIdleProcessHeaps() {}
 #endif
 
 ScreenshotToolPalette::Tool paletteToolForActiveTool(ScreenshotActiveTool tool) {
@@ -229,6 +245,7 @@ struct ScreenshotController::Impl final : public QObject,
     void updateSmartSelectionSettingForCurrentSession(bool enabled);
     void applyUiPreferences(const ScreenshotUiPreferences& preferences);
     void shutdown();
+    [[nodiscard]] bool releaseRetainedIdleResources(std::function<void(bool released)> completion);
     void startHistoryEdit(const QString& recordId);
     void handleCapturePresented();
     void invalidateDelayedCapture();
@@ -920,8 +937,8 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                 [this]() { handleCapturePresented(); },
                 [this](quint64 sessionId) {
                     QTimer::singleShot(75, &owner, [this, sessionId]() {
-                        if (m_captureState.sessionId != sessionId ||
-                            m_interaction.inactive() || m_presentationServices == nullptr) {
+                        if (m_captureState.sessionId != sessionId || m_interaction.inactive() ||
+                            m_presentationServices == nullptr) {
                             return;
                         }
                         m_presentationServices->updateOverlayState();
@@ -944,6 +961,7 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
             [this](std::optional<ScreenshotWindowCaptureFrame> frame) {
                 m_focusedWindowCapture = std::move(frame);
             },
+            true,
         });
 }
 
@@ -968,7 +986,7 @@ void ScreenshotController::Impl::startHistoryEdit(const QString& recordId) {
 }
 
 void ScreenshotController::Impl::handleCapturePresented() {
-#if defined(SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION) && \
+#if defined(SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION) &&                                \
     (defined(Q_OS_WIN) || defined(_WIN32))
     if (snow_shot::presentation::screenshot_lifecycle_perf::captureActive()) {
         // Verify the prepared frame has reached the compositor before recording
@@ -1297,8 +1315,7 @@ void ScreenshotController::Impl::connectSelectorSignals() {
     QObject::connect(m_selectorCoordinator, &ScreenshotSelectorCoordinator::refreshFinished, this,
                      [this](bool ok) { m_selectorWorkflow->handleRefreshFinished(ok); });
     QObject::connect(m_selectorCoordinator, &ScreenshotSelectorCoordinator::hitTestFinished, this,
-                     [this](bool ok, const QPoint& physicalPoint,
-                            const QVector<QRectF>& hitRects) {
+                     [this](bool ok, const QPoint& physicalPoint, const QVector<QRectF>& hitRects) {
                          m_selectorWorkflow->handleHitTestFinished(ok, physicalPoint, hitRects);
                      });
 }
@@ -3111,6 +3128,12 @@ ScreenshotController::Impl::~Impl() {
     shutdown();
 }
 
+bool ScreenshotController::Impl::releaseRetainedIdleResources(
+    std::function<void(bool released)> completion) {
+    return m_captureWorkflow != nullptr &&
+           m_captureWorkflow->releaseRetainedIdleResources(std::move(completion));
+}
+
 void ScreenshotController::Impl::invalidateDelayedCapture() {
     m_delayedCaptureGeneration = owner.nextOperationGeneration();
 }
@@ -3137,7 +3160,8 @@ bool ScreenshotController::Impl::canBeginCapture() const {
 
 bool ScreenshotController::Impl::canReleaseAfterCancel() const {
     return !m_captureState.captureInProgress && m_interaction.inactive() &&
-           m_captureState.sessionState == ScreenshotSessionState::IdleCold &&
+           (m_captureState.sessionState == ScreenshotSessionState::IdleCold ||
+            m_captureState.sessionState == ScreenshotSessionState::IdlePrepared) &&
            !m_imageExportInFlight && !m_clipboardPinJob.isValid() &&
            (m_screenRecordingController == nullptr || !m_screenRecordingController->isOpen());
 }
@@ -3388,12 +3412,13 @@ quint64 ScreenshotController::nextOperationGeneration() {
 
 void ScreenshotController::scheduleIdleImplementationRelease(Impl* implementation) {
     const QPointer<Impl> guardedImplementation(implementation);
-    QTimer::singleShot(0, this, [this, guardedImplementation]() {
+    const quint64 releaseGeneration = m_operationGeneration;
+    QTimer::singleShot(0, this, [this, guardedImplementation, releaseGeneration]() {
         if (guardedImplementation.isNull() || m_impl.get() != guardedImplementation.data() ||
             !guardedImplementation->canReleaseAfterCancel()) {
             return;
         }
-        QTimer::singleShot(0, this, [this]() {
+        QTimer::singleShot(0, this, [this, guardedImplementation, releaseGeneration]() {
 #if defined(Q_OS_WIN) || defined(_WIN32)
             // Overlay widgets may use deleteLater() while cancellation is
             // dispatched from the overlay itself. Drain that destruction
@@ -3403,6 +3428,40 @@ void ScreenshotController::scheduleIdleImplementationRelease(Impl* implementatio
 #if defined(SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION)
             snow_shot::presentation::screenshot_lifecycle_perf::captureReleased();
 #endif
+            constexpr int kIdleResourceReleaseGraceMilliseconds = 750;
+            QTimer::singleShot(
+                kIdleResourceReleaseGraceMilliseconds, this,
+                [this, guardedImplementation, releaseGeneration]() {
+                    if (guardedImplementation.isNull() ||
+                        m_impl.get() != guardedImplementation.data() ||
+                        m_operationGeneration != releaseGeneration ||
+                        !guardedImplementation->canReleaseAfterCancel()) {
+                        return;
+                    }
+                    const auto scheduleHeapCompaction = [this, guardedImplementation,
+                                                         releaseGeneration]() {
+                        QTimer::singleShot(
+                            kIdleHeapCompactionGraceMilliseconds, this,
+                            [this, guardedImplementation, releaseGeneration]() {
+                                if (guardedImplementation.isNull() ||
+                                    m_impl.get() != guardedImplementation.data() ||
+                                    m_operationGeneration != releaseGeneration ||
+                                    !guardedImplementation->canReleaseAfterCancel()) {
+                                    return;
+                                }
+                                compactIdleProcessHeaps();
+                            });
+                    };
+                    const bool scheduled = guardedImplementation->releaseRetainedIdleResources(
+                        [scheduleHeapCompaction](bool released) {
+                            if (released) {
+                                scheduleHeapCompaction();
+                            }
+                        });
+                    if (!scheduled) {
+                        scheduleHeapCompaction();
+                    }
+                });
         });
     });
 }
@@ -3470,10 +3529,10 @@ void ScreenshotController::captureCurrentMonitor() {
 #else
     const QPoint cursorPosition = QCursor::pos();
 #endif
-    static_cast<void>(implementation.beginCapture(
-        Impl::PendingSelectionAction::Copy,
-        snow_shot::storage::CaptureHistorySource::CurrentMonitor,
-        Impl::AutomaticSelectionMode::CurrentMonitor, cursorPosition));
+    static_cast<void>(
+        implementation.beginCapture(Impl::PendingSelectionAction::Copy,
+                                    snow_shot::storage::CaptureHistorySource::CurrentMonitor,
+                                    Impl::AutomaticSelectionMode::CurrentMonitor, cursorPosition));
 }
 
 void ScreenshotController::captureFocusedWindow() {

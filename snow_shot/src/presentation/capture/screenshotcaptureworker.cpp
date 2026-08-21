@@ -30,8 +30,7 @@ bool validFrameInfo(const SnowCaptureFrameInfo& info) {
     const quint64 expectedStride = static_cast<quint64>(info.width) * 4ULL;
     if (expectedStride > std::numeric_limits<std::uint32_t>::max() ||
         expectedStride > static_cast<quint64>(std::numeric_limits<int>::max()) ||
-        static_cast<quint64>(info.height) >
-            std::numeric_limits<quint64>::max() / expectedStride) {
+        static_cast<quint64>(info.height) > std::numeric_limits<quint64>::max() / expectedStride) {
         return false;
     }
     const quint64 expectedLen = expectedStride * static_cast<quint64>(info.height);
@@ -58,8 +57,7 @@ QImage imageFromFrameLease(SnowCaptureFrameLease* lease, const std::uint8_t* rgb
     }
 
     const quint64 expectedStride = static_cast<quint64>(width) * 4ULL;
-    if (static_cast<quint64>(height) >
-        std::numeric_limits<quint64>::max() / expectedStride) {
+    if (static_cast<quint64>(height) > std::numeric_limits<quint64>::max() / expectedStride) {
         snow_capture_frame_lease_release(lease);
         return {};
     }
@@ -93,6 +91,24 @@ ScreenshotCaptureBackend backendFromNative(std::uint8_t backend) {
     }
 }
 
+void markDesktopFrameBackend(std::uint8_t backend) {
+    using snow_shot::presentation::screenshot_lifecycle_perf::mark;
+    switch (backend) {
+    case SNOW_CAPTURE_BACKEND_DXGI:
+        mark(QStringLiteral("capture.desktop_frame_backend.dxgi"));
+        break;
+    case SNOW_CAPTURE_BACKEND_WGC:
+        mark(QStringLiteral("capture.desktop_frame_backend.wgc"));
+        break;
+    case SNOW_CAPTURE_BACKEND_GDI:
+        mark(QStringLiteral("capture.desktop_frame_backend.gdi"));
+        break;
+    default:
+        mark(QStringLiteral("capture.desktop_frame_backend.unknown"));
+        break;
+    }
+}
+
 QString nativeCaptureError(const char* fallback) {
     const char* message = snow_capture_last_error_message();
     return QString::fromUtf8(message != nullptr && *message != '\0' ? message : fallback);
@@ -119,19 +135,22 @@ void ScreenshotCaptureWorker::refreshLayout(quint64 requestId) {
     }
 }
 
-void ScreenshotCaptureWorker::releaseIdleResources(quint64 requestId) {
+bool ScreenshotCaptureWorker::releaseIdleResources(quint64 requestId) {
     Q_UNUSED(requestId);
-    if (m_session != nullptr &&
-        snow_capture_desktop_session_release_idle_resources(m_session) == 0) {
+    if (m_session == nullptr) {
+        return true;
+    }
+    if (snow_capture_desktop_session_release_idle_resources(m_session) == 0) {
         qWarning("Failed to release desktop capture idle resources: %s",
                  snow_capture_last_error_message());
+        return false;
     }
+    return true;
 }
 
-void ScreenshotCaptureWorker::capture(
-    const ScreenshotCaptureRequest& request,
-    const QPointer<ScreenshotCaptureCoordinator>& coordinator,
-    SnowCaptureCancellationToken* cancellationToken) {
+void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
+                                      const QPointer<ScreenshotCaptureCoordinator>& coordinator,
+                                      SnowCaptureCancellationToken* cancellationToken) {
     ScreenshotCaptureResult captureResult;
     captureResult.requestId = request.requestId;
     snow_shot::presentation::screenshot_lifecycle_perf::mark(
@@ -147,11 +166,20 @@ void ScreenshotCaptureWorker::capture(
     }
     if (!ensureSession()) {
         captureResult.errorMessage = nativeCaptureError("Failed to create desktop capture session");
+        postCaptureEnvironmentReady(request.requestId, coordinator, false);
+        postCaptureResult(coordinator, std::move(captureResult));
+        return;
+    }
+
+    if (!prepareCaptureEnvironment(request.refreshLayout)) {
+        captureResult.errorMessage = nativeCaptureError("Failed to prepare screenshot capture");
+        postCaptureEnvironmentReady(request.requestId, coordinator, false);
         postCaptureResult(coordinator, std::move(captureResult));
         return;
     }
     snow_shot::presentation::screenshot_lifecycle_perf::mark(
         QStringLiteral("capture.session_ready"));
+    postCaptureEnvironmentReady(request.requestId, coordinator, true);
     if (canceled()) {
         captureResult.errorMessage = QStringLiteral("Screenshot capture canceled");
         postCaptureResult(coordinator, std::move(captureResult));
@@ -161,7 +189,7 @@ void ScreenshotCaptureWorker::capture(
     SnowCaptureScreenshotRequestV1 nativeRequest{};
     nativeRequest.version = SNOW_CAPTURE_SCREENSHOT_REQUEST_VERSION;
     nativeRequest.struct_size = sizeof(nativeRequest);
-    nativeRequest.flags = request.refreshLayout ? SNOW_CAPTURE_SCREENSHOT_REQUEST_REFRESH_LAYOUT : 0;
+    nativeRequest.flags = 0;
     nativeRequest.focused_window = static_cast<intptr_t>(request.focusedWindowHandle);
     nativeRequest.cancellation_token = cancellationToken;
 
@@ -185,6 +213,7 @@ void ScreenshotCaptureWorker::capture(
             valid = false;
             break;
         }
+        markDesktopFrameBackend(info.backend_kind);
 
         SnowCaptureFrameLease* lease =
             snow_capture_screenshot_result_display_retain(nativeResult, index);
@@ -220,8 +249,8 @@ void ScreenshotCaptureWorker::capture(
                                                info.height, info.stride_bytes);
             ScreenshotWindowCaptureFrame focused;
             focused.image = std::move(image);
-            focused.physicalRect = QRect(info.x, info.y, static_cast<int>(info.width),
-                                         static_cast<int>(info.height));
+            focused.physicalRect =
+                QRect(info.x, info.y, static_cast<int>(info.width), static_cast<int>(info.height));
             focused.backend = backendFromNative(info.backend_kind);
             if (!focused.isValid()) {
                 valid = false;
@@ -253,6 +282,8 @@ bool ScreenshotCaptureWorker::ensureSession() {
     SnowCaptureDesktopSessionConfig config{};
     config.capture_retry_count = 1;
     config.capture_backend = SNOW_CAPTURE_BACKEND_AUTO;
+    config.reserved[SNOW_CAPTURE_DESKTOP_AUTO_BACKEND_POLICY_RESERVED_INDEX] =
+        SNOW_CAPTURE_DESKTOP_AUTO_BACKEND_POLICY_LOW_LATENCY_SDR;
     m_session = snow_capture_desktop_session_create(&config);
     if (m_session == nullptr) {
         qWarning("Failed to create desktop capture session: %s", snow_capture_last_error_message());
@@ -283,6 +314,11 @@ bool ScreenshotCaptureWorker::prepareSessionIfNeeded() {
     return snow_capture_desktop_session_prepare(m_session) != 0;
 }
 
+bool ScreenshotCaptureWorker::prepareCaptureEnvironment(bool refreshLayout) {
+    return m_session != nullptr && snow_capture_desktop_session_prepare_capture_environment(
+                                       m_session, static_cast<std::uint8_t>(refreshLayout)) != 0;
+}
+
 void ScreenshotCaptureWorker::postPrepared(
     quint64 requestId, const QPointer<ScreenshotCaptureCoordinator>& coordinator, bool ok) {
     if (coordinator.isNull()) {
@@ -294,6 +330,22 @@ void ScreenshotCaptureWorker::postPrepared(
         [coordinator, requestId, ok]() {
             if (!coordinator.isNull()) {
                 emit coordinator->prepared(requestId, ok);
+            }
+        },
+        Qt::QueuedConnection);
+}
+
+void ScreenshotCaptureWorker::postCaptureEnvironmentReady(
+    quint64 requestId, const QPointer<ScreenshotCaptureCoordinator>& coordinator, bool ok) {
+    if (coordinator.isNull()) {
+        return;
+    }
+
+    QMetaObject::invokeMethod(
+        coordinator,
+        [coordinator, requestId, ok]() {
+            if (!coordinator.isNull()) {
+                emit coordinator->captureEnvironmentReady(requestId, ok);
             }
         },
         Qt::QueuedConnection);

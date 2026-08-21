@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/screenshotoverlayeventsink.h"
 #include "snow_shot/presentation/screenshotscrollingthumbnailwidget.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
+#include <QBackingStore>
 #include <QEvent>
 #include <QCoreApplication>
 #include <QGuiApplication>
@@ -386,8 +387,8 @@ void ScreenshotOverlayWindow::restorePresentationCanvas() {
 
 void ScreenshotOverlayWindow::showPreparedFrame() {
     const bool wasVisible = isVisible();
-    const bool concealFirstPaint = !wasVisible && isWindow() &&
-                                   QGuiApplication::platformName() == QStringLiteral("windows");
+    const bool concealFirstPaint =
+        !wasVisible && isWindow() && QGuiApplication::platformName() == QStringLiteral("windows");
     const qreal previousOpacity = windowOpacity();
     if (concealFirstPaint) {
         setWindowOpacity(0.0);
@@ -422,9 +423,29 @@ void ScreenshotOverlayWindow::showPreparedFrame() {
         QStringLiteral("presentation.show_window_end"));
 }
 
+void ScreenshotOverlayWindow::hibernateNativeSurface() {
+    hide();
+    setUpdatesEnabled(false);
+    m_appliedWindowMask = QRegion();
+    m_windowMaskInitialized = false;
+    if (m_canvas != nullptr) {
+        m_canvas->setInteractionEnabled(false);
+        m_canvas->setUpdatesEnabled(false);
+    }
+
+    // The raster backing store owns the desktop-sized committed pages. Qt can
+    // grow it again when the prepared frame is shown, while the hidden HWND
+    // remains available for capture exclusion and presentation setup.
+    if (QBackingStore* store = backingStore(); store != nullptr) {
+        store->resize(QSize(1, 1));
+    }
+}
+
 void ScreenshotOverlayWindow::releaseNativeSurface() {
     hide();
     setUpdatesEnabled(false);
+    m_appliedWindowMask = QRegion();
+    m_windowMaskInitialized = false;
     if (m_canvas != nullptr) {
         m_canvas->setInteractionEnabled(false);
         m_canvas->setUpdatesEnabled(false);
@@ -434,6 +455,16 @@ void ScreenshotOverlayWindow::releaseNativeSurface() {
     // this overlay. destroy() keeps the QObject valid while immediately
     // releasing the HWND, child platform windows, and QBackingStore.
     destroy(true, true);
+}
+
+void ScreenshotOverlayWindow::restoreNativeSurface() {
+    setUpdatesEnabled(true);
+    if (m_canvas != nullptr) {
+        m_canvas->setUpdatesEnabled(true);
+    }
+    initializeScreenshotSurface();
+    static_cast<void>(winId());
+    hide();
 }
 
 void ScreenshotOverlayWindow::initializeScreenshotSurface() {

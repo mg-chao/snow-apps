@@ -10,13 +10,12 @@
 #include <algorithm>
 #include <utility>
 
-ScreenshotOverlayPool::ScreenshotOverlayPool(ScreenshotOverlayEventSink& eventSink,
-                                             SnowCanvasRuntime& canvasRuntime,
-                                             snow_shot::presentation::WindowShortcutManager&
-                                                 shortcutManager,
-                                             ScreenshotOverlayPoolCallbacks callbacks)
-    : m_eventSink(eventSink), m_canvasRuntime(canvasRuntime),
-      m_shortcutManager(shortcutManager), m_callbacks(std::move(callbacks)) {}
+ScreenshotOverlayPool::ScreenshotOverlayPool(
+    ScreenshotOverlayEventSink& eventSink, SnowCanvasRuntime& canvasRuntime,
+    snow_shot::presentation::WindowShortcutManager& shortcutManager,
+    ScreenshotOverlayPoolCallbacks callbacks)
+    : m_eventSink(eventSink), m_canvasRuntime(canvasRuntime), m_shortcutManager(shortcutManager),
+      m_callbacks(std::move(callbacks)) {}
 
 void ScreenshotOverlayPool::prewarmDisplayPool(ScreenshotDisplaySession& displaySession,
                                                int displayCount) {
@@ -45,6 +44,18 @@ void ScreenshotOverlayPool::clearDisplays(ScreenshotDisplaySession& displaySessi
         [](qsizetype, CapturedDisplayModel& display, ScreenshotOverlayWindow*) {
             ScreenshotCaptureDisplayModelReconciler::clearCaptureMetadata(display);
         });
+}
+
+void ScreenshotOverlayPool::hibernateDisplayPool(ScreenshotDisplaySession& displaySession) const {
+    clearDisplays(displaySession);
+    displaySession.forEachOverlay([this](qsizetype, ScreenshotOverlayWindow* overlay) {
+        if (overlay == nullptr) {
+            return;
+        }
+        clearOverlayCanvas(overlay);
+        overlay->resetScreenshotRendering();
+        overlay->hibernateNativeSurface();
+    });
 }
 
 void ScreenshotOverlayPool::destroyDisplayPool(ScreenshotDisplaySession& displaySession) const {
@@ -77,12 +88,11 @@ ScreenshotOverlayPool::ensureOverlay(ScreenshotOverlayWindow* overlay) const {
         auto* canvas = new SnowCanvasWidget(m_canvasRuntime);
         overlay = new ScreenshotOverlayWindow(m_eventSink, canvas);
         m_shortcutManager.addScopeWindow(overlay);
-        static_cast<void>(overlay->winId());
     }
 
+    overlay->restoreNativeSurface();
     if (created) {
         clearOverlayCanvas(overlay);
-        overlay->hide();
     }
     return overlay;
 }

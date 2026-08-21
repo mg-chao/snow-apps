@@ -114,6 +114,10 @@ class ScreenshotToolPalette final : public QWidget {
         bool showRecordingControls = false;
         bool showTrailingDragHandle = false;
         bool enableStyleToolbar = true;
+        // Keep the main row resident while materializing secondary rows on
+        // demand. Standalone palette consumers retain eager construction by
+        // default and can opt into this policy explicitly.
+        bool lazySecondaryResources = false;
         bool separatorAfterSelect = false;
         bool separatorBeforeShape = false;
         bool separatorAfterArrow = false;
@@ -143,6 +147,9 @@ class ScreenshotToolPalette final : public QWidget {
     QPoint contentOffset() const;
     quint64 layoutRevision() const;
     void prepareForDisplay();
+    // Evict widget-heavy secondary rows while retaining the main row and all
+    // value state. A later secondary-toolbar request materializes them again.
+    void releaseSecondaryResources();
     void resetStyleState();
     bool setShadowMargins(const QMargins& margins);
     bool setPhysicalScale(qreal scale);
@@ -293,6 +300,8 @@ class ScreenshotToolPalette final : public QWidget {
                                              bool danger = false, bool primary = false);
     void createMainToolbar(const Options& options);
     void createRectangleStyleToolbar();
+    void ensureSecondaryResources();
+    [[nodiscard]] bool secondaryResourcesReady() const;
     bool addMainToolButtons(const Options& options, QBoxLayout* layout);
     bool addMainHistoryButtons(const Options& options, QBoxLayout* layout);
     bool addMainSecondaryButtons(const Options& options, QBoxLayout* layout);
@@ -572,6 +581,7 @@ class ScreenshotToolPalette final : public QWidget {
     mutable LayoutResult m_layoutResult;
     mutable bool m_layoutDirty = true;
     mutable bool m_rowOrderDirty = true;
+    bool m_secondaryResourcesReady = false;
 
 #if defined(SNOW_SHOT_TEST_HOOKS)
     quint64 m_layoutCommitCount = 0;

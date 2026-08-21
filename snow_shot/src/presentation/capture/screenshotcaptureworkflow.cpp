@@ -47,12 +47,11 @@ QPoint currentPhysicalCursorPosition(const ScreenshotDisplaySession& displaySess
 QVector<QRect> activePhysicalRects(const ScreenshotDisplaySession& displaySession) {
     QVector<QRect> rects;
     rects.reserve(static_cast<int>(displaySession.size()));
-    displaySession.forEachActiveDisplay(
-        [&rects](qsizetype, const CapturedDisplayModel& display) {
-            if (!display.physicalRect.isEmpty()) {
-                rects.push_back(display.physicalRect);
-            }
-        });
+    displaySession.forEachActiveDisplay([&rects](qsizetype, const CapturedDisplayModel& display) {
+        if (!display.physicalRect.isEmpty()) {
+            rects.push_back(display.physicalRect);
+        }
+    });
     std::sort(rects.begin(), rects.end(), [](const QRect& left, const QRect& right) {
         if (left.x() != right.x()) {
             return left.x() < right.x();
@@ -88,8 +87,8 @@ void ScreenshotCaptureWorkflow::prewarmResources() {
     initializeIdleResources(0);
 }
 
-void ScreenshotCaptureWorkflow::startCapture(
-    ScreenshotCapturePresentationMode presentationMode, quintptr focusedWindowHandle) {
+void ScreenshotCaptureWorkflow::startCapture(ScreenshotCapturePresentationMode presentationMode,
+                                             quintptr focusedWindowHandle) {
     bool reusePriorCleanup = false;
     const bool coldStart = m_state.sessionState == ScreenshotSessionState::IdleCold;
     if (m_state.sessionState != ScreenshotSessionState::IdleCold &&
@@ -147,11 +146,15 @@ void ScreenshotCaptureWorkflow::cancelCapture() {
     m_focusedWindowHandle = 0;
     resetCaptureModels();
     resetCanvasRuntimeState();
-    releaseIdleResources(m_state.sessionId);
+    static_cast<void>(
+        releaseIdleResourcesInternal(m_state.sessionId, m_context.retainIdleResourcesForFastRestart
+                                                            ? IdleResourcePolicy::RetainWarm
+                                                            : IdleResourcePolicy::Destroy));
 }
 
 void ScreenshotCaptureWorkflow::clearCapturePresentationReadiness() {
     m_capturedPresentationSessionId = 0;
+    m_captureEnvironmentReadySessionId = 0;
     m_initialSmartSelectionPendingSessionId = 0;
     m_initialSmartSelectionResolvedSessionId = 0;
     m_visiblePresentationSessionId = 0;
@@ -212,20 +215,51 @@ void ScreenshotCaptureWorkflow::shutdownCaptureWorker() {
 }
 
 void ScreenshotCaptureWorkflow::releaseIdleResources(quint64 sessionId) {
+    static_cast<void>(releaseIdleResourcesInternal(sessionId, IdleResourcePolicy::Destroy));
+}
+
+bool ScreenshotCaptureWorkflow::releaseRetainedIdleResources(
+    std::function<void(bool released)> completion) {
+    return releaseIdleResourcesInternal(m_state.sessionId, IdleResourcePolicy::Hibernate,
+                                        std::move(completion));
+}
+
+bool ScreenshotCaptureWorkflow::releaseIdleResourcesInternal(
+    quint64 sessionId, IdleResourcePolicy policy, std::function<void(bool released)> completion) {
     if (sessionId != m_state.sessionId || m_state.captureInProgress ||
         !m_context.interaction.inactive()) {
-        return;
+        return false;
     }
 
     m_state.sessionState = ScreenshotSessionState::Releasing;
-    m_context.runtime.destroySelectorService();
+    if (policy == IdleResourcePolicy::Destroy) {
+        m_context.runtime.destroySelectorService();
+    } else {
+        m_context.runtime.releaseSelectorCache();
+    }
     m_context.runtime.hideOverlayWindows(m_context.displaySession);
     if (m_context.presentation.hideToolbar) {
         m_context.presentation.hideToolbar();
     }
+    if (policy == IdleResourcePolicy::RetainWarm) {
+        // Clear captured rasters and canvas state while retaining the prepared
+        // display/window pool and capture worker for a short restart window.
+        clearDisplays();
+        m_context.runtime.resetForNewCapture(m_context.displaySession);
+        m_state.sessionState = ScreenshotSessionState::IdlePrepared;
+        return true;
+    }
+    if (policy == IdleResourcePolicy::Hibernate) {
+        clearDisplays();
+        m_context.runtime.resetForNewCapture(m_context.displaySession);
+        m_context.runtime.hibernateDisplayPool(m_context.displaySession);
+        m_state.sessionState = ScreenshotSessionState::IdlePrepared;
+        return m_context.runtime.releaseIdleResourcesAsync(sessionId, std::move(completion));
+    }
     destroyDisplayPool();
     m_context.runtime.shutdownCaptureWorker();
     m_state.sessionState = ScreenshotSessionState::IdleCold;
+    return true;
 }
 
 void ScreenshotCaptureWorkflow::releaseResourcesForExternalInvalidation() {
@@ -261,26 +295,11 @@ void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
         return;
     }
 
-    const bool overlaysPrepared =
-        m_context.runtime.preparePreCaptureOverlayWindows(m_context.displaySession);
-    snow_shot::presentation::screenshot_lifecycle_perf::mark(
-        QStringLiteral("presentation.overlay_exclusions_ready"));
-    // Queue acquisition first, then overlap selector work with it. A synchronous
-    // acquisition failure invalidates the session before selector startup.
+    // The worker initializes a hibernated backend before publishing its ready
+    // milestone. Native-surface restoration and selector work start from that
+    // milestone while acquisition continues on the worker thread.
     m_context.runtime.captureAsync(
         ScreenshotCaptureRequest{sessionId, m_state.layoutDirty, m_focusedWindowHandle});
-    if (sessionId != m_state.sessionId || !m_state.captureInProgress) {
-        return;
-    }
-
-    if (!overlaysPrepared || !m_context.displaySession.hasActiveDisplays()) {
-        resolveInitialSmartSelection(sessionId, {}, false, {});
-        return;
-    }
-
-    m_context.geometry.rebuild(m_context.displaySession);
-    m_preCapturePhysicalRects = activePhysicalRects(m_context.displaySession);
-    beginInitialSmartSelection(sessionId);
 }
 
 void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCaptureResult& result) {
@@ -491,7 +510,7 @@ bool ScreenshotCaptureWorkflow::initialSelectorGeometryMatchesCapture() const {
     }
     if (m_initialSmartSelectionSucceeded &&
         m_context.geometry.displayForPhysicalPoint(m_context.displaySession,
-                                                  m_initialSmartSelectionPoint) == nullptr) {
+                                                   m_initialSmartSelectionPoint) == nullptr) {
         return false;
     }
     if (m_initialSmartSelectionSucceeded) {
@@ -511,6 +530,31 @@ void ScreenshotCaptureWorkflow::handleCapturePrepared(quint64, bool ok) {
     if (ok && m_state.sessionState == ScreenshotSessionState::IdleCold) {
         m_state.sessionState = ScreenshotSessionState::IdlePrepared;
     }
+}
+
+void ScreenshotCaptureWorkflow::handleCaptureEnvironmentReady(quint64 requestId, bool ok) {
+    if (!ok || requestId != m_state.sessionId || !m_state.captureInProgress ||
+        m_presentationMode == ScreenshotCapturePresentationMode::Silent ||
+        m_captureEnvironmentReadySessionId == requestId) {
+        return;
+    }
+    m_captureEnvironmentReadySessionId = requestId;
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.capture_environment_ready"));
+
+    const bool overlaysPrepared =
+        m_context.runtime.preparePreCaptureOverlayWindows(m_context.displaySession);
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.overlay_exclusions_ready"));
+
+    if (!overlaysPrepared || !m_context.displaySession.hasActiveDisplays()) {
+        resolveInitialSmartSelection(requestId, {}, false, {});
+        return;
+    }
+
+    m_context.geometry.rebuild(m_context.displaySession);
+    m_preCapturePhysicalRects = activePhysicalRects(m_context.displaySession);
+    beginInitialSmartSelection(requestId);
 }
 
 void ScreenshotCaptureWorkflow::handleCaptureFinished(const ScreenshotCaptureResult& result) {

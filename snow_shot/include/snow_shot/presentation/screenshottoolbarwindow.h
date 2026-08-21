@@ -19,6 +19,9 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
                                      QWidget* parent = nullptr);
     void prewarmForScreen(QScreen* screen);
     void resetForNewCapture();
+    // Retain the window and main toolbar for fast reuse while evicting the
+    // widget-heavy secondary tool rows after a completed screenshot flow.
+    void releaseIdleResources();
     void setToolbarSize(const QString& size);
     void setToolbarLayout(const snow_shot::storage::ScreenshotToolbarLayout& layout);
     void setScrollingScreenshotMode(bool enabled);

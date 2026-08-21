@@ -462,6 +462,12 @@ where
         }
     }
 
+    fn release_idle_resources(&mut self) {
+        for capturer in self.capturers.values_mut() {
+            capturer.release_idle_resources();
+        }
+    }
+
     fn active_capture_access_count(&self) -> usize {
         self.capturers
             .values()
@@ -631,9 +637,12 @@ impl MonitorCaptureRuntime {
     }
 
     fn release_idle_resources(&mut self) {
-        self.capturers.clear();
+        self.capturers.release_idle_resources();
+        if let Some(primary) = self.primary.as_mut() {
+            primary.capturer.release_idle_resources();
+        }
         self.output.clear();
-        self.clear_primary();
+        self.primary_output.clear();
     }
 }
 
@@ -661,7 +670,7 @@ impl WindowCaptureRuntime {
     }
 
     fn release_idle_resources(&mut self) {
-        self.capturers.clear();
+        self.capturers.release_idle_resources();
         self.output.clear();
     }
 }
@@ -776,9 +785,7 @@ impl RegionCaptureRuntime {
     }
 
     fn release_idle_resources(&mut self) {
-        self.capturers.clear();
-        self.layout = RegionLayoutRuntime::default();
-        self.desktop_direct_support.clear();
+        self.capturers.release_idle_resources();
         self.fallback_frames.clear();
         self.output_history_seq = None;
         self.output_frame = None;
@@ -852,9 +859,7 @@ impl CaptureSession {
         crate::convert::warmup();
     }
 
-    /// Prepare resources that are safe to retain between one-shot captures.
-    /// No active backend access may remain when this method returns.
-    pub fn prewarm_environment(&mut self) -> CaptureResult<CaptureTargetInfo> {
+    fn initialize_capture_environment(&mut self) -> CaptureResult<CaptureTargetInfo> {
         if self.config.mode == CaptureMode::Snapshot {
             // Snapshot warm-up must stay allocation-light. SIMD dispatch and
             // lookup tables are cheap to retain; the conversion worker pool
@@ -863,7 +868,26 @@ impl CaptureSession {
         } else {
             self.warmup_runtime();
         }
-        let result = self.prepare_target_resources();
+        self.prepare_target_resources()
+    }
+
+    /// Prepare resources that are safe to retain between one-shot captures.
+    /// No active backend access may remain when this method returns.
+    pub fn prewarm_environment(&mut self) -> CaptureResult<CaptureTargetInfo> {
+        let result = self.initialize_capture_environment();
+        if self.config.mode == CaptureMode::Snapshot {
+            self.release_idle_resources();
+        } else {
+            self.release_capture_access();
+        }
+        result
+    }
+
+    /// Initialize the configured backend for an imminent capture while
+    /// keeping heavyweight environment state alive for that capture. Active
+    /// frame access is still closed before this method returns.
+    pub fn prepare_capture_environment(&mut self) -> CaptureResult<CaptureTargetInfo> {
+        let result = self.initialize_capture_environment();
         self.release_capture_access();
         result
     }
@@ -878,8 +902,8 @@ impl CaptureSession {
         self.runtime.active_capture_access_count()
     }
 
-    /// Drop heavyweight capture resources and frame-history caches while
-    /// keeping the session reusable for a later capture.
+    /// Drop heavyweight capture surfaces and frame-history caches while
+    /// retaining the configured capturer environment for a later capture.
     pub fn release_idle_resources(&mut self) {
         if self.config.mode != CaptureMode::Snapshot {
             return;
@@ -1761,6 +1785,7 @@ mod tests {
         prewarm_calls: usize,
         capture_calls: usize,
         release_calls: usize,
+        idle_release_calls: usize,
         layout_calls: usize,
         fail_capture: bool,
     }
@@ -1934,6 +1959,11 @@ mod tests {
             state.release_calls += 1;
         }
 
+        fn release_idle_resources(&mut self) {
+            self.release_capture_access();
+            self.state.lock().unwrap().idle_release_calls += 1;
+        }
+
         fn capture_access_active(&self) -> bool {
             self.state.lock().unwrap().active
         }
@@ -2059,7 +2089,10 @@ mod tests {
         }
     }
 
-    fn lifecycle_session(state: Arc<Mutex<LifecycleState>>) -> CaptureResult<CaptureSession> {
+    fn lifecycle_session_with_workload(
+        state: Arc<Mutex<LifecycleState>>,
+        workload: CaptureMode,
+    ) -> CaptureResult<CaptureSession> {
         let backend: Arc<dyn CaptureBackend> = Arc::new(LifecycleBackend {
             monitor: MonitorId::from_parts(41, 43, 0, "lifecycle-monitor", true),
             state,
@@ -2067,7 +2100,15 @@ mod tests {
         CaptureSession::builder()
             .target(CaptureTarget::PrimaryMonitor)
             .with_backend(backend)
+            .with_options(CaptureOptions {
+                workload,
+                ..CaptureOptions::default()
+            })
             .build()
+    }
+
+    fn lifecycle_session(state: Arc<Mutex<LifecycleState>>) -> CaptureResult<CaptureSession> {
+        lifecycle_session_with_workload(state, CaptureMode::Snapshot)
     }
 
     impl MonitorCapturer for MockMonitorCapturer {
@@ -2426,6 +2467,43 @@ mod tests {
         let state = state.lock().unwrap();
         assert_eq!(state.prewarm_calls, 1);
         assert_eq!(state.capture_calls, 0);
+        assert_eq!(state.release_calls, 1);
+        assert_eq!(state.idle_release_calls, 1);
+        assert!(!state.active);
+        Ok(())
+    }
+
+    #[test]
+    fn continuous_environment_prewarm_closes_access_without_hibernating() -> CaptureResult<()> {
+        let state = Arc::new(Mutex::new(LifecycleState::default()));
+        let mut session =
+            lifecycle_session_with_workload(Arc::clone(&state), CaptureMode::Continuous)?;
+
+        session.prewarm_environment()?;
+
+        assert_eq!(session.active_capture_access_count(), 0);
+        let state = state.lock().unwrap();
+        assert_eq!(state.prewarm_calls, 1);
+        assert_eq!(state.release_calls, 1);
+        assert_eq!(state.idle_release_calls, 0);
+        assert!(!state.active);
+        Ok(())
+    }
+
+    #[test]
+    fn imminent_capture_prepare_keeps_environment_without_active_access() -> CaptureResult<()> {
+        let state = Arc::new(Mutex::new(LifecycleState::default()));
+        let mut session = lifecycle_session(Arc::clone(&state))?;
+
+        let info = session.prepare_capture_environment()?;
+
+        assert_eq!((info.width, info.height), (4, 4));
+        assert_eq!(session.active_capture_access_count(), 0);
+        let state = state.lock().unwrap();
+        assert_eq!(state.prewarm_calls, 1);
+        assert_eq!(state.capture_calls, 0);
+        assert_eq!(state.release_calls, 1);
+        assert_eq!(state.idle_release_calls, 0);
         assert!(!state.active);
         Ok(())
     }

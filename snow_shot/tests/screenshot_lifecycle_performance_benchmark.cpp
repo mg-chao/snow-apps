@@ -45,7 +45,7 @@ constexpr qint64 kBytesPerMebibyte = 1024 * 1024;
 constexpr qint64 kDefaultMaximumFirstScreenshotMilliseconds = 100;
 constexpr qint64 kDefaultMaximumToolbarShowMilliseconds = 50;
 constexpr qint64 kDefaultMaximumPrivateWorkingSetMebibytes = 18;
-constexpr qint64 kDefaultMaximumPrivateWorkingSetDeltaMebibytes = 3;
+constexpr qint64 kDefaultMaximumPrivateWorkingSetDeltaMebibytes = 2;
 
 void require(bool condition, const char* message) {
     if (!condition) {
@@ -633,8 +633,7 @@ QString reportHtml(const QJsonObject& report) {
         row(QStringLiteral("private_working_set_absolute_delta"),
             QStringLiteral("Absolute private working-set delta (MiB)"), QStringLiteral("mib")) +
         row(QStringLiteral("first_screenshot_to_composited_frame"),
-            QStringLiteral("First screenshot to complete smart frame (ms)"),
-            QStringLiteral("ms")) +
+            QStringLiteral("First screenshot to complete smart frame (ms)"), QStringLiteral("ms")) +
         row(QStringLiteral("first_capture_pixels_ready"),
             QStringLiteral("First capture pixels ready (ms)"), QStringLiteral("ms")) +
         row(QStringLiteral("first_initial_selection"),
@@ -703,6 +702,7 @@ struct BenchmarkConfiguration {
     int screenIndex = 0;
     int pollMilliseconds = 250;
     int baselineMinimumWaitMilliseconds = 20000;
+    int interCaptureWaitMilliseconds = 0;
     int postEndMinimumWaitMilliseconds = 15000;
     int stabilityWindowSamples = 20;
     qint64 stabilityRangeBytes = 1024 * 1024;
@@ -722,6 +722,8 @@ BenchmarkConfiguration configurationFromParser(const QCommandLineParser& parser)
     configuration.pollMilliseconds = parser.value(QStringLiteral("poll-ms")).toInt();
     configuration.baselineMinimumWaitMilliseconds =
         parser.value(QStringLiteral("baseline-min-wait-ms")).toInt();
+    configuration.interCaptureWaitMilliseconds =
+        parser.value(QStringLiteral("inter-capture-wait-ms")).toInt();
     configuration.postEndMinimumWaitMilliseconds =
         parser.value(QStringLiteral("post-end-min-wait-ms")).toInt();
     configuration.stabilityWindowSamples = parser.value(QStringLiteral("stability-window")).toInt();
@@ -748,6 +750,8 @@ void validateConfiguration(const BenchmarkConfiguration& configuration,
     require(configuration.pollMilliseconds > 0, "poll interval must be positive");
     require(configuration.baselineMinimumWaitMilliseconds >= 0,
             "baseline minimum wait must be nonnegative");
+    require(configuration.interCaptureWaitMilliseconds >= 0,
+            "inter-capture wait must be nonnegative");
     require(configuration.postEndMinimumWaitMilliseconds >= 0,
             "post-end minimum wait must be nonnegative");
     require(configuration.stabilityWindowSamples > 1,
@@ -840,10 +844,9 @@ CaptureMeasurement runCapture(const BenchmarkConfiguration& configuration,
             "could not issue screenshot command");
     require(request.waitForExit(10000), "screenshot command helper did not exit");
     require(request.exitCode() == 0, "screenshot command helper failed");
-    const QJsonObject accepted =
-        waitForTraceEvent(tracePath, primary.processId(),
-                          {QStringLiteral("capture_command_accepted")}, traceCursor, primary,
-                          configuration.timeoutMilliseconds);
+    const QJsonObject accepted = waitForTraceEvent(
+        tracePath, primary.processId(), {QStringLiteral("capture_command_accepted")}, traceCursor,
+        primary, configuration.timeoutMilliseconds);
     const QJsonObject presentation = waitForTraceEvent(
         tracePath, primary.processId(),
         {QStringLiteral("first_capture_presented"), QStringLiteral("capture_released")},
@@ -859,8 +862,8 @@ CaptureMeasurement runCapture(const BenchmarkConfiguration& configuration,
             "screenshot presentation duration was not recorded");
 
     ComPtr<IUIAutomationElement> initialSelectionToolbar = waitForVisibleElement(
-        automation, primary.processId(), QStringLiteral("screenshotSelectionToolbarPanel"),
-        primary, configuration.timeoutMilliseconds);
+        automation, primary.processId(), QStringLiteral("screenshotSelectionToolbarPanel"), primary,
+        configuration.timeoutMilliseconds);
     require(initialSelectionToolbar.get() != nullptr,
             "selection toolbar did not appear with the first smart-selection frame");
 
@@ -875,7 +878,7 @@ CaptureMeasurement runCapture(const BenchmarkConfiguration& configuration,
         configuration.timeoutMilliseconds);
     measurement.selectionToToolbarNanoseconds =
         std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() -
-                                                            selectionStarted)
+                                                             selectionStarted)
             .count();
     require(cancelButton.get() != nullptr, "screenshot cancel button did not appear");
     clickElement(*cancelButton.get());
@@ -885,37 +888,37 @@ CaptureMeasurement runCapture(const BenchmarkConfiguration& configuration,
                           traceCursor, primary, configuration.timeoutMilliseconds);
     require(released.value(QStringLiteral("capture_presented")).toBool(),
             "capture release did not follow a presented screenshot");
-    measurement.toolbarShowNanoseconds = tracePhaseDuration(
-        tracePath, primary.processId(),
-        accepted.value(QStringLiteral("event_sequence")).toInteger(),
-        released.value(QStringLiteral("event_sequence")).toInteger(),
-        QStringLiteral("presentation.toolbar_show_begin"),
-        QStringLiteral("presentation.toolbar_show_complete"));
-    measurement.interactionReadyNanoseconds = traceEventElapsed(
-        tracePath, primary.processId(),
-        accepted.value(QStringLiteral("event_sequence")).toInteger(),
-        released.value(QStringLiteral("event_sequence")).toInteger(),
-        QStringLiteral("capture_interaction_ready"));
-    measurement.capturePixelsNanoseconds = traceEventElapsed(
-        tracePath, primary.processId(),
-        accepted.value(QStringLiteral("event_sequence")).toInteger(),
-        released.value(QStringLiteral("event_sequence")).toInteger(),
-        QStringLiteral("presentation.capture_pixels_ready"));
-    const qint64 initialSelectionBeginNanoseconds = traceEventElapsed(
-        tracePath, primary.processId(),
-        accepted.value(QStringLiteral("event_sequence")).toInteger(),
-        released.value(QStringLiteral("event_sequence")).toInteger(),
-        QStringLiteral("presentation.initial_selection_begin"));
-    const qint64 initialSelectionResolvedNanoseconds = traceLastEventElapsed(
-        tracePath, primary.processId(),
-        accepted.value(QStringLiteral("event_sequence")).toInteger(),
-        released.value(QStringLiteral("event_sequence")).toInteger(),
-        QStringLiteral("presentation.initial_selection_resolved"));
-    const qint64 completeSmartFrameNanoseconds = traceEventElapsed(
-        tracePath, primary.processId(),
-        accepted.value(QStringLiteral("event_sequence")).toInteger(),
-        released.value(QStringLiteral("event_sequence")).toInteger(),
-        QStringLiteral("presentation.first_complete_smart_frame_presented"));
+    measurement.toolbarShowNanoseconds =
+        tracePhaseDuration(tracePath, primary.processId(),
+                           accepted.value(QStringLiteral("event_sequence")).toInteger(),
+                           released.value(QStringLiteral("event_sequence")).toInteger(),
+                           QStringLiteral("presentation.toolbar_show_begin"),
+                           QStringLiteral("presentation.toolbar_show_complete"));
+    measurement.interactionReadyNanoseconds =
+        traceEventElapsed(tracePath, primary.processId(),
+                          accepted.value(QStringLiteral("event_sequence")).toInteger(),
+                          released.value(QStringLiteral("event_sequence")).toInteger(),
+                          QStringLiteral("capture_interaction_ready"));
+    measurement.capturePixelsNanoseconds =
+        traceEventElapsed(tracePath, primary.processId(),
+                          accepted.value(QStringLiteral("event_sequence")).toInteger(),
+                          released.value(QStringLiteral("event_sequence")).toInteger(),
+                          QStringLiteral("presentation.capture_pixels_ready"));
+    const qint64 initialSelectionBeginNanoseconds =
+        traceEventElapsed(tracePath, primary.processId(),
+                          accepted.value(QStringLiteral("event_sequence")).toInteger(),
+                          released.value(QStringLiteral("event_sequence")).toInteger(),
+                          QStringLiteral("presentation.initial_selection_begin"));
+    const qint64 initialSelectionResolvedNanoseconds =
+        traceLastEventElapsed(tracePath, primary.processId(),
+                              accepted.value(QStringLiteral("event_sequence")).toInteger(),
+                              released.value(QStringLiteral("event_sequence")).toInteger(),
+                              QStringLiteral("presentation.initial_selection_resolved"));
+    const qint64 completeSmartFrameNanoseconds =
+        traceEventElapsed(tracePath, primary.processId(),
+                          accepted.value(QStringLiteral("event_sequence")).toInteger(),
+                          released.value(QStringLiteral("event_sequence")).toInteger(),
+                          QStringLiteral("presentation.first_complete_smart_frame_presented"));
     require(measurement.capturePixelsNanoseconds > 0 && initialSelectionBeginNanoseconds > 0 &&
                 initialSelectionResolvedNanoseconds >= initialSelectionBeginNanoseconds &&
                 completeSmartFrameNanoseconds >= measurement.capturePixelsNanoseconds &&
@@ -964,12 +967,14 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
 
-    const CaptureMeasurement firstCapture =
-        runCapture(configuration, monitor, automation, baseArguments, tracePath, traceCursor,
-                   primary);
-    const CaptureMeasurement subsequentCapture =
-        runCapture(configuration, monitor, automation, baseArguments, tracePath, traceCursor,
-                   primary);
+    const CaptureMeasurement firstCapture = runCapture(
+        configuration, monitor, automation, baseArguments, tracePath, traceCursor, primary);
+    if (configuration.interCaptureWaitMilliseconds > 0) {
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(configuration.interCaptureWaitMilliseconds));
+    }
+    const CaptureMeasurement subsequentCapture = runCapture(
+        configuration, monitor, automation, baseArguments, tracePath, traceCursor, primary);
     const StableMemorySample postEnd =
         waitForStableMemory(primary, configuration.postEndMinimumWaitMilliseconds,
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
@@ -1050,8 +1055,7 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
          subsequentCapture.interactionReadyNanoseconds},
         {QStringLiteral("subsequent_selection_to_toolbar_ns"),
          subsequentCapture.selectionToToolbarNanoseconds},
-        {QStringLiteral("subsequent_toolbar_show_ns"),
-         subsequentCapture.toolbarShowNanoseconds},
+        {QStringLiteral("subsequent_toolbar_show_ns"), subsequentCapture.toolbarShowNanoseconds},
         {QStringLiteral("private_working_set_method"),
          QString::fromLatin1(privateWorkingSetMethodName(baseline.method))},
         {QStringLiteral("cold_start_private_working_set_method"),
@@ -1070,8 +1074,7 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
          QJsonObject{
              {QStringLiteral("max_first_screenshot_ms"),
               configuration.maximumFirstScreenshotMilliseconds},
-             {QStringLiteral("max_toolbar_show_ms"),
-              configuration.maximumToolbarShowMilliseconds},
+             {QStringLiteral("max_toolbar_show_ms"), configuration.maximumToolbarShowMilliseconds},
              {QStringLiteral("max_private_working_set_mib"),
               configuration.maximumPrivateWorkingSetMebibytes},
              {QStringLiteral("max_private_working_set_delta_mib"),
@@ -1094,8 +1097,7 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
               << " MiB, delta=" << static_cast<double>(deltaBytes) / kBytesPerMebibyte
               << " MiB, first-frame="
               << static_cast<double>(firstCapture.presentationNanoseconds) / 1e6
-              << " ms (capture="
-              << static_cast<double>(firstCapture.capturePixelsNanoseconds) / 1e6
+              << " ms (capture=" << static_cast<double>(firstCapture.capturePixelsNanoseconds) / 1e6
               << " ms, selector="
               << static_cast<double>(firstCapture.initialSelectionNanoseconds) / 1e6
               << " ms, overlap="
@@ -1105,8 +1107,7 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
               << " ms, first-toolbar="
               << static_cast<double>(firstCapture.toolbarShowNanoseconds) / 1e6
               << " ms, subsequent-toolbar="
-              << static_cast<double>(subsequentCapture.toolbarShowNanoseconds) / 1e6
-              << " ms\n";
+              << static_cast<double>(subsequentCapture.toolbarShowNanoseconds) / 1e6 << " ms\n";
     if (!acceptancePassed) {
         QStringList failureReasonText;
         for (const QJsonValue& failure : std::as_const(acceptanceFailures)) {
@@ -1305,6 +1306,7 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
              {QStringLiteral("poll_ms"), configuration.pollMilliseconds},
              {QStringLiteral("baseline_min_wait_ms"),
               configuration.baselineMinimumWaitMilliseconds},
+             {QStringLiteral("inter_capture_wait_ms"), configuration.interCaptureWaitMilliseconds},
              {QStringLiteral("post_end_min_wait_ms"), configuration.postEndMinimumWaitMilliseconds},
              {QStringLiteral("stability_window_samples"), configuration.stabilityWindowSamples},
              {QStringLiteral("stability_range_kib"),
@@ -1312,8 +1314,7 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
              {QStringLiteral("timeout_ms"), configuration.timeoutMilliseconds},
              {QStringLiteral("max_first_screenshot_ms"),
               configuration.maximumFirstScreenshotMilliseconds},
-             {QStringLiteral("max_toolbar_show_ms"),
-              configuration.maximumToolbarShowMilliseconds},
+             {QStringLiteral("max_toolbar_show_ms"), configuration.maximumToolbarShowMilliseconds},
              {QStringLiteral("max_private_working_set_mib"),
               configuration.maximumPrivateWorkingSetMebibytes},
              {QStringLiteral("max_private_working_set_delta_mib"),
@@ -1328,8 +1329,7 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
              {QStringLiteral("failed_samples"), failedSamples},
              {QStringLiteral("max_first_screenshot_ms"),
               configuration.maximumFirstScreenshotMilliseconds},
-             {QStringLiteral("max_toolbar_show_ms"),
-              configuration.maximumToolbarShowMilliseconds},
+             {QStringLiteral("max_toolbar_show_ms"), configuration.maximumToolbarShowMilliseconds},
              {QStringLiteral("max_private_working_set_mib"),
               configuration.maximumPrivateWorkingSetMebibytes},
              {QStringLiteral("max_private_working_set_delta_mib"),
@@ -1419,6 +1419,9 @@ int main(int argc, char** argv) {
     parser.addOption({QStringLiteral("baseline-min-wait-ms"),
                       QStringLiteral("minimum cold-start stabilization time"),
                       QStringLiteral("milliseconds"), QStringLiteral("20000")});
+    parser.addOption({QStringLiteral("inter-capture-wait-ms"),
+                      QStringLiteral("idle wait between first and subsequent screenshots"),
+                      QStringLiteral("milliseconds"), QStringLiteral("0")});
     parser.addOption({QStringLiteral("post-end-min-wait-ms"),
                       QStringLiteral("minimum post-end stabilization time"),
                       QStringLiteral("milliseconds"), QStringLiteral("15000")});

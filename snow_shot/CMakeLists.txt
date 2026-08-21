@@ -2491,12 +2491,21 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-toolbar-main-panel-tests
         COMMAND snow-shot-toolbar-main-panel-tests
     )
-    set_tests_properties(snow-shot-toolbar-main-panel-tests PROPERTIES
-        ENVIRONMENT
-            "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
-        ENVIRONMENT_MODIFICATION
-            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
-    )
+    if(WIN32)
+        set_tests_properties(snow-shot-toolbar-main-panel-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    else()
+        set_tests_properties(snow-shot-toolbar-main-panel-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    endif()
 
     add_executable(snow-shot-screen-recording-geometry-tests
         tests/screen_recording_geometry_tests.cpp

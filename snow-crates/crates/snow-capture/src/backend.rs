@@ -246,6 +246,13 @@ pub(crate) trait MonitorCapturer: Send {
     /// idle. This method is idempotent.
     fn release_capture_access(&mut self) {}
 
+    /// Hibernate heavyweight native resources while retaining this configured
+    /// capturer object for a later request. Backends whose reusable environment
+    /// is already lightweight can use the default capture-access release.
+    fn release_idle_resources(&mut self) {
+        self.release_capture_access();
+    }
+
     /// Whether this capturer currently owns active OS capture access.
     fn capture_access_active(&self) -> bool {
         false

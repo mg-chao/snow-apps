@@ -101,7 +101,8 @@ bool imageContainsColor(const QImage& image, const QColor& expected) {
 
 adqt::widgets::AdButton* buttonWithTooltip(ScreenshotToolPalette& palette, const QString& tooltip) {
     for (adqt::widgets::AdButton* button : palette.findChildren<adqt::widgets::AdButton*>()) {
-        if (button != nullptr && button->toolTip() == tooltip) {
+        if (button != nullptr &&
+            (button->toolTip() == tooltip || button->accessibleName() == tooltip)) {
             return button;
         }
     }

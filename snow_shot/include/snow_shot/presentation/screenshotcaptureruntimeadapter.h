@@ -33,7 +33,9 @@ class ScreenshotCaptureRuntimeAdapter final : public ScreenshotCaptureRuntimePor
     void prepareAsync(quint64 requestId) override;
     void captureAsync(const ScreenshotCaptureRequest& request) override;
     void cancelActiveCapture() override;
-    void releaseIdleResourcesAsync(quint64 requestId) override;
+    [[nodiscard]] bool
+    releaseIdleResourcesAsync(quint64 requestId,
+                              std::function<void(bool released)> completion) override;
     void shutdownCaptureWorker() override;
 
     [[nodiscard]] bool selectorReady() const override;
@@ -52,6 +54,7 @@ class ScreenshotCaptureRuntimeAdapter final : public ScreenshotCaptureRuntimePor
     void prewarmToolbar() override;
     void clearOverlayCanvases(const ScreenshotDisplaySession& displaySession) const override;
     void clearDisplays(ScreenshotDisplaySession& displaySession) override;
+    void hibernateDisplayPool(ScreenshotDisplaySession& displaySession) override;
     void destroyDisplayPool(ScreenshotDisplaySession& displaySession) override;
     void resetForNewCapture(ScreenshotDisplaySession& displaySession) override;
     void prepareDisplayModels(ScreenshotDisplaySession& displaySession) override;

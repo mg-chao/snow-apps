@@ -101,7 +101,9 @@ void ScreenshotPresentationServices::prepareInitialOverlayState() {
     const QRectF selection = m_context.selection.normalizedSelection();
     m_smartSelectionTransition.seed(selection, smartFraming);
     presentSelectionOverlay(selection);
-    synchronizeSelectionToolbar(selection);
+    // The first visible frame only needs the selection overlay. Toolbar state
+    // synchronization traverses the full presentation graph and is already
+    // scheduled by the post-presentation overlay-state callback.
 }
 
 void ScreenshotPresentationServices::updateOverlayState() {

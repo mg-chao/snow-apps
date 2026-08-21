@@ -495,6 +495,14 @@ impl MonitorCapturer for AutomaticWindowsCapturer {
         }
     }
 
+    fn release_idle_resources(&mut self) {
+        for candidate in &mut self.candidates {
+            if let Some(capturer) = candidate.capturer.as_mut() {
+                capturer.release_idle_resources();
+            }
+        }
+    }
+
     fn capture_access_active(&self) -> bool {
         self.candidates.iter().any(|candidate| {
             candidate
@@ -816,6 +824,7 @@ mod tests {
         calls: usize,
         prewarm_calls: usize,
         releases: usize,
+        idle_releases: usize,
         active: bool,
         outcomes: VecDeque<CaptureResult<()>>,
         prewarm_outcomes: VecDeque<CaptureResult<()>>,
@@ -855,6 +864,11 @@ mod tests {
             let mut state = self.state.lock().unwrap();
             state.active = false;
             state.releases += 1;
+        }
+
+        fn release_idle_resources(&mut self) {
+            self.release_capture_access();
+            self.state.lock().unwrap().idle_releases += 1;
         }
 
         fn capture_access_active(&self) -> bool {
@@ -945,6 +959,67 @@ mod tests {
     }
 
     #[test]
+    fn low_latency_sdr_order_selects_gdi_first_and_keeps_it_sticky() -> CaptureResult<()> {
+        let gdi = Arc::new(Mutex::new(CandidateState {
+            outcomes: VecDeque::from([Ok(()), Ok(())]),
+            ..CandidateState::default()
+        }));
+        let dxgi = Arc::new(Mutex::new(CandidateState::default()));
+        let wgc = Arc::new(Mutex::new(CandidateState::default()));
+        let mut capturer = scripted_auto(&[
+            (CaptureBackendKind::Gdi, Arc::clone(&gdi)),
+            (CaptureBackendKind::DxgiDuplication, Arc::clone(&dxgi)),
+            (CaptureBackendKind::WindowsGraphicsCapture, Arc::clone(&wgc)),
+        ]);
+
+        let _first = capturer.capture(None)?;
+        capturer.release_capture_access();
+        let _second = capturer.capture(None)?;
+
+        assert_eq!(capturer.backend_kind(), CaptureBackendKind::Gdi);
+        assert_eq!(gdi.lock().unwrap().calls, 2);
+        assert_eq!(dxgi.lock().unwrap().calls, 0);
+        assert_eq!(wgc.lock().unwrap().calls, 0);
+        assert_eq!(
+            retained_candidate_kinds(&capturer),
+            vec![CaptureBackendKind::Gdi]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn low_latency_sdr_order_falls_back_to_dxgi_and_keeps_it_sticky() -> CaptureResult<()> {
+        let gdi = Arc::new(Mutex::new(CandidateState {
+            outcomes: VecDeque::from([Err(CaptureError::Timeout)]),
+            ..CandidateState::default()
+        }));
+        let dxgi = Arc::new(Mutex::new(CandidateState {
+            outcomes: VecDeque::from([Ok(()), Ok(())]),
+            ..CandidateState::default()
+        }));
+        let wgc = Arc::new(Mutex::new(CandidateState::default()));
+        let mut capturer = scripted_auto(&[
+            (CaptureBackendKind::Gdi, Arc::clone(&gdi)),
+            (CaptureBackendKind::DxgiDuplication, Arc::clone(&dxgi)),
+            (CaptureBackendKind::WindowsGraphicsCapture, Arc::clone(&wgc)),
+        ]);
+
+        let _first = capturer.capture(None)?;
+        capturer.release_capture_access();
+        let _second = capturer.capture(None)?;
+
+        assert_eq!(capturer.backend_kind(), CaptureBackendKind::DxgiDuplication);
+        assert_eq!(gdi.lock().unwrap().calls, 1);
+        assert_eq!(dxgi.lock().unwrap().calls, 2);
+        assert_eq!(wgc.lock().unwrap().calls, 0);
+        assert_eq!(
+            retained_candidate_kinds(&capturer),
+            vec![CaptureBackendKind::DxgiDuplication]
+        );
+        Ok(())
+    }
+
+    #[test]
     fn prewarm_stops_after_first_viable_backend_and_drops_the_rest() -> CaptureResult<()> {
         let dxgi = Arc::new(Mutex::new(CandidateState {
             prewarm_outcomes: VecDeque::from([Err(CaptureError::Timeout)]),
@@ -978,6 +1053,32 @@ mod tests {
         );
         assert_eq!(capturer.selected, None);
         assert!(!capturer.capture_access_active());
+        Ok(())
+    }
+
+    #[test]
+    fn idle_release_hibernates_the_selected_candidate_without_discarding_it() -> CaptureResult<()> {
+        let dxgi = Arc::new(Mutex::new(CandidateState::default()));
+        let mut capturer =
+            scripted_auto(&[(CaptureBackendKind::DxgiDuplication, Arc::clone(&dxgi))]);
+
+        capturer.prewarm_environment()?;
+        capturer.release_idle_resources();
+
+        let state = dxgi.lock().unwrap();
+        assert_eq!(state.prewarm_calls, 1);
+        assert_eq!(state.releases, 2);
+        assert_eq!(state.idle_releases, 1);
+        assert!(!state.active);
+        drop(state);
+        assert_eq!(
+            retained_candidate_kinds(&capturer),
+            vec![CaptureBackendKind::DxgiDuplication]
+        );
+        assert_eq!(
+            capturer.preferred,
+            Some(CaptureBackendKind::DxgiDuplication)
+        );
         Ok(())
     }
 

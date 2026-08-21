@@ -30,6 +30,7 @@ class ScreenshotOverlayPool final {
     void prewarmDisplayPool(ScreenshotDisplaySession& displaySession, int displayCount);
     void clearOverlayCanvases(const ScreenshotDisplaySession& displaySession) const;
     void clearDisplays(ScreenshotDisplaySession& displaySession) const;
+    void hibernateDisplayPool(ScreenshotDisplaySession& displaySession) const;
     void destroyDisplayPool(ScreenshotDisplaySession& displaySession) const;
     void resetForNewCapture(ScreenshotDisplaySession& displaySession) const;
     [[nodiscard]] ScreenshotOverlayWindow* ensureOverlay(ScreenshotOverlayWindow* overlay) const;
