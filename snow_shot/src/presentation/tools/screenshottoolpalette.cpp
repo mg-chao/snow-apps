@@ -136,6 +136,11 @@ constexpr int STYLE_ITEM_SPACING = 4;
 constexpr int STYLE_GROUP_SPACING = 8;
 constexpr int COMPACT_SLIDER_ICON_SIZE = 16;
 constexpr int COMPACT_SLIDER_WIDTH = 96;
+// The production screenshot toolbar's widest style editor is 1082x138 at
+// reference scale. Keep this transparent geometry reserve resident so opening
+// a secondary row never changes the native window frame.
+constexpr int LAZY_STYLE_RESERVE_BASE_WIDTH = 1082;
+constexpr int LAZY_STYLE_RESERVE_BASE_HEIGHT = 138;
 constexpr int TOOLBAR_PANEL_RADIUS = 8;
 constexpr qreal TOOLBAR_SHADOW_BLUR_RADIUS = 18.0;
 constexpr qreal TOOLBAR_SHADOW_OFFSET_X = 0.0;
@@ -617,6 +622,9 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
         m_styleDefaults);
 
     createMainToolbar(options);
+    if (options.enableStyleToolbar) {
+        createSecondaryToolbarReserve();
+    }
     if (options.enableStyleToolbar && !options.lazySecondaryResources) {
         createRectangleStyleToolbar();
     }
@@ -790,17 +798,37 @@ bool ScreenshotToolPalette::secondaryResourcesReady() const {
     return m_secondaryResourcesReady;
 }
 
-void ScreenshotToolPalette::ensureSecondaryResources() {
-    if (m_secondaryResourcesReady || m_releasingSecondaryResources ||
-        !m_options.lazySecondaryResources ||
+bool ScreenshotToolPalette::ensureSecondaryResources(Tool tool) {
+    if (m_releasingSecondaryResources || !m_options.lazySecondaryResources ||
         !m_options.enableStyleToolbar) {
-        return;
+        return false;
     }
 
-    createRectangleStyleToolbar();
-    m_secondaryResourcesReady = true;
+    QWidget* const actionPanelBefore = m_selectActionPanel;
+    QWidget* const stylePanelBefore = m_rectangleStylePanel;
+    QWidget* const styleControlsBefore = styleControlsForTool(tool);
+    if (toolUsesActionToolbar(tool)) {
+        createActionToolbar();
+    } else if (toolUsesStyleToolbar(tool)) {
+        createStyleToolbarShell();
+        createStyleControls(tool);
+    }
+    QWidget* const styleControlsAfter = styleControlsForTool(tool);
+    const bool materialized = actionPanelBefore != m_selectActionPanel ||
+                              stylePanelBefore != m_rectangleStylePanel ||
+                              styleControlsBefore != styleControlsAfter;
+    if (!materialized) {
+        return false;
+    }
+    QWidget* const materializedRoot =
+        actionPanelBefore != m_selectActionPanel
+            ? m_selectActionPanel
+            : (stylePanelBefore != m_rectangleStylePanel ? m_rectangleStylePanel
+                                                         : styleControlsAfter);
+    installRegisteredWheelFilters(materializedRoot);
+    m_secondaryResourcesReady = m_selectActionPanel != nullptr || m_rectangleStylePanel != nullptr;
     markLayoutDirty(true);
-    ensureLayoutApplied();
+    return true;
 }
 
 void ScreenshotToolPalette::clearSecondaryResourceBindings() {
@@ -857,7 +885,6 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_rectangleStyleLayout = nullptr;
     m_selectActionPanel = nullptr;
     m_rectangleStylePanel = nullptr;
-    m_styleReserveWidget = nullptr;
 }
 
 void ScreenshotToolPalette::releaseSecondaryResources() {
@@ -879,7 +906,6 @@ void ScreenshotToolPalette::releaseSecondaryResources() {
     const QVector<QWidget*> secondaryPanels = {
         m_selectActionPanel,
         m_rectangleStylePanel,
-        m_styleReserveWidget,
     };
     if (m_rootLayout != nullptr) {
         for (QWidget* panel : secondaryPanels) {
@@ -1064,8 +1090,9 @@ void ScreenshotToolPalette::setStyleToolbarAboveMain(bool above) {
 }
 
 void ScreenshotToolPalette::setStyleToolbarVisible(bool visible) {
+    bool resourcesMaterialized = false;
     if (visible) {
-        ensureSecondaryResources();
+        resourcesMaterialized = ensureSecondaryResources(m_activeTool.value_or(Tool::Shape));
     }
     if (m_rectangleStylePanel == nullptr) {
         return;
@@ -1079,6 +1106,10 @@ void ScreenshotToolPalette::setStyleToolbarVisible(bool visible) {
         updateToolbarGeometry();
         update();
         emit visibleContentChanged();
+    } else if (resourcesMaterialized) {
+        // No visibility transition can flush the dirty state when this API is
+        // called before a tool is active. Keep its geometry query contract.
+        ensureLayoutApplied();
     }
 }
 
@@ -1092,7 +1123,9 @@ bool ScreenshotToolPalette::actionToolbarVisible() const {
 
 bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisible,
                                                           bool styleToolbarVisible) {
-    if (m_selectActionPanel == nullptr || m_rectangleStylePanel == nullptr) {
+    if (m_styleReserveWidget == nullptr ||
+        (actionToolbarVisible && m_selectActionPanel == nullptr) ||
+        (styleToolbarVisible && m_rectangleStylePanel == nullptr)) {
         return false;
     }
 
@@ -1263,7 +1296,7 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.set_active_tool");
     if (m_options.lazySecondaryResources &&
         (toolUsesActionToolbar(tool) || toolUsesStyleToolbar(tool))) {
-        ensureSecondaryResources();
+        ensureSecondaryResources(tool);
     }
     selectDynamicEntryTool(tool);
     synchronizeFilterModeGroups(tool);
@@ -2129,6 +2162,15 @@ void ScreenshotToolPalette::updateToolbarGeometryLegacy() {
         m_mainPanel->setFixedSize(mainSize);
         rootLayoutNeedsActivation = true;
     }
+    if (m_selectActionPanel != nullptr) {
+        m_selectActionPanel->ensurePolished();
+        const QSize actionSize = m_selectActionPanel->sizeHint();
+        if (m_selectActionPanel->size() != actionSize ||
+            m_selectActionPanel->minimumSize() != actionSize ||
+            m_selectActionPanel->maximumSize() != actionSize) {
+            m_selectActionPanel->setFixedSize(actionSize);
+        }
+    }
     if (m_rectangleStylePanel != nullptr) {
         m_rectangleStylePanel->ensurePolished();
 
@@ -2138,27 +2180,13 @@ void ScreenshotToolPalette::updateToolbarGeometryLegacy() {
             m_rectangleStylePanel->maximumSize() != styleSize) {
             m_rectangleStylePanel->setFixedSize(styleSize);
         }
-        if (m_styleReserveWidget != nullptr) {
-            QSize actionSize;
-            if (m_selectActionPanel != nullptr) {
-                m_selectActionPanel->ensurePolished();
-                actionSize = m_selectActionPanel->sizeHint();
-                if (m_selectActionPanel->size() != actionSize ||
-                    m_selectActionPanel->minimumSize() != actionSize ||
-                    m_selectActionPanel->maximumSize() != actionSize) {
-                    m_selectActionPanel->setFixedSize(actionSize);
-                }
-            }
-            if (m_secondaryToolbarPresetSize.isEmpty()) {
-                m_secondaryToolbarPresetSize = styleToolbarPresetSizeHint().expandedTo(actionSize);
-            }
-            if (m_styleReserveWidget->size() != m_secondaryToolbarPresetSize ||
-                m_styleReserveWidget->minimumSize() != m_secondaryToolbarPresetSize ||
-                m_styleReserveWidget->maximumSize() != m_secondaryToolbarPresetSize) {
-                m_styleReserveWidget->setFixedSize(m_secondaryToolbarPresetSize);
-                rootLayoutNeedsActivation = true;
-            }
-        }
+    }
+    if (m_styleReserveWidget != nullptr &&
+        (m_styleReserveWidget->size() != m_secondaryToolbarPresetSize ||
+         m_styleReserveWidget->minimumSize() != m_secondaryToolbarPresetSize ||
+         m_styleReserveWidget->maximumSize() != m_secondaryToolbarPresetSize)) {
+        m_styleReserveWidget->setFixedSize(m_secondaryToolbarPresetSize);
+        rootLayoutNeedsActivation = true;
     }
     const QSize contentSize = contentSizeForStyleToolbarVisibility(true);
     if (!m_logicalClientExtent.isEmpty()) {
@@ -2216,7 +2244,7 @@ QSize ScreenshotToolPalette::styleToolbarPresetSizeHint() {
         return {};
     }
 
-    if (m_secondaryToolbarBasePresetSize.isValid() && !qFuzzyCompare(m_physicalScale + 1.0, 2.0)) {
+    if (m_secondaryToolbarBasePresetSize.isValid()) {
         return QSize(qMax(1, qRound(m_secondaryToolbarBasePresetSize.width() * m_physicalScale)),
                      qMax(1, qRound(m_secondaryToolbarBasePresetSize.height() * m_physicalScale)));
     }
@@ -2242,9 +2270,15 @@ QSize ScreenshotToolPalette::styleToolbarPresetSizeHint() {
     const QMargins margins = m_rectangleStyleLayout->contentsMargins();
     const QSize result =
         controlsSize + QSize(margins.left() + margins.right(), margins.top() + margins.bottom());
-    if (qFuzzyCompare(m_physicalScale + 1.0, 2.0)) {
-        m_secondaryToolbarBasePresetSize = result;
-    }
+    // Lazy rows may first be materialized after a mixed-DPI drag, when their
+    // metrics already use referenceDpr/currentDpr rather than the canonical
+    // scale. Cache a normalized preset immediately; otherwise a later return
+    // to the reference monitor can mistake the larger remote-screen metrics
+    // for the 1.0 baseline and make Qt request an oversized native frame.
+    const qreal scale = std::max<qreal>(0.25, m_physicalScale);
+    m_secondaryToolbarBasePresetSize =
+        QSize(qMax(1, qRound(result.width() / scale)),
+              qMax(1, qRound(result.height() / scale)));
     return result;
 }
 
@@ -2494,23 +2528,33 @@ void ScreenshotToolPalette::installWheelFilters(QObject* receiver) {
         return;
     }
 
-    const auto installRecursive = [&](auto&& self, QWidget* current) -> void {
-        if (current == nullptr) {
-            return;
-        }
+    const auto existing = std::find(m_wheelFilterReceivers.cbegin(),
+                                    m_wheelFilterReceivers.cend(), widget);
+    if (existing == m_wheelFilterReceivers.cend()) {
+        m_wheelFilterReceivers.push_back(widget);
+    }
+    installWheelFilterRecursively(this, widget);
+}
 
-        if (current != widget) {
-            current->installEventFilter(receiver);
-        }
+void ScreenshotToolPalette::installWheelFilterRecursively(QWidget* root, QWidget* receiver) {
+    if (root == nullptr || receiver == nullptr) {
+        return;
+    }
+    if (root != receiver) {
+        root->installEventFilter(receiver);
+    }
 
-        const QList<QWidget*> childWidgets =
-            current->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly);
-        for (QWidget* child : childWidgets) {
-            self(self, child);
-        }
-    };
+    const QList<QWidget*> childWidgets =
+        root->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly);
+    for (QWidget* child : childWidgets) {
+        installWheelFilterRecursively(child, receiver);
+    }
+}
 
-    installRecursive(installRecursive, this);
+void ScreenshotToolPalette::installRegisteredWheelFilters(QWidget* root) {
+    for (const QPointer<QWidget>& receiver : std::as_const(m_wheelFilterReceivers)) {
+        installWheelFilterRecursively(root, receiver);
+    }
 }
 
 bool ScreenshotToolPalette::handleToolbarWheel(QWheelEvent* event) {
@@ -3778,6 +3822,54 @@ ScreenshotToolPalette::createFilterEditor(const FilterEditorConfig& config) {
 }
 
 void ScreenshotToolPalette::createRectangleStyleToolbar() {
+    createSecondaryToolbarReserve();
+    createActionToolbar();
+    createStyleToolbarShell();
+    constexpr Tool editorTools[] = {
+        Tool::Shape,          Tool::Arrow,       Tool::RectangleHighlight,
+        Tool::PenHighlight,   Tool::Spotlight,   Tool::Text,
+        Tool::SerialNumber,   Tool::RectangleFilter,
+        Tool::PenFilter,      Tool::Watermark,
+    };
+    for (const Tool tool : editorTools) {
+        createStyleControls(tool);
+    }
+    setStyleControlsActive(Tool::Shape);
+    updateSerialNumberControls();
+    m_secondaryResourcesReady = true;
+}
+
+void ScreenshotToolPalette::createSecondaryToolbarReserve() {
+    if (m_styleReserveWidget != nullptr) {
+        return;
+    }
+
+    // Canonical reserve for the complete style row. It is intentionally
+    // geometry-only: the main toolbar keeps the width stable while individual
+    // editors are materialized on demand into this right-aligned slot.
+    m_secondaryToolbarBasePresetSize =
+        QSize(LAZY_STYLE_RESERVE_BASE_WIDTH, LAZY_STYLE_RESERVE_BASE_HEIGHT);
+    m_secondaryToolbarPresetSize =
+        QSize(qMax(1, qRound(m_secondaryToolbarBasePresetSize.width() * m_physicalScale)),
+              qMax(1, qRound(m_secondaryToolbarBasePresetSize.height() * m_physicalScale)));
+    m_styleReserveWidget = new QWidget(this);
+    m_styleReserveWidget->setObjectName(QStringLiteral("screenshotStyleToolbarReserve"));
+    m_styleReserveWidget->setAttribute(Qt::WA_NoSystemBackground, true);
+    m_styleReserveWidget->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    m_styleReserveWidget->setAutoFillBackground(false);
+    m_styleReserveWidget->setFocusPolicy(Qt::NoFocus);
+    m_styleReserveWidget->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_styleReserveWidget->setFixedSize(m_secondaryToolbarPresetSize);
+    if (m_rootLayout != nullptr) {
+        m_rootLayout->addWidget(m_styleReserveWidget, 0, Qt::AlignRight);
+    }
+}
+
+void ScreenshotToolPalette::createActionToolbar() {
+    if (m_selectActionPanel != nullptr) {
+        return;
+    }
+
     m_selectActionPanel =
         createSecondaryPanel(this, QStringLiteral("screenshotSelectActionPanel"));
     if (auto* frame = qobject_cast<QFrame*>(m_selectActionPanel)) {
@@ -3803,20 +3895,6 @@ void ScreenshotToolPalette::createRectangleStyleToolbar() {
         QSpacerItem* spacer = addStyleToolbarSpacing(selectLayout, spacing);
         m_selectionActionSpacers.push_back(spacer);
     };
-
-    m_rectangleStylePanel =
-        createSecondaryPanel(this, QStringLiteral("screenshotRectangleStylePanel"));
-    if (auto* frame = qobject_cast<QFrame*>(m_rectangleStylePanel)) {
-        m_panelFrames.push_back(frame);
-        updatePanelMetrics(frame);
-    }
-
-    auto* layout = new QVBoxLayout(m_rectangleStylePanel);
-    m_rectangleStyleLayout = layout;
-    layout->setContentsMargins(
-        scaledMetric(STYLE_PANEL_HORIZONTAL_MARGIN), scaledMetric(STYLE_PANEL_VERTICAL_MARGIN),
-        scaledMetric(STYLE_PANEL_HORIZONTAL_MARGIN), scaledMetric(STYLE_PANEL_VERTICAL_MARGIN));
-    layout->setSpacing(0);
 
     addSelectButton("Send to back", outlined_icons::VerticalAlignBottom(),
                     &ScreenshotToolPalette::sendSelectionToBackRequested);
@@ -3991,260 +4069,313 @@ void ScreenshotToolPalette::createRectangleStyleToolbar() {
     setTextEditingState(false, false);
     setTableEditingState(false, false, false, false, false, false);
 
-    m_rectangleStyleControlsWidget = new QWidget(m_rectangleStylePanel);
-    m_rectangleStyleControlsWidget->setObjectName(
-        QStringLiteral("screenshotRectangleStyleControls"));
-    auto* rectangleLayout = new QHBoxLayout(m_rectangleStyleControlsWidget);
-    m_styleControlLayouts.push_back(rectangleLayout);
-    rectangleLayout->setContentsMargins(0, 0, 0, 0);
-    rectangleLayout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
-    m_styleControls->addShapeControls(rectangleLayout, m_rectangleStyleControlsWidget, this,
-                                      styleButtonMetrics(m_physicalScale));
-    m_shapeStyleGroupSeparatorLeadingSpacing =
-        addStyleToolbarSpacing(rectangleLayout, STYLE_GROUP_SPACING);
-    m_shapeStyleGroupSeparator = createStyleToolbarSeparator(m_rectangleStyleControlsWidget);
-    m_shapeStyleGroupSeparator->setObjectName(QStringLiteral("screenshotShapeStyleGroupSeparator"));
-    rectangleLayout->addWidget(m_shapeStyleGroupSeparator);
-    m_shapeStyleGroupSeparatorTrailingSpacing =
-        addStyleToolbarSpacing(rectangleLayout, STYLE_GROUP_SPACING);
-    m_styleControls->addStrokeColorControls(rectangleLayout, m_rectangleStyleControlsWidget, this,
-                                            styleButtonMetrics(m_physicalScale));
-    addStyleToolbarSpacing(rectangleLayout, STYLE_GROUP_SPACING);
-    rectangleLayout->addWidget(createStyleToolbarSeparator(m_rectangleStyleControlsWidget));
-    addStyleToolbarSpacing(rectangleLayout, STYLE_GROUP_SPACING);
-    m_styleControls->addStrokeWidthControls(rectangleLayout, m_rectangleStyleControlsWidget, this,
-                                            styleButtonMetrics(m_physicalScale));
-    addStyleToolbarSpacing(rectangleLayout, STYLE_GROUP_SPACING);
-    rectangleLayout->addWidget(createStyleToolbarSeparator(m_rectangleStyleControlsWidget));
-    addStyleToolbarSpacing(rectangleLayout, STYLE_GROUP_SPACING);
-    m_styleControls->addFillColorControls(rectangleLayout, m_rectangleStyleControlsWidget, this,
-                                          styleButtonMetrics(m_physicalScale));
-    addStyleToolbarSpacing(rectangleLayout, STYLE_ITEM_SPACING);
-    m_styleControls->addCornerRadiusControl(rectangleLayout, m_rectangleStyleControlsWidget,
-                                            styleButtonMetrics(m_physicalScale));
-    m_arrowStyleControlsWidget = new QWidget(m_rectangleStylePanel);
-    m_arrowStyleControlsWidget->setObjectName(QStringLiteral("screenshotArrowStyleControls"));
-    auto* arrowLayout = new QHBoxLayout(m_arrowStyleControlsWidget);
-    m_styleControlLayouts.push_back(arrowLayout);
-    arrowLayout->setContentsMargins(0, 0, 0, 0);
-    arrowLayout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
-    const auto addArrowStyleGroupSeparator = [this, arrowLayout]() {
-        addStyleToolbarSpacing(arrowLayout, STYLE_GROUP_SPACING);
-        arrowLayout->addWidget(createStyleToolbarSeparator(m_arrowStyleControlsWidget));
-        addStyleToolbarSpacing(arrowLayout, STYLE_GROUP_SPACING);
-    };
-    m_styleControls->addArrowControls(arrowLayout, m_arrowStyleControlsWidget, this,
-                                      addArrowStyleGroupSeparator,
-                                      styleButtonMetrics(m_physicalScale));
-    m_highlightStyleControlsWidget = new QWidget(m_rectangleStylePanel);
-    m_highlightStyleControlsWidget->setObjectName(
-        QStringLiteral("screenshotHighlightStyleControls"));
-    auto* highlightLayout = new QHBoxLayout(m_highlightStyleControlsWidget);
-    m_styleControlLayouts.push_back(highlightLayout);
-    highlightLayout->setContentsMargins(0, 0, 0, 0);
-    highlightLayout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
-    const auto addHighlightStyleGroupSeparator = [this, highlightLayout]() {
-        addStyleToolbarSpacing(highlightLayout, STYLE_GROUP_SPACING);
-        highlightLayout->addWidget(createStyleToolbarSeparator(m_highlightStyleControlsWidget));
-        addStyleToolbarSpacing(highlightLayout, STYLE_GROUP_SPACING);
-    };
-    m_styleControls->addHighlightControls(highlightLayout, m_highlightStyleControlsWidget, this,
-                                          addHighlightStyleGroupSeparator,
-                                          styleButtonMetrics(m_physicalScale));
-
-    const QVector<StyleModeOption> highlightModes{
-        {QStringLiteral("Pen Highlighter Tool"), outlined_icons::Highlight(), Tool::PenHighlight},
-        {QStringLiteral("Rectangle Highlighter Tool"), custom_outlined_icons::ShapeRectangle(),
-         Tool::RectangleHighlight},
-    };
-    highlightLayout->insertWidget(
-        0, createStyleModeSelector(m_highlightStyleControlsWidget,
-                                   QStringLiteral("screenshotHighlightModeSelector"),
-                                   highlightModes, Tool::PenHighlight, m_highlightModeGroups));
-    insertStyleToolbarSpacing(highlightLayout, 1, STYLE_GROUP_SPACING);
-
-    m_penHighlightStyleControlsWidget = new QWidget(m_rectangleStylePanel);
-    m_penHighlightStyleControlsWidget->setObjectName(
-        QStringLiteral("screenshotPenHighlightStyleControls"));
-    auto* penHighlightLayout = new QHBoxLayout(m_penHighlightStyleControlsWidget);
-    m_styleControlLayouts.push_back(penHighlightLayout);
-    penHighlightLayout->setContentsMargins(0, 0, 0, 0);
-    penHighlightLayout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
-    const auto addPenHighlightStyleGroupSeparator = [this, penHighlightLayout]() {
-        addStyleToolbarSpacing(penHighlightLayout, STYLE_GROUP_SPACING);
-        penHighlightLayout->addWidget(
-            createStyleToolbarSeparator(m_penHighlightStyleControlsWidget));
-        addStyleToolbarSpacing(penHighlightLayout, STYLE_GROUP_SPACING);
-    };
-    m_styleControls->addPenHighlightControls(penHighlightLayout, m_penHighlightStyleControlsWidget,
-                                             this, addPenHighlightStyleGroupSeparator,
-                                             styleButtonMetrics(m_physicalScale));
-    penHighlightLayout->insertWidget(
-        0, createStyleModeSelector(m_penHighlightStyleControlsWidget,
-                                   QStringLiteral("screenshotHighlightModeSelector"),
-                                   highlightModes, Tool::PenHighlight, m_highlightModeGroups));
-    insertStyleToolbarSpacing(penHighlightLayout, 1, STYLE_GROUP_SPACING);
-
-    m_spotlightStyleControlsWidget = new QWidget(m_rectangleStylePanel);
-    m_spotlightStyleControlsWidget->setObjectName(
-        QStringLiteral("screenshotSpotlightStyleControls"));
-    auto* spotlightLayout = new QHBoxLayout(m_spotlightStyleControlsWidget);
-    m_styleControlLayouts.push_back(spotlightLayout);
-    spotlightLayout->setContentsMargins(0, 0, 0, 0);
-    spotlightLayout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
-
-    m_styleControls->addSpotlightColorControls(
-        spotlightLayout, m_spotlightStyleControlsWidget, this,
-        m_styleControls->styleState().spotlightConfig.color, spotlightColorValues(),
-        [this](const QColor& color) {
-            m_styleControls->styleState().spotlightConfig.color = color;
-            m_styleControls->updateSpotlightColorControls(color);
-            emit spotlightConfigChanged(m_styleControls->styleState().spotlightConfig);
-        },
-        [this](const QColor& color) {
-            m_styleControls->styleState().spotlightConfig.color = color;
-            emit spotlightPreviewChanged(m_styleControls->styleState().spotlightConfig);
-        },
-        styleButtonMetrics(m_physicalScale));
-    addStyleToolbarSpacing(spotlightLayout, STYLE_GROUP_SPACING);
-    spotlightLayout->addWidget(createStyleToolbarSeparator(m_spotlightStyleControlsWidget));
-    addStyleToolbarSpacing(spotlightLayout, STYLE_GROUP_SPACING);
-    ScreenshotToolPaletteSliderEditorConfig spotlightOpacityConfig;
-    spotlightOpacityConfig.iconObjectName = QStringLiteral("screenshotSpotlightOpacityIcon");
-    spotlightOpacityConfig.sliderObjectName = QStringLiteral("screenshotSpotlightOpacitySlider");
-    spotlightOpacityConfig.accessibleName = QStringLiteral("Opacity");
-    spotlightOpacityConfig.sliderTooltip = QStringLiteral("Adjust opacity");
-    spotlightOpacityConfig.iconRef = custom_outlined_icons::Opacity();
-    spotlightOpacityConfig.initialValue =
-        qRound(std::clamp(m_styleDefaults.spotlight.opacity, 0.0, 1.0) * 100.0);
-    spotlightOpacityConfig.baseIconSize = COMPACT_SLIDER_ICON_SIZE;
-    spotlightOpacityConfig.baseSliderWidth = COMPACT_SLIDER_WIDTH;
-    const ScreenshotToolPaletteSliderEditor spotlightOpacityEditor =
-        createScreenshotToolPaletteSliderEditor(spotlightLayout, m_spotlightStyleControlsWidget,
-                                                spotlightOpacityConfig,
-                                                styleButtonMetrics(m_physicalScale));
-    m_spotlightOpacityIcon = spotlightOpacityEditor.icon;
-    m_spotlightOpacitySlider = spotlightOpacityEditor.slider;
-    connect(m_spotlightOpacitySlider, &adqt::widgets::AdSlider::valueChanged, this,
-            [this](double value) {
-                m_styleControls->styleState().spotlightConfig.opacity =
-                    std::clamp(value / 100.0, 0.0, 1.0);
-                m_spotlightOpacitySlider->setAccessibleDescription(
-                    QStringLiteral("%1%").arg(qRound(value)));
-                emit spotlightConfigChanged(m_styleControls->styleState().spotlightConfig);
-            });
-    m_textStyleControlsWidget = new QWidget(m_rectangleStylePanel);
-    m_textStyleControlsWidget->setObjectName(QStringLiteral("screenshotTextStyleControls"));
-    auto* textLayout = new QHBoxLayout(m_textStyleControlsWidget);
-    m_styleControlLayouts.push_back(textLayout);
-    textLayout->setContentsMargins(0, 0, 0, 0);
-    textLayout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
-    const auto addTextStyleGroupSeparator = [this, textLayout]() {
-        addStyleToolbarSpacing(textLayout, STYLE_GROUP_SPACING);
-        textLayout->addWidget(createStyleToolbarSeparator(m_textStyleControlsWidget));
-        addStyleToolbarSpacing(textLayout, STYLE_GROUP_SPACING);
-    };
-    m_styleControls->addTextControls(textLayout, m_textStyleControlsWidget, this,
-                                     addTextStyleGroupSeparator,
-                                     styleButtonMetrics(m_physicalScale));
-    m_serialNumberStyleControlsWidget = new QWidget(m_rectangleStylePanel);
-    m_serialNumberStyleControlsWidget->setObjectName(
-        QStringLiteral("screenshotSerialNumberStyleControls"));
-    auto* serialNumberLayout = new QHBoxLayout(m_serialNumberStyleControlsWidget);
-    m_styleControlLayouts.push_back(serialNumberLayout);
-    serialNumberLayout->setContentsMargins(0, 0, 0, 0);
-    serialNumberLayout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
-    const auto addSerialNumberStyleGroupSeparator = [this, serialNumberLayout]() {
-        addStyleToolbarSpacing(serialNumberLayout, STYLE_GROUP_SPACING);
-        serialNumberLayout->addWidget(
-            createStyleToolbarSeparator(m_serialNumberStyleControlsWidget));
-        addStyleToolbarSpacing(serialNumberLayout, STYLE_GROUP_SPACING);
-    };
-    m_styleControls->addSerialNumberControls(serialNumberLayout, m_serialNumberStyleControlsWidget,
-                                             this, addSerialNumberStyleGroupSeparator,
-                                             styleButtonMetrics(m_physicalScale));
-    m_filterEditor = createFilterEditor({
-        Tool::RectangleFilter,
-        QStringLiteral("screenshotFilterStyleControls"),
-        QStringLiteral("screenshotFilterTypeSelect"),
-        QStringLiteral("screenshotFilterIntensityIcon"),
-        QStringLiteral("screenshotFilterIntensitySlider"),
-        false,
-    });
-    m_filterStyleControlsWidget = m_filterEditor.controls;
-    refreshFilterEditorState(m_filterEditor, false);
-    m_penFilterEditor = createFilterEditor({
-        Tool::PenFilter,
-        QStringLiteral("screenshotPenFilterStyleControls"),
-        QStringLiteral("screenshotPenFilterTypeSelect"),
-        QStringLiteral("screenshotPenFilterIntensityIcon"),
-        QStringLiteral("screenshotPenFilterIntensitySlider"),
-        true,
-    });
-    m_penFilterStyleControlsWidget = m_penFilterEditor.controls;
-    refreshFilterEditorState(m_penFilterEditor, true);
-    m_watermarkStyleControlsWidget = new QWidget(m_rectangleStylePanel);
-    m_watermarkStyleControlsWidget->setObjectName(
-        QStringLiteral("screenshotWatermarkStyleControls"));
-    auto* watermarkLayout = new QHBoxLayout(m_watermarkStyleControlsWidget);
-    m_styleControlLayouts.push_back(watermarkLayout);
-    watermarkLayout->setContentsMargins(0, 0, 0, 0);
-    watermarkLayout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
-    const auto addWatermarkStyleGroupSeparator = [this, watermarkLayout]() {
-        addStyleToolbarSpacing(watermarkLayout, STYLE_GROUP_SPACING);
-        watermarkLayout->addWidget(createStyleToolbarSeparator(m_watermarkStyleControlsWidget));
-        addStyleToolbarSpacing(watermarkLayout, STYLE_GROUP_SPACING);
-    };
-    m_styleControls->addWatermarkControls(watermarkLayout, m_watermarkStyleControlsWidget, this,
-                                          addWatermarkStyleGroupSeparator,
-                                          styleButtonMetrics(m_physicalScale));
-    m_styleEditorBindings = {
-        {m_rectangleStyleControlsWidget, {Tool::Shape, Tool::Line, Tool::FreeDraw}},
-        {m_arrowStyleControlsWidget, {Tool::Arrow}},
-        {m_highlightStyleControlsWidget, {Tool::RectangleHighlight}},
-        {m_penHighlightStyleControlsWidget, {Tool::PenHighlight}},
-        {m_spotlightStyleControlsWidget, {Tool::Spotlight}},
-        {m_textStyleControlsWidget, {Tool::Text}},
-        {m_serialNumberStyleControlsWidget, {Tool::SerialNumber}},
-        {m_filterStyleControlsWidget, {Tool::RectangleFilter}},
-        {m_penFilterStyleControlsWidget, {Tool::PenFilter}},
-        {m_watermarkStyleControlsWidget, {Tool::Watermark}},
-    };
-    layout->addWidget(m_rectangleStyleControlsWidget);
-    layout->addWidget(m_arrowStyleControlsWidget);
-    layout->addWidget(m_highlightStyleControlsWidget);
-    layout->addWidget(m_penHighlightStyleControlsWidget);
-    layout->addWidget(m_spotlightStyleControlsWidget);
-    layout->addWidget(m_textStyleControlsWidget);
-    layout->addWidget(m_serialNumberStyleControlsWidget);
-    layout->addWidget(m_filterStyleControlsWidget);
-    layout->addWidget(m_penFilterStyleControlsWidget);
-    layout->addWidget(m_watermarkStyleControlsWidget);
-    setStyleControlsActive(Tool::Shape);
-    updateSerialNumberControls();
-
-    if (m_styleReserveWidget == nullptr) {
-        m_styleReserveWidget = new QWidget(this);
-        m_styleReserveWidget->setObjectName(QStringLiteral("screenshotStyleToolbarReserve"));
-        m_styleReserveWidget->setAttribute(Qt::WA_NoSystemBackground, true);
-        m_styleReserveWidget->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-        m_styleReserveWidget->setAutoFillBackground(false);
-        m_styleReserveWidget->setFocusPolicy(Qt::NoFocus);
-        m_styleReserveWidget->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    }
-
-    if (m_rootLayout != nullptr) {
-        if (m_rootLayout->indexOf(m_selectActionPanel) < 0) {
-            m_rootLayout->addWidget(m_selectActionPanel, 0, Qt::AlignRight);
-        }
-        if (m_rootLayout->indexOf(m_rectangleStylePanel) < 0) {
-            m_rootLayout->addWidget(m_rectangleStylePanel, 0, Qt::AlignRight);
-        }
-        if (m_rootLayout->indexOf(m_styleReserveWidget) < 0) {
-            m_rootLayout->addWidget(m_styleReserveWidget, 0, Qt::AlignRight);
-        }
-    }
     m_secondaryResourcesReady = true;
+}
+
+void ScreenshotToolPalette::createStyleToolbarShell() {
+    if (m_rectangleStylePanel != nullptr) {
+        return;
+    }
+
+    m_rectangleStylePanel =
+        createSecondaryPanel(this, QStringLiteral("screenshotRectangleStylePanel"));
+    if (auto* frame = qobject_cast<QFrame*>(m_rectangleStylePanel)) {
+        m_panelFrames.push_back(frame);
+        updatePanelMetrics(frame);
+    }
+
+    auto* layout = new QVBoxLayout(m_rectangleStylePanel);
+    m_rectangleStyleLayout = layout;
+    layout->setContentsMargins(
+        scaledMetric(STYLE_PANEL_HORIZONTAL_MARGIN), scaledMetric(STYLE_PANEL_VERTICAL_MARGIN),
+        scaledMetric(STYLE_PANEL_HORIZONTAL_MARGIN), scaledMetric(STYLE_PANEL_VERTICAL_MARGIN));
+    layout->setSpacing(0);
+    m_secondaryResourcesReady = true;
+}
+
+void ScreenshotToolPalette::createStyleControls(Tool tool) {
+    createStyleToolbarShell();
+    auto* layout = m_rectangleStyleLayout;
+    if (layout == nullptr || styleControlsForTool(tool) != nullptr) {
+        return;
+    }
+
+    if (tool == Tool::Shape || tool == Tool::Line || tool == Tool::FreeDraw) {
+
+        m_rectangleStyleControlsWidget = new QWidget(m_rectangleStylePanel);
+        m_rectangleStyleControlsWidget->setObjectName(
+            QStringLiteral("screenshotRectangleStyleControls"));
+        auto* rectangleLayout = new QHBoxLayout(m_rectangleStyleControlsWidget);
+        m_styleControlLayouts.push_back(rectangleLayout);
+        rectangleLayout->setContentsMargins(0, 0, 0, 0);
+        rectangleLayout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
+        m_styleControls->addShapeControls(rectangleLayout, m_rectangleStyleControlsWidget, this,
+                                          styleButtonMetrics(m_physicalScale));
+        m_shapeStyleGroupSeparatorLeadingSpacing =
+            addStyleToolbarSpacing(rectangleLayout, STYLE_GROUP_SPACING);
+        m_shapeStyleGroupSeparator = createStyleToolbarSeparator(m_rectangleStyleControlsWidget);
+        m_shapeStyleGroupSeparator->setObjectName(
+            QStringLiteral("screenshotShapeStyleGroupSeparator"));
+        rectangleLayout->addWidget(m_shapeStyleGroupSeparator);
+        m_shapeStyleGroupSeparatorTrailingSpacing =
+            addStyleToolbarSpacing(rectangleLayout, STYLE_GROUP_SPACING);
+        m_styleControls->addStrokeColorControls(rectangleLayout, m_rectangleStyleControlsWidget,
+                                                this, styleButtonMetrics(m_physicalScale));
+        addStyleToolbarSpacing(rectangleLayout, STYLE_GROUP_SPACING);
+        rectangleLayout->addWidget(createStyleToolbarSeparator(m_rectangleStyleControlsWidget));
+        addStyleToolbarSpacing(rectangleLayout, STYLE_GROUP_SPACING);
+        m_styleControls->addStrokeWidthControls(rectangleLayout, m_rectangleStyleControlsWidget,
+                                                this, styleButtonMetrics(m_physicalScale));
+        addStyleToolbarSpacing(rectangleLayout, STYLE_GROUP_SPACING);
+        rectangleLayout->addWidget(createStyleToolbarSeparator(m_rectangleStyleControlsWidget));
+        addStyleToolbarSpacing(rectangleLayout, STYLE_GROUP_SPACING);
+        m_styleControls->addFillColorControls(rectangleLayout, m_rectangleStyleControlsWidget, this,
+                                              styleButtonMetrics(m_physicalScale));
+        addStyleToolbarSpacing(rectangleLayout, STYLE_ITEM_SPACING);
+        m_styleControls->addCornerRadiusControl(rectangleLayout, m_rectangleStyleControlsWidget,
+                                                styleButtonMetrics(m_physicalScale));
+        layout->addWidget(m_rectangleStyleControlsWidget);
+        m_styleEditorBindings.push_back(
+            {m_rectangleStyleControlsWidget, {Tool::Shape, Tool::Line, Tool::FreeDraw}});
+        return;
+    }
+
+    if (tool == Tool::Arrow) {
+        m_arrowStyleControlsWidget = new QWidget(m_rectangleStylePanel);
+        m_arrowStyleControlsWidget->setObjectName(QStringLiteral("screenshotArrowStyleControls"));
+        auto* arrowLayout = new QHBoxLayout(m_arrowStyleControlsWidget);
+        m_styleControlLayouts.push_back(arrowLayout);
+        arrowLayout->setContentsMargins(0, 0, 0, 0);
+        arrowLayout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
+        const auto addArrowStyleGroupSeparator = [this, arrowLayout]() {
+            addStyleToolbarSpacing(arrowLayout, STYLE_GROUP_SPACING);
+            arrowLayout->addWidget(createStyleToolbarSeparator(m_arrowStyleControlsWidget));
+            addStyleToolbarSpacing(arrowLayout, STYLE_GROUP_SPACING);
+        };
+        m_styleControls->addArrowControls(arrowLayout, m_arrowStyleControlsWidget, this,
+                                          addArrowStyleGroupSeparator,
+                                          styleButtonMetrics(m_physicalScale));
+        layout->addWidget(m_arrowStyleControlsWidget);
+        m_styleEditorBindings.push_back({m_arrowStyleControlsWidget, {Tool::Arrow}});
+        return;
+    }
+
+    if (tool == Tool::RectangleHighlight) {
+        m_highlightStyleControlsWidget = new QWidget(m_rectangleStylePanel);
+        m_highlightStyleControlsWidget->setObjectName(
+            QStringLiteral("screenshotHighlightStyleControls"));
+        auto* highlightLayout = new QHBoxLayout(m_highlightStyleControlsWidget);
+        m_styleControlLayouts.push_back(highlightLayout);
+        highlightLayout->setContentsMargins(0, 0, 0, 0);
+        highlightLayout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
+        const auto addHighlightStyleGroupSeparator = [this, highlightLayout]() {
+            addStyleToolbarSpacing(highlightLayout, STYLE_GROUP_SPACING);
+            highlightLayout->addWidget(createStyleToolbarSeparator(m_highlightStyleControlsWidget));
+            addStyleToolbarSpacing(highlightLayout, STYLE_GROUP_SPACING);
+        };
+        m_styleControls->addHighlightControls(highlightLayout, m_highlightStyleControlsWidget, this,
+                                              addHighlightStyleGroupSeparator,
+                                              styleButtonMetrics(m_physicalScale));
+
+        const QVector<StyleModeOption> highlightModes{
+            {QStringLiteral("Pen Highlighter Tool"), outlined_icons::Highlight(),
+             Tool::PenHighlight},
+            {QStringLiteral("Rectangle Highlighter Tool"), custom_outlined_icons::ShapeRectangle(),
+             Tool::RectangleHighlight},
+        };
+        highlightLayout->insertWidget(
+            0, createStyleModeSelector(m_highlightStyleControlsWidget,
+                                       QStringLiteral("screenshotHighlightModeSelector"),
+                                       highlightModes, Tool::PenHighlight, m_highlightModeGroups));
+        insertStyleToolbarSpacing(highlightLayout, 1, STYLE_GROUP_SPACING);
+        layout->addWidget(m_highlightStyleControlsWidget);
+        m_styleEditorBindings.push_back(
+            {m_highlightStyleControlsWidget, {Tool::RectangleHighlight}});
+        return;
+    }
+
+    if (tool == Tool::PenHighlight) {
+        const QVector<StyleModeOption> highlightModes{
+            {QStringLiteral("Pen Highlighter Tool"), outlined_icons::Highlight(),
+             Tool::PenHighlight},
+            {QStringLiteral("Rectangle Highlighter Tool"), custom_outlined_icons::ShapeRectangle(),
+             Tool::RectangleHighlight},
+        };
+        m_penHighlightStyleControlsWidget = new QWidget(m_rectangleStylePanel);
+        m_penHighlightStyleControlsWidget->setObjectName(
+            QStringLiteral("screenshotPenHighlightStyleControls"));
+        auto* penHighlightLayout = new QHBoxLayout(m_penHighlightStyleControlsWidget);
+        m_styleControlLayouts.push_back(penHighlightLayout);
+        penHighlightLayout->setContentsMargins(0, 0, 0, 0);
+        penHighlightLayout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
+        const auto addPenHighlightStyleGroupSeparator = [this, penHighlightLayout]() {
+            addStyleToolbarSpacing(penHighlightLayout, STYLE_GROUP_SPACING);
+            penHighlightLayout->addWidget(
+                createStyleToolbarSeparator(m_penHighlightStyleControlsWidget));
+            addStyleToolbarSpacing(penHighlightLayout, STYLE_GROUP_SPACING);
+        };
+        m_styleControls->addPenHighlightControls(
+            penHighlightLayout, m_penHighlightStyleControlsWidget, this,
+            addPenHighlightStyleGroupSeparator, styleButtonMetrics(m_physicalScale));
+        penHighlightLayout->insertWidget(
+            0, createStyleModeSelector(m_penHighlightStyleControlsWidget,
+                                       QStringLiteral("screenshotHighlightModeSelector"),
+                                       highlightModes, Tool::PenHighlight, m_highlightModeGroups));
+        insertStyleToolbarSpacing(penHighlightLayout, 1, STYLE_GROUP_SPACING);
+        layout->addWidget(m_penHighlightStyleControlsWidget);
+        m_styleEditorBindings.push_back({m_penHighlightStyleControlsWidget, {Tool::PenHighlight}});
+        return;
+    }
+
+    if (tool == Tool::Spotlight) {
+        m_spotlightStyleControlsWidget = new QWidget(m_rectangleStylePanel);
+        m_spotlightStyleControlsWidget->setObjectName(
+            QStringLiteral("screenshotSpotlightStyleControls"));
+        auto* spotlightLayout = new QHBoxLayout(m_spotlightStyleControlsWidget);
+        m_styleControlLayouts.push_back(spotlightLayout);
+        spotlightLayout->setContentsMargins(0, 0, 0, 0);
+        spotlightLayout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
+
+        m_styleControls->addSpotlightColorControls(
+            spotlightLayout, m_spotlightStyleControlsWidget, this,
+            m_styleControls->styleState().spotlightConfig.color, spotlightColorValues(),
+            [this](const QColor& color) {
+                m_styleControls->styleState().spotlightConfig.color = color;
+                m_styleControls->updateSpotlightColorControls(color);
+                emit spotlightConfigChanged(m_styleControls->styleState().spotlightConfig);
+            },
+            [this](const QColor& color) {
+                m_styleControls->styleState().spotlightConfig.color = color;
+                emit spotlightPreviewChanged(m_styleControls->styleState().spotlightConfig);
+            },
+            styleButtonMetrics(m_physicalScale));
+        addStyleToolbarSpacing(spotlightLayout, STYLE_GROUP_SPACING);
+        spotlightLayout->addWidget(createStyleToolbarSeparator(m_spotlightStyleControlsWidget));
+        addStyleToolbarSpacing(spotlightLayout, STYLE_GROUP_SPACING);
+        ScreenshotToolPaletteSliderEditorConfig spotlightOpacityConfig;
+        spotlightOpacityConfig.iconObjectName = QStringLiteral("screenshotSpotlightOpacityIcon");
+        spotlightOpacityConfig.sliderObjectName =
+            QStringLiteral("screenshotSpotlightOpacitySlider");
+        spotlightOpacityConfig.accessibleName = QStringLiteral("Opacity");
+        spotlightOpacityConfig.sliderTooltip = QStringLiteral("Adjust opacity");
+        spotlightOpacityConfig.iconRef = custom_outlined_icons::Opacity();
+        spotlightOpacityConfig.initialValue =
+            qRound(std::clamp(m_styleDefaults.spotlight.opacity, 0.0, 1.0) * 100.0);
+        spotlightOpacityConfig.baseIconSize = COMPACT_SLIDER_ICON_SIZE;
+        spotlightOpacityConfig.baseSliderWidth = COMPACT_SLIDER_WIDTH;
+        const ScreenshotToolPaletteSliderEditor spotlightOpacityEditor =
+            createScreenshotToolPaletteSliderEditor(spotlightLayout, m_spotlightStyleControlsWidget,
+                                                    spotlightOpacityConfig,
+                                                    styleButtonMetrics(m_physicalScale));
+        m_spotlightOpacityIcon = spotlightOpacityEditor.icon;
+        m_spotlightOpacitySlider = spotlightOpacityEditor.slider;
+        connect(m_spotlightOpacitySlider, &adqt::widgets::AdSlider::valueChanged, this,
+                [this](double value) {
+                    m_styleControls->styleState().spotlightConfig.opacity =
+                        std::clamp(value / 100.0, 0.0, 1.0);
+                    m_spotlightOpacitySlider->setAccessibleDescription(
+                        QStringLiteral("%1%").arg(qRound(value)));
+                    emit spotlightConfigChanged(m_styleControls->styleState().spotlightConfig);
+                });
+        layout->addWidget(m_spotlightStyleControlsWidget);
+        m_styleEditorBindings.push_back({m_spotlightStyleControlsWidget, {Tool::Spotlight}});
+        return;
+    }
+
+    if (tool == Tool::Text) {
+        m_textStyleControlsWidget = new QWidget(m_rectangleStylePanel);
+        m_textStyleControlsWidget->setObjectName(QStringLiteral("screenshotTextStyleControls"));
+        auto* textLayout = new QHBoxLayout(m_textStyleControlsWidget);
+        m_styleControlLayouts.push_back(textLayout);
+        textLayout->setContentsMargins(0, 0, 0, 0);
+        textLayout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
+        const auto addTextStyleGroupSeparator = [this, textLayout]() {
+            addStyleToolbarSpacing(textLayout, STYLE_GROUP_SPACING);
+            textLayout->addWidget(createStyleToolbarSeparator(m_textStyleControlsWidget));
+            addStyleToolbarSpacing(textLayout, STYLE_GROUP_SPACING);
+        };
+        m_styleControls->addTextControls(textLayout, m_textStyleControlsWidget, this,
+                                         addTextStyleGroupSeparator,
+                                         styleButtonMetrics(m_physicalScale));
+        layout->addWidget(m_textStyleControlsWidget);
+        m_styleEditorBindings.push_back({m_textStyleControlsWidget, {Tool::Text}});
+        return;
+    }
+
+    if (tool == Tool::SerialNumber) {
+        m_serialNumberStyleControlsWidget = new QWidget(m_rectangleStylePanel);
+        m_serialNumberStyleControlsWidget->setObjectName(
+            QStringLiteral("screenshotSerialNumberStyleControls"));
+        auto* serialNumberLayout = new QHBoxLayout(m_serialNumberStyleControlsWidget);
+        m_styleControlLayouts.push_back(serialNumberLayout);
+        serialNumberLayout->setContentsMargins(0, 0, 0, 0);
+        serialNumberLayout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
+        const auto addSerialNumberStyleGroupSeparator = [this, serialNumberLayout]() {
+            addStyleToolbarSpacing(serialNumberLayout, STYLE_GROUP_SPACING);
+            serialNumberLayout->addWidget(
+                createStyleToolbarSeparator(m_serialNumberStyleControlsWidget));
+            addStyleToolbarSpacing(serialNumberLayout, STYLE_GROUP_SPACING);
+        };
+        m_styleControls->addSerialNumberControls(
+            serialNumberLayout, m_serialNumberStyleControlsWidget, this,
+            addSerialNumberStyleGroupSeparator, styleButtonMetrics(m_physicalScale));
+        layout->addWidget(m_serialNumberStyleControlsWidget);
+        m_styleEditorBindings.push_back({m_serialNumberStyleControlsWidget, {Tool::SerialNumber}});
+        updateSerialNumberControls();
+        return;
+    }
+
+    if (tool == Tool::RectangleFilter) {
+        m_filterEditor = createFilterEditor({
+            Tool::RectangleFilter,
+            QStringLiteral("screenshotFilterStyleControls"),
+            QStringLiteral("screenshotFilterTypeSelect"),
+            QStringLiteral("screenshotFilterIntensityIcon"),
+            QStringLiteral("screenshotFilterIntensitySlider"),
+            false,
+        });
+        m_filterStyleControlsWidget = m_filterEditor.controls;
+        refreshFilterEditorState(m_filterEditor, false);
+        layout->addWidget(m_filterStyleControlsWidget);
+        m_styleEditorBindings.push_back({m_filterStyleControlsWidget, {Tool::RectangleFilter}});
+        return;
+    }
+
+    if (tool == Tool::PenFilter) {
+        m_penFilterEditor = createFilterEditor({
+            Tool::PenFilter,
+            QStringLiteral("screenshotPenFilterStyleControls"),
+            QStringLiteral("screenshotPenFilterTypeSelect"),
+            QStringLiteral("screenshotPenFilterIntensityIcon"),
+            QStringLiteral("screenshotPenFilterIntensitySlider"),
+            true,
+        });
+        m_penFilterStyleControlsWidget = m_penFilterEditor.controls;
+        refreshFilterEditorState(m_penFilterEditor, true);
+        layout->addWidget(m_penFilterStyleControlsWidget);
+        m_styleEditorBindings.push_back({m_penFilterStyleControlsWidget, {Tool::PenFilter}});
+        return;
+    }
+
+    if (tool == Tool::Watermark) {
+        m_watermarkStyleControlsWidget = new QWidget(m_rectangleStylePanel);
+        m_watermarkStyleControlsWidget->setObjectName(
+            QStringLiteral("screenshotWatermarkStyleControls"));
+        auto* watermarkLayout = new QHBoxLayout(m_watermarkStyleControlsWidget);
+        m_styleControlLayouts.push_back(watermarkLayout);
+        watermarkLayout->setContentsMargins(0, 0, 0, 0);
+        watermarkLayout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
+        const auto addWatermarkStyleGroupSeparator = [this, watermarkLayout]() {
+            addStyleToolbarSpacing(watermarkLayout, STYLE_GROUP_SPACING);
+            watermarkLayout->addWidget(createStyleToolbarSeparator(m_watermarkStyleControlsWidget));
+            addStyleToolbarSpacing(watermarkLayout, STYLE_GROUP_SPACING);
+        };
+        m_styleControls->addWatermarkControls(watermarkLayout, m_watermarkStyleControlsWidget, this,
+                                              addWatermarkStyleGroupSeparator,
+                                              styleButtonMetrics(m_physicalScale));
+        layout->addWidget(m_watermarkStyleControlsWidget);
+        m_styleEditorBindings.push_back({m_watermarkStyleControlsWidget, {Tool::Watermark}});
+    }
 }
 
 void ScreenshotToolPalette::addRecordingControls(QBoxLayout* layout) {
@@ -4340,15 +4471,18 @@ void ScreenshotToolPalette::addRecordingControls(QBoxLayout* layout) {
 
 void ScreenshotToolPalette::updateToolbarRowGeometry(bool styleToolbarVisible) {
     SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.update_row_geometry");
-    if (m_rootLayout == nullptr || m_mainPanel == nullptr || m_selectActionPanel == nullptr ||
-        m_rectangleStylePanel == nullptr || m_styleReserveWidget == nullptr) {
+    if (m_rootLayout == nullptr || m_mainPanel == nullptr || m_styleReserveWidget == nullptr) {
         return;
     }
 
     if (m_rowOrderDirty) {
         m_rootLayout->removeWidget(m_mainPanel);
-        m_rootLayout->removeWidget(m_selectActionPanel);
-        m_rootLayout->removeWidget(m_rectangleStylePanel);
+        if (m_selectActionPanel != nullptr) {
+            m_rootLayout->removeWidget(m_selectActionPanel);
+        }
+        if (m_rectangleStylePanel != nullptr) {
+            m_rootLayout->removeWidget(m_rectangleStylePanel);
+        }
         m_rootLayout->removeWidget(m_styleReserveWidget);
         if (m_styleToolbarAboveMain) {
             m_rootLayout->addWidget(m_styleReserveWidget, 0, Qt::AlignRight);
@@ -4366,10 +4500,12 @@ void ScreenshotToolPalette::updateToolbarRowGeometry(bool styleToolbarVisible) {
     // `isVisible()` is false while the palette's parent is hidden, even when
     // the child has never been explicitly hidden. Use the child visibility
     // state so a new palette hides its secondary rows before first display.
-    if (m_selectActionPanel->isHidden() == m_actionToolbarTargetVisible) {
+    if (m_selectActionPanel != nullptr &&
+        m_selectActionPanel->isHidden() == m_actionToolbarTargetVisible) {
         m_selectActionPanel->setVisible(m_actionToolbarTargetVisible);
     }
-    if (m_rectangleStylePanel->isHidden() == styleToolbarVisible) {
+    if (m_rectangleStylePanel != nullptr &&
+        m_rectangleStylePanel->isHidden() == styleToolbarVisible) {
         m_rectangleStylePanel->setVisible(styleToolbarVisible);
     }
     if (!m_styleReserveWidget->isVisible()) {
@@ -4690,6 +4826,7 @@ quint64 ScreenshotToolPalette::layoutRevision() const {
 }
 
 QSize ScreenshotToolPalette::contentSizeForStyleToolbarVisibility(bool styleToolbarVisible) const {
+    Q_UNUSED(styleToolbarVisible);
     int width = 0;
     int height = 0;
     int visibleRows = 0;
@@ -4712,8 +4849,8 @@ QSize ScreenshotToolPalette::contentSizeForStyleToolbarVisibility(bool styleTool
     };
 
     appendPanel(m_mainPanel, m_mainPanel != nullptr);
-    if (m_rectangleStylePanel != nullptr && styleToolbarVisible) {
-        QSize styleSize = m_styleReserveWidget != nullptr ? m_styleReserveWidget->size() : QSize();
+    if (m_styleReserveWidget != nullptr) {
+        QSize styleSize = m_styleReserveWidget->size();
         if (styleSize.isEmpty()) {
             styleSize = m_rectangleStylePanel->size();
         }

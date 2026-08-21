@@ -213,7 +213,12 @@ unsafe fn convert_gdi_bgra_surface_to_rgba(
     if mode == CaptureMode::Snapshot {
         if use_gdi_nt_bgra_conversion(mode, destination_has_history, pixel_count) {
             unsafe {
-                convert::convert_bgra_to_rgba_opaque_nt_serial_unchecked(src, dst, pixel_count);
+                // Snapshot desktop capture runs one worker per monitor. Use
+                // the shared bounded conversion pool for large frames so a
+                // high-resolution monitor does not spend the whole capture
+                // window in a single serial BGRA->RGBA pass. The pool is
+                // released with the capture runtime after End Screenshot.
+                convert::convert_bgra_to_rgba_opaque_nt_unchecked(src, dst, pixel_count);
             }
         } else {
             unsafe {

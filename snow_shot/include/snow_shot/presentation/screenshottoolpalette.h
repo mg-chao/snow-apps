@@ -10,6 +10,7 @@
 #include <QColor>
 #include <QMargins>
 #include <QHash>
+#include <QPointer>
 #include <QPoint>
 #include <QRect>
 #include <QSize>
@@ -300,7 +301,11 @@ class ScreenshotToolPalette final : public QWidget {
                                              bool danger = false, bool primary = false);
     void createMainToolbar(const Options& options);
     void createRectangleStyleToolbar();
-    void ensureSecondaryResources();
+    void createSecondaryToolbarReserve();
+    void createActionToolbar();
+    void createStyleToolbarShell();
+    void createStyleControls(Tool tool);
+    bool ensureSecondaryResources(Tool tool);
     void clearSecondaryResourceBindings();
     [[nodiscard]] bool secondaryResourcesReady() const;
     bool addMainToolButtons(const Options& options, QBoxLayout* layout);
@@ -367,6 +372,8 @@ class ScreenshotToolPalette final : public QWidget {
     QFrame* createStyleToolbarSeparator(QWidget* parent);
     void applyScaledToolbarMetrics();
     void applyStyleMetricsForScope(QWidget* scope);
+    void installWheelFilterRecursively(QWidget* root, QWidget* receiver);
+    void installRegisteredWheelFilters(QWidget* root);
     void updatePanelMetrics(QFrame* panel);
     void updatePanelStyle(QFrame* panel);
     void retranslateUi();
@@ -519,6 +526,7 @@ class ScreenshotToolPalette final : public QWidget {
     QVector<QFrame*> m_styleSeparatorFrames;
     QVector<QFrame*> m_panelFrames;
     QVector<SpacingItem> m_styleSpacingItems;
+    QVector<QPointer<QWidget>> m_wheelFilterReceivers;
     std::unique_ptr<ScreenshotToolPaletteStyleControls> m_styleControls;
     QMargins m_baseShadowMargins;
     QMargins m_shadowMargins;

@@ -861,10 +861,11 @@ impl CaptureSession {
 
     fn initialize_capture_environment(&mut self) -> CaptureResult<CaptureTargetInfo> {
         if self.config.mode == CaptureMode::Snapshot {
-            // Snapshot warm-up must stay allocation-light. SIMD dispatch and
-            // lookup tables are cheap to retain; the conversion worker pool
-            // is created only when a real capture needs it.
-            crate::convert::warmup_dispatch();
+            // Snapshot capture uses the bounded BGRA conversion pool for large
+            // desktop frames. Build it during the explicit environment-ready
+            // phase so the first visible screenshot does not pay for thread
+            // creation alongside the monitor readback.
+            crate::convert::warmup();
         } else {
             self.warmup_runtime();
         }

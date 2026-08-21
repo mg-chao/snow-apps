@@ -18,6 +18,7 @@
 #include <QSize>
 #include <QString>
 #include <QThread>
+#include <QWheelEvent>
 #include <QWindow>
 
 #include <atomic>
@@ -140,6 +141,18 @@ class SecondaryToolbarShowObserver final : public QObject {
 
     int actionPanelShowCount = 0;
     int stylePanelShowCount = 0;
+};
+
+class WheelEventObserver final : public QWidget {
+  public:
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (event != nullptr && event->type() == QEvent::Wheel) {
+            ++wheelEventCount;
+        }
+        return false;
+    }
+
+    int wheelEventCount = 0;
 };
 
 class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
@@ -594,8 +607,16 @@ void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable() {
         require(shapeColorTriggerTop(QStringLiteral("Stroke color")) == rowTop &&
                     shapeColorTriggerTop(QStringLiteral("Fill color")) == rowTop,
                 "shape color editor triggers should remain aligned after a tool toggle");
+        const QRect returnedNativeGeometry = nativeWindowGeometry(nativeWindow);
         require(MonitorFromWindow(nativeWindow, MONITOR_DEFAULTTONULL) == source->handle,
-                "styled toolbar did not return to the selection monitor");
+                ("styled toolbar did not return to the selection monitor; native geometry is " +
+                 std::to_string(returnedNativeGeometry.x()) + "," +
+                 std::to_string(returnedNativeGeometry.y()) + " " +
+                 std::to_string(returnedNativeGeometry.width()) + "x" +
+                 std::to_string(returnedNativeGeometry.height()) + ", expected frame size " +
+                 std::to_string(styledPhysicalWindowSize.width()) + "x" +
+                 std::to_string(styledPhysicalWindowSize.height()))
+                    .c_str());
         require(qFuzzyCompare(window.paletteHost()->physicalScale() + 1.0, 2.0),
                 "styled toolbar should use the selection monitor's scale after returning");
         const QSize returnedStyledVisualPhysicalSize =
@@ -742,7 +763,12 @@ void placementRectsTrackTheDisplayedStyleToolbar() {
     require(window.topPlacementContentRect() == expectedVisibleRect(),
             "top placement should use the displayed style toolbar size");
     require(window.windowSizeHint() == presetWindowSize,
-            "actual placement extents must not resize the preset toolbar window");
+            ("actual placement extents must not resize the preset toolbar window; preset " +
+             std::to_string(presetWindowSize.width()) + "x" +
+             std::to_string(presetWindowSize.height()) + ", actual " +
+             std::to_string(window.windowSizeHint().width()) + "x" +
+             std::to_string(window.windowSizeHint().height()))
+                .c_str());
 }
 
 void toolChangesRepositionOnlyBeforeManualDrag() {
@@ -878,13 +904,17 @@ void firstSecondaryToolbarOpeningNeverExposesBothPanelTypes() {
         QApplication::processEvents();
         QApplication::instance()->removeEventFilter(&observer);
 
-        require(palette->actionPanel() != nullptr && palette->stylePanel() != nullptr,
-                "the first secondary-tool activation must materialize both reusable panels");
+        require((expectActionPanel ? palette->actionPanel() != nullptr
+                                   : palette->stylePanel() != nullptr) &&
+                    (expectActionPanel ? palette->stylePanel() == nullptr
+                                       : palette->actionPanel() == nullptr),
+                "the first secondary-tool activation must materialize only the requested panel");
         require(observer.actionPanelShowCount == (expectActionPanel ? 1 : 0) &&
                     observer.stylePanelShowCount == (expectActionPanel ? 0 : 1),
                 "the first secondary-tool activation must never expose the other panel type");
-        require(palette->actionPanel()->isHidden() != expectActionPanel &&
-                    palette->stylePanel()->isHidden() == expectActionPanel,
+        const QWidget* requestedPanel =
+            expectActionPanel ? palette->actionPanel() : palette->stylePanel();
+        require(requestedPanel != nullptr && !requestedPanel->isHidden(),
                 "only the requested secondary panel may remain visible after first activation");
     };
 
@@ -908,8 +938,8 @@ void secondaryToolbarEvictionIsSafeAndReusable() {
 
         QPointer<QWidget> actionPanel = palette->actionPanel();
         QPointer<QWidget> stylePanel = palette->stylePanel();
-        require(actionPanel != nullptr && stylePanel != nullptr,
-                "activating a drawing tool must materialize both secondary panels");
+        require(stylePanel != nullptr && actionPanel == nullptr,
+                "activating a drawing tool must materialize only its style panel");
 
         window.releaseIdleResources();
         QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
@@ -932,6 +962,29 @@ void secondaryToolbarEvictionIsSafeAndReusable() {
         window.setSpotlightConfig(spotlight);
         window.resetForNewCapture();
     }
+}
+
+void lazySecondaryControlsInheritWheelEventFilters() {
+    NoOpToolbarCommands commands;
+    ScreenshotToolbarWindow window(commands);
+    ScreenshotToolPalette* palette = window.palette();
+    require(palette != nullptr && palette->stylePanel() == nullptr,
+            "the wheel-filter test must begin before lazy style controls exist");
+
+    WheelEventObserver observer;
+    palette->installWheelFilters(&observer);
+    window.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    QWidget* controls =
+        palette->findChild<QWidget*>(QStringLiteral("screenshotRectangleStyleControls"));
+    require(controls != nullptr,
+            "activating Shape must materialize controls for the wheel-filter test");
+
+    const QPoint localPosition = controls->rect().center();
+    QWheelEvent event(QPointF(localPosition), controls->mapToGlobal(localPosition), QPoint(),
+                      QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(controls, &event);
+    require(observer.wheelEventCount == 1,
+            "controls materialized after filter registration must inherit the wheel filter");
 }
 } // namespace
 
@@ -973,6 +1026,7 @@ int main(int argc, char* argv[]) {
         mainTextTranslationButtonUsesTranslationPresentation();
         firstSecondaryToolbarOpeningNeverExposesBothPanelTypes();
         secondaryToolbarEvictionIsSafeAndReusable();
+        lazySecondaryControlsInheritWheelEventFilters();
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

@@ -26,6 +26,7 @@ class ScreenshotToolPaletteHost final : public QWidget {
     ScreenshotToolPalette* palette() const;
     QSize contentSizeHint() const;
     QSize hostSizeHint() const;
+    QSize unconstrainedHostSizeHint() const;
     QRect occupiedContentRect() const;
     QRect visualContentRect() const;
     QRect fullContentRect() const;

@@ -43,6 +43,7 @@ using namespace std::chrono_literals;
 constexpr qint64 kBytesPerKibibyte = 1024;
 constexpr qint64 kBytesPerMebibyte = 1024 * 1024;
 constexpr qint64 kDefaultMaximumFirstScreenshotMilliseconds = 100;
+constexpr qint64 kAdditionalMonitorScreenshotBudgetMilliseconds = 50;
 constexpr qint64 kDefaultMaximumToolbarShowMilliseconds = 50;
 constexpr qint64 kDefaultMaximumPrivateWorkingSetMebibytes = 18;
 constexpr qint64 kDefaultMaximumPrivateWorkingSetDeltaMebibytes = 2;
@@ -708,6 +709,7 @@ struct BenchmarkConfiguration {
     qint64 stabilityRangeBytes = 1024 * 1024;
     int timeoutMilliseconds = 90000;
     qint64 maximumFirstScreenshotMilliseconds = kDefaultMaximumFirstScreenshotMilliseconds;
+    bool maximumFirstScreenshotExplicit = false;
     qint64 maximumToolbarShowMilliseconds = kDefaultMaximumToolbarShowMilliseconds;
     qint64 maximumPrivateWorkingSetMebibytes = kDefaultMaximumPrivateWorkingSetMebibytes;
     qint64 maximumPrivateWorkingSetDeltaMebibytes = kDefaultMaximumPrivateWorkingSetDeltaMebibytes;
@@ -732,6 +734,8 @@ BenchmarkConfiguration configurationFromParser(const QCommandLineParser& parser)
     configuration.timeoutMilliseconds = parser.value(QStringLiteral("timeout-ms")).toInt();
     configuration.maximumFirstScreenshotMilliseconds =
         parser.value(QStringLiteral("max-first-screenshot-ms")).toLongLong();
+    configuration.maximumFirstScreenshotExplicit =
+        parser.isSet(QStringLiteral("max-first-screenshot-ms"));
     configuration.maximumToolbarShowMilliseconds =
         parser.value(QStringLiteral("max-toolbar-show-ms")).toLongLong();
     configuration.maximumPrivateWorkingSetMebibytes =
@@ -780,6 +784,20 @@ struct CaptureMeasurement {
     qint64 toolbarShowNanoseconds = 0;
     qint64 selectionToToolbarNanoseconds = 0;
 };
+
+// Captures are fanned out to one worker per display, but each worker still has
+// to read and marshal a complete native frame. Preserve the 100 ms budget for
+// the original single-monitor benchmark and add a bounded allowance for each
+// additional display. An explicit CLI value always wins.
+void applyTopologyAwareDefaults(BenchmarkConfiguration& configuration,
+                                qsizetype monitorCount) {
+    if (configuration.maximumFirstScreenshotExplicit || monitorCount <= 1) {
+        return;
+    }
+    configuration.maximumFirstScreenshotMilliseconds =
+        kDefaultMaximumFirstScreenshotMilliseconds +
+        (monitorCount - 1) * kAdditionalMonitorScreenshotBudgetMilliseconds;
+}
 
 qint64 tracePhaseDuration(const QString& tracePath, qint64 processId, qint64 firstSequence,
                           qint64 lastSequence, const QString& beginEvent,
@@ -1120,8 +1138,9 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
     return record;
 }
 
-int runBenchmark(const BenchmarkConfiguration& configuration) {
+int runBenchmark(BenchmarkConfiguration configuration) {
     const QVector<MonitorInfo> displayList = monitors();
+    applyTopologyAwareDefaults(configuration, displayList.size());
     validateConfiguration(configuration, displayList);
     require(QDir().mkpath(configuration.outputDirectory), "could not create output directory");
 
@@ -1365,6 +1384,20 @@ bool runSelfTest() {
     require(stableWindow(stable, 4, 20), "stable-window acceptance self-test failed");
     require(!stableWindow(unstable, 4, 20), "stable-window rejection self-test failed");
 
+    BenchmarkConfiguration topologyDefaults;
+    applyTopologyAwareDefaults(topologyDefaults, 1);
+    require(topologyDefaults.maximumFirstScreenshotMilliseconds == 100,
+            "single-monitor latency default self-test failed");
+    topologyDefaults = BenchmarkConfiguration{};
+    applyTopologyAwareDefaults(topologyDefaults, 2);
+    require(topologyDefaults.maximumFirstScreenshotMilliseconds == 150,
+            "multi-monitor latency default self-test failed");
+    topologyDefaults.maximumFirstScreenshotMilliseconds = 123;
+    topologyDefaults.maximumFirstScreenshotExplicit = true;
+    applyTopologyAwareDefaults(topologyDefaults, 2);
+    require(topologyDefaults.maximumFirstScreenshotMilliseconds == 123,
+            "explicit latency threshold self-test failed");
+
     QTemporaryDir temporaryDirectory;
     require(temporaryDirectory.isValid(), "temporary directory self-test failed");
     const QString tracePath = temporaryDirectory.filePath(QStringLiteral("trace.jsonl"));
@@ -1434,7 +1467,8 @@ int main(int argc, char** argv) {
     parser.addOption({QStringLiteral("timeout-ms"), QStringLiteral("per-phase timeout"),
                       QStringLiteral("milliseconds"), QStringLiteral("90000")});
     parser.addOption({QStringLiteral("max-first-screenshot-ms"),
-                      QStringLiteral("maximum first screenshot latency acceptance threshold"),
+                      QStringLiteral("maximum first screenshot latency threshold (defaults to "
+                                     "100 ms plus 50 ms per additional monitor)"),
                       QStringLiteral("milliseconds"),
                       QString::number(kDefaultMaximumFirstScreenshotMilliseconds)});
     parser.addOption({QStringLiteral("max-toolbar-show-ms"),

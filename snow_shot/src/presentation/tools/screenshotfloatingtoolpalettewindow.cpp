@@ -126,16 +126,16 @@ ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
                                               logicalClientExtent,
                                               ScreenshotToolPaletteHost::defaultShadowMargins());
             }
-            updatePaletteGeometryForVisibleContent();
+            // requestGeometryUpdate() synchronously prepares the host once. A
+            // second preparation and explicit activation of this top-level
+            // layout used to make Qt reapply its pre-transition logical
+            // geometry while the native controller was preserving the new
+            // physical frame, producing a resize/move fight on mixed-DPI
+            // monitor returns.
             requestGeometryUpdate(true, true);
             const QList<QWidget*> scaledWidgets = findChildren<QWidget*>();
             for (QWidget* widget : scaledWidgets) {
                 QCoreApplication::removePostedEvents(widget, QEvent::LayoutRequest);
-            }
-            QCoreApplication::removePostedEvents(this, QEvent::LayoutRequest);
-            if (this->layout() != nullptr) {
-                this->layout()->invalidate();
-                this->layout()->activate();
             }
             QCoreApplication::removePostedEvents(this, QEvent::LayoutRequest);
             m_processingNativeDpiChange = false;
@@ -678,8 +678,25 @@ void ScreenshotFloatingToolPaletteWindow::handlePaletteContentChange() {
         return;
     }
 
+    // Secondary editors are materialized on demand. Rebind keyboard-capable
+    // controls whenever the palette publishes a new content tree so editors
+    // created after construction receive the same native focus hand-off as
+    // controls present in the initial palette.
+    bindDynamicKeyboardEditors();
+
     if (!m_processingNativeDpiChange) {
-        m_paletteHost->setLogicalClientExtent(QSize());
+        const QSize constrainedSize = fixedWindowSizeHint();
+        const QSize naturalSize = m_paletteHost->unconstrainedHostSizeHint();
+        const bool naturalContentFits =
+            constrainedSize.isValid() && naturalSize.isValid() &&
+            naturalSize.width() <= constrainedSize.width() &&
+            naturalSize.height() <= constrainedSize.height();
+        const ScreenshotToolPalette* palette = m_paletteHost->palette();
+        const bool reusableSecondaryRowsExist =
+            palette != nullptr && palette->stylePanel() != nullptr;
+        if (!reusableSecondaryRowsExist || !naturalContentFits) {
+            m_paletteHost->setLogicalClientExtent(QSize());
+        }
     }
 
     const QSize newHostSize = fixedWindowSizeHint();
@@ -840,7 +857,7 @@ bool ScreenshotFloatingToolPaletteWindow::commitGeometryUpdate(bool preserveCont
     } else if (!m_processingNativeDpiChange) {
         resize(windowSize);
     }
-    if (m_processingNativeDpiChange) {
+    if (m_processingNativeDpiChange && !m_draggingPalette) {
         m_lastRequestedContentPosition = contentPosition();
         m_lastRequestedContentPositionValid = true;
     }
@@ -921,13 +938,18 @@ QRect ScreenshotFloatingToolPaletteWindow::mainToolbarContentRect() const {
 }
 
 void ScreenshotFloatingToolPaletteWindow::updateMainToolbarPositionSnapshot() {
+    updateMainToolbarPositionSnapshot(contentPosition());
+}
+
+void ScreenshotFloatingToolPaletteWindow::updateMainToolbarPositionSnapshot(
+    const QPoint& contentPosition) {
     const QRect mainRect = mainToolbarContentRect();
     if (mainRect.isEmpty()) {
         m_lastMainToolbarGlobalTopLeftValid = false;
         return;
     }
 
-    m_lastMainToolbarGlobalTopLeft = contentPosition() + mainRect.topLeft();
+    m_lastMainToolbarGlobalTopLeft = contentPosition + mainRect.topLeft();
     m_lastMainToolbarGlobalTopLeftValid = true;
 }
 
@@ -999,21 +1021,23 @@ void ScreenshotFloatingToolPaletteWindow::updatePaletteDrag(const QPoint& global
         m_lastPhysicalDragCursorPosition = physicalPosition;
         if (m_dpiController != nullptr &&
             m_dpiController->moveForPhysicalCursor(physicalPosition)) {
-            m_lastDragPosition = dragPositionForEvent(globalPosition);
-            m_lastRequestedContentPosition = contentPosition();
+            const QPointF dragPosition = dragPositionForEvent(globalPosition);
+            m_dragContentPosition += dragPosition - m_lastDragPosition;
+            m_lastDragPosition = dragPosition;
+            m_lastRequestedContentPosition = m_dragContentPosition.toPoint();
             m_lastRequestedContentPositionValid = true;
-            m_dragContentPosition = QPointF(m_lastRequestedContentPosition);
-            updateMainToolbarPositionSnapshot();
+            updateMainToolbarPositionSnapshot(m_lastRequestedContentPosition);
             return;
         }
         const QRect targetNativeGeometry = nativeWindowGeometryForPhysicalDrag(
             physicalPosition, m_dragPhysicalCursorToWindowOffset, m_stablePhysicalWindowSize);
         if (native::moveWindowTo(winId(), targetNativeGeometry.topLeft())) {
-            m_lastDragPosition = dragPositionForEvent(globalPosition);
-            m_lastRequestedContentPosition = contentPosition();
+            const QPointF dragPosition = dragPositionForEvent(globalPosition);
+            m_dragContentPosition += dragPosition - m_lastDragPosition;
+            m_lastDragPosition = dragPosition;
+            m_lastRequestedContentPosition = m_dragContentPosition.toPoint();
             m_lastRequestedContentPositionValid = true;
-            m_dragContentPosition = QPointF(m_lastRequestedContentPosition);
-            updateMainToolbarPositionSnapshot();
+            updateMainToolbarPositionSnapshot(m_lastRequestedContentPosition);
             return;
         }
     }

@@ -137,6 +137,7 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
                                                      const QSize& stablePhysicalWindowSize);
     QRect mainToolbarContentRect() const;
     void updateMainToolbarPositionSnapshot();
+    void updateMainToolbarPositionSnapshot(const QPoint& contentPosition);
     qreal currentWindowDevicePixelRatio() const;
     qreal targetDevicePixelRatio() const;
     void beginPaletteDrag(const QPoint& globalPosition);

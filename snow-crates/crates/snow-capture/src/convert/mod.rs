@@ -2035,22 +2035,6 @@ pub(crate) unsafe fn convert_bgra_to_rgba_opaque_nt_unchecked(
     }
 }
 
-pub(crate) unsafe fn convert_bgra_to_rgba_opaque_nt_serial_unchecked(
-    src: *const u8,
-    dst: *mut u8,
-    pixel_count: usize,
-) {
-    let Some(nt_kernel) = bgra_nt_kernel_for_destination(dst as *const u8, true) else {
-        unsafe {
-            convert_bgra_to_rgba_opaque_serial_unchecked(src, dst, pixel_count);
-        }
-        return;
-    };
-    unsafe {
-        nt_kernel(src, dst, pixel_count);
-    }
-}
-
 unsafe fn convert_bgra_to_rgba_nt_unchecked_impl(
     src: *const u8,
     dst: *mut u8,
