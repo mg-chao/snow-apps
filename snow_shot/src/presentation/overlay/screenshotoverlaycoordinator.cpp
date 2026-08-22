@@ -262,11 +262,7 @@ void ScreenshotOverlayCoordinator::setScrollingCaptureMode(
         if (overlay == nullptr) {
             return;
         }
-        SnowCanvasWidget* canvas = overlay->canvas();
         if (enabled) {
-            if (canvas != nullptr) {
-                canvas->unsetCursor();
-            }
             overlay->setInputPassThroughRect(scrollingHoleForDisplay(display, selection));
             overlay->setScrollingCaptureMode(true);
             return;

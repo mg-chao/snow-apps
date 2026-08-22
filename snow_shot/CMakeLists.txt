@@ -1599,6 +1599,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/core/screenshotinteractionstate.cpp
         src/presentation/overlay/screenshotoverlayinputhandler.cpp
         src/presentation/overlay/screenshotoverlayshortcutcontroller.cpp
+        src/presentation/services/screenshotlifecycleperfinstrumentation.cpp
         src/presentation/selection/screenshotselectiongeometry.cpp
         src/presentation/selection/screenshotselectionmodel.cpp
         src/presentation/selection/screenshotselectionparams.cpp

@@ -147,6 +147,30 @@ bool isPointerInput(const SnowInputEvent& input, SnowPointerEventType eventType)
     return input.kind == SNOW_INPUT_EVENT_POINTER && input.pointer.event_type == eventType;
 }
 
+SnowCursorStyle baselineCursorForCanvasTool(SnowCanvasTool tool) {
+    switch (tool) {
+    case SnowCanvasTool::Text:
+        return SNOW_CURSOR_STYLE_TEXT;
+    case SnowCanvasTool::Eraser:
+        return SNOW_CURSOR_STYLE_HIDDEN;
+    case SnowCanvasTool::Shape:
+    case SnowCanvasTool::Arrow:
+    case SnowCanvasTool::Line:
+    case SnowCanvasTool::FreeDraw:
+    case SnowCanvasTool::RectangleHighlight:
+    case SnowCanvasTool::PenHighlight:
+    case SnowCanvasTool::RectangleFilter:
+    case SnowCanvasTool::PenFilter:
+    case SnowCanvasTool::SerialNumber:
+    case SnowCanvasTool::Spotlight:
+        return SNOW_CURSOR_STYLE_CROSSHAIR;
+    case SnowCanvasTool::Select:
+    case SnowCanvasTool::Watermark:
+    default:
+        return SNOW_CURSOR_STYLE_DEFAULT;
+    }
+}
+
 constexpr int kSerialToolbarButtonSize = 24;
 constexpr int kSerialToolbarIconSize = 14;
 constexpr int kSerialToolbarWidth = kSerialToolbarButtonSize * 3;
@@ -1964,11 +1988,7 @@ void SnowCanvasWidget::Impl::emitChangedStateSignals(const snow_canvas_state::Ch
 }
 
 void SnowCanvasWidget::Impl::applyCanvasToolCursor(SnowCanvasTool tool) {
-    if (tool == SnowCanvasTool::Text) {
-        widget.setCursor(Qt::IBeamCursor);
-        return;
-    }
-    widget.unsetCursor();
+    inputHandler.setBaselineCursor(baselineCursorForCanvasTool(tool));
 }
 
 void SnowCanvasWidget::Impl::refocusWidget() {
@@ -2186,6 +2206,7 @@ bool SnowCanvasWidget::Impl::handleMousePress(QMouseEvent* event) {
     const bool pointerInsideTextEditor =
         textInteraction.editorContains(displayState.displayCache(), event->position());
     if (textInteraction.handleEditorMousePress(event, displayState.displayCache(), widget.font())) {
+        inputHandler.setCursor(SNOW_CURSOR_STYLE_TEXT);
         return true;
     }
     const bool pointerOverTextEditorSelectionInteraction =
@@ -2272,6 +2293,7 @@ bool SnowCanvasWidget::Impl::handleMouseMove(QMouseEvent* event) {
         return false;
     }
     if (textInteraction.handleEditorMouseMove(event, displayState.displayCache(), widget.font())) {
+        inputHandler.setCursor(SNOW_CURSOR_STYLE_TEXT);
         return true;
     }
     const SnowInputEvent input =

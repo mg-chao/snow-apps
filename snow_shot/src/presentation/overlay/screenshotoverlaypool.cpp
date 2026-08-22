@@ -75,7 +75,6 @@ void ScreenshotOverlayPool::resetForNewCapture(ScreenshotDisplaySession& display
                 overlay->resetScreenshotRendering();
                 if (overlay->canvas() != nullptr) {
                     overlay->canvas()->setInteractionEnabled(false);
-                    overlay->canvas()->unsetCursor();
                 }
             }
         });

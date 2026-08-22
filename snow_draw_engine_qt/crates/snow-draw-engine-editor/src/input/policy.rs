@@ -24,7 +24,7 @@ impl Editor {
                 clear_selection_on_activate: true,
                 empty_canvas_action: ToolEmptyCanvasAction::CreateRectangle,
                 allow_shift_toggle: true,
-                default_cursor: CursorStyle::Default,
+                default_cursor: CursorStyle::Crosshair,
             },
             ActiveTool::Arrow => ToolPolicy {
                 selection_scope: ToolSelectionScope::ArrowOnly,
@@ -201,6 +201,23 @@ mod line_policy_tests {
             line_scope,
             ElementKind::Arrow
         ));
+    }
+
+    #[test]
+    fn shape_and_creation_tools_use_a_crosshair_baseline_cursor() {
+        for tool in [
+            ActiveTool::Shape,
+            ActiveTool::Arrow,
+            ActiveTool::Line,
+            ActiveTool::RectangleHighlight,
+            ActiveTool::Spotlight,
+        ] {
+            assert_eq!(
+                Editor::tool_policy_for(tool).default_cursor,
+                CursorStyle::Crosshair,
+                "{tool:?} should use the crosshair cursor while creating"
+            );
+        }
     }
 
     #[test]

@@ -1,8 +1,10 @@
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::Duration;
 
 fn main() {
     println!("cargo:rerun-if-env-changed=FFMPEG_DIR");
@@ -163,10 +165,84 @@ fn copy_dlls(source_dir: &Path, destination_dir: &Path) -> io::Result<()> {
         println!("cargo:rerun-if-changed={}", source.display());
 
         let destination = destination_dir.join(entry.file_name());
-        fs::copy(&source, &destination)?;
+        copy_dll_if_changed(&source, &destination)?;
     }
 
     Ok(())
+}
+
+fn copy_dll_if_changed(source: &Path, destination: &Path) -> io::Result<()> {
+    if files_are_identical_with_retry(source, destination)? {
+        return Ok(());
+    }
+
+    match fs::copy(source, destination) {
+        Ok(_) => Ok(()),
+        Err(copy_error) => {
+            // Another build script may deploy the same DLL concurrently.
+            // If it finishes after our initial comparison, no work remains.
+            if wait_for_identical_copy(source, destination).unwrap_or(false) {
+                Ok(())
+            } else {
+                Err(copy_error)
+            }
+        }
+    }
+}
+
+fn files_are_identical_with_retry(source: &Path, destination: &Path) -> io::Result<bool> {
+    for attempt in 0..=20 {
+        match files_are_identical(source, destination) {
+            Ok(identical) => return Ok(identical),
+            Err(_) if attempt < 20 => thread::sleep(Duration::from_millis(25)),
+            Err(error) => return Err(error),
+        }
+    }
+
+    unreachable!()
+}
+
+fn wait_for_identical_copy(source: &Path, destination: &Path) -> io::Result<bool> {
+    for attempt in 0..=20 {
+        match files_are_identical(source, destination) {
+            Ok(true) => return Ok(true),
+            Ok(false) | Err(_) if attempt < 20 => thread::sleep(Duration::from_millis(25)),
+            Ok(false) => return Ok(false),
+            Err(error) => return Err(error),
+        }
+    }
+
+    unreachable!()
+}
+
+fn files_are_identical(source: &Path, destination: &Path) -> io::Result<bool> {
+    let destination_metadata = match fs::metadata(destination) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let source_metadata = fs::metadata(source)?;
+    if source_metadata.len() != destination_metadata.len() {
+        return Ok(false);
+    }
+
+    let mut source = fs::File::open(source)?;
+    let mut destination = fs::File::open(destination)?;
+    let mut source_buffer = [0_u8; 64 * 1024];
+    let mut destination_buffer = [0_u8; 64 * 1024];
+    let mut remaining = source_metadata.len();
+
+    while remaining > 0 {
+        let length = remaining.min(source_buffer.len() as u64) as usize;
+        source.read_exact(&mut source_buffer[..length])?;
+        destination.read_exact(&mut destination_buffer[..length])?;
+        if source_buffer[..length] != destination_buffer[..length] {
+            return Ok(false);
+        }
+        remaining -= length as u64;
+    }
+
+    Ok(true)
 }
 
 fn is_dll_file(path: &Path) -> bool {

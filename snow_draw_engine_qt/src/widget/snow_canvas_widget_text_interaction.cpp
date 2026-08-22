@@ -581,7 +581,6 @@ bool SnowCanvasWidgetTextInteraction::handleEditorMouseMove(
         }
 
         if (editorContains(displayCache, event->position())) {
-            m_widget.setCursor(Qt::IBeamCursor);
             event->accept();
             return true;
         }

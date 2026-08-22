@@ -84,6 +84,11 @@ class ScreenshotFloatingToolPaletteWindowTestAccess {
         return ScreenshotFloatingToolPaletteWindow::nativeWindowGeometryForPhysicalDrag(
             physicalCursorPosition, physicalCursorToWindowOffset, stablePhysicalWindowSize);
     }
+
+    static bool handleNativeHitTest(const ScreenshotFloatingToolPaletteWindow& window,
+                                    void* message, qintptr* result) {
+        return window.handleNativeHitTest(message, result);
+    }
 };
 
 namespace {
@@ -425,7 +430,9 @@ void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable() {
     qint64 shortestDistanceSquared = std::numeric_limits<qint64>::max();
     for (const HardwareMonitor& left : monitors) {
         for (const HardwareMonitor& right : monitors) {
-            if (left.handle == right.handle || left.dpi == right.dpi) {
+            // Exercise the reported direction: the destination needs a larger logical client
+            // rect even though the toolbar keeps the same physical frame.
+            if (left.handle == right.handle || left.dpi <= right.dpi) {
                 continue;
             }
             const QPoint delta = monitorCenter(right) - monitorCenter(left);
@@ -500,6 +507,84 @@ void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable() {
 
     const QSize stablePhysicalSize = nativeWindowSize(nativeWindow);
     const UINT sourceWindowDpi = GetDpiForWindow(nativeWindow);
+    require(sourceWindowDpi > destination->dpi,
+            "toolbar HWND did not adopt the higher-DPI source monitor");
+
+    // Exercise the native hit-test conversion with a real lower-DPI HWND while the toolbar's Qt
+    // window still reports the source monitor DPR. This models the event turn after
+    // WM_DPICHANGED, when the HWND and QWindow can temporarily disagree about their DPI.
+    QWidget destinationDpiProbe;
+    destinationDpiProbe.setWindowFlags(Qt::FramelessWindowHint | Qt::Tool);
+    destinationDpiProbe.setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    destinationDpiProbe.setWindowOpacity(0.0);
+    destinationDpiProbe.winId();
+    require(destinationDpiProbe.windowHandle() != nullptr,
+            "DPI probe did not create a native window");
+    destinationDpiProbe.windowHandle()->setScreen(destinationScreen);
+    destinationDpiProbe.resize(window.size());
+    destinationDpiProbe.move(destinationScreen->geometry().center() -
+                             QPoint(destinationDpiProbe.width() / 2,
+                                    destinationDpiProbe.height() / 2));
+    destinationDpiProbe.show();
+    settleQueuedRefreshes();
+
+    const HWND destinationProbeWindow = toNativeHwnd(destinationDpiProbe.winId());
+    const UINT destinationProbeDpi = GetDpiForWindow(destinationProbeWindow);
+    require(destinationProbeDpi > 0 && destinationProbeDpi < sourceWindowDpi,
+            "DPI probe did not adopt the lower-DPI destination monitor");
+    RECT destinationProbeRect{};
+    require(GetWindowRect(destinationProbeWindow, &destinationProbeRect) != FALSE,
+            "failed to read the DPI probe geometry");
+
+    const QRegion interactiveRegion = window.paletteHost()->interactiveHostRegion().translated(
+        window.paletteHost()->pos());
+    const qreal sourceScale = static_cast<qreal>(sourceWindowDpi) / 96.0;
+    const qreal destinationScale = static_cast<qreal>(destinationProbeDpi) / 96.0;
+    QPoint hitTestPhysicalOffset;
+    bool foundDpiSensitivePoint = false;
+    const QRect interactiveBounds = interactiveRegion.boundingRect().intersected(window.rect());
+    for (int y = interactiveBounds.top(); y <= interactiveBounds.bottom() &&
+                                              !foundDpiSensitivePoint;
+         ++y) {
+        for (int x = interactiveBounds.left(); x <= interactiveBounds.right(); ++x) {
+            const QPoint physicalOffset(qFloor((x + 0.5) * destinationScale),
+                                        qFloor((y + 0.5) * destinationScale));
+            const QPoint mappedWithDestinationDpi(
+                qFloor(static_cast<qreal>(physicalOffset.x()) / destinationScale),
+                qFloor(static_cast<qreal>(physicalOffset.y()) / destinationScale));
+            const QPoint mappedWithStaleSourceDpi(
+                qFloor(static_cast<qreal>(physicalOffset.x()) / sourceScale),
+                qFloor(static_cast<qreal>(physicalOffset.y()) / sourceScale));
+            if (window.rect().contains(mappedWithDestinationDpi) &&
+                interactiveRegion.contains(mappedWithDestinationDpi) &&
+                (!window.rect().contains(mappedWithStaleSourceDpi) ||
+                 !interactiveRegion.contains(mappedWithStaleSourceDpi))) {
+                hitTestPhysicalOffset = physicalOffset;
+                foundDpiSensitivePoint = true;
+                break;
+            }
+        }
+    }
+    require(foundDpiSensitivePoint,
+            "toolbar did not expose a point that distinguishes destination and stale source DPI");
+
+    const QPoint nativeHitTestPoint(destinationProbeRect.left + hitTestPhysicalOffset.x(),
+                                    destinationProbeRect.top + hitTestPhysicalOffset.y());
+    require(nativeHitTestPoint.x() >= std::numeric_limits<short>::min() &&
+                nativeHitTestPoint.x() <= std::numeric_limits<short>::max() &&
+                nativeHitTestPoint.y() >= std::numeric_limits<short>::min() &&
+                nativeHitTestPoint.y() <= std::numeric_limits<short>::max(),
+            "native hit-test point exceeds the WM_NCHITTEST coordinate range");
+    MSG hitTestMessage{};
+    hitTestMessage.hwnd = destinationProbeWindow;
+    hitTestMessage.message = WM_NCHITTEST;
+    hitTestMessage.lParam = MAKELPARAM(nativeHitTestPoint.x(), nativeHitTestPoint.y());
+    qintptr hitTestResult = HTERROR;
+    require(!ScreenshotFloatingToolPaletteWindowTestAccess::handleNativeHitTest(
+                window, &hitTestMessage, &hitTestResult) &&
+                hitTestResult == HTERROR,
+            "native hit testing used the stale source-monitor DPR for a destination HWND");
+
     const QRect initialNativeGeometry = nativeWindowGeometry(nativeWindow);
     const QPoint physicalCursorToWindowOffset = start - initialNativeGeometry.topLeft();
     const QSize stableVisualPhysicalSize =
@@ -588,10 +673,28 @@ void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable() {
         ScreenshotFloatingToolPaletteWindowTestAccess::beginPhysicalDrag(window, QCursor::pos());
         require(ScreenshotFloatingToolPaletteWindowTestAccess::hasPhysicalDragAnchor(window),
                 "toolbar did not restart a native physical drag after style changes");
-        require(SetCursorPos(start.x(), start.y()) != FALSE,
-                "failed to move the styled toolbar back to the source monitor");
-        ScreenshotFloatingToolPaletteWindowTestAccess::updateDrag(window, QCursor::pos());
-        settleQueuedRefreshes();
+        const QPoint styledReturnStart = QCursor::pos();
+        const int returnDistance =
+            qMax(qAbs(start.x() - styledReturnStart.x()),
+                 qAbs(start.y() - styledReturnStart.y()));
+        const int returnSteps = qMax(1, returnDistance / 2);
+        for (int step = 1; step <= returnSteps; ++step) {
+            const QPoint cursor(
+                styledReturnStart.x() +
+                    qRound(static_cast<qreal>(start.x() - styledReturnStart.x()) * step /
+                           returnSteps),
+                styledReturnStart.y() +
+                    qRound(static_cast<qreal>(start.y() - styledReturnStart.y()) * step /
+                           returnSteps));
+            require(SetCursorPos(cursor.x(), cursor.y()) != FALSE,
+                    "failed to move the styled toolbar back to the source monitor");
+            POINT actualCursor{};
+            require(GetCursorPos(&actualCursor) != FALSE,
+                    "failed to read the cursor during the styled return move");
+            ScreenshotFloatingToolPaletteWindowTestAccess::updateDrag(
+                window, QPoint(actualCursor.x, actualCursor.y));
+            settleQueuedRefreshes();
+        }
         const QWidget* shapeControls = window.palette()->findChild<QWidget*>(
             QStringLiteral("screenshotRectangleStyleControls"));
         require(shapeControls != nullptr,
@@ -1010,6 +1113,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--secondary-toolbar-first-open-only"))) {
             firstSecondaryToolbarOpeningNeverExposesBothPanelTypes();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--mixed-dpi-only"))) {
+            physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable();
             return 0;
         }
         logicalDragMovesWithoutRefreshingGeometry();

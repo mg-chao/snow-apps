@@ -2898,6 +2898,40 @@ void overlayCanvasesAreDisabledUntilCanvasInteractionIsEnabled() {
             "activating a non-drawing tool must disable every reusable overlay canvas");
 }
 
+void overlayCursorRefreshDoesNotOverrideCanvasInteractionCursor() {
+    NoopOverlayEventSink eventSink;
+    auto* canvas = new SnowCanvasWidget;
+    ScreenshotOverlayWindow overlay(eventSink, canvas);
+
+    CapturedDisplayModel display;
+    display.active = true;
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(display, &overlay);
+
+    ScreenshotOverlayCanvasPresenter presenter({});
+    presenter.setCanvasTool(displays, SnowCanvasTool::Text);
+    presenter.setCanvasInteractionEnabled(displays, true);
+    require(canvas->cursor().shape() == Qt::IBeamCursor,
+            "an interaction-enabled canvas should install its active tool cursor");
+
+    presenter.updateOverlayCursors(displays, true, false);
+    require(canvas->cursor().shape() == Qt::IBeamCursor,
+            "selection cursor refresh must not override a cursor owned by canvas interaction");
+
+    presenter.setOverlayCursor(&overlay, ScreenshotSelectionDragMode::All);
+    require(canvas->cursor().shape() == Qt::IBeamCursor,
+            "selection drag cursors must not override a cursor owned by canvas interaction");
+
+    presenter.setCanvasInteractionEnabled(displays, false);
+    presenter.updateOverlayCursors(displays, true, false);
+    require(canvas->cursor().shape() == Qt::CrossCursor,
+            "selection mode should own the cursor after canvas interaction is disabled");
+
+    presenter.setOverlayCursor(&overlay, ScreenshotSelectionDragMode::All);
+    require(canvas->cursor().shape() == Qt::SizeAllCursor,
+            "selection dragging should own the cursor while canvas interaction is disabled");
+}
+
 void overlayPresenterRespectsSelectionHandleVisibility() {
     NoopOverlayEventSink eventSink;
     auto* canvas = new SnowCanvasWidget;
@@ -3040,6 +3074,10 @@ int main(int argc, char** argv) {
         guideLinesInitializeFromGlobalCursorPosition();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--overlay-cursor-ownership"))) {
+        overlayCursorRefreshDoesNotOverrideCanvasInteractionCursor();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--screenshot-ui-preferences"))) {
         screenshotUiPreferencesNormalizeAndApplyPickerVisibilityPolicies();
         shortcutHintStagesUseTheExactRequiredLines();
@@ -3125,6 +3163,7 @@ int main(int argc, char** argv) {
     canvasWheelZoomCanBeDisabled();
     disabledCanvasBlocksWidgetLevelToolInput();
     overlayCanvasesAreDisabledUntilCanvasInteractionIsEnabled();
+    overlayCursorRefreshDoesNotOverrideCanvasInteractionCursor();
     overlayPresenterRespectsSelectionHandleVisibility();
     resettingDisplaySessionEditingStateResetsEveryCanvas();
     overlayNativeSurfaceRetirementPreservesReusableRenderState();

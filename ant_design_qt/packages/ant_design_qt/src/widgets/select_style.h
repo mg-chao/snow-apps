@@ -47,6 +47,7 @@ struct SelectMetrics {
   int multiplePaddingVertical = 1;
   int multipleItemPaddingHorizontal = 8;
   int iconSize = 14;
+  int optionIconSize = 14;
   int spacing = 4;
   QFont selectorFont;
   QFont optionFont;

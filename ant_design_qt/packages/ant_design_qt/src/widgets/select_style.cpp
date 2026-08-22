@@ -192,6 +192,7 @@ SelectVisualStyle resolveSelectVisualStyle(const SelectStyleInput& input,
   style.metrics.tagContentGap = std::max(2, qRound(map.sizeXXS));
   style.metrics.optionStateGap = std::max(2, qRound(map.sizeXXS));
   style.metrics.iconSize = std::max(10, qRound(map.fontSizeSM));
+  style.metrics.optionIconSize = style.metrics.iconSize;
   style.metrics.spacing = std::max(2, qRound(map.sizeXXS));
 
   double optionLineHeight = map.lineHeight;
@@ -334,6 +335,7 @@ SelectVisualStyle resolveSelectVisualStyle(const SelectStyleInput& input,
   }
   if (metricTokens.iconSize.has_value()) {
     style.metrics.iconSize = std::max(10, metricTokens.iconSize.value());
+    style.metrics.optionIconSize = style.metrics.iconSize;
   }
   if (metricTokens.selectorFontSize.has_value()) {
     style.metrics.selectorFont.setPixelSize(std::max(8, metricTokens.selectorFontSize.value()));

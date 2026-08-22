@@ -597,7 +597,7 @@ mod tests {
         assert!(update.interaction.consumed);
         assert_eq!(
             update.interaction.cursor,
-            CursorCommand::Set(CursorStyle::Default)
+            CursorCommand::Set(CursorStyle::Crosshair)
         );
         assert!(matches!(
             editor.state.interaction,

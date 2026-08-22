@@ -71,6 +71,29 @@ QImage renderButton(QWidget& button) {
     return image;
 }
 
+QImage renderWidgetAtDevicePixelRatio(QWidget& widget, qreal devicePixelRatio) {
+    const QSize physicalSize(qMax(1, qRound(widget.width() * devicePixelRatio)),
+                             qMax(1, qRound(widget.height() * devicePixelRatio)));
+    QImage image(physicalSize, QImage::Format_RGBA8888);
+    image.setDevicePixelRatio(devicePixelRatio);
+    image.fill(Qt::transparent);
+    QPainter painter(&image);
+    widget.render(&painter);
+    return image;
+}
+
+QRect visiblePixelBounds(const QImage& image) {
+    QRect bounds;
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            if (image.pixelColor(x, y).alpha() > 0) {
+                bounds |= QRect(x, y, 1, 1);
+            }
+        }
+    }
+    return bounds;
+}
+
 QColor buttonBackgroundSample(QWidget& button) {
     const QImage image = renderButton(button);
     return image.pixelColor(qMax(1, image.width() / 8), image.height() / 2);
@@ -4519,6 +4542,122 @@ void popupColorEditorButtonsKeepPopupScaleAfterToolbarDpiCommit() {
             "the first fill-color popup button should retain the popup scale");
 }
 
+void toolbarEditorsKeepPhysicalMetricsAcrossDpiChanges() {
+    ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Watermark);
+
+    auto* slider = palette.findChild<adqt::widgets::AdSlider*>(
+        QStringLiteral("screenshotWatermarkOpacitySlider"));
+    auto* lineEdit = palette.findChild<adqt::widgets::AdLineEdit*>(
+        QStringLiteral("screenshotWatermarkTextEdit"));
+    auto* select = qobject_cast<adqt::widgets::AdSelect*>(
+        controlWithAccessibleName(palette, "Watermark font family"));
+    require(slider != nullptr && lineEdit != nullptr && select != nullptr,
+            "the watermark toolbar should expose slider, text, and select editors");
+
+    const QSize sliderSize = slider->size();
+    const QSize lineEditSize = lineEdit->size();
+    const QSize selectSize = select->size();
+    QWidget* selectSuffix = select->findChild<QWidget*>(QStringLiteral("adselect-suffix"));
+    require(selectSuffix != nullptr, "the toolbar select should expose its suffix icon");
+    const QSize selectSuffixSize = selectSuffix->size();
+    const int lineEditFontHeight = QFontMetrics(lineEdit->font()).height();
+    const int selectFontHeight = QFontMetrics(select->font()).height();
+    const QRect sliderVisualBounds =
+        visiblePixelBounds(renderWidgetAtDevicePixelRatio(*slider, 1.0));
+    const QRect lineEditVisualBounds =
+        visiblePixelBounds(renderWidgetAtDevicePixelRatio(*lineEdit, 1.0));
+    const QRect selectVisualBounds =
+        visiblePixelBounds(renderWidgetAtDevicePixelRatio(*select, 1.0));
+    require(!sliderVisualBounds.isEmpty() && !lineEditVisualBounds.isEmpty() &&
+                !selectVisualBounds.isEmpty(),
+            "the toolbar editors should render visible metrics");
+
+    adqt::widgets::AdControlScaleScope scaleScope(&palette);
+    require(scaleScope.publishScale(1.0, 2.0),
+            "the toolbar control scope should publish a 200-percent DPI transition");
+    require(palette.setPhysicalScale(0.5),
+            "the toolbar should adopt the destination monitor counter-scale");
+    QCoreApplication::processEvents();
+
+    const auto physicalExtentMatches = [](const QSize& reference, const QSize& logicalAtTwoX) {
+        return qAbs(reference.width() - logicalAtTwoX.width() * 2) <= 1 &&
+               qAbs(reference.height() - logicalAtTwoX.height() * 2) <= 1;
+    };
+    require(physicalExtentMatches(sliderSize, slider->size()) &&
+                physicalExtentMatches(lineEditSize, lineEdit->size()) &&
+                physicalExtentMatches(selectSize, select->size()) &&
+                physicalExtentMatches(selectSuffixSize, selectSuffix->size()),
+            "toolbar editor bounds should retain their physical pixel size after a DPI change");
+
+    require(qAbs(lineEditFontHeight - QFontMetrics(lineEdit->font()).height() * 2) <= 2,
+            "toolbar text editor glyphs should retain their physical pixel size");
+    require(qAbs(selectFontHeight - QFontMetrics(select->font()).height() * 2) <= 2,
+            "toolbar select glyphs should retain their physical pixel size");
+
+    const QRect scaledSliderVisualBounds =
+        visiblePixelBounds(renderWidgetAtDevicePixelRatio(*slider, 2.0));
+    const QRect scaledLineEditVisualBounds =
+        visiblePixelBounds(renderWidgetAtDevicePixelRatio(*lineEdit, 2.0));
+    const QRect scaledSelectVisualBounds =
+        visiblePixelBounds(renderWidgetAtDevicePixelRatio(*select, 2.0));
+    require(qAbs(sliderVisualBounds.width() - scaledSliderVisualBounds.width()) <= 2 &&
+                qAbs(sliderVisualBounds.height() - scaledSliderVisualBounds.height()) <= 2,
+            "toolbar slider track and thumb should retain their physical pixel size");
+    require(qAbs(lineEditVisualBounds.height() - scaledLineEditVisualBounds.height()) <= 2,
+            "toolbar text editor visuals should retain their physical pixel size");
+    require(qAbs(selectVisualBounds.width() - scaledSelectVisualBounds.width()) <= 2 &&
+                qAbs(selectVisualBounds.height() - scaledSelectVisualBounds.height()) <= 2,
+            "toolbar select visuals should retain their physical pixel size");
+
+    require(scaleScope.publishScale(1.0, 1.0),
+            "the toolbar control scope should publish the return DPI transition");
+    require(palette.setPhysicalScale(1.0),
+            "the toolbar should restore the reference monitor scale");
+    QCoreApplication::processEvents();
+    require(slider->size() == sliderSize && lineEdit->size() == lineEditSize &&
+                select->size() == selectSize && selectSuffix->size() == selectSuffixSize &&
+                QFontMetrics(lineEdit->font()).height() == lineEditFontHeight &&
+                QFontMetrics(select->font()).height() == selectFontHeight,
+            "toolbar editor metrics should return to their reference pixel sizes");
+}
+
+void selectPopupKeepsDestinationLogicalMetricsAcrossDpiChanges() {
+    QWidget root;
+    auto* select = new adqt::widgets::AdSelect(&root);
+    select->setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::InWindow);
+    adqt::widgets::AdSelect::Option option;
+    option.value = QStringLiteral("option");
+    option.label = QStringLiteral("Option");
+    select->setOptions({option});
+
+    QListView* popupView = select->view();
+    require(popupView != nullptr && popupView->model() != nullptr &&
+                popupView->model()->rowCount() == 1,
+            "the select should expose one popup option");
+    QWidget* popupSurface = popupView;
+    while (popupSurface != nullptr &&
+           popupSurface->objectName() != QStringLiteral("adselect-popup")) {
+        popupSurface = popupSurface->parentWidget();
+    }
+    require(popupSurface != nullptr && popupSurface->layout() != nullptr,
+            "the select should expose its popup layer");
+
+    const QModelIndex popupOption = popupView->model()->index(0, 0);
+    const QSize optionSize = popupOption.data(Qt::SizeHintRole).toSize();
+    const QFont optionFont = qvariant_cast<QFont>(popupOption.data(Qt::FontRole));
+    const QMargins popupMargins = popupSurface->layout()->contentsMargins();
+
+    adqt::widgets::AdControlScaleScope scaleScope(&root);
+    require(scaleScope.publishScale(1.0, 2.0),
+            "the popup test should publish a 200-percent DPI transition");
+    require(popupOption.data(Qt::SizeHintRole).toSize() == optionSize &&
+                QFontMetrics(qvariant_cast<QFont>(popupOption.data(Qt::FontRole))).height() ==
+                    QFontMetrics(optionFont).height() &&
+                popupSurface->layout()->contentsMargins() == popupMargins,
+            "select popup options should keep the destination display's logical metrics");
+}
+
 void selectToolExposesDedicatedActionToolbar() {
     ScreenshotToolPalette::Options options;
     options.showSelectTool = true;
@@ -5338,6 +5477,12 @@ int main(int argc, char** argv) {
         spotlightControlsMatchMaskConfigurationBehavior();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--dpi-controls-only"))) {
+        toolbarEditorsKeepPhysicalMetricsAcrossDpiChanges();
+        selectPopupKeepsDestinationLogicalMetricsAcrossDpiChanges();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     numericStrokeWidthPreviewUsesLineWithinPreviewBounds();
     textAndHighlightStrokeWidthTriggersUseSharedPreviewButton();
     scrollingScreenshotKeepsDrawingToolsAvailable();
@@ -5390,6 +5535,8 @@ int main(int argc, char** argv) {
     styleToolbarControlsDoNotEnterTabFocusChain();
     toolbarScalingDoesNotRelayoutPopupContent();
     popupColorEditorButtonsKeepPopupScaleAfterToolbarDpiCommit();
+    toolbarEditorsKeepPhysicalMetricsAcrossDpiChanges();
+    selectPopupKeepsDestinationLogicalMetricsAcrossDpiChanges();
     selectToolExposesDedicatedActionToolbar();
     secondaryToolbarsStartHiddenUntilTheirToolIsSelected();
     selectToolRemainsTheSoleOwnerOfItsSecondaryToolbar();

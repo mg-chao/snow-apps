@@ -67,7 +67,20 @@ impl Editor {
         if uses_stroke_cursor {
             self.apply_stroke_cursor_priority(event, &mut output);
         }
+        self.normalize_tool_cursor(event, &mut output);
         Ok(output)
+    }
+
+    // Pointer handlers historically had a few hard-coded Default responses. Resolve those
+    // through the active tool policy so every in-canvas path agrees on the same baseline cursor.
+    fn normalize_tool_cursor(&self, event: PointerEvent, output: &mut InteractionOutput) {
+        if event.event_type == PointerEventType::Leave {
+            return;
+        }
+
+        if output.cursor == CursorCommand::Set(CursorStyle::Default) {
+            output.cursor = CursorCommand::Set(self.tool_policy().default_cursor);
+        }
     }
 
     fn apply_stroke_cursor_priority(

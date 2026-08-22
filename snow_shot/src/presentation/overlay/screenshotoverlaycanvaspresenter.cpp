@@ -31,7 +31,7 @@ void ScreenshotOverlayCanvasPresenter::clearOverlayCanvas(ScreenshotOverlayWindo
 
     overlay->resetScreenshotRendering();
     overlay->canvas()->cancelActiveTextEditing();
-    overlay->canvas()->unsetCursor();
+    overlay->canvas()->setInteractionEnabled(false);
     overlay->clearPresentationFrame();
     overlay->canvas()->releaseRetainedRenderResources();
 }
@@ -355,6 +355,10 @@ void updateOverlayCursorsForDisplaySession(const ScreenshotDisplaySession& displ
                 return;
             }
 
+            if (canvas->interactionEnabled()) {
+                return;
+            }
+
             if (selecting) {
                 canvas->setCursor(Qt::CrossCursor);
                 return;
@@ -440,7 +444,7 @@ void ScreenshotOverlayCanvasPresenter::setOverlayCursor(
     }
 
     SnowCanvasWidget* canvas = overlay->canvas();
-    if (canvas == nullptr) {
+    if (canvas == nullptr || canvas->interactionEnabled()) {
         return;
     }
 

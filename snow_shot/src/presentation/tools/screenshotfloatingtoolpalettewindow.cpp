@@ -638,7 +638,13 @@ bool ScreenshotFloatingToolPaletteWindow::handleNativeHitTest(void* message,
         return false;
     }
 
-    const qreal devicePixelRatio = currentWindowDevicePixelRatio();
+    // WM_NCHITTEST coordinates and GetWindowRect are physical pixels.  Qt can still expose the
+    // source monitor DPR for one event turn after WM_DPICHANGED, so prefer the effective DPI of
+    // the HWND and only fall back to Qt's value when the native query is unavailable.
+    const UINT nativeDpi = GetDpiForWindow(msg->hwnd);
+    const qreal devicePixelRatio = nativeDpi > 0
+                                       ? static_cast<qreal>(nativeDpi) / 96.0
+                                       : currentWindowDevicePixelRatio();
     const qreal scale = devicePixelRatio > 0.0 ? devicePixelRatio : 1.0;
     const QPoint localPosition(
         static_cast<int>(std::floor(
@@ -684,7 +690,10 @@ void ScreenshotFloatingToolPaletteWindow::handlePaletteContentChange() {
     // controls present in the initial palette.
     bindDynamicKeyboardEditors();
 
-    if (!m_processingNativeDpiChange) {
+    // A native drag keeps the HWND's physical frame invariant across displays. Preserve the
+    // controller-derived logical extent until that drag ends; clearing it during an in-drag tool
+    // change makes the child layout request a destination-scaled top-level frame.
+    if (!m_processingNativeDpiChange && !physicalDragActive()) {
         const QSize constrainedSize = fixedWindowSizeHint();
         const QSize naturalSize = m_paletteHost->unconstrainedHostSizeHint();
         const bool naturalContentFits =
@@ -843,7 +852,12 @@ bool ScreenshotFloatingToolPaletteWindow::commitGeometryUpdate(bool preserveCont
     const QPoint contentAnchor =
         m_lastRequestedContentPositionValid ? m_lastRequestedContentPosition : contentPosition();
 
-    syncPalettePhysicalScale();
+    // The native DPI controller has already committed its HWND-derived scale before requesting
+    // this geometry pass. Qt can still report the previous monitor DPR here, so resynchronizing
+    // from QWindow would overwrite the authoritative scale for one event turn.
+    if (!m_processingNativeDpiChange) {
+        syncPalettePhysicalScale();
+    }
     updatePaletteGeometryForVisibleContent();
     const QSize windowSize = fixedWindowSizeHint();
     if (!windowSize.isValid() || windowSize.isEmpty()) {

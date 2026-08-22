@@ -1499,8 +1499,6 @@ bool ScreenshotPinnedWindow::present(const Config& config) {
                                                     m_editController->editMode());
                     if (active) {
                         m_canvas->setFocus(Qt::OtherFocusReason);
-                    } else {
-                        m_canvas->unsetCursor();
                     }
                 }
                 if (m_recognitionContent != nullptr) {
