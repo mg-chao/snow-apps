@@ -919,6 +919,30 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     enable_testing()
 
+    if(WIN32)
+        add_executable(snow-shot-window-chrome-tests
+            tests/window_chrome_tests.cpp
+            include/snow_shot/platform/windows/windowchrome.h
+            src/platform/windows/windowchrome.cpp
+        )
+        target_include_directories(snow-shot-window-chrome-tests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        )
+        target_link_libraries(snow-shot-window-chrome-tests PRIVATE
+            Qt6::Widgets
+            dwmapi
+            user32
+        )
+        add_test(NAME snow-shot-window-chrome-tests
+                 COMMAND snow-shot-window-chrome-tests)
+        set_tests_properties(snow-shot-window-chrome-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    endif()
+
     snow_shot_add_image_codec_smoke_test()
     add_test(NAME snow-shot-image-codec-backend-smoke-tests
              COMMAND snow-shot-image-codec-backend-smoke-tests)

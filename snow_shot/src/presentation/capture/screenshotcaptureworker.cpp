@@ -282,8 +282,6 @@ bool ScreenshotCaptureWorker::ensureSession() {
     SnowCaptureDesktopSessionConfig config{};
     config.capture_retry_count = 1;
     config.capture_backend = SNOW_CAPTURE_BACKEND_AUTO;
-    config.reserved[SNOW_CAPTURE_DESKTOP_AUTO_BACKEND_POLICY_RESERVED_INDEX] =
-        SNOW_CAPTURE_DESKTOP_AUTO_BACKEND_POLICY_LOW_LATENCY_SDR;
     m_session = snow_capture_desktop_session_create(&config);
     if (m_session == nullptr) {
         qWarning("Failed to create desktop capture session: %s", snow_capture_last_error_message());

@@ -237,6 +237,7 @@ class AdRadio final : public QRadioButton, public AdControlScaleParticipant {
   mutable std::unique_ptr<StyleCache> styleCache_;
   AdControlScaleContext controlScale_;
   QFont referenceFont_;
+  QSize referenceIconSize_;
   bool referenceFontCaptured_ = false;
 };
 

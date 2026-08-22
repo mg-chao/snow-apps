@@ -51,6 +51,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdlib>
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include <utility>
@@ -98,6 +99,20 @@ bool imageHasOpaqueLightPixel(const QImage& image) {
         }
     }
     return false;
+}
+
+QRect matchingPixelBounds(const QImage& image, const std::function<bool(const QColor&)>& matches) {
+    QRect bounds;
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            if (!matches(image.pixelColor(x, y))) {
+                continue;
+            }
+            const QRect pixel(x, y, 1, 1);
+            bounds = bounds.isValid() ? bounds.united(pixel) : pixel;
+        }
+    }
+    return bounds;
 }
 
 int longestHorizontalColorRun(const QImage& image, const QColor& color) {
@@ -2696,6 +2711,120 @@ void watermarkControlsFollowPhysicalScale() {
         require(allControls.at(index)->size() == expectedScaledSize(referenceSizes.at(index)),
                 "watermark controls should follow the toolbar physical counter-scale");
     }
+}
+
+void subToolbarControlInternalsFollowMixedDpiScale() {
+    ScreenshotToolPalette::Options options;
+    options.showWatermarkTool = true;
+    ScreenshotToolPalette palette(options);
+    palette.show();
+
+    palette.setActiveTool(ScreenshotToolPalette::Tool::RectangleFilter);
+    auto* slider = palette.findChild<adqt::widgets::AdSlider*>(
+        QStringLiteral("screenshotFilterIntensitySlider"));
+    require(slider != nullptr, "filter sub-toolbar should expose its intensity slider");
+    adqt::widgets::AdSlider::ComponentTokens sliderTokens;
+    sliderTokens.railSize = 4;
+    sliderTokens.handleSize = 10;
+    sliderTokens.handleSizeHover = 10;
+    sliderTokens.handleLineWidth = 2;
+    sliderTokens.handleLineWidthHover = 2;
+    sliderTokens.focusOutlineSize = 0;
+    sliderTokens.marginMain = 12;
+    sliderTokens.railBg = QColor(0, 220, 0);
+    sliderTokens.railHoverBg = sliderTokens.railBg;
+    sliderTokens.trackBg = sliderTokens.railBg;
+    sliderTokens.trackHoverBg = sliderTokens.railBg;
+    sliderTokens.handleColor = QColor(0, 0, 230);
+    sliderTokens.handleActiveColor = sliderTokens.handleColor;
+    slider->setComponentTokens(sliderTokens);
+    adqt::widgets::AdSlider::SemanticStyles sliderStyles;
+    sliderStyles.root.backgroundColor = QColor(Qt::white);
+    sliderStyles.handle.backgroundColor = QColor(250, 220, 0);
+    slider->setSemanticStyles(sliderStyles);
+    slider->setTooltipEnabled(false);
+    const auto isRail = [](const QColor& color) {
+        return color.green() > color.red() + 80 && color.green() > color.blue() + 80;
+    };
+    const auto isHandle = [](const QColor& color) {
+        return color.red() > 200 && color.green() > 170 && color.blue() < 80;
+    };
+    const QRect railBefore = matchingPixelBounds(renderButton(*slider), isRail);
+    const QRect handleBefore = matchingPixelBounds(renderButton(*slider), isHandle);
+
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    auto* shapeOption =
+        qobject_cast<adqt::widgets::AdRadio*>(controlWithTooltip(palette, "Rectangle"));
+    require(shapeOption != nullptr && !shapeOption->icon().isNull(),
+            "shape sub-toolbar should expose an icon radio option");
+    const QSize radioIconBefore = shapeOption->iconSize();
+
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Watermark);
+    auto* lineEdit = palette.findChild<adqt::widgets::AdLineEdit*>(
+        QStringLiteral("screenshotWatermarkTextEdit"));
+    require(lineEdit != nullptr, "watermark sub-toolbar should expose its input");
+    const QMargins inputMarginsBefore = lineEdit->textMargins();
+
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Text);
+    auto* select = qobject_cast<adqt::widgets::AdSelect*>(
+        controlWithAccessibleName(palette, "Text font family"));
+    require(select != nullptr && select->layout() != nullptr,
+            "text sub-toolbar should expose its font select");
+    select->showPopup();
+    QCoreApplication::processEvents();
+    QListView* popupView = select->view();
+    require(popupView != nullptr && popupView->model() != nullptr &&
+                popupView->model()->rowCount() > 0,
+            "font select popup should open for mixed-DPI isolation coverage");
+    QWidget* popupWindow = popupView->window();
+    const int selectHeightBefore = select->sizeHint().height();
+    const QMargins selectMarginsBefore = select->layout()->contentsMargins();
+    const QSize popupSizeBefore = popupWindow->size();
+    const QSize popupViewSizeBefore = popupView->size();
+    const QModelIndex firstRowBefore = popupView->model()->index(0, 0);
+    const QSize optionSizeBefore = firstRowBefore.data(Qt::SizeHintRole).toSize();
+    const QFont optionFontBefore = firstRowBefore.data(Qt::FontRole).value<QFont>();
+
+    constexpr qreal toolbarCounterScale = 1.5;
+    adqt::widgets::AdControlScaleScope scope(&palette);
+    require(scope.publishScale(toolbarCounterScale, 1.0),
+            "sub-toolbar controls should receive the mixed-DPI scale context");
+    require(palette.setPhysicalScale(toolbarCounterScale),
+            "sub-toolbar geometry should follow the mixed-DPI counter-scale");
+    QCoreApplication::processEvents();
+
+    const QMargins selectMarginsAfter = select->layout()->contentsMargins();
+    const QModelIndex firstRowAfter = popupView->model()->index(0, 0);
+    require(select->sizeHint().height() == qRound(selectHeightBefore * toolbarCounterScale) &&
+                selectMarginsAfter.left() > selectMarginsBefore.left() &&
+                selectMarginsAfter.right() > selectMarginsBefore.right(),
+            "select trigger internals should follow the toolbar mixed-DPI scale");
+    require(firstRowAfter.data(Qt::SizeHintRole).toSize() == optionSizeBefore &&
+                firstRowAfter.data(Qt::FontRole).value<QFont>() == optionFontBefore &&
+                popupView->size() == popupViewSizeBefore && popupWindow->size() == popupSizeBefore,
+            "select popup layer should retain its own monitor scale");
+    select->hidePopup();
+
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    require(shapeOption->iconSize() ==
+                QSize(qRound(radioIconBefore.width() * toolbarCounterScale),
+                      qRound(radioIconBefore.height() * toolbarCounterScale)),
+            "button-group icons should follow the toolbar mixed-DPI scale");
+
+    palette.setActiveTool(ScreenshotToolPalette::Tool::RectangleFilter);
+    const QRect railAfter = matchingPixelBounds(renderButton(*slider), isRail);
+    const QRect handleAfter = matchingPixelBounds(renderButton(*slider), isHandle);
+    require(railBefore.isValid() && handleBefore.isValid() && railAfter.height() > railBefore.height(),
+            "sub-toolbar slider rail thickness should follow the mixed-DPI scale");
+    require(handleAfter.width() > handleBefore.width() &&
+                handleAfter.height() > handleBefore.height(),
+            "sub-toolbar slider handle should follow the mixed-DPI scale");
+
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Watermark);
+    require(lineEdit->textMargins().left() > inputMarginsBefore.left() &&
+                lineEdit->textMargins().right() > inputMarginsBefore.right(),
+            "sub-toolbar input padding should follow the mixed-DPI scale");
+    palette.hide();
 }
 
 void shapeSelectorIsTheLeftmostStyleGroup() {
@@ -5369,6 +5498,7 @@ int main(int argc, char** argv) {
     watermarkControlsFollowCommittedStateAndUndo();
     watermarkEditsCommitCompleteConfigsAndClampWheel();
     watermarkControlsFollowPhysicalScale();
+    subToolbarControlInternalsFollowMixedDpiScale();
     selectedStyleEditsAreReflectedInTheCreationStyleContext();
     mixedColorsKeepUniformStyleButtonsActive();
     styleToolbarWidthTracksTheActiveTool();

@@ -2992,6 +2992,31 @@ mod tests {
     }
 
     #[test]
+    fn desktop_default_auto_config_preserves_hdr_aware_backend_order() {
+        let config = SnowCaptureDesktopSessionConfig {
+            capture_retry_count: 1,
+            wgc_update_mode: 0,
+            capture_backend: 0,
+            reserved: [0; 30],
+        };
+
+        let (options, backend, auto_backend_policy) = default_options(&raw const config).unwrap();
+
+        assert_eq!(backend, CaptureBackendKind::Auto);
+        assert_eq!(auto_backend_policy, None);
+        assert!(options.gpu_hdr_conversion);
+        assert!(options.hdr_tonemap_lut);
+        assert_eq!(
+            snow_capture::backend::DEFAULT_AUTO_BACKEND_PRIORITY,
+            [
+                CaptureBackendKind::DxgiDuplication,
+                CaptureBackendKind::WindowsGraphicsCapture,
+                CaptureBackendKind::Gdi,
+            ]
+        );
+    }
+
+    #[test]
     fn desktop_config_selects_low_latency_sdr_auto_backend_order() {
         let mut reserved = [0; 30];
         reserved[DESKTOP_AUTO_BACKEND_POLICY_RESERVED_INDEX] =

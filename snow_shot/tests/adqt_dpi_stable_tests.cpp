@@ -4,6 +4,7 @@
 #include "widgets/control_scale.h"
 #include "widgets/dpi_stable_window_controller.h"
 #include "widgets/floating_surface.h"
+#include "widgets/input.h"
 #include "widgets/radio.h"
 #include "widgets/select.h"
 #include "widgets/slider.h"
@@ -11,11 +12,15 @@
 #include <QApplication>
 #include <QHBoxLayout>
 #include <QImage>
+#include <QIconEngine>
+#include <QListView>
 #include <QPainter>
 
 #include <cmath>
 #include <atomic>
+#include <functional>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <thread>
 #include <vector>
@@ -38,6 +43,65 @@ void require(bool condition, const char* message) {
     if (!condition)
         throw std::runtime_error(message);
 }
+
+QImage renderWidget(QWidget* widget) {
+    QImage image(widget->size(), QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    QPainter painter(&image);
+    widget->render(&painter);
+    return image;
+}
+
+QRect matchingPixelBounds(const QImage& image, const std::function<bool(const QColor&)>& matches) {
+    QRect bounds;
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            if (!matches(image.pixelColor(x, y))) {
+                continue;
+            }
+            const QRect pixel(x, y, 1, 1);
+            bounds = bounds.isValid() ? bounds.united(pixel) : pixel;
+        }
+    }
+    return bounds;
+}
+
+struct IconPaintTrace final {
+    QVector<qreal> painterDprs;
+    int pixmapRequestCount = 0;
+};
+
+class DpiTrackingIconEngine final : public QIconEngine {
+  public:
+    explicit DpiTrackingIconEngine(std::shared_ptr<IconPaintTrace> trace)
+        : trace_(std::move(trace)) {}
+
+    QIconEngine* clone() const override { return new DpiTrackingIconEngine(trace_); }
+
+    void paint(QPainter* painter, const QRect& rect, QIcon::Mode mode,
+               QIcon::State state) override {
+        Q_UNUSED(mode)
+        Q_UNUSED(state)
+        trace_->painterDprs.append(painter && painter->device()
+                                       ? painter->device()->devicePixelRatioF()
+                                       : 1.0);
+        if (painter != nullptr) {
+            painter->fillRect(rect, Qt::black);
+        }
+    }
+
+    QPixmap pixmap(const QSize& size, QIcon::Mode mode, QIcon::State state) override {
+        Q_UNUSED(mode)
+        Q_UNUSED(state)
+        ++trace_->pixmapRequestCount;
+        QPixmap result(size);
+        result.fill(Qt::black);
+        return result;
+    }
+
+  private:
+    std::shared_ptr<IconPaintTrace> trace_;
+};
 
 class ParticipantWidget final : public QWidget, public adqt::widgets::AdControlScaleParticipant {
   public:
@@ -167,23 +231,167 @@ void componentHintsFollowTheScope() {
     auto* radio = new adqt::widgets::AdRadio(QStringLiteral("Choice"), &root);
     auto* slider = new adqt::widgets::AdSlider(&root);
     auto* select = new adqt::widgets::AdSelect(&root);
+    auto* lineEdit = new adqt::widgets::AdLineEdit(&root);
+    QPixmap radioIcon(16, 16);
+    radioIcon.fill(Qt::black);
+    radio->setIcon(QIcon(radioIcon));
+    radio->setIconSize(QSize(16, 16));
+    lineEdit->setText(QStringLiteral("Value"));
     layout->addWidget(button);
     layout->addWidget(radio);
     layout->addWidget(slider);
     layout->addWidget(select);
+    layout->addWidget(lineEdit);
     const QSize buttonBefore = button->sizeHint();
     const QSize radioBefore = radio->sizeHint();
     const QSize sliderBefore = slider->sizeHint();
     const QSize selectBefore = select->sizeHint();
+    const QSize lineEditBefore = lineEdit->sizeHint();
+    const QSize radioIconBefore = radio->iconSize();
+    const QMargins lineEditMarginsBefore = lineEdit->textMargins();
     adqt::widgets::AdControlScaleScope scope(&root);
     require(scope.publishScale(1.5, 1.0), "component scale commit failed");
     require(button->sizeHint().width() > buttonBefore.width() &&
                 radio->sizeHint().width() > radioBefore.width() &&
                 slider->sizeHint().width() > sliderBefore.width() &&
-                select->sizeHint().width() > selectBefore.width(),
+                select->sizeHint().width() > selectBefore.width() &&
+                lineEdit->sizeHint().width() > lineEditBefore.width(),
             "one or more migrated component hints ignored the scale context");
-    require(button->isEnabled() && radio->isEnabled() && slider->isEnabled() && select->isEnabled(),
+    require(select->sizeHint().height() == qRound(selectBefore.height() * 1.5) &&
+                lineEdit->sizeHint().height() == qRound(lineEditBefore.height() * 1.5),
+            "select and input trigger heights did not follow the scale context exactly once");
+    require(radio->iconSize() ==
+                QSize(qRound(radioIconBefore.width() * 1.5),
+                      qRound(radioIconBefore.height() * 1.5)),
+            "radio button-group icons did not follow the scale context");
+    require(lineEdit->textMargins().left() > lineEditMarginsBefore.left() &&
+                lineEdit->textMargins().right() > lineEditMarginsBefore.right(),
+            "input content padding did not follow the scale context");
+    require(button->isEnabled() && radio->isEnabled() && slider->isEnabled() &&
+                select->isEnabled() && lineEdit->isEnabled(),
             "scale commit changed component enabled state");
+}
+
+void radioIconUsesDirectPaintingAfterScaleChanges() {
+    QWidget root;
+    auto* radio = new adqt::widgets::AdRadio(&root);
+    radio->setVariant(adqt::widgets::AdRadio::Variant::Button);
+    radio->setIconSize(QSize(16, 16));
+    radio->setFixedSize(32, 24);
+
+    const auto trace = std::make_shared<IconPaintTrace>();
+    radio->setIcon(QIcon(new DpiTrackingIconEngine(trace)));
+
+    adqt::widgets::AdControlScaleScope scope(&root);
+    require(scope.publishScale(1.5, 1.0), "radio scale-up commit failed");
+    renderWidget(radio);
+    require(scope.publishScale(1.0, 1.0), "radio scale-down commit failed");
+    renderWidget(radio);
+
+    require(trace->painterDprs.size() == 2,
+            "radio icons did not paint through the current painter after scale changes");
+    require(trace->pixmapRequestCount == 0,
+            "radio icons fell back to cached pixmap scaling instead of direct painting");
+}
+
+void sliderControlMetricsFollowTheScope() {
+    QWidget root;
+    root.resize(260, 90);
+    adqt::widgets::AdSlider slider(&root);
+    slider.setGeometry(10, 10, 240, 70);
+    slider.setValue(50);
+    slider.setTooltipEnabled(false);
+
+    adqt::widgets::AdSlider::ComponentTokens tokens;
+    tokens.railSize = 4;
+    tokens.handleSize = 10;
+    tokens.handleSizeHover = 10;
+    tokens.handleLineWidth = 2;
+    tokens.handleLineWidthHover = 2;
+    tokens.focusOutlineSize = 0;
+    tokens.marginMain = 12;
+    tokens.railBg = QColor(0, 220, 0);
+    tokens.railHoverBg = tokens.railBg;
+    tokens.trackBg = tokens.railBg;
+    tokens.trackHoverBg = tokens.railBg;
+    tokens.handleColor = QColor(0, 0, 230);
+    tokens.handleActiveColor = tokens.handleColor;
+    slider.setComponentTokens(tokens);
+
+    adqt::widgets::AdSlider::SemanticStyles styles;
+    styles.root.backgroundColor = QColor(Qt::white);
+    styles.handle.backgroundColor = QColor(250, 220, 0);
+    slider.setSemanticStyles(styles);
+
+    const auto isRail = [](const QColor& color) {
+        return color.green() > color.red() + 80 && color.green() > color.blue() + 80;
+    };
+    const auto isHandle = [](const QColor& color) {
+        return color.red() > 200 && color.green() > 170 && color.blue() < 80;
+    };
+    const QRect railBefore = matchingPixelBounds(renderWidget(&slider), isRail);
+    const QRect handleBefore = matchingPixelBounds(renderWidget(&slider), isHandle);
+    require(railBefore.isValid() && handleBefore.isValid(),
+            "slider metric test did not render its reference rail and handle");
+
+    adqt::widgets::AdControlScaleScope scope(&root);
+    require(scope.publishScale(1.5, 1.0), "slider scale commit failed");
+    const QRect railAfter = matchingPixelBounds(renderWidget(&slider), isRail);
+    const QRect handleAfter = matchingPixelBounds(renderWidget(&slider), isHandle);
+    require(railAfter.height() > railBefore.height(),
+            "slider rail thickness did not follow the scale context");
+    require(handleAfter.width() > handleBefore.width() &&
+                handleAfter.height() > handleBefore.height(),
+            "slider handle dimensions did not follow the scale context");
+}
+
+void selectTriggerScaleDoesNotRelayoutPopup() {
+    QWidget root;
+    root.resize(480, 180);
+    adqt::widgets::AdSelect select(&root);
+    select.setOptions({
+        {QStringLiteral("first"), QStringLiteral("First option")},
+        {QStringLiteral("second"), QStringLiteral("Second option")},
+        {QStringLiteral("third"), QStringLiteral("Third option")},
+    });
+    select.setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
+    select.setPopupMatchSelectWidth(false);
+    select.move(20, 20);
+    select.resize(select.sizeHint());
+    root.show();
+    select.showPopup();
+    QApplication::processEvents();
+
+    QListView* popupView = select.view();
+    require(popupView != nullptr && popupView->model() != nullptr &&
+                popupView->model()->rowCount() == 3,
+            "select popup was not created for DPI isolation coverage");
+    QWidget* popupWindow = popupView->window();
+    const QModelIndex firstRow = popupView->model()->index(0, 0);
+    const int triggerHeightBefore = select.sizeHint().height();
+    const QMargins triggerMarginsBefore = select.layout()->contentsMargins();
+    const QSize popupSizeBefore = popupWindow->size();
+    const QSize popupViewSizeBefore = popupView->size();
+    const QSize optionSizeBefore = firstRow.data(Qt::SizeHintRole).toSize();
+    const QFont optionFontBefore = firstRow.data(Qt::FontRole).value<QFont>();
+
+    adqt::widgets::AdControlScaleScope scope(&root);
+    require(scope.publishScale(1.5, 1.0), "select scale commit failed");
+    QApplication::processEvents();
+
+    const QMargins triggerMarginsAfter = select.layout()->contentsMargins();
+    require(select.sizeHint().height() == qRound(triggerHeightBefore * 1.5) &&
+                triggerMarginsAfter.left() > triggerMarginsBefore.left() &&
+                triggerMarginsAfter.right() > triggerMarginsBefore.right(),
+            "select trigger metrics did not follow the scale context");
+    require(firstRow.data(Qt::SizeHintRole).toSize() == optionSizeBefore &&
+                firstRow.data(Qt::FontRole).value<QFont>() == optionFontBefore &&
+                popupView->size() == popupViewSizeBefore && popupWindow->size() == popupSizeBefore,
+            "select trigger scaling changed the excluded popup layer metrics");
+
+    select.hidePopup();
+    root.hide();
+    QApplication::processEvents();
 }
 
 const adqt::icons::ExternalIconPack& testIconPack() {
@@ -348,6 +556,9 @@ int main(int argc, char** argv) {
         controllerCoalescesToTheLatestPendingScale();
         controllerCanKeepReferenceDpiSeparateFromWindowDpi();
         componentHintsFollowTheScope();
+        radioIconUsesDirectPaintingAfterScaleChanges();
+        sliderControlMetricsFollowTheScope();
+        selectTriggerScaleDoesNotRelayoutPopup();
         iconCacheSharesPhysicalRasters();
         iconCacheSeparatesVisualKeys();
         concurrentIconMissesRasterizeOnce();

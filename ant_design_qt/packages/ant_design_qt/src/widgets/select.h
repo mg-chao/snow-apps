@@ -583,6 +583,7 @@ class AdSelect final : public QWidget,
   SemanticStyles semanticStyles_;
   SemanticStyleResolver semanticStyleResolver_;
   detail::SelectVisualStyle* visualStyle_ = nullptr;
+  detail::SelectVisualStyle* popupVisualStyle_ = nullptr;
   std::unique_ptr<detail::SelectCompositeModel> compositeModel_;
   std::unique_ptr<detail::SelectFilterProxyModel> filterProxyModel_;
 

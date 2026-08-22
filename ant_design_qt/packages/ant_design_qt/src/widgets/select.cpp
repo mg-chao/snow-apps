@@ -86,6 +86,55 @@ int sharedSpinnerAngle() {
   return static_cast<int>((phaseMs * 360) / cycleMs);
 }
 
+int scaledControlMetric(int value, qreal scale) {
+  if (value == 0) {
+    return 0;
+  }
+  return qMax(1, qRound(static_cast<qreal>(value) * scale));
+}
+
+qreal scaledControlMetric(qreal value, qreal scale) { return value * scale; }
+
+void scaleControlFont(QFont* font, qreal scale) {
+  if (font == nullptr) {
+    return;
+  }
+  if (font->pixelSize() > 0) {
+    font->setPixelSize(scaledControlMetric(font->pixelSize(), scale));
+  } else if (font->pointSizeF() > 0.0) {
+    font->setPointSizeF(font->pointSizeF() * scale);
+  }
+}
+
+void scaleSelectTriggerMetrics(detail::SelectMetrics* metrics, qreal scale) {
+  if (metrics == nullptr) {
+    return;
+  }
+  metrics->height = scaledControlMetric(metrics->height, scale);
+  metrics->borderRadius = scaledControlMetric(metrics->borderRadius, scale);
+  metrics->borderWidth = scaledControlMetric(metrics->borderWidth, scale);
+  metrics->focusOutlineWidth = scaledControlMetric(metrics->focusOutlineWidth, scale);
+  metrics->focusOutlineOffset = scaledControlMetric(metrics->focusOutlineOffset, scale);
+  metrics->inputPaddingHorizontalBase =
+      scaledControlMetric(metrics->inputPaddingHorizontalBase, scale);
+  metrics->horizontalPadding = scaledControlMetric(metrics->horizontalPadding, scale);
+  metrics->tagHeight = scaledControlMetric(metrics->tagHeight, scale);
+  metrics->tagBorderRadius = scaledControlMetric(metrics->tagBorderRadius, scale);
+  metrics->tagPaddingInlineStart = scaledControlMetric(metrics->tagPaddingInlineStart, scale);
+  metrics->tagPaddingInlineEnd = scaledControlMetric(metrics->tagPaddingInlineEnd, scale);
+  metrics->tagContentGap = scaledControlMetric(metrics->tagContentGap, scale);
+  metrics->tagItemMargin = scaledControlMetric(metrics->tagItemMargin, scale);
+  metrics->tagItemGap = scaledControlMetric(metrics->tagItemGap, scale);
+  metrics->multiplePaddingInlineStart =
+      scaledControlMetric(metrics->multiplePaddingInlineStart, scale);
+  metrics->multiplePaddingVertical = scaledControlMetric(metrics->multiplePaddingVertical, scale);
+  metrics->multipleItemPaddingHorizontal =
+      scaledControlMetric(metrics->multipleItemPaddingHorizontal, scale);
+  metrics->iconSize = scaledControlMetric(metrics->iconSize, scale);
+  metrics->spacing = scaledControlMetric(metrics->spacing, scale);
+  scaleControlFont(&metrics->selectorFont, scale);
+}
+
 QPixmap renderIconPixmap(const adqt::icons::IconRef& icon, int iconSize, qreal dpr,
                          int rotationDegrees = 0) {
   if (!adqt::icons::isValid(icon)) {
@@ -898,7 +947,7 @@ class AdSelect::OptionListModel final : public QAbstractListModel {
     }
 
     const ModelRow& row = rows_.at(index.row());
-    const detail::SelectVisualStyle& style = *owner_->visualStyle_;
+    const detail::SelectVisualStyle& style = *owner_->popupVisualStyle_;
 
     if (role == kSelectRowHeaderRole) {
       return row.header;
@@ -1114,7 +1163,7 @@ class AdSelect::OptionListDelegate final : public QStyledItemDelegate {
 
   void paint(QPainter* painter, const QStyleOptionViewItem& option,
              const QModelIndex& index) const override {
-    if (!painter || !index.isValid() || !owner_ || !owner_->visualStyle_) {
+    if (!painter || !index.isValid() || !owner_ || !owner_->popupVisualStyle_) {
       QStyledItemDelegate::paint(painter, option, index);
       return;
     }
@@ -1122,7 +1171,7 @@ class AdSelect::OptionListDelegate final : public QStyledItemDelegate {
     QStyleOptionViewItem itemOption(option);
     initStyleOption(&itemOption, index);
 
-    const detail::SelectVisualStyle& style = *owner_->visualStyle_;
+    const detail::SelectVisualStyle& style = *owner_->popupVisualStyle_;
     const bool isHeader = index.data(kSelectRowHeaderRole).toBool();
     const bool isEmpty = index.data(kSelectRowEmptyRole).toBool();
     const bool isSelected = (itemOption.state & QStyle::State_Selected) != 0;
@@ -1325,6 +1374,7 @@ AdSelect::AdSelect(QWidget* parent) : QWidget(parent) {
       "QVector<adqt::widgets::AdSelect::SelectionItem>");
 
   visualStyle_ = new detail::SelectVisualStyle();
+  popupVisualStyle_ = new detail::SelectVisualStyle();
   compositeModel_ = std::make_unique<detail::SelectCompositeModel>(this);
   compositeModel_->setPrimaryColumn(modelColumn_);
   filterProxyModel_ = std::make_unique<detail::SelectFilterProxyModel>(this);
@@ -1487,6 +1537,8 @@ AdSelect::~AdSelect() {
   }
   delete visualStyle_;
   visualStyle_ = nullptr;
+  delete popupVisualStyle_;
+  popupVisualStyle_ = nullptr;
 }
 
 AdSelect::SelectionSnapshot AdSelect::captureSelectionSnapshot() const {
@@ -2886,8 +2938,7 @@ QSize AdSelect::sizeHint() const {
   if (mode_ != Mode::Single) {
     height = std::max(height, this->height());
   }
-  return QSize(qMax(1, qRound(240 * controlScale_.logicalScale)),
-               qMax(1, qRound(height * controlScale_.logicalScale)));
+  return QSize(qMax(1, qRound(240 * controlScale_.logicalScale)), qMax(1, height));
 }
 
 QSize AdSelect::minimumSizeHint() const {
@@ -2895,8 +2946,7 @@ QSize AdSelect::minimumSizeHint() const {
   if (mode_ != Mode::Single) {
     height = std::max(height, this->height());
   }
-  return QSize(qMax(1, qRound(120 * controlScale_.logicalScale)),
-               qMax(1, qRound(height * controlScale_.logicalScale)));
+  return QSize(qMax(1, qRound(120 * controlScale_.logicalScale)), qMax(1, height));
 }
 
 void AdSelect::prepareControlScale(const AdControlScaleContext& context) { Q_UNUSED(context) }
@@ -4032,13 +4082,13 @@ void AdSelect::moveCurrentListRow(int step, bool pageStep) {
   }
 
   int moveStep = step;
-  if (pageStep && visualStyle_ && visualStyle_->metrics.optionHeight > 0) {
+  if (pageStep && popupVisualStyle_ && popupVisualStyle_->metrics.optionHeight > 0) {
     const int viewportHeight =
         popupScrollArea_
             ? popupScrollArea_->height()
             : (listView_->viewport() ? listView_->viewport()->height() : listView_->height());
     const int visibleRows =
-        std::max(1, viewportHeight / std::max(1, visualStyle_->metrics.optionHeight));
+        std::max(1, viewportHeight / std::max(1, popupVisualStyle_->metrics.optionHeight));
     moveStep *= visibleRows;
   }
 
@@ -4628,7 +4678,7 @@ void AdSelect::updateSuffixVisual() {
 }
 
 void AdSelect::applyVisualStyle() {
-  if (!visualStyle_ || applyingVisualStyle_) {
+  if (!visualStyle_ || !popupVisualStyle_ || applyingVisualStyle_) {
     return;
   }
   QScopedValueRollback<bool> styleGuard(applyingVisualStyle_, true);
@@ -4659,9 +4709,12 @@ void AdSelect::applyVisualStyle() {
   input.componentTokens = componentTokens_;
   input.semanticStyles = effectiveSemantic;
   const detail::SelectVisualStyle previousStyle = *visualStyle_;
+  const detail::SelectVisualStyle previousPopupStyle = *popupVisualStyle_;
   const adqt::theme::ResolvedTheme resolvedTheme =
       adqt::theme::ThemeManager::instance().resolve(this);
-  *visualStyle_ = detail::resolveSelectVisualStyle(input, resolvedTheme);
+  *popupVisualStyle_ = detail::resolveSelectVisualStyle(input, resolvedTheme);
+  *visualStyle_ = *popupVisualStyle_;
+  scaleSelectTriggerMetrics(&visualStyle_->metrics, controlScale_.logicalScale);
   const bool prefixIconColorOverridesChanged =
       previousStyle.prefixColor != visualStyle_->prefixColor ||
       previousStyle.metrics.iconSize != visualStyle_->metrics.iconSize;
@@ -4669,20 +4722,23 @@ void AdSelect::applyVisualStyle() {
       previousStyle.suffixColor != visualStyle_->suffixColor ||
       previousStyle.metrics.iconSize != visualStyle_->metrics.iconSize;
   const bool listDelegateStyleChanged =
-      previousStyle.popupBg != visualStyle_->popupBg ||
-      previousStyle.optionTextColor != visualStyle_->optionTextColor ||
-      previousStyle.optionHoverBg != visualStyle_->optionHoverBg ||
-      previousStyle.optionSelectedBg != visualStyle_->optionSelectedBg ||
-      previousStyle.optionSelectedColor != visualStyle_->optionSelectedColor ||
-      previousStyle.selectorActiveBorderColor != visualStyle_->selectorActiveBorderColor ||
-      previousStyle.disabledTextColor != visualStyle_->disabledTextColor ||
-      previousStyle.disabledBg != visualStyle_->disabledBg ||
-      previousStyle.metrics.optionBorderRadius != visualStyle_->metrics.optionBorderRadius ||
-      previousStyle.metrics.optionPaddingHorizontal !=
-          visualStyle_->metrics.optionPaddingHorizontal ||
-      previousStyle.metrics.optionPaddingVertical != visualStyle_->metrics.optionPaddingVertical ||
-      previousStyle.metrics.iconSize != visualStyle_->metrics.iconSize ||
-      previousStyle.metrics.optionFont != visualStyle_->metrics.optionFont;
+      previousPopupStyle.popupBg != popupVisualStyle_->popupBg ||
+      previousPopupStyle.optionTextColor != popupVisualStyle_->optionTextColor ||
+      previousPopupStyle.optionHoverBg != popupVisualStyle_->optionHoverBg ||
+      previousPopupStyle.optionSelectedBg != popupVisualStyle_->optionSelectedBg ||
+      previousPopupStyle.optionSelectedColor != popupVisualStyle_->optionSelectedColor ||
+      previousPopupStyle.selectorActiveBorderColor !=
+          popupVisualStyle_->selectorActiveBorderColor ||
+      previousPopupStyle.disabledTextColor != popupVisualStyle_->disabledTextColor ||
+      previousPopupStyle.disabledBg != popupVisualStyle_->disabledBg ||
+      previousPopupStyle.metrics.optionBorderRadius !=
+          popupVisualStyle_->metrics.optionBorderRadius ||
+      previousPopupStyle.metrics.optionPaddingHorizontal !=
+          popupVisualStyle_->metrics.optionPaddingHorizontal ||
+      previousPopupStyle.metrics.optionPaddingVertical !=
+          popupVisualStyle_->metrics.optionPaddingVertical ||
+      previousPopupStyle.metrics.iconSize != popupVisualStyle_->metrics.iconSize ||
+      previousPopupStyle.metrics.optionFont != popupVisualStyle_->metrics.optionFont;
 
   bool widgetStyleChanged = false;
 
@@ -4802,21 +4858,21 @@ void AdSelect::applyVisualStyle() {
   bool popupStyleChanged = false;
   if (popup_) {
     if (popupLayout_) {
-      const int popupPadding = visualStyle_->metrics.popupPadding;
+      const int popupPadding = popupVisualStyle_->metrics.popupPadding;
       const QMargins visualPadding(popupPadding, popupPadding, popupPadding, popupPadding);
       popupStyleChanged |= setLayoutContentsMarginsIfChanged(
           popupLayout_, detail::addAntPopupShadowMarginsToPadding(visualPadding));
       popupStyleChanged |= setLayoutSpacingIfChanged(popupLayout_, 0);
     }
 
-    static_cast<PopupFrame*>(popup_)->setVisualStyle(visualStyle_->popupBg,
-                                                     visualStyle_->popupBorderColor,
-                                                     visualStyle_->metrics.popupBorderRadius);
+    static_cast<PopupFrame*>(popup_)->setVisualStyle(
+        popupVisualStyle_->popupBg, popupVisualStyle_->popupBorderColor,
+        popupVisualStyle_->metrics.popupBorderRadius);
 
     if (popupScrollArea_) {
       QPalette scrollPalette = popupScrollArea_->palette();
-      scrollPalette.setColor(QPalette::Base, visualStyle_->popupBg);
-      scrollPalette.setColor(QPalette::Window, visualStyle_->popupBg);
+      scrollPalette.setColor(QPalette::Base, popupVisualStyle_->popupBg);
+      scrollPalette.setColor(QPalette::Window, popupVisualStyle_->popupBg);
       popupStyleChanged |= setWidgetPaletteIfChanged(popupScrollArea_, scrollPalette);
       if (QWidget* viewport = popupScrollArea_->viewport()) {
         popupStyleChanged |= setWidgetPaletteIfChanged(viewport, scrollPalette);
@@ -4826,12 +4882,14 @@ void AdSelect::applyVisualStyle() {
 
     if (listView_) {
       QPalette listPalette = listView_->palette();
-      listPalette.setColor(QPalette::Base, visualStyle_->popupBg);
-      listPalette.setColor(QPalette::Window, visualStyle_->popupBg);
-      listPalette.setColor(QPalette::Text, visualStyle_->optionTextColor);
-      listPalette.setColor(QPalette::Disabled, QPalette::Text, visualStyle_->disabledTextColor);
-      listPalette.setColor(QPalette::Highlight, visualStyle_->optionSelectedBg);
-      listPalette.setColor(QPalette::HighlightedText, visualStyle_->optionSelectedColor);
+      listPalette.setColor(QPalette::Base, popupVisualStyle_->popupBg);
+      listPalette.setColor(QPalette::Window, popupVisualStyle_->popupBg);
+      listPalette.setColor(QPalette::Text, popupVisualStyle_->optionTextColor);
+      listPalette.setColor(QPalette::Disabled, QPalette::Text,
+                           popupVisualStyle_->disabledTextColor);
+      listPalette.setColor(QPalette::Highlight, popupVisualStyle_->optionSelectedBg);
+      listPalette.setColor(QPalette::HighlightedText,
+                           popupVisualStyle_->optionSelectedColor);
       popupStyleChanged |= setWidgetPaletteIfChanged(listView_, listPalette);
       if (QWidget* viewport = listView_->viewport()) {
         popupStyleChanged |= setWidgetAutoFillBackgroundIfChanged(viewport, true);
@@ -5042,7 +5100,8 @@ void AdSelect::syncCurrentListRow(const QVariant& preferredValue, bool preserveS
     if (!preserveScrollPosition && popupScrollArea_) {
       const QRect targetRect = listView_->visualRect(targetIndex);
       if (targetRect.isValid()) {
-        const int margin = visualStyle_ ? std::max(2, visualStyle_->metrics.optionHeight / 2) : 8;
+        const int margin =
+            popupVisualStyle_ ? std::max(2, popupVisualStyle_->metrics.optionHeight / 2) : 8;
         popupScrollArea_->ensureVisible(targetRect.center().x(), targetRect.center().y(), 0,
                                         margin);
       }
@@ -5340,11 +5399,11 @@ void AdSelect::rebuildPopupExtraContent() {
 }
 
 int AdSelect::popupContentWidthHint() const {
-  if (!visualStyle_) {
+  if (!popupVisualStyle_) {
     return 0;
   }
 
-  const detail::SelectMetrics& metrics = visualStyle_->metrics;
+  const detail::SelectMetrics& metrics = popupVisualStyle_->metrics;
   const int horizontalPadding = std::max(0, metrics.optionPaddingHorizontal);
   const int selectedIconSize = std::max(10, metrics.iconSize);
   const int selectedStateGap = std::max(2, metrics.optionStateGap);
@@ -5413,22 +5472,22 @@ int AdSelect::popupContentWidthHint() const {
 }
 
 void AdSelect::syncPopupGeometry() {
-  if (!popup_ || !visualStyle_) {
+  if (!popup_ || !popupVisualStyle_) {
     return;
   }
 
+  const detail::SelectMetrics& popupMetrics = popupVisualStyle_->metrics;
   int contentHeight = 0;
   if (rows_.isEmpty()) {
-    contentHeight = visualStyle_->metrics.optionHeight;
+    contentHeight = popupMetrics.optionHeight;
   } else {
     for (const ModelRow& row : rows_) {
-      contentHeight +=
-          row.empty ? visualStyle_->metrics.emptyStateHeight : visualStyle_->metrics.optionHeight;
+      contentHeight += row.empty ? popupMetrics.emptyStateHeight : popupMetrics.optionHeight;
     }
   }
-  const int listHeight = std::min(visualStyle_->metrics.popupMaxHeight, contentHeight);
-  int targetListHeight = std::max(visualStyle_->metrics.optionHeight, listHeight);
-  const int targetListContentHeight = std::max(visualStyle_->metrics.optionHeight, contentHeight);
+  const int listHeight = std::min(popupMetrics.popupMaxHeight, contentHeight);
+  int targetListHeight = std::max(popupMetrics.optionHeight, listHeight);
+  const int targetListContentHeight = std::max(popupMetrics.optionHeight, contentHeight);
   if (listView_) {
     const int listViewHeight = popupScrollArea_ ? targetListContentHeight : targetListHeight;
     setWidgetFixedHeightIfChanged(listView_, listViewHeight);
@@ -5516,7 +5575,7 @@ void AdSelect::syncPopupGeometry() {
   const detail::PopupPlacementOutput placementOutput =
       detail::resolvePopupPlacement(placementInput);
   QPoint popupTopLeft = placementOutput.topLeft;
-  const int popupOffset = std::max(0, visualStyle_->metrics.popupOffset);
+  const int popupOffset = std::max(0, popupMetrics.popupOffset);
   if (popupOffset > 0) {
     switch (placementOutput.placement) {
       case detail::PopupPlacement::BottomLeft:

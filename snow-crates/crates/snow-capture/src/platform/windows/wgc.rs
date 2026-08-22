@@ -166,6 +166,8 @@ enum WorkerTarget {
     },
     Window {
         hwnd: usize,
+        adapter: IDXGIAdapter,
+        hdr_metadata: HdrMonitorMetadata,
     },
 }
 
@@ -598,14 +600,18 @@ impl WgcWorker {
                 let (device, context) = device_result?;
                 (device, context, item, hdr_to_sdr_params(hdr_metadata))
             }
-            WorkerTarget::Window { hwnd } => {
-                let device_creation = spawn_wgc_device_creation(None)?;
+            WorkerTarget::Window {
+                hwnd,
+                adapter,
+                hdr_metadata,
+            } => {
+                let device_creation = spawn_wgc_device_creation(Some(adapter))?;
                 let hwnd = HWND(hwnd as *mut c_void);
                 let item_result = create_window_capture_item(hwnd);
                 let device_result = join_wgc_device_creation(device_creation);
                 let item = item_result?;
                 let (device, context) = device_result?;
-                (device, context, item, None)
+                (device, context, item, hdr_to_sdr_params(hdr_metadata))
             }
         };
         let winrt_device = create_winrt_device(&device)?;
@@ -1552,7 +1558,7 @@ pub(crate) struct WindowsWindowCapturer {
 }
 
 impl WindowsWindowCapturer {
-    pub(crate) fn new(window: &WindowId) -> CaptureResult<Self> {
+    pub(crate) fn new(window: &WindowId, resolver: Arc<MonitorResolver>) -> CaptureResult<Self> {
         initialize_runtime()?;
         let hwnd = window.raw_handle();
         if hwnd == 0 {
@@ -1561,8 +1567,14 @@ impl WindowsWindowCapturer {
                 window.stable_id()
             )));
         }
+        let resolved = resolver.resolve_monitor_for_window(HWND(hwnd as *mut c_void))?;
+        let adapter = resolved.adapter.clone();
+        let hdr_metadata = resolved.hdr_metadata;
+        drop(resolved);
         let inner = PreparedWgcCapturer::new(WorkerTarget::Window {
             hwnd: hwnd as usize,
+            adapter,
+            hdr_metadata,
         });
         Ok(Self { inner })
     }

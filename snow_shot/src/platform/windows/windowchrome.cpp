@@ -131,13 +131,26 @@ bool hitTestResizeBorder(const MSG* msg, qintptr* result) {
     return false;
 }
 
-bool isTitleBarDragArea(QWidget* titleBar) {
+} // namespace
+
+bool isTitleBarDragArea(QWidget* titleBar, const QPoint& globalPosition) {
     if (titleBar == nullptr) {
         return false;
     }
 
-    const QPoint localPos = titleBar->mapFromGlobal(QCursor::pos());
+    const QPoint localPos = titleBar->mapFromGlobal(globalPosition);
     if (!titleBar->rect().contains(localPos)) {
+        return false;
+    }
+
+    QWidget* const hostWindow = titleBar->window();
+    if (hostWindow == nullptr) {
+        return false;
+    }
+
+    const QWidget* const topmostWidget =
+        hostWindow->childAt(hostWindow->mapFromGlobal(globalPosition));
+    if (topmostWidget != titleBar && !titleBar->isAncestorOf(topmostWidget)) {
         return false;
     }
 
@@ -145,6 +158,7 @@ bool isTitleBarDragArea(QWidget* titleBar) {
     return child == nullptr || child == titleBar;
 }
 
+namespace {
 bool handleNcHitTest(QWidget* titleBar, const MSG* msg, qintptr* result) {
     // Let the DWM run its default hit-test first (for things like the
     // top-of-screen snap zone).
@@ -160,7 +174,7 @@ bool handleNcHitTest(QWidget* titleBar, const MSG* msg, qintptr* result) {
 
     // Use QCursor::pos() which is already in Qt logical coordinates,
     // avoiding the DPI mismatch with physical-pixel WM_NCHITTEST coords.
-    if (isTitleBarDragArea(titleBar)) {
+    if (isTitleBarDragArea(titleBar, QCursor::pos())) {
         *result = HTCAPTION;
         return true;
     }

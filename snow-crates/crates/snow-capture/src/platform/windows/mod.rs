@@ -543,9 +543,9 @@ fn create_window_by_kind(
         CaptureBackendKind::DxgiDuplication => Ok(Box::new(
             duplication::WindowsDxgiWindowCapturer::new(window, resolver.clone())?,
         )),
-        CaptureBackendKind::WindowsGraphicsCapture => {
-            Ok(Box::new(wgc::WindowsWindowCapturer::new(window)?))
-        }
+        CaptureBackendKind::WindowsGraphicsCapture => Ok(Box::new(
+            wgc::WindowsWindowCapturer::new(window, resolver.clone())?,
+        )),
         CaptureBackendKind::Gdi => Ok(Box::new(gdi::WindowsWindowCapturer::new(window)?)),
     }
 }
