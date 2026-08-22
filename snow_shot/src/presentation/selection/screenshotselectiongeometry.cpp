@@ -133,6 +133,49 @@ QRectF aspectRatioLockedSelectionRect(ScreenshotSelectionDragMode dragMode, cons
     }
     return rectForScale(lowerScale);
 }
+
+QRectF aspectRatioLockedMarqueeRect(const QPointF& originPosition, const QPointF& position,
+                                    const QRectF& bounds, qreal lockedAspectRatio) {
+    if (lockedAspectRatio <= 0.0) {
+        return QRectF(originPosition, position);
+    }
+
+    const QRectF normalizedBounds = bounds.normalized();
+    const QPointF anchor(
+        bounds.isNull() ? originPosition.x()
+                        : std::clamp(originPosition.x(), normalizedBounds.left(),
+                                     normalizedBounds.right()),
+        bounds.isNull() ? originPosition.y()
+                        : std::clamp(originPosition.y(), normalizedBounds.top(),
+                                     normalizedBounds.bottom()));
+    const QPointF delta = position - anchor;
+    const int horizontalDirection = delta.x() < 0.0 ? -1 : 1;
+    const int verticalDirection = delta.y() < 0.0 ? -1 : 1;
+    const qreal horizontalSpan = std::abs(delta.x());
+    const qreal verticalSpan = std::abs(delta.y());
+
+    // Expand the smaller pointer span so the anchored marquee keeps its ratio.
+    qreal width = std::max(horizontalSpan, verticalSpan / lockedAspectRatio);
+    qreal height = width * lockedAspectRatio;
+
+    if (!bounds.isNull()) {
+        const qreal availableWidth = horizontalDirection < 0
+                                         ? anchor.x() - normalizedBounds.left()
+                                         : normalizedBounds.right() - anchor.x();
+        const qreal availableHeight = verticalDirection < 0
+                                          ? anchor.y() - normalizedBounds.top()
+                                          : normalizedBounds.bottom() - anchor.y();
+        const qreal maximumWidth = std::max<qreal>(0.0,
+                                                   std::min(availableWidth,
+                                                            availableHeight / lockedAspectRatio));
+        width = std::min(width, maximumWidth);
+        height = width * lockedAspectRatio;
+    }
+
+    const qreal left = horizontalDirection < 0 ? anchor.x() - width : anchor.x();
+    const qreal top = verticalDirection < 0 ? anchor.y() - height : anchor.y();
+    return QRectF(left, top, width, height).normalized();
+}
 } // namespace
 
 QRectF normalizedScreenshotSelection(const QPointF& start, const QPointF& end) {
@@ -243,6 +286,9 @@ QRectF draggedScreenshotSelectionRect(ScreenshotSelectionDragMode dragMode, cons
                                       const QRectF& bounds, qreal minimumSelectionSize,
                                       qreal lockedAspectRatio) {
     const QPointF delta = position - originPosition;
+    if (lockedAspectRatio > 0.0 && dragMode == ScreenshotSelectionDragMode::Marquee) {
+        return aspectRatioLockedMarqueeRect(originPosition, position, bounds, lockedAspectRatio);
+    }
     if (lockedAspectRatio > 0.0 && dragMode != ScreenshotSelectionDragMode::All &&
         dragMode != ScreenshotSelectionDragMode::None) {
         return aspectRatioLockedSelectionRect(dragMode, origin, delta, bounds, minimumSelectionSize,
@@ -252,6 +298,9 @@ QRectF draggedScreenshotSelectionRect(ScreenshotSelectionDragMode dragMode, cons
     QRectF result = origin;
 
     switch (dragMode) {
+    case ScreenshotSelectionDragMode::Marquee:
+        result = QRectF(originPosition, position);
+        break;
     case ScreenshotSelectionDragMode::All:
         result.translate(delta);
         break;
@@ -284,21 +333,26 @@ QRectF draggedScreenshotSelectionRect(ScreenshotSelectionDragMode dragMode, cons
         break;
     }
 
-    return boundedScreenshotSelectionRect(result.normalized(), bounds,
-                                          dragMode == ScreenshotSelectionDragMode::All,
-                                          minimumSelectionSize);
+    return boundedScreenshotSelectionRect(
+        result.normalized(), bounds, dragMode == ScreenshotSelectionDragMode::All,
+        dragMode == ScreenshotSelectionDragMode::Marquee ? 0.0 : minimumSelectionSize);
 }
 
 std::optional<QPointF> screenshotSelectionDragAnchor(const QRectF& selection,
                                                      ScreenshotSelectionDragMode dragMode,
                                                      const QPointF& position,
                                                      qreal minimumSelectionSize) {
+    if (dragMode == ScreenshotSelectionDragMode::Marquee) {
+        return std::nullopt;
+    }
     if (!selection.isValid() || selection.width() < minimumSelectionSize ||
         selection.height() < minimumSelectionSize) {
         return std::nullopt;
     }
 
     switch (dragMode) {
+    case ScreenshotSelectionDragMode::Marquee:
+        return std::nullopt;
     case ScreenshotSelectionDragMode::All:
         return QPointF(std::clamp(position.x(), selection.left(), selection.right()),
                        std::clamp(position.y(), selection.top(), selection.bottom()));

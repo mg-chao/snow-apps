@@ -11,8 +11,10 @@ runtime file access. Applications never download icons.
 ## Public API
 
 An icon is identified by `IconKey { pack, variant, name }`. `IconRef` is an immutable value created
-by a registered pack. Inspect metadata with `describeIcon(ref)` and derive a differently colored
-reference with `ref.withColors(colors)`.
+from an immutable generated pack. It contains a descriptor pointer and compact inline color data;
+it never owns a generated key, SVG, or entry-table string. Inspect metadata with
+`describeIcon(ref)` (owning compatibility values) or `describeIconView(ref)` (non-owning hot-path
+view), and derive a differently colored reference with `ref.withColors(colors)`.
 
 Use the rendering facade for every static icon:
 
@@ -24,6 +26,13 @@ Use the rendering facade for every static icon:
 `IconRenderRequest` carries logical size, DPR, `QIcon::Mode`, `QIcon::State`, optional fit override,
 and alignment. `IconFit::Contain` is the default and preserves the SVG view box aspect ratio;
 `IconFit::Stretch` must be declared or requested explicitly.
+
+Generated packs embed a `constexpr IconDescriptor[]` table in read-only program storage. A generated
+factory such as `antd::outlined::Search()` performs no per-entry registration, `QList`, `QString`, or
+`QByteArray` entry-table construction, and no runtime SVG parsing until that reference is rendered.
+The first call to a pack's `pack()` function records one pack pointer in the process-wide metadata
+catalog; `registerWith(renderer)` is an optional per-renderer registration operation for isolated
+tests and tooling.
 
 ```cpp
 #include "antd_icons.h"
@@ -92,8 +101,10 @@ button->setIcon(adqt::icons::makeIcon(ref, palette));
 ```
 
 Install an application palette resolver once and increment `revision` whenever its resolved colors
-change. The central cache separates physical size, mode/state, fit, alignment, resolved colors,
-state-palette revision, and application-palette revision.
+change. The renderer resolves colors before lookup, so the cache key separates descriptor identity,
+physical dimensions, mode/state, fit, alignment, and the resolved primary/secondary/tertiary RGBA
+values. Palette changes also advance a render generation and reclaim old entries, which prevents an
+in-flight render from repopulating a cleared cache.
 
 ```cpp
 adqt::icons::setPaletteResolver([] {
@@ -107,6 +118,30 @@ adqt::icons::setPaletteResolver([] {
   return palette;
 });
 ```
+
+## Cache and Reclamation
+
+The renderer owns a byte-bounded LRU of premultiplied `QImage` rasters. Its production defaults are:
+
+- 2 MiB total cache bytes;
+- at most 512 entries; and
+- at most 256 KiB for one raster.
+
+An entry's cost is `QImage::sizeInBytes()`, including row stride, rather than a pixel-area estimate.
+Rasters larger than either limit are returned to the caller but are never inserted. Caller-held
+`QImage`, `QPixmap`, and `QIcon` data is deliberately outside cache-owned statistics, so
+`cacheStatistics().costBytes` reaches zero immediately after eviction even when a caller still holds
+the returned image.
+
+Use `cacheStatistics()` for exact entry/byte/hit/miss/eviction counters. `trimCacheToBytes(target)`
+(`trimToBytes`/`reclaimCache` are equivalent aliases) and `trimIconCache(target)` reclaim whole
+least-recently-used entries and return an `IconCacheReclaimReport` with before/after bytes, entry
+counts, reclaimed bytes, and the new generation. `clearCache()` is the hard reset. Snow Shot trims
+the shared cache to 512 KiB when the application is hidden or capture resources become idle.
+
+The renderer coalesces concurrent requests for the same cache key. `clearCache()`, trim operations,
+cache-limit changes, and palette changes advance the generation; a render that began in an older
+generation can still complete for its caller, but it cannot repopulate the new cache.
 
 ## External Pack Manifest
 
@@ -152,11 +187,12 @@ python tools/generate_icon_pack.py path/to/icons.manifest.json \
   --check
 ```
 
-Generated factories register their pack lazily and thread-safely with `defaultRegistry()`. Tests can
-use `registerWith(IconRegistry&)` or `pack().icon(registry, variant, name)` for an isolated registry.
-Registration validates the full pack before committing. Identical repeated registration is
+`ExternalIconPackDefinition`, `ExternalIconPack(ExternalIconPackDefinition)`, and
+`IconRenderer::registerPack()` remain available only for explicitly dynamic project/test packs.
+They normalize and validate the full pack before committing. Identical repeated registration is
 idempotent; conflicting keys, SVG content, or hashes return structured diagnostics without partial
-registration.
+registration. Production generated packs use the static descriptor constructor and do not pay this
+runtime table-copy cost.
 
 ## Asset Ownership
 
@@ -193,7 +229,8 @@ Version 2.0 is intentionally source breaking. There are no compatibility adapter
 - Replace size/DPR render overloads with `IconRenderRequest`.
 - Replace manual `QIcon::addPixmap` state assembly with `IconStatePalette`.
 - Replace `registerIcon`, `makeIconRef`, qrc callbacks, and handwritten entry tables with a generated
-  `ExternalIconPack`.
+  static `ExternalIconPack`/`IconPack` factory. Keep `registerPack()` only for explicitly dynamic
+  test or plugin definitions.
 - Move local SVG overlays out of the `antd` pack and into the project that owns them.
 - Replace direct `QIcon(":/...svg")`, `QFile` SVG loading, and widget-local `QSvgRenderer` paths with
   the rendering facade.

@@ -1104,10 +1104,8 @@ void AdMultiSlider::setSemanticStyleResolver(SemanticStyleResolver resolver) {
 }
 
 QSize AdMultiSlider::sizeHint() const {
-  const auto scaled = [this](const QSize& size) {
-    return QSize(qMax(1, qRound(size.width() * controlScale_.logicalScale)),
-                 qMax(1, qRound(size.height() * controlScale_.logicalScale)));
-  };
+  const qreal scale = controlScale_.logicalScale;
+  const auto scaled = [scale](int value) { return qMax(1, qRound(value * scale)); };
   const LayoutInfo layout = buildLayout();
   const MarkMap marks = effectiveMarks();
   const bool hasMarks = !marks.isEmpty();
@@ -1115,20 +1113,21 @@ QSize AdMultiSlider::sizeHint() const {
   const int markLabelWidth = hasMarks ? maxMarkLabelWidth(marks, layout.style.metrics.font) : 0;
   QStyleOptionSlider option;
   initStyleOption(&option);
-  const int sliderLength = style()->pixelMetric(QStyle::PM_SliderLength, &option, this);
-  const int sliderThickness = style()->pixelMetric(QStyle::PM_SliderThickness, &option, this);
+  const int sliderLength = scaled(style()->pixelMetric(QStyle::PM_SliderLength, &option, this));
+  const int sliderThickness =
+      scaled(style()->pixelMetric(QStyle::PM_SliderThickness, &option, this));
   if (orientation_ == Qt::Horizontal) {
     const int height =
-        std::max(std::max(34, sliderThickness),
+        std::max(std::max(scaled(34), sliderThickness),
                  layout.style.metrics.controlSize + layout.style.metrics.marginCross * 2 +
                      (hasMarks ? layout.style.metrics.markGap + markLabelHeight : 0));
-    return scaled(QSize(std::max(260, sliderLength * 6), height));
+    return QSize(std::max(scaled(260), sliderLength * 6), height);
   }
   const int width =
-      std::max(std::max(52, sliderThickness),
+      std::max(std::max(scaled(52), sliderThickness),
                layout.style.metrics.controlSize + layout.style.metrics.marginCross * 2 +
                    (hasMarks ? layout.style.metrics.markGap + markLabelWidth : 0));
-  return scaled(QSize(width, std::max(260, sliderLength * 6)));
+  return QSize(width, std::max(scaled(260), sliderLength * 6));
 }
 
 QSize AdMultiSlider::minimumSizeHint() const {
@@ -1830,7 +1829,34 @@ AdMultiSlider::LayoutInfo AdMultiSlider::buildLayout() const {
     input.componentTokens = componentTokens_;
     const adqt::theme::ResolvedTheme resolvedTheme =
         adqt::theme::ThemeManager::instance().resolve(this);
-    return detail::resolveSliderVisualStyle(input, resolvedTheme);
+    detail::SliderVisualStyle style = detail::resolveSliderVisualStyle(input, resolvedTheme);
+    auto& metrics = style.metrics;
+    const qreal scale = controlScale_.logicalScale;
+    const auto scaled = [scale](int value) {
+      return value > 0 ? std::max(1, qRound(value * scale)) : 0;
+    };
+    metrics.controlSize = scaled(metrics.controlSize);
+    metrics.railSize = scaled(metrics.railSize);
+    metrics.handleSize = scaled(metrics.handleSize);
+    metrics.handleSizeHover = scaled(metrics.handleSizeHover);
+    metrics.handleLineWidth *= scale;
+    metrics.handleLineWidthHover *= scale;
+    metrics.dotSize = scaled(metrics.dotSize);
+    metrics.marginMain = scaled(metrics.marginMain);
+    metrics.marginCross = scaled(metrics.marginCross);
+    metrics.markGap = scaled(metrics.markGap);
+    metrics.focusOutlineSize *= scale;
+    metrics.tooltipPaddingH = scaled(metrics.tooltipPaddingH);
+    metrics.tooltipPaddingV = scaled(metrics.tooltipPaddingV);
+    metrics.tooltipRadius = scaled(metrics.tooltipRadius);
+    metrics.tooltipOffset = scaled(metrics.tooltipOffset);
+    metrics.tooltipArrowSize = scaled(metrics.tooltipArrowSize);
+    if (metrics.font.pixelSize() > 0) {
+      metrics.font.setPixelSize(scaled(metrics.font.pixelSize()));
+    } else if (metrics.font.pointSizeF() > 0.0) {
+      metrics.font.setPointSizeF(metrics.font.pointSizeF() * scale);
+    }
+    return style;
   };
 
   auto applySemanticStyles = [this](const detail::SliderVisualStyle& baseStyle) {

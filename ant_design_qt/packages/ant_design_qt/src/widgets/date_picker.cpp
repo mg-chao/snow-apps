@@ -2438,13 +2438,15 @@ void populateHourColumn(QListWidget* list, int step, bool use12Hours) {
   }
 }
 
-void populateMeridiemColumn(QListWidget* list) {
+void populateMeridiemColumn(QListWidget* list, const QLocale& locale) {
   if (!list) {
     return;
   }
   const QSignalBlocker blocker(list);
   list->clear();
-  const QStringList labels = {QStringLiteral("AM"), QStringLiteral("PM")};
+  const QString amText = locale.amText().isEmpty() ? QStringLiteral("AM") : locale.amText();
+  const QString pmText = locale.pmText().isEmpty() ? QStringLiteral("PM") : locale.pmText();
+  const QStringList labels = {amText, pmText};
   for (int value = 0; value < labels.size(); ++value) {
     auto* item = new QListWidgetItem(labels.at(value));
     item->setTextAlignment(Qt::AlignVCenter | Qt::AlignLeft);
@@ -2474,10 +2476,10 @@ QListWidget* createTimeColumn(QWidget* parent, int maximum, int step = 1,
   return list;
 }
 
-QListWidget* createMeridiemColumn(QWidget* parent, bool populate = true) {
+QListWidget* createMeridiemColumn(QWidget* parent, const QLocale& locale, bool populate = true) {
   auto* list = createTimeColumn(parent, 1, 1, false);
   if (populate) {
-    populateMeridiemColumn(list);
+    populateMeridiemColumn(list, locale);
   }
   return list;
 }
@@ -6013,7 +6015,7 @@ void AdDatePickerPanel::ensureTimeControlsCreated() {
     hourList = createTimeColumn(timeWidget_, 23, hourStep_, false);
     minuteList = createTimeColumn(timeWidget_, 59, minuteStep_, false);
     secondList = createTimeColumn(timeWidget_, 59, secondStep_, false);
-    meridiemList = createMeridiemColumn(timeWidget_, false);
+    meridiemList = createMeridiemColumn(timeWidget_, locale_, false);
 
     const auto setDelegate = [this, part](QListWidget* list, CellSubType subType) {
       list->setItemDelegate(new detail::DatePickerTimeColumnDelegate(this, part, subType, list));
@@ -6111,7 +6113,7 @@ void AdDatePickerPanel::ensureTimeColumnsPopulated() {
     populateTimeColumn(list, 59, secondStep_);
   }
   for (QListWidget* list : meridiemLists) {
-    populateMeridiemColumn(list);
+    populateMeridiemColumn(list, locale_);
   }
   timeColumnsPopulated_ = true;
 }
@@ -6139,7 +6141,7 @@ void AdDatePickerPanel::rebuildTimeColumns() {
     populateTimeColumn(list, 59, secondStep_);
   }
   for (QListWidget* list : meridiemLists) {
-    populateMeridiemColumn(list);
+    populateMeridiemColumn(list, locale_);
   }
   refreshStyle();
   refreshTimeEditors();

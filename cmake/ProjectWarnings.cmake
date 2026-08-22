@@ -61,6 +61,7 @@ function(snow_apply_release_options target)
         )
         target_link_options("${target}" PRIVATE
             $<$<CONFIG:Release>:/LTCG>
+            $<$<CONFIG:Release>:/CGTHREADS:1>
             $<$<CONFIG:Release>:/OPT:REF>
             $<$<CONFIG:Release>:/OPT:ICF>
         )

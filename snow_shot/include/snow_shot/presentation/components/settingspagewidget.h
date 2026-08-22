@@ -37,7 +37,6 @@ class SettingsPageWidget final : public QWidget {
 
   protected:
     void changeEvent(QEvent* event) override;
-    bool eventFilter(QObject* watched, QEvent* event) override;
 
   private:
     class Impl;

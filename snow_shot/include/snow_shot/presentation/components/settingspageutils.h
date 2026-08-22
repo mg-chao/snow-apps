@@ -6,7 +6,6 @@
 #include "widgets/scroll_area.h"
 
 #include <QFont>
-#include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPalette>
@@ -34,8 +33,8 @@ inline void configureSettingsScrollArea(adqt::widgets::AdScrollArea* scrollArea,
     viewport->setAutoFillBackground(false);
 }
 
-inline int settingsControlWidth(const styles::ThemeAliasMetricToken& metric) {
-    return metric.controlHeightLG * 5 + metric.paddingLG;
+inline int settingsControlWidth(const styles::ThemeAliasMetricToken&) {
+    return 230;
 }
 
 inline QWidget* createSettingItemRow(QWidget* parent,
@@ -73,15 +72,6 @@ inline QWidget* createSettingItemRow(QWidget* parent,
     return row;
 }
 
-inline QFrame* createSettingsDivider(QWidget* parent,
-                                     const styles::ThemeAliasMetricToken& metric) {
-    auto* divider = new QFrame(parent);
-    divider->setFrameShape(QFrame::HLine);
-    divider->setFrameShadow(QFrame::Plain);
-    divider->setFixedHeight(metric.lineWidth);
-    return divider;
-}
-
 inline void applyCategoryTitleTheme(QLabel* label, const styles::ThemeColorScheme& scheme) {
     QPalette palette = label->palette();
     palette.setColor(QPalette::WindowText, scheme.map.colorText);
@@ -112,15 +102,6 @@ inline void applySettingItemTheme(QLabel* title, QLabel* description,
     descriptionFont.setPixelSize(scheme.metricAlias.fontSize);
     descriptionFont.setWeight(QFont::Normal);
     description->setFont(descriptionFont);
-}
-
-inline void applySettingsDividerTheme(QFrame* divider,
-                                      const styles::ThemeColorScheme& scheme) {
-    QPalette palette = divider->palette();
-    palette.setColor(QPalette::WindowText, scheme.map.colorSplit);
-    palette.setColor(QPalette::Dark, scheme.map.colorSplit);
-    palette.setColor(QPalette::Mid, scheme.map.colorSplit);
-    divider->setPalette(palette);
 }
 
 } // namespace snow_shot::presentation::components

@@ -67,8 +67,8 @@ HWND toNativeHwnd(WId windowId) {
 }
 #endif
 
-constexpr int kReportSchemaVersion = 2;
-constexpr int kScenarioManifestVersion = 4;
+constexpr int kReportSchemaVersion = 3;
+constexpr int kScenarioManifestVersion = 5;
 constexpr int kCrossMonitorDragSteps = 240;
 constexpr double kRegressionPercent = 15.0;
 constexpr double kRegressionAbsoluteMilliseconds = 0.5;
@@ -123,6 +123,7 @@ struct Sample {
     QMap<QString, Aggregate> paintReceivers;
     QMap<QString, Aggregate> traceScopes;
     QMap<QString, qint64> counters;
+    QMap<QString, double> namedTimingsMilliseconds;
 };
 
 class Collector final : public toolbar_perf::Sink {
@@ -344,7 +345,7 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void pinSelectionToScreen() override {}
     void cancelCapture() override {}
     void copySelectionToClipboard() override {}
-    void startVideoRecording() override {}
+    void startScreenRecording() override {}
     void setShapeStyleFromToolbar(const SnowCanvasShapeStyle&, quint32,
                                   SnowCanvasShapeKind) override {}
     void setTextStyleFromToolbar(const SnowCanvasTextStyle&) override {}
@@ -797,6 +798,24 @@ constexpr ToolCase kTools[] = {
     {"scrolling_screenshot", ScreenshotToolPalette::Tool::ScrollingScreenshot},
 };
 
+// These are the user-facing annotation tools. Keep this list explicit so the
+// dedicated cycle benchmark cannot silently omit a newly added drawing mode.
+constexpr ToolCase kDrawingTools[] = {
+    {"shape", ScreenshotToolPalette::Tool::Shape},
+    {"arrow", ScreenshotToolPalette::Tool::Arrow},
+    {"line", ScreenshotToolPalette::Tool::Line},
+    {"free_draw", ScreenshotToolPalette::Tool::FreeDraw},
+    {"rectangle_highlight", ScreenshotToolPalette::Tool::RectangleHighlight},
+    {"pen_highlight", ScreenshotToolPalette::Tool::PenHighlight},
+    {"spotlight", ScreenshotToolPalette::Tool::Spotlight},
+    {"eraser", ScreenshotToolPalette::Tool::Eraser},
+    {"rectangle_filter", ScreenshotToolPalette::Tool::RectangleFilter},
+    {"pen_filter", ScreenshotToolPalette::Tool::PenFilter},
+    {"watermark", ScreenshotToolPalette::Tool::Watermark},
+    {"text", ScreenshotToolPalette::Tool::Text},
+    {"serial_number", ScreenshotToolPalette::Tool::SerialNumber},
+};
+
 struct SourceCase {
     const char* id;
     SnowCanvasStyleToolbarSource source;
@@ -878,6 +897,7 @@ struct Scenario {
     int sampleOverride = 0;
     int operationsPerSample = 1;
     bool requiresValidDragSample = false;
+    std::function<void(Fixture&, Sample&)> detailedAction;
 };
 
 QVector<QWidget*> visibleInteractiveWidgets(QWidget* root) {
@@ -1221,6 +1241,25 @@ QVector<Scenario> createScenarios() {
              }
          },
          5, 1000});
+    scenarios.push_back(
+        {QStringLiteral("tool.switch_all_drawing"), QStringLiteral("tool"),
+         QStringLiteral(
+             "Switch through every user-facing drawing tool once and measure each transition"),
+         {},
+         {},
+         5,
+         static_cast<int>(std::size(kDrawingTools)),
+         false,
+         [](Fixture& f, Sample& sample) {
+             for (const ToolCase& tool : kDrawingTools) {
+                 QElapsedTimer timer;
+                 timer.start();
+                 f.toolbar->setActiveTool(tool.tool);
+                 sample.namedTimingsMilliseconds.insert(
+                     QString::fromLatin1(tool.id),
+                     static_cast<double>(timer.nsecsElapsed()) / 1'000'000.0);
+             }
+         }});
     scenarios.push_back({QStringLiteral("stress.tool_cycle"),
                          QStringLiteral("stress"),
                          QStringLiteral("Cycle every tool 100 times"),
@@ -1354,6 +1393,11 @@ QJsonObject sampleJson(const Sample& sample) {
     for (auto it = sample.counters.cbegin(); it != sample.counters.cend(); ++it) {
         counters.insert(it.key(), static_cast<double>(it.value()));
     }
+    QJsonObject namedTimings;
+    for (auto it = sample.namedTimingsMilliseconds.cbegin();
+         it != sample.namedTimingsMilliseconds.cend(); ++it) {
+        namedTimings.insert(it.key(), it.value());
+    }
     return {
         {QStringLiteral("action_ms"), sample.actionMilliseconds},
         {QStringLiteral("settle_ms"), sample.settleMilliseconds},
@@ -1373,6 +1417,7 @@ QJsonObject sampleJson(const Sample& sample) {
         {QStringLiteral("paint_receivers"), painters},
         {QStringLiteral("trace_scopes"), traces},
         {QStringLiteral("counters"), counters},
+        {QStringLiteral("named_timings_ms"), namedTimings},
     };
 }
 
@@ -1396,6 +1441,7 @@ QJsonObject summarizeScenario(const Scenario& scenario, const QVector<Sample>& s
     QMap<QString, Aggregate> traces;
     QMap<QString, qint64> events;
     QMap<QString, std::vector<double>> counters;
+    QMap<QString, std::vector<double>> namedTimings;
     QJsonArray rawSamples;
     for (const Sample& sample : samples) {
         actionValues.push_back(sample.actionMilliseconds);
@@ -1458,6 +1504,22 @@ QJsonObject summarizeScenario(const Scenario& scenario, const QVector<Sample>& s
                 it.value().push_back(0.0);
             }
         }
+        QSet<QString> timingNames;
+        for (auto it = sample.namedTimingsMilliseconds.cbegin();
+             it != sample.namedTimingsMilliseconds.cend(); ++it) {
+            std::vector<double>& values = namedTimings[it.key()];
+            while (values.size() < static_cast<size_t>(rawSamples.size())) {
+                values.push_back(0.0);
+            }
+            values.push_back(it.value());
+            timingNames.insert(it.key());
+        }
+        for (auto it = namedTimings.begin(); it != namedTimings.end(); ++it) {
+            if (!timingNames.contains(it.key()) &&
+                it.value().size() < static_cast<size_t>(rawSamples.size() + 1)) {
+                it.value().push_back(0.0);
+            }
+        }
         rawSamples.push_back(sampleJson(sample));
     }
     QJsonObject metrics{
@@ -1505,6 +1567,10 @@ QJsonObject summarizeScenario(const Scenario& scenario, const QVector<Sample>& s
         normalizedCounterObject.insert(it.key(),
                                        distributionJson(distribution(std::move(normalized))));
     }
+    QJsonObject namedTimingObject;
+    for (auto it = namedTimings.cbegin(); it != namedTimings.cend(); ++it) {
+        namedTimingObject.insert(it.key(), distributionJson(distribution(it.value())));
+    }
     return {
         {QStringLiteral("id"), scenario.id},
         {QStringLiteral("category"), scenario.category},
@@ -1518,6 +1584,7 @@ QJsonObject summarizeScenario(const Scenario& scenario, const QVector<Sample>& s
         {QStringLiteral("trace_scopes"), traceObject},
         {QStringLiteral("structural_counters"), counterObject},
         {QStringLiteral("structural_counters_per_operation"), normalizedCounterObject},
+        {QStringLiteral("named_timings_ms"), namedTimingObject},
         {QStringLiteral("samples"), rawSamples},
     };
 }
@@ -1984,6 +2051,20 @@ bool writeHtmlReport(const QString& path, const QJsonObject& report, QString* er
                          formatNumber(surfacePresentations), formatNumber(surfaceRatio),
                          formatNumber(paintCount), formatNumber(layout));
     }
+    QString drawingTimingRows;
+    for (const auto& value : scenarios) {
+        const QJsonObject scenario = value.toObject();
+        const QJsonObject timings = scenario.value(QStringLiteral("named_timings_ms")).toObject();
+        for (const QString& toolId : timings.keys()) {
+            const double p95 = timings.value(toolId).toObject().value(QStringLiteral("p95"))
+                                   .toDouble();
+            drawingTimingRows +=
+                QStringLiteral("<tr><td><code>%1</code></td><td><code>%2</code></td>"
+                               "<td data-n=\"%3\">%3</td></tr>")
+                    .arg(htmlEscape(scenario.value(QStringLiteral("id")).toString()),
+                         htmlEscape(toolId), formatNumber(p95));
+        }
+    }
     QString recommendationRows;
     for (const auto& value : recommendations) {
         const QJsonObject item = value.toObject();
@@ -2004,10 +2085,11 @@ bool writeHtmlReport(const QString& path, const QJsonObject& report, QString* er
 :root{font-family:"Segoe UI",sans-serif;color:#202124;background:#f5f7f8}body{margin:0}header{background:#fff;border-bottom:1px solid #dfe3e6;padding:24px 32px}main{padding:24px 32px;max-width:1600px;margin:auto}.meta{display:flex;gap:24px;flex-wrap:wrap;color:#53606a}.band{background:#fff;border:1px solid #dfe3e6;border-radius:6px;padding:18px;margin-bottom:20px}h1{margin:0 0 10px;font-size:26px}h2{font-size:18px;margin-top:0}h3{font-size:14px;margin:0 0 6px}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border-bottom:1px solid #e5e8ea;padding:8px;text-align:right}th{position:sticky;top:0;background:#f8fafb;cursor:pointer}th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}td small{display:block;color:#69757d;max-width:470px}.status.regression{color:#b42318;font-weight:700}.status.pass{color:#067647}.status.new,.status.uncompared{color:#6941c6}article{border-left:3px solid #d92d20;padding:10px 14px;margin:10px 0;background:#fff8f7}code{font-family:Consolas,monospace}details{margin-top:20px}pre{overflow:auto;max-height:480px;background:#111827;color:#d1d5db;padding:16px}input{padding:8px 10px;width:320px;border:1px solid #b8c1c7;border-radius:4px}
 </style></head><body><header><h1>Screenshot Toolbar Rendering Performance</h1><div class="meta"><span>%1</span><span>Qt %2</span><span>%3</span><span>Baseline: %4</span><span>Regressions: %5</span></div></header><main>
 <section class="band"><h2>Measured Scenarios</h2><p>Times and per-sample presentation metrics are p95. Structural counters are normalized per operation.</p><input id="filter" placeholder="Filter scenarios"><div style="overflow:auto;max-height:720px"><table id="scenarios"><thead><tr><th>Scenario</th><th>Category</th><th>Total ms</th><th>Action ms</th><th>DWM ms</th><th>Surface presents</th><th>Surface dirty ratio</th><th>Paint events</th><th>Layout/op</th><th>Status</th></tr></thead><tbody>%6</tbody></table></div></section>
-<section class="band"><h2>Tuning Evidence</h2>%7</section>
-<section class="band"><h2>Environment</h2><pre>%8</pre></section>
+<section class="band"><h2>Drawing-Tool Transition Timings</h2><p>Per-tool elapsed time for the dedicated all-drawing-tools cycle, reported as p95 in milliseconds.</p><div style="overflow:auto;max-height:520px"><table><thead><tr><th>Scenario</th><th>Tool</th><th>Elapsed ms</th></tr></thead><tbody>%7</tbody></table></div></section>
+<section class="band"><h2>Tuning Evidence</h2>%8</section>
+<section class="band"><h2>Environment</h2><pre>%9</pre></section>
 <details class="band"><summary>Complete report JSON</summary><pre id="raw"></pre></details>
-</main><script id="data" type="application/json">%9</script><script>
+</main><script id="data" type="application/json">%10</script><script>
 const table=document.querySelector('#scenarios'),body=table.tBodies[0];document.querySelector('#filter').addEventListener('input',e=>{const q=e.target.value.toLowerCase();for(const r of body.rows)r.hidden=!r.textContent.toLowerCase().includes(q)});for(const [i,h] of [...table.tHead.rows[0].cells].entries())h.onclick=()=>{const rows=[...body.rows],num=i>=2&&i<=8;rows.sort((a,b)=>num?(parseFloat(a.cells[i].dataset.n||a.cells[i].textContent)-parseFloat(b.cells[i].dataset.n||b.cells[i].textContent)):a.cells[i].textContent.localeCompare(b.cells[i].textContent));rows.forEach(r=>body.appendChild(r))};document.querySelector('#raw').textContent=JSON.stringify(JSON.parse(document.querySelector('#data').textContent),null,2);
 </script></body></html>)HTML")
             .arg(htmlEscape(environment.value(QStringLiteral("timestamp_utc")).toString()),
@@ -2016,6 +2098,9 @@ const table=document.querySelector('#scenarios'),body=table.tBodies[0];document.
                  htmlEscape(comparison.value(QStringLiteral("status")).toString()),
                  QString::number(comparison.value(QStringLiteral("regression_count")).toInt()),
                  rows,
+                 drawingTimingRows.isEmpty()
+                     ? QStringLiteral("<tr><td colspan=\"3\">No named drawing-tool timings were measured.</td></tr>")
+                     : drawingTimingRows,
                  recommendationRows.isEmpty()
                      ? QStringLiteral("<p>No rule-based tuning findings were triggered.</p>")
                      : recommendationRows,
@@ -2049,6 +2134,48 @@ bool runSelfTests() {
         return condition;
     };
     bool passed = true;
+
+    NoOpToolbarCommands commands;
+    ScreenshotToolbarWindow toolbar(commands);
+    ScreenshotToolPalette* palette = toolbar.palette();
+    QWidget* retainedMainPanel = palette != nullptr ? palette->mainPanel() : nullptr;
+    passed &= require(palette != nullptr && retainedMainPanel != nullptr,
+                      "lazy toolbar retained core");
+    passed &= require(palette->stylePanel() == nullptr && palette->actionPanel() == nullptr,
+                      "lazy toolbar cold secondary rows");
+
+    SnowCanvasStyleToolbarState retainedState;
+    retainedState.source = SnowCanvasStyleToolbarSource::DefaultRectangle;
+    retainedState.shapeStyle =
+        snow_shot::presentation::screenshotCanvasStyleDefaults().rectangle;
+    retainedState.shapeStyle.strokeWidth = 17.0;
+    toolbar.setStyleToolbarState(retainedState);
+    toolbar.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    QPointer<QWidget> firstStylePanel = palette->stylePanel();
+    passed &= require(firstStylePanel != nullptr && palette->styleToolbarVisible(),
+                      "style row lazy materialization");
+    passed &= require(qFuzzyCompare(palette->rectangleStyle().strokeWidth + 1.0, 18.0),
+                      "pre-materialization state application");
+
+    toolbar.releaseIdleResources();
+    passed &= require(toolbar.palette() == palette && palette->mainPanel() == retainedMainPanel,
+                      "idle release retained object core");
+    passed &= require(firstStylePanel == nullptr && palette->stylePanel() == nullptr &&
+                          palette->actionPanel() == nullptr,
+                      "idle release secondary eviction");
+
+    toolbar.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    passed &= require(toolbar.palette() == palette && palette->mainPanel() == retainedMainPanel &&
+                          palette->stylePanel() != nullptr && palette->styleToolbarVisible(),
+                      "secondary rematerialization without palette rebuild");
+    passed &= require(qFuzzyCompare(palette->rectangleStyle().strokeWidth + 1.0, 18.0),
+                      "style state retained across eviction");
+    toolbar.releaseIdleResources();
+    toolbar.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    passed &= require(palette->actionPanel() != nullptr && palette->actionToolbarVisible() &&
+                          !palette->styleToolbarVisible(),
+                      "action row lazy materialization");
+
     std::vector<double> values;
     for (int value = 1; value <= 100; ++value) {
         values.push_back(static_cast<double>(value));
@@ -2158,6 +2285,9 @@ QJsonObject coverageJson(const QVector<Scenario>& scenarios) {
     QJsonArray tools;
     for (const ToolCase& tool : kTools)
         tools.push_back(QString::fromLatin1(tool.id));
+    QJsonArray drawingTools;
+    for (const ToolCase& tool : kDrawingTools)
+        drawingTools.push_back(QString::fromLatin1(tool.id));
     QJsonArray sources;
     for (const SourceCase& source : kSources)
         sources.push_back(QString::fromLatin1(source.id));
@@ -2179,6 +2309,7 @@ QJsonObject coverageJson(const QVector<Scenario>& scenarios) {
         {QStringLiteral("style_source_count"), static_cast<int>(std::size(kSources))},
         {QStringLiteral("scenario_count"), static_cast<int>(scenarios.size())},
         {QStringLiteral("tools"), tools},
+        {QStringLiteral("drawing_tools"), drawingTools},
         {QStringLiteral("style_sources"), sources},
         {QStringLiteral("entry_points"), entryPoints},
         {QStringLiteral("scenario_ids"), scenarioIds},
@@ -2454,7 +2585,11 @@ int runMain(BenchmarkApplication& application) {
             QElapsedTimer actionTimer;
             actionTimer.start();
             nativeGeometryWarningEmitted.store(false, std::memory_order_relaxed);
-            scenario.action(fixture);
+            if (scenario.detailedAction) {
+                scenario.detailedAction(fixture, sample);
+            } else {
+                scenario.action(fixture);
+            }
             sample.actionMilliseconds =
                 static_cast<double>(actionTimer.nsecsElapsed()) / 1'000'000.0;
             QElapsedTimer settleTimer;
@@ -2517,6 +2652,17 @@ int runMain(BenchmarkApplication& application) {
         }
         QJsonObject summary = summarizeScenario(scenario, measured);
         scenarioReports.push_back(summary);
+        const QJsonObject namedTimings = summary.value(QStringLiteral("named_timings_ms")).toObject();
+        if (!namedTimings.isEmpty()) {
+            std::cout << "[toolbar-perf] " << scenario.id.toStdString()
+                      << " per-tool p95 (ms):";
+            for (const QString& toolId : namedTimings.keys()) {
+                const double p95 = namedTimings.value(toolId).toObject().value(QStringLiteral("p95"))
+                                       .toDouble();
+                std::cout << ' ' << toolId.toStdString() << '=' << formatNumber(p95).toStdString();
+            }
+            std::cout << '\n';
+        }
         QJsonObject rawRecord{
             {QStringLiteral("schema_version"), kReportSchemaVersion},
             {QStringLiteral("scenario"), summary},

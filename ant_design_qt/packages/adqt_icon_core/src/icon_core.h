@@ -3,6 +3,7 @@
 
 #include "adqt_icon_core_global.h"
 #include "icon_core_types.h"
+#include "icon_renderer.h"
 #include "icon_registry.h"
 #include "version.h"
 

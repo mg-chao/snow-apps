@@ -1,5 +1,7 @@
 #include "snow_shot/presentation/screenshotocrtexteditingsession.h"
 
+#include "snow_shot/presentation/screenshotocrtexttransform.h"
+
 #include <utility>
 
 ScreenshotOcrTextEditingSession::ScreenshotOcrTextEditingSession(QString originalText)
@@ -42,7 +44,77 @@ bool ScreenshotOcrTextEditingSession::replaceText(const QString& text) {
 }
 
 bool ScreenshotOcrTextEditingSession::reset() {
+    clearTransforms();
     return replaceText(m_originalText);
+}
+
+bool ScreenshotOcrTextEditingSession::setFormatting(const QString& value) {
+    QString normalized;
+    if (value == QStringLiteral("keep") || value == QStringLiteral("remove")) {
+        normalized = value;
+    }
+    if (normalized == m_formatting) {
+        return false;
+    }
+    if (m_formatting.isEmpty() && m_punctuation.isEmpty()) {
+        m_transformBaseline = text();
+    }
+    m_formatting = normalized;
+    const bool changed = replaceText(transformedText());
+    if (m_formatting.isEmpty() && m_punctuation.isEmpty()) {
+        m_transformBaseline.clear();
+    }
+    return changed;
+}
+
+bool ScreenshotOcrTextEditingSession::setPunctuation(const QString& value) {
+    QString normalized;
+    if (value == QStringLiteral("half") || value == QStringLiteral("full")) {
+        normalized = value;
+    }
+    if (normalized == m_punctuation) {
+        return false;
+    }
+    if (m_formatting.isEmpty() && m_punctuation.isEmpty()) {
+        m_transformBaseline = text();
+    }
+    m_punctuation = normalized;
+    const bool changed = replaceText(transformedText());
+    if (m_formatting.isEmpty() && m_punctuation.isEmpty()) {
+        m_transformBaseline.clear();
+    }
+    return changed;
+}
+
+void ScreenshotOcrTextEditingSession::clearTransforms() {
+    m_transformBaseline.clear();
+    m_formatting.clear();
+    m_punctuation.clear();
+}
+
+const QString& ScreenshotOcrTextEditingSession::formatting() const {
+    return m_formatting;
+}
+
+const QString& ScreenshotOcrTextEditingSession::punctuation() const {
+    return m_punctuation;
+}
+
+void ScreenshotOcrTextEditingSession::establishBaseline(const QString& text) {
+    clearTransforms();
+    m_originalText = text;
+    establishHistory(text);
+}
+
+void ScreenshotOcrTextEditingSession::establishHistory(const QString& text) {
+    clearTransforms();
+    m_history = {text};
+    m_historyIndex = 0;
+    applyText(text);
+}
+
+void ScreenshotOcrTextEditingSession::replaceTextWithoutHistory(const QString& text) {
+    applyText(text);
 }
 
 void ScreenshotOcrTextEditingSession::recordCurrentText() {
@@ -53,6 +125,7 @@ void ScreenshotOcrTextEditingSession::recordCurrentText() {
     if (current == m_history.at(m_historyIndex)) {
         return;
     }
+    clearTransforms();
     if (m_historyIndex + 1 < m_history.size()) {
         m_history.resize(m_historyIndex + 1);
     }
@@ -66,11 +139,25 @@ void ScreenshotOcrTextEditingSession::applyText(const QString& text) {
     m_applying = false;
 }
 
+QString ScreenshotOcrTextEditingSession::transformedText() const {
+    QString transformed = m_transformBaseline;
+    if (m_formatting == QStringLiteral("remove")) {
+        transformed = snow_shot::presentation::removeOcrLineBreaks(transformed);
+    }
+    if (m_punctuation == QStringLiteral("half")) {
+        transformed = snow_shot::presentation::convertOcrPunctuation(transformed, false);
+    } else if (m_punctuation == QStringLiteral("full")) {
+        transformed = snow_shot::presentation::convertOcrPunctuation(transformed, true);
+    }
+    return transformed;
+}
+
 void ScreenshotOcrTextEditingSession::undo() {
     if (!canUndo()) {
         return;
     }
     --m_historyIndex;
+    clearTransforms();
     applyText(m_history.at(m_historyIndex));
 }
 
@@ -79,6 +166,7 @@ void ScreenshotOcrTextEditingSession::redo() {
         return;
     }
     ++m_historyIndex;
+    clearTransforms();
     applyText(m_history.at(m_historyIndex));
 }
 

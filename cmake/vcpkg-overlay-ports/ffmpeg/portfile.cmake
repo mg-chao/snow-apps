@@ -19,6 +19,8 @@ vcpkg_from_github(
         0050-fix-test-ld-absolute-lib-paths.patch
         0051-fix-msvc-undef-flags.patch
         0052-fix-disable-unstable-swscale-link.patch
+        0053-compile-out-disabled-codec-references.patch
+        0054-fix-shared-libwebp-animation-link.patch
 )
 
 if(SOURCE_PATH MATCHES " ")
@@ -34,6 +36,9 @@ if (VCPKG_TARGET_ARCHITECTURE STREQUAL "x86" OR VCPKG_TARGET_ARCHITECTURE STREQU
 endif()
 
 set(OPTIONS "--enable-pic --disable-doc --enable-runtime-cpudetect --disable-autodetect")
+if("snow-shot-minimal" IN_LIST FEATURES)
+    string(APPEND OPTIONS " --disable-everything")
+endif()
 
 if(VCPKG_TARGET_IS_MINGW)
     if(VCPKG_TARGET_ARCHITECTURE STREQUAL "x86")
@@ -634,6 +639,23 @@ else()
     set(WITH_RUBBERBAND OFF)
 endif()
 
+if("snow-shot-minimal" IN_LIST FEATURES)
+    if(NOT VCPKG_TARGET_IS_WINDOWS OR VCPKG_TARGET_IS_UWP)
+        message(FATAL_ERROR "ffmpeg[snow-shot-minimal] currently supports desktop Windows only")
+    endif()
+    string(APPEND OPTIONS
+        " --disable-network"
+        " --enable-decoder=h264"
+        " --enable-encoder=libx264,libx265,h264_mf,mpeg4,gif,apng,libwebp_anim,aac,mp3_mf"
+        " --enable-muxer=matroska,mp4,avi,gif,apng,webp"
+        " --enable-demuxer=matroska"
+        " --enable-parser=h264,aac,mpegaudio"
+        " --enable-bsf=h264_mp4toannexb,aac_adtstoasc"
+        " --enable-protocol=file"
+        " --enable-hwaccel=h264_d3d11va,h264_d3d11va2,h264_dxva2"
+    )
+endif()
+
 set(OPTIONS_CROSS "--enable-cross-compile")
 
 # ffmpeg needs --cross-prefix option to use appropriate tools for cross-compiling.
@@ -855,6 +877,19 @@ if (NOT VCPKG_BUILD_TYPE OR VCPKG_BUILD_TYPE STREQUAL "debug")
     )
 
     z_vcpkg_restore_pkgconfig_path()
+endif()
+
+if("snow-shot-minimal" IN_LIST FEATURES)
+    set(_snow_shot_ffmpeg_components
+        "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-rel/config_components.h")
+    if(NOT EXISTS "${_snow_shot_ffmpeg_components}")
+        message(FATAL_ERROR
+            "The Snow Shot FFmpeg build did not produce config_components.h")
+    endif()
+    file(INSTALL "${_snow_shot_ffmpeg_components}"
+        DESTINATION "${CURRENT_PACKAGES_DIR}/share/ffmpeg"
+        RENAME snow-shot-config-components.h)
+    unset(_snow_shot_ffmpeg_components)
 endif()
 
 if(VCPKG_TARGET_IS_WINDOWS)

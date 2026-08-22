@@ -8,6 +8,7 @@ pub mod frame;
 pub mod monitor;
 mod platform;
 pub mod region;
+pub mod scrolling;
 pub mod streaming;
 pub mod system;
 pub mod window;
@@ -35,19 +36,31 @@ pub enum CaptureTarget {
     Region(region::CaptureRegion),
 }
 
-pub use backend::CaptureWorkload;
+pub use backend::{CaptureWorkload, WgcUpdateMode};
 pub use capture_session::{CaptureSession, CaptureTargetInfo};
 pub use frame::{CaptureEvent, CapturedFrame, ColorSpace, DirtyRect, FrameMetadata};
 pub use monitor::MonitorId;
 pub use region::{CaptureRegion, MonitorLayout};
+pub use scrolling::{ScrollingGovernor, ScrollingGovernorConfig, ScrollingGovernorSignal};
 pub use streaming::{
-    CaptureStream, CaptureStreamConfig, CaptureStreamStats, CaptureStreamStatsSnapshot,
+    CaptureRateControl, CaptureStream, CaptureStreamConfig, CaptureStreamFeedbackSender,
+    CaptureStreamStats, CaptureStreamStatsSnapshot, ScrollingStitchFeedback,
 };
 pub use system::{CaptureOptions, CaptureSystem, CaptureSystemBuilder};
 pub use window::WindowId;
 
+/// Releases the process-wide Rayon pool used by pixel conversion.
+///
+/// Conversions that already acquired the pool keep it alive until they
+/// finish. A later conversion recreates the pool on demand. Callers that need
+/// the worker threads to exit promptly should first stop and join all capture
+/// work that can perform conversion.
+pub fn release_conversion_pool() {
+    convert::release_pool();
+}
+
 pub fn capture_once(target: &CaptureTarget) -> CaptureResult<Frame> {
     let system = CaptureSystem::builder().build()?;
     let mut session = system.open_session(target.clone(), CaptureOptions::default())?;
-    session.capture()
+    session.capture_once()
 }

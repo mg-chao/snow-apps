@@ -21,6 +21,7 @@ struct SnowCanvasRuntime::Impl {
     bool restoreDocumentHistory(const QByteArray& payload);
     bool restoreDocumentHistoryPreservingEditorStyles(const QByteArray& payload);
     bool clearDocumentPreservingViewports();
+    bool setQuickSelectionDisabledTools(const QSet<SnowCanvasTool>& tools);
     void destroyAsync();
     QImage renderToImage(const QRectF& virtualSelectionRect, const QSize& outputSize,
                          const QList<CanvasExportSource>& sources);
@@ -109,6 +110,12 @@ bool SnowCanvasRuntime::Impl::clearDocumentPreservingViewports() {
         return false;
     }
     return session.clearDocumentPreservingViewports();
+}
+
+bool SnowCanvasRuntime::Impl::setQuickSelectionDisabledTools(
+    const QSet<SnowCanvasTool>& tools) {
+    return hasThreadAccess("setQuickSelectionDisabledTools") &&
+           session.setQuickSelectionDisabledTools(tools);
 }
 
 void SnowCanvasRuntime::Impl::destroyAsync() {
@@ -214,6 +221,10 @@ bool SnowCanvasRuntime::restoreDocumentHistoryPreservingEditorStyles(const QByte
 
 bool SnowCanvasRuntime::clearDocumentPreservingViewports() {
     return m_impl->clearDocumentPreservingViewports();
+}
+
+bool SnowCanvasRuntime::setQuickSelectionDisabledTools(const QSet<SnowCanvasTool>& tools) {
+    return m_impl->setQuickSelectionDisabledTools(tools);
 }
 
 void SnowCanvasRuntime::destroyAsync() {

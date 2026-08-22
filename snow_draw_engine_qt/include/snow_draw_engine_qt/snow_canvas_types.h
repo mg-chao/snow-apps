@@ -7,6 +7,7 @@
 
 #include <cstring>
 #include <optional>
+#include <QSet>
 
 inline bool snowCanvasExactDoubleEqual(double lhs, double rhs) noexcept {
     return std::memcmp(&lhs, &rhs, sizeof(double)) == 0;
@@ -438,6 +439,7 @@ inline bool operator!=(const SnowCanvasStyleDefaults& lhs, const SnowCanvasStyle
 
 struct SnowCanvasRuntimeConfig {
     std::optional<SnowCanvasStyleDefaults> styleDefaults;
+    QSet<SnowCanvasTool> quickSelectionDisabledTools;
 };
 
 struct SnowCanvasStyleToolbarState {

@@ -29,10 +29,11 @@ class ScreenshotSelectionExportWorkflow final {
     explicit ScreenshotSelectionExportWorkflow(ScreenshotSelectionExportWorkflowContext context);
 
     using Completion = std::function<void(bool)>;
+    using CopyCompletion = std::function<void(bool, QImage)>;
     using ResultValidator = std::function<bool()>;
 
     [[nodiscard]] bool copySelectionToClipboard(ResultValidator validator,
-                                                Completion completion);
+                                                CopyCompletion completion);
     [[nodiscard]] bool pinSelectionToScreen(ResultValidator validator,
                                             Completion completion);
 

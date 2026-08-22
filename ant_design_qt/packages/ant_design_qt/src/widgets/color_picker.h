@@ -63,6 +63,8 @@ class AdColorPicker final : public QWidget {
   Q_PROPERTY(adqt::widgets::AdColorPickerState* state READ state WRITE setState NOTIFY stateChanged)
   Q_PROPERTY(QWidget* triggerContent READ triggerContent WRITE setTriggerContent NOTIFY
                  triggerContentChanged)
+  Q_PROPERTY(QWidget* previewContent READ previewContent WRITE setPreviewContent NOTIFY
+                 previewContentChanged)
   Q_PROPERTY(
       QWidget* popupContent READ popupContent WRITE setPopupContent NOTIFY popupContentChanged)
   Q_PROPERTY(PopupContentPlacement popupContentPlacement READ popupContentPlacement WRITE
@@ -195,6 +197,7 @@ class AdColorPicker final : public QWidget {
 
   AdColorValue value() const;
   void setValue(const AdColorValue& value);
+  void commitValue(const AdColorValue& value);
 
   QVector<PresetItem> presets() const;
   void setPresets(const QVector<PresetItem>& presets);
@@ -206,6 +209,11 @@ class AdColorPicker final : public QWidget {
   // custom widget, restores the built-in trigger.
   QWidget* triggerContent() const;
   void setTriggerContent(QWidget* widget);
+
+  // Replaces the trailing preview swatch in the popup's slider row. Passing
+  // nullptr, or destroying the custom widget, restores the built-in swatch.
+  QWidget* previewContent() const;
+  void setPreviewContent(QWidget* widget);
 
   QWidget* popupContent() const;
   void setPopupContent(QWidget* widget);
@@ -242,6 +250,7 @@ class AdColorPicker final : public QWidget {
   void presetsChanged();
   void stateChanged(adqt::widgets::AdColorPickerState* state);
   void triggerContentChanged(QWidget* widget);
+  void previewContentChanged(QWidget* widget);
   void popupContentChanged(QWidget* widget);
   void popupContentPlacementChanged(PopupContentPlacement placement);
   void showTextFormatterChanged();
@@ -334,6 +343,7 @@ class AdColorPicker final : public QWidget {
   void scheduleInteractiveEditorRefresh();
   void refreshChannelVisuals(LivePanelSyncSource source = LivePanelSyncSource::None);
   void refreshPreviewSwatch();
+  void syncPreviewContentWidget();
   void updateFormatInputText();
   void updateFormatInputVisibility();
   void updateModeSegmentedOptions();
@@ -419,6 +429,8 @@ class AdColorPicker final : public QWidget {
   QPointer<QWidget> defaultTrigger_;
   QPointer<QWidget> triggerContent_;
   QMetaObject::Connection triggerContentDestroyedConnection_;
+  QPointer<QWidget> previewContent_;
+  QMetaObject::Connection previewContentDestroyedConnection_;
   QPointer<QWidget> popupContent_;
   QPointer<QWidget> popoverContentStub_;
   QPointer<QWidget> panelHost_;

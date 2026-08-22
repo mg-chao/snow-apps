@@ -1,4 +1,6 @@
 #include "snow_shot/presentation/screenshotcolorpickerwidget.h"
+#include "snow_shot/presentation/screenshotgeometry.h"
+#include "snow_shot/presentation/screenshotguidelinerendering.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 
 #include <QFont>
@@ -24,6 +26,7 @@ constexpr int kColorTextHeight = 24;
 constexpr int kCenterPixelBorderWidth = 1;
 constexpr int kShadowMargin = 10;
 constexpr int kShadowBlurRadius = 8;
+constexpr int kCursorGap = 16;
 
 const QColor kFallbackPanelBackground(255, 255, 255);
 const QColor kFallbackPanelTextColor(38, 38, 38);
@@ -238,6 +241,19 @@ void ScreenshotColorPickerWidget::hidePicker() {
     hide();
 }
 
+void ScreenshotColorPickerWidget::setCenterGuideLineColor(const QColor& color) {
+    const QColor next = color.isValid() ? color : QColor(0, 0, 0, 0);
+    if (m_centerGuideLineColor == next) {
+        return;
+    }
+    m_centerGuideLineColor = next;
+    update();
+}
+
+QColor ScreenshotColorPickerWidget::centerGuideLineColor() const {
+    return m_centerGuideLineColor;
+}
+
 void ScreenshotColorPickerWidget::cycleColorFormat() {
     switch (m_colorFormat) {
     case ColorFormat::Hex:
@@ -312,13 +328,14 @@ void ScreenshotColorPickerWidget::paintEvent(QPaintEvent* event) {
     const qreal previewCenterOffset = static_cast<qreal>(kPreviewCenterOffset);
     const QRectF centerRect(preview.left() + previewCenterOffset,
                             preview.top() + previewCenterOffset, kPreviewScale, kPreviewScale);
+    paintScreenshotColorPickerCenterGuideLines(painter, preview, centerRect,
+                                               m_centerGuideLineColor);
     const QColor markerColor = readableTextColor(m_currentColor);
     painter.setPen(QPen(markerColor, kCenterPixelBorderWidth));
     painter.setBrush(Qt::NoBrush);
     painter.drawRoundedRect(centerRect.adjusted(0.5, 0.5, -0.5, -0.5), 2.0, 2.0);
 
     QFont textFont = font();
-    textFont.setFamily(QStringLiteral("Open Sans"));
     textFont.setPixelSize(13);
     painter.setFont(textFont);
     painter.setPen(m_panelTextColor);
@@ -379,19 +396,14 @@ bool ScreenshotColorPickerWidget::updatePreview(const QPoint& physicalPoint) {
 
 bool ScreenshotColorPickerWidget::updatePosition(const QPointF& overlayLocalPosition) {
     QWidget* parent = parentWidget();
-    QPoint targetPosition;
-    if (parent == nullptr) {
-        targetPosition = overlayLocalPosition.toPoint() - QPoint(kShadowMargin, kShadowMargin);
-    } else {
-        const QSize ownSize = size();
-        const int panelWidth = std::max(1, ownSize.width() - kShadowMargin * 2);
-        const int panelHeight = std::max(1, ownSize.height() - kShadowMargin * 2);
-        const int maxX = std::max(0, parent->width() - panelWidth);
-        const int maxY = std::max(0, parent->height() - panelHeight);
-        const int panelX = std::clamp(qRound(overlayLocalPosition.x()), 0, maxX);
-        const int panelY = std::clamp(qRound(overlayLocalPosition.y()), 0, maxY);
-        targetPosition = QPoint(panelX - kShadowMargin, panelY - kShadowMargin);
-    }
+    const QSize ownSize = size();
+    const QSize panelSize(std::max(1, ownSize.width() - kShadowMargin * 2),
+                          std::max(1, ownSize.height() - kShadowMargin * 2));
+    const QRect bounds = parent != nullptr ? parent->rect() : QRect();
+    const QPoint panelPosition = ScreenshotGeometryMapper::cursorPanelPosition(
+        overlayLocalPosition.toPoint(), panelSize, bounds, kCursorGap);
+    const QPoint targetPosition =
+        panelPosition - QPoint(kShadowMargin, kShadowMargin);
     if (pos() == targetPosition) {
         return false;
     }

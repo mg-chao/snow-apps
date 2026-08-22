@@ -61,6 +61,13 @@ class GeneratorTests(unittest.TestCase):
         command = [sys.executable, str(GENERATOR), str(manifest), "--header", str(header), "--source", str(source)]
         subprocess.run(command, check=True)
         first = (header.read_bytes(), source.read_bytes())
+        generated_source = source.read_text(encoding="utf-8")
+        self.assertIn("constexpr IconDescriptor kEntries[]", generated_source)
+        self.assertIn("std::string_view", generated_source)
+        self.assertIn("return pack().icon(0, colors);", generated_source)
+        self.assertNotIn("QByteArray", generated_source)
+        self.assertNotIn("QList", generated_source)
+        self.assertNotIn("QString", generated_source)
         subprocess.run(command, check=True)
         self.assertEqual(first, (header.read_bytes(), source.read_bytes()))
         subprocess.run([*command, "--check"], check=True)

@@ -59,6 +59,8 @@ constexpr char kSemanticSuffixColorProperty[] = "ad-input-suffix-color";
 constexpr char kSemanticSuffixActionColorProperty[] = "ad-input-suffix-action-color";
 constexpr char kFeedbackSpinnerFrameKey[] = "AdLineEdit.FeedbackSpinnerFrame";
 
+int scaledMinimum(int value, qreal scale) { return std::max(1, qRound(value * scale)); }
+
 bool isLoadingIcon(const adqt::icons::IconRef& icon) {
   const auto metadata = adqt::icons::describeIcon(icon);
   return metadata.key.pack == QStringLiteral("antd") &&
@@ -222,6 +224,38 @@ InputVisualStyle applyDynamicOverrides(InputVisualStyle style, const QObject* ob
   applyDynamicColor(&style.suffixActionHoverColor, object, kSemanticSuffixActionColorProperty);
 
   return style;
+}
+
+void applyControlScale(InputVisualStyle* style, qreal scale) {
+  if (!style) {
+    return;
+  }
+
+  auto& metrics = style->metrics;
+  const auto scaled = [scale](int value) {
+    return value > 0 ? std::max(1, qRound(value * scale)) : 0;
+  };
+  metrics.height = scaled(metrics.height);
+  metrics.borderRadius = scaled(metrics.borderRadius);
+  metrics.borderWidth = scaled(metrics.borderWidth);
+  metrics.horizontalPadding = scaled(metrics.horizontalPadding);
+  metrics.verticalPadding = scaled(metrics.verticalPadding);
+  metrics.textLineHeight = scaled(metrics.textLineHeight);
+  metrics.affixPadding = scaled(metrics.affixPadding);
+  metrics.affixItemGap = scaled(metrics.affixItemGap);
+  metrics.affixIconSize = scaled(metrics.affixIconSize);
+  metrics.clearIconSize = scaled(metrics.clearIconSize);
+  metrics.multilineAffixTopInset = scaled(metrics.multilineAffixTopInset);
+  metrics.multilineInlineStartCompensation = scaled(metrics.multilineInlineStartCompensation);
+  metrics.countTopMargin = scaled(metrics.countTopMargin);
+  metrics.countHeight = scaled(metrics.countHeight);
+  metrics.focusOutlineWidth *= scale;
+  metrics.focusOutlineOffset *= scale;
+  if (metrics.font.pixelSize() > 0) {
+    metrics.font.setPixelSize(scaled(metrics.font.pixelSize()));
+  } else if (metrics.font.pointSizeF() > 0.0) {
+    metrics.font.setPointSizeF(metrics.font.pointSizeF() * scale);
+  }
 }
 
 bool isDynamicStyleProperty(const QByteArray& propertyName) {
@@ -655,8 +689,10 @@ QSize AdLineEdit::sizeHint() const {
   const QMargins contentInsets = detail::input_internal::textControlContentMargins(style);
   const int contentWidth =
       std::max(horizontalTextWidth(fm, placeholderText()), horizontalTextWidth(fm, text()));
-  const int baseWidth = std::max(160, contentInsets.left() + contentInsets.right() + contentWidth +
-                                          accessoryWidthHint(style) + style.metrics.height);
+  const int minimumWidth = std::max(1, qRound(160 * controlScale_.logicalScale));
+  const int baseWidth =
+      std::max(minimumWidth, contentInsets.left() + contentInsets.right() + contentWidth +
+                                 accessoryWidthHint(style) + style.metrics.height);
   return QSize(baseWidth, style.metrics.height);
 }
 
@@ -665,7 +701,15 @@ QSize AdLineEdit::minimumSizeHint() const {
   if (property("ad-flex-min-width-zero").toBool()) {
     return QSize(0, hint.height());
   }
-  return QSize(std::min(96, hint.width()), hint.height());
+  return QSize(std::min(std::max(1, qRound(96 * controlScale_.logicalScale)), hint.width()),
+               hint.height());
+}
+
+void AdLineEdit::prepareControlScale(const AdControlScaleContext& context) { Q_UNUSED(context) }
+
+void AdLineEdit::commitControlScale(const AdControlScaleContext& context) {
+  controlScale_ = context;
+  refreshVisualState(true);
 }
 
 void AdLineEdit::focusEditor(FocusSelection selection, bool preventScroll) {
@@ -1062,7 +1106,8 @@ void AdLineEdit::updateClearButton() {
   }
 
   const InputVisualStyle style = resolvedStyle();
-  const int iconSide = std::max(10, style.metrics.clearIconSize);
+  const int iconSide =
+      std::max(scaledMinimum(10, controlScale_.logicalScale), style.metrics.clearIconSize);
   auto* clearIconButton = static_cast<InputIconButton*>(clearButton_);
   clearIconButton->setSlotSize(QSize(iconSide, iconSide));
   clearIconButton->setContentAlignment(Qt::AlignCenter);
@@ -1082,7 +1127,8 @@ void AdLineEdit::updatePrefixVisual() {
   prefixLabel_->setText(prefixText_);
   prefixLabel_->setFont(style.metrics.font);
   setLabelTextColor(prefixLabel_, isEnabled() ? style.prefixColor : style.disabledTextColor);
-  const int iconSide = std::max(10, style.metrics.affixIconSize);
+  const int iconSide =
+      std::max(scaledMinimum(10, controlScale_.logicalScale), style.metrics.affixIconSize);
   setLabelIcon(prefixIconLabel_, prefixIconRef_,
                isEnabled() ? style.prefixColor : style.disabledTextColor, iconSide,
                devicePixelRatioF());
@@ -1115,7 +1161,8 @@ void AdLineEdit::updateSuffixVisual() {
   suffixLabel_->setFont(style.metrics.font);
   setLabelTextColor(suffixLabel_, suffixColor);
 
-  const int iconSide = std::max(10, style.metrics.affixIconSize);
+  const int iconSide =
+      std::max(scaledMinimum(10, controlScale_.logicalScale), style.metrics.affixIconSize);
   feedbackIconLabel_->setFixedSize(iconSide, iconSide);
   const int actionSlotWidth = iconSide + affixPadding(style);
   const int actionSlotHeight = std::max(iconSide, style.metrics.height);
@@ -1239,9 +1286,12 @@ InputVisualStyle AdLineEdit::resolvedStyle() const {
   input.focused = focused_;
   input.hovered = hovered_;
   input.baseFont = font();
-  return applyDynamicOverrides(adqt::widgets::detail::resolveInputVisualStyle(
-                                   input, adqt::theme::ThemeManager::instance().resolve(this)),
-                               this);
+  InputVisualStyle style =
+      applyDynamicOverrides(adqt::widgets::detail::resolveInputVisualStyle(
+                                input, adqt::theme::ThemeManager::instance().resolve(this)),
+                            this);
+  applyControlScale(&style, controlScale_.logicalScale);
+  return style;
 }
 
 void AdLineEdit::updateCursorForRole() {
@@ -1329,7 +1379,8 @@ QString AdLineEdit::countLabelText(const QString& value, int count, int maximum)
 
 int AdLineEdit::accessoryWidthHint(const InputVisualStyle& style) const {
   const QFontMetrics fm(style.metrics.font);
-  const int iconSide = std::max(10, style.metrics.affixIconSize);
+  const int iconSide =
+      std::max(scaledMinimum(10, controlScale_.logicalScale), style.metrics.affixIconSize);
   const int groupGap = affixPadding(style);
   const int itemGap = affixItemGap(style);
 
@@ -1384,7 +1435,8 @@ int AdLineEdit::accessoryWidthHint(const InputVisualStyle& style) const {
     if (hasTrailing) {
       trailingWidth += groupGap;
     }
-    trailingWidth += std::max(10, style.metrics.clearIconSize);
+    trailingWidth +=
+        std::max(scaledMinimum(10, controlScale_.logicalScale), style.metrics.clearIconSize);
     hasTrailing = true;
   }
 

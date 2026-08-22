@@ -76,6 +76,9 @@ void publicationAndRecovery() {
     {
         auto repository = storage::makeCaptureHistoryRepository(temporary.path());
         storage::CaptureHistoryDraft draft = draftAt(now);
+        QImage resultImage(QSize(20, 12), QImage::Format_RGBA8888);
+        resultImage.fill(qRgba(210, 80, 40, 220));
+        draft.resultImage = resultImage;
         draft.source = storage::CaptureHistorySource::PinnedToScreen;
         const storage::CaptureHistoryPublishResult result = repository->publish(draft).get();
         require(result.storage.success, "self-contained publication failed");
@@ -83,19 +86,24 @@ void publicationAndRecovery() {
         const QString directory = onlyRecordDirectory(temporary.path());
         const QJsonObject manifest =
             readObject(QDir(directory).filePath(QStringLiteral("manifest.json")));
-        require(manifest.value(QStringLiteral("format_version")).toInt() == 1 &&
+        require(manifest.value(QStringLiteral("format_version")).toInt() == 2 &&
                     manifest.value(QStringLiteral("id")).toString() == published.id &&
                     manifest.value(QStringLiteral("source")).toString() ==
                         QStringLiteral("pinned_to_screen") &&
                     published.source == storage::CaptureHistorySource::PinnedToScreen &&
                     QFileInfo(QDir(directory).filePath(QStringLiteral("canvas_history.json")))
                         .isFile() &&
-                    QFileInfo(QDir(directory).filePath(QStringLiteral("display_0.png"))).isFile(),
+                    QFileInfo(QDir(directory).filePath(QStringLiteral("display_0.png"))).isFile() &&
+                    QFileInfo(QDir(directory).filePath(QStringLiteral("capture_result.png"))).isFile() &&
+                    published.result.has_value() && published.result->imageSize == QSize(20, 12),
                 "published record is not self-describing");
-        const qint64 physicalBytes =
+        qint64 physicalBytes =
             QFileInfo(QDir(directory).filePath(QStringLiteral("manifest.json"))).size() +
             QFileInfo(QDir(directory).filePath(QStringLiteral("canvas_history.json"))).size() +
             QFileInfo(QDir(directory).filePath(QStringLiteral("display_0.png"))).size();
+        const qint64 resultBytes =
+            QFileInfo(QDir(directory).filePath(QStringLiteral("capture_result.png"))).size();
+        physicalBytes += resultBytes;
         require(published.totalBytes == physicalBytes &&
                     manifest.value(QStringLiteral("total_record_size")).toInteger() ==
                         physicalBytes,
@@ -109,9 +117,14 @@ void publicationAndRecovery() {
         require(payload.has_value() && payload->displayImages.size() == 1 &&
                     payload->displayImages.constFirst().size() == QSize(32, 24),
                 "published record could not be loaded");
-        require(!QFileInfo::exists(
-                    QDir(temporary.path()).filePath(QStringLiteral("capture_history_catalog.json"))),
-                "capture-history publication unexpectedly created a catalog");
+        const auto loadedResult = repository->loadResultImage(published);
+        require(loadedResult.has_value() && loadedResult->size() == QSize(20, 12) &&
+                    loadedResult->pixelColor(3, 4) == resultImage.pixelColor(3, 4),
+                "published result image could not be loaded");
+        require(
+            !QFileInfo::exists(
+                QDir(temporary.path()).filePath(QStringLiteral("capture_history_catalog.json"))),
+            "capture-history publication unexpectedly created a catalog");
     }
 
     {
@@ -122,6 +135,42 @@ void publicationAndRecovery() {
                         storage::CaptureHistorySource::PinnedToScreen,
                 "record was not recovered from its self-contained directory");
     }
+}
+
+void quickCaptureSourcesRoundTrip() {
+    const auto verifySource = [](storage::CaptureHistorySource source,
+                                 const QString& manifestSource) {
+        QTemporaryDir temporary;
+        require(temporary.isValid(), "failed to create quick-capture source directory");
+        const QDateTime createdUtc =
+            QDateTime::fromString(QStringLiteral("2026-08-12T04:30:00.000Z"), Qt::ISODateWithMs);
+        QString recordId;
+
+        {
+            auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+            storage::CaptureHistoryDraft draft = draftAt(createdUtc);
+            draft.source = source;
+            const storage::CaptureHistoryPublishResult result = repository->publish(draft).get();
+            require(result.storage.success, "quick-capture source publication failed");
+            recordId = result.record.id;
+
+            const QString directory = onlyRecordDirectory(temporary.path());
+            const QJsonObject manifest =
+                readObject(QDir(directory).filePath(QStringLiteral("manifest.json")));
+            require(manifest.value(QStringLiteral("source")).toString() == manifestSource &&
+                        result.record.source == source,
+                    "quick-capture source was not encoded in the manifest");
+        }
+
+        auto recovered = storage::makeCaptureHistoryRepository(temporary.path());
+        require(recovered->records().size() == 1 &&
+                    recovered->records().constFirst().id == recordId &&
+                    recovered->records().constFirst().source == source,
+                "quick-capture source was not recovered from its manifest");
+    };
+
+    verifySource(storage::CaptureHistorySource::CurrentMonitor, QStringLiteral("current_monitor"));
+    verifySource(storage::CaptureHistorySource::FocusedWindow, QStringLiteral("focused_window"));
 }
 
 void quarantineTemporaryCleanupAndClear() {
@@ -152,14 +201,13 @@ void quarantineTemporaryCleanupAndClear() {
                 !QFileInfo::exists(expiredQuarantine) && repository->usage().quarantineBytes > 0,
             "startup did not clean temporary data and quarantine the invalid record");
     const auto clearResult = repository->requestClear().get();
-    require(
-        clearResult.success && repository->usage().entryCount == 0 &&
-            repository->usage().totalBytes == 0 &&
-            !QFileInfo::exists(
-                QDir(temporary.path()).filePath(QStringLiteral("capture_history_records"))) &&
-            !QFileInfo::exists(
-                QDir(temporary.path()).filePath(QStringLiteral("capture_history_quarantine"))),
-        "clear did not remove every managed history area");
+    require(clearResult.success && repository->usage().entryCount == 0 &&
+                repository->usage().totalBytes == 0 &&
+                !QFileInfo::exists(
+                    QDir(temporary.path()).filePath(QStringLiteral("capture_history_records"))) &&
+                !QFileInfo::exists(
+                    QDir(temporary.path()).filePath(QStringLiteral("capture_history_quarantine"))),
+            "clear did not remove every managed history area");
 }
 
 void policyBoundariesAndDisabledPreservation() {
@@ -309,6 +357,7 @@ void traversalManifestIsRejected() {
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     publicationAndRecovery();
+    quickCaptureSourcesRoundTrip();
     quarantineTemporaryCleanupAndClear();
     policyBoundariesAndDisabledPreservation();
     publicationQueueCapacity();

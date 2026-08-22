@@ -19,6 +19,9 @@ members = [
 ]
 resolver = "3"
 
+[workspace.package]
+license = "Apache-2.0"
+
 [workspace.dependencies]
 anyhow = "1.0.102"
 bincode = "1.3.3"

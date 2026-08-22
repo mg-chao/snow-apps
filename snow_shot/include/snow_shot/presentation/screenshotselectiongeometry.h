@@ -19,6 +19,7 @@ enum class ScreenshotSelectionDragMode : int {
     Bottom,
     BottomLeft,
     Left,
+    Marquee,
 };
 
 [[nodiscard]] QRectF normalizedScreenshotSelection(const QPointF& start, const QPointF& end);

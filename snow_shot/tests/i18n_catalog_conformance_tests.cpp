@@ -211,6 +211,38 @@ CheckResult validateExtractedCatalog(const Catalog& catalog) {
     CheckResult result;
     QSet<MessageKey> seen;
     bool hasGeneratedSettingsText = false;
+    QSet<MessageKey> requiredDynamicMessages{
+        {QStringLiteral("ScreenshotShortcutHintsWidget"),
+         QStringLiteral("Vertical scroll: mouse wheel"), {}, false},
+        {QStringLiteral("ScreenshotShortcutHintsWidget"),
+         QStringLiteral("Horizontal scroll: Shift + mouse wheel"), {}, false},
+        {QStringLiteral("ScreenshotShortcutHintsWidget"),
+         QStringLiteral("Switch element level: mouse wheel"), {}, false},
+        {QStringLiteral("ScreenshotShortcutHintsWidget"),
+         QStringLiteral("Switch Color Format: Shift"), {}, false},
+        {QStringLiteral("ScreenshotShortcutHintsWidget"),
+         QStringLiteral("Switch Screenshot History"), {}, false},
+        {QStringLiteral("ScreenshotShortcutHintsWidget"),
+         QStringLiteral("Maintain aspect ratio: Shift"), {}, false},
+        {QStringLiteral("ScreenshotShortcutHintsWidget"),
+         QStringLiteral("Fixed-angle rotation: Shift"), {}, false},
+        {QStringLiteral("ScreenshotShortcutHintsWidget"),
+         QStringLiteral("Scale from center: Alt"), {}, false},
+        {QStringLiteral("ScreenshotShortcutHintsWidget"),
+         QStringLiteral("Auto-align: Ctrl"), {}, false},
+        {QStringLiteral("ScreenshotShortcutHintsWidget"),
+         QStringLiteral("Delete selected elements: Delete"), {}, false},
+        {QStringLiteral("ScreenshotShortcutHintsWidget"),
+         QStringLiteral("Draw straight line: Shift"), {}, false},
+        {QStringLiteral("ScreenshotPinnedWindow"),
+         QStringLiteral("Image size is too large."), {}, false},
+        {QStringLiteral("ScreenshotPinnedWindow"),
+         QStringLiteral("The pinned image could not be prepared"), {}, false},
+        {QStringLiteral("ScreenshotPinnedWindow"),
+         QStringLiteral("The pinned image copy could not be started"), {}, false},
+        {QStringLiteral("ScreenshotPinnedWindow"),
+         QStringLiteral("The pinned image save could not be started"), {}, false},
+    };
     for (const Message& message : catalog.messages) {
         if (message.key.context.isEmpty() || message.key.source.isEmpty()) {
             fail(result, QStringLiteral("lupdate produced an empty message key"));
@@ -220,6 +252,7 @@ CheckResult validateExtractedCatalog(const Catalog& catalog) {
                              .arg(describe(message.key)));
         }
         seen.insert(message.key);
+        requiredDynamicMessages.remove(message.key);
         hasGeneratedSettingsText =
             hasGeneratedSettingsText ||
             (message.key.context == QStringLiteral("SettingsCatalog") &&
@@ -228,6 +261,10 @@ CheckResult validateExtractedCatalog(const Catalog& catalog) {
     if (!hasGeneratedSettingsText) {
         fail(result,
              QStringLiteral("lupdate did not extract configuration-defined settings text"));
+    }
+    if (!requiredDynamicMessages.isEmpty()) {
+        fail(result, QStringLiteral("lupdate did not extract dynamic UI text: %1")
+                         .arg(describe(*requiredDynamicMessages.cbegin())));
     }
     return result;
 }

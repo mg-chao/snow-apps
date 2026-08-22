@@ -55,6 +55,64 @@ void fitDoesNotDropBelowMinimumZoom() {
                 huge.nativeGeometry.size() == QSize(1000, 1000),
             "adaptive fit dropped below the minimum zoom");
 }
+
+void fullResolutionPlacementCentersWithoutFitting() {
+    const QRect logicalScreen(100, 50, 1600, 900);
+    const QRect available(100, 50, 1600, 860);
+    const QRect nativeScreen(200, 100, 2400, 1350);
+    const QSize imageSize(5000, 3000);
+    const ScreenshotPinnedImageFit placement =
+        ScreenshotGeometryMapper::centerImageAtFullResolution(
+            imageSize, available, logicalScreen, nativeScreen);
+    const QRect availableNative = ScreenshotGeometryMapper::nativeRectForLogicalRect(
+        available, logicalScreen, nativeScreen);
+    const QPointF availableCenter(availableNative.left() + availableNative.width() / 2.0,
+                                  availableNative.top() + availableNative.height() / 2.0);
+    const QPointF placementCenter(
+        placement.nativeGeometry.left() + placement.nativeGeometry.width() / 2.0,
+        placement.nativeGeometry.top() + placement.nativeGeometry.height() / 2.0);
+
+    require(placement.valid && placement.nativeGeometry.size() == imageSize &&
+                placement.fullResolutionSize == imageSize && placement.scalePercent == 100.0,
+            "full-resolution placement should preserve the image pixel dimensions");
+    require((placementCenter - availableCenter).manhattanLength() <= 1.0 &&
+                !availableNative.contains(placement.nativeGeometry),
+            "full-resolution placement should center in the work area while allowing overflow");
+}
+
+void cursorPanelPlacementUsesEveryAvailableQuadrant() {
+    constexpr int gap = 16;
+    const QRect bounds(0, 0, 800, 600);
+    const QSize panelSize(160, 220);
+
+    require(ScreenshotGeometryMapper::cursorPanelPosition(QPoint(100, 100), panelSize, bounds,
+                                                          gap) == QPoint(116, 116),
+            "cursor panel should prefer the bottom-right position");
+    require(ScreenshotGeometryMapper::cursorPanelPosition(QPoint(700, 100), panelSize, bounds,
+                                                          gap) == QPoint(524, 116),
+            "cursor panel should move to bottom-left when the right side is too narrow");
+    require(ScreenshotGeometryMapper::cursorPanelPosition(QPoint(100, 500), panelSize, bounds,
+                                                          gap) == QPoint(116, 264),
+            "cursor panel should move to top-right when the bottom side is too short");
+    require(ScreenshotGeometryMapper::cursorPanelPosition(QPoint(700, 500), panelSize, bounds,
+                                                          gap) == QPoint(524, 264),
+            "cursor panel should move to top-left when the right and bottom sides are too small");
+}
+
+void cursorPanelPlacementRespectsOffsetMonitorBounds() {
+    constexpr int gap = 14;
+    const QRect bounds(-1920, -160, 1920, 1080);
+    const QSize panelSize(228, 84);
+
+    require(ScreenshotGeometryMapper::cursorPanelPosition(QPoint(-10, 900), panelSize, bounds,
+                                                          gap) == QPoint(-252, 802),
+            "cursor panel should flip above-left inside an offset monitor");
+    const QPoint clamped = ScreenshotGeometryMapper::cursorPanelPosition(
+        QPoint(-1918, -158), QSize(2400, 1200), bounds, gap);
+    require(clamped == bounds.topLeft(),
+            "an oversized cursor panel should clamp to an offset monitor origin");
+}
+
 } // namespace
 
 int main() {
@@ -62,6 +120,9 @@ int main() {
         landscapeAndPortraitResultsFitBothAxes();
         fitUsesAvailableGeometryMarginAndNeverUpscales();
         fitDoesNotDropBelowMinimumZoom();
+        fullResolutionPlacementCentersWithoutFitting();
+        cursorPanelPlacementUsesEveryAvailableQuadrant();
+        cursorPanelPlacementRespectsOffsetMonitorBounds();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return EXIT_FAILURE;

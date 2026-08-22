@@ -90,9 +90,14 @@ struct IsolatedSettings {
             {directory.path(), directory.path(), 8000}));
         snow_shot::storage::ShortcutSettings().setScreenshot({});
         snow_shot::storage::ShortcutSettings().setOpenSettings({});
+        snow_shot::storage::ShortcutSettings().setPinClipboardContent({});
+        snow_shot::storage::GlobalShortcutSettings()
+            .setDisableOnFocusedFullscreenWindow(false);
     }
 
-    ~IsolatedSettings() { snow_shot::storage::ApplicationStorage::instance().shutdown(); }
+    ~IsolatedSettings() {
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+    }
 
     QString organization;
     QString application;
@@ -210,6 +215,128 @@ void releasedApplicationConflictIsReconciled() {
             "changing another action should retry bindings whose conflict was released");
 }
 
+void everyQuickActionHasIndependentPersistenceAndRegistration() {
+    IsolatedSettings settings;
+    const QVector<QPair<shortcuts::GlobalShortcutAction, QString>> actions = {
+        {shortcuts::GlobalShortcutAction::Screenshot, QStringLiteral("Ctrl+Alt+1")},
+        {shortcuts::GlobalShortcutAction::ScreenshotDelay, QStringLiteral("Ctrl+Alt+2")},
+        {shortcuts::GlobalShortcutAction::ScreenshotFixed, QStringLiteral("Ctrl+Alt+3")},
+        {shortcuts::GlobalShortcutAction::ScreenshotOcr, QStringLiteral("Ctrl+Alt+4")},
+        {shortcuts::GlobalShortcutAction::ScreenshotTranslation, QStringLiteral("Ctrl+Alt+5")},
+        {shortcuts::GlobalShortcutAction::ScreenshotCopy, QStringLiteral("Ctrl+Alt+6")},
+        {shortcuts::GlobalShortcutAction::ScreenshotFullScreen, QStringLiteral("Ctrl+Alt+7")},
+        {shortcuts::GlobalShortcutAction::ScreenshotFocusedWindow, QStringLiteral("Ctrl+Alt+8")},
+        {shortcuts::GlobalShortcutAction::ScreenRecord, QStringLiteral("Ctrl+Alt+9")},
+        {shortcuts::GlobalShortcutAction::ScreenRecordCopy, QStringLiteral("Ctrl+Alt+A")},
+        {shortcuts::GlobalShortcutAction::OpenCaptureHistory, QStringLiteral("Ctrl+Alt+B")},
+        {shortcuts::GlobalShortcutAction::OpenSettings, QStringLiteral("Ctrl+Alt+C")},
+        {shortcuts::GlobalShortcutAction::PinClipboardContent,
+         QStringLiteral("Ctrl+Alt+D")},
+    };
+
+    {
+        auto backend = std::make_unique<FakeGlobalShortcutBackend>();
+        shortcuts::GlobalShortcutManager manager(std::move(backend), settings.organization,
+                                                 settings.application);
+        manager.initialize();
+        for (const auto& [action, shortcut] : actions) {
+            manager.setShortcuts(action, {shortcut});
+            const auto state = manager.state(action);
+            require(state.status == shortcuts::GlobalShortcutStatus::Registered &&
+                        state.shortcuts == QStringList{shortcut},
+                    "quick action shortcut did not register independently");
+        }
+    }
+
+    auto restoredBackend = std::make_unique<FakeGlobalShortcutBackend>();
+    auto* const restoredBackendPtr = restoredBackend.get();
+    shortcuts::GlobalShortcutManager restored(std::move(restoredBackend), settings.organization,
+                                              settings.application);
+    restored.initialize();
+    for (const auto& [action, shortcut] : actions) {
+        const auto state = restored.state(action);
+        require(state.status == shortcuts::GlobalShortcutStatus::Registered &&
+                    state.shortcuts == QStringList{shortcut},
+                "quick action shortcut did not survive manager restart");
+    }
+    int activationCount = 0;
+    shortcuts::GlobalShortcutAction activatedAction = shortcuts::GlobalShortcutAction::Screenshot;
+    QObject::connect(&restored, &shortcuts::GlobalShortcutManager::activated, &restored,
+                     [&activationCount, &activatedAction](shortcuts::GlobalShortcutAction action) {
+                         ++activationCount;
+                         activatedAction = action;
+                     });
+    restoredBackendPtr->activate(QStringLiteral("Ctrl+Alt+7"));
+    require(activationCount == 1 &&
+                activatedAction == shortcuts::GlobalShortcutAction::ScreenshotFocusedWindow,
+            "quick action activation did not dispatch its owning action");
+}
+
+void focusedFullscreenSuppressionIsCheckedForEveryActivation() {
+    IsolatedSettings settings;
+    auto backend = std::make_unique<FakeGlobalShortcutBackend>();
+    auto* const backendPtr = backend.get();
+    bool focusedFullscreen = true;
+    shortcuts::GlobalShortcutManager manager(
+        std::move(backend), settings.organization, settings.application, nullptr,
+        [&focusedFullscreen]() { return focusedFullscreen; });
+    manager.initialize();
+    manager.setShortcuts(shortcuts::GlobalShortcutAction::Screenshot,
+                         {QStringLiteral("Ctrl+Alt+1")});
+
+    int activationCount = 0;
+    QObject::connect(&manager, &shortcuts::GlobalShortcutManager::activated, &manager,
+                     [&activationCount](shortcuts::GlobalShortcutAction) {
+                         ++activationCount;
+                     });
+    backendPtr->activate(QStringLiteral("Ctrl+Alt+1"));
+    require(activationCount == 1,
+            "fullscreen detection should not suppress hotkeys while the setting is disabled");
+
+    require(snow_shot::storage::GlobalShortcutSettings()
+                .setDisableOnFocusedFullscreenWindow(true),
+            "fullscreen hotkey suppression should be configurable");
+    backendPtr->activate(QStringLiteral("Ctrl+Alt+1"));
+    require(activationCount == 1,
+            "a focused fullscreen window should suppress the activated hotkey");
+
+    focusedFullscreen = false;
+    backendPtr->activate(QStringLiteral("Ctrl+Alt+1"));
+    require(activationCount == 2,
+            "hotkeys should resume as soon as no focused fullscreen window exists");
+}
+
+void shortcutFunctionsCanBeDisabledWithoutReconciliation() {
+    IsolatedSettings settings;
+    auto backend = std::make_unique<FakeGlobalShortcutBackend>();
+    auto* const backendPtr = backend.get();
+    shortcuts::GlobalShortcutManager manager(std::move(backend), settings.organization,
+                                              settings.application);
+    manager.initialize();
+    manager.setShortcuts(shortcuts::GlobalShortcutAction::Screenshot,
+                         {QStringLiteral("Ctrl+Alt+1")});
+
+    int activationCount = 0;
+    QObject::connect(&manager, &shortcuts::GlobalShortcutManager::activated, &manager,
+                     [&activationCount](shortcuts::GlobalShortcutAction) { ++activationCount; });
+    backendPtr->activate(QStringLiteral("Ctrl+Alt+1"));
+    require(activationCount == 1 && manager.shortcutFunctionsEnabled(),
+            "global shortcuts should activate before the disable gate is enabled");
+
+    manager.setShortcutFunctionsEnabled(false);
+    const auto stateWhileDisabled =
+        manager.state(shortcuts::GlobalShortcutAction::Screenshot);
+    backendPtr->activate(QStringLiteral("Ctrl+Alt+1"));
+    require(!manager.shortcutFunctionsEnabled() && activationCount == 1 &&
+                stateWhileDisabled.status == shortcuts::GlobalShortcutStatus::Registered,
+            "disabling shortcut functions should suppress activation without unregistering keys");
+
+    manager.setShortcutFunctionsEnabled(true);
+    backendPtr->activate(QStringLiteral("Ctrl+Alt+1"));
+    require(manager.shortcutFunctionsEnabled() && activationCount == 2,
+            "re-enabling shortcut functions should resume activation immediately");
+}
+
 #ifdef Q_OS_WIN
 void nativeWindowsBackendRegistersAndReleases() {
     IsolatedSettings settings;
@@ -268,6 +395,9 @@ int main(int argc, char** argv) {
     registrationStatesReflectActualAvailability();
     persistedDesiredBindingsAreRestored();
     releasedApplicationConflictIsReconciled();
+    everyQuickActionHasIndependentPersistenceAndRegistration();
+    focusedFullscreenSuppressionIsCheckedForEveryActivation();
+    shortcutFunctionsCanBeDisabledWithoutReconciliation();
 #ifdef Q_OS_WIN
     nativeWindowsBackendRegistersAndReleases();
 #endif

@@ -1,0 +1,16 @@
+diff --git a/lib/jxl.cmake b/lib/jxl.cmake
+index 9c9685e..2e56e33 100644
+--- a/lib/jxl.cmake
++++ b/lib/jxl.cmake
+@@ -131,6 +131,11 @@ target_compile_definitions(jxl_enc-obj PUBLIC
+ )
+ target_link_libraries(jxl_enc-obj PUBLIC jxl_base)
+ 
++if(NOT BUILD_SHARED_LIBS)
++  target_compile_definitions(jxl_dec-obj PRIVATE JXL_STATIC_DEFINE)
++  target_compile_definitions(jxl_enc-obj PRIVATE JXL_STATIC_DEFINE)
++endif()
++
+ set_target_properties(jxl_dec-obj PROPERTIES
+   CXX_VISIBILITY_PRESET hidden
+   VISIBILITY_INLINES_HIDDEN 1

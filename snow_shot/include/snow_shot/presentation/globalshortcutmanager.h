@@ -12,7 +12,18 @@
 namespace snow_shot::presentation {
 enum class GlobalShortcutAction {
     Screenshot,
+    ScreenshotDelay,
+    ScreenshotFixed,
+    ScreenshotOcr,
+    ScreenshotTranslation,
+    ScreenshotCopy,
+    ScreenshotFullScreen,
+    ScreenshotFocusedWindow,
+    ScreenRecord,
+    ScreenRecordCopy,
+    OpenCaptureHistory,
     OpenSettings,
+    PinClipboardContent,
 };
 
 enum class GlobalShortcutStatus {
@@ -77,7 +88,8 @@ class GlobalShortcutManager final : public QObject {
     explicit GlobalShortcutManager(QObject* parent = nullptr);
     GlobalShortcutManager(std::unique_ptr<GlobalShortcutBackend> backend,
                           const QString& organization, const QString& application,
-                          QObject* parent = nullptr);
+                          QObject* parent = nullptr,
+                          std::function<bool()> focusedFullscreenDetector = {});
     ~GlobalShortcutManager() override;
 
     void initialize();
@@ -85,6 +97,8 @@ class GlobalShortcutManager final : public QObject {
     [[nodiscard]] GlobalShortcutRegistrationState state(GlobalShortcutAction action) const;
     [[nodiscard]] GlobalShortcutValidationResult validateShortcut(const QString& shortcut) const;
     void setShortcuts(GlobalShortcutAction action, const QStringList& shortcuts);
+    void setShortcutFunctionsEnabled(bool enabled);
+    [[nodiscard]] bool shortcutFunctionsEnabled() const;
     void retryRegistrations();
 
   signals:

@@ -10,10 +10,10 @@ pub(crate) use f16::{
 use parallel::{install_conversion_pool, parallel_chunk_pixels, should_parallelize};
 use std::sync::OnceLock;
 
-/// SIMD kernel selection) so the first capture doesn't pay the cost.
-/// Safe to call multiple times - only the first call does real work.
-pub fn warmup() {
-    parallel::warmup_pool(CONVERSION_PARALLEL_MAX_WORKERS);
+/// Initialize allocation-light conversion state such as lookup tables and
+/// SIMD dispatch. This deliberately does not create the Rayon worker pool,
+/// so it is safe to use while preparing an idle snapshot session.
+pub(crate) fn warmup_dispatch() {
     f16::warmup_lut();
     let _ = bgra_kernel();
     let _ = bgra_opaque_kernel();
@@ -29,6 +29,18 @@ pub fn warmup() {
     let _ = f16_opaque_kernel_nt_nofence();
     let _ = f16_hdr_prepared_kernel();
     let _ = f16_hdr_prepared_opaque_kernel();
+}
+
+/// Initialize the complete conversion runtime so the first capture doesn't
+/// pay the worker-pool creation cost. Safe to call multiple times; only the
+/// first call performs initialization.
+pub fn warmup() {
+    warmup_dispatch();
+    parallel::warmup_pool(CONVERSION_PARALLEL_MAX_WORKERS);
+}
+
+pub(crate) fn release_pool() {
+    parallel::release_pool();
 }
 
 #[inline]
@@ -2020,22 +2032,6 @@ pub(crate) unsafe fn convert_bgra_to_rgba_opaque_nt_unchecked(
 ) {
     unsafe {
         convert_bgra_to_rgba_nt_unchecked_impl(src, dst, pixel_count, true);
-    }
-}
-
-pub(crate) unsafe fn convert_bgra_to_rgba_opaque_nt_serial_unchecked(
-    src: *const u8,
-    dst: *mut u8,
-    pixel_count: usize,
-) {
-    let Some(nt_kernel) = bgra_nt_kernel_for_destination(dst as *const u8, true) else {
-        unsafe {
-            convert_bgra_to_rgba_opaque_serial_unchecked(src, dst, pixel_count);
-        }
-        return;
-    };
-    unsafe {
-        nt_kernel(src, dst, pixel_count);
     }
 }
 

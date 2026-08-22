@@ -292,6 +292,91 @@ void textEditingHistoryIgnoresEditorLayoutFormatting() {
             "redo should restore the text edit and reverse command availability");
 }
 
+void textEditingTransformsAccumulateAndManualEditsClearTheirState() {
+    ScreenshotOcrTextEditingSession session(QStringLiteral("A,\nB!"));
+
+    require(session.setFormatting(QStringLiteral("remove")) &&
+                session.text() == QStringLiteral("A,B!") &&
+                session.formatting() == QStringLiteral("remove") &&
+                session.punctuation().isEmpty(),
+            "line-break formatting should remain selected after it is applied");
+
+    const QString fullWidth = QStringLiteral("A") + QChar(0xFF0C) + QStringLiteral("B") +
+                              QChar(0xFF01);
+    require(session.setPunctuation(QStringLiteral("full")) && session.text() == fullWidth &&
+                session.formatting() == QStringLiteral("remove") &&
+                session.punctuation() == QStringLiteral("full"),
+            "formatting and punctuation should accumulate independently");
+
+    const QString fullWidthWithLineBreak =
+        QStringLiteral("A") + QChar(0xFF0C) + QStringLiteral("\nB") + QChar(0xFF01);
+    require(session.setFormatting(QStringLiteral("keep")) &&
+                session.text() == fullWidthWithLineBreak &&
+                session.formatting() == QStringLiteral("keep") &&
+                session.punctuation() == QStringLiteral("full"),
+            "changing line-break formatting should preserve the punctuation effect");
+
+    require(session.setPunctuation(QString{}) && session.text() == QStringLiteral("A,\nB!") &&
+                session.formatting() == QStringLiteral("keep") &&
+                session.punctuation().isEmpty(),
+            "clearing punctuation should preserve the active formatting selection");
+    static_cast<void>(session.setPunctuation(QStringLiteral("full")));
+
+    ScreenshotOcrTextEditingSession reverseOrder(QStringLiteral("A,\nB!"));
+    static_cast<void>(reverseOrder.setPunctuation(QStringLiteral("full")));
+    require(reverseOrder.setFormatting(QStringLiteral("remove")) &&
+                reverseOrder.text() == fullWidth &&
+                reverseOrder.formatting() == QStringLiteral("remove") &&
+                reverseOrder.punctuation() == QStringLiteral("full"),
+            "punctuation and formatting should also accumulate in reverse selection order");
+    require(reverseOrder.setFormatting(QString{}) &&
+                reverseOrder.text() == fullWidthWithLineBreak &&
+                reverseOrder.formatting().isEmpty() &&
+                reverseOrder.punctuation() == QStringLiteral("full"),
+            "clearing formatting should preserve the active punctuation selection");
+
+    QTextCursor cursor(session.document());
+    cursor.movePosition(QTextCursor::End);
+    cursor.insertText(QStringLiteral("?"));
+    require(session.text() == fullWidthWithLineBreak + QStringLiteral("?") &&
+                session.formatting().isEmpty() && session.punctuation().isEmpty(),
+            "a native editor change should clear displayed transform selections");
+
+    static_cast<void>(session.setFormatting(QStringLiteral("remove")));
+    static_cast<void>(session.setPunctuation(QStringLiteral("half")));
+    require(!session.formatting().isEmpty() && !session.punctuation().isEmpty(),
+            "transform state should be populated before reset");
+    session.reset();
+    require(session.text() == QStringLiteral("A,\nB!") && session.formatting().isEmpty() &&
+                session.punctuation().isEmpty(),
+            "reset should restore the original text and clear transform selections");
+}
+
+void translationHistoryEstablishesSuccessfulAndPartialBaselines() {
+    ScreenshotOcrTextEditingSession session(QString{});
+    session.replaceTextWithoutHistory(QStringLiteral("streamed translation"));
+    require(session.text() == QStringLiteral("streamed translation") && !session.canUndo() &&
+                !session.canRedo(),
+            "streaming updates should not create one undo entry per chunk");
+
+    session.establishBaseline(QStringLiteral("streamed translation"));
+    require(session.originalText() == QStringLiteral("streamed translation") &&
+                !session.canUndo() && !session.canRedo(),
+            "a completed translation should become the independent reset baseline");
+    require(session.replaceText(QStringLiteral("edited translation")) && session.canUndo(),
+            "a completed translation should become editable with its own history");
+    require(session.reset() && session.text() == QStringLiteral("streamed translation"),
+            "translation Reset should restore the exact successful result");
+
+    session.replaceTextWithoutHistory(QStringLiteral("partial retry"));
+    session.establishHistory(QStringLiteral("partial retry"));
+    require(session.text() == QStringLiteral("partial retry") && !session.canUndo() &&
+                session.originalText() == QStringLiteral("streamed translation"),
+            "a failed partial stream should be editable without replacing the last successful baseline");
+    require(session.replaceText(QStringLiteral("partial retry fixed")) && session.canUndo(),
+            "a partial translation should gain independent edit history after streaming stops");
+}
+
 void tableDocumentPreservesSpansAndExportsCoveredCoordinates() {
     const ScreenshotTableDocument document = ScreenshotTableDocument::fromHtml(QStringLiteral(
         "<table><tr><th rowspan=\"2\">Group</th><th colspan=\"2\">Values</th></tr>"
@@ -356,8 +441,10 @@ int main(int argc, char** argv) {
     sourceComposerUsesOnlyCapturedDisplayPixels();
     textTransformsUseOriginalPunctuationAndLineRules();
     textEditingHistoryPreservesNativeEditsAndAtomicTransforms();
+    textEditingTransformsAccumulateAndManualEditsClearTheirState();
     textEditingHistoryInvalidatesRedoBranchesAndSurvivesReentry();
     textEditingHistoryIgnoresEditorLayoutFormatting();
+    translationHistoryEstablishesSuccessfulAndPartialBaselines();
     tableDocumentPreservesSpansAndExportsCoveredCoordinates();
     tableDocumentMergeSplitClearAndValidationPolicies();
     return 0;

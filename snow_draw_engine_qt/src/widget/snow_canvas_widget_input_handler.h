@@ -38,6 +38,8 @@ class SnowCanvasWidgetInputHandler final {
 
     bool interactionEnabled() const;
     void setInteractionEnabled(bool enabled);
+    void setBaselineCursor(SnowCursorStyle style);
+    void setCursor(SnowCursorStyle style);
     void clearTransientState();
 
     ProcessResult process(const Context& context, const SnowInputEvent& event);

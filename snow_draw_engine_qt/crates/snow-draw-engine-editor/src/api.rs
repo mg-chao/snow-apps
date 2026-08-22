@@ -35,6 +35,10 @@ impl ActiveTool {
     #[allow(non_upper_case_globals)]
     pub const Filter: Self = Self::RectangleFilter;
 
+    pub const fn policy_bit(self) -> u64 {
+        1_u64 << (self as u32)
+    }
+
     pub(crate) const fn uses_stroke_cursor(self) -> bool {
         matches!(self, Self::FreeDraw | Self::PenHighlight | Self::PenFilter)
     }

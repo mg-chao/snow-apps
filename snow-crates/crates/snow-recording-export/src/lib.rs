@@ -10,7 +10,7 @@ pub(crate) mod video_quality;
 
 pub use config::{
     ExportAudioOutputConfig, ExportAudioTrackRequest, ExportExecutionMode, ExportFormat,
-    ExportPerformanceConfig, ExportRequest, MouseEditConfig, SoftwareH264Priority,
+    ExportPerformanceConfig, ExportRequest, MouseEditConfig, SoftwareH264Priority, VideoCodec,
 };
 pub use editing::EditingSession;
 pub use error::RecordingExportError;

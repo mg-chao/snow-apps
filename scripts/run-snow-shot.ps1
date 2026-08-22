@@ -80,13 +80,6 @@ function Stop-RunningBuildInstance {
 }
 
 if (-not $NoBuild) {
-    $environmentScript = Join-Path $PSScriptRoot "snow-build-environment.ps1"
-    if (-not (Test-Path -LiteralPath $environmentScript -PathType Leaf)) {
-        throw "Snow build environment helper was not found at '$environmentScript'."
-    }
-    . $environmentScript
-    Set-SnowBuildEnvironment -Preset $Preset | Out-Null
-
     Stop-RunningBuildInstance -BuildDirectory $buildDirectory
 
     $buildScript = Join-Path $PSScriptRoot "build.ps1"

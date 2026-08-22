@@ -33,6 +33,7 @@ class RuntimeSession final {
     bool restoreDocumentHistory(const QByteArray& payload);
     bool restoreDocumentHistoryPreservingEditorStyles(const QByteArray& payload);
     bool clearDocumentPreservingViewports();
+    bool setQuickSelectionDisabledTools(const QSet<SnowCanvasTool>& tools);
     void destroyAsync(SnowCanvasRuntime& owner);
     void destroyForOwnerDestruction(SnowCanvasRuntime& owner, OwnerDestructionPolicy policy);
 
@@ -47,7 +48,7 @@ class RuntimeSession final {
     void destroyRuntimeAsync();
     void waitForPendingDestroy();
 
-    const SnowCanvasRuntimeConfig m_config;
+    SnowCanvasRuntimeConfig m_config;
     ScopedRuntimeHandle m_runtime;
     ClientRegistry m_clients;
     std::future<void> m_pendingDestroy;

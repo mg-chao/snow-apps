@@ -1290,6 +1290,55 @@ pub unsafe extern "C" fn snow_stitch_session_push_owned(
 
 #[unsafe(no_mangle)]
 /// # Safety
+/// `session` must be live and exclusively accessed. `rgba_bytes` must remain
+/// readable for `rgba_len` bytes for the duration of this call and
+/// `out_outcome` must be writable.
+pub unsafe extern "C" fn snow_stitch_session_push_rgba(
+    session: *mut SnowStitchSessionImpl,
+    width: u32,
+    height: u32,
+    stride_bytes: u32,
+    rgba_bytes: *const u8,
+    rgba_len: usize,
+    out_outcome: *mut SnowStitchFrameOutcome,
+) -> u8 {
+    if rgba_bytes.is_null() || out_outcome.is_null() {
+        set_last_error("RGBA pixels and outcome must be non-null");
+        return 0;
+    }
+    let Some(session) = (unsafe { session.as_mut() }) else {
+        set_last_error("stitch session is null");
+        return 0;
+    };
+    let pixels = unsafe { slice::from_raw_parts(rgba_bytes, rgba_len) };
+    let frame = match Frame::from_strided(
+        width,
+        height,
+        PixelFormat::Rgba8,
+        stride_bytes as usize,
+        pixels,
+    ) {
+        Ok(frame) => frame,
+        Err(error) => {
+            set_last_error(error);
+            return 0;
+        }
+    };
+    match session.session.push_owned_frame(Ok(frame)) {
+        Ok(outcome) => {
+            unsafe { *out_outcome = ffi_outcome(outcome) };
+            clear_last_error();
+            1
+        }
+        Err(error) => {
+            set_last_error(error);
+            0
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+/// # Safety
 /// `session` must remain live and unmodified during the call. `destination`
 /// must be writable for exactly `destination_len` bytes.
 pub unsafe extern "C" fn snow_stitch_session_copy_rows(
@@ -1473,6 +1522,43 @@ pub unsafe extern "C" fn snow_stitch_snapshot_info(
     }
     clear_last_error();
     1
+}
+
+#[unsafe(no_mangle)]
+/// # Safety
+/// `snapshot` must remain live and unmodified during the call. `destination`
+/// must be writable for `destination_len` bytes.
+pub unsafe extern "C" fn snow_stitch_snapshot_copy_rows(
+    snapshot: *const SnowStitchSnapshotImpl,
+    top: u32,
+    rows: u32,
+    destination_stride: usize,
+    destination: *mut u8,
+    destination_len: usize,
+) -> u8 {
+    if destination.is_null() {
+        set_last_error("snapshot row destination is null");
+        return 0;
+    }
+    let Some(snapshot) = (unsafe { snapshot.as_ref() }) else {
+        set_last_error("stitch snapshot is null");
+        return 0;
+    };
+    let bytes = unsafe { slice::from_raw_parts_mut(destination, destination_len) };
+    match snapshot
+        .snapshot
+        .canvas
+        .copy_rows_strided(top, rows, destination_stride, bytes)
+    {
+        Ok(()) => {
+            clear_last_error();
+            1
+        }
+        Err(error) => {
+            set_last_error(error);
+            0
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -1795,6 +1881,48 @@ mod tests {
     }
 
     #[test]
+    fn direct_rgba_push_accepts_strided_input() {
+        let config = ffi_config(StitchConfig::default());
+        let session = unsafe { snow_stitch_session_create(&config) };
+        assert!(!session.is_null());
+        let mut pixels = vec![0_u8; 5 * 24];
+        for row in pixels.chunks_exact_mut(24) {
+            row[..20].fill(0x55);
+            row[20..].fill(0xee);
+        }
+        let mut outcome = SnowStitchFrameOutcome {
+            event: SnowStitchFrameEvent::Unmatched,
+            unmatched_reason: SnowStitchUnmatchedReason::None,
+            matched_reference_offset_y: 0,
+            has_matched_reference_offset_y: 0,
+            reserved: [0; 3],
+            metrics: ffi_metrics(MatchMetrics::default()),
+            added_rows: 0,
+            output_width: 0,
+            output_height: 0,
+            delta_top: 0,
+            delta_rows: 0,
+        };
+        assert_eq!(
+            unsafe {
+                snow_stitch_session_push_rgba(
+                    session,
+                    5,
+                    5,
+                    24,
+                    pixels.as_ptr(),
+                    pixels.len(),
+                    &mut outcome,
+                )
+            },
+            1
+        );
+        assert!(matches!(outcome.event, SnowStitchFrameEvent::Initial));
+        assert_eq!((outcome.output_width, outcome.output_height), (5, 5));
+        unsafe { snow_stitch_session_destroy(session) };
+    }
+
+    #[test]
     fn owned_frame_is_consumed_and_snapshot_survives_session() {
         let pool = snow_stitch_frame_pool_create(5, 5, 2);
         let config = ffi_config(StitchConfig::default());
@@ -1837,6 +1965,22 @@ mod tests {
         assert!(!slice.is_null());
         assert!(unsafe { snow_stitch_snapshot_slice_rows(snapshot, 1, 1) }.is_null());
         unsafe { snow_stitch_session_destroy(session) };
+        let mut copied = [0_u8; 24];
+        assert_eq!(
+            unsafe {
+                snow_stitch_snapshot_copy_rows(
+                    slice,
+                    0,
+                    1,
+                    copied.len(),
+                    copied.as_mut_ptr(),
+                    copied.len(),
+                )
+            },
+            1
+        );
+        assert!(copied[..20].iter().all(|byte| *byte == 0x7f));
+        assert!(copied[20..].iter().all(|byte| *byte == 0));
         let image = unsafe { snow_stitch_snapshot_materialize(snapshot) };
         assert!(!image.is_null());
         let scaled = unsafe { snow_stitch_snapshot_render_scaled(slice, 1, 3) };

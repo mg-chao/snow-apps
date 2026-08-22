@@ -13,7 +13,8 @@ constexpr const char* PAGES_SOURCE = QT_TRANSLATE_NOOP("SettingsCatalog", "Pages
 
 QString normalized(QString value) {
     value = value.normalized(QString::NormalizationForm_KC).toCaseFolded().trimmed();
-    value.replace(QRegularExpression(QStringLiteral("\\s+")), QStringLiteral(" "));
+    static const QRegularExpression whitespacePattern(QStringLiteral("\\s+"));
+    value.replace(whitespacePattern, QStringLiteral(" "));
     return value;
 }
 
@@ -94,13 +95,62 @@ QStringList selectOptionLabels(const SettingsSelectDefinition& select) {
     }
     return result;
 }
+
+QStringList radioOptionLabels(const SettingsRadioDefinition& radio) {
+    QStringList result;
+    result.reserve(radio.options.size());
+    for (const SettingsRadioOptionDefinition& option : radio.options) {
+        result.push_back(option.label.translated());
+    }
+    return result;
+}
+
+QString itemTitle(const SettingsItemDefinition& item,
+                  const SettingsSearchRuntimeValues& runtimeValues) {
+    QString title = item.title.translated();
+    const auto* shortcut = std::get_if<SettingsShortcutActionDefinition>(&item.payload);
+    if (shortcut != nullptr &&
+        shortcut->adjustment == SettingsShortcutAdjustment::ScreenshotDelaySeconds) {
+        title = title.arg(runtimeValues.screenshotDelaySeconds);
+    }
+    return title;
+}
 } // namespace
 
-SettingsSearchIndex::SettingsSearchIndex(const SettingsCatalog& catalog) : m_catalog(catalog) {
+SettingsSearchIndex::SettingsSearchIndex(const SettingsCatalog& catalog,
+                                         SettingsSearchRuntimeValues runtimeValues)
+    : m_catalog(catalog), m_runtimeValues(runtimeValues) {
     rebuild();
 }
 
 void SettingsSearchIndex::rebuild() {
+    rebuildPageEntries();
+    m_entries.clear();
+    m_normalizedEntries.clear();
+    m_detailedIndexBuilt = false;
+}
+
+void SettingsSearchIndex::rebuildPageEntries() {
+    m_pageEntries.clear();
+    m_pageEntries.reserve(m_catalog.pages().size());
+    int order = 0;
+    const QString pages = QCoreApplication::translate("SettingsCatalog", PAGES_SOURCE);
+    for (const SettingsPageDefinition& page : m_catalog.pages()) {
+        m_pageEntries.push_back({
+            QStringLiteral("page:%1").arg(page.id),
+            SettingsSearchNodeKind::Page,
+            {page.id, {}, {}},
+            page.title.translated(),
+            page.description.translated(),
+            pages,
+            {},
+            {},
+            order++,
+        });
+    }
+}
+
+void SettingsSearchIndex::buildDetailedIndex() const {
     m_entries.clear();
     m_normalizedEntries.clear();
     int order = 0;
@@ -138,12 +188,15 @@ void SettingsSearchIndex::rebuild() {
                 QStringList optionLabels;
                 if (const auto* select = std::get_if<SettingsSelectDefinition>(&item.payload)) {
                     optionLabels = selectOptionLabels(*select);
+                } else if (const auto* radio =
+                               std::get_if<SettingsRadioDefinition>(&item.payload)) {
+                    optionLabels = radioOptionLabels(*radio);
                 }
                 m_entries.push_back({
                     QStringLiteral("item:%1").arg(item.id),
                     SettingsSearchNodeKind::Item,
                     {page.id, section.id, item.id},
-                    item.title.translated(),
+                    itemTitle(item, m_runtimeValues),
                     item.description.translated(),
                     itemPath,
                     translatedAliases(item.aliases),
@@ -163,13 +216,34 @@ void SettingsSearchIndex::rebuild() {
             normalizedList(entry.optionLabels),
         });
     }
+    m_detailedIndexBuilt = true;
+}
+
+void SettingsSearchIndex::ensureDetailedIndex() const {
+    if (!m_detailedIndexBuilt) {
+        buildDetailedIndex();
+    }
+}
+
+void SettingsSearchIndex::setRuntimeValues(SettingsSearchRuntimeValues runtimeValues) {
+    if (m_runtimeValues.screenshotDelaySeconds == runtimeValues.screenshotDelaySeconds) {
+        return;
+    }
+    m_runtimeValues = runtimeValues;
+    rebuild();
 }
 
 const QVector<SettingsSearchEntry>& SettingsSearchIndex::entries() const {
+    ensureDetailedIndex();
     return m_entries;
 }
 
+const QVector<SettingsSearchEntry>& SettingsSearchIndex::pageEntries() const {
+    return m_pageEntries;
+}
+
 QVector<SettingsSearchEntry> SettingsSearchIndex::search(const QString& query) const {
+    ensureDetailedIndex();
     const QString normalizedQuery = normalized(query);
     const QStringList queryTokens = tokens(query);
     if (queryTokens.isEmpty()) {

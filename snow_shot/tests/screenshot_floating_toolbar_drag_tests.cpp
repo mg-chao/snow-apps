@@ -2,19 +2,23 @@
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
 #include "snow_shot/presentation/screenshottoolpalettehost.h"
+#include "widgets/button.h"
 #include "widgets/dpi_stable_window_controller.h"
 
+#include <QAbstractButton>
 #include <QApplication>
 #include <QCoreApplication>
 #include <QCursor>
 #include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QPoint>
+#include <QPointer>
 #include <QRect>
 #include <QScreen>
 #include <QSize>
 #include <QString>
 #include <QThread>
+#include <QWheelEvent>
 #include <QWindow>
 
 #include <atomic>
@@ -80,6 +84,11 @@ class ScreenshotFloatingToolPaletteWindowTestAccess {
         return ScreenshotFloatingToolPaletteWindow::nativeWindowGeometryForPhysicalDrag(
             physicalCursorPosition, physicalCursorToWindowOffset, stablePhysicalWindowSize);
     }
+
+    static bool handleNativeHitTest(const ScreenshotFloatingToolPaletteWindow& window,
+                                    void* message, qintptr* result) {
+        return window.handleNativeHitTest(message, result);
+    }
 };
 
 namespace {
@@ -119,6 +128,38 @@ class NativeGeometryWarningScope final {
     NativeGeometryWarningScope& operator=(const NativeGeometryWarningScope&) = delete;
 };
 
+class SecondaryToolbarShowObserver final : public QObject {
+  public:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() != QEvent::Show) {
+            return false;
+        }
+
+        const QString objectName = watched->objectName();
+        if (objectName == QStringLiteral("screenshotSelectActionPanel")) {
+            ++actionPanelShowCount;
+        } else if (objectName == QStringLiteral("screenshotRectangleStylePanel")) {
+            ++stylePanelShowCount;
+        }
+        return false;
+    }
+
+    int actionPanelShowCount = 0;
+    int stylePanelShowCount = 0;
+};
+
+class WheelEventObserver final : public QWidget {
+  public:
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (event != nullptr && event->type() == QEvent::Wheel) {
+            ++wheelEventCount;
+        }
+        return false;
+    }
+
+    int wheelEventCount = 0;
+};
+
 class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
   public:
     void setMoveTool() override {}
@@ -138,11 +179,17 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void setTextTool() override {}
     void setSerialNumberTool() override {}
     void setOcrTool() override {}
+    void setTextTranslationTool() override {
+        ++textTranslationToolCount;
+    }
+    void toggleTextTranslation() override {
+        ++textTranslationToggleCount;
+    }
     void startScrollingScreenshot() override {}
     void pinSelectionToScreen() override {}
     void cancelCapture() override {}
     void copySelectionToClipboard() override {}
-    void startVideoRecording() override {}
+    void startScreenRecording() override {}
     void setShapeStyleFromToolbar(const SnowCanvasShapeStyle&, quint32,
                                   SnowCanvasShapeKind) override {}
     void setTextStyleFromToolbar(const SnowCanvasTextStyle&) override {}
@@ -156,6 +203,8 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void hideColorPickersForScreenshotUi() override {}
 
     int repositionCount = 0;
+    int textTranslationToolCount = 0;
+    int textTranslationToggleCount = 0;
 };
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -381,7 +430,9 @@ void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable() {
     qint64 shortestDistanceSquared = std::numeric_limits<qint64>::max();
     for (const HardwareMonitor& left : monitors) {
         for (const HardwareMonitor& right : monitors) {
-            if (left.handle == right.handle || left.dpi == right.dpi) {
+            // Exercise the reported direction: the destination needs a larger logical client
+            // rect even though the toolbar keeps the same physical frame.
+            if (left.handle == right.handle || left.dpi <= right.dpi) {
                 continue;
             }
             const QPoint delta = monitorCenter(right) - monitorCenter(left);
@@ -456,6 +507,84 @@ void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable() {
 
     const QSize stablePhysicalSize = nativeWindowSize(nativeWindow);
     const UINT sourceWindowDpi = GetDpiForWindow(nativeWindow);
+    require(sourceWindowDpi > destination->dpi,
+            "toolbar HWND did not adopt the higher-DPI source monitor");
+
+    // Exercise the native hit-test conversion with a real lower-DPI HWND while the toolbar's Qt
+    // window still reports the source monitor DPR. This models the event turn after
+    // WM_DPICHANGED, when the HWND and QWindow can temporarily disagree about their DPI.
+    QWidget destinationDpiProbe;
+    destinationDpiProbe.setWindowFlags(Qt::FramelessWindowHint | Qt::Tool);
+    destinationDpiProbe.setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    destinationDpiProbe.setWindowOpacity(0.0);
+    destinationDpiProbe.winId();
+    require(destinationDpiProbe.windowHandle() != nullptr,
+            "DPI probe did not create a native window");
+    destinationDpiProbe.windowHandle()->setScreen(destinationScreen);
+    destinationDpiProbe.resize(window.size());
+    destinationDpiProbe.move(destinationScreen->geometry().center() -
+                             QPoint(destinationDpiProbe.width() / 2,
+                                    destinationDpiProbe.height() / 2));
+    destinationDpiProbe.show();
+    settleQueuedRefreshes();
+
+    const HWND destinationProbeWindow = toNativeHwnd(destinationDpiProbe.winId());
+    const UINT destinationProbeDpi = GetDpiForWindow(destinationProbeWindow);
+    require(destinationProbeDpi > 0 && destinationProbeDpi < sourceWindowDpi,
+            "DPI probe did not adopt the lower-DPI destination monitor");
+    RECT destinationProbeRect{};
+    require(GetWindowRect(destinationProbeWindow, &destinationProbeRect) != FALSE,
+            "failed to read the DPI probe geometry");
+
+    const QRegion interactiveRegion = window.paletteHost()->interactiveHostRegion().translated(
+        window.paletteHost()->pos());
+    const qreal sourceScale = static_cast<qreal>(sourceWindowDpi) / 96.0;
+    const qreal destinationScale = static_cast<qreal>(destinationProbeDpi) / 96.0;
+    QPoint hitTestPhysicalOffset;
+    bool foundDpiSensitivePoint = false;
+    const QRect interactiveBounds = interactiveRegion.boundingRect().intersected(window.rect());
+    for (int y = interactiveBounds.top(); y <= interactiveBounds.bottom() &&
+                                              !foundDpiSensitivePoint;
+         ++y) {
+        for (int x = interactiveBounds.left(); x <= interactiveBounds.right(); ++x) {
+            const QPoint physicalOffset(qFloor((x + 0.5) * destinationScale),
+                                        qFloor((y + 0.5) * destinationScale));
+            const QPoint mappedWithDestinationDpi(
+                qFloor(static_cast<qreal>(physicalOffset.x()) / destinationScale),
+                qFloor(static_cast<qreal>(physicalOffset.y()) / destinationScale));
+            const QPoint mappedWithStaleSourceDpi(
+                qFloor(static_cast<qreal>(physicalOffset.x()) / sourceScale),
+                qFloor(static_cast<qreal>(physicalOffset.y()) / sourceScale));
+            if (window.rect().contains(mappedWithDestinationDpi) &&
+                interactiveRegion.contains(mappedWithDestinationDpi) &&
+                (!window.rect().contains(mappedWithStaleSourceDpi) ||
+                 !interactiveRegion.contains(mappedWithStaleSourceDpi))) {
+                hitTestPhysicalOffset = physicalOffset;
+                foundDpiSensitivePoint = true;
+                break;
+            }
+        }
+    }
+    require(foundDpiSensitivePoint,
+            "toolbar did not expose a point that distinguishes destination and stale source DPI");
+
+    const QPoint nativeHitTestPoint(destinationProbeRect.left + hitTestPhysicalOffset.x(),
+                                    destinationProbeRect.top + hitTestPhysicalOffset.y());
+    require(nativeHitTestPoint.x() >= std::numeric_limits<short>::min() &&
+                nativeHitTestPoint.x() <= std::numeric_limits<short>::max() &&
+                nativeHitTestPoint.y() >= std::numeric_limits<short>::min() &&
+                nativeHitTestPoint.y() <= std::numeric_limits<short>::max(),
+            "native hit-test point exceeds the WM_NCHITTEST coordinate range");
+    MSG hitTestMessage{};
+    hitTestMessage.hwnd = destinationProbeWindow;
+    hitTestMessage.message = WM_NCHITTEST;
+    hitTestMessage.lParam = MAKELPARAM(nativeHitTestPoint.x(), nativeHitTestPoint.y());
+    qintptr hitTestResult = HTERROR;
+    require(!ScreenshotFloatingToolPaletteWindowTestAccess::handleNativeHitTest(
+                window, &hitTestMessage, &hitTestResult) &&
+                hitTestResult == HTERROR,
+            "native hit testing used the stale source-monitor DPR for a destination HWND");
+
     const QRect initialNativeGeometry = nativeWindowGeometry(nativeWindow);
     const QPoint physicalCursorToWindowOffset = start - initialNativeGeometry.topLeft();
     const QSize stableVisualPhysicalSize =
@@ -544,10 +673,28 @@ void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable() {
         ScreenshotFloatingToolPaletteWindowTestAccess::beginPhysicalDrag(window, QCursor::pos());
         require(ScreenshotFloatingToolPaletteWindowTestAccess::hasPhysicalDragAnchor(window),
                 "toolbar did not restart a native physical drag after style changes");
-        require(SetCursorPos(start.x(), start.y()) != FALSE,
-                "failed to move the styled toolbar back to the source monitor");
-        ScreenshotFloatingToolPaletteWindowTestAccess::updateDrag(window, QCursor::pos());
-        settleQueuedRefreshes();
+        const QPoint styledReturnStart = QCursor::pos();
+        const int returnDistance =
+            qMax(qAbs(start.x() - styledReturnStart.x()),
+                 qAbs(start.y() - styledReturnStart.y()));
+        const int returnSteps = qMax(1, returnDistance / 2);
+        for (int step = 1; step <= returnSteps; ++step) {
+            const QPoint cursor(
+                styledReturnStart.x() +
+                    qRound(static_cast<qreal>(start.x() - styledReturnStart.x()) * step /
+                           returnSteps),
+                styledReturnStart.y() +
+                    qRound(static_cast<qreal>(start.y() - styledReturnStart.y()) * step /
+                           returnSteps));
+            require(SetCursorPos(cursor.x(), cursor.y()) != FALSE,
+                    "failed to move the styled toolbar back to the source monitor");
+            POINT actualCursor{};
+            require(GetCursorPos(&actualCursor) != FALSE,
+                    "failed to read the cursor during the styled return move");
+            ScreenshotFloatingToolPaletteWindowTestAccess::updateDrag(
+                window, QPoint(actualCursor.x, actualCursor.y));
+            settleQueuedRefreshes();
+        }
         const QWidget* shapeControls = window.palette()->findChild<QWidget*>(
             QStringLiteral("screenshotRectangleStyleControls"));
         require(shapeControls != nullptr,
@@ -563,8 +710,16 @@ void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable() {
         require(shapeColorTriggerTop(QStringLiteral("Stroke color")) == rowTop &&
                     shapeColorTriggerTop(QStringLiteral("Fill color")) == rowTop,
                 "shape color editor triggers should remain aligned after a tool toggle");
+        const QRect returnedNativeGeometry = nativeWindowGeometry(nativeWindow);
         require(MonitorFromWindow(nativeWindow, MONITOR_DEFAULTTONULL) == source->handle,
-                "styled toolbar did not return to the selection monitor");
+                ("styled toolbar did not return to the selection monitor; native geometry is " +
+                 std::to_string(returnedNativeGeometry.x()) + "," +
+                 std::to_string(returnedNativeGeometry.y()) + " " +
+                 std::to_string(returnedNativeGeometry.width()) + "x" +
+                 std::to_string(returnedNativeGeometry.height()) + ", expected frame size " +
+                 std::to_string(styledPhysicalWindowSize.width()) + "x" +
+                 std::to_string(styledPhysicalWindowSize.height()))
+                    .c_str());
         require(qFuzzyCompare(window.paletteHost()->physicalScale() + 1.0, 2.0),
                 "styled toolbar should use the selection monitor's scale after returning");
         const QSize returnedStyledVisualPhysicalSize =
@@ -656,7 +811,7 @@ void styleToolChangesKeepThePresetWindowSize() {
     options.showSerialNumberTool = true;
     options.showOcrTool = true;
     options.showScrollingScreenshotTool = true;
-    options.showVideoRecordButton = true;
+    options.showScreenRecordButton = true;
     options.separatorBeforeShape = true;
     options.separatorAfterArrow = true;
     options.actions = ScreenshotToolPalette::PinAction | ScreenshotToolPalette::CancelAction |
@@ -711,7 +866,12 @@ void placementRectsTrackTheDisplayedStyleToolbar() {
     require(window.topPlacementContentRect() == expectedVisibleRect(),
             "top placement should use the displayed style toolbar size");
     require(window.windowSizeHint() == presetWindowSize,
-            "actual placement extents must not resize the preset toolbar window");
+            ("actual placement extents must not resize the preset toolbar window; preset " +
+             std::to_string(presetWindowSize.width()) + "x" +
+             std::to_string(presetWindowSize.height()) + ", actual " +
+             std::to_string(window.windowSizeHint().width()) + "x" +
+             std::to_string(window.windowSizeHint().height()))
+                .c_str());
 }
 
 void toolChangesRepositionOnlyBeforeManualDrag() {
@@ -747,11 +907,218 @@ void unchangedShadowMarginsAreNoOps() {
     require(!palette->setShadowMargins(ScreenshotToolPaletteHost::defaultShadowMargins()),
             "setting the current shadow margins should be a no-op");
 }
+
+void screenshotToolbarSizeMultiplierSurvivesCaptureReset() {
+    NoOpToolbarCommands commands;
+    ScreenshotToolbarWindow window(commands);
+    window.setToolbarSize(QStringLiteral("small"));
+    window.prepareForDisplay();
+    require(qFuzzyCompare(window.paletteHost()->physicalScale() + 1.0, 1.8),
+            "small screenshot toolbar should apply the 0.8 palette multiplier");
+    window.resetForNewCapture();
+    require(qFuzzyCompare(window.paletteHost()->physicalScale() + 1.0, 1.8),
+            "capture reset should preserve the configured small toolbar multiplier");
+    window.setToolbarSize(QStringLiteral("normal"));
+    window.prepareForDisplay();
+    require(qFuzzyCompare(window.paletteHost()->physicalScale() + 1.0, 2.0),
+            "normal screenshot toolbar should restore the unmodified DPI scale");
+}
+
+void translateButtonRoutesEveryClickThroughTheToggleCommand() {
+    NoOpToolbarCommands commands;
+    ScreenshotToolbarWindow window(commands);
+    window.setActiveTool(ScreenshotToolPalette::Tool::Ocr);
+    window.setTextEditingState(true, false);
+    window.setTextTranslationState(true, false, false);
+
+    auto* translate = window.findChild<QAbstractButton*>(
+        QStringLiteral("screenshotOcrTextTranslateButton"));
+    require(translate != nullptr && translate->isEnabled(),
+            "Translate should be available for a completed OCR result");
+    translate->click();
+    require(commands.textTranslationToggleCount == 1,
+            "the first Translate click should enter through the toggle command");
+
+    window.setTextTranslationState(true, true, true);
+    require(translate->isEnabled(),
+            "active Translate should stay clickable while translation is streaming");
+    translate->click();
+    require(commands.textTranslationToggleCount == 2,
+            "clicking active Translate should exit through the same toggle command");
+}
+
+void mainTextTranslationButtonUsesTranslationPresentation() {
+    NoOpToolbarCommands commands;
+    ScreenshotToolbarWindow window(commands);
+    auto* translation = window.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotTextTranslationButton"));
+    auto* recognition = window.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotTextRecognitionButton"));
+    require(translation != nullptr, "the main Text Translation control should be present");
+
+    translation->click();
+    require(commands.textTranslationToolCount == 1 &&
+                window.palette()->activeToolForTests() ==
+                    ScreenshotToolPalette::Tool::TextTranslation,
+            "the main Text Translation control should activate the translation presentation");
+    window.setOcrBusy(true);
+    require(translation->busy() && (recognition == nullptr || !recognition->busy()),
+            "recognition for Text Translation should load on the translation control");
+    window.setOcrBusy(false);
+    window.setTextTranslationState(true, true, true);
+    require(translation->busy(),
+            "streaming translation should load on the main translation control");
+    window.setTextTranslationState(true, true, false);
+    require(!translation->busy(),
+            "the main translation control should stop loading when streaming completes");
+}
+
+void nativeSurfaceReleaseKeepsTheToolbarObjectUsableForDeferredDeletion() {
+    ScreenshotFloatingToolPaletteWindow window(testToolbarOptions());
+    window.show();
+    QApplication::processEvents();
+    static_cast<void>(window.winId());
+    require(window.internalWinId() != 0 && window.testAttribute(Qt::WA_WState_Created),
+            "the toolbar teardown test must begin with a live native window");
+
+    window.releaseNativeSurface();
+    require(window.internalWinId() == 0 && !window.testAttribute(Qt::WA_WState_Created),
+            "toolbar retirement must synchronously release its native window");
+    require(!window.isVisible(),
+            "native surface release must leave the still-live toolbar object hidden");
+}
+
+void firstSecondaryToolbarOpeningNeverExposesBothPanelTypes() {
+    const auto verifyFirstActivation = [](ScreenshotToolPalette::Tool tool,
+                                          bool expectActionPanel) {
+        NoOpToolbarCommands commands;
+        ScreenshotToolbarWindow window(commands);
+        ScreenshotToolPalette* palette = window.palette();
+        require(palette != nullptr && palette->actionPanel() == nullptr &&
+                    palette->stylePanel() == nullptr,
+                "the screenshot toolbar must begin with lazy secondary resources");
+
+        window.show();
+        QApplication::processEvents();
+
+        SecondaryToolbarShowObserver observer;
+        QApplication::instance()->installEventFilter(&observer);
+        window.setActiveTool(tool);
+        QApplication::processEvents();
+        QApplication::instance()->removeEventFilter(&observer);
+
+        require((expectActionPanel ? palette->actionPanel() != nullptr
+                                   : palette->stylePanel() != nullptr) &&
+                    (expectActionPanel ? palette->stylePanel() == nullptr
+                                       : palette->actionPanel() == nullptr),
+                "the first secondary-tool activation must materialize only the requested panel");
+        require(observer.actionPanelShowCount == (expectActionPanel ? 1 : 0) &&
+                    observer.stylePanelShowCount == (expectActionPanel ? 0 : 1),
+                "the first secondary-tool activation must never expose the other panel type");
+        const QWidget* requestedPanel =
+            expectActionPanel ? palette->actionPanel() : palette->stylePanel();
+        require(requestedPanel != nullptr && !requestedPanel->isHidden(),
+                "only the requested secondary panel may remain visible after first activation");
+    };
+
+    verifyFirstActivation(ScreenshotToolPalette::Tool::Shape, false);
+    verifyFirstActivation(ScreenshotToolPalette::Tool::Select, true);
+}
+
+void secondaryToolbarEvictionIsSafeAndReusable() {
+    NoOpToolbarCommands commands;
+    ScreenshotToolbarWindow window(commands);
+    ScreenshotToolPalette* palette = window.palette();
+    require(palette != nullptr && palette->mainPanel() != nullptr,
+            "the reusable screenshot toolbar must retain its main panel");
+    QWidget* const mainPanel = palette->mainPanel();
+
+    for (int cycle = 0; cycle < 2; ++cycle) {
+        window.show();
+        QApplication::processEvents();
+        window.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+        QApplication::processEvents();
+
+        QPointer<QWidget> actionPanel = palette->actionPanel();
+        QPointer<QWidget> stylePanel = palette->stylePanel();
+        require(stylePanel != nullptr && actionPanel == nullptr,
+                "activating a drawing tool must materialize only its style panel");
+
+        window.releaseIdleResources();
+        QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QApplication::processEvents();
+
+        require(actionPanel.isNull() && stylePanel.isNull(),
+                "ending a capture must destroy the materialized secondary panels");
+        require(palette->actionPanel() == nullptr && palette->stylePanel() == nullptr &&
+                    palette->mainPanel() == mainPanel,
+                "secondary eviction must not leave exposed stale panels or replace the main row");
+
+        // Capture-state callbacks can still arrive while the reusable toolbar is idle.
+        // They must update retained state without touching controls from the retired rows.
+        window.setTextEditingState(true, false, true, true);
+        window.setTextTranslationState(true, false, false, false, false, false);
+        window.setTableEditingState(true, true, true, true, true, true);
+        window.setTextTransformSelections(QStringLiteral("keep"), QStringLiteral("half"));
+        SnowCanvasSpotlightConfig spotlight;
+        spotlight.opacity = 0.42;
+        window.setSpotlightConfig(spotlight);
+        window.resetForNewCapture();
+    }
+}
+
+void lazySecondaryControlsInheritWheelEventFilters() {
+    NoOpToolbarCommands commands;
+    ScreenshotToolbarWindow window(commands);
+    ScreenshotToolPalette* palette = window.palette();
+    require(palette != nullptr && palette->stylePanel() == nullptr,
+            "the wheel-filter test must begin before lazy style controls exist");
+
+    WheelEventObserver observer;
+    palette->installWheelFilters(&observer);
+    window.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    QWidget* controls =
+        palette->findChild<QWidget*>(QStringLiteral("screenshotRectangleStyleControls"));
+    require(controls != nullptr,
+            "activating Shape must materialize controls for the wheel-filter test");
+
+    const QPoint localPosition = controls->rect().center();
+    QWheelEvent event(QPointF(localPosition), controls->mapToGlobal(localPosition), QPoint(),
+                      QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QApplication::sendEvent(controls, &event);
+    require(observer.wheelEventCount == 1,
+            "controls materialized after filter registration must inherit the wheel filter");
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     try {
+        if (app.arguments().contains(QStringLiteral("--ocr-translation-toggle-only"))) {
+            translateButtonRoutesEveryClickThroughTheToggleCommand();
+            mainTextTranslationButtonUsesTranslationPresentation();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--toolbar-size-only"))) {
+            screenshotToolbarSizeMultiplierSurvivesCaptureReset();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--native-surface-release-only"))) {
+            nativeSurfaceReleaseKeepsTheToolbarObjectUsableForDeferredDeletion();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--secondary-toolbar-eviction-only"))) {
+            secondaryToolbarEvictionIsSafeAndReusable();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--secondary-toolbar-first-open-only"))) {
+            firstSecondaryToolbarOpeningNeverExposesBothPanelTypes();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--mixed-dpi-only"))) {
+            physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable();
+            return 0;
+        }
         logicalDragMovesWithoutRefreshingGeometry();
         physicalDragMovesWithoutRefreshingGeometry();
         physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable();
@@ -761,6 +1128,12 @@ int main(int argc, char* argv[]) {
         placementRectsTrackTheDisplayedStyleToolbar();
         toolChangesRepositionOnlyBeforeManualDrag();
         unchangedShadowMarginsAreNoOps();
+        screenshotToolbarSizeMultiplierSurvivesCaptureReset();
+        translateButtonRoutesEveryClickThroughTheToggleCommand();
+        mainTextTranslationButtonUsesTranslationPresentation();
+        firstSecondaryToolbarOpeningNeverExposesBothPanelTypes();
+        secondaryToolbarEvictionIsSafeAndReusable();
+        lazySecondaryControlsInheritWheelEventFilters();
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

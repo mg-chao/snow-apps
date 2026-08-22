@@ -130,6 +130,7 @@ pub struct Editor {
     state: EditorState,
     view: EditorViewportState,
     config: EngineConfig,
+    quick_selection_disabled_tools: u64,
     scene_state_revision: u64,
     overlay_state_revision: u64,
     pending_command: Option<EditorCommand>,
@@ -145,6 +146,7 @@ impl Editor {
             },
             view: EditorViewportState::default(),
             config,
+            quick_selection_disabled_tools: 0,
             scene_state_revision: 0,
             overlay_state_revision: 0,
             pending_command: None,
@@ -202,6 +204,14 @@ impl Editor {
 
     pub fn active_tool(&self) -> ActiveTool {
         self.state.active_tool
+    }
+
+    pub fn quick_selection_disabled_tools(&self) -> u64 {
+        self.quick_selection_disabled_tools
+    }
+
+    pub fn set_quick_selection_disabled_tools(&mut self, tools: u64) {
+        self.quick_selection_disabled_tools = tools;
     }
 
     pub fn set_active_tool(&mut self, active_tool: ActiveTool) -> Result<(), ErrorCode> {

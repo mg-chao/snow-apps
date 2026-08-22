@@ -1,0 +1,166 @@
+diff --git a/libavcodec/h264dec.c b/libavcodec/h264dec.c
+index ca65df2..ccfa635 100644
+--- a/libavcodec/h264dec.c
++++ b/libavcodec/h264dec.c
+@@ -963,13 +963,13 @@ static int finalize_frame(H264Context *h, AVFrame *dst, H264Picture *out, int *g
+ 
+         *got_frame = 1;
+ 
+-        if (CONFIG_MPEGVIDEODEC) {
+-            ff_print_debug_info2(h->avctx, dst,
+-                                 out->mb_type,
+-                                 out->qscale_table,
+-                                 out->motion_val,
+-                                 out->mb_width, out->mb_height, out->mb_stride, 1);
+-        }
++#if CONFIG_MPEGVIDEODEC
++        ff_print_debug_info2(h->avctx, dst,
++                             out->mb_type,
++                             out->qscale_table,
++                             out->motion_val,
++                             out->mb_width, out->mb_height, out->mb_stride, 1);
++#endif
+     }
+ 
+     return 0;
+diff --git a/libavcodec/mpegvideo_enc.c b/libavcodec/mpegvideo_enc.c
+index 7751de8..dede6ec 100644
+--- a/libavcodec/mpegvideo_enc.c
++++ b/libavcodec/mpegvideo_enc.c
+@@ -1927,11 +1927,13 @@ int ff_mpv_encode_picture(AVCodecContext *avctx, AVPacket *pkt,
+         int growing_buffer = context_count == 1 && !s->data_partitioning;
+         size_t pkt_size = 10000 + s->c.mb_width * s->c.mb_height *
+                                   (growing_buffer ? 64 : (MAX_MB_BYTES + 100));
+-        if (CONFIG_MJPEG_ENCODER && avctx->codec_id == AV_CODEC_ID_MJPEG) {
++#if CONFIG_MJPEG_ENCODER
++        if (avctx->codec_id == AV_CODEC_ID_MJPEG) {
+             ret = ff_mjpeg_add_icc_profile_size(avctx, s->new_pic, &pkt_size);
+             if (ret < 0)
+                 return ret;
+         }
++#endif
+         if ((ret = ff_alloc_packet(avctx, pkt, pkt_size)) < 0)
+             return ret;
+         pkt->size = avctx->internal->byte_buffer_size - AV_INPUT_BUFFER_PADDING_SIZE;
+@@ -1958,8 +1960,10 @@ vbv_retry:
+ 
+         frame_end(m);
+ 
+-       if ((CONFIG_MJPEG_ENCODER || CONFIG_AMV_ENCODER) && s->c.out_format == FMT_MJPEG)
++#if CONFIG_MJPEG_ENCODER || CONFIG_AMV_ENCODER
++        if (s->c.out_format == FMT_MJPEG)
+             ff_mjpeg_encode_picture_trailer(&s->pb, m->header_bits);
++#endif
+ 
+         if (avctx->rc_buffer_size) {
+             RateControlContext *rcc = &m->rc_context;
+@@ -2853,17 +2857,24 @@ static int mb_var_thread(AVCodecContext *c, void *arg){
+ 
+ static void write_slice_end(MPVEncContext *const s)
+ {
+-    if (CONFIG_MPEG4_ENCODER && s->c.codec_id == AV_CODEC_ID_MPEG4) {
++#if CONFIG_MPEG4_ENCODER
++    if (s->c.codec_id == AV_CODEC_ID_MPEG4) {
+         if (s->partitioned_frame)
+             ff_mpeg4_merge_partitions(s);
+ 
+         ff_mpeg4_stuffing(&s->pb);
+-    } else if ((CONFIG_MJPEG_ENCODER || CONFIG_AMV_ENCODER) &&
+-               s->c.out_format == FMT_MJPEG) {
++    }
++#endif
++#if CONFIG_MJPEG_ENCODER || CONFIG_AMV_ENCODER
++    if (s->c.out_format == FMT_MJPEG) {
+         ff_mjpeg_encode_stuffing(s);
+-    } else if (CONFIG_SPEEDHQ_ENCODER && s->c.out_format == FMT_SPEEDHQ) {
++    }
++#endif
++#if CONFIG_SPEEDHQ_ENCODER
++    if (s->c.out_format == FMT_SPEEDHQ) {
+         ff_speedhq_end_slice(s);
+     }
++#endif
+ 
+     flush_put_bits(&s->pb);
+ 
+@@ -2991,16 +3002,16 @@ static int encode_thread(AVCodecContext *c, void *arg){
+     s->c.first_slice_line = 1;
+     s->ptr_lastgob = s->pb.buf;
+     for (int mb_y_order = s->c.start_mb_y; mb_y_order < s->c.end_mb_y; mb_y_order++) {
+-        int mb_y;
+-        if (CONFIG_SPEEDHQ_ENCODER && s->c.codec_id == AV_CODEC_ID_SPEEDHQ) {
++        int mb_y = mb_y_order;
++#if CONFIG_SPEEDHQ_ENCODER
++        if (s->c.codec_id == AV_CODEC_ID_SPEEDHQ) {
+             int first_in_slice;
+             mb_y = ff_speedhq_mb_y_order_to_mb(mb_y_order, s->c.mb_height, &first_in_slice);
+             if (first_in_slice && mb_y_order != s->c.start_mb_y)
+                 ff_speedhq_end_slice(s);
+             s->last_dc[0] = s->last_dc[1] = s->last_dc[2] = 1024;
+-        } else {
+-            mb_y = mb_y_order;
+         }
++#endif
+         s->c.mb_x = 0;
+         s->c.mb_y = mb_y;
+ 
+@@ -3032,8 +3043,10 @@ static int encode_thread(AVCodecContext *c, void *arg){
+             s->c.mb_y = mb_y;  // moved into loop, can get changed by H.261
+             ff_update_block_index(&s->c, 8, 0, s->c.chroma_x_shift);
+ 
+-            if (CONFIG_H261_ENCODER && s->c.codec_id == AV_CODEC_ID_H261)
++#if CONFIG_H261_ENCODER
++            if (s->c.codec_id == AV_CODEC_ID_H261)
+                 ff_h261_reorder_mb_index(s);
++#endif
+             xy      = s->c.mb_y * s->c.mb_stride + s->c.mb_x;
+             mb_type = s->mb_type[xy];
+ 
+@@ -3100,10 +3113,10 @@ static int encode_thread(AVCodecContext *c, void *arg){
+                     break;
+                     case AV_CODEC_ID_MPEG1VIDEO:
+                     case AV_CODEC_ID_MPEG2VIDEO:
+-                        if (CONFIG_MPEG1VIDEO_ENCODER || CONFIG_MPEG2VIDEO_ENCODER) {
+-                            ff_mpeg1_encode_slice_header(s);
+-                            ff_mpeg1_clean_buffers(s);
+-                        }
++#if CONFIG_MPEG1VIDEO_ENCODER || CONFIG_MPEG2VIDEO_ENCODER
++                        ff_mpeg1_encode_slice_header(s);
++                        ff_mpeg1_clean_buffers(s);
++#endif
+                     break;
+ #if CONFIG_H263P_ENCODER
+                     case AV_CODEC_ID_H263P:
+diff --git a/libavcodec/mpegvideo_motion.c b/libavcodec/mpegvideo_motion.c
+index 696cc49..2432846 100644
+--- a/libavcodec/mpegvideo_motion.c
++++ b/libavcodec/mpegvideo_motion.c
+@@ -211,10 +211,11 @@ void mpeg_motion_internal(MpegEncContext *s,
+         pix_op[s->chroma_x_shift][uvdxy]
+             (dest_cr, ptr_cr, uvlinesize, h >> s->chroma_y_shift);
+     }
+-    if (!is_mpeg12 && (CONFIG_H261_ENCODER || CONFIG_H261_DECODER) &&
+-        s->out_format == FMT_H261) {
++#if CONFIG_H261_ENCODER || CONFIG_H261_DECODER
++    if (!is_mpeg12 && s->out_format == FMT_H261) {
+         ff_h261_loop_filter(s);
+     }
++#endif
+ }
+ /* apply one mpeg motion vector to the three components */
+ static void mpeg_motion(MpegEncContext *s,
+@@ -699,9 +700,12 @@ static av_always_inline void mpv_motion_internal(MpegEncContext *s,
+ 
+     switch (s->mv_type) {
+     case MV_TYPE_16X16:
+-        if (CONFIG_MPEG4_DECODER && !is_mpeg12 && s->mcsel) {
++#if CONFIG_MPEG4_DECODER
++        if (!is_mpeg12 && s->mcsel) {
+             ff_mpeg4_mcsel_motion(s, dest_y, dest_cb, dest_cr, ref_picture);
+-        } else if (!is_mpeg12 && s->quarter_sample) {
++        } else
++#endif
++        if (!is_mpeg12 && s->quarter_sample) {
+             qpel_motion(s, dest_y, dest_cb, dest_cr,
+                         0, 0, 0,
+                         ref_picture, pix_op, qpix_op,

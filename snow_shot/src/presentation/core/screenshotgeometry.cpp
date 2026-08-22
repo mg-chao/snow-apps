@@ -843,6 +843,34 @@ ScreenshotPinnedImageFit ScreenshotGeometryMapper::fitImageToAvailableGeometry(
     return fit;
 }
 
+ScreenshotPinnedImageFit ScreenshotGeometryMapper::centerImageAtFullResolution(
+    const QSize& fullResolutionSize, const QRect& availableLogicalGeometry,
+    const QRect& screenLogicalGeometry, const QRect& screenNativeGeometry) {
+    ScreenshotPinnedImageFit placement;
+    placement.fullResolutionSize = fullResolutionSize;
+    if (!fullResolutionSize.isValid() || fullResolutionSize.isEmpty() ||
+        !availableLogicalGeometry.isValid() || availableLogicalGeometry.isEmpty() ||
+        !screenLogicalGeometry.isValid() || screenLogicalGeometry.isEmpty() ||
+        !screenNativeGeometry.isValid() || screenNativeGeometry.isEmpty()) {
+        return placement;
+    }
+
+    const QRect availableNative = nativeRectForLogicalRect(
+        availableLogicalGeometry, screenLogicalGeometry, screenNativeGeometry);
+    if (!availableNative.isValid() || availableNative.isEmpty()) {
+        return placement;
+    }
+    const QPoint topLeft(
+        qRound(availableNative.left() +
+               (availableNative.width() - fullResolutionSize.width()) / 2.0),
+        qRound(availableNative.top() +
+               (availableNative.height() - fullResolutionSize.height()) / 2.0));
+    placement.nativeGeometry = QRect(topLeft, fullResolutionSize);
+    placement.scalePercent = 100.0;
+    placement.valid = true;
+    return placement;
+}
+
 QPoint ScreenshotGeometryMapper::clampContentPositionToRect(const QPoint& desiredPosition,
                                                             const QRect& contentRect,
                                                             const QRect& bounds) {
@@ -856,6 +884,29 @@ QPoint ScreenshotGeometryMapper::clampContentPositionToRect(const QPoint& desire
     const int maxY = std::max(minY, bounds.bottom() - contentRect.bottom());
     return QPoint(std::clamp(desiredPosition.x(), minX, maxX),
                   std::clamp(desiredPosition.y(), minY, maxY));
+}
+
+QPoint ScreenshotGeometryMapper::cursorPanelPosition(const QPoint& cursorPosition,
+                                                      const QSize& panelSize,
+                                                      const QRect& bounds, int gap) {
+    const int effectiveGap = std::max(0, gap);
+    const QPoint bottomRightPosition =
+        cursorPosition + QPoint(effectiveGap, effectiveGap);
+    if (panelSize.isEmpty() || !bounds.isValid()) {
+        return bottomRightPosition;
+    }
+
+    const int boundsRight = bounds.left() + bounds.width();
+    const int boundsBottom = bounds.top() + bounds.height();
+    const bool useLeft = bottomRightPosition.x() + panelSize.width() > boundsRight;
+    const bool useTop = bottomRightPosition.y() + panelSize.height() > boundsBottom;
+    const QPoint desiredPosition(
+        useLeft ? cursorPosition.x() - effectiveGap - panelSize.width()
+                : bottomRightPosition.x(),
+        useTop ? cursorPosition.y() - effectiveGap - panelSize.height()
+               : bottomRightPosition.y());
+
+    return clampContentPositionToRect(desiredPosition, QRect(QPoint(), panelSize), bounds);
 }
 
 ScreenshotAnchoredToolbarPlacement ScreenshotGeometryMapper::anchoredToolbarPlacement(

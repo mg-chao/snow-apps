@@ -10,6 +10,7 @@
 #include "context_menu.h"
 #include "date_picker.h"
 #include "descriptions.h"
+#include "divider.h"
 #include "form.h"
 #include "image.h"
 #include "input.h"

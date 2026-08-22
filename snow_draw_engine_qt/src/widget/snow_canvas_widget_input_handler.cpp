@@ -18,6 +18,14 @@ void SnowCanvasWidgetInputHandler::setInteractionEnabled(bool enabled) {
     m_interaction.setEnabled(m_widget, enabled);
 }
 
+void SnowCanvasWidgetInputHandler::setBaselineCursor(SnowCursorStyle style) {
+    m_interaction.setBaselineCursor(m_widget, style);
+}
+
+void SnowCanvasWidgetInputHandler::setCursor(SnowCursorStyle style) {
+    m_interaction.setCursor(m_widget, style);
+}
+
 void SnowCanvasWidgetInputHandler::clearTransientState() {
     m_interaction.clearTransientState(m_widget);
 }

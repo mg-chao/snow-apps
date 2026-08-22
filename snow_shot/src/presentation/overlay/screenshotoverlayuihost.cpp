@@ -1,16 +1,29 @@
 #include "snow_shot/presentation/screenshotoverlayuihost.h"
 
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
+#include "snow_shot/presentation/components/icons/iconrenderutils.h"
+#include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/screenshotcolorpickerwidget.h"
 #include "snow_shot/presentation/screenshotselectiontoolbarwindow.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
 
+#include <algorithm>
+#include <optional>
+#include <utility>
+
 #include <QCoreApplication>
 #include <QCursor>
 #include <QEvent>
+#include <QFontMetrics>
+#include <QGraphicsOpacityEffect>
 #include <QGuiApplication>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QPaintEvent>
+#include <QPen>
+#include <QVector>
 #include <QWidget>
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -18,6 +31,232 @@
 #endif
 
 namespace {
+constexpr int kShortcutHintsMargin = 16;
+constexpr int kShortcutHintsPadding = 16;
+constexpr int kShortcutHintsRadius = 6;
+constexpr int kShortcutHintsFontSize = 14;
+constexpr int kShortcutHintsLineHeight = 22;
+constexpr int kShortcutHintsRowSpacing = 16;
+constexpr int kShortcutHintsColonMarginLeft = 2;
+constexpr int kShortcutHintsColonMarginRight = 8;
+constexpr int kShortcutHintsChipHorizontalPadding = 16;
+constexpr int kShortcutHintsChipVerticalPadding = 2;
+constexpr int kShortcutHintsChipRadius = 6;
+constexpr int kShortcutHintsChipSpacing = 8;
+constexpr int kShortcutHintsIconSize = 14;
+constexpr int kShortcutHintsIconTextGap = 8;
+constexpr int kShortcutHintsChipTrailingSpace = 8;
+
+namespace custom_outlined_icons = snow_shot::presentation::icons::custom::outlined;
+
+class ScreenshotShortcutHintsWidget final : public QWidget {
+  public:
+    explicit ScreenshotShortcutHintsWidget(QWidget* parent = nullptr) : QWidget(parent) {
+        setObjectName(QStringLiteral("screenshotShortcutHints"));
+        setAttribute(Qt::WA_TranslucentBackground, true);
+        setAttribute(Qt::WA_NoSystemBackground, true);
+        setAttribute(Qt::WA_TransparentForMouseEvents, true);
+        setFocusPolicy(Qt::NoFocus);
+        QFont hintFont = font();
+        hintFont.setPixelSize(kShortcutHintsFontSize);
+        hintFont.setWeight(QFont::Normal);
+        setFont(hintFont);
+        m_opacityEffect = new QGraphicsOpacityEffect(this);
+        m_opacityEffect->setOpacity(1.0);
+        setGraphicsEffect(m_opacityEffect);
+        // The hint is click-through, so observe application mouse moves to hide it on hover.
+        if (QCoreApplication::instance() != nullptr) {
+            QCoreApplication::instance()->installEventFilter(this);
+        }
+        hide();
+    }
+
+    void setPresentation(ScreenshotShortcutHintMode mode, qreal opacity) {
+        m_mode = mode;
+        m_context.reset();
+        m_opacity = std::clamp<qreal>(opacity, 0.0, 1.0);
+        updateTranslatedLines();
+        if (m_opacityEffect != nullptr) {
+            m_opacityEffect->setOpacity(m_opacity);
+        }
+        if (!hasVisiblePresentation()) {
+            hide();
+        }
+    }
+
+    void setPresentation(const ScreenshotShortcutHintContext& context, qreal opacity) {
+        m_context = context;
+        m_mode = screenshotShortcutHintModeForContext(context);
+        m_opacity = std::clamp<qreal>(opacity, 0.0, 1.0);
+        updateTranslatedLines();
+        if (m_opacityEffect != nullptr) {
+            m_opacityEffect->setOpacity(m_opacity);
+        }
+        if (!hasVisiblePresentation()) {
+            hide();
+        }
+    }
+
+    [[nodiscard]] bool hasVisiblePresentation() const {
+        return !m_rows.isEmpty() && m_opacity > 0.0;
+    }
+
+    void setObscuringSelection(const QRectF& selectionGlobal) {
+        m_selectionGlobal = selectionGlobal;
+    }
+
+    void refreshVisibility(const QPointF& cursorGlobal) {
+        m_cursorGlobal = cursorGlobal;
+        const QRectF hintAreaGlobal(mapToGlobal(QPoint(0, 0)), size());
+        const bool visible = parentWidget() != nullptr && hasVisiblePresentation() &&
+                             !screenshotShortcutHintAreaIsObscured(
+                                 hintAreaGlobal, m_selectionGlobal, m_cursorGlobal);
+        setVisible(visible);
+        if (visible) {
+            raise();
+        }
+    }
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event != nullptr && event->type() == QEvent::MouseMove) {
+            const auto* mouseEvent = static_cast<QMouseEvent*>(event);
+            refreshVisibility(mouseEvent->globalPosition());
+        }
+        return QWidget::eventFilter(watched, event);
+    }
+
+    void changeEvent(QEvent* event) override {
+        QWidget::changeEvent(event);
+        if (event != nullptr && event->type() == QEvent::LanguageChange) {
+            updateTranslatedLines();
+        }
+    }
+
+    void paintEvent(QPaintEvent* event) override {
+        Q_UNUSED(event);
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(0, 0, 0, 163));
+        painter.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), kShortcutHintsRadius,
+                                kShortcutHintsRadius);
+
+        const QFontMetrics metrics(font());
+        const QColor contentColor(Qt::white);
+        int rowTop = kShortcutHintsPadding;
+        for (const ScreenshotShortcutHintRow& row : m_rows) {
+            const int labelWidth = metrics.horizontalAdvance(row.label);
+            painter.setPen(QColor(255, 255, 255, 184));
+            painter.drawText(
+                QRect(kShortcutHintsPadding, rowTop, labelWidth, kShortcutHintsLineHeight),
+                Qt::AlignLeft | Qt::AlignVCenter, row.label);
+
+            const int colonLeft =
+                kShortcutHintsPadding + labelWidth + kShortcutHintsColonMarginLeft;
+            const int colonWidth = metrics.horizontalAdvance(QLatin1Char(':'));
+            painter.drawText(QRect(colonLeft, rowTop, colonWidth, kShortcutHintsLineHeight),
+                             Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral(":"));
+            int chipLeft = colonLeft + colonWidth + kShortcutHintsColonMarginRight;
+            const auto icon = row.input == ScreenshotShortcutHintInput::Mouse
+                                  ? custom_outlined_icons::WheelMouse()
+                                  : custom_outlined_icons::Keyboard();
+            const QPixmap iconPixmap = snow_shot::presentation::icons::renderTintedIconPixmap(
+                icon, QSize(kShortcutHintsIconSize, kShortcutHintsIconSize), devicePixelRatioF(),
+                contentColor);
+            const QStringList chipLabels =
+                row.shortcutChips.isEmpty() ? QStringList{row.shortcut} : row.shortcutChips;
+            for (const QString& chipLabel : chipLabels) {
+                const int chipWidth = shortcutChipWidth(chipLabel, metrics);
+                const QRectF chipRect(chipLeft, rowTop - kShortcutHintsChipVerticalPadding,
+                                      chipWidth, shortcutChipHeight());
+                painter.setRenderHint(QPainter::Antialiasing, true);
+                painter.setPen(QPen(contentColor, 1.0));
+                painter.setBrush(Qt::NoBrush);
+                painter.drawRoundedRect(chipRect.adjusted(0.5, 0.5, -0.5, -0.5),
+                                        kShortcutHintsChipRadius, kShortcutHintsChipRadius);
+
+                const int iconLeft = chipLeft + kShortcutHintsChipHorizontalPadding;
+                const int iconTop =
+                    rowTop + (kShortcutHintsLineHeight - kShortcutHintsIconSize) / 2;
+                if (!iconPixmap.isNull()) {
+                    painter.drawPixmap(iconLeft, iconTop, iconPixmap);
+                }
+
+                const int textLeft = iconLeft + kShortcutHintsIconSize + kShortcutHintsIconTextGap;
+                const int textWidth = metrics.horizontalAdvance(chipLabel);
+                painter.setRenderHint(QPainter::Antialiasing, false);
+                painter.setPen(contentColor);
+                painter.drawText(QRect(textLeft, rowTop, textWidth, kShortcutHintsLineHeight),
+                                 Qt::AlignLeft | Qt::AlignVCenter, chipLabel);
+                chipLeft += chipWidth + kShortcutHintsChipSpacing;
+            }
+            rowTop += kShortcutHintsLineHeight + kShortcutHintsRowSpacing;
+        }
+    }
+
+  private:
+    [[nodiscard]] static int shortcutChipHeight() {
+        return kShortcutHintsLineHeight + kShortcutHintsChipVerticalPadding * 2;
+    }
+
+    [[nodiscard]] static int shortcutChipWidth(const QString& shortcut,
+                                               const QFontMetrics& metrics) {
+        return kShortcutHintsChipHorizontalPadding * 2 + kShortcutHintsIconSize +
+               kShortcutHintsIconTextGap + metrics.horizontalAdvance(shortcut);
+    }
+
+    [[nodiscard]] static int shortcutChipsWidth(const ScreenshotShortcutHintRow& row,
+                                                const QFontMetrics& metrics) {
+        if (row.shortcutChips.isEmpty()) {
+            return shortcutChipWidth(row.shortcut, metrics);
+        }
+        int width = kShortcutHintsChipSpacing * (static_cast<int>(row.shortcutChips.size()) - 1);
+        for (const QString& chipLabel : row.shortcutChips) {
+            width += shortcutChipWidth(chipLabel, metrics);
+        }
+        return width;
+    }
+
+    void updateTranslatedLines() {
+        const QVector<ScreenshotShortcutHintRow> nextRows =
+            m_context.has_value() ? screenshotShortcutHintRows(*m_context)
+                                  : screenshotShortcutHintRows(m_mode);
+        if (m_rows != nextRows) {
+            m_rows = nextRows;
+            setAccessibleName(screenshotShortcutHintLines(m_rows).join(QLatin1Char('\n')));
+            updateSize();
+            update();
+        }
+    }
+
+    void updateSize() {
+        const QFontMetrics metrics(font());
+        int width = 0;
+        for (const ScreenshotShortcutHintRow& row : m_rows) {
+            int rowWidth = metrics.horizontalAdvance(row.label);
+            rowWidth += kShortcutHintsColonMarginLeft +
+                        metrics.horizontalAdvance(QLatin1Char(':')) +
+                        kShortcutHintsColonMarginRight;
+            rowWidth += shortcutChipsWidth(row, metrics) + kShortcutHintsChipTrailingSpace;
+            width = std::max(width, rowWidth);
+        }
+        const int rowCount = static_cast<int>(m_rows.size());
+        const int contentHeight = rowCount > 0 ? kShortcutHintsLineHeight * rowCount +
+                                                     kShortcutHintsRowSpacing * (rowCount - 1)
+                                               : 0;
+        setFixedSize(width + kShortcutHintsPadding * 2, contentHeight + kShortcutHintsPadding * 2);
+    }
+
+    QVector<ScreenshotShortcutHintRow> m_rows;
+    std::optional<ScreenshotShortcutHintContext> m_context;
+    ScreenshotShortcutHintMode m_mode = ScreenshotShortcutHintMode::Hidden;
+    qreal m_opacity = 0.0;
+    QGraphicsOpacityEffect* m_opacityEffect = nullptr;
+    QRectF m_selectionGlobal;
+    QPointF m_cursorGlobal;
+};
+
 template <typename Widget> Widget* trackedWidget(QPointer<Widget>& pointer) {
     return pointer.data();
 }
@@ -96,26 +335,8 @@ void ScreenshotOverlayUiHost::attachToolbarToOverlay(ScreenshotOverlayWindow* ov
         return;
     }
 
-    if (m_toolbarStyleConnection) {
-        if (m_toolbarStyleCanvas != nullptr) {
-            m_toolbarStyleCanvas->endTextStylePopupInteraction(toolbarWindow);
-        }
-        QObject::disconnect(m_toolbarStyleConnection);
-        m_toolbarStyleConnection = {};
-    }
-    if (m_toolbarHistoryConnection) {
-        QObject::disconnect(m_toolbarHistoryConnection);
-        m_toolbarHistoryConnection = {};
-    }
-    if (m_toolbarStylePopupBeginConnection) {
-        QObject::disconnect(m_toolbarStylePopupBeginConnection);
-        m_toolbarStylePopupBeginConnection = {};
-    }
-    if (m_toolbarStylePopupEndConnection) {
-        QObject::disconnect(m_toolbarStylePopupEndConnection);
-        m_toolbarStylePopupEndConnection = {};
-    }
-    m_toolbarStyleCanvas = nullptr;
+    disconnectToolbarCanvas();
+    toolbarWindow->setUpdatesEnabled(true);
     toolbarWindow->setOwnerWindow(overlay);
 
     if (overlay == nullptr || overlay->canvas() == nullptr) {
@@ -204,6 +425,7 @@ ScreenshotColorPickerWidget* ScreenshotOverlayUiHost::ensureColorPicker() {
         auto* colorPicker = new ScreenshotColorPickerWidget();
         m_ownedWidgets.add(colorPicker);
         m_colorPicker = colorPicker;
+        colorPicker->setCenterGuideLineColor(m_colorPickerCenterGuideLineColor);
         colorPicker->hide();
     }
     return trackedWidget(m_colorPicker);
@@ -245,6 +467,13 @@ void ScreenshotOverlayUiHost::hideColorPicker() {
     }
 }
 
+void ScreenshotOverlayUiHost::setColorPickerCenterGuideLineColor(const QColor& color) {
+    m_colorPickerCenterGuideLineColor = color.isValid() ? color : QColor(0, 0, 0, 0);
+    if (m_colorPicker != nullptr) {
+        m_colorPicker->setCenterGuideLineColor(m_colorPickerCenterGuideLineColor);
+    }
+}
+
 void ScreenshotOverlayUiHost::resetColorPickerForNewCapture() {
     if (m_colorPicker != nullptr) {
         m_colorPicker->resetForNewCapture();
@@ -281,6 +510,78 @@ bool ScreenshotOverlayUiHost::screenshotUiContainsGlobalCursor() const {
     }
 
     return false;
+}
+
+void ScreenshotOverlayUiHost::updateShortcutHints(ScreenshotOverlayWindow* overlay,
+                                                  ScreenshotShortcutHintMode mode, qreal opacity,
+                                                  const QRectF& selectionGlobal) {
+    if (overlay == nullptr || mode == ScreenshotShortcutHintMode::Hidden || opacity <= 0.0) {
+        hideShortcutHints();
+        return;
+    }
+
+    auto* hints = static_cast<ScreenshotShortcutHintsWidget*>(m_shortcutHints.data());
+    if (hints == nullptr) {
+        hints = new ScreenshotShortcutHintsWidget();
+        m_ownedWidgets.add(hints);
+        m_shortcutHints = hints;
+    }
+    if (hints->parentWidget() != overlay) {
+        hints->hide();
+        hints->setParent(overlay);
+        hints->setWindowFlags(Qt::Widget);
+    }
+    hints->setPresentation(mode, opacity);
+    if (!hints->hasVisiblePresentation()) {
+        hints->hide();
+        return;
+    }
+
+    const int y =
+        std::max(kShortcutHintsMargin, overlay->height() - hints->height() - kShortcutHintsMargin);
+    hints->move(kShortcutHintsMargin, y);
+    hints->setObscuringSelection(selectionGlobal);
+    hints->refreshVisibility(QCursor::pos());
+}
+
+void ScreenshotOverlayUiHost::updateShortcutHints(ScreenshotOverlayWindow* overlay,
+                                                  const ScreenshotShortcutHintContext& context,
+                                                  qreal opacity, const QRectF& selectionGlobal) {
+    const ScreenshotShortcutHintMode mode = screenshotShortcutHintModeForContext(context);
+    if (overlay == nullptr || mode == ScreenshotShortcutHintMode::Hidden || opacity <= 0.0) {
+        hideShortcutHints();
+        return;
+    }
+
+    auto* hints = static_cast<ScreenshotShortcutHintsWidget*>(m_shortcutHints.data());
+    if (hints == nullptr) {
+        hints = new ScreenshotShortcutHintsWidget();
+        m_ownedWidgets.add(hints);
+        m_shortcutHints = hints;
+    }
+    if (hints->parentWidget() != overlay) {
+        hints->hide();
+        hints->setParent(overlay);
+        hints->setWindowFlags(Qt::Widget);
+    }
+    hints->setPresentation(context, opacity);
+    if (!hints->hasVisiblePresentation()) {
+        hints->hide();
+        return;
+    }
+
+    const int y =
+        std::max(kShortcutHintsMargin, overlay->height() - hints->height() - kShortcutHintsMargin);
+    hints->move(kShortcutHintsMargin, y);
+    hints->setObscuringSelection(selectionGlobal);
+    hints->refreshVisibility(QCursor::pos());
+}
+
+void ScreenshotOverlayUiHost::hideShortcutHints() {
+    auto* hints = static_cast<ScreenshotShortcutHintsWidget*>(m_shortcutHints.data());
+    if (hints != nullptr) {
+        hints->setPresentation(ScreenshotShortcutHintMode::Hidden, 0.0);
+    }
 }
 
 bool ScreenshotOverlayUiHost::stepToolbarStrokeWidth(int direction) {
@@ -387,23 +688,8 @@ void ScreenshotOverlayUiHost::detachOverlayTransientUi(ScreenshotOverlayWindow* 
         m_selectionToolbar->setWindowFlags(Qt::FramelessWindowHint);
     }
 
-    if (m_toolbarStyleCanvas == overlay->canvas() && m_toolbarStyleConnection) {
-        m_toolbarStyleCanvas->endTextStylePopupInteraction(m_toolbar.data());
-        QObject::disconnect(m_toolbarStyleConnection);
-        m_toolbarStyleConnection = {};
-        if (m_toolbarHistoryConnection) {
-            QObject::disconnect(m_toolbarHistoryConnection);
-            m_toolbarHistoryConnection = {};
-        }
-        if (m_toolbarStylePopupBeginConnection) {
-            QObject::disconnect(m_toolbarStylePopupBeginConnection);
-            m_toolbarStylePopupBeginConnection = {};
-        }
-        if (m_toolbarStylePopupEndConnection) {
-            QObject::disconnect(m_toolbarStylePopupEndConnection);
-            m_toolbarStylePopupEndConnection = {};
-        }
-        m_toolbarStyleCanvas = nullptr;
+    if (m_toolbarStyleCanvas == overlay->canvas()) {
+        disconnectToolbarCanvas();
     }
     if (m_toolbar != nullptr && m_toolbar->parentWidget() == overlay) {
         m_toolbar->hide();
@@ -413,9 +699,13 @@ void ScreenshotOverlayUiHost::detachOverlayTransientUi(ScreenshotOverlayWindow* 
         m_colorPicker->hidePicker();
         m_colorPicker->setParent(nullptr);
     }
+    if (m_shortcutHints != nullptr && m_shortcutHints->parentWidget() == overlay) {
+        hideShortcutHints();
+        m_shortcutHints->setParent(nullptr);
+    }
 }
 
-void ScreenshotOverlayUiHost::destroyUiResources() {
+void ScreenshotOverlayUiHost::disconnectToolbarCanvas() {
     if (m_toolbarStyleConnection) {
         if (m_toolbarStyleCanvas != nullptr) {
             m_toolbarStyleCanvas->endTextStylePopupInteraction(m_toolbar.data());
@@ -436,6 +726,67 @@ void ScreenshotOverlayUiHost::destroyUiResources() {
         m_toolbarStylePopupEndConnection = {};
     }
     m_toolbarStyleCanvas = nullptr;
+}
+
+void ScreenshotOverlayUiHost::hibernateUiResources() {
+    disconnectToolbarCanvas();
+    resetToolbarForNewCapture();
+
+    if (m_toolbar != nullptr) {
+        m_toolbar->releaseIdleResources();
+        m_toolbar->releaseNativeSurface();
+    }
+    if (m_selectionToolbar != nullptr) {
+        m_selectionToolbar->hide();
+        m_selectionToolbar->resetForNewCapture();
+    }
+    if (m_colorPicker != nullptr) {
+        m_colorPicker->resetForNewCapture();
+    }
+    hideShortcutHints();
+}
+
+void ScreenshotOverlayUiHost::releaseUiResources() {
+    disconnectToolbarCanvas();
+
+    if (m_toolbar != nullptr) {
+        m_toolbar->hide();
+        m_toolbar->releaseIdleResources();
+        const Qt::WindowFlags toolbarWindowFlags = m_toolbar->windowFlags();
+        // Destroy before detaching: setOwnerWindow(nullptr) calls winId() and
+        // would create a throwaway native surface during teardown.
+        m_toolbar->releaseNativeSurface();
+        m_toolbar->setParent(nullptr, toolbarWindowFlags);
+    }
+    if (m_selectionToolbar != nullptr) {
+        m_selectionToolbar->hide();
+    }
+    if (m_colorPicker != nullptr) {
+        m_colorPicker->resetForNewCapture();
+    }
+    hideShortcutHints();
+
+    const auto retireWidget = [this](QWidget* widget) {
+        if (widget == nullptr) {
+            return;
+        }
+        widget->hide();
+        widget->setEnabled(false);
+        m_ownedWidgets.remove(widget);
+        m_retiredWidgets.add(widget);
+        widget->deleteLater();
+    };
+    retireWidget(m_selectionToolbar.data());
+    retireWidget(m_colorPicker.data());
+    retireWidget(m_shortcutHints.data());
+
+    m_selectionToolbar = nullptr;
+    m_colorPicker = nullptr;
+    m_shortcutHints = nullptr;
+}
+
+void ScreenshotOverlayUiHost::destroyUiResources() {
+    disconnectToolbarCanvas();
 
     if (m_toolbar != nullptr) {
         m_toolbar->hide();
@@ -446,11 +797,14 @@ void ScreenshotOverlayUiHost::destroyUiResources() {
     }
 
     if (m_colorPicker != nullptr) {
-        m_colorPicker->hidePicker();
+        m_colorPicker->resetForNewCapture();
     }
+    hideShortcutHints();
 
     m_ownedWidgets.clear();
+    m_retiredWidgets.clear();
     m_toolbar = nullptr;
     m_selectionToolbar = nullptr;
     m_colorPicker = nullptr;
+    m_shortcutHints = nullptr;
 }

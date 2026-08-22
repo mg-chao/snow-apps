@@ -6,8 +6,8 @@ use anyhow::Context;
 use snow_cursor::{CursorShape, CursorShapeCapture, CursorSnapshot};
 use windows::Win32::Foundation::RECT;
 use windows::Win32::Graphics::Direct3D11::{
-    D3D11_BOX, D3D11_TEXTURE2D_DESC, ID3D11Device, ID3D11DeviceContext, ID3D11Query,
-    ID3D11Resource, ID3D11Texture2D,
+    D3D11_BOX, D3D11_QUERY_DESC, D3D11_QUERY_EVENT, D3D11_TEXTURE2D_DESC, ID3D11Device,
+    ID3D11DeviceContext, ID3D11Query, ID3D11Resource, ID3D11Texture2D,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R16G16B16A16_FLOAT,
@@ -19,7 +19,7 @@ use windows::Win32::Graphics::Dxgi::{
 };
 use windows::core::Interface;
 
-use crate::backend::{CaptureBlitRegion, CaptureMode, CaptureSampleMetadata};
+use crate::backend::{CaptureBackendKind, CaptureBlitRegion, CaptureMode, CaptureSampleMetadata};
 use crate::convert::{HdrFrameContext, SurfaceConversionOptions};
 use crate::error::{CaptureError, CaptureResult};
 use crate::frame::{DirtyRect, Frame};
@@ -45,14 +45,40 @@ fn surface_options(hdr_to_sdr: Option<HdrFrameContext>) -> SurfaceConversionOpti
 }
 
 enum AcquireResult {
-    Ok(ID3D11Texture2D, DXGI_OUTDUPL_FRAME_INFO),
+    Ok(
+        ID3D11Texture2D,
+        DXGI_OUTDUPL_FRAME_INFO,
+        AcquiredDxgiFrameGuard,
+    ),
     AccessLost,
 }
 
 enum TryAcquireResult {
-    Ok(ID3D11Texture2D, DXGI_OUTDUPL_FRAME_INFO),
+    Ok(
+        ID3D11Texture2D,
+        DXGI_OUTDUPL_FRAME_INFO,
+        AcquiredDxgiFrameGuard,
+    ),
     AccessLost,
     Retry,
+}
+
+struct AcquiredDxgiFrameGuard {
+    duplication: IDXGIOutputDuplication,
+}
+
+impl AcquiredDxgiFrameGuard {
+    fn new(duplication: &IDXGIOutputDuplication) -> Self {
+        Self {
+            duplication: duplication.clone(),
+        }
+    }
+}
+
+impl Drop for AcquiredDxgiFrameGuard {
+    fn drop(&mut self) {
+        unsafe { self.duplication.ReleaseFrame() }.ok();
+    }
 }
 
 const PRESENT_ATTEMPTS: usize = 15;
@@ -60,16 +86,30 @@ const PRESENT_TIMEOUT_MS: u32 = 16;
 const FALLBACK_TIMEOUT_MS: u32 = 250;
 const STEADY_STATE_ATTEMPTS: usize = 20;
 const STEADY_STATE_TIMEOUT_MS: u32 = 100;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct AcquireRetryPolicy {
+    attempts: usize,
+    timeout_ms: u32,
+    require_present_time: bool,
+}
+
+const SNAPSHOT_ACQUISITION_POLICY: AcquireRetryPolicy = AcquireRetryPolicy {
+    attempts: 3,
+    timeout_ms: 16,
+    // The first frame after DuplicateOutput may be an initialization or
+    // pointer-only frame with an empty desktop texture. Never publish it as a
+    // screenshot; a timeout here lets the automatic backend fall back to WGC.
+    require_present_time: true,
+};
 const DXGI_DIRTY_COPY_MAX_RECTS: usize = 192;
 const DXGI_DIRTY_COPY_MAX_AREA_PERCENT: u64 = 70;
 const DXGI_DIRTY_GPU_COPY_MAX_RECTS: usize = 64;
 const DXGI_DIRTY_GPU_COPY_MAX_AREA_PERCENT: u64 = 45;
 const DXGI_DIRTY_GPU_COPY_LOW_LATENCY_MAX_RECTS: usize = 8;
 const DXGI_DIRTY_GPU_COPY_LOW_LATENCY_MAX_AREA_PERCENT: u64 = 18;
-// Continuous capture must not return a delayed staging slot with metadata
-// from a newer DXGI present. One synchronized slot keeps each region's pixels
-// and sample metadata in the same copy/readback transaction.
-const DXGI_REGION_STAGING_SLOTS: usize = 1;
+const DXGI_WINDOW_LOW_LATENCY_MAX_PIXELS_DEFAULT: u64 = 1_048_576;
+const DXGI_REGION_STAGING_SLOTS: usize = 3;
 const DXGI_REGION_DIRTY_TRACK_MAX_RECTS: usize = DXGI_DIRTY_COPY_MAX_RECTS + 1;
 const DXGI_REGION_MOVE_TRACK_MAX_RECTS: usize = DXGI_REGION_DIRTY_TRACK_MAX_RECTS;
 const DXGI_SCREENSHOT_MOVE_RECONSTRUCT_MAX_METADATA_BYTES: usize = DXGI_DIRTY_COPY_MAX_RECTS
@@ -90,6 +130,11 @@ const DXGI_DIRTY_RECT_DENSE_MERGE_THRESHOLDS: DirtyRectDenseMergeThresholds =
         min_rects: DXGI_DIRTY_RECT_DENSE_MERGE_MIN_RECTS,
         max_vertical_span: DXGI_DIRTY_RECT_DENSE_MERGE_MAX_VERTICAL_SPAN,
     };
+
+#[inline]
+fn window_low_latency_max_pixels() -> u64 {
+    DXGI_WINDOW_LOW_LATENCY_MAX_PIXELS_DEFAULT
+}
 
 #[inline]
 fn region_full_slot_map_fastpath_enabled() -> bool {
@@ -765,7 +810,6 @@ fn extract_region_move_rects(
 }
 
 #[inline]
-#[cfg(test)]
 fn can_use_full_frame_dirty_reconstruct(
     move_metadata_available: bool,
     frame_has_moves: bool,
@@ -774,7 +818,6 @@ fn can_use_full_frame_dirty_reconstruct(
 }
 
 #[inline]
-#[cfg(test)]
 fn source_is_unchanged_with_move_metadata(
     dirty_metadata_reports_unchanged: bool,
     move_metadata_available: bool,
@@ -916,13 +959,13 @@ fn try_acquire_frame(
         ));
     }
 
+    let frame_guard = AcquiredDxgiFrameGuard::new(duplication);
+
     if require_present_time && info.LastPresentTime == 0 {
-        unsafe { duplication.ReleaseFrame() }.ok();
         return Ok(TryAcquireResult::Retry);
     }
 
     let Some(resource) = resource else {
-        unsafe { duplication.ReleaseFrame() }.ok();
         return Ok(TryAcquireResult::Retry);
     };
 
@@ -930,7 +973,7 @@ fn try_acquire_frame(
         .cast()
         .context("failed to cast acquired IDXGIResource to ID3D11Texture2D")
         .map_err(CaptureError::platform)?;
-    Ok(TryAcquireResult::Ok(texture, info))
+    Ok(TryAcquireResult::Ok(texture, info, frame_guard))
 }
 
 fn acquire_with_retries(
@@ -941,8 +984,8 @@ fn acquire_with_retries(
 ) -> CaptureResult<Option<AcquireResult>> {
     for _ in 0..attempts {
         match try_acquire_frame(duplication, timeout_ms, require_present_time)? {
-            TryAcquireResult::Ok(texture, info) => {
-                return Ok(Some(AcquireResult::Ok(texture, info)));
+            TryAcquireResult::Ok(texture, info, frame_guard) => {
+                return Ok(Some(AcquireResult::Ok(texture, info, frame_guard)));
             }
             TryAcquireResult::AccessLost => return Ok(Some(AcquireResult::AccessLost)),
             TryAcquireResult::Retry => {}
@@ -963,7 +1006,9 @@ fn acquire_frame(
         }
 
         return match try_acquire_frame(duplication, FALLBACK_TIMEOUT_MS, false)? {
-            TryAcquireResult::Ok(texture, info) => Ok(AcquireResult::Ok(texture, info)),
+            TryAcquireResult::Ok(texture, info, frame_guard) => {
+                Ok(AcquireResult::Ok(texture, info, frame_guard))
+            }
             TryAcquireResult::AccessLost => Ok(AcquireResult::AccessLost),
             TryAcquireResult::Retry => Err(CaptureError::Timeout),
         };
@@ -974,6 +1019,19 @@ fn acquire_frame(
         STEADY_STATE_ATTEMPTS,
         STEADY_STATE_TIMEOUT_MS,
         false,
+    )? {
+        return Ok(result);
+    }
+    Err(CaptureError::Timeout)
+}
+
+fn acquire_snapshot_frame(duplication: &IDXGIOutputDuplication) -> CaptureResult<AcquireResult> {
+    let policy = SNAPSHOT_ACQUISITION_POLICY;
+    if let Some(result) = acquire_with_retries(
+        duplication,
+        policy.attempts,
+        policy.timeout_ms,
+        policy.require_present_time,
     )? {
         return Ok(result);
     }
@@ -996,19 +1054,28 @@ fn with_monitor_context<T>(
     })
 }
 
-/// Reusable staging storage for complete DXGI readbacks.
+/// Triple-buffered staging ring for overlapping GPU copies with CPU reads.
 ///
-/// Recording deliberately uses one synchronized slot. A staging texture is
-/// only mapped after its complete `CopyResource` has finished, so it cannot
-/// expose a partially initialized or stale frame when capture timing changes.
-const STAGING_SLOTS: usize = 1;
+/// With three slots the GPU can be copying into slot C while the CPU reads
+/// from slot A and slot B sits ready -- fully decoupling the GPU and CPU
+/// timelines at high frame rates.  The cost is one extra staging texture
+/// (~33 MB at 4K).
+const STAGING_SLOTS: usize = 3;
 
 struct StagingRing {
     slots: [Option<ID3D11Texture2D>; STAGING_SLOTS],
-    /// Cached `ID3D11Resource` for the slot -- avoids a COM `QueryInterface`
-    /// (`cast()`) on every copy call.
+    /// Cached `ID3D11Resource` for each slot -- avoids a COM
+    /// `QueryInterface` (`cast()`) on every `submit_copy` call.
     slot_resources: [Option<ID3D11Resource>; STAGING_SLOTS],
     queries: [Option<ID3D11Query>; STAGING_SLOTS],
+    /// Index of the slot that was most recently submitted for GPU copy.
+    /// The *other* slots are available for CPU reads or future writes.
+    write_idx: usize,
+    /// Whether a GPU copy is currently in-flight on `write_idx`.
+    pending: bool,
+    /// Index of the previous write slot (now available for CPU read).
+    /// `None` when there is no pending read.
+    read_idx: Option<usize>,
     /// Cached descriptor of the staging slots.  Avoids calling
     /// `GetDesc()` on every frame in `ensure_staging_texture` when the
     /// resolution hasn't changed.
@@ -1021,6 +1088,8 @@ struct StagingRing {
     /// `INITIAL_SPIN_POLLS` and adjusts based on whether the GPU copy
     /// completes within the spin window.
     adaptive_spin_polls: u32,
+    /// Number of staging slots currently allocated for the active mode.
+    allocated_slots: usize,
 }
 
 impl StagingRing {
@@ -1038,27 +1107,93 @@ impl StagingRing {
 
     fn new() -> Self {
         Self {
-            slots: [None],
-            slot_resources: [None],
-            queries: [None],
+            slots: [None, None, None],
+            slot_resources: [None, None, None],
+            queries: [None, None, None],
+            write_idx: 0,
+            pending: false,
+            read_idx: None,
             cached_desc: None,
             adaptive_spin_polls: Self::INITIAL_SPIN_POLLS,
+            allocated_slots: 0,
         }
     }
 
     fn invalidate(&mut self) {
-        self.slots = [None];
-        self.slot_resources = [None];
-        self.queries = [None];
+        self.slots = [None, None, None];
+        self.slot_resources = [None, None, None];
+        self.queries = [None, None, None];
+        self.pending = false;
+        self.read_idx = None;
         self.cached_desc = None;
         self.adaptive_spin_polls = Self::INITIAL_SPIN_POLLS;
+        self.allocated_slots = 0;
     }
 
     fn reset_pipeline(&mut self) {
+        self.pending = false;
+        self.read_idx = None;
+        self.write_idx = 0;
         self.adaptive_spin_polls = Self::INITIAL_SPIN_POLLS;
     }
 
-    fn ensure_slot(
+    /// Ensure the active staging slots match the given texture description.
+    /// Skips the per-slot `GetDesc()` COM call when the cached
+    /// (width, height, format) triple already matches.
+    fn ensure_slots(
+        &mut self,
+        device: &ID3D11Device,
+        desc: &D3D11_TEXTURE2D_DESC,
+        requested_slots: usize,
+    ) -> CaptureResult<()> {
+        let target_slots = requested_slots.clamp(1, STAGING_SLOTS);
+        let key = (desc.Width, desc.Height, desc.Format);
+        let desc_changed = self.cached_desc != Some(key);
+
+        if desc_changed || self.allocated_slots < target_slots {
+            for i in 0..target_slots {
+                surface::ensure_staging_texture(
+                    device,
+                    &mut self.slots[i],
+                    desc,
+                    StagingSampleDesc::SingleSample,
+                    "failed to create staging texture",
+                )?;
+                // Cache the ID3D11Resource cast alongside the texture.
+                self.slot_resources[i] = self.slots[i]
+                    .as_ref()
+                    .map(|tex| tex.cast::<ID3D11Resource>().unwrap());
+            }
+        }
+
+        if desc_changed || self.allocated_slots > target_slots {
+            for i in target_slots..STAGING_SLOTS {
+                self.slots[i] = None;
+                self.slot_resources[i] = None;
+                self.queries[i] = None;
+            }
+        }
+
+        for i in 0..target_slots {
+            if self.queries[i].is_none() {
+                let query_desc = D3D11_QUERY_DESC {
+                    Query: D3D11_QUERY_EVENT,
+                    ..Default::default()
+                };
+                let mut query: Option<ID3D11Query> = None;
+                unsafe { device.CreateQuery(&query_desc, Some(&mut query)) }
+                    .context("CreateQuery for staging ring failed")
+                    .map_err(CaptureError::platform)?;
+                self.queries[i] = query;
+            }
+        }
+
+        self.cached_desc = Some(key);
+        self.allocated_slots = target_slots;
+        Ok(())
+    }
+
+    fn ensure_screenshot_slot(
         &mut self,
         device: &ID3D11Device,
         desc: &D3D11_TEXTURE2D_DESC,
@@ -1081,7 +1216,17 @@ impl StagingRing {
                 .map(|tex| tex.cast::<ID3D11Resource>().unwrap());
         }
 
+        for i in 1..STAGING_SLOTS {
+            self.slots[i] = None;
+            self.slot_resources[i] = None;
+            self.queries[i] = None;
+        }
+
         self.cached_desc = Some(key);
+        self.allocated_slots = 1;
+        self.pending = false;
+        self.read_idx = None;
+        self.write_idx = 0;
         Ok(())
     }
 
@@ -1147,10 +1292,70 @@ impl StagingRing {
         Ok(())
     }
 
+    /// Submit a GPU copy from `source` into the current write slot.
+    /// Returns the *read* slot index if there was a previous pending
+    /// copy that can now be consumed.
+    fn submit_copy(
+        &mut self,
+        context: &ID3D11DeviceContext,
+        source: &ID3D11Texture2D,
+    ) -> CaptureResult<Option<usize>> {
+        let prev_pending = self.pending;
+        let read_idx = if prev_pending {
+            Some(self.write_idx)
+        } else {
+            None
+        };
+        let write_idx = if prev_pending {
+            (self.write_idx + 1) % STAGING_SLOTS
+        } else {
+            self.write_idx
+        };
+
+        self.copy_source_to_slot(context, source, write_idx, &[], false)?;
+
+        // Only flush when there is a pending read slot whose query
+        // hasn't completed yet.  This lets the driver batch the copy
+        // with subsequent work when the GPU is keeping up, while still
+        // ensuring the copy starts promptly when we need the result
+        // on the next call.
+        if let Some(ridx) = read_idx {
+            let needs_flush = self.queries[ridx].as_ref().is_none_or(|q| {
+                let mut data: u32 = 0;
+                unsafe {
+                    context.GetData(
+                        q,
+                        Some(&mut data as *mut u32 as *mut _),
+                        std::mem::size_of::<u32>() as u32,
+                        0x1,
+                    )
+                }
+                .is_err()
+            });
+            if needs_flush {
+                unsafe { context.Flush() };
+            }
+        } else {
+            unsafe { context.Flush() };
+        }
+
+        self.write_idx = write_idx;
+        self.pending = true;
+        self.read_idx = read_idx;
+        Ok(read_idx)
+    }
+
+    #[inline(always)]
+    fn latest_write_slot(&self) -> usize {
+        self.write_idx
+    }
+
     /// Wait for the copy on the given slot to complete, then map and
     /// convert into the frame.
     ///
-    /// We do a short bounded spin-wait (up to `MAX_SPIN_POLLS` non-blocking
+    /// Because the copy was submitted on the *previous* capture call,
+    /// it is almost always finished by the time we get here.  We do a
+    /// short bounded spin-wait (up to `MAX_SPIN_POLLS` non-blocking
     /// polls with `spin_loop` hints) using `D3D11_ASYNC_GETDATA_DONOTFLUSH`
     /// to avoid stalling the GPU command queue.  If the GPU still isn't
     /// done after the micro-spin, we fall through to the blocking `Map`
@@ -1264,7 +1469,7 @@ impl StagingRing {
         }
     }
 
-    /// Synchronous capture with optional snapshot-only dirty conversion.
+    /// Synchronous single-shot capture.
     ///
     /// The call submits a GPU copy to the current slot, flushes the
     /// command stream, then maps and converts into `frame`.
@@ -1285,7 +1490,7 @@ impl StagingRing {
         use_dirty_cpu_copy: bool,
         use_dirty_gpu_copy: bool,
     ) -> CaptureResult<()> {
-        let slot = 0usize;
+        let slot = self.write_idx;
         self.copy_source_to_slot(context, source, slot, dirty_rects, use_dirty_gpu_copy)?;
         unsafe { context.Flush() };
         self.read_slot_with_strategy(
@@ -1299,11 +1504,13 @@ impl StagingRing {
             use_dirty_cpu_copy,
             false,
         )?;
+        self.pending = false;
+        self.read_idx = None;
         Ok(())
     }
 
-    /// Complete capture path: copy directly into slot 0, flush once, then
-    /// use a blocking map without any query polling.
+    /// Screenshot-oriented single-shot path: copy directly into slot 0,
+    /// flush once, then use a blocking map without any query polling.
     fn copy_and_read_blocking(
         &mut self,
         context: &ID3D11DeviceContext,
@@ -1314,10 +1521,10 @@ impl StagingRing {
     ) -> CaptureResult<()> {
         let slot = 0usize;
         let staging = self.slots[slot].as_ref().ok_or_else(|| {
-            CaptureError::platform(anyhow::anyhow!("missing DXGI staging texture"))
+            CaptureError::platform(anyhow::anyhow!("missing DXGI screenshot staging texture"))
         })?;
         let staging_res = self.slot_resources[slot].as_ref().ok_or_else(|| {
-            CaptureError::platform(anyhow::anyhow!("missing DXGI staging resource"))
+            CaptureError::platform(anyhow::anyhow!("missing DXGI screenshot staging resource"))
         })?;
 
         d3d11::with_texture_resource(
@@ -1340,6 +1547,9 @@ impl StagingRing {
             surface_options(hdr_to_sdr),
             "failed to map staging texture",
         )?;
+        self.pending = false;
+        self.read_idx = None;
+        self.write_idx = 0;
         Ok(())
     }
 }
@@ -1412,6 +1622,114 @@ fn should_use_low_latency_dirty_gpu_copy(rects: &[DirtyRect], width: u32, height
 }
 
 #[inline(always)]
+fn choose_monitor_low_latency_dirty_gpu_mode(
+    recording_mode: bool,
+    feature_enabled: bool,
+    force_enabled: bool,
+    mode_active: bool,
+    output_matches_source: bool,
+    frame_pixels_unchanged: bool,
+    dirty_gpu_preferred: bool,
+    low_latency_dirty_gpu_preferred: bool,
+) -> bool {
+    if !recording_mode || !feature_enabled || !output_matches_source {
+        return false;
+    }
+
+    if frame_pixels_unchanged {
+        return mode_active;
+    }
+
+    if force_enabled {
+        return dirty_gpu_preferred;
+    }
+
+    low_latency_dirty_gpu_preferred
+}
+
+#[inline(always)]
+fn should_use_monitor_low_latency_dirty_gpu_mode(
+    capture_mode: CaptureMode,
+    mode_active: bool,
+    output_matches_source: bool,
+    frame_pixels_unchanged: bool,
+    dirty_strategy: DirtyCopyStrategy,
+) -> bool {
+    choose_monitor_low_latency_dirty_gpu_mode(
+        capture_mode == CaptureMode::Continuous,
+        true,
+        false,
+        mode_active,
+        output_matches_source,
+        frame_pixels_unchanged,
+        dirty_strategy.gpu,
+        dirty_strategy.gpu_low_latency,
+    )
+}
+
+#[inline(always)]
+fn choose_window_low_latency_region_mode(
+    recording_mode: bool,
+    prefer_low_latency: bool,
+    low_latency_enabled: bool,
+    force_low_latency: bool,
+    max_low_latency_pixels: u64,
+    blit: CaptureBlitRegion,
+    low_latency_dirty_gpu_preferred: bool,
+) -> bool {
+    if !recording_mode || !prefer_low_latency || !low_latency_enabled {
+        return false;
+    }
+
+    if force_low_latency {
+        return true;
+    }
+
+    let region_pixels = u64::from(blit.width).saturating_mul(u64::from(blit.height));
+    if region_pixels == 0 {
+        return false;
+    }
+
+    region_pixels <= max_low_latency_pixels || low_latency_dirty_gpu_preferred
+}
+
+#[inline(always)]
+fn should_use_window_low_latency_region_path(
+    recording_mode: bool,
+    prefer_low_latency: bool,
+    blit: CaptureBlitRegion,
+    low_latency_dirty_gpu_preferred: bool,
+) -> bool {
+    choose_window_low_latency_region_mode(
+        recording_mode,
+        prefer_low_latency,
+        true,
+        false,
+        window_low_latency_max_pixels(),
+        blit,
+        low_latency_dirty_gpu_preferred,
+    )
+}
+
+#[inline(always)]
+fn should_prefer_monitor_region_low_latency(
+    _capture_mode: CaptureMode,
+    _blit: CaptureBlitRegion,
+) -> bool {
+    false
+}
+
+#[inline(always)]
+fn should_skip_screenrecord_submit_copy(
+    fastpath_enabled: bool,
+    has_pending_submission: bool,
+    source_is_duplicate: bool,
+    source_unchanged: bool,
+) -> bool {
+    fastpath_enabled && has_pending_submission && (source_is_duplicate || source_unchanged)
+}
+
+#[inline(always)]
 fn should_short_circuit_screenshot_readback(
     capture_mode: CaptureMode,
     output_matches_source: bool,
@@ -1449,24 +1767,32 @@ fn dxgi_frame_has_no_metadata(info: &DXGI_OUTDUPL_FRAME_INFO) -> bool {
     info.TotalMetadataBufferSize == 0
 }
 
-#[inline(always)]
-fn frame_pixels_unchanged_for_mode(
-    capture_mode: CaptureMode,
-    frame_is_duplicate: bool,
-    metadata_reports_unchanged: bool,
-) -> bool {
-    if capture_mode == CaptureMode::Continuous {
-        frame_is_duplicate
-    } else {
-        frame_is_duplicate || metadata_reports_unchanged
-    }
-}
-
 struct OutputCapturer {
     device: ID3D11Device,
     context: ID3D11DeviceContext,
-    duplication: IDXGIOutputDuplication,
+    /// Active desktop-duplication access. The D3D environment stays warm,
+    /// but this interface is opened lazily and dropped after one-shot work.
+    duplication: Option<IDXGIOutputDuplication>,
     staging_ring: StagingRing,
+    /// Cached descriptor of the last successfully read frame, used to
+    /// read back the pipelined staging slot on the next capture call.
+    pending_desc: Option<D3D11_TEXTURE2D_DESC>,
+    pending_hdr: Option<HdrFrameContext>,
+    /// Whether the pending pipelined frame was marked duplicate by DXGI.
+    pending_is_duplicate: bool,
+    /// Dirty rectangles associated with the pending pipelined frame.
+    pending_dirty_rects: Vec<DirtyRect>,
+    /// Pre-computed dirty-copy strategy for `pending_dirty_rects`.
+    pending_dirty_cpu_copy_preferred: bool,
+    pending_dirty_total_pixels: u64,
+    /// Whether monitor capture is currently using the single-slot
+    /// low-latency dirty GPU copy path.
+    monitor_low_latency_dirty_gpu_active: bool,
+    /// Whether slot 0 contains a complete monitor frame for incremental
+    /// dirty GPU updates.
+    monitor_low_latency_dirty_gpu_primed: bool,
+    /// Descriptor key for the primed low-latency monitor slot.
+    monitor_low_latency_dirty_gpu_desc: Option<(u32, u32, DXGI_FORMAT)>,
     /// Cached descriptor of the desktop texture from the duplication
     /// interface.  DXGI duplication textures don't change format/size
     /// mid-session, so we only need to query once (and re-query after
@@ -1511,7 +1837,6 @@ impl OutputCapturer {
     fn new(resolved: &ResolvedMonitor) -> CaptureResult<Self> {
         let (device, context) = d3d11::create_d3d11_device_for_adapter(&resolved.adapter, true)
             .map_err(CaptureError::platform)?;
-        let duplication = create_duplication(&resolved.output, &device)?;
         let output_desc = unsafe { resolved.output.GetDesc() }
             .context("IDXGIOutput::GetDesc failed")
             .map_err(CaptureError::platform)?;
@@ -1519,8 +1844,17 @@ impl OutputCapturer {
         Ok(Self {
             device,
             context,
-            duplication,
+            duplication: None,
             staging_ring: StagingRing::new(),
+            pending_desc: None,
+            pending_hdr: None,
+            pending_is_duplicate: false,
+            pending_dirty_rects: Vec::new(),
+            pending_dirty_cpu_copy_preferred: false,
+            pending_dirty_total_pixels: 0,
+            monitor_low_latency_dirty_gpu_active: false,
+            monitor_low_latency_dirty_gpu_primed: false,
+            monitor_low_latency_dirty_gpu_desc: None,
             cached_src_desc: None,
             spare_frame: None,
             region: RegionPipelineState::new(),
@@ -1546,25 +1880,68 @@ impl OutputCapturer {
         })
     }
 
-    fn recreate_duplication(&mut self) -> CaptureResult<()> {
-        self.staging_ring.invalidate();
+    fn reset_capture_access_state(&mut self) {
+        self.clear_full_frame_pipeline_state();
         self.cached_src_desc = None;
-        self.region.invalidate();
+        self.staging_ring.reset_pipeline();
+        self.region.reset();
         self.dxgi_rect_buffer.clear();
         self.dxgi_move_rect_buffer.clear();
         self.source_dirty_rects_scratch.clear();
         self.source_move_rects_scratch.clear();
         self.region_dirty_rects_scratch.clear();
         self.region_move_rects_scratch.clear();
-        self.duplication = create_duplication(&self.output, &self.device)?;
         self.needs_presented_first_frame = self.capture_mode != CaptureMode::Snapshot;
+        self.last_present_time = 0;
         self.last_pointer_position = None;
         self.cached_pointer_shape = None;
         self.pointer_shape_buffer.clear();
-        Ok(())
     }
 
-    fn update_pointer_state(&mut self, frame_info: &DXGI_OUTDUPL_FRAME_INFO) {
+    fn open_capture_access(&mut self) -> CaptureResult<IDXGIOutputDuplication> {
+        self.reset_capture_access_state();
+        let duplication = create_duplication(&self.output, &self.device)?;
+        self.duplication = Some(duplication.clone());
+        Ok(duplication)
+    }
+
+    /// Returns the active duplication interface and whether it was opened by
+    /// this call. A newly opened session has no valid temporal relationship to
+    /// caller-provided history, so snapshot paths must perform a complete read.
+    fn ensure_capture_access(&mut self) -> CaptureResult<(IDXGIOutputDuplication, bool)> {
+        if let Some(duplication) = self.duplication.as_ref() {
+            return Ok((duplication.clone(), false));
+        }
+        self.open_capture_access()
+            .map(|duplication| (duplication, true))
+    }
+
+    fn recreate_duplication(
+        &mut self,
+        stale_duplication: IDXGIOutputDuplication,
+    ) -> CaptureResult<IDXGIOutputDuplication> {
+        self.duplication = None;
+        drop(stale_duplication);
+        self.open_capture_access()
+    }
+
+    fn release_capture_access(&mut self) {
+        self.duplication = None;
+        self.reset_capture_access_state();
+        if self.capture_mode == CaptureMode::Snapshot {
+            self.release_snapshot_capture_surfaces();
+        }
+    }
+
+    fn capture_access_active(&self) -> bool {
+        self.duplication.is_some()
+    }
+
+    fn update_pointer_state(
+        &mut self,
+        duplication: &IDXGIOutputDuplication,
+        frame_info: &DXGI_OUTDUPL_FRAME_INFO,
+    ) {
         self.last_pointer_position = Some(frame_info.PointerPosition);
 
         if frame_info.PointerShapeBufferSize == 0 {
@@ -1578,7 +1955,7 @@ impl OutputCapturer {
 
         let mut shape_info = DXGI_OUTDUPL_POINTER_SHAPE_INFO::default();
         let mut result = unsafe {
-            self.duplication.GetFramePointerShape(
+            duplication.GetFramePointerShape(
                 self.pointer_shape_buffer.len() as u32,
                 self.pointer_shape_buffer.as_mut_ptr().cast(),
                 &mut required,
@@ -1589,7 +1966,7 @@ impl OutputCapturer {
         if result.is_err() && required as usize > self.pointer_shape_buffer.len() {
             self.pointer_shape_buffer.resize(required as usize, 0);
             result = unsafe {
-                self.duplication.GetFramePointerShape(
+                duplication.GetFramePointerShape(
                     self.pointer_shape_buffer.len() as u32,
                     self.pointer_shape_buffer.as_mut_ptr().cast(),
                     &mut required,
@@ -1651,6 +2028,8 @@ impl OutputCapturer {
     /// but keeps a single reusable output frame alive for repeated one-shot
     /// captures at a stable resolution.
     fn trim_recording_scratch_for_screenshot(&mut self) {
+        self.pending_dirty_rects.clear();
+        self.pending_dirty_rects.shrink_to_fit();
         self.dxgi_rect_buffer.clear();
         self.dxgi_rect_buffer.shrink_to_fit();
         self.dxgi_move_rect_buffer.clear();
@@ -1672,6 +2051,7 @@ impl OutputCapturer {
     }
 
     fn warm_recording_scratch(&mut self) {
+        self.pending_dirty_rects.reserve(DXGI_DIRTY_COPY_MAX_RECTS);
         self.dxgi_rect_buffer.reserve(DXGI_DIRTY_COPY_MAX_RECTS);
         self.dxgi_move_rect_buffer
             .reserve(DXGI_REGION_MOVE_TRACK_MAX_RECTS);
@@ -1689,16 +2069,41 @@ impl OutputCapturer {
         }
     }
 
+    fn clear_full_frame_pipeline_state(&mut self) {
+        self.pending_desc = None;
+        self.pending_hdr = None;
+        self.pending_is_duplicate = false;
+        self.pending_dirty_rects.clear();
+        self.pending_dirty_cpu_copy_preferred = false;
+        self.pending_dirty_total_pixels = 0;
+        self.monitor_low_latency_dirty_gpu_active = false;
+        self.monitor_low_latency_dirty_gpu_primed = false;
+        self.monitor_low_latency_dirty_gpu_desc = None;
+    }
+
+    fn release_snapshot_capture_surfaces(&mut self) {
+        self.staging_ring.invalidate();
+        self.region.invalidate();
+        self.spare_frame = None;
+        if let Some(tonemapper) = self.gpu_tonemapper.as_mut() {
+            tonemapper.release_capture_surfaces();
+        }
+        if let Some(converter) = self.gpu_f16_converter.as_mut() {
+            converter.release_capture_surfaces();
+        }
+    }
+
     fn set_capture_mode(&mut self, mode: CaptureMode) {
         if self.capture_mode == mode {
             return;
         }
         self.capture_mode = mode;
+        // Drop any in-flight pipeline state when switching modes.
+        self.clear_full_frame_pipeline_state();
         self.needs_presented_first_frame = mode != CaptureMode::Snapshot;
         if mode == CaptureMode::Snapshot {
             // Screenshot captures use single-shot paths; drop recording buffers.
-            self.staging_ring.invalidate();
-            self.region.invalidate();
+            self.release_snapshot_capture_surfaces();
             self.trim_recording_scratch_for_screenshot();
         } else {
             // Recording mode keeps runtime state warm for sustained throughput.
@@ -1713,6 +2118,7 @@ impl OutputCapturer {
             return;
         }
         self.gpu_hdr_conversion_enabled = enabled;
+        self.clear_full_frame_pipeline_state();
         self.staging_ring.reset_pipeline();
         self.region.reset();
     }
@@ -1725,6 +2131,7 @@ impl OutputCapturer {
         if let Some(ref mut params) = self.hdr_to_sdr {
             params.tonemap_use_lut = enabled;
         }
+        self.clear_full_frame_pipeline_state();
         self.staging_ring.reset_pipeline();
         self.region.reset();
     }
@@ -1888,20 +2295,20 @@ impl OutputCapturer {
         })?;
         let sample = CaptureSampleMetadata {
             capture_time: Some(slot.capture_time.unwrap_or_else(Instant::now)),
-            present_time_qpc: if slot.present_time_qpc != 0 {
+            raw_os_ticks: if slot.present_time_qpc != 0 {
                 Some(slot.present_time_qpc)
             } else {
                 None
             },
+            tick_format: snow_core::timestamp::TickFormat::RawQpc,
             is_duplicate: slot.is_duplicate,
+            dirty_rects: Vec::new(),
         };
 
         let moves_only = {
             let slot = &self.region.slots[slot_idx];
-            let has_moves = self.capture_mode != CaptureMode::Continuous
-                && destination_has_history
-                && slot.move_mode_available
-                && !slot.move_rects.is_empty();
+            let has_moves =
+                destination_has_history && slot.move_mode_available && !slot.move_rects.is_empty();
             if has_moves {
                 apply_move_rects_to_frame(out, &slot.move_rects, blit.dst_x, blit.dst_y)?;
             }
@@ -2042,12 +2449,14 @@ impl OutputCapturer {
         })?;
         let sample = CaptureSampleMetadata {
             capture_time: Some(slot.capture_time.unwrap_or_else(Instant::now)),
-            present_time_qpc: if slot.present_time_qpc != 0 {
+            raw_os_ticks: if slot.present_time_qpc != 0 {
                 Some(slot.present_time_qpc)
             } else {
                 None
             },
+            tick_format: snow_core::timestamp::TickFormat::RawQpc,
             is_duplicate: slot.is_duplicate,
+            dirty_rects: Vec::new(),
         };
         let staging = slot.staging.as_ref().ok_or_else(|| {
             CaptureError::platform(anyhow::anyhow!(
@@ -2104,6 +2513,7 @@ impl OutputCapturer {
         blit: CaptureBlitRegion,
         destination: &mut Frame,
         destination_has_history: bool,
+        prefer_low_latency: bool,
     ) -> CaptureResult<CaptureSampleMetadata> {
         if blit.width == 0 || blit.height == 0 {
             return Err(CaptureError::InvalidConfig(
@@ -2111,12 +2521,23 @@ impl OutputCapturer {
             ));
         }
 
+        let (mut duplication, opened_capture_access) = self.ensure_capture_access()?;
+
         // Region capture uses its own sub-rect staging path.
-        // Reset the single full-frame staging slot's transient state so
-        // monitor capture and region capture remain independent.
+        // Reset full-frame pipeline state so monitor capture and region
+        // capture don't consume stale pending slots when callers switch targets.
+        self.pending_desc = None;
+        self.pending_hdr = None;
+        self.pending_is_duplicate = false;
+        self.pending_dirty_rects.clear();
+        self.pending_dirty_cpu_copy_preferred = false;
+        self.pending_dirty_total_pixels = 0;
+        self.monitor_low_latency_dirty_gpu_active = false;
+        self.monitor_low_latency_dirty_gpu_primed = false;
+        self.monitor_low_latency_dirty_gpu_desc = None;
         self.staging_ring.reset_pipeline();
 
-        let mut destination_has_history = destination_has_history;
+        let mut destination_has_history = destination_has_history && !opened_capture_access;
         if self.region.blit != Some(blit) {
             // Callers may reuse a frame across different window/region targets.
             // Even if dimensions match, the previous pixels are stale when the
@@ -2128,10 +2549,12 @@ impl OutputCapturer {
         let capture_time = Instant::now();
         let maybe_screenshot_frame =
             if should_try_zero_wait_screenshot_reuse(self.capture_mode, destination_has_history) {
-                match try_acquire_frame(&self.duplication, 0, false)? {
-                    TryAcquireResult::Ok(texture, info) => Some((texture, info)),
+                match try_acquire_frame(&duplication, 0, false)? {
+                    TryAcquireResult::Ok(texture, info, frame_guard) => {
+                        Some((texture, info, frame_guard))
+                    }
                     TryAcquireResult::AccessLost => {
-                        self.recreate_duplication()?;
+                        duplication = self.recreate_duplication(duplication)?;
                         destination_has_history = false;
                         self.region.ensure_blit(blit);
                         None
@@ -2139,8 +2562,10 @@ impl OutputCapturer {
                     TryAcquireResult::Retry => {
                         return Ok(CaptureSampleMetadata {
                             capture_time: Some(capture_time),
-                            present_time_qpc: None,
+                            raw_os_ticks: None,
+                            tick_format: snow_core::timestamp::TickFormat::RawQpc,
                             is_duplicate: true,
+                            dirty_rects: Vec::new(),
                         });
                     }
                 }
@@ -2149,28 +2574,41 @@ impl OutputCapturer {
             };
         let single_shot_screenshot =
             self.capture_mode == CaptureMode::Snapshot && !destination_has_history;
-        let (desktop_texture, frame_info) = if let Some((texture, info)) = maybe_screenshot_frame {
-            (texture, info)
-        } else {
-            match acquire_frame(
-                &self.duplication,
-                self.needs_presented_first_frame || single_shot_screenshot,
-            )? {
-                AcquireResult::Ok(texture, info) => (texture, info),
-                AcquireResult::AccessLost => {
-                    self.recreate_duplication()?;
-                    destination_has_history = false;
-                    self.region.ensure_blit(blit);
-                    match acquire_frame(
-                        &self.duplication,
+        let (desktop_texture, frame_info, _frame_guard) =
+            if let Some((texture, info, frame_guard)) = maybe_screenshot_frame {
+                (texture, info, frame_guard)
+            } else {
+                let acquired = if self.capture_mode == CaptureMode::Snapshot {
+                    acquire_snapshot_frame(&duplication)
+                } else {
+                    acquire_frame(
+                        &duplication,
                         self.needs_presented_first_frame || single_shot_screenshot,
-                    )? {
-                        AcquireResult::Ok(texture, info) => (texture, info),
-                        AcquireResult::AccessLost => return Err(CaptureError::AccessLost),
+                    )
+                }?;
+                match acquired {
+                    AcquireResult::Ok(texture, info, frame_guard) => (texture, info, frame_guard),
+                    AcquireResult::AccessLost => {
+                        duplication = self.recreate_duplication(duplication)?;
+                        destination_has_history = false;
+                        self.region.ensure_blit(blit);
+                        let retry = if self.capture_mode == CaptureMode::Snapshot {
+                            acquire_snapshot_frame(&duplication)
+                        } else {
+                            acquire_frame(
+                                &duplication,
+                                self.needs_presented_first_frame || single_shot_screenshot,
+                            )
+                        }?;
+                        match retry {
+                            AcquireResult::Ok(texture, info, frame_guard) => {
+                                (texture, info, frame_guard)
+                            }
+                            AcquireResult::AccessLost => return Err(CaptureError::AccessLost),
+                        }
                     }
                 }
-            }
-        };
+            };
 
         let source_present_time_qpc = frame_info.LastPresentTime;
         let source_is_duplicate =
@@ -2238,18 +2676,8 @@ impl OutputCapturer {
                 return Ok(sample);
             }
 
-            let recording_mode = self.capture_mode == CaptureMode::Continuous;
             let (region_dirty_available, region_move_available, region_has_moves, region_unchanged) =
-                if recording_mode {
-                    // Continuous recording uses complete region copies.  DXGI
-                    // dirty/move metadata is intentionally ignored here: a
-                    // region staging texture is not a complete history until
-                    // its first full copy, and that invariant is easily lost
-                    // when frames are dropped or a window moves.
-                    region_dirty_rects.clear();
-                    region_move_rects.clear();
-                    (false, false, false, source_is_duplicate)
-                } else if self.capture_mode == CaptureMode::Snapshot {
+                if self.capture_mode == CaptureMode::Snapshot {
                     region_dirty_rects.clear();
                     region_move_rects.clear();
                     (
@@ -2264,7 +2692,7 @@ impl OutputCapturer {
                     (true, true, false, true)
                 } else {
                     let region_dirty_available = extract_region_dirty_rects_direct(
-                        &self.duplication,
+                        &duplication,
                         &frame_info,
                         &mut self.dxgi_rect_buffer,
                         effective_desc.Width,
@@ -2274,7 +2702,7 @@ impl OutputCapturer {
                     );
                     let region_move_available = {
                         let source_move_available = extract_move_rects(
-                            &self.duplication,
+                            &duplication,
                             &frame_info,
                             &mut self.dxgi_move_rect_buffer,
                             effective_desc.Width,
@@ -2322,15 +2750,18 @@ impl OutputCapturer {
             {
                 return Ok(CaptureSampleMetadata {
                     capture_time: Some(capture_time),
-                    present_time_qpc: if source_present_time_qpc != 0 {
+                    raw_os_ticks: if source_present_time_qpc != 0 {
                         Some(source_present_time_qpc)
                     } else {
                         None
                     },
+                    tick_format: snow_core::timestamp::TickFormat::RawQpc,
                     is_duplicate: true,
+                    dirty_rects: Vec::new(),
                 });
             }
 
+            let recording_mode = self.capture_mode == CaptureMode::Continuous;
             let can_use_dirty_reconstruct =
                 can_use_region_dirty_reconstruct(region_move_available, region_has_moves, true);
             let dirty_copy_strategy = if region_dirty_available && can_use_dirty_reconstruct {
@@ -2342,15 +2773,30 @@ impl OutputCapturer {
             } else {
                 DirtyCopyStrategy::default()
             };
-            let write_slot = 0usize;
-            let read_slot = if recording_mode {
+            let low_latency_dirty_gpu_preferred = dirty_copy_strategy.gpu_low_latency;
+            let regular_dirty_gpu_preferred = dirty_copy_strategy.gpu;
+            let low_latency_recording = should_use_window_low_latency_region_path(
+                recording_mode,
+                prefer_low_latency,
+                blit,
+                low_latency_dirty_gpu_preferred,
+            );
+            let write_slot = if low_latency_recording {
+                self.region.pending_slot.unwrap_or(0)
+            } else if recording_mode {
+                self.region.next_write_slot % DXGI_REGION_STAGING_SLOTS
+            } else {
+                0
+            };
+            let read_slot = if low_latency_recording {
+                write_slot
+            } else if recording_mode {
                 self.region.pending_slot.unwrap_or(write_slot)
             } else {
                 write_slot
             };
 
             let skip_submit_copy = recording_mode
-                && destination_has_history
                 && self.region.pending_slot.is_some()
                 && (source_is_duplicate || region_unchanged);
 
@@ -2373,11 +2819,8 @@ impl OutputCapturer {
                 slot_idx
             } else {
                 self.ensure_region_slot(write_slot, &region_desc)?;
-                // Never use a partial GPU update for a recording frame.  The
-                // complete CopySubresourceRegion below initializes every
-                // pixel in the region staging texture on each changed frame.
-                let can_use_dirty_gpu_copy =
-                    destination_has_history && self.capture_mode != CaptureMode::Continuous;
+                let can_use_dirty_gpu_copy = destination_has_history
+                    && (self.capture_mode != CaptureMode::Continuous || low_latency_recording);
                 {
                     let slot = &mut self.region.slots[write_slot];
                     slot.capture_time = Some(capture_time);
@@ -2391,8 +2834,14 @@ impl OutputCapturer {
                     std::mem::swap(&mut slot.move_rects, &mut region_move_rects);
                     slot.dirty_cpu_copy_preferred =
                         region_dirty_available && dirty_copy_strategy.cpu;
-                    slot.dirty_gpu_copy_preferred =
-                        can_use_dirty_gpu_copy && region_dirty_available && dirty_copy_strategy.gpu;
+                    let dirty_gpu_copy_preferred = if low_latency_recording {
+                        low_latency_dirty_gpu_preferred
+                    } else {
+                        regular_dirty_gpu_preferred
+                    };
+                    slot.dirty_gpu_copy_preferred = can_use_dirty_gpu_copy
+                        && region_dirty_available
+                        && dirty_gpu_copy_preferred;
                     slot.dirty_total_pixels = dirty_copy_strategy.dirty_pixels;
                     slot.populated = true;
                 }
@@ -2417,7 +2866,11 @@ impl OutputCapturer {
             if recording_mode {
                 if !skip_submit_copy {
                     self.region.pending_slot = Some(write_slot);
-                    self.region.next_write_slot = 0;
+                    if low_latency_recording {
+                        self.region.next_write_slot = write_slot;
+                    } else {
+                        self.region.next_write_slot = (write_slot + 1) % DXGI_REGION_STAGING_SLOTS;
+                    }
                 }
             } else {
                 self.region.pending_slot = None;
@@ -2433,12 +2886,9 @@ impl OutputCapturer {
         self.region_move_rects_scratch = region_move_rects;
 
         if self.capture_mode != CaptureMode::Snapshot {
-            self.update_pointer_state(&frame_info);
+            self.update_pointer_state(&duplication, &frame_info);
         }
 
-        unsafe {
-            self.duplication.ReleaseFrame().ok();
-        }
         self.needs_presented_first_frame = false;
 
         if capture_result.is_err() {
@@ -2449,6 +2899,7 @@ impl OutputCapturer {
     }
 
     fn capture(&mut self, reuse: Option<Frame>) -> CaptureResult<Frame> {
+        let (mut duplication, opened_capture_access) = self.ensure_capture_access()?;
         // Full-frame capture and region/window capture keep independent
         // pipelines. Reset region state when callers switch back to full
         // monitor capture to avoid consuming stale region slots later.
@@ -2468,15 +2919,18 @@ impl OutputCapturer {
                 }
             })
             .unwrap_or_else(Frame::empty);
-        let has_frame_history =
-            frame.metadata.stream_timestamp.is_some() && !frame.as_rgba_bytes().is_empty();
+        let has_frame_history = !opened_capture_access
+            && frame.metadata.stream_timestamp.is_some()
+            && !frame.as_rgba_bytes().is_empty();
         let capture_time = Instant::now();
         let maybe_screenshot_frame =
             if should_try_zero_wait_screenshot_reuse(self.capture_mode, has_frame_history) {
-                match try_acquire_frame(&self.duplication, 0, false)? {
-                    TryAcquireResult::Ok(texture, info) => Some((texture, info)),
+                match try_acquire_frame(&duplication, 0, false)? {
+                    TryAcquireResult::Ok(texture, info, frame_guard) => {
+                        Some((texture, info, frame_guard))
+                    }
                     TryAcquireResult::AccessLost => {
-                        self.recreate_duplication()?;
+                        duplication = self.recreate_duplication(duplication)?;
                         None
                     }
                     TryAcquireResult::Retry => {
@@ -2503,26 +2957,39 @@ impl OutputCapturer {
             self.capture_mode == CaptureMode::Snapshot && !has_frame_history;
         frame.reset_metadata();
 
-        let (desktop_texture, frame_info) = if let Some((texture, info)) = maybe_screenshot_frame {
-            (texture, info)
-        } else {
-            match acquire_frame(
-                &self.duplication,
-                self.needs_presented_first_frame || single_shot_screenshot,
-            )? {
-                AcquireResult::Ok(texture, info) => (texture, info),
-                AcquireResult::AccessLost => {
-                    self.recreate_duplication()?;
-                    match acquire_frame(
-                        &self.duplication,
+        let (desktop_texture, frame_info, _frame_guard) =
+            if let Some((texture, info, frame_guard)) = maybe_screenshot_frame {
+                (texture, info, frame_guard)
+            } else {
+                let acquired = if self.capture_mode == CaptureMode::Snapshot {
+                    acquire_snapshot_frame(&duplication)
+                } else {
+                    acquire_frame(
+                        &duplication,
                         self.needs_presented_first_frame || single_shot_screenshot,
-                    )? {
-                        AcquireResult::Ok(texture, info) => (texture, info),
-                        AcquireResult::AccessLost => return Err(CaptureError::AccessLost),
+                    )
+                }?;
+                match acquired {
+                    AcquireResult::Ok(texture, info, frame_guard) => (texture, info, frame_guard),
+                    AcquireResult::AccessLost => {
+                        duplication = self.recreate_duplication(duplication)?;
+                        let retry = if self.capture_mode == CaptureMode::Snapshot {
+                            acquire_snapshot_frame(&duplication)
+                        } else {
+                            acquire_frame(
+                                &duplication,
+                                self.needs_presented_first_frame || single_shot_screenshot,
+                            )
+                        }?;
+                        match retry {
+                            AcquireResult::Ok(texture, info, frame_guard) => {
+                                (texture, info, frame_guard)
+                            }
+                            AcquireResult::AccessLost => return Err(CaptureError::AccessLost),
+                        }
                     }
                 }
-            }
-        };
+            };
 
         frame.metadata.set_timing(
             Some(capture_time),
@@ -2540,7 +3007,7 @@ impl OutputCapturer {
 
         // Duplicate frames have no new desktop damage. Skip the COM metadata
         // query on this fast path.
-        let source_unchanged = if self.capture_mode == CaptureMode::Snapshot {
+        let mut source_unchanged = if self.capture_mode == CaptureMode::Snapshot {
             frame.metadata.dirty_rects.clear();
             frame.metadata.is_duplicate || dxgi_frame_has_no_metadata(&frame_info)
         } else if single_shot_screenshot {
@@ -2550,7 +3017,7 @@ impl OutputCapturer {
             frame.metadata.dirty_rects.clear();
             true
         } else if extract_dirty_rects(
-            &self.duplication,
+            &duplication,
             &frame_info,
             &mut self.dxgi_rect_buffer,
             &mut frame.metadata.dirty_rects,
@@ -2583,37 +3050,79 @@ impl OutputCapturer {
         normalized_dirty_rects.clear();
         let mut source_move_rects = std::mem::take(&mut self.source_move_rects_scratch);
         source_move_rects.clear();
-        // A zero-length/failed metadata report is not proof that the acquired
-        // texture is unchanged.  In particular, DXGI can expose a frame with
-        // no dirty rectangles while the desktop texture has still advanced.
-        // Only an identical LastPresentTime is a safe duplicate signal for
-        // the recording path.  Treating metadata absence as a duplicate was
-        // the source of frames containing only the previously dirty regions.
-        let frame_pixels_unchanged = frame_pixels_unchanged_for_mode(
-            self.capture_mode,
-            frame.metadata.is_duplicate,
-            source_unchanged,
-        );
+        let mut continuous_move_metadata_available = true;
+        let mut continuous_frame_has_moves = false;
+        if self.capture_mode == CaptureMode::Continuous
+            && !single_shot_screenshot
+            && !frame.metadata.is_duplicate
+        {
+            continuous_move_metadata_available = extract_move_rects(
+                &duplication,
+                &frame_info,
+                &mut self.dxgi_move_rect_buffer,
+                effective_desc.Width,
+                effective_desc.Height,
+                &mut source_move_rects,
+            );
+            continuous_frame_has_moves =
+                continuous_move_metadata_available && !source_move_rects.is_empty();
+            // A frame with move metadata is changed even when its dirty list
+            // is empty. If move metadata cannot be queried, do not trust a
+            // dirty-only no-op classification either; the complete readback
+            // path is the correctness fallback.
+            source_unchanged = source_is_unchanged_with_move_metadata(
+                source_unchanged,
+                continuous_move_metadata_available,
+                continuous_frame_has_moves,
+            );
+        }
+        let frame_pixels_unchanged = frame.metadata.is_duplicate || source_unchanged;
         let mut current_dirty_strategy = DirtyCopyStrategy::default();
         let mut use_screenshot_move_reconstruct = false;
         let mut screenshot_moves_only = false;
-        if self.capture_mode != CaptureMode::Continuous
-            && should_try_screenshot_move_reconstruct(
-                self.capture_mode,
-                single_shot_screenshot,
-                output_matches_source,
-                frame_pixels_unchanged,
-                frame_info.TotalMetadataBufferSize,
-            )
+        if self.capture_mode == CaptureMode::Continuous
+            && !single_shot_screenshot
+            && !frame_pixels_unchanged
         {
+            // DXGI metadata contains both move and dirty rectangles. Dirty
+            // rects alone cannot reconstruct a moved desktop image, so only
+            // enable incremental readback when move metadata is available and
+            // confirms that this frame has no moves. Frames with moves (or an
+            // unavailable move query) use the complete staging readback path.
+            if !frame.metadata.dirty_rects.is_empty()
+                && frame.metadata.dirty_rects.len() <= DXGI_DIRTY_COPY_MAX_RECTS
+                && can_use_full_frame_dirty_reconstruct(
+                    continuous_move_metadata_available,
+                    continuous_frame_has_moves,
+                )
+            {
+                normalized_dirty_rects.extend_from_slice(&frame.metadata.dirty_rects);
+                normalize_dirty_rects_in_place(
+                    &mut normalized_dirty_rects,
+                    effective_desc.Width,
+                    effective_desc.Height,
+                );
+                current_dirty_strategy = evaluate_dirty_copy_strategy(
+                    &normalized_dirty_rects,
+                    effective_desc.Width,
+                    effective_desc.Height,
+                );
+            }
+        } else if should_try_screenshot_move_reconstruct(
+            self.capture_mode,
+            single_shot_screenshot,
+            output_matches_source,
+            frame_pixels_unchanged,
+            frame_info.TotalMetadataBufferSize,
+        ) {
             let dirty_available = extract_dirty_rects(
-                &self.duplication,
+                &duplication,
                 &frame_info,
                 &mut self.dxgi_rect_buffer,
                 &mut normalized_dirty_rects,
             );
             let move_available = extract_move_rects(
-                &self.duplication,
+                &duplication,
                 &frame_info,
                 &mut self.dxgi_move_rect_buffer,
                 effective_desc.Width,
@@ -2659,40 +3168,201 @@ impl OutputCapturer {
                 output_matches_source,
                 frame_pixels_unchanged,
             ) {
+                self.clear_full_frame_pipeline_state();
                 frame.metadata.is_duplicate = true;
                 return Ok(());
             }
 
             if self.capture_mode == CaptureMode::Continuous {
-                // Recording must always produce a complete frame.  The DXGI
-                // dirty/move lists describe compositor work, not a complete
-                // pixel history, and are therefore unsuitable as the source
-                // of truth for an output frame.  A synchronous CopyResource
-                // also removes staging-ring lifetime hazards where a slot is
-                // read before it has been fully populated after a dropped or
-                // delayed frame.
-                if !frame_pixels_unchanged || !output_matches_source {
+                let use_monitor_low_latency_dirty_gpu =
+                    should_use_monitor_low_latency_dirty_gpu_mode(
+                        self.capture_mode,
+                        self.monitor_low_latency_dirty_gpu_active,
+                        output_matches_source,
+                        frame_pixels_unchanged,
+                        current_dirty_strategy,
+                    );
+
+                if use_monitor_low_latency_dirty_gpu {
+                    if !self.monitor_low_latency_dirty_gpu_active {
+                        self.pending_desc = None;
+                        self.pending_hdr = None;
+                        self.pending_is_duplicate = false;
+                        self.pending_dirty_rects.clear();
+                        self.pending_dirty_cpu_copy_preferred = false;
+                        self.pending_dirty_total_pixels = 0;
+                        self.staging_ring.reset_pipeline();
+                        self.monitor_low_latency_dirty_gpu_primed = false;
+                        self.monitor_low_latency_dirty_gpu_desc = None;
+                    }
+                    self.monitor_low_latency_dirty_gpu_active = true;
+
                     self.staging_ring
-                        .ensure_slot(&self.device, &effective_desc)?;
-                    self.staging_ring.copy_and_read_blocking(
-                        &self.context,
-                        &effective_source,
-                        &effective_desc,
-                        &mut frame,
-                        effective_hdr,
-                    )?;
+                        .ensure_slots(&self.device, &effective_desc, 1)?;
+                    let desc_key = (
+                        effective_desc.Width,
+                        effective_desc.Height,
+                        effective_desc.Format,
+                    );
+                    if self.monitor_low_latency_dirty_gpu_desc != Some(desc_key) {
+                        self.monitor_low_latency_dirty_gpu_desc = Some(desc_key);
+                        self.monitor_low_latency_dirty_gpu_primed = false;
+                    }
+
+                    let skip_readback = output_matches_source && frame_pixels_unchanged;
+                    if !skip_readback {
+                        let use_dirty_gpu_copy = self.monitor_low_latency_dirty_gpu_primed
+                            && !normalized_dirty_rects.is_empty()
+                            && current_dirty_strategy.gpu;
+                        let use_dirty_cpu_copy = output_matches_source
+                            && !normalized_dirty_rects.is_empty()
+                            && current_dirty_strategy.cpu;
+                        self.staging_ring.copy_and_read_with_strategy(
+                            &self.context,
+                            &effective_source,
+                            &effective_desc,
+                            &mut frame,
+                            effective_hdr,
+                            &normalized_dirty_rects,
+                            current_dirty_strategy.dirty_pixels,
+                            use_dirty_cpu_copy,
+                            use_dirty_gpu_copy,
+                        )?;
+                        self.monitor_low_latency_dirty_gpu_primed = true;
+                    }
+
+                    self.pending_desc = None;
+                    self.pending_hdr = None;
+                    self.pending_is_duplicate = false;
+                    self.pending_dirty_rects.clear();
+                    self.pending_dirty_cpu_copy_preferred = false;
+                    self.pending_dirty_total_pixels = 0;
                 } else {
-                    frame.metadata.is_duplicate = true;
+                    if self.monitor_low_latency_dirty_gpu_active {
+                        self.monitor_low_latency_dirty_gpu_active = false;
+                        self.monitor_low_latency_dirty_gpu_primed = false;
+                        self.monitor_low_latency_dirty_gpu_desc = None;
+                        self.staging_ring.reset_pipeline();
+                    }
+
+                    self.staging_ring
+                        .ensure_slots(&self.device, &effective_desc, STAGING_SLOTS)?;
+                    let pending_slot_compatible = self.pending_desc.as_ref().is_some_and(|desc| {
+                        desc.Width == effective_desc.Width
+                            && desc.Height == effective_desc.Height
+                            && desc.Format == effective_desc.Format
+                    }) && self.pending_hdr == effective_hdr;
+                    let skip_submit_copy = should_skip_screenrecord_submit_copy(
+                        true,
+                        pending_slot_compatible,
+                        frame.metadata.is_duplicate,
+                        source_unchanged,
+                    );
+
+                    let mut read_slot = self.staging_ring.latest_write_slot();
+                    let mut read_desc = effective_desc;
+                    let mut read_hdr = effective_hdr;
+                    let mut read_is_duplicate = frame_pixels_unchanged;
+                    let mut read_dirty_rects: &[DirtyRect] = &[];
+                    let mut read_dirty_cpu_copy_preferred = false;
+                    let mut read_dirty_total_pixels = 0u64;
+
+                    if skip_submit_copy {
+                        if let Some(prev_desc) = self.pending_desc.as_ref() {
+                            read_desc = *prev_desc;
+                            read_hdr = self.pending_hdr;
+                            // The pending slot may still contain new pixels that
+                            // haven't been consumed yet (pipeline catch-up after a
+                            // non-duplicate frame). Respect its duplicate state.
+                            read_is_duplicate = self.pending_is_duplicate;
+                            read_dirty_rects = &self.pending_dirty_rects;
+                            read_dirty_cpu_copy_preferred = self.pending_dirty_cpu_copy_preferred;
+                            read_dirty_total_pixels = self.pending_dirty_total_pixels;
+                        }
+                    } else {
+                        let submitted_read_slot = self
+                            .staging_ring
+                            .submit_copy(&self.context, &effective_source)?;
+                        if let (Some(slot), Some(prev_desc)) =
+                            (submitted_read_slot, self.pending_desc.as_ref())
+                        {
+                            // Read back the previous slot while the next copy is in flight.
+                            read_slot = slot;
+                            read_desc = *prev_desc;
+                            read_hdr = self.pending_hdr;
+                            read_is_duplicate = self.pending_is_duplicate;
+                            read_dirty_rects = &self.pending_dirty_rects;
+                            read_dirty_cpu_copy_preferred = self.pending_dirty_cpu_copy_preferred;
+                            read_dirty_total_pixels = self.pending_dirty_total_pixels;
+                        } else {
+                            // Bootstrap/desync path: read the freshly submitted slot.
+                            read_slot = self.staging_ring.latest_write_slot();
+                            read_desc = effective_desc;
+                            read_hdr = effective_hdr;
+                            read_is_duplicate = frame_pixels_unchanged;
+                        }
+                    }
+
+                    let read_output_matches_source = has_frame_history
+                        && frame.width() == read_desc.Width
+                        && frame.height() == read_desc.Height;
+                    let skip_readback = read_output_matches_source && read_is_duplicate;
+                    let use_dirty_copy = read_output_matches_source
+                        && !skip_readback
+                        && !read_dirty_rects.is_empty()
+                        && read_dirty_cpu_copy_preferred;
+                    self.staging_ring.read_slot_with_strategy(
+                        &self.context,
+                        read_slot,
+                        &read_desc,
+                        &mut frame,
+                        read_hdr,
+                        read_dirty_rects,
+                        read_dirty_total_pixels,
+                        use_dirty_copy,
+                        skip_readback,
+                    )?;
+
+                    if skip_submit_copy {
+                        // We intentionally kept the previous pending slot alive;
+                        // keep metadata aligned with that slot's unchanged contents.
+                        self.pending_is_duplicate = true;
+                        self.pending_dirty_rects.clear();
+                        self.pending_dirty_cpu_copy_preferred = false;
+                        self.pending_dirty_total_pixels = 0;
+                    } else {
+                        self.pending_desc = Some(effective_desc);
+                        self.pending_hdr = effective_hdr;
+                        self.pending_is_duplicate = frame_pixels_unchanged;
+                        self.pending_dirty_rects.clear();
+                        self.pending_dirty_cpu_copy_preferred = false;
+                        self.pending_dirty_total_pixels = 0;
+                        if !frame_pixels_unchanged && !normalized_dirty_rects.is_empty() {
+                            self.pending_dirty_rects
+                                .extend_from_slice(&normalized_dirty_rects);
+                            self.pending_dirty_cpu_copy_preferred = current_dirty_strategy.cpu;
+                            self.pending_dirty_total_pixels = current_dirty_strategy.dirty_pixels;
+                        }
+                    }
                 }
             } else {
                 // Screenshot mode avoids recording-only buffering.
+                self.pending_desc = None;
+                self.pending_hdr = None;
+                self.pending_is_duplicate = false;
+                self.pending_dirty_rects.clear();
+                self.pending_dirty_cpu_copy_preferred = false;
+                self.pending_dirty_total_pixels = 0;
+                self.monitor_low_latency_dirty_gpu_active = false;
+                self.monitor_low_latency_dirty_gpu_primed = false;
+                self.monitor_low_latency_dirty_gpu_desc = None;
                 if use_screenshot_move_reconstruct {
                     apply_move_rects_to_frame(&mut frame, &source_move_rects, 0, 0)?;
                     if screenshot_moves_only {
                         self.staging_ring.reset_pipeline();
                     } else {
                         self.staging_ring
-                            .ensure_slot(&self.device, &effective_desc)?;
+                            .ensure_screenshot_slot(&self.device, &effective_desc)?;
                         self.staging_ring.copy_and_read_with_strategy(
                             &self.context,
                             &effective_source,
@@ -2707,7 +3377,7 @@ impl OutputCapturer {
                     }
                 } else {
                     self.staging_ring
-                        .ensure_slot(&self.device, &effective_desc)?;
+                        .ensure_screenshot_slot(&self.device, &effective_desc)?;
                     self.staging_ring.copy_and_read_blocking(
                         &self.context,
                         &effective_source,
@@ -2725,13 +3395,19 @@ impl OutputCapturer {
         source_move_rects.clear();
         self.source_move_rects_scratch = source_move_rects;
         if self.capture_mode != CaptureMode::Snapshot {
-            self.update_pointer_state(&frame_info);
-        }
-        unsafe {
-            self.duplication.ReleaseFrame().ok();
+            self.update_pointer_state(&duplication, &frame_info);
         }
         self.needs_presented_first_frame = false;
         if let Err(err) = convert_result {
+            self.pending_desc = None;
+            self.pending_hdr = None;
+            self.pending_is_duplicate = false;
+            self.pending_dirty_rects.clear();
+            self.pending_dirty_cpu_copy_preferred = false;
+            self.pending_dirty_total_pixels = 0;
+            self.monitor_low_latency_dirty_gpu_active = false;
+            self.monitor_low_latency_dirty_gpu_primed = false;
+            self.monitor_low_latency_dirty_gpu_desc = None;
             self.staging_ring.reset_pipeline();
             return Err(err);
         }
@@ -2743,27 +3419,49 @@ impl OutputCapturer {
 pub(crate) struct WindowsMonitorCapturer {
     monitor: MonitorId,
     resolver: Arc<MonitorResolver>,
-    _com: super::com::CoInitGuard,
+    /// Created on demand and retained only until explicit idle cleanup.
     output: Option<OutputCapturer>,
     capture_mode: CaptureMode,
     gpu_hdr_conversion_enabled: bool,
     hdr_tonemap_lut_enabled: bool,
+    // Keep last so all D3D/DXGI interfaces drop before CoUninitialize.
+    _com: super::com::CoInitGuard,
 }
 
 impl WindowsMonitorCapturer {
     pub(crate) fn new(monitor: &MonitorId, resolver: Arc<MonitorResolver>) -> CaptureResult<Self> {
         let com = super::com::CoInitGuard::init_multithreaded().map_err(CaptureError::platform)?;
-        let resolved = resolver.resolve_monitor(monitor)?;
-        let output = with_monitor_context(OutputCapturer::new(&resolved), monitor, "initialize")?;
+        resolver.resolve_monitor(monitor)?;
         Ok(Self {
             monitor: monitor.clone(),
             resolver,
-            _com: com,
-            output: Some(output),
+            output: None,
             capture_mode: CaptureMode::Snapshot,
             gpu_hdr_conversion_enabled: true,
             hdr_tonemap_lut_enabled: true,
+            _com: com,
         })
+    }
+
+    fn reinitialize_output(&mut self, action: &'static str) -> CaptureResult<()> {
+        if let Some(mut output) = self.output.take() {
+            output.release_capture_access();
+        }
+        let resolved = self.resolver.resolve_monitor(&self.monitor)?;
+        let mut output =
+            with_monitor_context(OutputCapturer::new(&resolved), &self.monitor, action)?;
+        output.set_capture_mode(self.capture_mode);
+        output.set_gpu_hdr_conversion(self.gpu_hdr_conversion_enabled);
+        output.set_hdr_tonemap_lut(self.hdr_tonemap_lut_enabled);
+        self.output = Some(output);
+        Ok(())
+    }
+
+    fn ensure_output(&mut self) -> CaptureResult<&mut OutputCapturer> {
+        if self.output.is_none() {
+            self.reinitialize_output("initialize")?;
+        }
+        Ok(self.output_mut())
     }
 
     fn output_mut(&mut self) -> &mut OutputCapturer {
@@ -2774,7 +3472,16 @@ impl WindowsMonitorCapturer {
 }
 
 impl crate::backend::MonitorCapturer for WindowsMonitorCapturer {
+    fn backend_kind(&self) -> CaptureBackendKind {
+        CaptureBackendKind::DxgiDuplication
+    }
+
+    fn prewarm_environment(&mut self) -> CaptureResult<()> {
+        self.ensure_output().map(|_| ())
+    }
+
     fn capture(&mut self, reuse: Option<Frame>) -> CaptureResult<Frame> {
+        self.ensure_output()?;
         let result = self.output_mut().capture(reuse);
         match result {
             Ok(frame) => {
@@ -2794,20 +3501,7 @@ impl crate::backend::MonitorCapturer for WindowsMonitorCapturer {
                 Ok(frame)
             }
             Err(CaptureError::MonitorLost) => {
-                let resolved = self.resolver.resolve_monitor(&self.monitor)?;
-                let capture_mode = self.capture_mode;
-                let gpu_hdr_conversion_enabled = self.gpu_hdr_conversion_enabled;
-                let hdr_tonemap_lut_enabled = self.hdr_tonemap_lut_enabled;
-                self.output = Some(with_monitor_context(
-                    OutputCapturer::new(&resolved),
-                    &self.monitor,
-                    "reinitialize",
-                )?);
-                self.output_mut().set_capture_mode(capture_mode);
-                self.output_mut()
-                    .set_gpu_hdr_conversion(gpu_hdr_conversion_enabled);
-                self.output_mut()
-                    .set_hdr_tonemap_lut(hdr_tonemap_lut_enabled);
+                self.reinitialize_output("reinitialize")?;
                 self.output_mut().capture(None)
             }
             Err(e) => Err(e),
@@ -2820,51 +3514,81 @@ impl crate::backend::MonitorCapturer for WindowsMonitorCapturer {
         destination: &mut Frame,
         destination_has_history: bool,
     ) -> CaptureResult<Option<CaptureSampleMetadata>> {
-        let result =
-            self.output_mut()
-                .capture_region_into(blit, destination, destination_has_history);
+        let prefer_low_latency = should_prefer_monitor_region_low_latency(self.capture_mode, blit);
+        self.ensure_output()?;
+        let result = self.output_mut().capture_region_into(
+            blit,
+            destination,
+            destination_has_history,
+            prefer_low_latency,
+        );
         match result {
             Ok(sample) => Ok(Some(sample)),
             Err(CaptureError::MonitorLost) | Err(CaptureError::AccessLost) => {
-                let resolved = self.resolver.resolve_monitor(&self.monitor)?;
                 let capture_mode = self.capture_mode;
-                let gpu_hdr_conversion_enabled = self.gpu_hdr_conversion_enabled;
-                let hdr_tonemap_lut_enabled = self.hdr_tonemap_lut_enabled;
-                self.output = Some(with_monitor_context(
-                    OutputCapturer::new(&resolved),
-                    &self.monitor,
-                    "reinitialize",
-                )?);
-                self.output_mut().set_capture_mode(capture_mode);
+                self.reinitialize_output("reinitialize")?;
+                let retry_prefer_low_latency =
+                    should_prefer_monitor_region_low_latency(capture_mode, blit);
                 self.output_mut()
-                    .set_gpu_hdr_conversion(gpu_hdr_conversion_enabled);
-                self.output_mut()
-                    .set_hdr_tonemap_lut(hdr_tonemap_lut_enabled);
-                self.output_mut()
-                    .capture_region_into(blit, destination, destination_has_history)
+                    .capture_region_into(
+                        blit,
+                        destination,
+                        destination_has_history,
+                        retry_prefer_low_latency,
+                    )
                     .map(Some)
             }
             Err(e) => Err(e),
         }
     }
 
-    fn set_capture_mode(&mut self, mode: CaptureMode) {
+    fn set_capture_mode(&mut self, mode: CaptureMode) -> CaptureResult<()> {
         self.capture_mode = mode;
-        self.output_mut().set_capture_mode(mode);
+        if let Some(output) = self.output.as_mut() {
+            output.set_capture_mode(mode);
+        }
+        Ok(())
     }
 
-    fn set_gpu_hdr_conversion(&mut self, enabled: bool) {
+    fn set_gpu_hdr_conversion(&mut self, enabled: bool) -> CaptureResult<()> {
         self.gpu_hdr_conversion_enabled = enabled;
-        self.output_mut().set_gpu_hdr_conversion(enabled);
+        if let Some(output) = self.output.as_mut() {
+            output.set_gpu_hdr_conversion(enabled);
+        }
+        Ok(())
     }
 
-    fn set_hdr_tonemap_lut(&mut self, enabled: bool) {
+    fn set_hdr_tonemap_lut(&mut self, enabled: bool) -> CaptureResult<()> {
         self.hdr_tonemap_lut_enabled = enabled;
-        self.output_mut().set_hdr_tonemap_lut(enabled);
+        if let Some(output) = self.output.as_mut() {
+            output.set_hdr_tonemap_lut(enabled);
+        }
+        Ok(())
     }
 
     fn sample_cursor(&mut self) -> CaptureResult<Option<CursorSnapshot>> {
-        self.output_mut().sample_cursor()
+        match self.output.as_mut() {
+            Some(output) => output.sample_cursor(),
+            None => Ok(None),
+        }
+    }
+
+    fn release_capture_access(&mut self) {
+        if let Some(output) = self.output.as_mut() {
+            output.release_capture_access();
+        }
+    }
+
+    fn release_idle_resources(&mut self) {
+        if let Some(mut output) = self.output.take() {
+            output.release_capture_access();
+        }
+    }
+
+    fn capture_access_active(&self) -> bool {
+        self.output
+            .as_ref()
+            .is_some_and(OutputCapturer::capture_access_active)
     }
 }
 
@@ -2941,8 +3665,7 @@ unsafe impl Send for SendHmon {}
 pub(crate) struct WindowsDxgiWindowCapturer {
     hwnd: SendHwnd,
     resolver: Arc<MonitorResolver>,
-    _com: super::com::CoInitGuard,
-    /// The DXGI output capturer for the monitor the window is on.
+    /// Created on demand for the monitor the window is on.
     output: Option<OutputCapturer>,
     /// Cached monitor handle so we can detect when the window moves
     /// to a different monitor.
@@ -2952,6 +3675,8 @@ pub(crate) struct WindowsDxgiWindowCapturer {
     capture_mode: CaptureMode,
     gpu_hdr_conversion_enabled: bool,
     hdr_tonemap_lut_enabled: bool,
+    // Keep last so all D3D/DXGI interfaces drop before CoUninitialize.
+    _com: super::com::CoInitGuard,
 }
 
 impl WindowsDxgiWindowCapturer {
@@ -2977,26 +3702,28 @@ impl WindowsDxgiWindowCapturer {
         })?;
 
         let monitor_id = hmonitor_to_monitor_id(hmon, &resolver)?;
-        let resolved = resolver.resolve_monitor(&monitor_id)?;
-        let output = OutputCapturer::new(&resolved).map_err(|e| {
-            CaptureError::BackendUnavailable(format!(
-                "failed to create DXGI duplication for window's monitor: {e}"
-            ))
-        })?;
+        resolver.resolve_monitor(&monitor_id)?;
         let current_hmon = SendHmon(hmon);
         let current_monitor_rect = monitor_rect(hmon)?;
 
         Ok(Self {
             hwnd: SendHwnd(hwnd),
             resolver,
-            _com: com,
-            output: Some(output),
+            output: None,
             current_hmon,
             current_monitor_rect,
             capture_mode: CaptureMode::Snapshot,
             gpu_hdr_conversion_enabled: true,
             hdr_tonemap_lut_enabled: true,
+            _com: com,
         })
+    }
+
+    fn ensure_output(&mut self) -> CaptureResult<&mut OutputCapturer> {
+        if self.output.is_none() {
+            self.reinit_for_monitor(self.current_hmon.0)?;
+        }
+        Ok(self.output_mut())
     }
 
     fn output_mut(&mut self) -> &mut OutputCapturer {
@@ -3008,12 +3735,19 @@ impl WindowsDxgiWindowCapturer {
     /// Re-create the DXGI output capturer when the window moves to a
     /// different monitor or after access-lost recovery.
     fn reinit_for_monitor(&mut self, hmon: HMONITOR) -> CaptureResult<()> {
+        if let Some(mut output) = self.output.take() {
+            output.release_capture_access();
+        }
         let monitor_id = hmonitor_to_monitor_id(hmon, &self.resolver)?;
         let resolved = self.resolver.resolve_monitor(&monitor_id)?;
         let capture_mode = self.capture_mode;
         let gpu_hdr_conversion_enabled = self.gpu_hdr_conversion_enabled;
         let hdr_tonemap_lut_enabled = self.hdr_tonemap_lut_enabled;
-        self.output = Some(OutputCapturer::new(&resolved)?);
+        self.output = Some(OutputCapturer::new(&resolved).map_err(|error| {
+            CaptureError::BackendUnavailable(format!(
+                "failed to initialize DXGI capture for window's monitor: {error}"
+            ))
+        })?);
         self.output_mut().set_capture_mode(capture_mode);
         self.output_mut()
             .set_gpu_hdr_conversion(gpu_hdr_conversion_enabled);
@@ -3066,6 +3800,12 @@ impl WindowsDxgiWindowCapturer {
             }
         }
 
+        if !rect_within_rect(win_rect, &self.current_monitor_rect) {
+            return Err(CaptureError::BackendUnavailable(
+                "DXGI window capture requires the window to fit within one monitor".into(),
+            ));
+        }
+
         let blit = match Self::window_blit_on_monitor(&self.current_monitor_rect, win_rect) {
             Ok(blit) => blit,
             Err(error) => {
@@ -3111,6 +3851,7 @@ impl WindowsDxgiWindowCapturer {
         }
 
         let blit = self.resolve_window_blit(hwnd, &win_rect)?;
+        self.ensure_output()?;
 
         let mut frame = reuse.unwrap_or_else(Frame::empty);
         let has_pixels = !frame.as_rgba_bytes().is_empty();
@@ -3120,46 +3861,56 @@ impl WindowsDxgiWindowCapturer {
         frame.ensure_rgba_capacity(blit.width, blit.height)?;
         frame.reset_metadata();
 
-        let sample =
-            match self
-                .output_mut()
-                .capture_region_into(blit, &mut frame, destination_has_history)
-            {
-                Ok(sample) => sample,
-                Err(CaptureError::MonitorLost) | Err(CaptureError::AccessLost) => {
-                    let retry_hmon = monitor_from_window(hwnd).ok_or_else(|| {
-                        CaptureError::BackendUnavailable("window is not on any monitor".into())
-                    })?;
-                    self.reinit_for_monitor(retry_hmon)?;
-                    win_rect = RECT::default();
-                    unsafe { GetWindowRect(hwnd, &mut win_rect) }
-                        .ok()
-                        .context("GetWindowRect failed during DXGI window capture recovery")
-                        .map_err(CaptureError::platform)?;
-                    let retry_blit = self.resolve_window_blit(hwnd, &win_rect)?;
-                    let retry_has_history = history_enabled
-                        && frame.width() == retry_blit.width
-                        && frame.height() == retry_blit.height
-                        && !frame.as_rgba_bytes().is_empty();
-                    frame.ensure_rgba_capacity(retry_blit.width, retry_blit.height)?;
-                    self.output_mut().capture_region_into(
-                        retry_blit,
-                        &mut frame,
-                        retry_has_history,
-                    )?
-                }
-                Err(e) => return Err(e),
-            };
+        let sample = match self.output_mut().capture_region_into(
+            blit,
+            &mut frame,
+            destination_has_history,
+            true,
+        ) {
+            Ok(sample) => sample,
+            Err(CaptureError::MonitorLost) | Err(CaptureError::AccessLost) => {
+                let retry_hmon = monitor_from_window(hwnd).ok_or_else(|| {
+                    CaptureError::BackendUnavailable("window is not on any monitor".into())
+                })?;
+                self.reinit_for_monitor(retry_hmon)?;
+                win_rect = RECT::default();
+                unsafe { GetWindowRect(hwnd, &mut win_rect) }
+                    .ok()
+                    .context("GetWindowRect failed during DXGI window capture recovery")
+                    .map_err(CaptureError::platform)?;
+                let retry_blit = self.resolve_window_blit(hwnd, &win_rect)?;
+                let retry_has_history = history_enabled
+                    && frame.width() == retry_blit.width
+                    && frame.height() == retry_blit.height
+                    && !frame.as_rgba_bytes().is_empty();
+                frame.ensure_rgba_capacity(retry_blit.width, retry_blit.height)?;
+                self.output_mut().capture_region_into(
+                    retry_blit,
+                    &mut frame,
+                    retry_has_history,
+                    true,
+                )?
+            }
+            Err(e) => return Err(e),
+        };
 
         frame
             .metadata
-            .set_timing(sample.capture_time, sample.present_time_qpc);
+            .set_timing(sample.capture_time, sample.raw_os_ticks);
         frame.metadata.is_duplicate = sample.is_duplicate;
         Ok(frame)
     }
 }
 
 impl crate::backend::MonitorCapturer for WindowsDxgiWindowCapturer {
+    fn backend_kind(&self) -> CaptureBackendKind {
+        CaptureBackendKind::DxgiDuplication
+    }
+
+    fn prewarm_environment(&mut self) -> CaptureResult<()> {
+        self.ensure_output().map(|_| ())
+    }
+
     fn capture(&mut self, reuse: Option<Frame>) -> CaptureResult<Frame> {
         self.capture_internal(reuse, None)
     }
@@ -3172,29 +3923,90 @@ impl crate::backend::MonitorCapturer for WindowsDxgiWindowCapturer {
         self.capture_internal(reuse, Some(destination_has_history))
     }
 
-    fn set_capture_mode(&mut self, mode: CaptureMode) {
+    fn set_capture_mode(&mut self, mode: CaptureMode) -> CaptureResult<()> {
         self.capture_mode = mode;
-        self.output_mut().set_capture_mode(mode);
+        if let Some(output) = self.output.as_mut() {
+            output.set_capture_mode(mode);
+        }
+        Ok(())
     }
 
-    fn set_gpu_hdr_conversion(&mut self, enabled: bool) {
+    fn set_gpu_hdr_conversion(&mut self, enabled: bool) -> CaptureResult<()> {
         self.gpu_hdr_conversion_enabled = enabled;
-        self.output_mut().set_gpu_hdr_conversion(enabled);
+        if let Some(output) = self.output.as_mut() {
+            output.set_gpu_hdr_conversion(enabled);
+        }
+        Ok(())
     }
 
-    fn set_hdr_tonemap_lut(&mut self, enabled: bool) {
+    fn set_hdr_tonemap_lut(&mut self, enabled: bool) -> CaptureResult<()> {
         self.hdr_tonemap_lut_enabled = enabled;
-        self.output_mut().set_hdr_tonemap_lut(enabled);
+        if let Some(output) = self.output.as_mut() {
+            output.set_hdr_tonemap_lut(enabled);
+        }
+        Ok(())
     }
 
     fn sample_cursor(&mut self) -> CaptureResult<Option<CursorSnapshot>> {
-        self.output_mut().sample_cursor()
+        match self.output.as_mut() {
+            Some(output) => output.sample_cursor(),
+            None => Ok(None),
+        }
+    }
+
+    fn release_capture_access(&mut self) {
+        if let Some(output) = self.output.as_mut() {
+            output.release_capture_access();
+        }
+    }
+
+    fn release_idle_resources(&mut self) {
+        if let Some(mut output) = self.output.take() {
+            output.release_capture_access();
+        }
+    }
+
+    fn capture_access_active(&self) -> bool {
+        self.output
+            .as_ref()
+            .is_some_and(OutputCapturer::capture_access_active)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn snapshot_acquisition_is_bounded_and_requires_a_presented_frame() {
+        assert_eq!(SNAPSHOT_ACQUISITION_POLICY.attempts, 3);
+        assert_eq!(SNAPSHOT_ACQUISITION_POLICY.timeout_ms, 16);
+        assert!(SNAPSHOT_ACQUISITION_POLICY.require_present_time);
+    }
+
+    #[test]
+    fn skip_submit_copy_requires_fastpath_and_pending_state() {
+        assert!(!should_skip_screenrecord_submit_copy(
+            false, true, true, false
+        ));
+        assert!(!should_skip_screenrecord_submit_copy(
+            true, false, true, false
+        ));
+    }
+
+    #[test]
+    fn skip_submit_copy_triggers_for_duplicate_frames() {
+        assert!(should_skip_screenrecord_submit_copy(
+            true, true, true, false
+        ));
+    }
+
+    #[test]
+    fn skip_submit_copy_triggers_for_empty_dirty_updates() {
+        assert!(should_skip_screenrecord_submit_copy(
+            true, true, false, true
+        ));
+    }
 
     #[test]
     fn screenshot_readback_short_circuit_requires_screenshot_mode() {
@@ -3222,30 +4034,6 @@ mod tests {
             true,
             true
         ));
-    }
-
-    #[test]
-    fn recording_duplicate_requires_present_timestamp_identity() {
-        assert!(!frame_pixels_unchanged_for_mode(
-            CaptureMode::Continuous,
-            false,
-            true
-        ));
-        assert!(frame_pixels_unchanged_for_mode(
-            CaptureMode::Continuous,
-            true,
-            false
-        ));
-        assert!(frame_pixels_unchanged_for_mode(
-            CaptureMode::Snapshot,
-            false,
-            true
-        ));
-    }
-
-    #[test]
-    fn continuous_region_readback_cannot_return_a_delayed_slot() {
-        assert_eq!(DXGI_REGION_STAGING_SLOTS, 1);
     }
 
     #[test]
@@ -3478,6 +4266,143 @@ mod tests {
             DXGI_DIRTY_GPU_COPY_LOW_LATENCY_MAX_RECTS + 1
         ];
         assert!(!should_use_low_latency_dirty_gpu_copy(&rects, 1920, 1080));
+    }
+
+    #[test]
+    fn monitor_low_latency_dirty_gpu_mode_requires_recording_and_size_match() {
+        assert!(!choose_monitor_low_latency_dirty_gpu_mode(
+            false, true, false, false, true, false, true, true
+        ));
+        assert!(!choose_monitor_low_latency_dirty_gpu_mode(
+            true, true, false, false, false, false, true, true
+        ));
+    }
+
+    #[test]
+    fn monitor_low_latency_dirty_gpu_mode_sticks_for_duplicate_frames_when_active() {
+        assert!(choose_monitor_low_latency_dirty_gpu_mode(
+            true, true, false, true, true, true, false, false
+        ));
+        assert!(!choose_monitor_low_latency_dirty_gpu_mode(
+            true, true, false, false, true, true, false, false
+        ));
+    }
+
+    #[test]
+    fn monitor_low_latency_dirty_gpu_mode_force_flag_uses_regular_gpu_threshold() {
+        assert!(choose_monitor_low_latency_dirty_gpu_mode(
+            true, true, true, false, true, false, true, false
+        ));
+        assert!(!choose_monitor_low_latency_dirty_gpu_mode(
+            true, true, true, false, true, false, false, true
+        ));
+    }
+
+    fn test_blit(width: u32, height: u32) -> CaptureBlitRegion {
+        CaptureBlitRegion {
+            src_x: 0,
+            src_y: 0,
+            width,
+            height,
+            dst_x: 0,
+            dst_y: 0,
+        }
+    }
+
+    #[test]
+    fn window_low_latency_mode_prefers_small_regions() {
+        assert!(choose_window_low_latency_region_mode(
+            true,
+            true,
+            true,
+            false,
+            1_048_576,
+            test_blit(1280, 720),
+            false
+        ));
+    }
+
+    #[test]
+    fn window_low_latency_mode_requires_recording_preference_and_enablement() {
+        assert!(!choose_window_low_latency_region_mode(
+            false,
+            true,
+            true,
+            true,
+            DXGI_WINDOW_LOW_LATENCY_MAX_PIXELS_DEFAULT,
+            test_blit(1280, 720),
+            true
+        ));
+        assert!(!choose_window_low_latency_region_mode(
+            true,
+            false,
+            true,
+            true,
+            DXGI_WINDOW_LOW_LATENCY_MAX_PIXELS_DEFAULT,
+            test_blit(1280, 720),
+            true
+        ));
+        assert!(!choose_window_low_latency_region_mode(
+            true,
+            true,
+            false,
+            true,
+            DXGI_WINDOW_LOW_LATENCY_MAX_PIXELS_DEFAULT,
+            test_blit(1280, 720),
+            true
+        ));
+    }
+
+    #[test]
+    fn window_low_latency_mode_uses_pipeline_for_large_regions_without_sparse_damage() {
+        assert!(!choose_window_low_latency_region_mode(
+            true,
+            true,
+            true,
+            false,
+            1_048_576,
+            test_blit(1920, 1080),
+            false
+        ));
+    }
+
+    #[test]
+    fn window_low_latency_mode_rejects_zero_sized_regions_without_force() {
+        assert!(!choose_window_low_latency_region_mode(
+            true,
+            true,
+            true,
+            false,
+            DXGI_WINDOW_LOW_LATENCY_MAX_PIXELS_DEFAULT,
+            test_blit(0, 720),
+            false
+        ));
+    }
+
+    #[test]
+    fn window_low_latency_mode_keeps_low_latency_for_sparse_large_updates() {
+        assert!(choose_window_low_latency_region_mode(
+            true,
+            true,
+            true,
+            false,
+            1_048_576,
+            test_blit(1920, 1080),
+            true
+        ));
+    }
+
+    #[test]
+    fn window_low_latency_mode_force_flag_overrides_thresholds() {
+        assert!(choose_window_low_latency_region_mode(
+            true,
+            true,
+            true,
+            true,
+            1,
+            test_blit(3840, 2160),
+            false
+        ));
     }
 
     #[test]

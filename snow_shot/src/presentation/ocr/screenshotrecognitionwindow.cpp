@@ -3,20 +3,29 @@
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotocrtextlayer.h"
 #include "snow_shot/presentation/screenshottableeditor.h"
+#include "snow_shot/presentation/windowshortcutmanager.h"
 #include "theme/theme_manager.h"
 #include "widgets/input_text_edit.h"
 #include "widgets/scroll_area.h"
+#include "widgets/spin.h"
 
 #include <QApplication>
+#include <QChildEvent>
 #include <QClipboard>
+#include <QContextMenuEvent>
+#include <QEvent>
 #include <QFocusEvent>
 #include <QFrame>
+#include <QGraphicsScene>
+#include <QGraphicsTextItem>
+#include <QGraphicsView>
 #include <QKeyEvent>
+#include <QLayout>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPalette>
 #include <QResizeEvent>
 #include <QScreen>
-#include <QShortcut>
 #include <QSignalBlocker>
 #include <QSizePolicy>
 #include <QStackedLayout>
@@ -70,11 +79,136 @@ bool isHttpUrl(const QString& text, QUrl* result = nullptr) {
     }
     return valid;
 }
+
+QList<QKeyCombination> commandCombinations(Qt::Key key) {
+    QList<QKeyCombination> combinations;
+    constexpr Qt::KeyboardModifier optionalModifiers[] = {
+        Qt::ShiftModifier,
+        Qt::AltModifier,
+        Qt::KeypadModifier,
+    };
+    for (int optionalMask = 0; optionalMask < 8; ++optionalMask) {
+        Qt::KeyboardModifiers optional;
+        for (int index = 0; index < 3; ++index) {
+            if ((optionalMask & (1 << index)) != 0) {
+                optional |= optionalModifiers[index];
+            }
+        }
+        combinations.push_back(QKeyCombination(optional | Qt::ControlModifier, key));
+        combinations.push_back(QKeyCombination(optional | Qt::MetaModifier, key));
+        combinations.push_back(
+            QKeyCombination(optional | Qt::ControlModifier | Qt::MetaModifier, key));
+    }
+    return combinations;
+}
+
+bool focusInside(const QWidget* container, const QWidget* focus) {
+    return container != nullptr && focus != nullptr &&
+           (container == focus || container->isAncestorOf(focus));
+}
 }  // namespace
+
+class ScreenshotFormattedTextLayer final : public QGraphicsView {
+  public:
+    explicit ScreenshotFormattedTextLayer(QWidget* parent = nullptr)
+        : QGraphicsView(parent), m_scene(new QGraphicsScene(this)),
+          m_textItem(new QGraphicsTextItem) {
+        setObjectName(QStringLiteral("screenshotClipboardText"));
+        setScene(m_scene);
+        m_scene->addItem(m_textItem);
+        setFrameShape(QFrame::NoFrame);
+        setContentsMargins(0, 0, 0, 0);
+        setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        setAlignment(Qt::AlignLeft | Qt::AlignTop);
+        const QColor background = QGuiApplication::palette().color(QPalette::Base);
+        QPalette layerPalette = palette();
+        layerPalette.setColor(QPalette::Base, background);
+        layerPalette.setColor(QPalette::Window, background);
+        setPalette(layerPalette);
+        viewport()->setPalette(layerPalette);
+        viewport()->setAutoFillBackground(true);
+        setBackgroundBrush(background);
+        setFocusPolicy(Qt::StrongFocus);
+        setInteractive(true);
+        setOptimizationFlag(QGraphicsView::DontSavePainterState, true);
+        setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing |
+                       QPainter::SmoothPixmapTransform);
+        setStyleSheet(
+            QStringLiteral("QGraphicsView#screenshotClipboardText { border: none; }"));
+
+        m_textItem->setObjectName(QStringLiteral("screenshotClipboardTextItem"));
+        m_textItem->setTextInteractionFlags(Qt::TextSelectableByMouse |
+                                            Qt::TextSelectableByKeyboard);
+        m_textItem->setOpenExternalLinks(false);
+        m_textItem->setFlag(QGraphicsItem::ItemIsFocusable, true);
+        m_textItem->setAcceptedMouseButtons(Qt::LeftButton);
+        m_textItem->hide();
+        hide();
+    }
+
+    ~ScreenshotFormattedTextLayer() override {
+        clearDocument();
+    }
+
+    void setDocument(std::shared_ptr<QTextDocument> document, const QRectF& canvasRect,
+                     qreal devicePixelRatio) {
+        clearDocument();
+        if (document == nullptr || !canvasRect.isValid() || canvasRect.isEmpty() ||
+            !std::isfinite(devicePixelRatio) || devicePixelRatio <= 0.0) {
+            return;
+        }
+        m_document = std::move(document);
+        m_canvasRect = canvasRect.normalized();
+        m_textItem->setDocument(m_document.get());
+        m_textItem->setPos(m_canvasRect.topLeft());
+        m_textItem->setScale(devicePixelRatio);
+        m_textItem->show();
+    }
+
+    void clearDocument() {
+        if (m_textItem != nullptr) {
+            m_textItem->clearFocus();
+            m_textItem->hide();
+            m_textItem->setScale(1.0);
+            m_textItem->setDocument(nullptr);
+        }
+        m_document.reset();
+        m_canvasRect = {};
+        hide();
+    }
+
+    void synchronize(const QTransform& canvasToViewTransform, const QRect& viewportRect) {
+        if (m_document == nullptr || m_canvasRect.isEmpty() || viewportRect.isEmpty()) {
+            hide();
+            return;
+        }
+        if (geometry() != viewportRect) {
+            setGeometry(viewportRect);
+        }
+        setSceneRect(m_canvasRect);
+        setTransform(canvasToViewTransform, false);
+        show();
+        raise();
+        viewport()->update();
+    }
+
+    void focusText() {
+        setFocus(Qt::OtherFocusReason);
+        m_textItem->setFocus(Qt::OtherFocusReason);
+    }
+
+  private:
+    QGraphicsScene* m_scene = nullptr;
+    QGraphicsTextItem* m_textItem = nullptr;
+    std::shared_ptr<QTextDocument> m_document;
+    QRectF m_canvasRect;
+};
 
 ScreenshotRecognitionWindow::ScreenshotRecognitionWindow(
     ScreenshotRecognitionWindowActions actions, QWidget* parent,
-    PresentationMode presentationMode)
+    PresentationMode presentationMode,
+    snow_shot::presentation::WindowShortcutManager* shortcutManager)
     : QWidget(parent,
                presentationMode == PresentationMode::EmbeddedChild
                    ? Qt::Widget
@@ -83,6 +217,13 @@ ScreenshotRecognitionWindow::ScreenshotRecognitionWindow(
       m_stack(new QStackedLayout(this)),
       m_textLayer(new ScreenshotOcrTextLayer(this)),
       m_presentationMode(presentationMode) {
+    if (shortcutManager == nullptr) {
+        m_ownedShortcutManager =
+            std::make_unique<snow_shot::presentation::WindowShortcutManager>();
+        shortcutManager = m_ownedShortcutManager.get();
+    }
+    m_shortcutManager = shortcutManager;
+    m_shortcutManager->addScopeWindow(this);
     setObjectName(QStringLiteral("screenshotRecognitionWindow"));
     if (m_presentationMode == PresentationMode::TopLevelWindow) {
         setAttribute(Qt::WA_TranslucentBackground, true);
@@ -92,22 +233,20 @@ ScreenshotRecognitionWindow::ScreenshotRecognitionWindow(
     setMouseTracking(true);
 
     m_stack->setContentsMargins(0, 0, 0, 0);
+    // This window is an exact overlay for the screenshot selection. Child pages such as
+    // QGraphicsView and AdTextEdit have useful standalone minimum size hints, but those hints
+    // must never enlarge the overlay and desynchronize it from the selected pixels.
+    m_stack->setSizeConstraint(QLayout::SetNoConstraint);
     m_stack->setStackingMode(QStackedLayout::StackOne);
     m_stack->addWidget(m_textLayer);
     m_textLayer->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     m_textLayer->viewport()->setAttribute(Qt::WA_TransparentForMouseEvents, true);
 
-    auto* cancelShortcut = new QShortcut(QKeySequence(Qt::Key_Escape), this);
-    cancelShortcut->setContext(Qt::WidgetWithChildrenShortcut);
-    connect(cancelShortcut, &QShortcut::activated, this, [this]() {
-        if (m_tableEditor != nullptr && m_tableEditor->cancelActiveEdit()) {
-            return;
-        }
-        m_actions.handleCancel();
-    });
+    registerWindowShortcuts();
 }
 
 ScreenshotRecognitionWindow::~ScreenshotRecognitionWindow() {
+    clearFormattedText();
     if (m_textEditor != nullptr) {
         const QSignalBlocker blocker(m_textEditor);
         m_textEditor->setDocument(nullptr);
@@ -117,14 +256,32 @@ ScreenshotRecognitionWindow::~ScreenshotRecognitionWindow() {
     }
 }
 
+void ScreenshotRecognitionWindow::installSelectionResizeEventFilters(QWidget* widget) {
+    if (widget == nullptr) {
+        return;
+    }
+    if (widget != this) {
+        widget->installEventFilter(this);
+    }
+    const QList<QWidget*> children = widget->findChildren<QWidget*>();
+    for (QWidget* child : children) {
+        if (child != nullptr) {
+            child->installEventFilter(this);
+        }
+    }
+}
+
 bool ScreenshotRecognitionWindow::present(const Config& config) {
     if (config.screen == nullptr || !config.geometry.isValid() || config.geometry.isEmpty() ||
         !config.canvasSelection.isValid() ||
-        config.canvasSelection.isEmpty()) {
+        config.canvasSelection.isEmpty() ||
+        !std::isfinite(config.formattedTextDevicePixelRatio) ||
+        config.formattedTextDevicePixelRatio <= 0.0) {
         return false;
     }
 
     m_canvasSelection = config.canvasSelection.normalized();
+    m_formattedTextDevicePixelRatio = config.formattedTextDevicePixelRatio;
     m_presentationMode = config.presentationMode;
     if (m_presentationMode == PresentationMode::TopLevelWindow) {
         static_cast<void>(winId());
@@ -144,6 +301,20 @@ bool ScreenshotRecognitionWindow::present(const Config& config) {
     }
     setFocus(Qt::OtherFocusReason);
     synchronizeTextLayer();
+    installSelectionResizeEventFilters(this);
+    return true;
+}
+
+bool ScreenshotRecognitionWindow::updateSelectionGeometry(const QRect& geometry,
+                                                           const QRectF& canvasSelection) {
+    if (!geometry.isValid() || geometry.isEmpty() || !canvasSelection.isValid() ||
+        canvasSelection.isEmpty()) {
+        return false;
+    }
+    m_canvasSelection = canvasSelection.normalized();
+    setGeometry(geometry);
+    synchronizeTextLayer();
+    update();
     return true;
 }
 
@@ -155,6 +326,7 @@ ScreenshotRecognitionWindow::PresentationMode ScreenshotRecognitionWindow::prese
 void ScreenshotRecognitionWindow::setOcrPresentation(
     std::shared_ptr<ScreenshotOcrPresentation> presentation) {
     hideTextEditor();
+    clearFormattedText();
     clearTableSession();
     clearQrContents();
     m_ocrPresentation = std::move(presentation);
@@ -170,14 +342,47 @@ void ScreenshotRecognitionWindow::clearOcrPresentation() {
     unsetCursor();
 }
 
+void ScreenshotRecognitionWindow::showFormattedText(std::shared_ptr<QTextDocument> document) {
+    if (document == nullptr) {
+        return;
+    }
+    hideTextEditor();
+    clearOcrPresentation();
+    clearTableSession();
+    clearQrContents();
+    if (m_formattedTextLayer == nullptr) {
+        m_formattedTextLayer = new ScreenshotFormattedTextLayer(this);
+        m_stack->addWidget(m_formattedTextLayer);
+        installSelectionResizeEventFilters(m_formattedTextLayer);
+    }
+    m_formattedTextLayer->setDocument(std::move(document), m_canvasSelection,
+                                      m_formattedTextDevicePixelRatio);
+    m_stack->setCurrentWidget(m_formattedTextLayer);
+    synchronizeTextLayer();
+    m_formattedTextLayer->focusText();
+}
+
+void ScreenshotRecognitionWindow::clearFormattedText() {
+    if (m_formattedTextLayer == nullptr) {
+        return;
+    }
+    m_formattedTextLayer->clearDocument();
+    m_stack->removeWidget(m_formattedTextLayer);
+    delete m_formattedTextLayer;
+    m_formattedTextLayer = nullptr;
+    m_stack->setCurrentWidget(m_textLayer);
+}
+
 void ScreenshotRecognitionWindow::setTableSession(
     std::shared_ptr<ScreenshotTableEditingSession> session) {
     hideTextEditor();
+    clearFormattedText();
     clearOcrPresentation();
     clearQrContents();
     if (m_tableEditor == nullptr) {
         m_tableEditor = new ScreenshotTableEditor(this);
         m_stack->addWidget(m_tableEditor);
+        installSelectionResizeEventFilters(m_tableEditor);
         connect(m_tableEditor, &ScreenshotTableEditor::commandStateChanged, this,
                 [this](const ScreenshotTableCommandState& state) {
                     if (m_actions.handleTableCommandStateChanged) {
@@ -246,11 +451,13 @@ void ScreenshotRecognitionWindow::commitActiveTableEdit() {
     }
 }
 
-void ScreenshotRecognitionWindow::showTextEditor(QTextDocument* document) {
+void ScreenshotRecognitionWindow::showTextEditor(QTextDocument* document, bool readOnly,
+                                                 bool streaming) {
     if (document == nullptr) {
         return;
     }
     clearOcrPresentation();
+    clearFormattedText();
     clearTableSession();
     clearQrContents();
     if (m_textEditor == nullptr) {
@@ -266,19 +473,25 @@ void ScreenshotRecognitionWindow::showTextEditor(QTextDocument* document) {
         editor->setVariant(adqt::widgets::AdTextEdit::Variant::Borderless);
         m_textEditor->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
         m_textEditor->setAcceptRichText(false);
-        m_textEditor->installEventFilter(this);
         editorLayout->addWidget(editor);
+        m_textEditorSpin = new adqt::widgets::AdSpin(m_textEditorContainer);
+        m_textEditorSpin->setObjectName(QStringLiteral("screenshotOcrTranslationSpin"));
+        m_textEditorSpin->setSizeClass(adqt::widgets::AdSpin::SizeClass::Small);
+        m_textEditorSpin->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+        m_textEditorSpin->hide();
         applyTextEditorContainerBackground(m_textEditorContainer);
         connect(&adqt::theme::ThemeManager::instance(), &adqt::theme::ThemeManager::themeChanged,
                 m_textEditorContainer, [container = m_textEditorContainer]() {
                     applyTextEditorContainerBackground(container);
                 });
         m_stack->addWidget(m_textEditorContainer);
+        installSelectionResizeEventFilters(m_textEditorContainer);
         connect(editor, &adqt::widgets::AdTextEdit::textEdited, this,
                 [this](const QString& text) { m_actions.handleTextEdited(text); });
     }
     const QSignalBlocker blocker(m_textEditor);
     m_textEditor->setDocument(document);
+    m_textEditor->setReadOnly(readOnly);
     const adqt::theme::ThemeMapToken theme =
         adqt::theme::ThemeManager::instance().resolveTheme(m_textEditor);
     QFont editorFont = theme.appFont.family().isEmpty() ? m_textEditor->font() : theme.appFont;
@@ -286,7 +499,120 @@ void ScreenshotRecognitionWindow::showTextEditor(QTextDocument* document) {
     m_textEditor->setFont(editorFont);
     document->setDefaultFont(editorFont);
     m_stack->setCurrentWidget(m_textEditorContainer);
-    static_cast<adqt::widgets::AdTextEdit*>(m_textEditor)->focusEditor();
+    setTextEditorStreaming(streaming);
+    if (!readOnly) {
+        static_cast<adqt::widgets::AdTextEdit*>(m_textEditor)->focusEditor();
+    }
+}
+
+void ScreenshotRecognitionWindow::registerWindowShortcuts() {
+    using ShortcutManager = snow_shot::presentation::WindowShortcutManager;
+
+    ShortcutManager::Binding cancel;
+    cancel.id = QStringLiteral("recognition.cancel");
+    cancel.keyCombinations = {QKeyCombination(Qt::NoModifier, Qt::Key_Escape)};
+    cancel.priority = ShortcutManager::StandardPriority::WindowCommand;
+    cancel.canActivate = [this](const auto&) { return isVisible(); };
+    cancel.activate = [this](const auto&) {
+        if (m_tableEditor == nullptr || !m_tableEditor->cancelActiveEdit()) {
+            m_actions.handleCancel();
+        }
+        return true;
+    };
+    static_cast<void>(m_shortcutManager->addBinding(this, std::move(cancel)));
+
+    const auto ocrCommandsAllowed = [this](const ShortcutManager::ActivationContext& context) {
+        QWidget* focus = context.focusWidget;
+        return isVisible() && m_ocrPresentation != nullptr &&
+               !focusInside(m_textEditorContainer, focus) &&
+               !focusInside(m_tableEditor, focus) && !focusInside(m_qrBrowser, focus) &&
+               !focusInside(m_formattedTextLayer, focus);
+    };
+
+    ShortcutManager::Binding selectAll;
+    selectAll.id = QStringLiteral("recognition.select_all");
+    selectAll.keyCombinations = commandCombinations(Qt::Key_A);
+    selectAll.priority = ShortcutManager::StandardPriority::WindowCommand;
+    selectAll.canActivate = ocrCommandsAllowed;
+    selectAll.activate = [this](const auto&) {
+        const quint64 previousRevision = m_ocrPresentation->selectionRevision();
+        m_ocrPresentation->selectAll();
+        if (m_ocrPresentation->selectionRevision() != previousRevision) {
+            m_textLayer->updateSelection();
+        }
+        return true;
+    };
+    static_cast<void>(m_shortcutManager->addBinding(this, std::move(selectAll)));
+
+    ShortcutManager::Binding copy;
+    copy.id = QStringLiteral("recognition.copy");
+    copy.keyCombinations = commandCombinations(Qt::Key_C);
+    copy.priority = ShortcutManager::StandardPriority::WindowCommand;
+    copy.canActivate = ocrCommandsAllowed;
+    copy.activate = [this](const auto&) {
+        QString text;
+        if (m_ocrPresentation->hasTextSelection()) {
+            text = m_ocrPresentation->selectedText();
+        } else {
+            QStringList lines;
+            lines.reserve(m_ocrPresentation->lines.size());
+            for (const ScreenshotOcrLine& line : m_ocrPresentation->lines) {
+                lines.push_back(line.text);
+            }
+            text = lines.join(QLatin1Char('\n'));
+        }
+        if (!text.isEmpty() && QApplication::clipboard() != nullptr) {
+            QApplication::clipboard()->setText(text);
+        }
+        return true;
+    };
+    static_cast<void>(m_shortcutManager->addBinding(this, std::move(copy)));
+
+    const auto textEditorActive = [this](const ShortcutManager::ActivationContext& context) {
+        return focusInside(m_textEditor, context.focusWidget);
+    };
+    ShortcutManager::Binding undo;
+    undo.id = QStringLiteral("recognition.text.undo");
+    undo.keyCombinations = {
+        QKeyCombination(Qt::ControlModifier, Qt::Key_Z),
+        QKeyCombination(Qt::MetaModifier, Qt::Key_Z),
+    };
+    undo.priority = ShortcutManager::StandardPriority::WindowCommand;
+    undo.canActivate = textEditorActive;
+    undo.activate = [this](const auto&) {
+        m_actions.handleUndoTextEdit();
+        return true;
+    };
+    static_cast<void>(m_shortcutManager->addBinding(this, std::move(undo)));
+
+    ShortcutManager::Binding redo;
+    redo.id = QStringLiteral("recognition.text.redo");
+    redo.keyCombinations = {
+        QKeyCombination(Qt::ControlModifier, Qt::Key_Y),
+        QKeyCombination(Qt::ControlModifier | Qt::ShiftModifier, Qt::Key_Z),
+        QKeyCombination(Qt::MetaModifier | Qt::ShiftModifier, Qt::Key_Z),
+    };
+    redo.priority = ShortcutManager::StandardPriority::WindowCommand;
+    redo.canActivate = textEditorActive;
+    redo.activate = [this](const auto&) {
+        m_actions.handleRedoTextEdit();
+        return true;
+    };
+    static_cast<void>(m_shortcutManager->addBinding(this, std::move(redo)));
+}
+
+void ScreenshotRecognitionWindow::setTextEditorStreaming(bool streaming) {
+    if (m_textEditor != nullptr) {
+        m_textEditor->setReadOnly(streaming);
+    }
+    if (m_textEditorSpin != nullptr) {
+        m_textEditorSpin->setSpinning(streaming);
+        m_textEditorSpin->setVisible(streaming);
+        if (streaming) {
+            updateTextEditorSpinGeometry();
+            m_textEditorSpin->raise();
+        }
+    }
 }
 
 void ScreenshotRecognitionWindow::hideTextEditor() {
@@ -303,11 +629,13 @@ void ScreenshotRecognitionWindow::hideTextEditor() {
     delete m_textEditorContainer;
     m_textEditorContainer = nullptr;
     m_textEditor = nullptr;
+    m_textEditorSpin = nullptr;
     m_stack->setCurrentWidget(m_textLayer);
 }
 
 void ScreenshotRecognitionWindow::showQrContents(const QStringList& contents) {
     hideTextEditor();
+    clearFormattedText();
     clearOcrPresentation();
     clearTableSession();
     if (m_qrBrowser == nullptr) {
@@ -325,6 +653,7 @@ void ScreenshotRecognitionWindow::showQrContents(const QStringList& contents) {
         m_qrBrowser->setOpenExternalLinks(false);
         m_qrBrowser->setTextInteractionFlags(Qt::TextBrowserInteraction);
         m_stack->addWidget(m_qrBrowser);
+        installSelectionResizeEventFilters(m_qrBrowser);
         connect(m_qrBrowser, &QTextBrowser::anchorClicked, this,
                 [this](const QUrl& url) { m_actions.handleLinkActivated(url); });
     }
@@ -398,14 +727,141 @@ void ScreenshotRecognitionWindow::focusOutEvent(QFocusEvent* event) {
     QWidget::focusOutEvent(event);
 }
 
-void ScreenshotRecognitionWindow::keyPressEvent(QKeyEvent* event) {
-    if (handleRecognitionKeyPress(event)) {
+ScreenshotSelectionDragMode ScreenshotRecognitionWindow::selectionResizeDragModeAtLocalPoint(
+    const QPointF& localPosition) const {
+    return m_actions.selectionResizeDragMode(canvasPositionForLocalPoint(localPosition));
+}
+
+Qt::CursorShape ScreenshotRecognitionWindow::cursorForSelectionResize(
+    ScreenshotSelectionDragMode dragMode) {
+    switch (dragMode) {
+    case ScreenshotSelectionDragMode::TopLeft:
+    case ScreenshotSelectionDragMode::BottomRight:
+        return Qt::SizeFDiagCursor;
+    case ScreenshotSelectionDragMode::TopRight:
+    case ScreenshotSelectionDragMode::BottomLeft:
+        return Qt::SizeBDiagCursor;
+    case ScreenshotSelectionDragMode::Top:
+    case ScreenshotSelectionDragMode::Bottom:
+        return Qt::SizeVerCursor;
+    case ScreenshotSelectionDragMode::Right:
+    case ScreenshotSelectionDragMode::Left:
+        return Qt::SizeHorCursor;
+    case ScreenshotSelectionDragMode::All:
+        return Qt::SizeAllCursor;
+    case ScreenshotSelectionDragMode::None:
+    case ScreenshotSelectionDragMode::Marquee:
+    default:
+        return Qt::ArrowCursor;
+    }
+}
+
+void ScreenshotRecognitionWindow::updateSelectionResizeCursor(
+    const QPointF& localPosition) {
+    const ScreenshotSelectionDragMode dragMode =
+        selectionResizeDragModeAtLocalPoint(localPosition);
+    if (dragMode != ScreenshotSelectionDragMode::None) {
+        setCursor(cursorForSelectionResize(dragMode));
         return;
     }
-    QWidget::keyPressEvent(event);
+    if (m_ocrPresentation != nullptr) {
+        const ScreenshotOcrTextPosition position =
+            m_textLayer->textPositionAt(canvasPositionForLocalPoint(localPosition), false);
+        setCursor(position.valid() ? Qt::IBeamCursor : Qt::ArrowCursor);
+        return;
+    }
+    unsetCursor();
+}
+
+bool ScreenshotRecognitionWindow::handleSelectionResizeEvent(QObject* watched, QEvent* event) {
+    if (event == nullptr ||
+        (event->type() != QEvent::MouseButtonPress && event->type() != QEvent::MouseMove &&
+         event->type() != QEvent::MouseButtonRelease)) {
+        return false;
+    }
+
+    auto* mouseEvent = static_cast<QMouseEvent*>(event);
+    QPointF localPosition = mouseEvent->position();
+    if (auto* watchedWidget = qobject_cast<QWidget*>(watched);
+        watchedWidget != nullptr && watchedWidget != this) {
+        localPosition = QPointF(watchedWidget->mapTo(this, mouseEvent->position().toPoint()));
+    }
+    const QPointF canvasPosition = canvasPositionForLocalPoint(localPosition);
+
+    if (event->type() == QEvent::MouseButtonPress && mouseEvent->button() == Qt::LeftButton) {
+        const ScreenshotSelectionDragMode dragMode =
+            selectionResizeDragModeAtLocalPoint(localPosition);
+        if (dragMode == ScreenshotSelectionDragMode::None ||
+            !m_actions.beginSelectionResize(canvasPosition)) {
+            return false;
+        }
+        m_selectionResizeActive = true;
+        setCursor(cursorForSelectionResize(dragMode));
+        mouseEvent->accept();
+        return true;
+    }
+
+    if (event->type() == QEvent::MouseMove) {
+        if (m_selectionResizeActive) {
+            m_actions.updateSelectionResize(canvasPosition);
+            mouseEvent->accept();
+            return true;
+        }
+        updateSelectionResizeCursor(localPosition);
+        if (selectionResizeDragModeAtLocalPoint(localPosition) !=
+            ScreenshotSelectionDragMode::None) {
+            mouseEvent->accept();
+            return true;
+        }
+        return false;
+    }
+
+    if (event->type() == QEvent::MouseButtonRelease && mouseEvent->button() == Qt::LeftButton &&
+        m_selectionResizeActive) {
+        m_selectionResizeActive = false;
+        m_actions.finishSelectionResize(canvasPosition);
+        unsetCursor();
+        m_actions.selectionResizeFinished();
+        mouseEvent->accept();
+        return true;
+    }
+    return false;
+}
+
+bool ScreenshotRecognitionWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (event != nullptr && event->type() == QEvent::ChildAdded) {
+        const auto* childEvent = static_cast<const QChildEvent*>(event);
+        if (auto* childWidget = qobject_cast<QWidget*>(childEvent->child());
+            childWidget != nullptr) {
+            installSelectionResizeEventFilters(childWidget);
+        }
+    }
+    if (event != nullptr && event->type() == QEvent::ContextMenu &&
+        m_presentationMode == PresentationMode::EmbeddedChild) {
+        auto* contextMenuEvent = static_cast<QContextMenuEvent*>(event);
+        emit embeddedContextMenuRequested(contextMenuEvent->globalPos());
+        contextMenuEvent->accept();
+        return true;
+    }
+    if (handleSelectionResizeEvent(watched, event)) {
+        return true;
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+void ScreenshotRecognitionWindow::contextMenuEvent(QContextMenuEvent* event) {
+    if (event != nullptr && m_presentationMode == PresentationMode::EmbeddedChild) {
+        emit embeddedContextMenuRequested(event->globalPos());
+        event->accept();
+        return;
+    }
+    QWidget::contextMenuEvent(event);
 }
 
 void ScreenshotRecognitionWindow::mousePressEvent(QMouseEvent* event) {
+    if (handleSelectionResizeEvent(this, event)) {
+        return;
+    }
     if (event != nullptr && event->button() == Qt::LeftButton && m_ocrPresentation != nullptr) {
         const quint64 previousRevision = m_ocrPresentation->selectionRevision();
         m_ocrPresentation->beginTextSelection(
@@ -420,6 +876,9 @@ void ScreenshotRecognitionWindow::mousePressEvent(QMouseEvent* event) {
 }
 
 void ScreenshotRecognitionWindow::mouseMoveEvent(QMouseEvent* event) {
+    if (handleSelectionResizeEvent(this, event)) {
+        return;
+    }
     if (event != nullptr && m_ocrPresentation != nullptr) {
         const QPointF canvasPosition = canvasPositionForLocalPoint(event->position());
         const ScreenshotOcrTextPosition exactPosition =
@@ -441,6 +900,9 @@ void ScreenshotRecognitionWindow::mouseMoveEvent(QMouseEvent* event) {
 }
 
 void ScreenshotRecognitionWindow::mouseReleaseEvent(QMouseEvent* event) {
+    if (handleSelectionResizeEvent(this, event)) {
+        return;
+    }
     if (event != nullptr && event->button() == Qt::LeftButton && m_ocrPresentation != nullptr) {
         const quint64 previousRevision = m_ocrPresentation->selectionRevision();
         m_ocrPresentation->updateTextSelection(m_textLayer->textPositionAt(
@@ -469,21 +931,7 @@ void ScreenshotRecognitionWindow::paintEvent(QPaintEvent* event) {
 void ScreenshotRecognitionWindow::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
     synchronizeTextLayer();
-}
-
-bool ScreenshotRecognitionWindow::eventFilter(QObject* watched, QEvent* event) {
-    if (watched == m_textEditor && event != nullptr && event->type() == QEvent::KeyPress) {
-        auto* keyEvent = static_cast<QKeyEvent*>(event);
-        if (keyEvent->matches(QKeySequence::Undo)) {
-            m_actions.handleUndoTextEdit();
-            return true;
-        }
-        if (keyEvent->matches(QKeySequence::Redo)) {
-            m_actions.handleRedoTextEdit();
-            return true;
-        }
-    }
-    return QWidget::eventFilter(watched, event);
+    updateTextEditorSpinGeometry();
 }
 
 QPointF ScreenshotRecognitionWindow::canvasPositionForLocalPoint(
@@ -514,44 +962,22 @@ QTransform ScreenshotRecognitionWindow::canvasToLocalTransform() const {
     return QTransform::quadToQuad(canvasQuad, localQuad, transform) ? transform : QTransform();
 }
 
-bool ScreenshotRecognitionWindow::handleRecognitionKeyPress(QKeyEvent* event) {
-    if (event == nullptr || m_ocrPresentation == nullptr) {
-        return false;
-    }
-    const bool command = event->modifiers().testFlag(Qt::ControlModifier) ||
-                         event->modifiers().testFlag(Qt::MetaModifier);
-    if (command && event->key() == Qt::Key_A) {
-        const quint64 previousRevision = m_ocrPresentation->selectionRevision();
-        m_ocrPresentation->selectAll();
-        if (m_ocrPresentation->selectionRevision() != previousRevision) {
-            m_textLayer->updateSelection();
-        }
-        event->accept();
-        return true;
-    }
-    if (command && event->key() == Qt::Key_C) {
-        QString text;
-        if (m_ocrPresentation->hasTextSelection()) {
-            text = m_ocrPresentation->selectedText();
-        } else {
-            QStringList lines;
-            lines.reserve(m_ocrPresentation->lines.size());
-            for (const ScreenshotOcrLine& line : m_ocrPresentation->lines) {
-                lines.push_back(line.text);
-            }
-            text = lines.join(QLatin1Char('\n'));
-        }
-        if (!text.isEmpty() && QApplication::clipboard() != nullptr) {
-            QApplication::clipboard()->setText(text);
-        }
-        event->accept();
-        return true;
-    }
-    return false;
-}
-
 void ScreenshotRecognitionWindow::synchronizeTextLayer() {
     if (m_textLayer != nullptr) {
         m_textLayer->synchronize(canvasToLocalTransform(), rect());
     }
+    if (m_formattedTextLayer != nullptr) {
+        m_formattedTextLayer->synchronize(canvasToLocalTransform(), rect());
+    }
+}
+
+void ScreenshotRecognitionWindow::updateTextEditorSpinGeometry() {
+    if (m_textEditorContainer == nullptr || m_textEditorSpin == nullptr) {
+        return;
+    }
+    const QSize spinSize = m_textEditorSpin->sizeHint().expandedTo(QSize(20, 20));
+    constexpr int margin = 12;
+    m_textEditorSpin->setGeometry(m_textEditorContainer->width() - spinSize.width() - margin,
+                                  m_textEditorContainer->height() - spinSize.height() - margin,
+                                  spinSize.width(), spinSize.height());
 }

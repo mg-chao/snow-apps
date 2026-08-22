@@ -10,6 +10,7 @@
 #include <QRectF>
 #include <QWidget>
 
+class QEnterEvent;
 class QPainter;
 
 namespace screenshot_selection_toolbar {
@@ -26,17 +27,23 @@ inline constexpr int ShadowMargin = 8;
 
 [[nodiscard]] QColor panelTextColor();
 [[nodiscard]] QColor panelPrimaryColor();
-[[nodiscard]] bool cursorInsideWidget(const QWidget* widget);
 void paintToolbarShadow(QPainter* painter, const QRectF& panelRect, bool hovered);
 [[nodiscard]] QPixmap renderToolbarIcon(QWidget* widget, const adqt::icons::IconRef& iconRef,
                                         QColor color);
 } // namespace screenshot_selection_toolbar
 
 class SelectionToolbarPanel final : public QFrame {
+    Q_OBJECT
+
   public:
     explicit SelectionToolbarPanel(QWidget* parent = nullptr);
 
+  signals:
+    void hoverChanged(bool hovered);
+
   protected:
+    void enterEvent(QEnterEvent* event) override;
+    void leaveEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 };
 
@@ -47,16 +54,20 @@ class SelectionToolbarValueLabel final : public QLabel {
     void setLeadingIcon(const QPixmap& icon);
     void setIconOnlyPixmap(const QPixmap& icon);
     void setLockAspectRatioControl(bool enabled);
+    void setPointerInteractionEnabled(bool enabled);
     QSize sizeHint() const override;
     QSize minimumSizeHint() const override;
 
   protected:
+    void enterEvent(QEnterEvent* event) override;
+    void leaveEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 
   private:
     QPixmap m_leadingIcon;
     bool m_iconOnly = false;
     bool m_lockAspectRatioControl = false;
+    bool m_hovered = false;
 };
 
 class SelectionToolbarSeparator final : public QWidget {

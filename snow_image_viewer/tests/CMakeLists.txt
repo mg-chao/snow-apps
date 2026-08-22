@@ -34,9 +34,18 @@ add_test(
     NAME snow_image_viewer_generated_icon_pack_tests
     COMMAND snow_image_viewer_generated_icon_pack_tests
 )
-set_tests_properties(snow_image_viewer_generated_icon_pack_tests PROPERTIES
-    ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
-)
+if(WIN32)
+    set_tests_properties(snow_image_viewer_generated_icon_pack_tests PROPERTIES
+        ENVIRONMENT
+            "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+else()
+    set_tests_properties(snow_image_viewer_generated_icon_pack_tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
+endif()
 
 add_test(
     NAME snow_image_viewer_edit_mode_performance

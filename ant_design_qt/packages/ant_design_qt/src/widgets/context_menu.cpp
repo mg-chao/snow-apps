@@ -1,5 +1,7 @@
 #include "context_menu.h"
 
+#include "detail/button_rendering.h"
+
 #include <QActionEvent>
 #include <QApplication>
 #include <QContextMenuEvent>
@@ -180,16 +182,6 @@ bool menuUsesIconColumn(const QMenu* menu) {
   return false;
 }
 
-bool menuUsesSubmenuColumn(const QMenu* menu) {
-  if (!menu) {
-    return false;
-  }
-  const QList<QAction*> actions = menu->actions();
-  return std::any_of(actions.cbegin(), actions.cend(), [](const QAction* action) {
-    return action && action->isVisible() && action->menu();
-  });
-}
-
 QString actionShortcutText(const QAction* action, const QString& optionText) {
   const qsizetype tab = optionText.indexOf(QLatin1Char('\t'));
   if (tab >= 0) {
@@ -225,6 +217,17 @@ int maximumShortcutWidth(const QMenu* menu, const QFontMetrics& metrics) {
     result = std::max(result, metrics.horizontalAdvance(shortcut));
   }
   return result;
+}
+
+int constrainedMenuItemWidth(const QMenu* menu, const ContextMenuVisualStyle& visual, int width,
+                             int shortcutWidth) {
+  if (!menu || menu->maximumWidth() >= QWIDGETSIZE_MAX) {
+    return width;
+  }
+
+  const int availableWidth =
+      std::max(1, menu->maximumWidth() - visual.menuPadding * 2 - shortcutWidth);
+  return std::min(width, availableWidth);
 }
 
 QRect mirroredRect(Qt::LayoutDirection direction, const QRect& bounds, const QRect& logicalRect) {
@@ -340,12 +343,14 @@ class AdContextMenuStyle final : public QProxyStyle {
       width += visual.iconSize + visual.iconTextGap;
     }
     if (shortcutWidth > 0) {
-      width += visual.shortcutGap + shortcutWidth;
+      width += visual.shortcutGap;
     }
-    if (menuUsesSubmenuColumn(menu)) {
+    if (menuOption->menuItemType == QStyleOptionMenuItem::SubMenu) {
       width += visual.trailingColumnGap + visual.arrowColumnWidth;
     }
-    return QSize(std::max(visual.minimumWidth - visual.menuPadding * 2, width), visual.itemHeight);
+    width = std::max(visual.minimumWidth - visual.menuPadding * 2, width);
+    width = constrainedMenuItemWidth(menu, visual, width, shortcutWidth);
+    return QSize(width, visual.itemHeight);
   }
 
   void drawPrimitive(PrimitiveElement element, const QStyleOption* option, QPainter* painter,
@@ -359,12 +364,17 @@ class AdContextMenuStyle final : public QProxyStyle {
     }
 
     const ContextMenuVisualStyle visual = resolveVisualStyle(menu_);
+    const qreal devicePixelRatio =
+        painter->device() ? painter->device()->devicePixelRatioF() : menu_->devicePixelRatioF();
+    const qreal logicalBorderWidth =
+        detail::deviceAlignedPenWidth(visual.borderWidth, devicePixelRatio);
     QRectF panelRect = option->rect;
-    const qreal inset = visual.borderWidth / 2.0;
+    const qreal inset = logicalBorderWidth / 2.0;
     panelRect.adjust(inset, inset, -inset, -inset);
 
-    QPainterPath path;
-    path.addRoundedRect(panelRect, visual.borderRadius, visual.borderRadius);
+    const QPainterPath path =
+        detail::roundedButtonPath(panelRect, visual.borderRadius, visual.borderRadius,
+                                  visual.borderRadius, visual.borderRadius);
     painter->save();
     // A translucent popup can receive an uninitialized backing store on
     // Windows.  Clear the complete panel clip first so pixels outside the
@@ -373,7 +383,7 @@ class AdContextMenuStyle final : public QProxyStyle {
     painter->fillRect(option->rect, Qt::transparent);
     painter->setCompositionMode(QPainter::CompositionMode_SourceOver);
     painter->setRenderHint(QPainter::Antialiasing, true);
-    painter->setPen(QPen(visual.border, visual.borderWidth));
+    painter->setPen(detail::makeButtonBorderPen(visual.border, logicalBorderWidth, Qt::SolidLine));
     painter->setBrush(visual.background);
     painter->drawPath(path);
     painter->restore();
@@ -395,12 +405,17 @@ class AdContextMenuStyle final : public QProxyStyle {
 
     const ContextMenuVisualStyle visual = resolveVisualStyle(menu_);
     if (menuOption->menuItemType == QStyleOptionMenuItem::Separator) {
-      const int y = menuOption->rect.center().y();
+      const qreal devicePixelRatio =
+          painter->device() ? painter->device()->devicePixelRatioF() : menu_->devicePixelRatioF();
+      const qreal logicalWidth =
+          detail::deviceAlignedPenWidth(std::max(1, visual.borderWidth), devicePixelRatio);
+      const qreal y = detail::deviceAlignedStrokeCenter(menuOption->rect.center().y(), logicalWidth,
+                                                        devicePixelRatio);
       const QRect lineRect =
           menuOption->rect.adjusted(visual.horizontalPadding, 0, -visual.horizontalPadding, 0);
       painter->save();
-      painter->setPen(QPen(visual.divider, std::max(1, visual.borderWidth)));
-      painter->drawLine(lineRect.left(), y, lineRect.right(), y);
+      painter->setPen(detail::makeButtonBorderPen(visual.divider, logicalWidth, Qt::SolidLine));
+      painter->drawLine(QPointF(lineRect.left(), y), QPointF(lineRect.right(), y));
       painter->restore();
       return;
     }
@@ -433,7 +448,7 @@ class AdContextMenuStyle final : public QProxyStyle {
     }
 
     const bool iconColumn = menuUsesIconColumn(menu);
-    const bool submenuColumn = menuUsesSubmenuColumn(menu);
+    const bool submenuItem = menuOption->menuItemType == QStyleOptionMenuItem::SubMenu;
     const QFontMetrics metrics(visual.font);
     const int shortcutWidth = maximumShortcutWidth(menu, metrics);
     const QRect bounds = menuOption->rect;
@@ -448,7 +463,7 @@ class AdContextMenuStyle final : public QProxyStyle {
     }
 
     QRect logicalArrowRect;
-    if (submenuColumn) {
+    if (submenuItem) {
       logicalArrowRect = QRect(right - visual.arrowColumnWidth + 1,
                                bounds.top() + (bounds.height() - visual.iconSize) / 2,
                                visual.arrowColumnWidth, visual.iconSize);

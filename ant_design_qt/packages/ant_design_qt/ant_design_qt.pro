@@ -45,7 +45,10 @@ HEADERS += \
     src/widgets/date_picker_style.h \
     src/widgets/descriptions.h \
     src/widgets/descriptions_style.h \
+    src/widgets/divider.h \
+    src/widgets/divider_style.h \
     src/widgets/detail/button_grouping.h \
+    src/widgets/detail/button_rendering.h \
     src/widgets/detail/color_picker_value_model.h \
     src/widgets/detail/flow_layout.h \
     src/widgets/detail/form_value_adapter.h \
@@ -155,6 +158,8 @@ SOURCES += \
     src/widgets/date_picker_style.cpp \
     src/widgets/descriptions.cpp \
     src/widgets/descriptions_style.cpp \
+    src/widgets/divider.cpp \
+    src/widgets/divider_style.cpp \
     src/widgets/detail/color_picker_value_model.cpp \
     src/widgets/detail/flow_layout.cpp \
     src/widgets/detail/form_value_adapter.cpp \

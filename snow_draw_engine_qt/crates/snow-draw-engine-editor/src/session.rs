@@ -17,6 +17,7 @@ use crate::defaults::EditorStyleDefaults;
 pub struct EditorSessionSnapshot {
     state: EditorState,
     config: EngineConfig,
+    quick_selection_disabled_tools: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -61,6 +62,7 @@ impl EditorSession {
         EditorSessionSnapshot {
             state: self.editor.state.clone(),
             config: self.editor.config,
+            quick_selection_disabled_tools: self.editor.quick_selection_disabled_tools(),
         }
     }
 
@@ -119,6 +121,14 @@ impl EditorSession {
         snow_draw_engine_core::validate_config(&config)?;
         self.editor.config = config;
         Ok(())
+    }
+
+    pub fn quick_selection_disabled_tools(&self) -> u64 {
+        self.editor.quick_selection_disabled_tools()
+    }
+
+    pub fn set_quick_selection_disabled_tools(&mut self, tools: u64) {
+        self.editor.set_quick_selection_disabled_tools(tools);
     }
 
     pub fn set_snap_config(&mut self, snap: SnapConfig) -> Result<(), ErrorCode> {

@@ -5,7 +5,8 @@ param(
     [string[]]$VcpkgVariants = @("Dynamic", "Static"),
     [switch]$Reset,
     [switch]$SkipVcpkgInstall,
-    [switch]$SkipDependencyInstall
+    [switch]$SkipDependencyInstall,
+    [switch]$SkipQtValidation
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,6 +43,7 @@ function Require-Command {
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $toolsRoot = Join-Path $repoRoot ".tools"
 $vcpkgRoot = Join-Path $toolsRoot "vcpkg"
+$env:VCPKG_ROOT = $vcpkgRoot
 $vcpkgExe = Join-Path $vcpkgRoot "vcpkg.exe"
 $vcpkgInstalledRoot = Join-Path $vcpkgRoot "installed"
 # Keep this paired with the available vcpkg tool release and CMake 4.2.3:
@@ -50,9 +52,11 @@ $vcpkgBaseline = "4497409a47f19db373a410a0efb84eca4747adbf"
 $rustToolchain = "1.97.1"
 $rustTarget = "x86_64-pc-windows-msvc"
 
-# Resolve and export one validated Qt kit before any bootstrap work. Environment
-# variables often outlive a Qt upgrade, so each candidate is version-checked.
-$Qt6Dir = Set-SnowQtEnvironment -Qt6Dir $Qt6Dir
+if (-not $SkipQtValidation) {
+    # Environment variables often outlive a Qt upgrade, so each candidate is
+    # version-checked before it is exported to the bootstrap subprocesses.
+    $Qt6Dir = Set-SnowQtEnvironment -Qt6Dir $Qt6Dir
+}
 
 $git = Require-Command "git"
 $cmake = Require-Command "cmake"
@@ -225,8 +229,10 @@ foreach ($variant in $VcpkgVariants) {
     $installVariant = $variant.ToLowerInvariant()
     Write-Host "vcpkg $installVariant installed: $(Join-Path $vcpkgInstalledRoot $installVariant)"
 }
-Write-Host "Qt6_DIR: $Qt6Dir"
-if (-not [string]::IsNullOrWhiteSpace($env:SNOW_QT_STATIC_DIR)) {
-    Write-Host "SNOW_QT_STATIC_DIR: $env:SNOW_QT_STATIC_DIR"
+if (-not $SkipQtValidation) {
+    Write-Host "Qt6_DIR: $Qt6Dir"
+    if (-not [string]::IsNullOrWhiteSpace($env:SNOW_QT_STATIC_DIR)) {
+        Write-Host "SNOW_QT_STATIC_DIR: $env:SNOW_QT_STATIC_DIR"
+    }
 }
 Write-Host "Rust: $rustToolchain ($rustTarget)"

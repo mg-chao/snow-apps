@@ -14,6 +14,12 @@ pub(crate) const MIN_COMMITTED_ARROW_LENGTH: f64 = 10.0;
 pub(crate) const MIN_COMMITTED_LINE_LENGTH: f64 = 8.0;
 const SHIFT_LOCKING_ANGLE: f64 = std::f64::consts::PI / 12.0;
 
+/// Quantize an angle to the same 15-degree increments used by the
+/// Shift-constrained linear drawing interaction.
+pub(crate) fn lock_rotation_to_discrete_angle(rotation: f64) -> f64 {
+    (rotation / SHIFT_LOCKING_ANGLE).round() * SHIFT_LOCKING_ANGLE
+}
+
 pub(crate) fn arrow_with_style(
     arrow_id: ElementId,
     arrow: &ArrowData,

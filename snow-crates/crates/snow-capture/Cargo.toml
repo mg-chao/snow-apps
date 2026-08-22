@@ -2,6 +2,7 @@
 name = "snow-capture"
 version = "0.2.0"
 edition = "2024"
+license.workspace = true
 
 [dependencies]
 snow-core = { path = "../snow-core" }
@@ -23,6 +24,7 @@ windows = { workspace = true, features = [
     "Win32_Graphics_Direct3D",
     "Win32_Graphics_Direct3D_Fxc",
     "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dwm",
     "Win32_Graphics_Dxgi",
     "Win32_Graphics_Dxgi_Common",
     "Win32_Graphics_Gdi",
@@ -43,6 +45,9 @@ windows = { workspace = true, features = [
 criterion = "0.5"
 image.workspace = true
 proptest = "1.11.0"
+
+[target.'cfg(windows)'.dev-dependencies]
+windows = { workspace = true, features = ["Win32_UI_HiDpi"] }
 
 [[bench]]
 name = "conversion_hot_path"

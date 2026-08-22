@@ -4,10 +4,12 @@
 #include "snow_shot/presentation/screenshotselectionmodel.h"
 #include "../pinned/screenshotpintoperfinstrumentation.h"
 
+#include <memory>
+
 namespace {
 ScreenshotResultStyle resultStyle(const ScreenshotSelectionModel& selection) {
-    return ScreenshotResultStyle{
-        selection.cornerRadius(), selection.shadowWidth(), selection.shadowColor()};
+    return ScreenshotResultStyle{selection.cornerRadius(), selection.shadowWidth(),
+                                 selection.shadowColor()};
 }
 } // namespace
 
@@ -16,7 +18,7 @@ ScreenshotSelectionExportWorkflow::ScreenshotSelectionExportWorkflow(
     : m_context(context) {}
 
 bool ScreenshotSelectionExportWorkflow::copySelectionToClipboard(ResultValidator validator,
-                                                                  Completion completion) {
+                                                                 CopyCompletion completion) {
     const QRect selection = m_context.selection.pixelSelection();
     if (selection.width() < 1 || selection.height() < 1) {
         return false;
@@ -24,27 +26,51 @@ bool ScreenshotSelectionExportWorkflow::copySelectionToClipboard(ResultValidator
 
     return m_context.imageComposer.requestSelectionClipboard(
         selection, resultStyle(m_context.selection), &m_context.callbackContext,
-            [this, validator = std::move(validator),
-         completion = std::move(completion)](ScreenshotClipboardPayload payload) mutable {
+        [this, validator = std::move(validator),
+         completion = std::move(completion)](ScreenshotSelectionClipboardResult result) mutable {
             if (validator && !validator()) {
                 if (completion) {
-                    completion(false);
+                    completion(false, {});
                 }
                 return;
             }
-            const bool success = payload.isValid() &&
-                                 m_context.destination.publishClipboard(std::move(payload));
-            if (success) {
-                persistCurrentSelectionParams();
+            if (!result.isValid()) {
+                if (completion) {
+                    completion(false, {});
+                }
+                return;
             }
-            if (completion) {
-                completion(success);
+            QImage resultImage = std::move(result.image);
+            auto terminal = std::make_shared<bool>(false);
+            auto publishCompletion = std::make_shared<std::function<void(bool)>>();
+            *publishCompletion = [this, terminal, validator = std::move(validator),
+                                  completion = std::move(completion),
+                                  resultImage = std::move(resultImage)](bool success) mutable {
+                if (*terminal) {
+                    return;
+                }
+                *terminal = true;
+                if (validator && !validator()) {
+                    success = false;
+                }
+                if (success) {
+                    persistCurrentSelectionParams();
+                }
+                if (completion) {
+                    completion(success, success ? std::move(resultImage) : QImage{});
+                }
+            };
+            const bool scheduled = m_context.destination.publishClipboard(
+                &m_context.callbackContext, std::move(result.payload),
+                [publishCompletion](bool success) { (*publishCompletion)(success); });
+            if (!scheduled) {
+                (*publishCompletion)(false);
             }
         });
 }
 
 bool ScreenshotSelectionExportWorkflow::pinSelectionToScreen(ResultValidator validator,
-                                                              Completion completion) {
+                                                             Completion completion) {
     SNOW_SHOT_PIN_PERF_SCOPE("workflow.pin_selection");
     const QRect selection = m_context.selection.pixelSelection();
     if (selection.width() < 1 || selection.height() < 1) {
@@ -59,16 +85,16 @@ bool ScreenshotSelectionExportWorkflow::pinSelectionToScreen(ResultValidator val
 
     return m_context.imageComposer.schedulePinnedSelection(
         std::move(*request), &m_context.callbackContext,
-        [this, validator = std::move(validator), completion = std::move(completion)](
-            ScreenshotPinnedSelectionRequest pinRequest) mutable {
+        [this, validator = std::move(validator),
+         completion = std::move(completion)](ScreenshotPinnedSelectionRequest pinRequest) mutable {
             if (validator && !validator()) {
                 if (completion) {
                     completion(false);
                 }
                 return;
             }
-            const bool success = pinRequest.isValid() &&
-                                 m_context.destination.presentPinnedSelection(pinRequest);
+            const bool success =
+                pinRequest.isValid() && m_context.destination.presentPinnedSelection(pinRequest);
             SNOW_SHOT_PIN_PERF_MILESTONE("workflow.destination_complete");
             if (success) {
                 persistCurrentSelectionParams();

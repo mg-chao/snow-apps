@@ -3,6 +3,7 @@
 
 #include <QColor>
 #include <QFrame>
+#include <QPixmap>
 
 class QAbstractButton;
 class QEvent;
@@ -35,6 +36,7 @@ class TitleBarWidget : public QFrame {
     QAbstractButton* m_closeButton = nullptr;
     int m_logoHeight = 17;
     QColor m_logoColor = QColor(Qt::black);
+    QPixmap m_logoPixmap;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_COMPONENTS_TITLEBARWIDGET_H

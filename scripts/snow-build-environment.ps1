@@ -6,6 +6,21 @@ $script:SnowMsvcToolset = "14.51"
 $script:SnowRustToolchain = "1.97.1"
 $script:SnowRustTarget = "x86_64-pc-windows-msvc"
 
+function Test-SnowQtSystemCodecKit {
+    param([Parameter(Mandatory = $true)][string]$Qt6Dir)
+
+    $coreTargets = Join-Path $Qt6Dir "..\Qt6Core\Qt6CoreTargets.cmake"
+    $guiTargets = Join-Path $Qt6Dir "..\Qt6Gui\Qt6GuiTargets.cmake"
+    if (-not (Test-Path -LiteralPath $coreTargets -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $guiTargets -PathType Leaf)) {
+        return $false
+    }
+    $coreText = Get-Content -LiteralPath $coreTargets -Raw
+    $guiText = Get-Content -LiteralPath $guiTargets -Raw
+    return $coreText -match 'QT_ENABLED_PRIVATE_FEATURES "[^"]*system_zlib' -and
+        $guiText -match 'QT_ENABLED_PRIVATE_FEATURES "[^"]*system_png'
+}
+
 function Resolve-SnowQtDir {
     param(
         [string]$Qt6Dir = "",
@@ -44,18 +59,16 @@ function Resolve-SnowQtDir {
                         ForEach-Object { Join-Path $_.FullName "lib\cmake\Qt6" }
                 }
         }
-        if (-not [string]::IsNullOrWhiteSpace($Preset)) {
-            $preferDebugKit = $Preset -eq "windows-msvc-debug"
-            $discoveredCandidates = @($discoveredCandidates) | Sort-Object `
-                @{ Expression = {
-                    $isDebugKit = $_ -match '(?i)debug'
-                    if ($isDebugKit -eq $preferDebugKit) { 0 } else { 1 }
-                } }, `
-                @{ Expression = { $_ } }
-        }
         $candidates = @($explicitCandidates + $discoveredCandidates) | Select-Object -Unique
     }
 
+    $requiredConfiguration = switch ($Preset) {
+        "windows-msvc-debug" { "Debug" }
+        "windows-msvc-performance" { "Release" }
+        "snow-shot-msvc-release" { "Release" }
+        "snow-shot-msvc-fast" { "Release" }
+        default { "" }
+    }
     foreach ($candidate in $candidates) {
         try {
             $resolved = [System.IO.Path]::GetFullPath($candidate)
@@ -70,12 +83,39 @@ function Resolve-SnowQtDir {
             (Join-Path $resolved "Qt6ConfigVersionImpl.cmake")
         ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf }
         $versionText = ($versionFiles | ForEach-Object { Get-Content -LiteralPath $_ -Raw }) -join "`n"
-        if ($versionText -match 'PACKAGE_VERSION\s+"6\.11\.1"') { return $resolved }
+        $expectedVersion = [regex]::Escape($script:SnowQtVersion)
+        if ($versionText -notmatch "(?m)^\s*set\s*\(\s*PACKAGE_VERSION\s+`"$expectedVersion`"\s*\)") {
+            continue
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($requiredConfiguration)) {
+            $configurationTargets = Join-Path $resolved (
+                "..\Qt6Core\Qt6CoreTargets-{0}.cmake" -f $requiredConfiguration.ToLowerInvariant()
+            )
+            if (-not (Test-Path -LiteralPath $configurationTargets -PathType Leaf)) { continue }
+        }
+        if ($Preset -in @("snow-shot-msvc-release", "snow-shot-msvc-fast") -and
+            -not (Test-SnowQtSystemCodecKit -Qt6Dir $resolved)) {
+            continue
+        }
+        return $resolved
     }
     if (-not [string]::IsNullOrWhiteSpace($Qt6Dir)) {
-        throw "Qt $script:SnowQtVersion CMake package was not found at the explicit Qt6Dir: $Qt6Dir"
+        $configurationHint = if ([string]::IsNullOrWhiteSpace($requiredConfiguration)) {
+            ""
+        }
+        else {
+            " with $requiredConfiguration libraries"
+        }
+        throw "Qt $script:SnowQtVersion$configurationHint was not found at the explicit Qt6Dir: $Qt6Dir"
     }
-    throw "Qt $script:SnowQtVersion CMake package was not found. Set SNOW_QT_STATIC_DIR, Qt6_DIR, QTDIR, or SNOW_QT_ROOT."
+    $configurationHint = if ([string]::IsNullOrWhiteSpace($requiredConfiguration)) {
+        ""
+    }
+    else {
+        " with $requiredConfiguration libraries"
+    }
+    throw "Qt $script:SnowQtVersion$configurationHint was not found. Set SNOW_QT_STATIC_DIR, Qt6_DIR, QTDIR, or SNOW_QT_ROOT."
 }
 
 function Set-SnowQtEnvironment {
@@ -232,19 +272,44 @@ function Test-SnowCacheAlignment {
     if (-not (Test-Path -LiteralPath $CachePath -PathType Leaf)) { return $false }
     $cache = Get-Content -LiteralPath $CachePath -Raw
     $qtNeedle = [regex]::Escape(($env:SNOW_QT_STATIC_DIR -replace '\\', '/'))
+    $repoNeedle = [regex]::Escape(($script:SnowRepoRoot -replace '\\', '/'))
     $expectedTriplet = if ($Preset -in @("snow-shot-msvc-release", "snow-shot-msvc-fast")) {
         "x64-windows-static"
     }
     else {
         "x64-windows"
     }
-    $qtAligned = $cache -match "(?m)^Qt6_DIR:PATH=$qtNeedle$"
+    $installedVariant = if ($expectedTriplet -eq "x64-windows-static") { "static" } else { "dynamic" }
+    $installedDir = Join-Path $script:SnowRepoRoot ".tools\vcpkg\installed\$installedVariant"
+    $installedDirNeedle = [regex]::Escape(($installedDir -replace '\\', '/'))
+    $lineEnd = '\r?$'
+
+    $qtAligned = $cache -match "(?m)^Qt6_DIR:PATH=$qtNeedle$lineEnd"
     if ($Preset -in @("snow-shot-msvc-release", "snow-shot-msvc-fast")) {
-        $qtAligned = $qtAligned -and $cache -match '(?m)^SNOW_QT_STATIC_DIR:PATH='
+        $qtAligned = $qtAligned -and $cache -match "(?m)^SNOW_QT_STATIC_DIR:PATH=.+$lineEnd"
     }
-    return $qtAligned -and
-        $cache -match "(?m)^VCPKG_TARGET_TRIPLET:.*=$([regex]::Escape($expectedTriplet))$" -and
-        $cache -match '(?m)^CMAKE_GENERATOR_TOOLSET:INTERNAL=host=x64,version=14\.51$'
+    $powerShellMatch = [regex]::Match(
+        $cache,
+        "(?m)^Z_VCPKG_POWERSHELL_PATH:INTERNAL=(.+)$lineEnd"
+    )
+    $powerShellAligned = $powerShellMatch.Success
+    if ($powerShellAligned) {
+        $cachedPowerShell = $powerShellMatch.Groups[1].Value.Trim()
+        if ([System.IO.Path]::IsPathRooted($cachedPowerShell)) {
+            $powerShellAligned = Test-Path -LiteralPath $cachedPowerShell -PathType Leaf
+        }
+        else {
+            $powerShellAligned = $null -ne (Get-Command $cachedPowerShell -ErrorAction SilentlyContinue)
+        }
+    }
+
+    return $qtAligned -and $powerShellAligned -and
+        $cache -match "(?m)^VCPKG_TARGET_TRIPLET:.*=$([regex]::Escape($expectedTriplet))$lineEnd" -and
+        $cache -match "(?m)^VCPKG_INSTALLED_DIR:PATH=$installedDirNeedle$lineEnd" -and
+        $cache -match "(?m)^CMAKE_HOME_DIRECTORY:INTERNAL=$repoNeedle$lineEnd" -and
+        $cache -match "(?m)^CMAKE_GENERATOR:INTERNAL=Visual Studio 18 2026$lineEnd" -and
+        $cache -match "(?m)^CMAKE_GENERATOR_PLATFORM:INTERNAL=x64$lineEnd" -and
+        $cache -match "(?m)^CMAKE_GENERATOR_TOOLSET:INTERNAL=host=x64,version=14\.51$lineEnd"
 }
 
 function Resolve-SnowExecutable {

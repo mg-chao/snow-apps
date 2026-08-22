@@ -4,6 +4,7 @@
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QImage>
+#include <QKeyEvent>
 #include <QPainter>
 #include <QPixmap>
 #include <QScreen>
@@ -24,6 +25,7 @@
 
 #include "theme/theme_manager.h"
 #include "widgets/context_menu.h"
+#include "widgets/detail/button_rendering.h"
 
 namespace {
 
@@ -131,6 +133,100 @@ void dirtyRenderTargetCornersAreCleared() {
         require(image.pixelColor(corner).alpha() == 0,
                 "context menu did not clear a dirty rounded-corner pixel to transparent");
     }
+}
+
+void borderGeometryUsesWholeDevicePixels() {
+    constexpr std::array<qreal, 4> devicePixelRatios = {1.0, 1.25, 1.5, 2.0};
+    for (const qreal devicePixelRatio : devicePixelRatios) {
+        const qreal logicalWidth =
+            adqt::widgets::detail::deviceAlignedPenWidth(1.0, devicePixelRatio);
+        const int physicalWidth = qRound(logicalWidth * devicePixelRatio);
+        require(physicalWidth >= 1 && qFuzzyCompare(logicalWidth * devicePixelRatio,
+                                                    static_cast<qreal>(physicalWidth)),
+                "border width was not quantized to a whole device pixel");
+
+        const qreal center =
+            adqt::widgets::detail::deviceAlignedStrokeCenter(16.0, logicalWidth, devicePixelRatio);
+        const qreal physicalCenter = center * devicePixelRatio;
+        const qreal phase = (physicalWidth % 2 == 0) ? 0.0 : 0.5;
+        require(std::abs(physicalCenter - (qRound(physicalCenter - phase) + phase)) < 0.001,
+                "border center was not aligned to the device pixel phase");
+    }
+}
+
+void constrainedPopupKeepsActionGeometryInsideSurface() {
+    QWidget parent;
+    parent.resize(640, 480);
+    parent.show();
+    require(waitUntil([&parent]() {
+                return parent.windowHandle() != nullptr && parent.windowHandle()->isExposed();
+            }),
+            "context menu geometry parent was not exposed");
+
+    adqt::widgets::AdContextMenu menu(&parent);
+    adqt::widgets::AdContextMenu::ComponentTokens tokens;
+    tokens.horizontalPadding = 12;
+    tokens.secondaryText = QColor(QStringLiteral("#ff0000"));
+    menu.setComponentTokens(tokens);
+    menu.setFixedWidth(300);
+    QAction* shortcutAction =
+        menu.addItem(QStringLiteral("A deliberately long translated menu item\tCtrl+Shift+C"));
+    adqt::widgets::AdContextMenu* submenu =
+        menu.addSubMenu(QStringLiteral("A deliberately long submenu item"));
+    submenu->addItem(QStringLiteral("Child"));
+
+    menu.popupAt(parent.mapToGlobal(QPoint(40, 40)));
+    require(waitUntil([&menu, shortcutAction]() {
+                return menu.isVisible() && menu.actionGeometry(shortcutAction).isValid();
+            }),
+            "constrained context menu geometry was not available");
+    require(menu.actionGeometry(shortcutAction).right() < menu.width() &&
+                menu.actionGeometry(submenu->menuAction()).right() < menu.width(),
+            "a constrained context menu exposed action geometry beyond its visible surface");
+
+    const auto rightmostShortcutPixel = [](adqt::widgets::AdContextMenu& renderedMenu,
+                                           QAction* action) {
+        const QImage image = renderedMenu.grab().toImage().convertToFormat(QImage::Format_ARGB32);
+        const QRect actionGeometry = renderedMenu.actionGeometry(action);
+        int rightmostPixel = -1;
+        for (int y = actionGeometry.top(); y <= actionGeometry.bottom(); ++y) {
+            for (int x = actionGeometry.left(); x <= actionGeometry.right(); ++x) {
+                const QColor pixel = image.pixelColor(x, y);
+                if (pixel.red() > 180 && pixel.green() < 100 && pixel.blue() < 100) {
+                    rightmostPixel = std::max(rightmostPixel, x);
+                }
+            }
+        }
+        return rightmostPixel;
+    };
+
+    adqt::widgets::AdContextMenu referenceMenu(&parent);
+    referenceMenu.setComponentTokens(tokens);
+    referenceMenu.setFixedWidth(300);
+    QAction* referenceShortcutAction = referenceMenu.addItem(
+        QStringLiteral("A deliberately long translated menu item\tCtrl+Shift+C"));
+    referenceMenu.popupAt(parent.mapToGlobal(QPoint(360, 40)));
+    require(waitUntil([&referenceMenu, referenceShortcutAction]() {
+                return referenceMenu.isVisible() &&
+                       referenceMenu.actionGeometry(referenceShortcutAction).isValid();
+            }),
+            "reference context menu geometry was not available");
+    require(rightmostShortcutPixel(menu, shortcutAction) ==
+                rightmostShortcutPixel(referenceMenu, referenceShortcutAction),
+            "a sibling submenu added trailing space after the shortcut text");
+    referenceMenu.hide();
+
+    menu.setActiveAction(submenu->menuAction());
+    QKeyEvent openSubmenu(QEvent::KeyPress, Qt::Key_Right, Qt::NoModifier);
+    QCoreApplication::sendEvent(&menu, &openSubmenu);
+    require(waitUntil([submenu]() { return submenu->isVisible(); }),
+            "the constrained context submenu did not open");
+    require(submenu->geometry().left() <= menu.geometry().right() &&
+                submenu->geometry().left() >= menu.geometry().right() - 16,
+            "the constrained context submenu opened beyond the visible parent edge");
+    submenu->hide();
+    menu.hide();
+    parent.hide();
 }
 
 int colorDistance(const QColor& lhs, const QColor& rhs) {
@@ -241,6 +337,8 @@ int main(int argc, char** argv) {
     QApplication application(argc, argv);
     adqt::theme::ThemeManager::instance().applyTo(application);
     try {
+        borderGeometryUsesWholeDevicePixels();
+        constrainedPopupKeepsActionGeometryInsideSurface();
         nativePopupCornersCompositeOverTheirBackdrop();
         dirtyRenderTargetCornersAreCleared();
         return 0;

@@ -2,7 +2,21 @@
 
 #include <algorithm>
 
+void ScreenshotIntelligentSelectionModel::beginCaptureSession(bool smartSelectionEnabled) {
+    clearTransientState();
+    m_smartSelectionEnabled = smartSelectionEnabled;
+    m_selectionTarget = smartSelectionEnabled
+                            ? ScreenshotIntelligentSelectionTarget::WindowSubElement
+                            : ScreenshotIntelligentSelectionTarget::Window;
+}
+
 void ScreenshotIntelligentSelectionModel::reset() {
+    clearTransientState();
+    m_smartSelectionEnabled = false;
+    m_selectionTarget = ScreenshotIntelligentSelectionTarget::Window;
+}
+
+void ScreenshotIntelligentSelectionModel::clearTransientState() {
     clearHitPath();
     clearPress();
 }
@@ -16,6 +30,22 @@ void ScreenshotIntelligentSelectionModel::clearPress() {
     m_pressActive = false;
     m_pressPosition = QPointF();
     m_pressSelection = QRectF();
+}
+
+bool ScreenshotIntelligentSelectionModel::updateSmartSelectionEnabled(bool enabled) {
+    if (m_smartSelectionEnabled == enabled) {
+        return false;
+    }
+
+    m_smartSelectionEnabled = enabled;
+    m_selectionTarget = enabled ? ScreenshotIntelligentSelectionTarget::WindowSubElement
+                                : ScreenshotIntelligentSelectionTarget::Window;
+    clearPress();
+    static_cast<void>(setIndex(m_selectionTarget ==
+                                       ScreenshotIntelligentSelectionTarget::Window
+                                   ? static_cast<int>(m_hitRects.size() - 1)
+                                   : 0));
+    return true;
 }
 
 bool ScreenshotIntelligentSelectionModel::applyCanvasHitPath(const QVector<QRectF>& canvasHitRects,
@@ -49,7 +79,9 @@ bool ScreenshotIntelligentSelectionModel::applyCanvasHitPath(const QVector<QRect
     }
 
     m_hitRects = boundedHitRects;
-    return setIndex(0);
+    return setIndex(m_selectionTarget == ScreenshotIntelligentSelectionTarget::Window
+                        ? static_cast<int>(m_hitRects.size() - 1)
+                        : 0);
 }
 
 bool ScreenshotIntelligentSelectionModel::setIndex(int index) {
@@ -58,9 +90,34 @@ bool ScreenshotIntelligentSelectionModel::setIndex(int index) {
         return false;
     }
 
-    const int maxIndex = static_cast<int>(m_hitRects.size() - 1);
-    m_index = std::clamp(index, 0, maxIndex);
+    // Selector hit paths run from the deepest element to the outermost window.
+    const int maximumIndex = static_cast<int>(m_hitRects.size() - 1);
+    m_index = m_selectionTarget == ScreenshotIntelligentSelectionTarget::Window
+                  ? maximumIndex
+                  : std::clamp(index, 0, maximumIndex);
     return true;
+}
+
+bool ScreenshotIntelligentSelectionModel::toggleSelectionTarget() {
+    if (!m_smartSelectionEnabled) {
+        return false;
+    }
+
+    m_selectionTarget = m_selectionTarget == ScreenshotIntelligentSelectionTarget::Window
+                            ? ScreenshotIntelligentSelectionTarget::WindowSubElement
+                            : ScreenshotIntelligentSelectionTarget::Window;
+    static_cast<void>(setIndex(m_selectionTarget == ScreenshotIntelligentSelectionTarget::Window
+                                   ? static_cast<int>(m_hitRects.size() - 1)
+                                   : 0));
+    return true;
+}
+
+bool ScreenshotIntelligentSelectionModel::smartSelectionEnabled() const {
+    return m_smartSelectionEnabled;
+}
+
+ScreenshotIntelligentSelectionTarget ScreenshotIntelligentSelectionModel::selectionTarget() const {
+    return m_selectionTarget;
 }
 
 int ScreenshotIntelligentSelectionModel::index() const {

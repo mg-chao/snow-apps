@@ -16,6 +16,12 @@
 #include <optional>
 #include <vector>
 
+#if QT_CONFIG(vulkan) && __has_include(<QVulkanInstance>) && __has_include(<vulkan/vulkan.h>)
+#define SNOW_IMAGE_VIEWER_HAS_QT_VULKAN 1
+#else
+#define SNOW_IMAGE_VIEWER_HAS_QT_VULKAN 0
+#endif
+
 QT_BEGIN_NAMESPACE
 class QExposeEvent;
 class QMouseEvent;
@@ -32,7 +38,9 @@ class QRhiShaderResourceBindings;
 class QRhiSwapChain;
 class QRhiTexture;
 class QOffscreenSurface;
+#if SNOW_IMAGE_VIEWER_HAS_QT_VULKAN
 class QVulkanInstance;
+#endif
 QT_END_NAMESPACE
 
 namespace snow::image_viewer {
@@ -202,7 +210,9 @@ class RhiImageWindow final : public QWindow {
 
     RhiBackend backend_ = RhiBackend::platform_default;
     std::unique_ptr<QOffscreenSurface> fallbackSurface_;
+#if SNOW_IMAGE_VIEWER_HAS_QT_VULKAN
     std::unique_ptr<QVulkanInstance> vulkanInstance_;
+#endif
     std::unique_ptr<QRhi> rhi_;
     QRhiSwapChain* swapChain_ = nullptr;
     QRhiRenderPassDescriptor* renderPassDescriptor_ = nullptr;

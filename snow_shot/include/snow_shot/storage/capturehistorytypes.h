@@ -12,10 +12,14 @@
 #include <QUrl>
 #include <QVector>
 
+#include <optional>
+
 namespace snow_shot::storage {
 enum class CaptureHistorySource {
     CopiedToClipboard,
     PinnedToScreen,
+    CurrentMonitor,
+    FocusedWindow,
 };
 
 struct PersistedSelection {
@@ -40,6 +44,28 @@ struct CaptureHistoryDisplayDraft {
     QImage image;
 };
 
+struct CaptureHistoryResultRecord {
+    QSize imageSize;
+    qint64 encodedBytes = 0;
+
+    friend bool operator==(const CaptureHistoryResultRecord& first,
+                           const CaptureHistoryResultRecord& second) {
+        return first.imageSize == second.imageSize && first.encodedBytes == second.encodedBytes;
+    }
+};
+
+struct CaptureHistoryResultAsset {
+    QString recordId;
+    QSize imageSize;
+    QUrl localFileUrl;
+
+    friend bool operator==(const CaptureHistoryResultAsset& first,
+                           const CaptureHistoryResultAsset& second) {
+        return first.recordId == second.recordId && first.imageSize == second.imageSize &&
+               first.localFileUrl == second.localFileUrl;
+    }
+};
+
 struct CaptureHistoryDraft {
     QString id;
     QDateTime createdUtc;
@@ -47,6 +73,7 @@ struct CaptureHistoryDraft {
     PersistedSelection selection;
     QByteArray canvasHistory;
     QVector<CaptureHistoryDisplayDraft> displays;
+    std::optional<QImage> resultImage;
     CaptureHistorySource source = CaptureHistorySource::CopiedToClipboard;
 };
 
@@ -69,6 +96,7 @@ struct CaptureHistoryRecord {
     QRect canvasBounds;
     PersistedSelection selection;
     QVector<CaptureHistoryDisplayRecord> displays;
+    std::optional<CaptureHistoryResultRecord> result;
     qint64 canvasBytes = 0;
     qint64 totalBytes = 0;
     CaptureHistorySource source = CaptureHistorySource::CopiedToClipboard;
@@ -76,7 +104,8 @@ struct CaptureHistoryRecord {
     friend bool operator==(const CaptureHistoryRecord& first, const CaptureHistoryRecord& second) {
         return first.id == second.id && first.createdUtc == second.createdUtc &&
                first.canvasBounds == second.canvasBounds && first.selection == second.selection &&
-               first.displays == second.displays && first.canvasBytes == second.canvasBytes &&
+               first.displays == second.displays && first.result == second.result &&
+               first.canvasBytes == second.canvasBytes &&
                first.totalBytes == second.totalBytes && first.source == second.source;
     }
 };
@@ -98,11 +127,13 @@ struct CaptureHistoryDisplayAsset {
 
 struct CaptureHistoryAssetSet {
     QString recordId;
+    std::optional<CaptureHistoryResultAsset> result;
     QVector<CaptureHistoryDisplayAsset> displays;
 
     friend bool operator==(const CaptureHistoryAssetSet& first,
                            const CaptureHistoryAssetSet& second) {
-        return first.recordId == second.recordId && first.displays == second.displays;
+        return first.recordId == second.recordId && first.result == second.result &&
+               first.displays == second.displays;
     }
 };
 

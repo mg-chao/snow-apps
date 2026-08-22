@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 pub use snow_recording_model::{
-    IntermediateRecordingProfile, VideoEncodeConfig, VideoEncodingSpeed,
+    IntermediateRecordingProfile, VideoCodec, VideoEncodeConfig, VideoEncodingSpeed,
 };
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -67,6 +67,31 @@ pub enum ExportFormat {
     Mp4,
     Avi,
     Gif,
+    Apng,
+    Webp,
+}
+
+impl ExportFormat {
+    pub const fn is_animated_image(self) -> bool {
+        matches!(self, Self::Gif | Self::Apng | Self::Webp)
+    }
+
+    /// Returns the conventional filename extension for the selected output
+    /// container. Callers that construct export paths should use this rather
+    /// than assuming every export is an MP4.
+    pub const fn file_extension(self) -> &'static str {
+        match self {
+            Self::Mp4 => "mp4",
+            Self::Avi => "avi",
+            Self::Gif => "gif",
+            Self::Apng => "apng",
+            Self::Webp => "webp",
+        }
+    }
+
+    pub const fn requires_even_dimensions(self) -> bool {
+        matches!(self, Self::Mp4 | Self::Avi)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -136,7 +161,15 @@ pub struct ExportRequest {
     pub format: ExportFormat,
     pub output_path: PathBuf,
     pub video: VideoEncodeConfig,
+    #[serde(default)]
+    pub codec: VideoCodec,
     pub performance: ExportPerformanceConfig,
+    #[serde(default)]
+    pub maximum_width: Option<u32>,
+    #[serde(default)]
+    pub maximum_height: Option<u32>,
+    #[serde(default)]
+    pub target_fps: Option<u32>,
 }
 
 impl Default for ExportRequest {
@@ -149,7 +182,11 @@ impl Default for ExportRequest {
             format: ExportFormat::Mp4,
             output_path: PathBuf::from("output.mp4"),
             video: VideoEncodeConfig::default(),
+            codec: VideoCodec::H264,
             performance: ExportPerformanceConfig::default(),
+            maximum_width: None,
+            maximum_height: None,
+            target_fps: None,
         }
     }
 }
@@ -192,8 +229,49 @@ impl ExportRequest {
             return Err("output_path must not be empty".to_string());
         }
 
+        if self.maximum_width == Some(0) {
+            return Err("maximum_width must be greater than zero when set".to_string());
+        }
+        if self.maximum_height == Some(0) {
+            return Err("maximum_height must be greater than zero when set".to_string());
+        }
+        if self.maximum_width.is_some() != self.maximum_height.is_some() {
+            return Err(
+                "maximum_width and maximum_height must either both be set or both be unset"
+                    .to_string(),
+            );
+        }
+        if self.target_fps == Some(0) {
+            return Err("target_fps must be greater than zero when set".to_string());
+        }
+
         self.video.validate("video")?;
         self.performance.validate("performance")?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ExportFormat, ExportRequest};
+
+    #[test]
+    fn export_request_requires_complete_resolution_caps() {
+        let mut request = ExportRequest::default();
+        request.maximum_width = Some(1920);
+        assert!(request.validate().is_err());
+
+        request.maximum_height = Some(1080);
+        assert!(request.validate().is_ok());
+    }
+
+    #[test]
+    fn animated_formats_have_distinct_extensions() {
+        assert!(ExportFormat::Gif.is_animated_image());
+        assert!(ExportFormat::Apng.is_animated_image());
+        assert!(ExportFormat::Webp.is_animated_image());
+        assert_eq!(ExportFormat::Gif.file_extension(), "gif");
+        assert_eq!(ExportFormat::Apng.file_extension(), "apng");
+        assert_eq!(ExportFormat::Webp.file_extension(), "webp");
     }
 }

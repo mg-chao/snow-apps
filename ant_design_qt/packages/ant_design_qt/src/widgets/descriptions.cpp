@@ -467,7 +467,8 @@ struct AdDescriptions::Private {
     return textOrWidget(
         label ? item.labelWidget.data() : item.contentWidget.data(),
         label ? item.label : item.content, color, font,
-        label ? QStringLiteral("Description label") : QStringLiteral("Description content"),
+        label ? AdDescriptions::tr("Description label")
+              : AdDescriptions::tr("Description content"),
         parent);
   }
 
@@ -500,7 +501,7 @@ struct AdDescriptions::Private {
       auto* colonLabel = new DescriptionLabel(QStringLiteral(":"),
                                               mergeColor(merged.textColor, appearance.labelColor),
                                               mergeFont(merged.font, appearance.metrics.textFont),
-                                              QStringLiteral("Label separator"), cell);
+                                              AdDescriptions::tr("Label separator"), cell);
       colonLabel->setTextInteractionFlags(Qt::NoTextInteraction);
       layout->addSpacing(appearance.metrics.colonMarginLeft);
       layout->addWidget(colonLabel);
@@ -527,7 +528,7 @@ struct AdDescriptions::Private {
       auto* colonLabel = new DescriptionLabel(QStringLiteral(":"),
                                               mergeColor(merged.textColor, appearance.labelColor),
                                               mergeFont(merged.font, appearance.metrics.textFont),
-                                              QStringLiteral("Label separator"), cell);
+                                              AdDescriptions::tr("Label separator"), cell);
       colonLabel->setTextInteractionFlags(Qt::NoTextInteraction);
       layout->addSpacing(appearance.metrics.colonMarginLeft);
       layout->addWidget(colonLabel);
@@ -589,7 +590,7 @@ struct AdDescriptions::Private {
         QWidget* widget = textOrWidget(
             titleWidget, title, mergeColor(semantics.title.textColor, appearance.titleColor),
             mergeFont(semantics.title.font, appearance.metrics.titleFont),
-            QStringLiteral("Descriptions title"), header);
+            AdDescriptions::tr("Descriptions title"), header);
         if (!titleWidget) widget->setObjectName(QStringLiteral("adDescriptionsTitle"));
         headerLayout->addWidget(frameValue(widget, semantics.title, appearance, header), 1);
       } else {
@@ -599,7 +600,7 @@ struct AdDescriptions::Private {
         QWidget* widget = textOrWidget(extraWidget, extra,
                                        mergeColor(semantics.extra.textColor, appearance.extraColor),
                                        mergeFont(semantics.extra.font, appearance.metrics.textFont),
-                                       QStringLiteral("Descriptions extra"), header);
+                                       AdDescriptions::tr("Descriptions extra"), header);
         if (!extraWidget) widget->setObjectName(QStringLiteral("adDescriptionsExtra"));
         headerLayout->addWidget(frameValue(widget, semantics.extra, appearance, header), 0,
                                 Qt::AlignTop | Qt::AlignTrailing);

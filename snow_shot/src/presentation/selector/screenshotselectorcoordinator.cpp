@@ -49,15 +49,19 @@ void ScreenshotSelectorCoordinator::resetRequests() {
     m_ready = false;
     m_refreshInFlight = false;
     m_hitTestInFlight = false;
+    m_inFlightHitTestPoint = QPoint();
     m_hasPendingHitTestPoint = false;
     m_pendingHitTestPoint = QPoint();
+    m_pendingHitTestMode = ScreenshotSelectorHitTestMode::Window;
 }
 
 void ScreenshotSelectorCoordinator::resetHitTestState() {
     ++m_hitTestRequestId;
     m_hitTestInFlight = false;
+    m_inFlightHitTestPoint = QPoint();
     m_hasPendingHitTestPoint = false;
     m_pendingHitTestPoint = QPoint();
+    m_pendingHitTestMode = ScreenshotSelectorHitTestMode::Window;
 }
 
 void ScreenshotSelectorCoordinator::releaseCache() {
@@ -91,12 +95,14 @@ bool ScreenshotSelectorCoordinator::startRefresh(const QVector<std::uintptr_t>& 
     return true;
 }
 
-bool ScreenshotSelectorCoordinator::requestHitTest(const QPoint& physicalPoint) {
+bool ScreenshotSelectorCoordinator::requestHitTest(const QPoint& physicalPoint,
+                                                    ScreenshotSelectorHitTestMode mode) {
     if ((!m_ready && !m_refreshInFlight) || !m_serviceClient->hasService()) {
         return false;
     }
 
     m_pendingHitTestPoint = physicalPoint;
+    m_pendingHitTestMode = mode;
     m_hasPendingHitTestPoint = true;
     if (!m_hitTestInFlight) {
         startNextHitTest();
@@ -110,12 +116,15 @@ void ScreenshotSelectorCoordinator::startNextHitTest() {
     }
 
     const QPoint point = m_pendingHitTestPoint;
+    const ScreenshotSelectorHitTestMode mode = m_pendingHitTestMode;
     m_hasPendingHitTestPoint = false;
     const quint64 requestId = ++m_hitTestRequestId;
     m_hitTestInFlight = true;
-    if (!m_serviceClient->startHitTest(requestId, point)) {
+    m_inFlightHitTestPoint = point;
+    if (!m_serviceClient->startHitTest(requestId, point, mode)) {
         m_hitTestInFlight = false;
-        emit hitTestFinished(false, {});
+        m_inFlightHitTestPoint = QPoint();
+        emit hitTestFinished(false, point, {});
     }
 }
 
@@ -135,6 +144,8 @@ void ScreenshotSelectorCoordinator::handleHitTestFinished(quint64 requestId, boo
         return;
     }
 
+    const QPoint physicalPoint = m_inFlightHitTestPoint;
     m_hitTestInFlight = false;
-    emit hitTestFinished(ok, hitRects);
+    m_inFlightHitTestPoint = QPoint();
+    emit hitTestFinished(ok, physicalPoint, hitRects);
 }

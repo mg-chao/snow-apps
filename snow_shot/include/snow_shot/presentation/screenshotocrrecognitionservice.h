@@ -26,6 +26,16 @@ struct ScreenshotOcrRecognitionResult {
     QString error;
 };
 
+enum class ScreenshotOcrRequestPriority { Interactive, Prefetch };
+
+enum class ScreenshotOcrBackendPreference { Cpu, DirectMl };
+
+struct ScreenshotOcrRequest {
+    QImage image;
+    QRectF canvasRect;
+    ScreenshotOcrRequestPriority priority = ScreenshotOcrRequestPriority::Interactive;
+};
+
 class ScreenshotOcrRecognitionPort : public QObject {
   public:
     explicit ScreenshotOcrRecognitionPort(QObject* parent = nullptr) : QObject(parent) {}
@@ -33,9 +43,10 @@ class ScreenshotOcrRecognitionPort : public QObject {
     using Completion = std::function<void(ScreenshotOcrRecognitionResult)>;
 
     virtual ~ScreenshotOcrRecognitionPort() = default;
-    virtual RequestToken recognize(QImage image, const QRectF& canvasRect, QObject* receiver,
+    virtual RequestToken recognize(ScreenshotOcrRequest request, QObject* receiver,
                                    Completion completion) = 0;
     virtual void cancel(RequestToken token) = 0;
+    virtual bool reprioritize(RequestToken token, ScreenshotOcrRequestPriority priority) = 0;
 };
 
 class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPort {
@@ -43,20 +54,25 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
 
   public:
     struct Options {
-        int engineIdleTimeoutMs = 16'000;
+        // Maximum concurrent OCR workers.
+        int workerCount = 2;
     };
 
     explicit ScreenshotOcrRecognitionService(QObject* parent = nullptr);
-    explicit ScreenshotOcrRecognitionService(std::function<bool()> directMlEnabled,
+    explicit ScreenshotOcrRecognitionService(ScreenshotOcrBackendPreference backendPreference,
                                              QObject* parent = nullptr);
     explicit ScreenshotOcrRecognitionService(const Options& options,
-                                             std::function<bool()> directMlEnabled = {},
+                                             ScreenshotOcrBackendPreference backendPreference =
+                                                 ScreenshotOcrBackendPreference::Cpu,
                                              QObject* parent = nullptr);
     ~ScreenshotOcrRecognitionService() override;
 
-    RequestToken recognize(QImage image, const QRectF& canvasRect, QObject* receiver,
+    RequestToken recognize(ScreenshotOcrRequest request, QObject* receiver,
                            Completion completion) override;
     void cancel(RequestToken token) override;
+    bool reprioritize(RequestToken token, ScreenshotOcrRequestPriority priority) override;
+    void setBackendPreference(ScreenshotOcrBackendPreference preference);
+    [[nodiscard]] int liveWorkerCount() const;
 
   private:
     class Impl;

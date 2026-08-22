@@ -11,8 +11,10 @@
 #include <QApplication>
 #include <QColor>
 #include <QCursor>
+#include <QEvent>
 #include <QImage>
 #include <QMouseEvent>
+#include <QObject>
 #include <QPainter>
 #include <QPixmap>
 
@@ -34,6 +36,35 @@ void requireNear(qreal actual, qreal expected, const char* message) {
         std::exit(1);
     }
 }
+
+void requireEqual(int actual, int expected, const char* message) {
+    if (actual != expected) {
+        std::cerr << message << ": expected " << expected << ", got " << actual << '\n';
+        std::exit(1);
+    }
+}
+
+class CursorChangeCounter final : public QObject {
+  public:
+    int count() const {
+        return m_count;
+    }
+
+    void reset() {
+        m_count = 0;
+    }
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event != nullptr && event->type() == QEvent::CursorChange) {
+            ++m_count;
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+  private:
+    int m_count = 0;
+};
 
 class RecordingRenderer final : public SnowCanvasCustomRenderer {
   public:
@@ -301,6 +332,83 @@ void sendMouseEvent(SnowCanvasWidget& canvas, QEvent::Type type, const QPointF& 
                     Qt::MouseButton button, Qt::MouseButtons buttons) {
     QMouseEvent event(type, position, position, position, button, buttons, Qt::NoModifier);
     QApplication::sendEvent(&canvas, &event);
+}
+
+void creationToolCursorsDoNotFallBackToTheNativeArrow() {
+    SnowCanvasWidget canvas;
+    canvas.resize(80, 80);
+    canvas.show();
+    QApplication::processEvents();
+
+    CursorChangeCounter cursorChanges;
+    canvas.installEventFilter(&cursorChanges);
+
+    require(canvas.setCanvasTool(SnowCanvasTool::Shape),
+            "shape tool should activate for cursor verification");
+    require(canvas.cursor().shape() == Qt::CrossCursor,
+            "shape tool should apply a crosshair cursor immediately");
+
+    require(canvas.setCanvasTool(SnowCanvasTool::Arrow),
+            "arrow tool should activate for cursor verification");
+    require(canvas.cursor().shape() == Qt::CrossCursor,
+            "arrow tool should retain a crosshair cursor between pointer events");
+
+    require(canvas.setCanvasTool(SnowCanvasTool::FreeDraw),
+            "free draw should activate for cursor mutation verification");
+    cursorChanges.reset();
+    sendMouseEvent(canvas, QEvent::MouseMove, QPointF(20.0, 20.0), Qt::NoButton,
+                   Qt::NoButton);
+    require(canvas.cursor().shape() == Qt::BlankCursor,
+            "free draw pointer feedback should hide the native cursor");
+    const int freeDrawCursorChangeCount = cursorChanges.count();
+    require(freeDrawCursorChangeCount > 0,
+            "free draw should apply its hidden contextual cursor on the first pointer move");
+
+    for (int index = 0; index < 20; ++index) {
+        sendMouseEvent(canvas, QEvent::MouseMove, QPointF(21.0 + index, 20.0), Qt::NoButton,
+                       Qt::NoButton);
+    }
+    require(canvas.cursor().shape() == Qt::BlankCursor,
+            "free draw should retain its hidden cursor across pointer movement");
+    requireEqual(cursorChanges.count(), freeDrawCursorChangeCount,
+                 "identical free draw cursor output must not repeat native cursor mutations");
+
+    require(canvas.setCanvasTool(SnowCanvasTool::Arrow),
+            "arrow should reactivate after free draw cursor verification");
+    cursorChanges.reset();
+    for (int index = 0; index < 20; ++index) {
+        sendMouseEvent(canvas, QEvent::MouseMove, QPointF(20.0 + index, 30.0), Qt::NoButton,
+                       Qt::NoButton);
+    }
+    require(canvas.cursor().shape() == Qt::CrossCursor,
+            "arrow should retain its crosshair across pointer movement");
+    requireEqual(cursorChanges.count(), 0,
+                 "identical arrow cursor output must not repeat native cursor mutations");
+
+    canvas.unsetCursor();
+    require(canvas.cursor().shape() == Qt::ArrowCursor,
+            "the external cursor recovery test should clear the canvas-owned cursor");
+    cursorChanges.reset();
+    sendMouseEvent(canvas, QEvent::MouseMove, QPointF(40.0, 30.0), Qt::NoButton,
+                   Qt::NoButton);
+    require(canvas.cursor().shape() == Qt::CrossCursor,
+            "pointer output should restore a canvas cursor changed by external code");
+    require(cursorChanges.count() > 0,
+            "restoring an externally changed cursor should perform one native mutation");
+
+    cursorChanges.reset();
+    canvas.setInteractionEnabled(false);
+    require(canvas.cursor().shape() == Qt::ArrowCursor,
+            "disabling canvas interaction should relinquish its tool cursor");
+    require(cursorChanges.count() > 0,
+            "disabling canvas interaction should relinquish the native cursor");
+
+    cursorChanges.reset();
+    canvas.setInteractionEnabled(true);
+    require(canvas.cursor().shape() == Qt::CrossCursor,
+            "re-enabling canvas interaction should restore the active tool cursor");
+    require(cursorChanges.count() > 0,
+            "re-enabling canvas interaction should restore the native tool cursor");
 }
 
 void runtimeExportUsesTheRequestedCanvasOrigin() {
@@ -571,9 +679,9 @@ void serialToolbarGlyphsMatchTheirApprovedGeometry() {
                 textFields.pixelColor(11, 10).rgb() == color.rgb(),
             "serial text-fields should retain the approved paired-letter geometry");
 
-    const auto& definition = snow::draw_engine::icons::pack().definition();
-    require(definition.pack == QStringLiteral("snow-draw-engine-qt") &&
-                definition.entries.size() == 4,
+    const adqt::icons::IconPack* staticPack = snow::draw_engine::icons::pack().staticPack();
+    require(staticPack != nullptr && staticPack->packName == "snow-draw-engine-qt" &&
+                staticPack->entryCount == 4,
             "draw-engine pack should contain its cursor and three toolbar glyphs");
 }
 
@@ -599,6 +707,7 @@ void rotationHandleCursorMatchesTheReferencePlatformBehavior() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     rotationHandleCursorMatchesTheReferencePlatformBehavior();
+    creationToolCursorsDoNotFallBackToTheNativeArrow();
     customRendererContractIsOrderedAndIsolated();
     runtimeExportUsesTheRequestedCanvasOrigin();
     canvasContentVisibilityPreservesCustomRenderingAndState();

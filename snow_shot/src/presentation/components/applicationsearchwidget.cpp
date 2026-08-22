@@ -1,6 +1,8 @@
 #include "snow_shot/presentation/components/applicationsearchwidget.h"
 
 #include "snow_shot/presentation/styles/themecolorscheme.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
 
 #include "antd_icons.h"
 #include "icons/widget_icons.h"
@@ -28,7 +30,11 @@ namespace outlined_icons = adqt::icons::antd::outlined;
 
 constexpr int kDescriptionRole = Qt::UserRole + 101;
 constexpr int kCategoryRole = Qt::UserRole + 102;
-constexpr int kResultsPopupWidth = 390;
+constexpr auto kScreenshotDelayKey = "screenshot/delay_seconds";
+
+snow_shot::presentation::settings::SettingsSearchRuntimeValues searchRuntimeValues() {
+    return {snow_shot::storage::ScreenshotSettings().delaySeconds()};
+}
 
 QString metadataRoleKey(int role) {
     return QStringLiteral("__role_%1").arg(role);
@@ -252,7 +258,8 @@ class SearchResultItemDelegate final : public QStyledItemDelegate {
 ApplicationSearchWidget::ApplicationSearchWidget(
     const snow_shot::presentation::settings::SettingsCatalog& catalog,
     const snow_shot::presentation::styles::ThemeAliasMetricToken& metric, QWidget* parent)
-    : QWidget(parent), m_index(catalog), m_select(new adqt::widgets::AdSelect(this)) {
+    : QWidget(parent), m_index(catalog, searchRuntimeValues()),
+      m_select(new adqt::widgets::AdSelect(this)) {
     auto* rootLayout = new QHBoxLayout(this);
     rootLayout->setContentsMargins(0, 0, 0, 0);
     rootLayout->setSpacing(0);
@@ -264,8 +271,7 @@ ApplicationSearchWidget::ApplicationSearchWidget(
     m_select->setSearchPolicy(adqt::widgets::AdSelect::SearchPolicy::External);
     m_select->setAllowClear(true);
     m_select->setAutoClearSearchValue(true);
-    m_select->setPopupMatchSelectWidth(false);
-    m_select->setPopupWidth(kResultsPopupWidth);
+    m_select->setPopupMatchSelectWidth(true);
     m_select->setPlacement(adqt::widgets::AdSelect::Placement::BottomCenter);
     m_select->setPrefixIconRef(outlined_icons::Search());
     m_select->setSearchRoles({
@@ -291,6 +297,15 @@ ApplicationSearchWidget::ApplicationSearchWidget(
 
     connect(m_select, &adqt::widgets::AdSelect::selected, this,
             &ApplicationSearchWidget::handleSelectedValue);
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    connect(&configuration, &snow_shot::storage::ConfigurationStore::valueChanged, this,
+            [this](const QString& key, const QJsonValue& value) {
+                if (key != QLatin1String(kScreenshotDelayKey)) {
+                    return;
+                }
+                m_index.setRuntimeValues({value.toInt()});
+                populateResults(query());
+            });
     populateResults(QString());
 }
 
@@ -401,18 +416,9 @@ void ApplicationSearchWidget::populateResults(const QString& queryText) {
         return;
     }
 
+    const bool emptyQuery = queryText.trimmed().isEmpty();
     QVector<snow_shot::presentation::settings::SettingsSearchEntry> results =
-        m_index.search(queryText);
-    if (queryText.trimmed().isEmpty()) {
-        results.erase(
-            std::remove_if(
-                results.begin(), results.end(),
-                [](const auto& entry) {
-                    return entry.kind != snow_shot::presentation::settings::
-                                             SettingsSearchNodeKind::Page;
-                }),
-            results.end());
-    }
+        emptyQuery ? m_index.pageEntries() : m_index.search(queryText);
     QVector<adqt::widgets::AdSelect::Option> options;
     options.reserve(results.size());
     m_locationsByValue.clear();

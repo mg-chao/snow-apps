@@ -182,17 +182,32 @@ if(SNOW_IMAGE_CODEC_JXL)
         pkg_check_modules(JXL QUIET IMPORTED_TARGET libjxl)
         pkg_check_modules(JXL_THREADS QUIET IMPORTED_TARGET libjxl_threads)
     endif()
-    if(TARGET PkgConfig::JXL AND TARGET PkgConfig::JXL_THREADS)
+    if(NOT WIN32 AND TARGET PkgConfig::JXL AND TARGET PkgConfig::JXL_THREADS)
         list(APPEND SNOW_IMAGE_PRIVATE_LIBRARIES PkgConfig::JXL PkgConfig::JXL_THREADS)
     else()
+        find_package(hwy CONFIG REQUIRED)
+        find_package(lcms2 CONFIG REQUIRED)
+        find_package(unofficial-brotli CONFIG REQUIRED)
         find_path(SNOW_IMAGE_JXL_INCLUDE_DIR NAMES jxl/decode.h REQUIRED)
         find_library(SNOW_IMAGE_JXL_LIBRARY NAMES jxl REQUIRED)
+        find_library(SNOW_IMAGE_JXL_CMS_LIBRARY NAMES jxl_cms REQUIRED)
         find_library(SNOW_IMAGE_JXL_THREADS_LIBRARY NAMES jxl_threads REQUIRED)
+        if(NOT TARGET snow_image_dependencies::jxl_cms)
+            add_library(snow_image_dependencies::jxl_cms UNKNOWN IMPORTED)
+            set_target_properties(snow_image_dependencies::jxl_cms PROPERTIES
+                IMPORTED_LOCATION "${SNOW_IMAGE_JXL_CMS_LIBRARY}"
+                INTERFACE_COMPILE_DEFINITIONS JXL_CMS_STATIC_DEFINE
+                INTERFACE_LINK_LIBRARIES lcms2::lcms2
+            )
+        endif()
         if(NOT TARGET snow_image_dependencies::jxl)
             add_library(snow_image_dependencies::jxl UNKNOWN IMPORTED)
             set_target_properties(snow_image_dependencies::jxl PROPERTIES
                 IMPORTED_LOCATION "${SNOW_IMAGE_JXL_LIBRARY}"
                 INTERFACE_INCLUDE_DIRECTORIES "${SNOW_IMAGE_JXL_INCLUDE_DIR}"
+                INTERFACE_COMPILE_DEFINITIONS JXL_STATIC_DEFINE
+                INTERFACE_LINK_LIBRARIES
+                    "hwy::hwy;unofficial::brotli::brotlienc;unofficial::brotli::brotlidec;snow_image_dependencies::jxl_cms"
             )
         endif()
         if(NOT TARGET snow_image_dependencies::jxl_threads)
@@ -200,6 +215,7 @@ if(SNOW_IMAGE_CODEC_JXL)
             set_target_properties(snow_image_dependencies::jxl_threads PROPERTIES
                 IMPORTED_LOCATION "${SNOW_IMAGE_JXL_THREADS_LIBRARY}"
                 INTERFACE_INCLUDE_DIRECTORIES "${SNOW_IMAGE_JXL_INCLUDE_DIR}"
+                INTERFACE_COMPILE_DEFINITIONS JXL_THREADS_STATIC_DEFINE
             )
         endif()
         list(APPEND SNOW_IMAGE_PRIVATE_LIBRARIES
@@ -365,5 +381,8 @@ if(SNOW_IMAGE_ENABLE_INSTALL)
         ${CMAKE_CURRENT_BINARY_DIR}/snow_imageConfig.cmake
         ${CMAKE_CURRENT_BINARY_DIR}/snow_imageConfigVersion.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/snow_image
+    )
+    install(FILES LICENSE COPYRIGHT
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/snow-image/licenses
     )
 endif()

@@ -38,11 +38,10 @@ class ScreenshotToolbarPresenter final {
     void hideSelectionToolbar();
     void showSelectionToolbar(const ScreenshotToolbarPresentationState& state);
     void repositionForContentChange(const ScreenshotToolbarPresentationState& state);
-    void updateSelectionToolbarState(const ScreenshotToolbarPresentationState& state,
-                                     bool reposition = true);
+    void updateSelectionToolbarState(const ScreenshotToolbarPresentationState& state);
     void raiseToolbarForCanvasInteraction(const ScreenshotToolbarPresentationState& state);
     void moveToolbar(const ScreenshotToolbarPresentationState& state);
-    void moveSelectionToolbar(const ScreenshotToolbarPresentationState& state);
+    [[nodiscard]] bool moveSelectionToolbar(const ScreenshotToolbarPresentationState& state);
 
   private:
     [[nodiscard]] const CapturedDisplayModel* displayForCanvasPoint(const QPointF& point) const;

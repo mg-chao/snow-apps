@@ -13,6 +13,7 @@
 #include <QEvent>
 #include <QLabel>
 #include <QPalette>
+#include <QSizePolicy>
 
 namespace {
 namespace outlined_icons = adqt::icons::antd::outlined;
@@ -25,6 +26,7 @@ SectionHeaderWidget::SectionHeaderWidget(
       m_resetButton(new ThemedHeaderIconButton(metric, outlined_icons::Reload(), this)),
       m_resetPopconfirm(new adqt::widgets::AdPopconfirm(this)) {
     setAutoFillBackground(false);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
     auto* headerLayout = new QHBoxLayout(this);
     headerLayout->setContentsMargins(0, metric.marginMD, 0, metric.marginMD);

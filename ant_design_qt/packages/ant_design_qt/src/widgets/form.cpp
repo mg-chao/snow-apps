@@ -2634,7 +2634,7 @@ void AdFormList::addRow(const QVariant& value, int index) {
 
   row.removeButton = new QToolButton(row.host);
   row.removeButton->setObjectName(QStringLiteral("ad-form-list-remove"));
-  row.removeButton->setText(QStringLiteral("Remove"));
+  row.removeButton->setText(tr("Remove"));
   row.removeButton->setToolTip(tr("Remove row"));
   row.removeButton->setAutoRaise(true);
   row.removeButton->setCursor(Qt::PointingHandCursor);
@@ -2697,8 +2697,16 @@ void AdFormList::moveRow(int from, int to) {
 
 void AdFormList::changeEvent(QEvent* event) {
   QWidget::changeEvent(event);
-  if (event && event->type() == QEvent::LanguageChange && addButtonText_.isEmpty()) {
-    setAddButtonText(tr("Add row"));
+  if (event && event->type() == QEvent::LanguageChange) {
+    if (addButtonText_.isEmpty()) {
+      setAddButtonText(tr("Add row"));
+    }
+    for (Row& row : rows_) {
+      if (row.removeButton) {
+        row.removeButton->setText(tr("Remove"));
+        row.removeButton->setToolTip(tr("Remove row"));
+      }
+    }
   }
 }
 

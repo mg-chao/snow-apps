@@ -11,12 +11,23 @@ vcpkg_from_github(
       0029-protobuf-caffe-generation.patch
 )
 
-vcpkg_download_distfile(CAFFE_PROTO_FILE
-    URLS "https://raw.githubusercontent.com/opencv/opencv/4.x/modules/dnn/src/caffe/opencv-caffe.proto"
-    SHA512 0b5f14ee72ebd236dd9af66716256127429fc1a817155c9afb93c109b6768b84ff1d22de989de960908e4719551fb2ead0be8072bf6b45e31fc404211fb35bb9
-    FILENAME "opencv-cache/caffe/opencv-caffe.proto"
-)
-file(COPY "${CAFFE_PROTO_FILE}" DESTINATION "${SOURCE_PATH}/modules/dnn/src/caffe")
+if("dnn" IN_LIST FEATURES)
+    vcpkg_download_distfile(CAFFE_PROTO_FILE
+        URLS "https://raw.githubusercontent.com/opencv/opencv/4.x/modules/dnn/src/caffe/opencv-caffe.proto"
+        SHA512 0b5f14ee72ebd236dd9af66716256127429fc1a817155c9afb93c109b6768b84ff1d22de989de960908e4719551fb2ead0be8072bf6b45e31fc404211fb35bb9
+        FILENAME "opencv-cache/caffe/opencv-caffe.proto"
+    )
+    file(COPY "${CAFFE_PROTO_FILE}" DESTINATION "${SOURCE_PATH}/modules/dnn/src/caffe")
+endif()
+
+set(OPENCV_BUILD_MODULES core imgproc objdetect)
+if("dnn" IN_LIST FEATURES)
+    list(APPEND OPENCV_BUILD_MODULES dnn)
+endif()
+if("contrib" IN_LIST FEATURES)
+    list(APPEND OPENCV_BUILD_MODULES wechat_qrcode)
+endif()
+list(JOIN OPENCV_BUILD_MODULES "," OPENCV_BUILD_LIST)
 
 # Disallow accidental build of vendored copies``
 file(GLOB third_party "${SOURCE_PATH}/3rdparty/*")
@@ -441,7 +452,7 @@ vcpkg_cmake_configure(
         ###### OPENCV vars
         "-DOPENCV_DOWNLOAD_PATH=${DOWNLOADS}/opencv-cache"
         ${BUILD_WITH_CONTRIB_FLAG}
-        -DBUILD_LIST=core,imgproc,dnn,objdetect,wechat_qrcode
+        -DBUILD_LIST=${OPENCV_BUILD_LIST}
         -DOPENCV_OTHER_INSTALL_PATH=share/opencv4
         ###### customized properties
         ${FEATURE_OPTIONS}
@@ -509,6 +520,11 @@ vcpkg_replace_string("${OPENCV_MODULES_FILE}"
     "set(_IMPORT_PREFIX \"\${VCPKG_IMPORT_PREFIX}\")\n\n# Create imported target opencv_core"
 )
 file(READ "${OPENCV_MODULES_FILE}" OPENCV_MODULES)
+if(VCPKG_TARGET_IS_WINDOWS AND NOT VCPKG_TARGET_IS_MINGW)
+  # OpenCV 5 exports pthread even after its pthread backend and header check
+  # are disabled. MSVC uses native Windows synchronization primitives.
+  string(REPLACE "\$<LINK_ONLY:pthread>" "" OPENCV_MODULES "${OPENCV_MODULES}")
+endif()
 set(DEPS_STRING "include(CMakeFindDependencyMacro)
 if(${BUILD_opencv_dnn} AND NOT TARGET libprotobuf)  #Check if the CMake target libprotobuf is already defined
   find_dependency(Protobuf CONFIG REQUIRED)

@@ -104,6 +104,84 @@ void testScaleLimitsUseExactBaselineMultiples() {
             "resizing above the maximum should clamp to the maximum scale");
 }
 
+void testWheelScaleAnchorsUseHalfOpenEdges() {
+    const QRect reference(101, 203, 319, 181);
+    const QSize targetSize(477, 269);
+    using ScaleAnchor = resize_geometry::ScaleAnchor;
+
+    const QRect topLeft =
+        resize_geometry::anchoredScaleRect(reference, targetSize, ScaleAnchor::TopLeft);
+    const QRect topRight =
+        resize_geometry::anchoredScaleRect(reference, targetSize, ScaleAnchor::TopRight);
+    const QRect bottomLeft =
+        resize_geometry::anchoredScaleRect(reference, targetSize, ScaleAnchor::BottomLeft);
+    const QRect bottomRight =
+        resize_geometry::anchoredScaleRect(reference, targetSize, ScaleAnchor::BottomRight);
+
+    require(topLeft.topLeft() == reference.topLeft(),
+            "top-left wheel scaling should preserve its half-open anchor");
+    require(topRight.left() + topRight.width() == reference.left() + reference.width() &&
+                topRight.top() == reference.top(),
+            "top-right wheel scaling should preserve its half-open anchor");
+    require(bottomLeft.left() == reference.left() &&
+                bottomLeft.top() + bottomLeft.height() == reference.top() + reference.height(),
+            "bottom-left wheel scaling should preserve its half-open anchor");
+    require(bottomRight.left() + bottomRight.width() ==
+                    reference.left() + reference.width() &&
+                bottomRight.top() + bottomRight.height() ==
+                    reference.top() + reference.height(),
+            "bottom-right wheel scaling should preserve its half-open anchor");
+}
+
+void testWheelScalePreservesCenterAndMousePosition() {
+    const QRect reference(100, 200, 320, 180);
+    const QSize targetSize(480, 270);
+    using ScaleAnchor = resize_geometry::ScaleAnchor;
+
+    const QRect centered =
+        resize_geometry::anchoredScaleRect(reference, targetSize, ScaleAnchor::Center);
+    const QPointF referenceCenter(reference.left() + reference.width() / 2.0,
+                                  reference.top() + reference.height() / 2.0);
+    const QPointF centeredCenter(centered.left() + centered.width() / 2.0,
+                                 centered.top() + centered.height() / 2.0);
+    require(centeredCenter == referenceCenter,
+            "center wheel scaling should preserve the geometric center");
+
+    const QRect oddReference(101, 203, 319, 181);
+    const QRect parityChanged =
+        resize_geometry::anchoredScaleRect(oddReference, QSize(478, 270), ScaleAnchor::Center);
+    const QRect roundTrip = resize_geometry::anchoredScaleRect(
+        parityChanged, oddReference.size(), ScaleAnchor::Center);
+    require(roundTrip == oddReference,
+            "center wheel scaling should not drift across dimension parity changes");
+
+    const QPointF mousePosition(180.0, 320.0);
+    const QRect aroundMouse = resize_geometry::anchoredScaleRect(
+        reference, targetSize, ScaleAnchor::MousePosition, mousePosition);
+    const QPointF oldNormalized((mousePosition.x() - reference.left()) / reference.width(),
+                                (mousePosition.y() - reference.top()) / reference.height());
+    const QPointF mappedMouse(aroundMouse.left() + oldNormalized.x() * aroundMouse.width(),
+                              aroundMouse.top() + oldNormalized.y() * aroundMouse.height());
+    require((mappedMouse - mousePosition).manhattanLength() <= 1.0,
+            "mouse-position wheel scaling should preserve the normalized cursor location");
+}
+
+void testWheelScaleSettingNames() {
+    using ScaleAnchor = resize_geometry::ScaleAnchor;
+    require(resize_geometry::scaleAnchorFromSetting(u"top_left") == ScaleAnchor::TopLeft &&
+                resize_geometry::scaleAnchorFromSetting(u"top_right") == ScaleAnchor::TopRight &&
+                resize_geometry::scaleAnchorFromSetting(u"bottom_left") ==
+                    ScaleAnchor::BottomLeft &&
+                resize_geometry::scaleAnchorFromSetting(u"bottom_right") ==
+                    ScaleAnchor::BottomRight &&
+                resize_geometry::scaleAnchorFromSetting(u"center") == ScaleAnchor::Center &&
+                resize_geometry::scaleAnchorFromSetting(u"mouse_position") ==
+                    ScaleAnchor::MousePosition &&
+                resize_geometry::scaleAnchorFromSetting(u"invalid") ==
+                    ScaleAnchor::MousePosition,
+            "wheel scale setting names should map to the documented anchors and default safely");
+}
+
 void testInvalidInputsAreRejected() {
     QRect result;
     require(!resize_geometry::proportionalResizeRect({}, QRect(0, 0, 100, 100), QSize(100, 100),
@@ -126,6 +204,9 @@ int main(int argc, char* argv[]) {
         testEveryHandlePreservesItsFixedAnchor();
         testDraggedEdgeDeterminesScale();
         testScaleLimitsUseExactBaselineMultiples();
+        testWheelScaleAnchorsUseHalfOpenEdges();
+        testWheelScalePreservesCenterAndMousePosition();
+        testWheelScaleSettingNames();
         testInvalidInputsAreRejected();
     } catch (const std::exception& error) {
         std::cerr << "screenshot pinned resize geometry test failure: " << error.what() << '\n';

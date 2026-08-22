@@ -482,7 +482,8 @@ class AdImage final : public QWidget {
   QUrl previewSource_;
   AdImageItems previewItems_;
   bool previewEnabled_ = true;
-  QString previewText_ = QStringLiteral("Preview");
+  // Empty means the locale-aware built-in label; non-empty values are application-owned text.
+  QString previewText_;
   QSize preferredImageSize_;
   bool loading_ = false;
   bool loadFailed_ = false;

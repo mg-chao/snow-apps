@@ -2,11 +2,31 @@
 
 #include "screenshotcaptureworker.h"
 
+#include "snow_capture.h"
+
 #include <QMetaObject>
 #include <QPointer>
 #include <QThread>
 
 #include <utility>
+
+struct ScreenshotCaptureCoordinator::CancellationState final {
+    CancellationState() : token(snow_capture_cancellation_token_create()) {}
+
+    ~CancellationState() {
+        if (token != nullptr) {
+            snow_capture_cancellation_token_destroy(token);
+        }
+    }
+
+    void cancel() const {
+        if (token != nullptr) {
+            snow_capture_cancellation_token_cancel(token);
+        }
+    }
+
+    SnowCaptureCancellationToken* token = nullptr;
+};
 
 ScreenshotCaptureCoordinator::ScreenshotCaptureCoordinator(QObject* parent) : QObject(parent) {}
 
@@ -30,31 +50,77 @@ void ScreenshotCaptureCoordinator::refreshLayoutAsync(quint64 requestId) {
         [requestId](ScreenshotCaptureWorker& worker) { worker.refreshLayout(requestId); }));
 }
 
-void ScreenshotCaptureCoordinator::captureAllAsync(quint64 requestId, bool refreshLayout) {
-    const QPointer<ScreenshotCaptureCoordinator> coordinator(this);
-    static_cast<void>(
-        postWorkerTask([coordinator, requestId, refreshLayout](ScreenshotCaptureWorker& worker) {
-            worker.captureAll(requestId, coordinator, refreshLayout);
-        }));
-}
-
-void ScreenshotCaptureCoordinator::releaseIdleResourcesAsync(quint64 requestId) {
-    if (!hasWorker()) {
+void ScreenshotCaptureCoordinator::captureAsync(const ScreenshotCaptureRequest& request) {
+    cancelActiveCapture();
+    auto cancellation = std::make_shared<CancellationState>();
+    if (cancellation->token == nullptr) {
+        ScreenshotCaptureResult result;
+        result.requestId = request.requestId;
+        result.errorMessage = QStringLiteral("Failed to create capture cancellation token");
+        emit captureFinished(std::move(result));
         return;
     }
+    m_activeCancellation = cancellation;
+    const QPointer<ScreenshotCaptureCoordinator> coordinator(this);
+    if (!postWorkerTask([coordinator, request, cancellation](ScreenshotCaptureWorker& worker) {
+            worker.capture(request, coordinator, cancellation->token);
+        })) {
+        cancellation->cancel();
+        ScreenshotCaptureResult result;
+        result.requestId = request.requestId;
+        result.errorMessage = QStringLiteral("Capture worker is unavailable");
+        emit captureFinished(std::move(result));
+    }
+}
 
-    static_cast<void>(postWorkerTask(
-        [requestId](ScreenshotCaptureWorker& worker) { worker.releaseIdleResources(requestId); }));
+void ScreenshotCaptureCoordinator::cancelActiveCapture() {
+    if (m_activeCancellation != nullptr) {
+        m_activeCancellation->cancel();
+        m_activeCancellation.reset();
+    }
+}
+
+bool ScreenshotCaptureCoordinator::releaseIdleResourcesAsync(
+    quint64 requestId, std::function<void(bool released)> completion) {
+    if (!hasWorker()) {
+        return false;
+    }
+
+    const QPointer<ScreenshotCaptureCoordinator> coordinator(this);
+    return postWorkerTask([coordinator, requestId, completion = std::move(completion)](
+                              ScreenshotCaptureWorker& worker) mutable {
+        const bool released = worker.releaseIdleResources(requestId);
+        if (coordinator.isNull() || !completion) {
+            return;
+        }
+        QMetaObject::invokeMethod(
+            coordinator,
+            [coordinator, released, completion = std::move(completion)]() mutable {
+                if (!coordinator.isNull()) {
+                    completion(released);
+                }
+            },
+            Qt::QueuedConnection);
+    });
 }
 
 void ScreenshotCaptureCoordinator::shutdown() {
+    cancelActiveCapture();
     if (m_thread == nullptr) {
+        delete m_worker;
         m_worker = nullptr;
         return;
     }
 
+    // The worker has no parent and its event loop is about to stop. Disconnect
+    // the deferred-delete hook and destroy it explicitly after the thread has
+    // joined, otherwise the native session can outlive the stopped worker.
+    if (m_worker != nullptr) {
+        QObject::disconnect(m_thread, &QThread::finished, m_worker, &QObject::deleteLater);
+    }
     m_thread->quit();
     m_thread->wait();
+    delete m_worker;
     delete m_thread;
     m_thread = nullptr;
     m_worker = nullptr;

@@ -18,6 +18,7 @@ pub enum VideoEncodingSpeed {
     Slow,
     Slower,
     VerySlow,
+    Placebo,
 }
 
 impl VideoEncodingSpeed {
@@ -32,8 +33,16 @@ impl VideoEncodingSpeed {
             Self::Slow => "slow",
             Self::Slower => "slower",
             Self::VerySlow => "veryslow",
+            Self::Placebo => "placebo",
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum VideoCodec {
+    #[default]
+    H264,
+    H265,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]

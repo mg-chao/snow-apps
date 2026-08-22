@@ -13,11 +13,13 @@
 #include <QWidget>
 
 #include <limits>
+#include <utility>
 
-ScreenshotOverlayCoordinator::ScreenshotOverlayCoordinator(ScreenshotOverlayEventSink& eventSink,
-                                                           SnowCanvasRuntime& canvasRuntime)
+ScreenshotOverlayCoordinator::ScreenshotOverlayCoordinator(
+    ScreenshotOverlayEventSink& eventSink, SnowCanvasRuntime& canvasRuntime,
+    snow_shot::presentation::WindowShortcutManager& shortcutManager)
     : m_overlayPool(
-          eventSink, canvasRuntime,
+          eventSink, canvasRuntime, shortcutManager,
           ScreenshotOverlayPoolCallbacks{
               [this](ScreenshotOverlayWindow* overlay) { detachOverlayTransientUi(overlay); },
               [this](ScreenshotOverlayWindow* overlay) { clearOverlayCanvas(overlay); },
@@ -64,14 +66,26 @@ void ScreenshotOverlayCoordinator::clearDisplays(ScreenshotDisplaySession& displ
     m_uiHost.resetColorPickerForNewCapture();
 }
 
+void ScreenshotOverlayCoordinator::hibernateDisplayPool(ScreenshotDisplaySession& displaySession) {
+    m_uiHost.hibernateUiResources();
+    m_overlayPool.hibernateDisplayPool(displaySession);
+    m_overlayMaintenancePending = false;
+}
+
 void ScreenshotOverlayCoordinator::destroyDisplayPool(ScreenshotDisplaySession& displaySession) {
+    // UI widgets can be children/native children of an overlay. Retire them
+    // before the pool releases its HWNDs so detach logic cannot recreate a
+    // top-level toolbar window during teardown.
+    m_uiHost.releaseUiResources();
     m_overlayPool.destroyDisplayPool(displaySession);
+    m_overlayMaintenancePending = false;
 }
 
 void ScreenshotOverlayCoordinator::resetForNewCapture(ScreenshotDisplaySession& displaySession) {
     flushDeferredOverlayMaintenance(displaySession);
     m_overlayPool.resetForNewCapture(displaySession);
     m_uiHost.resetColorPickerForNewCapture();
+    m_uiHost.hideShortcutHints();
 
     resetToolbarForNewCapture();
 }
@@ -145,25 +159,33 @@ void ScreenshotOverlayCoordinator::showOverlayWindows(
     m_canvasPresenter.showOverlayWindows(displaySession, mode);
 }
 
+void ScreenshotOverlayCoordinator::activateOverlayWindows(
+    const ScreenshotDisplaySession& displaySession, std::function<void()> interactionReady) {
+    m_canvasPresenter.activateOverlayWindows(displaySession, std::move(interactionReady));
+}
+
 void ScreenshotOverlayCoordinator::hideOverlayWindowsImmediately(
     const ScreenshotDisplaySession& displaySession) {
     // Reset the pooled toolbars before hiding them. Translucent Windows
     // surfaces retain their last composed frame while hidden, so resetting
     // after hide lets the old style/selection row flash on the next show.
-    // Keep the canvas untouched here: pin/copy exports may still consume it
-    // asynchronously after this immediate hide.
+    // Pin/copy exports may still consume the renderer and canvas document after
+    // this call, so their model state must remain intact. The native window is
+    // presentation-only, however, and a hidden translucent HWND retains its last
+    // DWM-composed frame. Retire that surface now so the next capture cannot
+    // expose the previous screenshot before its first repaint.
     m_uiHost.resetToolbarForNewCapture();
     m_uiHost.hideToolbar();
+    m_uiHost.hideShortcutHints();
     SNOW_SHOT_PIN_PERF_MILESTONE("overlay.toolbar_hidden");
-    displaySession.forEachOverlay(
-        [](qsizetype, ScreenshotOverlayWindow* overlay) {
-            if (overlay == nullptr) {
-                return;
-            }
-            overlay->setCanvasClearBackgroundEnabled(false);
-            overlay->clearInputPassThroughRect();
-            overlay->hide();
-        });
+    displaySession.forEachOverlay([](qsizetype, ScreenshotOverlayWindow* overlay) {
+        if (overlay == nullptr) {
+            return;
+        }
+        overlay->setCanvasClearBackgroundEnabled(false);
+        overlay->clearInputPassThroughRect();
+        overlay->releaseNativeSurface();
+    });
     m_overlayMaintenancePending = true;
     SNOW_SHOT_PIN_PERF_MILESTONE("overlay.overlays_hidden");
 }
@@ -181,6 +203,7 @@ void ScreenshotOverlayCoordinator::hideOverlayWindows(
 
     m_uiHost.resetToolbarForNewCapture();
     m_uiHost.hideToolbar();
+    m_uiHost.hideShortcutHints();
     displaySession.forEachOverlay([this](qsizetype, ScreenshotOverlayWindow* overlay) {
         if (overlay == nullptr) {
             return;
@@ -208,10 +231,10 @@ void ScreenshotOverlayCoordinator::flushDeferredOverlayMaintenance(
 void ScreenshotOverlayCoordinator::updateOverlayState(
     const ScreenshotDisplaySession& displaySession, const QRectF& selection, int cornerRadius,
     int shadowWidth, const QColor& shadowColor, bool selectionToolbarHovered,
-    bool intelligentSelecting, bool manualSelecting, bool dragging) {
-    m_canvasPresenter.updateOverlayState(displaySession, selection, cornerRadius, shadowWidth,
-                                         shadowColor, selectionToolbarHovered, intelligentSelecting,
-                                         manualSelecting, dragging);
+    bool selectionHandlesVisible, bool intelligentSelecting, bool manualSelecting, bool dragging) {
+    m_canvasPresenter.updateOverlayState(
+        displaySession, selection, cornerRadius, shadowWidth, shadowColor, selectionToolbarHovered,
+        selectionHandlesVisible, intelligentSelecting, manualSelecting, dragging);
 }
 
 namespace {
@@ -239,11 +262,7 @@ void ScreenshotOverlayCoordinator::setScrollingCaptureMode(
         if (overlay == nullptr) {
             return;
         }
-        SnowCanvasWidget* canvas = overlay->canvas();
         if (enabled) {
-            if (canvas != nullptr) {
-                canvas->unsetCursor();
-            }
             overlay->setInputPassThroughRect(scrollingHoleForDisplay(display, selection));
             overlay->setScrollingCaptureMode(true);
             return;
@@ -256,6 +275,34 @@ void ScreenshotOverlayCoordinator::setScrollingCaptureMode(
 void ScreenshotOverlayCoordinator::updateOverlayCursors(
     const ScreenshotDisplaySession& displaySession, bool selecting, bool dragging) const {
     m_canvasPresenter.updateOverlayCursors(displaySession, selecting, dragging);
+}
+
+void ScreenshotOverlayCoordinator::setSelectionMaskColor(
+    const ScreenshotDisplaySession& displaySession, const QColor& color) const {
+    displaySession.forEachOverlay([&color](qsizetype, ScreenshotOverlayWindow* overlay) {
+        overlay->setScreenshotMaskColor(color);
+    });
+}
+
+void ScreenshotOverlayCoordinator::updateGuideLines(const ScreenshotDisplaySession& displaySession,
+                                                    ScreenshotOverlayWindow* owner,
+                                                    const QPointF& localPosition, bool selecting,
+                                                    const QColor& cursorColor,
+                                                    const QColor& monitorCenterColor) const {
+    m_canvasPresenter.updateGuideLines(displaySession, owner, localPosition, selecting, cursorColor,
+                                       monitorCenterColor);
+}
+
+void ScreenshotOverlayCoordinator::updateGuideLinesAtGlobalPosition(
+    const ScreenshotDisplaySession& displaySession, const QPoint& globalPosition, bool selecting,
+    const QColor& cursorColor, const QColor& monitorCenterColor) const {
+    m_canvasPresenter.updateGuideLinesAtGlobalPosition(displaySession, globalPosition, selecting,
+                                                       cursorColor, monitorCenterColor);
+}
+
+void ScreenshotOverlayCoordinator::clearGuideLines(
+    const ScreenshotDisplaySession& displaySession) const {
+    m_canvasPresenter.clearGuideLines(displaySession);
 }
 
 void ScreenshotOverlayCoordinator::setOverlayCursor(ScreenshotOverlayWindow* overlay,
@@ -406,6 +453,28 @@ void ScreenshotOverlayCoordinator::updateColorPicker(ScreenshotOverlayWindow* ov
 
 void ScreenshotOverlayCoordinator::hideColorPicker() {
     m_uiHost.hideColorPicker();
+}
+
+void ScreenshotOverlayCoordinator::setColorPickerCenterGuideLineColor(const QColor& color) {
+    m_uiHost.setColorPickerCenterGuideLineColor(color);
+}
+
+void ScreenshotOverlayCoordinator::updateShortcutHints(ScreenshotOverlayWindow* overlay,
+                                                       ScreenshotShortcutHintMode mode,
+                                                       qreal opacity,
+                                                       const QRectF& selectionGlobal) {
+    m_uiHost.updateShortcutHints(overlay, mode, opacity, selectionGlobal);
+}
+
+void ScreenshotOverlayCoordinator::updateShortcutHints(ScreenshotOverlayWindow* overlay,
+                                                       const ScreenshotShortcutHintContext& context,
+                                                       qreal opacity,
+                                                       const QRectF& selectionGlobal) {
+    m_uiHost.updateShortcutHints(overlay, context, opacity, selectionGlobal);
+}
+
+void ScreenshotOverlayCoordinator::hideShortcutHints() {
+    m_uiHost.hideShortcutHints();
 }
 
 bool ScreenshotOverlayCoordinator::screenshotUiContainsGlobalCursor() const {

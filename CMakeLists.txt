@@ -10,7 +10,7 @@ set(SNOW_SHOT_DESCRIPTION
     "A Windows screenshot utility for capturing, annotating, pinning, and recognizing screen content.")
 set(SNOW_SHOT_HOMEPAGE_URL "https://snowshot.top")
 set(SNOW_SHOT_SUPPORT_EMAIL "chao@mgchao.top")
-set(SNOW_SHOT_COPYRIGHT "Copyright (C) 2026 mg-chao")
+set(SNOW_SHOT_COPYRIGHT "Copyright (C) 2025-2026 mg-chao")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -21,6 +21,7 @@ endif()
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(ProjectWarnings)
 include(SnowWorkspace)
+include(RustStaticLibrary)
 
 option(SNOW_APPS_BUILD_ANT_DESIGN_QT "Build the Ant Design Qt libraries." ON)
 option(SNOW_APPS_BUILD_SNOW_IMAGE "Build the Snow Image library." ON)
@@ -88,7 +89,10 @@ if(SNOW_IMAGE_PROFILE STREQUAL "full")
         ${_snow_workspace_all_image_codecs}
     )
 elseif(SNOW_APPS_BUILD_SNOW_SHOT)
-    set(_snow_workspace_image_codecs PNG WEBP)
+    # Snow Shot's Save As workflow supports all five raster formats in every
+    # application profile, so keep the corresponding codecs in the minimal
+    # workspace configuration as well as the full profile.
+    set(_snow_workspace_image_codecs PNG JPEG HEIF JXL WEBP)
 else()
     set(_snow_workspace_image_codecs)
 endif()
@@ -110,6 +114,26 @@ unset(_snow_workspace_image_codecs)
 
 if(SNOW_APPS_BUILD_TESTS)
     enable_testing()
+endif()
+
+if(SNOW_APPS_BUILD_SNOW_SHOT)
+    snow_add_rust_static_library(snow_shot_rust_ffi_bundle
+        PACKAGE snow-shot-rust-ffi
+        MANIFEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/snow_rust_ffi"
+        OUTPUT_NAME snow_shot_rust_ffi
+        STRIP_MSVC_DIRECTIVES
+    )
+    foreach(_snow_rust_ffi_target IN ITEMS
+            snow_capture_c
+            snow_ui_selector_c
+            snow_stitch_images_c
+            snow_ocr_c
+            snow_draw_engine_c)
+        add_library("${_snow_rust_ffi_target}" INTERFACE)
+        target_link_libraries("${_snow_rust_ffi_target}" INTERFACE
+            snow_shot_rust_ffi_bundle)
+    endforeach()
+    unset(_snow_rust_ffi_target)
 endif()
 
 if(SNOW_APPS_BUILD_IMAGE_VIEWER AND NOT SNOW_APPS_BUILD_SNOW_IMAGE)

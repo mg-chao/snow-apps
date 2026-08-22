@@ -17,6 +17,7 @@ adqt::icons::IconPalette buildPaletteSnapshot() {
     palette.textDisabled = QColor(colors.colorTextQuaternary);
     palette.primary = QColor(colors.colorPrimary);
     palette.twoToneSecondary = QColor(colors.colorPrimaryBg);
+    palette.tertiary = QColor(colors.colorPrimaryBorder);
     palette.revision = manager.themeRevision();
     return palette;
 }

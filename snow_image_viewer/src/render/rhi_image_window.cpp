@@ -23,7 +23,9 @@
 #include <QResizeEvent>
 #include <QTimer>
 #include <QUrl>
+#if SNOW_IMAGE_VIEWER_HAS_QT_VULKAN
 #include <QVulkanInstance>
+#endif
 #include <QWheelEvent>
 #include <QtConcurrentRun>
 
@@ -322,7 +324,7 @@ RhiImageWindow::RhiImageWindow(QWindow* parent, RhiBackend backend)
         break;
     case RhiBackend::vulkan:
         setSurfaceType(QSurface::VulkanSurface);
-#if QT_CONFIG(vulkan) && __has_include(<vulkan/vulkan.h>)
+#if SNOW_IMAGE_VIEWER_HAS_QT_VULKAN
         vulkanInstance_ = std::make_unique<QVulkanInstance>();
         vulkanInstance_->setExtensions(QRhiVulkanInitParams::preferredInstanceExtensions());
         if (vulkanInstance_->create())
@@ -354,7 +356,9 @@ RhiImageWindow::~RhiImageWindow() {
     // QWindow's base destructor runs after members. Release the native Vulkan
     // surface while its instance member is still alive.
     destroy();
+#if SNOW_IMAGE_VIEWER_HAS_QT_VULKAN
     vulkanInstance_.reset();
+#endif
     fallbackSurface_.reset();
 }
 
@@ -1714,7 +1718,7 @@ bool RhiImageWindow::initializeRhi() {
         break;
     }
     case RhiBackend::vulkan: {
-#if QT_CONFIG(vulkan) && __has_include(<vulkan/vulkan.h>)
+#if SNOW_IMAGE_VIEWER_HAS_QT_VULKAN
         if (vulkanInstance_ && vulkanInstance_->isValid()) {
             QRhiVulkanInitParams params;
             params.inst = vulkanInstance_.get();

@@ -27,6 +27,7 @@ struct ScreenshotHistoryEntry {
     ScreenshotSelectionParams selection;
     QByteArray canvasHistory;
     QVector<ScreenshotHistoryDisplay> displays;
+    std::optional<QImage> resultImage;
     snow_shot::storage::CaptureHistorySource source =
         snow_shot::storage::CaptureHistorySource::CopiedToClipboard;
     bool intelligentSelectionMode = false;

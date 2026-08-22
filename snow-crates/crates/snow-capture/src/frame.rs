@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::backend::CaptureBackendKind;
+
 use crossbeam_channel as mpsc;
 
 use crate::error::{CaptureError, CaptureResult};
@@ -61,13 +63,21 @@ pub struct FrameMetadata {
     /// `Srgb` for standard dynamic range captures. HDR pipelines can
     /// check this to decide whether tonemapping or passthrough is needed.
     pub(crate) color_space: ColorSpace,
-    /// Unified timestamp. `tick_format` is `RawQpc`.
+    /// Unified timestamp. GPU backends use either raw QPC ticks (DXGI) or
+    /// 100-nanosecond system-relative ticks (WGC).
     pub(crate) stream_timestamp: Option<StreamTimestamp>,
     /// Cursor state sampled for this frame on the capture thread.
     pub(crate) cursor: Option<AttachedCursorSample>,
+    /// Concrete backend that produced this frame. `Auto` means the producer
+    /// did not report a concrete backend.
+    pub(crate) backend_kind: CaptureBackendKind,
 }
 
 impl FrameMetadata {
+    pub fn backend_kind(&self) -> CaptureBackendKind {
+        self.backend_kind
+    }
+
     pub fn capture_duration(&self) -> Option<Duration> {
         self.capture_duration
     }
@@ -95,15 +105,20 @@ impl FrameMetadata {
     /// Set timing fields from a capture operation.
     ///
     /// Populates `stream_timestamp` from the capture time and QPC value.
-    pub(crate) fn set_timing(
+    pub(crate) fn set_timing(&mut self, capture_time: Option<Instant>, raw_os_ticks: Option<i64>) {
+        self.set_timing_with_format(capture_time, raw_os_ticks, TickFormat::RawQpc);
+    }
+
+    pub(crate) fn set_timing_with_format(
         &mut self,
         capture_time: Option<Instant>,
-        present_time_qpc: Option<i64>,
+        raw_os_ticks: Option<i64>,
+        tick_format: TickFormat,
     ) {
         self.stream_timestamp = Some(StreamTimestamp {
             instant: capture_time.unwrap_or_else(Instant::now),
-            raw_os_ticks: present_time_qpc,
-            tick_format: TickFormat::RawQpc,
+            raw_os_ticks,
+            tick_format,
         });
     }
 }
@@ -193,7 +208,7 @@ fn try_alloc_large_pages(size: usize) -> Option<LargePageAlloc> {
 
     let aligned_size = (size + large_page_size - 1) & !(large_page_size - 1);
 
-    let ptr = unsafe {
+    let mut ptr = unsafe {
         VirtualAlloc(
             None,
             aligned_size,
@@ -202,8 +217,22 @@ fn try_alloc_large_pages(size: usize) -> Option<LargePageAlloc> {
         )
     };
 
+    // Most desktop processes do not hold SeLockMemoryPrivilege, so the large-page
+    // request normally fails. Keep the same explicit VirtualAlloc/VirtualFree
+    // ownership for that case instead of falling back to a Vec whose freed
+    // multi-megabyte segments remain committed in the process heap.
     if ptr.is_null() {
-        return None;
+        const ALLOCATION_GRANULARITY: usize = 64 * 1024;
+        let regular_size = (size + ALLOCATION_GRANULARITY - 1) & !(ALLOCATION_GRANULARITY - 1);
+        ptr = unsafe { VirtualAlloc(None, regular_size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) };
+        if ptr.is_null() {
+            return None;
+        }
+        return Some(LargePageAlloc {
+            ptr: ptr as *mut u8,
+            len: 0,
+            capacity: regular_size,
+        });
     }
 
     Some(LargePageAlloc {
@@ -399,7 +428,13 @@ impl Frame {
         self.data.as_mut_ptr()
     }
 
-    pub(crate) fn ensure_rgba_capacity(&mut self, width: u32, height: u32) -> CaptureResult<()> {
+    /// Resize this frame's RGBA storage for `width` by `height` pixels while
+    /// retaining an existing allocation when it is large enough.
+    ///
+    /// This is useful for preparing a reusable destination before a latency-
+    /// sensitive capture. Existing pixel contents are unspecified when the
+    /// dimensions change; capture code is expected to overwrite them.
+    pub fn ensure_rgba_capacity(&mut self, width: u32, height: u32) -> CaptureResult<()> {
         let len = rgba_len(width, height)?;
         self.data.ensure_len(len);
         self.width = width;
@@ -426,6 +461,7 @@ impl Frame {
         self.metadata.dirty_rects.clear();
         self.metadata.color_space = ColorSpace::default();
         self.metadata.cursor = None;
+        self.metadata.backend_kind = CaptureBackendKind::Auto;
         // sequence is set by the session, not reset here
     }
 }
@@ -686,6 +722,20 @@ mod tests {
             prop_assert_eq!(ts.tick_format, TickFormat::RawQpc,
                 "FrameMetadata tick_format must always be RawQpc, got {:?}", ts.tick_format);
         }
+    }
+
+    #[test]
+    fn hns_timing_preserves_tick_format_and_raw_value() {
+        let capture_time = Instant::now();
+        let mut metadata = FrameMetadata::default();
+        metadata.set_timing_with_format(Some(capture_time), Some(123_456_789), TickFormat::Hns100);
+
+        let timestamp = metadata
+            .stream_timestamp()
+            .expect("set_timing_with_format should populate a timestamp");
+        assert_eq!(timestamp.instant, capture_time);
+        assert_eq!(timestamp.raw_os_ticks, Some(123_456_789));
+        assert_eq!(timestamp.tick_format, TickFormat::Hns100);
     }
 
     // **Validates: Requirements 1.6, 1.7, 7.2**

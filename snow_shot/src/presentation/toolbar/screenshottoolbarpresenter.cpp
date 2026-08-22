@@ -79,11 +79,11 @@ void ScreenshotToolbarPresenter::repositionForContentChange(
     }
 
     moveToolbar(state);
-    moveSelectionToolbar(state);
+    static_cast<void>(moveSelectionToolbar(state));
 }
 
 void ScreenshotToolbarPresenter::updateSelectionToolbarState(
-    const ScreenshotToolbarPresentationState& state, bool reposition) {
+    const ScreenshotToolbarPresentationState& state) {
     updateOcrAvailability(m_overlayCoordinator, state.ocrAvailable);
     if (!state.selectionToolbarMode || !hasValidSelection(state.selectionPixels)) {
         m_overlayCoordinator.hideSelectionToolbar();
@@ -100,8 +100,11 @@ void ScreenshotToolbarPresenter::updateSelectionToolbarState(
         state.intelligentSelecting ? ScreenshotSelectionToolbarWindow::DisplayMode::SizeOnly
                                    : ScreenshotSelectionToolbarWindow::DisplayMode::Full);
 
-    if (reposition) {
-        moveSelectionToolbar(state);
+    // A selection toolbar must never be revealed before it has an overlay owner and a
+    // placement derived from the current displayed selection. Otherwise a pooled or newly
+    // created widget can briefly appear at Qt's default position.
+    if (!moveSelectionToolbar(state)) {
+        return;
     }
     if (!toolbar->isVisible()) {
         m_overlayCoordinator.showSelectionToolbar();
@@ -174,16 +177,17 @@ void ScreenshotToolbarPresenter::moveToolbar(const ScreenshotToolbarPresentation
     toolbar->resetPositionForSelection(placement.contentPosition, toolbar->windowSizeHint());
 }
 
-void ScreenshotToolbarPresenter::moveSelectionToolbar(
+bool ScreenshotToolbarPresenter::moveSelectionToolbar(
     const ScreenshotToolbarPresentationState& state) {
     ScreenshotSelectionToolbarWindow* toolbar = m_overlayCoordinator.selectionToolbar();
     if (toolbar == nullptr) {
-        return;
+        return false;
     }
 
     const QRectF selection = state.selectionCanvas;
     if (!selection.isValid() || selection.isEmpty()) {
-        return;
+        m_overlayCoordinator.hideSelectionToolbar();
+        return false;
     }
 
     const QSize toolbarSize = toolbar->contentSizeHint();
@@ -192,7 +196,7 @@ void ScreenshotToolbarPresenter::moveSelectionToolbar(
     ScreenshotOverlayWindow* overlay = m_displaySession.overlayForDisplay(display);
     if (display == nullptr || overlay == nullptr) {
         m_overlayCoordinator.hideSelectionToolbar();
-        return;
+        return false;
     }
 
     m_overlayCoordinator.attachSelectionToolbarToOverlay(overlay);
@@ -200,7 +204,7 @@ void ScreenshotToolbarPresenter::moveSelectionToolbar(
         ScreenshotGeometryMapper::displayPlacementGeometry(display, overlay->geometry());
     if (!placementGeometry.valid) {
         m_overlayCoordinator.hideSelectionToolbar();
-        return;
+        return false;
     }
 
     const QPoint topLeftAnchor = logicalPositionForCanvasPoint(*display, selection.topLeft());
@@ -211,6 +215,7 @@ void ScreenshotToolbarPresenter::moveSelectionToolbar(
 
     const QPoint overlayOrigin = overlay->geometry().topLeft();
     toolbar->moveContentTo(pos - overlayOrigin);
+    return true;
 }
 
 const CapturedDisplayModel*

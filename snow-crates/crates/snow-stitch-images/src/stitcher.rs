@@ -217,15 +217,8 @@ struct StitchAccumulator {
     viewport_extent: u32,
     expected_geometry: crate::Geometry,
     canvas: TiledCanvas,
-    // The latest raw frame used as the temporal baseline. This keeps temporal
-    // similarity local when content continues changing without verified motion.
     previous_raw: Frame,
     previous_raw_index: usize,
-    // Rejected frames are retried against this stable baseline if the capture repeats
-    // them. It is retained only while observations remain unaccepted.
-    retry_baseline: Option<RetryBaseline>,
-    // At most one repeated capture is re-estimated for each rejected candidate.
-    pending_retry: Option<PendingRetry>,
     synthetic_reference: Frame,
     reference_mode: ReferenceMode,
     state: ViewportState,
@@ -233,16 +226,6 @@ struct StitchAccumulator {
     accepted_count: usize,
     trace: Vec<StitchTraceEvent>,
     options: StitchOptions,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct PendingRetry {
-    attempted: bool,
-}
-
-struct RetryBaseline {
-    frame: Frame,
-    index: usize,
 }
 
 fn validate_options(options: StitchOptions) -> Result<(), StitchError> {
@@ -269,8 +252,6 @@ impl StitchAccumulator {
             canvas: TiledCanvas::new_for_axis(first.clone(), options.axis)?,
             previous_raw: first.clone(),
             previous_raw_index: 0,
-            retry_baseline: None,
-            pending_retry: None,
             synthetic_reference: first,
             reference_mode: ReferenceMode::Synthetic,
             state: ViewportState::default(),
@@ -330,27 +311,9 @@ impl StitchAccumulator {
     ) -> Result<(), StitchError> {
         self.validate_incoming(index, &incoming)?;
         let before = self.snapshot()?;
-        let exact_duplicate = self.previous_raw.visible_pixels_equal(&incoming);
-        let retrying = exact_duplicate
-            && self.pending_retry.is_some_and(|pending| !pending.attempted)
-            && self.retry_baseline.is_some();
-        if !exact_duplicate {
-            // A new candidate supersedes any rejected candidate that was waiting for a
-            // repeated capture. The new frame still gets its own retry opportunity if
-            // motion recognition rejects it.
-            self.pending_retry = None;
-        }
-        let previous_raw_index = if retrying {
-            self.retry_baseline
-                .as_ref()
-                .expect("retry state has an accepted baseline")
-                .index
-        } else {
-            self.previous_raw_index
-        };
+        let previous_raw_index = self.previous_raw_index;
         let comparison_mode = self.reference_mode;
-        if exact_duplicate && !retrying {
-            self.pending_retry = None;
+        if self.previous_raw.visible_pixels_equal(&incoming) {
             if self.options.collect_trace {
                 self.trace.push(StitchTraceEvent {
                     input_index: index,
@@ -384,18 +347,7 @@ impl StitchAccumulator {
         let reference = canvas_window_reference
             .as_ref()
             .unwrap_or(&self.synthetic_reference);
-        let estimate = {
-            let temporal_previous = if retrying {
-                &self
-                    .retry_baseline
-                    .as_ref()
-                    .expect("retry state has an accepted baseline")
-                    .frame
-            } else {
-                &self.previous_raw
-            };
-            estimator(reference, temporal_previous, &incoming)?
-        };
+        let estimate = estimator(reference, &self.previous_raw, &incoming)?;
 
         let maximum_shift = self.viewport_extent as f32 * self.options.estimator.max_motion_ratio;
         let accepted_offset = match estimate.outcome {
@@ -409,27 +361,14 @@ impl StitchAccumulator {
             | MotionOutcome::Indeterminate => None,
         };
         let Some(offset) = accepted_offset else {
-            if retrying {
-                if let Some(pending) = self.pending_retry.as_mut() {
-                    pending.attempted = true;
-                }
-            } else {
-                if self.retry_baseline.is_none() {
-                    self.retry_baseline = Some(RetryBaseline {
-                        frame: self.previous_raw.clone(),
-                        index: self.previous_raw_index,
-                    });
-                }
-                self.previous_raw = incoming;
-                self.previous_raw_index = index;
-                self.pending_retry = Some(PendingRetry { attempted: false });
-            }
+            self.previous_raw = incoming;
+            self.previous_raw_index = index;
             let after = self.snapshot()?;
             if self.options.collect_trace {
                 self.trace.push(StitchTraceEvent {
                     input_index: index,
                     previous_raw_index,
-                    exact_duplicate,
+                    exact_duplicate: false,
                     reference_mode: comparison_mode,
                     motion: Some(estimate.outcome),
                     confidence: Some(estimate.confidence),
@@ -454,8 +393,6 @@ impl StitchAccumulator {
                 })?;
         self.previous_raw = incoming;
         self.previous_raw_index = index;
-        self.retry_baseline = None;
-        self.pending_retry = None;
         let transition = self.state.transition(offset)?;
         let shift = offset.unsigned_abs();
         let mut canvas_band = None;
@@ -534,7 +471,7 @@ impl StitchAccumulator {
             self.trace.push(StitchTraceEvent {
                 input_index: index,
                 previous_raw_index,
-                exact_duplicate,
+                exact_duplicate: false,
                 reference_mode: comparison_mode,
                 motion: Some(estimate.outcome),
                 confidence: Some(estimate.confidence),
@@ -796,15 +733,9 @@ mod tests {
     }
 
     #[test]
-    fn rejected_frame_gets_one_retry_before_duplicate_skip() {
+    fn non_skip_advances_previous_raw_even_without_motion() {
         let calls = Cell::new(0);
-        let frames = vec![
-            solid(1, 5, 8),
-            solid(2, 5, 8),
-            solid(2, 5, 8),
-            solid(2, 5, 8),
-        ];
-        let mut outcomes = VecDeque::from([MotionOutcome::NoMotion, MotionOutcome::NoMotion]);
+        let frames = vec![solid(1, 5, 8), solid(2, 5, 8), solid(2, 5, 8)];
         let result = stitch_owned_with_estimator(
             frames.into_iter().map(Ok),
             StitchOptions {
@@ -813,51 +744,16 @@ mod tests {
             },
             |_, _, _| {
                 calls.set(calls.get() + 1);
-                Ok(estimate(outcomes.pop_front().unwrap()))
+                Ok(estimate(MotionOutcome::NoMotion))
             },
         )
         .unwrap();
-        assert_eq!(calls.get(), 2);
+        assert_eq!(calls.get(), 1);
         assert_eq!(result.trace[0].branch, StitchBranch::NoMovement);
-        assert_eq!(result.trace[1].branch, StitchBranch::NoMovement);
-        assert!(result.trace[1].exact_duplicate);
-        assert_eq!(result.trace[1].previous_raw_index, 0);
+        assert_eq!(result.trace[1].branch, StitchBranch::Skip);
+        assert_eq!(result.trace[1].previous_raw_index, 1);
         assert_eq!(result.trace[1].before.processed_count, 1);
-        assert_eq!(result.trace[1].after.processed_count, 2);
-        assert_eq!(result.trace[2].branch, StitchBranch::Skip);
-    }
-
-    #[test]
-    fn rejected_shift_is_stitched_when_repeated_capture_can_be_verified() {
-        let calls = Cell::new(0);
-        let frames = vec![solid(1, 5, 8), solid(2, 5, 8), solid(2, 5, 8)];
-        let mut outcomes = VecDeque::from([
-            MotionOutcome::Indeterminate,
-            MotionOutcome::Motion { offset: -3 },
-        ]);
-        let result = stitch_owned_with_estimator(
-            frames.into_iter().map(Ok),
-            StitchOptions {
-                collect_trace: true,
-                ..StitchOptions::default()
-            },
-            |_, previous_raw, incoming| {
-                calls.set(calls.get() + 1);
-                if calls.get() == 2 {
-                    assert_eq!(previous_raw, &solid(1, 5, 8));
-                    assert_eq!(incoming, &solid(2, 5, 8));
-                }
-                Ok(estimate(outcomes.pop_front().unwrap()))
-            },
-        )
-        .unwrap();
-        assert_eq!(calls.get(), 2);
-        assert_eq!(result.image.height(), 11);
-        assert_eq!(result.trace[0].branch, StitchBranch::NoMovement);
-        assert_eq!(result.trace[1].branch, StitchBranch::Append);
-        assert!(result.trace[1].exact_duplicate);
-        assert_eq!(result.trace[1].previous_raw_index, 0);
-        assert_eq!(result.trace[1].accepted_offset, Some(-3));
+        assert_eq!(result.trace[1].after.processed_count, 1);
     }
 
     #[test]

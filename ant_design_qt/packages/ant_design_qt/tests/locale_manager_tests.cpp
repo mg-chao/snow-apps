@@ -33,6 +33,12 @@ int main(int argc, char** argv) {
   require(QCoreApplication::translate("adqt::widgets::AdPagination", "Previous page") !=
               QStringLiteral("Previous page"),
           "the bundled Ant Design catalog should translate pagination text");
+  require(QCoreApplication::translate("adqt::widgets::AdPagination", "%1 / page")
+                  .arg(50) == QStringLiteral("50 条/页"),
+          "the bundled catalog should translate pagination page-size labels");
+  require(QCoreApplication::translate("adqt::widgets::AdImage", "Preview") ==
+              QStringLiteral("预览"),
+          "the bundled catalog should translate the image preview label");
 
   manager.setLocale(QLocale(QLocale::English, QLocale::UnitedStates));
   require(manager.locale().name() == QStringLiteral("en_US"),

@@ -5,86 +5,74 @@
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 
 #include <QList>
-#include <QMetaObject>
 #include <QObject>
-#include <QPointer>
-#include <QThread>
 
 #include <utility>
 
 namespace {
-class ScreenshotPinnedCopyWorker final : public QObject {
-  public:
-    ScreenshotClipboardPayload prepareCurrentViewport(
-        const ScreenshotPinnedViewportCopyRequest& request) {
-        if (request.backgroundImage.isNull() || !request.backgroundCanvasRect.isValid() ||
-            request.backgroundCanvasRect.isEmpty() || !request.contentPixelSize.isValid() ||
-            request.contentPixelSize.isEmpty() || !ensureRuntime()) {
-            return {};
-        }
-        if (!request.documentSession.isEmpty() &&
-            !m_runtime->restoreDocumentSession(request.documentSession)) {
-            return {};
-        }
-
-        const QList<CanvasExportSource> sources{
-            CanvasExportSource{request.backgroundImage, request.backgroundCanvasRect}};
-        QImage content = m_runtime->renderToImage(request.backgroundCanvasRect,
-                                                  request.contentPixelSize, sources);
-        if (content.isNull()) {
-            return {};
-        }
-        return ScreenshotClipboardService::prepareImage(
-            ScreenshotResultCompositor::compose(content, request.resultStyle));
+SnowCanvasRuntime* workerRuntime() {
+    thread_local std::unique_ptr<SnowCanvasRuntime> runtime;
+    if (runtime == nullptr) {
+        runtime = std::make_unique<SnowCanvasRuntime>(
+            SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasStyleDefaults()});
     }
-
-    ScreenshotClipboardPayload prepareOriginalImage(const QImage& image) const {
-        return ScreenshotClipboardService::prepareImage(image);
-    }
-
-  private:
-    bool ensureRuntime() {
-        if (m_runtime == nullptr) {
-            m_runtime = std::make_unique<SnowCanvasRuntime>(SnowCanvasRuntimeConfig{
-                snow_shot::presentation::screenshotCanvasStyleDefaults()});
-        }
-        return m_runtime->isValid();
-    }
-
-    std::unique_ptr<SnowCanvasRuntime> m_runtime;
-};
-} // namespace
-
-ScreenshotPinnedCopyService::ScreenshotPinnedCopyService()
-    : m_thread(std::make_unique<QThread>()), m_worker(new ScreenshotPinnedCopyWorker),
-      m_completionContext(new QObject) {
-    m_thread->setObjectName(QStringLiteral("ScreenshotPinnedCopyWorker"));
-    m_worker->moveToThread(m_thread.get());
-    QObject::connect(m_thread.get(), &QThread::finished, m_worker, &QObject::deleteLater);
-    m_thread->start();
+    return runtime->isValid() ? runtime.get() : nullptr;
 }
 
-ScreenshotPinnedCopyService::~ScreenshotPinnedCopyService() {
-    delete m_completionContext;
-    m_completionContext = nullptr;
-    if (m_thread != nullptr) {
-        m_thread->quit();
-        m_thread->wait();
+QImage renderCurrentViewport(const ScreenshotPinnedViewportCopyRequest& request) {
+    SnowCanvasRuntime* runtime = workerRuntime();
+    if (request.backgroundImage.isNull() || !request.backgroundCanvasRect.isValid() ||
+        request.backgroundCanvasRect.isEmpty() || !request.contentPixelSize.isValid() ||
+        request.contentPixelSize.isEmpty() || runtime == nullptr) {
+        return {};
     }
-    m_worker = nullptr;
+    if (!request.documentSession.isEmpty() &&
+        !runtime->restoreDocumentSession(request.documentSession)) {
+        return {};
+    }
+    if (request.documentSession.isEmpty() && !runtime->clearDocumentPreservingViewports()) {
+        return {};
+    }
+
+    const QList<CanvasExportSource> sources{
+        CanvasExportSource{request.backgroundImage, request.backgroundCanvasRect}};
+    QImage content =
+        runtime->renderToImage(request.backgroundCanvasRect, request.contentPixelSize, sources);
+    if (content.isNull()) {
+        return {};
+    }
+    return ScreenshotResultCompositor::compose(content, request.resultStyle);
+}
+
+ScreenshotClipboardPayload
+prepareCurrentViewport(const ScreenshotPinnedViewportCopyRequest& request) {
+    return ScreenshotClipboardService::prepareImage(renderCurrentViewport(request));
+}
+} // namespace
+
+struct ScreenshotPinnedCopyService::State final {
+    quint64 generation = 0;
+    RequestKind activeKind = RequestKind::None;
+    bool requestInFlight = false;
+};
+
+ScreenshotPinnedCopyService::ScreenshotPinnedCopyService() : m_state(std::make_shared<State>()) {}
+
+ScreenshotPinnedCopyService::~ScreenshotPinnedCopyService() {
+    invalidate();
 }
 
 bool ScreenshotPinnedCopyService::beginRequest(RequestKind kind, quint64* generation) {
-    if (generation == nullptr || kind == RequestKind::None || m_worker == nullptr ||
-        m_thread == nullptr || !m_thread->isRunning() || m_completionContext == nullptr) {
+    if (generation == nullptr || kind == RequestKind::None || m_state == nullptr) {
         return false;
     }
-    if (m_requestInFlight && m_activeKind == kind) {
+    if (m_state->requestInFlight && m_state->activeKind == kind) {
         return false;
     }
-    *generation = ++m_generation;
-    m_activeKind = kind;
-    m_requestInFlight = true;
+    m_job.cancel();
+    *generation = ++m_state->generation;
+    m_state->activeKind = kind;
+    m_state->requestInFlight = true;
     return true;
 }
 
@@ -98,39 +86,41 @@ bool ScreenshotPinnedCopyService::requestCurrentViewport(
         return false;
     }
 
-    auto* worker = static_cast<ScreenshotPinnedCopyWorker*>(m_worker);
-    const QPointer<QObject> guardedReceiver(receiver);
-    const QPointer<QObject> guardedCompletionContext(m_completionContext);
-    const bool scheduled = QMetaObject::invokeMethod(
-        worker,
-        [this, worker, guardedReceiver, guardedCompletionContext, generation,
-         request = std::move(request), callback = std::move(callback)]() mutable {
-            auto payload = std::make_shared<ScreenshotClipboardPayload>(
-                worker->prepareCurrentViewport(request));
-            if (guardedCompletionContext.isNull()) {
+    m_job = ScreenshotExportCoordinator::shared().submit(
+        receiver, ScreenshotExportCoordinator::Priority::Foreground,
+        [request = std::move(request)](const ScreenshotExportCancellation& cancellation) mutable {
+            if (cancellation.isCancellationRequested()) {
+                return ScreenshotExportTaskResult::failure(
+                    ScreenshotExportFailureStage::Cancelled,
+                    QStringLiteral("The pinned image copy was cancelled"));
+            }
+            auto payload =
+                std::make_shared<ScreenshotClipboardPayload>(prepareCurrentViewport(request));
+            if (!payload->isValid()) {
+                return ScreenshotExportTaskResult::failure(
+                    ScreenshotExportFailureStage::Render,
+                    QStringLiteral("The pinned image could not be rendered"));
+            }
+            ScreenshotExportTaskResult result;
+            result.clipboardPayload = std::move(payload);
+            return result;
+        },
+        [state = m_state, generation,
+         callback = std::move(callback)](ScreenshotExportTaskResult result) mutable {
+            if (state == nullptr || generation != state->generation) {
                 return;
             }
-            static_cast<void>(QMetaObject::invokeMethod(
-                guardedCompletionContext,
-                [this, guardedReceiver, guardedCompletionContext, generation, payload,
-                 callback = std::move(callback)]() mutable {
-                    if (guardedCompletionContext.isNull() || generation != m_generation) {
-                        return;
-                    }
-                    m_requestInFlight = false;
-                    m_activeKind = RequestKind::None;
-                    if (!guardedReceiver.isNull()) {
-                        callback(std::move(*payload));
-                    }
-                },
-                Qt::QueuedConnection));
-        },
-        Qt::QueuedConnection);
-    if (!scheduled) {
-        m_requestInFlight = false;
-        m_activeKind = RequestKind::None;
+            state->requestInFlight = false;
+            state->activeKind = RequestKind::None;
+            callback(result.clipboardPayload != nullptr ? std::move(*result.clipboardPayload)
+                                                        : ScreenshotClipboardPayload{});
+        });
+    if (!m_job.isValid()) {
+        m_state->requestInFlight = false;
+        m_state->activeKind = RequestKind::None;
+        return false;
     }
-    return scheduled;
+    return true;
 }
 
 bool ScreenshotPinnedCopyService::requestOriginalImage(QImage image, QObject* receiver,
@@ -143,43 +133,95 @@ bool ScreenshotPinnedCopyService::requestOriginalImage(QImage image, QObject* re
         return false;
     }
 
-    auto* worker = static_cast<ScreenshotPinnedCopyWorker*>(m_worker);
-    const QPointer<QObject> guardedReceiver(receiver);
-    const QPointer<QObject> guardedCompletionContext(m_completionContext);
-    const bool scheduled = QMetaObject::invokeMethod(
-        worker,
-        [this, worker, guardedReceiver, guardedCompletionContext, generation,
-         image = std::move(image), callback = std::move(callback)]() mutable {
+    m_job = ScreenshotExportCoordinator::shared().submit(
+        receiver, ScreenshotExportCoordinator::Priority::Foreground,
+        [image = std::move(image)](const ScreenshotExportCancellation& cancellation) mutable {
+            if (cancellation.isCancellationRequested()) {
+                return ScreenshotExportTaskResult::failure(
+                    ScreenshotExportFailureStage::Cancelled,
+                    QStringLiteral("The original image copy was cancelled"));
+            }
             auto payload = std::make_shared<ScreenshotClipboardPayload>(
-                worker->prepareOriginalImage(image));
-            if (guardedCompletionContext.isNull()) {
+                ScreenshotClipboardService::prepareImage(image));
+            if (!payload->isValid()) {
+                return ScreenshotExportTaskResult::failure(
+                    ScreenshotExportFailureStage::Clipboard,
+                    QStringLiteral("The original image could not be prepared"));
+            }
+            ScreenshotExportTaskResult result;
+            result.clipboardPayload = std::move(payload);
+            return result;
+        },
+        [state = m_state, generation,
+         callback = std::move(callback)](ScreenshotExportTaskResult result) mutable {
+            if (state == nullptr || generation != state->generation) {
                 return;
             }
-            static_cast<void>(QMetaObject::invokeMethod(
-                guardedCompletionContext,
-                [this, guardedReceiver, guardedCompletionContext, generation, payload,
-                 callback = std::move(callback)]() mutable {
-                    if (guardedCompletionContext.isNull() || generation != m_generation) {
-                        return;
-                    }
-                    m_requestInFlight = false;
-                    m_activeKind = RequestKind::None;
-                    if (!guardedReceiver.isNull()) {
-                        callback(std::move(*payload));
-                    }
-                },
-                Qt::QueuedConnection));
-        },
-        Qt::QueuedConnection);
-    if (!scheduled) {
-        m_requestInFlight = false;
-        m_activeKind = RequestKind::None;
+            state->requestInFlight = false;
+            state->activeKind = RequestKind::None;
+            callback(result.clipboardPayload != nullptr ? std::move(*result.clipboardPayload)
+                                                        : ScreenshotClipboardPayload{});
+        });
+    if (!m_job.isValid()) {
+        m_state->requestInFlight = false;
+        m_state->activeKind = RequestKind::None;
+        return false;
     }
-    return scheduled;
+    return true;
+}
+
+bool ScreenshotPinnedCopyService::requestCurrentImage(ScreenshotPinnedViewportCopyRequest request,
+                                                       QObject* receiver,
+                                                       ImageCallback callback) {
+    if (receiver == nullptr || !callback || request.backgroundImage.isNull()) {
+        return false;
+    }
+    quint64 generation = 0;
+    if (!beginRequest(RequestKind::CurrentImage, &generation)) {
+        return false;
+    }
+
+    m_job = ScreenshotExportCoordinator::shared().submit(
+        receiver, ScreenshotExportCoordinator::Priority::Foreground,
+        [request = std::move(request)](const ScreenshotExportCancellation& cancellation) mutable {
+            if (cancellation.isCancellationRequested()) {
+                return ScreenshotExportTaskResult::failure(
+                    ScreenshotExportFailureStage::Cancelled,
+                    QStringLiteral("The pinned image export was cancelled"));
+            }
+            QImage image = renderCurrentViewport(request);
+            if (image.isNull()) {
+                return ScreenshotExportTaskResult::failure(
+                    ScreenshotExportFailureStage::Render,
+                    QStringLiteral("The pinned image could not be rendered"));
+            }
+            ScreenshotExportTaskResult result;
+            result.image = std::move(image);
+            return result;
+        },
+        [state = m_state, generation,
+         callback = std::move(callback)](ScreenshotExportTaskResult result) mutable {
+            if (state == nullptr || generation != state->generation) {
+                return;
+            }
+            state->requestInFlight = false;
+            state->activeKind = RequestKind::None;
+            callback(result.succeeded() ? std::move(result.image) : QImage{});
+        });
+    if (!m_job.isValid()) {
+        m_state->requestInFlight = false;
+        m_state->activeKind = RequestKind::None;
+        return false;
+    }
+    return true;
 }
 
 void ScreenshotPinnedCopyService::invalidate() {
-    ++m_generation;
-    m_requestInFlight = false;
-    m_activeKind = RequestKind::None;
+    m_job.cancel();
+    m_job = {};
+    if (m_state != nullptr) {
+        ++m_state->generation;
+        m_state->requestInFlight = false;
+        m_state->activeKind = RequestKind::None;
+    }
 }

@@ -134,6 +134,7 @@ struct UnitCache {
     std::list<std::shared_ptr<UnitEntry>> entries;
     std::size_t bytes = 0;
     std::size_t lifetimeShapeBuilds = 0;
+    QCoreApplication* cleanupApplication = nullptr;
 };
 
 struct Placement {
@@ -156,6 +157,37 @@ UnitCache g_cache;
 thread_local PlacementWorkspace g_workspace;
 thread_local WatermarkRenderDiagnostics g_diagnostics;
 thread_local std::size_t g_fallbackCount = 0;
+
+void clearWatermarkCacheAtApplicationShutdown() {
+    std::list<std::shared_ptr<UnitEntry>> removed;
+    {
+        std::lock_guard<std::mutex> lock(g_cache.mutex);
+        removed.swap(g_cache.entries);
+        g_cache.bytes = 0;
+        g_cache.cleanupApplication = nullptr;
+    }
+}
+
+void ensureWatermarkCacheCleanupRegistered() {
+    QCoreApplication* application = QCoreApplication::instance();
+    if (application == nullptr || !isGuiThread() || QCoreApplication::closingDown()) {
+        return;
+    }
+
+    bool registerCleanup = false;
+    {
+        std::lock_guard<std::mutex> lock(g_cache.mutex);
+        if (g_cache.cleanupApplication != application) {
+            g_cache.cleanupApplication = application;
+            registerCleanup = true;
+        }
+    }
+    if (registerCleanup) {
+        // Glyph runs own thread-affine QRawFont data and must die before Qt tears down its
+        // representation of the GUI thread.
+        qAddPostRoutine(&clearWatermarkCacheAtApplicationShutdown);
+    }
+}
 
 bool shapeKeyEquals(const ShapeKey& left, const ShapeKey& right) {
     return left.text == right.text && left.resolvedFont == right.resolvedFont;
@@ -381,6 +413,8 @@ std::shared_ptr<UnitEntry> findOrBuildUnit(const UnitKey& key, const QFont& font
             Qt::BlockingQueuedConnection);
         return invoked && result && !result->glyphFallback ? result : nullptr;
     }
+
+    ensureWatermarkCacheCleanupRegistered();
 
     std::shared_ptr<const ShapeData> reusableShape;
     {

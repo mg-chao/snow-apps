@@ -70,6 +70,16 @@ QSize ScreenshotToolPaletteHost::hostSizeHint() const {
     return m_palette != nullptr ? m_palette->size() : QSize();
 }
 
+QSize ScreenshotToolPaletteHost::unconstrainedHostSizeHint() const {
+    if (m_palette == nullptr) {
+        return {};
+    }
+
+    const QSize content = m_palette->contentSizeHint();
+    const QMargins shadow = currentShadowMargins();
+    return content + QSize(shadow.left() + shadow.right(), shadow.top() + shadow.bottom());
+}
+
 QRect ScreenshotToolPaletteHost::occupiedContentRect() const {
     return m_palette != nullptr ? m_palette->occupiedContentRect()
                                 : QRect(QPoint(0, 0), contentSizeHint());

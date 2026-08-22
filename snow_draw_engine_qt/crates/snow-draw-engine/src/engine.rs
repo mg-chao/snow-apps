@@ -114,8 +114,12 @@ impl Engine {
 
     pub fn clear_document_preserving_viewports(&mut self) -> Result<MutationResult, ErrorCode> {
         let view_config = self.editor.config();
+        let quick_selection_disabled_tools = self.editor.quick_selection_disabled_tools();
         let mut replacement = Self::try_new(self.config.clone())?;
         replacement.editor.set_config(view_config)?;
+        replacement
+            .editor
+            .set_quick_selection_disabled_tools(quick_selection_disabled_tools);
         self.model = replacement.model;
         self.history = HistoryStore::default();
         self.editor = replacement.editor;
@@ -177,6 +181,21 @@ impl Engine {
         let before = self.editor.snapshot();
         self.editor.set_active_tool(tool)?;
         self.refresh_after_session_mutation(before)
+    }
+
+    pub fn quick_selection_disabled_tools(&self) -> u64 {
+        self.editor.quick_selection_disabled_tools()
+    }
+
+    pub fn set_quick_selection_disabled_tools(
+        &mut self,
+        tools: u64,
+    ) -> Result<MutationResult, ErrorCode> {
+        if self.editor.quick_selection_disabled_tools() == tools {
+            return Ok(MutationResult::default());
+        }
+        self.editor.set_quick_selection_disabled_tools(tools);
+        self.refresh_all_viewports()
     }
 
     pub fn viewport_snap_config(&self, id: ViewportId) -> Result<SnapConfig, ErrorCode> {

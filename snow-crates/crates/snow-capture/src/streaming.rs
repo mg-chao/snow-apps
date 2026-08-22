@@ -19,6 +19,27 @@ use crate::backend::CaptureWorkload;
 use crate::capture_session::CaptureSession;
 use crate::error::{CaptureError, CaptureResult};
 use crate::frame::{CaptureEvent, CapturedFrame, Frame, FrameRecycleSender};
+use crate::scrolling::{ScrollingGovernor, ScrollingGovernorConfig, ScrollingGovernorSignal};
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CaptureRateControl {
+    Fixed,
+    Backpressure { min_fps: u32 },
+    Scrolling(ScrollingGovernorConfig),
+}
+
+/// Completion feedback from the serialized scrolling stitch worker.
+///
+/// Duplicate stitch fast-path completions set `representative` to `false`.
+/// Their service time is intentionally excluded from capacity estimation, but
+/// their pending/replacement pressure is still retained by the stream.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ScrollingStitchFeedback {
+    pub service_time: Duration,
+    pub representative: bool,
+    pub pending_depth: usize,
+    pub replaced_frames: u32,
+}
 
 /// Configuration for a continuous capture stream.
 #[derive(Clone, Debug)]
@@ -34,14 +55,13 @@ pub struct CaptureStreamConfig {
     /// Maximum number of consecutive transient errors before the
     /// stream thread gives up and exits.
     pub max_consecutive_errors: usize,
-    /// Enable adaptive frame rate reduction under sustained
-    /// backpressure. When the receiver can't keep up, the capture
-    /// rate is temporarily halved (down to `min_fps`), then ramped
-    /// back up when the consumer catches up.
-    pub adaptive_fps: bool,
-    /// Minimum FPS when adaptive rate reduction is active.
-    /// Ignored when `adaptive_fps` is `false`.
-    pub min_fps: u32,
+    /// Pacing policy. Recording normally uses `Backpressure`, while scrolling
+    /// uses the stitch-throughput governor.
+    pub rate_control: CaptureRateControl,
+    /// Optional limit for recyclable RGBA frame storage. The pool contains at
+    /// least three slots; once all slots are leased, capture waits for a frame
+    /// to return instead of allocating beyond the pool.
+    pub frame_pool_budget_bytes: Option<usize>,
     /// When `true`, the stream automatically pauses after sending a
     /// `ResolutionChanged` event, giving the consumer time to
     /// reconfigure its encoder before calling `resume()`.
@@ -54,8 +74,8 @@ impl Default for CaptureStreamConfig {
             target_fps: 60,
             buffer_depth: 6,
             max_consecutive_errors: 30,
-            adaptive_fps: false,
-            min_fps: 15,
+            rate_control: CaptureRateControl::Fixed,
+            frame_pool_budget_bytes: None,
             pause_on_resolution_change: false,
         }
     }
@@ -73,6 +93,14 @@ pub struct CaptureStreamStats {
     pub errors_recovered: AtomicU64,
     /// Current effective FPS (updated once per second).
     pub current_fps: AtomicU64,
+    /// Current target selected by the active rate controller.
+    pub effective_target_fps: AtomicU64,
+    /// EWMA of representative full stitch-worker service time in nanoseconds.
+    pub stitch_service_latency_avg_ns: AtomicU64,
+    /// Number of representative stitch samples incorporated by the governor.
+    pub stitch_samples: AtomicU64,
+    /// Number of emergency overload backoffs applied by the governor.
+    pub stitch_overload_backoffs: AtomicU64,
     /// Number of frames currently sitting in the channel buffer.
     /// Stored as a plain u64; compare against `CaptureStreamConfig::buffer_depth`
     /// to get a fill percentage.
@@ -101,6 +129,10 @@ impl Default for CaptureStreamStats {
             frames_dropped: AtomicU64::new(0),
             errors_recovered: AtomicU64::new(0),
             current_fps: AtomicU64::new(0),
+            effective_target_fps: AtomicU64::new(0),
+            stitch_service_latency_avg_ns: AtomicU64::new(0),
+            stitch_samples: AtomicU64::new(0),
+            stitch_overload_backoffs: AtomicU64::new(0),
             buffer_fill: AtomicU64::new(0),
             capture_latency_avg_ns: AtomicU64::new(0),
             cursor_latency_avg_ns: AtomicU64::new(0),
@@ -120,6 +152,12 @@ impl CaptureStreamStats {
             frames_dropped: self.frames_dropped.load(Ordering::Relaxed),
             errors_recovered: self.errors_recovered.load(Ordering::Relaxed),
             current_fps: f64::from_bits(self.current_fps.load(Ordering::Relaxed)),
+            effective_target_fps: f64::from_bits(self.effective_target_fps.load(Ordering::Relaxed)),
+            stitch_service_latency_avg: Duration::from_nanos(f64::from_bits(
+                self.stitch_service_latency_avg_ns.load(Ordering::Relaxed),
+            ) as u64),
+            stitch_samples: self.stitch_samples.load(Ordering::Relaxed),
+            stitch_overload_backoffs: self.stitch_overload_backoffs.load(Ordering::Relaxed),
             buffer_fill: self.buffer_fill.load(Ordering::Relaxed),
             capture_latency_avg: Duration::from_nanos(f64::from_bits(
                 self.capture_latency_avg_ns.load(Ordering::Relaxed),
@@ -142,6 +180,10 @@ pub struct CaptureStreamStatsSnapshot {
     pub frames_dropped: u64,
     pub errors_recovered: u64,
     pub current_fps: f64,
+    pub effective_target_fps: f64,
+    pub stitch_service_latency_avg: Duration,
+    pub stitch_samples: u64,
+    pub stitch_overload_backoffs: u64,
     /// Number of frames currently buffered in the channel.
     pub buffer_fill: u64,
     /// Exponentially-weighted moving average of per-frame capture latency.
@@ -161,8 +203,43 @@ pub struct CaptureStream {
     stop_flag: Arc<AtomicBool>,
     pause_flag: Arc<AtomicBool>,
     stats: Arc<CaptureStreamStats>,
+    feedback: Arc<CaptureStreamFeedback>,
     join_handle: Option<std::thread::JoinHandle<()>>,
     buffer_depth: usize,
+}
+
+#[derive(Debug, Default)]
+struct CaptureStreamFeedback {
+    stitch_service_time_max_ns: AtomicU64,
+    stitch_pending_depth: AtomicU64,
+    stitch_replaced_frames: AtomicU64,
+}
+
+/// Cheap cloneable handle used by native consumers to report stitch work
+/// without sending commands through the delivery thread.
+#[derive(Clone, Debug)]
+pub struct CaptureStreamFeedbackSender {
+    feedback: Arc<CaptureStreamFeedback>,
+}
+
+impl CaptureStreamFeedbackSender {
+    pub fn report_stitch_feedback(&self, feedback: ScrollingStitchFeedback) {
+        if feedback.representative && !feedback.service_time.is_zero() {
+            atomic_max(
+                &self.feedback.stitch_service_time_max_ns,
+                feedback.service_time.as_nanos().min(u64::MAX as u128) as u64,
+            );
+        }
+        atomic_max(
+            &self.feedback.stitch_pending_depth,
+            feedback.pending_depth.min(u64::MAX as usize) as u64,
+        );
+        if feedback.replaced_frames != 0 {
+            self.feedback
+                .stitch_replaced_frames
+                .fetch_add(feedback.replaced_frames as u64, Ordering::AcqRel);
+        }
+    }
 }
 
 impl CaptureStream {
@@ -194,12 +271,48 @@ impl CaptureStream {
                 "streaming requires CaptureWorkload::Continuous".into(),
             ));
         }
+        match config.rate_control {
+            CaptureRateControl::Fixed => {}
+            CaptureRateControl::Backpressure { min_fps } => {
+                if min_fps == 0 || config.target_fps == 0 || min_fps > config.target_fps {
+                    return Err(CaptureError::InvalidConfig(
+                        "backpressure rate control requires 0 < min_fps <= target_fps".into(),
+                    ));
+                }
+            }
+            CaptureRateControl::Scrolling(governor) => {
+                governor
+                    .validate()
+                    .map_err(|message| CaptureError::InvalidConfig(message.to_owned()))?;
+                if config.target_fps == 0 || governor.max_fps > config.target_fps as f64 {
+                    return Err(CaptureError::InvalidConfig(
+                        "scrolling rate control must not exceed target_fps".into(),
+                    ));
+                }
+            }
+        }
         capture.prepare_target()?;
 
         let buffer_depth = config.buffer_depth.max(1);
         let queue = Arc::new(StreamQueue::new(buffer_depth));
-        let recycle_depth = (buffer_depth * 3).max(8);
         let initial_target_info = capture.target_info().ok();
+        let bounded_frame_pool =
+            config.frame_pool_budget_bytes.is_some() && initial_target_info.is_some();
+        let desired_recycle_depth = buffer_depth.saturating_mul(3).max(8);
+        let recycle_depth = initial_target_info
+            .and_then(|target| {
+                config.frame_pool_budget_bytes.map(|budget| {
+                    let frame_bytes = (target.width as usize)
+                        .checked_mul(target.height as usize)
+                        .and_then(|pixels| pixels.checked_mul(4));
+                    if frame_bytes.is_none_or(|bytes| bytes == 0) {
+                        desired_recycle_depth
+                    } else {
+                        (budget / frame_bytes.unwrap()).clamp(3, desired_recycle_depth)
+                    }
+                })
+            })
+            .unwrap_or(desired_recycle_depth);
         let (recycle_tx, recycle_rx) = mpsc::bounded::<Frame>(recycle_depth);
         let recycler = FrameRecycleSender::new(recycle_tx.clone());
 
@@ -218,11 +331,13 @@ impl CaptureStream {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let pause_flag = Arc::new(AtomicBool::new(false));
         let stats = Arc::new(CaptureStreamStats::default());
+        let feedback = Arc::new(CaptureStreamFeedback::default());
 
         let worker_queue = Arc::clone(&queue);
         let stop = stop_flag.clone();
         let pause = pause_flag.clone();
         let stats_clone = stats.clone();
+        let feedback_clone = feedback.clone();
 
         let join_handle = std::thread::Builder::new()
             .name("snow-capture-stream".to_string())
@@ -236,6 +351,8 @@ impl CaptureStream {
                     &stop,
                     &pause,
                     &stats_clone,
+                    &feedback_clone,
+                    bounded_frame_pool,
                 );
                 worker_queue.close();
             })
@@ -250,6 +367,7 @@ impl CaptureStream {
             stop_flag,
             pause_flag,
             stats,
+            feedback,
             join_handle: Some(join_handle),
             buffer_depth,
         })
@@ -304,6 +422,13 @@ impl CaptureStream {
     /// Get a reference to the live stream statistics.
     pub fn stats(&self) -> &Arc<CaptureStreamStats> {
         &self.stats
+    }
+
+    /// Return a cloneable sender for stitch-worker timing feedback.
+    pub fn feedback_sender(&self) -> CaptureStreamFeedbackSender {
+        CaptureStreamFeedbackSender {
+            feedback: Arc::clone(&self.feedback),
+        }
     }
 
     /// Current buffer fill level as a fraction in `[0.0, 1.0]`.
@@ -391,6 +516,8 @@ fn stream_loop(
     stop: &AtomicBool,
     pause: &AtomicBool,
     stats: &CaptureStreamStats,
+    feedback: &CaptureStreamFeedback,
+    bounded_frame_pool: bool,
 ) {
     let base_interval = if config.target_fps > 0 {
         Some(Duration::from_secs_f64(1.0 / config.target_fps as f64))
@@ -398,23 +525,18 @@ fn stream_loop(
         None
     };
 
-    let min_interval = if config.adaptive_fps && config.min_fps > 0 {
-        Some(Duration::from_secs_f64(1.0 / config.min_fps as f64))
-    } else {
-        None
-    };
+    let mut rate_controller = RuntimeRateController::new(config.rate_control, base_interval);
+    if let Some(interval) = rate_controller.interval() {
+        stats.effective_target_fps.store(
+            (1.0 / interval.as_secs_f64().max(f64::EPSILON)).to_bits(),
+            Ordering::Relaxed,
+        );
+    }
 
     let mut reuse_frame: Option<Frame> = None;
     let mut consecutive_errors: usize = 0;
     let mut last_width: u32 = 0;
     let mut last_height: u32 = 0;
-
-    let mut current_interval = base_interval;
-    const ADAPTIVE_ALPHA: f64 = 0.15;
-    const DROP_RATIO_THRESHOLD: f64 = 0.10;
-    const ADAPTIVE_WINDOW: u32 = 30;
-    let mut window_drops: u32 = 0;
-    let mut window_total: u32 = 0;
 
     let mut latency_avg_ns: f64 = 0.0;
     const LATENCY_ALPHA: f64 = 0.1;
@@ -458,6 +580,13 @@ fn stream_loop(
         let frame_start = Instant::now();
 
         drain_recycled_frames(recycle_rx, &mut reuse_frame);
+        if bounded_frame_pool && reuse_frame.is_none() {
+            match recycle_rx.recv_timeout(Duration::from_millis(5)) {
+                Ok(frame) => reuse_frame = Some(frame),
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+        }
 
         let capture_result = match reuse_frame.take() {
             Some(f) => capture.capture_with_cursor(Some(f)),
@@ -522,7 +651,6 @@ fn stream_loop(
                 last_height = h;
 
                 stats.frames_captured.fetch_add(1, Ordering::Relaxed);
-
                 let outcome = queue.push(CaptureEvent::Frame(
                     CapturedFrame::from_frame_with_recycler(frame, recycler.clone()),
                 ));
@@ -545,26 +673,44 @@ fn stream_loop(
                     None => false,
                 };
 
-                if was_dropped {
-                    window_drops += 1;
+                let stitch_service_time = feedback
+                    .stitch_service_time_max_ns
+                    .swap(0, Ordering::AcqRel)
+                    .checked_into_duration();
+                let stitch_pending_depth =
+                    feedback.stitch_pending_depth.swap(0, Ordering::AcqRel) as usize;
+                let stitch_replaced_frames = feedback
+                    .stitch_replaced_frames
+                    .swap(0, Ordering::AcqRel)
+                    .min(u32::MAX as u64) as u32;
+                let current_interval = rate_controller.observe(
+                    RateObservation {
+                        dropped: was_dropped,
+                        queue_fill: outcome.data_len as f64 / config.buffer_depth.max(1) as f64,
+                        stitch_service_time,
+                        stitch_pending_depth,
+                        stitch_replaced_frames,
+                    },
+                    frame_start.elapsed(),
+                );
+                let target_fps = current_interval.map_or(0.0, |interval| {
+                    1.0 / interval.as_secs_f64().max(f64::EPSILON)
+                });
+                stats
+                    .effective_target_fps
+                    .store(target_fps.to_bits(), Ordering::Relaxed);
+                if let Some(estimated) = rate_controller.stitch_service_time() {
+                    stats
+                        .stitch_service_latency_avg_ns
+                        .store((estimated.as_nanos() as f64).to_bits(), Ordering::Relaxed);
                 }
-                window_total += 1;
-                if config.adaptive_fps && window_total >= ADAPTIVE_WINDOW {
-                    let drop_ratio = window_drops as f64 / window_total as f64;
-                    if let (Some(cur), Some(base), Some(max)) =
-                        (current_interval, base_interval, min_interval)
-                    {
-                        let cur_ns = cur.as_nanos() as f64;
-                        let target_ns = if drop_ratio > DROP_RATIO_THRESHOLD {
-                            (cur_ns * 1.5).min(max.as_nanos() as f64)
-                        } else {
-                            (cur_ns * 0.8).max(base.as_nanos() as f64)
-                        };
-                        let smoothed = ADAPTIVE_ALPHA * target_ns + (1.0 - ADAPTIVE_ALPHA) * cur_ns;
-                        current_interval = Some(Duration::from_nanos(smoothed as u64));
-                    }
-                    window_drops = 0;
-                    window_total = 0;
+                if rate_controller.last_sample_was_representative() {
+                    stats.stitch_samples.fetch_add(1, Ordering::Relaxed);
+                }
+                if rate_controller.last_observation_overloaded() {
+                    stats
+                        .stitch_overload_backoffs
+                        .fetch_add(1, Ordering::Relaxed);
                 }
             }
             Err(ref e) if e.is_retryable() => {
@@ -592,7 +738,7 @@ fn stream_loop(
             fps_epoch = Instant::now();
         }
 
-        if let Some(interval) = current_interval {
+        if let Some(interval) = rate_controller.interval() {
             let elapsed = frame_start.elapsed();
             if elapsed < interval {
                 spin_sleep(interval - elapsed);
@@ -605,20 +751,182 @@ fn stream_loop(
     store_queue_fill(stats, queue.push(CaptureEvent::StreamEnded).data_len);
 }
 
-fn drain_recycled_frames(recycle_rx: &mpsc::Receiver<Frame>, reuse_frame: &mut Option<Frame>) {
-    while let Ok(candidate) = recycle_rx.try_recv() {
-        let keep_candidate = match reuse_frame.as_ref() {
-            Some(current) => recycled_frame_rank(&candidate) >= recycled_frame_rank(current),
-            None => true,
-        };
-        if keep_candidate {
-            *reuse_frame = Some(candidate);
+#[derive(Clone, Copy)]
+struct RateObservation {
+    dropped: bool,
+    queue_fill: f64,
+    stitch_service_time: Option<Duration>,
+    stitch_pending_depth: usize,
+    stitch_replaced_frames: u32,
+}
+
+enum RuntimeRateController {
+    Fixed {
+        interval: Option<Duration>,
+    },
+    Backpressure {
+        base: Option<Duration>,
+        maximum: Option<Duration>,
+        current: Option<Duration>,
+        drops: u32,
+        total: u32,
+    },
+    Scrolling {
+        governor: ScrollingGovernor,
+        last_observation: Instant,
+        last_sample_representative: bool,
+        last_overloaded: bool,
+    },
+}
+
+impl RuntimeRateController {
+    fn new(policy: CaptureRateControl, base: Option<Duration>) -> Self {
+        match policy {
+            CaptureRateControl::Fixed => Self::Fixed { interval: base },
+            CaptureRateControl::Backpressure { min_fps } => Self::Backpressure {
+                base,
+                maximum: (min_fps > 0).then(|| Duration::from_secs_f64(1.0 / min_fps as f64)),
+                current: base,
+                drops: 0,
+                total: 0,
+            },
+            CaptureRateControl::Scrolling(config) => Self::Scrolling {
+                governor: ScrollingGovernor::new(config)
+                    .expect("validated capture stream scrolling rate control"),
+                last_observation: Instant::now(),
+                last_sample_representative: false,
+                last_overloaded: false,
+            },
+        }
+    }
+
+    fn interval(&self) -> Option<Duration> {
+        match self {
+            Self::Fixed { interval } => *interval,
+            Self::Backpressure { current, .. } => *current,
+            Self::Scrolling { governor, .. } => Some(governor.interval()),
+        }
+    }
+
+    fn observe(
+        &mut self,
+        observation: RateObservation,
+        fallback_elapsed: Duration,
+    ) -> Option<Duration> {
+        match self {
+            Self::Fixed { interval } => *interval,
+            Self::Backpressure {
+                base,
+                maximum,
+                current,
+                drops,
+                total,
+            } => {
+                const WINDOW: u32 = 30;
+                *total += 1;
+                *drops += u32::from(observation.dropped);
+                if *total >= WINDOW {
+                    if let (Some(value), Some(base), Some(maximum)) = (*current, *base, *maximum) {
+                        let drop_ratio = *drops as f64 / *total as f64;
+                        let value_ns = value.as_nanos() as f64;
+                        let target_ns = if drop_ratio > 0.10 {
+                            (value_ns * 1.5).min(maximum.as_nanos() as f64)
+                        } else {
+                            (value_ns * 0.8).max(base.as_nanos() as f64)
+                        };
+                        let smoothed = 0.15 * target_ns + 0.85 * value_ns;
+                        *current = Some(Duration::from_nanos(smoothed as u64));
+                    }
+                    *drops = 0;
+                    *total = 0;
+                }
+                *current
+            }
+            Self::Scrolling {
+                governor,
+                last_observation,
+                last_sample_representative,
+                last_overloaded,
+            } => {
+                let now = Instant::now();
+                let elapsed = now
+                    .checked_duration_since(*last_observation)
+                    .unwrap_or(fallback_elapsed);
+                *last_observation = now;
+                *last_sample_representative = observation.stitch_service_time.is_some();
+                *last_overloaded = observation.dropped
+                    || observation.stitch_replaced_frames > 0
+                    || observation.queue_fill > 0.75
+                    || observation.stitch_pending_depth >= 2;
+                governor.observe(
+                    ScrollingGovernorSignal {
+                        stitch_service_time: observation.stitch_service_time,
+                        stitch_pending_depth: observation.stitch_pending_depth,
+                        stitch_replaced_frames: observation.stitch_replaced_frames,
+                        queue_fill: observation.queue_fill,
+                        capture_dropped: observation.dropped,
+                    },
+                    elapsed,
+                );
+                Some(governor.interval())
+            }
+        }
+    }
+
+    fn stitch_service_time(&self) -> Option<Duration> {
+        match self {
+            Self::Scrolling { governor, .. } => governor.estimated_stitch_service_time(),
+            _ => None,
+        }
+    }
+
+    fn last_sample_was_representative(&self) -> bool {
+        matches!(
+            self,
+            Self::Scrolling {
+                last_sample_representative: true,
+                ..
+            }
+        )
+    }
+
+    fn last_observation_overloaded(&self) -> bool {
+        matches!(
+            self,
+            Self::Scrolling {
+                last_overloaded: true,
+                ..
+            }
+        )
+    }
+}
+
+fn atomic_max(target: &AtomicU64, value: u64) {
+    let mut current = target.load(Ordering::Acquire);
+    while current < value {
+        match target.compare_exchange_weak(current, value, Ordering::AcqRel, Ordering::Acquire) {
+            Ok(_) => break,
+            Err(observed) => current = observed,
         }
     }
 }
 
-fn recycled_frame_rank(frame: &Frame) -> (u64, usize) {
-    (frame.metadata.sequence, frame.as_rgba_bytes().len())
+trait CheckedDuration {
+    fn checked_into_duration(self) -> Option<Duration>;
+}
+
+impl CheckedDuration for u64 {
+    fn checked_into_duration(self) -> Option<Duration> {
+        (!self.eq(&0)).then(|| Duration::from_nanos(self))
+    }
+}
+
+fn drain_recycled_frames(recycle_rx: &mpsc::Receiver<Frame>, reuse_frame: &mut Option<Frame>) {
+    if reuse_frame.is_none()
+        && let Ok(candidate) = recycle_rx.try_recv()
+    {
+        *reuse_frame = Some(candidate);
+    }
 }
 
 fn store_queue_fill(stats: &CaptureStreamStats, len: usize) {
@@ -637,5 +945,25 @@ fn spin_sleep(duration: Duration) {
 
     while Instant::now() < target {
         std::hint::spin_loop();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recycle_acquisition_preserves_spare_pool_slots() {
+        let (tx, rx) = mpsc::bounded(3);
+        for _ in 0..3 {
+            tx.send(Frame::empty()).unwrap();
+        }
+        let mut reuse = None;
+        drain_recycled_frames(&rx, &mut reuse);
+        assert!(reuse.is_some());
+        assert_eq!(rx.len(), 2);
+
+        drain_recycled_frames(&rx, &mut reuse);
+        assert_eq!(rx.len(), 2, "an owned reuse frame must not drain spares");
     }
 }

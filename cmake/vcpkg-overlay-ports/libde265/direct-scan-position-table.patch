@@ -1,0 +1,62 @@
+diff --git a/libde265/scan.cc b/libde265/scan.cc
+index e8d46a2..cb16358 100644
+--- a/libde265/scan.cc
++++ b/libde265/scan.cc
+@@ -106,32 +106,5 @@ scan_position get_scan_position(int x,int y, int scanIdx, int log2BlkSize)
+ }
+ 
+-static void fill_scan_pos(scan_position* pos, int x,int y,int scanIdx, int log2TrafoSize)
+-{
+-  int lastScanPos = 16;
+-  int lastSubBlock = (1<<(log2TrafoSize-2)) * (1<<(log2TrafoSize-2)) -1;
+-
+-  const position* ScanOrderSub = get_scan_order(log2TrafoSize-2, scanIdx);
+-  const position* ScanOrderPos = get_scan_order(2, scanIdx);
+-
+-  int xC,yC;
+-  do {
+-    if (lastScanPos==0) {
+-      lastScanPos=16;
+-      lastSubBlock--;
+-    }
+-    lastScanPos--;
+-
+-    position S = ScanOrderSub[lastSubBlock];
+-    xC = (S.x<<2) + ScanOrderPos[lastScanPos].x;
+-    yC = (S.y<<2) + ScanOrderPos[lastScanPos].y;
+-
+-  } while ( (xC != x) || (yC != y));
+-
+-  pos->subBlock = lastSubBlock;
+-  pos->scanPos  = lastScanPos;
+-}
+-
+-
+ void init_scan_orders()
+ {
+   for (int log2size=1;log2size<=5;log2size++)
+@@ -143,10 +119,18 @@ void init_scan_orders()
+ 
+ 
+   for (int log2size=2;log2size<=5;log2size++)
+-    for (int scanIdx=0;scanIdx<3;scanIdx++)
+-      for (int y=0;y<(1<<log2size);y++)
+-        for (int x=0;x<(1<<log2size);x++)
+-          {
+-            fill_scan_pos(&scanpos[scanIdx][log2size][ y*(1<<log2size) + x ],x,y,scanIdx,log2size);
+-          }
++    for (int scanIdx=0;scanIdx<3;scanIdx++) {
++      const int blockSize = 1 << log2size;
++      const int subBlockCount = 1 << (log2size-2);
++      const position* scanOrderSub = get_scan_order(log2size-2, scanIdx);
++      const position* scanOrderPos = get_scan_order(2, scanIdx);
++
++      for (int subBlock=0;subBlock<subBlockCount*subBlockCount;subBlock++)
++        for (int scanPos=0;scanPos<16;scanPos++) {
++          const int x = (scanOrderSub[subBlock].x << 2) + scanOrderPos[scanPos].x;
++          const int y = (scanOrderSub[subBlock].y << 2) + scanOrderPos[scanPos].y;
++          scanpos[scanIdx][log2size][y*blockSize+x].subBlock = subBlock;
++          scanpos[scanIdx][log2size][y*blockSize+x].scanPos = scanPos;
++        }
++    }
+ }

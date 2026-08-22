@@ -183,11 +183,14 @@ if(MSVC)
 endif()
 
 if(WIN32)
-    find_program(SNOW_IMAGE_VIEWER_WINDEPLOYQT
-        NAMES windeployqt
-        HINTS "${Qt6_DIR}/../../../bin"
-        REQUIRED
-    )
+    get_target_property(SNOW_IMAGE_VIEWER_QT_CORE_TYPE Qt6::Core TYPE)
+    if(SNOW_IMAGE_VIEWER_QT_CORE_TYPE STREQUAL "SHARED_LIBRARY")
+        find_program(SNOW_IMAGE_VIEWER_WINDEPLOYQT
+            NAMES windeployqt
+            HINTS "${Qt6_DIR}/../../../bin"
+            REQUIRED
+        )
+    endif()
     add_custom_command(
         TARGET snow_image_viewer POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -203,16 +206,18 @@ if(WIN32)
                 "$<TARGET_FILE_DIR:snow_image_viewer>"
         )
     endif()
-    add_custom_command(
-        TARGET snow_image_viewer POST_BUILD
-        COMMAND "${SNOW_IMAGE_VIEWER_WINDEPLOYQT}"
-            "$<$<CONFIG:Debug>:--debug>"
-            "$<$<NOT:$<CONFIG:Debug>>:--release>"
-            --no-translations
-            --no-compiler-runtime
-            "$<TARGET_FILE:snow_image_viewer>"
-        COMMAND_EXPAND_LISTS
-    )
+    if(SNOW_IMAGE_VIEWER_QT_CORE_TYPE STREQUAL "SHARED_LIBRARY")
+        add_custom_command(
+            TARGET snow_image_viewer POST_BUILD
+            COMMAND "${SNOW_IMAGE_VIEWER_WINDEPLOYQT}"
+                "$<$<CONFIG:Debug>:--debug>"
+                "$<$<NOT:$<CONFIG:Debug>>:--release>"
+                --no-translations
+                --no-compiler-runtime
+                "$<TARGET_FILE:snow_image_viewer>"
+            COMMAND_EXPAND_LISTS
+        )
+    endif()
 endif()
 
 if(SNOW_IMAGE_VIEWER_BUILD_TESTS)

@@ -392,6 +392,16 @@ impl GpuComputePass {
         self.output_desc
             .expect("output descriptor must be available after ensure_output")
     }
+
+    fn release_capture_surfaces(&mut self) {
+        self.output_uav = None;
+        self.output_tex = None;
+        self.cached_srv = None;
+        self.cached_srv_source = 0;
+        self.cached_width = 0;
+        self.cached_height = 0;
+        self.output_desc = None;
+    }
 }
 
 pub(crate) struct GpuTonemapper {
@@ -541,6 +551,10 @@ impl GpuTonemapper {
     pub(crate) fn output_desc(&self) -> D3D11_TEXTURE2D_DESC {
         self.pass.output_desc()
     }
+
+    pub(crate) fn release_capture_surfaces(&mut self) {
+        self.pass.release_capture_surfaces();
+    }
 }
 
 ///
@@ -606,5 +620,9 @@ impl GpuF16Converter {
 
     pub(crate) fn output_desc(&self) -> D3D11_TEXTURE2D_DESC {
         self.pass.output_desc()
+    }
+
+    pub(crate) fn release_capture_surfaces(&mut self) {
+        self.pass.release_capture_surfaces();
     }
 }

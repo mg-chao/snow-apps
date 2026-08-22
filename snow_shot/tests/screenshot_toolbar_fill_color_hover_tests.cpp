@@ -41,11 +41,18 @@ HWND toNativeHwnd(WId windowId) {
 
 class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
   public:
+    int arrowToolRequests = 0;
+    int lineToolRequests = 0;
+
     void setMoveTool() override {}
     void setSelectTool() override {}
     void setShapeTool() override {}
-    void setArrowTool() override {}
-    void setLineTool() override {}
+    void setArrowTool() override {
+        ++arrowToolRequests;
+    }
+    void setLineTool() override {
+        ++lineToolRequests;
+    }
     void setFreeDrawTool() override {}
     void setHighlightTool() override {}
     void setPenHighlightTool() override {}
@@ -62,7 +69,7 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void pinSelectionToScreen() override {}
     void cancelCapture() override {}
     void copySelectionToClipboard() override {}
-    void startVideoRecording() override {}
+    void startScreenRecording() override {}
     void setShapeStyleFromToolbar(const SnowCanvasShapeStyle&, quint32,
                                   SnowCanvasShapeKind) override {}
     void setTextStyleFromToolbar(const SnowCanvasTextStyle&) override {}
@@ -106,8 +113,23 @@ void waitFor(int milliseconds) {
 
 adqt::widgets::AdButton* toolbarButton(ScreenshotToolbarWindow& toolbar, const QString& tooltip) {
     for (QWidget* control : toolbar.findChildren<QWidget*>()) {
-        if (control != nullptr && control->toolTip() == tooltip) {
+        if (control != nullptr &&
+            (control->toolTip() == tooltip || control->accessibleName() == tooltip)) {
             return qobject_cast<adqt::widgets::AdButton*>(control);
+        }
+    }
+    return nullptr;
+}
+
+adqt::widgets::AdButton* popoverButton(adqt::widgets::AdPopover* popover, const QString& tooltip) {
+    if (popover == nullptr || popover->contentWidget() == nullptr) {
+        return nullptr;
+    }
+    for (adqt::widgets::AdButton* button :
+         popover->contentWidget()->findChildren<adqt::widgets::AdButton*>()) {
+        if (button != nullptr &&
+            (button->toolTip() == tooltip || button->accessibleName() == tooltip)) {
+            return button;
         }
     }
     return nullptr;
@@ -482,46 +504,6 @@ void hoveringFillColorTriggerShowsPicker() {
     adqt::widgets::AdTooltip::showText(rectangleButton, QString());
     waitFor(350);
 
-    auto* arrowLineButton =
-        toolbar.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotArrowLineButton"));
-    auto* arrowLinePopover = arrowLineButton == nullptr
-                                 ? nullptr
-                                 : arrowLineButton->findChild<adqt::widgets::AdPopover*>();
-    require(arrowLineButton != nullptr && arrowLinePopover != nullptr &&
-                arrowLinePopover->sourceWidget() == arrowLineButton,
-            "Arrow and Line should expose its hover popover");
-    moveSystemMouseTo(outsidePosition);
-    waitFor(arrowLinePopover->hoverCloseDelayMs() + 50);
-    toolbar.setActiveTool(ScreenshotToolPalette::Tool::Arrow);
-    waitFor(50);
-    const QPoint arrowLinePosition = arrowLineButton->mapToGlobal(arrowLineButton->rect().center());
-    moveSystemMouseTo(arrowLinePosition);
-    for (int attempt = 0; attempt < 10; ++attempt) {
-        waitFor(50);
-        if (arrowLinePopover->isVisible()) {
-            break;
-        }
-        moveSystemMouseTo(arrowLinePosition);
-    }
-    require(arrowLinePopover->isVisible(),
-            "hovering the Arrow and Line trigger should open its popover");
-
-    arrowLineButton->click();
-    waitFor(arrowLinePopover->hoverCloseDelayMs() + 50);
-    const QRect arrowLineGlobalRect(arrowLineButton->mapToGlobal(QPoint()),
-                                    arrowLineButton->size());
-    require(arrowLineGlobalRect.contains(QCursor::pos()),
-            "clicking a hovered tool trigger must leave the cursor over the trigger");
-    require(arrowLinePopover->isVisible(),
-            "clicking a hovered tool trigger must keep its popover visible");
-
-    moveSystemMouseTo(outsidePosition);
-    for (int attempt = 0; attempt < 20 && arrowLinePopover->isVisible(); ++attempt) {
-        waitFor(25);
-    }
-    require(!arrowLinePopover->isVisible(),
-            "the tool popover should still close after the cursor leaves");
-
     rectangleButton->click();
     waitFor(50);
 
@@ -591,6 +573,63 @@ void hoveringFillColorTriggerShowsPicker() {
         require(!fillPicker->popupVisible(),
                 "repeated cursor exits must never leave the hover popover stuck open");
     }
+
+    auto* arrowLineButton =
+        toolbar.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotArrowLineButton"));
+    auto* arrowLinePopover = arrowLineButton == nullptr
+                                 ? nullptr
+                                 : arrowLineButton->findChild<adqt::widgets::AdPopover*>();
+    auto* lineOption = popoverButton(arrowLinePopover, QStringLiteral("Line"));
+    auto* arrowOption = popoverButton(arrowLinePopover, QStringLiteral("Arrow"));
+    require(arrowLineButton != nullptr && arrowLinePopover != nullptr &&
+                arrowLinePopover->sourceWidget() == arrowLineButton && lineOption != nullptr &&
+                arrowOption != nullptr,
+            "Arrow and Line should share the live toolbar's hover popover");
+
+    moveSystemMouseTo(outsidePosition);
+    waitFor(arrowLinePopover->hoverCloseDelayMs() + 50);
+    const QPoint arrowLinePosition = arrowLineButton->mapToGlobal(arrowLineButton->rect().center());
+    moveSystemMouseTo(arrowLinePosition);
+    for (int attempt = 0; attempt < 10 && !arrowLinePopover->isVisible(); ++attempt) {
+        waitFor(50);
+        moveSystemMouseTo(arrowLinePosition);
+    }
+    require(arrowLinePopover->isVisible(),
+            "hovering the Arrow and Line trigger should open its horizontal popover");
+
+    const int lineToolRequestsBeforeSelection = commands.lineToolRequests;
+    clickSystemMouseAt(lineOption->mapToGlobal(lineOption->rect().center()));
+    waitFor(50);
+    require(commands.lineToolRequests == lineToolRequestsBeforeSelection + 1 &&
+                arrowLineButton->accessibleName() == QStringLiteral("Line") &&
+                arrowLineButton->property("screenshotToolbarItemId").toString() ==
+                    QStringLiteral("line"),
+            "selecting Line should activate it and replace the shared toolbar trigger");
+
+    moveSystemMouseTo(outsidePosition);
+    waitFor(arrowLinePopover->hoverCloseDelayMs() + 50);
+    const int lineToolRequestsBeforeTrigger = commands.lineToolRequests;
+    clickSystemMouseAt(arrowLinePosition);
+    waitFor(50);
+    require(commands.lineToolRequests == lineToolRequestsBeforeTrigger + 1,
+            "clicking the replaced toolbar trigger should activate Line directly");
+
+    moveSystemMouseTo(outsidePosition);
+    waitFor(arrowLinePopover->hoverCloseDelayMs() + 50);
+    moveSystemMouseTo(arrowLinePosition);
+    for (int attempt = 0; attempt < 10 && !arrowLinePopover->isVisible(); ++attempt) {
+        waitFor(50);
+        moveSystemMouseTo(arrowLinePosition);
+    }
+    require(arrowLinePopover->isVisible(),
+            "the drawing-tool popover should reopen after selecting an entry");
+    const int arrowToolRequestsBeforeSelection = commands.arrowToolRequests;
+    clickSystemMouseAt(arrowOption->mapToGlobal(arrowOption->rect().center()));
+    waitFor(50);
+    require(commands.arrowToolRequests == arrowToolRequestsBeforeSelection + 1 &&
+                arrowLineButton->accessibleName() == QStringLiteral("Arrow"),
+            "selecting Arrow should restore it as the shared toolbar trigger");
+    moveSystemMouseTo(outsidePosition);
 
     toolbar.hide();
     overlay.hide();

@@ -7,6 +7,7 @@
 #include <QTest>
 #include <QTranslator>
 
+#include <algorithm>
 #include <limits>
 
 #include "widgets/combo_box.h"
@@ -379,15 +380,27 @@ void PaginationTest::languageChangeRefreshesPersistentText() {
   AdPagination pagination;
   pagination.setTotal(100);
   pagination.setShowQuickJumper(true);
+  pagination.setShowSizeChanger(true);
   auto* quickLabel = pagination.findChild<QLabel*>(QStringLiteral("paginationQuickLabel"));
+  auto* sizeChanger = pagination.findChild<AdComboBox*>(QStringLiteral("paginationSizeChanger"));
   QVERIFY(quickLabel);
+  QVERIFY(sizeChanger);
   QCOMPARE(quickLabel->text(), QStringLiteral("Go to"));
+  QCOMPARE(sizeChanger->currentText(), QStringLiteral("10 / page"));
 
   PaginationTranslator translator;
   QVERIFY(QCoreApplication::installTranslator(&translator));
   QEvent languageChange(QEvent::LanguageChange);
   QCoreApplication::sendEvent(&pagination, &languageChange);
   QCOMPARE(quickLabel->text(), QStringLiteral("translated:Go to"));
+  QCOMPARE(sizeChanger->currentText(), QStringLiteral("translated:10 / page"));
+  const auto translatedOptions = sizeChanger->options();
+  const auto page50 = std::find_if(translatedOptions.cbegin(), translatedOptions.cend(),
+                                   [](const AdComboBox::Option& option) {
+                                     return option.value.toInt() == 50;
+                                   });
+  QVERIFY(page50 != translatedOptions.cend());
+  QCOMPARE(page50->label, QStringLiteral("translated:50 / page"));
   QCOMPARE(pagination.accessibleName(), QStringLiteral("translated:Pagination"));
   QCoreApplication::removeTranslator(&translator);
 }

@@ -16,10 +16,19 @@
         {
           "name": "ffmpeg",
           "default-features": false,
-          "features": ["avcodec", "avformat", "swresample", "swscale"]
+          "features": [
+            "snow-shot-minimal"
+          ]
         },
         { "name": "libpng", "features": ["apng"] },
-        "libwebp",
+        {
+          "name": "libwebp",
+          "default-features": false,
+          "features": ["libwebpmux", "simd"]
+        },
+        "libjpeg-turbo",
+        { "name": "libheif", "default-features": false, "features": ["aom"] },
+        "libjxl",
         {
           "name": "onnxruntime",
           "default-features": false,
@@ -27,10 +36,8 @@
         },
         {
           "name": "opencv4",
-          "default-features": false,
-          "features": ["contrib", "dnn"]
-        },
-        "vulkan-headers"
+          "default-features": false
+        }
       ]
     },
     "full-codecs": {
@@ -44,6 +51,12 @@
         "libwebp",
         "lunasvg",
         "openexr"
+      ]
+    },
+    "image-viewer": {
+      "description": "Build the native dependencies required by Snow Image Viewer.",
+      "dependencies": [
+        "vulkan-headers"
       ]
     }
   }

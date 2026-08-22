@@ -6,9 +6,11 @@
 
 #include <QDate>
 #include <QHash>
+#include <QImage>
 #include <QObject>
 #include <QPointer>
 #include <QMetaType>
+#include <QSet>
 #include <QVector>
 #include <QWidget>
 
@@ -20,6 +22,12 @@ struct ScreenshotHistoryAssetResolution {
 };
 Q_DECLARE_METATYPE(ScreenshotHistoryAssetResolution)
 Q_DECLARE_METATYPE(QVector<ScreenshotHistoryAssetResolution>)
+
+struct ScreenshotHistoryResultResolution {
+    QString recordId;
+    std::optional<QImage> image;
+};
+Q_DECLARE_METATYPE(ScreenshotHistoryResultResolution)
 
 class QEvent;
 class QLabel;
@@ -49,6 +57,7 @@ class ScreenshotHistoryPageDataSource : public QObject {
     virtual bool supportsAsyncDisplayAssets() const { return false; }
     virtual void requestDisplayAssets(const QVector<snow_shot::storage::CaptureHistoryRecord>&,
                                       quint64) {}
+    virtual void requestResultImage(const snow_shot::storage::CaptureHistoryRecord&, quint64) {}
     virtual void remove(const QString& id) = 0;
     [[nodiscard]] virtual bool requestClear() = 0;
 
@@ -57,6 +66,7 @@ class ScreenshotHistoryPageDataSource : public QObject {
     void clearFinished(bool success, const QString& error);
     void displayAssetsReady(quint64 generation,
                             const QVector<ScreenshotHistoryAssetResolution>& resolutions);
+    void resultImageReady(quint64 generation, const ScreenshotHistoryResultResolution& resolution);
 };
 
 class ScreenshotHistoryPageWidget final : public QWidget {
@@ -93,6 +103,9 @@ class ScreenshotHistoryPageWidget final : public QWidget {
     void handleHistoryChanged();
     void handleDisplayAssetsReady(
         quint64 generation, const QVector<ScreenshotHistoryAssetResolution>& resolutions);
+    void handleResultImageReady(quint64 generation,
+                                const ScreenshotHistoryResultResolution& resolution);
+    void copyEntry(const snow_shot::storage::CaptureHistoryRecord& record);
     void queueRefresh();
     void updateEmptyStateMinimumHeight();
     [[nodiscard]] bool matchesFilters(const snow_shot::storage::CaptureHistoryRecord& record) const;
@@ -123,6 +136,8 @@ class ScreenshotHistoryPageWidget final : public QWidget {
     bool m_refreshQueued = false;
     bool m_updatingPagination = false;
     quint64 m_assetGeneration = 0;
+    quint64 m_resultGeneration = 0;
+    QSet<QString> m_pendingResultRecordIds;
     int m_emptyStateMinimumHeight = 0;
 };
 

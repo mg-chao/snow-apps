@@ -2,6 +2,7 @@
 name = "snow-stitch-images"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 rust-version = "1.97.1"
 description = "Clean-room Rust implementation workspace for stateful vertical screenshot stitching"
 publish = false

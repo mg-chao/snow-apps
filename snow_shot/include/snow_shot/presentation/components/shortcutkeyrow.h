@@ -23,6 +23,18 @@ struct MainWindowComponentMetricToken;
 struct ThemeAliasMetricToken;
 } // namespace snow_shot::presentation::styles
 struct ShortcutKeyRowConfig {
+    enum class Presentation {
+        ActionCard,
+        CompactFormField,
+    };
+
+    enum class ValidationScope {
+        GlobalShortcut,
+        ScreenshotShortcut,
+        DrawingShortcut,
+        PinnedWindowShortcut,
+    };
+
     QString title;
     adqt::icons::IconRef iconRef;
     QStringList shortcuts;
@@ -32,6 +44,12 @@ struct ShortcutKeyRowConfig {
     int maxShortcutCount = 2;
     std::function<snow_shot::presentation::GlobalShortcutValidationResult(const QString&)>
         shortcutValidator;
+    bool adjustableDelay = false;
+    int delaySeconds = 3;
+    std::function<bool(int)> delaySetter;
+    bool showRegistrationStatus = true;
+    ValidationScope validationScope = ValidationScope::GlobalShortcut;
+    Presentation presentation = Presentation::ActionCard;
 };
 
 class ShortcutKeyRow : public adqt::widgets::AdButton {
@@ -48,9 +66,12 @@ class ShortcutKeyRow : public adqt::widgets::AdButton {
     void retranslateUi();
     void
     setRegistrationState(const snow_shot::presentation::GlobalShortcutRegistrationState& state);
+    void setDelaySeconds(int seconds);
+    [[nodiscard]] int delaySeconds() const;
 
   signals:
     void shortcutsChanged(const QStringList& shortcuts);
+    void delaySecondsChanged(int seconds);
 
   protected:
     void paintEvent(QPaintEvent* event) override;
@@ -59,6 +80,10 @@ class ShortcutKeyRow : public adqt::widgets::AdButton {
 
   private:
     void openShortcutConfigDialog();
+    [[nodiscard]] QString delayDisplayTitle() const;
+    [[nodiscard]] QString titleLabelText() const;
+    bool adjustDelayFromWheel(QEvent* event);
+    void syncDelayUnderline();
     void syncTitle();
     void syncTitleLabelColor(const QColor& textColor);
     void syncTitleIcon(const QColor& iconColor);
@@ -67,16 +92,26 @@ class ShortcutKeyRow : public adqt::widgets::AdButton {
     bool isShortcutButtonActive() const;
 
     QLabel* m_titleLabel = nullptr;
+    QWidget* m_delayUnderline = nullptr;
     QLabel* m_titleIcon = nullptr;
     adqt::widgets::AdButton* m_shortcutButton = nullptr;
     QString m_rowState;
+    QString m_baseTitle;
     snow_shot::presentation::GlobalShortcutRegistrationState m_registrationState;
     adqt::icons::IconRef m_titleIconRef;
     int m_titleIconSize = 0;
     int m_rowBorderWidth = 1;
     int m_rowBorderRadius = 0;
     bool m_useStableBorder = false;
+    bool m_showRegistrationStatus = true;
+    bool m_compactPresentation = false;
+    ShortcutKeyRowConfig::ValidationScope m_validationScope =
+        ShortcutKeyRowConfig::ValidationScope::GlobalShortcut;
     int m_maxShortcutCount = 2;
+    bool m_adjustableDelay = false;
+    bool m_delayTitleHovered = false;
+    int m_delaySeconds = 3;
+    std::function<bool(int)> m_delaySetter;
     std::function<snow_shot::presentation::GlobalShortcutValidationResult(const QString&)>
         m_shortcutValidator;
     snow_shot::presentation::styles::ThemeColorScheme m_colorScheme;

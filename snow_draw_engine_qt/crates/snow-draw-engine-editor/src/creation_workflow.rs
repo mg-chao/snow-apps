@@ -967,8 +967,125 @@ impl Editor {
 #[cfg(test)]
 mod line_creation_tests {
     use super::*;
+    use snow_draw_engine_core::{SnapGuideAxis, SnapGuideKind};
     use snow_draw_engine_document::{CanvasFilterType, ElementData};
     use snow_draw_engine_interaction::{PointerButtons, PointerDevice};
+
+    fn editor_with_non_dominant_x_snap_reference() -> (Editor, DocumentModel) {
+        let mut config = EngineConfig::default();
+        config.snap.enabled = true;
+        config.snap.enable_gap_snaps = false;
+        let editor = Editor::new(config).unwrap();
+        let mut document = DocumentModel::new();
+        let (reference, _) = editor.preview_rectangle_with_snapping(
+            &document,
+            Point::new(19.0, 29.0),
+            Point::new(29.0, 49.0),
+            Modifiers::default(),
+        );
+        let reference = reference.expect("reference rectangle should be valid");
+        let mut transaction = Transaction::new("insert snap reference");
+        transaction.insert_rectangle(
+            document.peek_next_element_id(),
+            ElementMeta::default(),
+            reference,
+        );
+        document.apply_transaction(transaction).unwrap();
+        (editor, document)
+    }
+
+    fn assert_vertical_point_guide_matches_right_edge(rect: &RectangleData, guides: &[SnapGuide]) {
+        let bounds = rectangle_to_draw_rect(rect);
+        let guide = guides
+            .iter()
+            .find(|guide| {
+                guide.kind == SnapGuideKind::Point && guide.axis == SnapGuideAxis::Vertical
+            })
+            .expect("the applied X snap should return a vertical point guide");
+        assert!((guide.start.x - bounds.max_x).abs() <= 1e-9);
+        assert!((guide.end.x - bounds.max_x).abs() <= 1e-9);
+    }
+
+    #[test]
+    fn alt_rectangle_creation_scales_from_the_press_center() {
+        let document = DocumentModel::new();
+        let editor = Editor::new(EngineConfig::default()).unwrap();
+        let start = Point::new(10.0, 20.0);
+        let current = Point::new(15.0, 30.0);
+
+        let (preview, _) = editor.preview_rectangle_with_snapping(
+            &document,
+            start,
+            current,
+            Modifiers {
+                alt: true,
+                ..Modifiers::default()
+            },
+        );
+        let rect = preview.expect("Alt rectangle drag should produce a preview");
+        assert_eq!(rect.center, start);
+        assert_eq!(rect.width, 10.0);
+        assert_eq!(rect.height, 20.0);
+
+        let (preview, _) = editor.preview_rectangle_with_snapping(
+            &document,
+            start,
+            current,
+            Modifiers {
+                alt: true,
+                shift: true,
+                ..Modifiers::default()
+            },
+        );
+        let rect = preview.expect("Alt+Shift rectangle drag should produce a preview");
+        assert_eq!(rect.center, start);
+        assert_eq!(rect.width, rect.height);
+    }
+
+    #[test]
+    fn shift_rectangle_creation_applies_non_dominant_x_object_snap() {
+        let (editor, document) = editor_with_non_dominant_x_snap_reference();
+        let (preview, guides) = editor.preview_rectangle_with_snapping(
+            &document,
+            Point::new(0.0, 0.0),
+            Point::new(10.0, 20.0),
+            Modifiers {
+                shift: true,
+                ..Modifiers::default()
+            },
+        );
+        let rect = preview.expect("Shift rectangle drag should produce a preview");
+        let bounds = rectangle_to_draw_rect(&rect);
+
+        assert!((bounds.max_x - 19.0).abs() <= 1e-9);
+        assert!((rect.width - 19.0).abs() <= 1e-9);
+        assert_eq!(rect.width, rect.height);
+        assert_vertical_point_guide_matches_right_edge(&rect, &guides);
+    }
+
+    #[test]
+    fn alt_shift_rectangle_creation_applies_non_dominant_x_object_snap_from_center() {
+        let (editor, document) = editor_with_non_dominant_x_snap_reference();
+        let start = Point::new(0.0, 0.0);
+        let (preview, guides) = editor.preview_rectangle_with_snapping(
+            &document,
+            start,
+            Point::new(10.0, 20.0),
+            Modifiers {
+                alt: true,
+                shift: true,
+                ..Modifiers::default()
+            },
+        );
+        let rect = preview.expect("Alt+Shift rectangle drag should produce a preview");
+        let bounds = rectangle_to_draw_rect(&rect);
+
+        assert_eq!(rect.center, start);
+        assert!((bounds.max_x - 19.0).abs() <= 1e-9);
+        assert!((rect.width - 38.0).abs() <= 1e-9);
+        assert_eq!(rect.width, rect.height);
+        assert_vertical_point_guide_matches_right_edge(&rect, &guides);
+    }
 
     #[test]
     fn line_drag_queues_one_canonical_line_element() {

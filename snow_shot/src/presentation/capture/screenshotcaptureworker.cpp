@@ -1,6 +1,7 @@
 #include "screenshotcaptureworker.h"
 
 #include "snow_shot/presentation/screenshotcapturecoordinator.h"
+#include "../services/screenshotlifecycleperfinstrumentation.h"
 
 #include "snow_capture.h"
 
@@ -21,31 +22,96 @@ bool validFrameInfo(const SnowCaptureFrameInfo& info) {
         return false;
     }
 
+    if (info.width > static_cast<std::uint32_t>(std::numeric_limits<int>::max()) ||
+        info.height > static_cast<std::uint32_t>(std::numeric_limits<int>::max())) {
+        return false;
+    }
+
     const quint64 expectedStride = static_cast<quint64>(info.width) * 4ULL;
+    if (expectedStride > std::numeric_limits<std::uint32_t>::max() ||
+        expectedStride > static_cast<quint64>(std::numeric_limits<int>::max()) ||
+        static_cast<quint64>(info.height) > std::numeric_limits<quint64>::max() / expectedStride) {
+        return false;
+    }
     const quint64 expectedLen = expectedStride * static_cast<quint64>(info.height);
-    return expectedStride <= std::numeric_limits<std::uint32_t>::max() &&
-           info.stride_bytes == static_cast<std::uint32_t>(expectedStride) &&
+    return info.stride_bytes == static_cast<std::uint32_t>(expectedStride) &&
            info.rgba_len >= expectedLen;
 }
 
-QImage imageFromSnapshotFrame(SnowCaptureSnapshot* snapshot, size_t index,
-                              const SnowCaptureFrameInfo& info) {
-    if (snapshot == nullptr || !validFrameInfo(info)) {
+QImage imageFromFrameLease(SnowCaptureFrameLease* lease, const std::uint8_t* rgbaBytes,
+                           std::size_t rgbaLen, std::uint32_t width, std::uint32_t height,
+                           std::uint32_t strideBytes) {
+    if (lease == nullptr || rgbaBytes == nullptr || rgbaLen == 0 || width == 0 || height == 0) {
+        if (lease != nullptr) {
+            snow_capture_frame_lease_release(lease);
+        }
         return {};
     }
 
-    SnowCaptureFrameLease* lease = snow_capture_snapshot_frame_retain(snapshot, index);
-    if (lease == nullptr) {
+    if (width > static_cast<std::uint32_t>(std::numeric_limits<int>::max()) ||
+        height > static_cast<std::uint32_t>(std::numeric_limits<int>::max()) ||
+        static_cast<quint64>(width) * 4ULL >
+            static_cast<quint64>(std::numeric_limits<int>::max())) {
+        snow_capture_frame_lease_release(lease);
         return {};
     }
 
-    QImage image(info.rgba_bytes, static_cast<int>(info.width), static_cast<int>(info.height),
-                 static_cast<int>(info.stride_bytes), QImage::Format_RGBA8888, &releaseFrameLease,
-                 lease);
+    const quint64 expectedStride = static_cast<quint64>(width) * 4ULL;
+    if (static_cast<quint64>(height) > std::numeric_limits<quint64>::max() / expectedStride) {
+        snow_capture_frame_lease_release(lease);
+        return {};
+    }
+    const quint64 expectedLen = expectedStride * static_cast<quint64>(height);
+    if (strideBytes != static_cast<std::uint32_t>(expectedStride) || rgbaLen < expectedLen) {
+        snow_capture_frame_lease_release(lease);
+        return {};
+    }
+
+    // Desktop captures are opaque. Marking the wrapped RGBA surface as RGBX lets
+    // Qt use its opaque image path when the full-screen overlay is composited,
+    // avoiding an unnecessary alpha blend for every pixel.
+    QImage image(rgbaBytes, static_cast<int>(width), static_cast<int>(height),
+                 static_cast<int>(strideBytes), QImage::Format_RGBX8888, &releaseFrameLease, lease);
     if (image.isNull()) {
         snow_capture_frame_lease_release(lease);
     }
     return image;
+}
+
+ScreenshotCaptureBackend backendFromNative(std::uint8_t backend) {
+    switch (backend) {
+    case SNOW_CAPTURE_BACKEND_DXGI:
+        return ScreenshotCaptureBackend::Dxgi;
+    case SNOW_CAPTURE_BACKEND_WGC:
+        return ScreenshotCaptureBackend::WindowsGraphicsCapture;
+    case SNOW_CAPTURE_BACKEND_GDI:
+        return ScreenshotCaptureBackend::Gdi;
+    default:
+        return ScreenshotCaptureBackend::Auto;
+    }
+}
+
+void markDesktopFrameBackend(std::uint8_t backend) {
+    using snow_shot::presentation::screenshot_lifecycle_perf::mark;
+    switch (backend) {
+    case SNOW_CAPTURE_BACKEND_DXGI:
+        mark(QStringLiteral("capture.desktop_frame_backend.dxgi"));
+        break;
+    case SNOW_CAPTURE_BACKEND_WGC:
+        mark(QStringLiteral("capture.desktop_frame_backend.wgc"));
+        break;
+    case SNOW_CAPTURE_BACKEND_GDI:
+        mark(QStringLiteral("capture.desktop_frame_backend.gdi"));
+        break;
+    default:
+        mark(QStringLiteral("capture.desktop_frame_backend.unknown"));
+        break;
+    }
+}
+
+QString nativeCaptureError(const char* fallback) {
+    const char* message = snow_capture_last_error_message();
+    return QString::fromUtf8(message != nullptr && *message != '\0' ? message : fallback);
 }
 } // namespace
 
@@ -69,52 +135,93 @@ void ScreenshotCaptureWorker::refreshLayout(quint64 requestId) {
     }
 }
 
-void ScreenshotCaptureWorker::releaseIdleResources(quint64 requestId) {
+bool ScreenshotCaptureWorker::releaseIdleResources(quint64 requestId) {
     Q_UNUSED(requestId);
-    if (m_session != nullptr &&
-        snow_capture_desktop_session_release_idle_resources(m_session) == 0) {
+    if (m_session == nullptr) {
+        return true;
+    }
+    if (snow_capture_desktop_session_release_idle_resources(m_session) == 0) {
         qWarning("Failed to release desktop capture idle resources: %s",
                  snow_capture_last_error_message());
+        return false;
     }
+    return true;
 }
 
-void ScreenshotCaptureWorker::captureAll(quint64 requestId,
-                                         const QPointer<ScreenshotCaptureCoordinator>& coordinator,
-                                         bool refreshLayout) {
-    QVector<CapturedDisplayModel> displays;
+void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
+                                      const QPointer<ScreenshotCaptureCoordinator>& coordinator,
+                                      SnowCaptureCancellationToken* cancellationToken) {
+    ScreenshotCaptureResult captureResult;
+    captureResult.requestId = request.requestId;
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("capture.worker_enter"));
+    const auto canceled = [cancellationToken]() {
+        return cancellationToken != nullptr &&
+               snow_capture_cancellation_token_is_canceled(cancellationToken) != 0;
+    };
+    if (canceled()) {
+        captureResult.errorMessage = QStringLiteral("Screenshot capture canceled");
+        postCaptureResult(coordinator, std::move(captureResult));
+        return;
+    }
     if (!ensureSession()) {
-        postCaptureResult(requestId, coordinator, std::move(displays));
+        captureResult.errorMessage = nativeCaptureError("Failed to create desktop capture session");
+        postCaptureEnvironmentReady(request.requestId, coordinator, false);
+        postCaptureResult(coordinator, std::move(captureResult));
         return;
     }
 
-    if (refreshLayout) {
-        if (snow_capture_desktop_session_refresh_layout(m_session) == 0) {
-            qWarning("Failed to refresh desktop capture layout: %s",
-                     snow_capture_last_error_message());
-            postCaptureResult(requestId, coordinator, std::move(displays));
-            return;
-        }
+    if (!prepareCaptureEnvironment(request.refreshLayout)) {
+        captureResult.errorMessage = nativeCaptureError("Failed to prepare screenshot capture");
+        postCaptureEnvironmentReady(request.requestId, coordinator, false);
+        postCaptureResult(coordinator, std::move(captureResult));
+        return;
     }
-
-    SnowCaptureSnapshot* captureSnapshot = nullptr;
-    captureSnapshot = snow_capture_desktop_session_capture_all(m_session);
-    if (captureSnapshot == nullptr) {
-        postCaptureResult(requestId, coordinator, std::move(displays));
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("capture.session_ready"));
+    postCaptureEnvironmentReady(request.requestId, coordinator, true);
+    if (canceled()) {
+        captureResult.errorMessage = QStringLiteral("Screenshot capture canceled");
+        postCaptureResult(coordinator, std::move(captureResult));
         return;
     }
 
-    const size_t count = snow_capture_snapshot_count(captureSnapshot);
-    displays.reserve(static_cast<int>(count));
+    SnowCaptureScreenshotRequestV1 nativeRequest{};
+    nativeRequest.version = SNOW_CAPTURE_SCREENSHOT_REQUEST_VERSION;
+    nativeRequest.struct_size = sizeof(nativeRequest);
+    nativeRequest.flags = 0;
+    nativeRequest.focused_window = static_cast<intptr_t>(request.focusedWindowHandle);
+    nativeRequest.cancellation_token = cancellationToken;
+
+    SnowCaptureScreenshotResult* nativeResult =
+        snow_capture_desktop_session_capture_v1(m_session, &nativeRequest);
+    if (nativeResult == nullptr) {
+        captureResult.errorMessage = nativeCaptureError("Screenshot capture failed");
+        postCaptureResult(coordinator, std::move(captureResult));
+        return;
+    }
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("capture.native_complete"));
+
+    const size_t count = snow_capture_screenshot_result_display_count(nativeResult);
+    captureResult.displays.reserve(static_cast<int>(count));
+    bool valid = count != 0;
     for (size_t index = 0; index < count; ++index) {
         SnowCaptureFrameInfo info{};
-        if (snow_capture_snapshot_frame_info(captureSnapshot, index, &info) == 0) {
-            continue;
+        if (snow_capture_screenshot_result_display_info(nativeResult, index, &info) == 0 ||
+            !validFrameInfo(info)) {
+            valid = false;
+            break;
         }
+        markDesktopFrameBackend(info.backend_kind);
 
-        QImage image;
-        image = imageFromSnapshotFrame(captureSnapshot, index, info);
+        SnowCaptureFrameLease* lease =
+            snow_capture_screenshot_result_display_retain(nativeResult, index);
+        QImage image = imageFromFrameLease(lease, info.rgba_bytes, info.rgba_len, info.width,
+                                           info.height, info.stride_bytes);
         if (image.isNull()) {
-            continue;
+            valid = false;
+            break;
         }
 
         CapturedDisplayModel display;
@@ -125,12 +232,46 @@ void ScreenshotCaptureWorker::captureAll(quint64 requestId,
         display.canvasRect = display.physicalRect;
         display.image = std::move(image);
         display.active = true;
-        displays.push_back(std::move(display));
+        display.backend = backendFromNative(info.backend_kind);
+        captureResult.displays.push_back(std::move(display));
     }
 
-    snow_capture_snapshot_destroy(captureSnapshot);
+    if (valid && request.focusedWindowHandle != 0) {
+        SnowCaptureWindowFrameInfoV1 info{};
+        info.version = SNOW_CAPTURE_WINDOW_FRAME_INFO_VERSION;
+        info.struct_size = sizeof(info);
+        if (snow_capture_screenshot_result_focused_window_info_v1(nativeResult, &info) == 0) {
+            valid = false;
+        } else {
+            SnowCaptureFrameLease* lease =
+                snow_capture_screenshot_result_focused_window_retain(nativeResult);
+            QImage image = imageFromFrameLease(lease, info.rgba_bytes, info.rgba_len, info.width,
+                                               info.height, info.stride_bytes);
+            ScreenshotWindowCaptureFrame focused;
+            focused.image = std::move(image);
+            focused.physicalRect =
+                QRect(info.x, info.y, static_cast<int>(info.width), static_cast<int>(info.height));
+            focused.backend = backendFromNative(info.backend_kind);
+            if (!focused.isValid()) {
+                valid = false;
+            } else {
+                captureResult.focusedWindow = std::move(focused);
+            }
+        }
+    }
 
-    postCaptureResult(requestId, coordinator, std::move(displays));
+    if (!valid && captureResult.errorMessage.isEmpty()) {
+        captureResult.errorMessage = nativeCaptureError("Screenshot capture returned invalid data");
+    }
+    if (!valid) {
+        captureResult.displays.clear();
+        captureResult.focusedWindow.reset();
+    }
+    captureResult.succeeded = valid;
+    snow_capture_screenshot_result_destroy(nativeResult);
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("capture.result_marshaled"));
+    postCaptureResult(coordinator, std::move(captureResult));
 }
 
 bool ScreenshotCaptureWorker::ensureSession() {
@@ -140,6 +281,9 @@ bool ScreenshotCaptureWorker::ensureSession() {
 
     SnowCaptureDesktopSessionConfig config{};
     config.capture_retry_count = 1;
+    config.capture_backend = SNOW_CAPTURE_BACKEND_AUTO;
+    config.reserved[SNOW_CAPTURE_DESKTOP_AUTO_BACKEND_POLICY_RESERVED_INDEX] =
+        SNOW_CAPTURE_DESKTOP_AUTO_BACKEND_POLICY_LOW_LATENCY_SDR;
     m_session = snow_capture_desktop_session_create(&config);
     if (m_session == nullptr) {
         qWarning("Failed to create desktop capture session: %s", snow_capture_last_error_message());
@@ -170,6 +314,11 @@ bool ScreenshotCaptureWorker::prepareSessionIfNeeded() {
     return snow_capture_desktop_session_prepare(m_session) != 0;
 }
 
+bool ScreenshotCaptureWorker::prepareCaptureEnvironment(bool refreshLayout) {
+    return m_session != nullptr && snow_capture_desktop_session_prepare_capture_environment(
+                                       m_session, static_cast<std::uint8_t>(refreshLayout)) != 0;
+}
+
 void ScreenshotCaptureWorker::postPrepared(
     quint64 requestId, const QPointer<ScreenshotCaptureCoordinator>& coordinator, bool ok) {
     if (coordinator.isNull()) {
@@ -186,18 +335,33 @@ void ScreenshotCaptureWorker::postPrepared(
         Qt::QueuedConnection);
 }
 
-void ScreenshotCaptureWorker::postCaptureResult(
-    quint64 requestId, const QPointer<ScreenshotCaptureCoordinator>& coordinator,
-    QVector<CapturedDisplayModel> displays) {
+void ScreenshotCaptureWorker::postCaptureEnvironmentReady(
+    quint64 requestId, const QPointer<ScreenshotCaptureCoordinator>& coordinator, bool ok) {
     if (coordinator.isNull()) {
         return;
     }
 
     QMetaObject::invokeMethod(
         coordinator,
-        [coordinator, requestId, displays = std::move(displays)]() mutable {
+        [coordinator, requestId, ok]() {
             if (!coordinator.isNull()) {
-                emit coordinator->captureFinished(requestId, std::move(displays));
+                emit coordinator->captureEnvironmentReady(requestId, ok);
+            }
+        },
+        Qt::QueuedConnection);
+}
+
+void ScreenshotCaptureWorker::postCaptureResult(
+    const QPointer<ScreenshotCaptureCoordinator>& coordinator, ScreenshotCaptureResult result) {
+    if (coordinator.isNull()) {
+        return;
+    }
+
+    QMetaObject::invokeMethod(
+        coordinator,
+        [coordinator, result = std::move(result)]() mutable {
+            if (!coordinator.isNull()) {
+                emit coordinator->captureFinished(std::move(result));
             }
         },
         Qt::QueuedConnection);

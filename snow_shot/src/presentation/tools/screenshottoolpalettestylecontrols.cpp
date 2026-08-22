@@ -113,6 +113,7 @@ constexpr double kMaxWatermarkFontSize = 512.0;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Cross-line fill"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Line fill"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Solid fill"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pick color from canvas"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Current pen highlight stroke width"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen highlight stroke width %1 (%2px)"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Dashed arrow stroke"),
@@ -593,6 +594,23 @@ adqt::widgets::AdColorPicker* ScreenshotToolPaletteStyleControls::createColorPic
     picker->setPopupLayerMode(adqt::widgets::AdColorPicker::PopupLayerMode::QtTool);
     picker->setPopupContentPlacement(adqt::widgets::AdColorPicker::PopupContentPlacement::Top);
     picker->setValue(adqt::widgets::AdColorValue::solid(initialColor));
+    auto* sampler = createScreenshotToolPaletteColorPickerSamplerButton(picker, initialColor);
+    sampler->setObjectName(QStringLiteral("screenshot-color-picker-sampler"));
+    configureScreenshotToolPaletteTooltip(
+        sampler, ScreenshotToolPaletteTranslationText("Pick color from canvas"));
+    picker->setPreviewContent(sampler);
+    QObject::connect(picker, &adqt::widgets::AdColorPicker::valueChanged, sampler,
+                     [sampler](const adqt::widgets::AdColorValue& value) {
+                         if (value.isSolid() && value.solidColor.isValid()) {
+                             sampler->setSwatchColor(value.solidColor);
+                         }
+                     });
+    QObject::connect(sampler, &QAbstractButton::clicked, picker, [this, picker]() {
+        picker->setPopupVisible(false);
+        if (m_callbacks.canvasColorSamplingRequested) {
+            m_callbacks.canvasColorSamplingRequested(picker);
+        }
+    });
     return picker;
 }
 
@@ -2005,6 +2023,67 @@ void ScreenshotToolPaletteStyleControls::reset() {
     updateTextStyleControls();
     updateWatermarkControls();
     updateSerialNumberStyleControls();
+}
+
+void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
+    clearTextStylePopupInteractions();
+
+    m_handlingStrokeColorPickerChange = false;
+    m_handlingArrowStrokeColorPickerChange = false;
+    m_handlingTextColorPickerChange = false;
+    m_handlingTextStrokeColorPickerChange = false;
+    m_handlingTextFillColorPickerChange = false;
+    m_handlingHighlightColorPickerChange = false;
+    m_handlingHighlightStrokeColorPickerChange = false;
+    m_handlingPenHighlightColorPickerChange = false;
+    m_handlingSerialNumberColorPickerChange = false;
+    m_handlingSerialNumberFillColorPickerChange = false;
+    m_arrowControlsActive = false;
+    m_lineControlsActive = false;
+    m_freeDrawControlsActive = false;
+    m_highlightControlsActive = false;
+    m_penHighlightControlsActive = false;
+    m_textControlsActive = false;
+
+    m_shapeStrokeWidthEditor = {};
+    m_shapeStrokeEditor = {};
+    m_shapeFillEditor = {};
+    m_cornerRadiusEditor = nullptr;
+    m_shapeControlsContainer = nullptr;
+    m_highlightColorEditor = {};
+    m_spotlightColorEditor = {};
+    m_shapeButtonGroup = nullptr;
+    m_rectangleShapeButton = nullptr;
+    m_ellipseShapeButton = nullptr;
+    m_diamondShapeButton = nullptr;
+    m_highlightStrokeEditor = {};
+    m_penHighlightColorEditor = {};
+    m_penHighlightStrokeWidthEditor = {};
+    m_penFilterStrokeWidthEditor = {};
+    m_arrowStrokeWidthEditor = {};
+    m_arrowStrokeEditor = {};
+    m_arrowTypeControlsContainer = nullptr;
+    m_arrowTypeButtonGroup = nullptr;
+    m_startArrowheadEditor = {};
+    m_endArrowheadEditor = {};
+    m_textColorEditor = {};
+    m_textFontEditor = {};
+    m_textStrokeEditor = {};
+    m_textFillEditor = {};
+    m_textCornerRadiusEditor = nullptr;
+    m_textAlignmentEditor = {};
+    m_serialNumberColorEditor = {};
+    m_serialNumberFillEditor = {};
+    m_serialNumberEditor = nullptr;
+    m_serialNumberFontEditor = {};
+    m_watermarkColorPreviewPending = false;
+    m_watermarkColorEditor = {};
+    m_watermarkTextEdit = nullptr;
+    m_watermarkFontEditor = {};
+    m_watermarkAngleEditor = nullptr;
+    m_watermarkGapEditor = nullptr;
+    m_watermarkOpacityEditor = {};
+    m_toolbarSpacingItems.clear();
 }
 
 bool ScreenshotToolPaletteStyleControls::stepStrokeWidth(int direction) {
@@ -3519,7 +3598,6 @@ void ScreenshotToolPaletteStyleControls::updateTextStyleControls(quint32 groups)
             updateIconOptionEditor(m_textAlignmentEditor, static_cast<int>(style.horizontalAlign),
                                    mixed(SnowCanvasTextStyleMixedHorizontalAlign));
         }
-        applyTextActiveButtonStyles();
         return;
     }
     SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.text.property_group_refresh");
@@ -3554,27 +3632,6 @@ void ScreenshotToolPaletteStyleControls::updateTextStyleControls(quint32 groups)
 
     updateIconOptionEditor(m_textAlignmentEditor, static_cast<int>(style.horizontalAlign),
                            mixed(SnowCanvasTextStyleMixedHorizontalAlign));
-    applyTextActiveButtonStyles();
-}
-
-void ScreenshotToolPaletteStyleControls::applyTextActiveButtonStyles() {
-    const auto apply = [](const auto& buttons) {
-        for (adqt::widgets::AdButton* button : buttons) {
-            if (button != nullptr &&
-                button->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Tonal &&
-                button->accentRole() == adqt::widgets::AdButton::AccentRole::Primary) {
-                button->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Solid);
-            }
-        }
-    };
-
-    apply(m_textColorEditor.presets);
-    apply(m_textFontEditor.sizePresets);
-    apply(m_textStrokeEditor.widthButtons);
-    apply(m_textStrokeEditor.colorButtons);
-    apply(m_textFillEditor.colorPresets);
-    apply(m_textFillEditor.styleButtons);
-    apply(m_textAlignmentEditor.buttons);
 }
 
 void ScreenshotToolPaletteStyleControls::notifyTextStyleChanged() const {

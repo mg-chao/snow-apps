@@ -17,35 +17,47 @@ vcpkg_from_github(
 find_program(PROTOC NAMES protoc PATHS "${CURRENT_HOST_INSTALLED_DIR}/tools/protobuf" REQUIRED NO_DEFAULT_PATH NO_CMAKE_PATH)
 find_program(FLATC NAMES flatc PATHS "${CURRENT_HOST_INSTALLED_DIR}/tools/flatbuffers" REQUIRED NO_DEFAULT_PATH NO_CMAKE_PATH)
 
-# vcpkg's generic Python helper uses the third-party ``virtualenv`` module on
-# Windows. That is only bootstrapped when Python is vcpkg-managed, while
-# ordinary installations discovered from PATH do not necessarily provide it.
-# Use Python's built-in venv instead so this port is independent of global
-# Python packages and works with both system and vcpkg-discovered interpreters.
+# Prefer the standard-library venv module when vcpkg discovers a normal Python
+# installation. Fall back to vcpkg's virtualenv bootstrap for embedded Python.
 vcpkg_find_acquire_program(PYTHON3)
-set(_snow_onnxruntime_venv "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-venv")
-file(REMOVE_RECURSE "${_snow_onnxruntime_venv}")
-vcpkg_execute_required_process(
-    COMMAND "${PYTHON3}" -I -m venv "${_snow_onnxruntime_venv}"
-    WORKING_DIRECTORY "${CURRENT_BUILDTREES_DIR}"
-    LOGNAME "venv-setup-${TARGET_TRIPLET}"
+execute_process(
+    COMMAND "${PYTHON3}" -I -c "import venv"
+    RESULT_VARIABLE _snow_python_venv_result
+    OUTPUT_QUIET
+    ERROR_QUIET
 )
-if(CMAKE_HOST_WIN32)
-    set(_snow_onnxruntime_python_dir "${_snow_onnxruntime_venv}/Scripts")
+if(_snow_python_venv_result EQUAL 0)
+    set(_snow_onnxruntime_venv "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-venv")
+    file(REMOVE_RECURSE "${_snow_onnxruntime_venv}")
+    vcpkg_execute_required_process(
+        COMMAND "${PYTHON3}" -I -m venv "${_snow_onnxruntime_venv}"
+        WORKING_DIRECTORY "${CURRENT_BUILDTREES_DIR}"
+        LOGNAME "venv-setup-${TARGET_TRIPLET}"
+    )
+    if(CMAKE_HOST_WIN32)
+        set(_snow_onnxruntime_python_dir "${_snow_onnxruntime_venv}/Scripts")
+    else()
+        set(_snow_onnxruntime_python_dir "${_snow_onnxruntime_venv}/bin")
+    endif()
+    set(PYTHON3 "${_snow_onnxruntime_python_dir}/python${VCPKG_HOST_EXECUTABLE_SUFFIX}")
+    if(NOT EXISTS "${PYTHON3}")
+        message(FATAL_ERROR "Python venv creation did not produce the expected interpreter: ${PYTHON3}")
+    endif()
+    vcpkg_execute_required_process(
+        COMMAND "${PYTHON3}" -I -m pip install --disable-pip-version-check --no-warn-script-location flatbuffers
+        WORKING_DIRECTORY "${CURRENT_BUILDTREES_DIR}"
+        LOGNAME "pip-install-flatbuffers-${TARGET_TRIPLET}"
+    )
+    set(ENV{VIRTUAL_ENV} "${_snow_onnxruntime_venv}")
+    vcpkg_add_to_path(PREPEND "${_snow_onnxruntime_python_dir}")
 else()
-    set(_snow_onnxruntime_python_dir "${_snow_onnxruntime_venv}/bin")
+    x_vcpkg_get_python_packages(
+        PYTHON_VERSION "3"
+        PYTHON_EXECUTABLE "${PYTHON3}"
+        PACKAGES flatbuffers
+        OUT_PYTHON_VAR PYTHON3
+    )
 endif()
-set(PYTHON3 "${_snow_onnxruntime_python_dir}/python${VCPKG_HOST_EXECUTABLE_SUFFIX}")
-if(NOT EXISTS "${PYTHON3}")
-    message(FATAL_ERROR "Python venv creation did not produce the expected interpreter: ${PYTHON3}")
-endif()
-vcpkg_execute_required_process(
-    COMMAND "${PYTHON3}" -I -m pip install --disable-pip-version-check --no-warn-script-location flatbuffers
-    WORKING_DIRECTORY "${CURRENT_BUILDTREES_DIR}"
-    LOGNAME "pip-install-flatbuffers-${TARGET_TRIPLET}"
-)
-set(ENV{VIRTUAL_ENV} "${_snow_onnxruntime_venv}")
-vcpkg_add_to_path(PREPEND "${_snow_onnxruntime_python_dir}")
 
 set(SNOW_SHOT_REQUIRED_OPERATORS "${CMAKE_CURRENT_LIST_DIR}/required_operators.config")
 if(NOT EXISTS "${SNOW_SHOT_REQUIRED_OPERATORS}")
@@ -121,6 +133,16 @@ set(SNOW_ORT_PLATFORM_OPTIONS)
 set(SNOW_ORT_RELEASE_OPTIONS)
 set(SNOW_ORT_DEBUG_OPTIONS)
 if(VCPKG_TARGET_IS_WINDOWS)
+    if(NOT VCPKG_TARGET_IS_MINGW AND
+       VCPKG_BUILD_TYPE STREQUAL "release" AND
+       VCPKG_LIBRARY_LINKAGE STREQUAL "static")
+        # MSVC's final LTCG intermediate has a hard 4 GiB image limit. The
+        # reduced ONNX Runtime + DirectML archives alone exceed that limit, so
+        # keep /O2, /Gw, and /Gy but emit native objects for this dependency.
+        string(APPEND VCPKG_C_FLAGS_RELEASE " /GL-")
+        string(APPEND VCPKG_CXX_FLAGS_RELEASE " /GL-")
+    endif()
+
     if(VCPKG_CRT_LINKAGE STREQUAL "static")
         set(SNOW_ORT_MSVC_RUNTIME_RELEASE "MultiThreaded")
         set(SNOW_ORT_MSVC_RUNTIME_DEBUG "MultiThreadedDebug")
@@ -203,7 +225,13 @@ endif()
 if("tensorrt" IN_LIST FEATURES)
     vcpkg_cmake_build(TARGET onnxruntime_providers_tensorrt LOGFILE_BASE build-tensorrt)
 endif()
-vcpkg_cmake_install()
+if(VCPKG_BUILD_TYPE STREQUAL "release" AND VCPKG_LIBRARY_LINKAGE STREQUAL "static")
+    # LTCG objects exhaust memory under vcpkg's default parallel build, which
+    # otherwise forces the helper to discard progress and retry serially.
+    vcpkg_cmake_install(DISABLE_PARALLEL)
+else()
+    vcpkg_cmake_install()
+endif()
 vcpkg_cmake_config_fixup(CONFIG_PATH lib/cmake/onnxruntime)
 vcpkg_fixup_pkgconfig()
 
@@ -261,7 +289,9 @@ if("directml" IN_LIST FEATURES)
     endif()
 
     file(INSTALL "${DIRECTML_RUNTIME}" DESTINATION "${CURRENT_PACKAGES_DIR}/bin")
-    file(INSTALL "${DIRECTML_RUNTIME}" DESTINATION "${CURRENT_PACKAGES_DIR}/debug/bin")
+    if(NOT DEFINED VCPKG_BUILD_TYPE OR VCPKG_BUILD_TYPE STREQUAL "debug")
+        file(INSTALL "${DIRECTML_RUNTIME}" DESTINATION "${CURRENT_PACKAGES_DIR}/debug/bin")
+    endif()
 endif()
 
 vcpkg_install_copyright(FILE_LIST "${SOURCE_PATH}/LICENSE")

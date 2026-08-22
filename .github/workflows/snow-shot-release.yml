@@ -51,35 +51,32 @@ jobs:
           workspaces: |
             snow-crates -> ../build/snow-shot-msvc-release/cargo
             snow_draw_engine_qt -> ../build/snow-shot-msvc-release/cargo
+            snow_rust_ffi -> ../build/snow-shot-msvc-release/cargo
           cache-on-failure: true
+
+      - name: Install static project dependencies
+        shell: pwsh
+        run: .\scripts\bootstrap.ps1 -VcpkgVariants Static -SkipQtValidation
 
       - name: Cache static Qt kit
         uses: actions/cache@v4
         with:
-          path: ${{ runner.tool_cache }}\snow-qt\6.11.1\msvc2026_64-static
-          key: snow-qt-static-6.11.1-msvc2026-x64-${{ runner.os }}
+          path: ${{ runner.tool_cache }}\snow-qt\6.11.1\msvc2026_64-static-system-codecs
+          key: snow-qt-static-system-codecs-v2-6.11.1-msvc2026-x64-${{ runner.os }}-${{ hashFiles('scripts/build-static-qt.ps1', 'scripts/bootstrap.ps1', 'vcpkg.json', 'cmake/vcpkg-overlay-triplets/x64-windows-static.cmake', 'cmake/vcpkg-overlay-ports/zlib/**') }}
 
       - name: Prepare Qt 6.11.1 static kit
         shell: pwsh
-        env:
-          PREINSTALLED_QT_STATIC_DIR: ${{ vars.SNOW_QT_STATIC_DIR }}
         run: |
-          $prefix = Join-Path $env:RUNNER_TOOL_CACHE "snow-qt\6.11.1\msvc2026_64-static"
-          $qtDir = $env:PREINSTALLED_QT_STATIC_DIR
-          if ([string]::IsNullOrWhiteSpace($qtDir)) {
-            & "$env:GITHUB_WORKSPACE\scripts\build-static-qt.ps1" -QtVersion 6.11.1 -InstallPrefix $prefix
-            if ($LASTEXITCODE -ne 0) { throw "Static Qt bootstrap failed." }
-            $qtDir = Join-Path $prefix "lib\cmake\Qt6"
-          }
+          $prefix = Join-Path $env:RUNNER_TOOL_CACHE "snow-qt\6.11.1\msvc2026_64-static-system-codecs"
+          $dependencies = Join-Path $env:GITHUB_WORKSPACE ".tools\vcpkg\installed\static\x64-windows-static"
+          & "$env:GITHUB_WORKSPACE\scripts\build-static-qt.ps1" -QtVersion 6.11.1 -InstallPrefix $prefix -DependencyPrefix $dependencies
+          if ($LASTEXITCODE -ne 0) { throw "Static Qt bootstrap failed." }
+          $qtDir = Join-Path $prefix "lib\cmake\Qt6"
           if (-not (Test-Path -LiteralPath (Join-Path $qtDir "Qt6Config.cmake") -PathType Leaf)) {
             throw "Qt 6.11.1 static CMake package was not found at $qtDir"
           }
           "SNOW_QT_STATIC_DIR=$qtDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "Qt6_DIR=$qtDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Install vcpkg and project dependencies
-        shell: pwsh
-        run: .\scripts\bootstrap.ps1 -Qt6Dir $env:SNOW_QT_STATIC_DIR -VcpkgVariants Static
 
       - name: Build, audit, and package statically
         shell: pwsh
@@ -93,8 +90,8 @@ jobs:
             throw "Unexpected release tag: $env:GITHUB_REF_NAME"
           }
           $packages = @(Get-ChildItem build\snow-shot-msvc-release -File |
-            Where-Object { $_.Name -match '^snow-shot-.+\.exe$' -or $_.Name -match '^snow-shot-.+\.exe\.sha256$' })
-          if ($packages.Count -lt 2) { throw "The package and SHA-256 checksum were not produced." }
+            Where-Object { $_.Name -match '^snow-shot-.+\.exe$' -or $_.Name -match '^snow-shot-.+\.exe\.sha256$' -or $_.Name -match '^snow-shot-.+\.manifest\.json$' })
+          if ($packages.Count -lt 3) { throw "The package, SHA-256 checksum, and release manifest were not produced." }
           $assets = ($packages | ForEach-Object { $_.FullName }) -join "`n"
           "assets<<SNOW_ASSETS" | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
           $assets | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append

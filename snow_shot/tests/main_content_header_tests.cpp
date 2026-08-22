@@ -3,6 +3,7 @@
 #include "snow_shot/presentation/settings/settingscatalog.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
 
 #include "widgets/select.h"
 #include "widgets/tabs.h"
@@ -67,7 +68,7 @@ void headerPlacesSearchAboveAntDesignTabs() {
             "the content header should keep ant_design_qt tab transitions enabled");
     require(search->geometry().bottom() <= tabs->geometry().top(),
             "the global search should sit above the page tabs");
-    require(search->width() >= 260 && search->width() <= 360,
+    require(search->width() >= 280 && search->width() <= 400,
             "the global search should retain a stable readable width");
     require(tabs->count() == 2 &&
                 tabs->tabKey(0) == QStringLiteral("screenshot") &&
@@ -106,6 +107,28 @@ void headerPlacesSearchAboveAntDesignTabs() {
     flushEvents();
     require(select->options().size() == 4,
             "clearing the search should restore the page-only defaults");
+
+    require(snow_shot::storage::ScreenshotSettings().setDelaySeconds(7),
+            "the delayed screenshot setting should be writable");
+    select->setSearchText(QStringLiteral("delay 7s"));
+    flushEvents();
+    const auto delayOptions = select->options();
+    require(!delayOptions.isEmpty() &&
+                delayOptions.constFirst().value.toString() ==
+                    QStringLiteral("item:quick.screenshot-delay") &&
+                delayOptions.constFirst().label == QStringLiteral("Delay 7s to Execute") &&
+                !delayOptions.constFirst().label.contains(QStringLiteral("%1")),
+            "global search should render the current delayed screenshot value without placeholders");
+    require(snow_shot::storage::ScreenshotSettings().setDelaySeconds(4),
+            "the delayed screenshot setting should support live updates");
+    select->setSearchText(QStringLiteral("delay 4s"));
+    flushEvents();
+    const auto updatedDelayOptions = select->options();
+    require(!updatedDelayOptions.isEmpty() &&
+                updatedDelayOptions.constFirst().label == QStringLiteral("Delay 4s to Execute"),
+            "global search should refresh delayed screenshot text when the setting changes");
+    select->setSearchText(QString());
+    flushEvents();
     select->showPopup();
     flushEvents();
     QListView* resultList = nullptr;
@@ -123,8 +146,8 @@ void headerPlacesSearchAboveAntDesignTabs() {
             "the default search popup should render one row per page without group headers");
     require(resultList->sizeHintForRow(0) >= 52,
             "search result rows should be tall enough for title and description text");
-    require(resultList->width() >= 380 && resultList->width() <= 400,
-            "the search result popup should render at the configured 390px width");
+    require(resultList->width() == select->width(),
+            "the search result popup should match the global search control width");
     QWidget* resultPopup = resultList->window();
     if (resultPopup == &header) {
         QWidget* candidate = resultList;

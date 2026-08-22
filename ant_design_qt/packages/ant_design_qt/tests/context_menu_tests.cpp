@@ -24,6 +24,7 @@ class ContextMenuTests final : public QObject {
   void keyboardActivationUsesNativeMenuBehavior();
   void menuUsesCompactAntMetrics();
   void metricTokensRelayoutExistingActions();
+  void longLabelsRespectTrailingColumnsInConstrainedMenus();
 };
 
 void ContextMenuTests::actionMetadataAndNativeStateCoexist() {
@@ -215,6 +216,31 @@ void ContextMenuTests::metricTokensRelayoutExistingActions() {
   QTRY_VERIFY(menu.isVisible());
   QCOMPARE(menu.actionGeometry(action).height(), defaultHeight + 12);
   QVERIFY(menu.width() >= 260);
+  menu.hide();
+}
+
+void ContextMenuTests::longLabelsRespectTrailingColumnsInConstrainedMenus() {
+  QWidget window;
+  window.resize(360, 240);
+  window.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+  AdContextMenu menu(&window);
+  menu.setFixedWidth(300);
+  QAction* longAction = menu.addItem(
+      QStringLiteral("A very long action label that must be elided before the trailing columns"),
+      outlined_icons::Copy(), QKeySequence(Qt::CTRL | Qt::Key_C));
+  AdContextMenu* submenu = menu.addSubMenu(QStringLiteral("Submenu"), outlined_icons::Folder());
+  submenu->addItem(QStringLiteral("Child"));
+
+  menu.popupAt(window.mapToGlobal(QPoint(30, 30)));
+  QTRY_VERIFY(menu.isVisible());
+  QTRY_VERIFY(menu.actionGeometry(longAction).isValid());
+
+  QCOMPARE(menu.width(), 300);
+  const QRect actionRect = menu.actionGeometry(longAction);
+  QVERIFY(actionRect.width() < menu.fontMetrics().horizontalAdvance(longAction->text()));
+  QVERIFY(menu.actionGeometry(submenu->menuAction()).right() < menu.width());
   menu.hide();
 }
 

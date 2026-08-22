@@ -31,8 +31,11 @@ class ScreenshotCaptureRuntimeAdapter final : public ScreenshotCaptureRuntimePor
     [[nodiscard]] bool hasCaptureWorker() const override;
     void ensureCaptureWorker() override;
     void prepareAsync(quint64 requestId) override;
-    void captureAllAsync(quint64 requestId, bool refreshLayout) override;
-    void releaseIdleResourcesAsync(quint64 requestId) override;
+    void captureAsync(const ScreenshotCaptureRequest& request) override;
+    void cancelActiveCapture() override;
+    [[nodiscard]] bool
+    releaseIdleResourcesAsync(quint64 requestId,
+                              std::function<void(bool released)> completion) override;
     void shutdownCaptureWorker() override;
 
     [[nodiscard]] bool selectorReady() const override;
@@ -44,12 +47,14 @@ class ScreenshotCaptureRuntimeAdapter final : public ScreenshotCaptureRuntimePor
     void startWorkflowRefresh() override;
     void clearSelectorSelection() override;
     [[nodiscard]] bool updateSelectorSelectionAt(const QPoint& physicalPoint) override;
+    [[nodiscard]] bool applySelectorHitPath(const QVector<QRectF>& hitRects) override;
 
     void prewarmDisplayPool(ScreenshotDisplaySession& displaySession, int displayCount) override;
     void ensureToolbar() override;
     void prewarmToolbar() override;
     void clearOverlayCanvases(const ScreenshotDisplaySession& displaySession) const override;
     void clearDisplays(ScreenshotDisplaySession& displaySession) override;
+    void hibernateDisplayPool(ScreenshotDisplaySession& displaySession) override;
     void destroyDisplayPool(ScreenshotDisplaySession& displaySession) override;
     void resetForNewCapture(ScreenshotDisplaySession& displaySession) override;
     void prepareDisplayModels(ScreenshotDisplaySession& displaySession) override;
@@ -58,6 +63,8 @@ class ScreenshotCaptureRuntimeAdapter final : public ScreenshotCaptureRuntimePor
     preparePreCaptureOverlayWindows(ScreenshotDisplaySession& displaySession) override;
     void showOverlayWindows(const ScreenshotDisplaySession& displaySession,
                             ScreenshotOverlayShowMode mode) override;
+    void activateOverlayWindows(const ScreenshotDisplaySession& displaySession,
+                                std::function<void()> interactionReady) override;
     void hideOverlayWindows(const ScreenshotDisplaySession& displaySession) override;
 
     [[nodiscard]] bool clearDocumentPreservingViewports() override;

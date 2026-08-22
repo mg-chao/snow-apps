@@ -2,6 +2,7 @@
 name = "snow-screen-recorder"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 
 [dependencies]
 snow-recording-model = { path = "../snow-recording-model" }
@@ -20,5 +21,6 @@ windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
     "Win32_System_LibraryLoader",
+    "Win32_UI_HiDpi",
     "Win32_UI_WindowsAndMessaging",
 ] }
