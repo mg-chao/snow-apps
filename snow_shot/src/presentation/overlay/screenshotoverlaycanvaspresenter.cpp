@@ -31,7 +31,7 @@ void ScreenshotOverlayCanvasPresenter::clearOverlayCanvas(ScreenshotOverlayWindo
 
     overlay->resetScreenshotRendering();
     overlay->canvas()->cancelActiveTextEditing();
-    overlay->canvas()->unsetCursor();
+    overlay->canvas()->clearCursorForLayer(SnowCanvasCursorLayer::Host);
     overlay->clearPresentationFrame();
     overlay->canvas()->releaseRetainedRenderResources();
 }
@@ -348,20 +348,25 @@ void ScreenshotOverlayCanvasPresenter::updateOverlayState(
 namespace {
 void updateOverlayCursorsForDisplaySession(const ScreenshotDisplaySession& displaySession,
                                            bool selecting, bool dragging) {
+    if (!dragging) {
+        displaySession.forEachOverlay(
+            [](qsizetype, ScreenshotOverlayWindow* overlay) {
+                if (overlay != nullptr && overlay->canvas() != nullptr) {
+                    overlay->canvas()->clearCursorForLayer(SnowCanvasCursorLayer::Host);
+                }
+            });
+    }
+
+    if (!selecting) {
+        return;
+    }
+
     displaySession.forEachActiveOverlay(
-        [&](qsizetype, const CapturedDisplayModel&, ScreenshotOverlayWindow* overlay) {
+        [](qsizetype, const CapturedDisplayModel&, ScreenshotOverlayWindow* overlay) {
             SnowCanvasWidget* canvas = overlay->canvas();
-            if (canvas == nullptr) {
-                return;
-            }
-
-            if (selecting) {
-                canvas->setCursor(Qt::CrossCursor);
-                return;
-            }
-
-            if (!dragging) {
-                canvas->unsetCursor();
+            if (canvas != nullptr) {
+                canvas->setCursorForLayer(SnowCanvasCursorLayer::Host,
+                                          QCursor(Qt::CrossCursor));
             }
         });
 }
@@ -446,30 +451,30 @@ void ScreenshotOverlayCanvasPresenter::setOverlayCursor(
 
     switch (dragMode) {
     case ScreenshotSelectionDragMode::Marquee:
-        canvas->setCursor(Qt::CrossCursor);
+        canvas->setCursorForLayer(SnowCanvasCursorLayer::Host, QCursor(Qt::CrossCursor));
         break;
     case ScreenshotSelectionDragMode::All:
-        canvas->setCursor(Qt::SizeAllCursor);
+        canvas->setCursorForLayer(SnowCanvasCursorLayer::Host, QCursor(Qt::SizeAllCursor));
         break;
     case ScreenshotSelectionDragMode::TopLeft:
     case ScreenshotSelectionDragMode::BottomRight:
-        canvas->setCursor(Qt::SizeFDiagCursor);
+        canvas->setCursorForLayer(SnowCanvasCursorLayer::Host, QCursor(Qt::SizeFDiagCursor));
         break;
     case ScreenshotSelectionDragMode::TopRight:
     case ScreenshotSelectionDragMode::BottomLeft:
-        canvas->setCursor(Qt::SizeBDiagCursor);
+        canvas->setCursorForLayer(SnowCanvasCursorLayer::Host, QCursor(Qt::SizeBDiagCursor));
         break;
     case ScreenshotSelectionDragMode::Top:
     case ScreenshotSelectionDragMode::Bottom:
-        canvas->setCursor(Qt::SizeVerCursor);
+        canvas->setCursorForLayer(SnowCanvasCursorLayer::Host, QCursor(Qt::SizeVerCursor));
         break;
     case ScreenshotSelectionDragMode::Right:
     case ScreenshotSelectionDragMode::Left:
-        canvas->setCursor(Qt::SizeHorCursor);
+        canvas->setCursorForLayer(SnowCanvasCursorLayer::Host, QCursor(Qt::SizeHorCursor));
         break;
     case ScreenshotSelectionDragMode::None:
     default:
-        canvas->unsetCursor();
+        canvas->clearCursorForLayer(SnowCanvasCursorLayer::Host);
         break;
     }
 }

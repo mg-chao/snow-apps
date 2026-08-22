@@ -822,19 +822,79 @@ QVector<MonitorInfo> monitorInfo() {
     return result;
 }
 
+enum class BenchmarkScenario {
+    MainInterface,
+    ScreenshotWindow,
+    PinToScreen,
+    ScreenRecording,
+    RightClickMenu,
+};
+
+struct ScenarioMetadata {
+    QString commandLineName;
+    QString reportName;
+    QString activeStage;
+    QString closedStage;
+};
+
+const ScenarioMetadata& scenarioMetadata(BenchmarkScenario scenario) {
+    static const ScenarioMetadata mainInterface{
+        QStringLiteral("main-interface"), QStringLiteral("main_interface"),
+        QStringLiteral("main_interface"), QStringLiteral("main_interface_closed")};
+    static const ScenarioMetadata screenshotWindow{
+        QStringLiteral("screenshot-window"), QStringLiteral("screenshot_window"),
+        QStringLiteral("screenshot_window"), QStringLiteral("screenshot_window_closed")};
+    static const ScenarioMetadata pinToScreen{
+        QStringLiteral("pin-to-screen"), QStringLiteral("pin_to_screen"),
+        QStringLiteral("pin_to_screen"), QStringLiteral("pin_to_screen_closed")};
+    static const ScenarioMetadata screenRecording{
+        QStringLiteral("screen-recording"), QStringLiteral("screen_recording"),
+        QStringLiteral("screen_recording"), QStringLiteral("screen_recording_closed")};
+    static const ScenarioMetadata rightClickMenu{
+        QStringLiteral("right-click-menu"), QStringLiteral("right_click_menu"),
+        QStringLiteral("right_click_menu"), QStringLiteral("right_click_menu_closed")};
+    switch (scenario) {
+    case BenchmarkScenario::MainInterface:
+        return mainInterface;
+    case BenchmarkScenario::ScreenshotWindow:
+        return screenshotWindow;
+    case BenchmarkScenario::PinToScreen:
+        return pinToScreen;
+    case BenchmarkScenario::ScreenRecording:
+        return screenRecording;
+    case BenchmarkScenario::RightClickMenu:
+        return rightClickMenu;
+    }
+    throw std::runtime_error("unknown memory benchmark scenario");
+}
+
+BenchmarkScenario benchmarkScenario(const QString& name) {
+    const BenchmarkScenario scenarios[]{BenchmarkScenario::MainInterface,
+                                        BenchmarkScenario::ScreenshotWindow,
+                                        BenchmarkScenario::PinToScreen,
+                                        BenchmarkScenario::ScreenRecording,
+                                        BenchmarkScenario::RightClickMenu};
+    for (const BenchmarkScenario scenario : scenarios) {
+        const ScenarioMetadata& metadata = scenarioMetadata(scenario);
+        if (metadata.commandLineName == name ||
+            (scenario == BenchmarkScenario::ScreenshotWindow &&
+             name == QStringLiteral("fixed-screenshot")) ||
+            (scenario == BenchmarkScenario::RightClickMenu &&
+             name == QStringLiteral("tray-menu"))) {
+            return scenario;
+        }
+    }
+    throw std::runtime_error(
+        QStringLiteral("unsupported --scenario '%1'; expected main-interface, screenshot-window, "
+                       "pin-to-screen, screen-recording, or right-click-menu")
+            .arg(name)
+            .toStdString());
+}
+
 struct StageValues {
     StableMemorySample coldStart;
-    StableMemorySample mainInterface;
-    StableMemorySample mainInterfaceClosed;
-    StableMemorySample fixedScreenshot;
-    StableMemorySample pinnedWindowClosed;
-    StableMemorySample pinToScreen;
-    StableMemorySample pinToScreenClosed;
-    StableMemorySample screenRecording;
-    StableMemorySample screenRecordingClosed;
-    StableMemorySample trayMenu;
-    StableMemorySample trayMenuClosed;
-    StableMemorySample finalIdle;
+    StableMemorySample active;
+    StableMemorySample closed;
 };
 
 struct BenchmarkConfiguration {
@@ -849,31 +909,12 @@ struct BenchmarkConfiguration {
     qint64 stabilityRangeBytes = kBytesPerMebibyte;
     qint64 scenarioReclaimToleranceBytes = 3 * kBytesPerMebibyte;
     int timeoutMilliseconds = 90000;
+    BenchmarkScenario scenario = BenchmarkScenario::ScreenshotWindow;
 };
 
-const QStringList& benchmarkStageOrder() {
-    static const QStringList names{QStringLiteral("cold_start"),
-                                   QStringLiteral("main_interface"),
-                                   QStringLiteral("main_interface_closed"),
-                                   QStringLiteral("fixed_screenshot"),
-                                   QStringLiteral("pinned_window_closed"),
-                                   QStringLiteral("pin_to_screen"),
-                                   QStringLiteral("pin_to_screen_closed"),
-                                   QStringLiteral("screen_recording"),
-                                   QStringLiteral("screen_recording_closed"),
-                                   QStringLiteral("tray_menu"),
-                                   QStringLiteral("tray_menu_closed"),
-                                   QStringLiteral("final_idle")};
-    return names;
-}
-
-const QStringList& reclaimScenarioOrder() {
-    static const QStringList names{QStringLiteral("main_interface"),
-                                   QStringLiteral("fixed_screenshot"),
-                                   QStringLiteral("pin_to_screen"),
-                                   QStringLiteral("screen_recording"),
-                                   QStringLiteral("tray_menu")};
-    return names;
+QStringList benchmarkStageOrder(BenchmarkScenario scenario) {
+    const ScenarioMetadata& metadata = scenarioMetadata(scenario);
+    return {QStringLiteral("cold_start"), metadata.activeStage, metadata.closedStage};
 }
 
 QJsonObject statistics(QVector<double> values) {
@@ -1027,7 +1068,7 @@ QString reportHtml(const QJsonObject& report) {
         }
     }
     if (names.isEmpty()) {
-        names = benchmarkStageOrder();
+        names = benchmarkStageOrder(BenchmarkScenario::ScreenshotWindow);
     }
     for (const QString& name : names) {
         const QJsonObject metric = metrics.value(name).toObject();
@@ -1093,6 +1134,10 @@ void addBenchmarkCommandLineOptions(QCommandLineParser& parser) {
                       QStringLiteral("build/screenshot-memory-footprint/latest")});
     parser.addOption({QStringLiteral("samples"), QStringLiteral("fresh-process samples"),
                       QStringLiteral("count"), QStringLiteral("10")});
+    parser.addOption({QStringLiteral("scenario"),
+                      QStringLiteral("independent scenario: main-interface, screenshot-window, "
+                                     "pin-to-screen, screen-recording, or right-click-menu"),
+                      QStringLiteral("name"), QStringLiteral("screenshot-window")});
     parser.addOption({QStringLiteral("screen-index"), QStringLiteral("monitor index"),
                       QStringLiteral("index"), QStringLiteral("0")});
     parser.addOption({QStringLiteral("poll-ms"), QStringLiteral("memory polling interval"),
@@ -1144,6 +1189,7 @@ BenchmarkConfiguration configurationFromParser(const QCommandLineParser& parser)
     configuration.appPath = QFileInfo(parser.value(QStringLiteral("app"))).absoluteFilePath();
     configuration.outputDirectory = QDir::cleanPath(parser.value(QStringLiteral("output")));
     configuration.samples = integerOption(parser, QStringLiteral("samples"));
+    configuration.scenario = benchmarkScenario(parser.value(QStringLiteral("scenario")));
     configuration.screenIndex = integerOption(parser, QStringLiteral("screen-index"));
     configuration.pollMilliseconds = integerOption(parser, QStringLiteral("poll-ms"));
     configuration.coldStartMinimumWaitMilliseconds =
@@ -1258,8 +1304,12 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
         waitForStableMemory(primary, configuration.coldStartMinimumWaitMilliseconds,
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
+    const ScenarioMetadata& metadata = scenarioMetadata(configuration.scenario);
+    QJsonObject scenarioComparison;
+    QJsonObject scenarioTrace;
 
-    // Exercise the main-window lifecycle first, including its two heaviest lazy pages. Post
+    if (configuration.scenario == BenchmarkScenario::MainInterface) {
+    // Exercise the main-window lifecycle, including its two heaviest lazy pages. Post
     // WM_CLOSE directly to the validated HWND so unrelated foreground-window changes cannot
     // redirect the close command.
     forwardCommand(configuration, baseArguments, QStringLiteral("--e2e-open-main-interface"));
@@ -1285,7 +1335,7 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
                                       QStringLiteral("screenshotHistoryPage"), primary,
                                       configuration.timeoutMilliseconds),
             "screenshot history remained visible after opening interface settings");
-    stages.mainInterface =
+    stages.active =
         waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
@@ -1299,14 +1349,16 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
         lifecyclePath, primary.processId(), QStringLiteral("idle_memory_reclaim_completed"),
         lifecycleCursor, primary, configuration.timeoutMilliseconds);
     validateIdleMemoryReclaim(mainInterfaceReclaim, false);
-    stages.mainInterfaceClosed =
+    stages.closed =
         waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
-    const QJsonObject mainInterfaceComparison = scenarioReclaimComparison(
-        QStringLiteral("main_interface"), stages.coldStart, stages.mainInterfaceClosed,
-        configuration.scenarioReclaimToleranceBytes);
+    scenarioComparison = scenarioReclaimComparison(metadata.reportName, stages.coldStart,
+                                                   stages.closed,
+                                                   configuration.scenarioReclaimToleranceBytes);
+    scenarioTrace = mainInterfaceReclaim;
 
+    } else if (configuration.scenario == BenchmarkScenario::ScreenshotWindow) {
     // Exercise the normal screenshot window through every drawing-tool path, then enter a
     // scrolling capture before ending the screenshot. Keep the selection fixed so memory samples
     // remain comparable between iterations.
@@ -1369,7 +1421,7 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
         sendMouseWheel(monitorCenterX, monitorCenterY, -WHEEL_DELTA);
         std::this_thread::sleep_for(100ms);
     }
-    stages.fixedScreenshot =
+    stages.active =
         waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
@@ -1396,14 +1448,16 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
     validateIdleMemoryReclaim(screenshotReclaim, false);
     // Keep the historical stage name as a report compatibility alias. The sample now represents
     // the normal screenshot teardown, rather than a pinned-window close.
-    stages.pinnedWindowClosed =
+    stages.closed =
         waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
-    const QJsonObject fixedScreenshotComparison = scenarioReclaimComparison(
-        QStringLiteral("fixed_screenshot"), stages.coldStart, stages.pinnedWindowClosed,
-        configuration.scenarioReclaimToleranceBytes);
+    scenarioComparison = scenarioReclaimComparison(metadata.reportName, stages.coldStart,
+                                                   stages.closed,
+                                                   configuration.scenarioReclaimToleranceBytes);
+    scenarioTrace = screenshotReclaim;
 
+    } else if (configuration.scenario == BenchmarkScenario::PinToScreen) {
     // Pin a separate 800x800 selection, open drawing mode, visit every available drawing tool,
     // confirm the edit, and close the pinned surface before measuring its reclaim checkpoint.
     positionCursorForCapture(monitor.bounds);
@@ -1466,7 +1520,7 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
     clickPinnedDrawingGroupOption(
         QStringLiteral("screenshotDrawingToolGroupOption-highlighter"));
     clickPinnedDrawingGroupOption(QStringLiteral("screenshotDrawingToolGroupOption-spotlight"));
-    stages.pinToScreen =
+    stages.active =
         waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
@@ -1494,14 +1548,16 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
         lifecyclePath, primary.processId(), QStringLiteral("idle_memory_reclaim_completed"),
         lifecycleCursor, primary, configuration.timeoutMilliseconds);
     validateIdleMemoryReclaim(pinToScreenReclaim, true);
-    stages.pinToScreenClosed =
+    stages.closed =
         waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
-    const QJsonObject pinToScreenComparison = scenarioReclaimComparison(
-        QStringLiteral("pin_to_screen"), stages.coldStart, stages.pinToScreenClosed,
-        configuration.scenarioReclaimToleranceBytes);
+    scenarioComparison = scenarioReclaimComparison(metadata.reportName, stages.coldStart,
+                                                   stages.closed,
+                                                   configuration.scenarioReclaimToleranceBytes);
+    scenarioTrace = pinToScreenReclaim;
 
+    } else if (configuration.scenario == BenchmarkScenario::ScreenRecording) {
     // Reuse the same 800x800 screenshot gesture to enter screen recording, then exercise the
     // complete recorder lifecycle before measuring its reclaimed working set.
     positionCursorForCapture(monitor.bounds);
@@ -1525,7 +1581,7 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
                                   configuration.timeoutMilliseconds)
                     .get() != nullptr,
             "screen recording toolbar did not become visible");
-    stages.screenRecording =
+    stages.active =
         waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
@@ -1568,14 +1624,16 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
         lifecyclePath, primary.processId(), QStringLiteral("idle_memory_reclaim_completed"),
         lifecycleCursor, primary, configuration.timeoutMilliseconds);
     validateIdleMemoryReclaim(screenRecordingReclaim, false);
-    stages.screenRecordingClosed =
+    stages.closed =
         waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
-    const QJsonObject screenRecordingComparison = scenarioReclaimComparison(
-        QStringLiteral("screen_recording"), stages.coldStart, stages.screenRecordingClosed,
-        configuration.scenarioReclaimToleranceBytes);
+    scenarioComparison = scenarioReclaimComparison(metadata.reportName, stages.coldStart,
+                                                   stages.closed,
+                                                   configuration.scenarioReclaimToleranceBytes);
+    scenarioTrace = screenRecordingReclaim;
 
+    } else if (configuration.scenario == BenchmarkScenario::RightClickMenu) {
     // Open the tray menu only after every screenshot surface has closed. Escape is sent after
     // focusing the menu so the hide operation is deterministic on a busy desktop.
     forwardCommand(configuration, baseArguments, QStringLiteral("--e2e-open-tray-menu"));
@@ -1583,7 +1641,7 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
         waitForVisibleElement(automation, primary.processId(), QStringLiteral("systemTrayMenu"),
                               primary, configuration.timeoutMilliseconds);
     require(trayMenu.get() != nullptr, "tray menu did not become visible");
-    stages.trayMenu =
+    stages.active =
         waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
@@ -1597,21 +1655,22 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
                                       QStringLiteral("systemTrayMenu"), primary,
                                       configuration.timeoutMilliseconds),
             "tray menu did not close");
-    const QJsonObject finalIdleReclaim = waitForLifecycleEvent(
+    const QJsonObject rightClickMenuReclaim = waitForLifecycleEvent(
         lifecyclePath, primary.processId(), QStringLiteral("idle_memory_reclaim_completed"),
         lifecycleCursor, primary, configuration.timeoutMilliseconds);
-    validateIdleMemoryReclaim(finalIdleReclaim, false);
+    validateIdleMemoryReclaim(rightClickMenuReclaim, false);
     // One converged post-hide sample is both the explicit tray-menu-closed stage and the final
     // idle sample. Keeping these as separate schema fields makes the close sequence auditable
     // without adding another five-second stabilization window to every iteration.
-    stages.trayMenuClosed =
+    stages.closed =
         waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
-    stages.finalIdle = stages.trayMenuClosed;
-    const QJsonObject trayMenuComparison = scenarioReclaimComparison(
-        QStringLiteral("tray_menu"), stages.coldStart, stages.trayMenuClosed,
-        configuration.scenarioReclaimToleranceBytes);
+    scenarioComparison = scenarioReclaimComparison(metadata.reportName, stages.coldStart,
+                                                   stages.closed,
+                                                   configuration.scenarioReclaimToleranceBytes);
+    scenarioTrace = rightClickMenuReclaim;
+    }
 
     const auto mib = [](qint64 bytes) { return static_cast<double>(bytes) / kBytesPerMebibyte; };
     QJsonObject monitorReport;
@@ -1622,112 +1681,41 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
                          static_cast<qint64>(monitor.bounds.right - monitor.bounds.left));
     monitorReport.insert(QStringLiteral("height"),
                          static_cast<qint64>(monitor.bounds.bottom - monitor.bounds.top));
-    const QJsonObject reclaimComparisons{
-        {QStringLiteral("main_interface"), mainInterfaceComparison},
-        {QStringLiteral("fixed_screenshot"), fixedScreenshotComparison},
-        {QStringLiteral("pin_to_screen"), pinToScreenComparison},
-        {QStringLiteral("screen_recording"), screenRecordingComparison},
-        {QStringLiteral("tray_menu"), trayMenuComparison}};
+    const QJsonObject reclaimComparisons{{metadata.reportName, scenarioComparison}};
     const QJsonObject record{
-        {QStringLiteral("schema_version"), 4},
+        {QStringLiteral("schema_version"), 5},
         {QStringLiteral("memory_stage_representative"),
          QStringLiteral("median_of_stability_window")},
         {QStringLiteral("acceptance_uses_conservative_stability_bounds"), true},
+        {QStringLiteral("scenario"), metadata.commandLineName},
         {QStringLiteral("iteration"), iteration},
         {QStringLiteral("process_id"), static_cast<qint64>(primary.processId())},
-        {QStringLiteral("stage_order"), QJsonArray::fromStringList(benchmarkStageOrder())},
+        {QStringLiteral("stage_order"),
+         QJsonArray::fromStringList(benchmarkStageOrder(configuration.scenario))},
         {QStringLiteral("cold_start"), stageObject(stages.coldStart)},
-        {QStringLiteral("main_interface"), stageObject(stages.mainInterface)},
-        {QStringLiteral("main_interface_closed"), stageObject(stages.mainInterfaceClosed)},
-        {QStringLiteral("fixed_screenshot"), stageObject(stages.fixedScreenshot)},
-        {QStringLiteral("pinned_window_closed"), stageObject(stages.pinnedWindowClosed)},
-        {QStringLiteral("pin_to_screen"), stageObject(stages.pinToScreen)},
-        {QStringLiteral("pin_to_screen_closed"), stageObject(stages.pinToScreenClosed)},
-        {QStringLiteral("screen_recording"), stageObject(stages.screenRecording)},
-        {QStringLiteral("screen_recording_closed"), stageObject(stages.screenRecordingClosed)},
-        {QStringLiteral("tray_menu"), stageObject(stages.trayMenu)},
-        {QStringLiteral("tray_menu_closed"), stageObject(stages.trayMenuClosed)},
-        {QStringLiteral("final_idle"), stageObject(stages.finalIdle)},
+        {metadata.activeStage, stageObject(stages.active)},
+        {metadata.closedStage, stageObject(stages.closed)},
         {QStringLiteral("scenario_reclaim_vs_cold_start"), reclaimComparisons},
-        // Compatibility alias: final idle is the post-tray-menu checkpoint.
-        {QStringLiteral("final_idle_vs_cold_start"), trayMenuComparison},
+        {QStringLiteral("final_idle_vs_cold_start"), scenarioComparison},
         {QStringLiteral("cold_start_private_working_set_bytes"), stages.coldStart.bytes},
-        {QStringLiteral("main_interface_private_working_set_bytes"), stages.mainInterface.bytes},
-        {QStringLiteral("main_interface_closed_private_working_set_bytes"),
-         stages.mainInterfaceClosed.bytes},
-        {QStringLiteral("fixed_screenshot_private_working_set_bytes"),
-         stages.fixedScreenshot.bytes},
-        {QStringLiteral("pinned_window_closed_private_working_set_bytes"),
-         stages.pinnedWindowClosed.bytes},
-        {QStringLiteral("pin_to_screen_private_working_set_bytes"), stages.pinToScreen.bytes},
-        {QStringLiteral("pin_to_screen_closed_private_working_set_bytes"),
-         stages.pinToScreenClosed.bytes},
-        {QStringLiteral("screen_recording_private_working_set_bytes"),
-         stages.screenRecording.bytes},
-        {QStringLiteral("screen_recording_closed_private_working_set_bytes"),
-         stages.screenRecordingClosed.bytes},
-        {QStringLiteral("tray_menu_private_working_set_bytes"), stages.trayMenu.bytes},
-        {QStringLiteral("tray_menu_closed_private_working_set_bytes"), stages.trayMenuClosed.bytes},
-        {QStringLiteral("final_idle_private_working_set_bytes"), stages.finalIdle.bytes},
+        {metadata.activeStage + QStringLiteral("_private_working_set_bytes"), stages.active.bytes},
+        {metadata.closedStage + QStringLiteral("_private_working_set_bytes"), stages.closed.bytes},
         {QStringLiteral("cold_start_private_working_set_mib"), mib(stages.coldStart.bytes)},
-        {QStringLiteral("main_interface_private_working_set_mib"), mib(stages.mainInterface.bytes)},
-        {QStringLiteral("main_interface_closed_private_working_set_mib"),
-         mib(stages.mainInterfaceClosed.bytes)},
-        {QStringLiteral("fixed_screenshot_private_working_set_mib"),
-         mib(stages.fixedScreenshot.bytes)},
-        {QStringLiteral("pinned_window_closed_private_working_set_mib"),
-         mib(stages.pinnedWindowClosed.bytes)},
-        {QStringLiteral("pin_to_screen_private_working_set_mib"), mib(stages.pinToScreen.bytes)},
-        {QStringLiteral("pin_to_screen_closed_private_working_set_mib"),
-         mib(stages.pinToScreenClosed.bytes)},
-        {QStringLiteral("screen_recording_private_working_set_mib"),
-         mib(stages.screenRecording.bytes)},
-        {QStringLiteral("screen_recording_closed_private_working_set_mib"),
-         mib(stages.screenRecordingClosed.bytes)},
-        {QStringLiteral("tray_menu_private_working_set_mib"), mib(stages.trayMenu.bytes)},
-        {QStringLiteral("tray_menu_closed_private_working_set_mib"),
-         mib(stages.trayMenuClosed.bytes)},
-        {QStringLiteral("final_idle_private_working_set_mib"), mib(stages.finalIdle.bytes)},
+        {metadata.activeStage + QStringLiteral("_private_working_set_mib"),
+         mib(stages.active.bytes)},
+        {metadata.closedStage + QStringLiteral("_private_working_set_mib"),
+         mib(stages.closed.bytes)},
         {QStringLiteral("monitor"), monitorReport},
         {QStringLiteral("traces"),
          QJsonObject{{QStringLiteral("lifecycle"), QDir::toNativeSeparators(lifecyclePath)},
-                     {QStringLiteral("pin"), QDir::toNativeSeparators(pinPath)},
-                      {QStringLiteral("main_interface_reclaim"), mainInterfaceReclaim},
-                      {QStringLiteral("pinned_window_reclaim"), pinToScreenReclaim},
-                      {QStringLiteral("pin_to_screen_reclaim"), pinToScreenReclaim},
-                      {QStringLiteral("screen_recording_reclaim"), screenRecordingReclaim},
-                      {QStringLiteral("final_idle_reclaim"), finalIdleReclaim}}}};
+                      {QStringLiteral("pin"), QDir::toNativeSeparators(pinPath)},
+                      {QStringLiteral("scenario_reclaim"), scenarioTrace}}}};
     std::cout << "sample " << iteration << ": cold_start=" << mib(stages.coldStart.bytes)
-              << " MiB, main_interface=" << mib(stages.mainInterface.bytes)
-              << " MiB, main_interface_closed=" << mib(stages.mainInterfaceClosed.bytes)
-              << " MiB, fixed_screenshot=" << mib(stages.fixedScreenshot.bytes)
-              << " MiB, pinned_window_closed=" << mib(stages.pinnedWindowClosed.bytes)
-              << " MiB, pin_to_screen=" << mib(stages.pinToScreen.bytes)
-              << " MiB, pin_to_screen_closed=" << mib(stages.pinToScreenClosed.bytes)
-              << " MiB, screen_recording=" << mib(stages.screenRecording.bytes)
-              << " MiB, screen_recording_closed=" << mib(stages.screenRecordingClosed.bytes)
-              << " MiB, tray_menu=" << mib(stages.trayMenu.bytes)
-              << " MiB, final_idle=" << mib(stages.finalIdle.bytes)
-              << " MiB, reclaimed(main/fixed/pin/recording/tray)="
-              << (mainInterfaceComparison.value(QStringLiteral("within_upper_bound")).toBool()
-                      ? "yes"
-                      : "no")
-              << '/'
-               << (fixedScreenshotComparison.value(QStringLiteral("within_upper_bound")).toBool()
-                       ? "yes"
-                       : "no")
-               << '/'
-               << (pinToScreenComparison.value(QStringLiteral("within_upper_bound")).toBool()
-                       ? "yes"
-                       : "no")
-               << '/'
-               << (screenRecordingComparison.value(QStringLiteral("within_upper_bound")).toBool()
-                       ? "yes"
-                       : "no")
-               << '/'
-               << (trayMenuComparison.value(QStringLiteral("within_upper_bound")).toBool() ? "yes"
-                                                                                           : "no")
-              << '\n';
+               << " MiB, " << metadata.reportName.toStdString() << '=' << mib(stages.active.bytes)
+               << " MiB, closed=" << mib(stages.closed.bytes) << " MiB, reclaimed="
+               << (scenarioComparison.value(QStringLiteral("within_upper_bound")).toBool()
+                       ? "yes" : "no")
+               << '\n';
     require(primary.stop(), "could not terminate snow_shot after the sample");
     return record;
 }
@@ -1792,33 +1780,29 @@ QJsonObject scenarioComparisonSummary(const QVector<QJsonObject>& records,
         {QStringLiteral("delta_mib_statistics"), statistics(std::move(deltas))}};
 }
 
-QJsonObject scenarioReclaimSummary(const QVector<QJsonObject>& records, qint64 toleranceBytes,
-                                   qsizetype requestedSampleCount) {
+QJsonObject scenarioReclaimSummary(const QVector<QJsonObject>& records, const QString& scenario,
+                                   qint64 toleranceBytes, qsizetype requestedSampleCount) {
     require(requestedSampleCount > 0, "requested sample count must be positive");
     QJsonObject scenarios;
     QVector<double> deltas;
     qsizetype comparisonCount = 0;
     qsizetype withinUpperBound = 0;
-    for (const QString& scenario : reclaimScenarioOrder()) {
-        const QJsonObject summary =
-            scenarioComparisonSummary(records, scenario, toleranceBytes, requestedSampleCount);
-        scenarios.insert(scenario, summary);
-        comparisonCount += summary.value(QStringLiteral("sample_count")).toInteger();
-        withinUpperBound +=
-            summary.value(QStringLiteral("within_upper_bound_sample_count")).toInteger();
-        for (const QJsonObject& record : records) {
-            const QJsonObject comparison =
-                record.value(QStringLiteral("scenario_reclaim_vs_cold_start"))
-                    .toObject()
-                    .value(scenario)
-                    .toObject();
-            if (!comparison.isEmpty()) {
-                deltas.push_back(comparison.value(QStringLiteral("delta_mib")).toDouble());
-            }
+    const QJsonObject summary =
+        scenarioComparisonSummary(records, scenario, toleranceBytes, requestedSampleCount);
+    scenarios.insert(scenario, summary);
+    comparisonCount = summary.value(QStringLiteral("sample_count")).toInteger();
+    withinUpperBound =
+        summary.value(QStringLiteral("within_upper_bound_sample_count")).toInteger();
+    for (const QJsonObject& record : records) {
+        const QJsonObject comparison = record.value(QStringLiteral("scenario_reclaim_vs_cold_start"))
+                                           .toObject()
+                                           .value(scenario)
+                                           .toObject();
+        if (!comparison.isEmpty()) {
+            deltas.push_back(comparison.value(QStringLiteral("delta_mib")).toDouble());
         }
     }
-    const qsizetype requestedComparisonCount =
-        requestedSampleCount * reclaimScenarioOrder().size();
+    const qsizetype requestedComparisonCount = requestedSampleCount;
     const bool completeSampleSet = records.size() == requestedSampleCount;
     const bool completeComparisonSet = comparisonCount == requestedComparisonCount;
     const bool allComparisonsWithinUpperBound =
@@ -1869,6 +1853,7 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
     require(SUCCEEDED(com.result()), "COM initialization failed");
     ComPtr<IUIAutomation> automation = createAutomation();
     CursorRestore restoreCursor;
+    const ScenarioMetadata& metadata = scenarioMetadata(configuration.scenario);
 
     QVector<QJsonObject> records;
     records.reserve(configuration.samples);
@@ -1879,7 +1864,8 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
             record = runSample(configuration, displayList.at(configuration.screenIndex), iteration,
                                *automation.get());
         } catch (const std::exception& error) {
-            record = {{QStringLiteral("schema_version"), 4},
+            record = {{QStringLiteral("schema_version"), 5},
+                      {QStringLiteral("scenario"), metadata.commandLineName},
                       {QStringLiteral("iteration"), iteration},
                       {QStringLiteral("error"), QString::fromLocal8Bit(error.what())}};
             sampleErrors.append(record);
@@ -1897,26 +1883,11 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
 
     const QJsonObject metrics{
         {QStringLiteral("cold_start"), metricFor(records, QStringLiteral("cold_start"))},
-        {QStringLiteral("main_interface"), metricFor(records, QStringLiteral("main_interface"))},
-        {QStringLiteral("main_interface_closed"),
-         metricFor(records, QStringLiteral("main_interface_closed"))},
-        {QStringLiteral("fixed_screenshot"),
-         metricFor(records, QStringLiteral("fixed_screenshot"))},
-        {QStringLiteral("pinned_window_closed"),
-         metricFor(records, QStringLiteral("pinned_window_closed"))},
-        {QStringLiteral("pin_to_screen"), metricFor(records, QStringLiteral("pin_to_screen"))},
-        {QStringLiteral("pin_to_screen_closed"),
-         metricFor(records, QStringLiteral("pin_to_screen_closed"))},
-        {QStringLiteral("screen_recording"),
-         metricFor(records, QStringLiteral("screen_recording"))},
-        {QStringLiteral("screen_recording_closed"),
-         metricFor(records, QStringLiteral("screen_recording_closed"))},
-        {QStringLiteral("tray_menu"), metricFor(records, QStringLiteral("tray_menu"))},
-        {QStringLiteral("tray_menu_closed"),
-         metricFor(records, QStringLiteral("tray_menu_closed"))},
-        {QStringLiteral("final_idle"), metricFor(records, QStringLiteral("final_idle"))}};
+        {metadata.activeStage, metricFor(records, metadata.activeStage)},
+        {metadata.closedStage, metricFor(records, metadata.closedStage)}};
     const QJsonObject reclaimSummary = scenarioReclaimSummary(
-        records, configuration.scenarioReclaimToleranceBytes, configuration.samples);
+        records, metadata.reportName, configuration.scenarioReclaimToleranceBytes,
+        configuration.samples);
     const bool completeSampleSet = records.size() == configuration.samples;
     const bool benchmarkPassed =
         reclaimSummary.value(QStringLiteral("benchmark_passed")).toBool();
@@ -1925,15 +1896,18 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
             ? QStringLiteral("incomplete")
             : (benchmarkPassed ? QStringLiteral("pass") : QStringLiteral("retention_failed"));
     const QJsonObject report{
-        {QStringLiteral("schema_version"), 4},
+        {QStringLiteral("schema_version"), 5},
         {QStringLiteral("benchmark"), QStringLiteral("screenshot_memory_footprint")},
+        {QStringLiteral("scenario"), metadata.commandLineName},
         {QStringLiteral("benchmark_status"), benchmarkStatus},
         {QStringLiteral("generated_utc"),
          QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)},
-        {QStringLiteral("stage_order"), QJsonArray::fromStringList(benchmarkStageOrder())},
+        {QStringLiteral("stage_order"),
+         QJsonArray::fromStringList(benchmarkStageOrder(configuration.scenario))},
         {QStringLiteral("configuration"),
          QJsonObject{
-             {QStringLiteral("samples"), configuration.samples},
+              {QStringLiteral("samples"), configuration.samples},
+              {QStringLiteral("scenario"), metadata.commandLineName},
              {QStringLiteral("screen_index"), configuration.screenIndex},
              {QStringLiteral("poll_ms"), configuration.pollMilliseconds},
              {QStringLiteral("cold_start_min_wait_ms"),
@@ -1956,7 +1930,7 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
         {QStringLiteral("final_idle_vs_cold_start"),
          reclaimSummary.value(QStringLiteral("scenarios"))
              .toObject()
-             .value(QStringLiteral("tray_menu"))},
+             .value(metadata.reportName)},
         {QStringLiteral("successful_sample_count"), records.size()},
         {QStringLiteral("failed_sample_count"), configuration.samples - records.size()},
         {QStringLiteral("sample_errors"), sampleErrors},
@@ -2041,7 +2015,11 @@ bool runSelfTest() {
     require(defaultParser.parse({QStringLiteral("benchmark-self-test")}),
             "default command-line self-test setup failed");
     require(configurationFromParser(defaultParser).scenarioReclaimToleranceBytes ==
-                3 * kBytesPerMebibyte,
+                3 * kBytesPerMebibyte &&
+                configurationFromParser(defaultParser).scenario ==
+                    BenchmarkScenario::ScreenshotWindow &&
+                benchmarkScenario(QStringLiteral("right-click-menu")) ==
+                    BenchmarkScenario::RightClickMenu,
             "default scenario reclaim tolerance self-test failed");
 
     QTemporaryDir temporary;
@@ -2118,75 +2096,28 @@ bool runSelfTest() {
                 6 &&
             !conservativeComparison.value(QStringLiteral("within_upper_bound")).toBool(),
         "conservative stability-bound comparison self-test failed");
-    const auto syntheticRecord = [](const QJsonObject& mainInterface,
-                                    const QJsonObject& fixedScreenshot,
-                                    const QJsonObject& pinToScreen,
-                                    const QJsonObject& screenRecording,
-                                    const QJsonObject& trayMenu) {
+    const auto syntheticRecord = [](const QJsonObject& comparison) {
         return QJsonObject{{QStringLiteral("scenario_reclaim_vs_cold_start"),
-                            QJsonObject{{QStringLiteral("main_interface"), mainInterface},
-                                        {QStringLiteral("fixed_screenshot"), fixedScreenshot},
-                                        {QStringLiteral("pin_to_screen"), pinToScreen},
-                                        {QStringLiteral("screen_recording"), screenRecording},
-                                        {QStringLiteral("tray_menu"), trayMenu}}}};
+                            QJsonObject{{QStringLiteral("main_interface"), comparison}}}};
     };
-    const QJsonObject passingFixedComparison = scenarioReclaimComparison(
-        QStringLiteral("fixed_screenshot"), 100 * kBytesPerMebibyte,
-        99 * kBytesPerMebibyte, 8 * kBytesPerMebibyte);
-    const QJsonObject passingTrayComparison = scenarioReclaimComparison(
-        QStringLiteral("tray_menu"), 100 * kBytesPerMebibyte, 101 * kBytesPerMebibyte,
-        8 * kBytesPerMebibyte);
-    const QJsonObject passingScreenRecordingComparison = scenarioReclaimComparison(
-        QStringLiteral("screen_recording"), 100 * kBytesPerMebibyte,
-        103 * kBytesPerMebibyte, 8 * kBytesPerMebibyte);
-    const QJsonObject passingPinToScreenComparison = scenarioReclaimComparison(
-        QStringLiteral("pin_to_screen"), 100 * kBytesPerMebibyte,
-        102 * kBytesPerMebibyte, 8 * kBytesPerMebibyte);
     const QJsonObject secondMainComparison = scenarioReclaimComparison(
         QStringLiteral("main_interface"), 100 * kBytesPerMebibyte, 99 * kBytesPerMebibyte,
         8 * kBytesPerMebibyte);
-    const QJsonObject secondFixedComparison = scenarioReclaimComparison(
-        QStringLiteral("fixed_screenshot"), 100 * kBytesPerMebibyte,
-        102 * kBytesPerMebibyte, 8 * kBytesPerMebibyte);
-    const QJsonObject secondTrayComparison = scenarioReclaimComparison(
-        QStringLiteral("tray_menu"), 100 * kBytesPerMebibyte, 100 * kBytesPerMebibyte,
-        8 * kBytesPerMebibyte);
-    const QJsonObject secondScreenRecordingComparison = scenarioReclaimComparison(
-        QStringLiteral("screen_recording"), 100 * kBytesPerMebibyte,
-        104 * kBytesPerMebibyte, 8 * kBytesPerMebibyte);
-    const QJsonObject secondPinToScreenComparison = scenarioReclaimComparison(
-        QStringLiteral("pin_to_screen"), 100 * kBytesPerMebibyte,
-        101 * kBytesPerMebibyte, 8 * kBytesPerMebibyte);
     const QJsonObject syntheticSummary = scenarioReclaimSummary(
-        QVector<QJsonObject>{syntheticRecord(passingComparison, passingFixedComparison,
-                                              passingPinToScreenComparison,
-                                              passingScreenRecordingComparison,
-                                              passingTrayComparison),
-                             syntheticRecord(secondMainComparison, secondFixedComparison,
-                                              secondPinToScreenComparison,
-                                              secondScreenRecordingComparison,
-                                              secondTrayComparison)},
-        8 * kBytesPerMebibyte, 2);
+        QVector<QJsonObject>{syntheticRecord(passingComparison),
+                             syntheticRecord(secondMainComparison)},
+        QStringLiteral("main_interface"), 8 * kBytesPerMebibyte, 2);
     const QJsonObject incompleteSummary = scenarioReclaimSummary(
-        QVector<QJsonObject>{syntheticRecord(passingComparison, passingFixedComparison,
-                                               passingPinToScreenComparison,
-                                               passingScreenRecordingComparison,
-                                               passingTrayComparison)},
-        8 * kBytesPerMebibyte, 2);
+        QVector<QJsonObject>{syntheticRecord(passingComparison)},
+        QStringLiteral("main_interface"), 8 * kBytesPerMebibyte, 2);
     const QJsonObject retainedScenarioSummary = scenarioReclaimSummary(
-        QVector<QJsonObject>{syntheticRecord(failingComparison, passingFixedComparison,
-                                              passingPinToScreenComparison,
-                                              passingScreenRecordingComparison,
-                                              passingTrayComparison),
-                             syntheticRecord(secondMainComparison, secondFixedComparison,
-                                              secondPinToScreenComparison,
-                                              secondScreenRecordingComparison,
-                                              secondTrayComparison)},
-        8 * kBytesPerMebibyte, 2);
+        QVector<QJsonObject>{syntheticRecord(failingComparison),
+                             syntheticRecord(secondMainComparison)},
+        QStringLiteral("main_interface"), 8 * kBytesPerMebibyte, 2);
     require(
         syntheticSummary.value(QStringLiteral("benchmark_passed")).toBool() &&
             syntheticSummary.value(QStringLiteral("within_upper_bound_comparison_count"))
-                    .toInteger() == 10 &&
+                    .toInteger() == 2 &&
             !incompleteSummary.value(QStringLiteral("complete_sample_set")).toBool() &&
             !incompleteSummary.value(QStringLiteral("benchmark_passed")).toBool() &&
             !retainedScenarioSummary.value(QStringLiteral("benchmark_passed")).toBool() &&
@@ -2200,27 +2131,18 @@ bool runSelfTest() {
     const QJsonObject syntheticReport{
         {QStringLiteral("metrics"),
          QJsonObject{{QStringLiteral("cold_start"), statistics(QVector<double>{1.0})},
-                     {QStringLiteral("main_interface"), statistics(QVector<double>{3.0})},
-                     {QStringLiteral("main_interface_closed"), statistics(QVector<double>{1.5})},
-                     {QStringLiteral("fixed_screenshot"), statistics(QVector<double>{4.0})},
-                     {QStringLiteral("pinned_window_closed"), statistics(QVector<double>{1.75})},
-                     {QStringLiteral("pin_to_screen"), statistics(QVector<double>{5.0})},
-                     {QStringLiteral("pin_to_screen_closed"),
-                      statistics(QVector<double>{1.8})},
-                     {QStringLiteral("screen_recording"), statistics(QVector<double>{5.0})},
-                     {QStringLiteral("screen_recording_closed"),
-                      statistics(QVector<double>{1.8})},
-                     {QStringLiteral("tray_menu"), statistics(QVector<double>{2.0})},
-                     {QStringLiteral("tray_menu_closed"), statistics(QVector<double>{1.25})},
-                     {QStringLiteral("final_idle"), statistics(QVector<double>{1.25})}}},
-        {QStringLiteral("stage_order"), QJsonArray::fromStringList(benchmarkStageOrder())},
+                      {QStringLiteral("main_interface"), statistics(QVector<double>{3.0})},
+                      {QStringLiteral("main_interface_closed"),
+                       statistics(QVector<double>{1.5})}}},
+        {QStringLiteral("stage_order"),
+         QJsonArray::fromStringList(benchmarkStageOrder(BenchmarkScenario::MainInterface))},
         {QStringLiteral("scenario_reclaim_vs_cold_start"), syntheticSummary}};
     const QString syntheticHtml = reportHtml(syntheticReport);
     require(
             syntheticHtml.contains(QStringLiteral("Screenshot memory footprint")) &&
             syntheticHtml.contains(QStringLiteral("Benchmark: PASS")) &&
             syntheticHtml.contains(QStringLiteral("no more than 8 MiB above cold start")) &&
-            syntheticHtml.contains(QStringLiteral("final_idle")) &&
+            syntheticHtml.contains(QStringLiteral("main_interface_closed")) &&
             reportHtml(QJsonObject{{QStringLiteral("scenario_reclaim_vs_cold_start"),
                                     incompleteSummary}})
                 .contains(QStringLiteral("Benchmark: INCOMPLETE")),

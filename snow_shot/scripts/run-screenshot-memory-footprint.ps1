@@ -2,6 +2,8 @@
 param(
     [string]$QtBin = "",
     [string]$OutputDirectory = "",
+    [ValidateSet("all", "main-interface", "screenshot-window", "pin-to-screen", "screen-recording", "right-click-menu")]
+    [string]$Scenario = "all",
     [int]$Samples = 10,
     [int]$ScreenIndex = 0,
     [int]$PollMilliseconds = 250,
@@ -119,17 +121,27 @@ try {
     }
 
     New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
-    $rawPath = Join-Path $OutputDirectory "raw.jsonl"
-    $jsonReportPath = Join-Path $OutputDirectory "report.json"
-    $htmlReportPath = Join-Path $OutputDirectory "report.html"
-    foreach ($artifactPath in @($rawPath, $jsonReportPath, $htmlReportPath)) {
-        if (Test-Path -LiteralPath $artifactPath) {
-            Remove-Item -LiteralPath $artifactPath -Force
+    $scenarios = if ($Scenario -eq "all") {
+        @("main-interface", "screenshot-window", "pin-to-screen", "screen-recording", "right-click-menu")
+    } else { @($Scenario) }
+    $benchmarkExitCode = 0
+    foreach ($scenarioName in $scenarios) {
+        $scenarioDirectory = if ($Scenario -eq "all") {
+            Join-Path $OutputDirectory $scenarioName
+        } else { $OutputDirectory }
+        New-Item -ItemType Directory -Force -Path $scenarioDirectory | Out-Null
+        $rawPath = Join-Path $scenarioDirectory "raw.jsonl"
+        $jsonReportPath = Join-Path $scenarioDirectory "report.json"
+        $htmlReportPath = Join-Path $scenarioDirectory "report.html"
+        foreach ($artifactPath in @($rawPath, $jsonReportPath, $htmlReportPath)) {
+            if (Test-Path -LiteralPath $artifactPath) {
+                Remove-Item -LiteralPath $artifactPath -Force
+            }
         }
-    }
-    $arguments = @(
+        $arguments = @(
         "--app", $application,
-        "--output", $OutputDirectory,
+        "--output", $scenarioDirectory,
+        "--scenario", $scenarioName,
         "--samples", $Samples.ToString(),
         "--screen-index", $ScreenIndex.ToString(),
         "--poll-ms", $PollMilliseconds.ToString(),
@@ -139,10 +151,16 @@ try {
         "--stability-range-kib", $StabilityRangeKiB.ToString(),
         "--final-idle-tolerance-kib", $FinalIdleToleranceKiB.ToString(),
         "--timeout-ms", $TimeoutMilliseconds.ToString()
-    )
-    if ($SelfTest) { $arguments += "--self-test" }
-    & $benchmark @arguments
-    $benchmarkExitCode = $LASTEXITCODE
+        )
+        if ($SelfTest) { $arguments += "--self-test" }
+        & $benchmark @arguments
+        if ($LASTEXITCODE -ne 0) { $benchmarkExitCode = $LASTEXITCODE }
+        if (!$SelfTest) {
+            Write-Host "[$scenarioName] raw data: $rawPath"
+            Write-Host "[$scenarioName] JSON: $jsonReportPath"
+            Write-Host "[$scenarioName] HTML: $htmlReportPath"
+        }
+    }
 }
 finally {
     [System.Windows.Forms.Cursor]::Position = $cursor
@@ -153,19 +171,4 @@ finally {
     $env:SNOW_SHOT_PERF_GIT_DIRTY = $savedDirty
 }
 
-if (!$SelfTest) {
-    if (Test-Path -LiteralPath $rawPath) {
-        Write-Host "Screenshot memory footprint raw data: $rawPath"
-    }
-    if (Test-Path -LiteralPath $jsonReportPath) {
-        Write-Host "Screenshot memory footprint JSON: $jsonReportPath"
-    } else {
-        Write-Warning "The benchmark did not produce report.json"
-    }
-    if (Test-Path -LiteralPath $htmlReportPath) {
-        Write-Host "Screenshot memory footprint HTML: $htmlReportPath"
-    } else {
-        Write-Warning "The benchmark did not produce report.html"
-    }
-}
 exit $benchmarkExitCode

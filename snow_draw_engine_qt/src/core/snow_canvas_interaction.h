@@ -5,6 +5,7 @@
 #include <cstdint>
 
 class QWidget;
+class SnowCanvasCursorController;
 
 namespace snow_canvas_interaction {
 
@@ -13,9 +14,10 @@ class Controller final {
     bool isEnabled() const;
     std::uint32_t capturedPointerId() const;
 
-    void setEnabled(QWidget& widget, bool enabled);
-    void clearTransientState(QWidget& widget);
-    void applyOutput(QWidget& widget, const SnowInteractionOutput& output);
+    void setEnabled(QWidget& widget, SnowCanvasCursorController& cursorController, bool enabled);
+    void clearTransientState(QWidget& widget, SnowCanvasCursorController& cursorController);
+    void applyOutput(QWidget& widget, SnowCanvasCursorController& cursorController,
+                     const SnowInteractionOutput& output);
 
   private:
     bool m_enabled = true;

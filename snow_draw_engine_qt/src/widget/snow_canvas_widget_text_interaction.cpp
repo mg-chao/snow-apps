@@ -1,5 +1,6 @@
 #include "snow_canvas_widget_text_interaction.h"
 
+#include "snow_canvas_cursor_controller.h"
 #include "snow_canvas_element_id.h"
 #include "snow_canvas_render_geometry.h"
 #include "snow_canvas_text.h"
@@ -67,8 +68,9 @@ QRegion committedTextRegion(const QRegion& editorRegion, const SnowCanvasDisplay
 
 } // namespace
 
-SnowCanvasWidgetTextInteraction::SnowCanvasWidgetTextInteraction(QWidget& widget)
-    : m_widget(widget) {
+SnowCanvasWidgetTextInteraction::SnowCanvasWidgetTextInteraction(
+    QWidget& widget, SnowCanvasCursorController& cursorController)
+    : m_widget(widget), m_cursorController(cursorController) {
     m_caretBlinkTimer.setTimerType(Qt::CoarseTimer);
     QObject::connect(&m_caretBlinkTimer, &QTimer::timeout, &m_caretBlinkTimer,
                      [this]() { handleCaretBlinkTimeout(); });
@@ -581,7 +583,8 @@ bool SnowCanvasWidgetTextInteraction::handleEditorMouseMove(
         }
 
         if (editorContains(displayCache, event->position())) {
-            m_widget.setCursor(Qt::IBeamCursor);
+            m_cursorController.setCursor(SnowCanvasCursorLayer::CanvasTool,
+                                         QCursor(Qt::IBeamCursor));
             event->accept();
             return true;
         }

@@ -598,6 +598,7 @@ void ScreenshotFloatingToolPaletteWindow::updatePaletteGeometryForVisibleContent
     const QSize previousHostSize = m_paletteHost->size();
 #endif
     m_paletteHost->prepareForDisplay();
+    bindDynamicKeyboardEditors();
     const QSize windowSize = fixedWindowSizeHint();
     if (m_panel->size() != windowSize) {
         m_panel->setFixedSize(windowSize);

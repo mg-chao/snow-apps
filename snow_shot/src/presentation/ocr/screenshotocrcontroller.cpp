@@ -490,7 +490,7 @@ void ScreenshotOcrController::deactivateImpl(bool preserveRecognitionWindow) {
     }
     m_context.displaySession.forEachOverlay([](qsizetype, ScreenshotOverlayWindow* overlay) {
         if (overlay != nullptr && overlay->canvas() != nullptr) {
-            overlay->canvas()->unsetCursor();
+            overlay->canvas()->clearCursorForLayer(SnowCanvasCursorLayer::Host);
         }
     });
     for (const CanvasState& state : std::as_const(m_canvasStates)) {
