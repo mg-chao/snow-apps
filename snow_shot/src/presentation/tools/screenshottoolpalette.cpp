@@ -13,7 +13,6 @@
 #include "snow_shot/storage/settingsadapters.h"
 
 #include "antd_icons.h"
-#include "icon_registry.h"
 #include "widgets/button.h"
 #include "widgets/radio.h"
 #include "widgets/radio_button_group.h"
@@ -903,11 +902,6 @@ void ScreenshotToolPalette::releaseSecondaryResources() {
         }
     }
     m_releasingSecondaryResources = false;
-
-    // Trim only the Ant Design icon cache owned by the toolbar. The next
-    // materialization repopulates the icons it actually displays without
-    // invalidating unrelated Qt pixmap consumers.
-    adqt::icons::trimIconCache(512 * 1024);
 
     markLayoutDirty(true);
     ensureLayoutApplied();

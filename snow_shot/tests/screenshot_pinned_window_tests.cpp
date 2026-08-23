@@ -196,12 +196,10 @@ void selectionExportUiServicesPinnedWindowPoolLifecycle(SnowCanvasRuntime& sourc
     const int initialPinnedWindowCount = pinnedWindowCount();
     require(initialPinnedWindowCount == 0,
             "the focused pool test started with an unexpected pinned window");
-    int presentedCount = 0;
     int destroyedCount = 0;
     {
         ScreenshotSelectionExportUiServices services(
-            sourceRuntime, nullptr, nullptr, nullptr, {}, [&presentedCount]() { ++presentedCount; },
-            [&destroyedCount]() { ++destroyedCount; });
+            sourceRuntime, nullptr, nullptr, nullptr, {}, [&destroyedCount]() { ++destroyedCount; });
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         require(pinnedWindowCount() == initialPinnedWindowCount,
                 "constructing selection export UI services prewarmed a pinned window");
@@ -213,15 +211,11 @@ void selectionExportUiServicesPinnedWindowPoolLifecycle(SnowCanvasRuntime& sourc
         const QRect nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), image.size());
         require(services.presentPinnedImage(image, screen, nativeGeometry),
                 "selection export UI services failed to present the pool test image");
-        require(presentedCount == 1,
-                "presenting a pooled pinned window did not publish its callback exactly once");
 
         const QRect secondNativeGeometry =
             physicalPinGeometry(*screen, QPoint(240, 180), image.size());
         require(services.presentPinnedImage(image, screen, secondNativeGeometry),
                 "selection export UI services failed to present the second pool test image");
-        require(presentedCount == 2,
-                "presenting two pooled windows did not publish two callbacks");
 
         QList<QPointer<ScreenshotPinnedWindow>> activeWindows;
         const auto topLevelWidgets = QApplication::topLevelWidgets();
@@ -264,13 +258,12 @@ void selectionExportUiServicesPinnedWindowPoolLifecycle(SnowCanvasRuntime& sourc
                            pinnedWindowCount() == initialPinnedWindowCount;
                 }),
                 "closing the last active pin did not destroy it and the hidden spare");
-        require(presentedCount == 2 && destroyedCount == 2,
-                "the pooled pin lifecycle callbacks were not emitted exactly once per window");
+        require(destroyedCount == 2,
+                "the pooled pin lifecycle callback was not emitted exactly once per window");
     }
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-    require(pinnedWindowCount() == initialPinnedWindowCount && presentedCount == 2 &&
-                destroyedCount == 2,
+    require(pinnedWindowCount() == initialPinnedWindowCount && destroyedCount == 2,
             "destroying idle selection export UI services retained a pinned window or spare");
 }
 

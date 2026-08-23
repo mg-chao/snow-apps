@@ -47,7 +47,6 @@ class SystemTrayController final : public QObject {
     void showApplicationInterfaceRequested();
     void quickActionRequested(snow_shot::presentation::GlobalShortcutAction action);
     void shortcutFunctionsDisabledChanged(bool disabled);
-    void transientUiHidden();
     void exitRequested();
 
   private:

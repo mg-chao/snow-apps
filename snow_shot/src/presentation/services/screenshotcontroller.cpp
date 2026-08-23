@@ -94,21 +94,7 @@ namespace {
 constexpr auto kCopyMessageKey = "screenshot-copy";
 constexpr auto kSaveMessageKey = "screenshot-save";
 constexpr auto kPinClipboardMessageKey = "screenshot-pin-clipboard";
-constexpr int kIdleHeapCompactionGraceMilliseconds = 1250;
 #if defined(Q_OS_WIN) || defined(_WIN32)
-void compactIdleProcessHeaps() {
-    DWORD heapCount = GetProcessHeaps(0, nullptr);
-    if (heapCount > 0) {
-        std::vector<HANDLE> heaps(heapCount);
-        heapCount = GetProcessHeaps(heapCount, heaps.data());
-        for (DWORD index = 0; index < heapCount && index < heaps.size(); ++index) {
-            if (heaps[index] != nullptr) {
-                static_cast<void>(HeapCompact(heaps[index], 0));
-            }
-        }
-    }
-}
-
 QString cameraShutterAudioPath() {
     const QString installedPath = QDir(QCoreApplication::applicationDirPath())
                                       .filePath(QStringLiteral("audios/camera_shutter.mp3"));
@@ -162,7 +148,6 @@ void playCameraShutterSound() {
 }
 #else
 void playCameraShutterSound() {}
-void compactIdleProcessHeaps() {}
 #endif
 
 ScreenshotToolPalette::Tool paletteToolForActiveTool(ScreenshotActiveTool tool) {
@@ -789,11 +774,6 @@ void ScreenshotController::Impl::createSelectionWorkflows() {
         [controller = QPointer<ScreenshotController>(&owner)]() {
             if (controller != nullptr) {
                 emit controller->showApplicationInterfaceRequested();
-            }
-        },
-        [controller = QPointer<ScreenshotController>(&owner)]() {
-            if (controller != nullptr) {
-                controller->requestWorkingSetTrimAfterRelease();
             }
         },
         [controller = QPointer<ScreenshotController>(&owner)]() {
@@ -3556,28 +3536,11 @@ void ScreenshotController::scheduleIdleImplementationRelease(Impl* implementatio
                                     return;
                                 }
 
-                                const bool trimWorkingSet = std::exchange(
-                                    guardedController->m_workingSetTrimAfterRelease, false);
                                 guardedController->m_impl.reset();
 #if defined(SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION)
                                 snow_shot::presentation::screenshot_lifecycle_perf::
                                     captureReleased();
 #endif
-                                const quint64 postReleaseGeneration =
-                                    guardedController->m_operationGeneration;
-                                emit guardedController->idleResourcesReleased(trimWorkingSet);
-
-                                QTimer::singleShot(
-                                    kIdleHeapCompactionGraceMilliseconds, guardedController,
-                                    [guardedController, postReleaseGeneration]() {
-                                        if (guardedController.isNull() ||
-                                            guardedController->m_impl != nullptr ||
-                                            guardedController->m_operationGeneration !=
-                                                postReleaseGeneration) {
-                                            return;
-                                        }
-                                        compactIdleProcessHeaps();
-                                    });
                             });
                     };
                     const bool scheduled = guardedImplementation->releaseRetainedIdleResources(
@@ -3640,10 +3603,6 @@ void ScreenshotController::captureAndPinSelection() {
     Impl& implementation = ensureImpl();
     static_cast<void>(implementation.beginCapture(Impl::PendingSelectionAction::Pin));
     scheduleIdleImplementationRelease(&implementation);
-}
-
-void ScreenshotController::requestWorkingSetTrimAfterRelease() {
-    m_workingSetTrimAfterRelease = true;
 }
 
 void ScreenshotController::retryIdleImplementationRelease() {

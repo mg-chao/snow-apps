@@ -23,7 +23,6 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         ScreenshotQrRecognitionPort* qrRecognition = nullptr,
         SnowShotApiClient* tableRecognition = nullptr,
         std::function<void()> showApplicationInterfaceRequested = {},
-        std::function<void()> pinnedWindowPresented = {},
         std::function<void()> pinnedWindowDestroyed = {});
     ~ScreenshotSelectionExportUiServices() override;
 
@@ -48,7 +47,6 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     ScreenshotQrRecognitionPort* m_qrRecognition = nullptr;
     SnowShotApiClient* m_tableRecognition = nullptr;
     std::function<void()> m_showApplicationInterfaceRequested;
-    std::function<void()> m_pinnedWindowPresented;
     std::function<void()> m_pinnedWindowDestroyed;
     std::unique_ptr<ScreenshotPinnedWindowPool> m_windowPool;
     ScreenshotClipboardCommitHandle m_clipboardCommit;

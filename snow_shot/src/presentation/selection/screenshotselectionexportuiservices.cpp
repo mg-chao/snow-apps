@@ -149,8 +149,7 @@ namespace {
 bool presentPinnedWindowAndSynchronize(ScreenshotPinnedWindow* window,
                                        const ScreenshotPinnedWindow::Config& config,
                                        ScreenshotPinnedWindowPool* windowPool,
-                                       const std::function<void()>& showApplicationInterfaceRequested,
-                                       const std::function<void()>& pinnedWindowPresented) {
+                                       const std::function<void()>& showApplicationInterfaceRequested) {
     if (window == nullptr) {
         return false;
     }
@@ -168,9 +167,6 @@ bool presentPinnedWindowAndSynchronize(ScreenshotPinnedWindow* window,
     if (windowPool != nullptr) {
         windowPool->trackPresentedWindow(window);
     }
-    if (pinnedWindowPresented) {
-        pinnedWindowPresented();
-    }
     SNOW_SHOT_PIN_PERF_COUNTER("window.visible", window->isVisible() ? 1 : 0);
     SNOW_SHOT_PIN_PERF_COUNTER("window.geometry_valid",
                                window->currentNativeGeometry() == config.nativeGeometry ? 1 : 0);
@@ -187,12 +183,10 @@ ScreenshotSelectionExportUiServices::ScreenshotSelectionExportUiServices(
     SnowCanvasRuntime& runtime, ScreenshotOcrRecognitionPort* recognition,
     ScreenshotQrRecognitionPort* qrRecognition, SnowShotApiClient* tableRecognition,
     std::function<void()> showApplicationInterfaceRequested,
-    std::function<void()> pinnedWindowPresented,
     std::function<void()> pinnedWindowDestroyed)
     : m_runtime(runtime), m_recognition(recognition), m_qrRecognition(qrRecognition),
       m_tableRecognition(tableRecognition),
       m_showApplicationInterfaceRequested(std::move(showApplicationInterfaceRequested)),
-      m_pinnedWindowPresented(std::move(pinnedWindowPresented)),
       m_pinnedWindowDestroyed(std::move(pinnedWindowDestroyed)),
       m_windowPool(std::make_unique<ScreenshotPinnedWindowPool>(m_pinnedWindowDestroyed)) {}
 
@@ -269,8 +263,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedSelection(
     config.formattedPlainText.clear();
     applyPinRuntimeSettings(&config);
     return presentPinnedWindowAndSynchronize(pinnedWindow, config, m_windowPool.get(),
-                                             m_showApplicationInterfaceRequested,
-                                             m_pinnedWindowPresented);
+                                             m_showApplicationInterfaceRequested);
 }
 
 bool ScreenshotSelectionExportUiServices::presentPinnedImage(
@@ -314,6 +307,5 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     config.tableRecognition = m_tableRecognition;
     applyPinRuntimeSettings(&config);
     return presentPinnedWindowAndSynchronize(pinnedWindow, config, m_windowPool.get(),
-                                             m_showApplicationInterfaceRequested,
-                                             m_pinnedWindowPresented);
+                                             m_showApplicationInterfaceRequested);
 }

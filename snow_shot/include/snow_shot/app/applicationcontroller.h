@@ -7,7 +7,6 @@
 #include <memory>
 
 class QApplication;
-class QEvent;
 
 namespace snow_shot::app {
 class ApplicationController final : public QObject {
@@ -22,8 +21,6 @@ class ApplicationController final : public QObject {
     void handleLaunchRequest(const QStringList& arguments);
 
   private:
-    bool eventFilter(QObject* watched, QEvent* event) override;
-
     class Impl;
     std::unique_ptr<Impl> m_impl;
 };

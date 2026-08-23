@@ -1,7 +1,5 @@
 #include "snow_shot/presentation/screenshotdisplayconfigurationobserver.h"
 
-#include "icon_registry.h"
-
 #include <QGuiApplication>
 #include <QRect>
 #include <QScreen>
@@ -71,8 +69,6 @@ void ScreenshotDisplayConfigurationObserver::handleScreenRemoved(QScreen* screen
 void ScreenshotDisplayConfigurationObserver::handleApplicationStateChanged(
     Qt::ApplicationState state) {
     if (state == Qt::ApplicationHidden || state == Qt::ApplicationSuspended) {
-        // Hidden/suspended windows do not need their toolbar rasters retained at the active budget.
-        adqt::icons::trimIconCache(512 * 1024);
         notifyChanged();
     }
 }

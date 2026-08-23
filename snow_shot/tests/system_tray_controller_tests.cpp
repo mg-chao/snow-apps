@@ -240,20 +240,6 @@ int main(int argc, char* argv[]) {
     const QStringList defaultMenuOptions = snow_shot::storage::TraySettings().menuOptions();
     controller.setMenuOptions(defaultMenuOptions);
     const QList<QAction*> defaultVisibleActions = visibleActions();
-    int transientUiHiddenCount = 0;
-    QObject::connect(&controller, &snow_shot::presentation::SystemTrayController::transientUiHidden,
-                     [&transientUiHiddenCount]() { ++transientUiHiddenCount; });
-    menu->popupAt(QPoint(100, 100));
-    require(waitUntil([menu]() { return menu->isVisible(); }),
-            "the tray context menu did not become visible for its hide lifecycle test");
-    menu->hide();
-    require(transientUiHiddenCount == 0,
-            "tray transient cleanup was emitted synchronously from aboutToHide");
-    require(waitUntil([&transientUiHiddenCount]() { return transientUiHiddenCount == 1; }),
-            "hiding the tray context menu did not publish deferred transient cleanup");
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
-    require(transientUiHiddenCount == 1,
-            "one tray context-menu hide published transient cleanup more than once");
     auto* screenshotMenuAction = actionForId(QStringLiteral("quick.screenshot"));
     auto* delayedScreenshotMenuAction =
         actionForId(QStringLiteral("quick.screenshot-delay"));

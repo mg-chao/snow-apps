@@ -73,7 +73,6 @@ class ScreenshotController : public QObject {
 
   signals:
     void showApplicationInterfaceRequested();
-    void idleResourcesReleased(bool trimWorkingSet);
 
   private:
     struct Impl;
@@ -82,13 +81,11 @@ class ScreenshotController : public QObject {
     Impl* activeCaptureImpl() noexcept;
     const Impl* activeCaptureImpl() const noexcept;
     quint64 nextOperationGeneration();
-    void requestWorkingSetTrimAfterRelease();
     void retryIdleImplementationRelease();
     void scheduleIdleImplementationRelease(Impl* implementation);
 
     std::unique_ptr<Impl> m_impl;
     quint64 m_operationGeneration = 0;
-    bool m_workingSetTrimAfterRelease = false;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTCONTROLLER_H

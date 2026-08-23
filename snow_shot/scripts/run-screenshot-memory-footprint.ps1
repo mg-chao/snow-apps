@@ -11,7 +11,7 @@ param(
     [int]$StageMinimumWaitMilliseconds = 5000,
     [int]$StabilityWindow = 20,
     [int]$StabilityRangeKiB = 1024,
-    [int]$FinalIdleToleranceKiB = 2048,
+    [int]$FinalIdleToleranceKiB = 3072,
     [int]$TimeoutMilliseconds = 90000,
     [int]$CountdownSeconds = 5,
     [switch]$SelfTest

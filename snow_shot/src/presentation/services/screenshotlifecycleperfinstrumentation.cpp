@@ -167,16 +167,6 @@ void captureReleased() {
     captureWasPresented = false;
 }
 
-void idleMemoryReclaimCompleted(bool trimWorkingSet, bool success, int attemptCount,
-                                int nativeErrorCode) {
-    QMutexLocker lock(&traceMutex);
-    writeSynchronizationEvent(
-        QStringLiteral("idle_memory_reclaim_completed"),
-        QJsonObject{{QStringLiteral("trim_working_set"), trimWorkingSet},
-                    {QStringLiteral("success"), success},
-                    {QStringLiteral("attempt_count"), attemptCount},
-                    {QStringLiteral("native_error_code"), nativeErrorCode}});
-}
 } // namespace snow_shot::presentation::screenshot_lifecycle_perf
 
 #else
@@ -192,7 +182,6 @@ bool captureActive() {
 void capturePresented() {}
 void captureInteractionReady() {}
 void captureReleased() {}
-void idleMemoryReclaimCompleted(bool, bool, int, int) {}
 } // namespace snow_shot::presentation::screenshot_lifecycle_perf
 
 #endif

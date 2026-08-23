@@ -37,8 +37,8 @@ class ScreenshotAsyncActivityLease final {
 };
 
 // Tracks asynchronous allocations through their true terminal callback, not merely until a
-// cancellation request or worker return. The process-wide idle observer lets memory reclamation
-// run after the final result payload and callback captures have been released.
+// cancellation request or worker return. Owners and lifecycle tests can therefore distinguish a
+// requested cancellation from release of the final result payload and callback captures.
 class ScreenshotAsyncActivityTracker final {
   public:
     using IdleCallback = std::function<void()>;

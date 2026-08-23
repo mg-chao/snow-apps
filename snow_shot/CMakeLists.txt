@@ -715,7 +715,6 @@ set(PROJECT_HEADERS
 )
 
 set(PROJECT_CXX_SOURCES
-    src/app/idlememoryreclaimpolicy.h
     src/app/applicationcontroller.cpp
     src/app/main.cpp
     src/app/singleinstancecoordinator.cpp
@@ -991,16 +990,6 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
-
-    add_executable(snow-shot-idle-memory-reclaim-policy-tests
-        tests/idle_memory_reclaim_policy_tests.cpp
-        src/app/idlememoryreclaimpolicy.h
-    )
-    target_include_directories(snow-shot-idle-memory-reclaim-policy-tests PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src/app"
-    )
-    add_test(NAME snow-shot-idle-memory-reclaim-policy-tests
-             COMMAND snow-shot-idle-memory-reclaim-policy-tests)
 
     add_test(NAME snow-shot-storage-boundary-check
         COMMAND ${CMAKE_COMMAND}
