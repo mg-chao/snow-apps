@@ -121,6 +121,18 @@ void mark(const QString& event) {
         BufferedPhaseEvent{event, captureTimer.nsecsElapsed(), nextEventSequence++});
 }
 
+void synchronize(const QString& event) {
+    QMutexLocker lock(&traceMutex);
+    if (!activeCapture || !captureTimer.isValid() || !traceFile.isOpen()) {
+        return;
+    }
+    // Preserve ordering with deferred phase marks, then flush this event immediately so an
+    // external benchmark can observe completion while the capture is still active.
+    flushPendingPhaseEvents();
+    writeSynchronizationEvent(
+        event, QJsonObject{{QStringLiteral("elapsed_ns"), captureTimer.nsecsElapsed()}});
+}
+
 bool captureActive() {
     QMutexLocker lock(&traceMutex);
     return activeCapture;
@@ -176,6 +188,7 @@ void configureTrace(const QString&) {}
 void appReady() {}
 void beginCapture() {}
 void mark(const QString&) {}
+void synchronize(const QString&) {}
 bool captureActive() {
     return false;
 }

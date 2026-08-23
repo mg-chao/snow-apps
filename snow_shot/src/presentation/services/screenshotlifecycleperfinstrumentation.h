@@ -8,6 +8,9 @@ void configureTrace(const QString& path);
 void appReady();
 void beginCapture();
 void mark(const QString& event);
+// Writes a synchronization event immediately so external automation can wait for an
+// asynchronous capture task without waiting for capture teardown to flush deferred marks.
+void synchronize(const QString& event);
 [[nodiscard]] bool captureActive();
 void capturePresented();
 void captureInteractionReady();

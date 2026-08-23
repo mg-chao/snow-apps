@@ -7,6 +7,7 @@
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include "snow_shot/presentation/screenshottabledocument.h"
 #include "snow_shot/presentation/screenshottableeditor.h"
+#include "../services/screenshotlifecycleperfinstrumentation.h"
 
 #include <QDesktopServices>
 #include <QCoreApplication>
@@ -934,6 +935,10 @@ void ScreenshotRecognitionSessionController::startTextRecognition(
                 m_textRequestToken = 0;
             }
             handleTextOutput(generation, key, std::move(output));
+            QTimer::singleShot(0, this, [] {
+                snow_shot::presentation::screenshot_lifecycle_perf::synchronize(
+                    QStringLiteral("ocr_text_recognition_complete"));
+            });
         });
     if (*callbackCompleted) {
         m_textRequestToken = 0;
@@ -967,6 +972,10 @@ void ScreenshotRecognitionSessionController::startTableRecognition() {
                 m_tableRequestToken = 0;
             }
             handleTableOutput(generation, key, std::move(result));
+            QTimer::singleShot(0, this, [] {
+                snow_shot::presentation::screenshot_lifecycle_perf::synchronize(
+                    QStringLiteral("ocr_table_recognition_complete"));
+            });
         });
     if (*callbackCompleted) {
         m_tableRequestToken = 0;
@@ -998,6 +1007,10 @@ void ScreenshotRecognitionSessionController::startQrRecognition() {
                 m_qrRequestToken = 0;
             }
             handleQrOutput(generation, key, std::move(result));
+            QTimer::singleShot(0, this, [] {
+                snow_shot::presentation::screenshot_lifecycle_perf::synchronize(
+                    QStringLiteral("ocr_qr_recognition_complete"));
+            });
         });
     if (*callbackCompleted) {
         m_qrRequestToken = 0;

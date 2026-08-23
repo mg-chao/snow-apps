@@ -607,6 +607,42 @@ void sendMouseWheel(int x, int y, int delta) {
     require(SendInput(1, &input, sizeof(input)) == 1, "SendInput mouse wheel event failed");
 }
 
+void sendVirtualKey(WORD virtualKey, bool release = false) {
+    INPUT input{};
+    input.type = INPUT_KEYBOARD;
+    input.ki.wVk = virtualKey;
+    input.ki.dwFlags = release ? KEYEVENTF_KEYUP : 0;
+    require(SendInput(1, &input, sizeof(input)) == 1, "SendInput keyboard event failed");
+}
+
+void selectFocusedText() {
+    sendVirtualKey(VK_CONTROL);
+    sendVirtualKey('A');
+    sendVirtualKey('A', true);
+    sendVirtualKey(VK_CONTROL, true);
+}
+
+void sendUnicodeText(const QString& text) {
+    for (const QChar character : text) {
+        INPUT input{};
+        input.type = INPUT_KEYBOARD;
+        input.ki.dwFlags = KEYEVENTF_UNICODE;
+        input.ki.wScan = character.unicode();
+        require(SendInput(1, &input, sizeof(input)) == 1,
+                "SendInput Unicode key-down failed");
+        input.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
+        require(SendInput(1, &input, sizeof(input)) == 1,
+                "SendInput Unicode key-up failed");
+    }
+}
+
+void commitCanvasText() {
+    sendVirtualKey(VK_CONTROL);
+    sendVirtualKey(VK_RETURN);
+    sendVirtualKey(VK_RETURN, true);
+    sendVirtualKey(VK_CONTROL, true);
+}
+
 void clickElement(IUIAutomationElement& element) {
     RECT bounds{};
     require(SUCCEEDED(element.get_CurrentBoundingRectangle(&bounds)) &&
@@ -627,6 +663,110 @@ void clickVisibleElement(IUIAutomation& automation, DWORD processId, const QStri
         waitForVisibleElement(automation, processId, automationId, process, timeoutMilliseconds);
     require(element.get() != nullptr, errorMessage);
     clickElement(*element.get());
+}
+
+bool readAutomationValue(IUIAutomationElement& element, QString* value) {
+    require(value != nullptr, "UI Automation value output is null");
+
+    ComPtr<IUIAutomationValuePattern> valuePattern;
+    if (SUCCEEDED(element.GetCurrentPatternAs(UIA_ValuePatternId,
+                                               IID_PPV_ARGS(valuePattern.put()))) &&
+        valuePattern.get() != nullptr) {
+        BSTR rawValue = nullptr;
+        if (SUCCEEDED(valuePattern.get()->get_CurrentValue(&rawValue))) {
+            *value = rawValue != nullptr
+                         ? QString::fromWCharArray(rawValue,
+                                                   static_cast<int>(SysStringLen(rawValue)))
+                         : QString();
+            SysFreeString(rawValue);
+            return true;
+        }
+    }
+
+    // Some Qt accessibility providers expose the value property without advertising the
+    // Value pattern. Keep the read-back check useful for that provider shape as well.
+    VARIANT rawValue{};
+    if (SUCCEEDED(element.GetCurrentPropertyValue(UIA_ValueValuePropertyId, &rawValue))) {
+        if (rawValue.vt == VT_BSTR) {
+            *value = rawValue.bstrVal != nullptr
+                         ? QString::fromWCharArray(rawValue.bstrVal,
+                                                   static_cast<int>(SysStringLen(rawValue.bstrVal)))
+                         : QString();
+            VariantClear(&rawValue);
+            return true;
+        }
+        VariantClear(&rawValue);
+    }
+    return false;
+}
+
+void focusElementForKeyboardInput(IUIAutomationElement& element) {
+    // UIA SetFocus targets the actual child control. Bringing its native window to the foreground
+    // also makes the subsequent SendInput fallback deterministic across desktops.
+    static_cast<void>(element.SetFocus());
+    UIA_HWND automationWindow = nullptr;
+    if (SUCCEEDED(element.get_CurrentNativeWindowHandle(&automationWindow)) &&
+        automationWindow != nullptr) {
+        const HWND window = static_cast<HWND>(automationWindow);
+        if (IsWindow(window) != FALSE) {
+            static_cast<void>(SetForegroundWindow(window));
+            static_cast<void>(BringWindowToTop(window));
+        }
+    }
+    static_cast<void>(element.SetFocus());
+}
+
+void setWatermarkText(IUIAutomation& automation, DWORD processId, const ChildProcess& process,
+                      int timeoutMilliseconds) {
+    const QString expectedText = QStringLiteral("MEMORY TEST WATERMARK");
+    ComPtr<IUIAutomationElement> editor = waitForVisibleElement(
+        automation, processId, QStringLiteral("screenshotWatermarkTextEdit"), process,
+        timeoutMilliseconds);
+    require(editor.get() != nullptr, "watermark text editor did not become visible");
+
+    clickElement(*editor.get());
+    focusElementForKeyboardInput(*editor.get());
+
+    bool acceptedByValuePattern = false;
+    ComPtr<IUIAutomationValuePattern> valuePattern;
+    if (SUCCEEDED(editor.get()->GetCurrentPatternAs(UIA_ValuePatternId,
+                                                     IID_PPV_ARGS(valuePattern.put()))) &&
+        valuePattern.get() != nullptr) {
+        const std::wstring expectedWide = expectedText.toStdWString();
+        BSTR expectedBstr = SysAllocString(expectedWide.c_str());
+        require(expectedBstr != nullptr, "could not allocate watermark text for UI Automation");
+        acceptedByValuePattern = SUCCEEDED(valuePattern.get()->SetValue(expectedBstr));
+        SysFreeString(expectedBstr);
+    }
+
+    if (!acceptedByValuePattern) {
+        // Fall back to keyboard input only when the provider does not implement SetValue. The
+        // explicit focus/foreground step is required because the toolbar click itself may leave
+        // focus on the popover host rather than the QLineEdit child.
+        focusElementForKeyboardInput(*editor.get());
+        selectFocusedText();
+        sendUnicodeText(expectedText);
+    }
+
+    // QLineEdit commits the normalized watermark through editingFinished when focus leaves it.
+    sendVirtualKey(VK_TAB);
+    sendVirtualKey(VK_TAB, true);
+
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMilliseconds);
+    while (process.alive() && std::chrono::steady_clock::now() < deadline) {
+        VisibleElementLookup lookup = findVisibleElementByAutomationIdSuffix(
+            automation, processId, QStringLiteral("screenshotWatermarkTextEdit"));
+        if (lookup.status == VisibleElementLookupStatus::Found) {
+            QString actualText;
+            if (readAutomationValue(*lookup.element.get(), &actualText) &&
+                actualText.trimmed() == expectedText) {
+                return;
+            }
+        }
+        std::this_thread::sleep_for(25ms);
+    }
+    require(false, "watermark text editor did not accept the expected text");
 }
 
 void closeNativeWindow(IUIAutomationElement& element, DWORD expectedProcessId) {
@@ -674,6 +814,77 @@ void dragFixedSelection(const RECT& monitor) {
     sendMouse(x0 + kSelectionPixels, y0 + kSelectionPixels, MOUSEEVENTF_MOVE);
     std::this_thread::sleep_for(80ms);
     sendMouse(x0 + kSelectionPixels, y0 + kSelectionPixels, MOUSEEVENTF_LEFTUP);
+}
+
+void dragCanvasRectangle(const RECT& monitor, int offsetX, int offsetY, int width, int height) {
+    const int monitorWidth = monitor.right - monitor.left;
+    const int monitorHeight = monitor.bottom - monitor.top;
+    require(monitorSupportsFixedSelectionDrag(monitor),
+            "selected monitor cannot contain the canvas drawing fixture");
+    const int x0 = monitor.left + (monitorWidth - kSelectionPixels) / 2 + offsetX;
+    const int y0 = monitor.top + (monitorHeight - kSelectionPixels) / 2 + offsetY;
+    sendMouse(x0, y0, MOUSEEVENTF_MOVE);
+    sendMouse(x0, y0, MOUSEEVENTF_LEFTDOWN);
+    std::this_thread::sleep_for(60ms);
+    sendMouse(x0 + width, y0 + height, MOUSEEVENTF_MOVE);
+    std::this_thread::sleep_for(60ms);
+    sendMouse(x0 + width, y0 + height, MOUSEEVENTF_LEFTUP);
+}
+
+void clickCanvasPoint(const RECT& monitor, int offsetX, int offsetY) {
+    const int monitorWidth = monitor.right - monitor.left;
+    const int monitorHeight = monitor.bottom - monitor.top;
+    require(monitorSupportsFixedSelectionDrag(monitor),
+            "selected monitor cannot contain the canvas drawing fixture");
+    const int x = monitor.left + (monitorWidth - kSelectionPixels) / 2 + offsetX;
+    const int y = monitor.top + (monitorHeight - kSelectionPixels) / 2 + offsetY;
+    sendMouse(x, y, MOUSEEVENTF_MOVE);
+    std::this_thread::sleep_for(25ms);
+    sendMouse(x, y, MOUSEEVENTF_LEFTDOWN);
+    sendMouse(x, y, MOUSEEVENTF_LEFTUP);
+}
+
+void dragCanvasLine(const RECT& monitor, int startOffsetX, int startOffsetY, int endOffsetX,
+                    int endOffsetY) {
+    const int monitorWidth = monitor.right - monitor.left;
+    const int monitorHeight = monitor.bottom - monitor.top;
+    require(monitorSupportsFixedSelectionDrag(monitor),
+            "selected monitor cannot contain the canvas drawing fixture");
+    const int x0 = monitor.left + (monitorWidth - kSelectionPixels) / 2 + startOffsetX;
+    const int y0 = monitor.top + (monitorHeight - kSelectionPixels) / 2 + startOffsetY;
+    const int x1 = monitor.left + (monitorWidth - kSelectionPixels) / 2 + endOffsetX;
+    const int y1 = monitor.top + (monitorHeight - kSelectionPixels) / 2 + endOffsetY;
+    sendMouse(x0, y0, MOUSEEVENTF_MOVE);
+    sendMouse(x0, y0, MOUSEEVENTF_LEFTDOWN);
+    std::this_thread::sleep_for(60ms);
+    sendMouse(x1, y1, MOUSEEVENTF_MOVE);
+    std::this_thread::sleep_for(60ms);
+    sendMouse(x1, y1, MOUSEEVENTF_LEFTUP);
+}
+
+void drawCanvasCurve(const RECT& monitor, int offsetX = 0, int offsetY = 0) {
+    const int monitorWidth = monitor.right - monitor.left;
+    const int monitorHeight = monitor.bottom - monitor.top;
+    require(monitorSupportsFixedSelectionDrag(monitor),
+            "selected monitor cannot contain the canvas drawing fixture");
+    const int x0 = monitor.left + (monitorWidth - kSelectionPixels) / 2;
+    const int y0 = monitor.top + (monitorHeight - kSelectionPixels) / 2;
+    const QVector<QPoint> curve{
+        QPoint(x0 + offsetX + 130, y0 + offsetY + 360),
+        QPoint(x0 + offsetX + 165, y0 + offsetY + 315),
+        QPoint(x0 + offsetX + 210, y0 + offsetY + 280),
+        QPoint(x0 + offsetX + 260, y0 + offsetY + 275),
+        QPoint(x0 + offsetX + 305, y0 + offsetY + 315),
+        QPoint(x0 + offsetX + 345, y0 + offsetY + 370),
+        QPoint(x0 + offsetX + 390, y0 + offsetY + 400)};
+    require(!curve.isEmpty(), "canvas curve fixture must contain points");
+    sendMouse(curve.constFirst().x(), curve.constFirst().y(), MOUSEEVENTF_MOVE);
+    sendMouse(curve.constFirst().x(), curve.constFirst().y(), MOUSEEVENTF_LEFTDOWN);
+    for (int index = 1; index < curve.size(); ++index) {
+        sendMouse(curve.at(index).x(), curve.at(index).y(), MOUSEEVENTF_MOVE);
+        std::this_thread::sleep_for(30ms);
+    }
+    sendMouse(curve.constLast().x(), curve.constLast().y(), MOUSEEVENTF_LEFTUP);
 }
 
 QVector<QJsonObject> readJsonLines(const QString& path) {
@@ -1501,25 +1712,75 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
                             "screenshot drawing-tool option did not become visible");
     };
 
-    // Shape, pen, text, serial number, filter, eraser, and watermark are standalone toolbar
-    // entries. Arrow/line and highlighter/spotlight are configured as two-option popovers, so
-    // reopen each popover for both options to exercise the actual tool switch.
-    const QStringList standaloneDrawingTools{
-        QStringLiteral("screenshotSelectButton"), QStringLiteral("screenshotShapeButton"),
-        QStringLiteral("screenshotFreeDrawButton"), QStringLiteral("screenshotTextButton"),
-        QStringLiteral("screenshotSerialNumberButton"), QStringLiteral("screenshotFilterButton"),
-        QStringLiteral("screenshotEraserButton"), QStringLiteral("screenshotWatermarkButton")};
-    for (const QString& buttonId : standaloneDrawingTools) {
-        clickDrawingTool(buttonId);
-    }
+    // Exercise the canvas, rather than only toggling toolbar state. Keep the gestures well inside
+    // the fixed selection so they cannot resize the selection border or hit the toolbar.
+    clickDrawingTool(QStringLiteral("screenshotShapeButton"));
+    dragCanvasRectangle(monitor.bounds, 100, 100, 260, 180);
+    clickDrawingTool(QStringLiteral("screenshotFreeDrawButton"));
+    drawCanvasCurve(monitor.bounds);
+
+    clickDrawingTool(QStringLiteral("screenshotWatermarkButton"));
+    setWatermarkText(automation, primary.processId(), primary,
+                     configuration.timeoutMilliseconds);
+
+    clickDrawingTool(QStringLiteral("screenshotTextButton"));
+    clickCanvasPoint(monitor.bounds, 470, 130);
+    sendUnicodeText(QStringLiteral("MEMORY TEST TEXT"));
+    commitCanvasText();
+    std::this_thread::sleep_for(100ms);
+
+    clickDrawingTool(QStringLiteral("screenshotSerialNumberButton"));
+    clickCanvasPoint(monitor.bounds, 520, 300);
+    std::this_thread::sleep_for(100ms);
+
+    clickDrawingTool(QStringLiteral("screenshotFilterButton"));
+    drawCanvasCurve(monitor.bounds, 0, 220);
+
+    // Erase through the original shape so the eraser exercises hit testing and deletion rather
+    // than only entering its mode.
+    clickDrawingTool(QStringLiteral("screenshotEraserButton"));
+    dragCanvasLine(monitor.bounds, 140, 140, 340, 240);
+
     clickGroupedDrawingTool(QStringLiteral("screenshotArrowLineButton"),
                             QStringLiteral("screenshotDrawingToolGroupOption-arrow"));
+    dragCanvasLine(monitor.bounds, 120, 500, 360, 500);
     clickGroupedDrawingTool(QStringLiteral("screenshotArrowLineButton"),
                             QStringLiteral("screenshotDrawingToolGroupOption-line"));
+    dragCanvasLine(monitor.bounds, 120, 540, 360, 540);
     clickGroupedDrawingTool(QStringLiteral("screenshotHighlightButton"),
                             QStringLiteral("screenshotDrawingToolGroupOption-highlighter"));
+    drawCanvasCurve(monitor.bounds, 250, 0);
     clickGroupedDrawingTool(QStringLiteral("screenshotHighlightButton"),
                             QStringLiteral("screenshotDrawingToolGroupOption-spotlight"));
+    dragCanvasRectangle(monitor.bounds, 470, 500, 180, 120);
+
+    // Exercise every recognition entry before entering scrolling mode. Table and QR share a
+    // popover, so explicitly select both options instead of relying on the remembered entry.
+    clickDrawingTool(QStringLiteral("screenshotTableQrButton"));
+    clickVisibleElement(automation, primary.processId(),
+                        QStringLiteral("screenshotTableRecognitionOptionButton"), primary,
+                        configuration.timeoutMilliseconds,
+                        "table recognition option did not become visible");
+    static_cast<void>(waitForLifecycleEvent(
+        lifecyclePath, primary.processId(), QStringLiteral("ocr_table_recognition_complete"),
+        lifecycleCursor, primary, configuration.timeoutMilliseconds));
+    clickDrawingTool(QStringLiteral("screenshotTableQrButton"));
+    // Opening the shared popover also activates its remembered table entry. Wait for that
+    // request before selecting QR so no table worker remains active when QR starts.
+    static_cast<void>(waitForLifecycleEvent(
+        lifecyclePath, primary.processId(), QStringLiteral("ocr_table_recognition_complete"),
+        lifecycleCursor, primary, configuration.timeoutMilliseconds));
+    clickVisibleElement(automation, primary.processId(),
+                        QStringLiteral("screenshotQrRecognitionOptionButton"), primary,
+                        configuration.timeoutMilliseconds,
+                        "QR recognition option did not become visible");
+    static_cast<void>(waitForLifecycleEvent(
+        lifecyclePath, primary.processId(), QStringLiteral("ocr_qr_recognition_complete"),
+        lifecycleCursor, primary, configuration.timeoutMilliseconds));
+    clickDrawingTool(QStringLiteral("screenshotOcrButton"));
+    static_cast<void>(waitForLifecycleEvent(
+        lifecyclePath, primary.processId(), QStringLiteral("ocr_text_recognition_complete"),
+        lifecycleCursor, primary, configuration.timeoutMilliseconds));
 
     clickDrawingTool(QStringLiteral("screenshotScrollingScreenshotButton"));
     require(waitForVisibleElement(automation, primary.processId(),
@@ -1543,11 +1804,27 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
                             configuration.pollMilliseconds, configuration.stabilityWindowSamples,
                             configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
 
-    clickDrawingTool(QStringLiteral("screenshotCancelButton"));
+    // Switching to Edit selection stops the scrolling stream and restores the selection toolbar;
+    // copy the resulting selection through the normal clipboard action to exercise its export
+    // path before the capture is released.
+    clickDrawingTool(QStringLiteral("screenshotMoveButton"));
     require(waitForElementToDisappear(automation, primary.processId(),
                                       QStringLiteral("screenshot-scrolling-thumbnail"), primary,
                                       configuration.timeoutMilliseconds),
-            "scrolling screenshot thumbnail did not close");
+            "scrolling screenshot thumbnail did not close after selecting Edit selection");
+    require(waitForVisibleElement(automation, primary.processId(),
+                                  QStringLiteral("screenshotSelectionToolbarPanel"), primary,
+                                  configuration.timeoutMilliseconds)
+                    .get() != nullptr,
+            "selection toolbar did not return after selecting Edit selection");
+    clickDrawingTool(QStringLiteral("screenshotCopyButton"));
+    scenarioTrace = waitForLifecycleEvent(lifecyclePath, primary.processId(),
+                                          QStringLiteral("capture_released"), lifecycleCursor,
+                                          primary, configuration.timeoutMilliseconds);
+    require(waitForElementToDisappear(automation, primary.processId(),
+                                      QStringLiteral("screenshot-scrolling-thumbnail"), primary,
+                                      configuration.timeoutMilliseconds),
+            "scrolling screenshot thumbnail did not close after copying");
     require(waitForElementToDisappear(automation, primary.processId(),
                                       QStringLiteral("screenshotSelectionToolbarPanel"), primary,
                                       configuration.timeoutMilliseconds),
@@ -1556,9 +1833,6 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
                                       QStringLiteral("screenshotCancelButton"), primary,
                                       configuration.timeoutMilliseconds),
             "screenshot toolbar did not close after ending screenshot");
-    scenarioTrace = waitForLifecycleEvent(lifecyclePath, primary.processId(),
-                                          QStringLiteral("capture_released"), lifecycleCursor,
-                                          primary, configuration.timeoutMilliseconds);
     // Keep the historical stage name as a report compatibility alias. The sample now represents
     // the normal screenshot teardown, rather than a pinned-window close.
     stages.closed =

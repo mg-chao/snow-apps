@@ -3105,6 +3105,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
 
     if (options.showMoveTool) {
         m_moveButton = addToolButton("Edit selection", custom_outlined_icons::ToolMove());
+        m_moveButton->setObjectName(QStringLiteral("screenshotMoveButton"));
         addButton(m_moveButton);
         connect(m_moveButton, &adqt::widgets::AdButton::clicked, this, [this]() {
             setActiveTool(Tool::Move);
@@ -3543,6 +3544,7 @@ void ScreenshotToolPalette::addMainActionButtons(const Options& options, QBoxLay
 
     if ((options.actions & CopyAction) != 0) {
         m_copyButton = addActionButton("Copy to clipboard", primaryIcon(outlined_icons::Copy()));
+        m_copyButton->setObjectName(QStringLiteral("screenshotCopyButton"));
         applyScreenshotShortcutTooltip(m_copyButton, QStringLiteral("Copy to clipboard"),
                                        QStringLiteral("copy_to_clipboard"));
         addButton(m_copyButton);
