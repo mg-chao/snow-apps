@@ -3026,6 +3026,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         tests/screenshot_memory_footprint_benchmark.cpp
     )
     target_link_libraries(snow-shot-screenshot-memory-footprint-benchmark PRIVATE
+        snow_shot_storage
         Qt6::Core
         ole32
         oleaut32

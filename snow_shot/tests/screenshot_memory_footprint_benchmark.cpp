@@ -15,7 +15,10 @@
 #include <QSysInfo>
 #include <QStringList>
 #include <QTemporaryDir>
+#include <QUuid>
 #include <QVector>
+
+#include "snow_shot/storage/capturehistoryrepository.h"
 
 #include <Windows.h>
 #include <UIAutomation.h>
@@ -44,11 +47,113 @@ using namespace std::chrono_literals;
 constexpr qint64 kBytesPerKibibyte = 1024;
 constexpr qint64 kBytesPerMebibyte = 1024 * 1024;
 constexpr int kSelectionPixels = 800;
+constexpr int kMainInterfaceHistoryRecordCount = 10;
+constexpr QSize kMainInterfaceHistoryDisplaySize(1920, 1080);
+constexpr QSize kMainInterfaceHistoryResultSize(1280, 720);
+constexpr auto kE2eStorageDirectoryEnvironment = "SNOW_SHOT_E2E_STORAGE_DIRECTORY";
 
 void require(bool condition, const char* message) {
     if (!condition) {
         throw std::runtime_error(message);
     }
+}
+
+struct MainInterfaceHistoryFixture {
+    QString newestRecordId;
+    int recordCount = 0;
+};
+
+snow_shot::storage::CaptureHistoryDraft
+mainInterfaceHistoryDraft(int index, const QDateTime& createdUtc,
+                          const QSize& displaySize = kMainInterfaceHistoryDisplaySize,
+                          const QSize& resultSize = kMainInterfaceHistoryResultSize) {
+    using snow_shot::storage::CaptureHistoryDisplayDraft;
+    using snow_shot::storage::CaptureHistoryDraft;
+    using snow_shot::storage::CaptureHistorySource;
+
+    CaptureHistoryDraft draft;
+    draft.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    draft.createdUtc = createdUtc.addSecs(-index * 3 * 60 * 60);
+    draft.canvasBounds = QRect(QPoint(0, 0), displaySize);
+    draft.selection.rectangle =
+        QRect(QPoint(std::max(0, (displaySize.width() - resultSize.width()) / 2),
+                     std::max(0, (displaySize.height() - resultSize.height()) / 2)),
+              resultSize);
+    draft.selection.cornerRadius = index % 3 == 0 ? 8 : 0;
+    draft.selection.shadowWidth = index % 3 == 0 ? 12 : 0;
+    draft.selection.shadowColor = QColor(0, 0, 0, 96);
+    draft.canvasHistory =
+        QByteArrayLiteral("{\"schemaVersion\":1,\"document\":{},\"history\":{}}");
+
+    QImage displayImage(displaySize, QImage::Format_RGB32);
+    displayImage.fill(QColor::fromHsv((index * 37) % 360, 120, 205));
+    draft.displays.push_back(CaptureHistoryDisplayDraft{
+        QStringLiteral("display-primary"), QStringLiteral("Primary display"),
+        std::move(displayImage)});
+    QImage secondaryDisplayImage(displaySize, QImage::Format_RGB32);
+    secondaryDisplayImage.fill(QColor::fromHsv((index * 37 + 97) % 360, 135, 190));
+    draft.displays.push_back(CaptureHistoryDisplayDraft{
+        QStringLiteral("display-secondary"), QStringLiteral("Secondary display"),
+        std::move(secondaryDisplayImage)});
+
+    QImage resultImage(resultSize, QImage::Format_RGB32);
+    resultImage.fill(QColor::fromHsv((index * 37 + 18) % 360, 145, 225));
+    draft.resultImage = std::move(resultImage);
+
+    switch (index % 4) {
+    case 0:
+        draft.source = CaptureHistorySource::CopiedToClipboard;
+        break;
+    case 1:
+        draft.source = CaptureHistorySource::PinnedToScreen;
+        break;
+    case 2:
+        draft.source = CaptureHistorySource::CurrentMonitor;
+        break;
+    default:
+        draft.source = CaptureHistorySource::FocusedWindow;
+        break;
+    }
+    return draft;
+}
+
+MainInterfaceHistoryFixture seedMainInterfaceHistory(
+    const QString& storageDirectory, int recordCount = kMainInterfaceHistoryRecordCount,
+    const QSize& displaySize = kMainInterfaceHistoryDisplaySize,
+    const QSize& resultSize = kMainInterfaceHistoryResultSize) {
+    require(recordCount > 0, "main-interface history fixture must contain records");
+    require(displaySize.isValid() && resultSize.isValid() &&
+                displaySize.width() >= resultSize.width() &&
+                displaySize.height() >= resultSize.height(),
+            "main-interface history fixture image sizes are invalid");
+
+    auto repository =
+        snow_shot::storage::makeCaptureHistoryRepository(storageDirectory);
+    const QDateTime createdUtc = QDateTime::currentDateTimeUtc();
+    for (int index = 0; index < recordCount; ++index) {
+        const snow_shot::storage::CaptureHistoryPublishResult result =
+            repository
+                ->publish(mainInterfaceHistoryDraft(index, createdUtc, displaySize, resultSize))
+                .get();
+        require(result.storage.success, "could not seed main-interface screenshot history");
+    }
+    repository->drain();
+    const QVector<snow_shot::storage::CaptureHistoryRecord> records = repository->records();
+    require(records.size() == recordCount,
+            "main-interface screenshot-history fixture is incomplete");
+    return {records.constFirst().id, static_cast<int>(records.size())};
+}
+
+QJsonObject mainInterfaceHistoryFixtureDescription(
+    int recordCount = kMainInterfaceHistoryRecordCount) {
+    return {{QStringLiteral("preexisting_before_measured_process"), true},
+            {QStringLiteral("record_count"), recordCount},
+            {QStringLiteral("displays_per_record"), 2},
+            {QStringLiteral("display_width"), kMainInterfaceHistoryDisplaySize.width()},
+            {QStringLiteral("display_height"), kMainInterfaceHistoryDisplaySize.height()},
+            {QStringLiteral("result_width"), kMainInterfaceHistoryResultSize.width()},
+            {QStringLiteral("result_height"), kMainInterfaceHistoryResultSize.height()},
+            {QStringLiteral("source_kinds"), 4}};
 }
 
 void configurePerMonitorDpiAwareness() {
@@ -1271,6 +1376,20 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
     const ScopedEnvironmentVariable pinEnvironment(QByteArrayLiteral("SNOW_SHOT_PIN_PERF_TRACE"),
                                                    QFile::encodeName(pinPath));
 
+    const QString sampleStorageTemplate =
+        QDir(QDir(configuration.outputDirectory).absolutePath())
+            .filePath(QStringLiteral("sample-%1-storage-XXXXXX")
+                          .arg(iteration, 3, 10, QLatin1Char('0')));
+    QTemporaryDir sampleStorage(sampleStorageTemplate);
+    require(sampleStorage.isValid(), "could not create isolated sample storage");
+    const ScopedEnvironmentVariable storageEnvironment(
+        QByteArray(kE2eStorageDirectoryEnvironment), QFile::encodeName(sampleStorage.path()));
+
+    MainInterfaceHistoryFixture historyFixture;
+    if (configuration.scenario == BenchmarkScenario::MainInterface) {
+        historyFixture = seedMainInterfaceHistory(sampleStorage.path());
+    }
+
     const QString instanceId = QStringLiteral("memory-%1-%2-%3")
                                    .arg(GetCurrentProcessId())
                                    .arg(iteration)
@@ -1311,6 +1430,23 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
                                   configuration.timeoutMilliseconds)
                     .get() != nullptr,
             "screenshot history did not become visible");
+    require(waitForVisibleElement(
+                automation, primary.processId(),
+                QStringLiteral("screenshotHistoryEntry-%1").arg(historyFixture.newestRecordId),
+                primary, configuration.timeoutMilliseconds)
+                    .get() != nullptr,
+            "screenshot history did not load the pre-existing records");
+    require(waitForVisibleElement(automation, primary.processId(),
+                                  QStringLiteral("screenshotHistoryImage"), primary,
+                                  configuration.timeoutMilliseconds)
+                    .get() != nullptr,
+            "screenshot history did not resolve a pre-existing record preview");
+    // Keep the populated page visible through a stable window so its thumbnail decode and cache
+    // work complete before the second lazy page replaces it.
+    static_cast<void>(
+        waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
+                            configuration.pollMilliseconds, configuration.stabilityWindowSamples,
+                            configuration.stabilityRangeBytes, configuration.timeoutMilliseconds));
     forwardCommand(configuration, baseArguments,
                    QStringLiteral("--e2e-open-interface-settings"));
     require(waitForVisibleElement(automation, primary.processId(),
@@ -1662,6 +1798,11 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
          mib(stages.active.bytes)},
         {metadata.closedStage + QStringLiteral("_private_working_set_mib"),
          mib(stages.closed.bytes)},
+        {QStringLiteral("main_interface_history_fixture"),
+         configuration.scenario == BenchmarkScenario::MainInterface
+             ? QJsonValue(
+                   mainInterfaceHistoryFixtureDescription(historyFixture.recordCount))
+             : QJsonValue(QJsonValue::Null)},
         {QStringLiteral("monitor"), monitorReport},
         {QStringLiteral("traces"),
          QJsonObject{{QStringLiteral("lifecycle"), QDir::toNativeSeparators(lifecyclePath)},
@@ -1882,6 +2023,10 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
              {QStringLiteral("final_idle_tolerance_kib"),
               configuration.scenarioReclaimToleranceBytes / kBytesPerKibibyte},
              {QStringLiteral("timeout_ms"), configuration.timeoutMilliseconds}}},
+        {QStringLiteral("main_interface_history_fixture"),
+         configuration.scenario == BenchmarkScenario::MainInterface
+             ? QJsonValue(mainInterfaceHistoryFixtureDescription())
+             : QJsonValue(QJsonValue::Null)},
         {QStringLiteral("metrics"), metrics},
         {QStringLiteral("scenario_reclaim_vs_cold_start"), reclaimSummary},
         {QStringLiteral("final_idle_vs_cold_start"),
@@ -1912,6 +2057,21 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
 }
 
 bool runSelfTest() {
+    QTemporaryDir historyStorage;
+    require(historyStorage.isValid(), "history fixture self-test directory is unavailable");
+    const MainInterfaceHistoryFixture historyFixture =
+        seedMainInterfaceHistory(historyStorage.path(), 3, QSize(64, 48), QSize(32, 24));
+    {
+        auto recovered =
+            snow_shot::storage::makeCaptureHistoryRepository(historyStorage.path());
+        const QVector<snow_shot::storage::CaptureHistoryRecord> records = recovered->records();
+        require(records.size() == 3 && records.constFirst().id == historyFixture.newestRecordId &&
+                    records.constFirst().result.has_value() &&
+                    recovered->displayAssets(records.constFirst()).has_value() &&
+                    recovered->load(records.constFirst()).has_value() &&
+                    recovered->loadResultImage(records.constFirst()).has_value(),
+                "history fixture did not reopen as existing screenshot-history records");
+    }
     require(statistics(QVector<double>{1.0, 2.0, 3.0, 4.0, 5.0})
                     .value(QStringLiteral("p50_mib"))
                     .toDouble() == 3.0,

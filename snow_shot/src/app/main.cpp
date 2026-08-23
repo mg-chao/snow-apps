@@ -17,6 +17,7 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDebug>
+#include <QDir>
 #include <QRegularExpression>
 #include <QString>
 #include <QTimer>
@@ -36,10 +37,12 @@ int main(int argc, char* argv[]) {
                 std::char_traits<char>::length(e2eInstancePrefix)));
         }
     }
-    if (e2eCaptureEnabled &&
+    const bool isolatedE2eInstance =
+        e2eCaptureEnabled &&
         QRegularExpression(QStringLiteral("^[A-Za-z0-9_-]{1,64}$"))
             .match(e2eInstanceId)
-            .hasMatch()) {
+            .hasMatch();
+    if (isolatedE2eInstance) {
         applicationName += QStringLiteral("-e2e-") + e2eInstanceId;
     }
     QCoreApplication::setApplicationName(applicationName);
@@ -64,7 +67,24 @@ int main(int argc, char* argv[]) {
         return 2;
     }
 
-    static_cast<void>(snow_shot::storage::ApplicationStorage::instance().initialize());
+    snow_shot::storage::StorageInitializationOptions storageOptions;
+#if defined(SNOW_SHOT_SCREENSHOT_MEMORY_FOOTPRINT_INSTRUMENTATION)
+    const QString e2eStorageDirectory =
+        qEnvironmentVariable("SNOW_SHOT_E2E_STORAGE_DIRECTORY").trimmed();
+    if (isolatedE2eInstance && !e2eStorageDirectory.isEmpty()) {
+        if (!QDir::isAbsolutePath(e2eStorageDirectory)) {
+            qWarning("The E2E storage directory must be absolute");
+            return 2;
+        }
+        const QString isolatedStoragePath = QDir::cleanPath(e2eStorageDirectory);
+        // Treat the benchmark directory as both the executable and AppData roots so a portable
+        // marker beside the measured binary cannot redirect the test into normal user storage.
+        storageOptions.executableDirectory = isolatedStoragePath;
+        storageOptions.appDataDirectory = isolatedStoragePath;
+    }
+#endif
+    static_cast<void>(
+        snow_shot::storage::ApplicationStorage::instance().initialize(storageOptions));
     if (snow_shot::platform::windows::AutoStartRegistration::isSupported()) {
         const bool enabled = snow_shot::storage::SystemSettings().autoStartAtBoot();
         QString error;
