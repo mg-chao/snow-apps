@@ -2227,7 +2227,7 @@ void ScreenshotPinnedWindow::createContextMenu() {
     m_showMainInterfaceAction->setObjectName(
         QStringLiteral("screenshotPinnedShowMainInterfaceAction"));
     connect(m_showMainInterfaceAction, &QAction::triggered, this,
-            &ScreenshotPinnedWindow::showMainWindowRequested);
+            &ScreenshotPinnedWindow::showApplicationInterfaceRequested);
     m_closeAction = m_contextMenu->addItem(tr("Close"), outlined_icons::Close());
     setActionTranslationSource(m_closeAction, "Close");
     m_closeAction->setObjectName(QStringLiteral("screenshotPinnedCloseAction"));

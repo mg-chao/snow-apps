@@ -242,7 +242,7 @@ class SystemTrayController::Impl {
                          [this](QSystemTrayIcon::ActivationReason reason) {
                              if (reason == QSystemTrayIcon::Trigger) {
                                  if (leftClickAction == QStringLiteral("show_main_window")) {
-                                     emit q.showMainWindowRequested();
+                                     emit q.showApplicationInterfaceRequested();
                                  } else {
                                      emit q.screenshotRequested();
                                  }
@@ -292,7 +292,7 @@ class SystemTrayController::Impl {
                     break;
                 case settings::SettingsTrayMenuOptionKind::ShowMainWindow:
                     QObject::connect(action, &QAction::triggered, &q,
-                                     &SystemTrayController::showMainWindowRequested);
+                                     &SystemTrayController::showApplicationInterfaceRequested);
                     break;
                 case settings::SettingsTrayMenuOptionKind::Exit:
                     menu->setActionDanger(action);

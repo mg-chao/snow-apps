@@ -44,7 +44,7 @@ class SystemTrayController final : public QObject {
 
   signals:
     void screenshotRequested();
-    void showMainWindowRequested();
+    void showApplicationInterfaceRequested();
     void quickActionRequested(snow_shot::presentation::GlobalShortcutAction action);
     void shortcutFunctionsDisabledChanged(bool disabled);
     void transientUiHidden();

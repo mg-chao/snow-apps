@@ -324,7 +324,7 @@ int main(int argc, char* argv[]) {
                      &snow_shot::presentation::SystemTrayController::screenshotRequested,
                      [&screenshotRequests]() { ++screenshotRequests; });
     QObject::connect(&controller,
-                     &snow_shot::presentation::SystemTrayController::showMainWindowRequested,
+                     &snow_shot::presentation::SystemTrayController::showApplicationInterfaceRequested,
                      [&showMainWindowRequests]() { ++showMainWindowRequests; });
     QObject::connect(&controller, &snow_shot::presentation::SystemTrayController::exitRequested,
                      [&exitRequests]() { ++exitRequests; });

@@ -9,6 +9,7 @@
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/screenshotselectionshadowrenderer.h"
 #include "snow_shot/presentation/systemtraycontroller.h"
+#include "snow_shot/presentation/settings/settingsruntimebindings.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "../presentation/services/screenshotlifecycleperfinstrumentation.h"
@@ -85,7 +86,8 @@ class ApplicationController::Impl {
                                  controller->startCapture();
                              }
                          });
-        QObject::connect(&systemTray, &presentation::SystemTrayController::showMainWindowRequested,
+        QObject::connect(&systemTray,
+                         &presentation::SystemTrayController::showApplicationInterfaceRequested,
                          &q, [this]() { showMainWindow(); });
         QObject::connect(&systemTray, &presentation::SystemTrayController::exitRequested, &q,
                          [this]() {
@@ -127,6 +129,8 @@ class ApplicationController::Impl {
         if (!applicationStorage.isInitialized()) {
             static_cast<void>(applicationStorage.initialize());
         }
+        runtimeBindings = std::make_unique<presentation::settings::BuiltInSettingsRuntimeBindings>(
+            globalShortcutManager);
         auto& configuration = applicationStorage.configuration();
         applyRuntimeConfiguration(configuration.value(kPinBorderColorKey), kPinBorderColorKey);
         applyRuntimeConfiguration(configuration.value(kTrayEnabledKey), kTrayEnabledKey);
@@ -176,7 +180,7 @@ class ApplicationController::Impl {
         if (screenshotController == nullptr) {
             screenshotController = std::make_unique<ScreenshotController>();
             QObject::connect(screenshotController.get(),
-                             &ScreenshotController::showMainWindowRequested, &q,
+                             &ScreenshotController::showApplicationInterfaceRequested, &q,
                              [this]() { showMainWindow(); });
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::idleResourcesReleased, &q,
@@ -214,9 +218,7 @@ class ApplicationController::Impl {
     MainWindow& ensureMainWindow() {
         if (mainWindow == nullptr) {
             prewarmTimer.stop();
-            ScreenshotController* controller = ensureScreenshotController();
-            Q_ASSERT(controller != nullptr);
-            mainWindow = std::make_unique<MainWindow>(*controller, globalShortcutManager);
+            mainWindow = std::make_unique<MainWindow>(*runtimeBindings);
             QObject::connect(
                 mainWindow.get(), &MainWindow::closed, &q,
                 [this, closedWindow = QPointer<MainWindow>(mainWindow.get())]() {
@@ -232,11 +234,23 @@ class ApplicationController::Impl {
                         scheduleIdleMemoryReclaim();
                     });
                 });
-            QObject::connect(mainWindow.get(), &MainWindow::firstFramePresented, &q,
-                             [this]() { prewarmScreenshotResources(); });
             QObject::connect(mainWindow.get(), &MainWindow::quickActionRequested, &q,
                              [this](presentation::GlobalShortcutAction action) {
                                  dispatchQuickAction(action);
+                             });
+            QObject::connect(mainWindow.get(), &MainWindow::screenshotRequested, &q,
+                             [this]() {
+                                 beginForegroundOperation();
+                                 if (ScreenshotController* controller = ensureScreenshotController()) {
+                                     controller->startCapture();
+                                 }
+                             });
+            QObject::connect(mainWindow.get(), &MainWindow::screenshotHistoryEditRequested, &q,
+                             [this](const QString& recordId) {
+                                 beginForegroundOperation();
+                                 if (ScreenshotController* controller = ensureScreenshotController()) {
+                                     controller->editHistoryRecord(recordId);
+                                 }
                              });
             if (!screenshotResourcesPrewarmStarted) {
                 prewarmTimer.start(kFirstFramePrewarmFallbackMs);
@@ -446,6 +460,7 @@ class ApplicationController::Impl {
     QApplication& app;
     presentation::SystemTrayController systemTray;
     presentation::GlobalShortcutManager globalShortcutManager;
+    std::unique_ptr<presentation::settings::SettingsRuntimeBindings> runtimeBindings;
     std::unique_ptr<ScreenshotController> screenshotController;
     std::unique_ptr<MainWindow> mainWindow;
     QTimer prewarmTimer;

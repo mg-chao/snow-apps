@@ -113,7 +113,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     [[nodiscard]] static bool runtimeTrayEnabled();
 
   signals:
-    void showMainWindowRequested();
+    void showApplicationInterfaceRequested();
 
   private:
     friend class ScreenshotPinnedEditController;

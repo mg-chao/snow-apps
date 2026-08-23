@@ -788,7 +788,7 @@ void ScreenshotController::Impl::createSelectionWorkflows() {
         m_canvasRuntime, m_ocrRecognition.get(), m_qrRecognition.get(), m_tableRecognition.get(),
         [controller = QPointer<ScreenshotController>(&owner)]() {
             if (controller != nullptr) {
-                emit controller->showMainWindowRequested();
+                emit controller->showApplicationInterfaceRequested();
             }
         },
         [controller = QPointer<ScreenshotController>(&owner)]() {

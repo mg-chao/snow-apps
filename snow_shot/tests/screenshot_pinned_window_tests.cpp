@@ -1163,7 +1163,7 @@ void pinnedContextMenuAndModes(SnowCanvasRuntime& sourceRuntime) {
             "pinned menu should not expose a Move Cursor item");
 
     int showMainWindowRequests = 0;
-    QObject::connect(pinnedWindow, &ScreenshotPinnedWindow::showMainWindowRequested,
+    QObject::connect(pinnedWindow, &ScreenshotPinnedWindow::showApplicationInterfaceRequested,
                      [&showMainWindowRequests]() { ++showMainWindowRequests; });
     ScreenshotPinnedWindow::setRuntimeTrayEnabled(false);
     const QList<QAction*> noTrayActions = menu->actions();

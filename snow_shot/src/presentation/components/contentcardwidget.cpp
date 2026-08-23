@@ -13,12 +13,26 @@
 
 ContentCardWidget::ContentCardWidget(
     const snow_shot::presentation::settings::SettingsCatalog& catalog,
+    snow_shot::presentation::settings::SettingsRuntimeBindings& bindings, QWidget* parent)
+    : QFrame(parent), m_catalog(catalog),
+      m_runtimeBindings(&bindings),
+      m_colorScheme(snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme()) {
+    initializeUi();
+}
+
+ContentCardWidget::ContentCardWidget(
+    const snow_shot::presentation::settings::SettingsCatalog& catalog,
     snow_shot::presentation::GlobalShortcutManager& shortcutManager, QWidget* parent)
     : QFrame(parent), m_catalog(catalog),
-      m_runtimeBindings(
+      m_ownedRuntimeBindings(
           std::make_unique<snow_shot::presentation::settings::BuiltInSettingsRuntimeBindings>(
               shortcutManager, this)),
+      m_runtimeBindings(m_ownedRuntimeBindings.get()),
       m_colorScheme(snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme()) {
+    initializeUi();
+}
+
+void ContentCardWidget::initializeUi() {
     setFrameShape(QFrame::NoFrame);
     setLineWidth(0);
     setAutoFillBackground(false);

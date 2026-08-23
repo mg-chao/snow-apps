@@ -72,7 +72,7 @@ class ScreenshotController : public QObject {
     void hideColorPickersForScreenshotUi();
 
   signals:
-    void showMainWindowRequested();
+    void showApplicationInterfaceRequested();
     void idleResourcesReleased(bool trimWorkingSet);
 
   private:

@@ -28,6 +28,11 @@ class ContentCardWidget final : public QFrame {
 
   public:
     ContentCardWidget(const snow_shot::presentation::settings::SettingsCatalog& catalog,
+                      snow_shot::presentation::settings::SettingsRuntimeBindings& bindings,
+                      QWidget* parent = nullptr);
+    // Kept for standalone callers that construct the settings surface directly. Application
+    // windows should pass an externally-owned runtime binding instead.
+    ContentCardWidget(const snow_shot::presentation::settings::SettingsCatalog& catalog,
                       snow_shot::presentation::GlobalShortcutManager& shortcutManager,
                       QWidget* parent = nullptr);
     ~ContentCardWidget() override;
@@ -56,12 +61,15 @@ class ContentCardWidget final : public QFrame {
     void changeEvent(QEvent* event) override;
 
   private:
+    void initializeUi();
     QWidget* ensureRouteWidget(
         const snow_shot::presentation::settings::SettingsPageDefinition& pageDefinition);
     void handleCommand(const snow_shot::presentation::settings::SettingsCommand& command);
 
     const snow_shot::presentation::settings::SettingsCatalog& m_catalog;
-    std::unique_ptr<snow_shot::presentation::settings::SettingsRuntimeBindings> m_runtimeBindings;
+    std::unique_ptr<snow_shot::presentation::settings::SettingsRuntimeBindings>
+        m_ownedRuntimeBindings;
+    snow_shot::presentation::settings::SettingsRuntimeBindings* m_runtimeBindings = nullptr;
     QStackedWidget* m_stack = nullptr;
     QHash<QString, int> m_routePageIndices;
     QHash<QString, QWidget*> m_routeWidgetsById;
