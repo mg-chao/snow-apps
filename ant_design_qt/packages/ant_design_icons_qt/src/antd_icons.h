@@ -7,1668 +7,845 @@
 namespace adqt::icons::antd {
 
 ADQT_ICONS_EXPORT const adqt::icons::ExternalIconPack& pack();
-ADQT_ICONS_EXPORT adqt::icons::IconPackRegistrationResult registerWith(
-    adqt::icons::IconRegistry& registry);
+ADQT_ICONS_EXPORT adqt::icons::IconPackRegistrationResult registerWith(adqt::icons::IconRegistry& registry);
 ADQT_ICONS_EXPORT adqt::icons::IconPackRegistrationResult ensureRegistered();
 
 namespace filled {
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AccountBook(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Alert(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AlipayCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AlipaySquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Aliwangwang(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AmazonCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AmazonSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Android(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Api(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Apple(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Appstore(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Audio(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Backward(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bank(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BehanceCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BehanceSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bell(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bilibili(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Book(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BoxPlot(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bug(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Build(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bulb(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Calculator(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Calendar(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Camera(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Car(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CaretDown(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CaretLeft(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CaretRight(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CaretUp(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CarryOut(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CheckCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CheckSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Chrome(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CiCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ClockCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CloseCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CloseSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Cloud(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Code(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CodeSandboxCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CodeSandboxSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CodepenCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CodepenSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Compass(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Contacts(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Container(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Control(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Copy(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CopyrightCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CreditCard(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Crown(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CustomerService(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dashboard(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Database(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef IconDelete(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Diff(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DingtalkCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DingtalkSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Discord(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dislike(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DollarCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DownCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DownSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DribbbleCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DribbbleSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DropboxCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DropboxSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Edit(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Environment(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef EuroCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ExclamationCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Experiment(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Eye(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef EyeInvisible(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Facebook(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FastBackward(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FastForward(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef File(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileAdd(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileExcel(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileExclamation(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileImage(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileMarkdown(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FilePdf(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FilePpt(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileText(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileUnknown(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileWord(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileZip(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Filter(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Fire(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Flag(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Folder(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FolderAdd(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FolderOpen(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FormatPainter(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Forward(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Frown(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Fund(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FunnelPlot(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Gift(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Github(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Gitlab(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Gold(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Golden(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef GoogleCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef GooglePlusCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef GooglePlusSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef GoogleSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Hdd(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Heart(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Highlight(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Home(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Hourglass(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Html5(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Idcard(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef IeCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef IeSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef InfoCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Instagram(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Insurance(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Interaction(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Layout(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef LeftCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef LeftSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Like(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Linkedin(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Lock(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MacCommand(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Mail(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MedicineBox(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MediumCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MediumSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Meh(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Merge(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Message(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MinusCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MinusSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Mobile(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MoneyCollect(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Moon(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Muted(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Notification(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef OpenAI(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PauseCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PayCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Phone(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Picture(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PieChart(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Pinterest(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlayCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlaySquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlusCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlusSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PoundCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Printer(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Product(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Profile(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Project(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PropertySafety(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Pushpin(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef QqCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef QqSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef QuestionCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Read(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Reconciliation(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RedEnvelope(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RedditCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RedditSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Rest(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RightCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RightSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Robot(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Rocket(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SafetyCertificate(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Save(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Schedule(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SecurityScan(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Setting(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Shop(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Shopping(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Signal(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Signature(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SketchCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SketchSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Skin(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Skype(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SlackCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SlackSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sliders(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Smile(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Snippets(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sound(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Spotify(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Star(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef StepBackward(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef StepForward(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Stop(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sun(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Switcher(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tablet(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tag(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tags(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef TaobaoCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef TaobaoSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Thunderbolt(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef TikTok(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tool(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef TrademarkCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Trophy(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Truck(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Twitch(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef TwitterCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef TwitterSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Unlock(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UpCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UpSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Usb(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef VideoCamera(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Wallet(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Warning(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Wechat(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef WechatWork(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef WeiboCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef WeiboSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Windows(
-    const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AccountBook(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Alert(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AlipayCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AlipaySquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Aliwangwang(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AmazonCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AmazonSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Android(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Api(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Apple(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Appstore(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Audio(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Backward(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bank(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BehanceCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BehanceSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bell(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bilibili(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Book(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BoxPlot(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bug(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Build(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bulb(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Calculator(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Calendar(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Camera(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Car(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CaretDown(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CaretLeft(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CaretRight(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CaretUp(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CarryOut(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CheckCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CheckSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Chrome(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CiCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ClockCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CloseCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CloseSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Cloud(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Code(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CodeSandboxCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CodeSandboxSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CodepenCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CodepenSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Compass(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Contacts(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Container(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Control(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Copy(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CopyrightCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CreditCard(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Crown(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CustomerService(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dashboard(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Database(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef IconDelete(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Diff(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DingtalkCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DingtalkSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Discord(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dislike(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DollarCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DownCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DownSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DribbbleCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DribbbleSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DropboxCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DropboxSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Edit(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Environment(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef EuroCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ExclamationCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Experiment(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Eye(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef EyeInvisible(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Facebook(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FastBackward(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FastForward(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef File(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileAdd(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileExcel(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileExclamation(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileImage(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileMarkdown(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FilePdf(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FilePpt(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileText(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileUnknown(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileWord(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileZip(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Filter(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Fire(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Flag(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Folder(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FolderAdd(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FolderOpen(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FormatPainter(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Forward(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Frown(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Fund(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FunnelPlot(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Gift(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Github(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Gitlab(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Gold(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Golden(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef GoogleCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef GooglePlusCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef GooglePlusSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef GoogleSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Hdd(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Heart(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Highlight(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Home(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Hourglass(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Html5(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Idcard(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef IeCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef IeSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef InfoCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Instagram(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Insurance(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Interaction(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Layout(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef LeftCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef LeftSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Like(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Linkedin(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Lock(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MacCommand(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Mail(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MedicineBox(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MediumCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MediumSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Meh(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Merge(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Message(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MinusCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MinusSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Mobile(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MoneyCollect(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Moon(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Muted(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Notification(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef OpenAI(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PauseCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PayCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Phone(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Picture(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PieChart(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Pinterest(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlayCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlaySquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlusCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlusSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PoundCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Printer(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Product(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Profile(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Project(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PropertySafety(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Pushpin(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef QqCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef QqSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef QuestionCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Read(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Reconciliation(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RedEnvelope(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RedditCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RedditSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Rest(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RightCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RightSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Robot(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Rocket(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SafetyCertificate(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Save(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Schedule(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SecurityScan(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Setting(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Shop(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Shopping(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Signal(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Signature(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SketchCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SketchSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Skin(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Skype(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SlackCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SlackSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sliders(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Smile(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Snippets(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sound(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Spotify(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Star(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef StepBackward(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef StepForward(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Stop(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sun(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Switcher(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tablet(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tag(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tags(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef TaobaoCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef TaobaoSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Thunderbolt(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef TikTok(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tool(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef TrademarkCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Trophy(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Truck(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Twitch(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef TwitterCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef TwitterSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Unlock(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UpCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UpSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Usb(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef VideoCamera(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Wallet(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Warning(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Wechat(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef WechatWork(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef WeiboCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef WeiboSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Windows(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef X(const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Yahoo(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Youtube(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Yuque(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ZhihuCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ZhihuSquare(
-    const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Yahoo(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Youtube(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Yuque(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ZhihuCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ZhihuSquare(const adqt::icons::IconColors& colors = {});
 }  // namespace filled
 
 namespace outlined {
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AccountBook(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Aim(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Alert(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Alibaba(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AlignCenter(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AlignLeft(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AlignRight(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Alipay(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AlipayCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Aliwangwang(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Aliyun(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Amazon(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Android(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AntCloud(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AntDesign(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Apartment(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Api(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Apple(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Appstore(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AppstoreAdd(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AreaChart(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ArrowDown(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ArrowLeft(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ArrowRight(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ArrowUp(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ArrowsAlt(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Audio(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AudioMuted(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Audit(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Backward(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Baidu(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bank(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BarChart(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Barcode(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bars(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Behance(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BehanceSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bell(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BgColors(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bilibili(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Block(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bold(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Book(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Border(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BorderBottom(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BorderHorizontal(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BorderInner(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BorderLeft(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BorderOuter(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BorderRight(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BorderTop(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BorderVerticle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BorderlessTable(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BoxPlot(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Branches(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bug(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Build(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bulb(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Calculator(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Calendar(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Camera(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Car(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CaretDown(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CaretLeft(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CaretRight(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CaretUp(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CarryOut(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Check(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CheckCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CheckSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Chrome(
-    const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AccountBook(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Aim(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Alert(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Alibaba(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AlignCenter(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AlignLeft(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AlignRight(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Alipay(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AlipayCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Aliwangwang(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Aliyun(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Amazon(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Android(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AntCloud(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AntDesign(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Apartment(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Api(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Apple(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Appstore(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AppstoreAdd(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AreaChart(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ArrowDown(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ArrowLeft(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ArrowRight(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ArrowUp(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ArrowsAlt(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Audio(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AudioMuted(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Audit(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Backward(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Baidu(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bank(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BarChart(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Barcode(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bars(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Behance(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BehanceSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bell(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BgColors(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bilibili(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Block(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bold(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Book(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Border(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BorderBottom(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BorderHorizontal(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BorderInner(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BorderLeft(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BorderOuter(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BorderRight(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BorderTop(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BorderVerticle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BorderlessTable(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BoxPlot(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Branches(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bug(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Build(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bulb(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Calculator(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Calendar(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Camera(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Car(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CaretDown(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CaretLeft(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CaretRight(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CaretUp(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CarryOut(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Check(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CheckCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CheckSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Chrome(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Ci(const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CiCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Clear(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ClockCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Close(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CloseCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CloseSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Cloud(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CloudDownload(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CloudServer(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CloudSync(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CloudUpload(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Cluster(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Code(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CodeSandbox(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Codepen(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CodepenCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Coffee(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Comment(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Compass(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Compress(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ConsoleSql(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Contacts(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Container(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Control(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Copy(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Copyright(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CopyrightCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CreditCard(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Crown(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CustomerService(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dash(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dashboard(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Database(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef IconDelete(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DeleteColumn(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DeleteRow(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DeliveredProcedure(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DeploymentUnit(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Desktop(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Diff(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dingding(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dingtalk(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Disconnect(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Discord(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dislike(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Docker(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dollar(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DollarCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DotChart(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DotNet(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DoubleLeft(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DoubleRight(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Down(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DownCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DownSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Download(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Drag(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dribbble(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DribbbleSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dropbox(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Edit(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Ellipsis(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Enter(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Environment(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Euro(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef EuroCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Exception(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Exclamation(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ExclamationCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Expand(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ExpandAlt(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Experiment(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Export(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Eye(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef EyeInvisible(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Facebook(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Fall(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FastBackward(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FastForward(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FieldBinary(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FieldNumber(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FieldString(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FieldTime(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef File(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileAdd(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileDone(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileExcel(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileExclamation(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileGif(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileImage(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileJpg(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileMarkdown(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FilePdf(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FilePpt(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileProtect(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileSearch(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileSync(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileText(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileUnknown(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileWord(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileZip(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Filter(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Fire(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Flag(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Folder(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FolderAdd(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FolderOpen(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FolderView(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FontColors(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FontSize(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Fork(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Form(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FormatPainter(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Forward(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Frown(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Fullscreen(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FullscreenExit(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Function(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Fund(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FundProjectionScreen(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FundView(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FunnelPlot(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Gateway(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Gif(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Gift(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Github(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Gitlab(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Global(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Gold(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Google(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef GooglePlus(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Group(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef HarmonyOS(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Hdd(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Heart(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef HeatMap(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Highlight(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef History(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Holder(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Home(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Hourglass(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Html5(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Idcard(
-    const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CiCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Clear(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ClockCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Close(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CloseCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CloseSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Cloud(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CloudDownload(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CloudServer(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CloudSync(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CloudUpload(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Cluster(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Code(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CodeSandbox(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Codepen(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CodepenCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Coffee(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Comment(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Compass(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Compress(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ConsoleSql(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Contacts(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Container(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Control(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Copy(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Copyright(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CopyrightCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CreditCard(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Crown(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CustomerService(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dash(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dashboard(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Database(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef IconDelete(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DeleteColumn(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DeleteRow(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DeliveredProcedure(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DeploymentUnit(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Desktop(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Diff(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dingding(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dingtalk(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Disconnect(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Discord(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dislike(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Docker(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dollar(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DollarCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DotChart(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DotNet(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DoubleLeft(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DoubleRight(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Down(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DownCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DownSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Download(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Drag(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dribbble(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DribbbleSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dropbox(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Edit(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Ellipsis(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Enter(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Environment(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Euro(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef EuroCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Exception(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Exclamation(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ExclamationCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Expand(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ExpandAlt(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Experiment(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Export(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Eye(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef EyeInvisible(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Facebook(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Fall(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FastBackward(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FastForward(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FieldBinary(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FieldNumber(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FieldString(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FieldTime(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef File(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileAdd(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileDone(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileExcel(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileExclamation(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileGif(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileImage(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileJpg(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileMarkdown(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FilePdf(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FilePpt(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileProtect(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileSearch(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileSync(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileText(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileUnknown(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileWord(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileZip(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Filter(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Fire(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Flag(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Folder(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FolderAdd(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FolderOpen(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FolderView(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FontColors(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FontSize(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Fork(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Form(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FormatPainter(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Forward(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Frown(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Fullscreen(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FullscreenExit(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Function(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Fund(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FundProjectionScreen(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FundView(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FunnelPlot(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Gateway(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Gif(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Gift(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Github(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Gitlab(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Global(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Gold(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Google(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef GooglePlus(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Group(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef HarmonyOS(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Hdd(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Heart(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef HeatMap(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Highlight(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef History(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Holder(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Home(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Hourglass(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Html5(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Idcard(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Ie(const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Import(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Inbox(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Info(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef InfoCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef InsertRowAbove(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef InsertRowBelow(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef InsertRowLeft(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef InsertRowRight(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Instagram(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Insurance(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Interaction(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef IssuesClose(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Italic(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Java(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef JavaScript(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Key(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Kubernetes(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Laptop(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Layout(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Left(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef LeftCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef LeftSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Like(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Line(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef LineChart(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef LineHeight(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Link(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Linkedin(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Linux(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Loading(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Loading3Quarters(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Lock(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Login(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Logout(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MacCommand(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Mail(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Man(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MedicineBox(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Medium(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MediumWorkmark(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Meh(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Menu(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MenuFold(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MenuUnfold(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Merge(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MergeCells(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Message(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Minus(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MinusCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MinusSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Mobile(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MoneyCollect(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Monitor(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Moon(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef More(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Muted(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef NodeCollapse(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef NodeExpand(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef NodeIndex(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Notification(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Number(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef OneToOne(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef OpenAI(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef OrderedList(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PaperClip(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Partition(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Pause(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PauseCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PayCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Percentage(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Phone(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PicCenter(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PicLeft(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PicRight(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Picture(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PieChart(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Pinterest(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlayCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlaySquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Plus(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlusCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlusSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Pound(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PoundCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Poweroff(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Printer(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Product(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Profile(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Project(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PropertySafety(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PullRequest(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Pushpin(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Python(
-    const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Import(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Inbox(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Info(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef InfoCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef InsertRowAbove(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef InsertRowBelow(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef InsertRowLeft(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef InsertRowRight(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Instagram(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Insurance(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Interaction(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef IssuesClose(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Italic(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Java(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef JavaScript(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Key(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Kubernetes(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Laptop(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Layout(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Left(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef LeftCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef LeftSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Like(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Line(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef LineChart(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef LineHeight(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Link(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Linkedin(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Linux(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Loading(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Loading3Quarters(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Lock(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Login(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Logout(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MacCommand(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Mail(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Man(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MedicineBox(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Medium(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MediumWorkmark(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Meh(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Menu(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MenuFold(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MenuUnfold(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Merge(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MergeCells(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Message(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Minus(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MinusCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MinusSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Mobile(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MoneyCollect(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Monitor(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Moon(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef More(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Muted(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef NodeCollapse(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef NodeExpand(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef NodeIndex(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Notification(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Number(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef OneToOne(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef OpenAI(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef OrderedList(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PaperClip(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Partition(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Pause(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PauseCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PayCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Percentage(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Phone(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PicCenter(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PicLeft(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PicRight(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Picture(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PieChart(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Pinterest(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlayCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlaySquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Plus(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlusCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlusSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Pound(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PoundCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Poweroff(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Printer(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Product(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Profile(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Project(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PropertySafety(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PullRequest(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Pushpin(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Python(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Qq(const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Qrcode(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Question(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef QuestionCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RadarChart(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RadiusBottomleft(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RadiusBottomright(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RadiusSetting(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RadiusUpleft(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RadiusUpright(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Read(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Reconciliation(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RedEnvelope(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Reddit(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Redo(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Reload(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Rest(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Retweet(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Right(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RightCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RightSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Rise(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Robot(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Rocket(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Rollback(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RotateLeft(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RotateRight(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Ruby(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Safety(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SafetyCertificate(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Save(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Scan(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Schedule(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Scissor(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Search(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SecurityScan(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Select(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Send(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Setting(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Shake(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ShareAlt(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Shop(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Shopping(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ShoppingCart(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Shrink(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Signature(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sisternode(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sketch(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Skin(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Skype(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Slack(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SlackSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sliders(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SmallDash(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Smile(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Snippets(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Solution(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SortAscending(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SortDescending(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sound(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SplitCells(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Spotify(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Star(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef StepBackward(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef StepForward(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Stock(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Stop(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Strikethrough(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Subnode(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sun(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Swap(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SwapLeft(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SwapRight(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Switcher(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sync(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Table(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tablet(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tag(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tags(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Taobao(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef TaobaoCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Team(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Thunderbolt(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef TikTok(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ToTop(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tool(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Trademark(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef TrademarkCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Transaction(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Translation(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Trophy(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Truck(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Twitch(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Twitter(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Underline(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Undo(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Ungroup(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Unlock(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UnorderedList(
-    const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Qrcode(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Question(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef QuestionCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RadarChart(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RadiusBottomleft(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RadiusBottomright(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RadiusSetting(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RadiusUpleft(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RadiusUpright(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Read(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Reconciliation(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RedEnvelope(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Reddit(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Redo(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Reload(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Rest(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Retweet(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Right(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RightCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RightSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Rise(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Robot(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Rocket(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Rollback(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RotateLeft(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RotateRight(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Ruby(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Safety(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SafetyCertificate(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Save(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Scan(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Schedule(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Scissor(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Search(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SecurityScan(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Select(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Send(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Setting(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Shake(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ShareAlt(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Shop(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Shopping(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ShoppingCart(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Shrink(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Signature(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sisternode(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sketch(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Skin(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Skype(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Slack(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SlackSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sliders(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SmallDash(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Smile(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Snippets(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Solution(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SortAscending(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SortDescending(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sound(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SplitCells(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Spotify(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Star(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef StepBackward(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef StepForward(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Stock(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Stop(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Strikethrough(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Subnode(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sun(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Swap(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SwapLeft(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SwapRight(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Switcher(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sync(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Table(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tablet(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tag(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tags(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Taobao(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef TaobaoCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Team(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Thunderbolt(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef TikTok(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ToTop(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tool(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Trademark(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef TrademarkCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Transaction(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Translation(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Trophy(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Truck(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Twitch(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Twitter(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Underline(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Undo(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Ungroup(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Unlock(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UnorderedList(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Up(const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UpCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UpSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Upload(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Usb(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef User(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UserAdd(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UserDelete(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UserSwitch(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UsergroupAdd(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UsergroupDelete(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Verified(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef VerticalAlignBottom(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef VerticalAlignMiddle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef VerticalAlignTop(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef VerticalLeft(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef VerticalRight(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef VideoCamera(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef VideoCameraAdd(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Wallet(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Warning(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Wechat(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef WechatWork(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Weibo(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef WeiboCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef WeiboSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef WhatsApp(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Wifi(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Windows(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Woman(
-    const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UpCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UpSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Upload(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Usb(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef User(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UserAdd(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UserDelete(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UserSwitch(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UsergroupAdd(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UsergroupDelete(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Verified(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef VerticalAlignBottom(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef VerticalAlignMiddle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef VerticalAlignTop(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef VerticalLeft(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef VerticalRight(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef VideoCamera(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef VideoCameraAdd(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Wallet(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Warning(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Wechat(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef WechatWork(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Weibo(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef WeiboCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef WeiboSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef WhatsApp(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Wifi(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Windows(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Woman(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef X(const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Yahoo(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Youtube(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Yuque(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Zhihu(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ZoomIn(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ZoomOut(
-    const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Yahoo(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Youtube(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Yuque(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Zhihu(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ZoomIn(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ZoomOut(const adqt::icons::IconColors& colors = {});
 }  // namespace outlined
 
 namespace twotone {
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AccountBook(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Alert(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Api(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Appstore(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Audio(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bank(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bell(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Book(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BoxPlot(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bug(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Build(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bulb(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Calculator(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Calendar(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Camera(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Car(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CarryOut(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CheckCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CheckSquare(
-    const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef AccountBook(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Alert(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Api(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Appstore(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Audio(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bank(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bell(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Book(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef BoxPlot(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bug(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Build(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Bulb(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Calculator(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Calendar(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Camera(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Car(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CarryOut(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CheckCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CheckSquare(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Ci(const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CiCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ClockCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CloseCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CloseSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Cloud(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Code(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Compass(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Contacts(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Container(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Control(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Copy(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Copyright(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CopyrightCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CreditCard(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Crown(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CustomerService(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dashboard(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Database(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef IconDelete(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Diff(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dislike(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dollar(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DollarCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DownCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DownSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Edit(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Environment(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Euro(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef EuroCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ExclamationCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Experiment(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Eye(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef EyeInvisible(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef File(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileAdd(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileExcel(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileExclamation(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileImage(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileMarkdown(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FilePdf(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FilePpt(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileText(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileUnknown(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileWord(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileZip(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Filter(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Fire(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Flag(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Folder(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FolderAdd(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FolderOpen(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Frown(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Fund(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FunnelPlot(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Gift(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Gold(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Hdd(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Heart(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Highlight(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Home(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Hourglass(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Html5(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Idcard(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef InfoCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Insurance(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Interaction(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Layout(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef LeftCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef LeftSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Like(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Lock(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Mail(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MedicineBox(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Meh(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Message(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MinusCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MinusSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Mobile(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MoneyCollect(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Notification(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PauseCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Phone(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Picture(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PieChart(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlayCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlaySquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlusCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlusSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PoundCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Printer(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Profile(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Project(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PropertySafety(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Pushpin(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef QuestionCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Reconciliation(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RedEnvelope(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Rest(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RightCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RightSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Rocket(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SafetyCertificate(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Save(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Schedule(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SecurityScan(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Setting(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Shop(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Shopping(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Skin(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sliders(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Smile(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Snippets(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sound(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Star(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Stop(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Switcher(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tablet(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tag(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tags(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Thunderbolt(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tool(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef TrademarkCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Trophy(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Unlock(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UpCircle(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UpSquare(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Usb(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef VideoCamera(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Wallet(
-    const adqt::icons::IconColors& colors = {});
-[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Warning(
-    const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CiCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ClockCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CloseCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CloseSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Cloud(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Code(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Compass(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Contacts(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Container(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Control(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Copy(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Copyright(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CopyrightCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CreditCard(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Crown(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef CustomerService(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dashboard(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Database(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef IconDelete(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Diff(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dislike(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Dollar(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DollarCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DownCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef DownSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Edit(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Environment(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Euro(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef EuroCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef ExclamationCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Experiment(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Eye(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef EyeInvisible(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef File(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileAdd(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileExcel(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileExclamation(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileImage(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileMarkdown(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FilePdf(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FilePpt(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileText(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileUnknown(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileWord(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FileZip(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Filter(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Fire(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Flag(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Folder(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FolderAdd(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FolderOpen(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Frown(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Fund(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef FunnelPlot(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Gift(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Gold(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Hdd(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Heart(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Highlight(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Home(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Hourglass(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Html5(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Idcard(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef InfoCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Insurance(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Interaction(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Layout(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef LeftCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef LeftSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Like(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Lock(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Mail(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MedicineBox(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Meh(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Message(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MinusCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MinusSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Mobile(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef MoneyCollect(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Notification(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PauseCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Phone(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Picture(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PieChart(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlayCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlaySquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlusCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PlusSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PoundCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Printer(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Profile(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Project(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef PropertySafety(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Pushpin(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef QuestionCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Reconciliation(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RedEnvelope(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Rest(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RightCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef RightSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Rocket(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SafetyCertificate(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Save(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Schedule(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef SecurityScan(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Setting(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Shop(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Shopping(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Skin(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sliders(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Smile(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Snippets(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Sound(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Star(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Stop(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Switcher(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tablet(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tag(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tags(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Thunderbolt(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Tool(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef TrademarkCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Trophy(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Unlock(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UpCircle(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef UpSquare(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Usb(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef VideoCamera(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Wallet(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] ADQT_ICONS_EXPORT adqt::icons::IconRef Warning(const adqt::icons::IconColors& colors = {});
 }  // namespace twotone
 
 }  // namespace adqt::icons::antd

@@ -101,7 +101,8 @@ bool imageContainsColor(const QImage& image, const QColor& expected) {
 
 adqt::widgets::AdButton* buttonWithTooltip(ScreenshotToolPalette& palette, const QString& tooltip) {
     for (adqt::widgets::AdButton* button : palette.findChildren<adqt::widgets::AdButton*>()) {
-        if (button != nullptr && button->toolTip() == tooltip) {
+        if (button != nullptr &&
+            (button->toolTip() == tooltip || button->accessibleName() == tooltip)) {
             return button;
         }
     }
@@ -269,7 +270,8 @@ void cachedToolbarIconsFollowThemeColors() {
     auto* systemAudioButton =
         buttonWithTooltip(recordingToolbar, QStringLiteral("Record speakers"));
     auto* pauseButton = buttonWithTooltip(recordingToolbar, QStringLiteral("Pause recording"));
-    auto* copyGifButton = buttonWithTooltip(recordingToolbar, QStringLiteral("Copy GIF"));
+    auto* copyGifButton =
+        buttonWithTooltip(recordingToolbar, QStringLiteral("Copy animated image"));
     require(recordStartButton != nullptr && microphoneButton != nullptr &&
                 systemAudioButton != nullptr && pauseButton != nullptr && copyGifButton != nullptr,
             "theme icon test should expose recording toolbar icon controls");
@@ -355,7 +357,7 @@ void recordingToolbarUsesTheScreenshotMainPanelContract() {
             "recording and screenshot toolbar buttons should share dimensions");
 
     QLabel* duration =
-        recordingToolbar.findChild<QLabel*>(QStringLiteral("videoRecordingDuration"));
+        recordingToolbar.findChild<QLabel*>(QStringLiteral("screenRecordingDuration"));
     require(duration != nullptr, "recording toolbar should expose its duration label");
     require(duration->height() == recordingButtons.constFirst()->height(),
             "recording duration should align with the shared button height");

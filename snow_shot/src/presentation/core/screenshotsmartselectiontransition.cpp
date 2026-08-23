@@ -16,10 +16,30 @@ ScreenshotSmartSelectionTransition::ScreenshotSmartSelectionTransition(UpdateCal
                      });
 }
 
+void ScreenshotSmartSelectionTransition::setEnabled(bool enabled) {
+    if (m_enabled == enabled) {
+        return;
+    }
+    m_enabled = enabled;
+    if (!m_enabled && m_animation.state() == QAbstractAnimation::Running) {
+        presentDirectly(m_targetSelection);
+    }
+}
+
+bool ScreenshotSmartSelectionTransition::enabled() const {
+    return m_enabled;
+}
+
 bool ScreenshotSmartSelectionTransition::update(const QRectF& selection, bool smartFraming) {
     const bool hasSelection = selection.isValid() && !selection.isEmpty();
     if (!smartFraming || !hasSelection) {
         m_hasPresentedSmartSelection = false;
+        presentDirectly(selection);
+        return true;
+    }
+
+    if (!m_enabled) {
+        m_hasPresentedSmartSelection = true;
         presentDirectly(selection);
         return true;
     }
@@ -40,6 +60,14 @@ bool ScreenshotSmartSelectionTransition::update(const QRectF& selection, bool sm
     m_animation.setEndValue(m_targetSelection);
     m_animation.start();
     return true;
+}
+
+void ScreenshotSmartSelectionTransition::seed(const QRectF& selection, bool smartFraming) {
+    m_animation.stop();
+    m_displayedSelection = selection;
+    m_targetSelection = selection;
+    m_hasPresentedSmartSelection =
+        smartFraming && selection.isValid() && !selection.isEmpty();
 }
 
 void ScreenshotSmartSelectionTransition::reset() {

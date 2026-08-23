@@ -2,7 +2,7 @@ pub use snow_recording_export::{
     EditingSession, ExportAudioOutputConfig, ExportAudioTrackRequest, ExportExecutionMode,
     ExportFormat, ExportPathKind, ExportPerformanceConfig, ExportProgress, ExportRequest,
     ExportResult, ExportRuntimeReport, ExportStage, ExportStageDurationsMs, ExportTask,
-    MouseEditConfig, RecordingExportError, SoftwareH264Priority,
+    MouseEditConfig, RecordingExportError, SoftwareH264Priority, VideoCodec,
 };
 pub use snow_recording_model::{
     AudioSampleFormat, AudioTrackManifest, AudioTrackRole, ClickEventRecord, CursorFrameRecord,

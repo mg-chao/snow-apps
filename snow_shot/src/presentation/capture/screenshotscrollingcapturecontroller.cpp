@@ -5,13 +5,10 @@
 #include "snow_shot/presentation/screenshotoverlaycoordinator.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
-#include "snow_shot/presentation/screenshotclipboardservice.h"
-
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #include "snow_shot/platform/windows/windowchrome.h"
 #endif
 
-#include "adaptivescrollingcapturecadence.h"
 #include "latestbridgemailbox.h"
 
 #include "snow_capture.h"
@@ -20,15 +17,13 @@
 #include <QCoreApplication>
 #include <QLoggingCategory>
 #include <QMetaObject>
-#include <QPainter>
 #include <QPointer>
 #include <QThread>
-#include <QTimer>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <cstring>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -39,14 +34,6 @@ Q_LOGGING_CATEGORY(snowShotScrollingCaptureLog, "snowshot.capture.scrolling", Qt
 
 namespace {
 using ScrollClock = std::chrono::steady_clock;
-using AdaptiveScrollCadence = snow_shot::capture_detail::AdaptiveScrollingCaptureCadence;
-
-struct ScrollDisplayLayout {
-    QString stableId;
-    QString name;
-    QRect physicalRect;
-    QRect canvasRect;
-};
 
 struct ScrollWorkerFrame {
     quint64 generation = 0;
@@ -69,19 +56,13 @@ struct ScrollPreviewLayout {
     bool valid = false;
 };
 
-struct ScrollCaptureResult {
-    quint64 generation = 0;
-    ScrollClock::duration captureDuration{};
-    bool wakeConsumer = false;
-};
-
 class OwnedScrollFrame {
   public:
     OwnedScrollFrame() = default;
-    explicit OwnedScrollFrame(SnowStitchFrameBuffer* frameValue) : frame(frameValue) {}
+    explicit OwnedScrollFrame(SnowCaptureRegionStreamFrame* frameValue) : frame(frameValue) {}
     ~OwnedScrollFrame() {
         if (frame != nullptr) {
-            snow_stitch_frame_buffer_destroy(frame);
+            snow_capture_region_stream_frame_destroy(frame);
         }
     }
     OwnedScrollFrame(const OwnedScrollFrame&) = delete;
@@ -91,105 +72,22 @@ class OwnedScrollFrame {
     OwnedScrollFrame& operator=(OwnedScrollFrame&& other) noexcept {
         if (this != &other) {
             if (frame != nullptr) {
-                snow_stitch_frame_buffer_destroy(frame);
+                snow_capture_region_stream_frame_destroy(frame);
             }
             frame = std::exchange(other.frame, nullptr);
         }
         return *this;
     }
-    SnowStitchFrameBuffer* release() {
-        return std::exchange(frame, nullptr);
+    SnowCaptureRegionStreamFrame* get() const {
+        return frame;
     }
 
   private:
-    SnowStitchFrameBuffer* frame = nullptr;
+    SnowCaptureRegionStreamFrame* frame = nullptr;
 };
 
 using ScrollFrameMailbox =
     snow_shot::capture_detail::LatestBridgeMailbox<OwnedScrollFrame, quint64>;
-
-const ScrollDisplayLayout* matchingLayout(const QVector<ScrollDisplayLayout>& layouts,
-                                          const SnowCaptureFrameInfo& frame) {
-    const QString stableId = QString::fromUtf8(frame.stable_id != nullptr ? frame.stable_id : "");
-    if (!stableId.isEmpty()) {
-        for (const ScrollDisplayLayout& layout : layouts) {
-            if (layout.stableId == stableId) {
-                return &layout;
-            }
-        }
-    }
-
-    const QRect physicalRect(frame.x, frame.y, static_cast<int>(frame.width),
-                             static_cast<int>(frame.height));
-    for (const ScrollDisplayLayout& layout : layouts) {
-        if (layout.physicalRect == physicalRect) {
-            return &layout;
-        }
-    }
-
-    const QString name = QString::fromUtf8(frame.name != nullptr ? frame.name : "");
-    for (const ScrollDisplayLayout& layout : layouts) {
-        if (!name.isEmpty() && layout.name == name) {
-            return &layout;
-        }
-    }
-    return nullptr;
-}
-
-bool validCaptureFrame(const SnowCaptureFrameInfo& frame) {
-    if (frame.rgba_bytes == nullptr || frame.width == 0 || frame.height == 0) {
-        return false;
-    }
-    const quint64 stride = static_cast<quint64>(frame.width) * 4ULL;
-    const quint64 length = stride * static_cast<quint64>(frame.height);
-    return stride <= std::numeric_limits<std::uint32_t>::max() &&
-           frame.stride_bytes == static_cast<std::uint32_t>(stride) && frame.rgba_len >= length;
-}
-
-bool composeSelectionFrame(SnowCaptureSnapshot* snapshot, const QRect& selection,
-                           const QVector<ScrollDisplayLayout>& layouts, QImage& selectionFrame) {
-    if (snapshot == nullptr || selection.isEmpty() || selectionFrame.isNull() ||
-        selectionFrame.size() != selection.size()) {
-        return false;
-    }
-
-    selectionFrame.fill(Qt::transparent);
-    QPainter painter(&selectionFrame);
-    bool drewFrame = false;
-
-    const size_t count = snow_capture_snapshot_count(snapshot);
-    for (size_t index = 0; index < count; ++index) {
-        SnowCaptureFrameInfo frame{};
-        if (snow_capture_snapshot_frame_info(snapshot, index, &frame) == 0 ||
-            !validCaptureFrame(frame)) {
-            continue;
-        }
-        const ScrollDisplayLayout* layout = matchingLayout(layouts, frame);
-        if (layout == nullptr) {
-            continue;
-        }
-
-        const QRect intersection = selection.intersected(layout->canvasRect);
-        if (intersection.isEmpty()) {
-            continue;
-        }
-
-        const QImage source(frame.rgba_bytes, static_cast<int>(frame.width),
-                            static_cast<int>(frame.height), static_cast<int>(frame.stride_bytes),
-                            QImage::Format_RGBA8888);
-        if (source.isNull()) {
-            continue;
-        }
-
-        const QRect sourceRect = intersection.translated(-layout->canvasRect.topLeft());
-        const QRect targetRect = intersection.translated(-selection.topLeft());
-        painter.drawImage(targetRect, source, sourceRect);
-        drewFrame = true;
-    }
-
-    painter.end();
-    return drewFrame;
-}
 
 void releaseStitchOwnedImage(void* image) {
     snow_stitch_owned_image_destroy(static_cast<SnowStitchOwnedImage*>(image));
@@ -215,339 +113,21 @@ const char* unmatchedReasonName(SnowStitchUnmatchedReason reason) {
     }
 }
 
-const char* limitingStageName(AdaptiveScrollCadence::LimitingStage stage) {
-    switch (stage) {
-    case AdaptiveScrollCadence::LimitingStage::Capture:
-        return "capture";
-    case AdaptiveScrollCadence::LimitingStage::Stitch:
-        return "stitch";
-    case AdaptiveScrollCadence::LimitingStage::Warmup:
-    default:
-        return "warmup";
-    }
-}
-
-class ScreenshotScrollingCaptureProducer final : public QObject {
-  public:
-    using CaptureCompletedCallback = std::function<void(ScrollCaptureResult)>;
-
-    explicit ScreenshotScrollingCaptureProducer(std::shared_ptr<ScrollFrameMailbox> mailbox,
-                                                CaptureCompletedCallback callback)
-        : m_mailbox(std::move(mailbox)), m_captureCompleted(std::move(callback)) {}
-
-    ~ScreenshotScrollingCaptureProducer() override {
-        destroyRegionSession();
-        if (m_framePool != nullptr) {
-            snow_stitch_frame_pool_destroy(m_framePool);
-        }
-        if (m_captureSession != nullptr) {
-            snow_capture_desktop_session_destroy(m_captureSession);
-        }
-    }
-
-    void begin(quint64 generation, QRect selection, QRect physicalSelection,
-               QVector<ScrollDisplayLayout> layouts,
-               AdaptiveScrollCadence::Config cadenceConfig = {}) {
-        m_generation = generation;
-        m_selection = selection;
-        m_physicalSelection = physicalSelection;
-        m_layouts = std::move(layouts);
-        m_cadence = AdaptiveScrollCadence(cadenceConfig);
-        m_lastCaptureDispatch.reset();
-        m_lastLoggedFps = -1;
-        m_active = true;
-        m_useLegacyCapture = false;
-        destroyRegionSession();
-        if (m_framePool != nullptr) {
-            snow_stitch_frame_pool_destroy(m_framePool);
-            m_framePool = nullptr;
-        }
-        if (ensureFramePool() && !ensureRegionSession()) {
-            activateLegacyCapture();
-        }
-        ensureTimer();
-        scheduleNextCapture();
-    }
-
-    void reset(quint64 generation) {
-        m_generation = generation;
-        m_active = false;
-        m_lastCaptureDispatch.reset();
-        if (m_timer != nullptr) {
-            m_timer->stop();
-        }
-        m_selection = {};
-        m_physicalSelection = {};
-        m_layouts.clear();
-        m_useLegacyCapture = false;
-        destroyRegionSession();
-        if (m_framePool != nullptr) {
-            snow_stitch_frame_pool_destroy(m_framePool);
-            m_framePool = nullptr;
-        }
-    }
-
-    void recordStitch(quint64 generation, ScrollClock::duration duration) {
-        if (!m_active || generation != m_generation) {
-            return;
-        }
-        m_cadence.recordStitch(duration);
-        logCadenceIfChanged();
-        scheduleNextCapture();
-    }
-
-  private:
-    void ensureTimer() {
-        if (m_timer != nullptr) {
-            return;
-        }
-        m_timer = new QTimer(this);
-        m_timer->setTimerType(Qt::PreciseTimer);
-        m_timer->setSingleShot(true);
-        QObject::connect(m_timer, &QTimer::timeout, this, [this]() { requestFrame(); });
-    }
-
-    void scheduleNextCapture() {
-        if (!m_active || m_timer == nullptr || m_selection.isEmpty() || !ensureFramePool() ||
-            !m_mailbox->hasPendingCapacity()) {
-            return;
-        }
-
-        const ScrollClock::time_point now = ScrollClock::now();
-        ScrollClock::duration remaining = ScrollClock::duration::zero();
-        if (m_lastCaptureDispatch.has_value()) {
-            const ScrollClock::time_point due = *m_lastCaptureDispatch + m_cadence.period();
-            if (due > now) {
-                remaining = due - now;
-            }
-        }
-        const int delayMilliseconds = static_cast<int>(
-            std::ceil(std::chrono::duration<double, std::milli>(remaining).count()));
-        m_timer->start(std::max(0, delayMilliseconds));
-    }
-
-    void requestFrame() {
-        if (!m_active || m_timer == nullptr || !m_mailbox->hasPendingCapacity()) {
-            return;
-        }
-
-        const ScrollClock::time_point now = ScrollClock::now();
-        if (m_lastCaptureDispatch.has_value() &&
-            now < *m_lastCaptureDispatch + m_cadence.period()) {
-            scheduleNextCapture();
-            return;
-        }
-
-        m_lastCaptureDispatch = now;
-        ScrollCaptureResult result = capture(m_generation);
-        m_cadence.recordCapture(result.captureDuration);
-        logCadenceIfChanged();
-        if (m_captureCompleted) {
-            m_captureCompleted(std::move(result));
-        }
-        scheduleNextCapture();
-    }
-
-    void logCadenceIfChanged() {
-        const int fps = static_cast<int>(std::floor(m_cadence.fps()));
-        if (fps == m_lastLoggedFps) {
-            return;
-        }
-        m_lastLoggedFps = fps;
-        qCDebug(snowShotScrollingCaptureLog,
-                "Scrolling capture target rate changed: fps=%d limiting-stage=%s", fps,
-                limitingStageName(m_cadence.limitingStage()));
-    }
-
-    ScrollCaptureResult capture(quint64 generation);
-
-    void destroyRegionSession() {
-        if (m_regionSession != nullptr) {
-            snow_capture_region_session_destroy(m_regionSession);
-            m_regionSession = nullptr;
-        }
-    }
-
-    bool ensureRegionSession() {
-        if (m_regionSession != nullptr) {
-            return true;
-        }
-        if (m_physicalSelection.isEmpty()) {
-            return false;
-        }
-        SnowCaptureRegionSessionConfig config{};
-        config.x = m_physicalSelection.x();
-        config.y = m_physicalSelection.y();
-        config.width = static_cast<std::uint32_t>(m_physicalSelection.width());
-        config.height = static_cast<std::uint32_t>(m_physicalSelection.height());
-        config.capture_retry_count = 1;
-        m_regionSession = snow_capture_region_session_create(&config);
-        if (m_regionSession == nullptr ||
-            snow_capture_region_session_prepare(m_regionSession) == 0) {
-            qWarning("Failed to create scrolling region capture session: %s",
-                     snow_capture_last_error_message());
-            destroyRegionSession();
-            return false;
-        }
-        return true;
-    }
-
-    void activateLegacyCapture() {
-        m_useLegacyCapture = true;
-        destroyRegionSession();
-        if (ensureCaptureSession()) {
-            static_cast<void>(snow_capture_desktop_session_prepare(m_captureSession));
-        }
-    }
-
-    bool ensureCaptureSession() {
-        if (m_captureSession != nullptr) {
-            return true;
-        }
-        SnowCaptureDesktopSessionConfig config{};
-        config.capture_retry_count = 1;
-        m_captureSession = snow_capture_desktop_session_create(&config);
-        if (m_captureSession == nullptr) {
-            qWarning("Failed to create scrolling desktop capture session: %s",
-                     snow_capture_last_error_message());
-        }
-        return m_captureSession != nullptr;
-    }
-
-    bool ensureFramePool() {
-        if (m_framePool != nullptr) {
-            return true;
-        }
-        if (m_selection.isEmpty()) {
-            return false;
-        }
-        m_framePool =
-            snow_stitch_frame_pool_create(static_cast<std::uint32_t>(m_selection.width()),
-                                          static_cast<std::uint32_t>(m_selection.height()), 6);
-        if (m_framePool == nullptr) {
-            qWarning("Failed to create scrolling frame pool: %s", snow_stitch_last_error_message());
-        }
-        return m_framePool != nullptr;
-    }
-
-    std::shared_ptr<ScrollFrameMailbox> m_mailbox;
-    CaptureCompletedCallback m_captureCompleted;
-    QTimer* m_timer = nullptr;
-    SnowCaptureRegionSession* m_regionSession = nullptr;
-    SnowCaptureDesktopSession* m_captureSession = nullptr;
-    SnowStitchFramePool* m_framePool = nullptr;
-    quint64 m_generation = 0;
-    QRect m_selection;
-    QRect m_physicalSelection;
-    QVector<ScrollDisplayLayout> m_layouts;
-    AdaptiveScrollCadence m_cadence;
-    std::optional<ScrollClock::time_point> m_lastCaptureDispatch;
-    int m_lastLoggedFps = -1;
-    bool m_active = false;
-    bool m_useLegacyCapture = false;
-};
-
-ScrollCaptureResult ScreenshotScrollingCaptureProducer::capture(quint64 generation) {
-    ScrollCaptureResult result;
-    result.generation = generation;
-    const ScrollClock::time_point startedAt = ScrollClock::now();
-    const auto complete = [&result, startedAt]() {
-        const ScrollClock::time_point completedAt = ScrollClock::now();
-        result.captureDuration = completedAt - startedAt;
-        return result;
-    };
-    if (generation != m_generation || m_selection.isEmpty() || !ensureFramePool()) {
-        return complete();
-    }
-
-    if (!m_useLegacyCapture) {
-        SnowCaptureRegionFrameInfo region{};
-        bool captured = false;
-        for (int attempt = 0; attempt < 2 && !captured; ++attempt) {
-            captured = ensureRegionSession() &&
-                       snow_capture_region_session_capture(m_regionSession, &region) != 0;
-            if (!captured) {
-                destroyRegionSession();
-            }
-        }
-        if (!captured) {
-            qWarning("Scrolling region capture failed; using desktop fallback: %s",
-                     snow_capture_last_error_message());
-            activateLegacyCapture();
-        } else {
-            if (region.is_duplicate != 0) {
-                return complete();
-            }
-            const size_t expected = static_cast<size_t>(m_selection.width()) *
-                                    static_cast<size_t>(m_selection.height()) * 4U;
-            const bool validRegion =
-                region.rgba_bytes != nullptr &&
-                region.width == static_cast<std::uint32_t>(m_selection.width()) &&
-                region.height == static_cast<std::uint32_t>(m_selection.height()) &&
-                region.stride_bytes == region.width * 4 && region.rgba_len >= expected;
-            SnowStitchFrameBuffer* stitchFrame =
-                validRegion ? snow_stitch_frame_pool_acquire(m_framePool) : nullptr;
-            SnowStitchMutableImageInfo input{};
-            const bool validInput = stitchFrame != nullptr &&
-                                    snow_stitch_frame_buffer_info(stitchFrame, &input) != 0 &&
-                                    input.rgba_bytes != nullptr && input.rgba_len >= expected &&
-                                    input.width == region.width && input.height == region.height &&
-                                    input.stride_bytes == region.stride_bytes;
-            if (!validInput) {
-                if (stitchFrame != nullptr) {
-                    snow_stitch_frame_buffer_destroy(stitchFrame);
-                }
-                return complete();
-            }
-            std::memcpy(input.rgba_bytes, region.rgba_bytes, expected);
-            result.wakeConsumer = m_mailbox->publish(generation, OwnedScrollFrame(stitchFrame));
-            return complete();
-        }
-    }
-
-    if (!ensureCaptureSession()) {
-        return complete();
-    }
-
-    SnowCaptureSnapshot* snapshot = snow_capture_desktop_session_capture_all(m_captureSession);
-    if (snapshot == nullptr) {
-        qWarning("Scrolling screenshot capture failed: %s", snow_capture_last_error_message());
-        return complete();
-    }
-
-    SnowStitchFrameBuffer* stitchFrame = snow_stitch_frame_pool_acquire(m_framePool);
-    SnowStitchMutableImageInfo input{};
-    const bool validInput = stitchFrame != nullptr &&
-                            snow_stitch_frame_buffer_info(stitchFrame, &input) != 0 &&
-                            input.rgba_bytes != nullptr && input.width > 0 && input.height > 0 &&
-                            input.stride_bytes == input.width * 4 &&
-                            input.width == static_cast<std::uint32_t>(m_selection.width()) &&
-                            input.height == static_cast<std::uint32_t>(m_selection.height());
-    QImage selectionFrame;
-    if (validInput) {
-        selectionFrame =
-            QImage(input.rgba_bytes, static_cast<int>(input.width), static_cast<int>(input.height),
-                   static_cast<int>(input.stride_bytes), QImage::Format_RGBA8888);
-    }
-    const bool composed =
-        validInput && composeSelectionFrame(snapshot, m_selection, m_layouts, selectionFrame);
-    snow_capture_snapshot_destroy(snapshot);
-    if (!composed) {
-        if (stitchFrame != nullptr) {
-            snow_stitch_frame_buffer_destroy(stitchFrame);
-        }
-        return complete();
-    }
-
-    result.wakeConsumer = m_mailbox->publish(generation, OwnedScrollFrame(stitchFrame));
-    return complete();
-}
-
 class ScreenshotScrollingCaptureWorker final : public QObject {
   public:
     ~ScreenshotScrollingCaptureWorker() override {
+        shutdown();
+    }
+
+    // Shutdown is invoked on the worker thread before that thread is stopped.  Keeping this
+    // explicit avoids relying on a deferred-delete event after QThread::quit(), which can leave
+    // the native stitch session and its accumulated frame tiles alive indefinitely.
+    void shutdown() {
+        resetPreview();
+        m_generation = 0;
         if (m_stitchSession != nullptr) {
             snow_stitch_session_destroy(m_stitchSession);
+            m_stitchSession = nullptr;
         }
     }
 
@@ -573,18 +153,26 @@ class ScreenshotScrollingCaptureWorker final : public QObject {
         }
     }
 
-    ScrollWorkerFrame process(quint64 generation, SnowStitchFrameBuffer* stitchFrame) {
+    ScrollWorkerFrame process(quint64 generation, SnowCaptureRegionStreamFrame* captureFrame) {
         ScrollWorkerFrame result;
         result.generation = generation;
-        if (generation != m_generation || stitchFrame == nullptr || !ensureStitchSession()) {
-            if (stitchFrame != nullptr) {
-                snow_stitch_frame_buffer_destroy(stitchFrame);
-            }
+        if (generation != m_generation || captureFrame == nullptr || !ensureStitchSession()) {
             return result;
         }
 
+        SnowCaptureRegionStreamFrameInfo frame{};
+        if (snow_capture_region_stream_frame_info(captureFrame, &frame) == 0 ||
+            frame.rgba_bytes == nullptr || frame.width == 0 || frame.height == 0 ||
+            frame.stride_bytes < frame.width * 4) {
+            qWarning("Failed to read scrolling capture frame: %s",
+                     snow_capture_last_error_message());
+            result.fatalError = true;
+            return result;
+        }
         SnowStitchFrameOutcome outcome{};
-        if (snow_stitch_session_push_owned(m_stitchSession, &stitchFrame, &outcome) == 0) {
+        if (snow_stitch_session_push_rgba(m_stitchSession, frame.width, frame.height,
+                                          frame.stride_bytes, frame.rgba_bytes, frame.rgba_len,
+                                          &outcome) == 0) {
             qWarning("Scrolling screenshot stitching failed: %s", snow_stitch_last_error_message());
             result.fatalError = true;
             return result;
@@ -654,32 +242,30 @@ class ScreenshotScrollingCaptureWorker final : public QObject {
         return result;
     }
 
-    QImage trimmedOutput(int trimTop, int trimBottom) const {
-        if (m_stitchSession == nullptr || m_lastOutputSize.isEmpty())
+    ScreenshotScrollingSnapshot trimmedSnapshot(int trimTop, int trimBottom) const {
+        if (m_stitchSession == nullptr || m_lastOutputSize.isEmpty()) {
             return {};
+        }
         const int sourceExtent = m_mode == ScreenshotScrollingRecognitionMode::Horizontal
                                      ? m_lastOutputSize.width()
                                      : m_lastOutputSize.height();
         const int top = std::clamp(trimTop, 0, sourceExtent - 1);
         const int bottom = std::clamp(trimBottom, top + 1, sourceExtent);
-        SnowStitchOwnedImage* image = snow_stitch_session_materialize_axis(
+        SnowStitchSnapshot* snapshot = snow_stitch_session_snapshot_axis(
             m_stitchSession, static_cast<std::uint32_t>(top), static_cast<std::uint32_t>(bottom));
-        if (image == nullptr) {
+        if (snapshot == nullptr) {
             return {};
         }
         SnowStitchImageInfo info{};
-        if (snow_stitch_owned_image_info(image, &info) == 0 || info.rgba_bytes == nullptr ||
-            info.width == 0 || info.height == 0 || info.stride_bytes != info.width * 4) {
-            snow_stitch_owned_image_destroy(image);
+        if (snow_stitch_snapshot_info(snapshot, &info) == 0 || info.width == 0 ||
+            info.height == 0 ||
+            info.width > static_cast<std::uint32_t>(std::numeric_limits<int>::max()) ||
+            info.height > static_cast<std::uint32_t>(std::numeric_limits<int>::max())) {
+            snow_stitch_snapshot_destroy(snapshot);
             return {};
         }
-        QImage output(info.rgba_bytes, static_cast<int>(info.width), static_cast<int>(info.height),
-                      static_cast<int>(info.stride_bytes), QImage::Format_RGBA8888,
-                      &releaseStitchOwnedImage, image);
-        if (output.isNull()) {
-            snow_stitch_owned_image_destroy(image);
-        }
-        return output;
+        return ScreenshotScrollingSnapshot::adoptNative(
+            snapshot, QSize(static_cast<int>(info.width), static_cast<int>(info.height)));
     }
 
   private:
@@ -804,6 +390,76 @@ QRect logicalSelectionRect(const ScreenshotGeometryMapper& geometry,
 }
 } // namespace
 
+ScreenshotScrollingSnapshot ScreenshotScrollingSnapshot::adoptNative(void* snapshot, QSize size) {
+    ScreenshotScrollingSnapshot result;
+    if (snapshot == nullptr || !size.isValid() || size.isEmpty()) {
+        return result;
+    }
+    result.m_snapshot = std::shared_ptr<void>(snapshot, [](void* value) {
+        snow_stitch_snapshot_destroy(static_cast<SnowStitchSnapshot*>(value));
+    });
+    result.m_size = size;
+    return result;
+}
+
+bool ScreenshotScrollingSnapshot::isValid() const {
+    return m_snapshot != nullptr && m_size.isValid() && !m_size.isEmpty();
+}
+
+QSize ScreenshotScrollingSnapshot::size() const {
+    return isValid() ? m_size : QSize{};
+}
+
+ScreenshotImageRowSource
+ScreenshotScrollingSnapshot::rowSource(std::function<bool()> cancellationRequested) const {
+    ScreenshotImageRowSource source;
+    if (!isValid()) {
+        return source;
+    }
+    source.size = m_size;
+    source.cancellationRequested = std::move(cancellationRequested);
+    const std::shared_ptr<void> snapshot = m_snapshot;
+    source.readRows = [snapshot](int firstRow, int rowCount, qsizetype destinationStride,
+                                 uchar* destination, qsizetype destinationSize) {
+        if (firstRow < 0 || rowCount <= 0 || destinationStride <= 0 || destination == nullptr ||
+            destinationSize <= 0) {
+            return false;
+        }
+        return snow_stitch_snapshot_copy_rows(
+                   static_cast<const SnowStitchSnapshot*>(snapshot.get()),
+                   static_cast<std::uint32_t>(firstRow), static_cast<std::uint32_t>(rowCount),
+                   static_cast<std::size_t>(destinationStride), destination,
+                   static_cast<std::size_t>(destinationSize)) != 0;
+    };
+    return source;
+}
+
+QImage ScreenshotScrollingSnapshot::materialize() const {
+    if (!isValid()) {
+        return {};
+    }
+    SnowStitchOwnedImage* image =
+        snow_stitch_snapshot_materialize(static_cast<const SnowStitchSnapshot*>(m_snapshot.get()));
+    if (image == nullptr) {
+        return {};
+    }
+    SnowStitchImageInfo info{};
+    if (snow_stitch_owned_image_info(image, &info) == 0 || info.rgba_bytes == nullptr ||
+        info.width != static_cast<std::uint32_t>(m_size.width()) ||
+        info.height != static_cast<std::uint32_t>(m_size.height()) ||
+        info.stride_bytes != info.width * 4) {
+        snow_stitch_owned_image_destroy(image);
+        return {};
+    }
+    QImage result(info.rgba_bytes, m_size.width(), m_size.height(),
+                  static_cast<int>(info.stride_bytes), QImage::Format_RGBA8888,
+                  &releaseStitchOwnedImage, image);
+    if (result.isNull()) {
+        snow_stitch_owned_image_destroy(image);
+    }
+    return result;
+}
+
 struct ScreenshotScrollingCaptureController::Impl {
     Impl(ScreenshotScrollingCaptureController& ownerValue,
          ScreenshotScrollingCaptureControllerContext contextValue)
@@ -835,21 +491,7 @@ struct ScreenshotScrollingCaptureController::Impl {
             stop(false);
         }
         ensureWorker();
-        if (worker == nullptr || producer == nullptr) {
-            return false;
-        }
-
-        layouts.clear();
-        context.displaySession.forEachActiveDisplay(
-            [this](qsizetype, const CapturedDisplayModel& display) {
-                layouts.push_back(ScrollDisplayLayout{
-                    display.stableId,
-                    display.name,
-                    display.physicalRect,
-                    display.canvasRect,
-                });
-            });
-        if (layouts.isEmpty()) {
+        if (worker == nullptr) {
             return false;
         }
         if (!excludeScrollingWindowsFromCapture(anchorOverlay)) {
@@ -861,6 +503,7 @@ struct ScreenshotScrollingCaptureController::Impl {
         thumbnailHost = anchorOverlay;
         active = true;
         ++generation;
+        captureGeneration.store(generation, std::memory_order_release);
         pendingResultRequestId.reset();
         mailbox->reset(generation);
 
@@ -873,21 +516,17 @@ struct ScreenshotScrollingCaptureController::Impl {
             logicalSelection.translated(-thumbnailHost->geometry().topLeft()), mode);
 
         const quint64 requestGeneration = generation;
-        const QRect requestSelection = canvasSelection;
-        const QRect requestPhysicalSelection =
-            canvasSelection.translated(context.geometry.canvasOrigin());
-        QVector<ScrollDisplayLayout> requestLayouts = layouts;
-        const AdaptiveScrollCadence::Config requestCadenceConfig = cadenceConfig;
-        postCaptureTask([requestGeneration, requestSelection, requestPhysicalSelection,
-                         requestLayouts,
-                         requestCadenceConfig](ScreenshotScrollingCaptureProducer& target) mutable {
-            target.begin(requestGeneration, requestSelection, requestPhysicalSelection,
-                         std::move(requestLayouts), requestCadenceConfig);
-        });
         const ScreenshotScrollingRecognitionMode requestMode = mode;
         postWorkerTask([requestGeneration, requestMode](ScreenshotScrollingCaptureWorker& target) {
             target.begin(requestGeneration, requestMode);
         });
+        const QRect physicalSelection = canvasSelection.translated(context.geometry.canvasOrigin());
+        if (!startCaptureStream(physicalSelection)) {
+            qWarning("Failed to start native scrolling capture stream: %s",
+                     snow_capture_last_error_message());
+            stop(true);
+            return false;
+        }
         return true;
     }
 
@@ -901,7 +540,7 @@ struct ScreenshotScrollingCaptureController::Impl {
             context.displaySession, ScreenshotHalfOpenRect::fromRect(canvasSelection).center());
         if (anchorDisplay == nullptr) {
             anchorDisplay = context.geometry.displayForCanvasRect(context.displaySession,
-                                                                   QRectF(canvasSelection));
+                                                                  QRectF(canvasSelection));
         }
         if (anchorDisplay == nullptr) {
             return false;
@@ -912,27 +551,17 @@ struct ScreenshotScrollingCaptureController::Impl {
         // the generation drops work from the previous axis without briefly restoring the canvas.
         mode = requestedMode;
         ++generation;
+        captureGeneration.store(generation, std::memory_order_release);
         pendingResultRequestId.reset();
         mailbox->reset(generation);
         latestOutputSize = {};
 
         const quint64 requestGeneration = generation;
-        const QRect requestSelection = canvasSelection;
-        const QRect requestPhysicalSelection =
-            canvasSelection.translated(context.geometry.canvasOrigin());
-        QVector<ScrollDisplayLayout> requestLayouts = layouts;
-        const AdaptiveScrollCadence::Config requestCadenceConfig = cadenceConfig;
         const QRect logicalSelection =
             logicalSelectionRect(context.geometry, *anchorDisplay, canvasSelection);
         thumbnailHost->beginScrollingThumbnail(
             logicalSelection.translated(-thumbnailHost->geometry().topLeft()), mode);
 
-        postCaptureTask([requestGeneration, requestSelection, requestPhysicalSelection,
-                         requestLayouts = std::move(requestLayouts), requestCadenceConfig](
-                            ScreenshotScrollingCaptureProducer& target) mutable {
-            target.begin(requestGeneration, requestSelection, requestPhysicalSelection,
-                         std::move(requestLayouts), requestCadenceConfig);
-        });
         const ScreenshotScrollingRecognitionMode requestMode = mode;
         postWorkerTask([requestGeneration, requestMode](ScreenshotScrollingCaptureWorker& target) {
             target.begin(requestGeneration, requestMode);
@@ -944,11 +573,12 @@ struct ScreenshotScrollingCaptureController::Impl {
         const bool wasActive = active;
         active = false;
         ++generation;
+        captureGeneration.store(generation, std::memory_order_release);
+        stopCaptureStream();
         pendingResultRequestId.reset();
         mailbox->reset(generation);
         latestOutputSize = {};
         canvasSelection = {};
-        layouts.clear();
 
         if (worker != nullptr) {
             const quint64 resetGeneration = generation;
@@ -956,13 +586,6 @@ struct ScreenshotScrollingCaptureController::Impl {
                 target.reset(resetGeneration);
             });
         }
-        if (producer != nullptr) {
-            const quint64 resetGeneration = generation;
-            postCaptureTask([resetGeneration](ScreenshotScrollingCaptureProducer& target) {
-                target.reset(resetGeneration);
-            });
-        }
-
         if (wasActive) {
             context.overlayCoordinator.setScrollingCaptureMode(context.displaySession, QRectF(),
                                                                false);
@@ -1016,72 +639,120 @@ struct ScreenshotScrollingCaptureController::Impl {
     }
 
     void ensureWorker() {
-        if (worker != nullptr && producer != nullptr) {
+        if (worker != nullptr) {
             return;
         }
-        captureThread = new QThread(&owner);
-        captureThread->setObjectName(QStringLiteral("snow-shot-scrolling-capture"));
-        const QPointer<ScreenshotScrollingCaptureController> receiver(&owner);
-        producer = new ScreenshotScrollingCaptureProducer(
-            mailbox, [receiver](ScrollCaptureResult result) mutable {
-                if (receiver.isNull()) {
-                    return;
-                }
-                static_cast<void>(QMetaObject::invokeMethod(
-                    receiver,
-                    [receiver, result = std::move(result)]() mutable {
-                        if (!receiver.isNull() && receiver->m_impl != nullptr) {
-                            receiver->m_impl->handleCapture(std::move(result));
-                        }
-                    },
-                    Qt::QueuedConnection));
-            });
-        producer->moveToThread(captureThread);
-        QObject::connect(captureThread, &QThread::finished, producer, &QObject::deleteLater);
-        captureThread->start();
-
         thread = new QThread(&owner);
         thread->setObjectName(QStringLiteral("snow-shot-scrolling-stitch"));
         worker = new ScreenshotScrollingCaptureWorker;
         worker->moveToThread(thread);
-        QObject::connect(thread, &QThread::finished, worker, &QObject::deleteLater);
         thread->start();
     }
 
     void shutdownWorker() {
-        if (captureThread != nullptr) {
-            captureThread->quit();
-            captureThread->wait();
-            delete captureThread;
-            captureThread = nullptr;
-            producer = nullptr;
-        }
+        stopCaptureStream();
         if (thread == nullptr) {
-            worker = nullptr;
+            delete std::exchange(worker, nullptr);
             return;
+        }
+
+        // Drain all queued frame work and release the native stitch session while the worker
+        // event loop is still running.  The explicit delete below is the final ownership edge;
+        // no QObject::deleteLater() event is required after the event loop exits.
+        if (worker != nullptr && thread->isRunning()) {
+            ScreenshotScrollingCaptureWorker* const target = worker;
+            static_cast<void>(QMetaObject::invokeMethod(
+                worker,
+                [target]() { target->shutdown(); },
+                Qt::BlockingQueuedConnection));
         }
         thread->quit();
         thread->wait();
+        delete std::exchange(worker, nullptr);
         delete thread;
         thread = nullptr;
-        worker = nullptr;
     }
 
-    template <typename Task> void postCaptureTask(Task&& task) {
-        if (producer == nullptr) {
+    bool startCaptureStream(const QRect& physicalSelection) {
+        stopCaptureStream();
+        if (physicalSelection.isEmpty()) {
+            return false;
+        }
+        SnowCaptureRegionStreamConfig config{};
+        config.version = SNOW_CAPTURE_REGION_STREAM_CONFIG_VERSION;
+        config.struct_size = static_cast<std::uint32_t>(sizeof(config));
+        config.x = physicalSelection.x();
+        config.y = physicalSelection.y();
+        config.width = static_cast<std::uint32_t>(physicalSelection.width());
+        config.height = static_cast<std::uint32_t>(physicalSelection.height());
+        config.capture_retry_count = 1;
+        config.capture_backend = SNOW_CAPTURE_BACKEND_WGC;
+        captureStream = snow_capture_region_stream_create(&config, &Impl::captureEvent, this);
+        return captureStream != nullptr;
+    }
+
+    void stopCaptureStream() {
+        if (captureStream == nullptr) {
             return;
         }
-        const QPointer<ScreenshotScrollingCaptureProducer> target(producer);
+        SnowCaptureRegionStream* stream = std::exchange(captureStream, nullptr);
+        snow_capture_region_stream_destroy(stream);
+    }
+
+    static void captureEvent(void* contextValue, SnowCaptureRegionStreamEventKind kind,
+                             SnowCaptureRegionStreamFrame* frame) {
+        auto* self = static_cast<Impl*>(contextValue);
+        if (self == nullptr) {
+            if (frame != nullptr) {
+                snow_capture_region_stream_frame_destroy(frame);
+            }
+            return;
+        }
+        if (kind == SNOW_CAPTURE_REGION_STREAM_FRAME) {
+            const quint64 frameGeneration = self->captureGeneration.load(std::memory_order_acquire);
+            const bool wake = self->mailbox->publish(frameGeneration, OwnedScrollFrame(frame));
+            if (wake) {
+                self->wakeStitchConsumer(frameGeneration);
+            }
+            return;
+        }
+        if (frame != nullptr) {
+            snow_capture_region_stream_frame_destroy(frame);
+        }
+        if (kind == SNOW_CAPTURE_REGION_STREAM_ERROR ||
+            kind == SNOW_CAPTURE_REGION_STREAM_RESOLUTION_CHANGED) {
+            const QString errorMessage = kind == SNOW_CAPTURE_REGION_STREAM_ERROR
+                                             ? QString::fromUtf8(snow_capture_last_error_message())
+                                             : QStringLiteral("capture resolution changed");
+            self->reportCaptureFailure(self->captureGeneration.load(std::memory_order_acquire),
+                                       errorMessage);
+        }
+    }
+
+    void wakeStitchConsumer(quint64 frameGeneration) {
+        const QPointer<ScreenshotScrollingCaptureController> receiver(&owner);
         static_cast<void>(QMetaObject::invokeMethod(
-            producer,
-            [target, task = std::forward<Task>(task)]() mutable {
-                if (!target.isNull()) {
-                    task(*target);
+            &owner,
+            [receiver, frameGeneration]() {
+                if (!receiver.isNull() && receiver->m_impl != nullptr &&
+                    receiver->m_impl->generation == frameGeneration) {
+                    receiver->m_impl->scheduleStitchFrame();
                 }
             },
             Qt::QueuedConnection));
     }
 
+    void reportCaptureFailure(quint64 frameGeneration, QString message) {
+        const QPointer<ScreenshotScrollingCaptureController> receiver(&owner);
+        static_cast<void>(QMetaObject::invokeMethod(
+            &owner,
+            [receiver, frameGeneration, message = std::move(message)]() {
+                if (!receiver.isNull() && receiver->m_impl != nullptr) {
+                    receiver->m_impl->handleCaptureFailure(frameGeneration, message);
+                }
+            },
+            Qt::QueuedConnection));
+    }
     template <typename Task> void postWorkerTask(Task&& task) {
         if (worker == nullptr) {
             return;
@@ -1097,13 +768,13 @@ struct ScreenshotScrollingCaptureController::Impl {
             Qt::QueuedConnection));
     }
 
-    void handleCapture(ScrollCaptureResult result) {
-        if (!active || result.generation != generation) {
+    void handleCaptureFailure(quint64 failedGeneration, const QString& message) {
+        if (!active || failedGeneration != generation) {
             return;
         }
-        if (result.wakeConsumer) {
-            scheduleStitchFrame();
-        }
+        qWarning("Native scrolling capture stream stopped unexpectedly: %s",
+                 qUtf8Printable(message));
+        stop(false);
     }
 
     void scheduleStitchFrame() {
@@ -1117,47 +788,50 @@ struct ScreenshotScrollingCaptureController::Impl {
         const quint64 requestGeneration = next->generation;
         auto sharedFrame = std::make_shared<OwnedScrollFrame>(std::move(next->item));
         const QPointer<ScreenshotScrollingCaptureController> receiver(&owner);
-        postWorkerTask([receiver, requestGeneration,
-                        sharedFrame](ScreenshotScrollingCaptureWorker& target) {
-            const ScrollClock::time_point startedAt = ScrollClock::now();
-            ScrollWorkerFrame result = target.process(requestGeneration, sharedFrame->release());
-            result.processingDuration = ScrollClock::now() - startedAt;
-            if (receiver.isNull()) {
-                return;
-            }
-            static_cast<void>(QMetaObject::invokeMethod(
-                receiver,
-                [receiver, result = std::move(result)]() mutable {
-                    if (!receiver.isNull() && receiver->m_impl != nullptr) {
-                        receiver->m_impl->handleFrame(std::move(result));
-                    }
-                },
-                Qt::QueuedConnection));
-        });
+        postWorkerTask(
+            [receiver, requestGeneration, sharedFrame](ScreenshotScrollingCaptureWorker& target) {
+                const ScrollClock::time_point startedAt = ScrollClock::now();
+                ScrollWorkerFrame result = target.process(requestGeneration, sharedFrame->get());
+                result.processingDuration = ScrollClock::now() - startedAt;
+                if (receiver.isNull()) {
+                    return;
+                }
+                static_cast<void>(QMetaObject::invokeMethod(
+                    receiver,
+                    [receiver, result = std::move(result)]() mutable {
+                        if (!receiver.isNull() && receiver->m_impl != nullptr) {
+                            receiver->m_impl->handleFrame(std::move(result));
+                        }
+                    },
+                    Qt::QueuedConnection));
+            });
     }
 
     void handleFrame(ScrollWorkerFrame result) {
-        const bool hasNext = mailbox->finish(result.generation);
+        const auto completion = mailbox->finishWithFeedback(result.generation);
+        const bool hasNext = completion.hasNext;
         if (!active || result.generation != generation) {
             return;
         }
-        const quint64 feedbackGeneration = result.generation;
-        const ScrollClock::duration feedbackDuration = result.processingDuration;
-        postCaptureTask(
-            [feedbackGeneration, feedbackDuration](ScreenshotScrollingCaptureProducer& target) {
-                target.recordStitch(feedbackGeneration, feedbackDuration);
-            });
+        if (captureStream != nullptr) {
+            SnowCaptureRegionStreamStitchFeedback feedback{};
+            feedback.version = SNOW_CAPTURE_REGION_STREAM_STITCH_FEEDBACK_VERSION;
+            feedback.struct_size = static_cast<std::uint32_t>(sizeof(feedback));
+            feedback.service_time_ns = static_cast<std::uint64_t>(std::max<std::int64_t>(
+                0, std::chrono::duration_cast<std::chrono::nanoseconds>(result.processingDuration)
+                       .count()));
+            feedback.pending_depth = static_cast<std::uint32_t>(
+                std::min<std::size_t>(completion.pendingDepth, std::numeric_limits<std::uint32_t>::max()));
+            feedback.replaced_frames = static_cast<std::uint32_t>(std::min<std::size_t>(
+                completion.replacedFrames, std::numeric_limits<std::uint32_t>::max()));
+            feedback.representative =
+                !result.fatalError && result.event != SNOW_STITCH_FRAME_EVENT_DUPLICATE;
+            static_cast<void>(
+                snow_capture_region_stream_report_stitch_feedback(captureStream, &feedback));
+        }
         if (result.fatalError) {
-            ++generation;
-            pendingResultRequestId.reset();
-            mailbox->reset(generation);
-            const quint64 resetGeneration = generation;
-            postCaptureTask([resetGeneration](ScreenshotScrollingCaptureProducer& target) {
-                target.reset(resetGeneration);
-            });
-            postWorkerTask([resetGeneration](ScreenshotScrollingCaptureWorker& target) {
-                target.reset(resetGeneration);
-            });
+            qWarning("Scrolling stitch pipeline stopped after a fatal frame error");
+            stop(false);
             return;
         }
         if (hasNext) {
@@ -1220,7 +894,8 @@ struct ScreenshotScrollingCaptureController::Impl {
                    : QSize(latestOutputSize.width(), bottom - top);
     }
 
-    bool requestTrimmedImage(ScreenshotScrollingCaptureController::ImageResultCallback callback) {
+    bool
+    requestTrimmedSnapshot(ScreenshotScrollingCaptureController::SnapshotResultCallback callback) {
         if (!active || worker == nullptr || thumbnailHost == nullptr ||
             latestOutputSize.isEmpty() || !callback || pendingResultRequestId.has_value()) {
             return false;
@@ -1238,9 +913,9 @@ struct ScreenshotScrollingCaptureController::Impl {
             worker,
             [target, receiver, requestId, requestGeneration, trim,
              callback = std::move(callback)]() mutable {
-                QImage result;
+                ScreenshotScrollingSnapshot result;
                 if (!target.isNull()) {
-                    result = target->trimmedOutput(trim.top, trim.bottom);
+                    result = target->trimmedSnapshot(trim.top, trim.bottom);
                 }
                 if (receiver.isNull()) {
                     return;
@@ -1263,59 +938,6 @@ struct ScreenshotScrollingCaptureController::Impl {
                     Qt::QueuedConnection));
             },
             Qt::QueuedConnection);
-        if (!invoked) {
-            if (pendingResultRequestId == requestId) {
-                pendingResultRequestId.reset();
-            }
-        }
-        return invoked;
-    }
-
-    bool requestTrimmedClipboardPayload(
-        ScreenshotScrollingCaptureController::ClipboardResultCallback callback) {
-        if (!active || worker == nullptr || thumbnailHost == nullptr ||
-            latestOutputSize.isEmpty() || !callback || pendingResultRequestId.has_value()) {
-            return false;
-        }
-        const ScreenshotScrollingTrimRange trim = thumbnailHost->scrollingThumbnailTrim();
-        if (!trim.isValid()) {
-            return false;
-        }
-        const quint64 requestGeneration = generation;
-        const quint64 requestId = ++nextResultRequestId;
-        pendingResultRequestId = requestId;
-        const QPointer<ScreenshotScrollingCaptureWorker> target(worker);
-        const QPointer<ScreenshotScrollingCaptureController> receiver(&owner);
-        const bool invoked = QMetaObject::invokeMethod(
-            worker,
-            [target, receiver, requestId, requestGeneration, trim,
-             callback = std::move(callback)]() mutable {
-                auto payload = std::make_shared<ScreenshotClipboardPayload>();
-                if (!target.isNull()) {
-                    *payload = ScreenshotClipboardService::prepare(ScreenshotClipboardPixelSource(
-                        target->trimmedOutput(trim.top, trim.bottom)));
-                }
-                if (receiver.isNull()) {
-                    return;
-                }
-                static_cast<void>(QMetaObject::invokeMethod(
-                    receiver,
-                    [receiver, requestId, requestGeneration, payload,
-                     callback = std::move(callback)]() mutable {
-                        if (receiver.isNull() || receiver->m_impl == nullptr ||
-                            receiver->m_impl->pendingResultRequestId != requestId) {
-                            return;
-                        }
-                        receiver->m_impl->pendingResultRequestId.reset();
-                        if (!receiver->m_impl->active ||
-                            receiver->m_impl->generation != requestGeneration) {
-                            return;
-                        }
-                        callback(std::move(*payload));
-                    },
-                    Qt::QueuedConnection));
-            },
-            Qt::QueuedConnection);
         if (!invoked && pendingResultRequestId == requestId) {
             pendingResultRequestId.reset();
         }
@@ -1324,10 +946,8 @@ struct ScreenshotScrollingCaptureController::Impl {
 
     ScreenshotScrollingCaptureController& owner;
     ScreenshotScrollingCaptureControllerContext context;
-    AdaptiveScrollCadence::Config cadenceConfig;
     std::shared_ptr<ScrollFrameMailbox> mailbox = std::make_shared<ScrollFrameMailbox>();
-    QThread* captureThread = nullptr;
-    ScreenshotScrollingCaptureProducer* producer = nullptr;
+    SnowCaptureRegionStream* captureStream = nullptr;
     QThread* thread = nullptr;
     ScreenshotScrollingCaptureWorker* worker = nullptr;
     QPointer<ScreenshotOverlayWindow> thumbnailHost;
@@ -1335,8 +955,8 @@ struct ScreenshotScrollingCaptureController::Impl {
     QPointer<ScreenshotToolbarWindow> excludedToolbar;
     QSize latestOutputSize;
     std::optional<quint64> pendingResultRequestId;
-    QVector<ScrollDisplayLayout> layouts;
     QRect canvasSelection;
+    std::atomic<quint64> captureGeneration{0};
     quint64 generation = 0;
     quint64 nextResultRequestId = 0;
     bool active = false;
@@ -1387,13 +1007,8 @@ QSize ScreenshotScrollingCaptureController::trimmedSize() const {
     return m_impl->trimmedSize();
 }
 
-bool ScreenshotScrollingCaptureController::requestTrimmedImage(ImageResultCallback callback) {
-    return m_impl->requestTrimmedImage(std::move(callback));
-}
-
-bool ScreenshotScrollingCaptureController::requestTrimmedClipboardPayload(
-    ClipboardResultCallback callback) {
-    return m_impl->requestTrimmedClipboardPayload(std::move(callback));
+bool ScreenshotScrollingCaptureController::requestTrimmedSnapshot(SnapshotResultCallback callback) {
+    return m_impl->requestTrimmedSnapshot(std::move(callback));
 }
 
 QRect ScreenshotScrollingCaptureController::canvasSelection() const {

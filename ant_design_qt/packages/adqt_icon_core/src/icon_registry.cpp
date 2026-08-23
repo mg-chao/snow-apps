@@ -1,11 +1,9 @@
 #include "icon_registry.h"
 
-#include <QCache>
 #include <QCryptographicHash>
 #include <QIconEngine>
 #include <QMutex>
 #include <QMutexLocker>
-#include <QPaintDevice>
 #include <QPainter>
 #include <QRegularExpression>
 #include <QSet>
@@ -14,98 +12,146 @@
 #include <QtMath>
 
 #include <algorithm>
+#include <list>
+#include <limits>
+#include <memory>
+#include <new>
+#include <string_view>
+#include <unordered_map>
 #include <utility>
 
 namespace adqt::icons::detail {
 
 struct IconRefAccess final {
-  static const IconKey& key(const IconRef& ref) { return ref.key_; }
+  static const IconDescriptor* descriptor(const IconRef& ref) { return ref.descriptor_; }
   static const IconColors& colors(const IconRef& ref) { return ref.colors_; }
 };
 
-struct StoredIcon final {
+struct DynamicIcon final {
+  QByteArray pack;
+  QByteArray variant;
+  QByteArray name;
+  QByteArray svg;
+  QByteArray sourceHash;
+  QByteArray primaryColor;
+  QByteArray secondaryColor;
+  QByteArray tertiaryColor;
+  IconDescriptor descriptor;
   IconMetadata metadata;
-  QByteArray svgTemplate;
 };
 
-struct IconPixmapCacheKey final {
-  IconKey key;
+struct IconCacheKey final {
+  const IconDescriptor* descriptor = nullptr;
   QSize physicalSize;
   QIcon::Mode mode = QIcon::Normal;
   QIcon::State state = QIcon::Off;
   IconFit fit = IconFit::Contain;
   int alignment = Qt::AlignCenter;
-  quint64 paletteRevision = 1;
-  quint64 statePaletteRevision = 0;
   QRgb primary = 0;
   QRgb secondary = 0;
   QRgb tertiary = 0;
 };
 
-inline bool operator==(const IconPixmapCacheKey& lhs, const IconPixmapCacheKey& rhs) {
-  return lhs.key == rhs.key && lhs.physicalSize == rhs.physicalSize && lhs.mode == rhs.mode &&
-         lhs.state == rhs.state && lhs.fit == rhs.fit && lhs.alignment == rhs.alignment &&
-         lhs.paletteRevision == rhs.paletteRevision &&
-         lhs.statePaletteRevision == rhs.statePaletteRevision && lhs.primary == rhs.primary &&
+inline bool operator==(const IconCacheKey& lhs, const IconCacheKey& rhs) {
+  return lhs.descriptor == rhs.descriptor && lhs.physicalSize == rhs.physicalSize &&
+         lhs.mode == rhs.mode && lhs.state == rhs.state && lhs.fit == rhs.fit &&
+         lhs.alignment == rhs.alignment && lhs.primary == rhs.primary &&
          lhs.secondary == rhs.secondary && lhs.tertiary == rhs.tertiary;
 }
 
-inline IconHashValue qHash(const IconPixmapCacheKey& value, IconHashValue seed = 0) {
-  seed = iconHashCombine(seed, qHash(value.key, 0));
+inline IconHashValue qHash(const IconCacheKey& value, IconHashValue seed = 0) {
+  seed = iconHashCombine(seed, ::qHash(reinterpret_cast<quintptr>(value.descriptor), 0));
   seed = iconHashCombine(seed, ::qHash(value.physicalSize, 0));
   seed = iconHashCombine(seed, ::qHash(static_cast<int>(value.mode), 0));
   seed = iconHashCombine(seed, ::qHash(static_cast<int>(value.state), 0));
   seed = iconHashCombine(seed, ::qHash(static_cast<int>(value.fit), 0));
   seed = iconHashCombine(seed, ::qHash(value.alignment, 0));
-  seed = iconHashCombine(seed, ::qHash(value.paletteRevision, 0));
-  seed = iconHashCombine(seed, ::qHash(value.statePaletteRevision, 0));
   seed = iconHashCombine(seed, ::qHash(value.primary, 0));
   seed = iconHashCombine(seed, ::qHash(value.secondary, 0));
   return iconHashCombine(seed, ::qHash(value.tertiary, 0));
 }
 
-struct IconRegistryImpl final {
-  static constexpr int kDefaultCacheLimitKB = 8 * 1024;
-  IconRegistryImpl() : pixmapCache(kDefaultCacheLimitKB) {}
+struct CacheKeyHash final {
+  std::size_t operator()(const IconCacheKey& value) const noexcept {
+    return static_cast<std::size_t>(qHash(value));
+  }
+};
+
+struct CacheEntry final {
+  IconCacheKey key;
+  QImage image;
+  qint64 cost = 0;
+};
+
+struct IconRendererImpl final {
+  using CacheList = std::list<CacheEntry>;
+  using CacheIterator = CacheList::iterator;
 
   QMutex mutex;
-  QHash<IconKey, StoredIcon> icons;
+  QHash<IconKey, std::shared_ptr<DynamicIcon>> dynamicIcons;
+  // Static packs are catalogued process-wide, but registration results remain local to each
+  // renderer so an isolated renderer can report its own first-use accurately.
+  QSet<const IconPack*> registeredStaticPacks;
   IconPaletteResolver resolver;
-  QCache<IconPixmapCacheKey, QPixmap> pixmapCache;
-  QSet<IconPixmapCacheKey> inFlight;
+  CacheList lru;
+  std::unordered_map<IconCacheKey, CacheIterator, CacheKeyHash> cache;
+  QSet<IconCacheKey> inFlight;
   QWaitCondition cacheReady;
-  int cacheLimitKB = kDefaultCacheLimitKB;
+
+  qint64 cacheLimitBytes = IconRenderer::kDefaultCacheLimitBytes;
+  int maxEntries = IconRenderer::kDefaultMaxCacheEntries;
+  qint64 maxRasterBytes = IconRenderer::kDefaultMaxRasterBytes;
+  qint64 cacheBytes = 0;
   quint64 hitCount = 0;
   quint64 missCount = 0;
   quint64 rasterizationCount = 0;
+  quint64 evictionCount = 0;
+  quint64 generation = 1;
+  quint64 staleRenderCount = 0;
 };
+
+struct StaticPackCatalog final {
+  QMutex mutex;
+  QVector<const IconPack*> packs;
+};
+
+StaticPackCatalog& staticPackCatalog() {
+  static StaticPackCatalog catalog;
+  return catalog;
+}
 
 }  // namespace adqt::icons::detail
 
 namespace adqt::icons {
 namespace {
 
-using detail::IconPixmapCacheKey;
-using detail::IconRegistryImpl;
-using detail::StoredIcon;
+using detail::CacheEntry;
+using detail::IconCacheKey;
+using detail::IconRendererImpl;
+using detail::DynamicIcon;
 
 constexpr auto kPrimaryPlaceholder = "__ADQT_SLOT_PRIMARY__";
 constexpr auto kSecondaryPlaceholder = "__ADQT_SLOT_SECONDARY__";
 constexpr auto kTertiaryPlaceholder = "__ADQT_SLOT_TERTIARY__";
-constexpr qint64 kMaxCacheablePixmapBytes = 256 * 1024;
 
-QString placeholderForSlot(const QString& slot) {
-  if (slot.compare(QStringLiteral("secondary"), Qt::CaseInsensitive) == 0) {
-    return QString::fromLatin1(kSecondaryPlaceholder);
-  }
-  if (slot.compare(QStringLiteral("tertiary"), Qt::CaseInsensitive) == 0) {
-    return QString::fromLatin1(kTertiaryPlaceholder);
-  }
-  return QString::fromLatin1(kPrimaryPlaceholder);
+QString stringFromView(std::string_view value) {
+  return QString::fromUtf8(value.data(), static_cast<int>(value.size()));
 }
 
-QString svgColor(const QColor& value) {
-  return (value.isValid() ? value : QColor(Qt::black)).name(QColor::HexRgb);
+QByteArray bytesFromView(std::string_view value) {
+  return QByteArray(value.data(), static_cast<int>(value.size()));
+}
+
+QColor colorFromView(std::string_view value) {
+  return value.empty() ? QColor() : QColor(stringFromView(value));
+}
+
+IconColors colorsFromStatic(const IconStaticColors& colors) {
+  IconColors result;
+  if (!colors.primary.empty()) result = result.withPrimary(colorFromView(colors.primary));
+  if (!colors.secondary.empty()) result = result.withSecondary(colorFromView(colors.secondary));
+  if (!colors.tertiary.empty()) result = result.withTertiary(colorFromView(colors.tertiary));
+  return result;
 }
 
 bool hasSlot(const IconColors& colors, int slot) {
@@ -115,17 +161,20 @@ bool hasSlot(const IconColors& colors, int slot) {
 }
 
 QColor slot(const IconColors& colors, int index) {
-  if (index == 0 && colors.primarySlot()) return *colors.primarySlot();
-  if (index == 1 && colors.secondarySlot()) return *colors.secondarySlot();
-  if (index == 2 && colors.tertiarySlot()) return *colors.tertiarySlot();
-  return QColor();
+  std::optional<QColor> value;
+  if (index == 0)
+    value = colors.primarySlot();
+  else if (index == 1)
+    value = colors.secondarySlot();
+  else if (index == 2)
+    value = colors.tertiarySlot();
+  return value.value_or(QColor());
 }
 
 bool colorsAllowed(IconColorModel model, const IconColors& colors) {
   if (model == IconColorModel::FullColor) return colors.isEmpty();
-  if (model == IconColorModel::Monochrome) {
+  if (model == IconColorModel::Monochrome)
     return !colors.secondarySlot() && !colors.tertiarySlot();
-  }
   if (model == IconColorModel::TwoTone) return !colors.tertiarySlot();
   return true;
 }
@@ -135,14 +184,24 @@ void addDiagnostic(IconPackRegistrationResult& result, IconRegistrationError err
   result.diagnostics.append(IconRegistrationDiagnostic{error, key, message});
 }
 
+QString placeholderForSlot(const QString& slotName) {
+  if (slotName.compare(QStringLiteral("secondary"), Qt::CaseInsensitive) == 0)
+    return QString::fromLatin1(kSecondaryPlaceholder);
+  if (slotName.compare(QStringLiteral("tertiary"), Qt::CaseInsensitive) == 0)
+    return QString::fromLatin1(kTertiaryPlaceholder);
+  return QString::fromLatin1(kPrimaryPlaceholder);
+}
+
+QString svgColor(const QColor& value) {
+  return (value.isValid() ? value : QColor(Qt::black)).name(QColor::HexRgb);
+}
+
 bool replaceColorAttribute(QString& tag, const QString& name, const QString& placeholder) {
   const QRegularExpression expression(QStringLiteral(R"(\b%1\s*=\s*(['"])([^'"]*)\1)").arg(name),
                                       QRegularExpression::CaseInsensitiveOption);
   const QRegularExpressionMatch match = expression.match(tag);
-  if (!match.hasMatch() ||
-      match.captured(2).compare(QStringLiteral("none"), Qt::CaseInsensitive) == 0) {
+  if (!match.hasMatch() || match.captured(2).compare(QStringLiteral("none"), Qt::CaseInsensitive) == 0)
     return false;
-  }
   tag.replace(match.capturedStart(), match.capturedLength(),
               QStringLiteral("%1=\"%2\"").arg(name, placeholder));
   return true;
@@ -155,18 +214,46 @@ QByteArray normalizeSvg(const IconDefinition& definition, QString* error) {
     if (error) *error = QStringLiteral("source does not contain an svg root");
     return {};
   }
+  const QRegularExpression forbiddenElement(
+      QStringLiteral(R"(<\s*(?:script|foreignObject|iframe|animate|animateMotion|animateTransform|set)\b)"),
+      QRegularExpression::CaseInsensitiveOption);
+  if (svg.contains(forbiddenElement)) {
+    if (error) *error = QStringLiteral("SVG contains a forbidden active element");
+    return {};
+  }
   if (svg.contains(QRegularExpression(QStringLiteral(R"((?:href|src)\s*=\s*['"](?:https?:)?//)"),
                                       QRegularExpression::CaseInsensitiveOption))) {
     if (error) *error = QStringLiteral("external network references are forbidden");
     return {};
   }
-  if (!definition.allowEmbeddedDataImages &&
-      svg.contains(QRegularExpression(QStringLiteral(R"(<image\b)"),
+  if (svg.contains(QRegularExpression(QStringLiteral(R"(<image\b)"),
                                       QRegularExpression::CaseInsensitiveOption))) {
-    if (error) *error = QStringLiteral("image elements require explicit embedded-data permission");
-    return {};
+    if (definition.colorModel != IconColorModel::FullColor ||
+        !definition.allowEmbeddedDataImages) {
+      if (error)
+        *error = QStringLiteral(
+            "image elements require an explicitly permitted full-color entry");
+      return {};
+    }
+    const QRegularExpression imageTag(QStringLiteral(R"(<image\b[^>]*>)"),
+                                      QRegularExpression::CaseInsensitiveOption);
+    const QRegularExpression imageReference(
+        QStringLiteral(R"((?:href|src)\s*=\s*(['"])([^'"]*)\1)"),
+        QRegularExpression::CaseInsensitiveOption);
+    auto tags = imageTag.globalMatch(svg);
+    while (tags.hasNext()) {
+      const QRegularExpressionMatch tag = tags.next();
+      auto references = imageReference.globalMatch(tag.captured());
+      while (references.hasNext()) {
+        const QRegularExpressionMatch reference = references.next();
+        if (!reference.captured(2).startsWith(QStringLiteral("data:"),
+                                               Qt::CaseInsensitive)) {
+          if (error) *error = QStringLiteral("image elements may only reference data URLs");
+          return {};
+        }
+      }
+    }
   }
-
   if (definition.colorModel == IconColorModel::FullColor) {
     if (svg.contains(QStringLiteral("data-adqt-slot"), Qt::CaseInsensitive) ||
         svg.contains(QStringLiteral("currentColor"), Qt::CaseInsensitive)) {
@@ -177,15 +264,13 @@ QByteArray normalizeSvg(const IconDefinition& definition, QString* error) {
   }
 
   const QRegularExpression slotTag(
-      QStringLiteral(
-          R"(<([A-Za-z_:][A-Za-z0-9:._-]*)([^>]*)\bdata-adqt-slot\s*=\s*(['"])(primary|secondary|tertiary)\3([^>]*)>)"),
+      QStringLiteral(R"(<([A-Za-z_:][A-Za-z0-9:._-]*)([^>]*)\bdata-adqt-slot\s*=\s*(['"])(primary|secondary|tertiary)\3([^>]*)>)"),
       QRegularExpression::CaseInsensitiveOption);
   const QRegularExpression slotAttribute(
       QStringLiteral(R"(\s*data-adqt-slot\s*=\s*(['"])(primary|secondary|tertiary)\1)"),
       QRegularExpression::CaseInsensitiveOption);
   const QRegularExpression currentColor(QStringLiteral("currentColor"),
                                         QRegularExpression::CaseInsensitiveOption);
-
   QString normalized;
   qsizetype cursor = 0;
   auto matches = slotTag.globalMatch(svg);
@@ -211,14 +296,14 @@ QByteArray normalizeSvg(const IconDefinition& definition, QString* error) {
   }
   normalized += svg.mid(cursor);
   normalized.replace(currentColor, QString::fromLatin1(kPrimaryPlaceholder));
-
   const bool primary = normalized.contains(QString::fromLatin1(kPrimaryPlaceholder));
   const bool secondary = normalized.contains(QString::fromLatin1(kSecondaryPlaceholder));
   const bool tertiary = normalized.contains(QString::fromLatin1(kTertiaryPlaceholder));
-  const bool valid =
-      definition.colorModel == IconColorModel::Monochrome ? primary && !secondary && !tertiary
-      : definition.colorModel == IconColorModel::TwoTone  ? primary && secondary && !tertiary
-                                                          : primary && secondary && tertiary;
+  const bool valid = definition.colorModel == IconColorModel::Monochrome
+                         ? primary && !secondary && !tertiary
+                     : definition.colorModel == IconColorModel::TwoTone
+                         ? primary && secondary && !tertiary
+                         : primary && secondary && tertiary;
   if (!valid) {
     if (error) *error = QStringLiteral("SVG slots do not match the declared color model");
     return {};
@@ -248,58 +333,48 @@ struct ResolvedColors final {
   QColor primary;
   QColor secondary;
   QColor tertiary;
-  quint64 applicationRevision = 1;
-  quint64 stateRevision = 0;
 };
 
-ResolvedColors resolveColors(const StoredIcon& stored, const IconRef& ref,
+ResolvedColors resolveColors(const IconDescriptor& descriptor, const IconRef& ref,
                              const IconStatePalette& statePalette, const IconPalette& app,
                              QIcon::Mode mode, QIcon::State state) {
   ResolvedColors result;
-  result.applicationRevision = app.revision;
-  result.stateRevision = statePalette.revision();
-  if (stored.metadata.colorModel == IconColorModel::FullColor) return result;
-
-  const QColor appPrimary = stored.metadata.colorModel == IconColorModel::Monochrome
-                                ? (mode == QIcon::Disabled ? app.textDisabled : app.text)
-                                : (mode == QIcon::Disabled ? app.textDisabled : app.primary);
-  result.primary = appPrimary;
-  result.secondary =
-      mode == QIcon::Disabled ? deriveSecondary(app.textDisabled) : app.twoToneSecondary;
+  if (descriptor.colorModel == IconColorModel::FullColor) return result;
+  result.primary = descriptor.colorModel == IconColorModel::Monochrome
+                       ? (mode == QIcon::Disabled ? app.textDisabled : app.text)
+                       : (mode == QIcon::Disabled ? app.textDisabled : app.primary);
+  result.secondary = mode == QIcon::Disabled ? deriveSecondary(app.textDisabled)
+                                             : app.twoToneSecondary;
   result.tertiary = mode == QIcon::Disabled ? result.secondary : app.tertiary;
 
   const std::optional<IconColors> stateColors = statePalette.resolve(mode, state);
+  const IconColors defaults = colorsFromStatic(descriptor.defaultColors);
+  const IconColors& refColors = detail::IconRefAccess::colors(ref);
   for (int index = 0; index < 3; ++index) {
     QColor selected;
     if (stateColors && hasSlot(*stateColors, index))
       selected = slot(*stateColors, index);
-    else if (hasSlot(detail::IconRefAccess::colors(ref), index))
-      selected = slot(detail::IconRefAccess::colors(ref), index);
-    else if (hasSlot(stored.metadata.defaultColors, index))
-      selected = slot(stored.metadata.defaultColors, index);
-    if (!selected.isValid()) continue;
-    if (index == 0)
-      result.primary = selected;
-    else if (index == 1)
-      result.secondary = selected;
-    else
-      result.tertiary = selected;
+    else if (hasSlot(refColors, index))
+      selected = slot(refColors, index);
+    else if (hasSlot(defaults, index))
+      selected = slot(defaults, index);
+    if (index == 0 && selected.isValid()) result.primary = selected;
+    if (index == 1 && selected.isValid()) result.secondary = selected;
+    if (index == 2 && selected.isValid()) result.tertiary = selected;
   }
   const bool hasPrimaryOverride = (stateColors && stateColors->primarySlot()) ||
-                                  detail::IconRefAccess::colors(ref).primarySlot();
+                                  refColors.primarySlot();
   const bool hasSecondaryColor = (stateColors && stateColors->secondarySlot()) ||
-                                 detail::IconRefAccess::colors(ref).secondarySlot() ||
-                                 stored.metadata.defaultColors.secondarySlot();
-  if (stored.metadata.colorModel != IconColorModel::Monochrome && hasPrimaryOverride &&
-      !hasSecondaryColor) {
+                                 refColors.secondarySlot() || defaults.secondarySlot();
+  if (descriptor.colorModel != IconColorModel::Monochrome && hasPrimaryOverride &&
+      !hasSecondaryColor)
     result.secondary = deriveSecondary(result.primary);
-  }
   return result;
 }
 
-QByteArray coloredSvg(const StoredIcon& stored, const ResolvedColors& colors) {
-  if (stored.metadata.colorModel == IconColorModel::FullColor) return stored.svgTemplate;
-  QString svg = QString::fromUtf8(stored.svgTemplate);
+QByteArray coloredSvg(const IconDescriptor& descriptor, const ResolvedColors& colors) {
+  if (descriptor.colorModel == IconColorModel::FullColor) return bytesFromView(descriptor.svg);
+  QString svg = stringFromView(descriptor.svg);
   svg.replace(QString::fromLatin1(kPrimaryPlaceholder), svgColor(colors.primary));
   svg.replace(QString::fromLatin1(kSecondaryPlaceholder), svgColor(colors.secondary));
   svg.replace(QString::fromLatin1(kTertiaryPlaceholder), svgColor(colors.tertiary));
@@ -323,118 +398,291 @@ QRectF alignedContainedRect(const QSizeF& source, const QRectF& bounds, Qt::Alig
   return QRectF(QPointF(x, y), size);
 }
 
-bool lookup(const std::shared_ptr<IconRegistryImpl>& impl, const IconRef& ref, StoredIcon* stored,
-            IconPaletteResolver* resolver) {
-  if (!ref.isValid()) return false;
-  QMutexLocker lock(&impl->mutex);
-  const auto found = impl->icons.constFind(detail::IconRefAccess::key(ref));
-  if (found == impl->icons.constEnd()) return false;
-  if (stored) *stored = found.value();
-  if (resolver) *resolver = impl->resolver;
-  return true;
+int physicalDimension(int logical, qreal dpr) {
+  const qreal scaled = static_cast<qreal>(logical) * dpr;
+  // qRound returns an int; reject values that could overflow during rounding rather than
+  // allowing an overflowed small dimension to slip past the raster safety check.
+  const qreal maxRounded = static_cast<qreal>(std::numeric_limits<int>::max()) - 0.5;
+  if (!qIsFinite(scaled) || scaled >= maxRounded)
+    return std::numeric_limits<int>::max();
+  return qMax(1, qRound(scaled));
 }
 
-int pixmapCost(const QPixmap& pixmap) {
-  return qMax(1, static_cast<int>(
-                     (static_cast<qint64>(pixmap.width()) * pixmap.height() * 4 + 1023) / 1024));
+qint64 estimatedRasterBytes(const QSize& physical) {
+  constexpr qint64 kBytesPerPixel = 4;
+  const qint64 width = physical.width();
+  const qint64 height = physical.height();
+  const qint64 maxValue = std::numeric_limits<qint64>::max();
+  if (height > 0 && width > maxValue / height) return maxValue;
+  const qint64 pixels = width * height;
+  return pixels > maxValue / kBytesPerPixel ? maxValue : pixels * kBytesPerPixel;
 }
 
-QPixmap renderPixmap(const std::shared_ptr<IconRegistryImpl>& impl, const IconRef& ref,
-                     IconRenderRequest request, const IconStatePalette& statePalette) {
-  StoredIcon stored;
-  IconPaletteResolver resolver;
-  if (!lookup(impl, ref, &stored, &resolver)) return {};
-  if (stored.metadata.colorModel == IconColorModel::FullColor &&
+// Rendering is allowed to produce rasters larger than the cache's per-entry budget, but a
+// malformed or untrusted size must never turn into an unbounded QImage allocation. This ceiling
+// bounds transient caller-owned images as well as cacheable rasters.
+constexpr int kMaxRenderDimension = 16384;
+constexpr qint64 kMaxTransientRasterBytes = 64LL * 1024 * 1024;
+
+bool isSafeRasterSize(const QSize& physical) {
+  return physical.isValid() && physical.width() > 0 && physical.height() > 0 &&
+         physical.width() <= kMaxRenderDimension && physical.height() <= kMaxRenderDimension &&
+         estimatedRasterBytes(physical) <= kMaxTransientRasterBytes;
+}
+
+IconMetadata metadataFromDescriptor(const IconDescriptor& descriptor) {
+  IconMetadata result;
+  result.key = {stringFromView(descriptor.pack), stringFromView(descriptor.variant),
+                stringFromView(descriptor.name)};
+  result.colorModel = descriptor.colorModel;
+  result.fit = descriptor.fit;
+  result.defaultColors = colorsFromStatic(descriptor.defaultColors);
+  result.sourceHash = bytesFromView(descriptor.sourceHash);
+  return result;
+}
+
+IconMetadataView metadataViewFromDescriptor(const IconDescriptor& descriptor) {
+  return {descriptor.pack, descriptor.variant, descriptor.name, descriptor.colorModel,
+          descriptor.fit, descriptor.defaultColors, descriptor.sourceHash};
+}
+
+const IconDescriptor* findStaticDescriptor(const IconKey& key) {
+  auto& catalog = detail::staticPackCatalog();
+  QMutexLocker lock(&catalog.mutex);
+  const QByteArray packName = key.pack.toUtf8();
+  const std::string_view packView(packName.constData(), static_cast<std::size_t>(packName.size()));
+  for (const IconPack* pack : catalog.packs) {
+    if (pack->packName == packView) {
+      const QByteArray variant = key.variant.toUtf8();
+      const QByteArray name = key.name.toUtf8();
+      if (const IconDescriptor* descriptor =
+              pack->find(std::string_view(variant.constData(), static_cast<std::size_t>(variant.size())),
+                         std::string_view(name.constData(), static_cast<std::size_t>(name.size()))))
+        return descriptor;
+    }
+  }
+  return nullptr;
+}
+
+void touchCache(IconRendererImpl& impl, IconRendererImpl::CacheIterator iterator) {
+  impl.lru.splice(impl.lru.end(), impl.lru, iterator);
+}
+
+void evictFront(IconRendererImpl& impl) {
+  if (impl.lru.empty()) return;
+  auto iterator = impl.lru.begin();
+  impl.cache.erase(iterator->key);
+  impl.cacheBytes -= iterator->cost;
+  ++impl.evictionCount;
+  impl.lru.erase(iterator);
+}
+
+void evictTo(IconRendererImpl& impl, qint64 targetBytes) {
+  targetBytes = qMax<qint64>(0, targetBytes);
+  while (!impl.lru.empty() &&
+         (impl.cacheBytes > targetBytes || static_cast<int>(impl.lru.size()) > impl.maxEntries))
+    evictFront(impl);
+}
+
+void evictRastersAboveLimit(IconRendererImpl& impl) {
+  for (auto iterator = impl.lru.begin(); iterator != impl.lru.end();) {
+    if (iterator->cost <= impl.maxRasterBytes) {
+      ++iterator;
+      continue;
+    }
+    impl.cache.erase(iterator->key);
+    impl.cacheBytes -= iterator->cost;
+    ++impl.evictionCount;
+    iterator = impl.lru.erase(iterator);
+  }
+}
+
+void releaseEmptyCacheIndex(IconRendererImpl& impl) {
+  if (!impl.lru.empty() || !impl.cache.empty()) return;
+  decltype(impl.cache) empty;
+  impl.cache.swap(empty);
+}
+
+int kilobytesFor(qint64 bytes) {
+  if (bytes <= 0) return 0;
+  const qint64 kilobytes = bytes / 1024 + (bytes % 1024 == 0 ? 0 : 1);
+  return kilobytes >= std::numeric_limits<int>::max()
+             ? std::numeric_limits<int>::max()
+             : static_cast<int>(kilobytes);
+}
+
+QImage rasterize(const IconDescriptor& descriptor, const ResolvedColors& colors,
+                 const QSize& physical, IconFit fit, Qt::Alignment alignment) {
+  QSvgRenderer renderer(coloredSvg(descriptor, colors));
+  if (!renderer.isValid()) return {};
+  QImage image(physical, QImage::Format_ARGB32_Premultiplied);
+  image.fill(Qt::transparent);
+  QPainter painter(&image);
+  painter.setRenderHint(QPainter::Antialiasing, true);
+  const QRectF bounds(QPointF(0, 0), QSizeF(physical));
+  const QRectF target = fit == IconFit::Stretch
+                            ? bounds
+                            : alignedContainedRect(renderer.viewBoxF().size(), bounds, alignment);
+  renderer.render(&painter, target);
+  if (descriptor.colorModel == IconColorModel::Monochrome && colors.primary.alpha() < 255) {
+    painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+    painter.fillRect(bounds, QColor(0, 0, 0, colors.primary.alpha()));
+  }
+  return image;
+}
+
+QImage renderImage(const std::shared_ptr<IconRendererImpl>& impl, const IconRef& ref,
+                   IconRenderRequest request, const IconStatePalette& statePalette) {
+  const IconDescriptor* descriptor = detail::IconRefAccess::descriptor(ref);
+  if (!descriptor || !descriptor->isValid()) return {};
+  if (descriptor->colorModel == IconColorModel::FullColor &&
       (!detail::IconRefAccess::colors(ref).isEmpty() || !statePalette.isEmpty()))
     return {};
 
-  if (!request.logicalSize.isValid() || request.logicalSize.isEmpty())
-    request.logicalSize = QSize(16, 16);
-  const qreal dpr =
-      request.devicePixelRatio > 0.0 ? qBound(0.25, request.devicePixelRatio, 8.0) : 1.0;
-  const QSize physical(qMax(1, qRound(request.logicalSize.width() * dpr)),
-                       qMax(1, qRound(request.logicalSize.height() * dpr)));
-  const IconFit fit = request.fit.value_or(stored.metadata.fit);
-  const IconPalette app = resolvedApplicationPalette(resolver);
-  const ResolvedColors colors =
-      resolveColors(stored, ref, statePalette, app, request.mode, request.state);
+  if (!request.logicalSize.isValid() || request.logicalSize.isEmpty()) request.logicalSize = QSize(16, 16);
+  const qreal dpr = request.devicePixelRatio > 0.0
+                        ? qBound<qreal>(0.25, request.devicePixelRatio, 8.0)
+                        : 1.0;
+  const QSize physical(physicalDimension(request.logicalSize.width(), dpr),
+                       physicalDimension(request.logicalSize.height(), dpr));
 
-  IconPixmapCacheKey key;
-  key.key = stored.metadata.key;
-  key.physicalSize = physical;
-  key.mode = request.mode;
-  key.state = request.state;
-  key.fit = fit;
-  key.alignment = static_cast<int>(request.alignment);
-  key.paletteRevision = colors.applicationRevision;
-  key.statePaletteRevision = colors.stateRevision;
-  key.primary = colors.primary.rgba();
-  key.secondary = colors.secondary.rgba();
-  key.tertiary = colors.tertiary.rgba();
-  const bool cacheable =
-      static_cast<qint64>(physical.width()) * physical.height() * 4 <= kMaxCacheablePixmapBytes;
+  if (!isSafeRasterSize(physical)) return {};
 
-  if (cacheable) {
-    QMutexLocker lock(&impl->mutex);
-    for (;;) {
-      if (QPixmap* cached = impl->pixmapCache.object(key)) {
-        ++impl->hitCount;
-        QPixmap copy = *cached;
-        copy.setDevicePixelRatio(dpr);
-        return copy;
-      }
-      if (!impl->inFlight.contains(key)) {
-        impl->inFlight.insert(key);
+  IconPaletteResolver resolver;
+  ResolvedColors colors;
+  IconCacheKey key;
+  quint64 renderGeneration = 0;
+  bool cacheable = false;
+  const IconFit requestedFit = request.fit.value_or(descriptor->fit);
+  const IconFit fit = requestedFit == IconFit::Stretch ? IconFit::Stretch : IconFit::Contain;
+  // A cache invalidation can happen while another thread is rendering this key. Re-snapshot the
+  // resolver and generation after waking so a waiter never performs a second stale render using
+  // the palette that was current before the invalidation.
+  for (;;) {
+    {
+      QMutexLocker lock(&impl->mutex);
+      resolver = impl->resolver;
+      renderGeneration = impl->generation;
+    }
+    const IconPalette app = resolvedApplicationPalette(resolver);
+    colors = resolveColors(*descriptor, ref, statePalette, app, request.mode, request.state);
+    // Ignore color slots that the descriptor cannot consume. This keeps equivalent monochrome and
+    // two-tone requests on one raster instead of retaining duplicate cache entries for irrelevant
+    // state overrides.
+    const QRgb secondaryKey = descriptor->colorModel == IconColorModel::Monochrome
+                                  ? 0
+                                  : colors.secondary.rgba();
+    const QRgb tertiaryKey = descriptor->colorModel == IconColorModel::ThreeTone
+                                 ? colors.tertiary.rgba()
+                                 : 0;
+    const int alignmentKey = fit == IconFit::Stretch ? static_cast<int>(Qt::AlignCenter)
+                                                      : static_cast<int>(request.alignment);
+    key = IconCacheKey{descriptor,
+                       physical,
+                       request.mode,
+                       request.state,
+                       fit,
+                       alignmentKey,
+                       colors.primary.rgba(),
+                       secondaryKey,
+                       tertiaryKey};
+
+    bool retry = false;
+    {
+      QMutexLocker lock(&impl->mutex);
+      const qint64 estimatedCost = estimatedRasterBytes(physical);
+      cacheable = impl->cacheLimitBytes > 0 && estimatedCost <= impl->cacheLimitBytes &&
+                  estimatedCost <= impl->maxRasterBytes;
+      if (cacheable) {
+        for (;;) {
+          const auto found = impl->cache.find(key);
+          if (found != impl->cache.end()) {
+            touchCache(*impl, found->second);
+            ++impl->hitCount;
+            QImage result = found->second->image;
+            result.setDevicePixelRatio(dpr);
+            return result;
+          }
+          if (!impl->inFlight.contains(key)) {
+            impl->inFlight.insert(key);
+            ++impl->missCount;
+            break;
+          }
+          impl->cacheReady.wait(&impl->mutex);
+          if (renderGeneration != impl->generation) {
+            retry = true;
+            break;
+          }
+        }
+      } else {
         ++impl->missCount;
-        break;
       }
-      impl->cacheReady.wait(&impl->mutex);
     }
+    if (!retry) break;
   }
 
-  QSvgRenderer renderer(coloredSvg(stored, colors));
-  QPixmap pixmap;
-  if (renderer.isValid()) {
-    pixmap = QPixmap(physical);
-    pixmap.fill(Qt::transparent);
-    QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    const QRectF bounds(QPointF(0, 0), QSizeF(physical));
-    const QRectF target = fit == IconFit::Stretch ? bounds
-                                                  : alignedContainedRect(renderer.viewBoxF().size(),
-                                                                         bounds, request.alignment);
-    renderer.render(&painter, target);
-    if (stored.metadata.colorModel == IconColorModel::Monochrome && colors.primary.alpha() < 255) {
-      painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
-      painter.fillRect(bounds, QColor(0, 0, 0, colors.primary.alpha()));
+  QImage image;
+  try {
+    image = rasterize(*descriptor, colors, physical, fit, request.alignment);
+    image.setDevicePixelRatio(dpr);
+  } catch (...) {
+    // A failed raster allocation must not strand waiters on this key. The caller still receives
+    // the original exception, while a later request can retry after the in-flight marker is gone.
+    if (cacheable) {
+      QMutexLocker lock(&impl->mutex);
+      impl->inFlight.remove(key);
+      impl->cacheReady.wakeAll();
     }
+    throw;
   }
 
-  if (cacheable) {
+  {
     QMutexLocker lock(&impl->mutex);
-    if (!pixmap.isNull()) {
-      ++impl->rasterizationCount;
-      impl->pixmapCache.insert(key, new QPixmap(pixmap), pixmapCost(pixmap));
+    ++impl->rasterizationCount;
+    if (cacheable) {
+      const bool generationMatches = renderGeneration == impl->generation;
+      const qint64 cost = image.isNull() ? 0 : static_cast<qint64>(image.sizeInBytes());
+      if (generationMatches && !image.isNull() && cost <= impl->maxRasterBytes &&
+          cost <= impl->cacheLimitBytes && impl->cacheLimitBytes > 0) {
+        // Cache bookkeeping is best-effort after a successful raster. If the index or list
+        // cannot grow, return the caller's image without leaving a half-inserted entry or a
+        // stranded in-flight marker.
+        auto iterator = impl->lru.end();
+        try {
+          impl->lru.push_back(CacheEntry{key, image, cost});
+          iterator = std::prev(impl->lru.end());
+          const auto inserted = impl->cache.emplace(key, iterator);
+          if (inserted.second) {
+            impl->cacheBytes += cost;
+            evictTo(*impl, impl->cacheLimitBytes);
+          } else {
+            impl->lru.erase(iterator);
+          }
+        } catch (const std::bad_alloc&) {
+          if (iterator != impl->lru.end()) impl->lru.erase(iterator);
+        }
+      } else if (!generationMatches) {
+        ++impl->staleRenderCount;
+      }
+      impl->inFlight.remove(key);
+      impl->cacheReady.wakeAll();
     }
-    impl->inFlight.remove(key);
-    impl->cacheReady.wakeAll();
   }
-  pixmap.setDevicePixelRatio(dpr);
-  return pixmap;
+  return image;
 }
 
-class RegistryIconEngine final : public QIconEngine {
+class RendererIconEngine final : public QIconEngine {
  public:
-  RegistryIconEngine(std::shared_ptr<IconRegistryImpl> impl, IconRef ref, IconStatePalette palette)
+  RendererIconEngine(std::shared_ptr<IconRendererImpl> impl, IconRef ref, IconStatePalette palette)
       : impl_(std::move(impl)), ref_(std::move(ref)), palette_(std::move(palette)) {}
-  QIconEngine* clone() const override { return new RegistryIconEngine(impl_, ref_, palette_); }
-  QString key() const override { return QStringLiteral("adqt.icon.engine.v2"); }
+  QIconEngine* clone() const override { return new RendererIconEngine(impl_, ref_, palette_); }
+  QString key() const override { return QStringLiteral("adqt.icon.engine.v3"); }
   QPixmap pixmap(const QSize& size, QIcon::Mode mode, QIcon::State state) override {
     IconRenderRequest request;
     request.logicalSize = size;
     request.mode = mode;
     request.state = state;
-    return renderPixmap(impl_, ref_, request, palette_);
+    return QPixmap::fromImage(renderImage(impl_, ref_, request, palette_));
   }
   QPixmap scaledPixmap(const QSize& size, QIcon::Mode mode, QIcon::State state,
                        qreal scale) override {
@@ -443,7 +691,7 @@ class RegistryIconEngine final : public QIconEngine {
     request.devicePixelRatio = scale;
     request.mode = mode;
     request.state = state;
-    return renderPixmap(impl_, ref_, request, palette_);
+    return QPixmap::fromImage(renderImage(impl_, ref_, request, palette_));
   }
   void paint(QPainter* painter, const QRect& rect, QIcon::Mode mode, QIcon::State state) override {
     if (!painter || rect.isEmpty()) return;
@@ -452,17 +700,49 @@ class RegistryIconEngine final : public QIconEngine {
     request.devicePixelRatio = painter->device() ? painter->device()->devicePixelRatioF() : 1.0;
     request.mode = mode;
     request.state = state;
-    const QPixmap pixmap = renderPixmap(impl_, ref_, request, palette_);
-    if (!pixmap.isNull()) painter->drawPixmap(rect, pixmap);
+    const QImage image = renderImage(impl_, ref_, request, palette_);
+    if (!image.isNull()) painter->drawImage(rect, image, image.rect());
   }
 
  private:
-  std::shared_ptr<IconRegistryImpl> impl_;
+  std::shared_ptr<IconRendererImpl> impl_;
   IconRef ref_;
   IconStatePalette palette_;
 };
 
 }  // namespace
+
+const IconDescriptor* IconPack::entry(std::size_t index) const {
+  return index < entryCount && entries ? &entries[index] : nullptr;
+}
+
+const IconDescriptor* IconPack::find(std::string_view variant, std::string_view name) const {
+  if (!entries) return nullptr;
+  for (std::size_t index = 0; index < entryCount; ++index) {
+    const IconDescriptor& candidate = entries[index];
+    if (candidate.variant == variant && candidate.name == name) return &candidate;
+  }
+  return nullptr;
+}
+
+IconRef IconPack::icon(std::size_t index) const { return icon(index, IconColors()); }
+
+IconRef IconPack::icon(std::size_t index, const IconColors& colors) const {
+  const IconDescriptor* descriptor = entry(index);
+  if (!descriptor || !colorsAllowed(descriptor->colorModel, colors)) return {};
+  return IconRef(descriptor, colors);
+}
+
+IconRef IconPack::icon(std::string_view variant, std::string_view name) const {
+  return icon(variant, name, IconColors());
+}
+
+IconRef IconPack::icon(std::string_view variant, std::string_view name,
+                       const IconColors& colors) const {
+  const IconDescriptor* descriptor = find(variant, name);
+  if (!descriptor || !colorsAllowed(descriptor->colorModel, colors)) return {};
+  return IconRef(descriptor, colors);
+}
 
 IconColors IconColors::primary(const QColor& color) { return IconColors().withPrimary(color); }
 IconColors IconColors::twoTone(const QColor& primary, const QColor& secondary) {
@@ -474,27 +754,46 @@ IconColors IconColors::threeTone(const QColor& primary, const QColor& secondary,
 }
 IconColors IconColors::withPrimary(const QColor& color) const {
   IconColors copy = *this;
-  copy.primary_ = color;
+  copy.primary_ = color.rgba();
+  copy.presentMask_ |= Primary;
   return copy;
 }
 IconColors IconColors::withSecondary(const QColor& color) const {
   IconColors copy = *this;
-  copy.secondary_ = color;
+  copy.secondary_ = color.rgba();
+  copy.presentMask_ |= Secondary;
   return copy;
 }
 IconColors IconColors::withTertiary(const QColor& color) const {
   IconColors copy = *this;
-  copy.tertiary_ = color;
+  copy.tertiary_ = color.rgba();
+  copy.presentMask_ |= Tertiary;
   return copy;
 }
 
+std::optional<QColor> IconColors::primarySlot() const {
+  return (presentMask_ & Primary) != 0
+             ? std::optional<QColor>(QColor::fromRgba(primary_))
+             : std::nullopt;
+}
+
+std::optional<QColor> IconColors::secondarySlot() const {
+  return (presentMask_ & Secondary) != 0
+             ? std::optional<QColor>(QColor::fromRgba(secondary_))
+             : std::nullopt;
+}
+
+std::optional<QColor> IconColors::tertiarySlot() const {
+  return (presentMask_ & Tertiary) != 0
+             ? std::optional<QColor>(QColor::fromRgba(tertiary_))
+             : std::nullopt;
+}
+
 IconHashValue qHash(const IconColors& value, IconHashValue seed) {
-  for (const auto* optional :
-       {&value.primarySlot(), &value.secondarySlot(), &value.tertiarySlot()}) {
-    seed = iconHashCombine(seed, ::qHash(optional->has_value(), 0));
-    if (*optional) seed = iconHashCombine(seed, ::qHash((*optional)->rgba(), 0));
-  }
-  return seed;
+  seed = iconHashCombine(seed, ::qHash(value.presentMask_, 0));
+  seed = iconHashCombine(seed, ::qHash(value.primary_, 0));
+  seed = iconHashCombine(seed, ::qHash(value.secondary_, 0));
+  return iconHashCombine(seed, ::qHash(value.tertiary_, 0));
 }
 
 IconHashValue qHash(const IconKey& value, IconHashValue seed) {
@@ -504,8 +803,13 @@ IconHashValue qHash(const IconKey& value, IconHashValue seed) {
 }
 
 IconHashValue qHash(const IconRef& value, IconHashValue seed) {
-  seed = iconHashCombine(seed, qHash(value.key_, 0));
+  seed = iconHashCombine(seed, ::qHash(reinterpret_cast<quintptr>(value.descriptor_), 0));
   return iconHashCombine(seed, qHash(value.colors_, 0));
+}
+
+IconRef IconRef::withColors(const IconColors& colors) const {
+  if (!isValid() || !colorsAllowed(descriptor_->colorModel, colors)) return {};
+  return IconRef(descriptor_, colors);
 }
 
 int IconStatePalette::key(QIcon::Mode mode, QIcon::State state) {
@@ -546,10 +850,32 @@ quint64 IconStatePalette::revision() const {
   return static_cast<quint64>(seed);
 }
 
-IconRegistry::IconRegistry() : impl_(std::make_shared<IconRegistryImpl>()) {}
-IconRegistry::~IconRegistry() = default;
+IconRenderer::IconRenderer() : impl_(std::make_shared<IconRendererImpl>()) {}
+IconRenderer::~IconRenderer() = default;
 
-IconPackRegistrationResult IconRegistry::registerPack(const QString& pack,
+IconPackRegistrationResult IconRenderer::registerStaticPack(const IconPack& pack) const {
+  IconPackRegistrationResult result;
+  if (!pack.isValid()) {
+    addDiagnostic(result, IconRegistrationError::InvalidPack, {},
+                  QStringLiteral("static icon pack is empty or invalid"));
+    return result;
+  }
+  auto& catalog = detail::staticPackCatalog();
+  {
+    QMutexLocker catalogLock(&catalog.mutex);
+    if (!catalog.packs.contains(&pack)) catalog.packs.append(&pack);
+  }
+  QMutexLocker lock(&impl_->mutex);
+  if (impl_->registeredStaticPacks.contains(&pack)) {
+    result.existingCount = static_cast<int>(pack.entryCount);
+  } else {
+    impl_->registeredStaticPacks.insert(&pack);
+    result.registeredCount = static_cast<int>(pack.entryCount);
+  }
+  return result;
+}
+
+IconPackRegistrationResult IconRenderer::registerPack(const QString& pack,
                                                       const QList<IconDefinition>& definitions) {
   IconPackRegistrationResult result;
   if (pack.isEmpty() || definitions.isEmpty()) {
@@ -557,8 +883,7 @@ IconPackRegistrationResult IconRegistry::registerPack(const QString& pack,
                   QStringLiteral("pack name and entries are required"));
     return result;
   }
-
-  QHash<IconKey, StoredIcon> pending;
+  QHash<IconKey, std::shared_ptr<DynamicIcon>> pending;
   for (const IconDefinition& definition : definitions) {
     if (!definition.isValid() || definition.key.pack != pack) {
       addDiagnostic(result, IconRegistrationError::InvalidEntry, definition.key,
@@ -581,85 +906,164 @@ IconPackRegistrationResult IconRegistry::registerPack(const QString& pack,
       addDiagnostic(result, IconRegistrationError::InvalidSvg, definition.key, error);
       continue;
     }
-    const QByteArray hash =
-        QCryptographicHash::hash(normalized, QCryptographicHash::Sha256).toHex();
+    const QByteArray hash = QCryptographicHash::hash(normalized, QCryptographicHash::Sha256).toHex();
     if (!definition.sourceHash.isEmpty() && definition.sourceHash.toLower() != hash) {
       addDiagnostic(result, IconRegistrationError::HashMismatch, definition.key,
                     QStringLiteral("declared source hash does not match normalized SVG"));
       continue;
     }
-    StoredIcon stored;
-    stored.metadata = IconMetadata{definition.key, definition.colorModel, definition.fit,
-                                   definition.defaultColors, hash};
-    stored.svgTemplate = normalized;
-    pending.insert(definition.key, stored);
+    auto stored = std::make_shared<DynamicIcon>();
+    stored->pack = definition.key.pack.toUtf8();
+    stored->variant = definition.key.variant.toUtf8();
+    stored->name = definition.key.name.toUtf8();
+    stored->svg = normalized;
+    stored->sourceHash = hash;
+    const auto primary = definition.defaultColors.primarySlot();
+    const auto secondary = definition.defaultColors.secondarySlot();
+    const auto tertiary = definition.defaultColors.tertiarySlot();
+    stored->primaryColor =
+        primary ? primary->name(QColor::HexArgb).toUtf8() : QByteArray();
+    stored->secondaryColor =
+        secondary ? secondary->name(QColor::HexArgb).toUtf8() : QByteArray();
+    stored->tertiaryColor =
+        tertiary ? tertiary->name(QColor::HexArgb).toUtf8() : QByteArray();
+    stored->descriptor = {
+        std::string_view(stored->pack.constData(), static_cast<std::size_t>(stored->pack.size())),
+        std::string_view(stored->variant.constData(), static_cast<std::size_t>(stored->variant.size())),
+        std::string_view(stored->name.constData(), static_cast<std::size_t>(stored->name.size())),
+        std::string_view(stored->svg.constData(), static_cast<std::size_t>(stored->svg.size())),
+        std::string_view(stored->sourceHash.constData(),
+                         static_cast<std::size_t>(stored->sourceHash.size())),
+        definition.colorModel,
+        definition.fit,
+        {std::string_view(stored->primaryColor.constData(),
+                          static_cast<std::size_t>(stored->primaryColor.size())),
+         std::string_view(stored->secondaryColor.constData(),
+                          static_cast<std::size_t>(stored->secondaryColor.size())),
+         std::string_view(stored->tertiaryColor.constData(),
+                          static_cast<std::size_t>(stored->tertiaryColor.size()))},
+        definition.allowEmbeddedDataImages};
+    stored->metadata = metadataFromDescriptor(stored->descriptor);
+    pending.insert(definition.key, std::move(stored));
   }
   if (!result.ok()) return result;
 
   QMutexLocker lock(&impl_->mutex);
   for (auto it = pending.constBegin(); it != pending.constEnd(); ++it) {
-    const auto existing = impl_->icons.constFind(it.key());
-    if (existing != impl_->icons.constEnd() &&
-        (existing->metadata != it->metadata || existing->svgTemplate != it->svgTemplate)) {
+    const auto existing = impl_->dynamicIcons.constFind(it.key());
+    if (existing != impl_->dynamicIcons.constEnd() &&
+        ((*existing)->metadata != (*it)->metadata || (*existing)->svg != (*it)->svg)) {
       addDiagnostic(result, IconRegistrationError::ConflictingRegistration, it.key(),
                     QStringLiteral("key is already registered with different content"));
+    }
+    if (existing == impl_->dynamicIcons.constEnd()) {
+      if (findStaticDescriptor(it.key()))
+        addDiagnostic(result, IconRegistrationError::ConflictingRegistration, it.key(),
+                      QStringLiteral("key conflicts with a static icon pack"));
     }
   }
   if (!result.ok()) return result;
   for (auto it = pending.constBegin(); it != pending.constEnd(); ++it) {
-    if (impl_->icons.contains(it.key()))
+    if (impl_->dynamicIcons.contains(it.key()))
       ++result.existingCount;
     else {
-      impl_->icons.insert(it.key(), it.value());
+      impl_->dynamicIcons.insert(it.key(), it.value());
       ++result.registeredCount;
     }
   }
   return result;
 }
 
-bool IconRegistry::containsIcon(const IconKey& key) const {
+bool IconRenderer::containsIcon(const IconKey& key) const {
+  if (!key.isValid()) return false;
+  {
+    QMutexLocker lock(&impl_->mutex);
+    if (impl_->dynamicIcons.contains(key)) return true;
+  }
+  return findStaticDescriptor(key) != nullptr;
+}
+
+IconMetadataView IconRenderer::describeIconView(const IconRef& ref) const {
+  const IconDescriptor* descriptor = detail::IconRefAccess::descriptor(ref);
+  return descriptor && descriptor->isValid() ? metadataViewFromDescriptor(*descriptor)
+                                             : IconMetadataView();
+}
+
+IconMetadata IconRenderer::describeIcon(const IconRef& ref) const {
+  const IconDescriptor* descriptor = detail::IconRefAccess::descriptor(ref);
+  return descriptor && descriptor->isValid() ? metadataFromDescriptor(*descriptor) : IconMetadata();
+}
+
+IconMetadata IconRenderer::describeIcon(const IconKey& key) const {
   QMutexLocker lock(&impl_->mutex);
-  return key.isValid() && impl_->icons.contains(key);
+  const auto found = impl_->dynamicIcons.constFind(key);
+  if (found != impl_->dynamicIcons.constEnd()) return (*found)->metadata;
+  lock.unlock();
+  if (const IconDescriptor* descriptor = findStaticDescriptor(key)) return metadataFromDescriptor(*descriptor);
+  return {};
 }
-IconMetadata IconRegistry::describeIcon(const IconRef& ref) const {
-  return ref.isValid() ? describeIcon(detail::IconRefAccess::key(ref)) : IconMetadata();
-}
-IconMetadata IconRegistry::describeIcon(const IconKey& key) const {
-  QMutexLocker lock(&impl_->mutex);
-  const auto found = impl_->icons.constFind(key);
-  return found == impl_->icons.constEnd() ? IconMetadata() : found->metadata;
-}
-QList<IconMetadata> IconRegistry::listIcons(const QString& pack, const QString& variant) const {
+
+QList<IconMetadata> IconRenderer::listIcons(const QString& pack, const QString& variant) const {
   QList<IconMetadata> result;
   {
     QMutexLocker lock(&impl_->mutex);
-    for (auto it = impl_->icons.constBegin(); it != impl_->icons.constEnd(); ++it) {
+    for (auto it = impl_->dynamicIcons.constBegin(); it != impl_->dynamicIcons.constEnd(); ++it) {
       if ((!pack.isEmpty() && it.key().pack != pack) ||
           (!variant.isEmpty() && it.key().variant != variant))
         continue;
-      result.append(it->metadata);
+      result.append((*it)->metadata);
     }
   }
-  std::sort(result.begin(), result.end(), [](const IconMetadata& a, const IconMetadata& b) {
-    if (a.key.pack != b.key.pack) return a.key.pack < b.key.pack;
-    if (a.key.variant != b.key.variant) return a.key.variant < b.key.variant;
-    return a.key.name < b.key.name;
+  auto& catalog = detail::staticPackCatalog();
+  QMutexLocker catalogLock(&catalog.mutex);
+  for (const IconPack* staticPack : catalog.packs) {
+    if (!pack.isEmpty() && stringFromView(staticPack->packName) != pack) continue;
+    for (std::size_t index = 0; index < staticPack->entryCount; ++index) {
+      const IconDescriptor& descriptor = staticPack->entries[index];
+      if (!variant.isEmpty() && stringFromView(descriptor.variant) != variant) continue;
+      result.append(metadataFromDescriptor(descriptor));
+    }
+  }
+  std::sort(result.begin(), result.end(), [](const IconMetadata& lhs, const IconMetadata& rhs) {
+    if (lhs.key.pack != rhs.key.pack) return lhs.key.pack < rhs.key.pack;
+    if (lhs.key.variant != rhs.key.variant) return lhs.key.variant < rhs.key.variant;
+    return lhs.key.name < rhs.key.name;
   });
   return result;
 }
-IconRef IconRegistry::reference(const IconKey& key, const IconColors& colors) const {
-  if (!containsIcon(key)) return {};
-  const IconMetadata metadata = describeIcon(key);
-  return colorsAllowed(metadata.colorModel, colors) ? IconRef(key, colors) : IconRef();
+
+IconRef IconRenderer::reference(const IconKey& key, const IconColors& colors) const {
+  if (!key.isValid()) return {};
+  {
+    QMutexLocker lock(&impl_->mutex);
+    const auto found = impl_->dynamicIcons.constFind(key);
+    if (found != impl_->dynamicIcons.constEnd())
+      return colorsAllowed((*found)->descriptor.colorModel, colors)
+                 ? IconRef(&(*found)->descriptor, colors)
+                 : IconRef();
+  }
+  if (const IconDescriptor* descriptor = findStaticDescriptor(key))
+    return colorsAllowed(descriptor->colorModel, colors) ? IconRef(descriptor, colors) : IconRef();
+  return {};
 }
-QIcon IconRegistry::makeIcon(const IconRef& ref, const IconStatePalette& palette) const {
-  return describeIcon(ref).isValid() ? QIcon(new RegistryIconEngine(impl_, ref, palette)) : QIcon();
+
+QIcon IconRenderer::makeIcon(const IconRef& ref, const IconStatePalette& palette) const {
+  const IconDescriptor* descriptor = detail::IconRefAccess::descriptor(ref);
+  return descriptor && descriptor->isValid() ? QIcon(new RendererIconEngine(impl_, ref, palette))
+                                             : QIcon();
 }
-QPixmap IconRegistry::renderIconPixmap(const IconRef& ref, const IconRenderRequest& request,
+
+QImage IconRenderer::renderIconImage(const IconRef& ref, const IconRenderRequest& request,
+                                     const IconStatePalette& palette) const {
+  return renderImage(impl_, ref, request, palette);
+}
+
+QPixmap IconRenderer::renderIconPixmap(const IconRef& ref, const IconRenderRequest& request,
                                        const IconStatePalette& palette) const {
-  return renderPixmap(impl_, ref, request, palette);
+  return QPixmap::fromImage(renderImage(impl_, ref, request, palette));
 }
-void IconRegistry::paintIcon(QPainter* painter, const IconRef& ref, const QRectF& rect,
+
+void IconRenderer::paintIcon(QPainter* painter, const IconRef& ref, const QRectF& rect,
                              const IconRenderRequest& request,
                              const IconStatePalette& palette) const {
   if (!painter || rect.isEmpty()) return;
@@ -667,82 +1071,171 @@ void IconRegistry::paintIcon(QPainter* painter, const IconRef& ref, const QRectF
   actual.logicalSize = rect.size().toSize();
   if (actual.devicePixelRatio <= 0.0)
     actual.devicePixelRatio = painter->device() ? painter->device()->devicePixelRatioF() : 1.0;
-  const QPixmap pixmap = renderPixmap(impl_, ref, actual, palette);
-  if (!pixmap.isNull()) {
-    painter->drawPixmap(rect, pixmap, QRectF(pixmap.rect()));
-  }
+  const QImage image = renderImage(impl_, ref, actual, palette);
+  if (!image.isNull()) painter->drawImage(rect, image, image.rect());
 }
-QCursor IconRegistry::makeCursor(const IconRef& ref, const QSize& logicalSize,
+
+QCursor IconRenderer::makeCursor(const IconRef& ref, const QSize& logicalSize,
                                  const QPoint& hotSpot, qreal devicePixelRatio) const {
-  const IconMetadata metadata = describeIcon(ref);
-  if (!metadata.isValid() || metadata.colorModel != IconColorModel::FullColor) return {};
+  const IconDescriptor* descriptor = detail::IconRefAccess::descriptor(ref);
+  if (!descriptor || !descriptor->isValid() || descriptor->colorModel != IconColorModel::FullColor)
+    return {};
   IconRenderRequest request;
   request.logicalSize = logicalSize;
   request.devicePixelRatio = devicePixelRatio;
-  const QPixmap pixmap = renderPixmap(impl_, ref, request, {});
+  const QPixmap pixmap = renderIconPixmap(ref, request, {});
   return pixmap.isNull() ? QCursor() : QCursor(pixmap, hotSpot.x(), hotSpot.y());
 }
-void IconRegistry::setPaletteResolver(IconPaletteResolver resolver) {
+
+void IconRenderer::setPaletteResolver(IconPaletteResolver resolver) {
   QMutexLocker lock(&impl_->mutex);
   impl_->resolver = std::move(resolver);
-  impl_->pixmapCache.clear();
+  ++impl_->generation;
+  evictTo(*impl_, 0);
+  releaseEmptyCacheIndex(*impl_);
+  impl_->cacheReady.wakeAll();
 }
-void IconRegistry::clearPaletteResolver() { setPaletteResolver({}); }
-void IconRegistry::setCacheLimitKB(int kb) {
+void IconRenderer::clearPaletteResolver() { setPaletteResolver({}); }
+
+void IconRenderer::setCacheLimitBytes(qint64 bytes) {
   QMutexLocker lock(&impl_->mutex);
-  impl_->cacheLimitKB = qMax(1024, kb);
-  impl_->pixmapCache.setMaxCost(impl_->cacheLimitKB);
-  impl_->pixmapCache.clear();
-}
-void IconRegistry::clearCache() {
-  QMutexLocker lock(&impl_->mutex);
-  impl_->pixmapCache.clear();
-  impl_->hitCount = impl_->missCount = impl_->rasterizationCount = 0;
-}
-void IconRegistry::prewarm(const QList<IconPixmapRequest>& requests) const {
-  for (const auto& request : requests)
-    renderPixmap(impl_, request.ref, request.render, request.palette);
-}
-IconCacheStatistics IconRegistry::cacheStatistics() const {
-  QMutexLocker lock(&impl_->mutex);
-  return {static_cast<int>(impl_->pixmapCache.size()),
-          static_cast<int>(impl_->pixmapCache.totalCost()),
-          impl_->cacheLimitKB,
-          impl_->hitCount,
-          impl_->missCount,
-          impl_->rasterizationCount};
+  impl_->cacheLimitBytes = qMax<qint64>(0, bytes);
+  ++impl_->generation;
+  evictTo(*impl_, impl_->cacheLimitBytes);
+  releaseEmptyCacheIndex(*impl_);
+  impl_->cacheReady.wakeAll();
 }
 
-IconRegistry& defaultRegistry() {
-  static IconRegistry instance;
+qint64 IconRenderer::cacheLimitBytes() const {
+  QMutexLocker lock(&impl_->mutex);
+  return impl_->cacheLimitBytes;
+}
+
+void IconRenderer::setCacheLimits(qint64 bytes, int maxEntries, qint64 maxRasterBytes) {
+  QMutexLocker lock(&impl_->mutex);
+  impl_->cacheLimitBytes = qMax<qint64>(0, bytes);
+  impl_->maxEntries = qMax(1, maxEntries);
+  impl_->maxRasterBytes = qMax<qint64>(1, maxRasterBytes);
+  ++impl_->generation;
+  evictRastersAboveLimit(*impl_);
+  evictTo(*impl_, impl_->cacheLimitBytes);
+  releaseEmptyCacheIndex(*impl_);
+  impl_->cacheReady.wakeAll();
+}
+
+void IconRenderer::setCacheLimitKB(int kb) {
+  setCacheLimitBytes(qMax<qint64>(0, static_cast<qint64>(kb) * 1024));
+}
+
+IconCacheReclaimReport IconRenderer::trimCache(qint64 targetBytes) {
+  QMutexLocker lock(&impl_->mutex);
+  IconCacheReclaimReport report;
+  report.bytesBefore = impl_->cacheBytes;
+  report.entriesBefore = static_cast<int>(impl_->lru.size());
+  if (targetBytes < 0) targetBytes = impl_->cacheLimitBytes;
+  ++impl_->generation;
+  evictTo(*impl_, targetBytes);
+  releaseEmptyCacheIndex(*impl_);
+  report.bytesAfter = impl_->cacheBytes;
+  report.entriesAfter = static_cast<int>(impl_->lru.size());
+  report.reclaimedBytes = report.bytesBefore - report.bytesAfter;
+  report.generation = impl_->generation;
+  impl_->cacheReady.wakeAll();
+  return report;
+}
+
+IconCacheReclaimReport IconRenderer::trimToBytes(qint64 targetBytes) { return trimCache(targetBytes); }
+IconCacheReclaimReport IconRenderer::trimCacheToBytes(qint64 targetBytes) {
+  return trimCache(targetBytes);
+}
+IconCacheReclaimReport IconRenderer::reclaimCache(qint64 targetBytes) {
+  return trimCache(targetBytes);
+}
+
+void IconRenderer::clearCache() {
+  QMutexLocker lock(&impl_->mutex);
+  impl_->lru.clear();
+  decltype(impl_->cache) emptyCache;
+  impl_->cache.swap(emptyCache);
+  impl_->cacheBytes = 0;
+  impl_->hitCount = impl_->missCount = impl_->rasterizationCount = 0;
+  impl_->evictionCount = impl_->staleRenderCount = 0;
+  ++impl_->generation;
+  impl_->cacheReady.wakeAll();
+}
+
+void IconRenderer::prewarm(const QList<IconPixmapRequest>& requests) const {
+  for (const auto& request : requests) renderImage(impl_, request.ref, request.render, request.palette);
+}
+
+IconCacheStatistics IconRenderer::cacheStatistics() const {
+  QMutexLocker lock(&impl_->mutex);
+  IconCacheStatistics result;
+  result.entryCount = static_cast<int>(impl_->lru.size());
+  result.costBytes = impl_->cacheBytes;
+  result.limitBytes = impl_->cacheLimitBytes;
+  result.costKB = kilobytesFor(impl_->cacheBytes);
+  result.limitKB = kilobytesFor(impl_->cacheLimitBytes);
+  result.maxEntries = impl_->maxEntries;
+  result.maxRasterBytes = impl_->maxRasterBytes;
+  result.hitCount = impl_->hitCount;
+  result.missCount = impl_->missCount;
+  result.rasterizationCount = impl_->rasterizationCount;
+  result.evictionCount = impl_->evictionCount;
+  result.generation = impl_->generation;
+  result.staleRenderCount = impl_->staleRenderCount;
+  return result;
+}
+
+IconRenderer& defaultRenderer() {
+  static IconRenderer instance;
   return instance;
 }
-IconMetadata describeIcon(const IconRef& ref) { return defaultRegistry().describeIcon(ref); }
+IconRenderer& defaultRegistry() { return defaultRenderer(); }
+IconMetadataView describeIconView(const IconRef& ref) { return defaultRenderer().describeIconView(ref); }
+IconMetadata describeIcon(const IconRef& ref) { return defaultRenderer().describeIcon(ref); }
 QList<IconMetadata> listIcons(const QString& pack, const QString& variant) {
-  return defaultRegistry().listIcons(pack, variant);
+  return defaultRenderer().listIcons(pack, variant);
 }
 QIcon makeIcon(const IconRef& ref, const IconStatePalette& palette) {
-  return defaultRegistry().makeIcon(ref, palette);
+  return defaultRenderer().makeIcon(ref, palette);
+}
+QImage renderIconImage(const IconRef& ref, const IconRenderRequest& request,
+                       const IconStatePalette& palette) {
+  return defaultRenderer().renderIconImage(ref, request, palette);
 }
 QPixmap renderIconPixmap(const IconRef& ref, const IconRenderRequest& request,
                          const IconStatePalette& palette) {
-  return defaultRegistry().renderIconPixmap(ref, request, palette);
+  return defaultRenderer().renderIconPixmap(ref, request, palette);
 }
 void paintIcon(QPainter* painter, const IconRef& ref, const QRectF& rect,
                const IconRenderRequest& request, const IconStatePalette& palette) {
-  defaultRegistry().paintIcon(painter, ref, rect, request, palette);
+  defaultRenderer().paintIcon(painter, ref, rect, request, palette);
 }
 QCursor makeCursor(const IconRef& ref, const QSize& logicalSize, const QPoint& hotSpot,
                    qreal devicePixelRatio) {
-  return defaultRegistry().makeCursor(ref, logicalSize, hotSpot, devicePixelRatio);
+  return defaultRenderer().makeCursor(ref, logicalSize, hotSpot, devicePixelRatio);
 }
-void setPaletteResolver(IconPaletteResolver resolver) {
-  defaultRegistry().setPaletteResolver(std::move(resolver));
+void setPaletteResolver(IconPaletteResolver resolver) { defaultRenderer().setPaletteResolver(std::move(resolver)); }
+void clearPaletteResolver() { defaultRenderer().clearPaletteResolver(); }
+void setCacheLimitBytes(qint64 bytes) { defaultRenderer().setCacheLimitBytes(bytes); }
+void setCacheLimits(qint64 bytes, int maxEntries, qint64 maxRasterBytes) {
+  defaultRenderer().setCacheLimits(bytes, maxEntries, maxRasterBytes);
 }
-void clearPaletteResolver() { defaultRegistry().clearPaletteResolver(); }
-void setCacheLimitKB(int kb) { defaultRegistry().setCacheLimitKB(kb); }
-void clearCache() { defaultRegistry().clearCache(); }
-void prewarm(const QList<IconPixmapRequest>& requests) { defaultRegistry().prewarm(requests); }
-IconCacheStatistics cacheStatistics() { return defaultRegistry().cacheStatistics(); }
+void setCacheLimitKB(int kb) { defaultRenderer().setCacheLimitKB(kb); }
+IconCacheReclaimReport trimIconCache(qint64 targetBytes) { return defaultRenderer().trimCache(targetBytes); }
+IconCacheReclaimReport trimCache(qint64 targetBytes) { return defaultRenderer().trimCache(targetBytes); }
+IconCacheReclaimReport trimCacheToBytes(qint64 targetBytes) {
+  return defaultRenderer().trimCache(targetBytes);
+}
+IconCacheReclaimReport trimToBytes(qint64 targetBytes) {
+  return defaultRenderer().trimToBytes(targetBytes);
+}
+IconCacheReclaimReport reclaimCache(qint64 targetBytes) {
+  return defaultRenderer().reclaimCache(targetBytes);
+}
+void clearCache() { defaultRenderer().clearCache(); }
+void prewarm(const QList<IconPixmapRequest>& requests) { defaultRenderer().prewarm(requests); }
+IconCacheStatistics cacheStatistics() { return defaultRenderer().cacheStatistics(); }
 
 }  // namespace adqt::icons

@@ -17,7 +17,7 @@ if (-not $QsbPath) {
     }
 }
 if (-not $QsbPath -or -not (Test-Path $QsbPath)) {
-    throw "A Qt 6.10.x qsb executable is required. Pass it with -QsbPath."
+    throw "A Qt 6.11.x qsb executable is required. Pass it with -QsbPath."
 }
 
 foreach ($shader in @("image.vert", "image.frag", "image_array.frag",

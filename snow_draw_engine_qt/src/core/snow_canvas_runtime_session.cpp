@@ -24,6 +24,14 @@ bool toEngineRuntimeConfig(const SnowCanvasRuntimeConfig& config, SnowStyleDefau
     return true;
 }
 
+std::uint64_t quickSelectionDisabledToolMask(const SnowCanvasRuntimeConfig& config) {
+    std::uint64_t mask = 0;
+    for (const SnowCanvasTool tool : config.quickSelectionDisabledTools) {
+        mask |= std::uint64_t{1} << static_cast<unsigned>(snow_canvas_types::toEngineTool(tool));
+    }
+    return mask;
+}
+
 ScopedRuntimeHandle createRuntime(const SnowCanvasRuntimeConfig& config) {
     ScopedRuntimeHandle runtime;
     SnowStyleDefaults styleDefaults{};
@@ -31,6 +39,11 @@ ScopedRuntimeHandle createRuntime(const SnowCanvasRuntimeConfig& config) {
     if (!toEngineRuntimeConfig(config, styleDefaults, engineConfig) ||
         snow_runtime_create_with_config(&engineConfig, runtime.outParam()) != SNOW_OK) {
         runtime.reset();
+    }
+    // Runtime policy is shared by every viewport attached to this document session.
+    if (runtime.get() != nullptr) {
+        static_cast<void>(snow_runtime_set_quick_selection_disabled_tools(
+            runtime.get(), quickSelectionDisabledToolMask(config)));
     }
     return runtime;
 }
@@ -47,6 +60,10 @@ ScopedRuntimeHandle cloneRuntimeFrom(SnowRuntime source, const SnowCanvasRuntime
                                                         runtime.outParam()) != SNOW_OK) {
         runtime.reset();
     }
+    if (runtime.get() != nullptr) {
+        static_cast<void>(snow_runtime_set_quick_selection_disabled_tools(
+            runtime.get(), quickSelectionDisabledToolMask(config)));
+    }
     return runtime;
 }
 
@@ -62,6 +79,10 @@ ScopedRuntimeHandle runtimeFromSerializedSession(const QByteArray& payload,
             runtime.outParam()) != SNOW_OK) {
         runtime.reset();
     }
+    if (runtime.get() != nullptr) {
+        static_cast<void>(snow_runtime_set_quick_selection_disabled_tools(
+            runtime.get(), quickSelectionDisabledToolMask(config)));
+    }
     return runtime;
 }
 
@@ -76,6 +97,10 @@ ScopedRuntimeHandle runtimeFromSerializedHistory(const QByteArray& payload,
             static_cast<std::size_t>(payload.size()), &engineConfig,
             runtime.outParam()) != SNOW_OK) {
         runtime.reset();
+    }
+    if (runtime.get() != nullptr) {
+        static_cast<void>(snow_runtime_set_quick_selection_disabled_tools(
+            runtime.get(), quickSelectionDisabledToolMask(config)));
     }
     return runtime;
 }
@@ -200,6 +225,24 @@ bool RuntimeSession::clearDocumentPreservingViewports() {
         return false;
     }
 
+    syncChangedViewports(changedViewports.get());
+    return true;
+}
+
+bool RuntimeSession::setQuickSelectionDisabledTools(const QSet<SnowCanvasTool>& tools) {
+    if (m_runtime.get() == nullptr) {
+        return false;
+    }
+
+    SnowCanvasRuntimeConfig nextConfig = m_config;
+    nextConfig.quickSelectionDisabledTools = tools;
+    ScopedChangedViewportList changedViewports;
+    if (snow_runtime_set_quick_selection_disabled_tools_ex(
+            m_runtime.get(), quickSelectionDisabledToolMask(nextConfig),
+            changedViewports.outParam()) != SNOW_OK) {
+        return false;
+    }
+    m_config = std::move(nextConfig);
     syncChangedViewports(changedViewports.get());
     return true;
 }

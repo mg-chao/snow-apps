@@ -41,11 +41,11 @@ pub fn resize_image_within_bounds(
     Ok((current, ratio_h, ratio_w))
 }
 
-pub fn apply_vertical_padding(
-    img: RecImage,
+pub fn apply_vertical_padding_in_place(
+    img: &mut RecImage,
     width_height_ratio: f32,
     min_height: usize,
-) -> Result<(RecImage, usize)> {
+) -> Result<usize> {
     let h = img.height();
     let w = img.width();
     if h == 0 || w == 0 {
@@ -59,7 +59,7 @@ pub fn apply_vertical_padding(
         w as f32 / h as f32 > width_height_ratio
     };
     if h > min_height && !use_limit_ratio {
-        return Ok((img, 0));
+        return Ok(0);
     }
 
     let target_h = if width_height_ratio > 0.0 {
@@ -68,8 +68,9 @@ pub fn apply_vertical_padding(
         min_height * 2
     };
     let padding_h = target_h.abs_diff(h) / 2;
-    let padded = pad_image(&img, padding_h, padding_h, 0, 0)?;
-    Ok((padded, padding_h))
+    let padded = pad_image(img, padding_h, padding_h, 0, 0)?;
+    *img = padded;
+    Ok(padding_h)
 }
 
 pub fn crop_text_regions(
@@ -214,4 +215,40 @@ fn rotate_90(img: RecImage) -> Result<RecImage> {
         }
     }
     RecImage::from_bgr_u8(new_w, new_h, out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_vertical_padding_in_place;
+    use crate::config::RecImage;
+
+    fn image(width: usize, height: usize) -> RecImage {
+        RecImage::from_bgr_u8(width, height, vec![0; width * height * 3])
+            .expect("test image should be valid")
+    }
+
+    #[test]
+    fn padding_keeps_buffer_when_no_padding_is_needed() {
+        let mut img = image(100, 50);
+        let original_ptr = img.as_bytes().as_ptr();
+
+        let pad_top =
+            apply_vertical_padding_in_place(&mut img, 8.0, 30).expect("padding should succeed");
+
+        assert_eq!(pad_top, 0);
+        assert_eq!(img.height(), 50);
+        assert_eq!(img.as_bytes().as_ptr(), original_ptr);
+    }
+
+    #[test]
+    fn padding_updates_image_and_reports_top_padding() {
+        let mut img = image(100, 10);
+
+        let pad_top =
+            apply_vertical_padding_in_place(&mut img, 8.0, 30).expect("padding should succeed");
+
+        assert_eq!(pad_top, 25);
+        assert_eq!(img.width(), 100);
+        assert_eq!(img.height(), 60);
+    }
 }

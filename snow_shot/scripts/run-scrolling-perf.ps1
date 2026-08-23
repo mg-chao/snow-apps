@@ -88,7 +88,7 @@ try {
     )
 
     if (!(Test-Path (Join-Path $QtBin "Qt6Core.dll"))) {
-        throw "Qt 6.10.3 runtime was not found in QtBin: $QtBin"
+        throw "Qt 6.11.1 runtime was not found in QtBin: $QtBin"
     }
     $env:PATH = "$QtBin;$env:PATH"
     $qtRoot = Split-Path $QtBin -Parent

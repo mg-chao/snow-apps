@@ -31,3 +31,10 @@ panic = "abort"
 debug = 0
 incremental = false
 overflow-checks = false
+
+[profile.release-fast]
+inherits = "release"
+opt-level = 2
+codegen-units = 16
+lto = "thin"
+incremental = true

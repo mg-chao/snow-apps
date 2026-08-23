@@ -1,0 +1,12 @@
+Ant Design Qt - Qt widgets and synchronized icon integration.
+Copyright (C) 2026 mg-chao
+
+Unless otherwise noted, the original files in this directory are licensed
+under the Apache License, Version 2.0. You may obtain a copy of the License at
+https://www.apache.org/licenses/LICENSE-2.0.
+
+The complete Apache License 2.0 terms are in LICENSE. Synchronized Ant Design
+Icons remain subject to the upstream MIT license recorded in
+THIRD_PARTY_NOTICES.md.
+
+SPDX-License-Identifier: Apache-2.0

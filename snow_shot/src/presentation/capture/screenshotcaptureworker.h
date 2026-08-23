@@ -7,6 +7,7 @@
 #include <QPointer>
 
 typedef struct SnowCaptureDesktopSessionImpl SnowCaptureDesktopSession;
+typedef struct SnowCaptureCancellationTokenImpl SnowCaptureCancellationToken;
 
 class ScreenshotCaptureCoordinator;
 
@@ -16,19 +17,23 @@ class ScreenshotCaptureWorker final : public QObject {
 
     void prepare(quint64 requestId, const QPointer<ScreenshotCaptureCoordinator>& coordinator);
     void refreshLayout(quint64 requestId);
-    void releaseIdleResources(quint64 requestId);
-    void captureAll(quint64 requestId, const QPointer<ScreenshotCaptureCoordinator>& coordinator,
-                    bool refreshLayout);
+    [[nodiscard]] bool releaseIdleResources(quint64 requestId);
+    void capture(const ScreenshotCaptureRequest& request,
+                 const QPointer<ScreenshotCaptureCoordinator>& coordinator,
+                 SnowCaptureCancellationToken* cancellationToken);
 
   private:
     bool ensureSession();
     bool sessionPrepared() const;
     bool prepareSessionIfNeeded();
+    bool prepareCaptureEnvironment(bool refreshLayout);
     static void postPrepared(quint64 requestId,
                              const QPointer<ScreenshotCaptureCoordinator>& coordinator, bool ok);
-    static void postCaptureResult(quint64 requestId,
-                                  const QPointer<ScreenshotCaptureCoordinator>& coordinator,
-                                  QVector<CapturedDisplayModel> displays);
+    static void
+    postCaptureEnvironmentReady(quint64 requestId,
+                                const QPointer<ScreenshotCaptureCoordinator>& coordinator, bool ok);
+    static void postCaptureResult(const QPointer<ScreenshotCaptureCoordinator>& coordinator,
+                                  ScreenshotCaptureResult result);
 
     SnowCaptureDesktopSession* m_session = nullptr;
 };

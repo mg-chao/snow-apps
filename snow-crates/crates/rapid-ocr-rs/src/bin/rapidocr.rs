@@ -117,6 +117,7 @@ struct ConfigInitArgs {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum ProviderCli {
+    Auto,
     Cpu,
     Cuda,
     Directml,
@@ -151,6 +152,9 @@ fn run_cmd(cli: RunArgs) -> Result<(), Box<dyn std::error::Error>> {
     }
     if let Some(provider) = cli.provider {
         let preference = match provider {
+            ProviderCli::Auto => ProviderPreference::Auto {
+                device_id: cli.device_id.unwrap_or(0),
+            },
             ProviderCli::Cpu => ProviderPreference::Cpu,
             ProviderCli::Cuda => ProviderPreference::Cuda {
                 device_id: cli.device_id.unwrap_or(0),

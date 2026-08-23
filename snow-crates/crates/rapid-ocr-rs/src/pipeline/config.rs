@@ -6,7 +6,7 @@ use serde_yaml::Value;
 use crate::{
     cls::classifier::ClassifierConfig,
     config::RecognizerConfig,
-    config::RuntimeConfig,
+    config::{ProviderPreference, RuntimeConfig},
     det::detector::DetectorConfig,
     error::{RapidOcrError, Result},
 };
@@ -43,13 +43,29 @@ impl Default for GlobalConfig {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct EngineConfig {
     pub global: GlobalConfig,
     pub det: DetectorConfig,
     pub cls: ClassifierConfig,
     pub rec: RecognizerConfig,
+}
+
+impl Default for EngineConfig {
+    fn default() -> Self {
+        let mut det = DetectorConfig::default();
+        det.runtime.provider_preference = ProviderPreference::Auto { device_id: 0 };
+        let cls = ClassifierConfig::default();
+        let mut rec = RecognizerConfig::default();
+        rec.runtime.provider_preference = ProviderPreference::Auto { device_id: 0 };
+        Self {
+            global: GlobalConfig::default(),
+            det,
+            cls,
+            rec,
+        }
+    }
 }
 
 impl EngineConfig {
@@ -144,6 +160,11 @@ impl EngineConfig {
                 self.rec.rec_img_shape
             )));
         }
+        if self.rec.rec_width_alignment == 0 {
+            return Err(RapidOcrError::Config(
+                "rec.rec_width_alignment must be greater than zero".to_string(),
+            ));
+        }
 
         validate_runtime_config("det.runtime", &self.det.runtime)?;
         validate_runtime_config("cls.runtime", &self.cls.runtime)?;
@@ -173,6 +194,11 @@ fn validate_native_required_sections(root: &Value) -> Result<()> {
 }
 
 fn validate_runtime_config(prefix: &str, runtime: &RuntimeConfig) -> Result<()> {
+    if runtime.thread_budget.is_some_and(|v| v == 0) {
+        return Err(RapidOcrError::Config(format!(
+            "{prefix}.thread_budget must be greater than zero when set"
+        )));
+    }
     if runtime.intra_threads.is_some_and(|v| v == 0) {
         return Err(RapidOcrError::Config(format!(
             "{prefix}.intra_threads must be greater than zero when set"
@@ -207,6 +233,24 @@ fn mapping_get<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
 #[cfg(test)]
 mod tests {
     use super::EngineConfig;
+    use crate::config::ProviderPreference;
+
+    #[test]
+    fn default_provider_policy_accelerates_det_and_rec_only() {
+        let config = EngineConfig::default();
+        assert_eq!(
+            config.det.runtime.provider_preference,
+            ProviderPreference::Auto { device_id: 0 }
+        );
+        assert_eq!(
+            config.rec.runtime.provider_preference,
+            ProviderPreference::Auto { device_id: 0 }
+        );
+        assert_eq!(
+            config.cls.runtime.provider_preference,
+            ProviderPreference::Cpu
+        );
+    }
 
     #[test]
     fn parse_native_yaml_requires_all_sections() {

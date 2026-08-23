@@ -3,6 +3,7 @@
 #include "icon_registry.h"
 
 #include "snow_canvas_commands.h"
+#include "snow_canvas_cursor_controller.h"
 #include "snow_canvas_changed_viewports.h"
 #include "snow_canvas_compositor.h"
 #include "snow_canvas_display_cache.h"
@@ -11,6 +12,7 @@
 #include "snow_canvas_lifecycle.h"
 #include "snow_canvas_pen_mask_atlas.h"
 #include "snow_canvas_render_geometry.h"
+#include "snow_canvas_renderer.h"
 #include "snow_canvas_state.h"
 #include "snow_canvas_text_editor_input.h"
 #include "snow_canvas_text_measurement.h"
@@ -43,6 +45,7 @@
 #include <QInputMethodEvent>
 #include <QImage>
 #include <QKeyEvent>
+#include <QLineF>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
@@ -65,6 +68,30 @@
 #include <vector>
 
 namespace {
+
+std::optional<QCursor> baselineCursorForCanvasTool(SnowCanvasTool tool) {
+    switch (tool) {
+    case SnowCanvasTool::Shape:
+    case SnowCanvasTool::Arrow:
+    case SnowCanvasTool::Line:
+    case SnowCanvasTool::FreeDraw:
+    case SnowCanvasTool::RectangleHighlight:
+    case SnowCanvasTool::RectangleFilter:
+    case SnowCanvasTool::PenHighlight:
+    case SnowCanvasTool::PenFilter:
+    case SnowCanvasTool::Spotlight:
+    case SnowCanvasTool::SerialNumber:
+        return QCursor(Qt::CrossCursor);
+    case SnowCanvasTool::Eraser:
+        return QCursor(Qt::BlankCursor);
+    case SnowCanvasTool::Text:
+        return QCursor(Qt::IBeamCursor);
+    case SnowCanvasTool::Select:
+    case SnowCanvasTool::Watermark:
+    default:
+        return std::nullopt;
+    }
+}
 
 bool hasExposedRect(const QRegion& exposedRegion, const QRect& widgetRect) {
     return !exposedRegion.boundingRect().intersected(widgetRect).isEmpty();
@@ -295,10 +322,12 @@ void accept(QKeyEvent& event) {
 
 struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     explicit Impl(SnowCanvasWidget& widget)
-        : widget(widget), inputHandler(widget), textInteraction(widget) {}
+        : widget(widget), cursorController(widget), inputHandler(widget, cursorController),
+          textInteraction(widget, cursorController) {}
 
     Impl(SnowCanvasWidget& widget, SnowCanvasRuntime& runtime)
-        : widget(widget), runtimeBinding(runtime), inputHandler(widget), textInteraction(widget) {}
+        : widget(widget), runtimeBinding(runtime), cursorController(widget),
+          inputHandler(widget, cursorController), textInteraction(widget, cursorController) {}
 
     void initializeWidget();
     void initializeViewport();
@@ -308,6 +337,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     void attachRuntime(SnowRuntime runtime) override;
     void detachRuntimeOwner(SnowCanvasRuntime* owner) override;
     void clearRetainedDisplayState();
+    void releaseRetainedRenderResources();
     bool hasViewport() const;
     void syncAfterEngineMutation() override;
     void syncAfterEngineMutation(bool emitSignals);
@@ -321,6 +351,8 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
 
     SnowCanvasTool canvasTool() const;
     bool setCanvasTool(SnowCanvasTool tool);
+    void setCursorForLayer(SnowCanvasCursorLayer layer, const QCursor& cursor);
+    void clearCursorForLayer(SnowCanvasCursorLayer layer);
     SnowCanvasStyleToolbarState canvasStyleToolbarState() const;
     SnowCanvasSerialNumberToolbarState serialNumberToolbarState() const;
     SnowCanvasWatermarkConfig canvasWatermarkConfig() const;
@@ -350,6 +382,8 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     void setWheelZoomEnabled(bool enabled);
     bool canvasContentVisible() const;
     void setCanvasContentVisible(bool visible);
+    bool retainedSceneCacheEnabled() const;
+    void setRetainedSceneCacheEnabled(bool enabled);
     bool clearBackgroundEnabled() const;
     void setClearBackgroundEnabled(bool enabled);
     bool showDirtyRects() const;
@@ -387,6 +421,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     bool createSerialNumberText();
     bool resetEditingState();
     bool cancelActiveTextEditing();
+    bool hasActiveTextEditing() const;
     SnowCanvasWidgetTextInteraction::CommitResult commitText(bool refocusWidget = true,
                                                              bool restoreExistingSelection = true);
     void applyTextCommitResult(SnowCanvasWidgetTextInteraction::CommitResult& result,
@@ -407,6 +442,10 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     bool handleMouseDoubleClick(QMouseEvent* event);
     bool handleMouseMove(QMouseEvent* event);
     bool handleMouseRelease(QMouseEvent* event);
+    void beginMiddleClickTracking(const QPointF& position);
+    void updateMiddleClickTracking(const QPointF& position);
+    bool finishMiddleClickTracking();
+    void cancelMiddleClickTracking();
     bool handleEnter(QEnterEvent* event);
     bool handleLeave(QEvent* event);
     bool handleWheel(QWheelEvent* event);
@@ -443,6 +482,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
 
     SnowCanvasWidget& widget;
     SnowCanvasWidgetRuntimeBinding runtimeBinding;
+    SnowCanvasCursorController cursorController;
     SnowCanvasWidgetInputHandler inputHandler;
     SnowCanvasWidgetDisplayState displayState;
     QWidget* serialNumberToolbar = nullptr;
@@ -451,6 +491,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     QToolButton* serialNumberCreateTextButton = nullptr;
     bool dirtyRectsVisible = false;
     bool canvasContentIsVisible = true;
+    bool retainedSceneCacheIsEnabled = true;
     bool canvasClearBackgroundEnabled = true;
     bool suppressNextTextToolCreate = false;
     bool restoredSelectionForNextTextToolPress = false;
@@ -461,6 +502,8 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     snow_canvas_filter_render::RenderWorkspace filterWorkspace;
     snow_canvas_pen_mask::PenMaskAtlas penMaskAtlas;
     SnowCanvasWidgetTextInteraction textInteraction;
+    std::optional<QPointF> middleClickPressPosition;
+    bool middleClickCandidate = false;
     std::vector<SnowInputEvent> pendingLiveStrokeMoves;
     bool liveStrokeMoveFlushScheduled = false;
     quint64 liveStrokeMoveFlushGeneration = 0;
@@ -784,6 +827,23 @@ bool SnowCanvasWidget::Impl::setCanvasTool(SnowCanvasTool tool) {
 
 bool SnowCanvasWidget::setCanvasTool(SnowCanvasTool tool) {
     return m_impl->setCanvasTool(tool);
+}
+
+void SnowCanvasWidget::Impl::setCursorForLayer(SnowCanvasCursorLayer layer,
+                                               const QCursor& cursor) {
+    cursorController.setCursor(layer, cursor);
+}
+
+void SnowCanvasWidget::setCursorForLayer(SnowCanvasCursorLayer layer, const QCursor& cursor) {
+    m_impl->setCursorForLayer(layer, cursor);
+}
+
+void SnowCanvasWidget::Impl::clearCursorForLayer(SnowCanvasCursorLayer layer) {
+    cursorController.clearCursor(layer);
+}
+
+void SnowCanvasWidget::clearCursorForLayer(SnowCanvasCursorLayer layer) {
+    m_impl->clearCursorForLayer(layer);
 }
 
 SnowCanvasStyleToolbarState SnowCanvasWidget::Impl::canvasStyleToolbarState() const {
@@ -1173,6 +1233,27 @@ void SnowCanvasWidget::setCanvasContentVisible(bool visible) {
     m_impl->setCanvasContentVisible(visible);
 }
 
+bool SnowCanvasWidget::Impl::retainedSceneCacheEnabled() const {
+    return retainedSceneCacheIsEnabled;
+}
+
+bool SnowCanvasWidget::retainedSceneCacheEnabled() const {
+    return m_impl->retainedSceneCacheEnabled();
+}
+
+void SnowCanvasWidget::Impl::setRetainedSceneCacheEnabled(bool enabled) {
+    if (retainedSceneCacheIsEnabled == enabled) {
+        return;
+    }
+    retainedSceneCacheIsEnabled = enabled;
+    releaseRetainedRenderResources();
+    widget.update();
+}
+
+void SnowCanvasWidget::setRetainedSceneCacheEnabled(bool enabled) {
+    m_impl->setRetainedSceneCacheEnabled(enabled);
+}
+
 bool SnowCanvasWidget::Impl::clearBackgroundEnabled() const {
     return canvasClearBackgroundEnabled;
 }
@@ -1526,6 +1607,16 @@ void SnowCanvasWidget::Impl::clearRetainedDisplayState() {
     refreshSerialNumberToolbar();
 }
 
+void SnowCanvasWidget::Impl::releaseRetainedRenderResources() {
+    snow_canvas_tile_cache::invalidateNamespace(&widget);
+    filterWorkspace.finishFrame(true);
+    penMaskAtlas.clear();
+}
+
+void SnowCanvasWidget::releaseRetainedRenderResources() {
+    m_impl->releaseRetainedRenderResources();
+}
+
 bool SnowCanvasWidget::Impl::hasViewport() const {
     return runtimeBinding.hasViewport();
 }
@@ -1672,6 +1763,14 @@ bool SnowCanvasWidget::Impl::cancelActiveTextEditing() {
 
 bool SnowCanvasWidget::cancelActiveTextEditing() {
     return m_impl->cancelActiveTextEditing();
+}
+
+bool SnowCanvasWidget::Impl::hasActiveTextEditing() const {
+    return textInteraction.isActive();
+}
+
+bool SnowCanvasWidget::hasActiveTextEditing() const {
+    return m_impl->hasActiveTextEditing();
 }
 
 void SnowCanvasWidget::Impl::beginTextStylePopupInteraction() {
@@ -1913,11 +2012,12 @@ void SnowCanvasWidget::Impl::emitChangedStateSignals(const snow_canvas_state::Ch
 }
 
 void SnowCanvasWidget::Impl::applyCanvasToolCursor(SnowCanvasTool tool) {
-    if (tool == SnowCanvasTool::Text) {
-        widget.setCursor(Qt::IBeamCursor);
+    const std::optional<QCursor> cursor = baselineCursorForCanvasTool(tool);
+    if (cursor.has_value()) {
+        cursorController.setCursor(SnowCanvasCursorLayer::CanvasTool, *cursor);
         return;
     }
-    widget.unsetCursor();
+    cursorController.clearCursor(SnowCanvasCursorLayer::CanvasTool);
 }
 
 void SnowCanvasWidget::Impl::refocusWidget() {
@@ -1984,37 +2084,54 @@ bool SnowCanvasWidget::Impl::paint(QPainter& painter, const QRegion& exposedRegi
 
         snow_canvas_renderer::resetFilterRenderDiagnosticsForCurrentThread();
         snow_canvas_renderer::FilterRenderDiagnostics aggregateDiagnostics;
-        const auto tileDiagnostics = snow_canvas_tile_cache::render(
-            painter, snow_canvas_tile_cache::RenderRequest{
-                         &widget,
-                         widget.size(),
-                         painterDevicePixelRatio(painter, widget),
-                         static_cast<std::uint64_t>(contentKey),
-                         cache.patchCursor().scene_revision,
-                         // Scene dirty rectangles are consumed when syncAfterEngineMutation
-                         // advances the scene revision. Passing the retained patch metadata
-                         // here would invalidate the same tiles again on every decoration-only
-                         // repaint.
-                         QRegion(),
-                         exposedRegion,
-                         [&](QPainter& tilePainter, const QRegion& missingRegion) {
-                             snow_canvas_compositor::Frame tileFrame = frame;
-                             const SnowCanvasRenderContext tileContext =
-                                 renderContext(tilePainter, missingRegion);
-                             snow_canvas_compositor::clearSurface(tilePainter, tileFrame);
-                             if (installedCustomRenderer != nullptr &&
-                                 hasFilter(tileFrame.sceneItems, tileFrame.sceneItemCount)) {
-                                 tileFrame.backgroundRenderer = installedCustomRenderer;
-                                 tileFrame.backgroundContext = &tileContext;
-                             } else {
-                                 renderBeforeCanvas(tilePainter, tileContext);
-                             }
-                             snow_canvas_compositor::renderSceneContent(tilePainter, tileFrame);
-                             snow_canvas_renderer::accumulateFilterRenderDiagnostics(
-                                 aggregateDiagnostics,
-                                 snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread());
-                         },
-                     });
+        snow_canvas_tile_cache::Diagnostics tileDiagnostics;
+        if (retainedSceneCacheIsEnabled) {
+            tileDiagnostics = snow_canvas_tile_cache::render(
+                painter, snow_canvas_tile_cache::RenderRequest{
+                             &widget,
+                             widget.size(),
+                             painterDevicePixelRatio(painter, widget),
+                             static_cast<std::uint64_t>(contentKey),
+                             cache.patchCursor().scene_revision,
+                             // Scene dirty rectangles are consumed when syncAfterEngineMutation
+                             // advances the scene revision. Passing the retained patch metadata
+                             // here would invalidate the same tiles again on every decoration-only
+                             // repaint.
+                             QRegion(),
+                             exposedRegion,
+                             [&](QPainter& tilePainter, const QRegion& missingRegion) {
+                                 snow_canvas_compositor::Frame tileFrame = frame;
+                                 const SnowCanvasRenderContext tileContext =
+                                     renderContext(tilePainter, missingRegion);
+                                 snow_canvas_compositor::clearSurface(tilePainter, tileFrame);
+                                 if (installedCustomRenderer != nullptr &&
+                                     hasFilter(tileFrame.sceneItems, tileFrame.sceneItemCount)) {
+                                     tileFrame.backgroundRenderer = installedCustomRenderer;
+                                     tileFrame.backgroundContext = &tileContext;
+                                 } else {
+                                     renderBeforeCanvas(tilePainter, tileContext);
+                                 }
+                                 snow_canvas_compositor::renderSceneContent(tilePainter, tileFrame);
+                                 snow_canvas_renderer::accumulateFilterRenderDiagnostics(
+                                     aggregateDiagnostics,
+                                     snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread());
+                             },
+                         });
+        } else {
+            const SnowCanvasRenderContext directContext = renderContext(painter, exposedRegion);
+            snow_canvas_compositor::clearSurface(painter, frame);
+            if (installedCustomRenderer != nullptr &&
+                hasFilter(frame.sceneItems, frame.sceneItemCount)) {
+                frame.backgroundRenderer = installedCustomRenderer;
+                frame.backgroundContext = &directContext;
+            } else {
+                renderBeforeCanvas(painter, directContext);
+            }
+            snow_canvas_compositor::renderSceneContent(painter, frame);
+            snow_canvas_renderer::accumulateFilterRenderDiagnostics(
+                aggregateDiagnostics,
+                snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread());
+        }
         snow_canvas_renderer::setFilterRenderDiagnosticsForCurrentThread(aggregateDiagnostics);
         snow_canvas_renderer::recordTileCacheDiagnosticsForCurrentThread(
             tileDiagnostics.hits, tileDiagnostics.misses, tileDiagnostics.evictions,
@@ -2186,7 +2303,14 @@ bool SnowCanvasWidget::Impl::handleMousePress(QMouseEvent* event) {
 }
 
 void SnowCanvasWidget::mousePressEvent(QMouseEvent* event) {
-    if (m_impl->handleMousePress(event)) {
+    if (event != nullptr && event->button() == Qt::MiddleButton) {
+        m_impl->beginMiddleClickTracking(event->position());
+    }
+    const bool handled = m_impl->handleMousePress(event);
+    if (event != nullptr && event->button() == Qt::MiddleButton && handled) {
+        m_impl->cancelMiddleClickTracking();
+    }
+    if (handled) {
         return;
     }
     QWidget::mousePressEvent(event);
@@ -2235,8 +2359,12 @@ void SnowCanvasWidget::Impl::flushEraserMove() {
 }
 
 bool SnowCanvasWidget::Impl::handleMouseDoubleClick(QMouseEvent* event) {
-    if (event == nullptr || !interactionEnabled() || textInteraction.isActive()) {
+    if (event == nullptr || !interactionEnabled()) {
         return false;
+    }
+    if (textInteraction.isActive()) {
+        event->accept();
+        return true;
     }
     flushLiveStrokeMoves();
     flushEraserMove();
@@ -2246,6 +2374,11 @@ bool SnowCanvasWidget::Impl::handleMouseDoubleClick(QMouseEvent* event) {
 
 void SnowCanvasWidget::mouseDoubleClickEvent(QMouseEvent* event) {
     if (m_impl->handleMouseDoubleClick(event)) {
+        return;
+    }
+    if (event != nullptr && event->button() == Qt::LeftButton) {
+        event->accept();
+        emit unhandledLeftDoubleClick();
         return;
     }
     QWidget::mouseDoubleClickEvent(event);
@@ -2308,6 +2441,9 @@ void SnowCanvasWidget::Impl::flushLiveStrokeMoves() {
 }
 
 void SnowCanvasWidget::mouseMoveEvent(QMouseEvent* event) {
+    if (event != nullptr) {
+        m_impl->updateMiddleClickTracking(event->position());
+    }
     if (m_impl->handleMouseMove(event)) {
         return;
     }
@@ -2327,10 +2463,42 @@ bool SnowCanvasWidget::Impl::handleMouseRelease(QMouseEvent* event) {
 }
 
 void SnowCanvasWidget::mouseReleaseEvent(QMouseEvent* event) {
-    if (m_impl->handleMouseRelease(event)) {
+    const bool middleClick = event != nullptr && event->button() == Qt::MiddleButton &&
+                             m_impl->finishMiddleClickTracking();
+    const bool handled = m_impl->handleMouseRelease(event);
+    if (middleClick && !handled) {
+        event->accept();
+        emit unhandledMiddleClick();
+        return;
+    }
+    if (handled) {
         return;
     }
     QWidget::mouseReleaseEvent(event);
+}
+
+void SnowCanvasWidget::Impl::beginMiddleClickTracking(const QPointF& position) {
+    middleClickPressPosition = position;
+    middleClickCandidate = true;
+}
+
+void SnowCanvasWidget::Impl::updateMiddleClickTracking(const QPointF& position) {
+    if (middleClickCandidate && middleClickPressPosition.has_value() &&
+        QLineF(*middleClickPressPosition, position).length() > QApplication::startDragDistance()) {
+        middleClickCandidate = false;
+    }
+}
+
+bool SnowCanvasWidget::Impl::finishMiddleClickTracking() {
+    const bool candidate = middleClickCandidate;
+    middleClickCandidate = false;
+    middleClickPressPosition.reset();
+    return candidate;
+}
+
+void SnowCanvasWidget::Impl::cancelMiddleClickTracking() {
+    middleClickCandidate = false;
+    middleClickPressPosition.reset();
 }
 
 bool SnowCanvasWidget::Impl::handleEnter(QEnterEvent* event) {

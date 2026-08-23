@@ -861,6 +861,10 @@ void ColorSwatchButton::setPhysicalScale(qreal scale) {
     update();
 }
 
+QColor ColorSwatchButton::swatchColor() const { return m_color; }
+
+qreal ColorSwatchButton::swatchPhysicalScale() const { return m_physicalScale; }
+
 void ColorSwatchButton::paintEvent(QPaintEvent* event) {
     adqt::widgets::AdButton::paintEvent(event);
 
@@ -896,6 +900,34 @@ void ColorSwatchButton::paintEvent(QPaintEvent* event) {
         painter.setBrush(Qt::NoBrush);
         painter.drawPath(path);
     }
+}
+
+ColorPickerSamplerButton::ColorPickerSamplerButton(QWidget* parent)
+    : ColorSwatchButton(parent) {
+    setSizeClass(adqt::widgets::AdButton::SizeClass::Small);
+    setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Outline);
+    setAccentRole(adqt::widgets::AdButton::AccentRole::Neutral);
+    setCursor(Qt::PointingHandCursor);
+}
+
+void ColorPickerSamplerButton::paintEvent(QPaintEvent* event) {
+    ColorSwatchButton::paintEvent(event);
+
+    const QColor color = swatchColor();
+    const int lightness = color.isValid() && color.alpha() > 0 ? qGray(color.rgb()) : 255;
+    const QColor iconColor = lightness >= 136 ? QColor(Qt::black) : QColor(Qt::white);
+    const int iconSide = qBound(10, qRound(14.0 * swatchPhysicalScale()),
+                                qMin(width(), height()));
+    const QRect iconRect((width() - iconSide) / 2, (height() - iconSide) / 2, iconSide, iconSide);
+    const QPixmap icon = snow_shot::presentation::icons::renderTintedIconPixmap(
+        snow_shot::presentation::icons::custom::outlined::ColorPicker(), iconRect.size(),
+        devicePixelRatioF(), iconColor);
+    if (icon.isNull()) {
+        return;
+    }
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.drawPixmap(iconRect, icon);
 }
 
 StrokeStylePreviewTrigger::StrokeStylePreviewTrigger(QWidget* parent)
@@ -1734,6 +1766,15 @@ createScreenshotToolPaletteColorButton(QWidget* parent, const char* tooltip, con
     button->setSwatchColor(color);
     button->setSwatchBorderVisible(swatchBorderVisible);
     button->setPhysicalScale(metrics.physicalScale);
+    return button;
+}
+
+ColorPickerSamplerButton* createScreenshotToolPaletteColorPickerSamplerButton(
+    QWidget* parent, const QColor& color) {
+    auto* button = new ColorPickerSamplerButton(parent);
+    button->setSwatchColor(color);
+    button->setSwatchBorderVisible(true);
+    button->setFocusPolicy(Qt::NoFocus);
     return button;
 }
 

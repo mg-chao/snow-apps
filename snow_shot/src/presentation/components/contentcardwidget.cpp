@@ -13,12 +13,26 @@
 
 ContentCardWidget::ContentCardWidget(
     const snow_shot::presentation::settings::SettingsCatalog& catalog,
+    snow_shot::presentation::settings::SettingsRuntimeBindings& bindings, QWidget* parent)
+    : QFrame(parent), m_catalog(catalog),
+      m_runtimeBindings(&bindings),
+      m_colorScheme(snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme()) {
+    initializeUi();
+}
+
+ContentCardWidget::ContentCardWidget(
+    const snow_shot::presentation::settings::SettingsCatalog& catalog,
     snow_shot::presentation::GlobalShortcutManager& shortcutManager, QWidget* parent)
     : QFrame(parent), m_catalog(catalog),
-      m_runtimeBindings(
+      m_ownedRuntimeBindings(
           std::make_unique<snow_shot::presentation::settings::BuiltInSettingsRuntimeBindings>(
               shortcutManager, this)),
+      m_runtimeBindings(m_ownedRuntimeBindings.get()),
       m_colorScheme(snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme()) {
+    initializeUi();
+}
+
+void ContentCardWidget::initializeUi() {
     setFrameShape(QFrame::NoFrame);
     setLineWidth(0);
     setAutoFillBackground(false);
@@ -33,34 +47,14 @@ ContentCardWidget::ContentCardWidget(
     m_stack->setAutoFillBackground(false);
 
     for (const auto& pageDefinition : m_catalog.pages()) {
-        QWidget* routeWidget = nullptr;
-        if (pageDefinition.kind ==
-            snow_shot::presentation::settings::SettingsPageKind::ScreenshotHistory) {
-            m_historyPlaceholder = new QWidget(m_stack);
-            m_historyPlaceholder->setObjectName(
-                QStringLiteral("screenshotHistoryRoutePlaceholder"));
-            routeWidget = m_historyPlaceholder;
-        } else {
-            auto* page =
-                new SettingsPageWidget(m_catalog, pageDefinition.id, *m_runtimeBindings, m_stack);
-            routeWidget = page;
-            m_pagesById.insert(pageDefinition.id, page);
-            connect(page, &SettingsPageWidget::commandRequested, this,
-                    &ContentCardWidget::handleCommand);
-            connect(page, &SettingsPageWidget::visibleSectionChanged, this,
-                    [this, page](const QString& sectionId) {
-                        if (sectionId.isEmpty() || m_stack == nullptr ||
-                            m_stack->currentWidget() != page ||
-                            m_currentLocation.pageId != page->pageId() ||
-                            (m_currentLocation.sectionId == sectionId &&
-                             m_currentLocation.itemId.isEmpty())) {
-                            return;
-                        }
-                        m_currentLocation.sectionId = sectionId;
-                        m_currentLocation.itemId.clear();
-                        emit locationChanged(m_currentLocation);
-                    });
-        }
+        auto* routePlaceholder = new QWidget(m_stack);
+        routePlaceholder->setObjectName(
+            pageDefinition.kind ==
+                    snow_shot::presentation::settings::SettingsPageKind::ScreenshotHistory
+                ? QStringLiteral("screenshotHistoryRoutePlaceholder")
+                : QStringLiteral("settingsRoutePlaceholder-%1").arg(pageDefinition.id));
+        m_routePlaceholdersById.insert(pageDefinition.id, routePlaceholder);
+        QWidget* routeWidget = routePlaceholder;
         m_routeWidgetsById.insert(pageDefinition.id, routeWidget);
         m_routePageIndices.insert(pageDefinition.route, m_stack->addWidget(routeWidget));
     }
@@ -70,8 +64,10 @@ ContentCardWidget::ContentCardWidget(
 
     const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
     connect(&themeManager, &snow_shot::presentation::styles::ThemeManager::themeChanged, this,
-            &ContentCardWidget::applyTheme);
-    applyTheme(m_colorScheme);
+            [this](const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
+                m_colorScheme = scheme;
+                update();
+            });
 }
 
 ContentCardWidget::~ContentCardWidget() = default;
@@ -109,12 +105,7 @@ void ContentCardWidget::navigateTo(
     const snow_shot::presentation::settings::SettingsLocation& requested) {
     const auto resolved = m_catalog.resolveLocation(requested);
     const auto* pageDefinition = m_catalog.page(resolved.pageId);
-    if (pageDefinition != nullptr &&
-        pageDefinition->kind ==
-            snow_shot::presentation::settings::SettingsPageKind::ScreenshotHistory) {
-        ensureHistoryPage(resolved.pageId);
-    }
-    QWidget* routeWidget = m_routeWidgetsById.value(resolved.pageId, nullptr);
+    QWidget* routeWidget = pageDefinition != nullptr ? ensureRouteWidget(*pageDefinition) : nullptr;
     if (pageDefinition == nullptr || routeWidget == nullptr || m_stack == nullptr) {
         return;
     }
@@ -146,37 +137,62 @@ void ContentCardWidget::navigateTo(
     emit locationChanged(m_currentLocation);
 }
 
-ScreenshotHistoryPageWidget* ContentCardWidget::ensureHistoryPage(const QString& pageId) {
-    if (m_historyPage != nullptr || m_stack == nullptr || m_historyPlaceholder == nullptr) {
-        return m_historyPage;
-    }
-
-    const int index = m_stack->indexOf(m_historyPlaceholder);
-    if (index < 0) {
+QWidget* ContentCardWidget::ensureRouteWidget(
+    const snow_shot::presentation::settings::SettingsPageDefinition& pageDefinition) {
+    if (m_stack == nullptr) {
         return nullptr;
     }
-    m_stack->removeWidget(m_historyPlaceholder);
-    m_historyPlaceholder->deleteLater();
-    m_historyPlaceholder = nullptr;
 
-    m_historyPage = new ScreenshotHistoryPageWidget(m_stack);
-    connect(m_historyPage, &ScreenshotHistoryPageWidget::editRequested, this,
-            &ContentCardWidget::screenshotHistoryEditRequested);
-    m_historyPage->applyTheme(m_colorScheme);
-    m_historyPage->retranslateUi();
-    m_stack->insertWidget(index, m_historyPage);
-    m_routeWidgetsById.insert(pageId, m_historyPage);
-    return m_historyPage;
+    QWidget* existing = m_routeWidgetsById.value(pageDefinition.id, nullptr);
+    if (!m_routePlaceholdersById.contains(pageDefinition.id)) {
+        return existing;
+    }
+
+    QWidget* placeholder = m_routePlaceholdersById.take(pageDefinition.id);
+    const int index = m_stack->indexOf(placeholder);
+    if (index < 0) {
+        return existing;
+    }
+
+    m_stack->removeWidget(placeholder);
+    delete placeholder;
+
+    QWidget* routeWidget = nullptr;
+    if (pageDefinition.kind ==
+        snow_shot::presentation::settings::SettingsPageKind::ScreenshotHistory) {
+        m_historyPage = new ScreenshotHistoryPageWidget(m_stack);
+        connect(m_historyPage, &ScreenshotHistoryPageWidget::editRequested, this,
+                &ContentCardWidget::screenshotHistoryEditRequested);
+        routeWidget = m_historyPage;
+    } else {
+        auto* page =
+            new SettingsPageWidget(m_catalog, pageDefinition.id, *m_runtimeBindings, m_stack);
+        m_pagesById.insert(pageDefinition.id, page);
+        connect(page, &SettingsPageWidget::commandRequested, this,
+                &ContentCardWidget::handleCommand);
+        connect(page, &SettingsPageWidget::visibleSectionChanged, this,
+                [this, page](const QString& sectionId) {
+                    if (sectionId.isEmpty() || m_stack == nullptr ||
+                        m_stack->currentWidget() != page ||
+                        m_currentLocation.pageId != page->pageId() ||
+                        (m_currentLocation.sectionId == sectionId &&
+                         m_currentLocation.itemId.isEmpty())) {
+                        return;
+                    }
+                    m_currentLocation.sectionId = sectionId;
+                    m_currentLocation.itemId.clear();
+                    emit locationChanged(m_currentLocation);
+                });
+        routeWidget = page;
+    }
+
+    m_stack->insertWidget(index, routeWidget);
+    m_routeWidgetsById.insert(pageDefinition.id, routeWidget);
+    return routeWidget;
 }
 
 void ContentCardWidget::showInterfaceSettings() {
-    const auto command =
-        m_catalog.commandForShortcut(snow_shot::presentation::GlobalShortcutAction::OpenSettings);
-    if (command.has_value()) {
-        handleCommand(*command);
-    } else {
-        navigateTo(m_catalog.defaultLocation());
-    }
+    navigateTo({QStringLiteral("interface-settings"), QStringLiteral("general"), {}});
 }
 
 void ContentCardWidget::handleCommand(
@@ -184,6 +200,9 @@ void ContentCardWidget::handleCommand(
     switch (command.kind) {
     case snow_shot::presentation::settings::SettingsCommandKind::CaptureScreenshot:
         emit screenshotRequested();
+        break;
+    case snow_shot::presentation::settings::SettingsCommandKind::ExecuteQuickAction:
+        emit quickActionRequested(command.shortcutAction);
         break;
     case snow_shot::presentation::settings::SettingsCommandKind::Navigate:
         navigateTo(command.location);

@@ -2,6 +2,7 @@
 name = "snow-recording-export"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 build = "build.rs"
 
 [dependencies]
@@ -12,9 +13,9 @@ ffmpeg-next.workspace = true
 rayon.workspace = true
 num_cpus.workspace = true
 serde.workspace = true
+tempfile.workspace = true
 thiserror.workspace = true
 zstd.workspace = true
 
 [dev-dependencies]
-proptest = "1"
-tempfile.workspace = true
+proptest = "1.11.0"

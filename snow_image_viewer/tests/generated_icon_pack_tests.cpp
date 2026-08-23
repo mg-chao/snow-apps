@@ -41,11 +41,12 @@ void viewerPackRendersAndPreservesColorModels() {
     namespace icons = snow::image_viewer::icons;
     adqt::icons::IconRegistry registry;
     const auto registered = icons::registerWith(registry);
-    require(registered.ok() && icons::pack().definition().entries.size() == 2,
+    const adqt::icons::IconPack* staticPack = icons::pack().staticPack();
+    require(registered.ok() && staticPack != nullptr && staticPack->entryCount == 2,
             "viewer pack should register its two project-owned assets");
 
-    for (const auto& entry : icons::pack().definition().entries) {
-        const auto ref = icons::pack().icon(registry, entry.variant, entry.name);
+    for (std::size_t index = 0; index < staticPack->entryCount; ++index) {
+        const auto ref = icons::pack().icon(index);
         adqt::icons::IconRenderRequest request;
         request.logicalSize = QSize(32, 32);
         request.devicePixelRatio = 1.5;

@@ -28,7 +28,7 @@
 
 namespace snow_shot::storage {
 namespace {
-constexpr int kManifestFormatVersion = 1;
+constexpr int kManifestFormatVersion = 2;
 constexpr int kMaximumDisplays = 32;
 constexpr qint64 kMaximumPixelsPerImage = 64'000'000;
 constexpr qint64 kMaximumPixelsPerRecord = 128'000'000;
@@ -38,11 +38,13 @@ constexpr auto kHistoryDirectoryName = "capture_history_records";
 constexpr auto kQuarantineDirectoryName = "capture_history_quarantine";
 constexpr auto kManifestFileName = "manifest.json";
 constexpr auto kCanvasFileName = "canvas_history.json";
+constexpr auto kResultFileName = "capture_result.png";
 
 struct StoredRecord {
     CaptureHistoryRecord record;
     QString directoryName;
     QString canvasFileName;
+    std::optional<QString> resultFileName;
     QVector<QString> displayFileNames;
     bool payloadValidated = false;
 };
@@ -52,9 +54,48 @@ struct EncodedDraft {
     QByteArray canvas;
     QVector<QByteArray> images;
     QVector<QString> imageFileNames;
+    std::optional<QByteArray> resultImage;
+    std::optional<QString> resultImageFileName;
     QJsonObject manifest;
     QByteArray manifestBytes;
 };
+
+QString sourceToManifest(CaptureHistorySource source) {
+    switch (source) {
+    case CaptureHistorySource::CopiedToClipboard:
+        return QStringLiteral("copied_to_clipboard");
+    case CaptureHistorySource::PinnedToScreen:
+        return QStringLiteral("pinned_to_screen");
+    case CaptureHistorySource::CurrentMonitor:
+        return QStringLiteral("current_monitor");
+    case CaptureHistorySource::FocusedWindow:
+        return QStringLiteral("focused_window");
+    }
+    return QStringLiteral("copied_to_clipboard");
+}
+
+bool sourceFromManifest(const QString& value, CaptureHistorySource* source) {
+    if (source == nullptr) {
+        return false;
+    }
+    if (value == QStringLiteral("copied_to_clipboard")) {
+        *source = CaptureHistorySource::CopiedToClipboard;
+        return true;
+    }
+    if (value == QStringLiteral("pinned_to_screen")) {
+        *source = CaptureHistorySource::PinnedToScreen;
+        return true;
+    }
+    if (value == QStringLiteral("current_monitor")) {
+        *source = CaptureHistorySource::CurrentMonitor;
+        return true;
+    }
+    if (value == QStringLiteral("focused_window")) {
+        *source = CaptureHistorySource::FocusedWindow;
+        return true;
+    }
+    return false;
+}
 
 QJsonObject rectangleToJson(const QRect& rectangle) {
     return {
@@ -211,7 +252,8 @@ template <typename Result> std::shared_future<Result> readyFuture(Result result)
 }
 
 QJsonObject buildManifest(const CaptureHistoryRecord& record, const QString& canvasFileName,
-                          const QVector<QString>& imageFileNames, qint64 totalBytes) {
+                          const QVector<QString>& imageFileNames,
+                          const std::optional<QString>& resultFileName, qint64 totalBytes) {
     QJsonArray displays;
     for (qsizetype index = 0; index < record.displays.size(); ++index) {
         const CaptureHistoryDisplayRecord& display = record.displays[index];
@@ -224,13 +266,11 @@ QJsonObject buildManifest(const CaptureHistoryRecord& record, const QString& can
             {QStringLiteral("encoded_bytes"), display.encodedBytes},
         });
     }
-    return {
+    QJsonObject manifest{
         {QStringLiteral("format_version"), kManifestFormatVersion},
         {QStringLiteral("id"), record.id},
         {QStringLiteral("created_utc"), record.createdUtc.toUTC().toString(Qt::ISODateWithMs)},
-        {QStringLiteral("source"), record.source == CaptureHistorySource::PinnedToScreen
-                                       ? QStringLiteral("pinned_to_screen")
-                                       : QStringLiteral("copied_to_clipboard")},
+        {QStringLiteral("source"), sourceToManifest(record.source)},
         {QStringLiteral("canvas_bounds"), rectangleToJson(record.canvasBounds)},
         {QStringLiteral("selection"), persistedSelectionToJson(record.selection)},
         {QStringLiteral("canvas_history_file"), canvasFileName},
@@ -238,6 +278,18 @@ QJsonObject buildManifest(const CaptureHistoryRecord& record, const QString& can
         {QStringLiteral("displays"), displays},
         {QStringLiteral("total_record_size"), totalBytes},
     };
+    if (record.result.has_value() && resultFileName.has_value()) {
+        manifest.insert(QStringLiteral("result"), QJsonObject{
+                                                   {QStringLiteral("image_file"), *resultFileName},
+                                                   {QStringLiteral("width"),
+                                                    record.result->imageSize.width()},
+                                                   {QStringLiteral("height"),
+                                                    record.result->imageSize.height()},
+                                                   {QStringLiteral("encoded_bytes"),
+                                                    record.result->encodedBytes},
+                                               });
+    }
+    return manifest;
 }
 
 bool encodeDraft(const CaptureHistoryDraft& draft, qint64 quotaBytes, EncodedDraft* encoded,
@@ -266,6 +318,30 @@ bool encodeDraft(const CaptureHistoryDraft& draft, qint64 quotaBytes, EncodedDra
 
     qint64 pixelCount = 0;
     qint64 payloadBytes = result.canvas.size();
+    if (draft.resultImage.has_value()) {
+        const QImage& image = *draft.resultImage;
+        const qint64 pixels = static_cast<qint64>(image.width()) *
+                              static_cast<qint64>(image.height());
+        if (image.isNull() || pixels <= 0 || pixels > kMaximumPixelsPerImage ||
+            pixelCount > kMaximumPixelsPerRecord - pixels) {
+            if (error != nullptr) {
+                *error = QStringLiteral("The capture-history result exceeds the image limits");
+            }
+            return false;
+        }
+        pixelCount += pixels;
+        const QByteArray png = snow_shot::image_codec::encodePng(image);
+        if (png.isEmpty()) {
+            if (error != nullptr) {
+                *error = QStringLiteral("The capture-history result could not be encoded");
+            }
+            return false;
+        }
+        payloadBytes += png.size();
+        result.resultImage = png;
+        result.resultImageFileName = QString::fromLatin1(kResultFileName);
+        result.record.result = CaptureHistoryResultRecord{image.size(), png.size()};
+    }
     for (qsizetype index = 0; index < draft.displays.size(); ++index) {
         const CaptureHistoryDisplayDraft& display = draft.displays[index];
         const qint64 pixels = static_cast<qint64>(display.image.width()) *
@@ -301,7 +377,8 @@ bool encodeDraft(const CaptureHistoryDraft& draft, qint64 quotaBytes, EncodedDra
     qint64 totalBytes = payloadBytes;
     for (int iteration = 0; iteration < 8; ++iteration) {
         result.manifest = buildManifest(result.record, QString::fromLatin1(kCanvasFileName),
-                                        result.imageFileNames, totalBytes);
+                                        result.imageFileNames, result.resultImageFileName,
+                                        totalBytes);
         result.manifestBytes = jsonBytes(result.manifest);
         const qint64 nextTotal = payloadBytes + result.manifestBytes.size();
         if (nextTotal == totalBytes) {
@@ -311,7 +388,8 @@ bool encodeDraft(const CaptureHistoryDraft& draft, qint64 quotaBytes, EncodedDra
     }
     result.record.totalBytes = payloadBytes + result.manifestBytes.size();
     result.manifest = buildManifest(result.record, QString::fromLatin1(kCanvasFileName),
-                                    result.imageFileNames, result.record.totalBytes);
+                                    result.imageFileNames, result.resultImageFileName,
+                                    result.record.totalBytes);
     result.manifestBytes = jsonBytes(result.manifest);
     result.record.totalBytes = payloadBytes + result.manifestBytes.size();
     if (result.record.totalBytes > quotaBytes) {
@@ -371,11 +449,7 @@ bool parseManifest(const QJsonObject& object, const QString& directoryName,
         return false;
     }
     const QString source = sourceValue.toString(QStringLiteral("copied_to_clipboard"));
-    if (source == QStringLiteral("copied_to_clipboard")) {
-        result.record.source = CaptureHistorySource::CopiedToClipboard;
-    } else if (source == QStringLiteral("pinned_to_screen")) {
-        result.record.source = CaptureHistorySource::PinnedToScreen;
-    } else {
+    if (!sourceFromManifest(source, &result.record.source)) {
         if (error != nullptr) {
             *error = QStringLiteral("The record manifest source is invalid");
         }
@@ -418,6 +492,67 @@ bool parseManifest(const QJsonObject& object, const QString& directoryName,
         }
     }
 
+    qint64 pixelsInRecord = 0;
+    qint64 calculatedBytes = result.record.canvasBytes;
+    const QJsonValue resultValue = object.value(QStringLiteral("result"));
+    if (!resultValue.isUndefined() && !resultValue.isObject()) {
+        if (error != nullptr) {
+            *error = QStringLiteral("The record result descriptor is invalid");
+        }
+        return false;
+    }
+    if (resultValue.isObject()) {
+        const QJsonObject resultObject = resultValue.toObject();
+        qint64 width = 0;
+        qint64 height = 0;
+        qint64 encodedBytes = 0;
+        const QString imageFile = resultObject.value(QStringLiteral("image_file")).toString();
+        if (!resultObject.value(QStringLiteral("image_file")).isString() ||
+            !safeLocalFileName(imageFile) || expectedFiles.contains(imageFile) ||
+            !jsonInteger(resultObject.value(QStringLiteral("width")), 1,
+                         std::numeric_limits<int>::max(), &width) ||
+            !jsonInteger(resultObject.value(QStringLiteral("height")), 1,
+                         std::numeric_limits<int>::max(), &height) ||
+            !jsonInteger(resultObject.value(QStringLiteral("encoded_bytes")), 1,
+                         std::numeric_limits<qint64>::max(), &encodedBytes)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("The record result descriptor is invalid");
+            }
+            return false;
+        }
+        const qint64 pixels = width * height;
+        if (pixels <= 0 || pixels > kMaximumPixelsPerImage ||
+            pixelsInRecord > kMaximumPixelsPerRecord - pixels) {
+            if (error != nullptr) {
+                *error = QStringLiteral("The record result exceeds the image limits");
+            }
+            return false;
+        }
+        pixelsInRecord += pixels;
+        const QString imagePath = QDir(directoryPath).filePath(imageFile);
+        const QFileInfo imageInfo(imagePath);
+        if (!pathInsideRoot(directoryPath, imagePath) || !imageInfo.isFile() ||
+            imageInfo.isSymLink() || imageInfo.size() != encodedBytes) {
+            if (error != nullptr) {
+                *error = QStringLiteral("The record result payload is invalid");
+            }
+            return false;
+        }
+        if (validatePayloads && !snow_shot::image_codec::inspectFile(
+                                    imagePath, snow::image::Format::png,
+                                    QSize(static_cast<int>(width), static_cast<int>(height)))) {
+            if (error != nullptr) {
+                *error = QStringLiteral("The record result payload is invalid");
+            }
+            return false;
+        }
+        expectedFiles.insert(imageFile);
+        calculatedBytes += encodedBytes;
+        result.resultFileName = imageFile;
+        result.record.result = CaptureHistoryResultRecord{
+            QSize(static_cast<int>(width), static_cast<int>(height)), encodedBytes};
+    }
+
     const QJsonArray displays = object.value(QStringLiteral("displays")).toArray();
     if (displays.isEmpty() || displays.size() > kMaximumDisplays) {
         if (error != nullptr) {
@@ -425,8 +560,6 @@ bool parseManifest(const QJsonObject& object, const QString& directoryName,
         }
         return false;
     }
-    qint64 pixelsInRecord = 0;
-    qint64 calculatedBytes = result.record.canvasBytes;
     for (const QJsonValue& displayValue : displays) {
         if (!displayValue.isObject()) {
             return false;
@@ -533,6 +666,16 @@ bool validateStoredPayload(const StoredRecord& stored, const QString& directoryP
                 imagePath, snow::image::Format::png, stored.record.displays[index].imageSize)) {
             if (error != nullptr) {
                 *error = QStringLiteral("A record display payload is invalid");
+            }
+            return false;
+        }
+    }
+    if (stored.resultFileName.has_value()) {
+        const QString imagePath = QDir(directoryPath).filePath(*stored.resultFileName);
+        if (!snow_shot::image_codec::inspectFile(
+                imagePath, snow::image::Format::png, stored.record.result->imageSize)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("The record result payload is invalid");
             }
             return false;
         }
@@ -703,7 +846,8 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
             }
             const StoredRecord& found = m_records.at(*index);
             if (!(found.record == record) ||
-                found.displayFileNames.size() != found.record.displays.size()) {
+                found.displayFileNames.size() != found.record.displays.size() ||
+                found.resultFileName.has_value() != found.record.result.has_value()) {
                 return std::nullopt;
             }
             stored = found;
@@ -732,6 +876,21 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
 
         CaptureHistoryAssetSet result;
         result.recordId = stored.record.id;
+        if (stored.resultFileName.has_value() && stored.record.result.has_value()) {
+            const QString& fileName = *stored.resultFileName;
+            if (!safeLocalFileName(fileName)) {
+                return std::nullopt;
+            }
+            const QString imagePath = QDir(directoryPath).filePath(fileName);
+            const QFileInfo imageInfo(imagePath);
+            if (!pathInsideRoot(directoryPath, imagePath) || !imageInfo.isFile() ||
+                imageInfo.isSymLink() || imageInfo.size() != stored.record.result->encodedBytes) {
+                return std::nullopt;
+            }
+            result.result = CaptureHistoryResultAsset{
+                stored.record.id, stored.record.result->imageSize,
+                QUrl::fromLocalFile(imageInfo.absoluteFilePath())};
+        }
         result.displays.reserve(stored.record.displays.size());
         for (qsizetype index = 0; index < stored.record.displays.size(); ++index) {
             const CaptureHistoryDisplayRecord& display = stored.record.displays[index];
@@ -752,6 +911,43 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
                                        QUrl::fromLocalFile(imageInfo.absoluteFilePath())});
         }
         return result;
+    }
+
+    std::optional<QImage> loadResultImage(const CaptureHistoryRecord& record) const override {
+        StoredRecord stored;
+        {
+            std::lock_guard<std::mutex> lock(m_stateMutex);
+            const auto index = m_recordIndex.constFind(record.id);
+            if (index == m_recordIndex.cend() || *index >= m_records.size()) {
+                return std::nullopt;
+            }
+            const StoredRecord& found = m_records.at(*index);
+            if (!(found.record == record) || !found.resultFileName.has_value() ||
+                !found.record.result.has_value()) {
+                return std::nullopt;
+            }
+            stored = found;
+        }
+        const QString directoryPath = QDir(m_historyDirectory).filePath(stored.directoryName);
+        const QString imagePath = QDir(directoryPath).filePath(*stored.resultFileName);
+        if (!pathInsideRoot(m_historyDirectory, directoryPath) ||
+            !pathInsideRoot(directoryPath, imagePath)) {
+            return std::nullopt;
+        }
+        QString validationError;
+        if (!stored.payloadValidated &&
+            !validateStoredPayload(stored, directoryPath, &validationError)) {
+            const_cast<CaptureHistoryRepositoryImpl*>(this)->setError(validationError);
+            const_cast<CaptureHistoryRepositoryImpl*>(this)->enqueueQuarantine(
+                record.id, validationError);
+            return std::nullopt;
+        }
+        const QImage image =
+            snow_shot::image_codec::decodeFile(imagePath, snow::image::Format::png);
+        if (image.isNull() || image.size() != stored.record.result->imageSize) {
+            return std::nullopt;
+        }
+        return image;
     }
 
     std::shared_future<StorageResult> remove(const QString& id) override {
@@ -975,6 +1171,10 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
         const QString temporaryPath = historyRoot.filePath(temporaryName);
         bool wrote = writeFile(QDir(temporaryPath).filePath(QString::fromLatin1(kCanvasFileName)),
                                encoded.canvas);
+        if (wrote && encoded.resultImage.has_value() && encoded.resultImageFileName.has_value()) {
+            wrote = writeFile(QDir(temporaryPath).filePath(*encoded.resultImageFileName),
+                              *encoded.resultImage);
+        }
         for (qsizetype index = 0; wrote && index < encoded.images.size(); ++index) {
             wrote = writeFile(QDir(temporaryPath).filePath(encoded.imageFileNames[index]),
                               encoded.images[index]);

@@ -38,6 +38,9 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     ScreenshotToolPaletteHost* paletteHost() const;
     void setOwnerWindow(QWidget* owner);
     void setTransientOwnerWindow(QWidget* owner);
+    // Releases the platform window while leaving this QObject alive for safe
+    // deferred deletion from toolbar-triggered commands.
+    void releaseNativeSurface();
     void setPlacementContext(QScreen* screen, const QRect& logicalBounds,
                              const QRect& physicalBounds = QRect());
     void setStyleToolbarAboveMain(bool above);
@@ -85,6 +88,8 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     QPointF constrainedContentPosition(const QPointF& position) const;
     void beginKeyboardFocusInteraction(QWidget* editor);
     void endKeyboardFocusInteraction(QWidget* editor = nullptr);
+    void setPaletteScaleMultiplier(qreal multiplier);
+    [[nodiscard]] qreal paletteScaleMultiplier() const;
 
   private:
     class GeometryUpdateTransaction final {
@@ -110,6 +115,7 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     };
 
     void updatePaletteGeometryForVisibleContent();
+    void bindDynamicKeyboardEditors();
     void refreshPaletteWindow(bool forceRepaint = false);
     bool handleNativeHitTest(void* message, qintptr* result) const;
     bool isPointInInteractiveContent(const QPoint& localPosition) const;
@@ -161,6 +167,7 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     QPointer<QWidget> m_watermarkTextEditor;
     QSize m_stablePhysicalWindowSize;
     qreal m_referenceDevicePixelRatio = 0.0;
+    qreal m_paletteScaleMultiplier = 1.0;
     qreal m_lastAppliedWindowDevicePixelRatio = 0.0;
     QSize m_lastAppliedHostSize;
     QPoint m_lastAppliedContentOffset;

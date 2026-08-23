@@ -99,7 +99,9 @@ QJsonObject readBaseline() {
 } // namespace
 
 int main(int argc, char** argv) {
-    qputenv("QT_QPA_PLATFORM", "offscreen");
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM")) {
+        qputenv("QT_QPA_PLATFORM", "offscreen");
+    }
     QApplication application(argc, argv);
     snow_shot::presentation::styles::ThemeManager::instance().initialize(application);
 

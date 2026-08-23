@@ -2,6 +2,7 @@
 name = "snow-audio-recorder"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 
 [features]
 bench-internals = []
@@ -26,7 +27,7 @@ windows = { workspace = true, features = [
 
 [dev-dependencies]
 criterion = "0.5"
-proptest = "1"
+proptest = "1.11.0"
 
 [[bench]]
 name = "audio_hot_path"

@@ -168,9 +168,33 @@
     },
     {
       "variant": "outlined",
+      "symbol": "ColorPicker",
+      "name": "color-picker",
+      "source": "../src/presentation/components/icons/resources/color-picker.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "Disabled",
+      "name": "disabled",
+      "source": "../src/presentation/components/icons/resources/disabled.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "Duplicate",
       "name": "duplicate",
       "source": "../src/presentation/components/icons/resources/duplicate.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "Exit",
+      "name": "exit",
+      "source": "../src/presentation/components/icons/resources/exit.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },
@@ -232,6 +256,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "OcrTranslate",
+      "name": "ocr-translate",
+      "source": "../src/presentation/components/icons/resources/ocr-translate.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "Opacity",
       "name": "opacity",
       "source": "../src/presentation/components/icons/resources/opacity.svg",
@@ -248,9 +280,9 @@
     },
     {
       "variant": "outlined",
-      "symbol": "RecordVideo",
-      "name": "record-video",
-      "source": "../src/presentation/components/icons/resources/record-video.svg",
+      "symbol": "RecordScreen",
+      "name": "record-screen",
+      "source": "../src/presentation/components/icons/resources/record-screen.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },
@@ -296,9 +328,49 @@
     },
     {
       "variant": "outlined",
+      "symbol": "Save",
+      "name": "save",
+      "source": "../src/presentation/components/icons/resources/save.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "ScanQrcode",
       "name": "scan-qrcode",
       "source": "../src/presentation/components/icons/resources/scan-qrcode.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ScreenshotCopy",
+      "name": "screenshot-copy",
+      "source": "../src/presentation/components/icons/resources/screenshot-copy.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ScreenshotDelay",
+      "name": "screenshot-delay",
+      "source": "../src/presentation/components/icons/resources/screenshot-delay.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ScreenshotFocusedWindow",
+      "name": "screenshot-focused-window",
+      "source": "../src/presentation/components/icons/resources/screenshot-focused-window.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "ScreenshotFullScreen",
+      "name": "screenshot-full-screen",
+      "source": "../src/presentation/components/icons/resources/screenshot-full-screen.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },
@@ -515,6 +587,22 @@
       "symbol": "WatermarkGap",
       "name": "watermark-gap",
       "source": "../src/presentation/components/icons/resources/watermark-gap.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "WheelMouse",
+      "name": "wheel-mouse",
+      "source": "../src/presentation/components/icons/resources/wheel-mouse.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "Window",
+      "name": "window",
+      "source": "../src/presentation/components/icons/resources/window.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },

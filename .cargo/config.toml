@@ -1,4 +1,3 @@
 [build]
-incremental = false
 target-dir = "build/cargo"
 rustflags = ["-Dwarnings"]

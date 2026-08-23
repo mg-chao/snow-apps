@@ -1,5 +1,6 @@
 use std::cell::Cell;
 use std::collections::{HashMap, VecDeque};
+use std::ffi::OsString;
 use std::ffi::c_void;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom};
@@ -22,7 +23,8 @@ use snow_recording_model::{
 
 use crate::config::{
     ExportAudioTrackRequest, ExportExecutionMode, ExportFormat, ExportPerformanceConfig,
-    ExportRequest, MouseEditConfig, SoftwareH264Priority, VideoEncodeConfig, VideoEncodingSpeed,
+    ExportRequest, MouseEditConfig, SoftwareH264Priority, VideoCodec, VideoEncodeConfig,
+    VideoEncodingSpeed,
 };
 use crate::error::{RecordingExportError as ScreenRecorderError, Result};
 use crate::export::{
@@ -87,7 +89,11 @@ impl EditingSession {
                 quality: 60,
                 speed: VideoEncodingSpeed::UltraFast,
             },
+            codec: VideoCodec::H264,
             performance: crate::config::ExportPerformanceConfig::default(),
+            maximum_width: None,
+            maximum_height: None,
+            target_fps: None,
         }
     }
 
@@ -123,6 +129,39 @@ impl EditingSession {
 
     fn export_inner(
         self,
+        mut request: ExportRequest,
+        progress_tx: &Option<Sender<ExportProgress>>,
+        cancel_flag: &Arc<AtomicBool>,
+    ) -> Result<ExportResult> {
+        let output_path = request.output_path.clone();
+        let output_directory = output_path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        fs::create_dir_all(output_directory)?;
+
+        let mut staging_suffix = OsString::new();
+        if let Some(extension) = output_path.extension() {
+            staging_suffix.push(".");
+            staging_suffix.push(extension);
+        }
+        let staging_path = tempfile::Builder::new()
+            .prefix(".snow-recording-export-")
+            .suffix(&staging_suffix)
+            .tempfile_in(output_directory)?
+            .into_temp_path();
+        request.output_path = staging_path.to_path_buf();
+
+        let mut result = self.export_inner_impl(request, progress_tx, cancel_flag)?;
+        staging_path
+            .persist(&output_path)
+            .map_err(|err| ScreenRecorderError::Io(err.error))?;
+        result.output_path = output_path;
+        Ok(result)
+    }
+
+    fn export_inner_impl(
+        self,
         request: ExportRequest,
         progress_tx: &Option<Sender<ExportProgress>>,
         cancel_flag: &Arc<AtomicBool>,
@@ -140,7 +179,7 @@ impl EditingSession {
         let mut runtime_report = ExportRuntimeReport::default();
         let wants_mouse_overlay =
             request.mouse.visible || request.mouse.click_enabled || request.mouse.trail_enabled;
-        let export_fps = choose_export_fps(self.manifest.fps, request.format);
+        let export_fps = choose_export_fps(self.manifest.fps, request.format, request.target_fps);
         let source_index = read_video_index(&self.artifact.bundle_path, &self.bundle_footer)?;
         if source_index.is_empty() {
             return Err(ScreenRecorderError::Export(
@@ -158,8 +197,13 @@ impl EditingSession {
                 self.manifest.height.max(1),
             )
         };
-        let (output_w, output_h) =
-            output_dimensions(source_w, source_h, request.format != ExportFormat::Gif);
+        let (output_w, output_h) = output_dimensions(
+            source_w,
+            source_h,
+            request.maximum_width,
+            request.maximum_height,
+            request.format.requires_even_dimensions(),
+        );
         let needs_resize = source_w != output_w || source_h != output_h;
 
         emit_progress(progress_tx, ExportStage::Decode, 2.0, 0.0, None);
@@ -211,7 +255,7 @@ impl EditingSession {
         let duration_ms = retime.output_duration_ms.max(1);
 
         emit_progress(progress_tx, ExportStage::Compose, 25.0, 0.0, None);
-        let mixed_audio = if request.format == ExportFormat::Gif {
+        let mixed_audio = if request.format.is_animated_image() {
             None
         } else {
             build_mixed_audio(
@@ -252,6 +296,8 @@ impl EditingSession {
             self.manifest.fps,
             export_fps,
             needs_overlay,
+            needs_resize,
+            request.codec == VideoCodec::H264,
         ) {
             match export_video_packet_copy_with_generated_audio(
                 &self.artifact.local_paths.video_intermediate_path,
@@ -295,6 +341,7 @@ impl EditingSession {
                 output_h,
                 export_fps,
                 request.format,
+                request.codec,
                 mixed_audio.as_ref(),
                 request.audio_output.bitrate_kbps.max(8),
                 &request.video,
@@ -330,6 +377,7 @@ impl EditingSession {
             output_h,
             export_fps,
             request.format,
+            request.codec,
             mixed_audio.as_ref(),
             request.audio_output.bitrate_kbps.max(8),
             &request.video,
@@ -397,6 +445,7 @@ impl EditingSession {
             retime.frame_count,
             export_fps,
             request.format,
+            request.codec,
             mixed_audio.as_ref(),
             request.audio_output.bitrate_kbps.max(8),
             &request.video,
@@ -507,18 +556,37 @@ fn apply_codec_telemetry(report: &mut ExportRuntimeReport, telemetry: ExportCode
     report.stage_durations_ms = telemetry.stage_durations_ms;
 }
 
-fn choose_export_fps(record_fps: u32, format: ExportFormat) -> u32 {
+fn choose_export_fps(record_fps: u32, format: ExportFormat, requested_fps: Option<u32>) -> u32 {
+    if let Some(requested_fps) = requested_fps {
+        return requested_fps.max(1);
+    }
     let fps = record_fps.max(1);
-    if matches!(format, ExportFormat::Gif) {
+    if format.is_animated_image() {
         fps.min(20)
     } else {
         fps
     }
 }
 
-fn output_dimensions(src_w: u32, src_h: u32, force_even: bool) -> (u32, u32) {
+fn output_dimensions(
+    src_w: u32,
+    src_h: u32,
+    maximum_width: Option<u32>,
+    maximum_height: Option<u32>,
+    force_even: bool,
+) -> (u32, u32) {
     let mut w = src_w.max(1);
     let mut h = src_h.max(1);
+
+    if let (Some(maximum_width), Some(maximum_height)) = (maximum_width, maximum_height) {
+        let maximum_width = maximum_width.max(1);
+        let maximum_height = maximum_height.max(1);
+        if w > maximum_width || h > maximum_height {
+            let scale = (maximum_width as f64 / w as f64).min(maximum_height as f64 / h as f64);
+            w = ((w as f64 * scale).floor() as u32).max(1);
+            h = ((h as f64 * scale).floor() as u32).max(1);
+        }
+    }
 
     if force_even {
         if !w.is_multiple_of(2) {
@@ -565,9 +633,13 @@ fn can_use_video_packet_copy_path(
     source_fps: u32,
     export_fps: u32,
     needs_overlay: bool,
+    needs_resize: bool,
+    codec_matches_source: bool,
 ) -> bool {
-    !matches!(format, ExportFormat::Gif)
+    !format.is_animated_image()
         && !needs_overlay
+        && !needs_resize
+        && codec_matches_source
         && playback_speed.is_finite()
         && playback_speed > 0.0
         && source_fps.max(1) == export_fps.max(1)
@@ -866,6 +938,13 @@ fn can_use_direct_video_passthrough_copy_path(
     if !matches!(request.format, ExportFormat::Mp4) {
         return false;
     }
+    if request.codec != VideoCodec::H264
+        || request.target_fps.is_some()
+        || request.maximum_width.is_some()
+        || request.maximum_height.is_some()
+    {
+        return false;
+    }
     if !path_has_extension(&request.output_path, "mp4") {
         return false;
     }
@@ -876,6 +955,8 @@ fn can_use_direct_video_passthrough_copy_path(
         manifest.fps,
         manifest.fps,
         needs_overlay,
+        false,
+        true,
     )
 }
 
@@ -1511,7 +1592,7 @@ fn decoded_to_stored_frame(
                     ffmpeg::format::Pixel::RGBA,
                     width,
                     height,
-                    ffmpeg::software::scaling::flag::Flags::FAST_BILINEAR,
+                    ffmpeg::software::scaling::flag::Flags::BICUBIC,
                 )
                 .map_err(|err| {
                     ScreenRecorderError::Export(format!(
@@ -5437,11 +5518,18 @@ fn retime_audio_i16_interleaved_owned(
     out
 }
 
-fn choose_video_codec_id(format: ExportFormat) -> ffmpeg::codec::Id {
+fn choose_video_codec_id(format: ExportFormat, video_codec: VideoCodec) -> ffmpeg::codec::Id {
     match format {
-        ExportFormat::Mp4 => ffmpeg::codec::Id::H264,
+        ExportFormat::Mp4 => match video_codec {
+            VideoCodec::H264 => ffmpeg::codec::Id::H264,
+            VideoCodec::H265 => ffmpeg::codec::Id::HEVC,
+        },
         ExportFormat::Avi => ffmpeg::codec::Id::MPEG4,
         ExportFormat::Gif => ffmpeg::codec::Id::GIF,
+        ExportFormat::Apng => ffmpeg::codec::Id::APNG,
+        // FFmpeg 9's animated libwebp encoder advertises AV_CODEC_ID_WEBP;
+        // AV_CODEC_ID_WEBP_ANIM is used only by the native decoder.
+        ExportFormat::Webp => ffmpeg::codec::Id::WEBP,
     }
 }
 
@@ -5456,6 +5544,18 @@ fn choose_video_pixel_format(
             ffmpeg::format::Pixel::RGB8,
             ffmpeg::format::Pixel::PAL8,
             ffmpeg::format::Pixel::RGB24,
+        ]
+        .as_slice(),
+        ExportFormat::Apng => [
+            ffmpeg::format::Pixel::RGBA,
+            ffmpeg::format::Pixel::RGB24,
+            ffmpeg::format::Pixel::BGRA,
+        ]
+        .as_slice(),
+        ExportFormat::Webp => [
+            ffmpeg::format::Pixel::YUVA420P,
+            ffmpeg::format::Pixel::YUV420P,
+            ffmpeg::format::Pixel::RGBA,
         ]
         .as_slice(),
         ExportFormat::Mp4 | ExportFormat::Avi
@@ -5497,6 +5597,8 @@ fn choose_video_pixel_format(
 
     source_hint.unwrap_or(match format {
         ExportFormat::Gif => ffmpeg::format::Pixel::RGB8,
+        ExportFormat::Apng => ffmpeg::format::Pixel::RGBA,
+        ExportFormat::Webp => ffmpeg::format::Pixel::YUVA420P,
         ExportFormat::Mp4 | ExportFormat::Avi => ffmpeg::format::Pixel::YUV420P,
     })
 }
@@ -5508,7 +5610,7 @@ fn choose_audio_codec(format: ExportFormat) -> Option<ffmpeg::Codec> {
             .or_else(|| ffmpeg::encoder::find_by_name("libshine"))
             .or_else(|| ffmpeg::encoder::find(ffmpeg::codec::Id::MP3))
             .or_else(|| ffmpeg::encoder::find(ffmpeg::codec::Id::AAC)),
-        ExportFormat::Gif => None,
+        ExportFormat::Gif | ExportFormat::Apng | ExportFormat::Webp => None,
     }
 }
 
@@ -5671,7 +5773,7 @@ fn export_video_packet_copy_with_generated_audio(
 
     let mut audio_state = None;
     if let Some(mixed) = mixed_audio
-        && format != ExportFormat::Gif
+        && !format.is_animated_image()
     {
         let container_audio_codec = output
             .format()
@@ -5959,6 +6061,7 @@ fn export_video_generated<F>(
     frame_count: usize,
     export_fps: u32,
     format: ExportFormat,
+    requested_codec: VideoCodec,
     mixed_audio: Option<&AudioMixPlan>,
     audio_bitrate_kbps: u16,
     video_config: &VideoEncodeConfig,
@@ -5971,7 +6074,7 @@ where
     F: FnMut(usize, &mut [u8]) -> Result<()>,
 {
     ensure_ffmpeg_initialized()?;
-    validate_export_dimensions(width, height, format != ExportFormat::Gif)?;
+    validate_export_dimensions(width, height, format.requires_even_dimensions())?;
 
     let mut output = ffmpeg::format::output(output_path).map_err(|err| {
         ScreenRecorderError::Export(format!("failed to create ffmpeg output context: {err}"))
@@ -5989,6 +6092,7 @@ where
         &output,
         output_path,
         format,
+        requested_codec,
         perf_config.mode,
         perf_config.software_h264_priority,
     )?;
@@ -6017,7 +6121,7 @@ where
     );
 
     let effective_video = effective_video_config(video_config);
-    if format != ExportFormat::Gif {
+    if !format.is_animated_image() {
         video_encoder.set_bit_rate(smart_quality_bitrate_bps(
             width,
             height,
@@ -6037,12 +6141,13 @@ where
             // If hardware auto-select picked an encoder that fails to open,
             // transparently fall back to software H.264.
             if hardware_video_encode_allowed(perf_config.mode)
-                && is_hardware_h264_encoder(&video_codec)
+                && is_hardware_video_encoder(&video_codec)
             {
                 video_codec = select_video_codec(
                     &output,
                     output_path,
                     format,
+                    requested_codec,
                     ExportExecutionMode::SoftwareOnly,
                     perf_config.software_h264_priority,
                 )?;
@@ -6077,7 +6182,7 @@ where
                     perf_config.encode_threads,
                     ffmpeg::codec::threading::Type::Frame,
                 );
-                if format != ExportFormat::Gif {
+                if !format.is_animated_image() {
                     fallback_encoder.set_bit_rate(smart_quality_bitrate_bps(
                         width,
                         height,
@@ -6116,7 +6221,7 @@ where
 
     let mut audio_state = None;
     if let Some(mixed) = mixed_audio
-        && format != ExportFormat::Gif
+        && !format.is_animated_image()
     {
         let container_audio_codec = output
             .format()
@@ -6213,7 +6318,7 @@ where
         pixel_format,
         width,
         height,
-        ffmpeg::software::scaling::flag::Flags::FAST_BILINEAR,
+        ffmpeg::software::scaling::flag::Flags::BICUBIC,
     )
     .map_err(|err| {
         ScreenRecorderError::Export(format!("failed to create RGBA video scaler: {err}"))
@@ -6362,6 +6467,7 @@ fn export_video_generated_from_source(
     height: u32,
     export_fps: u32,
     format: ExportFormat,
+    requested_codec: VideoCodec,
     mixed_audio: Option<&AudioMixPlan>,
     audio_bitrate_kbps: u16,
     video_config: &VideoEncodeConfig,
@@ -6370,7 +6476,7 @@ fn export_video_generated_from_source(
     progress_tx: &Option<Sender<ExportProgress>>,
 ) -> Result<ExportCodecTelemetry> {
     ensure_ffmpeg_initialized()?;
-    validate_export_dimensions(width, height, format != ExportFormat::Gif)?;
+    validate_export_dimensions(width, height, format.requires_even_dimensions())?;
 
     if retime.frame_count == 0 {
         return Err(ScreenRecorderError::Export(
@@ -6420,6 +6526,7 @@ fn export_video_generated_from_source(
         &output,
         output_path,
         format,
+        requested_codec,
         perf_config.mode,
         perf_config.software_h264_priority,
     )?;
@@ -6453,7 +6560,7 @@ fn export_video_generated_from_source(
     );
 
     let effective_video = effective_video_config(video_config);
-    if format != ExportFormat::Gif {
+    if !format.is_animated_image() {
         video_encoder.set_bit_rate(smart_quality_bitrate_bps(
             width,
             height,
@@ -6471,12 +6578,13 @@ fn export_video_generated_from_source(
         Ok(encoder) => encoder,
         Err(primary_error) => {
             if hardware_video_encode_allowed(perf_config.mode)
-                && is_hardware_h264_encoder(&video_codec)
+                && is_hardware_video_encoder(&video_codec)
             {
                 video_codec = select_video_codec(
                     &output,
                     output_path,
                     format,
+                    requested_codec,
                     ExportExecutionMode::SoftwareOnly,
                     perf_config.software_h264_priority,
                 )?;
@@ -6511,7 +6619,7 @@ fn export_video_generated_from_source(
                     perf_config.encode_threads,
                     ffmpeg::codec::threading::Type::Frame,
                 );
-                if format != ExportFormat::Gif {
+                if !format.is_animated_image() {
                     fallback_encoder.set_bit_rate(smart_quality_bitrate_bps(
                         width,
                         height,
@@ -6558,7 +6666,7 @@ fn export_video_generated_from_source(
 
     let mut audio_state = None;
     if let Some(mixed) = mixed_audio
-        && format != ExportFormat::Gif
+        && !format.is_animated_image()
     {
         let container_audio_codec = output
             .format()
@@ -6728,7 +6836,7 @@ fn export_video_generated_from_source(
                     pixel_format,
                     width,
                     height,
-                    ffmpeg::software::scaling::flag::Flags::FAST_BILINEAR,
+                    ffmpeg::software::scaling::flag::Flags::BICUBIC,
                 )
                 .map_err(|err| {
                     ScreenRecorderError::Export(format!(
@@ -6920,6 +7028,7 @@ fn export_video_generated_from_source_with_overlay(
     height: u32,
     export_fps: u32,
     format: ExportFormat,
+    requested_codec: VideoCodec,
     mixed_audio: Option<&AudioMixPlan>,
     audio_bitrate_kbps: u16,
     video_config: &VideoEncodeConfig,
@@ -6930,7 +7039,7 @@ fn export_video_generated_from_source_with_overlay(
     progress_tx: &Option<Sender<ExportProgress>>,
 ) -> Result<ExportCodecTelemetry> {
     ensure_ffmpeg_initialized()?;
-    validate_export_dimensions(width, height, format != ExportFormat::Gif)?;
+    validate_export_dimensions(width, height, format.requires_even_dimensions())?;
 
     if retime.frame_count == 0 {
         return Err(ScreenRecorderError::Export(
@@ -6980,6 +7089,7 @@ fn export_video_generated_from_source_with_overlay(
         &output,
         output_path,
         format,
+        requested_codec,
         perf_config.mode,
         perf_config.software_h264_priority,
     )?;
@@ -7008,7 +7118,7 @@ fn export_video_generated_from_source_with_overlay(
     );
 
     let effective_video = effective_video_config(video_config);
-    if format != ExportFormat::Gif {
+    if !format.is_animated_image() {
         video_encoder.set_bit_rate(smart_quality_bitrate_bps(
             width,
             height,
@@ -7026,12 +7136,13 @@ fn export_video_generated_from_source_with_overlay(
         Ok(encoder) => encoder,
         Err(primary_error) => {
             if hardware_video_encode_allowed(perf_config.mode)
-                && is_hardware_h264_encoder(&video_codec)
+                && is_hardware_video_encoder(&video_codec)
             {
                 video_codec = select_video_codec(
                     &output,
                     output_path,
                     format,
+                    requested_codec,
                     ExportExecutionMode::SoftwareOnly,
                     perf_config.software_h264_priority,
                 )?;
@@ -7066,7 +7177,7 @@ fn export_video_generated_from_source_with_overlay(
                     perf_config.encode_threads,
                     ffmpeg::codec::threading::Type::Frame,
                 );
-                if format != ExportFormat::Gif {
+                if !format.is_animated_image() {
                     fallback_encoder.set_bit_rate(smart_quality_bitrate_bps(
                         width,
                         height,
@@ -7113,7 +7224,7 @@ fn export_video_generated_from_source_with_overlay(
 
     let mut audio_state = None;
     if let Some(mixed) = mixed_audio
-        && format != ExportFormat::Gif
+        && !format.is_animated_image()
     {
         let container_audio_codec = output
             .format()
@@ -7220,7 +7331,7 @@ fn export_video_generated_from_source_with_overlay(
         pixel_format,
         width,
         height,
-        ffmpeg::software::scaling::flag::Flags::FAST_BILINEAR,
+        ffmpeg::software::scaling::flag::Flags::BICUBIC,
     )
     .map_err(|err| {
         ScreenRecorderError::Export(format!("failed to create RGBA video scaler: {err}"))
@@ -7757,7 +7868,7 @@ fn decode_frame_to_output_rgba(
                 ffmpeg::format::Pixel::RGBA,
                 output_w,
                 output_h,
-                ffmpeg::software::scaling::flag::Flags::FAST_BILINEAR,
+                ffmpeg::software::scaling::flag::Flags::BICUBIC,
             )
             .map_err(|err| {
                 ScreenRecorderError::Export(format!(
@@ -7815,7 +7926,7 @@ fn scale_decoded_frame_to_output_format(
                 output_format,
                 output_w,
                 output_h,
-                ffmpeg::software::scaling::flag::Flags::FAST_BILINEAR,
+                ffmpeg::software::scaling::flag::Flags::BICUBIC,
             )
             .map_err(|err| {
                 ScreenRecorderError::Export(format!(
@@ -8170,45 +8281,39 @@ fn select_video_codec(
     output: &ffmpeg::format::context::Output,
     output_path: &Path,
     format: ExportFormat,
+    requested_codec: VideoCodec,
     mode: ExportExecutionMode,
     software_h264_priority: SoftwareH264Priority,
 ) -> Result<ffmpeg::Codec> {
-    if matches!(format, ExportFormat::Mp4) {
-        if matches!(mode, ExportExecutionMode::SoftwareOnly) {
-            return select_software_h264_codec(software_h264_priority).ok_or_else(|| {
+    if matches!(format, ExportFormat::Webp) {
+        return ffmpeg::encoder::find_by_name("libwebp_anim")
+            .or_else(|| ffmpeg::encoder::find(ffmpeg::codec::Id::WEBP))
+            .ok_or_else(|| {
                 ScreenRecorderError::Export(
-                    "SoftwareOnly mode requested, but no software H.264 encoder is available"
+                    "no animated WebP encoder is available; FFmpeg must include libwebp"
                         .to_string(),
                 )
             });
-        }
-        if matches!(mode, ExportExecutionMode::HardwarePreferred)
-            && let Some(codec) = select_software_h264_codec(software_h264_priority)
-        {
-            return Ok(codec);
-        }
-        if hardware_video_encode_allowed(mode) {
-            for name in ["h264_nvenc", "h264_qsv", "h264_amf", "h264_mf"] {
-                if let Some(codec) = ffmpeg::encoder::find_by_name(name) {
-                    return Ok(codec);
-                }
-            }
-        }
+    }
+
+    if matches!(format, ExportFormat::Mp4) {
+        let (encoder_name, codec_name) = exact_mp4_encoder(requested_codec);
         if matches!(mode, ExportExecutionMode::HardwareOnly) {
-            return Err(ScreenRecorderError::Export(
-                "HardwareOnly mode requested, but no hardware H.264 encoder is available"
-                    .to_string(),
-            ));
+            return Err(ScreenRecorderError::Export(format!(
+                "HardwareOnly mode cannot satisfy the requested {codec_name} export; SnowShot requires {encoder_name}"
+            )));
         }
-        if let Some(codec) = select_software_h264_codec(software_h264_priority) {
-            return Ok(codec);
-        }
+        return ffmpeg::encoder::find_by_name(encoder_name).ok_or_else(|| {
+            ScreenRecorderError::Export(format!(
+                "requested {codec_name} encoder {encoder_name} is unavailable; rebuild FFmpeg with {encoder_name} support"
+            ))
+        });
     }
 
     let container_video_codec = output
         .format()
         .codec(output_path, ffmpeg::media::Type::Video);
-    let preferred_video_codec = choose_video_codec_id(format);
+    let preferred_video_codec = choose_video_codec_id(format, requested_codec);
     let codec = ffmpeg::encoder::find(preferred_video_codec)
         .or_else(|| ffmpeg::encoder::find(container_video_codec))
         .ok_or_else(|| {
@@ -8217,7 +8322,7 @@ fn select_video_codec(
             ))
         })?;
 
-    if matches!(mode, ExportExecutionMode::SoftwareOnly) && is_hardware_h264_encoder(&codec) {
+    if matches!(mode, ExportExecutionMode::SoftwareOnly) && is_hardware_video_encoder(&codec) {
         if let Some(software_codec) = select_software_h264_codec(software_h264_priority) {
             return Ok(software_codec);
         }
@@ -8228,7 +8333,7 @@ fn select_video_codec(
 
     if matches!(mode, ExportExecutionMode::HardwareOnly)
         && matches!(format, ExportFormat::Mp4)
-        && !is_hardware_h264_encoder(&codec)
+        && !is_hardware_video_encoder(&codec)
     {
         return Err(ScreenRecorderError::Export(
             "HardwareOnly mode requested, but selected codec is not hardware accelerated"
@@ -8237,6 +8342,13 @@ fn select_video_codec(
     }
 
     Ok(codec)
+}
+
+fn exact_mp4_encoder(codec: VideoCodec) -> (&'static str, &'static str) {
+    match codec {
+        VideoCodec::H264 => ("libx264", "H.264"),
+        VideoCodec::H265 => ("libx265", "H.265"),
+    }
 }
 
 fn effective_video_config(video_config: &VideoEncodeConfig) -> VideoEncodeConfig {
@@ -8264,9 +8376,17 @@ fn should_use_x264_options(codec: &ffmpeg::Codec) -> bool {
     codec.name().eq_ignore_ascii_case("libx264")
 }
 
+fn should_use_x265_options(codec: &ffmpeg::Codec) -> bool {
+    codec.name().eq_ignore_ascii_case("libx265")
+}
+
 fn is_hardware_h264_encoder(codec: &ffmpeg::Codec) -> bool {
     let name = codec.name().to_ascii_lowercase();
     name.contains("nvenc") || name.contains("qsv") || name.contains("amf") || name.contains("mf")
+}
+
+fn is_hardware_video_encoder(codec: &ffmpeg::Codec) -> bool {
+    is_hardware_h264_encoder(codec)
 }
 
 fn select_software_h264_codec(priority: SoftwareH264Priority) -> Option<ffmpeg::Codec> {
@@ -8296,6 +8416,19 @@ fn open_video_encoder(
         return video_encoder.open_as_with(*codec, options).map_err(|err| {
             ScreenRecorderError::Export(format!(
                 "failed to open video encoder with h264 options: {err}"
+            ))
+        });
+    }
+    if should_use_x265_options(codec) {
+        let mut options = ffmpeg::Dictionary::new();
+        options.set("preset", video_config.speed.as_x264_preset());
+        options.set(
+            "crf",
+            &quality_to_h264_crf(video_config.quality).to_string(),
+        );
+        return video_encoder.open_as_with(*codec, options).map_err(|err| {
+            ScreenRecorderError::Export(format!(
+                "failed to open video encoder with h265 options: {err}"
             ))
         });
     }
@@ -8984,6 +9117,34 @@ mod tests {
     }
 
     #[test]
+    fn failed_export_preserves_an_existing_destination() {
+        let directory = tempdir().expect("temporary directory should be available");
+        let output_path = directory.path().join("existing.mp4");
+        fs::write(&output_path, b"keep this file").expect("destination fixture should be written");
+
+        let editing = test_editing_session(false, false);
+        let mut request = editing.export_request();
+        request.output_path = output_path.clone();
+
+        assert!(editing.export(request).is_err());
+        assert_eq!(
+            fs::read(&output_path).expect("existing destination should remain readable"),
+            b"keep this file"
+        );
+        let staged_files = fs::read_dir(directory.path())
+            .expect("temporary directory should remain readable")
+            .filter_map(std::result::Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".snow-recording-export-")
+            })
+            .count();
+        assert_eq!(staged_files, 0, "failed exports must clean staging files");
+    }
+
+    #[test]
     fn collect_required_source_indices_deduplicates_adjacent_indices() {
         assert_eq!(
             collect_required_source_indices(&[0, 0, 1, 1, 1, 3, 3, 8]),
@@ -8994,14 +9155,148 @@ mod tests {
 
     #[test]
     fn choose_export_fps_keeps_recording_fps() {
-        assert_eq!(choose_export_fps(60, ExportFormat::Mp4), 60);
-        assert_eq!(choose_export_fps(30, ExportFormat::Avi), 30);
+        assert_eq!(choose_export_fps(60, ExportFormat::Mp4, None), 60);
+        assert_eq!(choose_export_fps(30, ExportFormat::Avi, None), 30);
+    }
+
+    #[test]
+    fn configured_mp4_codecs_use_exact_gpl_encoders() {
+        assert_eq!(exact_mp4_encoder(VideoCodec::H264), ("libx264", "H.264"));
+        assert_eq!(exact_mp4_encoder(VideoCodec::H265), ("libx265", "H.265"));
     }
 
     #[test]
     fn choose_export_fps_clamps_gif() {
-        assert_eq!(choose_export_fps(60, ExportFormat::Gif), 20);
-        assert_eq!(choose_export_fps(10, ExportFormat::Gif), 10);
+        assert_eq!(choose_export_fps(60, ExportFormat::Gif, None), 20);
+        assert_eq!(choose_export_fps(10, ExportFormat::Gif, None), 10);
+        assert_eq!(choose_export_fps(60, ExportFormat::Gif, Some(24)), 24);
+        assert_eq!(choose_export_fps(60, ExportFormat::Apng, Some(15)), 15);
+        assert_eq!(choose_export_fps(60, ExportFormat::Webp, Some(10)), 10);
+    }
+
+    #[test]
+    fn production_exporters_emit_valid_container_signatures() {
+        let directory = tempdir().expect("temporary output directory should be available");
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let performance = ExportPerformanceConfig {
+            mode: ExportExecutionMode::SoftwareOnly,
+            ..ExportPerformanceConfig::default()
+        };
+        let mut muxer_names = Vec::new();
+        let mut muxer_opaque = ptr::null_mut();
+        loop {
+            let muxer = unsafe { ffmpeg::ffi::av_muxer_iterate(&mut muxer_opaque) };
+            if muxer.is_null() {
+                break;
+            }
+            let name = unsafe { std::ffi::CStr::from_ptr((*muxer).name) };
+            muxer_names.push(name.to_string_lossy().into_owned());
+        }
+        muxer_names.sort_unstable();
+        assert_eq!(
+            muxer_names,
+            ["apng", "avi", "gif", "matroska", "mov", "mp4", "webp"],
+            "FFmpeg muxer registry does not match the production profile"
+        );
+
+        let cases = [
+            (ExportFormat::Mp4, VideoCodec::H264, "h264", "libx264"),
+            (ExportFormat::Mp4, VideoCodec::H265, "h265", "libx265"),
+            (ExportFormat::Avi, VideoCodec::H264, "mpeg4", "mpeg4"),
+            (ExportFormat::Gif, VideoCodec::H264, "gif", "gif"),
+            (ExportFormat::Apng, VideoCodec::H264, "apng", "apng"),
+            (ExportFormat::Webp, VideoCodec::H264, "webp", "libwebp_anim"),
+        ];
+
+        for (format, codec, label, expected_encoder) in cases {
+            let output_path = directory
+                .path()
+                .join(format!("{label}-test.{}", format.file_extension()));
+            let result = export_video_generated(
+                &output_path,
+                16,
+                16,
+                2,
+                10,
+                format,
+                codec,
+                None,
+                8,
+                &VideoEncodeConfig::default(),
+                &performance,
+                &cancel_flag,
+                &None,
+                |index, rgba| {
+                    for (pixel_index, pixel) in rgba.chunks_exact_mut(4).enumerate() {
+                        pixel[0] = if index == 0 { 0x20 } else { 0xE0 };
+                        pixel[1] = (pixel_index % 16) as u8 * 16;
+                        pixel[2] = (pixel_index / 16) as u8 * 16;
+                        pixel[3] = 0xFF;
+                    }
+                    Ok(())
+                },
+            )
+            .unwrap_or_else(|error| panic!("{label} should encode: {error}"));
+
+            assert_eq!(result.video_encoder.as_deref(), Some(expected_encoder));
+            let bytes = fs::read(&output_path)
+                .unwrap_or_else(|error| panic!("{label} output should be readable: {error}"));
+            assert!(
+                bytes.len() > 16,
+                "{label} output should contain encoded data"
+            );
+
+            match format {
+                ExportFormat::Mp4 => assert_eq!(&bytes[4..8], b"ftyp"),
+                ExportFormat::Avi => {
+                    assert_eq!(&bytes[0..4], b"RIFF");
+                    assert_eq!(&bytes[8..12], b"AVI ");
+                }
+                ExportFormat::Gif => {
+                    assert!(bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a"));
+                }
+                ExportFormat::Apng => {
+                    assert!(bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+                    assert!(
+                        bytes.windows(4).any(|window| window == b"acTL"),
+                        "APNG output should contain an animation control chunk"
+                    );
+                }
+                ExportFormat::Webp => {
+                    assert_eq!(&bytes[0..4], b"RIFF");
+                    assert_eq!(&bytes[8..12], b"WEBP");
+                    assert!(
+                        bytes.windows(4).any(|window| window == b"ANIM"),
+                        "WebP output should contain an animation header"
+                    );
+                    assert!(
+                        bytes.windows(4).any(|window| window == b"ANMF"),
+                        "WebP output should contain an animation frame"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn output_dimensions_preserve_aspect_ratio_and_do_not_upscale() {
+        assert_eq!(
+            output_dimensions(3840, 2160, Some(1920), Some(1080), true),
+            (1920, 1080)
+        );
+        assert_eq!(
+            output_dimensions(1920, 1080, Some(3840), Some(2160), true),
+            (1920, 1080)
+        );
+        assert_eq!(
+            output_dimensions(1080, 1920, Some(1080), Some(1920), true),
+            (1080, 1920)
+        );
+        assert_eq!(
+            output_dimensions(3000, 2000, Some(1920), Some(1080), true),
+            (1620, 1080)
+        );
+        assert_eq!(output_dimensions(1001, 777, None, None, true), (1000, 776));
     }
 
     #[test]
@@ -9024,14 +9319,18 @@ mod tests {
             1.0,
             60,
             60,
-            false
+            false,
+            false,
+            true,
         ));
         assert!(can_use_video_packet_copy_path(
             ExportFormat::Avi,
             0.5,
             24,
             24,
-            false
+            false,
+            false,
+            true,
         ));
 
         assert!(!can_use_video_packet_copy_path(
@@ -9039,34 +9338,62 @@ mod tests {
             1.0,
             60,
             60,
-            true
+            true,
+            false,
+            true,
         ));
         assert!(!can_use_video_packet_copy_path(
             ExportFormat::Gif,
             1.0,
             20,
             20,
-            false
+            false,
+            false,
+            true,
         ));
         assert!(!can_use_video_packet_copy_path(
             ExportFormat::Mp4,
             1.0,
             60,
             30,
-            false
+            false,
+            false,
+            true,
         ));
         assert!(!can_use_video_packet_copy_path(
             ExportFormat::Mp4,
             0.0,
             60,
             60,
-            false
+            false,
+            false,
+            true,
         ));
         assert!(!can_use_video_packet_copy_path(
             ExportFormat::Mp4,
             f32::NAN,
             60,
             60,
+            false,
+            false,
+            true,
+        ));
+        assert!(!can_use_video_packet_copy_path(
+            ExportFormat::Mp4,
+            1.0,
+            60,
+            60,
+            false,
+            true,
+            true
+        ));
+        assert!(!can_use_video_packet_copy_path(
+            ExportFormat::Mp4,
+            1.0,
+            60,
+            60,
+            false,
+            false,
             false
         ));
     }

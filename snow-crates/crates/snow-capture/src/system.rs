@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::CaptureTarget;
 use crate::backend::{
-    self, AutoBackendPolicy, CaptureBackend, CaptureBackendKind, CaptureWorkload,
+    self, AutoBackendPolicy, CaptureBackend, CaptureBackendKind, CaptureWorkload, WgcUpdateMode,
 };
 use crate::capture_session::{CaptureSession, CaptureTargetInfo, inspect_target_from_backend};
 use crate::error::CaptureResult;
@@ -15,6 +15,12 @@ pub struct CaptureOptions {
     pub workload: CaptureWorkload,
     pub gpu_hdr_conversion: bool,
     pub hdr_tonemap_lut: bool,
+    /// Controls how Windows Graphics Capture updates its canonical GPU frame.
+    ///
+    /// This is independent from [`CaptureWorkload`]: workload selects latency
+    /// and backpressure behavior, while this option selects the WGC surface
+    /// correctness contract.
+    pub wgc_update_mode: WgcUpdateMode,
 }
 
 impl Default for CaptureOptions {
@@ -24,6 +30,7 @@ impl Default for CaptureOptions {
             workload: CaptureWorkload::Snapshot,
             gpu_hdr_conversion: true,
             hdr_tonemap_lut: true,
+            wgc_update_mode: WgcUpdateMode::Auto,
         }
     }
 }
@@ -32,7 +39,6 @@ impl Default for CaptureOptions {
 pub struct CaptureSystem {
     backend: Arc<dyn CaptureBackend>,
     backend_kind: CaptureBackendKind,
-    auto_backend_policy: AutoBackendPolicy,
 }
 
 impl CaptureSystem {
@@ -69,21 +75,14 @@ impl CaptureSystem {
         target: CaptureTarget,
         options: CaptureOptions,
     ) -> CaptureResult<CaptureSession> {
-        let session_backend = if options.workload == CaptureWorkload::Snapshot {
-            backend::backend_for_kind_with_auto_policy(
-                self.backend_kind,
-                self.auto_backend_policy.clone(),
-            )?
-        } else {
-            Arc::clone(&self.backend)
-        };
-        CaptureSession::open_with_backend(target, session_backend, options)
+        CaptureSession::open_with_backend(target, Arc::clone(&self.backend), options)
     }
 }
 
 pub struct CaptureSystemBuilder {
     backend_kind: CaptureBackendKind,
     auto_backend_policy: AutoBackendPolicy,
+    auto_backend_policy_is_explicit: bool,
 }
 
 impl CaptureSystemBuilder {
@@ -91,6 +90,7 @@ impl CaptureSystemBuilder {
         Self {
             backend_kind: CaptureBackendKind::Auto,
             auto_backend_policy: AutoBackendPolicy::default(),
+            auto_backend_policy_is_explicit: false,
         }
     }
 
@@ -101,6 +101,7 @@ impl CaptureSystemBuilder {
 
     pub fn with_auto_backend_policy(mut self, auto_backend_policy: AutoBackendPolicy) -> Self {
         self.auto_backend_policy = auto_backend_policy;
+        self.auto_backend_policy_is_explicit = true;
         self
     }
 
@@ -108,11 +109,11 @@ impl CaptureSystemBuilder {
         let backend = backend::backend_for_kind_with_auto_policy(
             self.backend_kind,
             self.auto_backend_policy.clone(),
+            self.auto_backend_policy_is_explicit,
         )?;
         Ok(CaptureSystem {
             backend,
             backend_kind: self.backend_kind,
-            auto_backend_policy: self.auto_backend_policy,
         })
     }
 }

@@ -1,6 +1,8 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTORSERVICECLIENT_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTORSERVICECLIENT_H
 
+#include "snow_shot/presentation/screenshotselectorworkflowports.h"
+
 #include <QObject>
 #include <QPoint>
 #include <QRectF>
@@ -31,7 +33,8 @@ class ScreenshotSelectorServiceClient final : public QObject {
 
     [[nodiscard]] bool startRefresh(quint64 requestId,
                                     const QVector<std::uintptr_t>& excludedHwnds);
-    [[nodiscard]] bool startHitTest(quint64 requestId, const QPoint& physicalPoint);
+    [[nodiscard]] bool startHitTest(quint64 requestId, const QPoint& physicalPoint,
+                                    ScreenshotSelectorHitTestMode mode);
 
   private:
     struct RefreshCallbackContext;

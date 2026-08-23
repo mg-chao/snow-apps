@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     println!("cargo:rerun-if-env-changed=FFMPEG_DIR");
+    println!("cargo:rerun-if-env-changed=VCPKGRS_DYNAMIC");
 
     let Some(ffmpeg_dir_raw) = env::var_os("FFMPEG_DIR").map(PathBuf::from) else {
         println!("cargo:warning=FFMPEG_DIR is not set; skipping FFmpeg DLL deployment");
@@ -14,6 +15,11 @@ fn main() {
     let ffmpeg_dir = resolve_ffmpeg_dir(&ffmpeg_dir_raw);
 
     let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
+    if env::var("VCPKGRS_DYNAMIC").is_ok_and(|value| value == "0") {
+        configure_static_ffmpeg_linking(&ffmpeg_dir, &profile);
+        return;
+    }
+
     let Some(source_dir) = select_ffmpeg_bin_dir(&ffmpeg_dir, &profile) else {
         println!(
             "cargo:warning=No FFmpeg DLL folder found under {}",
@@ -35,6 +41,69 @@ fn main() {
             );
         }
     }
+}
+
+fn configure_static_ffmpeg_linking(ffmpeg_dir: &Path, profile: &str) {
+    let lib_dir = if profile == "debug" && ffmpeg_dir.join("debug/lib").is_dir() {
+        ffmpeg_dir.join("debug/lib")
+    } else {
+        ffmpeg_dir.join("lib")
+    };
+    let pkgconfig_dir = lib_dir.join("pkgconfig");
+
+    println!("cargo:rustc-link-search=native={}", lib_dir.display());
+    let mut linked = Vec::new();
+    for module in [
+        "libavformat",
+        "libavcodec",
+        "libswresample",
+        "libswscale",
+        "libavutil",
+    ] {
+        let metadata_path = pkgconfig_dir.join(format!("{module}.pc"));
+        println!("cargo:rerun-if-changed={}", metadata_path.display());
+        let metadata = fs::read_to_string(&metadata_path).unwrap_or_else(|error| {
+            panic!(
+                "failed to read static FFmpeg metadata {}: {error}",
+                metadata_path.display()
+            )
+        });
+        for library in pkgconfig_link_libraries(&metadata) {
+            if is_ffmpeg_library(&library) || linked.iter().any(|item| item == &library) {
+                continue;
+            }
+            linked.push(library);
+        }
+    }
+
+    for library in linked {
+        if lib_dir.join(format!("{library}.lib")).is_file() {
+            println!("cargo:rustc-link-lib=static={library}");
+        } else {
+            println!("cargo:rustc-link-lib={library}");
+        }
+    }
+}
+
+fn pkgconfig_link_libraries(metadata: &str) -> Vec<String> {
+    metadata
+        .lines()
+        .filter_map(|line| {
+            line.strip_prefix("Libs:")
+                .or_else(|| line.strip_prefix("Libs.private:"))
+        })
+        .flat_map(str::split_whitespace)
+        .map(|token| token.trim_matches('"'))
+        .filter_map(|token| token.strip_prefix("-l"))
+        .map(str::to_string)
+        .collect()
+}
+
+fn is_ffmpeg_library(library: &str) -> bool {
+    matches!(
+        library,
+        "avformat" | "avcodec" | "swresample" | "swscale" | "avutil"
+    )
 }
 
 fn resolve_ffmpeg_dir(path: &Path) -> PathBuf {

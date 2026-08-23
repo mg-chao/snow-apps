@@ -188,3 +188,35 @@ bool screenshot_pinned_window_native::synchronizeClientPaint(WId windowId) {
     return true;
 #endif
 }
+
+bool screenshot_pinned_window_native::beginWindowMoveCapture(WId windowId) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    const HWND hwnd = toNativeHwnd(windowId);
+    if (hwnd == nullptr) {
+        return false;
+    }
+    // HTCAPTION is handled by the application, so USER32 does not perform
+    // its usual non-client activation before capture. A genuine pointer press
+    // grants this process foreground rights; claim focus here so ordinary Qt
+    // key events continue to reach the pinned window throughout the drag.
+    static_cast<void>(SetForegroundWindow(hwnd));
+    static_cast<void>(SetActiveWindow(hwnd));
+    static_cast<void>(SetFocus(hwnd));
+    SetCapture(hwnd);
+    return GetCapture() == hwnd;
+#else
+    Q_UNUSED(windowId);
+    return false;
+#endif
+}
+
+void screenshot_pinned_window_native::endWindowMoveCapture(WId windowId) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    const HWND hwnd = toNativeHwnd(windowId);
+    if (hwnd != nullptr && GetCapture() == hwnd) {
+        static_cast<void>(ReleaseCapture());
+    }
+#else
+    Q_UNUSED(windowId);
+#endif
+}

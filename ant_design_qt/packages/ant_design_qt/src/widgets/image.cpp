@@ -2617,7 +2617,9 @@ void AdImage::setPreviewEnabled(bool value) {
   update();
 }
 
-QString AdImage::previewText() const { return previewText_; }
+QString AdImage::previewText() const {
+  return previewText_.trimmed().isEmpty() ? tr("Preview") : previewText_;
+}
 
 void AdImage::setPreviewText(const QString& value) {
   if (previewText_ == value) {
@@ -2625,7 +2627,7 @@ void AdImage::setPreviewText(const QString& value) {
   }
 
   previewText_ = value;
-  emit previewTextChanged(previewText_);
+  emit previewTextChanged(previewText());
   update();
 }
 
@@ -2888,10 +2890,7 @@ void AdImage::paintEvent(QPaintEvent* event) {
     const QPixmap iconPixmap = adqt::icons::renderIconPixmap(
         outlined_icons::ZoomIn(iconColors), {QSize(iconSize, iconSize), devicePixelRatioF()});
 
-    QString coverText = previewText_.trimmed();
-    if (coverText.isEmpty()) {
-      coverText = tr("Preview");
-    }
+    const QString coverText = previewText();
 
     const QFontMetrics metrics(font());
     const int textWidth = metrics.horizontalAdvance(coverText);
@@ -2937,6 +2936,9 @@ void AdImage::changeEvent(QEvent* event) {
     case QEvent::ApplicationPaletteChange:
     case QEvent::StyleChange:
     case QEvent::LanguageChange:
+      if (previewText_.trimmed().isEmpty()) {
+        emit previewTextChanged(previewText());
+      }
       update();
       break;
     case QEvent::DevicePixelRatioChange:

@@ -18,6 +18,7 @@
 #include <QVector>
 
 #include <cstdint>
+#include <functional>
 
 class ScreenshotColorPickerWidget;
 class ScreenshotDisplaySession;
@@ -27,11 +28,15 @@ class ScreenshotSelectionToolbarWindow;
 class ScreenshotToolbarCommandSink;
 class ScreenshotToolbarWindow;
 class SnowCanvasRuntime;
+namespace snow_shot::presentation {
+class WindowShortcutManager;
+}
 
 class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort {
   public:
-    explicit ScreenshotOverlayCoordinator(ScreenshotOverlayEventSink& eventSink,
-                                          SnowCanvasRuntime& canvasRuntime);
+    explicit ScreenshotOverlayCoordinator(
+        ScreenshotOverlayEventSink& eventSink, SnowCanvasRuntime& canvasRuntime,
+        snow_shot::presentation::WindowShortcutManager& shortcutManager);
     ~ScreenshotOverlayCoordinator();
 
     void setToolbarCommandSinks(ScreenshotToolbarCommandSink& toolbarCommands,
@@ -40,6 +45,7 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     void prewarmDisplayPool(ScreenshotDisplaySession& displaySession, int displayCount);
     void clearOverlayCanvases(const ScreenshotDisplaySession& displaySession) const;
     void clearDisplays(ScreenshotDisplaySession& displaySession);
+    void hibernateDisplayPool(ScreenshotDisplaySession& displaySession);
     void destroyDisplayPool(ScreenshotDisplaySession& displaySession);
     void resetForNewCapture(ScreenshotDisplaySession& displaySession);
     void prepareDisplayModels(ScreenshotDisplaySession& displaySession);
@@ -47,16 +53,29 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     [[nodiscard]] bool preparePreCaptureOverlayWindows(ScreenshotDisplaySession& displaySession);
     void showOverlayWindows(const ScreenshotDisplaySession& displaySession,
                             ScreenshotOverlayShowMode mode);
+    void activateOverlayWindows(const ScreenshotDisplaySession& displaySession,
+                                std::function<void()> interactionReady);
     void hideOverlayWindowsImmediately(const ScreenshotDisplaySession& displaySession);
     void hideOverlayWindows(const ScreenshotDisplaySession& displaySession);
     void updateOverlayState(const ScreenshotDisplaySession& displaySession, const QRectF& selection,
                             int cornerRadius, int shadowWidth, const QColor& shadowColor,
-                            bool selectionToolbarHovered, bool intelligentSelecting,
-                            bool manualSelecting, bool dragging);
+                            bool selectionToolbarHovered, bool selectionHandlesVisible,
+                            bool intelligentSelecting, bool manualSelecting, bool dragging);
     void setScrollingCaptureMode(const ScreenshotDisplaySession& displaySession,
                                  const QRectF& selection, bool enabled);
     void updateOverlayCursors(const ScreenshotDisplaySession& displaySession, bool selecting,
                               bool dragging) const;
+    void setSelectionMaskColor(const ScreenshotDisplaySession& displaySession,
+                               const QColor& color) const;
+    void updateGuideLines(const ScreenshotDisplaySession& displaySession,
+                          ScreenshotOverlayWindow* owner, const QPointF& localPosition,
+                          bool selecting, const QColor& cursorColor,
+                          const QColor& monitorCenterColor) const;
+    void updateGuideLinesAtGlobalPosition(const ScreenshotDisplaySession& displaySession,
+                                          const QPoint& globalPosition, bool selecting,
+                                          const QColor& cursorColor,
+                                          const QColor& monitorCenterColor) const;
+    void clearGuideLines(const ScreenshotDisplaySession& displaySession) const;
     void setOverlayCursor(ScreenshotOverlayWindow* overlay,
                           ScreenshotSelectionDragMode dragMode) const;
     void setCanvasInteractionEnabled(const ScreenshotDisplaySession& displaySession,
@@ -109,6 +128,13 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
                            const QRect& physicalRect, const QPoint& physicalPoint,
                            const QPointF& localPosition, qreal opacity);
     void hideColorPicker();
+    void setColorPickerCenterGuideLineColor(const QColor& color);
+    void updateShortcutHints(ScreenshotOverlayWindow* overlay, ScreenshotShortcutHintMode mode,
+                             qreal opacity, const QRectF& selectionGlobal = {});
+    void updateShortcutHints(ScreenshotOverlayWindow* overlay,
+                             const ScreenshotShortcutHintContext& context, qreal opacity,
+                             const QRectF& selectionGlobal = {});
+    void hideShortcutHints();
     [[nodiscard]] bool screenshotUiContainsGlobalCursor() const;
     [[nodiscard]] bool stepToolbarStrokeWidth(int direction);
     [[nodiscard]] bool stepToolbarSelectionOpacity(int direction);

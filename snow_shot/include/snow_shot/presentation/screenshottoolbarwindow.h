@@ -3,6 +3,7 @@
 
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "snow_shot/storage/settingsadapters.h"
 
 #include <QRect>
 
@@ -18,8 +19,14 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
                                      QWidget* parent = nullptr);
     void prewarmForScreen(QScreen* screen);
     void resetForNewCapture();
+    // Retain the window and main toolbar for fast reuse while evicting the
+    // widget-heavy secondary tool rows after a completed screenshot flow.
+    void releaseIdleResources();
+    void setToolbarSize(const QString& size);
+    void setToolbarLayout(const snow_shot::storage::ScreenshotToolbarLayout& layout);
     void setScrollingScreenshotMode(bool enabled);
     void setActiveTool(ScreenshotToolPalette::Tool tool);
+    [[nodiscard]] bool activateDrawingShortcut(const QString& toolId);
     void setHistoryState(const SnowCanvasHistoryState& state);
     void setStyleToolbarState(const SnowCanvasStyleToolbarState& state);
     void setWatermarkConfig(const SnowCanvasWatermarkConfig& config);
@@ -34,6 +41,10 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
                               bool canSplit, bool canReset);
     void setTextEditingState(bool available, bool editing, bool canUndo = false,
                              bool canRedo = false);
+    void setTextTranslationState(bool available, bool translating, bool streaming,
+                                 bool canUndo = false, bool canRedo = false,
+                                 bool canReset = false);
+    void setTextTransformSelections(const QString& formatting, const QString& punctuation);
     void clearTextTransformSelections();
     void setPlacementContext(QScreen* screen, const QRect& logicalBounds,
                              const QRect& physicalBounds = QRect());

@@ -8,6 +8,7 @@ SUBDIRS += \
     carousel_tests \
     checkbox_tests \
     descriptions_tests \
+    divider_tests \
     image_tests \
     ant_design_qt_tests \
     notification_tests \
@@ -28,6 +29,8 @@ checkbox_tests.file = packages/ant_design_qt/tests/checkbox-tests.pro
 checkbox_tests.depends = adqt_icon_core ant_design_qt ant_design_icons_qt
 descriptions_tests.file = packages/ant_design_qt/tests/descriptions-tests.pro
 descriptions_tests.depends = adqt_icon_core ant_design_qt ant_design_icons_qt
+divider_tests.file = packages/ant_design_qt/tests/divider-tests.pro
+divider_tests.depends = adqt_icon_core ant_design_qt ant_design_icons_qt
 image_tests.file = packages/ant_design_qt/tests/image-tests.pro
 image_tests.depends = adqt_icon_core ant_design_qt ant_design_icons_qt
 ant_design_qt_tests.file = packages/ant_design_qt/tests/ant_design_qt-tests.pro

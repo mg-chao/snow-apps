@@ -174,6 +174,39 @@ void primaryOverridesPreserveFixedDefaultSecondaryColors() {
           "a state primary override should preserve a pack's fixed default secondary color");
 }
 
+void dynamicDefaultColorsPreserveAlpha() {
+  adqt::icons::IconRegistry registry;
+  auto value = definition(QStringLiteral("translucent-default"), squareSvg());
+  value.defaultColors = adqt::icons::IconColors::primary(QColor(12, 34, 56, 73));
+  const auto registered = registry.registerPack(QStringLiteral("core-test"), {value});
+  require(registered.ok(), "the translucent dynamic fixture should register");
+
+  adqt::icons::IconRenderRequest request;
+  request.logicalSize = QSize(16, 16);
+  request.devicePixelRatio = 1.0;
+  const QImage image = registry.renderIconImage(registry.reference(value.key), request);
+  require(!image.isNull() && image.pixelColor(8, 8).alpha() == 73,
+          "dynamic descriptor defaults should preserve their alpha channel");
+}
+
+void dynamicImagePermissionIsStrict() {
+  adqt::icons::IconRegistry registry;
+  auto monochrome = definition(
+      QStringLiteral("embedded-monochrome"),
+      QByteArrayLiteral("<svg viewBox=\"0 0 16 16\"><image href=\"data:image/png;base64,AA==\"/></svg>"));
+  monochrome.allowEmbeddedDataImages = true;
+  require(!registry.registerPack(QStringLiteral("core-test"), {monochrome}).ok(),
+          "embedded images must remain restricted to explicitly permitted full-color entries");
+
+  auto local = definition(
+      QStringLiteral("local-image"),
+      QByteArrayLiteral("<svg viewBox=\"0 0 16 16\"><image href=\"local.png\"/></svg>"));
+  local.colorModel = adqt::icons::IconColorModel::FullColor;
+  local.allowEmbeddedDataImages = true;
+  require(!registry.registerPack(QStringLiteral("core-test"), {local}).ok(),
+          "permitted embedded images must still reject local file references");
+}
+
 void lazyRegistrationIsThreadSafe() {
   static const adqt::icons::ExternalIconPack pack([] {
     auto value = externalDefinition();
@@ -290,17 +323,20 @@ void renderPackEntries(const adqt::icons::ExternalIconPack& pack,
                        adqt::icons::IconRegistry& registry) {
   const auto registered = pack.registerWith(registry);
   require(registered.ok(), "generated pack registration should succeed");
-  require(!pack.definition().entries.isEmpty(), "generated pack should contain entries");
+  const adqt::icons::IconPack* staticPack = pack.staticPack();
+  require(staticPack != nullptr && staticPack->isValid() && staticPack->entryCount != 0,
+          "generated pack should contain immutable descriptor entries");
 
   adqt::icons::IconRenderRequest request;
   request.logicalSize = QSize(16, 16);
   request.devicePixelRatio = 1.25;
-  for (const auto& entry : pack.definition().entries) {
-    const auto ref = pack.icon(registry, entry.variant, entry.name);
+  for (std::size_t index = 0; index < staticPack->entryCount; ++index) {
+    const adqt::icons::IconDescriptor* entry = staticPack->entry(index);
+    const auto ref = pack.icon(index);
     require(ref.isValid(), "every generated entry should create a valid reference");
-    const auto metadata = registry.describeIcon(ref);
-    require(metadata.key.pack == pack.definition().pack && metadata.key.variant == entry.variant &&
-                metadata.key.name == entry.name && metadata.sourceHash == entry.sourceHash,
+    const auto metadata = registry.describeIconView(ref);
+    require(metadata.pack == staticPack->packName && metadata.variant == entry->variant &&
+                metadata.name == entry->name && metadata.sourceHash == entry->sourceHash,
             "generated entry metadata should match its pack definition");
     const QPixmap pixmap = registry.renderIconPixmap(ref, request);
     require(!pixmap.isNull() && pixmap.size() == QSize(20, 20) &&
@@ -315,9 +351,9 @@ void everyBuiltInAndWidgetEntryRenders() {
   adqt::icons::IconRegistry registry;
   renderPackEntries(adqt::icons::antd::pack(), registry);
   renderPackEntries(adqt::widgets::icons::pack(), registry);
-  require(adqt::icons::antd::pack().definition().entries.size() == 829,
+  require(adqt::icons::antd::pack().staticPack()->entryCount == 829,
           "the pinned built-in Ant pack should contain exactly 829 upstream entries");
-  require(adqt::widgets::icons::pack().definition().entries.size() == 1,
+  require(adqt::widgets::icons::pack().staticPack()->entryCount == 1,
           "the widget-owned pack should contain only empty-simple");
 }
 
@@ -329,6 +365,8 @@ int main(int argc, char** argv) {
     registrationIsAtomicIdempotentAndConflictAware();
     referencesAreImmutableValuesAndSupportIsolatedRegistries();
     primaryOverridesPreserveFixedDefaultSecondaryColors();
+    dynamicDefaultColorsPreserveAlpha();
+    dynamicImagePermissionIsStrict();
     lazyRegistrationIsThreadSafe();
     statePaletteUsesTheDocumentedFallbackOrder();
     renderingContainsAndPreservesFractionalDpr();

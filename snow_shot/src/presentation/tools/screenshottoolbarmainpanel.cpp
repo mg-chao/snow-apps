@@ -17,6 +17,7 @@
 #include <QPixmap>
 #include <QSizePolicy>
 #include <QSpacerItem>
+#include <QSet>
 #include <QtGlobal>
 
 #include <algorithm>
@@ -185,8 +186,44 @@ void ScreenshotToolbarMainPanel::addSeparator() {
     applyMetrics();
 }
 
+void ScreenshotToolbarMainPanel::resetContentLayout() {
+    if (m_layout == nullptr) {
+        return;
+    }
+
+    const QSet<QFrame*> separators(m_separatorFrames.cbegin(), m_separatorFrames.cend());
+    while (QLayoutItem* item = m_layout->takeAt(0)) {
+        QWidget* widget = item->widget();
+        if (widget != nullptr) {
+            widget->hide();
+            if (QFrame* separator = qobject_cast<QFrame*>(widget);
+                separator != nullptr && separators.contains(separator)) {
+                delete separator;
+            }
+        }
+        delete item;
+    }
+    m_separatorFrames.clear();
+    m_spacingItems.clear();
+
+    if (m_dragHandle != nullptr) {
+        m_dragHandle->show();
+        m_layout->addWidget(m_dragHandle);
+        addSpacing(kDragHandleTrailingSpacing);
+    }
+    applyMetrics();
+}
+
 void ScreenshotToolbarMainPanel::addTrailingDragHandle() {
-    if (m_layout == nullptr || m_trailingDragHandle != nullptr) {
+    if (m_layout == nullptr) {
+        return;
+    }
+
+    if (m_trailingDragHandle != nullptr) {
+        if (m_layout->indexOf(m_trailingDragHandle) < 0) {
+            m_layout->addWidget(m_trailingDragHandle);
+        }
+        m_trailingDragHandle->show();
         return;
     }
 

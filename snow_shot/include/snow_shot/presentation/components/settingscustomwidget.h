@@ -22,6 +22,8 @@ class SettingsCustomWidget : public QWidget {
 
 [[nodiscard]] SettingsCustomWidget* createSettingsCustomWidget(
     snow_shot::presentation::settings::SettingsCustomRenderer renderer,
+    const snow_shot::presentation::settings::SettingsCatalog& catalog,
+    const snow_shot::presentation::settings::SettingsItemDefinition& definition,
     snow_shot::presentation::settings::SettingsRuntimeBindings& runtimeBindings,
     QWidget* parent = nullptr);
 

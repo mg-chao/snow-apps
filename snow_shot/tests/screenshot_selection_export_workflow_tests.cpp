@@ -36,7 +36,8 @@ class FakeComposer final : public ScreenshotSelectionImageComposerPort {
             image = QImage(QSize(8, 6), QImage::Format_ARGB32);
             image.fill(QColor(20, 40, 60, 200));
         }
-        callback(ScreenshotClipboardService::prepareImage(image));
+        callback(ScreenshotSelectionClipboardResult{
+            image, ScreenshotClipboardService::prepareImage(image)});
         return true;
     }
 
@@ -57,10 +58,15 @@ class FakeComposer final : public ScreenshotSelectionImageComposerPort {
 
 class FakeDestination final : public ScreenshotSelectionExportDestinationPort {
   public:
-    bool publishClipboard(ScreenshotClipboardPayload payload) override {
+    bool publishClipboard(QObject*, ScreenshotClipboardPayload payload,
+                          ClipboardCompletion completion) override {
         ++publishCount;
         receivedValidPayload = payload.isValid();
-        return publicationSucceeds;
+        if (!schedulingSucceeds) {
+            return false;
+        }
+        completion(publicationSucceeds);
+        return true;
     }
 
     bool presentPinnedSelection(const ScreenshotPinnedSelectionRequest&) override {
@@ -68,6 +74,7 @@ class FakeDestination final : public ScreenshotSelectionExportDestinationPort {
     }
 
     bool publicationSucceeds = true;
+    bool schedulingSucceeds = true;
     bool receivedValidPayload = false;
     int publishCount = 0;
 };
@@ -112,15 +119,20 @@ struct Fixture {
 void publicationSuccessPersistsAndCompletes() {
     Fixture fixture;
     std::optional<bool> completion;
+    QImage completedImage;
     require(fixture.workflow.copySelectionToClipboard(
                 []() { return true; },
-                [&completion](bool success) { completion = success; }),
+                [&completion, &completedImage](bool success, QImage image) {
+                    completion = success;
+                    completedImage = std::move(image);
+                }),
             "clipboard request was not scheduled");
     require(fixture.composer.requestCount == 1 && fixture.destination.publishCount == 1,
             "successful copy did not execute exactly once");
     require(fixture.destination.receivedValidPayload,
             "destination did not receive a valid prepared payload");
-    require(completion == true, "successful publication was not reported");
+    require(completion == true && completedImage.size() == QSize(8, 6),
+            "successful publication did not return the rendered image");
     require(fixture.store.writeCount == 1 && fixture.store.lastParams.has_value(),
             "selection settings were not persisted after publication");
 }
@@ -131,7 +143,10 @@ void publicationFailureDoesNotPersist() {
     std::optional<bool> completion;
     require(fixture.workflow.copySelectionToClipboard(
                 []() { return true; },
-                [&completion](bool success) { completion = success; }),
+                [&completion](bool success, QImage image) {
+                    completion = success;
+                    require(image.isNull(), "failed publication returned a result image");
+                }),
             "failing clipboard request was not scheduled");
     require(fixture.destination.publishCount == 1, "publication failure bypassed destination");
     require(completion == false, "publication failure was not propagated");
@@ -145,7 +160,10 @@ void invalidPayloadDoesNotPublish() {
     std::optional<bool> completion;
     require(fixture.workflow.copySelectionToClipboard(
                 []() { return true; },
-                [&completion](bool success) { completion = success; }),
+                [&completion](bool success, QImage image) {
+                    completion = success;
+                    require(image.isNull(), "invalid payload returned a result image");
+                }),
             "invalid-payload request was not scheduled");
     require(fixture.destination.publishCount == 0,
             "invalid payload reached the clipboard destination");
@@ -156,9 +174,12 @@ void invalidPayloadDoesNotPublish() {
 void staleResultHasNoSideEffects() {
     Fixture fixture;
     bool completionCalled = false;
-    require(fixture.workflow.copySelectionToClipboard(
-                []() { return false; },
-                [&completionCalled](bool) { completionCalled = true; }),
+    require(fixture.workflow.copySelectionToClipboard([]() { return false; },
+                                                      [&completionCalled](bool, QImage image) {
+                                                          completionCalled = true;
+                                                          require(image.isNull(),
+                                                                  "stale result returned an image");
+                                                      }),
             "stale-result request was not scheduled");
     require(fixture.destination.publishCount == 0 && fixture.store.writeCount == 0 &&
                 completionCalled,

@@ -1,18 +1,13 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTQRRECOGNITIONSERVICE_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTQRRECOGNITIONSERVICE_H
 
-#include <QHash>
 #include <QImage>
 #include <QObject>
-#include <QPointer>
 #include <QString>
 #include <QStringList>
 
-#include <atomic>
 #include <functional>
 #include <memory>
-
-class QThread;
 
 struct ScreenshotQrRecognitionResult {
     QStringList contents;
@@ -34,6 +29,7 @@ class ScreenshotQrRecognitionService final : public ScreenshotQrRecognitionPort 
     Q_OBJECT
 
   public:
+    // Recognition owns a short-lived worker; the service itself remains lightweight while idle.
     explicit ScreenshotQrRecognitionService(QObject* parent = nullptr);
     ~ScreenshotQrRecognitionService() override;
 
@@ -41,16 +37,8 @@ class ScreenshotQrRecognitionService final : public ScreenshotQrRecognitionPort 
     void cancel(RequestToken token) override;
 
   private:
-    class Worker;
-
-    void deliver(RequestToken token, const QPointer<QObject>& receiver,
-                 const Completion& completion, ScreenshotQrRecognitionResult result);
-
-    using CancellationFlag = std::shared_ptr<std::atomic_bool>;
-
-    QThread* m_workerThread = nullptr;
-    Worker* m_worker = nullptr;
-    QHash<RequestToken, CancellationFlag> m_requests;
+    class Impl;
+    std::unique_ptr<Impl> m_impl;
     RequestToken m_nextToken = 0;
 };
 

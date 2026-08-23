@@ -8,5 +8,5 @@ license.workspace = true
 snow-draw-engine = { path = "../snow-draw-engine" }
 
 [lib]
-crate-type = ["staticlib"]
+crate-type = ["staticlib", "rlib"]
 path = "src/lib.rs"

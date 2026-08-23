@@ -6,6 +6,10 @@
 
 #include <QString>
 
+namespace adqt::widgets {
+class AdColorPicker;
+}
+
 class ScreenshotToolbarCommandSink {
   public:
     virtual ~ScreenshotToolbarCommandSink() = default;
@@ -37,6 +41,7 @@ class ScreenshotToolbarCommandSink {
     virtual void setTextTool() = 0;
     virtual void setSerialNumberTool() = 0;
     virtual void setOcrTool() = 0;
+    virtual void setTextTranslationTool() { setOcrTool(); }
     virtual void setTableTool() {}
     virtual void setQrTool() {}
     virtual void mergeTableSelection() {}
@@ -44,15 +49,19 @@ class ScreenshotToolbarCommandSink {
     virtual void resetTable() {}
     virtual void beginTextEditing() {}
     virtual void toggleTextEditing() { beginTextEditing(); }
+    virtual void beginTextTranslation() {}
+    virtual void toggleTextTranslation() { beginTextTranslation(); }
     virtual void resetTextEditing() {}
+    virtual void openTextTranslationSettings() {}
     virtual void applyTextFormatting(const QString&) {}
     virtual void applyTextPunctuation(const QString&) {}
     virtual void startScrollingScreenshot() = 0;
     virtual void setScrollingScreenshotRecognitionMode(ScreenshotScrollingRecognitionMode) {}
     virtual void pinSelectionToScreen() = 0;
+    virtual void saveSelectionToFile() {}
     virtual void cancelCapture() = 0;
     virtual void copySelectionToClipboard() = 0;
-    virtual void startVideoRecording() = 0;
+    virtual void startScreenRecording() = 0;
     virtual void setShapeStyleFromToolbar(const SnowCanvasShapeStyle& style, quint32 properties,
                                           SnowCanvasShapeKind kind) = 0;
     virtual void setTextStyleFromToolbar(const SnowCanvasTextStyle& style) = 0;
@@ -66,6 +75,7 @@ class ScreenshotToolbarCommandSink {
     virtual void deleteSelectedElements() {}
     virtual void repositionToolbarForContentChange() = 0;
     virtual void hideColorPickersForScreenshotUi() = 0;
+    virtual void beginCanvasColorSampling(adqt::widgets::AdColorPicker*) {}
 };
 
 class ScreenshotSelectionToolbarCommandSink {

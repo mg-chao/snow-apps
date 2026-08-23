@@ -3,6 +3,8 @@
 #include "screenshotfloatingtoolpalettenative.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshottoolpalettehost.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
 
 #include "screenshottoolbarperfinstrumentation.h"
 
@@ -17,6 +19,7 @@
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QHideEvent>
+#include <QJsonValue>
 #include <QLineEdit>
 #include <QPaintEvent>
 #include <QPainter>
@@ -76,32 +79,7 @@ ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
     contentLayout->addWidget(m_paletteHost);
     layout->addWidget(contentPanel);
 
-    QLineEdit* watermarkTextEditor =
-        m_paletteHost->findChild<QLineEdit*>(QStringLiteral("screenshotWatermarkTextEdit"));
-    m_watermarkTextEditor = watermarkTextEditor;
-    if (watermarkTextEditor != nullptr) {
-        watermarkTextEditor->installEventFilter(this);
-        connect(watermarkTextEditor, &QLineEdit::editingFinished, this, [this]() {
-            const QPointer<QWidget> editor = m_watermarkTextEditor;
-            QTimer::singleShot(0, this, [this, editor]() { endKeyboardFocusInteraction(editor); });
-        });
-    }
-
-    const QList<adqt::widgets::AdSelect*> selects =
-        m_paletteHost->findChildren<adqt::widgets::AdSelect*>();
-    for (adqt::widgets::AdSelect* select : selects) {
-        if (select == nullptr || !select->searchEnabled() || select->lineEdit() == nullptr) {
-            continue;
-        }
-        connect(select, &adqt::widgets::AdSelect::popupOpening, this,
-                [this, select]() { beginKeyboardFocusInteraction(select->lineEdit()); });
-        connect(select, &adqt::widgets::AdSelect::popupVisibleChanged, this,
-                [this, select](bool visible) {
-                    if (!visible) {
-                        endKeyboardFocusInteraction(select->lineEdit());
-                    }
-                });
-    }
+    bindDynamicKeyboardEditors();
 
     refreshGeometryForVisibleContent(false);
 
@@ -144,7 +122,8 @@ ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
                const QSize& logicalClientExtent) {
             m_processingNativeDpiChange = true;
             if (m_paletteHost != nullptr) {
-                m_paletteHost->commitDpiScale(context.logicalScale, logicalClientExtent,
+                m_paletteHost->commitDpiScale(context.logicalScale * m_paletteScaleMultiplier,
+                                              logicalClientExtent,
                                               ScreenshotToolPaletteHost::defaultShadowMargins());
             }
             updatePaletteGeometryForVisibleContent();
@@ -171,9 +150,73 @@ ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
             [this](const QPoint&) { finishPaletteDrag(true); });
     connect(m_paletteHost, &ScreenshotToolPaletteHost::visibleContentChanged, this,
             &ScreenshotFloatingToolPaletteWindow::handlePaletteContentChange);
+
+    const auto applyToolbarSize = [this](const QString& size) {
+        setPaletteScaleMultiplier(size == QStringLiteral("small") ? 0.8 : 1.0);
+    };
+    applyToolbarSize(snow_shot::storage::ScreenshotUiSettings().toolbarSize());
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    connect(&configuration, &snow_shot::storage::ConfigurationStore::valueChanged, this,
+            [this, applyToolbarSize](const QString& key, const QJsonValue&) {
+                if (key == QStringLiteral("screenshot_ui/toolbar_size")) {
+                    applyToolbarSize(snow_shot::storage::ScreenshotUiSettings().toolbarSize());
+                }
+            });
 }
 
 ScreenshotFloatingToolPaletteWindow::~ScreenshotFloatingToolPaletteWindow() {}
+
+void ScreenshotFloatingToolPaletteWindow::bindDynamicKeyboardEditors() {
+    if (m_paletteHost == nullptr) {
+        return;
+    }
+
+    QLineEdit* watermarkTextEditor =
+        m_paletteHost->findChild<QLineEdit*>(QStringLiteral("screenshotWatermarkTextEdit"));
+    if (watermarkTextEditor != nullptr && m_watermarkTextEditor != watermarkTextEditor) {
+        m_watermarkTextEditor = watermarkTextEditor;
+        watermarkTextEditor->installEventFilter(this);
+        connect(watermarkTextEditor, &QLineEdit::editingFinished, this, [this]() {
+            const QPointer<QWidget> editor = m_watermarkTextEditor;
+            QTimer::singleShot(0, this, [this, editor]() { endKeyboardFocusInteraction(editor); });
+        });
+    }
+
+    const QList<adqt::widgets::AdSelect*> selects =
+        m_paletteHost->findChildren<adqt::widgets::AdSelect*>();
+    for (adqt::widgets::AdSelect* select : selects) {
+        if (select == nullptr || !select->searchEnabled() || select->lineEdit() == nullptr ||
+            select->property("snowShotKeyboardBindingInstalled").toBool()) {
+            continue;
+        }
+        select->setProperty("snowShotKeyboardBindingInstalled", true);
+        connect(select, &adqt::widgets::AdSelect::popupOpening, this,
+                [this, select]() { beginKeyboardFocusInteraction(select->lineEdit()); });
+        connect(select, &adqt::widgets::AdSelect::popupVisibleChanged, this,
+                [this, select](bool visible) {
+                    if (!visible) {
+                        endKeyboardFocusInteraction(select->lineEdit());
+                    }
+                });
+    }
+}
+
+void ScreenshotFloatingToolPaletteWindow::setPaletteScaleMultiplier(qreal multiplier) {
+    if (!std::isfinite(multiplier) || multiplier <= 0.0) {
+        multiplier = 1.0;
+    }
+    multiplier = std::clamp<qreal>(multiplier, 0.25, 4.0);
+    if (qFuzzyCompare(m_paletteScaleMultiplier + 1.0, multiplier + 1.0)) {
+        return;
+    }
+    m_paletteScaleMultiplier = multiplier;
+    resetPhysicalSizeInvariant();
+    refreshGeometryForVisibleContent(m_lastRequestedContentPositionValid || isVisible(), true);
+}
+
+qreal ScreenshotFloatingToolPaletteWindow::paletteScaleMultiplier() const {
+    return m_paletteScaleMultiplier;
+}
 
 ScreenshotToolPalette* ScreenshotFloatingToolPaletteWindow::palette() const {
     return m_paletteHost != nullptr ? m_paletteHost->palette() : nullptr;
@@ -213,6 +256,13 @@ void ScreenshotFloatingToolPaletteWindow::setOwnerWindow(QWidget* owner) {
         repaint();
         raise();
     }
+}
+
+void ScreenshotFloatingToolPaletteWindow::releaseNativeSurface() {
+    cancelDrag();
+    hide();
+    setUpdatesEnabled(false);
+    destroy(true, true);
 }
 
 void ScreenshotFloatingToolPaletteWindow::setTransientOwnerWindow(QWidget* owner) {
@@ -268,6 +318,7 @@ void ScreenshotFloatingToolPaletteWindow::setStyleToolbarAboveMain(bool above) {
 }
 
 void ScreenshotFloatingToolPaletteWindow::prepareForDisplay() {
+    bindDynamicKeyboardEditors();
     const qreal currentDpr = currentWindowDevicePixelRatio();
     if (m_lastAppliedWindowDevicePixelRatio <= 0.0 ||
         !qFuzzyCompare(m_lastAppliedWindowDevicePixelRatio + 1.0, currentDpr + 1.0) ||
@@ -547,6 +598,7 @@ void ScreenshotFloatingToolPaletteWindow::updatePaletteGeometryForVisibleContent
     const QSize previousHostSize = m_paletteHost->size();
 #endif
     m_paletteHost->prepareForDisplay();
+    bindDynamicKeyboardEditors();
     const QSize windowSize = fixedWindowSizeHint();
     if (m_panel->size() != windowSize) {
         m_panel->setFixedSize(windowSize);
@@ -841,7 +893,8 @@ void ScreenshotFloatingToolPaletteWindow::syncPalettePhysicalScale() {
 
     ensureReferenceDevicePixelRatio();
     const qreal currentDpr = currentWindowDevicePixelRatio();
-    const qreal scale = currentDpr > 0.0 ? m_referenceDevicePixelRatio / currentDpr : 1.0;
+    const qreal dpiScale = currentDpr > 0.0 ? m_referenceDevicePixelRatio / currentDpr : 1.0;
+    const qreal scale = dpiScale * m_paletteScaleMultiplier;
     m_paletteHost->setPhysicalScale(scale);
     m_paletteHost->setShadowMargins(ScreenshotToolPaletteHost::defaultShadowMargins());
 }

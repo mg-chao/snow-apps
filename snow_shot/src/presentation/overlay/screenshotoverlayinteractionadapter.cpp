@@ -54,6 +54,18 @@ bool ScreenshotOverlayEventAdapter::handleOverlayRightClick(ScreenshotOverlayWin
     return m_inputHandler->handleRightClick(overlay, localPosition);
 }
 
+void ScreenshotOverlayEventAdapter::handleUnhandledLeftDoubleClick() {
+    if (m_inputHandler != nullptr) {
+        m_inputHandler->handleUnhandledLeftDoubleClick();
+    }
+}
+
+void ScreenshotOverlayEventAdapter::handleUnhandledMiddleClick() {
+    if (m_inputHandler != nullptr) {
+        m_inputHandler->handleUnhandledMiddleClick();
+    }
+}
+
 bool ScreenshotOverlayEventAdapter::handleOverlayWheel(ScreenshotOverlayWindow* overlay,
                                                        const QPointF& localPosition,
                                                        const QPoint& angleDelta,
@@ -64,12 +76,8 @@ bool ScreenshotOverlayEventAdapter::handleOverlayWheel(ScreenshotOverlayWindow* 
     return m_inputHandler->handleWheel(overlay, localPosition, angleDelta, pixelDelta);
 }
 
-bool ScreenshotOverlayEventAdapter::handleOverlayKeyPress(int key,
-                                                          Qt::KeyboardModifiers modifiers) {
-    if (m_inputHandler == nullptr) {
-        return false;
-    }
-    return m_inputHandler->handleKeyPress(key, modifiers);
+bool ScreenshotOverlayEventAdapter::shouldBlockUnhandledOverlayKeyInput() const {
+    return m_inputHandler != nullptr && m_inputHandler->shouldBlockUnhandledKeyInput();
 }
 
 void ScreenshotOverlayEventAdapter::raiseToolbarForCanvasInteraction() {

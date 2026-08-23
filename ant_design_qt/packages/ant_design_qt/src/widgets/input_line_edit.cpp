@@ -131,6 +131,53 @@ int horizontalTextWidth(const QFontMetrics& fm, const QString& text) {
   return text.isEmpty() ? 0 : fm.horizontalAdvance(text);
 }
 
+int scaledControlMetric(int value, qreal scale) {
+  if (value == 0) {
+    return 0;
+  }
+  return qMax(1, qRound(static_cast<qreal>(value) * scale));
+}
+
+qreal scaledControlMetric(qreal value, qreal scale) {
+  return value * scale;
+}
+
+void scaleControlFont(QFont* font, qreal scale) {
+  if (font == nullptr) {
+    return;
+  }
+  if (font->pixelSize() > 0) {
+    font->setPixelSize(scaledControlMetric(font->pixelSize(), scale));
+  } else if (font->pointSizeF() > 0.0) {
+    font->setPointSizeF(font->pointSizeF() * scale);
+  }
+}
+
+void scaleInputMetrics(detail::InputMetrics* metrics, qreal scale) {
+  if (metrics == nullptr) {
+    return;
+  }
+  metrics->height = scaledControlMetric(metrics->height, scale);
+  metrics->borderRadius = scaledControlMetric(metrics->borderRadius, scale);
+  metrics->borderWidth = scaledControlMetric(metrics->borderWidth, scale);
+  metrics->horizontalPadding = scaledControlMetric(metrics->horizontalPadding, scale);
+  metrics->verticalPadding = scaledControlMetric(metrics->verticalPadding, scale);
+  metrics->textLineHeight = scaledControlMetric(metrics->textLineHeight, scale);
+  metrics->affixPadding = scaledControlMetric(metrics->affixPadding, scale);
+  metrics->affixItemGap = scaledControlMetric(metrics->affixItemGap, scale);
+  metrics->affixIconSize = scaledControlMetric(metrics->affixIconSize, scale);
+  metrics->clearIconSize = scaledControlMetric(metrics->clearIconSize, scale);
+  metrics->multilineAffixTopInset =
+      scaledControlMetric(metrics->multilineAffixTopInset, scale);
+  metrics->multilineInlineStartCompensation =
+      scaledControlMetric(metrics->multilineInlineStartCompensation, scale);
+  metrics->countTopMargin = scaledControlMetric(metrics->countTopMargin, scale);
+  metrics->countHeight = scaledControlMetric(metrics->countHeight, scale);
+  metrics->focusOutlineWidth = scaledControlMetric(metrics->focusOutlineWidth, scale);
+  metrics->focusOutlineOffset = scaledControlMetric(metrics->focusOutlineOffset, scale);
+  scaleControlFont(&metrics->font, scale);
+}
+
 ActionIconColors suffixActionColors(const InputVisualStyle& style) {
   // The password visibility toggle is hosted in the shared suffix-action button,
   // but its visual treatment follows Ant Design's weak action icon semantics.
@@ -655,8 +702,10 @@ QSize AdLineEdit::sizeHint() const {
   const QMargins contentInsets = detail::input_internal::textControlContentMargins(style);
   const int contentWidth =
       std::max(horizontalTextWidth(fm, placeholderText()), horizontalTextWidth(fm, text()));
-  const int baseWidth = std::max(160, contentInsets.left() + contentInsets.right() + contentWidth +
-                                          accessoryWidthHint(style) + style.metrics.height);
+  const int baseWidth =
+      std::max(scaledControlMetric(160, controlScale_.logicalScale),
+               contentInsets.left() + contentInsets.right() + contentWidth +
+                   accessoryWidthHint(style) + style.metrics.height);
   return QSize(baseWidth, style.metrics.height);
 }
 
@@ -665,7 +714,22 @@ QSize AdLineEdit::minimumSizeHint() const {
   if (property("ad-flex-min-width-zero").toBool()) {
     return QSize(0, hint.height());
   }
-  return QSize(std::min(96, hint.width()), hint.height());
+  return QSize(std::min(scaledControlMetric(96, controlScale_.logicalScale), hint.width()),
+               hint.height());
+}
+
+void AdLineEdit::prepareControlScale(const AdControlScaleContext& context) { Q_UNUSED(context) }
+
+void AdLineEdit::commitControlScale(const AdControlScaleContext& context) {
+  if (!referenceFontCaptured_) {
+    referenceFont_ = font();
+    referenceFontCaptured_ = true;
+  }
+  controlScale_ = context;
+  QFont scaledFont = referenceFont_;
+  scaleControlFont(&scaledFont, context.logicalScale);
+  QLineEdit::setFont(scaledFont);
+  refreshVisualState(true);
 }
 
 void AdLineEdit::focusEditor(FocusSelection selection, bool preventScroll) {
@@ -1239,9 +1303,12 @@ InputVisualStyle AdLineEdit::resolvedStyle() const {
   input.focused = focused_;
   input.hovered = hovered_;
   input.baseFont = font();
-  return applyDynamicOverrides(adqt::widgets::detail::resolveInputVisualStyle(
-                                   input, adqt::theme::ThemeManager::instance().resolve(this)),
-                               this);
+  InputVisualStyle style =
+      applyDynamicOverrides(adqt::widgets::detail::resolveInputVisualStyle(
+                                input, adqt::theme::ThemeManager::instance().resolve(this)),
+                            this);
+  scaleInputMetrics(&style.metrics, controlScale_.logicalScale);
+  return style;
 }
 
 void AdLineEdit::updateCursorForRole() {

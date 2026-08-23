@@ -320,8 +320,15 @@ impl Editor {
             SelectionEditMode::Rotate {
                 start_pointer_angle,
             } => {
-                let rotation_delta =
+                let raw_rotation_delta =
                     angle_between(state.original_bounds.center, canvas_point) - start_pointer_angle;
+                let rotation_delta = if modifiers.shift {
+                    lock_rotation_to_discrete_angle(
+                        state.original_bounds.rotation + raw_rotation_delta,
+                    ) - state.original_bounds.rotation
+                } else {
+                    raw_rotation_delta
+                };
                 SelectionEditPreview {
                     elements: state
                         .original_elements
@@ -358,9 +365,7 @@ impl Editor {
                         .collect(),
                     bounds: SelectionBounds {
                         rotation: normalize_rotation(
-                            state.original_bounds.rotation
-                                + angle_between(state.original_bounds.center, canvas_point)
-                                - start_pointer_angle,
+                            state.original_bounds.rotation + rotation_delta,
                         ),
                         ..state.original_bounds
                     },
@@ -911,6 +916,69 @@ mod tests {
             (left - right).abs() <= 1e-9,
             "expected {left} to be close to {right}"
         );
+    }
+
+    #[test]
+    fn shift_rotation_snaps_absolute_selection_angle_to_fifteen_degrees() {
+        let initial_rotation = 10.0_f64.to_radians();
+        let rect = RectangleData {
+            rectangle_kind: snow_draw_engine_document::RectangleElementKind::Rectangle,
+            highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
+            center: Point::new(0.0, 0.0),
+            width: 40.0,
+            height: 20.0,
+            rotation: initial_rotation,
+            fill: ColorRgba8::default(),
+            fill_style: snow_draw_engine_document::FillStyle::Solid,
+            stroke: ColorRgba8::default(),
+            stroke_width: 0.0,
+            stroke_style: snow_draw_engine_document::StrokeStyle::Solid,
+            corner_radii: CornerRadii::default(),
+            opacity: 1.0,
+        };
+        let state = EditSelectionState {
+            pointer_id: 1,
+            original_elements: vec![SelectionRectState {
+                id: ElementId::default(),
+                rect,
+            }],
+            preview_elements: vec![SelectionRectState {
+                id: ElementId::default(),
+                rect,
+            }],
+            original_arrows: Vec::new(),
+            preview_arrows: Vec::new(),
+            original_bounds: SelectionBounds {
+                center: rect.center,
+                width: rect.width,
+                height: rect.height,
+                rotation: rect.rotation,
+            },
+            preview_bounds: SelectionBounds {
+                center: rect.center,
+                width: rect.width,
+                height: rect.height,
+                rotation: rect.rotation,
+            },
+            mode: SelectionEditMode::Rotate {
+                start_pointer_angle: 0.0,
+            },
+        };
+        let editor = Editor::new(EngineConfig::default()).unwrap();
+        let drag_angle = 10.0_f64.to_radians();
+        let preview = editor.selection_edit_preview(
+            &DocumentModel::new(),
+            &state,
+            Point::new(drag_angle.cos(), drag_angle.sin()),
+            Modifiers {
+                shift: true,
+                ..Modifiers::default()
+            },
+            1.0,
+        );
+
+        assert_close(preview.bounds.rotation, 15.0_f64.to_radians());
+        assert_close(preview.elements[0].rect.rotation, 15.0_f64.to_radians());
     }
 
     fn insert_text(document: &mut DocumentModel, text: TextData) -> ElementId {

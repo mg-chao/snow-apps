@@ -1,12 +1,16 @@
 [CmdletBinding()]
 param(
     [string]$Qt6Dir = "",
+    [ValidateSet("Dynamic", "Static")]
+    [string[]]$VcpkgVariants = @("Dynamic", "Static"),
     [switch]$Reset,
     [switch]$SkipVcpkgInstall,
-    [switch]$SkipDependencyInstall
+    [switch]$SkipDependencyInstall,
+    [switch]$SkipQtValidation
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "snow-build-environment.ps1")
 
 function Invoke-Checked {
     param(
@@ -39,23 +43,38 @@ function Require-Command {
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $toolsRoot = Join-Path $repoRoot ".tools"
 $vcpkgRoot = Join-Path $toolsRoot "vcpkg"
+$env:VCPKG_ROOT = $vcpkgRoot
 $vcpkgExe = Join-Path $vcpkgRoot "vcpkg.exe"
 $vcpkgInstalledRoot = Join-Path $vcpkgRoot "installed"
-$vcpkgBaseline = "ffc071e0c08432c60c9b64f00334c0227667931b"
-$rustToolchain = "1.93.1"
+# Keep this paired with the available vcpkg tool release and CMake 4.2.3:
+# newer snapshots require an unsupported manifest-tool schema or bundled CMake 4.4+.
+$vcpkgBaseline = "4497409a47f19db373a410a0efb84eca4747adbf"
+$rustToolchain = "1.97.1"
 $rustTarget = "x86_64-pc-windows-msvc"
+
+if (-not $SkipQtValidation) {
+    # Environment variables often outlive a Qt upgrade, so each candidate is
+    # version-checked before it is exported to the bootstrap subprocesses.
+    $Qt6Dir = Set-SnowQtEnvironment -Qt6Dir $Qt6Dir
+}
 
 $git = Require-Command "git"
 $cmake = Require-Command "cmake"
 $cargo = Require-Command "cargo"
 $rustup = Require-Command "rustup"
 
+# vcpkg's app-local packaging invokes dumpbin to discover DLL dependencies of
+# host tools. Without the MSVC bin directory, it can install unusable tools and
+# still record their packages as successfully installed.
+Add-SnowMsvcToolsToPath | Out-Null
+Require-Command "dumpbin" | Out-Null
+
 $cmakeVersionLine = (& $cmake.Source --version | Select-Object -First 1)
 if ($cmakeVersionLine -notmatch "cmake version (\d+)\.(\d+)") {
     throw "Unable to determine the installed CMake version: $cmakeVersionLine"
 }
-if ([int]$Matches[1] -lt 3 -or ([int]$Matches[1] -eq 3 -and [int]$Matches[2] -lt 30)) {
-    throw "CMake 3.30 or newer is required; found $cmakeVersionLine"
+if ([int]$Matches[1] -lt 4 -or ([int]$Matches[1] -eq 4 -and [int]$Matches[2] -lt 2)) {
+    throw "CMake 4.2 or newer is required for the Visual Studio 2026 generator; found $cmakeVersionLine"
 }
 
 if ($Reset) {
@@ -72,13 +91,14 @@ if ($Reset) {
 
 New-Item -ItemType Directory -Path $toolsRoot -Force | Out-Null
 
-if (-not (Test-Path -LiteralPath $vcpkgExe)) {
+$vcpkgGitDirectory = Join-Path $vcpkgRoot ".git"
+if (-not (Test-Path -LiteralPath $vcpkgExe) -and
+    -not (Test-Path -LiteralPath $vcpkgGitDirectory -PathType Container)) {
     Invoke-Checked -Command $git.Source -Arguments @(
         "clone", "https://github.com/microsoft/vcpkg.git", $vcpkgRoot
     ) -WorkingDirectory $repoRoot
 }
 
-$vcpkgGitDirectory = Join-Path $vcpkgRoot ".git"
 if (-not (Test-Path -LiteralPath $vcpkgGitDirectory)) {
     throw "Repository-local vcpkg must be a Git checkout so the pinned baseline can be enforced: $vcpkgRoot. Rerun with -Reset."
 }
@@ -91,7 +111,33 @@ if (Test-Path -LiteralPath $vcpkgGitDirectory) {
     ) -WorkingDirectory $vcpkgRoot
 }
 
-if (-not (Test-Path -LiteralPath $vcpkgExe) -and -not $SkipVcpkgInstall) {
+function Test-VcpkgToolAlignment {
+    if (-not (Test-Path -LiteralPath $vcpkgExe -PathType Leaf)) {
+        return $false
+    }
+
+    $metadataPath = Join-Path $vcpkgRoot "scripts\vcpkg-tool-metadata.txt"
+    if (-not (Test-Path -LiteralPath $metadataPath -PathType Leaf)) {
+        return $false
+    }
+    $metadata = ConvertFrom-StringData (Get-Content -LiteralPath $metadataPath -Raw)
+    $expectedRelease = $metadata.VCPKG_TOOL_RELEASE_TAG
+    if ([string]::IsNullOrWhiteSpace($expectedRelease)) {
+        return $false
+    }
+
+    $versionOutput = & $vcpkgExe version --disable-metrics 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0 -or $versionOutput -notmatch "version\s+($([regex]::Escape($expectedRelease)))") {
+        return $false
+    }
+    return $true
+}
+
+$vcpkgNeedsBootstrap = -not (Test-VcpkgToolAlignment)
+if ($vcpkgNeedsBootstrap -and $SkipVcpkgInstall) {
+    Write-Host "Repository-local vcpkg.exe is missing or stale; refreshing it from the pinned checkout."
+}
+if ($vcpkgNeedsBootstrap) {
     $bootstrap = Join-Path $vcpkgRoot "bootstrap-vcpkg.bat"
     if (-not (Test-Path -LiteralPath $bootstrap)) {
         throw "vcpkg bootstrap script was not found at $bootstrap"
@@ -101,21 +147,57 @@ if (-not (Test-Path -LiteralPath $vcpkgExe) -and -not $SkipVcpkgInstall) {
     ) -WorkingDirectory $vcpkgRoot
 }
 
+function Repair-VcpkgHostTools {
+    param([Parameter(Mandatory = $true)][string]$InstallRoot)
+
+    $hostRoot = Join-Path $InstallRoot "x64-windows"
+    $hostBin = Join-Path $hostRoot "bin"
+    $hostTools = Join-Path $hostRoot "tools"
+    if (-not (Test-Path -LiteralPath $hostTools -PathType Container) -or
+        -not (Test-Path -LiteralPath $hostBin -PathType Container)) {
+        return
+    }
+
+    $appLocal = Join-Path $vcpkgRoot "scripts\buildsystems\msbuild\applocal.ps1"
+    if (-not (Test-Path -LiteralPath $appLocal -PathType Leaf)) {
+        throw "vcpkg app-local deployment script was not found at $appLocal"
+    }
+    Get-ChildItem -LiteralPath $hostTools -Filter "*.exe" -File -Recurse | ForEach-Object {
+        & $appLocal -TargetBinary $_.FullName -InstalledDir $hostBin
+    }
+}
+
+foreach ($variant in $VcpkgVariants) {
+    $installVariant = $variant.ToLowerInvariant()
+    Repair-VcpkgHostTools -InstallRoot (Join-Path $vcpkgInstalledRoot $installVariant)
+}
+
 if (-not $SkipDependencyInstall) {
     if (-not (Test-Path -LiteralPath $vcpkgExe)) {
         throw "Repository-local vcpkg is not installed. Rerun without -SkipVcpkgInstall."
     }
-    foreach ($triplet in @("x64-windows", "x64-windows-static")) {
-        $installVariant = if ($triplet -eq "x64-windows-static") { "static" } else { "dynamic" }
+    foreach ($variant in $VcpkgVariants) {
+        $triplet = if ($variant -eq "Static") { "x64-windows-static" } else { "x64-windows" }
+        $installVariant = $variant.ToLowerInvariant()
         $tripletInstallRoot = Join-Path $vcpkgInstalledRoot $installVariant
-        Invoke-Checked -Command $vcpkgExe -Arguments @(
+        $overlayPortArguments = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "cmake/vcpkg-overlay-ports") -Directory |
+            Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "portfile.cmake") -PathType Leaf } |
+            Sort-Object Name |
+            ForEach-Object { "--overlay-ports=$($_.FullName)" })
+        $vcpkgArguments = @(
             "install",
             "--x-manifest-root=$repoRoot",
             "--x-install-root=$tripletInstallRoot",
             "--triplet=$triplet",
-            "--overlay-ports=$(Join-Path $repoRoot 'cmake/vcpkg-overlay-ports')",
-            "--clean-after-build"
-        ) -WorkingDirectory $repoRoot
+              "--x-feature=snow-shot"
+          ) + $overlayPortArguments + @(
+              "--overlay-triplets=$(Join-Path $repoRoot 'cmake/vcpkg-overlay-triplets')",
+              "--clean-after-build"
+          )
+        if ($variant -eq "Dynamic") {
+            $vcpkgArguments += "--x-feature=full-codecs"
+        }
+        Invoke-Checked -Command $vcpkgExe -Arguments $vcpkgArguments -WorkingDirectory $repoRoot
     }
 }
 
@@ -127,41 +209,12 @@ Invoke-Checked -Command $rustup.Source -Arguments @(
     "--target", $rustTarget
 ) -WorkingDirectory $repoRoot
 
-Invoke-Checked -Command $cargo.Source -Arguments @(
+$null = Invoke-Checked -Command $cargo.Source -Arguments @(
     "+$rustToolchain", "metadata", "--format-version", "1", "--no-deps"
 ) -WorkingDirectory (Join-Path $repoRoot "snow-crates")
-Invoke-Checked -Command $cargo.Source -Arguments @(
+$null = Invoke-Checked -Command $cargo.Source -Arguments @(
     "+$rustToolchain", "metadata", "--format-version", "1", "--no-deps"
 ) -WorkingDirectory (Join-Path $repoRoot "snow_draw_engine_qt")
-
-if ([string]::IsNullOrWhiteSpace($Qt6Dir)) {
-    $Qt6Dir = $env:SNOW_QT_STATIC_DIR
-}
-if ([string]::IsNullOrWhiteSpace($Qt6Dir)) {
-    $Qt6Dir = $env:Qt6_DIR
-}
-if ([string]::IsNullOrWhiteSpace($Qt6Dir) -and $env:QTDIR) {
-    $Qt6Dir = Join-Path $env:QTDIR "lib\cmake\Qt6"
-}
-if ([string]::IsNullOrWhiteSpace($Qt6Dir) -or
-    -not (Test-Path -LiteralPath (Join-Path $Qt6Dir "Qt6Config.cmake"))) {
-    throw "Qt 6.10.3 was not found. Set -Qt6Dir, Qt6_DIR, SNOW_QT_STATIC_DIR, or QTDIR."
-}
-$qt6VersionFiles = @(
-    (Join-Path $Qt6Dir "Qt6ConfigVersion.cmake"),
-    (Join-Path $Qt6Dir "Qt6ConfigVersionImpl.cmake")
-)
-$qt6VersionText = ($qt6VersionFiles |
-    Where-Object { Test-Path -LiteralPath $_ } |
-    ForEach-Object { Get-Content -LiteralPath $_ -Raw }) -join "`n"
-if ([string]::IsNullOrWhiteSpace($qt6VersionText)) {
-    throw "Qt 6 version metadata is missing under $Qt6Dir"
-}
-$qt6VersionMatch = [regex]::Match($qt6VersionText, 'PACKAGE_VERSION\s+"([^"]+)"')
-if (-not $qt6VersionMatch.Success -or $qt6VersionMatch.Groups[1].Value -ne "6.10.3") {
-    $detectedQtVersion = if ($qt6VersionMatch.Success) { $qt6VersionMatch.Groups[1].Value } else { "unknown" }
-    throw "Qt 6.10.3 is required; detected $detectedQtVersion at $Qt6Dir"
-}
 
 $libclangDirectory = Join-Path $toolsRoot "llvm\bin"
 if (-not (Test-Path -LiteralPath (Join-Path $libclangDirectory "libclang.dll"))) {
@@ -172,10 +225,14 @@ Write-Host "Snow Apps build environment is ready."
 Write-Host "Repository: $repoRoot"
 Write-Host "CMake: $cmakeVersionLine"
 Write-Host "vcpkg: $vcpkgRoot"
-Write-Host "vcpkg dynamic installed: $(Join-Path $vcpkgInstalledRoot 'dynamic')"
-Write-Host "vcpkg static installed: $(Join-Path $vcpkgInstalledRoot 'static')"
-Write-Host "Qt6_DIR: $Qt6Dir"
-if (-not [string]::IsNullOrWhiteSpace($env:SNOW_QT_STATIC_DIR)) {
-    Write-Host "SNOW_QT_STATIC_DIR: $env:SNOW_QT_STATIC_DIR"
+foreach ($variant in $VcpkgVariants) {
+    $installVariant = $variant.ToLowerInvariant()
+    Write-Host "vcpkg $installVariant installed: $(Join-Path $vcpkgInstalledRoot $installVariant)"
+}
+if (-not $SkipQtValidation) {
+    Write-Host "Qt6_DIR: $Qt6Dir"
+    if (-not [string]::IsNullOrWhiteSpace($env:SNOW_QT_STATIC_DIR)) {
+        Write-Host "SNOW_QT_STATIC_DIR: $env:SNOW_QT_STATIC_DIR"
+    }
 }
 Write-Host "Rust: $rustToolchain ($rustTarget)"

@@ -3,6 +3,7 @@
 #include <QLineEdit>
 #include <QPointer>
 
+#include "control_scale.h"
 #include "icon_core.h"
 #include "input_policies.h"
 
@@ -21,7 +22,7 @@ struct InputVisualStyle;
 
 namespace adqt::widgets {
 
-class AdLineEdit : public QLineEdit {
+class AdLineEdit : public QLineEdit, public AdControlScaleParticipant {
   Q_OBJECT
 
   Q_PROPERTY(
@@ -135,6 +136,8 @@ class AdLineEdit : public QLineEdit {
 
   QSize sizeHint() const override;
   QSize minimumSizeHint() const override;
+  void prepareControlScale(const AdControlScaleContext& context) override;
+  void commitControlScale(const AdControlScaleContext& context) override;
 
   void focusEditor(FocusSelection selection = FocusSelection::Preserve, bool preventScroll = false);
   void blurInput();
@@ -239,10 +242,13 @@ class AdLineEdit : public QLineEdit {
   QToolButton* suffixActionButton_ = nullptr;
   QLabel* countLabel_ = nullptr;
 
+  AdControlScaleContext controlScale_;
+  QFont referenceFont_;
   bool hovered_ = false;
   bool focused_ = false;
   bool feedbackSpinnerSubscribed_ = false;
   bool internalTextUpdate_ = false;
+  bool referenceFontCaptured_ = false;
 };
 
 }  // namespace adqt::widgets

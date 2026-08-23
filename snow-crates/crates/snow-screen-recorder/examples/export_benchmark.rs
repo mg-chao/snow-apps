@@ -83,9 +83,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         audio_tracks: Vec::new(),
     };
     let manifest = artifact.read_embedded_manifest()?;
-    let output_path = manifest
-        .output_dir
-        .join(format!("{}-benchmark.mp4", manifest.session_id));
+    let output_path = manifest.output_dir.join(format!(
+        "{}-benchmark.{}",
+        manifest.session_id,
+        format.file_extension()
+    ));
 
     let editing = EditingSession::open(artifact)?;
     let mut request = editing.export_request();
@@ -150,6 +152,8 @@ fn parse_format(value: &str) -> Result<ExportFormat, Box<dyn Error>> {
         "mp4" => Ok(ExportFormat::Mp4),
         "avi" => Ok(ExportFormat::Avi),
         "gif" => Ok(ExportFormat::Gif),
+        "apng" => Ok(ExportFormat::Apng),
+        "webp" => Ok(ExportFormat::Webp),
         _ => Err(format!("unsupported format: {value}").into()),
     }
 }

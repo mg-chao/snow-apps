@@ -7,6 +7,7 @@
 
 namespace {
 using DragHandle = screenshot_pinned_resize_geometry::DragHandle;
+using ScaleAnchor = screenshot_pinned_resize_geometry::ScaleAnchor;
 
 bool isCornerHandle(DragHandle handle) {
     switch (handle) {
@@ -67,6 +68,70 @@ QSize screenshot_pinned_resize_geometry::scaledSize(const QSize& baseline, doubl
 
     return QSize(std::max(1, qRound(baseline.width() * scale)),
                  std::max(1, qRound(baseline.height() * scale)));
+}
+
+ScaleAnchor screenshot_pinned_resize_geometry::scaleAnchorFromSetting(QStringView value) {
+    if (value == u"top_left") {
+        return ScaleAnchor::TopLeft;
+    }
+    if (value == u"top_right") {
+        return ScaleAnchor::TopRight;
+    }
+    if (value == u"bottom_left") {
+        return ScaleAnchor::BottomLeft;
+    }
+    if (value == u"bottom_right") {
+        return ScaleAnchor::BottomRight;
+    }
+    if (value == u"center") {
+        return ScaleAnchor::Center;
+    }
+    return ScaleAnchor::MousePosition;
+}
+
+QRect screenshot_pinned_resize_geometry::anchoredScaleRect(const QRect& reference,
+                                                            const QSize& targetSize,
+                                                            ScaleAnchor anchor,
+                                                            const QPointF& mousePosition) {
+    if (!reference.isValid() || reference.isEmpty() || !targetSize.isValid() ||
+        targetSize.isEmpty()) {
+        return {};
+    }
+
+    QPointF topLeft;
+    switch (anchor) {
+    case ScaleAnchor::MousePosition: {
+        const double normalizedX =
+            (mousePosition.x() - reference.left()) / reference.width();
+        const double normalizedY =
+            (mousePosition.y() - reference.top()) / reference.height();
+        topLeft = QPointF(mousePosition.x() - normalizedX * targetSize.width(),
+                          mousePosition.y() - normalizedY * targetSize.height());
+        break;
+    }
+    case ScaleAnchor::TopLeft:
+        topLeft = QPointF(reference.left(), reference.top());
+        break;
+    case ScaleAnchor::TopRight:
+        topLeft = QPointF(reference.left() + reference.width() - targetSize.width(),
+                          reference.top());
+        break;
+    case ScaleAnchor::BottomLeft:
+        topLeft = QPointF(reference.left(),
+                          reference.top() + reference.height() - targetSize.height());
+        break;
+    case ScaleAnchor::BottomRight:
+        topLeft = QPointF(reference.left() + reference.width() - targetSize.width(),
+                          reference.top() + reference.height() - targetSize.height());
+        break;
+    case ScaleAnchor::Center:
+        // Truncating the integer size delta keeps opposite zoom steps
+        // reversible when old and new dimensions have different parity.
+        topLeft = QPointF(reference.left() + (reference.width() - targetSize.width()) / 2,
+                          reference.top() + (reference.height() - targetSize.height()) / 2);
+        break;
+    }
+    return QRect(QPoint(qRound(topLeft.x()), qRound(topLeft.y())), targetSize);
 }
 
 bool screenshot_pinned_resize_geometry::proportionalResizeRect(

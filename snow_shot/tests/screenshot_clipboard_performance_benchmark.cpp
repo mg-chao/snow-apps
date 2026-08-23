@@ -238,11 +238,17 @@ ValidationResult validateClipboard(const QImage& source) {
         return result;
     }
 
-    HANDLE handle = GetClipboardData(CF_DIBV5);
+    HANDLE dibV5Handle = GetClipboardData(CF_DIBV5);
+    const bool dibV5 = dibV5Handle != nullptr;
+    HANDLE handle = dibV5Handle;
     if (handle == nullptr) {
-        result.error = QStringLiteral("CF_DIBV5 was not present after publication");
-        CloseClipboard();
-        return result;
+        handle = GetClipboardData(CF_DIB);
+        if (handle == nullptr) {
+            result.error =
+                QStringLiteral("Neither CF_DIBV5 nor CF_DIB was present after publication");
+            CloseClipboard();
+            return result;
+        }
     }
     const SIZE_T allocationBytes = GlobalSize(handle);
     const void* memory = GlobalLock(handle);
@@ -252,18 +258,38 @@ ValidationResult validateClipboard(const QImage& source) {
         return result;
     }
 
-    const auto* header = static_cast<const BITMAPV5HEADER*>(memory);
-    const quint64 requiredBytes = sizeof(BITMAPV5HEADER) + static_cast<quint64>(expectedBytes);
-    const bool validHeader =
-        allocationBytes >= requiredBytes && header->bV5Size == sizeof(BITMAPV5HEADER) &&
-        header->bV5Width == expected.width() && header->bV5Height == -expected.height() &&
-        header->bV5Planes == 1 && header->bV5BitCount == 32 &&
-        header->bV5Compression == BI_BITFIELDS &&
-        header->bV5SizeImage == static_cast<DWORD>(expectedBytes) &&
-        header->bV5RedMask == 0x00ff0000 && header->bV5GreenMask == 0x0000ff00 &&
-        header->bV5BlueMask == 0x000000ff && header->bV5AlphaMask == 0xff000000;
+    const auto* header = static_cast<const BITMAPINFOHEADER*>(memory);
+    const quint64 headerBytes = dibV5 ? sizeof(BITMAPV5HEADER) : sizeof(BITMAPINFOHEADER);
+    const quint64 requiredBytes = headerBytes + static_cast<quint64>(expectedBytes);
+    bool validHeader = allocationBytes >= requiredBytes &&
+                       header->biWidth == expected.width() &&
+                       header->biHeight == (dibV5 ? -expected.height() : expected.height()) &&
+                       header->biPlanes == 1 &&
+                       header->biBitCount == 32 &&
+                       header->biSizeImage == static_cast<DWORD>(expectedBytes);
+    if (dibV5) {
+        const auto* v5Header = static_cast<const BITMAPV5HEADER*>(memory);
+        validHeader = validHeader && v5Header->bV5Size == sizeof(BITMAPV5HEADER) &&
+                      v5Header->bV5Compression == BI_BITFIELDS &&
+                      v5Header->bV5RedMask == 0x00ff0000 &&
+                      v5Header->bV5GreenMask == 0x0000ff00 &&
+                      v5Header->bV5BlueMask == 0x000000ff &&
+                      v5Header->bV5AlphaMask == 0xff000000;
+    } else {
+        validHeader = validHeader && header->biSize == sizeof(BITMAPINFOHEADER) &&
+                      header->biCompression == BI_RGB;
+    }
     if (validHeader) {
-        const auto* payload = reinterpret_cast<const uchar*>(header + 1);
+        const auto* payload = static_cast<const uchar*>(memory) + headerBytes;
+        if (!dibV5) {
+            QImage bottomUp(expected.size(), QImage::Format_ARGB32);
+            for (int row = 0; row < expected.height(); ++row) {
+                std::memcpy(bottomUp.scanLine(row),
+                            expected.constScanLine(expected.height() - 1 - row),
+                            static_cast<std::size_t>(expected.bytesPerLine()));
+            }
+            result.expectedChecksum = checksum(bottomUp.constBits(), bottomUp.sizeInBytes());
+        }
         result.actualChecksum = checksum(payload, expectedBytes);
         result.payloadBytes = expectedBytes;
     }
@@ -271,11 +297,12 @@ ValidationResult validateClipboard(const QImage& source) {
     CloseClipboard();
 
     if (!validHeader) {
-        result.error = QStringLiteral("CF_DIBV5 header or payload length was invalid");
+        result.error = QStringLiteral("clipboard DIB header or payload length was invalid");
         return result;
     }
     if (result.actualChecksum != result.expectedChecksum) {
-        result.error = QStringLiteral("CF_DIBV5 pixel checksum did not match the source image");
+        result.error =
+            QStringLiteral("clipboard DIB pixel checksum did not match the source image");
         return result;
     }
     result.success = true;
@@ -392,11 +419,11 @@ Sample runExportSample(const Scenario& scenario, ExportFixture& fixture, Collect
     const auto started = std::chrono::steady_clock::now();
     const bool scheduled = fixture.service().requestSelectionClipboard(
         fixture.selection(), scenario.style, &receiver,
-        [&, state, expected](ScreenshotClipboardPayload payload) {
+         [&, state, expected](ScreenshotSelectionClipboardResult result) {
             if (state->cancelled) {
                 return;
             }
-            if (!payload.isValid()) {
+            if (!result.isValid()) {
                 state->sample.error = QStringLiteral("selection export produced an invalid payload");
                 collector.addDuration(state->sample, QStringLiteral("benchmark.end_to_end"),
                                       elapsedNanoseconds(started));
@@ -404,7 +431,7 @@ Sample runExportSample(const Scenario& scenario, ExportFixture& fixture, Collect
                 return;
             }
             const bool published = ScreenshotClipboardService::publish(
-                QApplication::clipboard(), std::move(payload));
+                QApplication::clipboard(), std::move(result.payload));
             collector.addDuration(state->sample, QStringLiteral("benchmark.end_to_end"),
                                   elapsedNanoseconds(started));
             const ValidationResult validation = validateClipboard(expected);
@@ -732,7 +759,8 @@ int main(int argc, char** argv) {
                       QStringLiteral("id")});
     parser.addOption({QStringLiteral("list"), QStringLiteral("List scenarios and exit")});
     parser.addOption({QStringLiteral("self-test"),
-                      QStringLiteral("Validate instrumentation, statistics, and CF_DIBV5 output")});
+                      QStringLiteral(
+                          "Validate instrumentation, statistics, and native DIB output")});
     parser.process(application);
 
     const QVector<Scenario> availableScenarios = scenarios();

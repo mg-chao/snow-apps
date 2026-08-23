@@ -13,7 +13,7 @@ use windows::Win32::Devices::Display::{
     DISPLAYCONFIG_SOURCE_DEVICE_NAME, DisplayConfigGetDeviceInfo, GetDisplayConfigBufferSizes,
     QDC_ONLY_ACTIVE_PATHS, QueryDisplayConfig,
 };
-use windows::Win32::Foundation::POINT;
+use windows::Win32::Foundation::{HWND, POINT};
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020, DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020,
 };
@@ -21,7 +21,9 @@ use windows::Win32::Graphics::Dxgi::{
     CreateDXGIFactory1, DXGI_ERROR_NOT_FOUND, IDXGIAdapter, IDXGIFactory1, IDXGIOutput,
     IDXGIOutput6,
 };
-use windows::Win32::Graphics::Gdi::{HMONITOR, MONITOR_DEFAULTTOPRIMARY, MonitorFromPoint};
+use windows::Win32::Graphics::Gdi::{
+    HMONITOR, MONITOR_DEFAULTTONULL, MONITOR_DEFAULTTOPRIMARY, MonitorFromPoint, MonitorFromWindow,
+};
 use windows::core::Interface;
 
 use crate::convert::HdrFrameContext;
@@ -128,6 +130,22 @@ impl MonitorResolver {
             .into_iter()
             .find(|candidate| candidate.key == id.key())
             .ok_or(CaptureError::MonitorLost)
+    }
+
+    pub(crate) fn resolve_monitor_for_window(&self, hwnd: HWND) -> CaptureResult<ResolvedMonitor> {
+        let handle = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONULL) };
+        if handle.0.is_null() {
+            return Err(CaptureError::BackendUnavailable(
+                "window is not on any monitor".into(),
+            ));
+        }
+
+        let monitor = self
+            .enumerate_monitors()?
+            .into_iter()
+            .find(|monitor| monitor.raw_handle() == handle.0 as isize)
+            .ok_or(CaptureError::MonitorLost)?;
+        self.resolve_monitor(&monitor)
     }
 
     fn current_monitors(&self, force_refresh: bool) -> CaptureResult<Vec<MonitorId>> {

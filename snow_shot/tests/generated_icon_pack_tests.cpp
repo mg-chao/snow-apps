@@ -69,14 +69,15 @@ void everySnowShotEntryRenders() {
     adqt::icons::IconRegistry registry;
     const auto registered = icons::registerWith(registry);
     require(registered.ok(), "Snow Shot pack registration should succeed");
-    require(icons::pack().definition().entries.size() == 65,
-            "Snow Shot pack should contain all 65 project-owned assets");
+    const adqt::icons::IconPack* staticPack = icons::pack().staticPack();
+    require(staticPack != nullptr && staticPack->entryCount == 76,
+            "Snow Shot pack should contain all 76 project-owned assets");
 
     adqt::icons::IconRenderRequest request;
     request.logicalSize = QSize(32, 32);
     request.devicePixelRatio = 1.25;
-    for (const auto& entry : icons::pack().definition().entries) {
-        const auto ref = icons::pack().icon(registry, entry.variant, entry.name);
+    for (std::size_t index = 0; index < staticPack->entryCount; ++index) {
+        const auto ref = icons::pack().icon(index);
         require(ref.isValid(), "every Snow Shot pack entry should create a reference");
         const QPixmap pixmap = registry.renderIconPixmap(ref, request);
         require(!pixmap.isNull() && pixmap.size() == QSize(40, 40) &&
@@ -135,6 +136,19 @@ void projectIconColorsAndModelsArePreserved() {
             "Snow Shot application icon should preserve full-color source pixels");
 }
 
+void ocrTranslateIconUsesTheSuppliedProjectAsset() {
+    namespace icons = snow_shot::presentation::icons::custom;
+    const QColor primary(0, 166, 90);
+    const auto translateRef =
+        icons::outlined::OcrTranslate(adqt::icons::IconColors::primary(primary));
+    const auto translateMetadata = adqt::icons::describeIcon(translateRef);
+    const QImage translate = render(translateRef, QSize(32, 32)).toImage();
+    require(translateMetadata.key.pack == QStringLiteral("snow-shot") &&
+                translateMetadata.key.name == QStringLiteral("ocr-translate") &&
+                containsOpaqueColor(translate, primary) && !alphaBounds(translate).isEmpty(),
+            "OCR Translate should render the supplied project asset with its primary color");
+}
+
 void pinToScreenIconKeepsItsIntendedFootprint() {
     namespace icons = snow_shot::presentation::icons::custom;
     const QImage image = render(icons::outlined::PinToScreen(), QSize(32, 32)).toImage();
@@ -189,8 +203,17 @@ void scrollingIconsUseTheRequestedOrientations() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     try {
+        if (application.arguments().contains(QStringLiteral("--ocr-translate-only"))) {
+            ocrTranslateIconUsesTheSuppliedProjectAsset();
+            return 0;
+        }
+        if (application.arguments().contains(QStringLiteral("--all-entries-only"))) {
+            everySnowShotEntryRenders();
+            return 0;
+        }
         everySnowShotEntryRenders();
         projectIconColorsAndModelsArePreserved();
+        ocrTranslateIconUsesTheSuppliedProjectAsset();
         scrollingIconsUseTheRequestedOrientations();
         pinToScreenIconKeepsItsIntendedFootprint();
         flipVerticalIconUsesTheRotatedProjectAsset();

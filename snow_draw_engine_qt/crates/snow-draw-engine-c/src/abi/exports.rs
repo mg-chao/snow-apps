@@ -312,6 +312,54 @@ pub unsafe extern "C" fn snow_engine_destroy(engine: SnowEngine) {
 }
 
 /// # Safety
+/// If `runtime` is non-null, it must be a live handle returned by `snow_runtime_create`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_runtime_set_quick_selection_disabled_tools(
+    runtime: SnowRuntime,
+    tools: u64,
+) -> SnowError {
+    ffi_error(|| {
+        let mut changed_viewports = std::ptr::null_mut();
+        let error = unsafe {
+            snow_runtime_set_quick_selection_disabled_tools_ex(
+                runtime,
+                tools,
+                &mut changed_viewports,
+            )
+        };
+        unsafe {
+            snow_changed_viewports_destroy(changed_viewports);
+        }
+        error
+    })
+}
+
+/// # Safety
+/// If `runtime` is non-null, it must be a live handle returned by `snow_runtime_create`.
+/// `out_changed_viewports` must be valid for writes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_runtime_set_quick_selection_disabled_tools_ex(
+    runtime: SnowRuntime,
+    tools: u64,
+    out_changed_viewports: *mut SnowChangedViewportList,
+) -> SnowError {
+    ffi_error(|| {
+        if out_changed_viewports.is_null() {
+            return SnowError::InvalidArgument;
+        }
+
+        ffi_status(with_runtime_impl_mut(runtime, |state| {
+            let result = state
+                .runtime
+                .set_quick_selection_disabled_tools(snow_active_tool_mask_to_rust(tools))
+                .map_err(SnowError::from)?;
+            write_changed_viewports(out_changed_viewports, result.changed_viewports);
+            Ok(())
+        }))
+    })
+}
+
+/// # Safety
 /// If `runtime` is non-null, it must be a live `SnowRuntime` handle.
 /// `config` must point to a readable `SnowEngineConfig` and `out_viewport` must be writable.
 /// The returned viewport handle must later be released with `snow_viewport_destroy`.
@@ -743,6 +791,7 @@ pub unsafe extern "C" fn snow_changed_viewports_get(
 #[cfg(test)]
 mod session_tests {
     use super::*;
+    use snow_draw_engine::ActiveTool;
 
     #[test]
     fn session_abi_is_two_pass_and_rejects_bad_input() {
@@ -901,5 +950,19 @@ mod session_tests {
             );
             assert!(runtime.is_null());
         }
+    }
+
+    #[test]
+    fn quick_selection_tool_mask_uses_the_stable_c_enum_layout() {
+        let c_mask = (1_u64 << SnowActiveTool::FreeDraw as u32)
+            | (1_u64 << SnowActiveTool::PenFilter as u32);
+        let rust_mask = snow_active_tool_mask_to_rust(c_mask);
+
+        assert_eq!(
+            rust_mask,
+            ActiveTool::FreeDraw.policy_bit() | ActiveTool::PenFilter.policy_bit()
+        );
+        assert_eq!(rust_mask & ActiveTool::Text.policy_bit(), 0);
+        assert_eq!(rust_mask & ActiveTool::Spotlight.policy_bit(), 0);
     }
 }

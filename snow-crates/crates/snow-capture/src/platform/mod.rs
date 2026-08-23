@@ -64,17 +64,25 @@ impl CaptureBackend for UnsupportedBackend {
 pub(crate) fn build_backend(
     kind: CaptureBackendKind,
     auto_policy: AutoBackendPolicy,
+    auto_policy_is_explicit: bool,
 ) -> crate::error::CaptureResult<Arc<dyn CaptureBackend>> {
-    build_backend_for_mode(kind, auto_policy, CaptureMode::Continuous)
+    build_backend_for_mode(
+        kind,
+        auto_policy,
+        auto_policy_is_explicit,
+        CaptureMode::Continuous,
+    )
 }
 
 #[cfg(target_os = "windows")]
 pub(crate) fn build_backend_for_mode(
     kind: CaptureBackendKind,
     auto_policy: AutoBackendPolicy,
+    auto_policy_is_explicit: bool,
     _mode: CaptureMode,
 ) -> crate::error::CaptureResult<Arc<dyn CaptureBackend>> {
-    let backend = windows::WindowsBackend::with_kind_and_policy(kind, auto_policy)?;
+    let backend =
+        windows::WindowsBackend::with_kind_and_policy(kind, auto_policy, auto_policy_is_explicit)?;
     Ok(Arc::new(backend))
 }
 
@@ -89,14 +97,21 @@ pub(crate) fn monitor_layout_from_monitors(
 pub(crate) fn build_backend(
     _kind: CaptureBackendKind,
     _auto_policy: AutoBackendPolicy,
+    _auto_policy_is_explicit: bool,
 ) -> crate::error::CaptureResult<Arc<dyn CaptureBackend>> {
-    build_backend_for_mode(_kind, _auto_policy, CaptureMode::Continuous)
+    build_backend_for_mode(
+        _kind,
+        _auto_policy,
+        _auto_policy_is_explicit,
+        CaptureMode::Continuous,
+    )
 }
 
 #[cfg(not(target_os = "windows"))]
 pub(crate) fn build_backend_for_mode(
     _kind: CaptureBackendKind,
     _auto_policy: AutoBackendPolicy,
+    _auto_policy_is_explicit: bool,
     _mode: CaptureMode,
 ) -> crate::error::CaptureResult<Arc<dyn CaptureBackend>> {
     Ok(Arc::new(UnsupportedBackend))

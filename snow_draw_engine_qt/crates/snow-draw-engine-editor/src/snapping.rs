@@ -162,7 +162,12 @@ impl Editor {
         } else {
             self.state.default_rectangle_shape_style
         };
-        let mut preview = preview_rectangle(start, current, style, modifiers.shift);
+        let constrained_current = if modifiers.shift {
+            square_constrained_rectangle_end(start, current)
+        } else {
+            current
+        };
+        let mut preview = preview_rectangle(start, current, style, modifiers.shift, modifiers.alt);
         if highlight {
             preview = preview.map(|mut rect| {
                 rect = rect.into_highlight(snow_draw_engine_document::HighlightShape::Rectangle);
@@ -184,12 +189,14 @@ impl Editor {
         let Some(rect) = preview else {
             return (None, Vec::new());
         };
-        let move_min_x = current.x < start.x;
-        let move_min_y = current.y < start.y;
-        let snap_result = OBJECT_SNAP_SERVICE.snap_rect(ObjectSnapRectRequest {
+        let move_min_x = constrained_current.x < start.x;
+        let move_min_y = constrained_current.y < start.y;
+        let reference_rects = Self::visible_reference_rects(document, &[]);
+        let snap_distance = self.zoom_adjusted_snap_distance();
+        let mut snap_result = OBJECT_SNAP_SERVICE.snap_rect(ObjectSnapRectRequest {
             target_rect: rectangle_to_draw_rect(&rect),
-            reference_rects: &Self::visible_reference_rects(document, &[]),
-            snap_distance: self.zoom_adjusted_snap_distance(),
+            reference_rects: &reference_rects,
+            snap_distance,
             target_anchors_x: if move_min_x {
                 &[SnapAxisAnchor::Start]
             } else {
@@ -204,16 +211,104 @@ impl Editor {
             enable_gap_snaps: self.config.snap.enable_gap_snaps,
         });
         if snap_result.has_snap() {
-            let rect_bounds = rectangle_to_draw_rect(&rect);
-            preview = Some(rectangle_from_draw_rect(
-                DrawRect::new(
-                    rect_bounds.min_x + if move_min_x { snap_result.dx } else { 0.0 },
-                    rect_bounds.min_y + if move_min_y { snap_result.dy } else { 0.0 },
-                    rect_bounds.max_x + if move_min_x { 0.0 } else { snap_result.dx },
-                    rect_bounds.max_y + if move_min_y { 0.0 } else { snap_result.dy },
-                ),
-                &rect,
-            ));
+            if !modifiers.alt && !modifiers.shift {
+                let rect_bounds = rectangle_to_draw_rect(&rect);
+                preview = Some(rectangle_from_draw_rect(
+                    DrawRect::new(
+                        rect_bounds.min_x + if move_min_x { snap_result.dx } else { 0.0 },
+                        rect_bounds.min_y + if move_min_y { snap_result.dy } else { 0.0 },
+                        rect_bounds.max_x + if move_min_x { 0.0 } else { snap_result.dx },
+                        rect_bounds.max_y + if move_min_y { 0.0 } else { snap_result.dy },
+                    ),
+                    &rect,
+                ));
+                return (
+                    preview,
+                    if self.config.snap.show_guides {
+                        snap_result.guides
+                    } else {
+                        Vec::new()
+                    },
+                );
+            }
+            // Rebuild from the constrained dragged edge rather than the raw
+            // pointer. A single-axis snap drives both square dimensions, so
+            // inward and outward snaps preserve the constraint equally.
+            let constrained_snap =
+                constrained_rectangle_snap_end(start, constrained_current, &snap_result);
+            let snapped_current = if modifiers.shift {
+                constrained_snap.end
+            } else {
+                Point::new(
+                    constrained_current.x + snap_result.dx,
+                    constrained_current.y + snap_result.dy,
+                )
+            };
+            let snapped_preview = preview_rectangle(
+                start,
+                snapped_current,
+                style,
+                modifiers.shift,
+                modifiers.alt,
+            );
+            if let Some(snapped) = snapped_preview {
+                // `preview` may carry a highlight or spotlight kind and its
+                // opacity. Preserve those semantic/style fields while taking
+                // only the snapped geometry from the base preview.
+                let mut next = rect;
+                next.center = snapped.center;
+                next.width = snapped.width;
+                next.height = snapped.height;
+                next.corner_radii =
+                    normalize_corner_radii(next.width, next.height, next.corner_radii);
+
+                if modifiers.shift {
+                    let snapped_move_min_x = snapped_current.x < start.x;
+                    let snapped_move_min_y = snapped_current.y < start.y;
+                    let target_anchors_x = if constrained_snap.snap_x {
+                        if snapped_move_min_x {
+                            vec![SnapAxisAnchor::Start]
+                        } else {
+                            vec![SnapAxisAnchor::End]
+                        }
+                    } else {
+                        Vec::new()
+                    };
+                    let target_anchors_y = if constrained_snap.snap_y {
+                        if snapped_move_min_y {
+                            vec![SnapAxisAnchor::Start]
+                        } else {
+                            vec![SnapAxisAnchor::End]
+                        }
+                    } else {
+                        Vec::new()
+                    };
+                    let verified_snap = OBJECT_SNAP_SERVICE.snap_rect(ObjectSnapRectRequest {
+                        target_rect: rectangle_to_draw_rect(&next),
+                        reference_rects: &reference_rects,
+                        snap_distance,
+                        target_anchors_x: &target_anchors_x,
+                        target_anchors_y: &target_anchors_y,
+                        enable_point_snaps: self.config.snap.enable_point_snaps,
+                        enable_gap_snaps: self.config.snap.enable_gap_snaps,
+                    });
+                    let verified = !verified_snap.guides.is_empty()
+                        && (!constrained_snap.snap_x || verified_snap.dx.abs() <= 1e-6)
+                        && (!constrained_snap.snap_y || verified_snap.dy.abs() <= 1e-6);
+                    if verified {
+                        preview = Some(next);
+                        snap_result.guides = verified_snap.guides;
+                    } else {
+                        snap_result.guides.clear();
+                    }
+                } else {
+                    preview = Some(next);
+                }
+            } else if modifiers.shift {
+                // Do not show a guide for a snap that would collapse the
+                // constrained preview and therefore was not applied.
+                snap_result.guides.clear();
+            }
         }
 
         (
@@ -307,6 +402,84 @@ impl Editor {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ConstrainedRectangleSnap {
+    end: Point<f64>,
+    snap_x: bool,
+    snap_y: bool,
+}
+
+fn constrained_rectangle_snap_end(
+    start: Point<f64>,
+    constrained_end: Point<f64>,
+    snap: &ObjectSnapResult,
+) -> ConstrainedRectangleSnap {
+    let snapped_x = constrained_end.x + snap.dx;
+    let snapped_y = constrained_end.y + snap.dy;
+    let x_side = (snapped_x - start.x).abs();
+    let y_side = (snapped_y - start.y).abs();
+    let snap_x = snap.dx != 0.0;
+    let snap_y = snap.dy != 0.0;
+
+    if snap_x && snap_y {
+        let side_tolerance = 1e-9 * x_side.max(y_side).max(1.0);
+        if (x_side - y_side).abs() <= side_tolerance {
+            return ConstrainedRectangleSnap {
+                end: Point::new(snapped_x, snapped_y),
+                snap_x: true,
+                snap_y: true,
+            };
+        }
+        if snap.dx.abs() <= snap.dy.abs() {
+            return constrained_rectangle_snap_from_x(start, constrained_end, snapped_x);
+        }
+        return constrained_rectangle_snap_from_y(start, constrained_end, snapped_y);
+    }
+    if snap_x {
+        return constrained_rectangle_snap_from_x(start, constrained_end, snapped_x);
+    }
+    if snap_y {
+        return constrained_rectangle_snap_from_y(start, constrained_end, snapped_y);
+    }
+    ConstrainedRectangleSnap {
+        end: constrained_end,
+        snap_x: false,
+        snap_y: false,
+    }
+}
+
+fn constrained_rectangle_snap_from_x(
+    start: Point<f64>,
+    constrained_end: Point<f64>,
+    snapped_x: f64,
+) -> ConstrainedRectangleSnap {
+    let side = (snapped_x - start.x).abs();
+    ConstrainedRectangleSnap {
+        end: Point::new(
+            snapped_x,
+            start.y + (constrained_end.y - start.y).signum() * side,
+        ),
+        snap_x: true,
+        snap_y: false,
+    }
+}
+
+fn constrained_rectangle_snap_from_y(
+    start: Point<f64>,
+    constrained_end: Point<f64>,
+    snapped_y: f64,
+) -> ConstrainedRectangleSnap {
+    let side = (snapped_y - start.y).abs();
+    ConstrainedRectangleSnap {
+        end: Point::new(
+            start.x + (constrained_end.x - start.x).signum() * side,
+            snapped_y,
+        ),
+        snap_x: false,
+        snap_y: true,
+    }
+}
+
 pub(crate) struct MoveSnapRequest<'a> {
     pub(crate) document: &'a DocumentModel,
     pub(crate) original_bounds: &'a SelectionBounds,
@@ -322,14 +495,34 @@ fn preview_rectangle(
     end: Point<f64>,
     style: RectangleShapeStyle,
     lock_aspect_ratio: bool,
+    scale_from_center: bool,
 ) -> Option<RectangleData> {
-    let end = if lock_aspect_ratio {
-        square_constrained_rectangle_end(start, end)
+    let (center, width, height) = if scale_from_center {
+        let constrained_end = if lock_aspect_ratio {
+            square_constrained_rectangle_end(start, end)
+        } else {
+            end
+        };
+        (
+            start,
+            2.0 * (constrained_end.x - start.x).abs(),
+            2.0 * (constrained_end.y - start.y).abs(),
+        )
     } else {
-        end
+        let end = if lock_aspect_ratio {
+            square_constrained_rectangle_end(start, end)
+        } else {
+            end
+        };
+        (
+            Point {
+                x: f64::midpoint(start.x, end.x),
+                y: f64::midpoint(start.y, end.y),
+            },
+            (end.x - start.x).abs(),
+            (end.y - start.y).abs(),
+        )
     };
-    let width = (end.x - start.x).abs();
-    let height = (end.y - start.y).abs();
     if width <= 0.0 || height <= 0.0 {
         return None;
     }
@@ -337,10 +530,7 @@ fn preview_rectangle(
     Some(RectangleData {
         rectangle_kind: RectangleElementKind::Rectangle,
         highlight_shape: style.shape,
-        center: Point {
-            x: f64::midpoint(start.x, end.x),
-            y: f64::midpoint(start.y, end.y),
-        },
+        center,
         width,
         height,
         rotation: 0.0,

@@ -6,6 +6,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
+#include <QTranslator>
 #include <QVBoxLayout>
 
 #include <functional>
@@ -13,6 +14,16 @@
 using namespace adqt::widgets;
 
 namespace {
+class ImageTranslator final : public QTranslator {
+ public:
+  QString translate(const char* context, const char* sourceText, const char*, int) const override {
+    if (qstrcmp(context, "adqt::widgets::AdImage") == 0) {
+      return QStringLiteral("translated:%1").arg(QString::fromUtf8(sourceText));
+    }
+    return {};
+  }
+};
+
 class TestReply final : public AdImageReply {
  public:
   explicit TestReply(QObject* parent = nullptr) : AdImageReply(parent) {}
@@ -93,6 +104,28 @@ class ImageTests final : public QObject {
   Q_OBJECT
 
  private slots:
+  void defaultPreviewTextTracksLanguageAndPreservesOverrides() {
+    AdImage image;
+    QCOMPARE(image.previewText(), QStringLiteral("Preview"));
+
+    QSignalSpy previewTextSpy(&image, &AdImage::previewTextChanged);
+    ImageTranslator translator;
+    QVERIFY(QCoreApplication::installTranslator(&translator));
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(&image, &languageChange);
+    QCOMPARE(image.previewText(), QStringLiteral("translated:Preview"));
+    QCOMPARE(previewTextSpy.count(), 1);
+    QCOMPARE(previewTextSpy.constFirst().constFirst().toString(),
+             QStringLiteral("translated:Preview"));
+
+    image.setPreviewText(QStringLiteral("Inspect"));
+    previewTextSpy.clear();
+    QCoreApplication::sendEvent(&image, &languageChange);
+    QCOMPARE(image.previewText(), QStringLiteral("Inspect"));
+    QCOMPARE(previewTextSpy.count(), 0);
+    QCoreApplication::removeTranslator(&translator);
+  }
+
   void legacyLoaderCompatibilityOverload() {
     LegacyLoader loader;
     QObject owner;

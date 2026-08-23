@@ -718,6 +718,11 @@ impl RectangleData {
         self.rectangle_kind == RectangleElementKind::Spotlight
     }
 
+    pub fn supports_corner_radius(&self) -> bool {
+        self.rectangle_kind == RectangleElementKind::Rectangle
+            && self.highlight_shape == HighlightShape::Rectangle
+    }
+
     pub fn element_kind(&self) -> ElementKind {
         if self.is_highlight() {
             ElementKind::RectangleHighlight

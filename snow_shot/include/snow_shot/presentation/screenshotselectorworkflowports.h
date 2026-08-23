@@ -8,6 +8,11 @@
 
 class ScreenshotDisplaySession;
 
+enum class ScreenshotSelectorHitTestMode {
+    Window,
+    WindowSubElement,
+};
+
 class ScreenshotSelectorServicePort {
   public:
     virtual ~ScreenshotSelectorServicePort() = default;
@@ -15,7 +20,8 @@ class ScreenshotSelectorServicePort {
     [[nodiscard]] virtual bool ready() const = 0;
     [[nodiscard]] virtual bool refreshInFlight() const = 0;
     [[nodiscard]] virtual bool startRefresh(const QVector<std::uintptr_t>& excludedHwnds) = 0;
-    [[nodiscard]] virtual bool requestHitTest(const QPoint& physicalPoint) = 0;
+    [[nodiscard]] virtual bool requestHitTest(const QPoint& physicalPoint,
+                                              ScreenshotSelectorHitTestMode mode) = 0;
     virtual void startNextHitTest() = 0;
 };
 

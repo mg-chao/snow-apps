@@ -2,7 +2,7 @@
 
 #include "snow_shot/presentation/components/icons/iconrenderutils.h"
 
-#include <QCursor>
+#include <QEnterEvent>
 #include <QFontMetrics>
 #include <QPaintEvent>
 #include <QPainter>
@@ -36,14 +36,6 @@ QColor screenshot_selection_toolbar::panelTextColor() {
 
 QColor screenshot_selection_toolbar::panelPrimaryColor() {
     return PanelPrimaryColor;
-}
-
-bool screenshot_selection_toolbar::cursorInsideWidget(const QWidget* widget) {
-    if (widget == nullptr || !widget->isVisible()) {
-        return false;
-    }
-
-    return widget->rect().contains(widget->mapFromGlobal(QCursor::pos()));
 }
 
 void screenshot_selection_toolbar::paintToolbarShadow(QPainter* painter, const QRectF& panelRect,
@@ -94,6 +86,16 @@ SelectionToolbarPanel::SelectionToolbarPanel(QWidget* parent) : QFrame(parent) {
     setAutoFillBackground(false);
 }
 
+void SelectionToolbarPanel::enterEvent(QEnterEvent* event) {
+    emit hoverChanged(true);
+    QFrame::enterEvent(event);
+}
+
+void SelectionToolbarPanel::leaveEvent(QEvent* event) {
+    emit hoverChanged(false);
+    QFrame::leaveEvent(event);
+}
+
 void SelectionToolbarPanel::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
 
@@ -108,7 +110,6 @@ void SelectionToolbarPanel::paintEvent(QPaintEvent* event) {
 
 SelectionToolbarValueLabel::SelectionToolbarValueLabel(QWidget* parent) : QLabel(parent) {
     setAlignment(Qt::AlignCenter);
-    setAttribute(Qt::WA_Hover, true);
     setFocusPolicy(Qt::NoFocus);
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     setFixedHeight(screenshot_selection_toolbar::PanelHeight -
@@ -137,6 +138,30 @@ void SelectionToolbarValueLabel::setLockAspectRatioControl(bool enabled) {
     update();
 }
 
+void SelectionToolbarValueLabel::setPointerInteractionEnabled(bool enabled) {
+    setAttribute(Qt::WA_TransparentForMouseEvents, !enabled);
+    if (!enabled && m_hovered) {
+        m_hovered = false;
+        update();
+    }
+}
+
+void SelectionToolbarValueLabel::enterEvent(QEnterEvent* event) {
+    if (!testAttribute(Qt::WA_TransparentForMouseEvents) && !m_hovered) {
+        m_hovered = true;
+        update();
+    }
+    QLabel::enterEvent(event);
+}
+
+void SelectionToolbarValueLabel::leaveEvent(QEvent* event) {
+    if (m_hovered) {
+        m_hovered = false;
+        update();
+    }
+    QLabel::leaveEvent(event);
+}
+
 QSize SelectionToolbarValueLabel::sizeHint() const {
     const int textWidth = text().isEmpty() ? 0 : QFontMetrics(font()).horizontalAdvance(text());
     int width = textWidth + ValueHorizontalInset * 2;
@@ -159,8 +184,7 @@ QSize SelectionToolbarValueLabel::minimumSizeHint() const {
 void SelectionToolbarValueLabel::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
 
-    if (!testAttribute(Qt::WA_TransparentForMouseEvents) &&
-        screenshot_selection_toolbar::cursorInsideWidget(this)) {
+    if (!testAttribute(Qt::WA_TransparentForMouseEvents) && m_hovered) {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
         painter.setPen(Qt::NoPen);

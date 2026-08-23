@@ -11,6 +11,8 @@ set(SNOW_CANVAS_QT_SOURCES
     src/core/snow_canvas_changed_viewports.h
     src/core/snow_canvas_commands.cpp
     src/core/snow_canvas_commands.h
+    src/core/snow_canvas_cursor_controller.cpp
+    src/core/snow_canvas_cursor_controller.h
     src/core/snow_canvas_element_id.h
     src/core/snow_canvas_event_flow.cpp
     src/core/snow_canvas_event_flow.h

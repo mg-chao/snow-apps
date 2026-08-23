@@ -5,33 +5,26 @@
 #include "snow_ocr_c.h"
 
 #include <QCoreApplication>
+#include <QDebug>
 #include <QHash>
 #include <QMetaObject>
 #include <QPointer>
-#include <QThread>
-#include <QTimer>
-#include <QTransform>
 
 #include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <limits>
-#include <list>
 #include <memory>
+#include <mutex>
+#include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
 namespace {
-constexpr int kWorkerIdleTimeoutMs = 30'000;
-
-int workerIdleTimeoutMs() {
-    bool valid = false;
-    const int configured = qEnvironmentVariableIntValue("SNOW_SHOT_OCR_IDLE_TIMEOUT_MS", &valid);
-    return valid && configured > 0 ? configured : kWorkerIdleTimeoutMs;
-}
-
 struct OcrEngineDeleter {
     void operator()(SnowOcrEngine* engine) const {
         snow_ocr_engine_destroy(engine);
@@ -108,137 +101,128 @@ bool validOwnedImageInfo(const SnowOcrImageInfoV1& info) {
     return info.stride_bytes >= rowBytes && required <= info.rgba_len;
 }
 
-class OcrWorker final : public QObject {
-  public:
-    ScreenshotOcrRecognitionResult recognize(QImage source, const QRectF& canvasRect,
-                                             bool directMlEnabled) {
-        if (!ensureEngine(directMlEnabled)) {
-            return {nullptr, lastOcrError()};
-        }
-        if (source.format() != QImage::Format_RGBA8888) {
-            source = source.convertToFormat(QImage::Format_RGBA8888);
-        }
-        if (source.isNull()) {
-            return {nullptr, QCoreApplication::translate("ScreenshotOcrController",
-                                                        "Text recognition failed")};
-        }
+OcrEngineHandle createEngine(ScreenshotOcrBackendPreference preference) {
+    SnowOcrRuntimeInfoV1 runtimeInfo{
+        static_cast<std::uint32_t>(sizeof(SnowOcrRuntimeInfoV1)), 0};
+    const std::uint32_t physicalCores =
+        snow_ocr_runtime_info_v1(&runtimeInfo) != 0 ? runtimeInfo.physical_core_count : 1;
+    const std::uint32_t threadBudget = (std::max)(1u, physicalCores / 2u);
+    const bool preferDirectMl = preference == ScreenshotOcrBackendPreference::DirectMl;
+    const SnowOcrEngineConfigV2 config{
+        static_cast<std::uint32_t>(sizeof(SnowOcrEngineConfigV2)),
+        threadBudget,
+        1u,
+        threadBudget,
+        1,
+        static_cast<std::uint8_t>(preferDirectMl ? 1 : 0),
+        {0, 0},
+    };
+    return OcrEngineHandle(snow_ocr_engine_create_with_config_v2(&config));
+}
 
-        const SnowOcrRequestV1 request{
-            static_cast<std::uint32_t>(sizeof(SnowOcrRequestV1)),
-            static_cast<std::uint32_t>(source.width()),
-            static_cast<std::uint32_t>(source.height()),
-            static_cast<std::uint32_t>(source.bytesPerLine()),
-            source.constBits(),
-            static_cast<std::size_t>(source.sizeInBytes()),
-        };
-        OcrResultHandle result(snow_ocr_engine_recognize_rgba(m_engine.get(), &request));
-        if (result == nullptr) {
-            return {nullptr, lastOcrError()};
-        }
-
-        ScreenshotOcrRecognitionResult output;
-        output.presentation = std::make_shared<ScreenshotOcrPresentation>();
-        output.presentation->selection = canvasRect.toAlignedRect();
-        const std::size_t lineCount = snow_ocr_result_line_count(result.get());
-        if (lineCount > static_cast<std::size_t>((std::numeric_limits<qsizetype>::max)())) {
-            return {nullptr, QCoreApplication::translate("ScreenshotOcrController",
-                                                        "Text recognition failed")};
-        }
-        output.presentation->lines.reserve(static_cast<qsizetype>(lineCount));
-        for (std::size_t lineIndex = 0; lineIndex < lineCount; ++lineIndex) {
-            SnowOcrLineInfoV1 lineInfo{};
-            lineInfo.struct_size = static_cast<std::uint32_t>(sizeof(SnowOcrLineInfoV1));
-            if (snow_ocr_result_line(result.get(), lineIndex, &lineInfo) == 0 ||
-                (lineInfo.text_len > 0 && lineInfo.text_utf8 == nullptr) ||
-                lineInfo.text_len >
-                    static_cast<std::size_t>((std::numeric_limits<qsizetype>::max)())) {
-                return {nullptr, lastOcrError()};
-            }
-            ScreenshotOcrLine line;
-            line.text = QString::fromUtf8(reinterpret_cast<const char*>(lineInfo.text_utf8),
-                                          static_cast<qsizetype>(lineInfo.text_len));
-            line.confidence = static_cast<qreal>(lineInfo.confidence);
-            line.foreground = QColor(lineInfo.foreground.red, lineInfo.foreground.green,
-                                     lineInfo.foreground.blue, lineInfo.foreground.alpha);
-            line.quad = quadFromFfi(lineInfo.quad, canvasRect, source.size());
-            line.direction = textDirectionForQuad(line.quad);
-            output.presentation->lines.push_back(std::move(line));
-        }
-
-        OcrOwnedImageHandle image(snow_ocr_result_take_image(result.get()));
-        if (image == nullptr) {
-            return {nullptr, lastOcrError()};
-        }
-        SnowOcrImageInfoV1 imageInfo{};
-        imageInfo.struct_size = static_cast<std::uint32_t>(sizeof(SnowOcrImageInfoV1));
-        if (snow_ocr_owned_image_info(image.get(), &imageInfo) == 0 ||
-            !validOwnedImageInfo(imageInfo)) {
-            return {nullptr, lastOcrError()};
-        }
-
-        SnowOcrOwnedImage* imageContext = image.release();
-        QImage filledImage(imageInfo.rgba_bytes, static_cast<int>(imageInfo.width),
-                           static_cast<int>(imageInfo.height),
-                           static_cast<qsizetype>(imageInfo.stride_bytes),
-                           QImage::Format_RGBA8888, &releaseOwnedImage, imageContext);
-        if (filledImage.isNull()) {
-            snow_ocr_owned_image_destroy(imageContext);
-            return {nullptr, QCoreApplication::translate("ScreenshotOcrController",
-                                                        "Text recognition failed")};
-        }
-        output.presentation->filledImage = std::move(filledImage);
-        output.presentation->prepareForRendering();
-        return output;
+ScreenshotOcrRecognitionResult runRecognition(OcrEngineHandle& engine, QImage source,
+                                              const QRectF& canvasRect) {
+    if (engine == nullptr) {
+        return {nullptr, lastOcrError()};
+    }
+    if (source.format() != QImage::Format_RGBA8888) {
+        source = source.convertToFormat(QImage::Format_RGBA8888);
+    }
+    if (source.isNull()) {
+        return {nullptr, QCoreApplication::translate("ScreenshotOcrController",
+                                                     "Text recognition failed")};
     }
 
-  private:
-    bool ensureEngine(bool directMlEnabled) {
-        if (m_engine != nullptr && m_engineDirectMl == directMlEnabled) {
-            return true;
-        }
-        m_engine.reset();
-        const SnowOcrEngineConfigV1 config{
-            static_cast<std::uint32_t>(sizeof(SnowOcrEngineConfigV1)),
-            1,
-            1,
-            1,
-            0,
-            static_cast<std::uint8_t>(directMlEnabled ? 1 : 0),
-            {0, 0},
-        };
-        m_engine.reset(snow_ocr_engine_create_with_config_v1(&config));
-        m_engineDirectMl = directMlEnabled;
-        return m_engine != nullptr;
+    const SnowOcrRequestV1 request{
+        static_cast<std::uint32_t>(sizeof(SnowOcrRequestV1)),
+        static_cast<std::uint32_t>(source.width()),
+        static_cast<std::uint32_t>(source.height()),
+        static_cast<std::uint32_t>(source.bytesPerLine()),
+        source.constBits(),
+        static_cast<std::size_t>(source.sizeInBytes()),
+    };
+    OcrResultHandle result(snow_ocr_engine_recognize_rgba(engine.get(), &request));
+    if (result == nullptr) {
+        return {nullptr, lastOcrError()};
     }
 
-    OcrEngineHandle m_engine;
-    bool m_engineDirectMl = false;
-};
+    ScreenshotOcrRecognitionResult output;
+    output.presentation = std::make_shared<ScreenshotOcrPresentation>();
+    output.presentation->selection = canvasRect.toAlignedRect();
+    const std::size_t lineCount = snow_ocr_result_line_count(result.get());
+    if (lineCount > static_cast<std::size_t>((std::numeric_limits<qsizetype>::max)())) {
+        return {nullptr, QCoreApplication::translate("ScreenshotOcrController",
+                                                     "Text recognition failed")};
+    }
+    output.presentation->lines.reserve(static_cast<qsizetype>(lineCount));
+    for (std::size_t lineIndex = 0; lineIndex < lineCount; ++lineIndex) {
+        SnowOcrLineInfoV1 lineInfo{};
+        lineInfo.struct_size = static_cast<std::uint32_t>(sizeof(SnowOcrLineInfoV1));
+        if (snow_ocr_result_line(result.get(), lineIndex, &lineInfo) == 0 ||
+            (lineInfo.text_len > 0 && lineInfo.text_utf8 == nullptr) ||
+            lineInfo.text_len >
+                static_cast<std::size_t>((std::numeric_limits<qsizetype>::max)())) {
+            return {nullptr, lastOcrError()};
+        }
+        ScreenshotOcrLine line;
+        line.text = QString::fromUtf8(reinterpret_cast<const char*>(lineInfo.text_utf8),
+                                      static_cast<qsizetype>(lineInfo.text_len));
+        line.confidence = static_cast<qreal>(lineInfo.confidence);
+        line.foreground = QColor(lineInfo.foreground.red, lineInfo.foreground.green,
+                                 lineInfo.foreground.blue, lineInfo.foreground.alpha);
+        line.quad = quadFromFfi(lineInfo.quad, canvasRect, source.size());
+        line.direction = textDirectionForQuad(line.quad);
+        output.presentation->lines.push_back(std::move(line));
+    }
+
+    OcrOwnedImageHandle image(snow_ocr_result_take_image(result.get()));
+    if (image == nullptr) {
+        return {nullptr, lastOcrError()};
+    }
+    SnowOcrImageInfoV1 imageInfo{};
+    imageInfo.struct_size = static_cast<std::uint32_t>(sizeof(SnowOcrImageInfoV1));
+    if (snow_ocr_owned_image_info(image.get(), &imageInfo) == 0 ||
+        !validOwnedImageInfo(imageInfo)) {
+        return {nullptr, lastOcrError()};
+    }
+
+    SnowOcrOwnedImage* imageContext = image.release();
+    QImage filledImage(imageInfo.rgba_bytes, static_cast<int>(imageInfo.width),
+                       static_cast<int>(imageInfo.height),
+                       static_cast<qsizetype>(imageInfo.stride_bytes), QImage::Format_RGBA8888,
+                       &releaseOwnedImage, imageContext);
+    if (filledImage.isNull()) {
+        snow_ocr_owned_image_destroy(imageContext);
+        return {nullptr, QCoreApplication::translate("ScreenshotOcrController",
+                                                     "Text recognition failed")};
+    }
+    output.presentation->filledImage = std::move(filledImage);
+    output.presentation->prepareForRendering();
+    return output;
+}
 } // namespace
 
 class ScreenshotOcrRecognitionService::Impl final {
   public:
-    Impl(ScreenshotOcrRecognitionService* owner, std::function<bool()> directMlEnabled)
-        : m_owner(owner), m_directMlEnabled(std::move(directMlEnabled)),
-          m_shared(std::make_shared<SharedState>()), m_maxWorkers(workerBudget()),
-          m_idleTimeoutMs(workerIdleTimeoutMs()) {}
+    Impl(ScreenshotOcrRecognitionService* owner, const Options& options,
+         ScreenshotOcrBackendPreference preference)
+        : m_owner(owner),
+          m_workerLimit(std::clamp(options.workerCount, 1, 2)),
+          m_backendPreference(preference) {
+        m_workers.reserve(static_cast<std::size_t>(m_workerLimit));
+    }
 
     ~Impl() {
         shutdown();
     }
 
-    RequestToken enqueue(RequestToken token, QImage image, const QRectF& canvasRect,
-                         QObject* receiver, Completion completion) {
-        if (m_shared->stopping.load(std::memory_order_acquire)) {
-            return 0;
-        }
+    RequestToken enqueue(RequestToken token, ScreenshotOcrRequest request, QObject* receiver,
+                         Completion completion) {
         auto job = std::make_shared<Job>();
         job->token = token;
-        job->image = std::move(image);
-        job->canvasRect = canvasRect;
+        job->request = std::move(request);
         job->receiver = receiver;
         job->completion = std::move(completion);
-        job->directMlEnabled = m_directMlEnabled && m_directMlEnabled();
         QPointer<ScreenshotOcrRecognitionService> service(m_owner);
         job->receiverDestroyed = QObject::connect(
             receiver, &QObject::destroyed, m_owner, [service, token]() {
@@ -247,324 +231,339 @@ class ScreenshotOcrRecognitionService::Impl final {
                 }
             });
 
-        const auto queueIterator = m_queue.insert(m_queue.end(), job);
-        m_requests.insert(token, RequestRecord{job, true, queueIterator});
-        reconcileCapacity();
-        dispatch();
+        bool accepted = false;
+        {
+            std::lock_guard lock(m_mutex);
+            if (m_stopping) {
+                QObject::disconnect(job->receiverDestroyed);
+                return 0;
+            }
+            m_requests.insert(token, job);
+            queueFor(job->request.priority).push_back(job);
+            startWorkersForDemandLocked();
+            accepted = m_liveWorkerCount > 0;
+            if (!accepted) {
+                eraseQueuedJob(job);
+                m_requests.remove(token);
+            }
+        }
+        if (!accepted) {
+            QObject::disconnect(job->receiverDestroyed);
+            return 0;
+        }
         return token;
     }
 
     void cancel(RequestToken token) {
-        auto request = m_requests.find(token);
-        if (request == m_requests.end()) {
-            return;
+        std::shared_ptr<Job> job;
+        {
+            std::lock_guard lock(m_mutex);
+            const auto request = m_requests.find(token);
+            if (request == m_requests.end()) {
+                return;
+            }
+            job = request.value();
+            job->cancelled.store(true, std::memory_order_release);
+            if (!job->running) {
+                eraseQueuedJob(job);
+                m_requests.erase(request);
+            }
         }
-        request->job->cancelled.store(true, std::memory_order_release);
-        QObject::disconnect(request->job->receiverDestroyed);
-        if (request->queued) {
-            m_queue.erase(request->queueIterator);
-            m_requests.erase(request);
-            reconcileCapacity();
+        QObject::disconnect(job->receiverDestroyed);
+    }
+
+    bool reprioritize(RequestToken token, ScreenshotOcrRequestPriority priority) {
+        std::lock_guard lock(m_mutex);
+        const auto request = m_requests.find(token);
+        if (request == m_requests.end() || request.value()->running ||
+            request.value()->cancelled.load(std::memory_order_acquire)) {
+            return false;
         }
+        const std::shared_ptr<Job>& job = request.value();
+        if (job->request.priority == priority) {
+            return true;
+        }
+        eraseQueuedJob(job);
+        job->request.priority = priority;
+        queueFor(priority).push_back(job);
+        return true;
+    }
+
+    void setBackendPreference(ScreenshotOcrBackendPreference preference) {
+        {
+            std::lock_guard lock(m_mutex);
+            if (m_backendPreference == preference) {
+                return;
+            }
+            m_backendPreference = preference;
+        }
+    }
+
+    [[nodiscard]] int liveWorkerCount() const {
+        std::lock_guard lock(m_mutex);
+        return m_liveWorkerCount;
     }
 
   private:
     using RequestToken = ScreenshotOcrRecognitionPort::RequestToken;
     using Completion = ScreenshotOcrRecognitionPort::Completion;
-
-    struct SharedState {
-        std::atomic_bool stopping{false};
-    };
-
     struct Job {
         RequestToken token = 0;
-        QImage image;
-        QRectF canvasRect;
+        ScreenshotOcrRequest request;
         QPointer<QObject> receiver;
         Completion completion;
         QMetaObject::Connection receiverDestroyed;
         std::atomic_bool cancelled{false};
-        bool directMlEnabled = false;
-    };
-
-    using JobPtr = std::shared_ptr<Job>;
-    // This FIFO is intentionally unbounded. Avoiding request rejection is the product policy;
-    // callers must account for RAM growth if producers continuously outrun OCR workers.
-    using Queue = std::list<JobPtr>;
-
-    struct RequestRecord {
-        JobPtr job;
-        bool queued = false;
-        Queue::iterator queueIterator;
+        bool running = false;
     };
 
     struct WorkerSlot {
-        quint64 id = 0;
-        QThread* thread = nullptr;
-        OcrWorker* worker = nullptr;
-        QTimer* idleTimer = nullptr;
-        JobPtr activeJob;
-        bool retiring = false;
+        std::thread thread;
+        bool finished = false;
     };
 
-    static int workerBudget() {
-        SnowOcrRuntimeInfoV1 info{};
-        info.struct_size = static_cast<std::uint32_t>(sizeof(SnowOcrRuntimeInfoV1));
-        int physicalCores = 0;
-        if (snow_ocr_runtime_info_v1(&info) != 0) {
-            physicalCores = static_cast<int>((std::min)(
-                info.physical_core_count,
-                static_cast<std::uint32_t>((std::numeric_limits<int>::max)())));
-        }
-        if (physicalCores < 1) {
-            physicalCores = (std::max)(1, QThread::idealThreadCount());
-        }
-        return (std::max)(1, physicalCores / 2);
+    using Queue = std::deque<std::shared_ptr<Job>>;
+
+    Queue& queueFor(ScreenshotOcrRequestPriority priority) {
+        return priority == ScreenshotOcrRequestPriority::Interactive ? m_interactiveQueue
+                                                                     : m_prefetchQueue;
     }
 
-    WorkerSlot* findSlot(quint64 id) const {
-        const auto slot = std::find_if(m_workers.begin(), m_workers.end(), [id](const auto& item) {
-            return item->id == id;
-        });
-        return slot != m_workers.end() ? slot->get() : nullptr;
-    }
-
-    int busyWorkerCount() const {
-        return static_cast<int>(std::count_if(m_workers.begin(), m_workers.end(), [](const auto& slot) {
-            return !slot->retiring && slot->activeJob != nullptr;
-        }));
-    }
-
-    int liveWorkerCount() const {
-        return static_cast<int>(std::count_if(m_workers.begin(), m_workers.end(), [](const auto& slot) {
-            return !slot->retiring;
-        }));
-    }
-
-    void reconcileCapacity() {
-        if (m_shared->stopping.load(std::memory_order_acquire)) {
-            return;
-        }
-        const std::size_t outstanding = m_queue.size() + static_cast<std::size_t>(busyWorkerCount());
-        const int desired = static_cast<int>((std::min)(
-            static_cast<std::size_t>(m_maxWorkers), outstanding));
-        while (liveWorkerCount() < desired) {
-            startWorker();
+    void eraseQueuedJob(const std::shared_ptr<Job>& job) {
+        Queue& queue = queueFor(job->request.priority);
+        const auto position = std::find(queue.begin(), queue.end(), job);
+        if (position != queue.end()) {
+            queue.erase(position);
         }
     }
 
-    void startWorker() {
+    std::shared_ptr<Job> takeNextJob() {
+        Queue& queue = !m_interactiveQueue.empty() ? m_interactiveQueue : m_prefetchQueue;
+        if (queue.empty()) {
+            return {};
+        }
+        std::shared_ptr<Job> job = std::move(queue.front());
+        queue.pop_front();
+        job->running = true;
+        ++m_activeWorkerCount;
+        return job;
+    }
+
+    [[nodiscard]] std::size_t queuedJobCountLocked() const {
+        return m_interactiveQueue.size() + m_prefetchQueue.size();
+    }
+
+    void reapFinishedWorkersLocked() {
+        auto worker = m_workers.begin();
+        while (worker != m_workers.end()) {
+            if (!(*worker)->finished) {
+                ++worker;
+                continue;
+            }
+            if ((*worker)->thread.get_id() == std::this_thread::get_id()) {
+                ++worker;
+                continue;
+            }
+            if ((*worker)->thread.joinable()) {
+                (*worker)->thread.join();
+            }
+            worker = m_workers.erase(worker);
+        }
+    }
+
+    [[nodiscard]] bool spawnWorkerLocked() {
+        reapFinishedWorkersLocked();
         auto slot = std::make_unique<WorkerSlot>();
-        slot->id = ++m_nextWorkerId;
-        slot->thread = new QThread;
-        slot->worker = new OcrWorker;
-        slot->idleTimer = new QTimer(m_owner);
-        slot->idleTimer->setSingleShot(true);
-        slot->worker->moveToThread(slot->thread);
-        slot->thread->setObjectName(QStringLiteral("ScreenshotOcrWorker-%1").arg(slot->id));
-        const quint64 id = slot->id;
-        QObject::connect(slot->idleTimer, &QTimer::timeout, m_owner,
-                         [this, id]() { retireIdleWorker(id); });
-        QObject::connect(slot->thread, &QThread::finished, m_owner,
-                         [this, id]() { handleWorkerFinished(id); });
-        slot->thread->start();
+        WorkerSlot* const worker = slot.get();
         m_workers.push_back(std::move(slot));
+        try {
+            worker->thread = std::thread([this, worker]() { workerLoop(worker); });
+        } catch (const std::system_error& error) {
+            qWarning() << "Unable to create OCR worker thread:" << error.what();
+            m_workers.pop_back();
+            return false;
+        }
+        ++m_liveWorkerCount;
+        return true;
     }
 
-    void dispatch() {
-        if (m_shared->stopping.load(std::memory_order_acquire)) {
-            return;
-        }
-        for (const auto& slot : m_workers) {
-            if (m_queue.empty()) {
+    void startWorkersForDemandLocked() {
+        const std::size_t demand =
+            (std::min)(static_cast<std::size_t>(m_workerLimit),
+                       queuedJobCountLocked() + static_cast<std::size_t>(m_activeWorkerCount));
+        while (static_cast<std::size_t>(m_liveWorkerCount) < demand) {
+            if (!spawnWorkerLocked()) {
                 break;
             }
-            if (slot->retiring || slot->activeJob != nullptr) {
-                continue;
-            }
-            slot->idleTimer->stop();
-            JobPtr job = m_queue.front();
-            m_queue.pop_front();
-            auto record = m_requests.find(job->token);
-            if (record == m_requests.end()) {
-                continue;
-            }
-            record->queued = false;
-            slot->activeJob = job;
-            runJob(*slot, std::move(job));
-        }
-        if (m_queue.empty()) {
-            for (const auto& slot : m_workers) {
-                if (!slot->retiring && slot->activeJob == nullptr && !slot->idleTimer->isActive()) {
-                    slot->idleTimer->start(m_idleTimeoutMs);
-                }
-            }
         }
     }
 
-    void runJob(WorkerSlot& slot, JobPtr job) {
-        QPointer<ScreenshotOcrRecognitionService> service(m_owner);
-        const std::shared_ptr<SharedState> shared = m_shared;
-        OcrWorker* worker = slot.worker;
-        const quint64 workerId = slot.id;
-        QMetaObject::invokeMethod(
-            worker,
-            [worker, service, shared, workerId, job = std::move(job)]() mutable {
-                ScreenshotOcrRecognitionResult result;
-                if (!job->cancelled.load(std::memory_order_acquire)) {
-                    result = worker->recognize(std::move(job->image), job->canvasRect,
-                                               job->directMlEnabled);
-                }
-                if (shared->stopping.load(std::memory_order_acquire) || service == nullptr) {
+    void finishWorkerLocked(WorkerSlot* worker) {
+        --m_liveWorkerCount;
+        worker->finished = true;
+    }
+
+    void workerLoop(WorkerSlot* worker) {
+        OcrEngineHandle engine;
+        ScreenshotOcrBackendPreference enginePreference = ScreenshotOcrBackendPreference::Cpu;
+
+        while (true) {
+            std::shared_ptr<Job> job;
+            ScreenshotOcrBackendPreference preference = ScreenshotOcrBackendPreference::Cpu;
+            {
+                std::lock_guard lock(m_mutex);
+                if (m_stopping) {
+                    finishWorkerLocked(worker);
                     return;
                 }
-                QMetaObject::invokeMethod(
-                    service,
-                    [service, workerId, job = std::move(job), result = std::move(result)]() mutable {
-                        if (service != nullptr && service->m_impl != nullptr) {
-                            service->m_impl->finishJob(workerId, std::move(job), std::move(result));
-                        }
-                    },
-                    Qt::QueuedConnection);
-            },
-            Qt::QueuedConnection);
+                job = takeNextJob();
+                if (job == nullptr) {
+                    finishWorkerLocked(worker);
+                    return;
+                }
+                preference = m_backendPreference;
+            }
+
+            ScreenshotOcrRecognitionResult result;
+            if (!job->cancelled.load(std::memory_order_acquire)) {
+                if (engine == nullptr || enginePreference != preference) {
+                    engine.reset();
+                    engine = createEngine(preference);
+                    enginePreference = preference;
+                }
+                result =
+                    runRecognition(engine, std::move(job->request.image), job->request.canvasRect);
+            }
+
+            bool keepWorker = false;
+            {
+                std::lock_guard lock(m_mutex);
+                --m_activeWorkerCount;
+                keepWorker = !m_stopping && queuedJobCountLocked() > 0;
+                if (!keepWorker) {
+                    finishWorkerLocked(worker);
+                }
+            }
+
+            if (!keepWorker) {
+                engine.reset();
+            }
+
+            QPointer<ScreenshotOcrRecognitionService> service(m_owner);
+            QMetaObject::invokeMethod(
+                m_owner,
+                [service, job = std::move(job), result = std::move(result)]() mutable {
+                    if (service != nullptr && service->m_impl != nullptr) {
+                        service->m_impl->finishJob(std::move(job), std::move(result));
+                    }
+                },
+                Qt::QueuedConnection);
+
+            if (!keepWorker) {
+                return;
+            }
+        }
     }
 
-    void finishJob(quint64 workerId, JobPtr job, ScreenshotOcrRecognitionResult result) {
-        WorkerSlot* slot = findSlot(workerId);
-        if (slot == nullptr || slot->activeJob == nullptr ||
-            slot->activeJob->token != job->token) {
-            return;
+    void finishJob(std::shared_ptr<Job> job, ScreenshotOcrRecognitionResult result) {
+        {
+            std::lock_guard lock(m_mutex);
+            reapFinishedWorkersLocked();
+            const auto request = m_requests.find(job->token);
+            if (request == m_requests.end() || request.value() != job) {
+                return;
+            }
+            m_requests.erase(request);
         }
-        slot->activeJob.reset();
-        auto request = m_requests.find(job->token);
-        if (request == m_requests.end()) {
-            reconcileCapacity();
-            dispatch();
-            return;
-        }
+
         QObject::disconnect(job->receiverDestroyed);
-        Completion completion = std::move(job->completion);
-        const QPointer<QObject> receiver = job->receiver;
-        const bool cancelled = job->cancelled.load(std::memory_order_acquire);
-        m_requests.erase(request);
-
-        reconcileCapacity();
-        dispatch();
-        if (!cancelled && receiver != nullptr && completion) {
-            completion(std::move(result));
+        if (!job->cancelled.load(std::memory_order_acquire) && job->receiver != nullptr &&
+            job->completion) {
+            job->completion(std::move(result));
         }
-    }
-
-    void retireIdleWorker(quint64 id) {
-        WorkerSlot* slot = findSlot(id);
-        if (slot == nullptr || slot->retiring || slot->activeJob != nullptr || !m_queue.empty()) {
-            return;
-        }
-        slot->retiring = true;
-        slot->idleTimer->stop();
-        OcrWorker* worker = slot->worker;
-        QThread* thread = slot->thread;
-        QMetaObject::invokeMethod(
-            worker,
-            [worker, thread]() {
-                delete worker;
-                thread->quit();
-            },
-            Qt::QueuedConnection);
-    }
-
-    void handleWorkerFinished(quint64 id) {
-        if (m_shared->stopping.load(std::memory_order_acquire)) {
-            return;
-        }
-        const auto slot = std::find_if(m_workers.begin(), m_workers.end(), [id](const auto& item) {
-            return item->id == id;
-        });
-        if (slot == m_workers.end()) {
-            return;
-        }
-        (*slot)->thread->wait();
-        delete (*slot)->thread;
-        delete (*slot)->idleTimer;
-        m_workers.erase(slot);
-        reconcileCapacity();
-        dispatch();
     }
 
     void shutdown() {
-        if (m_shared->stopping.exchange(true, std::memory_order_acq_rel)) {
-            return;
-        }
-        for (auto request = m_requests.begin(); request != m_requests.end(); ++request) {
-            request->job->cancelled.store(true, std::memory_order_release);
-            QObject::disconnect(request->job->receiverDestroyed);
-        }
-        m_queue.clear();
-        m_requests.clear();
-
-        for (const auto& slot : m_workers) {
-            slot->idleTimer->stop();
-            if (slot->retiring) {
-                continue;
+        {
+            std::lock_guard lock(m_mutex);
+            if (m_stopping) {
+                return;
             }
-            slot->retiring = true;
-            OcrWorker* worker = slot->worker;
-            QThread* thread = slot->thread;
-            QMetaObject::invokeMethod(
-                worker,
-                [worker, thread]() {
-                    delete worker;
-                    thread->quit();
-                },
-                Qt::QueuedConnection);
+            m_stopping = true;
+            for (auto request = m_requests.begin(); request != m_requests.end(); ++request) {
+                request.value()->cancelled.store(true, std::memory_order_release);
+                QObject::disconnect(request.value()->receiverDestroyed);
+            }
+            m_interactiveQueue.clear();
+            m_prefetchQueue.clear();
+            m_requests.clear();
         }
-        for (const auto& slot : m_workers) {
-            slot->thread->wait();
-            delete slot->thread;
-            delete slot->idleTimer;
-            slot->activeJob.reset();
+        for (const std::unique_ptr<WorkerSlot>& worker : m_workers) {
+            if (worker->thread.joinable()) {
+                worker->thread.join();
+            }
         }
         m_workers.clear();
     }
 
     ScreenshotOcrRecognitionService* m_owner = nullptr;
-    std::function<bool()> m_directMlEnabled;
-    std::shared_ptr<SharedState> m_shared;
-    Queue m_queue;
-    QHash<RequestToken, RequestRecord> m_requests;
+    const int m_workerLimit;
+    mutable std::mutex m_mutex;
+    Queue m_interactiveQueue;
+    Queue m_prefetchQueue;
+    QHash<RequestToken, std::shared_ptr<Job>> m_requests;
     std::vector<std::unique_ptr<WorkerSlot>> m_workers;
-    quint64 m_nextWorkerId = 0;
-    int m_maxWorkers = 1;
-    int m_idleTimeoutMs = kWorkerIdleTimeoutMs;
+    int m_liveWorkerCount = 0;
+    int m_activeWorkerCount = 0;
+    ScreenshotOcrBackendPreference m_backendPreference = ScreenshotOcrBackendPreference::Cpu;
+    bool m_stopping = false;
 };
 
 ScreenshotOcrRecognitionService::ScreenshotOcrRecognitionService(QObject* parent)
-    : ScreenshotOcrRecognitionService({}, parent) {}
+    : ScreenshotOcrRecognitionService(Options{}, ScreenshotOcrBackendPreference::Cpu, parent) {}
 
 ScreenshotOcrRecognitionService::ScreenshotOcrRecognitionService(
-    std::function<bool()> directMlEnabled, QObject* parent)
+    ScreenshotOcrBackendPreference backendPreference, QObject* parent)
+    : ScreenshotOcrRecognitionService(Options{}, backendPreference, parent) {}
+
+ScreenshotOcrRecognitionService::ScreenshotOcrRecognitionService(
+    const Options& options, ScreenshotOcrBackendPreference backendPreference, QObject* parent)
     : ScreenshotOcrRecognitionPort(parent),
-      m_impl(std::make_unique<Impl>(this, std::move(directMlEnabled))) {}
+      m_impl(std::make_unique<Impl>(this, options, backendPreference)) {}
 
 ScreenshotOcrRecognitionService::~ScreenshotOcrRecognitionService() = default;
 
 ScreenshotOcrRecognitionPort::RequestToken
-ScreenshotOcrRecognitionService::recognize(QImage image, const QRectF& canvasRect,
-                                           QObject* receiver, Completion completion) {
-    if (image.isNull() || !canvasRect.isValid() || canvasRect.isEmpty() || receiver == nullptr ||
-        !completion || m_impl == nullptr) {
+ScreenshotOcrRecognitionService::recognize(ScreenshotOcrRequest request, QObject* receiver,
+                                           Completion completion) {
+    if (request.image.isNull() || !request.canvasRect.isValid() || request.canvasRect.isEmpty() ||
+        receiver == nullptr || !completion || m_impl == nullptr) {
         return 0;
     }
     do {
         ++m_nextToken;
     } while (m_nextToken == 0);
-    return m_impl->enqueue(m_nextToken, std::move(image), canvasRect, receiver,
-                           std::move(completion));
+    return m_impl->enqueue(m_nextToken, std::move(request), receiver, std::move(completion));
 }
 
 void ScreenshotOcrRecognitionService::cancel(RequestToken token) {
     if (m_impl != nullptr && token != 0) {
         m_impl->cancel(token);
     }
+}
+
+bool ScreenshotOcrRecognitionService::reprioritize(RequestToken token,
+                                                   ScreenshotOcrRequestPriority priority) {
+    return m_impl != nullptr && token != 0 && m_impl->reprioritize(token, priority);
+}
+
+void ScreenshotOcrRecognitionService::setBackendPreference(
+    ScreenshotOcrBackendPreference preference) {
+    if (m_impl != nullptr) {
+        m_impl->setBackendPreference(preference);
+    }
+}
+
+int ScreenshotOcrRecognitionService::liveWorkerCount() const {
+    return m_impl != nullptr ? m_impl->liveWorkerCount() : 0;
 }

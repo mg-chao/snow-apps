@@ -7,9 +7,9 @@ use anyhow::Context;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, HWND_MESSAGE,
-    MSG, PostMessageW, RegisterClassW, TranslateMessage, WM_CLOSE, WM_DISPLAYCHANGE, WM_USER,
-    WNDCLASSW, WS_OVERLAPPED,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, MSG,
+    PostMessageW, RegisterClassW, TranslateMessage, WM_CLOSE, WM_DISPLAYCHANGE, WM_USER, WNDCLASSW,
+    WS_OVERLAPPED,
 };
 
 use crate::error::{CaptureError, CaptureResult};
@@ -33,6 +33,8 @@ struct DisplayCacheState {
 pub(crate) struct DisplayInfoCache {
     state: RwLock<DisplayCacheState>,
     generation: AtomicU64,
+    refresh_required: AtomicBool,
+    refresh_lock: Mutex<()>,
     listener_hwnd: Mutex<Option<HWND>>,
     listener_join: Mutex<Option<std::thread::JoinHandle<()>>>,
     running: AtomicBool,
@@ -44,19 +46,19 @@ unsafe impl Send for DisplayInfoCache {}
 unsafe impl Sync for DisplayInfoCache {}
 
 impl DisplayInfoCache {
-    /// Create a new cache, spawn the listener thread, and perform the
-    /// initial enumeration so data is available immediately.
+    /// Create a populated cache and spawn the listener thread.
     pub(crate) fn new() -> CaptureResult<Arc<Self>> {
         let cache = Arc::new(Self {
             state: RwLock::new(DisplayCacheState::default()),
             generation: AtomicU64::new(0),
+            refresh_required: AtomicBool::new(true),
+            refresh_lock: Mutex::new(()),
             listener_hwnd: Mutex::new(None),
             listener_join: Mutex::new(None),
             running: AtomicBool::new(false),
         });
 
-        cache.refresh()?;
-
+        cache.refresh_pending()?;
         cache.start_listener()?;
 
         Ok(cache)
@@ -70,11 +72,15 @@ impl DisplayInfoCache {
 
     /// Return a snapshot of the cached monitor list.
     pub(crate) fn monitors(&self) -> CaptureResult<Vec<MonitorId>> {
+        if self.refresh_required.load(Ordering::Acquire) {
+            self.refresh_pending()?;
+        }
         let state = self.state.read().map_err(|_| {
             CaptureError::platform(anyhow::anyhow!("display cache rwlock was poisoned"))
         })?;
         if state.monitors.is_empty() {
             drop(state);
+            self.mark_refresh_required();
             return self.refresh_and_get_monitors();
         }
         Ok(state.monitors.clone())
@@ -82,12 +88,16 @@ impl DisplayInfoCache {
 
     /// Return a snapshot of the cached resolved monitors.
     pub(crate) fn resolved(&self) -> CaptureResult<Vec<ResolvedMonitor>> {
+        if self.refresh_required.load(Ordering::Acquire) {
+            self.refresh_pending()?;
+        }
         let state = self.state.read().map_err(|_| {
             CaptureError::platform(anyhow::anyhow!("display cache rwlock was poisoned"))
         })?;
         if state.resolved.is_empty() {
             drop(state);
-            self.refresh()?;
+            self.mark_refresh_required();
+            self.refresh_pending()?;
             let state = self.state.read().map_err(|_| {
                 CaptureError::platform(anyhow::anyhow!("display cache rwlock was poisoned"))
             })?;
@@ -96,9 +106,29 @@ impl DisplayInfoCache {
         Ok(state.resolved.clone())
     }
 
-    /// Force a refresh of the cached data. Called on `WM_DISPLAYCHANGE`
-    /// and during initial construction.
+    /// Force a refresh of the cached data.
     pub(crate) fn refresh(&self) -> CaptureResult<()> {
+        self.mark_refresh_required();
+        self.refresh_pending()
+    }
+
+    fn mark_refresh_required(&self) {
+        let _refresh = match self.refresh_lock.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        self.refresh_required.store(true, Ordering::Release);
+        self.generation.fetch_add(1, Ordering::AcqRel);
+    }
+
+    fn refresh_pending(&self) -> CaptureResult<()> {
+        let _refresh = self.refresh_lock.lock().map_err(|_| {
+            CaptureError::platform(anyhow::anyhow!("display refresh mutex was poisoned"))
+        })?;
+        if !self.refresh_required.load(Ordering::Acquire) {
+            return Ok(());
+        }
+
         let resolved = super::monitor::enumerate_resolved()?;
         let monitors = super::monitor::to_monitor_ids(&resolved);
 
@@ -110,12 +140,12 @@ impl DisplayInfoCache {
         state.refreshed_at = Some(Instant::now());
         drop(state);
 
-        self.generation.fetch_add(1, Ordering::Release);
+        self.refresh_required.store(false, Ordering::Release);
         Ok(())
     }
 
     fn refresh_and_get_monitors(&self) -> CaptureResult<Vec<MonitorId>> {
-        self.refresh()?;
+        self.refresh_pending()?;
         let state = self.state.read().map_err(|_| {
             CaptureError::platform(anyhow::anyhow!("display cache rwlock was poisoned"))
         })?;
@@ -198,7 +228,7 @@ impl Drop for DisplayInfoCache {
     }
 }
 
-/// Class name for our message-only window.
+/// Class name for our hidden top-level broadcast listener window.
 const CLASS_NAME: &str = "SnowCaptureDisplayChangeListener";
 
 fn listener_thread_main(cache_ptr: usize, hwnd_tx: mpsc::Sender<CaptureResult<isize>>) {
@@ -249,7 +279,7 @@ fn create_listener_window(cache_ptr: usize) -> CaptureResult<HWND> {
             0,
             0,
             0,
-            Some(HWND_MESSAGE),
+            None,
             None,
             Some(hinstance.into()),
             Some(cache_ptr as *const std::ffi::c_void),
@@ -290,9 +320,10 @@ unsafe extern "system" fn display_change_wnd_proc(
             };
             if ptr != 0 {
                 let cache = unsafe { &*(ptr as *const DisplayInfoCache) };
-                // Best-effort refresh; errors are silently ignored since
-                // the next read will trigger a fallback refresh anyway.
-                let _ = cache.refresh();
+                // Enumeration is deferred to the next reader. Marking the
+                // generation here invalidates capture runtimes even if the
+                // eventual refresh fails transiently.
+                cache.mark_refresh_required();
             }
             LRESULT(0)
         }
@@ -317,5 +348,35 @@ unsafe extern "system" fn display_change_wnd_proc(
             unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
         }
         _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn empty_cache() -> DisplayInfoCache {
+        DisplayInfoCache {
+            state: RwLock::new(DisplayCacheState::default()),
+            generation: AtomicU64::new(0),
+            refresh_required: AtomicBool::new(false),
+            refresh_lock: Mutex::new(()),
+            listener_hwnd: Mutex::new(None),
+            listener_join: Mutex::new(None),
+            running: AtomicBool::new(false),
+        }
+    }
+
+    #[test]
+    fn display_change_marks_refresh_pending_and_advances_generation() {
+        let cache = empty_cache();
+
+        cache.mark_refresh_required();
+        assert!(cache.refresh_required.load(Ordering::Acquire));
+        assert_eq!(cache.generation(), 1);
+
+        cache.mark_refresh_required();
+        assert!(cache.refresh_required.load(Ordering::Acquire));
+        assert_eq!(cache.generation(), 2);
     }
 }

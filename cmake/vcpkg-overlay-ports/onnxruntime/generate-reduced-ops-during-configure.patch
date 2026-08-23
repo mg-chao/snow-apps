@@ -1,0 +1,25 @@
+diff --git a/cmake/CMakeLists.txt b/cmake/CMakeLists.txt
+index 398c4d7..ab83fd1 100644
+--- a/cmake/CMakeLists.txt
++++ b/cmake/CMakeLists.txt
+@@ -1800,3 +1800,20 @@ endif()
++if(onnxruntime_REDUCED_OPS_BUILD AND onnxruntime_REDUCED_OPS_CONFIG)
++  execute_process(
++    COMMAND "${Python_EXECUTABLE}"
++      "${PROJECT_SOURCE_DIR}/../tools/ci_build/reduce_op_kernels.py"
++      "${onnxruntime_REDUCED_OPS_CONFIG}"
++      --cmake_build_dir "${CMAKE_BINARY_DIR}"
++      --is_extended_minimal_build_or_higher
++    WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}/.."
++    RESULT_VARIABLE onnxruntime_REDUCED_OPS_RESULT
++  )
++  if(NOT onnxruntime_REDUCED_OPS_RESULT EQUAL 0)
++    message(FATAL_ERROR
++      "Failed to generate reduced ONNX Runtime operator registrations: "
++      "${onnxruntime_REDUCED_OPS_RESULT}")
++  endif()
++endif()
++
+ foreach(onnxruntime_cmake_file ${ONNXRUNTIME_CMAKE_FILES})
+   include(${onnxruntime_cmake_file}.cmake)
+ endforeach()

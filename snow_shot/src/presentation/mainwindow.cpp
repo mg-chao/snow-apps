@@ -5,22 +5,21 @@
 #include "snow_shot/presentation/components/contentcardwidget.h"
 #include "snow_shot/presentation/components/maincontentheaderwidget.h"
 #include "snow_shot/presentation/components/sidebarwidget.h"
-#include "snow_shot/presentation/screenshotcontroller.h"
 #include "snow_shot/presentation/components/titlebarwidget.h"
 #include "snow_shot/presentation/settings/settingscatalog.h"
+#include "snow_shot/presentation/settings/settingsruntimebindings.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QLinearGradient>
-#include <QMenuBar>
 #include <QPainter>
 #include <QPalette>
 #include <QPoint>
 #include <QScopedValueRollback>
-#include <QStatusBar>
 #include <QAbstractButton>
+#include <QCloseEvent>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -58,28 +57,22 @@ class TitleBarBottomShadowWidget final : public QWidget {
 };
 } // namespace
 
-MainWindow::MainWindow(ScreenshotController& screenshotController,
-                       snow_shot::presentation::GlobalShortcutManager& globalShortcutManager,
-                       QWidget* parent)
-    : QMainWindow(parent), m_screenshotController(&screenshotController),
-      m_globalShortcutManager(&globalShortcutManager) {
+MainWindow::MainWindow(
+    snow_shot::presentation::settings::SettingsRuntimeBindings& runtimeBindings, QWidget* parent)
+    : QMainWindow(parent), m_runtimeBindings(&runtimeBindings) {
     setObjectName(QStringLiteral("snowShotMainWindow"));
     setAccessibleName(QStringLiteral("SnowShot"));
     setWindowTitle(QStringLiteral("SnowShot"));
     resize(MAIN_WINDOW_WIDTH, MAIN_WINDOW_HEIGHT);
     setMinimumSize(MAIN_WINDOW_MIN_WIDTH, MAIN_WINDOW_MIN_HEIGHT);
-    setMouseTracking(true);
-
-    menuBar()->hide();
-    statusBar()->hide();
 
     buildUi();
     const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
     connect(&themeManager, &snow_shot::presentation::styles::ThemeManager::themeChanged, this,
             [this](const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
-                applyTheme(scheme);
+                applyTheme(scheme, false);
             });
-    applyTheme(themeManager.themeColorScheme());
+    applyTheme(themeManager.themeColorScheme(), false);
 }
 
 bool MainWindow::event(QEvent* event) {
@@ -93,6 +86,13 @@ bool MainWindow::event(QEvent* event) {
 #endif
 
     return handled;
+}
+
+void MainWindow::closeEvent(QCloseEvent* event) {
+    QMainWindow::closeEvent(event);
+    if (event != nullptr && event->isAccepted()) {
+        emit closed();
+    }
 }
 
 void MainWindow::changeEvent(QEvent* event) {
@@ -149,7 +149,6 @@ void MainWindow::buildUi() {
     m_titleBar = titleBar;
 
     auto* body = new QWidget(root);
-    body->setAutoFillBackground(true);
     auto* bodyLayout = new QHBoxLayout(body);
     bodyLayout->setContentsMargins(0, 0, 0, 0);
     bodyLayout->setSpacing(0);
@@ -159,7 +158,6 @@ void MainWindow::buildUi() {
     m_sidebar = sidebar;
 
     auto* contentShell = new QWidget(body);
-    contentShell->setAutoFillBackground(true);
     auto* contentShellLayout = new QVBoxLayout(contentShell);
     contentShellLayout->setContentsMargins(0, 0, 0, 0);
     contentShellLayout->setSpacing(0);
@@ -169,13 +167,12 @@ void MainWindow::buildUi() {
     m_contentHeader = contentHeader;
 
     auto* contentArea = new QWidget(contentShell);
-    contentArea->setAutoFillBackground(true);
     auto* contentAreaLayout = new QVBoxLayout(contentArea);
     contentAreaLayout->setContentsMargins(metric.padding, metric.padding, metric.padding,
                                           metric.padding);
     contentAreaLayout->setSpacing(0);
     auto* contentCard =
-        new ContentCardWidget(settingsCatalog, *m_globalShortcutManager, contentArea);
+        new ContentCardWidget(settingsCatalog, *m_runtimeBindings, contentArea);
     contentAreaLayout->addWidget(contentCard, 1);
     m_contentCard = contentCard;
     contentShellLayout->addWidget(contentArea, 1);
@@ -203,10 +200,12 @@ void MainWindow::buildUi() {
                     m_contentHeader->setCurrentSection(location.sectionId);
                 }
             });
-    connect(m_contentCard, &ContentCardWidget::screenshotRequested, m_screenshotController,
-            &ScreenshotController::startCapture);
-    connect(m_contentCard, &ContentCardWidget::screenshotHistoryEditRequested,
-            m_screenshotController, &ScreenshotController::editHistoryRecord);
+    connect(m_contentCard, &ContentCardWidget::screenshotRequested, this,
+            &MainWindow::screenshotRequested);
+    connect(m_contentCard, &ContentCardWidget::quickActionRequested, this,
+            &MainWindow::quickActionRequested);
+    connect(m_contentCard, &ContentCardWidget::screenshotHistoryEditRequested, this,
+            &MainWindow::screenshotHistoryEditRequested);
     m_contentCard->setCurrentRoute(m_sidebar->currentRoute());
     m_contentHeader->setSections(m_contentCard->currentSections());
     m_contentHeader->setCurrentSection(m_contentCard->currentLocation().sectionId);
@@ -217,6 +216,13 @@ void MainWindow::showInterfaceSettings() {
         m_contentCard->showInterfaceSettings();
     }
 
+    showAndActivate();
+}
+
+void MainWindow::showScreenshotHistory() {
+    if (m_contentCard != nullptr) {
+        m_contentCard->navigateTo({QStringLiteral("screenshot-history"), {}, {}});
+    }
     showAndActivate();
 }
 
@@ -250,7 +256,8 @@ void MainWindow::syncTitleBarBottomShadowGeometry() {
     m_titleBarBottomShadow->raise();
 }
 
-void MainWindow::applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
+void MainWindow::applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme,
+                            bool propagateToChildren) {
     if (m_isApplyingTheme) {
         return;
     }
@@ -271,15 +278,15 @@ void MainWindow::applyTheme(const snow_shot::presentation::styles::ThemeColorSch
         centerWidget->setPalette(centerPalette);
     }
 
-    if (m_titleBar != nullptr) {
+    if (propagateToChildren && m_titleBar != nullptr) {
         m_titleBar->applyTheme(scheme);
     }
 
-    if (m_contentCard != nullptr) {
+    if (propagateToChildren && m_contentCard != nullptr) {
         m_contentCard->applyTheme(scheme);
     }
 
-    if (m_contentHeader != nullptr) {
+    if (propagateToChildren && m_contentHeader != nullptr) {
         m_contentHeader->applyTheme(scheme);
     }
 

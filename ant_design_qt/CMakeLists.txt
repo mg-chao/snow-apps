@@ -36,7 +36,9 @@ file(GLOB_RECURSE ADQT_ICONS_SOURCES CONFIGURE_DEPENDS
 # for useful source-level linting. It remains subject to strict compilation.
 set_source_files_properties(
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_icons_qt/src/antd_icons.cpp"
-    PROPERTIES SKIP_LINTING ON
+    PROPERTIES
+        SKIP_LINTING ON
+        SKIP_UNITY_BUILD_INCLUSION ON
 )
 add_library(ant_design_icons_qt STATIC ${ADQT_ICONS_SOURCES})
 add_library(adqt::icons ALIAS ant_design_icons_qt)
@@ -56,6 +58,21 @@ target_include_directories(ant_design_qt SYSTEM PUBLIC
 )
 target_link_libraries(ant_design_qt PUBLIC adqt::icon_core adqt::icons
     Qt6::Widgets Qt6::Svg Qt6::Network)
+target_precompile_headers(ant_design_qt PRIVATE
+    <algorithm>
+    <memory>
+    <optional>
+    <string>
+    <vector>
+    <QtCore/QObject>
+    <QtCore/QString>
+    <QtGui/QColor>
+    <QtGui/QImage>
+    <QtGui/QPainter>
+    <QtWidgets/QWidget>
+)
+# Widget sources reuse common anonymous-namespace helper names extensively,
+# which makes this target unsafe to combine into unity translation units.
 
 set(QT_I18N_SOURCE_LANGUAGE en_US)
 file(GLOB ADQT_TS_FILES CONFIGURE_DEPENDS
@@ -86,12 +103,35 @@ endif()
 if(ADQT_BUILD_TESTS)
     enable_testing()
     find_package(Qt6 REQUIRED COMPONENTS Test)
+    add_executable(adqt-icon-cache-tests tests/icon_cache_tests.cpp)
+    target_link_libraries(adqt-icon-cache-tests PRIVATE adqt::icon_core Qt6::Widgets)
+    add_test(NAME adqt-icon-cache-tests COMMAND adqt-icon-cache-tests)
+    if(WIN32)
+        set_tests_properties(adqt-icon-cache-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    else()
+        set_tests_properties(adqt-icon-cache-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endif()
+
     add_executable(adqt-icon-core-v2-tests tests/icon_core_v2_tests.cpp)
     target_link_libraries(adqt-icon-core-v2-tests PRIVATE adqt::widgets Qt6::Widgets)
     add_test(NAME adqt-icon-core-v2-tests COMMAND adqt-icon-core-v2-tests)
-    set_tests_properties(adqt-icon-core-v2-tests PROPERTIES
-        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
-    )
+    if(WIN32)
+        set_tests_properties(adqt-icon-core-v2-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    else()
+        set_tests_properties(adqt-icon-core-v2-tests PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        )
+    endif()
     add_executable(adqt-image-tests packages/ant_design_qt/tests/tst_image.cpp)
     set_target_properties(adqt-image-tests PROPERTIES AUTOMOC ON)
     target_link_libraries(adqt-image-tests PRIVATE adqt::widgets Qt6::Test)
@@ -136,6 +176,12 @@ if(ADQT_BUILD_TESTS)
     add_test(NAME adqt-locale-manager-tests COMMAND adqt-locale-manager-tests)
     set_tests_properties(adqt-locale-manager-tests PROPERTIES
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    add_executable(adqt-divider-tests packages/ant_design_qt/tests/tst_divider.cpp)
+    set_target_properties(adqt-divider-tests PROPERTIES AUTOMOC ON)
+    target_link_libraries(adqt-divider-tests PRIVATE adqt::widgets Qt6::Test)
+    add_test(NAME adqt-divider-tests COMMAND adqt-divider-tests)
+    set_tests_properties(adqt-divider-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 
 if(ADQT_BUILD_BENCHMARKS)

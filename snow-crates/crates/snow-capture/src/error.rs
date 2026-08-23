@@ -74,7 +74,7 @@ impl CaptureError {
     pub fn requires_worker_reset(&self) -> bool {
         matches!(
             self,
-            Self::MonitorLost | Self::AccessLost | Self::WorkerDead
+            Self::MonitorLost | Self::AccessLost | Self::WorkerDead | Self::ResolutionChanged(_, _)
         )
     }
 }

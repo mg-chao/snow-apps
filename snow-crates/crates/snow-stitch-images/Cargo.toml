@@ -2,7 +2,8 @@
 name = "snow-stitch-images"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.93.1"
+license.workspace = true
+rust-version = "1.97.1"
 description = "Clean-room Rust implementation workspace for stateful vertical screenshot stitching"
 publish = false
 
@@ -10,17 +11,37 @@ publish = false
 name = "snow_stitch_images"
 path = "src/lib.rs"
 
+[features]
+default = ["full-image-io"]
+full-image-io = [
+    "image/avif",
+    "image/bmp",
+    "image/dds",
+    "image/ff",
+    "image/gif",
+    "image/hdr",
+    "image/ico",
+    "image/jpeg",
+    "image/pnm",
+    "image/qoi",
+    "image/rayon",
+    "image/tga",
+    "image/tiff",
+    "image/webp",
+]
+
 [dependencies]
 anyhow.workspace = true
-image = { workspace = true, default-features = false, features = ["avif", "bmp", "dds", "ff", "gif", "hdr", "ico", "jpeg", "png", "pnm", "qoi", "rayon", "tga", "tiff", "webp"] }
+image.workspace = true
 rayon.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-proptest = "1.9"
+proptest = "1.11.0"
 tempfile.workspace = true
 
 [[example]]
 name = "scroll_4_benchmark"
+required-features = ["full-image-io"]

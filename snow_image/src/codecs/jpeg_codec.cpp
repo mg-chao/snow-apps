@@ -580,6 +580,20 @@ bool native_jpeg_source(const RasterFrameDescriptor& frame) {
     return true;
 }
 
+bool packed_jpeg_source(const RasterFrameDescriptor& frame) {
+    if (frame.layout.planes.size() != 1 ||
+        frame.layout.planes.front().semantic != PlaneSemantic::packed) {
+        return false;
+    }
+    const PixelFormat& format = frame.layout.planes.front().format;
+    if (format.sample_type != SampleType::unsigned_integer || format.bits_per_channel != 8) {
+        return false;
+    }
+    return format.channels == ChannelLayout::gray || format.channels == ChannelLayout::rgb ||
+           format.channels == ChannelLayout::rgba || format.channels == ChannelLayout::bgr ||
+           format.channels == ChannelLayout::bgra;
+}
+
 bool sdr_srgb(const ColorEncoding& color) noexcept {
     return color.dynamic_range == DynamicRange::standard &&
            (color.primaries == ColorPrimaries::unknown ||
@@ -796,10 +810,101 @@ Result<EncodedArtifactReceipt> JpegCodec::encode_raster_to_sink(const RasterSour
                                                                 const EncodeOptions& options,
                                                                 std::stop_token stop) const {
     const DocumentDescriptor& descriptor = source.descriptor();
-    if (descriptor.frames.size() != 1 || !native_jpeg_source(descriptor.frames.front())) {
+    if (descriptor.frames.size() != 1) {
         return Codec::encode_raster_to_sink(source, output, options, stop);
     }
     const RasterFrameDescriptor& frame = descriptor.frames.front();
+    if (packed_jpeg_source(frame) && frame.x == 0 && frame.y == 0 &&
+        frame.width == descriptor.canvas_width && frame.height == descriptor.canvas_height) {
+        Result<void> descriptor_status = descriptor.validate();
+        if (!descriptor_status)
+            return descriptor_status.error();
+        const PlaneDescriptor& plane = frame.layout.planes.front();
+        Result<J_COLOR_SPACE> color_space = jpeg_input_color_space(plane.format);
+        if (!color_space)
+            return color_space.error();
+        Result<std::size_t> row_bytes_result = plane.row_bytes();
+        if (!row_bytes_result)
+            return row_bytes_result.error();
+        const std::size_t row_bytes = row_bytes_result.value();
+        if (frame.width > static_cast<std::uint32_t>(std::numeric_limits<int>::max()) ||
+            frame.height > static_cast<std::uint32_t>(std::numeric_limits<int>::max()) ||
+            row_bytes > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+            return Status::error(ErrorCode::limit_exceeded,
+                                 "JPEG dimensions or stride exceed codec limits.", "libjpeg-turbo");
+        }
+        const bool grayscale = plane.format.channels == ChannelLayout::gray;
+        Result<ChromaSubsampling> selected = resolve_jpeg_chroma_subsampling(options, grayscale);
+        if (!selected)
+            return selected.error();
+        const ChromaSubsampling sampling = selected.value();
+        std::vector<std::byte> row(row_bytes);
+        auto context = std::make_unique<JpegEncoderContext>();
+        context->compressor.err = jpeg_std_error(&context->error.base);
+        context->error.base.error_exit = jpeg_error_exit;
+        if (setjmp(context->error.jump) != 0) {
+            jpeg_destroy_compress(&context->compressor);
+            return compression_error(*context);
+        }
+        if (stop.stop_requested())
+            return cancelled_status();
+        const bool alpha = plane.format.channels == ChannelLayout::rgba ||
+                           plane.format.channels == ChannelLayout::bgra;
+        Result<void> begun = begin_compression(context.get(), frame.width, frame.height,
+                                               grayscale ? 1 : (alpha ? 4 : 3), color_space.value(),
+                                               sampling, options, output.sink.get(), false);
+        if (!begun)
+            return begun.error();
+        while (context->compressor.next_scanline < context->compressor.image_height) {
+            if (stop.stop_requested()) {
+                jpeg_destroy_compress(&context->compressor);
+                return cancelled_status();
+            }
+            const std::uint32_t y = context->compressor.next_scanline;
+            Result<void> read = source.read_rows(0, 0, y, 1, row_bytes, row, stop);
+            if (!read) {
+                jpeg_destroy_compress(&context->compressor);
+                return read.error();
+            }
+            if (alpha) {
+                auto* pixels = reinterpret_cast<std::uint8_t*>(row.data());
+                for (std::uint32_t x = 0; x < frame.width; ++x) {
+                    std::uint8_t* pixel = pixels + static_cast<std::size_t>(x) * 4U;
+                    const unsigned int opacity = pixel[3];
+                    for (std::size_t channel = 0; channel < 3; ++channel) {
+                        if (plane.format.alpha == AlphaMode::premultiplied) {
+                            pixel[channel] = static_cast<std::uint8_t>(
+                                (std::min)(255U, static_cast<unsigned int>(pixel[channel]) + 255U -
+                                                     opacity));
+                        } else {
+                            pixel[channel] = static_cast<std::uint8_t>(
+                                (static_cast<unsigned int>(pixel[channel]) * opacity +
+                                 255U * (255U - opacity) + 127U) /
+                                255U);
+                        }
+                    }
+                    pixel[3] = 255;
+                }
+            }
+            JSAMPROW scanline = reinterpret_cast<JSAMPROW>(row.data());
+            if (jpeg_write_scanlines(&context->compressor, &scanline, 1) != 1) {
+                jpeg_destroy_compress(&context->compressor);
+                return Status::error(ErrorCode::encode_failed,
+                                     "libjpeg-turbo did not consume a JPEG scanline.",
+                                     "libjpeg-turbo");
+            }
+        }
+        if (stop.stop_requested()) {
+            jpeg_destroy_compress(&context->compressor);
+            return cancelled_status();
+        }
+        jpeg_finish_compress(&context->compressor);
+        jpeg_destroy_compress(&context->compressor);
+        return jpeg_receipt(descriptor, sampling);
+    }
+    if (!native_jpeg_source(frame)) {
+        return Codec::encode_raster_to_sink(source, output, options, stop);
+    }
     if (frame.width > static_cast<std::uint32_t>(std::numeric_limits<int>::max()) ||
         frame.height > static_cast<std::uint32_t>(std::numeric_limits<int>::max()) ||
         frame.layout.color_range != ColorRange::full) {
@@ -930,8 +1035,11 @@ RasterEncodeRoute JpegCodec::raster_encode_route(const DocumentDescriptor& descr
         return RasterEncodeRoute::materialized;
     const RasterFrameDescriptor& frame = descriptor.frames.front();
     if (frame.x != 0 || frame.y != 0 || frame.width != descriptor.canvas_width ||
-        frame.height != descriptor.canvas_height || !sdr_srgb(frame.color) ||
-        frame.layout.color_range != ColorRange::full || !native_jpeg_source(frame))
+        frame.height != descriptor.canvas_height || !sdr_srgb(frame.color))
+        return RasterEncodeRoute::materialized;
+    if (packed_jpeg_source(frame))
+        return RasterEncodeRoute::native;
+    if (frame.layout.color_range != ColorRange::full || !native_jpeg_source(frame))
         return RasterEncodeRoute::materialized;
     if (frame.layout.color_model != ColorModel::gray &&
         frame.layout.chroma_subsampling != resolved_sampling(options))

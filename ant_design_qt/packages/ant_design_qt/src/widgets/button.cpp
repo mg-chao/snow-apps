@@ -2,6 +2,7 @@
 
 #include "button_style.h"
 #include "detail/button_grouping.h"
+#include "detail/button_rendering.h"
 #include "detail/timing_hub.h"
 #include "antd_icons.h"
 #include "interaction_overlay_manager.h"
@@ -34,12 +35,7 @@ namespace outlined_icons = adqt::icons::antd::outlined;
 constexpr char kLoadingDelayTaskKey[] = "AdButton.LoadingDelay";
 constexpr char kSpinnerFrameKey[] = "AdButton.SpinnerFrame";
 
-struct CornerRadii {
-  qreal topLeft = 0.0;
-  qreal topRight = 0.0;
-  qreal bottomRight = 0.0;
-  qreal bottomLeft = 0.0;
-};
+using CornerRadii = detail::ButtonCornerRadii;
 
 bool iconRefsEqual(const adqt::icons::IconRef& lhs, const adqt::icons::IconRef& rhs) {
   return lhs == rhs;
@@ -75,43 +71,7 @@ ButtonIconRenderState resolveIconRenderState(const AdButton& button, bool busyIn
 
 QPainterPath roundedRectPath(const QRectF& rect, qreal topLeft, qreal topRight, qreal bottomRight,
                              qreal bottomLeft) {
-  const qreal w = std::max(rect.width(), 0.0);
-  const qreal h = std::max(rect.height(), 0.0);
-  const qreal maxRadius = std::min(w, h) / 2.0;
-
-  topLeft = std::clamp(topLeft, 0.0, maxRadius);
-  topRight = std::clamp(topRight, 0.0, maxRadius);
-  bottomRight = std::clamp(bottomRight, 0.0, maxRadius);
-  bottomLeft = std::clamp(bottomLeft, 0.0, maxRadius);
-
-  const qreal left = rect.left();
-  const qreal top = rect.top();
-  const qreal right = left + rect.width();
-  const qreal bottom = top + rect.height();
-
-  QPainterPath path;
-  path.moveTo(left + topLeft, top);
-  path.lineTo(right - topRight, top);
-  if (topRight > 0.0) {
-    path.arcTo(QRectF(right - 2.0 * topRight, top, 2.0 * topRight, 2.0 * topRight), 90.0, -90.0);
-  }
-  path.lineTo(right, bottom - bottomRight);
-  if (bottomRight > 0.0) {
-    path.arcTo(QRectF(right - 2.0 * bottomRight, bottom - 2.0 * bottomRight, 2.0 * bottomRight,
-                      2.0 * bottomRight),
-               0.0, -90.0);
-  }
-  path.lineTo(left + bottomLeft, bottom);
-  if (bottomLeft > 0.0) {
-    path.arcTo(QRectF(left, bottom - 2.0 * bottomLeft, 2.0 * bottomLeft, 2.0 * bottomLeft), 270.0,
-               -90.0);
-  }
-  path.lineTo(left, top + topLeft);
-  if (topLeft > 0.0) {
-    path.arcTo(QRectF(left, top, 2.0 * topLeft, 2.0 * topLeft), 180.0, -90.0);
-  }
-  path.closeSubpath();
-  return path;
+  return detail::roundedButtonPath(rect, topLeft, topRight, bottomRight, bottomLeft);
 }
 
 bool isTwoChineseCharacters(const QString& text) {
@@ -369,16 +329,7 @@ void drawMenuIndicator(QPainter& painter, const QRect& indicatorRect, const QCol
 }
 
 QRectF joinedBorderRect(const QRect& bounds, qreal borderWidth, bool joinedLeft, bool joinedRight) {
-  const qreal half = std::max<qreal>(0.0, borderWidth / 2.0);
-  qreal leftInset = half + 0.5;
-  qreal rightInset = half + 0.5;
-  if (joinedLeft) {
-    leftInset = half;
-  }
-  if (joinedRight) {
-    rightInset = half;
-  }
-  return QRectF(bounds).adjusted(leftInset, half + 0.5, -rightInset, -half - 0.5);
+  return detail::joinedButtonBorderRect(bounds, borderWidth, joinedLeft, joinedRight);
 }
 
 int sharedSpinnerAngle() {
@@ -399,24 +350,7 @@ QRectF centeredSquareRect(const QRectF& rect) {
 }
 
 QRectF resolveShapeRect(const QRectF& rect, AdButton::Shape shape) {
-  if (shape == AdButton::Shape::Circle) {
-    return centeredSquareRect(rect);
-  }
-  return rect;
-}
-
-qreal shapeRadius(AdButton::Shape shape, const QRectF& rect, int borderRadius) {
-  switch (shape) {
-    case AdButton::Shape::Rectangle:
-      return 0.0;
-    case AdButton::Shape::Pill:
-      return rect.height() / 2.0;
-    case AdButton::Shape::Circle:
-      return std::min(rect.width(), rect.height()) / 2.0;
-    case AdButton::Shape::Rounded:
-    default:
-      return static_cast<qreal>(borderRadius);
-  }
+  return detail::resolveButtonShapeRect(rect, shape);
 }
 
 bool stateHasVisibleBorder(const detail::ButtonStateStyle& state, int borderWidth) {
@@ -453,18 +387,7 @@ int resolveHorizontalFrameWidth(const detail::ButtonVisualStyle& style, AdButton
 
 CornerRadii resolveCorners(AdButton::Shape shape, const QRectF& rect, int borderRadius,
                            bool joinedLeft, bool joinedRight) {
-  const qreal radius = shapeRadius(shape, rect, borderRadius);
-  CornerRadii corners{radius, radius, radius, radius};
-
-  if (joinedLeft) {
-    corners.topLeft = 0.0;
-    corners.bottomLeft = 0.0;
-  }
-  if (joinedRight) {
-    corners.topRight = 0.0;
-    corners.bottomRight = 0.0;
-  }
-  return corners;
+  return detail::resolveButtonCorners(shape, rect, borderRadius, joinedLeft, joinedRight);
 }
 
 struct InteractionOutline {
@@ -902,15 +825,8 @@ void AdButton::paintEvent(QPaintEvent* event) {
   if (hasVisibleBorder) {
     const QPainterPath borderPath = roundedRectPath(shapeRect, corners.topLeft, corners.topRight,
                                                     corners.bottomRight, corners.bottomLeft);
-    QPen borderPen(state.border, style.metrics.borderWidth, state.borderStyle, Qt::SquareCap,
-                   Qt::MiterJoin);
-    if (state.borderStyle == Qt::DashLine) {
-      borderPen.setStyle(Qt::CustomDashLine);
-      const qreal penWidth = std::max<qreal>(1.0, borderPen.widthF());
-      borderPen.setDashPattern({3.0 / penWidth, 2.0 / penWidth});
-      borderPen.setCapStyle(Qt::FlatCap);
-      borderPen.setJoinStyle(Qt::RoundJoin);
-    }
+    QPen borderPen =
+        detail::makeButtonBorderPen(state.border, style.metrics.borderWidth, state.borderStyle);
     painter.setPen(borderPen);
     painter.setBrush(Qt::NoBrush);
     painter.drawPath(borderPath);

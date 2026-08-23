@@ -156,6 +156,7 @@ void ScreenshotToolCommandWorkflow::setCanvasTool(ScreenshotActiveTool activeToo
     m_context.intelligentSelection.clearPress();
     m_context.actions.setCanvasInteractionEnabled(true);
     m_context.actions.setCanvasTool(canvasTool);
+    m_context.actions.updateOverlayState();
     m_context.actions.updateOverlayCursors();
     m_context.actions.raiseToolbarForCanvasInteraction();
 }

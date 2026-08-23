@@ -20,6 +20,7 @@ class QMouseEvent;
 class QPainter;
 class QWheelEvent;
 class QWidget;
+class SnowCanvasCursorController;
 
 class SnowCanvasWidgetTextInteraction final {
   public:
@@ -85,7 +86,8 @@ class SnowCanvasWidgetTextInteraction final {
         ScopedChangedViewportList changedViewports;
     };
 
-    explicit SnowCanvasWidgetTextInteraction(QWidget& widget);
+    SnowCanvasWidgetTextInteraction(QWidget& widget,
+                                    SnowCanvasCursorController& cursorController);
 
     SnowCanvasTextEditorSession& session();
     const SnowCanvasTextEditorSession& session() const;
@@ -183,6 +185,7 @@ class SnowCanvasWidgetTextInteraction final {
     void handleCaretBlinkTimeout();
 
     QWidget& m_widget;
+    SnowCanvasCursorController& m_cursorController;
     SnowCanvasTextEditorSession m_session;
     QTimer m_caretBlinkTimer;
     QRegion m_caretUpdateRegion;

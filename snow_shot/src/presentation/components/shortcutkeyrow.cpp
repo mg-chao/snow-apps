@@ -12,6 +12,7 @@
 #include "theme/theme.h"
 #include "widgets/button.h"
 #include "widgets/button_style.h"
+#include "widgets/detail/button_rendering.h"
 #include "widgets/input_line_edit.h"
 #include "widgets/modal.h"
 
@@ -48,6 +49,7 @@
 #include <QTimer>
 #include <QVector>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 
 namespace {
 namespace outlined_icons = adqt::icons::antd::outlined;
@@ -157,9 +159,10 @@ constexpr int SHORTCUT_CONFIG_MODAL_WIDTH = 520;
 constexpr int SHORTCUT_CONFIG_INPUT_MIN_WIDTH = 248;
 constexpr int SHORTCUT_CONFIG_APPLY_BUTTON_WIDTH = 76;
 constexpr int SHORTCUT_KEY_TEXT_MAX_WIDTH = 200;
+constexpr int COMPACT_SHORTCUT_KEY_TEXT_MAX_WIDTH = 100;
 
 bool isModifierOnlyKey(int key) {
-    return key == Qt::Key_Control || key == Qt::Key_Shift || key == Qt::Key_Alt ||
+    return key == Qt::Key_Control || key == Qt::Key_Alt ||
            key == Qt::Key_Meta || key == Qt::Key_AltGr || key == Qt::Key_Super_L ||
            key == Qt::Key_Super_R;
 }
@@ -181,6 +184,10 @@ QString formatShortcutDisplayText(const QString& shortcut) {
     QString displayText = compactShortcutText(shortcut);
     if (displayText.isEmpty()) {
         return displayText;
+    }
+
+    if (displayText.compare(QStringLiteral("Shift+Shift"), Qt::CaseInsensitive) == 0) {
+        return QStringLiteral("Shift");
     }
 
     const bool hasPlusKey =
@@ -222,6 +229,9 @@ QString formatShortcutListDisplayText(const QStringList& shortcuts) {
 
 QString shortcutTextForKey(const QKeyEvent& event) {
     const auto key = static_cast<Qt::Key>(event.key());
+    if (key == Qt::Key_Shift) {
+        return QStringLiteral("Shift");
+    }
     if (key == Qt::Key_unknown || isModifierOnlyKey(key)) {
         return {};
     }
@@ -235,13 +245,60 @@ QString shortcutTextForKey(const QKeyEvent& event) {
 
 QString
 shortcutValidationMessage(const snow_shot::presentation::GlobalShortcutValidationResult& validation,
-                          const QString& attemptedShortcut) {
+                          const QString& attemptedShortcut,
+                          ShortcutKeyRowConfig::ValidationScope validationScope) {
+    const QString displayShortcut = formatShortcutDisplayText(attemptedShortcut);
+    if (validationScope == ShortcutKeyRowConfig::ValidationScope::ScreenshotShortcut) {
+        if (validation.failureReason ==
+            snow_shot::presentation::GlobalShortcutFailureReason::AlreadyInUse) {
+            return displayShortcut.isEmpty()
+                       ? QObject::tr(
+                             "This key is already assigned to another shortcut, try another key")
+                       : QObject::tr(
+                             "%1 is already assigned to another shortcut, try another key")
+                             .arg(displayShortcut);
+        }
+        return displayShortcut.isEmpty()
+                   ? QObject::tr("This key cannot be used as a screenshot shortcut, try another key")
+                   : QObject::tr("%1 cannot be used as a screenshot shortcut, try another key")
+                         .arg(displayShortcut);
+    }
+    if (validationScope == ShortcutKeyRowConfig::ValidationScope::DrawingShortcut) {
+        if (validation.failureReason ==
+            snow_shot::presentation::GlobalShortcutFailureReason::AlreadyInUse) {
+            return displayShortcut.isEmpty()
+                       ? QObject::tr(
+                             "This key is already assigned to another drawing tool, try another key")
+                       : QObject::tr(
+                             "%1 is already assigned to another drawing tool, try another key")
+                             .arg(displayShortcut);
+        }
+        return displayShortcut.isEmpty()
+                   ? QObject::tr("This key cannot be used as a drawing shortcut, try another key")
+                   : QObject::tr("%1 cannot be used as a drawing shortcut, try another key")
+                         .arg(displayShortcut);
+    }
+    if (validationScope == ShortcutKeyRowConfig::ValidationScope::PinnedWindowShortcut) {
+        if (validation.failureReason ==
+            snow_shot::presentation::GlobalShortcutFailureReason::AlreadyInUse) {
+            return displayShortcut.isEmpty()
+                       ? QObject::tr(
+                             "This key is already assigned to another pinned window action, try another key")
+                       : QObject::tr(
+                             "%1 is already assigned to another pinned window action, try another key")
+                             .arg(displayShortcut);
+        }
+        return displayShortcut.isEmpty()
+                   ? QObject::tr("This key cannot be used as a pinned window shortcut, try another key")
+                   : QObject::tr("%1 cannot be used as a pinned window shortcut, try another key")
+                         .arg(displayShortcut);
+    }
+
     if (validation.failureReason ==
         snow_shot::presentation::GlobalShortcutFailureReason::UnsupportedPlatform) {
         return QObject::tr("Global shortcuts are not supported on this platform");
     }
 
-    const QString displayShortcut = formatShortcutDisplayText(attemptedShortcut);
     if (!displayShortcut.isEmpty()) {
         return QObject::tr("%1 cannot be registered as a Windows global shortcut, try another key")
             .arg(displayShortcut);
@@ -451,12 +508,22 @@ class ShortcutConfigValidationButton final : public adqt::widgets::AdButton {
   public:
     explicit ShortcutConfigValidationButton(
         const snow_shot::presentation::styles::ThemeAliasMetricToken& metric,
+        ShortcutKeyRowConfig::ValidationScope validationScope,
         QWidget* parent = nullptr)
         : adqt::widgets::AdButton(parent), m_infoGap(metric.marginXS),
           m_info(new InfoTooltipIcon(metric.fontSize, this)) {
         m_info->setObjectName(QStringLiteral("shortcutConfigValidationTooltipTrigger"));
         m_info->setProperty("inlineGap", m_infoGap);
-        m_info->setAccessibleName(QObject::tr("Invalid global shortcut"));
+        if (validationScope == ShortcutKeyRowConfig::ValidationScope::ScreenshotShortcut) {
+            m_info->setAccessibleName(QObject::tr("Invalid screenshot shortcut"));
+        } else if (validationScope == ShortcutKeyRowConfig::ValidationScope::DrawingShortcut) {
+            m_info->setAccessibleName(QObject::tr("Invalid drawing shortcut"));
+        } else if (validationScope ==
+                   ShortcutKeyRowConfig::ValidationScope::PinnedWindowShortcut) {
+            m_info->setAccessibleName(QObject::tr("Invalid pinned window shortcut"));
+        } else {
+            m_info->setAccessibleName(QObject::tr("Invalid global shortcut"));
+        }
     }
 
     void setValidationTooltipText(const QString& text) {
@@ -504,10 +571,17 @@ class ShortcutConfigValidationButton final : public adqt::widgets::AdButton {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
 
-        const QRectF buttonRect = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
-        const qreal radius = static_cast<qreal>(metrics.borderRadius);
-        QPainterPath buttonPath;
-        buttonPath.addRoundedRect(buttonRect, radius, radius);
+        const bool joinedLeft = false;
+        const bool joinedRight = false;
+        const QRectF rawBorderRect = adqt::widgets::detail::joinedButtonBorderRect(
+            rect(), metrics.borderWidth, joinedLeft, joinedRight);
+        const QRectF shapeRect =
+            adqt::widgets::detail::resolveButtonShapeRect(rawBorderRect, shape());
+        const adqt::widgets::detail::ButtonCornerRadii corners =
+            adqt::widgets::detail::resolveButtonCorners(shape(), shapeRect, metrics.borderRadius,
+                                                        joinedLeft, joinedRight);
+        const QPainterPath buttonPath = adqt::widgets::detail::roundedButtonPath(
+            shapeRect, corners.topLeft, corners.topRight, corners.bottomRight, corners.bottomLeft);
         painter.fillPath(buttonPath, state.background);
 
         if (metrics.borderWidth > 0 && state.border.alpha() > 0) {
@@ -610,10 +684,12 @@ class ShortcutKeyConfigContent final : public QWidget {
         const snow_shot::presentation::styles::ThemeColorScheme& colorScheme, int maxShortcutCount,
         std::function<snow_shot::presentation::GlobalShortcutValidationResult(const QString&)>
             shortcutValidator,
+        ShortcutKeyRowConfig::ValidationScope validationScope,
         QWidget* parent = nullptr)
         : QWidget(parent), m_colorScheme(colorScheme),
           m_maxShortcutCount(std::max(1, maxShortcutCount)),
-          m_shortcutValidator(std::move(shortcutValidator)) {
+          m_shortcutValidator(std::move(shortcutValidator)),
+          m_validationScope(validationScope) {
         setObjectName(QStringLiteral("shortcutConfigContent"));
         setFocusPolicy(Qt::StrongFocus);
 
@@ -742,7 +818,8 @@ class ShortcutKeyConfigContent final : public QWidget {
             ShortcutConfigValidationButton* validationButton = nullptr;
             adqt::widgets::AdButton* keyButton = nullptr;
             if (hasValidationError) {
-                validationButton = new ShortcutConfigValidationButton(metric, rowWidget);
+                validationButton =
+                    new ShortcutConfigValidationButton(metric, m_validationScope, rowWidget);
                 keyButton = validationButton;
             } else {
                 keyButton = new adqt::widgets::AdButton(rowWidget);
@@ -900,7 +977,8 @@ class ShortcutKeyConfigContent final : public QWidget {
 
         m_pendingShortcut.clear();
         m_rejectedShortcut = shortcut;
-        m_validationMessage = shortcutValidationMessage(validation, shortcut);
+        m_validationMessage =
+            shortcutValidationMessage(validation, shortcut, m_validationScope);
     }
 
     void deleteKeyConfig(int configIndex) {
@@ -987,13 +1065,17 @@ class ShortcutKeyConfigContent final : public QWidget {
     bool m_keyboardGrabbed = false;
     std::function<snow_shot::presentation::GlobalShortcutValidationResult(const QString&)>
         m_shortcutValidator;
+    ShortcutKeyRowConfig::ValidationScope m_validationScope =
+        ShortcutKeyRowConfig::ValidationScope::GlobalShortcut;
 };
 
 class ShortcutKeyButton final : public adqt::widgets::AdButton {
   public:
     explicit ShortcutKeyButton(const snow_shot::presentation::styles::ThemeAliasMetricToken& metric,
+                               int textMaxWidth,
                                QWidget* parent = nullptr)
-        : adqt::widgets::AdButton(parent), m_iconTextSpacing(metric.marginXS) {
+        : adqt::widgets::AdButton(parent), m_iconTextSpacing(metric.marginXS),
+          m_textMaxWidth(std::max(0, textMaxWidth)) {
         setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Dashed);
         setAccentRole(adqt::widgets::AdButton::AccentRole::Danger);
         setShape(adqt::widgets::AdButton::Shape::Rounded);
@@ -1018,7 +1100,7 @@ class ShortcutKeyButton final : public adqt::widgets::AdButton {
         const adqt::widgets::detail::ButtonVisualStyle style = buttonVisualStyle();
         const QFontMetricsF fontMetrics(style.metrics.font);
         const int textWidth = static_cast<int>(std::ceil(fontMetrics.horizontalAdvance(text())));
-        const int cappedTextWidth = std::min(textWidth, SHORTCUT_KEY_TEXT_MAX_WIDTH);
+        const int cappedTextWidth = std::min(textWidth, m_textMaxWidth);
         const int iconSize = std::max(10, style.metrics.font.pixelSize());
         const int iconGap = contentTextGap(style.metrics);
         const int horizontalFrameWidth =
@@ -1090,18 +1172,25 @@ class ShortcutKeyButton final : public adqt::widgets::AdButton {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
 
-        const QRectF buttonRect = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
-        const qreal radius = static_cast<qreal>(metrics.borderRadius);
-        QPainterPath buttonPath;
-        buttonPath.addRoundedRect(buttonRect, radius, radius);
+        const bool joinedLeft = false;
+        const bool joinedRight = false;
+        const QRectF rawBorderRect = adqt::widgets::detail::joinedButtonBorderRect(
+            rect(), metrics.borderWidth, joinedLeft, joinedRight);
+        const QRectF shapeRect =
+            adqt::widgets::detail::resolveButtonShapeRect(rawBorderRect, shape());
+        const adqt::widgets::detail::ButtonCornerRadii corners =
+            adqt::widgets::detail::resolveButtonCorners(shape(), shapeRect, metrics.borderRadius,
+                                                        joinedLeft, joinedRight);
+        const QPainterPath buttonPath = adqt::widgets::detail::roundedButtonPath(
+            shapeRect, corners.topLeft, corners.topRight, corners.bottomRight, corners.bottomLeft);
         painter.fillPath(buttonPath, state.background);
 
         if (metrics.borderWidth > 0 && state.border.alpha() > 0) {
-            QPen borderPen(state.border, metrics.borderWidth, Qt::CustomDashLine);
-            const qreal penWidth = std::max<qreal>(1.0, borderPen.widthF());
-            borderPen.setDashPattern({3.0 / penWidth, 2.0 / penWidth});
-            borderPen.setCapStyle(Qt::FlatCap);
-            borderPen.setJoinStyle(Qt::RoundJoin);
+            const bool dashed = buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Dashed ||
+                                buttonStyle() == adqt::widgets::AdButton::ButtonStyle::GhostDashed;
+            const Qt::PenStyle borderStyle = dashed ? Qt::DashLine : state.borderStyle;
+            QPen borderPen = adqt::widgets::detail::makeButtonBorderPen(
+                state.border, metrics.borderWidth, borderStyle);
             painter.setPen(borderPen);
             painter.setBrush(Qt::NoBrush);
             painter.drawPath(buttonPath);
@@ -1227,6 +1316,7 @@ class ShortcutKeyButton final : public adqt::widgets::AdButton {
     }
 
     int m_iconTextSpacing = 6;
+    int m_textMaxWidth = SHORTCUT_KEY_TEXT_MAX_WIDTH;
     InfoTooltipIcon* m_statusTooltipTrigger = nullptr;
     bool m_statusTooltipVisible = false;
     bool m_hovered = false;
@@ -1241,21 +1331,33 @@ ShortcutKeyRow::ShortcutKeyRow(
     const snow_shot::presentation::styles::ThemeAliasMetricToken& metric,
     const snow_shot::presentation::styles::MainWindowComponentMetricToken& mainWindowMetric,
     QWidget* parent)
-    : adqt::widgets::AdButton(parent), m_rowState(config.rowState),
+    : adqt::widgets::AdButton(parent), m_rowState(config.rowState), m_baseTitle(config.title),
       m_registrationState(config.registrationState),
       m_maxShortcutCount(std::max(1, config.maxShortcutCount)),
       m_shortcutValidator(config.shortcutValidator),
+      m_adjustableDelay(config.adjustableDelay),
+      m_delaySeconds(std::clamp(config.delaySeconds, 1, 10)),
+      m_delaySetter(config.delaySetter),
       m_colorScheme(snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme()) {
+    m_showRegistrationStatus = config.showRegistrationStatus;
+    m_compactPresentation =
+        config.presentation == ShortcutKeyRowConfig::Presentation::CompactFormField;
+    m_validationScope = config.validationScope;
     if (m_registrationState.shortcuts.isEmpty() && !config.shortcuts.isEmpty()) {
         m_registrationState.shortcuts = config.shortcuts;
     }
 
     setAccessibleName(config.title);
-    setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Outline);
+    setButtonStyle(m_compactPresentation ? adqt::widgets::AdButton::ButtonStyle::Text
+                                         : adqt::widgets::AdButton::ButtonStyle::Outline);
     setAccentRole(adqt::widgets::AdButton::AccentRole::Primary);
     setShape(adqt::widgets::AdButton::Shape::Rounded);
-    setFixedHeight(metric.controlHeightLG + metric.paddingXXS);
-    setCursor(Qt::PointingHandCursor);
+    setFixedHeight(m_compactPresentation ? metric.controlHeight
+                                         : metric.controlHeightLG + metric.paddingXXS);
+    setCursor(m_compactPresentation ? Qt::ArrowCursor : Qt::PointingHandCursor);
+    if (m_adjustableDelay) {
+        setToolTip(tr("Delay: %1 seconds").arg(m_delaySeconds));
+    }
     setFocusPolicy(Qt::NoFocus);
     setCheckable(false);
     setAttribute(Qt::WA_Hover, true);
@@ -1267,38 +1369,67 @@ ShortcutKeyRow::ShortcutKeyRow(
     m_titleIconSize = metric.fontSizeLG + metric.borderRadiusXS;
 
     auto* rowLayout = new QHBoxLayout(this);
-    rowLayout->setContentsMargins(metric.padding, metric.paddingXXS, metric.padding,
-                                  metric.paddingXXS);
-    rowLayout->setSpacing(metric.marginXS + metric.borderRadiusXS);
+    if (m_compactPresentation) {
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        rowLayout->setSpacing(metric.marginXS);
+    } else {
+        rowLayout->setContentsMargins(metric.padding, metric.paddingXXS, metric.padding,
+                                      metric.paddingXXS);
+        rowLayout->setSpacing(metric.marginXS + metric.borderRadiusXS);
+    }
 
     auto* titleWrap = new QWidget(this);
-    titleWrap->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    titleWrap->setAttribute(Qt::WA_TransparentForMouseEvents, !m_adjustableDelay);
     auto* titleLayout = new QHBoxLayout(titleWrap);
     titleLayout->setContentsMargins(0, 0, 0, 0);
     titleLayout->setSpacing(metric.marginXS);
 
-    m_titleLabel = new QLabel(config.title, titleWrap);
-    m_titleLabel->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    const QString initialTitle = delayDisplayTitle();
+    m_titleLabel = new QLabel(titleLabelText(), titleWrap);
+    m_titleLabel->setObjectName(m_adjustableDelay ? QStringLiteral("delayTitleLabel")
+                                                  : QStringLiteral("shortcutTitleLabel"));
+    setAccessibleName(initialTitle);
+    m_titleLabel->setAttribute(Qt::WA_TransparentForMouseEvents, !m_adjustableDelay);
+    if (m_adjustableDelay) {
+        m_titleLabel->setCursor(Qt::SplitVCursor);
+        m_titleLabel->installEventFilter(this);
+        m_delayUnderline = new QWidget(m_titleLabel);
+        m_delayUnderline->setObjectName(QStringLiteral("delaySecondsHoverUnderline"));
+        m_delayUnderline->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+        m_delayUnderline->hide();
+    }
     titleLayout->addWidget(m_titleLabel, 0, Qt::AlignVCenter);
 
-    if (adqt::icons::isValid(m_titleIconRef)) {
+    if (!m_compactPresentation && adqt::icons::isValid(m_titleIconRef)) {
         m_titleIcon = new QLabel(titleWrap);
         m_titleIcon->setAttribute(Qt::WA_TransparentForMouseEvents, true);
         m_titleIcon->setFixedSize(m_titleIconSize, m_titleIconSize);
         titleLayout->addWidget(m_titleIcon, 0, Qt::AlignVCenter);
     }
 
-    titleLayout->addStretch(1);
-    rowLayout->addWidget(titleWrap, 1);
+    if (!m_compactPresentation) {
+        titleLayout->addStretch(1);
+    }
+    rowLayout->addWidget(titleWrap, m_compactPresentation ? 0 : 1);
 
-    auto* shortcutButton = new ShortcutKeyButton(metric, this);
+    auto* shortcutButton = new ShortcutKeyButton(
+        metric, m_compactPresentation ? COMPACT_SHORTCUT_KEY_TEXT_MAX_WIDTH
+                                      : SHORTCUT_KEY_TEXT_MAX_WIDTH,
+        this);
     shortcutButton->setObjectName(QStringLiteral("shortcutKeyButton"));
     shortcutButton->setFixedHeight(metric.controlHeight);
+    if (m_compactPresentation) {
+        shortcutButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Outline);
+    }
     shortcutButton->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     shortcutButton->installEventFilter(this);
     connect(shortcutButton, &QAbstractButton::clicked, this,
             &ShortcutKeyRow::openShortcutConfigDialog);
-    rowLayout->addWidget(shortcutButton, 0, Qt::AlignRight);
+    rowLayout->addWidget(shortcutButton, 0,
+                         m_compactPresentation ? Qt::AlignVCenter : Qt::AlignRight);
+    if (m_compactPresentation) {
+        rowLayout->addStretch(1);
+    }
     m_shortcutButton = shortcutButton;
 
     const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
@@ -1317,18 +1448,25 @@ void ShortcutKeyRow::applyTheme(const snow_shot::presentation::styles::ThemeColo
     }
 
     syncTitle();
+    syncDelayUnderline();
     syncRegistrationStatus();
     update();
 }
 
 void ShortcutKeyRow::setTitle(const QString& title) {
+    m_baseTitle = title;
+    const QString displayTitle = delayDisplayTitle();
     if (m_titleLabel != nullptr) {
-        m_titleLabel->setText(title);
+        m_titleLabel->setText(titleLabelText());
     }
-    setAccessibleName(title);
+    setAccessibleName(displayTitle);
+    syncDelayUnderline();
 }
 
 void ShortcutKeyRow::retranslateUi() {
+    if (m_adjustableDelay) {
+        setToolTip(tr("Delay: %1 seconds").arg(m_delaySeconds));
+    }
     syncRegistrationStatus();
     updateGeometry();
     update();
@@ -1342,8 +1480,31 @@ void ShortcutKeyRow::setRegistrationState(
     update();
 }
 
+void ShortcutKeyRow::setDelaySeconds(int seconds) {
+    if (!m_adjustableDelay) {
+        return;
+    }
+    const int clamped = std::clamp(seconds, 1, 10);
+    if (m_delaySeconds == clamped) {
+        return;
+    }
+    m_delaySeconds = clamped;
+    setTitle(m_baseTitle);
+    setToolTip(tr("Delay: %1 seconds").arg(m_delaySeconds));
+    updateGeometry();
+    update();
+}
+
+int ShortcutKeyRow::delaySeconds() const {
+    return m_delaySeconds;
+}
+
 void ShortcutKeyRow::paintEvent(QPaintEvent* event) {
     (void)event;
+
+    if (m_compactPresentation) {
+        return;
+    }
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
@@ -1391,6 +1552,19 @@ bool ShortcutKeyRow::event(QEvent* event) {
 }
 
 bool ShortcutKeyRow::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == m_titleLabel && m_adjustableDelay) {
+        const QEvent::Type type = event->type();
+        if (type == QEvent::Wheel && adjustDelayFromWheel(event)) {
+            return true;
+        }
+        if (type == QEvent::Enter || type == QEvent::Leave) {
+            m_delayTitleHovered = type == QEvent::Enter;
+            syncDelayUnderline();
+        } else if (type == QEvent::Resize || type == QEvent::FontChange) {
+            syncDelayUnderline();
+        }
+    }
+
     if (watched == m_shortcutButton) {
         const QEvent::Type type = event->type();
         if (type == QEvent::Enter || type == QEvent::Leave || type == QEvent::MouseButtonPress ||
@@ -1403,11 +1577,71 @@ bool ShortcutKeyRow::eventFilter(QObject* watched, QEvent* event) {
     return adqt::widgets::AdButton::eventFilter(watched, event);
 }
 
+QString ShortcutKeyRow::delayDisplayTitle() const {
+    if (!m_adjustableDelay) {
+        return m_baseTitle;
+    }
+    return m_baseTitle.contains(QStringLiteral("%1"))
+               ? m_baseTitle.arg(m_delaySeconds)
+               : tr("%1 (%2 s)").arg(m_baseTitle).arg(m_delaySeconds);
+}
+
+QString ShortcutKeyRow::titleLabelText() const {
+    const QString title = delayDisplayTitle();
+    return m_compactPresentation ? title + QStringLiteral(":") : title;
+}
+
+bool ShortcutKeyRow::adjustDelayFromWheel(QEvent* event) {
+    auto* wheel = static_cast<QWheelEvent*>(event);
+    const int delta = wheel->angleDelta().y() != 0 ? wheel->angleDelta().y()
+                                                    : wheel->pixelDelta().y();
+    if (delta == 0) {
+        return false;
+    }
+
+    const int next = std::clamp(m_delaySeconds + (delta > 0 ? 1 : -1), 1, 10);
+    if (next != m_delaySeconds && (!m_delaySetter || m_delaySetter(next))) {
+        setDelaySeconds(next);
+        emit delaySecondsChanged(next);
+    }
+    wheel->accept();
+    return true;
+}
+
+void ShortcutKeyRow::syncDelayUnderline() {
+    if (!m_adjustableDelay || m_titleLabel == nullptr || m_delayUnderline == nullptr) {
+        return;
+    }
+
+    const QString secondsText = QString::number(m_delaySeconds);
+    const QString displayTitle = m_titleLabel->text();
+    const int delayTextStart = m_baseTitle.contains(QStringLiteral("%1"))
+                                   ? m_baseTitle.indexOf(QStringLiteral("%1"))
+                                   : displayTitle.lastIndexOf(secondsText);
+    if (delayTextStart < 0 || secondsText.isEmpty()) {
+        m_delayUnderline->hide();
+        return;
+    }
+
+    const QFontMetrics metrics(m_titleLabel->font());
+    const int underlineX = metrics.horizontalAdvance(displayTitle.left(delayTextStart));
+    const int underlineWidth = std::max(1, metrics.horizontalAdvance(secondsText));
+    m_delayUnderline->setGeometry(underlineX, m_titleLabel->height() - 2, underlineWidth, 2);
+
+    const QColor highlightColor = m_colorScheme.map.presetColorHover.value(
+        QStringLiteral("blue"), m_colorScheme.map.colorPrimaryHover);
+    m_delayUnderline->setProperty("highlightColor", highlightColor);
+    m_delayUnderline->setStyleSheet(
+        QStringLiteral("background-color: %1;").arg(cssColor(highlightColor)));
+    m_delayUnderline->setVisible(m_delayTitleHovered);
+}
+
 void ShortcutKeyRow::openShortcutConfigDialog() {
     QWidget* const hostWindow = window();
     auto* modal = new adqt::widgets::AdModal(this);
     auto* content = new ShortcutKeyConfigContent(m_registrationState.shortcuts, m_colorScheme,
-                                                 m_maxShortcutCount, m_shortcutValidator);
+                                                 m_maxShortcutCount, m_shortcutValidator,
+                                                 m_validationScope);
     const QPointer<ShortcutKeyConfigContent> contentGuard(content);
 
     modal->setOwnerWindow(hostWindow);
@@ -1469,8 +1703,11 @@ void ShortcutKeyRow::openShortcutConfigDialog() {
 void ShortcutKeyRow::syncTitle() {
     const auto& map = m_colorScheme.map;
     const bool shortcutButtonActive = isShortcutButtonActive();
-    const QColor textColor = titleColorForShortcutRow(m_rowState, isDown() && !shortcutButtonActive,
-                                                      underMouse() && !shortcutButtonActive, map);
+    const QColor textColor =
+        m_compactPresentation
+            ? map.colorText
+            : titleColorForShortcutRow(m_rowState, isDown() && !shortcutButtonActive,
+                                       underMouse() && !shortcutButtonActive, map);
 
     syncTitleLabelColor(textColor);
     syncTitleIcon(textColor);
@@ -1484,8 +1721,9 @@ void ShortcutKeyRow::syncTitleLabelColor(const QColor& textColor) {
     m_titleLabel->setStyleSheet(QStringLiteral("color: %1;").arg(cssColor(textColor)));
 
     QFont labelFont = m_titleLabel->font();
-    labelFont.setPixelSize(m_colorScheme.metricAlias.fontSizeLG);
-    labelFont.setWeight(QFont::Medium);
+    labelFont.setPixelSize(m_compactPresentation ? m_colorScheme.metricAlias.fontSize
+                                                 : m_colorScheme.metricAlias.fontSizeLG);
+    labelFont.setWeight(m_compactPresentation ? QFont::Normal : QFont::Medium);
     m_titleLabel->setFont(labelFont);
 }
 
@@ -1505,14 +1743,26 @@ void ShortcutKeyRow::syncTitleIcon(const QColor& iconColor) {
 }
 
 void ShortcutKeyRow::syncRegistrationStatus() {
-    const auto status = m_registrationState.status;
-    const QColor statusColor = registrationStatusColor(status, m_colorScheme.map);
     const QString shortcutText = formatShortcutListDisplayText(m_registrationState.shortcuts);
+    const auto status =
+        m_showRegistrationStatus
+            ? m_registrationState.status
+            : (shortcutText.isEmpty()
+                   ? snow_shot::presentation::GlobalShortcutStatus::Unset
+                   : snow_shot::presentation::GlobalShortcutStatus::Registered);
+    const QColor statusColor = registrationStatusColor(status, m_colorScheme.map);
 
     if (m_shortcutButton != nullptr) {
         auto* const button = static_cast<ShortcutKeyButton*>(m_shortcutButton);
-        button->setText(shortcutText.isEmpty() ? tr("Unset") : shortcutText);
+        button->setText(m_compactPresentation
+                            ? shortcutText
+                            : (shortcutText.isEmpty() ? tr("Unset") : shortcutText));
         button->setRegistrationStatus(status);
+        if (!m_showRegistrationStatus) {
+            button->setAccentRole(shortcutText.isEmpty()
+                                      ? adqt::widgets::AdButton::AccentRole::Danger
+                                      : adqt::widgets::AdButton::AccentRole::Neutral);
+        }
         button->setTheme(m_colorScheme);
     }
 
@@ -1532,7 +1782,7 @@ void ShortcutKeyRow::syncRegistrationStatus() {
         break;
     }
 
-    const QString tooltipText = registrationTooltipText();
+    const QString tooltipText = m_showRegistrationStatus ? registrationTooltipText() : QString();
     const bool showTooltip = !tooltipText.trimmed().isEmpty();
     if (m_shortcutButton != nullptr) {
         auto* const button = static_cast<ShortcutKeyButton*>(m_shortcutButton);

@@ -879,8 +879,14 @@ fn make_stream_config(config: &Config) -> CaptureStreamConfig {
         target_fps: config.recording_target_fps,
         buffer_depth: config.recording_buffer_depth,
         max_consecutive_errors: config.recording_max_consecutive_errors,
-        adaptive_fps: config.recording_adaptive_fps,
-        min_fps: config.recording_min_fps,
+        rate_control: if config.recording_adaptive_fps {
+            snow_capture::CaptureRateControl::Backpressure {
+                min_fps: config.recording_min_fps,
+            }
+        } else {
+            snow_capture::CaptureRateControl::Fixed
+        },
+        frame_pool_budget_bytes: None,
         pause_on_resolution_change: false,
     }
 }

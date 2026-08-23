@@ -198,7 +198,7 @@ class ColorSaturationPanel final : public QWidget {
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    setAccessibleName(QStringLiteral("Color selection area"));
+    setAccessibleName(AdColorPicker::tr("Color selection area"));
     refreshAccessibleDescription();
   }
 
@@ -239,6 +239,14 @@ class ColorSaturationPanel final : public QWidget {
   }
 
  protected:
+  void changeEvent(QEvent* event) override {
+    QWidget::changeEvent(event);
+    if (event && event->type() == QEvent::LanguageChange) {
+      setAccessibleName(AdColorPicker::tr("Color selection area"));
+      refreshAccessibleDescription();
+    }
+  }
+
   void paintEvent(QPaintEvent* event) override {
     Q_UNUSED(event)
     QPainter painter(this);
@@ -467,10 +475,11 @@ class ColorSaturationPanel final : public QWidget {
   }
 
   void refreshAccessibleDescription() {
-    setAccessibleDescription(QStringLiteral("Hue %1, saturation %2 percent, brightness %3 percent")
-                                 .arg(hue_)
-                                 .arg(qRound(saturation_ * 100.0))
-                                 .arg(qRound(brightness_ * 100.0)));
+    setAccessibleDescription(
+        AdColorPicker::tr("Hue %1, saturation %2 percent, brightness %3 percent")
+            .arg(hue_)
+            .arg(qRound(saturation_ * 100.0))
+            .arg(qRound(brightness_ * 100.0)));
   }
 
   void updateFromPoint(const QPointF& point, bool completed) {
@@ -529,8 +538,8 @@ class ColorPickerTriggerFrame final : public QAbstractButton {
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
     setCursor(Qt::PointingHandCursor);
-    setAccessibleName(QStringLiteral("Color picker trigger"));
-    setAccessibleDescription(QStringLiteral("Open or close the color picker popup"));
+    setAccessibleName(AdColorPicker::tr("Color picker trigger"));
+    setAccessibleDescription(AdColorPicker::tr("Open or close the color picker popup"));
   }
 
   void setVisualStyle(const QColor& background, const QColor& border, qreal borderWidth,
@@ -554,6 +563,14 @@ class ColorPickerTriggerFrame final : public QAbstractButton {
   qreal radius() const { return radius_; }
 
  protected:
+  void changeEvent(QEvent* event) override {
+    QAbstractButton::changeEvent(event);
+    if (event && event->type() == QEvent::LanguageChange) {
+      setAccessibleName(AdColorPicker::tr("Color picker trigger"));
+      setAccessibleDescription(AdColorPicker::tr("Open or close the color picker popup"));
+    }
+  }
+
   void paintEvent(QPaintEvent* event) override {
     Q_UNUSED(event)
 
@@ -1376,8 +1393,8 @@ class PresetCollapseHeaderButton final : public QAbstractButton {
       return;
     }
     label_ = label;
-    setAccessibleName(QStringLiteral("Preset group %1").arg(label_));
-    setAccessibleDescription(QStringLiteral("Expand or collapse preset group"));
+    setAccessibleName(AdColorPicker::tr("Preset group %1").arg(label_));
+    setAccessibleDescription(AdColorPicker::tr("Expand or collapse preset group"));
     updateGeometry();
     update();
   }
@@ -1424,6 +1441,14 @@ class PresetCollapseHeaderButton final : public QAbstractButton {
   QSize minimumSizeHint() const override { return sizeHint(); }
 
  protected:
+  void changeEvent(QEvent* event) override {
+    QAbstractButton::changeEvent(event);
+    if (event && event->type() == QEvent::LanguageChange) {
+      setAccessibleName(AdColorPicker::tr("Preset group %1").arg(label_));
+      setAccessibleDescription(AdColorPicker::tr("Expand or collapse preset group"));
+    }
+  }
+
   void paintEvent(QPaintEvent* event) override {
     Q_UNUSED(event)
 
@@ -2123,11 +2148,11 @@ bool parseBoundedInt(const QVariant& value, int minValue, int maxValue, int* out
 QString modeLabel(AdColorPicker::Mode value) {
   switch (value) {
     case AdColorPicker::Mode::Solid:
-      return QStringLiteral("Solid");
+      return AdColorPicker::tr("Solid");
     case AdColorPicker::Mode::Gradient:
-      return QStringLiteral("Gradient");
+      return AdColorPicker::tr("Gradient");
   }
-  return QStringLiteral("Solid");
+  return AdColorPicker::tr("Solid");
 }
 
 }  // namespace
@@ -2410,6 +2435,9 @@ AdColorPicker::~AdColorPicker() {
   disconnect(triggerContentDestroyedConnection_);
   triggerContentDestroyedConnection_ = {};
   triggerContent_ = nullptr;
+  disconnect(previewContentDestroyedConnection_);
+  previewContentDestroyedConnection_ = {};
+  previewContent_ = nullptr;
   if (state_) {
     disconnect(state_.data(), nullptr, this, nullptr);
   }
@@ -2681,6 +2709,10 @@ void AdColorPicker::setValue(const AdColorValue& value) {
   importColorValue(toLegacyColorValue(value), false, false, true);
 }
 
+void AdColorPicker::commitValue(const AdColorValue& value) {
+  importColorValue(toLegacyColorValue(value), true, true, true);
+}
+
 QVector<AdColorPicker::PresetItem> AdColorPicker::presets() const { return presets_; }
 
 void AdColorPicker::setPresets(const QVector<PresetItem>& presets) {
@@ -2762,6 +2794,52 @@ void AdColorPicker::setTriggerContent(QWidget* widget) {
   setActiveTriggerWidget(currentTriggerWidget());
   syncPopoverSourceWidget();
   emit triggerContentChanged(triggerContent_);
+  refreshStyle();
+}
+
+QWidget* AdColorPicker::previewContent() const { return previewContent_; }
+
+void AdColorPicker::setPreviewContent(QWidget* widget) {
+  ensureEditorUi();
+  if (widget == this || widget == sliderContainer_ || widget == sliderGroup_ ||
+      widget == previewSwatch_) {
+    return;
+  }
+  if (previewContent_ == widget) {
+    return;
+  }
+
+  disconnect(previewContentDestroyedConnection_);
+  previewContentDestroyedConnection_ = {};
+  if (previewContent_) {
+    previewContent_->hide();
+    if (auto* layout = qobject_cast<QHBoxLayout*>(sliderContainer_->layout())) {
+      layout->removeWidget(previewContent_);
+    }
+  }
+
+  previewContent_ = widget;
+  if (previewContent_) {
+    previewContentDestroyedConnection_ =
+        connect(previewContent_, &QObject::destroyed, this, [this]() {
+          previewContent_.clear();
+          previewContentDestroyedConnection_ = {};
+          // QWidget removes itself from its parent layout after QObject emits
+          // destroyed. Defer the replacement so the layout is no longer
+          // traversing the widget being deleted.
+          QTimer::singleShot(0, this, [this]() {
+            if (previewContent_) {
+              return;
+            }
+            syncPreviewContentWidget();
+            emit previewContentChanged(nullptr);
+            refreshStyle();
+          });
+        });
+  }
+
+  syncPreviewContentWidget();
+  emit previewContentChanged(previewContent_);
   refreshStyle();
 }
 
@@ -4056,6 +4134,7 @@ void AdColorPicker::ensureEditorUi() {
   previewSwatch_->setObjectName(QStringLiteral("ad-color-picker-preview-swatch"));
   previewSwatch_->setFixedSize(currentMetrics.previewSwatchSize, currentMetrics.previewSwatchSize);
   sliderContainerLayout->addWidget(previewSwatch_, 0, Qt::AlignCenter);
+  syncPreviewContentWidget();
   sliderContainer_->setFixedHeight(sliderContainerHeightFromMetrics(
       currentMetrics.previewSwatchSize, currentMetrics.sliderVisualHeight,
       sliderGroupGapFromMetrics(currentMetrics.marginSM, currentMetrics.sliderMarginCross),
@@ -4790,6 +4869,9 @@ void AdColorPicker::refreshStyle(bool preserveCurrentTriggerWidth) {
   if (previewSwatch_) {
     previewSwatch_->setFixedSize(style.metrics.previewSwatchSize, style.metrics.previewSwatchSize);
   }
+  if (previewContent_) {
+    previewContent_->setFixedSize(style.metrics.previewSwatchSize, style.metrics.previewSwatchSize);
+  }
 
   if (popover_) {
     popover_->setBackgroundColor(style.panelBackground);
@@ -5094,7 +5176,7 @@ void AdColorPicker::refreshTriggerDisplay(bool deferTextUpdate) {
 
     if (text.trimmed().isEmpty()) {
       if (displayValue.isEmpty()) {
-        text = QStringLiteral("Transparent");
+        text = tr("Transparent");
       } else if (mode_ == Mode::Gradient && !displayValue.gradientStops.isEmpty()) {
         QStringList cells;
         const QVector<InternalGradientStop> normalized = normalizeGradientStops(gradientStops_);
@@ -5586,6 +5668,31 @@ void AdColorPicker::refreshPreviewSwatch() {
       swatch->setSolidFill(currentEditableColor());
     }
   }
+}
+
+void AdColorPicker::syncPreviewContentWidget() {
+  if (!sliderContainer_ || !previewSwatch_) {
+    return;
+  }
+  auto* layout = qobject_cast<QHBoxLayout*>(sliderContainer_->layout());
+  if (layout == nullptr) {
+    return;
+  }
+
+  layout->removeWidget(previewSwatch_);
+  previewSwatch_->hide();
+  if (!previewContent_) {
+    layout->addWidget(previewSwatch_, 0, Qt::AlignCenter);
+    previewSwatch_->show();
+    return;
+  }
+
+  if (previewContent_->parentWidget() != sliderContainer_) {
+    previewContent_->setParent(sliderContainer_);
+  }
+  layout->removeWidget(previewContent_);
+  layout->addWidget(previewContent_, 0, Qt::AlignCenter);
+  previewContent_->show();
 }
 
 void AdColorPicker::updateFormatInputText() {

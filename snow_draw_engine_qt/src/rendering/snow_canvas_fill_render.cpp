@@ -161,4 +161,8 @@ std::size_t hatchTextureCacheEntryCountForCurrentThread() {
     return static_cast<std::size_t>(currentHatchTextureCache().entries.size());
 }
 
+void resetHatchTextureCacheForCurrentThread() {
+    currentHatchTextureCache() = {};
+}
+
 } // namespace snow_canvas_fill_render

@@ -441,10 +441,7 @@ void drawButtonIcon(const AdRadio* radio, QPainter* painter, const QRectF& rect,
                            : radio->underMouse() ? QIcon::Active
                                                  : QIcon::Normal;
   const QIcon::State state = radio->isChecked() ? QIcon::On : QIcon::Off;
-  const QPixmap pixmap = radio->icon().pixmap(iconSize, mode, state);
-  if (!pixmap.isNull()) {
-    painter->drawPixmap(rect.toAlignedRect(), pixmap);
-  }
+  radio->icon().paint(painter, rect.toAlignedRect(), Qt::AlignCenter, mode, state);
 }
 
 detail::RadioButtonStateStyle resolveButtonStateStyle(const detail::RadioButtonVisualStyle& style,
@@ -867,6 +864,7 @@ void AdRadio::prepareControlScale(const AdControlScaleContext& context) {
 void AdRadio::commitControlScale(const AdControlScaleContext& context) {
   if (!referenceFontCaptured_) {
     referenceFont_ = font();
+    referenceIconSize_ = iconSize();
     referenceFontCaptured_ = true;
   }
   controlScale_ = context;
@@ -877,6 +875,10 @@ void AdRadio::commitControlScale(const AdControlScaleContext& context) {
     scaledFont.setPointSizeF(scaledFont.pointSizeF() * context.logicalScale);
   }
   setFont(scaledFont);
+  if (referenceIconSize_.isValid()) {
+    setIconSize(QSize(qMax(1, qRound(referenceIconSize_.width() * context.logicalScale)),
+                      qMax(1, qRound(referenceIconSize_.height() * context.logicalScale))));
+  }
   styleCache_.reset();
 }
 

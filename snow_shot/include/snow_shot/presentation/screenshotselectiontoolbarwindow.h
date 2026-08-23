@@ -62,10 +62,7 @@ class ScreenshotSelectionToolbarWindow final : public QWidget {
     QLabel* addIconLabel(const QString& tooltip);
     QWidget* addSeparator();
     void setToolbarHovered(bool hovered);
-    bool isCursorInsideToolbarPanel() const;
-    QWidget* hoveredPanelChildAtCursor() const;
-    void setHoveredPanelChild(QWidget* child);
-    void syncToolbarHoverFromCursor();
+    void scheduleToolbarHoverSync();
     void refreshHoverVisuals();
     bool fieldForObject(QObject* object, Field* outField) const;
     void handleFieldWheel(Field field, int deltaY);
@@ -96,7 +93,6 @@ class ScreenshotSelectionToolbarWindow final : public QWidget {
     QRect m_selection;
     bool m_aspectRatioLocked = false;
     bool m_toolbarHovered = false;
-    QWidget* m_hoveredPanelChild = nullptr;
     DisplayMode m_displayMode = DisplayMode::Full;
     int m_cornerRadius = 0;
     int m_shadowWidth = 0;

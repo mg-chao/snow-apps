@@ -393,6 +393,8 @@ int main(int argc, char** argv) {
         QStringLiteral("rounded-corners"),
         QStringLiteral("hover-entry-exit"),
         QStringLiteral("shadow-width-sweep"),
+        QStringLiteral("cursor-and-monitor-guide-lines"),
+        QStringLiteral("monitor-center-guide-line-only"),
         QStringLiteral("active-spotlight"),
         QStringLiteral("live-reanchored-watermark"),
         QStringLiteral("fractional-dpr"),
@@ -462,6 +464,25 @@ int main(int argc, char** argv) {
         renderer.setSelection(baseSelection, true, 16, widths[index % widths.size()], shadowColor);
         renderer.setSelectionToolbarHovered(true);
     });
+
+    const QPointF guideLineCenter(surfaceSize.width() / 2.0, surfaceSize.height() / 2.0);
+    const QColor cursorGuideLineColor(220, 30, 40);
+    const QColor monitorGuideLineColor(30, 80, 220);
+    renderer.setSelectionToolbarHovered(false);
+    renderer.setGuideLines(guideLineCenter, cursorGuideLineColor, monitorGuideLineColor);
+    QApplication::processEvents();
+    run(QStringLiteral("cursor-and-monitor-guide-lines"), [&](int index) {
+        renderer.setGuideLines(guideLineCenter + QPointF(index & 1, (index >> 1) & 1),
+                               cursorGuideLineColor, monitorGuideLineColor);
+    });
+    renderer.setGuideLines(guideLineCenter, Qt::transparent, monitorGuideLineColor);
+    QApplication::processEvents();
+    run(QStringLiteral("monitor-center-guide-line-only"), [&](int index) {
+        renderer.setGuideLines(guideLineCenter + QPointF(index & 1, (index >> 1) & 1),
+                               Qt::transparent, monitorGuideLineColor);
+    });
+    renderer.clearGuideLines();
+    QApplication::processEvents();
 
     createSpotlightCutout(canvas);
     run(QStringLiteral("active-spotlight"), [&](int index) {

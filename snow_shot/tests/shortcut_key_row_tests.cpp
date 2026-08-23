@@ -13,7 +13,10 @@
 #include <QEvent>
 #include <QFontMetricsF>
 #include <QKeyEvent>
+#include <QLabel>
+#include <QLayout>
 #include <QString>
+#include <QWheelEvent>
 
 #include <algorithm>
 #include <cmath>
@@ -242,6 +245,13 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
     };
 
     ShortcutKeyRow row(config, scheme.metricAlias, mainWindowMetric);
+    QObject::connect(&row, &ShortcutKeyRow::shortcutsChanged, &row,
+                     [&row](const QStringList& selectedShortcuts) {
+                         shortcuts::GlobalShortcutRegistrationState state;
+                         state.action = shortcuts::GlobalShortcutAction::Screenshot;
+                         state.shortcuts = selectedShortcuts;
+                         row.setRegistrationState(state);
+                     });
     row.resize(720, row.height());
     row.show();
     QApplication::processEvents();
@@ -336,12 +346,271 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
     require(keyButton->text().contains(QStringLiteral("Num Plus")) &&
                 !keyButton->text().contains(QStringLiteral("Num++")),
             "a keypad plus should not be displayed as two shortcut separators");
+
+    QKeyEvent shiftEvent(QEvent::KeyPress, Qt::Key_Shift, Qt::ShiftModifier);
+    QCoreApplication::sendEvent(configContent, &shiftEvent);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QApplication::processEvents();
+
+    keyButton = row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutConfigKeyButton"));
+    actionButton =
+        row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutConfigActionButton"));
+    require(keyButton != nullptr && actionButton != nullptr &&
+                lastValidatedShortcut == QStringLiteral("Shift") &&
+                keyButton->text() == QStringLiteral("Shift") && actionButton->isEnabled() &&
+                modal->acceptButton()->isEnabled(),
+            "a bare Shift key must validate and display as Shift without a duplicated modifier");
+
+    actionButton->click();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QApplication::processEvents();
+    keyButton = row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutConfigKeyButton"));
+    require(keyButton != nullptr && keyButton->text() == QStringLiteral("Shift"),
+            "a committed bare Shift key must retain its normalized display");
+
+    modal->acceptButton()->click();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QApplication::processEvents();
+    require(shortcutButton->text() == QStringLiteral("Shift"),
+            "the outer shortcut control must display a committed bare Shift key without duplication");
+}
+
+void drawingRecorderUsesLocalValidationLanguage() {
+    const styles::ThemeColorScheme scheme = styles::ThemeManager::instance().themeColorScheme();
+    const auto mainWindowMetric = styles::buildMainWindowComponentMetricToken(scheme);
+
+    ShortcutKeyRowConfig config;
+    config.title = QStringLiteral("Shape tool");
+    config.maxShortcutCount = 2;
+    config.showRegistrationStatus = false;
+    config.validationScope = ShortcutKeyRowConfig::ValidationScope::DrawingShortcut;
+    config.shortcutValidator = [](const QString& shortcut) {
+        return shortcuts::GlobalShortcutValidationResult{
+            shortcut,
+            false,
+            shortcuts::GlobalShortcutFailureReason::AlreadyInUse,
+        };
+    };
+
+    ShortcutKeyRow row(config, scheme.metricAlias, mainWindowMetric);
+    row.resize(720, row.height());
+    row.show();
+    QApplication::processEvents();
+
+    auto* shortcutButton =
+        row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutKeyButton"));
+    require(shortcutButton != nullptr, "drawing shortcut control should open the recorder");
+    shortcutButton->click();
+    QApplication::processEvents();
+
+    auto* configContent = row.findChild<QWidget*>(QStringLiteral("shortcutConfigContent"));
+    require(configContent != nullptr, "drawing shortcut recorder should be created");
+    QKeyEvent duplicateEvent(QEvent::KeyPress, Qt::Key_S, Qt::NoModifier);
+    QCoreApplication::sendEvent(configContent, &duplicateEvent);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QApplication::processEvents();
+
+    auto* keyButton =
+        row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutConfigKeyButton"));
+    auto* validationInfo =
+        row.findChild<InfoTooltipIcon*>(QStringLiteral("shortcutConfigValidationTooltipTrigger"));
+    require(keyButton != nullptr && validationInfo != nullptr &&
+                keyButton->property("shortcutValidationState").toString() ==
+                    QStringLiteral("invalid") &&
+                validationInfo->accessibleName() == QStringLiteral("Invalid drawing shortcut") &&
+                validationInfo->tooltipText().contains(
+                    QStringLiteral("already assigned to another drawing tool")) &&
+                !validationInfo->tooltipText().contains(
+                    QStringLiteral("Windows global shortcut")) &&
+                keyButton->accessibleDescription() == validationInfo->tooltipText(),
+            "drawing shortcut conflicts must use local validation and accessibility wording");
+}
+
+void compactTitleAndKeyButtonStylesMatchReference() {
+    const styles::ThemeColorScheme scheme = styles::ThemeManager::instance().themeColorScheme();
+    const auto mainWindowMetric = styles::buildMainWindowComponentMetricToken(scheme);
+
+    ShortcutKeyRowConfig config;
+    config.title = QStringLiteral("Shape tool");
+    config.shortcuts = {QStringLiteral("Ctrl+Shift+S")};
+    config.showRegistrationStatus = false;
+    config.validationScope = ShortcutKeyRowConfig::ValidationScope::DrawingShortcut;
+    config.presentation = ShortcutKeyRowConfig::Presentation::CompactFormField;
+
+    ShortcutKeyRow row(config, scheme.metricAlias, mainWindowMetric);
+    row.resize(360, row.height());
+    row.show();
+    QApplication::processEvents();
+
+    auto* titleLabel = row.findChild<QLabel*>(QStringLiteral("shortcutTitleLabel"));
+    auto* shortcutButton =
+        row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutKeyButton"));
+    require(titleLabel != nullptr && titleLabel->text() == QStringLiteral("Shape tool:") &&
+                titleLabel->font().pixelSize() == scheme.metricAlias.fontSize &&
+                titleLabel->font().weight() == QFont::Normal && shortcutButton != nullptr &&
+                row.height() == scheme.metricAlias.controlHeight &&
+                row.cursor().shape() == Qt::ArrowCursor && row.layout() != nullptr &&
+                row.layout()->contentsMargins() == QMargins() &&
+                row.layout()->spacing() == scheme.metricAlias.marginXS &&
+                shortcutButton->buttonStyle() ==
+                    adqt::widgets::AdButton::ButtonStyle::Outline &&
+                shortcutButton->accentRole() ==
+                    adqt::widgets::AdButton::AccentRole::Neutral &&
+                shortcutButton->height() == scheme.metricAlias.controlHeight &&
+                shortcutButton->text() == QStringLiteral("Ctrl+Shift+S"),
+            "compact shortcut titles and key buttons must match the reference presentation");
+
+    const QString originalText = shortcutButton->text();
+    shortcutButton->setText(QString(256, QLatin1Char('W')));
+    const int longWidth = shortcutButton->sizeHint().width();
+    shortcutButton->setText(QString(100, QLatin1Char('W')));
+    const int cappedWidth = shortcutButton->sizeHint().width();
+    shortcutButton->setText(originalText);
+    require(longWidth == cappedWidth,
+            "compact shortcut values must use the reference 100px text cap");
+
+    row.setRegistrationState({});
+    QApplication::processEvents();
+    require(shortcutButton->text().isEmpty() &&
+                shortcutButton->accentRole() ==
+                    adqt::widgets::AdButton::AccentRole::Danger &&
+                shortcutButton->property("registrationStatus").toInt() ==
+                    static_cast<int>(shortcuts::GlobalShortcutStatus::Unset),
+            "unset compact shortcuts must use the reference icon-only danger button");
+}
+
+void adjustableDelayUsesWheelAndClampsRange() {
+    const styles::ThemeColorScheme scheme = styles::ThemeManager::instance().themeColorScheme();
+    const auto mainWindowMetric = styles::buildMainWindowComponentMetricToken(scheme);
+
+    int persistedDelay = 3;
+    int setterCalls = 0;
+    int changeSignals = 0;
+    bool acceptWrites = true;
+    ShortcutKeyRowConfig config;
+    config.title = QStringLiteral("Delay %1s to Execute");
+    config.adjustableDelay = true;
+    config.delaySeconds = 3;
+    config.delaySetter = [&persistedDelay, &setterCalls, &acceptWrites](int seconds) {
+        ++setterCalls;
+        if (!acceptWrites) {
+            return false;
+        }
+        persistedDelay = seconds;
+        return true;
+    };
+
+    ShortcutKeyRow row(config, scheme.metricAlias, mainWindowMetric);
+    row.resize(720, row.height());
+    row.show();
+    QObject::connect(&row, &ShortcutKeyRow::delaySecondsChanged, &row,
+                     [&changeSignals](int) { ++changeSignals; });
+    QApplication::processEvents();
+
+    auto* shortcutButton =
+        row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutKeyButton"));
+    auto* delayTitleLabel = row.findChild<QLabel*>(QStringLiteral("delayTitleLabel"));
+    auto* delayUnderline = row.findChild<QWidget*>(QStringLiteral("delaySecondsHoverUnderline"));
+    auto* delayTitleWrap = delayTitleLabel != nullptr ? delayTitleLabel->parentWidget() : nullptr;
+    bool titleShowsDefaultDelay = false;
+    for (const QLabel* label : row.findChildren<QLabel*>()) {
+        if (label->text() == QStringLiteral("Delay 3s to Execute")) {
+            titleShowsDefaultDelay = true;
+            break;
+        }
+    }
+    require(shortcutButton != nullptr && delayTitleLabel != nullptr && delayTitleWrap != nullptr &&
+                delayUnderline != nullptr &&
+                row.delaySeconds() == 3 && titleShowsDefaultDelay &&
+                row.toolTip() == QStringLiteral("Delay: 3 seconds") &&
+                row.cursor().shape() == Qt::PointingHandCursor &&
+                delayTitleLabel->cursor().shape() == Qt::SplitVCursor &&
+                shortcutButton->cursor().shape() != Qt::SplitVCursor &&
+                !delayUnderline->isVisible(),
+            "only the delay title must advertise vertical scrolling before hover");
+
+    const auto sendWheel = [](QWidget* target, int angleDelta) {
+        const QPoint localPoint = target->rect().center();
+        QWheelEvent event(QPointF(localPoint), QPointF(target->mapToGlobal(localPoint)), QPoint(),
+                          QPoint(0, angleDelta), Qt::NoButton, Qt::NoModifier,
+                          Qt::NoScrollPhase, false);
+        QCoreApplication::sendEvent(target, &event);
+        return event.isAccepted();
+    };
+
+    sendWheel(&row, 120);
+    require(row.delaySeconds() == 3 && persistedDelay == 3 && setterCalls == 0 &&
+                changeSignals == 0,
+            "scrolling outside the delay title must not change the configured delay");
+
+    sendWheel(delayTitleWrap, 120);
+    require(row.delaySeconds() == 3 && persistedDelay == 3 && setterCalls == 0 &&
+                changeSignals == 0,
+            "scrolling over the title container outside its text must not change the configured delay");
+
+    sendWheel(shortcutButton, 120);
+    require(row.delaySeconds() == 3 && persistedDelay == 3 && setterCalls == 0 &&
+                changeSignals == 0,
+            "scrolling over the shortcut button must not change the configured delay");
+
+    require(sendWheel(delayTitleLabel, 120),
+            "the delay title must consume handled wheel events");
+    require(row.delaySeconds() == 4 && persistedDelay == 4 && setterCalls == 1 &&
+                changeSignals == 1,
+            "scrolling over the delay title must persist and publish a one-second increment");
+
+    QEvent enterEvent(QEvent::Enter);
+    QCoreApplication::sendEvent(delayTitleLabel, &enterEvent);
+    require(delayUnderline->isVisible() && delayUnderline->height() == 2 &&
+                delayUnderline->property("highlightColor").value<QColor>() ==
+                    scheme.map.presetColorHover.value(QStringLiteral("blue"),
+                                                      scheme.map.colorPrimaryHover),
+            "hovering the delay title must show a blue underline below the seconds value");
+    QEvent leaveEvent(QEvent::Leave);
+    QCoreApplication::sendEvent(delayTitleLabel, &leaveEvent);
+    require(!delayUnderline->isVisible(),
+            "leaving the delay title must hide the seconds underline");
+
+    acceptWrites = false;
+    sendWheel(delayTitleLabel, -120);
+    require(row.delaySeconds() == 4 && persistedDelay == 4 && setterCalls == 2 &&
+                changeSignals == 1,
+            "a rejected delay write must leave the displayed and persisted values unchanged");
+    acceptWrites = true;
+
+    row.setDelaySeconds(100);
+    const int callsAtUpperBound = setterCalls;
+    sendWheel(delayTitleLabel, 120);
+    require(row.delaySeconds() == 10 && setterCalls == callsAtUpperBound,
+            "delay values and upward wheel input must clamp at ten seconds");
+
+    row.setDelaySeconds(-100);
+    const int callsAtLowerBound = setterCalls;
+    sendWheel(delayTitleLabel, -120);
+    require(row.delaySeconds() == 1 && setterCalls == callsAtLowerBound,
+            "delay values and downward wheel input must clamp at one second");
 }
 } // namespace
 
 int main(int argc, char** argv) {
+    bool titleAndKeyButtonOnly = false;
+    for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex) {
+        if (QString::fromLocal8Bit(argv[argumentIndex]) ==
+            QStringLiteral("--title-and-key-button-only")) {
+            titleAndKeyButtonOnly = true;
+        }
+    }
+
     QApplication application(argc, argv);
+    if (titleAndKeyButtonOnly) {
+        compactTitleAndKeyButtonStylesMatchReference();
+        return 0;
+    }
+
     statusPresentationUsesSemanticTokens();
     recorderAcceptsOnlyBackendSupportedShortcuts();
+    drawingRecorderUsesLocalValidationLanguage();
+    compactTitleAndKeyButtonStylesMatchReference();
+    adjustableDelayUsesWheelAndClampsRange();
     return 0;
 }

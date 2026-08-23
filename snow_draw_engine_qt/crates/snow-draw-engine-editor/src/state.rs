@@ -115,6 +115,8 @@ pub(crate) struct CreatePenFilterState {
     pub(crate) pending_raw_points: Vec<Point<f64>>,
     pub(crate) preview_committed_points: Vec<Point<f64>>,
     pub(crate) epsilon: f64,
+    pub(crate) straight_anchor: Option<Point<f64>>,
+    pub(crate) straight_endpoint: Option<Point<f64>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

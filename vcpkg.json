@@ -2,25 +2,44 @@
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "snow-apps",
   "version-semver": "0.1.0",
-  "builtin-baseline": "ffc071e0c08432c60c9b64f00334c0227667931b",
-  "dependencies": [
-    "ffmpeg",
-    "giflib",
-    { "name": "libheif", "default-features": false, "features": ["aom"] },
-    "libjpeg-turbo",
-    "libjxl",
-    { "name": "libpng", "features": ["apng"] },
-    "libwebp",
-    "lunasvg",
-    { "name": "onnxruntime", "features": ["directml"] },
-    { "name": "opencv4", "features": ["contrib", "world"] },
-    "openexr",
-    "vulkan-headers"
-  ],
+  "dependencies": [],
   "overrides": [
-    { "name": "flatbuffers", "version": "23.5.26" }
+    { "name": "flatbuffers", "version": "23.5.26" },
+    { "name": "abseil", "version": "20250814.1" },
+    { "name": "ffmpeg", "version": "9.0" },
+    { "name": "ffmpeg-bin2c", "version": "9.0" }
   ],
   "features": {
+    "snow-shot": {
+      "description": "Build the minimal native dependency set required by Snow Shot.",
+      "dependencies": [
+        {
+          "name": "ffmpeg",
+          "default-features": false,
+          "features": [
+            "snow-shot-minimal"
+          ]
+        },
+        { "name": "libpng", "features": ["apng"] },
+        {
+          "name": "libwebp",
+          "default-features": false,
+          "features": ["libwebpmux", "simd"]
+        },
+        "libjpeg-turbo",
+        { "name": "libheif", "default-features": false, "features": ["aom"] },
+        "libjxl",
+        {
+          "name": "onnxruntime",
+          "default-features": false,
+          "features": ["directml"]
+        },
+        {
+          "name": "opencv4",
+          "default-features": false
+        }
+      ]
+    },
     "full-codecs": {
       "description": "Enable the complete Snow Image codec profile.",
       "dependencies": [
@@ -28,9 +47,16 @@
         { "name": "libheif", "default-features": false, "features": ["aom", "hevc"] },
         "libjpeg-turbo",
         "libjxl",
+        { "name": "libpng", "features": ["apng"] },
         "libwebp",
         "lunasvg",
         "openexr"
+      ]
+    },
+    "image-viewer": {
+      "description": "Build the native dependencies required by Snow Image Viewer.",
+      "dependencies": [
+        "vulkan-headers"
       ]
     }
   }

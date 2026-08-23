@@ -1,10 +1,16 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTCLIPBOARDSERVICE_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTCLIPBOARDSERVICE_H
 
+#include "snow_shot/presentation/screenshotimagerowsource.h"
+
 #include <QImage>
+#include <QString>
 
 #include <QtGlobal>
 
+#include <atomic>
+#include <functional>
+#include <memory>
 #include <utility>
 
 class ScreenshotClipboardPixelSource final {
@@ -35,14 +41,22 @@ class ScreenshotClipboardPixelSource final {
             return Format::Unsupported;
         }
     }
-    [[nodiscard]] const QImage& image() const { return m_image; }
+    [[nodiscard]] const QImage& image() const {
+        return m_image;
+    }
 
   private:
     QImage m_image;
 };
 
 class QClipboard;
+class QObject;
 struct ScreenshotClipboardPayloadTestAccess;
+
+enum class ScreenshotClipboardFormatMode {
+    CompatibleDib,
+    DibV5,
+};
 
 class ScreenshotClipboardPayload final {
   public:
@@ -64,18 +78,72 @@ class ScreenshotClipboardPayload final {
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
     void* m_nativeHandle = nullptr;
+    ScreenshotClipboardFormatMode m_formatMode = ScreenshotClipboardFormatMode::DibV5;
 #else
     QImage m_image;
 #endif
 };
 
+enum class ScreenshotClipboardCommitFailure {
+    None,
+    Cancelled,
+    InvalidPayload,
+    ClipboardUnavailable,
+    Busy,
+    ClearFailed,
+    PublishFailed,
+};
+
+struct ScreenshotClipboardCommitResult final {
+    ScreenshotClipboardCommitFailure failure = ScreenshotClipboardCommitFailure::None;
+    quint32 nativeError = 0;
+    int attempts = 0;
+
+    [[nodiscard]] bool succeeded() const {
+        return failure == ScreenshotClipboardCommitFailure::None;
+    }
+    [[nodiscard]] QString errorString() const;
+};
+
+class ScreenshotClipboardCommitHandle final {
+  public:
+    ScreenshotClipboardCommitHandle() = default;
+
+    void cancel() const;
+    [[nodiscard]] bool isValid() const;
+    [[nodiscard]] bool isCancellationRequested() const;
+
+  private:
+    friend class ScreenshotClipboardService;
+    explicit ScreenshotClipboardCommitHandle(std::shared_ptr<std::atomic_bool> cancelled);
+    std::shared_ptr<std::atomic_bool> m_cancelled;
+};
+
 class ScreenshotClipboardService final {
   public:
+    using CommitCompletion = std::function<void(ScreenshotClipboardCommitResult)>;
+
     [[nodiscard]] static ScreenshotClipboardPayload prepare(
-        ScreenshotClipboardPixelSource source);
-    [[nodiscard]] static ScreenshotClipboardPayload prepareImage(const QImage& image);
+        ScreenshotClipboardPixelSource source,
+        ScreenshotClipboardFormatMode formatMode =
+            ScreenshotClipboardFormatMode::DibV5);
+    [[nodiscard]] static ScreenshotClipboardPayload prepare(
+        const ScreenshotImageRowSource& source,
+        ScreenshotClipboardFormatMode formatMode =
+            ScreenshotClipboardFormatMode::DibV5);
+    [[nodiscard]] static ScreenshotClipboardPayload prepareImage(
+        const QImage& image,
+        ScreenshotClipboardFormatMode formatMode =
+            ScreenshotClipboardFormatMode::DibV5);
+    [[nodiscard]] static ScreenshotClipboardCommitHandle commit(QClipboard* clipboard,
+                                                                QObject* receiver,
+                                                                ScreenshotClipboardPayload payload,
+                                                                CommitCompletion completion);
     [[nodiscard]] static bool publish(QClipboard* clipboard, ScreenshotClipboardPayload payload);
-    [[nodiscard]] static bool publishImage(QClipboard* clipboard, const QImage& image);
+    [[nodiscard]] static bool publishImage(
+        QClipboard* clipboard, const QImage& image,
+        ScreenshotClipboardFormatMode formatMode =
+            ScreenshotClipboardFormatMode::DibV5);
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTCLIPBOARDSERVICE_H

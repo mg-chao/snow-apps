@@ -5,14 +5,17 @@
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotoverlayeventsink.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
+#include "snow_shot/presentation/windowshortcutmanager.h"
 
 #include <algorithm>
 #include <utility>
 
-ScreenshotOverlayPool::ScreenshotOverlayPool(ScreenshotOverlayEventSink& eventSink,
-                                             SnowCanvasRuntime& canvasRuntime,
-                                             ScreenshotOverlayPoolCallbacks callbacks)
-    : m_eventSink(eventSink), m_canvasRuntime(canvasRuntime), m_callbacks(std::move(callbacks)) {}
+ScreenshotOverlayPool::ScreenshotOverlayPool(
+    ScreenshotOverlayEventSink& eventSink, SnowCanvasRuntime& canvasRuntime,
+    snow_shot::presentation::WindowShortcutManager& shortcutManager,
+    ScreenshotOverlayPoolCallbacks callbacks)
+    : m_eventSink(eventSink), m_canvasRuntime(canvasRuntime), m_shortcutManager(shortcutManager),
+      m_callbacks(std::move(callbacks)) {}
 
 void ScreenshotOverlayPool::prewarmDisplayPool(ScreenshotDisplaySession& displaySession,
                                                int displayCount) {
@@ -43,6 +46,18 @@ void ScreenshotOverlayPool::clearDisplays(ScreenshotDisplaySession& displaySessi
         });
 }
 
+void ScreenshotOverlayPool::hibernateDisplayPool(ScreenshotDisplaySession& displaySession) const {
+    clearDisplays(displaySession);
+    displaySession.forEachOverlay([this](qsizetype, ScreenshotOverlayWindow* overlay) {
+        if (overlay == nullptr) {
+            return;
+        }
+        clearOverlayCanvas(overlay);
+        overlay->resetScreenshotRendering();
+        overlay->hibernateNativeSurface();
+    });
+}
+
 void ScreenshotOverlayPool::destroyDisplayPool(ScreenshotDisplaySession& displaySession) const {
     displaySession.takeEachOverlay(
         [this](qsizetype, ScreenshotOverlayWindow* overlay) { deleteOverlay(overlay); });
@@ -60,7 +75,7 @@ void ScreenshotOverlayPool::resetForNewCapture(ScreenshotDisplaySession& display
                 overlay->resetScreenshotRendering();
                 if (overlay->canvas() != nullptr) {
                     overlay->canvas()->setInteractionEnabled(false);
-                    overlay->canvas()->unsetCursor();
+                    overlay->canvas()->clearCursorForLayer(SnowCanvasCursorLayer::Host);
                 }
             }
         });
@@ -72,12 +87,12 @@ ScreenshotOverlayPool::ensureOverlay(ScreenshotOverlayWindow* overlay) const {
     if (created) {
         auto* canvas = new SnowCanvasWidget(m_canvasRuntime);
         overlay = new ScreenshotOverlayWindow(m_eventSink, canvas);
-        static_cast<void>(overlay->winId());
+        m_shortcutManager.addScopeWindow(overlay);
     }
 
+    overlay->restoreNativeSurface();
     if (created) {
         clearOverlayCanvas(overlay);
-        overlay->hide();
     }
     return overlay;
 }
@@ -100,6 +115,12 @@ void ScreenshotOverlayPool::deleteOverlay(ScreenshotOverlayWindow* overlay) cons
     }
 
     detachOverlayUi(overlay);
-    overlay->hide();
+    // deleteLater() deliberately keeps the QObject alive until the current
+    // event dispatch is complete. Drop the renderer's QImage now so a frame
+    // lease cannot keep a full desktop raster alive during that interval.
+    clearOverlayCanvas(overlay);
+    m_shortcutManager.removeScopeWindow(overlay);
+    overlay->releaseNativeSurface();
+    m_retiredOverlays.add(overlay);
     overlay->deleteLater();
 }

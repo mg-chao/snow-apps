@@ -4,8 +4,11 @@
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/settings/applicationpriority.h"
+#include "snow_shot/platform/windows/autostartregistration.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "../presentation/pinned/screenshotpintoperfinstrumentation.h"
+#include "../presentation/services/screenshotlifecycleperfinstrumentation.h"
 
 #include "icon_registry.h"
 #include "locale/locale.h"
@@ -14,8 +17,10 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDebug>
+#include <QDir>
 #include <QRegularExpression>
 #include <QString>
+#include <QTimer>
 
 int main(int argc, char* argv[]) {
     QCoreApplication::setOrganizationName(QStringLiteral("SnowShot"));
@@ -32,10 +37,12 @@ int main(int argc, char* argv[]) {
                 std::char_traits<char>::length(e2eInstancePrefix)));
         }
     }
-    if (e2eCaptureEnabled &&
+    const bool isolatedE2eInstance =
+        e2eCaptureEnabled &&
         QRegularExpression(QStringLiteral("^[A-Za-z0-9_-]{1,64}$"))
             .match(e2eInstanceId)
-            .hasMatch()) {
+            .hasMatch();
+    if (isolatedE2eInstance) {
         applicationName += QStringLiteral("-e2e-") + e2eInstanceId;
     }
     QCoreApplication::setApplicationName(applicationName);
@@ -44,6 +51,10 @@ int main(int argc, char* argv[]) {
 #if defined(SNOW_SHOT_PIN_PERF_INSTRUMENTATION)
     snow_shot::presentation::pin_perf::configureTrace(
         qEnvironmentVariable("SNOW_SHOT_PIN_PERF_TRACE"));
+#endif
+#if defined(SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION)
+    snow_shot::presentation::screenshot_lifecycle_perf::configureTrace(
+        qEnvironmentVariable("SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_TRACE"));
 #endif
     snow_shot::app::SingleInstanceCoordinator singleInstance;
     const snow_shot::app::SingleInstanceResult instanceResult =
@@ -56,7 +67,33 @@ int main(int argc, char* argv[]) {
         return 2;
     }
 
-    static_cast<void>(snow_shot::storage::ApplicationStorage::instance().initialize());
+    snow_shot::storage::StorageInitializationOptions storageOptions;
+#if defined(SNOW_SHOT_SCREENSHOT_MEMORY_FOOTPRINT_INSTRUMENTATION)
+    const QString e2eStorageDirectory =
+        qEnvironmentVariable("SNOW_SHOT_E2E_STORAGE_DIRECTORY").trimmed();
+    if (isolatedE2eInstance && !e2eStorageDirectory.isEmpty()) {
+        if (!QDir::isAbsolutePath(e2eStorageDirectory)) {
+            qWarning("The E2E storage directory must be absolute");
+            return 2;
+        }
+        const QString isolatedStoragePath = QDir::cleanPath(e2eStorageDirectory);
+        // Treat the benchmark directory as both the executable and AppData roots so a portable
+        // marker beside the measured binary cannot redirect the test into normal user storage.
+        storageOptions.executableDirectory = isolatedStoragePath;
+        storageOptions.appDataDirectory = isolatedStoragePath;
+    }
+#endif
+    static_cast<void>(
+        snow_shot::storage::ApplicationStorage::instance().initialize(storageOptions));
+    if (snow_shot::platform::windows::AutoStartRegistration::isSupported()) {
+        const bool enabled = snow_shot::storage::SystemSettings().autoStartAtBoot();
+        QString error;
+        if ((!enabled ||
+             !snow_shot::platform::windows::AutoStartRegistration::matchesExpectedCommand()) &&
+            !snow_shot::platform::windows::AutoStartRegistration::setEnabled(enabled, &error)) {
+            qWarning().noquote() << error;
+        }
+    }
     static_cast<void>(snow_shot::presentation::settings::applyConfiguredApplicationPriority());
     QApplication::setQuitOnLastWindowClosed(false);
     QApplication::setWindowIcon(
@@ -72,7 +109,13 @@ int main(int argc, char* argv[]) {
             applicationController.handleLaunchRequest(arguments);
         });
     applicationController.start();
-    if (QApplication::arguments().contains(QStringLiteral("--show-main-window"))) {
+#if defined(SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION)
+    QTimer::singleShot(0, &app, []() {
+        snow_shot::presentation::screenshot_lifecycle_perf::appReady();
+    });
+#endif
+    if (!QApplication::arguments().contains(QStringLiteral("--autostart")) &&
+        QApplication::arguments().contains(QStringLiteral("--show-main-window"))) {
         applicationController.showMainWindow();
     }
     return QApplication::exec();

@@ -18,6 +18,7 @@ adqt::icons::IconPalette buildSnapshot() {
   snapshot.textDisabled = QColor(colors.colorTextQuaternary);
   snapshot.primary = QColor(colors.colorPrimary);
   snapshot.twoToneSecondary = QColor(colors.colorPrimaryBg);
+  snapshot.tertiary = QColor(colors.colorPrimaryBorder);
   snapshot.revision = manager.themeRevision();
   return snapshot;
 }

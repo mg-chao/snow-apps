@@ -1,6 +1,11 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("windows-msvc-debug", "windows-msvc-performance", "snow-shot-msvc-release")]
+    [ValidateSet(
+        "windows-msvc-debug",
+        "windows-msvc-performance",
+        "snow-shot-msvc-release",
+        "snow-shot-msvc-fast"
+    )]
     [string]$Preset = "windows-msvc-debug",
     [string]$Target = "snow-all",
     [switch]$Clean,
@@ -8,6 +13,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "snow-build-environment.ps1")
+Set-SnowBuildEnvironment -Preset $Preset | Out-Null
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $buildDirectory = Join-Path $repoRoot "build/$Preset"
 
@@ -29,7 +36,18 @@ if (-not $SkipBootstrap) {
 
 Push-Location $repoRoot
 try {
-    & cmake --fresh --preset $Preset
+    $cachePath = Join-Path $buildDirectory "CMakeCache.txt"
+    $configureArguments = @("--preset", $Preset)
+    if ((Test-Path -LiteralPath $cachePath -PathType Leaf) -and
+        -not (Test-SnowCacheAlignment -CachePath $cachePath -Preset $Preset)) {
+        Write-Host "The existing CMake cache does not match preset $Preset; configuring from a fresh cache."
+        $configureArguments = @("--fresh") + $configureArguments
+    }
+    elseif (Test-Path -LiteralPath $cachePath -PathType Leaf) {
+        Write-Host "Reusing the existing CMake cache for preset $Preset."
+    }
+
+    & cmake @configureArguments
     if ($LASTEXITCODE -ne 0) {
         throw "CMake configure failed for preset $Preset."
     }

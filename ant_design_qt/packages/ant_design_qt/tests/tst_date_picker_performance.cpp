@@ -42,6 +42,7 @@ class DatePickerPerformanceTests final : public QObject {
   void rangePanelResynchronizationRepaintsGrid();
   void unchangedPanelRenderReusesCellState();
   void deferredColumnsHonorConfiguredSteps();
+  void meridiemColumnUsesConfiguredLocale();
   void presetsAreDeferredUntilConfigured();
   void pickerPopupUsesDeferredPanel();
   void rangePickerStartEditAdvancesToEnd();
@@ -70,6 +71,24 @@ void DatePickerPerformanceTests::timePanelCreatesOnlySingleGroup() {
   panel.setShowTime(false);
   panel.setShowTime(true);
   QCOMPARE(timeColumns(&panel).size(), 4);
+}
+
+void DatePickerPerformanceTests::meridiemColumnUsesConfiguredLocale() {
+  const QLocale locale(QLocale::Chinese, QLocale::China);
+  AdDatePickerPanel panel;
+  panel.setLocale(locale);
+  panel.setShowTime(true);
+
+  const QList<QListWidget*> columns = timeColumns(&panel);
+  QCOMPARE(columns.size(), 4);
+  const auto meridiemIt = std::find_if(columns.cbegin(), columns.cend(), [&locale](QListWidget* list) {
+    return list && list->count() >= 2 && list->item(0)->text() == locale.amText() &&
+           list->item(1)->text() == locale.pmText();
+  });
+  QVERIFY(meridiemIt != columns.cend());
+  QListWidget* const meridiem = *meridiemIt;
+  QCOMPARE(meridiem->item(0)->text(), locale.amText());
+  QCOMPARE(meridiem->item(1)->text(), locale.pmText());
 }
 
 void DatePickerPerformanceTests::rangePanelCreatesSidesOnDemand() {

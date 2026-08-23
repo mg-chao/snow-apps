@@ -6,6 +6,8 @@
 #include "snow_shot/presentation/screenshottypes.h"
 
 #include <QColor>
+#include <QPointer>
+#include <QPoint>
 #include <QRectF>
 
 #include <functional>
@@ -24,12 +26,23 @@ class ScreenshotOverlayCanvasPresenter final {
     void applyDisplayModels(ScreenshotDisplaySession& displaySession) const;
     void showOverlayWindows(const ScreenshotDisplaySession& displaySession,
                             ScreenshotOverlayShowMode mode) const;
+    void activateOverlayWindows(const ScreenshotDisplaySession& displaySession,
+                                std::function<void()> interactionReady) const;
     void updateOverlayState(const ScreenshotDisplaySession& displaySession, const QRectF& selection,
                             int cornerRadius, int shadowWidth, const QColor& shadowColor,
-                            bool selectionToolbarHovered, bool intelligentSelecting,
-                            bool manualSelecting, bool dragging) const;
+                            bool selectionToolbarHovered, bool selectionHandlesVisible,
+                            bool intelligentSelecting, bool manualSelecting, bool dragging) const;
     void updateOverlayCursors(const ScreenshotDisplaySession& displaySession, bool selecting,
                               bool dragging) const;
+    void updateGuideLines(const ScreenshotDisplaySession& displaySession,
+                          ScreenshotOverlayWindow* owner, const QPointF& localPosition,
+                          bool selecting, const QColor& cursorColor,
+                          const QColor& monitorCenterColor) const;
+    void updateGuideLinesAtGlobalPosition(const ScreenshotDisplaySession& displaySession,
+                                          const QPoint& globalPosition, bool selecting,
+                                          const QColor& cursorColor,
+                                          const QColor& monitorCenterColor) const;
+    void clearGuideLines(const ScreenshotDisplaySession& displaySession) const;
     void setOverlayCursor(ScreenshotOverlayWindow* overlay,
                           ScreenshotSelectionDragMode dragMode) const;
     void setCanvasInteractionEnabled(const ScreenshotDisplaySession& displaySession,
@@ -71,6 +84,7 @@ class ScreenshotOverlayCanvasPresenter final {
 
   private:
     OverlayFactory m_ensureOverlay;
+    mutable QPointer<ScreenshotOverlayWindow> m_guideLineOwner;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTOVERLAYCANVASPRESENTER_H

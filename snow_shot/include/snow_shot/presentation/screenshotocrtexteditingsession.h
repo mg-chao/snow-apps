@@ -17,6 +17,14 @@ class ScreenshotOcrTextEditingSession final {
     // Replaces the complete draft as one text-history step.
     bool replaceText(const QString& text);
     bool reset();
+    bool setFormatting(const QString& value);
+    bool setPunctuation(const QString& value);
+    void clearTransforms();
+    [[nodiscard]] const QString& formatting() const;
+    [[nodiscard]] const QString& punctuation() const;
+    void establishBaseline(const QString& text);
+    void establishHistory(const QString& text);
+    void replaceTextWithoutHistory(const QString& text);
     void recordCurrentText();
     void undo();
     void redo();
@@ -25,8 +33,12 @@ class ScreenshotOcrTextEditingSession final {
 
   private:
     void applyText(const QString& text);
+    [[nodiscard]] QString transformedText() const;
 
     QString m_originalText;
+    QString m_transformBaseline;
+    QString m_formatting;
+    QString m_punctuation;
     QTextDocument m_document;
     QVector<QString> m_history;
     int m_historyIndex = 0;

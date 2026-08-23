@@ -23,7 +23,9 @@ struct ScreenshotSelectorPresentationCallbacks {
     std::function<void()> updateColorPicker;
     std::function<void()> hideToolbar;
     std::function<void()> updateOverlayCursors;
-    std::function<void(quint64 sessionId)> smartSelectionResultReady;
+    std::function<bool(quint64 sessionId, const QPoint& physicalPoint, bool ok,
+                       const QVector<QRectF>& hitRects)>
+        consumeInitialSmartSelectionResult;
 };
 
 struct ScreenshotSelectorWorkflowContext {
@@ -49,9 +51,10 @@ class ScreenshotSelectorWorkflow final {
     [[nodiscard]] bool updateSelectionAt(const QPoint& physicalPoint);
     [[nodiscard]] bool requestHitTest(const QPoint& physicalPoint);
     void startNextHitTest();
-    void handleHitTestFinished(bool ok, const QVector<QRectF>& hitRects);
+    void handleHitTestFinished(bool ok, const QPoint& physicalPoint,
+                               const QVector<QRectF>& hitRects);
 
-    void applyHitPath(const QVector<QRectF>& hitRects);
+    [[nodiscard]] bool applyHitPath(const QVector<QRectF>& hitRects);
     void setSelectionIndex(int index);
     void clearSelection();
     [[nodiscard]] QRectF currentSelection() const;

@@ -51,6 +51,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdlib>
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include <utility>
@@ -98,6 +99,20 @@ bool imageHasOpaqueLightPixel(const QImage& image) {
         }
     }
     return false;
+}
+
+QRect matchingPixelBounds(const QImage& image, const std::function<bool(const QColor&)>& matches) {
+    QRect bounds;
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            if (!matches(image.pixelColor(x, y))) {
+                continue;
+            }
+            const QRect pixel(x, y, 1, 1);
+            bounds = bounds.isValid() ? bounds.united(pixel) : pixel;
+        }
+    }
+    return bounds;
 }
 
 int longestHorizontalColorRun(const QImage& image, const QColor& color) {
@@ -191,11 +206,18 @@ void textAndHighlightStrokeWidthTriggersUseSharedPreviewButton() {
             "configured width-color editors should share picker and trigger metrics");
 }
 
+bool tooltipMatches(const QString& actual, const QString& expected) {
+    return actual == expected ||
+           (actual.startsWith(expected + QStringLiteral(" (")) && actual.endsWith(')'));
+}
+
 QWidget* controlWithTooltip(ScreenshotToolPalette& palette, const char* tooltip) {
     const QString expected = QString::fromUtf8(tooltip);
     const QList<QWidget*> controls = palette.findChildren<QWidget*>();
     for (QWidget* control : controls) {
-        if (control != nullptr && control->toolTip() == expected) {
+        if (control != nullptr &&
+            (tooltipMatches(control->toolTip(), expected) ||
+             control->property("snowShotDrawingShortcutTooltipSource").toString() == expected)) {
             return control;
         }
     }
@@ -220,8 +242,18 @@ QList<adqt::widgets::AdButton*> mainToolbarButtons(ScreenshotToolPalette& palett
 
     QLayout* layout = palette.mainPanel()->layout();
     for (int index = 0; index < layout->count(); ++index) {
-        if (auto* button =
-                qobject_cast<adqt::widgets::AdButton*>(layout->itemAt(index)->widget())) {
+        QWidget* widget = layout->itemAt(index)->widget();
+        if (auto* button = qobject_cast<adqt::widgets::AdButton*>(widget)) {
+            buttons.append(button);
+        }
+    }
+    return buttons;
+}
+
+QList<adqt::widgets::AdButton*> mainDrawingToolbarButtons(ScreenshotToolPalette& palette) {
+    QList<adqt::widgets::AdButton*> buttons;
+    for (adqt::widgets::AdButton* button : mainToolbarButtons(palette)) {
+        if (!button->property("screenshotToolbarPositionItems").toStringList().isEmpty()) {
             buttons.append(button);
         }
     }
@@ -243,7 +275,7 @@ adqt::widgets::AdColorPicker* colorPickerWithAccessibleName(ScreenshotToolPalett
 QWidget* popupControlWithTooltip(const char* tooltip) {
     const QString expected = QString::fromUtf8(tooltip);
     for (QWidget* control : QApplication::allWidgets()) {
-        if (control != nullptr && control->toolTip() == expected) {
+        if (control != nullptr && tooltipMatches(control->toolTip(), expected)) {
             return control;
         }
     }
@@ -291,7 +323,7 @@ void clickPopoverStyleControl(adqt::widgets::AdPopover* popover, const char* too
 
     const QString expected = QString::fromUtf8(tooltip);
     for (QWidget* control : content->findChildren<QWidget*>()) {
-        if (control != nullptr && control->toolTip() == expected) {
+        if (control != nullptr && tooltipMatches(control->toolTip(), expected)) {
             auto* button = qobject_cast<adqt::widgets::AdButton*>(control);
             require(button != nullptr, "arrow popup option should be a button");
             button->click();
@@ -309,7 +341,7 @@ adqt::widgets::AdButton* popoverButtonWithTooltip(adqt::widgets::AdPopover* popo
 
     const QString expected = QString::fromUtf8(tooltip);
     for (QWidget* control : popover->contentWidget()->findChildren<QWidget*>()) {
-        if (control != nullptr && control->toolTip() == expected) {
+        if (control != nullptr && tooltipMatches(control->toolTip(), expected)) {
             return qobject_cast<adqt::widgets::AdButton*>(control);
         }
     }
@@ -340,7 +372,7 @@ void requireControlActive(ScreenshotToolPalette& palette, const char* tooltip,
             message);
 }
 
-void scrollingScreenshotDisablesUnavailableTools() {
+void scrollingScreenshotKeepsDrawingToolsAvailable() {
     ScreenshotToolPalette::Options options;
     options.showMoveTool = true;
     options.showSelectTool = true;
@@ -356,39 +388,53 @@ void scrollingScreenshotDisablesUnavailableTools() {
     options.showOcrTool = true;
     options.showTableTool = true;
     options.showScrollingScreenshotTool = true;
-    options.showVideoRecordButton = true;
+    options.showScreenRecordButton = true;
     options.enableStyleToolbar = false;
     options.actions = ScreenshotToolPalette::PinAction | ScreenshotToolPalette::CancelAction |
                       ScreenshotToolPalette::CopyAction;
 
     ScreenshotToolPalette palette(options);
-    const char* const disabledDuringScrolling[] = {
+    int selectRequestCount = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::selectRequested,
+                     [&selectRequestCount]() { ++selectRequestCount; });
+    require(palette.activateDrawingShortcut(QStringLiteral("select")) &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select &&
+                selectRequestCount == 1,
+            "the Select drawing shortcut must activate the selection tool and request it");
+    const char* const drawingTools[] = {
         "Select elements", "Shape",  "Arrow",  "Line",      "Pen", "Text",
         "Serial number",   "Filter", "Eraser", "Watermark",
     };
     const char* const enabledDuringScrolling[] = {
         "Edit selection", "Text recognition", "Table recognition", "Scrolling screenshot",
-        "Record video",   "Pin to screen",    "Cancel screenshot", "Copy to clipboard",
+        "Record screen",   "Pin to screen",    "Cancel screenshot", "Copy to clipboard",
     };
 
-    requireControlsEnabled(palette, disabledDuringScrolling, std::size(disabledDuringScrolling),
+    requireControlsEnabled(palette, drawingTools, std::size(drawingTools),
                            true, "restricted tools should start enabled");
     requireControlsEnabled(palette, enabledDuringScrolling, std::size(enabledDuringScrolling), true,
                            "available scrolling controls should start enabled");
 
     palette.setScrollingScreenshotMode(true);
     require(palette.scrollingScreenshotMode(), "palette should enter scrolling screenshot mode");
-    requireControlsEnabled(palette, disabledDuringScrolling, std::size(disabledDuringScrolling),
-                           false, "scrolling screenshot mode should disable restricted tools");
+    requireControlsEnabled(palette, drawingTools, std::size(drawingTools), true,
+                           "scrolling screenshot mode should keep drawing tools enabled");
     requireControlsEnabled(
         palette, enabledDuringScrolling, std::size(enabledDuringScrolling), true,
         "scrolling screenshot mode should keep navigation and result controls enabled");
 
+    auto* shapeButton =
+        qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Shape"));
+    require(shapeButton != nullptr, "shape tool should remain clickable during scrolling capture");
+    shapeButton->click();
+    require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape,
+            "clicking a drawing tool should switch directly from scrolling capture to that tool");
+
     palette.setScrollingScreenshotMode(false);
     require(!palette.scrollingScreenshotMode(), "palette should leave scrolling screenshot mode");
-    requireControlsEnabled(palette, disabledDuringScrolling, std::size(disabledDuringScrolling),
+    requireControlsEnabled(palette, drawingTools, std::size(drawingTools),
                            true,
-                           "leaving scrolling screenshot mode should restore restricted tools");
+                           "leaving scrolling screenshot mode should preserve drawing tools");
     requireControlsEnabled(palette, enabledDuringScrolling, std::size(enabledDuringScrolling), true,
                            "leaving scrolling screenshot mode should preserve available controls");
 }
@@ -410,7 +456,7 @@ void screenshotToolbarUsesCanonicalOrderAndSectionSeparators() {
     options.showWatermarkTool = true;
     options.showOcrTool = true;
     options.showTableTool = true;
-    options.showVideoRecordButton = true;
+    options.showScreenRecordButton = true;
     options.showScrollingScreenshotTool = true;
     options.separatorAfterSelect = true;
     options.separatorBeforeShape = true;
@@ -423,23 +469,23 @@ void screenshotToolbarUsesCanonicalOrderAndSectionSeparators() {
     const QList<adqt::widgets::AdButton*> buttons = mainToolbarButtons(palette);
     const QStringList expected{
         QStringLiteral("Edit selection"),
-        QStringLiteral("Select elements"),
-        QStringLiteral("Shape"),
+        QStringLiteral("Select elements (V)"),
+        QStringLiteral("Shape (1)"),
         QStringLiteral("Arrow"),
-        QStringLiteral("Pen"),
-        QStringLiteral("Pen highlight"),
-        QStringLiteral("Text"),
-        QStringLiteral("Serial number"),
-        QStringLiteral("Filter"),
-        QStringLiteral("Eraser"),
-        QStringLiteral("Watermark"),
-        QStringLiteral("Table recognition"),
-        QStringLiteral("Record video"),
-        QStringLiteral("Pin to screen"),
-        QStringLiteral("Text recognition"),
-        QStringLiteral("Scrolling screenshot"),
-        QStringLiteral("Cancel screenshot"),
-        QStringLiteral("Copy to clipboard"),
+        QStringLiteral("Pen (3, P)"),
+        QStringLiteral("Highlighter Tool (4, H)"),
+        QStringLiteral("Text (5, T)"),
+        QStringLiteral("Serial number (6, N)"),
+        QStringLiteral("Filter (7, F)"),
+        QStringLiteral("Eraser (8, E)"),
+        QStringLiteral("Watermark (9)"),
+        QStringLiteral("Table recognition (Ctrl+X)"),
+        QStringLiteral("Record screen (Ctrl+R)"),
+        QStringLiteral("Pin to screen (Ctrl+F)"),
+        QStringLiteral("Text recognition (Ctrl+D)"),
+        QStringLiteral("Scrolling screenshot (L)"),
+        QStringLiteral("Cancel screenshot (Esc)"),
+        QStringLiteral("Copy to clipboard (Ctrl+C)"),
     };
     require(buttons.size() == expected.size(),
             "canonical screenshot toolbar should expose one entry per main group");
@@ -461,9 +507,19 @@ void screenshotToolbarUsesCanonicalOrderAndSectionSeparators() {
     require(separatorIndices.size() == 3,
             "canonical toolbar should contain only the three section separators");
 
-    const auto hasSeparatorBetween = [&layout, &separatorIndices](QWidget* first, QWidget* second) {
-        const int firstIndex = layout->indexOf(first);
-        const int secondIndex = layout->indexOf(second);
+    const auto topLevelIndex = [layout](QWidget* widget) {
+        if (widget == nullptr) {
+            return -1;
+        }
+        if (const int directIndex = layout->indexOf(widget); directIndex >= 0) {
+            return directIndex;
+        }
+        return widget->parentWidget() != nullptr ? layout->indexOf(widget->parentWidget()) : -1;
+    };
+    const auto hasSeparatorBetween = [&separatorIndices, &topLevelIndex](QWidget* first,
+                                                                         QWidget* second) {
+        const int firstIndex = topLevelIndex(first);
+        const int secondIndex = topLevelIndex(second);
         return std::any_of(separatorIndices.cbegin(), separatorIndices.cend(),
                            [firstIndex, secondIndex](int separatorIndex) {
                                return separatorIndex > firstIndex && separatorIndex < secondIndex;
@@ -479,57 +535,218 @@ void screenshotToolbarUsesCanonicalOrderAndSectionSeparators() {
             "Arrow and Line grouping should not introduce an internal separator");
 }
 
-void arrowLinePopoverReplacesItsEntryWithoutToolbarGeometryChurn() {
+void screenshotActionTooltipsUseConfiguredShortcuts() {
+    ScreenshotToolPalette::Options options;
+    options.showHistoryActions = true;
+    options.showSelectTool = false;
+    options.showShapeTool = false;
+    options.enableStyleToolbar = false;
+    options.actions = ScreenshotToolPalette::PinAction | ScreenshotToolPalette::CancelAction |
+                      ScreenshotToolPalette::CopyAction;
+    ScreenshotToolPalette palette(options);
+
+    auto* pin =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotPinToScreenButton"));
+    auto* undo =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotUndoButton"));
+    auto* redo =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotRedoButton"));
+    auto* cancel = qobject_cast<adqt::widgets::AdButton*>(
+        controlWithTooltip(palette, "Cancel screenshot"));
+    auto* copy = qobject_cast<adqt::widgets::AdButton*>(
+        controlWithTooltip(palette, "Copy to clipboard"));
+    require(pin != nullptr && cancel != nullptr && copy != nullptr && undo != nullptr &&
+                redo != nullptr && pin->toolTip() == QStringLiteral("Pin to screen (Ctrl+F)") &&
+                cancel->toolTip() == QStringLiteral("Cancel screenshot (Esc)") &&
+                copy->toolTip() == QStringLiteral("Copy to clipboard (Ctrl+C)") &&
+                undo->toolTip() == QStringLiteral("Undo (Ctrl+Z)") &&
+                redo->toolTip() == QStringLiteral("Redo (Ctrl+Y)"),
+            "screenshot toolbar actions must show their configured shortcuts");
+
+    const snow_shot::storage::ScreenshotShortcutSettings shortcutSettings;
+    const QMap<QString, QStringList> originalShortcuts = shortcutSettings.allShortcuts();
+    require(shortcutSettings.setShortcuts(QStringLiteral("pin_to_screen"),
+                                          {QStringLiteral("Alt+F")}),
+            "pin shortcut fixture must support a non-default mapping");
+    require(shortcutSettings.shortcuts(QStringLiteral("pin_to_screen")) ==
+                QStringList{QStringLiteral("Alt+F")},
+            "pin shortcut fixture must expose the updated mapping immediately");
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(&palette, &languageChange);
+    require(pin->toolTip() == QStringLiteral("Pin to screen (Alt+F)"),
+            "screenshot toolbar shortcuts must survive runtime retranslation");
+    require(shortcutSettings.setAllShortcutsAtomic(originalShortcuts),
+            "pin shortcut fixture must restore the original mapping");
+    QCoreApplication::sendEvent(&palette, &languageChange);
+}
+
+void configurableToolbarLayoutSupportsArbitraryPopoverGroups() {
+    ScreenshotToolPalette::Options options;
+    options.showSelectTool = true;
+    options.showShapeTool = true;
+    options.showArrowTool = true;
+    options.showLineTool = true;
+    options.showFreeDrawTool = true;
+    options.showHighlightTool = true;
+    options.showSpotlightTool = true;
+    options.showHistoryActions = true;
+    options.enableStyleToolbar = false;
+    options.actions = ScreenshotToolPalette::CancelAction | ScreenshotToolPalette::CopyAction |
+                      ScreenshotToolPalette::ConfirmAction;
+    options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
+        {{QStringLiteral("free-draw"), QStringLiteral("line"), QStringLiteral("shape")},
+         {QStringLiteral("spotlight"), QStringLiteral("arrow")},
+         {QStringLiteral("highlighter")}}};
+
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    QCoreApplication::processEvents();
+    const QList<adqt::widgets::AdButton*> drawingButtons = mainDrawingToolbarButtons(palette);
+    require(drawingButtons.size() == 3,
+            "each configured drawing position should occupy one live toolbar slot");
+    auto* firstTrigger = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotDrawingToolGroupButton0"));
+    auto* secondTrigger = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotDrawingToolGroupButton1"));
+    require(firstTrigger == drawingButtons.at(0) && secondTrigger == drawingButtons.at(1) &&
+                drawingButtons.at(2)->property("screenshotToolbarItemId").toString() ==
+                    QStringLiteral("highlighter") &&
+                popoverForTrigger(drawingButtons.at(2)) == nullptr &&
+                palette.findChild<adqt::widgets::AdButton*>(
+                    QStringLiteral("screenshotHighlighterButton")) == drawingButtons.at(2) &&
+                palette.findChild<adqt::widgets::AdButton*>(
+                    QStringLiteral("screenshotRectangleHighlightButton")) == nullptr,
+            "multi-tool positions should use one trigger while singleton positions stay direct");
+    require(firstTrigger->accessibleName() == QStringLiteral("Shape") &&
+                firstTrigger->property("screenshotToolbarItemId").toString() ==
+                    QStringLiteral("shape") &&
+                secondTrigger->accessibleName() == QStringLiteral("Arrow") &&
+                secondTrigger->property("screenshotToolbarItemId").toString() ==
+                    QStringLiteral("arrow"),
+            "the last configured item should be each live group's initial trigger");
+
+    adqt::widgets::AdPopover* firstPopover = popoverForTrigger(firstTrigger);
+    adqt::widgets::AdPopover* secondPopover = popoverForTrigger(secondTrigger);
+    auto* shapeOption = popoverButtonWithTooltip(firstPopover, "Shape");
+    auto* lineOption = popoverButtonWithTooltip(firstPopover, "Line");
+    auto* penOption = popoverButtonWithTooltip(firstPopover, "Pen");
+    auto* arrowOption = popoverButtonWithTooltip(secondPopover, "Arrow");
+    auto* spotlightOption = popoverButtonWithTooltip(secondPopover, "Spotlight");
+    require(firstPopover != nullptr && secondPopover != nullptr && shapeOption != nullptr &&
+                lineOption != nullptr && penOption != nullptr && arrowOption != nullptr &&
+                spotlightOption != nullptr &&
+                qobject_cast<QHBoxLayout*>(firstPopover->contentWidget()->layout()) != nullptr &&
+                firstPopover->contentWidget()->layout()->indexOf(shapeOption) <
+                    firstPopover->contentWidget()->layout()->indexOf(lineOption) &&
+                firstPopover->contentWidget()->layout()->indexOf(lineOption) <
+                    firstPopover->contentWidget()->layout()->indexOf(penOption) &&
+                qobject_cast<QHBoxLayout*>(secondPopover->contentWidget()->layout()) != nullptr &&
+                secondPopover->contentWidget()->layout()->indexOf(arrowOption) <
+                    secondPopover->contentWidget()->layout()->indexOf(spotlightOption),
+            "group popovers should present configured tools horizontally from main to top");
+
+    int freeDrawRequests = 0;
+    int spotlightRequests = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::freeDrawRequested,
+                     [&freeDrawRequests]() { ++freeDrawRequests; });
+    QObject::connect(&palette, &ScreenshotToolPalette::spotlightRequested,
+                     [&spotlightRequests]() { ++spotlightRequests; });
+    penOption->click();
+    require(freeDrawRequests == 1 &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::FreeDraw &&
+                firstTrigger->accessibleName() == QStringLiteral("Pen") &&
+                firstTrigger->property("screenshotToolbarItemId").toString() ==
+                    QStringLiteral("free-draw"),
+            "selecting an arbitrary group option should activate it and replace the trigger");
+    firstTrigger->click();
+    require(freeDrawRequests == 2,
+            "the replaced arbitrary group trigger should immediately reactivate its entry");
+    spotlightOption->click();
+    require(spotlightRequests == 1 &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::Spotlight &&
+                secondTrigger->accessibleName() == QStringLiteral("Spotlight"),
+            "every arbitrary drawing group should independently remember its selected entry");
+    require(palette.mainPanel()
+                ->findChildren<QWidget*>(QStringLiteral("screenshotDrawingToolPosition"),
+                                         Qt::FindDirectChildrenOnly)
+                .isEmpty(),
+            "the live screenshot toolbar should never create vertical drawing columns");
+
+    const snow_shot::storage::ScreenshotToolbarLayout hiddenSpotlight{
+        {{QStringLiteral("shape")},
+         {QStringLiteral("highlighter"), QStringLiteral("free-draw")},
+         {QStringLiteral("arrow")},
+         {QStringLiteral("line")}},
+        {QStringLiteral("spotlight")}};
+    palette.setToolbarLayout(hiddenSpotlight);
+    QCoreApplication::processEvents();
+    const QList<adqt::widgets::AdButton*> updatedDrawingButtons =
+        mainDrawingToolbarButtons(palette);
+    adqt::widgets::AdButton* updatedGroupTrigger = updatedDrawingButtons.value(1);
+    adqt::widgets::AdPopover* updatedPopover = popoverForTrigger(updatedGroupTrigger);
+    require(updatedDrawingButtons.size() == 4 && updatedPopover != nullptr &&
+                updatedGroupTrigger->accessibleName() == QStringLiteral("Pen") &&
+                popoverButtonWithTooltip(updatedPopover, "Pen") != nullptr &&
+                popoverButtonWithTooltip(updatedPopover, "Highlighter Tool") != nullptr &&
+                std::none_of(updatedDrawingButtons.cbegin(), updatedDrawingButtons.cend(),
+                             [](const adqt::widgets::AdButton* button) {
+                                 return button != nullptr &&
+                                        button->property("screenshotToolbarPositionItems")
+                                            .toStringList()
+                                            .contains(QStringLiteral("spotlight"));
+                             }),
+            "hidden drawing tools should create no live toolbar slot or popover option");
+
+    snow_shot::storage::ScreenshotToolbarLayout restored = hiddenSpotlight;
+    restored.positions.push_back({QStringLiteral("spotlight")});
+    restored.hidden.clear();
+    palette.setToolbarLayout(restored);
+    QCoreApplication::processEvents();
+    const QList<adqt::widgets::AdButton*> restoredDrawingButtons =
+        mainDrawingToolbarButtons(palette);
+    require(restoredDrawingButtons.size() == 5 &&
+                std::any_of(restoredDrawingButtons.cbegin(), restoredDrawingButtons.cend(),
+                            [](const adqt::widgets::AdButton* button) {
+                                return button != nullptr &&
+                                       button->property("screenshotToolbarPositionItems")
+                                           .toStringList() ==
+                                           QStringList{QStringLiteral("spotlight")};
+                            }),
+            "runtime layout changes should restore a previously hidden drawing tool");
+}
+
+void arrowAndLineUseConfiguredPopoverGroup() {
     ScreenshotToolPalette::Options options;
     options.showShapeTool = false;
     options.showArrowTool = true;
     options.showLineTool = true;
     options.enableStyleToolbar = false;
+    options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
+        {{QStringLiteral("line"), QStringLiteral("arrow")}}};
 
     ScreenshotToolPalette palette(options);
-    palette.contentSizeHint();
+    palette.show();
+    QCoreApplication::processEvents();
     auto* trigger =
         palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotArrowLineButton"));
-    require(trigger != nullptr, "Arrow and Line should share a main toolbar entry");
     adqt::widgets::AdPopover* popover = popoverForTrigger(trigger);
-    require(popover != nullptr, "Arrow and Line should expose a popover");
-    require(trigger->toolTip().isEmpty() && trigger->accessibleName() == QStringLiteral("Arrow"),
-            "Arrow and Line main trigger should keep accessibility without a tooltip");
-    require(popover->triggers() == adqt::widgets::AdPopover::Trigger::Hover &&
+    QWidget* content = popover != nullptr ? popover->contentWidget() : nullptr;
+    auto* arrowOption = popoverButtonWithTooltip(popover, "Arrow");
+    auto* lineOption = popoverButtonWithTooltip(popover, "Line");
+    require(trigger != nullptr && mainDrawingToolbarButtons(palette).size() == 1 &&
+                mainDrawingToolbarButtons(palette).constFirst() == trigger &&
+                trigger->toolTip().isEmpty() &&
+                trigger->accessibleName() == QStringLiteral("Arrow") && popover != nullptr &&
+                popover->triggers() == adqt::widgets::AdPopover::Trigger::Hover &&
                 popover->placement() == adqt::widgets::AdPopover::Placement::Top &&
                 popover->popupLayerMode() == adqt::widgets::AdPopover::PopupLayerMode::QtTool &&
                 popover->arrowVisible() && popover->contentMargins() == QMargins(12, 12, 12, 12) &&
-                popover->titleMinimumWidth() == 0,
-            "Arrow and Line popover should use the Qt tool hover configuration");
-
-    QWidget* content = popover->contentWidget();
-    require(content != nullptr && content->layout() != nullptr,
-            "Arrow and Line popover should contain an options layout");
-    require(content->layout()->spacing() == 8 &&
-                content->layout()->contentsMargins() == QMargins(0, 0, 0, 0),
-            "Arrow and Line popover options should match toolbar spacing metrics");
-    adqt::widgets::AdButton* arrowOption = nullptr;
-    adqt::widgets::AdButton* lineOption = nullptr;
-    for (QWidget* optionWidget : content->findChildren<QWidget*>()) {
-        auto* option = qobject_cast<adqt::widgets::AdButton*>(optionWidget);
-        if (option == nullptr) {
-            continue;
-        }
-        if (option->toolTip() == QStringLiteral("Arrow")) {
-            arrowOption = option;
-        } else if (option->toolTip() == QStringLiteral("Line")) {
-            lineOption = option;
-        }
-    }
-    require(arrowOption != nullptr && lineOption != nullptr &&
+                content != nullptr &&
+                content->objectName() == QStringLiteral("screenshotArrowLinePopoverContent") &&
+                qobject_cast<QHBoxLayout*>(content->layout()) != nullptr &&
+                arrowOption != nullptr && lineOption != nullptr &&
                 content->layout()->indexOf(arrowOption) < content->layout()->indexOf(lineOption),
-            "Arrow and Line popover options should be ordered Arrow then Line");
-    require(content->sizeHint().width() == arrowOption->sizeHint().width() +
-                                               lineOption->sizeHint().width() +
-                                               content->layout()->spacing() &&
-                content->sizeHint().height() ==
-                    qMax(arrowOption->sizeHint().height(), lineOption->sizeHint().height()),
-            "Arrow and Line popover content should use only the toolbar button spacing");
+            "Arrow and Line should share one standard horizontal hover popover");
 
     int arrowRequests = 0;
     int lineRequests = 0;
@@ -537,69 +754,20 @@ void arrowLinePopoverReplacesItsEntryWithoutToolbarGeometryChurn() {
                      [&arrowRequests]() { ++arrowRequests; });
     QObject::connect(&palette, &ScreenshotToolPalette::lineRequested,
                      [&lineRequests]() { ++lineRequests; });
-
-    const int triggerIndex = palette.mainPanel()->layout()->indexOf(trigger);
-    const QRect triggerGeometry = trigger->geometry();
-    const QSize panelSize = palette.mainPanel()->size();
-    const quint64 layoutRevision = palette.layoutRevision();
-
-    popover->show();
-    QCoreApplication::processEvents();
-    require(arrowOption->geometry().left() == content->rect().left() &&
-                arrowOption->geometry().right() + 1 + content->layout()->spacing() ==
-                    lineOption->geometry().left() &&
-                lineOption->geometry().right() == content->rect().right(),
-            "Arrow and Line popover buttons should use the toolbar button spacing");
+    arrowOption->click();
+    require(arrowRequests == 1 && lineRequests == 0 &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::Arrow &&
+                trigger->accessibleName() == QStringLiteral("Arrow"),
+            "the Arrow popover option should activate the configured Arrow entry");
     lineOption->click();
-    require(lineRequests == 1 && arrowRequests == 0 &&
-                palette.activeToolForTests() == ScreenshotToolPalette::Tool::Line,
-            "selecting Line from the popover should activate and request Line immediately");
-    require(trigger->toolTip().isEmpty() && trigger->accessibleName() == QStringLiteral("Line") &&
-                adqt::icons::describeIcon(trigger->iconRef()).key.name ==
-                    adqt::icons::describeIcon(
-                        snow_shot::presentation::icons::custom::outlined::ToolLine())
-                        .key.name,
-            "the Arrow and Line entry should replace its presentation with Line");
-    require(
-        !popover->isVisible() && palette.mainPanel()->layout()->indexOf(trigger) == triggerIndex &&
-            trigger->geometry() == triggerGeometry && palette.mainPanel()->size() == panelSize &&
-            palette.layoutRevision() == layoutRevision,
-        "switching Arrow and Line should preserve the main toolbar slot geometry");
-
-    palette.setActiveTool(ScreenshotToolPalette::Tool::Move);
-    require(trigger->accessibleName() == QStringLiteral("Line") &&
-                adqt::icons::describeIcon(trigger->iconRef()).key.name ==
-                    adqt::icons::describeIcon(
-                        snow_shot::presentation::icons::custom::outlined::ToolLine())
-                        .key.name,
-            "new-capture reset should preserve the Line entry presentation");
-    trigger->click();
-    require(lineRequests == 2 && arrowRequests == 0 &&
+    require(lineRequests == 1 && arrowRequests == 1 &&
                 palette.activeToolForTests() == ScreenshotToolPalette::Tool::Line &&
                 trigger->accessibleName() == QStringLiteral("Line") &&
-                adqt::icons::describeIcon(trigger->iconRef()).key.name ==
-                    adqt::icons::describeIcon(
-                        snow_shot::presentation::icons::custom::outlined::ToolLine())
-                        .key.name,
-            "the shared trigger should display and execute its persisted Line entry");
-
-    popover->show();
-    QCoreApplication::processEvents();
-    arrowOption->click();
-    require(
-        arrowRequests == 1 && palette.activeToolForTests() == ScreenshotToolPalette::Tool::Arrow &&
-            trigger->toolTip().isEmpty() && trigger->accessibleName() == QStringLiteral("Arrow") &&
-            adqt::icons::describeIcon(trigger->iconRef()).key.name ==
-                adqt::icons::describeIcon(
-                    snow_shot::presentation::icons::custom::outlined::ToolArrow())
-                    .key.name,
-        "selecting Arrow should synchronously restore the Arrow entry");
-
-    popover->show();
+                trigger->property("screenshotToolbarItemId").toString() == QStringLiteral("line"),
+            "selecting Line should activate it and replace the shared trigger");
     trigger->click();
-    require(popover->isVisible() && arrowRequests == 2,
-            "clicking the Arrow and Line hover trigger should not close its popover");
-    popover->hide();
+    require(lineRequests == 2 && arrowRequests == 1,
+            "clicking the replaced group trigger should reactivate Line directly");
 }
 
 void tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode() {
@@ -616,24 +784,21 @@ void tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode() {
     const QList<adqt::widgets::AdButton*> mainButtons = mainToolbarButtons(palette);
     require(mainButtons.size() == 1,
             "Table and QR recognition should occupy one main toolbar slot");
-    auto* trigger = palette.findChild<adqt::widgets::AdButton*>(
-        QStringLiteral("screenshotTableQrButton"));
+    auto* trigger =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotTableQrButton"));
     require(trigger == mainButtons.front() && trigger->toolTip().isEmpty() &&
                 trigger->accessibleName() == QStringLiteral("Table recognition"),
             "the shared recognition slot should initially present Table recognition");
 
     adqt::widgets::AdPopover* popover = popoverForTrigger(trigger);
-    require(popover != nullptr &&
-                popover->triggers() == adqt::widgets::AdPopover::Trigger::Hover,
+    require(popover != nullptr && popover->triggers() == adqt::widgets::AdPopover::Trigger::Hover,
             "the shared Table and QR slot should expose a hover popover");
     QWidget* content = popover->contentWidget();
     require(content != nullptr &&
                 content->objectName() == QStringLiteral("screenshotTableQrPopoverContent"),
             "the Table and QR popover should expose stable testable content");
-    adqt::widgets::AdButton* tableOption =
-        popoverButtonWithTooltip(popover, "Table recognition");
-    adqt::widgets::AdButton* qrOption =
-        popoverButtonWithTooltip(popover, "QR code recognition");
+    adqt::widgets::AdButton* tableOption = popoverButtonWithTooltip(popover, "Table recognition");
+    adqt::widgets::AdButton* qrOption = popoverButtonWithTooltip(popover, "QR code recognition");
     require(tableOption != nullptr && qrOption != nullptr &&
                 content->layout()->indexOf(tableOption) < content->layout()->indexOf(qrOption),
             "the shared popover should list Table recognition before QR recognition");
@@ -685,7 +850,7 @@ void tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode() {
             "choosing Table should restore the default shared trigger presentation");
 }
 
-void arrowLineGroupFallsBackToDirectButtonsWhenOnlyOneToolIsEnabled() {
+void arrowAndLineRemainDirectWhenConfiguredIndividually() {
     ScreenshotToolPalette::Options arrowOptions;
     arrowOptions.showSelectTool = false;
     arrowOptions.showShapeTool = false;
@@ -694,7 +859,7 @@ void arrowLineGroupFallsBackToDirectButtonsWhenOnlyOneToolIsEnabled() {
     ScreenshotToolPalette arrowPalette(arrowOptions);
     const QList<adqt::widgets::AdButton*> arrowButtons = mainToolbarButtons(arrowPalette);
     require(arrowButtons.size() == 1 &&
-                arrowButtons.constFirst()->toolTip() == QStringLiteral("Arrow") &&
+                arrowButtons.constFirst()->toolTip() == QStringLiteral("Arrow (2)") &&
                 popoverForTrigger(arrowButtons.constFirst()) == nullptr,
             "Arrow should remain a direct button when Line is unavailable");
 
@@ -764,6 +929,7 @@ void confirmActionRemainsSeparatedAndCallableForPinnedEditing() {
 void ocrControlReflectsLoadingState() {
     ScreenshotToolPalette::Options options;
     options.showOcrTool = true;
+    options.showTextTranslationTool = true;
     options.showTableTool = true;
     options.enableStyleToolbar = false;
 
@@ -787,6 +953,27 @@ void ocrControlReflectsLoadingState() {
     palette.setOcrBusy(false);
     require(!ocrButton->busy(),
             "OCR toolbar control should leave its loading state after recognition");
+
+    auto* translationButton = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotTextTranslationButton"));
+    require(translationButton != nullptr,
+            "text translation toolbar control should be present");
+    translationButton->click();
+    require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::TextTranslation &&
+                translationButton->buttonStyle() ==
+                    adqt::widgets::AdButton::ButtonStyle::Solid &&
+                ocrButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text,
+            "text translation should have its own active toolbar presentation");
+    palette.setOcrBusy(true);
+    require(translationButton->busy() && !ocrButton->busy(),
+            "text translation should show recognition loading on its active toolbar control");
+    palette.setOcrBusy(false);
+    palette.setTextTranslationState(true, true, true);
+    require(translationButton->busy(),
+            "text translation should keep loading while translation is streaming");
+    palette.setTextTranslationState(true, true, false);
+    require(!translationButton->busy(),
+            "text translation should stop loading after translation completes");
 
     auto* tableButton =
         qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Table recognition"));
@@ -824,11 +1011,9 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
     QCoreApplication::processEvents();
     QWidget* controls =
         palette.findChild<QWidget*>(QStringLiteral("screenshotScrollingRecognitionMode"));
-    const auto modeButtons =
-        controls != nullptr
-            ? controls->findChildren<adqt::widgets::AdButton*>(QString(),
-                                                              Qt::FindDirectChildrenOnly)
-            : QList<adqt::widgets::AdButton*>();
+    const auto modeButtons = controls != nullptr ? controls->findChildren<adqt::widgets::AdButton*>(
+                                                       QString(), Qt::FindDirectChildrenOnly)
+                                                 : QList<adqt::widgets::AdButton*>();
     auto* verticalButton = controls != nullptr
                                ? controls->findChild<adqt::widgets::AdButton*>(
                                      QStringLiteral("screenshotScrollingVerticalButton"))
@@ -839,8 +1024,7 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
                                  : nullptr;
     require(controls != nullptr &&
                 controls->findChild<adqt::widgets::AdRadioButtonGroup*>() == nullptr &&
-                modeButtons.size() == 2 && verticalButton != nullptr &&
-                horizontalButton != nullptr,
+                modeButtons.size() == 2 && verticalButton != nullptr && horizontalButton != nullptr,
             "scrolling screenshot should expose two independent mode buttons");
     require(!palette.actionPanel()->isHidden() && palette.stylePanel()->isHidden() &&
                 !controls->isHidden(),
@@ -853,20 +1037,18 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
     require(verticalButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
                 verticalButton->accentRole() == adqt::widgets::AdButton::AccentRole::Primary &&
                 horizontalButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text &&
-                horizontalButton->accentRole() ==
-                    adqt::widgets::AdButton::AccentRole::Neutral,
+                horizontalButton->accentRole() == adqt::widgets::AdButton::AccentRole::Neutral,
             "the active scrolling mode should be visually distinct");
-    auto* scrollingToolButton = qobject_cast<adqt::widgets::AdButton*>(
-        controlWithTooltip(palette, "Scrolling screenshot"));
-    require(scrollingToolButton != nullptr &&
-                buttonBackgroundSample(*verticalButton) ==
-                    buttonBackgroundSample(*scrollingToolButton),
+    auto* scrollingToolButton =
+        qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Scrolling screenshot"));
+    require(scrollingToolButton != nullptr && buttonBackgroundSample(*verticalButton) ==
+                                                  buttonBackgroundSample(*scrollingToolButton),
             "the active scrolling mode should match the main toolbar active background");
-    require(imageHasOpaqueLightPixel(
-                verticalButton->icon()
-                    .pixmap(verticalButton->iconSize(), QIcon::Normal, QIcon::On)
-                    .toImage()),
-            "the active scrolling mode icon should use the main toolbar foreground color");
+    require(
+        imageHasOpaqueLightPixel(verticalButton->icon()
+                                     .pixmap(verticalButton->iconSize(), QIcon::Normal, QIcon::On)
+                                     .toImage()),
+        "the active scrolling mode icon should use the main toolbar foreground color");
     for (adqt::widgets::AdButton* button : modeButtons) {
         require(button != nullptr && !button->toolTip().isEmpty() &&
                     button->accessibleName() == button->toolTip(),
@@ -885,29 +1067,24 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
     require(changes == 0, "setting the current scrolling mode should be a no-op");
     horizontalButton->click();
     require(changes == 1 && lastMode == ScreenshotScrollingRecognitionMode::Horizontal &&
-                verticalButton->buttonStyle() ==
-                    adqt::widgets::AdButton::ButtonStyle::Text &&
-                horizontalButton->buttonStyle() ==
-                    adqt::widgets::AdButton::ButtonStyle::Solid,
+                verticalButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text &&
+                horizontalButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid,
             "clicking the horizontal button should synchronize both mode buttons once");
-    require(imageHasOpaqueLightPixel(
-                horizontalButton->icon()
-                    .pixmap(horizontalButton->iconSize(), QIcon::Normal, QIcon::On)
-                    .toImage()),
-            "switching scrolling modes should update the active icon foreground color");
+    require(
+        imageHasOpaqueLightPixel(horizontalButton->icon()
+                                     .pixmap(horizontalButton->iconSize(), QIcon::Normal, QIcon::On)
+                                     .toImage()),
+        "switching scrolling modes should update the active icon foreground color");
     horizontalButton->click();
     require(changes == 1 &&
-                horizontalButton->buttonStyle() ==
-                    adqt::widgets::AdButton::ButtonStyle::Solid,
+                horizontalButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid,
             "clicking the active mode should keep it selected without another change");
 
     palette.setScrollingScreenshotMode(false);
     palette.setScrollingScreenshotMode(true);
     require(palette.scrollingRecognitionMode() == ScreenshotScrollingRecognitionMode::Vertical &&
-                verticalButton->buttonStyle() ==
-                    adqt::widgets::AdButton::ButtonStyle::Solid &&
-                horizontalButton->buttonStyle() ==
-                    adqt::widgets::AdButton::ButtonStyle::Text,
+                verticalButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
+                horizontalButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text,
             "each new scrolling screenshot session should reset to vertical recognition");
 }
 
@@ -932,18 +1109,29 @@ void ocrToolReplacesSelectionActionToolbarContents() {
     };
     adqt::widgets::AdButton* sendToBack = buttonWithTooltip("Send to back");
     adqt::widgets::AdButton* edit = buttonWithTooltip("Edit");
+    adqt::widgets::AdButton* translate = buttonWithTooltip("Text Translation");
     adqt::widgets::AdButton* reset = buttonWithTooltip("Reset");
-    auto* undo = palette.findChild<adqt::widgets::AdButton*>(
-        QStringLiteral("screenshotUndoButton"));
-    auto* redo = palette.findChild<adqt::widgets::AdButton*>(
-        QStringLiteral("screenshotRedoButton"));
+    adqt::widgets::AdButton* settings = buttonWithTooltip("Translation settings");
+    auto* undo =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotUndoButton"));
+    auto* redo =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotRedoButton"));
     const auto textSelects =
         actionPanel->findChildren<adqt::widgets::AdSelect*>(QString(), Qt::FindDirectChildrenOnly);
+    auto* formattingSelect = palette.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotOcrTextFormattingSelect"));
+    auto* punctuationSelect = palette.findChild<adqt::widgets::AdSelect*>(
+        QStringLiteral("screenshotOcrTextPunctuationSelect"));
     QWidget* opacityIcon =
         actionPanel->findChild<QWidget*>(QStringLiteral("screenshotSelectionOpacityIcon"));
-    require(sendToBack != nullptr && edit != nullptr && reset != nullptr && undo != nullptr &&
-                redo != nullptr && textSelects.size() == 2,
+    require(sendToBack != nullptr && edit != nullptr && translate != nullptr &&
+                reset != nullptr && settings != nullptr && undo != nullptr && redo != nullptr &&
+                textSelects.size() == 2 && formattingSelect != nullptr &&
+                punctuationSelect != nullptr,
             "the shared action panel should contain the OCR editing controls");
+    require(undo->toolTip() == QStringLiteral("Undo (Ctrl+Z)") &&
+                redo->toolTip() == QStringLiteral("Redo (Ctrl+Y)"),
+            "toolbar history actions must show their configured shortcuts");
     require(opacityIcon != nullptr, "the selection action panel should contain an opacity icon");
 
     palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
@@ -953,9 +1141,17 @@ void ocrToolReplacesSelectionActionToolbarContents() {
     palette.setActiveTool(ScreenshotToolPalette::Tool::Ocr);
     require(sendToBack->isHidden() && opacityIcon->isHidden(),
             "OCR mode should hide selection actions");
-    require(!edit->isHidden() && !reset->isHidden() && !textSelects.at(0)->isHidden() &&
+    require(!edit->isHidden() && !translate->isHidden() && !reset->isHidden() &&
+                !settings->isHidden() && !textSelects.at(0)->isHidden() &&
                 !textSelects.at(1)->isHidden(),
             "OCR mode should replace selection actions with text editing controls");
+    QLayout* actionLayout = actionPanel->layout();
+    require(actionLayout != nullptr && actionLayout->indexOf(edit) < actionLayout->indexOf(translate) &&
+                actionLayout->indexOf(translate) < actionLayout->indexOf(textSelects.at(0)) &&
+                actionLayout->indexOf(textSelects.at(0)) < actionLayout->indexOf(textSelects.at(1)) &&
+                actionLayout->indexOf(textSelects.at(1)) < actionLayout->indexOf(reset) &&
+                actionLayout->indexOf(reset) < actionLayout->indexOf(settings),
+            "OCR actions should be ordered Edit, Translate, formatting, punctuation, Reset, Settings");
     require(!edit->isEnabled() && !reset->isEnabled(),
             "OCR editing controls should remain disabled before a text result exists");
     require(!edit->isCheckable(),
@@ -970,13 +1166,23 @@ void ocrToolReplacesSelectionActionToolbarContents() {
     require(edit->isEnabled() && !reset->isEnabled() && textSelects.at(0)->isEnabled() &&
                 textSelects.at(1)->isEnabled(),
             "a text result should enable editing operations but not Reset");
+    formattingSelect->setCurrentValue(QStringLiteral("remove"));
+    punctuationSelect->setCurrentValue(QStringLiteral("full"));
+    require(formattingSelect->currentValue().toString() == QStringLiteral("remove") &&
+                punctuationSelect->currentValue().toString() == QStringLiteral("full"),
+            "active OCR transforms should remain displayed on both selects");
+    palette.setTextTransformSelections({}, {});
+    require(!formattingSelect->currentValue().isValid() &&
+                !punctuationSelect->currentValue().isValid(),
+            "published manual-edit state should clear both OCR transform selections");
     palette.setTextEditingState(true, true);
+    palette.setTextTranslationState(true, false, false, false, false, false);
     require(edit->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
                 edit->accentRole() == adqt::widgets::AdButton::AccentRole::Primary &&
                 reset->isEnabled(),
-            "Edit should be active and Reset enabled while text editing is active");
-    auto* ocrToolButton = qobject_cast<adqt::widgets::AdButton*>(
-        controlWithTooltip(palette, "Text recognition"));
+            "Edit Reset should remain enabled after translation state is published");
+    auto* ocrToolButton =
+        qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Text recognition"));
     require(ocrToolButton != nullptr &&
                 buttonBackgroundSample(*edit) == buttonBackgroundSample(*ocrToolButton),
             "the active OCR edit control should match the main toolbar active background");
@@ -984,13 +1190,24 @@ void ocrToolReplacesSelectionActionToolbarContents() {
     require(undo->isEnabled() && !redo->isEnabled(),
             "OCR editing should expose the text document's undo state on the toolbar");
     palette.setTextEditingState(true, false);
+    palette.setTextTranslationState(true, true, true, false, false, false);
+    require(translate->isEnabled() &&
+                translate->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
+                !reset->isEnabled() && !textSelects.at(0)->isEnabled() &&
+                !textSelects.at(1)->isEnabled() && settings->isEnabled(),
+            "streaming translation should remain dismissible while edits stay locked");
+    palette.setTextTranslationState(true, true, false, true, false, true);
+    require(reset->isEnabled() && undo->isEnabled() && !redo->isEnabled() &&
+                formattingSelect->isEnabled() && punctuationSelect->isEnabled(),
+            "completed translation should expose Reset, history, and text formatting");
+    palette.setTextTranslationState(true, false, false, false, false, false);
     require(edit->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text &&
                 edit->accentRole() == adqt::widgets::AdButton::AccentRole::Neutral &&
                 !reset->isEnabled(),
             "Edit should return to its inactive state after text editing exits");
 }
 
-void recognitionToolsDisableDrawingTools() {
+void recognitionToolsKeepDrawingToolsAvailable() {
     ScreenshotToolPalette::Options options;
     options.showMoveTool = true;
     options.showSelectTool = true;
@@ -1010,53 +1227,28 @@ void recognitionToolsDisableDrawingTools() {
 
     ScreenshotToolPalette palette(options);
     const char* const drawingTools[] = {
-        "Select elements", "Shape",  "Pen", "Text", "Serial number",
-        "Filter",          "Eraser", "Watermark",
-    };
-    auto* arrowLineTrigger = palette.findChild<adqt::widgets::AdButton*>(
-        QStringLiteral("screenshotArrowLineButton"));
-    adqt::widgets::AdPopover* arrowLinePopover = popoverForTrigger(arrowLineTrigger);
-    const auto requireArrowLineOptionsEnabled = [arrowLinePopover](bool enabled,
-                                                                  const char* message) {
-        for (const char* tooltip : {"Arrow", "Line"}) {
-            adqt::widgets::AdButton* button =
-                popoverButtonWithTooltip(arrowLinePopover, tooltip);
-            require(button != nullptr, "expected arrow/line option is missing");
-            require(button->isEnabled() == enabled, message);
-        }
+        "Select elements", "Shape",  "Arrow",  "Line",      "Pen", "Text",
+        "Serial number",   "Filter", "Eraser", "Watermark",
     };
 
     palette.setActiveTool(ScreenshotToolPalette::Tool::Ocr);
-    require(arrowLineTrigger != nullptr && !arrowLineTrigger->isEnabled(),
-            "text recognition should disable the arrow/line trigger");
-    requireControlsEnabled(palette, drawingTools, std::size(drawingTools), false,
-                           "text recognition should disable drawing tools");
-    requireArrowLineOptionsEnabled(false,
-                                   "text recognition should disable arrow/line options");
+    requireControlsEnabled(palette, drawingTools, std::size(drawingTools), true,
+                           "text recognition should keep drawing tools enabled");
 
     palette.setActiveTool(ScreenshotToolPalette::Tool::Table);
-    require(!arrowLineTrigger->isEnabled(),
-            "table recognition should keep the arrow/line trigger disabled");
-    requireControlsEnabled(palette, drawingTools, std::size(drawingTools), false,
-                           "table recognition should keep drawing tools disabled");
-    requireArrowLineOptionsEnabled(false,
-                                   "table recognition should keep arrow/line options disabled");
+    requireControlsEnabled(palette, drawingTools, std::size(drawingTools), true,
+                           "table recognition should keep drawing tools enabled");
 
     palette.setActiveTool(ScreenshotToolPalette::Tool::Qr);
-    require(!arrowLineTrigger->isEnabled(),
-            "QR recognition should keep the arrow/line trigger disabled");
-    requireControlsEnabled(palette, drawingTools, std::size(drawingTools), false,
-                           "QR recognition should keep drawing tools disabled");
-    requireArrowLineOptionsEnabled(false,
-                                   "QR recognition should keep arrow/line options disabled");
-
-    palette.setActiveTool(ScreenshotToolPalette::Tool::Move);
-    require(arrowLineTrigger->isEnabled(),
-            "leaving recognition should restore the arrow/line trigger");
     requireControlsEnabled(palette, drawingTools, std::size(drawingTools), true,
-                           "leaving recognition should restore drawing tools");
-    requireArrowLineOptionsEnabled(true,
-                                   "leaving recognition should restore arrow/line options");
+                           "QR recognition should keep drawing tools enabled");
+
+    auto* shapeButton =
+        qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Shape"));
+    require(shapeButton != nullptr, "shape tool should remain clickable during recognition");
+    shapeButton->click();
+    require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape,
+            "clicking a drawing tool should switch directly from recognition to that tool");
 }
 
 void tableToolExposesStructureActionsAndOwnHistoryState() {
@@ -1354,7 +1546,7 @@ void freeDrawToolIsDistinctAndUsesIndependentPathStyleControls() {
             "canvas should retain Free Draw identity");
 }
 
-void highlightToolUsesMainToolbarPopoverForHighlightVariants() {
+void highlightVariantsUseConfiguredPopoverGroup() {
     ScreenshotToolPalette::Options options;
     options.showSelectTool = false;
     options.showShapeTool = false;
@@ -1365,56 +1557,30 @@ void highlightToolUsesMainToolbarPopoverForHighlightVariants() {
     options.showSpotlightTool = true;
     ScreenshotToolPalette palette(options);
 
-    auto* highlightButton =
+    palette.show();
+    QCoreApplication::processEvents();
+    auto* trigger =
         palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotHighlightButton"));
-    require(highlightButton != nullptr, "the unified highlight toolbar control should be present");
-    require(highlightButton->toolTip().isEmpty() &&
-                highlightButton->accessibleName() == QStringLiteral("Pen highlight"),
-            "the unified highlight entry should start in pen highlight mode");
-    auto* popover = popoverForTrigger(highlightButton);
-    require(popover != nullptr, "highlight variants should expose a popover");
-    require(popover->triggers() == adqt::widgets::AdPopover::Trigger::Hover &&
-                popover->placement() == adqt::widgets::AdPopover::Placement::Top &&
-                popover->popupLayerMode() == adqt::widgets::AdPopover::PopupLayerMode::QtTool &&
-                popover->arrowVisible() && popover->contentMargins() == QMargins(12, 12, 12, 12) &&
-                popover->titleMinimumWidth() == 0,
-            "highlight variants should use the Qt tool hover popover configuration");
-
-    QWidget* content = popover->contentWidget();
-    require(content != nullptr && content->layout() != nullptr,
-            "highlight variants should expose a popover options layout");
-    const QStringList expectedTooltips{
-        QStringLiteral("Highlight"),
-        QStringLiteral("Spotlight"),
-    };
-    QList<adqt::widgets::AdButton*> optionsInPopover;
-    for (QWidget* optionWidget : content->findChildren<QWidget*>()) {
-        if (auto* option = qobject_cast<adqt::widgets::AdButton*>(optionWidget)) {
-            optionsInPopover.append(option);
-        }
-    }
-    require(optionsInPopover.size() == expectedTooltips.size(),
-            "highlight popover should contain one button per enabled variant");
-    for (int index = 0; index < expectedTooltips.size(); ++index) {
-        require(optionsInPopover.at(index)->toolTip() == expectedTooltips.at(index),
-                "highlight popover variants should preserve the configured order");
-    }
-    const auto requireHighlightOptionActive = [&optionsInPopover](int activeIndex,
-                                                                  const char* message) {
-        for (int index = 0; index < optionsInPopover.size(); ++index) {
-            const bool active = index == activeIndex;
-            require(optionsInPopover.at(index)->buttonStyle() ==
-                            (active ? adqt::widgets::AdButton::ButtonStyle::Solid
-                                    : adqt::widgets::AdButton::ButtonStyle::Text) &&
-                        optionsInPopover.at(index)->accentRole() ==
-                            (active ? adqt::widgets::AdButton::AccentRole::Primary
-                                    : adqt::widgets::AdButton::AccentRole::Neutral),
-                    message);
-        }
-    };
-    require(content->layout()->spacing() == 8 &&
-                content->layout()->contentsMargins() == QMargins(0, 0, 0, 0),
-            "highlight popover options should match toolbar spacing metrics");
+    adqt::widgets::AdPopover* popover = popoverForTrigger(trigger);
+    QWidget* content = popover != nullptr ? popover->contentWidget() : nullptr;
+    auto* highlighterOption = popoverButtonWithTooltip(popover, "Highlighter Tool");
+    auto* penHighlightOption = popoverButtonWithTooltip(popover, "Pen Highlighter Tool");
+    auto* rectangleHighlightOption =
+        popoverButtonWithTooltip(popover, "Rectangle Highlighter Tool");
+    auto* spotlightOption = popoverButtonWithTooltip(popover, "Spotlight");
+    require(trigger != nullptr &&
+                trigger->accessibleName() == QStringLiteral("Highlighter Tool") &&
+                popover != nullptr && content != nullptr &&
+                content->objectName() == QStringLiteral("screenshotHighlightPopoverContent") &&
+                qobject_cast<QHBoxLayout*>(content->layout()) != nullptr &&
+                highlighterOption != nullptr && penHighlightOption == nullptr &&
+                rectangleHighlightOption == nullptr &&
+                spotlightOption != nullptr &&
+                palette.findChild<adqt::widgets::AdButton*>(
+                    QStringLiteral("screenshotRectangleHighlightButton")) == nullptr &&
+                content->layout()->indexOf(highlighterOption) <
+                    content->layout()->indexOf(spotlightOption),
+            "the live toolbar should expose one generic Highlighter Tool alongside Spotlight");
 
     const QList<QWidget*> highlightModeSelectors =
         palette.findChildren<QWidget*>(QStringLiteral("screenshotHighlightModeSelector"));
@@ -1427,15 +1593,15 @@ void highlightToolUsesMainToolbarPopoverForHighlightVariants() {
         require(group != nullptr && group->buttons().size() == 2,
                 "highlight style mode selectors should contain only rectangle and pen");
         const QStringList expectedModes{
-            QStringLiteral("Pen highlight"),
-            QStringLiteral("Rectangle highlight"),
+            QStringLiteral("Pen Highlighter Tool"),
+            QStringLiteral("Rectangle Highlighter Tool"),
         };
         for (int index = 0; index < expectedModes.size(); ++index) {
             require(group->buttons().at(index)->toolTip() == expectedModes.at(index),
-                    "highlight style mode selectors should place pen before rectangle");
+                    "highlight style mode selectors should place the default pen mode first");
         }
         require(group->checkedId() == static_cast<int>(ScreenshotToolPalette::Tool::PenHighlight),
-                "highlight style mode selectors should default to Pen highlight");
+                "highlight style mode selectors should default to Pen Highlighter Tool");
     }
     require(palette.findChild<QWidget*>(QStringLiteral("screenshotSpotlightStyleControls"))
                     ->findChild<QWidget*>(QStringLiteral("screenshotHighlightModeSelector")) ==
@@ -1443,20 +1609,9 @@ void highlightToolUsesMainToolbarPopoverForHighlightVariants() {
             "Spotlight should not be added to the rectangle and pen style selector");
 
     QWidget* freeDrawButton = controlWithTooltip(palette, "Pen");
-    QLayout* mainLayout = highlightButton->parentWidget()->layout();
-    require(freeDrawButton != nullptr && mainLayout != nullptr &&
-                mainLayout == freeDrawButton->parentWidget()->layout() &&
-                mainLayout == highlightButton->parentWidget()->layout(),
-            "the highlight control should share the main toolbar layout with Free Draw");
-    const int freeDrawIndex = mainLayout->indexOf(freeDrawButton);
-    const int highlightIndex = mainLayout->indexOf(highlightButton);
-    QLayoutItem* beforeHighlight = freeDrawIndex >= 0 && freeDrawIndex + 1 < mainLayout->count()
-                                       ? mainLayout->itemAt(freeDrawIndex + 1)
-                                       : nullptr;
-    require(highlightIndex == freeDrawIndex + 2 && beforeHighlight != nullptr &&
-                beforeHighlight->spacerItem() != nullptr &&
-                beforeHighlight->sizeHint().width() == 8,
-            "the unified highlight tool should have 8px spacing on its left");
+    require(freeDrawButton != nullptr && freeDrawButton->mapTo(palette.mainPanel(), QPoint()).y() ==
+                                             trigger->mapTo(palette.mainPanel(), QPoint()).y(),
+            "the highlight group trigger should remain in the single main toolbar row");
 
     int rectangleRequests = 0;
     int penRequests = 0;
@@ -1467,65 +1622,71 @@ void highlightToolUsesMainToolbarPopoverForHighlightVariants() {
                      [&penRequests]() { ++penRequests; });
     QObject::connect(&palette, &ScreenshotToolPalette::spotlightRequested,
                      [&spotlightRequests]() { ++spotlightRequests; });
-    highlightButton->click();
-    require(rectangleRequests == 0 && penRequests == 1,
-            "the unified highlight entry should default to Pen highlight");
-    requireHighlightOptionActive(-1,
-                                 "Pen highlight should leave the popover-only variants inactive");
-
     auto* highlightModeGroup =
         highlightModeSelectors.constFirst()->findChild<adqt::widgets::AdRadioButtonGroup*>();
-    auto* penHighlightMode =
-        qobject_cast<adqt::widgets::AdRadio*>(highlightModeGroup->buttons().at(0));
-    require(penHighlightMode != nullptr,
-            "the highlight style selector should expose Pen highlight");
-    penHighlightMode->click();
-    require(penRequests == 2 && rectangleRequests == 0 &&
-                palette.activeToolForTests() == ScreenshotToolPalette::Tool::PenHighlight &&
-                highlightButton->toolTip().isEmpty() &&
-                highlightButton->accessibleName() == QStringLiteral("Pen highlight") &&
-                adqt::icons::describeIcon(highlightButton->iconRef()).key.name ==
-                    adqt::icons::describeIcon(
-                        snow_shot::presentation::icons::custom::outlined::ToolHighlight())
-                        .key.name,
-            "selecting Pen highlight should keep its existing style selector and main entry");
-
-    popover->show();
-    QCoreApplication::processEvents();
-    optionsInPopover.at(1)->click();
-    require(penRequests == 2 && rectangleRequests == 0 && spotlightRequests == 1 &&
-                palette.activeToolForTests() == ScreenshotToolPalette::Tool::Spotlight &&
-                highlightButton->toolTip().isEmpty() &&
-                highlightButton->accessibleName() == QStringLiteral("Spotlight") &&
-                adqt::icons::describeIcon(highlightButton->iconRef()).key.name ==
-                    adqt::icons::describeIcon(
-                        snow_shot::presentation::icons::custom::outlined::ToolSpotlight())
-                        .key.name &&
-                !popover->isVisible(),
-            "selecting Spotlight should update and close the shared popover");
-    requireHighlightOptionActive(1, "selecting Spotlight should activate only its popover button");
-
-    popover->show();
-    QCoreApplication::processEvents();
-    optionsInPopover.at(0)->click();
-    require(rectangleRequests == 1 && spotlightRequests == 1 &&
+    auto* rectangleHighlightMode =
+        qobject_cast<adqt::widgets::AdRadio*>(highlightModeGroup->buttons().at(1));
+    require(rectangleHighlightMode != nullptr,
+            "the highlight style selector should expose Rectangle Highlighter Tool");
+    rectangleHighlightMode->click();
+    require(penRequests == 0 && rectangleRequests == 1 &&
                 palette.activeToolForTests() == ScreenshotToolPalette::Tool::RectangleHighlight &&
-                !popover->isVisible(),
-            "selecting Highlight should activate it and close the shared popover");
-    requireHighlightOptionActive(0, "selecting Highlight should activate only its popover button");
+                trigger->accessibleName() == QStringLiteral("Highlighter Tool") &&
+                trigger->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
+                trigger->accentRole() == adqt::widgets::AdButton::AccentRole::Primary &&
+                highlighterOption->buttonStyle() ==
+                    adqt::widgets::AdButton::ButtonStyle::Solid,
+            "Rectangle Highlighter Tool should remain style-selectable through the generic item");
+
+    palette.setToolbarLayout({
+        {{QStringLiteral("highlighter"), QStringLiteral("spotlight")},
+         {QStringLiteral("free-draw")}},
+        {},
+    });
+    QCoreApplication::processEvents();
+    trigger =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotHighlightButton"));
+    popover = popoverForTrigger(trigger);
+    highlighterOption = popoverButtonWithTooltip(popover, "Highlighter Tool");
+    spotlightOption = popoverButtonWithTooltip(popover, "Spotlight");
+    require(trigger != nullptr &&
+                trigger->accessibleName() == QStringLiteral("Highlighter Tool") &&
+                trigger->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
+                highlighterOption != nullptr &&
+                highlighterOption->buttonStyle() ==
+                    adqt::widgets::AdButton::ButtonStyle::Solid,
+            "toolbar rebuilds should preserve the generic entry while Rectangle mode is active");
+
+    trigger->click();
+    require(penRequests == 1 && rectangleRequests == 1 &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::PenHighlight &&
+                trigger->accessibleName() == QStringLiteral("Highlighter Tool") &&
+                highlighterOption->buttonStyle() ==
+                    adqt::widgets::AdButton::ButtonStyle::Solid,
+            "clicking Highlighter Tool should activate its Pen Highlighter Tool default");
+
+    spotlightOption->click();
+    require(penRequests == 1 && rectangleRequests == 1 && spotlightRequests == 1 &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::Spotlight &&
+                trigger->accessibleName() == QStringLiteral("Spotlight") &&
+                trigger->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
+                spotlightOption->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid,
+            "the Spotlight option should replace and activate the shared trigger");
+
+    highlighterOption->click();
+    require(penRequests == 2 && rectangleRequests == 1 && spotlightRequests == 1 &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::PenHighlight &&
+                trigger->accessibleName() == QStringLiteral("Highlighter Tool") &&
+                highlighterOption->buttonStyle() ==
+                    adqt::widgets::AdButton::ButtonStyle::Solid,
+            "the generic Highlighter Tool option should activate Pen Highlighter Tool");
 
     palette.setActiveTool(ScreenshotToolPalette::Tool::FreeDraw);
-    requireHighlightOptionActive(
-        -1, "leaving the highlight group should clear its popover button state");
-    palette.setActiveTool(ScreenshotToolPalette::Tool::Spotlight);
-
-    popover->show();
-    highlightButton->click();
-    require(popover->isVisible(),
-            "clicking the Highlight hover trigger should not close its popover");
-    require(spotlightRequests == 2,
-            "clicking the Highlight trigger should activate its displayed tool");
-    popover->hide();
+    require(trigger->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text &&
+                highlighterOption->buttonStyle() ==
+                    adqt::widgets::AdButton::ButtonStyle::Text &&
+                spotlightOption->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text,
+            "leaving the highlight tools should clear the trigger and option states");
 }
 
 void highlightStyleToolbarWidthTracksActiveMode() {
@@ -1880,75 +2041,69 @@ void filterStyleEditorsMatchShapeAndSpotlightMetrics() {
     }
 }
 
-void mainToolbarOptionPopoversShareConfiguredEditorShell() {
+void drawingToolbarGroupsUseToolbarPopoverMetrics() {
     ScreenshotToolPalette::Options options;
+    options.showSelectTool = false;
+    options.showShapeTool = true;
     options.showArrowTool = true;
     options.showLineTool = true;
     options.showHighlightTool = true;
     options.showPenHighlightTool = true;
     options.showSpotlightTool = true;
+    options.enableStyleToolbar = false;
     ScreenshotToolPalette palette(options);
-    auto* arrowLineTrigger =
-        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotArrowLineButton"));
-    auto* highlightTrigger =
-        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotHighlightButton"));
+    palette.show();
+    QCoreApplication::processEvents();
+
+    const QList<adqt::widgets::AdButton*> drawingButtons = mainDrawingToolbarButtons(palette);
+    require(drawingButtons.size() == 3,
+            "the default drawing layout should expose Shape and two grouped live slots");
+    auto* shapeButton = drawingButtons.at(0);
+    auto* arrowLineTrigger = drawingButtons.at(1);
+    auto* highlightTrigger = drawingButtons.at(2);
     adqt::widgets::AdPopover* arrowLinePopover = popoverForTrigger(arrowLineTrigger);
     adqt::widgets::AdPopover* highlightPopover = popoverForTrigger(highlightTrigger);
-    require(arrowLinePopover != nullptr && highlightPopover != nullptr,
-            "main toolbar option groups should expose configured popover editors");
-
-    const QList<adqt::widgets::AdPopover*> popovers{
-        arrowLinePopover,
-        highlightPopover,
+    require(
+        shapeButton->size() == QSize(32, 32) && popoverForTrigger(shapeButton) == nullptr &&
+            arrowLineTrigger->size() == QSize(32, 32) &&
+            highlightTrigger->size() == QSize(32, 32) && arrowLinePopover != nullptr &&
+            highlightPopover != nullptr &&
+            qobject_cast<QHBoxLayout*>(arrowLinePopover->contentWidget()->layout()) != nullptr &&
+            qobject_cast<QHBoxLayout*>(highlightPopover->contentWidget()->layout()) != nullptr &&
+            arrowLinePopover->contentWidget()->layout()->spacing() == 8 &&
+            highlightPopover->contentWidget()->layout()->spacing() == 8,
+        "group triggers should use toolbar metrics and horizontal eight-pixel popover spacing");
+    const QList<adqt::widgets::AdButton*> popupButtons{
+        popoverButtonWithTooltip(arrowLinePopover, "Arrow"),
+        popoverButtonWithTooltip(arrowLinePopover, "Line"),
+        popoverButtonWithTooltip(highlightPopover, "Highlighter Tool"),
+        popoverButtonWithTooltip(highlightPopover, "Spotlight"),
     };
-    const QStringList contentObjectNames{
-        QStringLiteral("screenshotArrowLinePopoverContent"),
-        QStringLiteral("screenshotHighlightPopoverContent"),
-    };
-    QList<QSize> optionReferenceSizes;
-    for (int popoverIndex = 0; popoverIndex < popovers.size(); ++popoverIndex) {
-        adqt::widgets::AdPopover* popover = popovers.at(popoverIndex);
-        QWidget* content = popover->contentWidget();
-        auto* layout = content == nullptr ? nullptr : qobject_cast<QHBoxLayout*>(content->layout());
-        const QList<adqt::widgets::AdButton*> buttons =
-            content == nullptr ? QList<adqt::widgets::AdButton*>()
-                               : content->findChildren<adqt::widgets::AdButton*>(
-                                     QString(), Qt::FindDirectChildrenOnly);
-        require(popover->triggers() == adqt::widgets::AdPopover::Trigger::Hover &&
-                    popover->placement() == adqt::widgets::AdPopover::Placement::Top &&
-                    popover->popupLayerMode() == adqt::widgets::AdPopover::PopupLayerMode::QtTool &&
-                    popover->arrowVisible() && content != nullptr &&
-                    content->objectName() == contentObjectNames.at(popoverIndex) &&
-                    content->sizePolicy().horizontalPolicy() == QSizePolicy::Fixed &&
-                    content->sizePolicy().verticalPolicy() == QSizePolicy::Fixed &&
-                    layout != nullptr && layout->contentsMargins() == QMargins(0, 0, 0, 0) &&
-                    layout->spacing() == 8 && buttons.size() == 2,
-                "main toolbar option popovers should share one configured shell");
-        for (adqt::widgets::AdButton* button : buttons) {
-            require(button != nullptr && button->focusPolicy() == Qt::NoFocus &&
-                        !button->toolTip().isEmpty(),
-                    "configured toolbar options should share button behavior");
-            if (optionReferenceSizes.size() < buttons.size()) {
-                optionReferenceSizes.append(button->size());
-            } else {
-                require(button->size() == optionReferenceSizes.at(buttons.indexOf(button)),
-                        "both configured popovers should use identical option metrics");
-            }
-        }
-    }
+    require(std::all_of(popupButtons.cbegin(), popupButtons.cend(),
+                        [](const auto* button) {
+                            return button != nullptr && button->size() == QSize(32, 32);
+                        }),
+            "drawing group popup options should start at the popup reference size");
+    require(palette.mainPanel()
+                ->findChildren<QWidget*>(QStringLiteral("screenshotDrawingToolPosition"),
+                                         Qt::FindDirectChildrenOnly)
+                .isEmpty(),
+            "live drawing groups should not create vertical toolbar positions");
 
-    constexpr qreal toolbarScale = 1.5;
-    require(palette.setPhysicalScale(toolbarScale),
-            "toolbar option popover test should change toolbar scale");
-    for (adqt::widgets::AdPopover* popover : popovers) {
-        const QList<adqt::widgets::AdButton*> buttons =
-            popover->contentWidget()->findChildren<adqt::widgets::AdButton*>(
-                QString(), Qt::FindDirectChildrenOnly);
-        for (int index = 0; index < buttons.size(); ++index) {
-            require(buttons.at(index)->size() == optionReferenceSizes.at(index),
-                    "popup-owned toolbar options should not inherit toolbar counter-scaling");
-        }
+    require(palette.setPhysicalScale(1.5),
+            "drawing toolbar scale test should change the physical scale");
+    QCoreApplication::processEvents();
+    for (adqt::widgets::AdButton* button : drawingButtons) {
+        require(button->size() == QSize(48, 48),
+                "drawing toolbar triggers should follow the committed physical scale");
     }
+    require(std::all_of(popupButtons.cbegin(), popupButtons.cend(),
+                        [](const auto* button) {
+                            return button != nullptr && button->size() == QSize(32, 32);
+                        }) &&
+                arrowLinePopover->contentWidget()->layout()->spacing() == 8 &&
+                highlightPopover->contentWidget()->layout()->spacing() == 8,
+            "popup options should retain popup-owned metrics when the toolbar scales");
 }
 
 void spotlightControlsMatchMaskConfigurationBehavior() {
@@ -1958,19 +2113,18 @@ void spotlightControlsMatchMaskConfigurationBehavior() {
     options.showSpotlightTool = true;
     ScreenshotToolPalette palette(options);
 
-    auto* highlightButton =
+    auto* highlightTrigger =
         palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotHighlightButton"));
-    auto* highlightPopover = popoverForTrigger(highlightButton);
-    auto* spotlightButton = popoverButtonWithTooltip(highlightPopover, "Spotlight");
+    auto* spotlightButton =
+        popoverButtonWithTooltip(popoverForTrigger(highlightTrigger), "Spotlight");
     auto* colorPicker = colorPickerWithAccessibleName(palette, "Mask color");
     auto* opacitySlider = palette.findChild<adqt::widgets::AdSlider*>(
         QStringLiteral("screenshotSpotlightOpacitySlider"));
     auto* opacityIcon =
         palette.findChild<QLabel*>(QStringLiteral("screenshotSpotlightOpacityIcon"));
-    require(highlightButton != nullptr && highlightPopover != nullptr &&
-                spotlightButton != nullptr && colorPicker != nullptr && opacitySlider != nullptr &&
-                opacityIcon != nullptr,
-            "Spotlight must expose its mode, mask color, and opacity controls");
+    require(highlightTrigger != nullptr && spotlightButton != nullptr && colorPicker != nullptr &&
+                opacitySlider != nullptr && opacityIcon != nullptr,
+            "Spotlight must be selectable from its group and expose mask controls");
     QWidget* spotlightControls =
         palette.findChild<QWidget*>(QStringLiteral("screenshotSpotlightStyleControls"));
     require(spotlightControls != nullptr && spotlightControls->layout() != nullptr &&
@@ -2001,8 +2155,6 @@ void spotlightControlsMatchMaskConfigurationBehavior() {
                          ++commits;
                          lastConfig = config;
                      });
-    highlightPopover->show();
-    QCoreApplication::processEvents();
     spotlightButton->click();
     require(requests == 1, "Spotlight mode must request the Spotlight canvas tool");
 
@@ -2561,6 +2713,120 @@ void watermarkControlsFollowPhysicalScale() {
     }
 }
 
+void subToolbarControlInternalsFollowMixedDpiScale() {
+    ScreenshotToolPalette::Options options;
+    options.showWatermarkTool = true;
+    ScreenshotToolPalette palette(options);
+    palette.show();
+
+    palette.setActiveTool(ScreenshotToolPalette::Tool::RectangleFilter);
+    auto* slider = palette.findChild<adqt::widgets::AdSlider*>(
+        QStringLiteral("screenshotFilterIntensitySlider"));
+    require(slider != nullptr, "filter sub-toolbar should expose its intensity slider");
+    adqt::widgets::AdSlider::ComponentTokens sliderTokens;
+    sliderTokens.railSize = 4;
+    sliderTokens.handleSize = 10;
+    sliderTokens.handleSizeHover = 10;
+    sliderTokens.handleLineWidth = 2;
+    sliderTokens.handleLineWidthHover = 2;
+    sliderTokens.focusOutlineSize = 0;
+    sliderTokens.marginMain = 12;
+    sliderTokens.railBg = QColor(0, 220, 0);
+    sliderTokens.railHoverBg = sliderTokens.railBg;
+    sliderTokens.trackBg = sliderTokens.railBg;
+    sliderTokens.trackHoverBg = sliderTokens.railBg;
+    sliderTokens.handleColor = QColor(0, 0, 230);
+    sliderTokens.handleActiveColor = sliderTokens.handleColor;
+    slider->setComponentTokens(sliderTokens);
+    adqt::widgets::AdSlider::SemanticStyles sliderStyles;
+    sliderStyles.root.backgroundColor = QColor(Qt::white);
+    sliderStyles.handle.backgroundColor = QColor(250, 220, 0);
+    slider->setSemanticStyles(sliderStyles);
+    slider->setTooltipEnabled(false);
+    const auto isRail = [](const QColor& color) {
+        return color.green() > color.red() + 80 && color.green() > color.blue() + 80;
+    };
+    const auto isHandle = [](const QColor& color) {
+        return color.red() > 200 && color.green() > 170 && color.blue() < 80;
+    };
+    const QRect railBefore = matchingPixelBounds(renderButton(*slider), isRail);
+    const QRect handleBefore = matchingPixelBounds(renderButton(*slider), isHandle);
+
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    auto* shapeOption =
+        qobject_cast<adqt::widgets::AdRadio*>(controlWithTooltip(palette, "Rectangle"));
+    require(shapeOption != nullptr && !shapeOption->icon().isNull(),
+            "shape sub-toolbar should expose an icon radio option");
+    const QSize radioIconBefore = shapeOption->iconSize();
+
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Watermark);
+    auto* lineEdit = palette.findChild<adqt::widgets::AdLineEdit*>(
+        QStringLiteral("screenshotWatermarkTextEdit"));
+    require(lineEdit != nullptr, "watermark sub-toolbar should expose its input");
+    const QMargins inputMarginsBefore = lineEdit->textMargins();
+
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Text);
+    auto* select = qobject_cast<adqt::widgets::AdSelect*>(
+        controlWithAccessibleName(palette, "Text font family"));
+    require(select != nullptr && select->layout() != nullptr,
+            "text sub-toolbar should expose its font select");
+    select->showPopup();
+    QCoreApplication::processEvents();
+    QListView* popupView = select->view();
+    require(popupView != nullptr && popupView->model() != nullptr &&
+                popupView->model()->rowCount() > 0,
+            "font select popup should open for mixed-DPI isolation coverage");
+    QWidget* popupWindow = popupView->window();
+    const int selectHeightBefore = select->sizeHint().height();
+    const QMargins selectMarginsBefore = select->layout()->contentsMargins();
+    const QSize popupSizeBefore = popupWindow->size();
+    const QSize popupViewSizeBefore = popupView->size();
+    const QModelIndex firstRowBefore = popupView->model()->index(0, 0);
+    const QSize optionSizeBefore = firstRowBefore.data(Qt::SizeHintRole).toSize();
+    const QFont optionFontBefore = firstRowBefore.data(Qt::FontRole).value<QFont>();
+
+    constexpr qreal toolbarCounterScale = 1.5;
+    adqt::widgets::AdControlScaleScope scope(&palette);
+    require(scope.publishScale(toolbarCounterScale, 1.0),
+            "sub-toolbar controls should receive the mixed-DPI scale context");
+    require(palette.setPhysicalScale(toolbarCounterScale),
+            "sub-toolbar geometry should follow the mixed-DPI counter-scale");
+    QCoreApplication::processEvents();
+
+    const QMargins selectMarginsAfter = select->layout()->contentsMargins();
+    const QModelIndex firstRowAfter = popupView->model()->index(0, 0);
+    require(select->sizeHint().height() == qRound(selectHeightBefore * toolbarCounterScale) &&
+                selectMarginsAfter.left() > selectMarginsBefore.left() &&
+                selectMarginsAfter.right() > selectMarginsBefore.right(),
+            "select trigger internals should follow the toolbar mixed-DPI scale");
+    require(firstRowAfter.data(Qt::SizeHintRole).toSize() == optionSizeBefore &&
+                firstRowAfter.data(Qt::FontRole).value<QFont>() == optionFontBefore &&
+                popupView->size() == popupViewSizeBefore && popupWindow->size() == popupSizeBefore,
+            "select popup layer should retain its own monitor scale");
+    select->hidePopup();
+
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    require(shapeOption->iconSize() ==
+                QSize(qRound(radioIconBefore.width() * toolbarCounterScale),
+                      qRound(radioIconBefore.height() * toolbarCounterScale)),
+            "button-group icons should follow the toolbar mixed-DPI scale");
+
+    palette.setActiveTool(ScreenshotToolPalette::Tool::RectangleFilter);
+    const QRect railAfter = matchingPixelBounds(renderButton(*slider), isRail);
+    const QRect handleAfter = matchingPixelBounds(renderButton(*slider), isHandle);
+    require(railBefore.isValid() && handleBefore.isValid() && railAfter.height() > railBefore.height(),
+            "sub-toolbar slider rail thickness should follow the mixed-DPI scale");
+    require(handleAfter.width() > handleBefore.width() &&
+                handleAfter.height() > handleBefore.height(),
+            "sub-toolbar slider handle should follow the mixed-DPI scale");
+
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Watermark);
+    require(lineEdit->textMargins().left() > inputMarginsBefore.left() &&
+                lineEdit->textMargins().right() > inputMarginsBefore.right(),
+            "sub-toolbar input padding should follow the mixed-DPI scale");
+    palette.hide();
+}
+
 void shapeSelectorIsTheLeftmostStyleGroup() {
     ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
     palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
@@ -3081,10 +3347,9 @@ void textStyleControlsExposeAndEmitAllRequestedProperties() {
     }
     require(activeFontSizePreset != nullptr &&
                 activeFontSizePreset->buttonStyle() ==
-                    adqt::widgets::AdButton::ButtonStyle::Solid &&
-                activeFontSizePreset->accentRole() ==
-                    adqt::widgets::AdButton::AccentRole::Primary,
-            "the active text style button should match the main toolbar active style");
+                    adqt::widgets::AdButton::ButtonStyle::Tonal &&
+                activeFontSizePreset->accentRole() == adqt::widgets::AdButton::AccentRole::Primary,
+            "the active text style button should use the shared style-toolbar active state");
     auto* fontSelect = qobject_cast<adqt::widgets::AdSelect*>(
         controlWithAccessibleName(palette, "Text font family"));
     require(fontSelect != nullptr, "text font-family select should be present");
@@ -3231,11 +3496,9 @@ void textStyleControlsExposeAndEmitAllRequestedProperties() {
     auto* xlFontSizePreset = qobject_cast<adqt::widgets::AdButton*>(
         controlWithTooltip(palette, "Text font size XL (54px)"));
     require(xlFontSizePreset != nullptr &&
-                xlFontSizePreset->buttonStyle() ==
-                    adqt::widgets::AdButton::ButtonStyle::Solid &&
-                activeFontSizePreset->buttonStyle() ==
-                    adqt::widgets::AdButton::ButtonStyle::Text,
-            "changing text size should move the main-toolbar active style to the new preset");
+                xlFontSizePreset->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Tonal &&
+                activeFontSizePreset->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text,
+            "changing text size should move the shared style-toolbar active state to the new preset");
     clickStyleControl(palette, "Line text fill");
     require(changeCount == 2 && emittedStyle.fillStyle == SnowCanvasFillStyle::Line,
             "text fill pattern should update");
@@ -3887,6 +4150,14 @@ void configurationDrivenStyleEditorsShareStructuralContracts() {
                     picker->popupContentPlacement() ==
                         adqt::widgets::AdColorPicker::PopupContentPlacement::Top,
                 "color, fill, stroke, and width-color editors should share the picker shell");
+        auto* sampler = dynamic_cast<ColorPickerSamplerButton*>(picker->previewContent());
+        require(sampler != nullptr && sampler->focusPolicy() == Qt::NoFocus &&
+                    sampler->sizeClass() == adqt::widgets::AdButton::SizeClass::Small &&
+                    sampler->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Outline &&
+                    sampler->accentRole() == adqt::widgets::AdButton::AccentRole::Neutral &&
+                    sampler->toolTip() == QStringLiteral("Pick color from canvas") &&
+                    sampler->accessibleName() == sampler->toolTip(),
+                "canvas-color samplers should use the fill-color trigger's outlined style");
     }
     require(dynamic_cast<ColorSwatchButton*>(colorPicker->triggerContent()) != nullptr &&
                 dynamic_cast<FillStylePreviewTrigger*>(fillPicker->triggerContent()) != nullptr &&
@@ -3897,6 +4168,34 @@ void configurationDrivenStyleEditorsShareStructuralContracts() {
                 !colorPicker->alphaChannelEnabled() && fillPicker->alphaChannelEnabled() &&
                 !strokePicker->alphaChannelEnabled() && !widthColorPicker->alphaChannelEnabled(),
             "picker configuration should preserve trigger and alpha differences");
+    auto* fillTrigger = dynamic_cast<FillStylePreviewTrigger*>(fillPicker->triggerContent());
+    auto* fillSampler = dynamic_cast<ColorPickerSamplerButton*>(fillPicker->previewContent());
+    require(fillTrigger != nullptr && fillSampler != nullptr &&
+                fillSampler->sizeClass() == fillTrigger->sizeClass() &&
+                fillSampler->buttonStyle() == fillTrigger->buttonStyle() &&
+                fillSampler->accentRole() == fillTrigger->accentRole(),
+            "canvas sampler button chrome should match the fill-color picker trigger");
+
+    auto* sampler = dynamic_cast<ColorPickerSamplerButton*>(colorPicker->previewContent());
+    adqt::widgets::AdColorPicker* samplingTarget = nullptr;
+    QObject::connect(&palette, &ScreenshotToolPalette::canvasColorSamplingRequested, &palette,
+                     [&samplingTarget](adqt::widgets::AdColorPicker* picker) {
+                         samplingTarget = picker;
+                     });
+    colorPicker->setPopupVisible(true);
+    require(colorPicker->popupVisible(), "color picker popup should open before sampling");
+    sampler->click();
+    require(samplingTarget == colorPicker && !colorPicker->popupVisible(),
+            "canvas sampler should close its picker and request sampling for the owning picker");
+    int completedColorChanges = 0;
+    QObject::connect(colorPicker, &adqt::widgets::AdColorPicker::editingFinished, &palette,
+                     [&completedColorChanges](const adqt::widgets::AdColorValue&) {
+                         ++completedColorChanges;
+                     });
+    colorPicker->commitValue(adqt::widgets::AdColorValue::solid(QColor(QStringLiteral("#123456"))));
+    require(completedColorChanges == 1 &&
+                colorPicker->value().solidColor == QColor(QStringLiteral("#123456")),
+            "externally sampled colors should use completed picker change semantics");
 
     QWidget* startArrowhead = controlWithAccessibleName(palette, "Start arrowhead");
     QWidget* endArrowhead = controlWithAccessibleName(palette, "End arrowhead");
@@ -3937,6 +4236,49 @@ void configurationDrivenStyleEditorsShareStructuralContracts() {
     palette.setActiveTool(ScreenshotToolPalette::Tool::RectangleFilter);
     require(filterSelect->size() == scaledSelectSize,
             "filter select should apply the same metrics when its editor activates");
+}
+
+void canvasColorSamplerButtonRequestsAndCommits() {
+    ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    auto* picker = colorPickerWithAccessibleName(palette, "Stroke color");
+    auto* sampler = picker == nullptr
+                        ? nullptr
+                        : dynamic_cast<ColorPickerSamplerButton*>(picker->previewContent());
+    require(picker != nullptr && sampler != nullptr && sampler->focusPolicy() == Qt::NoFocus &&
+                sampler->sizeClass() == adqt::widgets::AdButton::SizeClass::Small &&
+                sampler->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Outline &&
+                sampler->accentRole() == adqt::widgets::AdButton::AccentRole::Neutral &&
+                sampler->toolTip() == QStringLiteral("Pick color from canvas") &&
+                sampler->accessibleName() == sampler->toolTip(),
+            "drawing color picker should expose an outlined canvas sampler button");
+
+    const QImage initialSamplerImage = renderButton(*sampler);
+    picker->setValue(adqt::widgets::AdColorValue::solid(QColor(QStringLiteral("#12ab34"))));
+    QCoreApplication::processEvents();
+    require(renderButton(*sampler) != initialSamplerImage,
+            "canvas sampler should repaint to display the current picker color");
+
+    adqt::widgets::AdColorPicker* samplingTarget = nullptr;
+    QObject::connect(&palette, &ScreenshotToolPalette::canvasColorSamplingRequested, &palette,
+                     [&samplingTarget](adqt::widgets::AdColorPicker* requested) {
+                         samplingTarget = requested;
+                     });
+    picker->setPopupVisible(true);
+    require(picker->popupVisible(), "color picker popup should open before sampling");
+    sampler->click();
+    require(samplingTarget == picker && !picker->popupVisible(),
+            "canvas sampler should close its picker and request the owning picker");
+
+    int completedChanges = 0;
+    QObject::connect(picker, &adqt::widgets::AdColorPicker::editingFinished, &palette,
+                     [&completedChanges](const adqt::widgets::AdColorValue&) {
+                         ++completedChanges;
+                     });
+    const QColor sampledColor(QStringLiteral("#123456"));
+    picker->commitValue(adqt::widgets::AdColorValue::solid(sampledColor));
+    require(completedChanges == 1 && picker->value().solidColor == sampledColor,
+            "sampled colors should use completed picker change semantics");
 }
 
 void styleToolbarRowSpacingFollowsPhysicalScale() {
@@ -5057,56 +5399,30 @@ void selectToolRemainsTheSoleOwnerOfItsSecondaryToolbar() {
             "a direct style-visibility request must not expose styles while Select is active");
 }
 
-void popoverEntrySelectionsPersistAcrossPaletteInstances() {
+void tableQrEntrySelectionPersistsAcrossPaletteInstances() {
     ScreenshotToolPalette::Options options;
     options.showSelectTool = false;
     options.showShapeTool = false;
-    options.showArrowTool = true;
-    options.showLineTool = true;
-    options.showHighlightTool = true;
-    options.showSpotlightTool = true;
     options.showTableTool = true;
     options.showQrTool = true;
     options.enableStyleToolbar = false;
 
     {
         ScreenshotToolPalette palette(options);
-        auto* arrowLineTrigger = palette.findChild<adqt::widgets::AdButton*>(
-            QStringLiteral("screenshotArrowLineButton"));
-        auto* highlightTrigger = palette.findChild<adqt::widgets::AdButton*>(
-            QStringLiteral("screenshotHighlightButton"));
-        auto* tableQrTrigger = palette.findChild<adqt::widgets::AdButton*>(
-            QStringLiteral("screenshotTableQrButton"));
-        auto* lineOption = popoverButtonWithTooltip(popoverForTrigger(arrowLineTrigger), "Line");
-        auto* spotlightOption =
-            popoverButtonWithTooltip(popoverForTrigger(highlightTrigger), "Spotlight");
-        auto* qrOption = popoverButtonWithTooltip(popoverForTrigger(tableQrTrigger),
-                                                  "QR code recognition");
-        require(lineOption != nullptr && spotlightOption != nullptr && qrOption != nullptr,
-                "persisted toolbar test should expose all grouped options");
-        lineOption->click();
-        spotlightOption->click();
+        auto* tableQrTrigger =
+            palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotTableQrButton"));
+        auto* qrOption =
+            popoverButtonWithTooltip(popoverForTrigger(tableQrTrigger), "QR code recognition");
+        require(qrOption != nullptr, "persisted recognition test should expose the QR option");
         qrOption->click();
     }
 
     ScreenshotToolPalette restored(options);
-    auto* restoredArrowLine = restored.findChild<adqt::widgets::AdButton*>(
-        QStringLiteral("screenshotArrowLineButton"));
-    auto* restoredHighlight = restored.findChild<adqt::widgets::AdButton*>(
-        QStringLiteral("screenshotHighlightButton"));
-    auto* restoredTableQr = restored.findChild<adqt::widgets::AdButton*>(
-        QStringLiteral("screenshotTableQrButton"));
-    require(restoredArrowLine != nullptr &&
-                restoredArrowLine->accessibleName() == QStringLiteral("Line") &&
-                adqt::icons::describeIcon(restoredArrowLine->iconRef()).key.name ==
-                    adqt::icons::describeIcon(
-                        snow_shot::presentation::icons::custom::outlined::ToolLine())
-                        .key.name &&
-                restoredHighlight != nullptr &&
-                restoredHighlight->accessibleName() == QStringLiteral("Spotlight") &&
-                restoredTableQr != nullptr &&
+    auto* restoredTableQr =
+        restored.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotTableQrButton"));
+    require(restoredTableQr != nullptr &&
                 restoredTableQr->accessibleName() == QStringLiteral("QR code recognition"),
-            "new toolbar instances should restore each persisted popover entry");
+            "new toolbar instances should restore the persisted recognition entry");
     require(snow_shot::storage::ApplicationStorage::instance().flushNow().success,
             "toolbar entry preferences should flush to the configuration file");
 }
@@ -5124,25 +5440,53 @@ int main(int argc, char** argv) {
                 .initialize({executableDirectory, storageDirectory.path(), 60000})
                 .success,
             "failed to initialize isolated toolbar test storage");
+    if (application.arguments().contains(QStringLiteral("--ocr-translation-only"))) {
+        ocrToolReplacesSelectionActionToolbarContents();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--screenshot-actions-tooltips-only"))) {
+        screenshotActionTooltipsUseConfiguredShortcuts();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--shortcut-tooltips-only"))) {
+        screenshotActionTooltipsUseConfiguredShortcuts();
+        ocrToolReplacesSelectionActionToolbarContents();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--canvas-color-sampling-only"))) {
+        canvasColorSamplerButtonRequestsAndCommits();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--toolbar-layout-only"))) {
+        configurableToolbarLayoutSupportsArbitraryPopoverGroups();
+        arrowAndLineUseConfiguredPopoverGroup();
+        highlightVariantsUseConfiguredPopoverGroup();
+        drawingToolbarGroupsUseToolbarPopoverMetrics();
+        spotlightControlsMatchMaskConfigurationBehavior();
+        return 0;
+    }
     numericStrokeWidthPreviewUsesLineWithinPreviewBounds();
     textAndHighlightStrokeWidthTriggersUseSharedPreviewButton();
-    scrollingScreenshotDisablesUnavailableTools();
-    recognitionToolsDisableDrawingTools();
+    scrollingScreenshotKeepsDrawingToolsAvailable();
+    recognitionToolsKeepDrawingToolsAvailable();
     scrollingScreenshotExposesAxisRecognitionModes();
     screenshotToolbarUsesCanonicalOrderAndSectionSeparators();
+    configurableToolbarLayoutSupportsArbitraryPopoverGroups();
     ocrControlReflectsLoadingState();
     ocrToolReplacesSelectionActionToolbarContents();
     tableToolExposesStructureActionsAndOwnHistoryState();
     tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode();
-    arrowLineGroupFallsBackToDirectButtonsWhenOnlyOneToolIsEnabled();
+    arrowAndLineRemainDirectWhenConfiguredIndividually();
     confirmActionRemainsSeparatedAndCallableForPinnedEditing();
     isolatedBusyIndicatorMatchesItsOwnerWindowBand();
     repeatedToolsAndDifferentialStyleSynchronizationAreNoOps();
     editorlessToolsRejectStaleStyleToolbarState();
     lineToolIsDiscoverableSelectableAndUsesLinearStyleControls();
     freeDrawToolIsDistinctAndUsesIndependentPathStyleControls();
-    highlightToolUsesMainToolbarPopoverForHighlightVariants();
-    mainToolbarOptionPopoversShareConfiguredEditorShell();
+    highlightVariantsUseConfiguredPopoverGroup();
+    drawingToolbarGroupsUseToolbarPopoverMetrics();
     spotlightControlsMatchMaskConfigurationBehavior();
     highlightStyleToolbarWidthTracksActiveMode();
     eraserToolIsDiscoverableAndHidesStyleControls();
@@ -5154,6 +5498,7 @@ int main(int argc, char** argv) {
     watermarkControlsFollowCommittedStateAndUndo();
     watermarkEditsCommitCompleteConfigsAndClampWheel();
     watermarkControlsFollowPhysicalScale();
+    subToolbarControlInternalsFollowMixedDpiScale();
     selectedStyleEditsAreReflectedInTheCreationStyleContext();
     mixedColorsKeepUniformStyleButtonsActive();
     styleToolbarWidthTracksTheActiveTool();
@@ -5185,7 +5530,7 @@ int main(int argc, char** argv) {
     resetStyleStateRestoresTheCompleteInjectedProfileWithoutCommands();
     textStylePopupLifecyclesAreBalanced();
     arrowheadOptionsRetranslateInPlace();
-    arrowLinePopoverReplacesItsEntryWithoutToolbarGeometryChurn();
-    popoverEntrySelectionsPersistAcrossPaletteInstances();
+    arrowAndLineUseConfiguredPopoverGroup();
+    tableQrEntrySelectionPersistsAcrossPaletteInstances();
     return 0;
 }

@@ -2,7 +2,10 @@ use super::*;
 
 impl Editor {
     pub(crate) fn tool_policy(&self) -> ToolPolicy {
-        Self::tool_policy_for(self.state.active_tool)
+        let mut policy = Self::tool_policy_for(self.state.active_tool);
+        policy.quick_selection_enabled = self.state.active_tool == ActiveTool::Select
+            || (self.quick_selection_disabled_tools & self.state.active_tool.policy_bit()) == 0;
+        policy
     }
 
     pub(crate) fn tool_policy_for(active_tool: ActiveTool) -> ToolPolicy {
@@ -21,7 +24,7 @@ impl Editor {
                 clear_selection_on_activate: true,
                 empty_canvas_action: ToolEmptyCanvasAction::CreateRectangle,
                 allow_shift_toggle: true,
-                default_cursor: CursorStyle::Default,
+                default_cursor: CursorStyle::Crosshair,
             },
             ActiveTool::Arrow => ToolPolicy {
                 selection_scope: ToolSelectionScope::ArrowOnly,
@@ -41,7 +44,7 @@ impl Editor {
             },
             ActiveTool::FreeDraw => ToolPolicy {
                 selection_scope: ToolSelectionScope::FreeDrawOnly,
-                quick_selection_enabled: false,
+                quick_selection_enabled: true,
                 clear_selection_on_activate: true,
                 empty_canvas_action: ToolEmptyCanvasAction::CreateFreeDraw,
                 allow_shift_toggle: true,
@@ -65,7 +68,7 @@ impl Editor {
             },
             ActiveTool::RectangleFilter => ToolPolicy {
                 selection_scope: ToolSelectionScope::FilterOnly,
-                quick_selection_enabled: false,
+                quick_selection_enabled: true,
                 clear_selection_on_activate: true,
                 empty_canvas_action: ToolEmptyCanvasAction::CreateRectangle,
                 allow_shift_toggle: true,
@@ -81,7 +84,7 @@ impl Editor {
             },
             ActiveTool::PenFilter => ToolPolicy {
                 selection_scope: ToolSelectionScope::PenFilterOnly,
-                quick_selection_enabled: false,
+                quick_selection_enabled: true,
                 clear_selection_on_activate: true,
                 empty_canvas_action: ToolEmptyCanvasAction::CreatePenFilter,
                 allow_shift_toggle: true,
@@ -89,7 +92,7 @@ impl Editor {
             },
             ActiveTool::Watermark => ToolPolicy {
                 selection_scope: ToolSelectionScope::None,
-                quick_selection_enabled: false,
+                quick_selection_enabled: true,
                 clear_selection_on_activate: false,
                 empty_canvas_action: ToolEmptyCanvasAction::Configure,
                 allow_shift_toggle: false,
@@ -97,7 +100,7 @@ impl Editor {
             },
             ActiveTool::Eraser => ToolPolicy {
                 selection_scope: ToolSelectionScope::All,
-                quick_selection_enabled: false,
+                quick_selection_enabled: true,
                 clear_selection_on_activate: false,
                 empty_canvas_action: ToolEmptyCanvasAction::MarqueeSelect,
                 allow_shift_toggle: false,
@@ -179,6 +182,14 @@ mod line_policy_tests {
     use super::*;
 
     #[test]
+    fn shape_uses_a_crosshair_creation_cursor() {
+        assert_eq!(
+            Editor::tool_policy_for(ActiveTool::Shape).default_cursor,
+            CursorStyle::Crosshair
+        );
+    }
+
+    #[test]
     fn arrow_and_line_creation_scopes_are_distinct() {
         let arrow_scope = Editor::tool_policy_for(ActiveTool::Arrow).selection_scope;
         let line_scope = Editor::tool_policy_for(ActiveTool::Line).selection_scope;
@@ -211,17 +222,20 @@ mod line_policy_tests {
     }
 
     #[test]
-    fn continuous_drawing_and_filter_tools_disable_quick_selection() {
-        for tool in [
-            ActiveTool::FreeDraw,
-            ActiveTool::RectangleFilter,
-            ActiveTool::PenFilter,
-        ] {
-            assert!(!Editor::tool_policy_for(tool).quick_selection_enabled);
-        }
+    fn quick_selection_is_controlled_by_the_runtime_tool_mask() {
+        let mut editor = Editor::new(EngineConfig::default()).unwrap();
+        editor.set_quick_selection_disabled_tools(
+            ActiveTool::FreeDraw.policy_bit() | ActiveTool::PenFilter.policy_bit(),
+        );
 
-        assert!(Editor::tool_policy_for(ActiveTool::Shape).quick_selection_enabled);
-        assert!(Editor::tool_policy_for(ActiveTool::RectangleHighlight).quick_selection_enabled);
+        editor.set_active_tool(ActiveTool::FreeDraw).unwrap();
+        assert!(!editor.tool_policy().quick_selection_enabled);
+        editor.set_active_tool(ActiveTool::PenFilter).unwrap();
+        assert!(!editor.tool_policy().quick_selection_enabled);
+        editor.set_active_tool(ActiveTool::RectangleFilter).unwrap();
+        assert!(editor.tool_policy().quick_selection_enabled);
+        editor.set_active_tool(ActiveTool::Select).unwrap();
+        assert!(editor.tool_policy().quick_selection_enabled);
     }
 
     #[test]

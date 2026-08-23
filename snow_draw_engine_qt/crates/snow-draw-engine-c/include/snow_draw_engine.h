@@ -1001,6 +1001,11 @@ SnowError snow_engine_create(SnowEngine* out_engine);
 
 void snow_engine_destroy(SnowEngine engine);
 
+SnowError snow_runtime_set_quick_selection_disabled_tools(SnowRuntime runtime, uint64_t tools);
+
+SnowError snow_runtime_set_quick_selection_disabled_tools_ex(
+    SnowRuntime runtime, uint64_t tools, SnowChangedViewportList* out_changed_viewports);
+
 SnowError snow_viewport_create(SnowRuntime runtime, const SnowEngineConfig* config,
                                SnowViewport* out_viewport);
 

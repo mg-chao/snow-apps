@@ -1,7 +1,7 @@
 {
   "name": "onnxruntime",
-  "version-semver": "1.23.2",
-  "port-version": 1,
+  "version-semver": "1.28.0",
+  "port-version": 2,
   "description": "ONNX Runtime: cross-platform, high performance ML inferencing and training accelerator",
   "homepage": "https://github.com/microsoft/onnxruntime",
   "license": "MIT",
@@ -37,7 +37,7 @@
     "nlohmann-json",
     {
       "name": "onnx",
-      "version>=": "1.19.0"
+      "version>=": "1.22.0"
     },
     "optional-lite",
     {
@@ -58,6 +58,10 @@
     },
     {
       "name": "vcpkg-cmake-config",
+      "host": true
+    },
+    {
+      "name": "vcpkg-get-python-packages",
       "host": true
     },
     {

@@ -112,28 +112,7 @@ impl Editor {
             return Ok(InteractionOutput::default());
         }
 
-        let previous_tool = self.state.active_tool;
         let handled = match event.key_code {
-            KeyCode::Character('r') | KeyCode::Character('R') => {
-                self.set_active_tool(ActiveTool::Shape)?;
-                true
-            }
-            KeyCode::Character('v') | KeyCode::Character('V') => {
-                self.set_active_tool(ActiveTool::Select)?;
-                true
-            }
-            KeyCode::Character('a') | KeyCode::Character('A') => {
-                self.set_active_tool(ActiveTool::Arrow)?;
-                true
-            }
-            KeyCode::Character('t') | KeyCode::Character('T') => {
-                self.set_active_tool(ActiveTool::Text)?;
-                true
-            }
-            KeyCode::Character('n') | KeyCode::Character('N') => {
-                self.set_active_tool(ActiveTool::SerialNumber)?;
-                true
-            }
             KeyCode::Character('z') | KeyCode::Character('Z') if event.modifiers.ctrl => {
                 if event.modifiers.shift {
                     self.queue_command(EditorCommand::Redo);
@@ -158,11 +137,7 @@ impl Editor {
         Ok(InteractionOutput {
             consumed: handled,
             capture: PointerCaptureCommand::NoChange,
-            cursor: if handled && self.state.active_tool != previous_tool {
-                CursorCommand::Set(self.tool_policy().default_cursor)
-            } else {
-                CursorCommand::NoChange
-            },
+            cursor: CursorCommand::NoChange,
         })
     }
 
@@ -210,7 +185,7 @@ mod tests {
     }
 
     #[test]
-    fn keyboard_tool_switch_restores_the_native_cursor_after_stroke_cursor_hides_it() {
+    fn tool_selection_is_owned_by_the_host_application() {
         let document = DocumentModel::new();
         let mut editor = editor_for(ActiveTool::FreeDraw);
         let enter = InputEvent::Pointer(PointerEvent {
@@ -228,20 +203,17 @@ mod tests {
             CursorCommand::Set(CursorStyle::Hidden)
         );
 
-        let switch = InputEvent::Key(KeyEvent {
+        let character = InputEvent::Key(KeyEvent {
             event_type: KeyEventType::KeyDown,
             key_code: KeyCode::Character('v'),
             modifiers: Modifiers::default(),
             repeat: false,
         });
-        let switch_update = editor.process_input(&document, switch).unwrap();
+        let update = editor.process_input(&document, character).unwrap();
 
-        assert_eq!(editor.active_tool(), ActiveTool::Select);
-        assert_eq!(
-            switch_update.interaction.cursor,
-            CursorCommand::Set(CursorStyle::Default)
-        );
-        assert_eq!(editor.presentation_state(&document).stroke_cursor, None);
+        assert_eq!(editor.active_tool(), ActiveTool::FreeDraw);
+        assert!(!update.interaction.consumed);
+        assert_eq!(update.interaction.cursor, CursorCommand::NoChange);
     }
 
     #[test]

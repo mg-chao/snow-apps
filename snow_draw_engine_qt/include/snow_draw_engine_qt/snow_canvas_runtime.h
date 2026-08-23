@@ -36,6 +36,7 @@ class SnowCanvasRuntime {
     bool restoreDocumentHistory(const QByteArray& payload);
     bool restoreDocumentHistoryPreservingEditorStyles(const QByteArray& payload);
     bool clearDocumentPreservingViewports();
+    bool setQuickSelectionDisabledTools(const QSet<SnowCanvasTool>& tools);
     void destroyAsync();
     QImage renderToImage(const QRectF& virtualSelectionRect, const QSize& outputSize,
                          const QList<CanvasExportSource>& sources);

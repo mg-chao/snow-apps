@@ -36,12 +36,14 @@ if(NOT TARGET adqt::icons)
                      "${CMAKE_CURRENT_BINARY_DIR}/ant_design_qt")
 endif()
 
-snow_add_rust_static_library(snow_draw_engine_c
-    PACKAGE snow-draw-engine-c
-    MANIFEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
-    OUTPUT_NAME snow_draw_engine_c
-    STRIP_MSVC_DIRECTIVES
-)
+if(NOT TARGET snow_draw_engine_c)
+    snow_add_rust_static_library(snow_draw_engine_c
+        PACKAGE snow-draw-engine-c
+        MANIFEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_NAME snow_draw_engine_c
+        STRIP_MSVC_DIRECTIVES
+    )
+endif()
 
 qt_add_library(snow_draw_engine_qt_canvas STATIC
     ${SNOW_CANVAS_QT_SOURCES}
@@ -50,10 +52,12 @@ qt_add_library(snow_draw_engine_qt_canvas STATIC
 )
 
 if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set_source_files_properties(
+set_source_files_properties(
         src/rendering/snow_canvas_filter_avx2.cpp
         src/rendering/snow_canvas_pen_mask_avx2.cpp
-        PROPERTIES COMPILE_OPTIONS "/arch:AVX2"
+        PROPERTIES
+            COMPILE_OPTIONS "/arch:AVX2"
+            SKIP_UNITY_BUILD_INCLUSION ON
     )
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
     set_source_files_properties(
@@ -85,6 +89,20 @@ target_link_libraries(snow_draw_engine_qt_canvas
         userenv
         ws2_32
 )
+target_precompile_headers(snow_draw_engine_qt_canvas PRIVATE
+    <algorithm>
+    <memory>
+    <optional>
+    <string>
+    <vector>
+    <QtCore/QObject>
+    <QtCore/QString>
+    <QtGui/QColor>
+    <QtGui/QImage>
+    <QtGui/QPainter>
+    <QtWidgets/QWidget>
+)
+snow_enable_unity_build(snow_draw_engine_qt_canvas)
 
 if(SNOW_DRAW_ENGINE_QT_BUILD_DEMO)
     add_subdirectory(qt-demo)
@@ -185,12 +203,21 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
         NAME snow-canvas-custom-renderer-tests
         COMMAND snow-canvas-custom-renderer-tests
     )
-    set_tests_properties(snow-canvas-custom-renderer-tests PROPERTIES
-        ENVIRONMENT
-            "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
-        ENVIRONMENT_MODIFICATION
-            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
-    )
+    if(WIN32)
+        set_tests_properties(snow-canvas-custom-renderer-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    else()
+        set_tests_properties(snow-canvas-custom-renderer-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    endif()
 
     add_executable(snow-canvas-state-tests
         tests/snow_canvas_state_tests.cpp

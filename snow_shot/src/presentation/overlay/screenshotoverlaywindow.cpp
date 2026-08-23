@@ -1,10 +1,12 @@
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 
 #include "snow_shot/presentation/screenshotmessageservice.h"
+#include "../services/screenshotlifecycleperfinstrumentation.h"
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
 #include "snow_shot/presentation/screenshotoverlayeventsink.h"
 #include "snow_shot/presentation/screenshotscrollingthumbnailwidget.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
+#include <QBackingStore>
 #include <QEvent>
 #include <QCoreApplication>
 #include <QGuiApplication>
@@ -53,6 +55,10 @@ ScreenshotOverlayWindow::ScreenshotOverlayWindow(ScreenshotOverlayEventSink& eve
     if (m_canvas != nullptr) {
         m_screenshotRenderer = std::make_unique<ScreenshotCanvasRenderer>(*m_canvas);
         m_canvas->setCustomRenderer(m_screenshotRenderer.get());
+        // Screenshot overlays repaint an entire captured desktop and are torn
+        // down after the interaction. Retaining another full-screen raster in
+        // the scene tile cache only adds cold-path work and resident memory.
+        m_canvas->setRetainedSceneCacheEnabled(false);
         m_canvas->setWatermarkRenderArea(QRectF());
         m_canvas->setSpotlightRenderArea(QRectF());
         m_canvas->setWheelZoomEnabled(false);
@@ -60,6 +66,10 @@ ScreenshotOverlayWindow::ScreenshotOverlayWindow(ScreenshotOverlayEventSink& eve
         m_canvas->installEventFilter(this);
         m_canvas->setFocusPolicy(Qt::StrongFocus);
         m_canvas->setMouseTracking(true);
+        connect(m_canvas, &SnowCanvasWidget::unhandledLeftDoubleClick, this,
+                [this]() { m_eventSink.handleUnhandledLeftDoubleClick(); });
+        connect(m_canvas, &SnowCanvasWidget::unhandledMiddleClick, this,
+                [this]() { m_eventSink.handleUnhandledMiddleClick(); });
     }
 
     initializeScreenshotSurface();
@@ -96,6 +106,26 @@ void ScreenshotOverlayWindow::clearScreenshotImage() {
 void ScreenshotOverlayWindow::setScreenshotMaskVisible(bool visible) {
     if (m_screenshotRenderer != nullptr) {
         m_screenshotRenderer->setMaskVisible(visible);
+    }
+}
+
+void ScreenshotOverlayWindow::setScreenshotMaskColor(const QColor& color) {
+    if (m_screenshotRenderer != nullptr) {
+        m_screenshotRenderer->setMaskColor(color);
+    }
+}
+
+void ScreenshotOverlayWindow::setScreenshotGuideLines(const QPointF& cursorPosition,
+                                                      const QColor& cursorColor,
+                                                      const QColor& monitorCenterColor) {
+    if (m_screenshotRenderer != nullptr) {
+        m_screenshotRenderer->setGuideLines(cursorPosition, cursorColor, monitorCenterColor);
+    }
+}
+
+void ScreenshotOverlayWindow::clearScreenshotGuideLines() {
+    if (m_screenshotRenderer != nullptr) {
+        m_screenshotRenderer->clearGuideLines();
     }
 }
 
@@ -323,6 +353,10 @@ ScreenshotScrollingTrimRange ScreenshotOverlayWindow::scrollingThumbnailTrim() c
 quint64 ScreenshotOverlayWindow::windowMaskApplicationCountForTesting() const {
     return m_windowMaskApplicationCount;
 }
+
+ScreenshotCanvasRenderer* ScreenshotOverlayWindow::screenshotRendererForTesting() const {
+    return m_screenshotRenderer.get();
+}
 #endif
 
 void ScreenshotOverlayWindow::clearPresentationFrame() {
@@ -353,33 +387,86 @@ void ScreenshotOverlayWindow::restorePresentationCanvas() {
 
 void ScreenshotOverlayWindow::showPreparedFrame() {
     const bool wasVisible = isVisible();
-    const bool concealFirstPaint = !wasVisible && isWindow() &&
-                                   QGuiApplication::platformName() == QStringLiteral("windows");
+    const bool concealFirstPaint =
+        !wasVisible && isWindow() && QGuiApplication::platformName() == QStringLiteral("windows");
     const qreal previousOpacity = windowOpacity();
     if (concealFirstPaint) {
         setWindowOpacity(0.0);
     }
 
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.show_window_begin"));
     show();
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.show_window_complete"));
     // show() queues a normal update, but a translucent native window can be
     // composited from its previous backing surface first. Commit the prepared
     // frame synchronously before making the window opaque.
     repaint();
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.show_repaint_complete"));
     QCoreApplication::sendPostedEvents(this, QEvent::UpdateRequest);
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.show_posted_events_complete"));
 
-#if defined(Q_OS_WIN) || defined(_WIN32)
-    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
-        const HWND hwnd = reinterpret_cast<HWND>(winId());
-        if (hwnd != nullptr) {
-            static_cast<void>(RedrawWindow(hwnd, nullptr, nullptr,
-                                           RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN));
-        }
-    }
-#endif
+    // Avoid a second native RDW_UPDATENOW/ALLCHILDREN pass here. The prepared
+    // canvas has already been committed through Qt's synchronous repaint and
+    // UpdateRequest processing; the lifecycle probe verifies compositor
+    // visibility before recording the presentation milestone.
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.show_redraw_complete"));
 
     if (concealFirstPaint) {
         setWindowOpacity(previousOpacity);
     }
+    snow_shot::presentation::screenshot_lifecycle_perf::mark(
+        QStringLiteral("presentation.show_window_end"));
+}
+
+void ScreenshotOverlayWindow::hibernateNativeSurface() {
+    hide();
+    setUpdatesEnabled(false);
+    m_appliedWindowMask = QRegion();
+    m_windowMaskInitialized = false;
+    if (m_canvas != nullptr) {
+        m_canvas->setInteractionEnabled(false);
+        m_canvas->setUpdatesEnabled(false);
+    }
+
+    // The raster backing store owns the desktop-sized committed pages. Qt can
+    // grow it again when the prepared frame is shown, while the hidden HWND
+    // remains available for capture exclusion and presentation setup.
+    if (QBackingStore* store = backingStore(); store != nullptr) {
+        store->resize(QSize(1, 1));
+    }
+}
+
+void ScreenshotOverlayWindow::releaseNativeSurface() {
+    hide();
+    setUpdatesEnabled(false);
+    m_appliedWindowMask = QRegion();
+    m_windowMaskInitialized = false;
+    if (m_canvas != nullptr) {
+        m_canvas->setInteractionEnabled(false);
+        m_canvas->setUpdatesEnabled(false);
+    }
+
+    // destroy() releases the HWND, child platform windows, and QBackingStore,
+    // but intentionally leaves the renderer and canvas document untouched.
+    // Besides making deferred QObject deletion safe, this lets an asynchronous
+    // export retain its immutable/model inputs without retaining a stale DWM
+    // frame for the next presentation.
+    destroy(true, true);
+}
+
+void ScreenshotOverlayWindow::restoreNativeSurface() {
+    setUpdatesEnabled(true);
+    if (m_canvas != nullptr) {
+        m_canvas->setUpdatesEnabled(true);
+    }
+    initializeScreenshotSurface();
+    static_cast<void>(winId());
+    hide();
 }
 
 void ScreenshotOverlayWindow::initializeScreenshotSurface() {
@@ -408,7 +495,7 @@ bool ScreenshotOverlayWindow::eventFilter(QObject* watched, QEvent* event) {
 }
 
 void ScreenshotOverlayWindow::keyPressEvent(QKeyEvent* event) {
-    if (m_eventSink.handleOverlayKeyPress(event->key(), event->modifiers())) {
+    if (m_eventSink.shouldBlockUnhandledOverlayKeyInput()) {
         event->accept();
         return;
     }
@@ -556,12 +643,14 @@ bool ScreenshotOverlayWindow::handleCanvasKeyPress(QKeyEvent* event) {
     if (event == nullptr) {
         return false;
     }
-    if (!m_eventSink.handleOverlayKeyPress(event->key(), event->modifiers())) {
+    if (m_canvas != nullptr && m_canvas->hasActiveTextEditing()) {
         return false;
     }
-
-    event->accept();
-    return true;
+    if (m_eventSink.shouldBlockUnhandledOverlayKeyInput()) {
+        event->accept();
+        return true;
+    }
+    return false;
 }
 
 bool ScreenshotOverlayWindow::handleCanvasMouseEvent(QMouseEvent* event) {

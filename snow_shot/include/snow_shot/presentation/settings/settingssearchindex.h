@@ -27,12 +27,20 @@ struct SettingsSearchEntry {
     int catalogOrder = 0;
 };
 
+struct SettingsSearchRuntimeValues {
+    int screenshotDelaySeconds = 3;
+};
+
 class SettingsSearchIndex final {
   public:
-    explicit SettingsSearchIndex(const SettingsCatalog& catalog);
+    explicit SettingsSearchIndex(
+        const SettingsCatalog& catalog,
+        SettingsSearchRuntimeValues runtimeValues = {});
 
     void rebuild();
+    void setRuntimeValues(SettingsSearchRuntimeValues runtimeValues);
     [[nodiscard]] const QVector<SettingsSearchEntry>& entries() const;
+    [[nodiscard]] const QVector<SettingsSearchEntry>& pageEntries() const;
     [[nodiscard]] QVector<SettingsSearchEntry> search(const QString& query) const;
 
   public:
@@ -45,9 +53,16 @@ class SettingsSearchIndex final {
     };
 
   private:
+    void rebuildPageEntries();
+    void buildDetailedIndex() const;
+    void ensureDetailedIndex() const;
+
     const SettingsCatalog& m_catalog;
-    QVector<SettingsSearchEntry> m_entries;
-    QVector<NormalizedFields> m_normalizedEntries;
+    SettingsSearchRuntimeValues m_runtimeValues;
+    QVector<SettingsSearchEntry> m_pageEntries;
+    mutable QVector<SettingsSearchEntry> m_entries;
+    mutable QVector<NormalizedFields> m_normalizedEntries;
+    mutable bool m_detailedIndexBuilt = false;
 };
 
 } // namespace snow_shot::presentation::settings

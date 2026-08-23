@@ -6,6 +6,11 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     println!("cargo:rerun-if-env-changed=FFMPEG_DIR");
+    println!("cargo:rerun-if-env-changed=VCPKGRS_DYNAMIC");
+
+    if env::var("VCPKGRS_DYNAMIC").is_ok_and(|value| value == "0") {
+        return;
+    }
 
     let Some(ffmpeg_dir_raw) = env::var_os("FFMPEG_DIR").map(PathBuf::from) else {
         println!("cargo:warning=FFMPEG_DIR is not set; skipping FFmpeg DLL deployment");

@@ -3,6 +3,11 @@
 
 #include "snow_draw_engine_qt/snow_canvas_types.h"
 
+#include <QColor>
+#include <QHash>
+#include <QSet>
+#include <QStringList>
+
 namespace snow_shot::presentation {
 inline SnowCanvasStyleDefaults screenshotCanvasStyleDefaults() {
     const QColor red(0xf5, 0x22, 0x2d, 255);
@@ -91,6 +96,32 @@ inline SnowCanvasStyleDefaults screenshotCanvasStyleDefaults() {
     defaults.spotlight.color = QColor(0, 0, 0, 255);
     defaults.spotlight.opacity = 0.64;
     return defaults;
+}
+
+inline QSet<SnowCanvasTool> screenshotQuickSelectionDisabledTools(const QStringList& toolIds) {
+    QSet<SnowCanvasTool> tools;
+    const QHash<QString, SnowCanvasTool> toolsById{
+        {QStringLiteral("shape"), SnowCanvasTool::Shape},
+        {QStringLiteral("arrow"), SnowCanvasTool::Arrow},
+        {QStringLiteral("line"), SnowCanvasTool::Line},
+        {QStringLiteral("free-draw"), SnowCanvasTool::FreeDraw},
+        {QStringLiteral("rectangle-highlight"), SnowCanvasTool::RectangleHighlight},
+        {QStringLiteral("pen-highlight"), SnowCanvasTool::PenHighlight},
+        {QStringLiteral("spotlight"), SnowCanvasTool::Spotlight},
+        {QStringLiteral("rectangle-filter"), SnowCanvasTool::RectangleFilter},
+        {QStringLiteral("pen-filter"), SnowCanvasTool::PenFilter},
+        {QStringLiteral("text"), SnowCanvasTool::Text},
+        {QStringLiteral("serial-number"), SnowCanvasTool::SerialNumber},
+        {QStringLiteral("eraser"), SnowCanvasTool::Eraser},
+        {QStringLiteral("watermark"), SnowCanvasTool::Watermark},
+    };
+    for (const QString& toolId : toolIds) {
+        const auto it = toolsById.constFind(toolId);
+        if (it != toolsById.cend()) {
+            tools.insert(*it);
+        }
+    }
+    return tools;
 }
 } // namespace snow_shot::presentation
 

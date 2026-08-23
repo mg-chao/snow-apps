@@ -571,9 +571,9 @@ void serialToolbarGlyphsMatchTheirApprovedGeometry() {
                 textFields.pixelColor(11, 10).rgb() == color.rgb(),
             "serial text-fields should retain the approved paired-letter geometry");
 
-    const auto& definition = snow::draw_engine::icons::pack().definition();
-    require(definition.pack == QStringLiteral("snow-draw-engine-qt") &&
-                definition.entries.size() == 4,
+    const adqt::icons::IconPack* staticPack = snow::draw_engine::icons::pack().staticPack();
+    require(staticPack != nullptr && staticPack->packName == "snow-draw-engine-qt" &&
+                staticPack->entryCount == 4,
             "draw-engine pack should contain its cursor and three toolbar glyphs");
 }
 

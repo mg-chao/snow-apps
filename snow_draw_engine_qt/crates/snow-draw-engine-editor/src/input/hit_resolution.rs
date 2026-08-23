@@ -326,6 +326,7 @@ mod tests {
         document.apply_transaction(transaction).unwrap();
 
         let mut editor = Editor::new(EngineConfig::default()).unwrap();
+        editor.set_quick_selection_disabled_tools(ActiveTool::RectangleFilter.policy_bit());
         editor.set_active_tool(ActiveTool::Filter).unwrap();
 
         assert_eq!(
@@ -371,6 +372,7 @@ mod tests {
         document.apply_transaction(transaction).unwrap();
 
         let mut editor = Editor::new(EngineConfig::default()).unwrap();
+        editor.set_quick_selection_disabled_tools(ActiveTool::FreeDraw.policy_bit());
         editor.set_active_tool(ActiveTool::FreeDraw).unwrap();
 
         assert_eq!(
@@ -449,6 +451,7 @@ mod tests {
         document.apply_transaction(transaction).unwrap();
 
         let mut editor = Editor::new(EngineConfig::default()).unwrap();
+        editor.set_quick_selection_disabled_tools(ActiveTool::PenFilter.policy_bit());
         editor.set_active_tool(ActiveTool::PenFilter).unwrap();
 
         assert_eq!(

@@ -12,8 +12,8 @@ use crate::{
     pipeline::{
         config::EngineConfig,
         image_ops::{
-            PreprocessRecord, apply_vertical_padding, crop_text_regions, map_boxes_to_original,
-            map_img_to_original, resize_image_within_bounds,
+            PreprocessRecord, apply_vertical_padding_in_place, crop_text_regions,
+            map_boxes_to_original, map_img_to_original, resize_image_within_bounds,
         },
         types::{OcrCallOptions, OcrOutput, OcrResult, RunOptions},
     },
@@ -202,12 +202,11 @@ impl RapidOcr {
         output: &mut OcrOutput,
     ) -> Result<bool> {
         if switches.use_det {
-            let (padded, pad_top) = apply_vertical_padding(
-                prepared.proc_img.clone(),
+            let pad_top = apply_vertical_padding_in_place(
+                &mut prepared.proc_img,
                 self.config.global.width_height_ratio,
                 self.config.global.min_height,
             )?;
-            prepared.proc_img = padded;
             prepared.preprocess_record.pad_top = pad_top;
 
             let detector = self.detector.as_mut().ok_or_else(|| {
@@ -410,6 +409,13 @@ fn resolve_rayon_threads(config: &EngineConfig) -> Option<usize> {
         .max();
     if explicit.is_some() {
         return explicit;
+    }
+    let budget = runtimes
+        .iter()
+        .filter_map(|rt| rt.thread_budget.filter(|v| *v > 0))
+        .max();
+    if budget.is_some() {
+        return budget;
     }
     if runtimes.iter().any(|rt| rt.auto_tune_threads) {
         return available_parallelism();

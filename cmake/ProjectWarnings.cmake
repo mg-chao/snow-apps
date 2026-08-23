@@ -2,6 +2,16 @@ include_guard(GLOBAL)
 
 option(SNOW_ENABLE_CLANG_TIDY "Run clang-tidy while compiling C++ targets." OFF)
 
+function(snow_enable_unity_build target)
+    if(NOT TARGET "${target}")
+        message(FATAL_ERROR "snow_enable_unity_build target does not exist: ${target}")
+    endif()
+    set_target_properties("${target}" PROPERTIES
+        UNITY_BUILD ON
+        UNITY_BUILD_BATCH_SIZE 8
+    )
+endfunction()
+
 function(snow_apply_strict_warnings target)
     if(NOT TARGET "${target}")
         message(FATAL_ERROR "snow_apply_strict_warnings target does not exist: ${target}")
@@ -13,7 +23,7 @@ function(snow_apply_strict_warnings target)
             /Zc:__cplusplus /Zc:preprocessor /Zc:inline
             /w14242 /w14254 /w14263 /w14265 /w14287 /we4289 /w14296
             /w14311 /w14545 /w14546 /w14547 /w14549 /w14555 /w14619
-            /w14640 /w14826 /w14905 /w14906 /w14928
+            /w14640 /w14826 /w14905 /w14906 /w14928 /wd4702
         )
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         target_compile_options("${target}" PRIVATE
@@ -33,6 +43,11 @@ function(snow_apply_release_options target)
         message(FATAL_ERROR "snow_apply_release_options target does not exist: ${target}")
     endif()
 
+    if(DEFINED SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION AND
+       NOT SNOW_APPS_ENABLE_RELEASE_OPTIMIZATION)
+        return()
+    endif()
+
     set_property(TARGET "${target}" PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
     if(MSVC)
         target_compile_options("${target}" PRIVATE
@@ -46,6 +61,7 @@ function(snow_apply_release_options target)
         )
         target_link_options("${target}" PRIVATE
             $<$<CONFIG:Release>:/LTCG>
+            $<$<CONFIG:Release>:/CGTHREADS:1>
             $<$<CONFIG:Release>:/OPT:REF>
             $<$<CONFIG:Release>:/OPT:ICF>
         )
@@ -67,7 +83,7 @@ function(snow_enable_strict_warnings)
             /Zc:__cplusplus /Zc:preprocessor /Zc:inline
             /w14242 /w14254 /w14263 /w14265 /w14287 /we4289 /w14296
             /w14311 /w14545 /w14546 /w14547 /w14549 /w14555 /w14619
-            /w14640 /w14826 /w14905 /w14906 /w14928
+            /w14640 /w14826 /w14905 /w14906 /w14928 /wd4702
         )
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         add_compile_options(

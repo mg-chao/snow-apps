@@ -991,9 +991,134 @@ Result<EncodedArtifactReceipt> PngCodec::encode_raster_to_sink(const RasterSourc
                              "libpng");
     }
     const RasterFrameDescriptor& source_frame = descriptor.frames.front();
-    if (source_frame.layout.planes.size() != 1 ||
+    if (descriptor.frames.size() != 1 || source_frame.layout.planes.size() != 1 ||
         source_frame.layout.planes.front().semantic != PlaneSemantic::packed) {
         return Codec::encode_raster_to_sink(source, output, options, stop);
+    }
+    if (!has_access(source.access(), RasterAccess::mapped_planes)) {
+        if (options.interlaced && !has_access(source.access(), RasterAccess::random_rows)) {
+            return Codec::encode_raster_to_sink(source, output, options, stop);
+        }
+        Result<void> descriptor_status = descriptor.validate();
+        if (!descriptor_status)
+            return descriptor_status.error();
+        const PlaneDescriptor& plane = source_frame.layout.planes.front();
+        const ImageView layout{source_frame.width, source_frame.height, plane.format, 0, {}};
+        Result<std::pair<png_uint_32, int>> mapped_format = output_png_format(layout);
+        if (!mapped_format)
+            return Codec::encode_raster_to_sink(source, output, options, stop);
+        Result<std::size_t> row_bytes_result = plane.row_bytes();
+        if (!row_bytes_result)
+            return row_bytes_result.error();
+        const std::size_t row_bytes = row_bytes_result.value();
+        if (source_frame.width > std::numeric_limits<png_uint_32>::max() ||
+            source_frame.height > std::numeric_limits<png_uint_32>::max() ||
+            row_bytes > static_cast<std::size_t>(std::numeric_limits<png_int_32>::max())) {
+            return Status::error(ErrorCode::limit_exceeded,
+                                 "PNG dimensions or stride exceed libpng limits.", "libpng");
+        }
+
+        std::vector<std::byte> row(row_bytes);
+        png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+        if (!png) {
+            return Status::error(ErrorCode::out_of_memory, "Could not create PNG writer.",
+                                 "libpng");
+        }
+        png_infop info = png_create_info_struct(png);
+        if (!info) {
+            png_destroy_write_struct(&png, nullptr);
+            return Status::error(ErrorCode::out_of_memory, "Could not create PNG metadata.",
+                                 "libpng");
+        }
+        PngWriteState state;
+        state.sink = output.sink.get();
+        state.stop = stop;
+        std::vector<png_text> text_chunks;
+        std::vector<std::string> text_values;
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4611)
+#endif
+        if (setjmp(png_jmpbuf(png)) != 0) {
+            png_destroy_write_struct(&png, &info);
+            return state.failure.ok()
+                       ? Status::error(ErrorCode::encode_failed,
+                                       "libpng could not encode the image.", "libpng")
+                       : state.failure;
+        }
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
+        png_set_write_fn(png, &state, &write_png_bytes, &flush_png_bytes);
+        png_set_compression_level(png, std::clamp(options.compression_level, 0, 9));
+        png_set_compression_buffer_size(png, 256U * 1024U);
+        int color_type = PNG_COLOR_TYPE_RGBA;
+        switch (plane.format.channels) {
+        case ChannelLayout::gray:
+            color_type = PNG_COLOR_TYPE_GRAY;
+            break;
+        case ChannelLayout::gray_alpha:
+            color_type = PNG_COLOR_TYPE_GRAY_ALPHA;
+            break;
+        case ChannelLayout::rgb:
+        case ChannelLayout::bgr:
+            color_type = PNG_COLOR_TYPE_RGB;
+            break;
+        case ChannelLayout::rgba:
+        case ChannelLayout::bgra:
+            color_type = PNG_COLOR_TYPE_RGBA;
+            break;
+        case ChannelLayout::cmyk:
+        case ChannelLayout::indexed:
+            png_destroy_write_struct(&png, &info);
+            return Codec::encode_raster_to_sink(source, output, options, stop);
+        }
+        png_set_IHDR(png, info, source_frame.width, source_frame.height,
+                     plane.format.bits_per_channel, color_type,
+                     options.interlaced ? PNG_INTERLACE_ADAM7 : PNG_INTERLACE_NONE,
+                     PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+        if (plane.format.channels == ChannelLayout::bgr ||
+            plane.format.channels == ChannelLayout::bgra) {
+            png_set_bgr(png);
+        }
+        Document metadata_document;
+        metadata_document.format = descriptor.format;
+        metadata_document.canvas_width = descriptor.canvas_width;
+        metadata_document.canvas_height = descriptor.canvas_height;
+        metadata_document.loop_count = descriptor.loop_count;
+        metadata_document.metadata = descriptor.metadata;
+        metadata_document.color = descriptor.color;
+        Result<void> metadata_status =
+            write_png_metadata(png, info, metadata_document, options, &text_chunks, &text_values);
+        if (!metadata_status) {
+            png_destroy_write_struct(&png, &info);
+            return metadata_status.error();
+        }
+        png_write_info(png, info);
+        if (plane.format.bits_per_channel == 16 && plane.format.little_endian &&
+            std::endian::native == std::endian::little) {
+            png_set_swap(png);
+        }
+        const int passes = options.interlaced ? png_set_interlace_handling(png) : 1;
+        for (int pass = 0; pass < passes; ++pass) {
+            for (std::uint32_t y = 0; y < source_frame.height; ++y) {
+                if (stop.stop_requested()) {
+                    state.failure = cancelled_status();
+                    png_error(png, "PNG encode cancelled.");
+                }
+                Result<void> read = source.read_rows(0, 0, y, 1, row_bytes, row, stop);
+                if (!read) {
+                    state.failure = read.error();
+                    png_error(png, "PNG row source failed.");
+                }
+                png_write_row(png, reinterpret_cast<png_bytep>(row.data()));
+            }
+        }
+        png_write_end(png, info);
+        png_destroy_write_struct(&png, &info);
+        if (!state.failure.ok())
+            return state.failure;
+        return receipt_for_descriptor(descriptor, format());
     }
     Result<MappedPlane> mapped = source.map_plane(0, 0);
     if (!mapped) {

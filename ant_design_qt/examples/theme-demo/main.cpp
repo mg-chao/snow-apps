@@ -31,6 +31,7 @@
 #include "color_picker_docs_page.h"
 #include "checkbox_docs_page.h"
 #include "date_picker_docs_page.h"
+#include "divider_docs_page.h"
 #include "descriptions_docs_page.h"
 #include "form_docs_page.h"
 #include "image_docs_page.h"
@@ -1090,6 +1091,7 @@ class DemoWindow final : public QWidget {
     Input,
     Form,
     Descriptions,
+    Divider,
     InputNumber,
     Switch,
     Segmented,
@@ -1129,6 +1131,9 @@ class DemoWindow final : public QWidget {
     }
     if (kind == DocsKind::Descriptions) {
       return QStringLiteral("descriptions-docs");
+    }
+    if (kind == DocsKind::Divider) {
+      return QStringLiteral("divider-docs");
     }
     if (kind == DocsKind::InputNumber) {
       return QStringLiteral("inputnumber-docs");
@@ -1210,6 +1215,8 @@ class DemoWindow final : public QWidget {
       prefix = QStringLiteral("form");
     } else if (kind == DocsKind::Descriptions) {
       prefix = QStringLiteral("descriptions");
+    } else if (kind == DocsKind::Divider) {
+      prefix = QStringLiteral("divider");
     } else if (kind == DocsKind::InputNumber) {
       prefix = QStringLiteral("inputnumber");
     } else if (kind == DocsKind::Switch) {
@@ -1307,6 +1314,20 @@ class DemoWindow final : public QWidget {
       if (ok) {
         if (kind) {
           *kind = DocsKind::InputNumber;
+        }
+        if (row) {
+          *row = value;
+        }
+        return true;
+      }
+      return false;
+    }
+    if (key.startsWith(QStringLiteral("divider-section-"))) {
+      bool ok = false;
+      const int value = key.mid(QStringLiteral("divider-section-").size()).toInt(&ok);
+      if (ok) {
+        if (kind) {
+          *kind = DocsKind::Divider;
         }
         if (row) {
           *row = value;
@@ -1657,6 +1678,12 @@ class DemoWindow final : public QWidget {
       }
       return true;
     }
+    if (key == docsRootKey(DocsKind::Divider)) {
+      if (kind) {
+        *kind = DocsKind::Divider;
+      }
+      return true;
+    }
     if (key == docsRootKey(DocsKind::InputNumber)) {
       if (kind) {
         *kind = DocsKind::InputNumber;
@@ -1795,7 +1822,8 @@ class DemoWindow final : public QWidget {
   bool parseDocsGroupKey(const QString& key, DocsKind* kind) const {
     for (const DocsKind candidate :
          {DocsKind::Button,      DocsKind::Alert,        DocsKind::Input,
-          DocsKind::Form,        DocsKind::Descriptions, DocsKind::InputNumber,
+          DocsKind::Form,        DocsKind::Descriptions, DocsKind::Divider,
+          DocsKind::InputNumber,
           DocsKind::Switch,      DocsKind::Segmented,    DocsKind::Menu,
           DocsKind::Message,     DocsKind::Notification, DocsKind::Modal,
           DocsKind::Select,      DocsKind::Slider,       DocsKind::Spin,
@@ -1829,6 +1857,9 @@ class DemoWindow final : public QWidget {
     }
     if (kind == DocsKind::Descriptions && descriptionsPage_) {
       return descriptionsPage_->sectionAnchors();
+    }
+    if (kind == DocsKind::Divider && dividerPage_) {
+      return dividerPage_->sectionAnchors();
     }
     if (kind == DocsKind::InputNumber && inputNumberPage_) {
       return inputNumberPage_->sectionAnchors();
@@ -1915,6 +1946,9 @@ class DemoWindow final : public QWidget {
     }
     if (kind == DocsKind::Descriptions && descriptionsPage_) {
       return descriptionsPage_->sectionTitles();
+    }
+    if (kind == DocsKind::Divider && dividerPage_) {
+      return dividerPage_->sectionTitles();
     }
     if (kind == DocsKind::InputNumber && inputNumberPage_) {
       return inputNumberPage_->sectionTitles();
@@ -2004,6 +2038,9 @@ class DemoWindow final : public QWidget {
     }
     if (kind == DocsKind::Descriptions) {
       return descriptionsPage_ != nullptr;
+    }
+    if (kind == DocsKind::Divider) {
+      return dividerPage_ != nullptr;
     }
     if (kind == DocsKind::InputNumber) {
       return inputNumberPage_ != nullptr;
@@ -2213,6 +2250,7 @@ class DemoWindow final : public QWidget {
     appendRoot(DocsKind::Input, QStringLiteral("Input"), outlined_icons::Edit());
     appendRoot(DocsKind::Form, QStringLiteral("Form"), outlined_icons::Form());
     appendRoot(DocsKind::Descriptions, QStringLiteral("Descriptions"), outlined_icons::Profile());
+    appendRoot(DocsKind::Divider, QStringLiteral("Divider"), outlined_icons::Minus());
     appendRoot(DocsKind::InputNumber, QStringLiteral("InputNumber"), outlined_icons::Number());
     appendRoot(DocsKind::Switch, QStringLiteral("Switch"), outlined_icons::Switcher());
     appendRoot(DocsKind::Segmented, QStringLiteral("Segmented"), outlined_icons::Appstore());
@@ -2296,6 +2334,13 @@ class DemoWindow final : public QWidget {
         created = true;
       }
       target = descriptionsPage_;
+    } else if (kind == DocsKind::Divider) {
+      if (!dividerPage_) {
+        dividerPage_ = new DividerDocsPage();
+        docsStack_->addWidget(dividerPage_);
+        created = true;
+      }
+      target = dividerPage_;
     } else if (kind == DocsKind::InputNumber) {
       if (!inputNumberPage_) {
         inputNumberPage_ = new InputNumberDocsPage();
@@ -2554,6 +2599,7 @@ class DemoWindow final : public QWidget {
   InputDocsPage* inputPage_ = nullptr;
   FormDocsPage* formPage_ = nullptr;
   DescriptionsDocsPage* descriptionsPage_ = nullptr;
+  DividerDocsPage* dividerPage_ = nullptr;
   InputNumberDocsPage* inputNumberPage_ = nullptr;
   SwitchDocsPage* switchPage_ = nullptr;
   SegmentedDocsPage* segmentedPage_ = nullptr;

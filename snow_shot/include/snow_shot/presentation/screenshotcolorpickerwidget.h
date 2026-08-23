@@ -20,6 +20,8 @@ class ScreenshotColorPickerWidget final : public QWidget {
     void updatePicker(const QPoint& physicalPoint, const QPointF& overlayLocalPosition,
                       qreal opacity);
     void hidePicker();
+    void setCenterGuideLineColor(const QColor& color);
+    [[nodiscard]] QColor centerGuideLineColor() const;
     void cycleColorFormat();
     QString currentColorText() const;
     QColor currentColor() const;
@@ -52,6 +54,7 @@ class ScreenshotColorPickerWidget final : public QWidget {
     QColor m_currentColor;
     QColor m_panelBackground;
     QColor m_panelTextColor;
+    QColor m_centerGuideLineColor = QColor(0, 0, 0, 0);
     QGraphicsOpacityEffect* m_opacityEffect = nullptr;
     ColorFormat m_colorFormat = ColorFormat::Hex;
     bool m_hasCurrentColor = false;

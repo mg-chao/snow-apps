@@ -10,6 +10,7 @@ mod output;
 mod pipeline;
 mod rec;
 mod runtime;
+mod service;
 mod types;
 mod vision;
 
@@ -31,6 +32,7 @@ pub use pipeline::{
     },
 };
 pub use runtime::provider::{ProviderResolution, ResolvedExecutionProvider};
+pub use service::{OcrService, RequestToken, ServiceStats};
 pub use types::{LineResult, RecognizeOutput, WordBox, WordInfo, WordType};
 
 pub type Quad = [[f32; 2]; 4];
@@ -41,10 +43,17 @@ pub fn initialize_onnx_runtime() -> Result<()> {
 }
 
 pub fn directml_is_available() -> bool {
-    use ort::execution_providers::{DirectMLExecutionProvider, ExecutionProvider};
+    #[cfg(feature = "directml-provider")]
+    {
+        use ort::ep::{DirectML, ExecutionProvider};
 
-    DirectMLExecutionProvider::default()
-        .with_device_id(0)
-        .is_available()
-        .unwrap_or(false)
+        DirectML::default()
+            .with_device_id(0)
+            .is_available()
+            .unwrap_or(false)
+    }
+    #[cfg(not(feature = "directml-provider"))]
+    {
+        false
+    }
 }

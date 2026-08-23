@@ -1190,8 +1190,13 @@ snow_canvas_filter_render::Parameters filterParameters(const SceneDisplayInfo& d
     parameters.logicalBlockSize = item.filter.mosaic_block_size * projection.cameraZoom;
     parameters.logicalSigma = item.filter.blur_sigma * projection.cameraZoom;
     parameters.devicePixelRatio = devicePixelRatio;
-    parameters.gridOriginInImage =
-        (canvasToView(projection, 0.0, 0.0) - imageLogicalOrigin) * devicePixelRatio;
+    const QPointF globalGridOrigin =
+        canvasToView(projection, 0.0, 0.0) * devicePixelRatio;
+    // Quantize before translating into a cropped surface. Rounding afterwards can shift
+    // half-pixel origins in tiles on opposite sides of the global grid.
+    parameters.gridOriginInImage = QPointF(
+        qRound(globalGridOrigin.x()) - qRound(imageLogicalOrigin.x() * devicePixelRatio),
+        qRound(globalGridOrigin.y()) - qRound(imageLogicalOrigin.y() * devicePixelRatio));
     return parameters;
 }
 
@@ -1967,7 +1972,12 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
             }
             if (backgroundRenderer != nullptr && backgroundContext != nullptr) {
                 scenePainter.save();
-                backgroundRenderer->renderBeforeCanvas(scenePainter, *backgroundContext);
+                // Sampling filters need backdrop pixels in the planned halo as well as in the
+                // original repaint. Exposure-aware custom renderers use this region to stay local.
+                SnowCanvasRenderContext surfaceContext = *backgroundContext;
+                surfaceContext.exposedRegion =
+                    QRegion(surfaceBounds).intersected(backgroundContext->viewportRect);
+                backgroundRenderer->renderBeforeCanvas(scenePainter, surfaceContext);
                 scenePainter.restore();
             }
             g_filterDiagnostics.sceneReplayNanoseconds += static_cast<std::uint64_t>(
@@ -2599,6 +2609,10 @@ void drawOverlayItem(QPainter& painter, const OverlayDisplayInfo& displayInfo,
 
 std::size_t hatchTextureCacheEntryCountForCurrentThread() {
     return snow_canvas_fill_render::hatchTextureCacheEntryCountForCurrentThread();
+}
+
+void resetHatchTextureCacheForCurrentThread() {
+    snow_canvas_fill_render::resetHatchTextureCacheForCurrentThread();
 }
 
 void renderOverlayItems(QPainter& painter, const OverlayDisplayInfo& displayInfo,

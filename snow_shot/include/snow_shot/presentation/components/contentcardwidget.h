@@ -20,12 +20,18 @@ class GlobalShortcutManager;
 }
 namespace snow_shot::presentation::settings {
 class SettingsRuntimeBindings;
+struct SettingsPageDefinition;
 }
 
 class ContentCardWidget final : public QFrame {
     Q_OBJECT
 
   public:
+    ContentCardWidget(const snow_shot::presentation::settings::SettingsCatalog& catalog,
+                      snow_shot::presentation::settings::SettingsRuntimeBindings& bindings,
+                      QWidget* parent = nullptr);
+    // Kept for standalone callers that construct the settings surface directly. Application
+    // windows should pass an externally-owned runtime binding instead.
     ContentCardWidget(const snow_shot::presentation::settings::SettingsCatalog& catalog,
                       snow_shot::presentation::GlobalShortcutManager& shortcutManager,
                       QWidget* parent = nullptr);
@@ -47,6 +53,7 @@ class ContentCardWidget final : public QFrame {
     void sectionListChanged();
     void locationChanged(const snow_shot::presentation::settings::SettingsLocation& location);
     void screenshotRequested();
+    void quickActionRequested(snow_shot::presentation::GlobalShortcutAction action);
     void screenshotHistoryEditRequested(const QString& recordId);
 
   protected:
@@ -54,17 +61,21 @@ class ContentCardWidget final : public QFrame {
     void changeEvent(QEvent* event) override;
 
   private:
-    ScreenshotHistoryPageWidget* ensureHistoryPage(const QString& pageId);
+    void initializeUi();
+    QWidget* ensureRouteWidget(
+        const snow_shot::presentation::settings::SettingsPageDefinition& pageDefinition);
     void handleCommand(const snow_shot::presentation::settings::SettingsCommand& command);
 
     const snow_shot::presentation::settings::SettingsCatalog& m_catalog;
-    std::unique_ptr<snow_shot::presentation::settings::SettingsRuntimeBindings> m_runtimeBindings;
+    std::unique_ptr<snow_shot::presentation::settings::SettingsRuntimeBindings>
+        m_ownedRuntimeBindings;
+    snow_shot::presentation::settings::SettingsRuntimeBindings* m_runtimeBindings = nullptr;
     QStackedWidget* m_stack = nullptr;
     QHash<QString, int> m_routePageIndices;
     QHash<QString, QWidget*> m_routeWidgetsById;
+    QHash<QString, QWidget*> m_routePlaceholdersById;
     QHash<QString, SettingsPageWidget*> m_pagesById;
     ScreenshotHistoryPageWidget* m_historyPage = nullptr;
-    QWidget* m_historyPlaceholder = nullptr;
     snow_shot::presentation::settings::SettingsLocation m_currentLocation;
     snow_shot::presentation::styles::ThemeColorScheme m_colorScheme;
 };

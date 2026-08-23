@@ -1075,6 +1075,33 @@ pub(crate) fn snow_active_tool_from_rust(value: ActiveTool) -> SnowActiveTool {
     }
 }
 
+pub(crate) fn snow_active_tool_mask_to_rust(value: u64) -> u64 {
+    const TOOLS: [SnowActiveTool; 14] = [
+        SnowActiveTool::Select,
+        SnowActiveTool::Shape,
+        SnowActiveTool::Arrow,
+        SnowActiveTool::Text,
+        SnowActiveTool::SerialNumber,
+        SnowActiveTool::Line,
+        SnowActiveTool::FreeDraw,
+        SnowActiveTool::RectangleHighlight,
+        SnowActiveTool::Eraser,
+        SnowActiveTool::RectangleFilter,
+        SnowActiveTool::Watermark,
+        SnowActiveTool::PenHighlight,
+        SnowActiveTool::PenFilter,
+        SnowActiveTool::Spotlight,
+    ];
+
+    TOOLS.into_iter().fold(0, |mask, tool| {
+        if value & (1_u64 << tool as u32) == 0 {
+            mask
+        } else {
+            mask | snow_active_tool_to_rust(tool).policy_bit()
+        }
+    })
+}
+
 pub(crate) fn snow_style_toolbar_source_from_rust(
     value: StyleToolbarSource,
 ) -> SnowStyleToolbarSource {

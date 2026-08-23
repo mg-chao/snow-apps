@@ -3,10 +3,14 @@
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/screenshottoolpalettehost.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/configurationstore.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "theme/theme_manager.h"
 
 #include <QCursor>
 #include <QGuiApplication>
+#include <QJsonValue>
 #include <QLayout>
 #include <QPixmap>
 #include <QScreen>
@@ -34,10 +38,13 @@ ScreenshotToolPalette::Options screenshotToolbarOptions() {
     options.showTextTool = true;
     options.showSerialNumberTool = true;
     options.showOcrTool = true;
+    options.showTextTranslationTool = true;
     options.showTableTool = true;
     options.showQrTool = true;
-    options.showVideoRecordButton = true;
+    options.showScreenRecordButton = true;
     options.showScrollingScreenshotTool = true;
+    options.showSaveButton = true;
+    options.lazySecondaryResources = true;
     options.separatorBeforeShape = true;
     options.actions = ScreenshotToolPalette::PinAction | ScreenshotToolPalette::CancelAction |
                       ScreenshotToolPalette::CopyAction;
@@ -49,7 +56,33 @@ ScreenshotToolbarWindow::ScreenshotToolbarWindow(ScreenshotToolbarCommandSink& c
                                                  QWidget* parent)
     : ScreenshotFloatingToolPaletteWindow(screenshotToolbarOptions(), parent),
       m_commands(commands) {
+    setToolbarSize(snow_shot::storage::ScreenshotUiSettings().toolbarSize());
+    setToolbarLayout(snow_shot::storage::ScreenshotToolbarSettings().layout());
     initializePalette();
+
+    auto& configuration =
+        snow_shot::storage::ApplicationStorage::instance().configuration();
+    connect(&configuration, &snow_shot::storage::ConfigurationStore::valueChanged, this,
+            [this](const QString& key, const QJsonValue&) {
+                if (key == QStringLiteral("screenshot_ui/toolbar_size")) {
+                    setToolbarSize(snow_shot::storage::ScreenshotUiSettings().toolbarSize());
+                } else if (key == QStringLiteral("screenshot_toolbar/layout")) {
+                    setToolbarLayout(snow_shot::storage::ScreenshotToolbarSettings().layout());
+                }
+            });
+}
+
+void ScreenshotToolbarWindow::setToolbarSize(const QString& size) {
+    m_prewarmKey.clear();
+    setPaletteScaleMultiplier(size == QStringLiteral("small") ? 0.8 : 1.0);
+}
+
+void ScreenshotToolbarWindow::setToolbarLayout(
+    const snow_shot::storage::ScreenshotToolbarLayout& layout) {
+    m_prewarmKey.clear();
+    if (ScreenshotToolPalette* toolPalette = palette()) {
+        toolPalette->setToolbarLayout(layout);
+    }
 }
 
 void ScreenshotToolbarWindow::prewarmForScreen(QScreen* screen) {
@@ -164,6 +197,10 @@ void ScreenshotToolbarWindow::connectToolCommands(ScreenshotToolPalette& toolPal
         m_commands.setOcrTool();
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::Ocr);
     });
+    connect(&toolPalette, &ScreenshotToolPalette::textTranslationRequested, this, [this]() {
+        m_commands.setTextTranslationTool();
+        setActiveToolAndReposition(ScreenshotToolPalette::Tool::TextTranslation);
+    });
     connect(&toolPalette, &ScreenshotToolPalette::tableRequested, this, [this]() {
         m_commands.setTableTool();
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::Table);
@@ -174,8 +211,12 @@ void ScreenshotToolbarWindow::connectToolCommands(ScreenshotToolPalette& toolPal
     });
     connect(&toolPalette, &ScreenshotToolPalette::textEditRequested, this,
             [this]() { m_commands.toggleTextEditing(); });
+    connect(&toolPalette, &ScreenshotToolPalette::textTranslateRequested, this,
+            [this]() { m_commands.toggleTextTranslation(); });
     connect(&toolPalette, &ScreenshotToolPalette::textResetRequested, this,
             [this]() { m_commands.resetTextEditing(); });
+    connect(&toolPalette, &ScreenshotToolPalette::textSettingsRequested, this,
+            [this]() { m_commands.openTextTranslationSettings(); });
     connect(&toolPalette, &ScreenshotToolPalette::textFormattingRequested, this,
             [this](const QString& value) { m_commands.applyTextFormatting(value); });
     connect(&toolPalette, &ScreenshotToolPalette::textPunctuationRequested, this,
@@ -189,10 +230,12 @@ void ScreenshotToolbarWindow::connectToolCommands(ScreenshotToolPalette& toolPal
 }
 
 void ScreenshotToolbarWindow::connectActionCommands(ScreenshotToolPalette& toolPalette) {
-    connect(&toolPalette, &ScreenshotToolPalette::videoRecordRequested, this,
-            [this]() { m_commands.startVideoRecording(); });
+    connect(&toolPalette, &ScreenshotToolPalette::screenRecordRequested, this,
+            [this]() { m_commands.startScreenRecording(); });
     connect(&toolPalette, &ScreenshotToolPalette::pinRequested, this,
             [this]() { m_commands.pinSelectionToScreen(); });
+    connect(&toolPalette, &ScreenshotToolPalette::saveRequested, this,
+            [this]() { m_commands.saveSelectionToFile(); });
     connect(&toolPalette, &ScreenshotToolPalette::cancelRequested, this,
             [this, palette = &toolPalette]() {
                 palette->clearActiveTool();
@@ -203,6 +246,10 @@ void ScreenshotToolbarWindow::connectActionCommands(ScreenshotToolPalette& toolP
 }
 
 void ScreenshotToolbarWindow::connectStyleCommands(ScreenshotToolPalette& toolPalette) {
+    connect(&toolPalette, &ScreenshotToolPalette::canvasColorSamplingRequested, this,
+            [this](adqt::widgets::AdColorPicker* picker) {
+                m_commands.beginCanvasColorSampling(picker);
+            });
     connect(&toolPalette, &ScreenshotToolPalette::sendSelectionToBackRequested, this,
             [this]() { m_commands.reorderSelectedElements(SnowCanvasSelectionOrder::SendToBack); });
     connect(&toolPalette, &ScreenshotToolPalette::sendSelectionBackwardRequested, this, [this]() {
@@ -331,7 +378,7 @@ void ScreenshotToolbarWindow::resetForNewCapture() {
     resetPhysicalSizeInvariant();
     if (ScreenshotToolPaletteHost* host = paletteHost()) {
         const QSignalBlocker blocker(host);
-        host->setPhysicalScale(1.0);
+        host->setPhysicalScale(paletteScaleMultiplier());
         host->setShadowMargins(ScreenshotToolPaletteHost::defaultShadowMargins());
         host->setStyleToolbarAboveMain(false);
         host->setStyleToolbarVisible(false);
@@ -340,6 +387,17 @@ void ScreenshotToolbarWindow::resetForNewCapture() {
         host->setActiveTool(ScreenshotToolPalette::Tool::Move);
     }
     setHistoryState(SnowCanvasHistoryState{});
+    prepareForDisplay();
+}
+
+void ScreenshotToolbarWindow::releaseIdleResources() {
+    cancelDrag();
+    hide();
+    if (ScreenshotToolPalette* toolPalette = palette()) {
+        toolPalette->clearActiveTool();
+        toolPalette->releaseSecondaryResources();
+    }
+    resetPhysicalSizeInvariant();
     prepareForDisplay();
 }
 
@@ -352,6 +410,11 @@ void ScreenshotToolbarWindow::setScrollingScreenshotMode(bool enabled) {
 
 void ScreenshotToolbarWindow::setActiveTool(ScreenshotToolPalette::Tool tool) {
     setActiveToolAndReposition(tool);
+}
+
+bool ScreenshotToolbarWindow::activateDrawingShortcut(const QString& toolId) {
+    ScreenshotToolPalette* toolPalette = palette();
+    return toolPalette != nullptr && toolPalette->activateDrawingShortcut(toolId);
 }
 
 void ScreenshotToolbarWindow::setHistoryState(const SnowCanvasHistoryState& state) {
@@ -405,6 +468,22 @@ void ScreenshotToolbarWindow::setTextEditingState(bool available, bool editing, 
     }
 }
 
+void ScreenshotToolbarWindow::setTextTranslationState(bool available, bool translating,
+                                                       bool streaming, bool canUndo,
+                                                       bool canRedo, bool canReset) {
+    if (ScreenshotToolPalette* toolPalette = palette()) {
+        toolPalette->setTextTranslationState(available, translating, streaming, canUndo, canRedo,
+                                             canReset);
+    }
+}
+
+void ScreenshotToolbarWindow::setTextTransformSelections(const QString& formatting,
+                                                          const QString& punctuation) {
+    if (ScreenshotToolPalette* toolPalette = palette()) {
+        toolPalette->setTextTransformSelections(formatting, punctuation);
+    }
+}
+
 void ScreenshotToolbarWindow::setQrBusy(bool busy) {
     if (ScreenshotToolPalette* toolPalette = palette()) {
         toolPalette->setQrBusy(busy);
@@ -412,9 +491,7 @@ void ScreenshotToolbarWindow::setQrBusy(bool busy) {
 }
 
 void ScreenshotToolbarWindow::clearTextTransformSelections() {
-    if (ScreenshotToolPalette* toolPalette = palette()) {
-        toolPalette->clearTextTransformSelections();
-    }
+    setTextTransformSelections({}, {});
 }
 
 void ScreenshotToolbarWindow::setOcrEnabled(bool enabled) {

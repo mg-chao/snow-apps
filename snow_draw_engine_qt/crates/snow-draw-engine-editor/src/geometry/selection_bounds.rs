@@ -498,7 +498,7 @@ pub(crate) fn selection_hit_target(
         return Some(SelectionHitTarget::Resize(handle));
     }
 
-    if let Some(rect) = single_rect.filter(|rect| !rect.is_highlight() && !rect.is_spotlight()) {
+    if let Some(rect) = single_rect.filter(|rect| rect.supports_corner_radius()) {
         for corner in ALL_CORNERS {
             let center = rect_local_to_canvas(
                 rect.center,
@@ -834,6 +834,31 @@ mod tests {
             target,
             Some(SelectionHitTarget::CornerRadius(RectCorner::TopLeft))
         );
+    }
+
+    #[test]
+    fn ellipse_and_diamond_corner_radius_controls_are_not_hittable() {
+        let bounds = selection_bounds();
+        for shape in [
+            snow_draw_engine_document::HighlightShape::Ellipse,
+            snow_draw_engine_document::HighlightShape::Diamond,
+        ] {
+            let mut selected_rect = text_rect(bounds);
+            selected_rect.highlight_shape = shape;
+            let handle = rect_local_to_canvas(
+                selected_rect.center,
+                selected_rect.rotation,
+                corner_radius_handle_local_point(&selected_rect, 1.0, RectCorner::TopLeft),
+            );
+
+            let target =
+                selection_hit_target(&bounds, Some(&selected_rect), None, 4.0, 0.0, 1.0, handle);
+
+            assert_ne!(
+                target,
+                Some(SelectionHitTarget::CornerRadius(RectCorner::TopLeft))
+            );
+        }
     }
 
     #[test]

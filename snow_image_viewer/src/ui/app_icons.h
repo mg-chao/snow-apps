@@ -12,12 +12,12 @@ adqt::icons::IconPackRegistrationResult ensureRegistered();
 
 namespace app {
 [[nodiscard]] adqt::icons::IconRef ApplicationIcon(const adqt::icons::IconColors& colors = {});
-} // namespace app
+}  // namespace app
 
 namespace outlined {
 [[nodiscard]] adqt::icons::IconRef ResizeImage(const adqt::icons::IconColors& colors = {});
-} // namespace outlined
+}  // namespace outlined
 
-} // namespace snow::image_viewer::icons
+}  // namespace snow::image_viewer::icons
 
-#endif // ADQT_GENERATED_SNOW_IMAGE_VIEWER_APP_ICONS_H
+#endif  // ADQT_GENERATED_SNOW_IMAGE_VIEWER_APP_ICONS_H

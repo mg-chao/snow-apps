@@ -17,7 +17,6 @@ use crate::error::{CaptureError, CaptureResult};
 use crate::frame::{ColorSpace, DirtyRect, Frame};
 
 pub(crate) enum StagingSampleDesc {
-    Source,
     SingleSample,
 }
 
@@ -657,7 +656,6 @@ pub(crate) fn ensure_staging_texture<'a>(
 
     if needs_new_staging {
         let sample_desc = match sample_desc {
-            StagingSampleDesc::Source => src.SampleDesc,
             StagingSampleDesc::SingleSample => DXGI_SAMPLE_DESC {
                 Count: 1,
                 Quality: 0,

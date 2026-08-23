@@ -13,7 +13,7 @@ win32-msvc {
 
 INCLUDEPATH += $$PWD/src
 
-HEADERS +=     src/adqt_icon_core_global.h     src/icon_core.h     src/icon_core_types.h     src/icon_registry.h     src/version.h
+HEADERS +=     src/adqt_icon_core_global.h     src/icon_core.h     src/icon_core_types.h     src/icon_registry.h     src/icon_renderer.h     src/version.h
 
 SOURCES +=     src/icon_registry.cpp
 

@@ -1,14 +1,20 @@
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 const PARALLEL_CHUNK_ALIGNMENT_PIXELS: usize = 256;
 
 /// Pre-initialize the conversion thread pool so the first capture doesn't
-/// pay the pool-creation cost (~10-50 ms).  Safe to call multiple times;
-/// only the first call has any effect.
+/// pay the pool-creation cost (~10-50 ms). Safe to call multiple times; a
+/// released pool is recreated on demand.
 pub(crate) fn warmup_pool(max_workers: usize) {
-    // Force the OnceLock inside install_conversion_pool to initialise by
-    // running a trivial no-op job.
     install_conversion_pool(max_workers, || {});
+}
+
+/// Drop the process-wide reference to the conversion pool.
+///
+/// Work that has already acquired the pool keeps it alive until that work
+/// completes. A later conversion creates a fresh pool on demand.
+pub(crate) fn release_pool() {
+    conversion_pool().release();
 }
 
 #[inline(always)]
@@ -91,22 +97,96 @@ pub(crate) fn install_conversion_pool<F>(max_workers: usize, job: F)
 where
     F: FnOnce() + Send,
 {
-    static POOL: OnceLock<Option<rayon::ThreadPool>> = OnceLock::new();
-    if let Some(pool) = POOL
-        .get_or_init(|| {
-            let workers = conversion_workers(max_workers);
-            if workers <= 1 {
-                return None;
-            }
-            rayon::ThreadPoolBuilder::new()
-                .num_threads(workers)
-                .build()
-                .ok()
-        })
-        .as_ref()
-    {
+    let workers = conversion_workers(max_workers);
+    let pool = conversion_pool().acquire(workers);
+
+    if let Some(pool) = pool {
         pool.install(job);
     } else {
         job();
+    }
+}
+
+struct ConversionPool {
+    pool: Mutex<Option<Arc<rayon::ThreadPool>>>,
+}
+
+impl ConversionPool {
+    const fn new() -> Self {
+        Self {
+            pool: Mutex::new(None),
+        }
+    }
+
+    fn acquire(&self, workers: usize) -> Option<Arc<rayon::ThreadPool>> {
+        if workers <= 1 {
+            return None;
+        }
+
+        let mut pool = self.lock();
+        if pool.is_none() {
+            *pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(workers)
+                .build()
+                .ok()
+                .map(Arc::new);
+        }
+        pool.clone()
+    }
+
+    fn release(&self) {
+        // Drop outside the mutex: ThreadPool teardown can wait for its worker
+        // threads, and pool acquisition must never be blocked by that wait.
+        let pool = self.lock().take();
+        drop(pool);
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Option<Arc<rayon::ThreadPool>>> {
+        self.pool
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+}
+
+fn conversion_pool() -> &'static ConversionPool {
+    static POOL: ConversionPool = ConversionPool::new();
+    &POOL
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ConversionPool;
+    use std::sync::Arc;
+
+    #[test]
+    fn release_drops_an_idle_pool_and_allows_recreation() {
+        let slot = ConversionPool::new();
+        let first = slot
+            .acquire(2)
+            .expect("a multi-worker pool should be built");
+        let first_weak = Arc::downgrade(&first);
+        drop(first);
+
+        slot.release();
+        assert!(first_weak.upgrade().is_none());
+
+        let second = slot.acquire(2).expect("the pool should be recreated");
+        assert!(Arc::strong_count(&second) >= 2);
+    }
+
+    #[test]
+    fn release_preserves_a_pool_acquired_by_in_flight_work() {
+        let slot = ConversionPool::new();
+        let acquired = slot
+            .acquire(2)
+            .expect("a multi-worker pool should be built");
+        let weak = Arc::downgrade(&acquired);
+
+        slot.release();
+        assert!(weak.upgrade().is_some());
+
+        acquired.install(|| {});
+        drop(acquired);
+        assert!(weak.upgrade().is_none());
     }
 }

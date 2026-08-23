@@ -1,0 +1,31 @@
+[package]
+name = "snow-shot-rust-ffi"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+snow-capture-c = { path = "../snow-crates/crates/snow-capture-c" }
+snow-draw-engine-c = { path = "../snow_draw_engine_qt/crates/snow-draw-engine-c" }
+snow-ocr-c = { path = "../snow-crates/crates/snow-ocr-c" }
+snow-stitch-images-c = { path = "../snow-crates/crates/snow-stitch-images-c" }
+snow-ui-selector-c = { path = "../snow-crates/crates/snow-ui-selector-c" }
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = "fat"
+panic = "abort"
+debug = 0
+incremental = false
+overflow-checks = false
+
+[profile.release-fast]
+inherits = "release"
+opt-level = 2
+codegen-units = 16
+lto = "thin"
+incremental = true

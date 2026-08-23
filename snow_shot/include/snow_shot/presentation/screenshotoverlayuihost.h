@@ -1,6 +1,9 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTOVERLAYUIHOST_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTOVERLAYUIHOST_H
 
+#include "snow_shot/presentation/screenshotshortcuthints.h"
+
+#include <QColor>
 #include <QImage>
 #include <QMetaObject>
 #include <QObjectCleanupHandler>
@@ -8,6 +11,7 @@
 #include <QPointF>
 #include <QPointer>
 #include <QRect>
+#include <QRectF>
 
 class ScreenshotColorPickerWidget;
 class ScreenshotOverlayWindow;
@@ -40,10 +44,17 @@ class ScreenshotOverlayUiHost final {
                            const QRect& physicalRect, const QPoint& physicalPoint,
                            const QPointF& localPosition, qreal opacity);
     void hideColorPicker();
+    void setColorPickerCenterGuideLineColor(const QColor& color);
     void resetColorPickerForNewCapture();
     void hideColorPickerForOverlay(ScreenshotOverlayWindow* overlay) const;
     [[nodiscard]] bool colorPickerBelongsToOverlay(const ScreenshotOverlayWindow* overlay) const;
     [[nodiscard]] bool screenshotUiContainsGlobalCursor() const;
+    void updateShortcutHints(ScreenshotOverlayWindow* overlay, ScreenshotShortcutHintMode mode,
+                             qreal opacity, const QRectF& selectionGlobal = {});
+    void updateShortcutHints(ScreenshotOverlayWindow* overlay,
+                             const ScreenshotShortcutHintContext& context, qreal opacity,
+                             const QRectF& selectionGlobal = {});
+    void hideShortcutHints();
     [[nodiscard]] bool stepToolbarStrokeWidth(int direction);
     [[nodiscard]] bool stepToolbarSelectionOpacity(int direction);
     [[nodiscard]] bool stepToolbarSpotlightOpacity(int direction);
@@ -58,12 +69,19 @@ class ScreenshotOverlayUiHost final {
     void showSelectionToolbar();
     void raiseSelectionToolbar();
     void detachOverlayTransientUi(ScreenshotOverlayWindow* overlay);
+    void hibernateUiResources();
+    // Detaches the reusable main toolbar before its overlay owner is retired
+    // and releases the remaining capture-scoped widgets through deleteLater().
+    void releaseUiResources();
     void destroyUiResources();
 
   private:
+    void disconnectToolbarCanvas();
+
     ScreenshotToolbarCommandSink* m_toolbarCommands = nullptr;
     ScreenshotSelectionToolbarCommandSink* m_selectionToolbarCommands = nullptr;
     QObjectCleanupHandler m_ownedWidgets;
+    QObjectCleanupHandler m_retiredWidgets;
     QPointer<ScreenshotToolbarWindow> m_toolbar;
     QPointer<SnowCanvasWidget> m_toolbarStyleCanvas;
     QMetaObject::Connection m_toolbarStyleConnection;
@@ -72,6 +90,8 @@ class ScreenshotOverlayUiHost final {
     QMetaObject::Connection m_toolbarStylePopupEndConnection;
     QPointer<ScreenshotSelectionToolbarWindow> m_selectionToolbar;
     QPointer<ScreenshotColorPickerWidget> m_colorPicker;
+    QPointer<QWidget> m_shortcutHints;
+    QColor m_colorPickerCenterGuideLineColor = QColor(0, 0, 0, 0);
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTOVERLAYUIHOST_H

@@ -109,6 +109,7 @@ snow_shot::storage::CaptureHistoryDraft storageDraft(const ScreenshotHistoryEntr
     for (const ScreenshotHistoryDisplay& display : entry.displays) {
         draft.displays.push_back({display.stableId, display.name, display.image});
     }
+    draft.resultImage = entry.resultImage;
     return draft;
 }
 
@@ -121,6 +122,10 @@ placeholderRecord(const snow_shot::storage::CaptureHistoryDraft& draft) {
     record.selection = draft.selection;
     record.source = draft.source;
     record.canvasBytes = draft.canvasHistory.size();
+    if (draft.resultImage.has_value()) {
+        record.result = snow_shot::storage::CaptureHistoryResultRecord{
+            draft.resultImage->size(), 0};
+    }
     for (const snow_shot::storage::CaptureHistoryDisplayDraft& display : draft.displays) {
         record.displays.push_back({display.stableId, display.name, display.image.size(), 0});
     }
@@ -550,7 +555,7 @@ bool ScreenshotHistoryService::applyEntry(const ScreenshotHistoryEntry& entry) {
     m_context.interaction.cancelDrag();
     bool requestIntelligentSelection = false;
     if (entry.persistent) {
-        m_context.intelligentSelection.reset();
+        m_context.intelligentSelection.clearTransientState();
         m_context.interaction.returnToSelectionMode(false);
     } else if (entry.intelligentSelectionMode) {
         if (entry.liveIntelligentSelection.has_value()) {
@@ -559,7 +564,7 @@ bool ScreenshotHistoryService::applyEntry(const ScreenshotHistoryEntry& entry) {
         m_context.interaction.returnToSelectionMode(true);
         requestIntelligentSelection = true;
     } else {
-        m_context.intelligentSelection.reset();
+        m_context.intelligentSelection.clearTransientState();
         m_context.interaction.confirmSelection();
     }
     if (m_context.presentationChanged) {

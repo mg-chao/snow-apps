@@ -12,14 +12,14 @@ adqt::icons::IconPackRegistrationResult ensureRegistered();
 
 namespace cursor {
 [[nodiscard]] adqt::icons::IconRef CornerRadius(const adqt::icons::IconColors& colors = {});
-} // namespace cursor
+}  // namespace cursor
 
 namespace toolbar {
 [[nodiscard]] adqt::icons::IconRef SerialDecrease(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef SerialIncrease(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef SerialTextFields(const adqt::icons::IconColors& colors = {});
-} // namespace toolbar
+}  // namespace toolbar
 
-} // namespace snow::draw_engine::icons
+}  // namespace snow::draw_engine::icons
 
-#endif // ADQT_GENERATED_SNOW_DRAW_ENGINE_QT_DRAW_ENGINE_ICONS_H
+#endif  // ADQT_GENERATED_SNOW_DRAW_ENGINE_QT_DRAW_ENGINE_ICONS_H

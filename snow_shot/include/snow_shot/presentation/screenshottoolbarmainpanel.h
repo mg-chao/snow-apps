@@ -41,6 +41,7 @@ class ScreenshotToolbarMainPanel final : public QFrame {
                                                 bool danger = false, bool primary = false);
     void addSpacing(int baseSpacing);
     void addSeparator();
+    void resetContentLayout();
     void addTrailingDragHandle();
     void setPhysicalScale(qreal scale);
 

@@ -35,6 +35,10 @@ class ScreenshotOverlayWindow final : public QWidget {
     void setScreenshotImage(QImage image, const QRectF& canvasRect);
     void clearScreenshotImage();
     void setScreenshotMaskVisible(bool visible);
+    void setScreenshotMaskColor(const QColor& color);
+    void setScreenshotGuideLines(const QPointF& cursorPosition, const QColor& cursorColor,
+                                 const QColor& monitorCenterColor);
+    void clearScreenshotGuideLines();
     void setScreenshotSelection(const QRectF& selection, bool handlesVisible, int cornerRadius,
                                 int shadowWidth = 0,
                                 const QColor& shadowColor = QColor(0x33, 0x33, 0x33),
@@ -63,10 +67,20 @@ class ScreenshotOverlayWindow final : public QWidget {
     [[nodiscard]] ScreenshotScrollingTrimRange scrollingThumbnailTrim() const;
 #if defined(SNOW_SHOT_BENCH_INTERNALS)
     [[nodiscard]] quint64 windowMaskApplicationCountForTesting() const;
+    [[nodiscard]] ScreenshotCanvasRenderer* screenshotRendererForTesting() const;
 #endif
     void clearPresentationFrame();
     void restorePresentationCanvas();
     void showPreparedFrame();
+    // Reclaim the desktop-sized backing store while preserving the hidden
+    // platform window for a low-latency restart.
+    void hibernateNativeSurface();
+    // Drops the platform window and its backing store without deleting this
+    // QObject or its renderer/canvas model. Pool teardown and asynchronous
+    // export exits can therefore retire the composed frame immediately while
+    // keeping the reusable presentation object alive.
+    void releaseNativeSurface();
+    void restoreNativeSurface();
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override;

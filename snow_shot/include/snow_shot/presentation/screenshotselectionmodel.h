@@ -25,11 +25,16 @@ class ScreenshotSelectionModel final {
     void setSelectionEnd(const QPointF& end);
 
     void beginMoveDrag(const QPointF& startPosition);
+    // Rebase a move/resize gesture without changing the visible selection.
+    // This is used when a transient modifier switches an active resize into
+    // moving the whole selection, avoiding a cursor jump.
+    void rebaseMoveDrag(const QPointF& startPosition);
     [[nodiscard]] QRectF moveOriginalSelection() const;
     [[nodiscard]] QPointF moveStart() const;
     [[nodiscard]] QRectF selectionRectForDrag(ScreenshotSelectionDragMode dragMode,
                                               const QPointF& position, const QRectF& bounds,
-                                              qreal minimumSelectionSize) const;
+                                              qreal minimumSelectionSize,
+                                              qreal lockedAspectRatioOverride = -1.0) const;
 
     [[nodiscard]] QRectF boundedSelectionRect(const QRectF& selection, const QRectF& bounds,
                                               bool preserveSize, qreal minimumSelectionSize) const;

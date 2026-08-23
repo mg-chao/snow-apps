@@ -28,6 +28,7 @@ HEADERS += \
     alert_docs_page.h \
     color_picker_docs_page.h \
     date_picker_docs_page.h \
+    divider_docs_page.h \
     descriptions_docs_page.h \
     form_docs_page.h \
     icon_theme_adapter.h \
@@ -57,6 +58,7 @@ SOURCES += \
     alert_docs_page.cpp \
     color_picker_docs_page.cpp \
     date_picker_docs_page.cpp \
+    divider_docs_page.cpp \
     descriptions_docs_page.cpp \
     form_docs_page.cpp \
     icon_theme_adapter.cpp \

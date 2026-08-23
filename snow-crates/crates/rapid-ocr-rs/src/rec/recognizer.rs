@@ -43,6 +43,11 @@ impl Recognizer {
                 "rec_batch_num must be greater than zero".to_string(),
             ));
         }
+        if config.rec_width_alignment == 0 {
+            return Err(RapidOcrError::Config(
+                "rec_width_alignment must be greater than zero".to_string(),
+            ));
+        }
 
         let model_store_dir = config
             .model_store_dir
@@ -83,6 +88,11 @@ impl Recognizer {
         if config.rec_batch_num == 0 {
             return Err(RapidOcrError::Config(
                 "rec_batch_num must be greater than zero".to_string(),
+            ));
+        }
+        if config.rec_width_alignment == 0 {
+            return Err(RapidOcrError::Config(
+                "rec_width_alignment must be greater than zero".to_string(),
             ));
         }
 
@@ -154,8 +164,10 @@ impl Recognizer {
                 wh_ratio_list.push(wh_ratio as f32);
             }
 
-            let (img_channel, img_height, dst_width) =
+            let (img_channel, img_height, natural_width) =
                 batch_shape_for(max_wh_ratio, self.config.rec_img_shape)?;
+            let dst_width = align_width(natural_width, self.config.rec_width_alignment)?;
+            let tensor_wh_ratio = dst_width as f64 / img_height as f64;
             let sample_len = img_channel
                 .checked_mul(img_height)
                 .and_then(|v| v.checked_mul(dst_width))
@@ -183,7 +195,7 @@ impl Recognizer {
                             })?;
                             write_resize_norm_img_into_slice_with_scratch(
                                 image,
-                                max_wh_ratio,
+                                tensor_wh_ratio,
                                 self.config.rec_img_shape,
                                 self.vision_backend,
                                 dst,
@@ -204,7 +216,7 @@ impl Recognizer {
                 let mut resize_scratch = LinearResizeScratch::default();
                 write_resize_norm_img_into_slice_with_scratch(
                     image,
-                    max_wh_ratio,
+                    tensor_wh_ratio,
                     self.config.rec_img_shape,
                     self.vision_backend,
                     &mut self.batch_scratch[..sample_len],
@@ -227,7 +239,7 @@ impl Recognizer {
                         preds,
                         options.return_word_box,
                         &wh_ratio_list,
-                        max_wh_ratio as f32,
+                        tensor_wh_ratio as f32,
                     )
                 })?;
 
@@ -266,6 +278,38 @@ impl Recognizer {
 
     pub fn provider_resolution(&self) -> ProviderResolution {
         self.session.provider_resolution()
+    }
+}
+
+fn align_width(width: usize, alignment: usize) -> Result<usize> {
+    if alignment == 0 {
+        return Err(RapidOcrError::Config(
+            "rec_width_alignment must be greater than zero".to_string(),
+        ));
+    }
+    let remainder = width % alignment;
+    if remainder == 0 {
+        return Ok(width);
+    }
+    width
+        .checked_add(alignment - remainder)
+        .ok_or_else(|| RapidOcrError::InvalidInput("recognition width overflow".to_string()))
+}
+
+#[cfg(test)]
+mod width_alignment_tests {
+    use super::align_width;
+
+    #[test]
+    fn dynamic_width_rounds_up_to_configured_multiple() {
+        assert_eq!(align_width(320, 32).expect("aligned width"), 320);
+        assert_eq!(align_width(321, 32).expect("rounded width"), 352);
+        assert_eq!(align_width(321, 1).expect("disabled alignment"), 321);
+    }
+
+    #[test]
+    fn zero_width_alignment_is_rejected() {
+        assert!(align_width(320, 0).is_err());
     }
 }
 
@@ -380,6 +424,7 @@ mod tests {
             },
             rec_batch_num: 6,
             rec_img_shape: [3, 48, 320],
+            rec_width_alignment: 32,
             model_store_dir: Some(model_store_dir),
         }
     }

@@ -66,6 +66,20 @@ function(snow_workspace_configure_options)
     set(SNOW_IMAGE_DEFAULT_LINKAGE static CACHE STRING
         "Default Snow Image target linkage." FORCE)
 
+    # The repository's portable Qt kit is static. Qt's imported targets carry
+    # a static CRT requirement, so align every workspace target before nested
+    # projects are added. Otherwise a static-CRT executable can link against
+    # a dynamic-CRT Snow Image library and fail on standard CRT symbols.
+    if(MSVC AND (SNOW_APPS_QT_STATIC OR
+                 (DEFINED Qt6_DIR AND Qt6_DIR MATCHES "[Ss][Tt][Aa][Tt][Ii][Cc]") OR
+                 (DEFINED ENV{SNOW_QT_STATIC_DIR} AND
+                  "$ENV{SNOW_QT_STATIC_DIR}" MATCHES "[Ss][Tt][Aa][Tt][Ii][Cc]")))
+        set(CMAKE_MSVC_RUNTIME_LIBRARY
+            "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+            CACHE STRING
+            "MSVC runtime used with the static Qt kit." FORCE)
+    endif()
+
     if(SNOW_APPS_RELEASE_STATIC AND MSVC)
         set(CMAKE_MSVC_RUNTIME_LIBRARY MultiThreaded CACHE STRING
             "MSVC runtime used for static release builds." FORCE)

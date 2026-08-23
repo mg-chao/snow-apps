@@ -47,6 +47,44 @@ struct HandleEntry {
 
 bool fuzzyEq(double lhs, double rhs) { return std::abs(lhs - rhs) <= kEpsilon; }
 
+int scaledControlMetric(int value, qreal scale) {
+  if (value == 0) {
+    return 0;
+  }
+  return qMax(1, qRound(static_cast<qreal>(value) * scale));
+}
+
+qreal scaledControlMetric(qreal value, qreal scale) { return value * scale; }
+
+void scaleControlFont(QFont* font, qreal scale) {
+  if (font == nullptr) {
+    return;
+  }
+  if (font->pixelSize() > 0) {
+    font->setPixelSize(scaledControlMetric(font->pixelSize(), scale));
+  } else if (font->pointSizeF() > 0.0) {
+    font->setPointSizeF(font->pointSizeF() * scale);
+  }
+}
+
+void scaleSliderControlMetrics(detail::SliderMetrics* metrics, qreal scale) {
+  if (metrics == nullptr) {
+    return;
+  }
+  metrics->controlSize = scaledControlMetric(metrics->controlSize, scale);
+  metrics->railSize = scaledControlMetric(metrics->railSize, scale);
+  metrics->handleSize = scaledControlMetric(metrics->handleSize, scale);
+  metrics->handleSizeHover = scaledControlMetric(metrics->handleSizeHover, scale);
+  metrics->handleLineWidth = scaledControlMetric(metrics->handleLineWidth, scale);
+  metrics->handleLineWidthHover = scaledControlMetric(metrics->handleLineWidthHover, scale);
+  metrics->dotSize = scaledControlMetric(metrics->dotSize, scale);
+  metrics->marginMain = scaledControlMetric(metrics->marginMain, scale);
+  metrics->marginCross = scaledControlMetric(metrics->marginCross, scale);
+  metrics->markGap = scaledControlMetric(metrics->markGap, scale);
+  metrics->focusOutlineSize = scaledControlMetric(metrics->focusOutlineSize, scale);
+  scaleControlFont(&metrics->font, scale);
+}
+
 double clampValue(double value, double minValue, double maxValue) {
   if (maxValue < minValue) {
     return minValue;
@@ -1104,10 +1142,7 @@ void AdMultiSlider::setSemanticStyleResolver(SemanticStyleResolver resolver) {
 }
 
 QSize AdMultiSlider::sizeHint() const {
-  const auto scaled = [this](const QSize& size) {
-    return QSize(qMax(1, qRound(size.width() * controlScale_.logicalScale)),
-                 qMax(1, qRound(size.height() * controlScale_.logicalScale)));
-  };
+  const qreal scale = controlScale_.logicalScale;
   const LayoutInfo layout = buildLayout();
   const MarkMap marks = effectiveMarks();
   const bool hasMarks = !marks.isEmpty();
@@ -1119,16 +1154,21 @@ QSize AdMultiSlider::sizeHint() const {
   const int sliderThickness = style()->pixelMetric(QStyle::PM_SliderThickness, &option, this);
   if (orientation_ == Qt::Horizontal) {
     const int height =
-        std::max(std::max(34, sliderThickness),
+        std::max(std::max(scaledControlMetric(34, scale),
+                          scaledControlMetric(sliderThickness, scale)),
                  layout.style.metrics.controlSize + layout.style.metrics.marginCross * 2 +
                      (hasMarks ? layout.style.metrics.markGap + markLabelHeight : 0));
-    return scaled(QSize(std::max(260, sliderLength * 6), height));
+    return QSize(std::max(scaledControlMetric(260, scale),
+                          scaledControlMetric(sliderLength * 6, scale)),
+                 height);
   }
   const int width =
-      std::max(std::max(52, sliderThickness),
+      std::max(std::max(scaledControlMetric(52, scale),
+                        scaledControlMetric(sliderThickness, scale)),
                layout.style.metrics.controlSize + layout.style.metrics.marginCross * 2 +
                    (hasMarks ? layout.style.metrics.markGap + markLabelWidth : 0));
-  return scaled(QSize(width, std::max(260, sliderLength * 6)));
+  return QSize(width, std::max(scaledControlMetric(260, scale),
+                               scaledControlMetric(sliderLength * 6, scale)));
 }
 
 QSize AdMultiSlider::minimumSizeHint() const {
@@ -1830,7 +1870,9 @@ AdMultiSlider::LayoutInfo AdMultiSlider::buildLayout() const {
     input.componentTokens = componentTokens_;
     const adqt::theme::ResolvedTheme resolvedTheme =
         adqt::theme::ThemeManager::instance().resolve(this);
-    return detail::resolveSliderVisualStyle(input, resolvedTheme);
+    detail::SliderVisualStyle style = detail::resolveSliderVisualStyle(input, resolvedTheme);
+    scaleSliderControlMetrics(&style.metrics, controlScale_.logicalScale);
+    return style;
   };
 
   auto applySemanticStyles = [this](const detail::SliderVisualStyle& baseStyle) {

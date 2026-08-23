@@ -49,9 +49,7 @@ class ScreenshotInteractionState final {
     void applySelectionParams();
     void enterScrollingCapture();
     void returnToSelectionMode(bool selectorReady);
-    void enterManualSelectionDrag();
-    void enterManualSelectionDragFromIntelligent();
-    [[nodiscard]] bool enterMovingSelectionDrag(ScreenshotSelectionDragMode dragMode);
+    [[nodiscard]] bool enterSelectionDrag(ScreenshotSelectionDragMode dragMode);
     void finishDrag();
     void cancelDrag();
 
@@ -63,18 +61,23 @@ class ScreenshotInteractionState final {
     [[nodiscard]] bool moveToolActive() const;
     [[nodiscard]] bool intelligentSelecting() const;
     [[nodiscard]] bool manualSelecting() const;
+    [[nodiscard]] bool marqueeSelecting() const;
+    [[nodiscard]] bool modifyingSelection() const;
     [[nodiscard]] bool movingSelection() const;
     [[nodiscard]] bool editing() const;
     [[nodiscard]] bool scrollingCapture() const;
     [[nodiscard]] bool selecting() const;
+    [[nodiscard]] bool cursorMovementEnabled() const;
     [[nodiscard]] bool selectionToolbarMode() const;
     [[nodiscard]] bool canResizeSelection() const;
+    [[nodiscard]] bool selectionHandlesVisible() const;
 
   private:
     ScreenshotActiveTool m_activeTool = ScreenshotActiveTool::Move;
     ScreenshotCaptureMode m_mode = ScreenshotCaptureMode::Inactive;
     ScreenshotSelectionDragMode m_dragMode = ScreenshotSelectionDragMode::None;
     bool m_dragging = false;
+    bool m_recognitionSelectionActive = false;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTINTERACTIONSTATE_H

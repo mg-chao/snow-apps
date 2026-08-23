@@ -160,6 +160,9 @@ impl LangRec {
 pub enum ProviderPreference {
     #[default]
     Cpu,
+    Auto {
+        device_id: usize,
+    },
     Cuda {
         device_id: usize,
     },
@@ -206,6 +209,8 @@ impl Default for ModelConfig {
 #[serde(default, deny_unknown_fields)]
 pub struct RuntimeConfig {
     pub backend: RuntimeBackend,
+    /// Maximum host-thread budget for one engine. Services set this automatically per worker.
+    pub thread_budget: Option<usize>,
     pub intra_threads: Option<usize>,
     pub inter_threads: Option<usize>,
     pub auto_tune_threads: bool,
@@ -220,6 +225,7 @@ impl Default for RuntimeConfig {
     fn default() -> Self {
         Self {
             backend: RuntimeBackend::default(),
+            thread_budget: None,
             intra_threads: None,
             inter_threads: None,
             auto_tune_threads: true,
@@ -239,6 +245,8 @@ pub struct RecognizerConfig {
     pub runtime: RuntimeConfig,
     pub rec_batch_num: usize,
     pub rec_img_shape: [usize; 3],
+    /// Rounds dynamic recognition tensor widths up to this multiple. Use 1 to disable.
+    pub rec_width_alignment: usize,
     pub model_store_dir: Option<PathBuf>,
 }
 
@@ -249,6 +257,7 @@ impl Default for RecognizerConfig {
             runtime: RuntimeConfig::default(),
             rec_batch_num: 6,
             rec_img_shape: [3, 48, 320],
+            rec_width_alignment: 32,
             model_store_dir: None,
         }
     }
@@ -391,6 +400,7 @@ mod tests {
     fn runtime_config_default_backend_matches_feature() {
         let cfg = RuntimeConfig::default();
         assert_eq!(cfg.backend, RuntimeBackend::OnnxCpu);
+        assert_eq!(cfg.thread_budget, None);
         assert!(cfg.auto_tune_threads);
         assert_eq!(cfg.rayon_threads, None);
         assert!(cfg.enable_cpu_mem_arena);

@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/globalshortcutmanager.h"
+#include "snow_shot/platform/windows/focusedfullscreenwindow.h"
 #include "snow_shot/storage/settingsadapters.h"
 
 #include <QAbstractNativeEventFilter>
@@ -24,18 +25,52 @@ namespace {
 constexpr int MAX_SHORTCUTS_PER_ACTION = 2;
 constexpr int FIRST_REGISTRATION_ID = 0x2200;
 constexpr int LAST_REGISTRATION_ID = 0xBFFF;
+constexpr std::size_t ACTION_COUNT = 13;
 
-constexpr std::array<GlobalShortcutAction, 2> ALL_ACTIONS = {
+constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::Screenshot,
+    GlobalShortcutAction::ScreenshotDelay,
+    GlobalShortcutAction::ScreenshotFixed,
+    GlobalShortcutAction::ScreenshotOcr,
+    GlobalShortcutAction::ScreenshotTranslation,
+    GlobalShortcutAction::ScreenshotCopy,
+    GlobalShortcutAction::ScreenshotFullScreen,
+    GlobalShortcutAction::ScreenshotFocusedWindow,
+    GlobalShortcutAction::ScreenRecord,
+    GlobalShortcutAction::ScreenRecordCopy,
+    GlobalShortcutAction::OpenCaptureHistory,
     GlobalShortcutAction::OpenSettings,
+    GlobalShortcutAction::PinClipboardContent,
 };
 
 int actionIndex(GlobalShortcutAction action) {
     switch (action) {
     case GlobalShortcutAction::Screenshot:
         return 0;
-    case GlobalShortcutAction::OpenSettings:
+    case GlobalShortcutAction::ScreenshotDelay:
         return 1;
+    case GlobalShortcutAction::ScreenshotFixed:
+        return 2;
+    case GlobalShortcutAction::ScreenshotOcr:
+        return 3;
+    case GlobalShortcutAction::ScreenshotTranslation:
+        return 4;
+    case GlobalShortcutAction::ScreenshotCopy:
+        return 5;
+    case GlobalShortcutAction::ScreenshotFullScreen:
+        return 6;
+    case GlobalShortcutAction::ScreenshotFocusedWindow:
+        return 7;
+    case GlobalShortcutAction::ScreenRecord:
+        return 8;
+    case GlobalShortcutAction::ScreenRecordCopy:
+        return 9;
+    case GlobalShortcutAction::OpenCaptureHistory:
+        return 10;
+    case GlobalShortcutAction::OpenSettings:
+        return 11;
+    case GlobalShortcutAction::PinClipboardContent:
+        return 12;
     }
     return 0;
 }
@@ -497,6 +532,72 @@ std::unique_ptr<GlobalShortcutBackend> createPlatformBackend() {
     return std::make_unique<UnsupportedGlobalShortcutBackend>();
 #endif
 }
+
+QStringList persistedShortcuts(const snow_shot::storage::ShortcutSettings& settings,
+                               GlobalShortcutAction action) {
+    switch (action) {
+    case GlobalShortcutAction::Screenshot:
+        return settings.screenshot();
+    case GlobalShortcutAction::ScreenshotDelay:
+        return settings.screenshotDelay();
+    case GlobalShortcutAction::ScreenshotFixed:
+        return settings.screenshotFixed();
+    case GlobalShortcutAction::ScreenshotOcr:
+        return settings.screenshotOcr();
+    case GlobalShortcutAction::ScreenshotTranslation:
+        return settings.screenshotTranslation();
+    case GlobalShortcutAction::ScreenshotCopy:
+        return settings.screenshotCopy();
+    case GlobalShortcutAction::ScreenshotFullScreen:
+        return settings.screenshotFullScreen();
+    case GlobalShortcutAction::ScreenshotFocusedWindow:
+        return settings.screenshotFocusedWindow();
+    case GlobalShortcutAction::ScreenRecord:
+        return settings.screenRecord();
+    case GlobalShortcutAction::ScreenRecordCopy:
+        return settings.screenRecordCopy();
+    case GlobalShortcutAction::OpenCaptureHistory:
+        return settings.openCaptureHistory();
+    case GlobalShortcutAction::OpenSettings:
+        return settings.openSettings();
+    case GlobalShortcutAction::PinClipboardContent:
+        return settings.pinClipboardContent();
+    }
+    return {};
+}
+
+bool persistShortcuts(const snow_shot::storage::ShortcutSettings& settings,
+                      GlobalShortcutAction action, const QStringList& shortcuts) {
+    switch (action) {
+    case GlobalShortcutAction::Screenshot:
+        return settings.setScreenshot(shortcuts);
+    case GlobalShortcutAction::ScreenshotDelay:
+        return settings.setScreenshotDelay(shortcuts);
+    case GlobalShortcutAction::ScreenshotFixed:
+        return settings.setScreenshotFixed(shortcuts);
+    case GlobalShortcutAction::ScreenshotOcr:
+        return settings.setScreenshotOcr(shortcuts);
+    case GlobalShortcutAction::ScreenshotTranslation:
+        return settings.setScreenshotTranslation(shortcuts);
+    case GlobalShortcutAction::ScreenshotCopy:
+        return settings.setScreenshotCopy(shortcuts);
+    case GlobalShortcutAction::ScreenshotFullScreen:
+        return settings.setScreenshotFullScreen(shortcuts);
+    case GlobalShortcutAction::ScreenshotFocusedWindow:
+        return settings.setScreenshotFocusedWindow(shortcuts);
+    case GlobalShortcutAction::ScreenRecord:
+        return settings.setScreenRecord(shortcuts);
+    case GlobalShortcutAction::ScreenRecordCopy:
+        return settings.setScreenRecordCopy(shortcuts);
+    case GlobalShortcutAction::OpenCaptureHistory:
+        return settings.setOpenCaptureHistory(shortcuts);
+    case GlobalShortcutAction::OpenSettings:
+        return settings.setOpenSettings(shortcuts);
+    case GlobalShortcutAction::PinClipboardContent:
+        return settings.setPinClipboardContent(shortcuts);
+    }
+    return false;
+}
 } // namespace
 
 class GlobalShortcutManager::Impl {
@@ -508,8 +609,13 @@ class GlobalShortcutManager::Impl {
     };
 
     Impl(GlobalShortcutManager& owner, std::unique_ptr<GlobalShortcutBackend> backend,
-         const QString&, const QString&)
-        : q(owner), m_backend(backend != nullptr ? std::move(backend) : createPlatformBackend()) {
+         const QString&, const QString&, std::function<bool()> focusedFullscreenDetector)
+        : q(owner), m_backend(backend != nullptr ? std::move(backend) : createPlatformBackend()),
+          m_focusedFullscreenDetector(
+              focusedFullscreenDetector
+                  ? std::move(focusedFullscreenDetector)
+                  : std::function<bool()>(
+                        &snow_shot::platform::windows::focusedFullscreenWindowExists)) {
         for (GlobalShortcutAction action : ALL_ACTIONS) {
             GlobalShortcutRegistrationState initialState;
             initialState.action = action;
@@ -520,6 +626,16 @@ class GlobalShortcutManager::Impl {
             const QString activeKey = m_registrationKeysById.value(registrationId);
             const auto active = m_activeRegistrations.constFind(activeKey);
             if (active != m_activeRegistrations.cend()) {
+                if (!m_shortcutFunctionsEnabled) {
+                    return;
+                }
+                const bool suppressionEnabled =
+                    snow_shot::storage::GlobalShortcutSettings()
+                        .disableOnFocusedFullscreenWindow();
+                if (suppressionEnabled && m_focusedFullscreenDetector &&
+                    m_focusedFullscreenDetector()) {
+                    return;
+                }
                 emit q.activated(active->action);
             }
         });
@@ -540,10 +656,10 @@ class GlobalShortcutManager::Impl {
         }
 
         const snow_shot::storage::ShortcutSettings settings;
-        m_shortcuts[actionIndex(GlobalShortcutAction::Screenshot)] =
-            canonicalShortcuts(settings.screenshot());
-        m_shortcuts[actionIndex(GlobalShortcutAction::OpenSettings)] =
-            canonicalShortcuts(settings.openSettings());
+        for (GlobalShortcutAction action : ALL_ACTIONS) {
+            m_shortcuts[actionIndex(action)] =
+                canonicalShortcuts(persistedShortcuts(settings, action));
+        }
         m_initialized = true;
         reconcile();
     }
@@ -555,11 +671,7 @@ class GlobalShortcutManager::Impl {
 
         m_shortcuts[actionIndex(action)] = canonicalShortcuts(shortcuts);
         const snow_shot::storage::ShortcutSettings settings;
-        if (action == GlobalShortcutAction::Screenshot) {
-            settings.setScreenshot(m_shortcuts[actionIndex(action)]);
-        } else {
-            settings.setOpenSettings(m_shortcuts[actionIndex(action)]);
-        }
+        static_cast<void>(persistShortcuts(settings, action, m_shortcuts[actionIndex(action)]));
         reconcile();
     }
 
@@ -615,7 +727,7 @@ class GlobalShortcutManager::Impl {
             m_backend->unregisterShortcut(registration.registrationId);
         }
 
-        std::array<GlobalShortcutRegistrationState, 2> nextStates;
+        std::array<GlobalShortcutRegistrationState, ACTION_COUNT> nextStates;
         for (GlobalShortcutAction action : ALL_ACTIONS) {
             GlobalShortcutRegistrationState nextState;
             nextState.action = action;
@@ -673,22 +785,26 @@ class GlobalShortcutManager::Impl {
 
     GlobalShortcutManager& q;
     std::unique_ptr<GlobalShortcutBackend> m_backend;
-    std::array<QStringList, 2> m_shortcuts;
-    std::array<GlobalShortcutRegistrationState, 2> m_states;
+    std::function<bool()> m_focusedFullscreenDetector;
+    std::array<QStringList, ACTION_COUNT> m_shortcuts;
+    std::array<GlobalShortcutRegistrationState, ACTION_COUNT> m_states;
     QHash<QString, ActiveRegistration> m_activeRegistrations;
     QHash<int, QString> m_registrationKeysById;
     int m_nextRegistrationId = FIRST_REGISTRATION_ID;
     bool m_initialized = false;
+    bool m_shortcutFunctionsEnabled = true;
 };
 
 GlobalShortcutManager::GlobalShortcutManager(QObject* parent)
-    : GlobalShortcutManager(nullptr, {}, {}, parent) {}
+    : GlobalShortcutManager(nullptr, {}, {}, parent, {}) {}
 
 GlobalShortcutManager::GlobalShortcutManager(std::unique_ptr<GlobalShortcutBackend> backend,
                                              const QString& organization,
-                                             const QString& application, QObject* parent)
+                                             const QString& application, QObject* parent,
+                                             std::function<bool()> focusedFullscreenDetector)
     : QObject(parent),
-      m_impl(std::make_unique<Impl>(*this, std::move(backend), organization, application)) {}
+      m_impl(std::make_unique<Impl>(*this, std::move(backend), organization, application,
+                                    std::move(focusedFullscreenDetector))) {}
 
 GlobalShortcutManager::~GlobalShortcutManager() = default;
 
@@ -710,8 +826,16 @@ GlobalShortcutManager::validateShortcut(const QString& shortcut) const {
 }
 
 void GlobalShortcutManager::setShortcuts(GlobalShortcutAction action,
-                                         const QStringList& shortcuts) {
+                                          const QStringList& shortcuts) {
     m_impl->setShortcuts(action, shortcuts);
+}
+
+void GlobalShortcutManager::setShortcutFunctionsEnabled(bool enabled) {
+    m_impl->m_shortcutFunctionsEnabled = enabled;
+}
+
+bool GlobalShortcutManager::shortcutFunctionsEnabled() const {
+    return m_impl->m_shortcutFunctionsEnabled;
 }
 
 void GlobalShortcutManager::retryRegistrations() {

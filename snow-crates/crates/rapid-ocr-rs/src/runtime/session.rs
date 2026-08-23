@@ -9,10 +9,12 @@ use ort::{
 };
 
 use crate::{
-    config::{ProviderPreference, RuntimeBackend, RuntimeConfig},
+    config::{RuntimeBackend, RuntimeConfig},
     error::{RapidOcrError, Result},
     model_source::ModelSource,
-    runtime::provider::{ProviderResolution, resolve_execution_providers},
+    runtime::provider::{
+        ProviderResolution, ResolvedExecutionProvider, resolve_execution_providers,
+    },
 };
 
 #[derive(Debug)]
@@ -44,15 +46,19 @@ impl OrtSession {
             )));
         }
 
+        let provider_chain = resolve_execution_providers(
+            &runtime_cfg.provider_preference,
+            runtime_cfg.enable_cpu_mem_arena,
+            runtime_cfg.fail_if_provider_unavailable,
+        )?;
+        let resolved_provider = provider_chain.resolution.resolved;
+
         let mut builder = Session::builder()?;
         builder = builder
             .with_optimization_level(GraphOptimizationLevel::Level3)
             .map_err(ort::Error::from)?;
 
-        if matches!(
-            runtime_cfg.provider_preference,
-            ProviderPreference::DirectMl { .. }
-        ) {
+        if resolved_provider == ResolvedExecutionProvider::DirectMl {
             builder = builder
                 .with_memory_pattern(false)
                 .map_err(ort::Error::from)?
@@ -60,7 +66,7 @@ impl OrtSession {
                 .map_err(ort::Error::from)?;
         }
 
-        let (intra_threads, inter_threads) = derive_runtime_threads(runtime_cfg);
+        let (intra_threads, inter_threads) = derive_runtime_threads(runtime_cfg, resolved_provider);
 
         if let Some(intra) = intra_threads {
             builder = builder
@@ -74,11 +80,6 @@ impl OrtSession {
                 .map_err(ort::Error::from)?;
         }
 
-        let provider_chain = resolve_execution_providers(
-            &runtime_cfg.provider_preference,
-            runtime_cfg.enable_cpu_mem_arena,
-            runtime_cfg.fail_if_provider_unavailable,
-        )?;
         builder = builder
             .with_execution_providers(provider_chain.providers)
             .map_err(ort::Error::from)?;
@@ -194,17 +195,30 @@ impl OrtSession {
     }
 }
 
-fn derive_runtime_threads(runtime_cfg: &RuntimeConfig) -> (Option<usize>, Option<usize>) {
+fn derive_runtime_threads(
+    runtime_cfg: &RuntimeConfig,
+    resolved_provider: ResolvedExecutionProvider,
+) -> (Option<usize>, Option<usize>) {
     let mut intra = runtime_cfg.intra_threads.filter(|v| *v > 0);
     let mut inter = runtime_cfg.inter_threads.filter(|v| *v > 0);
 
     if runtime_cfg.auto_tune_threads {
-        let available = auto_tuned_thread_budget();
-        if intra.is_none() {
-            intra = Some(available.max(1));
-        }
-        if inter.is_none() {
-            inter = Some(1);
+        if resolved_provider == ResolvedExecutionProvider::DirectMl {
+            // DirectML executes the graph sequentially. Keep ORT's CPU pool
+            // small; Rayon handles the independent host-side work.
+            intra.get_or_insert(1);
+            inter.get_or_insert(1);
+        } else {
+            let available = runtime_cfg
+                .thread_budget
+                .filter(|threads| *threads > 0)
+                .unwrap_or_else(auto_tuned_thread_budget);
+            if intra.is_none() {
+                intra = Some(available.max(1));
+            }
+            if inter.is_none() {
+                inter = Some(1);
+            }
         }
     }
 
@@ -315,4 +329,66 @@ fn validate_tensor_spec(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::derive_runtime_threads;
+    use crate::{
+        config::{ProviderPreference, RuntimeConfig},
+        runtime::provider::ResolvedExecutionProvider,
+    };
+
+    #[test]
+    fn directml_auto_tuning_uses_single_ort_threads() {
+        let config = RuntimeConfig {
+            provider_preference: ProviderPreference::DirectMl { device_id: 0 },
+            ..RuntimeConfig::default()
+        };
+
+        assert_eq!(
+            derive_runtime_threads(&config, ResolvedExecutionProvider::DirectMl),
+            (Some(1), Some(1))
+        );
+    }
+
+    #[test]
+    fn directml_auto_tuning_preserves_explicit_thread_settings() {
+        let config = RuntimeConfig {
+            intra_threads: Some(3),
+            inter_threads: Some(2),
+            provider_preference: ProviderPreference::DirectMl { device_id: 0 },
+            ..RuntimeConfig::default()
+        };
+
+        assert_eq!(
+            derive_runtime_threads(&config, ResolvedExecutionProvider::DirectMl),
+            (Some(3), Some(2))
+        );
+    }
+
+    #[test]
+    fn disabled_auto_tuning_leaves_unspecified_threads_to_ort() {
+        let config = RuntimeConfig {
+            auto_tune_threads: false,
+            provider_preference: ProviderPreference::DirectMl { device_id: 0 },
+            ..RuntimeConfig::default()
+        };
+
+        assert_eq!(
+            derive_runtime_threads(&config, ResolvedExecutionProvider::DirectMl),
+            (None, None)
+        );
+    }
+
+    #[test]
+    fn auto_fallback_to_cpu_uses_the_cpu_thread_budget() {
+        let config = RuntimeConfig {
+            provider_preference: ProviderPreference::Auto { device_id: 0 },
+            ..RuntimeConfig::default()
+        };
+        let (intra, inter) = derive_runtime_threads(&config, ResolvedExecutionProvider::Cpu);
+        assert!(intra.is_some_and(|threads| threads >= 1));
+        assert_eq!(inter, Some(1));
+    }
 }

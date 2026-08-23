@@ -12,6 +12,7 @@
 
 #include "snow_draw_engine_qt/snow_canvas_types.h"
 
+class QCursor;
 class QEnterEvent;
 class QEvent;
 class QFocusEvent;
@@ -40,6 +41,9 @@ class SnowCanvasWidget : public QWidget {
 
     SnowCanvasTool canvasTool() const;
     bool setCanvasTool(SnowCanvasTool tool);
+
+    void setCursorForLayer(SnowCanvasCursorLayer layer, const QCursor& cursor);
+    void clearCursorForLayer(SnowCanvasCursorLayer layer);
 
     SnowCanvasStyleToolbarState canvasStyleToolbarState() const;
     SnowCanvasSerialNumberToolbarState serialNumberToolbarState() const;
@@ -77,6 +81,7 @@ class SnowCanvasWidget : public QWidget {
     bool resetEditingState();
     // Discards an uncommitted inline text draft without adding it to history.
     bool cancelActiveTextEditing();
+    [[nodiscard]] bool hasActiveTextEditing() const;
     // Keeps an active inline text draft alive while a text-style popup owns focus.
     void beginTextStylePopupInteraction();
     // Ends a text-style popup interaction and restores text input when appropriate.
@@ -90,6 +95,11 @@ class SnowCanvasWidget : public QWidget {
     // Custom renderer passes and background clearing remain active.
     [[nodiscard]] bool canvasContentVisible() const;
     void setCanvasContentVisible(bool visible);
+    [[nodiscard]] bool retainedSceneCacheEnabled() const;
+    void setRetainedSceneCacheEnabled(bool enabled);
+    // Releases renderer-owned caches while preserving the canvas runtime,
+    // interaction state, and display model.
+    void releaseRetainedRenderResources();
     bool clearBackgroundEnabled() const;
     void setClearBackgroundEnabled(bool enabled);
 
@@ -129,6 +139,8 @@ class SnowCanvasWidget : public QWidget {
     void spotlightPreviewApplied();
     void freeDrawMoveBatchProcessed(quint32 inputCount, quint32 dispatchedCount);
     void eraserMoveFrameProcessed();
+    void unhandledLeftDoubleClick();
+    void unhandledMiddleClick();
     void showDirtyRectsChanged();
 
   protected:

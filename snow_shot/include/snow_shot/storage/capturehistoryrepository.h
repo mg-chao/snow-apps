@@ -42,6 +42,8 @@ class CaptureHistoryRepository {
     load(const CaptureHistoryRecord& record) const = 0;
     [[nodiscard]] virtual std::optional<CaptureHistoryAssetSet>
     displayAssets(const CaptureHistoryRecord& record) const = 0;
+    [[nodiscard]] virtual std::optional<QImage>
+    loadResultImage(const CaptureHistoryRecord& record) const = 0;
     [[nodiscard]] virtual std::shared_future<StorageResult> remove(const QString& id) = 0;
     [[nodiscard]] virtual std::shared_future<StorageResult>
     updatePolicy(CaptureHistoryPolicy policy) = 0;

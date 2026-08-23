@@ -12,15 +12,15 @@ authors = ["mg-chao <chao@mgchao.top>"]
 [dependencies]
 geo-clipper = "0.9.0"
 geo-types = "0.7"
-image = { version = "0.25", default-features = true, features = ["png", "jpeg"] }
-imageproc = "0.25"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+imageproc = { version = "0.25", default-features = false, features = ["rayon"] }
 kamadak-exif = "0.6"
 nalgebra = "0.33"
 ndarray = "0.17"
 num_cpus = "1.16"
-opencv = { version = "0.94", optional = true, default-features = false, features = ["clang-runtime", "imgproc"] }
-ort = { version = "=2.0.0-rc.12", default-features = false, features = ["ndarray", "std"] }
-ort-sys = { version = "=2.0.0-rc.12", default-features = false, optional = true }
+opencv = { version = "0.100.1", optional = true, default-features = false, features = ["clang-runtime", "imgproc"] }
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["ndarray", "std"] }
+ort-sys = { version = "=2.0.0-rc.13", default-features = false, optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -33,14 +33,29 @@ rayon = "1.10"
 clap = { version = "4.5", features = ["derive"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-ort = { version = "=2.0.0-rc.12", default-features = false, features = ["ndarray", "std"] }
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["ndarray", "std"] }
 
 [features]
-default = ["download-binaries", "copy-dylibs", "ort/default", "turbojpeg-decode"]
+default = ["download-binaries", "copy-dylibs", "ort/default", "turbojpeg-decode", "full-image-io"]
 download-binaries = ["ort/download-binaries"]
 copy-dylibs = ["ort/copy-dylibs"]
-dynamic-onnx-runtime = ["ort/api-24", "ort/load-dynamic"]
-static-onnx-runtime = ["dep:ort-sys", "ort/api-23", "ort-sys/disable-linking"]
+full-image-io = [
+    "image/avif",
+    "image/bmp",
+    "image/dds",
+    "image/ff",
+    "image/gif",
+    "image/hdr",
+    "image/ico",
+    "image/pnm",
+    "image/qoi",
+    "image/rayon",
+    "image/tga",
+    "image/tiff",
+    "image/webp",
+]
+dynamic-onnx-runtime = ["ort/api-28", "ort/load-dynamic"]
+static-onnx-runtime = ["dep:ort-sys", "ort/api-28", "ort-sys/disable-linking"]
 turbojpeg-decode = ["dep:turbojpeg"]
 opencv-backend = ["dep:opencv"]
 cuda-provider = ["ort/cuda"]

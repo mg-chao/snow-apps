@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("windows-msvc-debug", "windows-msvc-release", "portable-debug")]
+    [ValidateSet("windows-msvc-debug", "windows-msvc-performance", "snow-shot-msvc-release", "snow-shot-msvc-fast")]
     [string]$Preset = "windows-msvc-debug",
     [switch]$Clean,
     [switch]$SkipBootstrap

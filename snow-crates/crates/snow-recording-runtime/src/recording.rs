@@ -12,8 +12,8 @@ use snow_audio_recorder::{
     AudioTrackDevice,
 };
 use snow_capture::{
-    CaptureEvent, CaptureOptions, CaptureStream, CaptureStreamConfig, CaptureSystem,
-    CaptureWorkload, CapturedFrame,
+    CaptureEvent, CaptureOptions, CaptureRateControl, CaptureStream, CaptureStreamConfig,
+    CaptureSystem, CaptureWorkload, CapturedFrame,
 };
 use snow_core::error::{Classify, ErrorClass};
 use snow_core::recording_clock::RecordingClock;
@@ -29,7 +29,9 @@ use uuid::Uuid;
 use crate::adapter::video::resolve_capture_target;
 use crate::config::{IntermediateRecordingProfile, RecordingConfig, VideoEncodeConfig};
 use crate::error::{Result, ScreenRecorderError};
-use crate::ffmpeg_util::{copy_rgba_into_frame, ensure_ffmpeg_initialized, is_eagain};
+use crate::ffmpeg_util::{
+    copy_rgba_into_frame, ensure_ffmpeg_initialized, ensure_video_frame_writable, is_eagain,
+};
 use crate::processor::{CursorProcessor, VideoProcessor};
 use crate::temp::TempLayout;
 use crate::video_quality::{quality_to_h264_crf, smart_quality_bitrate_bps};
@@ -99,6 +101,7 @@ pub struct RecordingSession {
     config: RecordingConfig,
     session_id: String,
     layout: TempLayout,
+    cleanup_paths_on_drop: bool,
     state: AtomicU8,
     runtime: Mutex<Option<RuntimeHandles>>,
     capture_origin: Mutex<(i32, i32)>,
@@ -117,6 +120,7 @@ impl RecordingSession {
             config,
             session_id,
             layout,
+            cleanup_paths_on_drop: true,
             state: AtomicU8::new(RecordingState::Created.as_u8()),
             runtime: Mutex::new(None),
             capture_origin: Mutex::new((0, 0)),
@@ -197,8 +201,8 @@ impl RecordingSession {
                 target_fps: self.config.fps,
                 buffer_depth: 16,
                 max_consecutive_errors: 30,
-                adaptive_fps: true,
-                min_fps: 10,
+                rate_control: CaptureRateControl::Backpressure { min_fps: 10 },
+                frame_pool_budget_bytes: None,
                 pause_on_resolution_change: false,
             },
         ) {
@@ -255,7 +259,7 @@ impl RecordingSession {
         )
     }
 
-    pub fn stop(self) -> Result<RecordingArtifact> {
+    pub fn stop(mut self) -> Result<RecordingArtifact> {
         let mut runtime_guard = self.lock_runtime()?;
         let runtime = runtime_guard.take().ok_or_else(|| {
             ScreenRecorderError::InvalidConfig("recording session was not started".to_string())
@@ -320,25 +324,58 @@ impl RecordingSession {
         write_recording_bundle(&self.layout.bundle_path, &manifest, &assets)?;
 
         if !self.config.keep_temp_files && self.layout.session_dir.exists() {
-            std::fs::remove_dir_all(&self.layout.session_dir)?;
+            // The bundle is complete and is now the authoritative recording.
+            // A transient cleanup failure must not turn a successful stop into
+            // an error whose Drop path removes that valid bundle.
+            let _ = std::fs::remove_dir_all(&self.layout.session_dir);
         }
 
-        Ok(RecordingArtifact {
-            session_id: self.session_id,
-            output_dir: self.layout.output_dir,
+        let artifact = RecordingArtifact {
+            session_id: self.session_id.clone(),
+            output_dir: self.layout.output_dir.clone(),
             local_paths: LocalRecordingPaths {
-                temp_dir: self.layout.session_dir,
+                temp_dir: self.layout.session_dir.clone(),
                 video_intermediate_path: self.layout.bundle_path.clone(),
-                video_index_path: self.layout.video_index_path,
-                mouse_path: self.layout.mouse_path,
+                video_index_path: self.layout.video_index_path.clone(),
+                mouse_path: self.layout.mouse_path.clone(),
             },
-            bundle_path: self.layout.bundle_path,
+            bundle_path: self.layout.bundle_path.clone(),
             audio_tracks: manifest.audio_tracks,
-        })
+        };
+        self.cleanup_paths_on_drop = false;
+        Ok(artifact)
     }
 
     pub fn state(&self) -> RecordingState {
         RecordingState::from_u8(self.state.load(Ordering::Acquire))
+    }
+
+    fn cleanup_recording_paths(&self) {
+        if self.config.keep_temp_files {
+            return;
+        }
+
+        let _ = std::fs::remove_file(&self.layout.bundle_path);
+        let _ = std::fs::remove_dir_all(&self.layout.session_dir);
+    }
+}
+
+impl Drop for RecordingSession {
+    fn drop(&mut self) {
+        if !self.cleanup_paths_on_drop {
+            return;
+        }
+
+        let runtime = match self.runtime.get_mut() {
+            Ok(runtime) => runtime.take(),
+            Err(poisoned) => poisoned.into_inner().take(),
+        };
+        if let Some(runtime) = runtime {
+            let _ = runtime.control_tx.send(ControlCommand::Stop);
+            let _ = runtime.worker_handle.join();
+        }
+
+        self.cleanup_recording_paths();
     }
 }
 
@@ -643,6 +680,7 @@ impl LiveVideoEncoder {
         }
 
         copy_rgba_into_frame(&mut self.rgba_frame, self.width, rgba);
+        ensure_video_frame_writable(&mut self.encode_frame)?;
         self.scaler
             .run(&self.rgba_frame, &mut self.encode_frame)
             .map_err(|err| {
@@ -1203,5 +1241,65 @@ mod tests {
         ] {
             assert_eq!(state, RecordingState::from_u8(state.as_u8()));
         }
+    }
+
+    #[test]
+    fn unfinished_session_removes_temporary_paths_on_drop() {
+        let output = tempfile::tempdir().expect("temporary output should be created");
+        let config = RecordingConfig {
+            output_dir: output.path().to_path_buf(),
+            keep_temp_files: false,
+            ..RecordingConfig::default()
+        };
+        let session =
+            RecordingSession::create(config).expect("recording session should be created");
+        let session_dir = session.layout.session_dir.clone();
+        let bundle_path = session.layout.bundle_path.clone();
+        fs::write(&bundle_path, b"partial recording").expect("partial recording should be created");
+
+        drop(session);
+
+        assert!(!session_dir.exists());
+        assert!(!bundle_path.exists());
+    }
+
+    #[test]
+    fn unfinished_session_preserves_temporary_paths_when_requested() {
+        let output = tempfile::tempdir().expect("temporary output should be created");
+        let config = RecordingConfig {
+            output_dir: output.path().to_path_buf(),
+            keep_temp_files: true,
+            ..RecordingConfig::default()
+        };
+        let session =
+            RecordingSession::create(config).expect("recording session should be created");
+        let session_dir = session.layout.session_dir.clone();
+        let bundle_path = session.layout.bundle_path.clone();
+        fs::write(&bundle_path, b"partial recording").expect("partial recording should be created");
+
+        drop(session);
+
+        assert!(session_dir.exists());
+        assert!(bundle_path.exists());
+    }
+
+    #[test]
+    fn failed_stop_removes_temporary_paths() {
+        let output = tempfile::tempdir().expect("temporary output should be created");
+        let config = RecordingConfig {
+            output_dir: output.path().to_path_buf(),
+            keep_temp_files: false,
+            ..RecordingConfig::default()
+        };
+        let session =
+            RecordingSession::create(config).expect("recording session should be created");
+        let session_dir = session.layout.session_dir.clone();
+        let bundle_path = session.layout.bundle_path.clone();
+        fs::write(&bundle_path, b"partial recording").expect("partial recording should be created");
+
+        assert!(session.stop().is_err());
+
+        assert!(!session_dir.exists());
+        assert!(!bundle_path.exists());
     }
 }

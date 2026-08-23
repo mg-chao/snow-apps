@@ -32,11 +32,17 @@ void ScreenshotCaptureRuntimeAdapter::ensureCaptureCoordinator() {
                              m_captureEventSink->handleCapturePrepared(requestId, ok);
                          }
                      });
-    QObject::connect(m_captureCoordinator.get(), &ScreenshotCaptureCoordinator::captureFinished,
-                     m_captureCoordinator.get(),
-                     [this](quint64 requestId, const QVector<CapturedDisplayModel>& snapshots) {
+    QObject::connect(m_captureCoordinator.get(),
+                     &ScreenshotCaptureCoordinator::captureEnvironmentReady,
+                     m_captureCoordinator.get(), [this](quint64 requestId, bool ok) {
                          if (m_captureEventSink != nullptr) {
-                             m_captureEventSink->handleCaptureFinished(requestId, snapshots);
+                             m_captureEventSink->handleCaptureEnvironmentReady(requestId, ok);
+                         }
+                     });
+    QObject::connect(m_captureCoordinator.get(), &ScreenshotCaptureCoordinator::captureFinished,
+                     m_captureCoordinator.get(), [this](const ScreenshotCaptureResult& result) {
+                         if (m_captureEventSink != nullptr) {
+                             m_captureEventSink->handleCaptureFinished(result);
                          }
                      });
 }
@@ -63,17 +69,26 @@ void ScreenshotCaptureRuntimeAdapter::prepareAsync(quint64 requestId) {
     m_captureCoordinator->prepareAsync(requestId);
 }
 
-void ScreenshotCaptureRuntimeAdapter::captureAllAsync(quint64 requestId, bool refreshLayout) {
+void ScreenshotCaptureRuntimeAdapter::captureAsync(const ScreenshotCaptureRequest& request) {
     ensureCaptureCoordinator();
-    m_captureCoordinator->captureAllAsync(requestId, refreshLayout);
+    m_captureCoordinator->captureAsync(request);
 }
 
-void ScreenshotCaptureRuntimeAdapter::releaseIdleResourcesAsync(quint64 requestId) {
+void ScreenshotCaptureRuntimeAdapter::cancelActiveCapture() {
+    if (m_captureCoordinator != nullptr) {
+        m_captureCoordinator->cancelActiveCapture();
+    }
+}
+
+bool ScreenshotCaptureRuntimeAdapter::releaseIdleResourcesAsync(
+    quint64 requestId, std::function<void(bool released)> completion) {
     if (m_captureCoordinator == nullptr) {
-        return;
+        return false;
     }
 
-    m_captureCoordinator->releaseIdleResourcesAsync(requestId);
+    const bool scheduled =
+        m_captureCoordinator->releaseIdleResourcesAsync(requestId, std::move(completion));
+    return scheduled;
 }
 
 void ScreenshotCaptureRuntimeAdapter::shutdownCaptureWorker() {
@@ -121,6 +136,10 @@ bool ScreenshotCaptureRuntimeAdapter::updateSelectorSelectionAt(const QPoint& ph
     return m_context.selectorWorkflow.updateSelectionAt(physicalPoint);
 }
 
+bool ScreenshotCaptureRuntimeAdapter::applySelectorHitPath(const QVector<QRectF>& hitRects) {
+    return m_context.selectorWorkflow.applyHitPath(hitRects);
+}
+
 void ScreenshotCaptureRuntimeAdapter::prewarmDisplayPool(ScreenshotDisplaySession& displaySession,
                                                          int displayCount) {
     m_context.overlayCoordinator.prewarmDisplayPool(displaySession, displayCount);
@@ -141,6 +160,11 @@ void ScreenshotCaptureRuntimeAdapter::clearOverlayCanvases(
 
 void ScreenshotCaptureRuntimeAdapter::clearDisplays(ScreenshotDisplaySession& displaySession) {
     m_context.overlayCoordinator.clearDisplays(displaySession);
+}
+
+void ScreenshotCaptureRuntimeAdapter::hibernateDisplayPool(
+    ScreenshotDisplaySession& displaySession) {
+    m_context.overlayCoordinator.hibernateDisplayPool(displaySession);
 }
 
 void ScreenshotCaptureRuntimeAdapter::destroyDisplayPool(ScreenshotDisplaySession& displaySession) {
@@ -168,6 +192,12 @@ bool ScreenshotCaptureRuntimeAdapter::preparePreCaptureOverlayWindows(
 void ScreenshotCaptureRuntimeAdapter::showOverlayWindows(
     const ScreenshotDisplaySession& displaySession, ScreenshotOverlayShowMode mode) {
     m_context.overlayCoordinator.showOverlayWindows(displaySession, mode);
+}
+
+void ScreenshotCaptureRuntimeAdapter::activateOverlayWindows(
+    const ScreenshotDisplaySession& displaySession, std::function<void()> interactionReady) {
+    m_context.overlayCoordinator.activateOverlayWindows(displaySession,
+                                                        std::move(interactionReady));
 }
 
 void ScreenshotCaptureRuntimeAdapter::hideOverlayWindows(

@@ -42,9 +42,9 @@ SnowUiSelectorBackend selectorBackendForCurrentMode() {
         .backend;
 }
 
-SnowUiSelectorHitTestMode hitTestModeForCurrentSetting() {
-    return screenshotSelectorLookupPolicy(smartSelectionEnabled(), configuredSelectorBackend())
-        .mode;
+SnowUiSelectorHitTestMode hitTestModeForRequestedTarget(
+    ScreenshotSelectorHitTestMode requestedMode) {
+    return screenshotSelectorHitTestMode(smartSelectionEnabled(), requestedMode);
 }
 
 QVector<QRectF> rectsFromHitPath(SnowUiSelectorHitPath* path) {
@@ -137,7 +137,8 @@ bool ScreenshotSelectorServiceClient::startRefresh(quint64 requestId,
 }
 
 bool ScreenshotSelectorServiceClient::startHitTest(quint64 requestId,
-                                                   const QPoint& physicalPoint) {
+                                                   const QPoint& physicalPoint,
+                                                   ScreenshotSelectorHitTestMode mode) {
     if (!ensureService()) {
         return false;
     }
@@ -145,7 +146,7 @@ bool ScreenshotSelectorServiceClient::startHitTest(quint64 requestId,
     auto* context = new HitTestCallbackContext{QPointer<ScreenshotSelectorServiceClient>(this)};
     const uint8_t started = snow_ui_selector_service_hit_test_point_async(
         m_service, static_cast<std::uint64_t>(requestId), physicalPoint.x(), physicalPoint.y(),
-        hitTestModeForCurrentSetting(),
+        hitTestModeForRequestedTarget(mode),
         &ScreenshotSelectorServiceClient::hitTestCallback, context);
     if (started == 0) {
         delete context;

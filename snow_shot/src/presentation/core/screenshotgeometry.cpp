@@ -12,6 +12,9 @@
 #include <limits>
 
 namespace {
+// Keep adaptive pinned-image sizing within the canvas engine's camera range.
+constexpr double kMinimumZoom = 0.1;
+
 int floorToInt(double value) {
     return static_cast<int>(std::floor(value));
 }
@@ -822,9 +825,10 @@ ScreenshotPinnedImageFit ScreenshotGeometryMapper::fitImageToAvailableGeometry(
         return fit;
     }
 
-    const double scale = std::min(
-        {1.0, static_cast<double>(insetNative.width()) / fullResolutionSize.width(),
-         static_cast<double>(insetNative.height()) / fullResolutionSize.height()});
+    const double scale = std::max(
+        kMinimumZoom,
+        std::min({1.0, static_cast<double>(insetNative.width()) / fullResolutionSize.width(),
+                  static_cast<double>(insetNative.height()) / fullResolutionSize.height()}));
     if (!(scale > 0.0)) {
         return fit;
     }
@@ -837,6 +841,34 @@ ScreenshotPinnedImageFit ScreenshotGeometryMapper::fitImageToAvailableGeometry(
     fit.scalePercent = scale * 100.0;
     fit.valid = fit.nativeGeometry.isValid() && !fit.nativeGeometry.isEmpty();
     return fit;
+}
+
+ScreenshotPinnedImageFit ScreenshotGeometryMapper::centerImageAtFullResolution(
+    const QSize& fullResolutionSize, const QRect& availableLogicalGeometry,
+    const QRect& screenLogicalGeometry, const QRect& screenNativeGeometry) {
+    ScreenshotPinnedImageFit placement;
+    placement.fullResolutionSize = fullResolutionSize;
+    if (!fullResolutionSize.isValid() || fullResolutionSize.isEmpty() ||
+        !availableLogicalGeometry.isValid() || availableLogicalGeometry.isEmpty() ||
+        !screenLogicalGeometry.isValid() || screenLogicalGeometry.isEmpty() ||
+        !screenNativeGeometry.isValid() || screenNativeGeometry.isEmpty()) {
+        return placement;
+    }
+
+    const QRect availableNative = nativeRectForLogicalRect(
+        availableLogicalGeometry, screenLogicalGeometry, screenNativeGeometry);
+    if (!availableNative.isValid() || availableNative.isEmpty()) {
+        return placement;
+    }
+    const QPoint topLeft(
+        qRound(availableNative.left() +
+               (availableNative.width() - fullResolutionSize.width()) / 2.0),
+        qRound(availableNative.top() +
+               (availableNative.height() - fullResolutionSize.height()) / 2.0));
+    placement.nativeGeometry = QRect(topLeft, fullResolutionSize);
+    placement.scalePercent = 100.0;
+    placement.valid = true;
+    return placement;
 }
 
 QPoint ScreenshotGeometryMapper::clampContentPositionToRect(const QPoint& desiredPosition,
@@ -852,6 +884,29 @@ QPoint ScreenshotGeometryMapper::clampContentPositionToRect(const QPoint& desire
     const int maxY = std::max(minY, bounds.bottom() - contentRect.bottom());
     return QPoint(std::clamp(desiredPosition.x(), minX, maxX),
                   std::clamp(desiredPosition.y(), minY, maxY));
+}
+
+QPoint ScreenshotGeometryMapper::cursorPanelPosition(const QPoint& cursorPosition,
+                                                      const QSize& panelSize,
+                                                      const QRect& bounds, int gap) {
+    const int effectiveGap = std::max(0, gap);
+    const QPoint bottomRightPosition =
+        cursorPosition + QPoint(effectiveGap, effectiveGap);
+    if (panelSize.isEmpty() || !bounds.isValid()) {
+        return bottomRightPosition;
+    }
+
+    const int boundsRight = bounds.left() + bounds.width();
+    const int boundsBottom = bounds.top() + bounds.height();
+    const bool useLeft = bottomRightPosition.x() + panelSize.width() > boundsRight;
+    const bool useTop = bottomRightPosition.y() + panelSize.height() > boundsBottom;
+    const QPoint desiredPosition(
+        useLeft ? cursorPosition.x() - effectiveGap - panelSize.width()
+                : bottomRightPosition.x(),
+        useTop ? cursorPosition.y() - effectiveGap - panelSize.height()
+               : bottomRightPosition.y());
+
+    return clampContentPositionToRect(desiredPosition, QRect(QPoint(), panelSize), bounds);
 }
 
 ScreenshotAnchoredToolbarPlacement ScreenshotGeometryMapper::anchoredToolbarPlacement(

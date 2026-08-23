@@ -63,7 +63,12 @@ bool ScreenshotSelectorWorkflow::requestHitTest(const QPoint& physicalPoint) {
         return false;
     }
 
-    return m_context.selectorService.requestHitTest(physicalPoint);
+    const ScreenshotSelectorHitTestMode hitTestMode =
+        m_context.intelligentSelection.selectionTarget() ==
+                ScreenshotIntelligentSelectionTarget::Window
+            ? ScreenshotSelectorHitTestMode::Window
+            : ScreenshotSelectorHitTestMode::WindowSubElement;
+    return m_context.selectorService.requestHitTest(physicalPoint, hitTestMode);
 }
 
 void ScreenshotSelectorWorkflow::startNextHitTest() {
@@ -72,26 +77,31 @@ void ScreenshotSelectorWorkflow::startNextHitTest() {
     }
 }
 
-void ScreenshotSelectorWorkflow::handleHitTestFinished(bool ok, const QVector<QRectF>& hitRects) {
+void ScreenshotSelectorWorkflow::handleHitTestFinished(bool ok, const QPoint& physicalPoint,
+                                                        const QVector<QRectF>& hitRects) {
     if (m_context.interaction.inactive()) {
         return;
     }
 
     if (m_context.interaction.intelligentSelecting()) {
+        const bool consumed = m_context.presentation.consumeInitialSmartSelectionResult &&
+                              m_context.presentation.consumeInitialSmartSelectionResult(
+                                  m_context.captureState.sessionId, physicalPoint, ok, hitRects);
+        if (consumed) {
+            startNextHitTest();
+            return;
+        }
         if (ok) {
-            applyHitPath(hitRects);
+            static_cast<void>(applyHitPath(hitRects));
         }
         if (m_context.presentation.updateOverlayState) {
             m_context.presentation.updateOverlayState();
-        }
-        if (m_context.presentation.smartSelectionResultReady) {
-            m_context.presentation.smartSelectionResultReady(m_context.captureState.sessionId);
         }
         startNextHitTest();
     }
 }
 
-void ScreenshotSelectorWorkflow::applyHitPath(const QVector<QRectF>& hitRects) {
+bool ScreenshotSelectorWorkflow::applyHitPath(const QVector<QRectF>& hitRects) {
     QVector<QRectF> canvasHitRects;
     canvasHitRects.reserve(hitRects.size());
     for (const QRectF& hitRect : hitRects) {
@@ -103,11 +113,12 @@ void ScreenshotSelectorWorkflow::applyHitPath(const QVector<QRectF>& hitRects) {
             canvasHitRects, m_context.geometry.canvasBounds(),
             snow_shot::presentation::kScreenshotSelectionMinimumSize)) {
         m_context.selection.clearSelection();
-        return;
+        return false;
     }
 
     const QRectF currentSelection = m_context.intelligentSelection.currentSelection();
     m_context.selection.setSelectionRect(currentSelection);
+    return true;
 }
 
 void ScreenshotSelectorWorkflow::setSelectionIndex(int index) {
@@ -120,7 +131,7 @@ void ScreenshotSelectorWorkflow::setSelectionIndex(int index) {
 }
 
 void ScreenshotSelectorWorkflow::clearSelection() {
-    m_context.intelligentSelection.reset();
+    m_context.intelligentSelection.clearTransientState();
     m_context.selection.clearSelection();
 }
 

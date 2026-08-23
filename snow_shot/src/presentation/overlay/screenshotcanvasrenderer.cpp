@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
 
+#include "snow_shot/presentation/screenshotguidelinerendering.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotocrtextlayer.h"
 #include "snow_shot/presentation/screenshotselectionshadowrenderer.h"
@@ -9,6 +10,7 @@
 #include <QApplication>
 #include <QBrush>
 #include <QColor>
+#include <QColorSpace>
 #include <QFont>
 #include <QFontMetricsF>
 #include <QGlyphRun>
@@ -84,6 +86,7 @@ constexpr double kShowMidHandlesMinSize = 64.0;
 constexpr int kSelectionUpdatePadding = 10;
 constexpr int kSelectionBorderUpdatePadding = 3;
 constexpr int kSelectionHandleUpdatePadding = 6;
+constexpr int kGuideLineUpdatePadding = 1;
 constexpr qreal kOcrTextInkSafetyMargin = 1.0;
 constexpr int kOcrTextLayoutMinPixelSize = 32;
 constexpr qreal kOcrTextCrossAxisScale = 0.9;
@@ -91,6 +94,8 @@ constexpr qreal kOcrTextCrossAxisScale = 0.9;
 #if defined(SNOW_SHOT_BENCH_INTERNALS)
 thread_local QRegion g_selectionDamageRegion;
 thread_local std::size_t g_selectionDamagePathFallbacks = 0;
+thread_local QRegion g_guideLineDamageRegion;
+thread_local std::size_t g_guideLineUpdateRequests = 0;
 
 std::size_t regionPixelCount(const QRegion& region) {
     std::size_t pixels = 0;
@@ -673,7 +678,88 @@ QRegion selectionStateRoundedCornerRegion(const ScreenshotSelectionVisualState& 
     return corners.intersected(viewportRect);
 }
 
+QColor normalizedGuideLineColor(const QColor& color) {
+    return color.isValid() && color.alpha() > 0 ? color : QColor(0, 0, 0, 0);
+}
+
+QPoint guideLinePixelPosition(const QPointF& position) {
+    return QPoint(qFloor(position.x()), qFloor(position.y()));
+}
+
+QRegion guideLineVerticalRegion(const QRect& viewportRect, int x) {
+    if (viewportRect.isEmpty()) {
+        return {};
+    }
+
+    return QRegion(QRect(x - kGuideLineUpdatePadding, viewportRect.top(),
+                         kGuideLineUpdatePadding * 2 + 1, viewportRect.height()))
+        .intersected(viewportRect);
+}
+
+QRegion guideLineHorizontalRegion(const QRect& viewportRect, int y) {
+    if (viewportRect.isEmpty()) {
+        return {};
+    }
+
+    return QRegion(QRect(viewportRect.left(), y - kGuideLineUpdatePadding, viewportRect.width(),
+                         kGuideLineUpdatePadding * 2 + 1))
+        .intersected(viewportRect);
+}
+
+QRegion guideLineCrosshairRegion(const QRect& viewportRect, const QPoint& center) {
+    return guideLineVerticalRegion(viewportRect, center.x()) +
+           guideLineHorizontalRegion(viewportRect, center.y());
+}
+
+QPoint monitorCenterGuideLinePosition(const QRect& viewportRect) {
+    const QPointF center = QRectF(viewportRect).center();
+    return guideLinePixelPosition(center);
+}
+
+QRegion planGuideLineDamage(const QRect& viewportRect, const QPoint& previousCursorPosition,
+                            const QColor& previousCursorColor,
+                            const QColor& previousMonitorCenterColor,
+                            const QPoint& nextCursorPosition, const QColor& nextCursorColor,
+                            const QColor& nextMonitorCenterColor) {
+    QRegion dirtyRegion;
+    const bool cursorColorChanged = previousCursorColor != nextCursorColor;
+    if (cursorColorChanged || previousCursorPosition.x() != nextCursorPosition.x()) {
+        if (previousCursorColor.alpha() > 0) {
+            dirtyRegion += guideLineVerticalRegion(viewportRect, previousCursorPosition.x());
+        }
+        if (nextCursorColor.alpha() > 0) {
+            dirtyRegion += guideLineVerticalRegion(viewportRect, nextCursorPosition.x());
+        }
+    }
+    if (cursorColorChanged || previousCursorPosition.y() != nextCursorPosition.y()) {
+        if (previousCursorColor.alpha() > 0) {
+            dirtyRegion += guideLineHorizontalRegion(viewportRect, previousCursorPosition.y());
+        }
+        if (nextCursorColor.alpha() > 0) {
+            dirtyRegion += guideLineHorizontalRegion(viewportRect, nextCursorPosition.y());
+        }
+    }
+    if (previousMonitorCenterColor != nextMonitorCenterColor &&
+        (previousMonitorCenterColor.alpha() > 0 || nextMonitorCenterColor.alpha() > 0)) {
+        dirtyRegion +=
+            guideLineCrosshairRegion(viewportRect, monitorCenterGuideLinePosition(viewportRect));
+    }
+    return dirtyRegion;
+}
+
 } // namespace
+
+QRegion planScreenshotGuideLineDamage(const QRect& viewportRect,
+                                      const QPoint& previousCursorPosition,
+                                      const QColor& previousCursorColor,
+                                      const QColor& previousMonitorCenterColor,
+                                      const QPoint& nextCursorPosition,
+                                      const QColor& nextCursorColor,
+                                      const QColor& nextMonitorCenterColor) {
+    return planGuideLineDamage(viewportRect, previousCursorPosition, previousCursorColor,
+                               previousMonitorCenterColor, nextCursorPosition, nextCursorColor,
+                               nextMonitorCenterColor);
+}
 
 QRegion planScreenshotSelectionDamage(const ScreenshotSelectionVisualState& previous,
                                       const ScreenshotSelectionVisualState& next,
@@ -715,14 +801,239 @@ QRectF sourcePixelsForImageLayer(const ScreenshotImageLayer& layer) {
                   layer.destinationCanvasRect.height() * scaleY);
 }
 
+constexpr qreal kMaximumRasterSourceCoordinate = 32768.0;
+constexpr qreal kMaximumRasterSourceScale = 16384.0;
+constexpr qreal kMaximumSourceChunkSpan = 2048.0;
+constexpr qreal kMinimumSourceSamplingPadding = 1.0;
+
+bool finiteRect(const QRectF& rect) {
+    return std::isfinite(rect.left()) && std::isfinite(rect.top()) &&
+           std::isfinite(rect.width()) && std::isfinite(rect.height());
+}
+
+QImage imageWindow(const QImage& image, const QRect& bounds) {
+    if (image.isNull() || bounds.isEmpty() || !image.rect().contains(bounds)) {
+        return {};
+    }
+
+    // A read-only QImage view keeps the source pixels shared while rebasing the coordinates.
+    // Screenshot images are normally 32-bit; copy is retained for indexed and packed formats
+    // whose palette or bit offset cannot be represented by the public QImage view constructor.
+    const int depth = image.depth();
+    if (depth > 0 && depth % 8 == 0 && image.colorTable().isEmpty()) {
+        const int bytesPerPixel = depth / 8;
+        const uchar* data = image.constScanLine(bounds.top()) +
+                            static_cast<qsizetype>(bounds.left()) * bytesPerPixel;
+        const qsizetype byteOffset = data - image.constBits();
+        const qsizetype availableBytes = image.sizeInBytes() - byteOffset;
+        const qsizetype requiredBytes = image.bytesPerLine() * bounds.height();
+        const bool scanLinesAligned =
+            reinterpret_cast<quintptr>(data) % alignof(quint32) == 0;
+        if (scanLinesAligned && requiredBytes <= availableBytes) {
+            QImage view(data, bounds.width(), bounds.height(), image.bytesPerLine(),
+                        image.format());
+            if (!view.isNull()) {
+                view.setColorSpace(image.colorSpace());
+                view.setDevicePixelRatio(1.0);
+                return view;
+            }
+        }
+    }
+
+    QImage copy = image.copy(bounds);
+    if (!copy.isNull()) {
+        copy.setDevicePixelRatio(1.0);
+    }
+    return copy;
+}
+
+bool sourceMappingFitsRaster(const QRectF& source, qreal sourcePerTargetX,
+                             qreal sourcePerTargetY) {
+    return finiteRect(source) && source.left() >= 0.0 && source.top() >= 0.0 &&
+           source.right() < kMaximumRasterSourceCoordinate &&
+           source.bottom() < kMaximumRasterSourceCoordinate &&
+           sourcePerTargetX > 0.0 && sourcePerTargetY > 0.0 &&
+           sourcePerTargetX <= kMaximumRasterSourceScale &&
+           sourcePerTargetY <= kMaximumRasterSourceScale;
+}
+
+void paintScaledSourceWindow(QPainter& painter, const QRectF& targetWindow,
+                             const QImage& image, const QRect& sourceBounds) {
+    if (targetWindow.isEmpty() || sourceBounds.isEmpty()) {
+        return;
+    }
+    const QImage sourceWindow = imageWindow(image, sourceBounds);
+    if (sourceWindow.isNull()) {
+        return;
+    }
+
+    // Scale in QImage, whose transform path does not use the raster paint engine's 16.16
+    // source-coordinate representation. The resulting image is deliberately bounded so the
+    // final painter call itself remains inside that representation as well.
+    const QRectF deviceWindow = painter.deviceTransform().mapRect(targetWindow);
+    constexpr int kMaximumScaledDimension =
+        static_cast<int>(kMaximumRasterSourceCoordinate) - 4;
+    const int scaledWidth = std::clamp(qCeil(std::abs(deviceWindow.width())), 1,
+                                       kMaximumScaledDimension);
+    const int scaledHeight = std::clamp(qCeil(std::abs(deviceWindow.height())), 1,
+                                        kMaximumScaledDimension);
+    const Qt::TransformationMode mode =
+        painter.testRenderHint(QPainter::SmoothPixmapTransform) ? Qt::SmoothTransformation
+                                                                 : Qt::FastTransformation;
+    QImage scaled = sourceWindow.scaled(QSize(scaledWidth, scaledHeight), Qt::IgnoreAspectRatio,
+                                        mode);
+    if (scaled.isNull()) {
+        return;
+    }
+    scaled.setDevicePixelRatio(1.0);
+    painter.drawImage(targetWindow, scaled, QRectF(scaled.rect()));
+}
+
+void paintExposedImageSlice(QPainter& painter, const QRectF& targetRect, const QImage& image,
+                            const QRectF& sourceRect, const QRegion& exposedRegion) {
+    if (image.isNull() || !finiteRect(targetRect) || !targetRect.isValid() ||
+        targetRect.isEmpty() || !finiteRect(sourceRect) || !sourceRect.isValid() ||
+        sourceRect.isEmpty() || exposedRegion.isEmpty()) {
+        return;
+    }
+
+    const qreal sourcePerTargetX = sourceRect.width() / targetRect.width();
+    const qreal sourcePerTargetY = sourceRect.height() / targetRect.height();
+    if (!std::isfinite(sourcePerTargetX) || !std::isfinite(sourcePerTargetY) ||
+        sourcePerTargetX <= 0.0 || sourcePerTargetY <= 0.0) {
+        return;
+    }
+
+    const QRectF drawableSource = sourceRect.intersected(QRectF(image.rect()));
+    if (!drawableSource.isValid() || drawableSource.isEmpty()) {
+        return;
+    }
+    const QRectF drawableTarget(
+        targetRect.left() + (drawableSource.left() - sourceRect.left()) / sourcePerTargetX,
+        targetRect.top() + (drawableSource.top() - sourceRect.top()) / sourcePerTargetY,
+        drawableSource.width() / sourcePerTargetX, drawableSource.height() / sourcePerTargetY);
+    if (!drawableTarget.isValid() || drawableTarget.isEmpty()) {
+        return;
+    }
+
+    // Keep the ordinary path identical to the old single draw. The explicit clip makes this
+    // correct even when a caller supplies a damage region without clipping its painter first.
+    if (sourceMappingFitsRaster(sourceRect, sourcePerTargetX, sourcePerTargetY)) {
+        painter.save();
+        painter.setClipRegion(exposedRegion, Qt::IntersectClip);
+        painter.drawImage(targetRect, image, sourceRect);
+        painter.restore();
+        return;
+    }
+
+    const auto sourceForTarget = [&](const QRectF& target) {
+        return QRectF(sourceRect.left() + (target.left() - targetRect.left()) * sourcePerTargetX,
+                      sourceRect.top() + (target.top() - targetRect.top()) * sourcePerTargetY,
+                      target.width() * sourcePerTargetX, target.height() * sourcePerTargetY);
+    };
+    const auto targetForSource = [&](const QRectF& source) {
+        return QRectF(targetRect.left() + (source.left() - sourceRect.left()) / sourcePerTargetX,
+                      targetRect.top() + (source.top() - sourceRect.top()) / sourcePerTargetY,
+                      source.width() / sourcePerTargetX, source.height() / sourcePerTargetY);
+    };
+    const bool smoothSampling = painter.testRenderHint(QPainter::SmoothPixmapTransform);
+    const qreal samplingPaddingX =
+        smoothSampling ? std::max(kMinimumSourceSamplingPadding, sourcePerTargetX) : 0.0;
+    const qreal samplingPaddingY =
+        smoothSampling ? std::max(kMinimumSourceSamplingPadding, sourcePerTargetY) : 0.0;
+
+    for (const QRect& exposedRectangle : exposedRegion) {
+        const QRectF exposedTarget = drawableTarget.intersected(QRectF(exposedRectangle));
+        if (!exposedTarget.isValid() || exposedTarget.isEmpty()) {
+            continue;
+        }
+
+        const QRectF exposedSource = sourceForTarget(exposedTarget).intersected(drawableSource);
+        if (!exposedSource.isValid() || exposedSource.isEmpty()) {
+            continue;
+        }
+
+        // Keep each source chunk bounded in both dimensions. A ratio above the signed 16.16
+        // increment limit is handled by QImage::scaled below, so that axis does not need to be
+        // split into sub-pixel target cells.
+        const int chunkCountX = sourcePerTargetX > kMaximumRasterSourceScale
+                                    ? 1
+                                    : qMax(1, qCeil(exposedSource.width() /
+                                                    kMaximumSourceChunkSpan));
+        const int chunkCountY = sourcePerTargetY > kMaximumRasterSourceScale
+                                    ? 1
+                                    : qMax(1, qCeil(exposedSource.height() /
+                                                    kMaximumSourceChunkSpan));
+
+        painter.save();
+        painter.setClipRect(exposedRectangle, Qt::IntersectClip);
+        for (int chunkY = 0; chunkY < chunkCountY; ++chunkY) {
+            const qreal sourceTop =
+                exposedSource.top() + exposedSource.height() * chunkY / chunkCountY;
+            const qreal sourceBottom =
+                exposedSource.top() + exposedSource.height() * (chunkY + 1) / chunkCountY;
+            for (int chunkX = 0; chunkX < chunkCountX; ++chunkX) {
+                const qreal sourceLeft =
+                    exposedSource.left() + exposedSource.width() * chunkX / chunkCountX;
+                const qreal sourceRight =
+                    exposedSource.left() + exposedSource.width() * (chunkX + 1) / chunkCountX;
+                const QRectF chunkSource(sourceLeft, sourceTop, sourceRight - sourceLeft,
+                                         sourceBottom - sourceTop);
+                const QRectF chunkTarget = targetForSource(chunkSource).intersected(exposedTarget);
+                if (!chunkTarget.isValid() || chunkTarget.isEmpty()) {
+                    continue;
+                }
+
+                const QRectF sampleSource =
+                    chunkSource.adjusted(-samplingPaddingX, -samplingPaddingY, samplingPaddingX,
+                                         samplingPaddingY)
+                        .intersected(drawableSource);
+                const QRect sourceBounds =
+                    sampleSource.toAlignedRect().intersected(image.rect());
+                if (!sampleSource.isValid() || sampleSource.isEmpty() || sourceBounds.isEmpty()) {
+                    continue;
+                }
+                const QRectF sampleTarget = targetForSource(sampleSource);
+
+                painter.save();
+                painter.setClipRect(chunkTarget, Qt::IntersectClip);
+                if (sourcePerTargetX > kMaximumRasterSourceScale ||
+                    sourcePerTargetY > kMaximumRasterSourceScale) {
+                    // This also handles a single target pixel representing tens of thousands of
+                    // source pixels; splitting that target pixel cannot make the 16.16 increment
+                    // finite, while QImage's scaler can reduce the source safely.
+                    const QRectF targetWindow = targetForSource(QRectF(sourceBounds));
+                    paintScaledSourceWindow(painter, targetWindow, image, sourceBounds);
+                } else if (sourceMappingFitsRaster(sampleSource, sourcePerTargetX,
+                                                   sourcePerTargetY)) {
+                    painter.drawImage(sampleTarget, image, sampleSource);
+                } else {
+                    const QImage boundedSource = imageWindow(image, sourceBounds);
+                    if (!boundedSource.isNull()) {
+                        painter.drawImage(sampleTarget, boundedSource,
+                                          sampleSource.translated(-sourceBounds.topLeft()));
+                    }
+                }
+                painter.restore();
+            }
+        }
+        painter.restore();
+    }
+}
+
 void paintImageLayer(QPainter& painter, const ScreenshotImageLayer& layer,
-                     const QTransform& canvasToTarget) {
+                     const QTransform& canvasToTarget,
+                     const QRegion* exposedRegion = nullptr) {
     const QRectF sourcePixels = sourcePixelsForImageLayer(layer);
     if (sourcePixels.isEmpty()) {
         return;
     }
-    painter.drawImage(canvasToTarget.mapRect(layer.destinationCanvasRect), layer.image,
-                      sourcePixels);
+    const QRectF targetRect = canvasToTarget.mapRect(layer.destinationCanvasRect);
+    if (exposedRegion != nullptr) {
+        paintExposedImageSlice(painter, targetRect, layer.image, sourcePixels, *exposedRegion);
+    } else {
+        painter.drawImage(targetRect, layer.image, sourcePixels);
+    }
 }
 } // namespace
 
@@ -1261,6 +1572,50 @@ void ScreenshotCanvasRenderer::setMaskVisible(bool visible) {
     m_canvas.update();
 }
 
+void ScreenshotCanvasRenderer::setMaskColor(const QColor& color) {
+    const QColor next = color.isValid() ? color : QColor(0, 0, 0, 128);
+    if (m_maskColor == next) {
+        return;
+    }
+    m_maskColor = next;
+    if (m_maskVisible) {
+        m_canvas.update();
+    }
+}
+
+void ScreenshotCanvasRenderer::setGuideLines(const QPointF& cursorPosition,
+                                             const QColor& cursorColor,
+                                             const QColor& monitorCenterColor) {
+    const QColor nextCursorColor = normalizedGuideLineColor(cursorColor);
+    const QColor nextMonitorColor = normalizedGuideLineColor(monitorCenterColor);
+    const QPoint nextCursorPosition =
+        nextCursorColor.alpha() > 0 ? guideLinePixelPosition(cursorPosition) : QPoint();
+    const bool nextVisible = nextCursorColor.alpha() > 0 || nextMonitorColor.alpha() > 0;
+    if (m_guideLineCursorPosition == nextCursorPosition &&
+        m_cursorGuideLineColor == nextCursorColor &&
+        m_monitorCenterGuideLineColor == nextMonitorColor && m_guideLinesVisible == nextVisible) {
+        return;
+    }
+    const QRegion dirtyRegion = planScreenshotGuideLineDamage(
+        m_canvas.rect(), m_guideLineCursorPosition, m_cursorGuideLineColor,
+        m_monitorCenterGuideLineColor, nextCursorPosition, nextCursorColor, nextMonitorColor);
+    m_guideLineCursorPosition = nextCursorPosition;
+    m_cursorGuideLineColor = nextCursorColor;
+    m_monitorCenterGuideLineColor = nextMonitorColor;
+    m_guideLinesVisible = nextVisible;
+    if (!dirtyRegion.isEmpty()) {
+#if defined(SNOW_SHOT_BENCH_INTERNALS)
+        g_guideLineDamageRegion += dirtyRegion;
+        ++g_guideLineUpdateRequests;
+#endif
+        m_canvas.update(dirtyRegion);
+    }
+}
+
+void ScreenshotCanvasRenderer::clearGuideLines() {
+    setGuideLines({}, Qt::transparent, Qt::transparent);
+}
+
 void ScreenshotCanvasRenderer::setSelection(const QRectF& selection, bool handlesVisible,
                                             int cornerRadius, int shadowWidth,
                                             const QColor& shadowColor) {
@@ -1317,6 +1672,18 @@ ScreenshotSelectionRenderDiagnostics selectionRenderDiagnosticsForCurrentThread(
 void resetSelectionRenderDiagnosticsForCurrentThread() {
     g_selectionDamageRegion = {};
     g_selectionDamagePathFallbacks = 0;
+}
+
+ScreenshotGuideLineRenderDiagnostics guideLineRenderDiagnosticsForCurrentThread() {
+    return ScreenshotGuideLineRenderDiagnostics{
+        regionPixelCount(g_guideLineDamageRegion),
+        g_guideLineUpdateRequests,
+    };
+}
+
+void resetGuideLineRenderDiagnosticsForCurrentThread() {
+    g_guideLineDamageRegion = {};
+    g_guideLineUpdateRequests = 0;
 }
 #endif
 
@@ -1395,7 +1762,7 @@ void ScreenshotCanvasRenderer::reset() {
                           m_renderMode != RenderMode::Standard || m_maskVisible ||
                           m_selectionState.present || m_selectionState.shadowWidth > 0 ||
                           m_selectionState.toolbarHovered || !m_selectionState.borderVisible ||
-                          m_ocrPresentation != nullptr;
+                          m_ocrPresentation != nullptr || m_guideLinesVisible;
     m_imageSource = {};
     m_imageViewportPhysicalSize = QSize();
     m_pinnedContentCanvasRect = {};
@@ -1404,6 +1771,10 @@ void ScreenshotCanvasRenderer::reset() {
     m_selectionState = ScreenshotSelectionVisualState{};
     m_renderMode = RenderMode::Standard;
     m_maskVisible = false;
+    m_guideLineCursorPosition = {};
+    m_cursorGuideLineColor = QColor(0, 0, 0, 0);
+    m_monitorCenterGuideLineColor = QColor(0, 0, 0, 0);
+    m_guideLinesVisible = false;
     m_ocrPresentation.reset();
     m_ocrPresentationMode = OcrPresentationMode::BackgroundAndText;
     if (m_ocrTextLayer != nullptr) {
@@ -1427,6 +1798,14 @@ ScreenshotCanvasRenderer::RenderMode ScreenshotCanvasRenderer::renderMode() cons
 
 bool ScreenshotCanvasRenderer::maskVisible() const {
     return m_maskVisible;
+}
+
+QColor ScreenshotCanvasRenderer::maskColor() const {
+    return m_maskColor;
+}
+
+bool ScreenshotCanvasRenderer::guideLinesVisible() const {
+    return m_guideLinesVisible;
 }
 
 bool ScreenshotCanvasRenderer::hasSelection() const {
@@ -1507,8 +1886,9 @@ void ScreenshotCanvasRenderer::renderBeforeCanvas(QPainter& painter,
         painter.setRenderHint(QPainter::SmoothPixmapTransform,
                               m_imageSource.materializedImage.size() !=
                                   m_imageViewportPhysicalSize);
-        painter.drawImage(targetRect, m_imageSource.materializedImage,
-                          QRectF(m_imageSource.materializedImage.rect()));
+        paintExposedImageSlice(painter, targetRect, m_imageSource.materializedImage,
+                               QRectF(m_imageSource.materializedImage.rect()),
+                               context.exposedRegion);
         painter.restore();
     } else if (m_imageSource.isMaterialized()) {
         const QRectF targetRect =
@@ -1519,14 +1899,17 @@ void ScreenshotCanvasRenderer::renderBeforeCanvas(QPainter& painter,
                           m_imageSource.materializedCanvasRect),
                       context.devicePixelRatio);
         if (context.exposedRegion.intersects(targetRect.toAlignedRect())) {
-            painter.drawImage(targetRect, m_imageSource.materializedImage);
+            paintExposedImageSlice(painter, targetRect, m_imageSource.materializedImage,
+                                   QRectF(m_imageSource.materializedImage.rect()),
+                                   context.exposedRegion);
         }
     } else {
         for (const ScreenshotImageLayer& layer : m_imageSource.layers) {
             const QRectF targetRect =
                 context.canvasToViewTransform.mapRect(layer.destinationCanvasRect);
             if (context.exposedRegion.intersects(targetRect.toAlignedRect())) {
-                paintImageLayer(painter, layer, context.canvasToViewTransform);
+                paintImageLayer(painter, layer, context.canvasToViewTransform,
+                                &context.exposedRegion);
             }
         }
     }
@@ -1555,7 +1938,8 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
         }
         return;
     }
-    if (!m_maskVisible && !m_selectionState.present && m_ocrPresentation == nullptr) {
+    if (!m_maskVisible && !m_selectionState.present && m_ocrPresentation == nullptr &&
+        !m_guideLinesVisible) {
         return;
     }
 
@@ -1575,7 +1959,13 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
             dimPath.addPath(selectionShapePath(m_selectionState.bounds, visibleCornerRadius,
                                                context.canvasToViewTransform));
         }
-        painter.fillPath(dimPath, QColor(0, 0, 0, 128));
+        painter.fillPath(dimPath, m_maskColor);
+    }
+    if (m_renderMode == RenderMode::Standard && m_guideLinesVisible) {
+        const QRectF viewport(context.viewportRect);
+        paintScreenshotGuideLines(painter, viewport, QPointF(m_guideLineCursorPosition),
+                                  m_cursorGuideLineColor, m_monitorCenterGuideLineColor,
+                                  &context.exposedRegion);
     }
     if (m_renderMode == RenderMode::Standard && m_selectionState.present) {
         const QRectF selectionView = context.canvasToViewTransform.mapRect(m_selectionState.bounds);

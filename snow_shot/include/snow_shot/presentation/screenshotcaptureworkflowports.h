@@ -4,9 +4,11 @@
 #include "snow_shot/presentation/screenshottypes.h"
 
 #include <QPoint>
+#include <QRectF>
 #include <QVector>
 
 #include <cstdint>
+#include <functional>
 
 class ScreenshotDisplaySession;
 
@@ -15,8 +17,8 @@ class ScreenshotCaptureWorkerEventSink {
     virtual ~ScreenshotCaptureWorkerEventSink() = default;
 
     virtual void handleCapturePrepared(quint64 requestId, bool ok) = 0;
-    virtual void handleCaptureFinished(quint64 requestId,
-                                       const QVector<CapturedDisplayModel>& snapshots) = 0;
+    virtual void handleCaptureEnvironmentReady(quint64 requestId, bool ok) = 0;
+    virtual void handleCaptureFinished(const ScreenshotCaptureResult& result) = 0;
 };
 
 class ScreenshotCaptureRuntimePort {
@@ -28,8 +30,10 @@ class ScreenshotCaptureRuntimePort {
     [[nodiscard]] virtual bool hasCaptureWorker() const = 0;
     virtual void ensureCaptureWorker() = 0;
     virtual void prepareAsync(quint64 requestId) = 0;
-    virtual void captureAllAsync(quint64 requestId, bool refreshLayout) = 0;
-    virtual void releaseIdleResourcesAsync(quint64 requestId) = 0;
+    virtual void captureAsync(const ScreenshotCaptureRequest& request) = 0;
+    virtual void cancelActiveCapture() = 0;
+    [[nodiscard]] virtual bool
+    releaseIdleResourcesAsync(quint64 requestId, std::function<void(bool released)> completion) = 0;
     virtual void shutdownCaptureWorker() = 0;
 
     [[nodiscard]] virtual bool selectorReady() const = 0;
@@ -41,12 +45,14 @@ class ScreenshotCaptureRuntimePort {
     virtual void startWorkflowRefresh() = 0;
     virtual void clearSelectorSelection() = 0;
     [[nodiscard]] virtual bool updateSelectorSelectionAt(const QPoint& physicalPoint) = 0;
+    [[nodiscard]] virtual bool applySelectorHitPath(const QVector<QRectF>& hitRects) = 0;
 
     virtual void prewarmDisplayPool(ScreenshotDisplaySession& displaySession, int displayCount) = 0;
     virtual void ensureToolbar() = 0;
     virtual void prewarmToolbar() = 0;
     virtual void clearOverlayCanvases(const ScreenshotDisplaySession& displaySession) const = 0;
     virtual void clearDisplays(ScreenshotDisplaySession& displaySession) = 0;
+    virtual void hibernateDisplayPool(ScreenshotDisplaySession& displaySession) = 0;
     virtual void destroyDisplayPool(ScreenshotDisplaySession& displaySession) = 0;
     virtual void resetForNewCapture(ScreenshotDisplaySession& displaySession) = 0;
     virtual void prepareDisplayModels(ScreenshotDisplaySession& displaySession) = 0;
@@ -55,6 +61,8 @@ class ScreenshotCaptureRuntimePort {
     preparePreCaptureOverlayWindows(ScreenshotDisplaySession& displaySession) = 0;
     virtual void showOverlayWindows(const ScreenshotDisplaySession& displaySession,
                                     ScreenshotOverlayShowMode mode) = 0;
+    virtual void activateOverlayWindows(const ScreenshotDisplaySession& displaySession,
+                                        std::function<void()> interactionReady) = 0;
     virtual void hideOverlayWindows(const ScreenshotDisplaySession& displaySession) = 0;
 
     [[nodiscard]] virtual bool clearDocumentPreservingViewports() = 0;

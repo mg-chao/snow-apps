@@ -26,6 +26,8 @@ impl Editor {
             pending_raw_points: vec![start_canvas_position],
             preview_committed_points: Vec::new(),
             epsilon,
+            straight_anchor: None,
+            straight_endpoint: None,
         });
         self.state.creation_preview = None;
         self.bump_scene_state_revision();
@@ -45,7 +47,7 @@ impl Editor {
                 if state.pointer_id != event.pointer_id {
                     return Ok(InteractionOutput::default());
                 }
-                if append_streaming_point(state, point) {
+                if append_pen_filter_point(state, point, event.modifiers.shift) {
                     self.bump_scene_state_revision();
                 }
                 Ok(InteractionOutput {
@@ -65,7 +67,7 @@ impl Editor {
                     self.state.interaction = InteractionState::CreatingPenFilter(state);
                     return Ok(InteractionOutput::default());
                 }
-                append_streaming_point(&mut state, point);
+                append_pen_filter_point(&mut state, point, event.modifiers.shift);
                 let streaming_points = finalized_streaming_points(&state);
                 let points =
                     simplify_polyline(&streaming_points, state.epsilon * FINAL_ERROR_FRACTION);
@@ -149,37 +151,100 @@ fn append_streaming_point(state: &mut CreatePenFilterState, point: Point<f64>) -
     }
     state.pending_raw_points.push(point);
     if state.pending_raw_points.len() >= PEN_FILTER_SIMPLIFICATION_WINDOW {
-        let preview_chunk = simplify_polyline(&state.pending_raw_points, state.epsilon);
-        append_without_endpoint(&mut state.preview_committed_points, &preview_chunk);
-
-        let simplified = simplify_polyline(
-            &state.pending_raw_points,
-            state.epsilon * RAW_WINDOW_ERROR_FRACTION,
-        );
-        let committed_end = simplified.len().saturating_sub(1);
-        for point in simplified.into_iter().take(committed_end) {
-            if state.pending_simplified_points.last().copied() != Some(point) {
-                state.pending_simplified_points.push(point);
-            }
-            if state.pending_simplified_points.len() >= PEN_FILTER_SIMPLIFICATION_WINDOW {
-                let compacted = simplify_polyline(
-                    &state.pending_simplified_points,
-                    state.epsilon * COMPACTION_ERROR_FRACTION,
-                );
-                let compacted_end = compacted.len().saturating_sub(1);
-                for compacted_point in compacted.into_iter().take(compacted_end) {
-                    if state.committed_points.last().copied() != Some(compacted_point) {
-                        state.committed_points.push(compacted_point);
-                    }
-                }
-                state.pending_simplified_points.clear();
-                state.pending_simplified_points.push(point);
-            }
-        }
-        state.pending_raw_points.clear();
-        state.pending_raw_points.push(point);
+        flush_pending_raw_prefix(state);
     }
     true
+}
+
+fn flush_pending_raw_prefix(state: &mut CreatePenFilterState) {
+    let Some(endpoint) = state.pending_raw_points.last().copied() else {
+        return;
+    };
+    let preview_chunk = simplify_polyline(&state.pending_raw_points, state.epsilon);
+    append_without_endpoint(&mut state.preview_committed_points, &preview_chunk);
+
+    let simplified = simplify_polyline(
+        &state.pending_raw_points,
+        state.epsilon * RAW_WINDOW_ERROR_FRACTION,
+    );
+    let committed_end = simplified.len().saturating_sub(1);
+    for point in simplified.into_iter().take(committed_end) {
+        if state.pending_simplified_points.last().copied() != Some(point) {
+            state.pending_simplified_points.push(point);
+        }
+        if state.pending_simplified_points.len() >= PEN_FILTER_SIMPLIFICATION_WINDOW {
+            let compacted = simplify_polyline(
+                &state.pending_simplified_points,
+                state.epsilon * COMPACTION_ERROR_FRACTION,
+            );
+            let compacted_end = compacted.len().saturating_sub(1);
+            for compacted_point in compacted.into_iter().take(compacted_end) {
+                if state.committed_points.last().copied() != Some(compacted_point) {
+                    state.committed_points.push(compacted_point);
+                }
+            }
+            state.pending_simplified_points.clear();
+            state.pending_simplified_points.push(point);
+        }
+    }
+    state.pending_raw_points.clear();
+    state.pending_raw_points.push(endpoint);
+}
+
+/// Append a filter sample, optionally replacing the active Shift-straight
+/// endpoint. This mirrors Free Draw's one-segment straight-line interaction
+/// while retaining the filter's bounded streaming simplifier.
+fn append_pen_filter_point(
+    state: &mut CreatePenFilterState,
+    point: Point<f64>,
+    shift: bool,
+) -> bool {
+    if !point.x.is_finite() || !point.y.is_finite() {
+        return false;
+    }
+    if !shift {
+        state.straight_anchor = None;
+        state.straight_endpoint = None;
+        return append_streaming_point(state, point);
+    }
+
+    if state.straight_anchor.is_none() {
+        let Some(anchor) = state
+            .pending_raw_points
+            .last()
+            .copied()
+            .or_else(|| state.preview_committed_points.last().copied())
+            .or_else(|| state.committed_points.last().copied())
+        else {
+            return false;
+        };
+        // Freeze the curve before adding the movable endpoint so simplification
+        // cannot discard the exact point where the straight segment begins.
+        flush_pending_raw_prefix(state);
+        state.straight_anchor = Some(anchor);
+    }
+
+    let Some(anchor) = state.straight_anchor else {
+        return false;
+    };
+    let mut changed = false;
+    if let Some(endpoint) = state.straight_endpoint.take() {
+        // The final raw sample is the movable endpoint while Shift remains
+        // held. Keep the segment's anchor in the stream and replace only that
+        // endpoint so high-frequency pointer events do not add vertices.
+        if state.pending_raw_points.last().copied() == Some(endpoint) {
+            state.pending_raw_points.pop();
+            changed = true;
+        }
+    }
+    if point == anchor {
+        return changed;
+    }
+    if append_streaming_point(state, point) {
+        state.straight_endpoint = Some(point);
+        return true;
+    }
+    changed
 }
 
 fn streaming_points(state: &CreatePenFilterState) -> Vec<Point<f64>> {
@@ -247,10 +312,7 @@ mod tests {
             position,
             button: None,
             buttons: PointerButtons(PointerButtons::PRIMARY),
-            modifiers: Modifiers {
-                shift: true,
-                ..Modifiers::default()
-            },
+            modifiers: Modifiers::default(),
         }
     }
 
@@ -336,6 +398,86 @@ mod tests {
     }
 
     #[test]
+    fn shift_replaces_one_pen_filter_straight_endpoint() {
+        let mut state = CreatePenFilterState {
+            pointer_id: 7,
+            committed_points: Vec::new(),
+            pending_simplified_points: Vec::new(),
+            pending_raw_points: vec![Point::new(0.0, 0.0)],
+            preview_committed_points: Vec::new(),
+            epsilon: 0.75,
+            straight_anchor: None,
+            straight_endpoint: None,
+        };
+
+        // Starting Shift without moving must not turn the segment anchor into
+        // the replaceable endpoint.
+        assert!(!append_pen_filter_point(
+            &mut state,
+            Point::new(0.0, 0.0),
+            true
+        ));
+        assert!(append_pen_filter_point(
+            &mut state,
+            Point::new(10.0, 3.0),
+            true
+        ));
+        assert!(append_pen_filter_point(
+            &mut state,
+            Point::new(20.0, 8.0),
+            true
+        ));
+        let points = streaming_points(&state);
+        assert_eq!(points, vec![Point::new(0.0, 0.0), Point::new(20.0, 8.0)]);
+
+        assert!(append_pen_filter_point(
+            &mut state,
+            Point::new(30.0, 30.0),
+            false,
+        ));
+        assert_eq!(state.straight_anchor, None);
+        assert_eq!(state.straight_endpoint, None);
+        assert_eq!(
+            state.pending_raw_points.last(),
+            Some(&Point::new(30.0, 30.0))
+        );
+    }
+
+    #[test]
+    fn shift_preserves_the_straight_anchor_at_a_streaming_window_boundary() {
+        let mut state = CreatePenFilterState {
+            pointer_id: 7,
+            committed_points: Vec::new(),
+            pending_simplified_points: Vec::new(),
+            pending_raw_points: vec![Point::new(0.0, 0.0)],
+            preview_committed_points: Vec::new(),
+            epsilon: 0.75,
+            straight_anchor: None,
+            straight_endpoint: None,
+        };
+        for index in 1..(PEN_FILTER_SIMPLIFICATION_WINDOW - 1) {
+            state.pending_raw_points.push(Point::new(index as f64, 0.0));
+        }
+        let anchor = *state.pending_raw_points.last().unwrap();
+
+        assert!(append_pen_filter_point(
+            &mut state,
+            Point::new(600.0, 0.0),
+            true,
+        ));
+        assert!(append_pen_filter_point(
+            &mut state,
+            Point::new(700.0, 0.0),
+            true,
+        ));
+
+        assert_eq!(
+            streaming_points(&state),
+            vec![Point::new(0.0, 0.0), anchor, Point::new(700.0, 0.0)]
+        );
+    }
+
+    #[test]
     fn high_frequency_trace_is_reduced_within_the_error_budget() {
         let mut editor = Editor::new(snow_draw_engine_core::EngineConfig::default()).unwrap();
         editor.set_surface_size(2000, 400).unwrap();
@@ -402,6 +544,8 @@ mod tests {
             pending_raw_points: vec![Point::new(0.0, 0.0)],
             preview_committed_points: Vec::new(),
             epsilon: 0.75,
+            straight_anchor: None,
+            straight_endpoint: None,
         };
         for index in 1..3_000 {
             let x = index as f64 * 0.03;
@@ -428,6 +572,8 @@ mod tests {
             pending_raw_points: vec![Point::new(0.0, -0.2)],
             preview_committed_points: Vec::new(),
             epsilon: 0.75,
+            straight_anchor: None,
+            straight_endpoint: None,
         };
         for index in 1..32_000 {
             let progress = index as f64 / 31_999.0;

@@ -8,7 +8,7 @@ multiple selection, disabled-date predicates, and both popup layer modes.
 Configure and build with CMake:
 
 ```powershell
-cmake -S . -B .codex-build/date-picker-perf -G "Visual Studio 17 2022" -A x64 `
+cmake -S . -B .codex-build/date-picker-perf -G "Visual Studio 18 2026" -T "host=x64,version=14.50" -A x64 `
   -DCMAKE_PREFIX_PATH=$env:QTDIR `
   -DADQT_BUILD_BENCHMARKS=ON -DADQT_STRICT_COMPILE=OFF
 cmake --build .codex-build/date-picker-perf --config Release `
@@ -18,7 +18,7 @@ $env:QT_QPA_PLATFORM='offscreen'
 ```
 
 Use a generator and Qt installation built with the same compiler. The paths above match a standard
-Qt 6.10 MSVC installation and can be adjusted for the local toolchain.
+Qt 6.11 MSVC installation and can be adjusted for the local toolchain.
 
 Run the executable several times when comparing revisions. `process_first_single_popup_in_window`
 is deliberately the first component operation after QApplication startup, so it includes one-time
