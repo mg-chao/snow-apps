@@ -2361,7 +2361,19 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
-    if(NOT WIN32)
+    if(WIN32)
+        add_test(
+            NAME snow-shot-floating-toolbar-dpi-real-mouse-repro
+            COMMAND snow-shot-floating-toolbar-drag-tests --dpi-metrics-only
+        )
+        set_tests_properties(snow-shot-floating-toolbar-dpi-real-mouse-repro PROPERTIES
+            LABELS "regression;interactive"
+            RUN_SERIAL TRUE
+            TIMEOUT 20
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    else()
         set_tests_properties(snow-shot-floating-toolbar-drag-tests PROPERTIES
             ENVIRONMENT
                 "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"

@@ -907,7 +907,7 @@ struct BenchmarkConfiguration {
     int stageMinimumWaitMilliseconds = 5000;
     int stabilityWindowSamples = 20;
     qint64 stabilityRangeBytes = kBytesPerMebibyte;
-    qint64 scenarioReclaimToleranceBytes = 3 * kBytesPerMebibyte;
+    qint64 scenarioReclaimToleranceBytes = 2 * kBytesPerMebibyte;
     int timeoutMilliseconds = 90000;
     BenchmarkScenario scenario = BenchmarkScenario::ScreenshotWindow;
 };
@@ -1156,7 +1156,7 @@ void addBenchmarkCommandLineOptions(QCommandLineParser& parser) {
                       QStringLiteral("kibibytes"), QStringLiteral("1024")});
     parser.addOption({QStringLiteral("final-idle-tolerance-kib"),
                       QStringLiteral("maximum post-scenario excess over cold start"),
-                      QStringLiteral("kibibytes"), QStringLiteral("3072")});
+                      QStringLiteral("kibibytes"), QStringLiteral("2048")});
     parser.addOption({QStringLiteral("timeout-ms"), QStringLiteral("per-stage timeout"),
                       QStringLiteral("milliseconds"), QStringLiteral("90000")});
     parser.addOption({QStringLiteral("self-test"), QStringLiteral("run benchmark self-tests")});
@@ -2015,7 +2015,7 @@ bool runSelfTest() {
     require(defaultParser.parse({QStringLiteral("benchmark-self-test")}),
             "default command-line self-test setup failed");
     require(configurationFromParser(defaultParser).scenarioReclaimToleranceBytes ==
-                3 * kBytesPerMebibyte &&
+                2 * kBytesPerMebibyte &&
                 configurationFromParser(defaultParser).scenario ==
                     BenchmarkScenario::ScreenshotWindow &&
                 benchmarkScenario(QStringLiteral("right-click-menu")) ==

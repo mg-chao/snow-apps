@@ -116,8 +116,18 @@ const char* unmatchedReasonName(SnowStitchUnmatchedReason reason) {
 class ScreenshotScrollingCaptureWorker final : public QObject {
   public:
     ~ScreenshotScrollingCaptureWorker() override {
+        shutdown();
+    }
+
+    // Shutdown is invoked on the worker thread before that thread is stopped.  Keeping this
+    // explicit avoids relying on a deferred-delete event after QThread::quit(), which can leave
+    // the native stitch session and its accumulated frame tiles alive indefinitely.
+    void shutdown() {
+        resetPreview();
+        m_generation = 0;
         if (m_stitchSession != nullptr) {
             snow_stitch_session_destroy(m_stitchSession);
+            m_stitchSession = nullptr;
         }
     }
 
@@ -636,21 +646,31 @@ struct ScreenshotScrollingCaptureController::Impl {
         thread->setObjectName(QStringLiteral("snow-shot-scrolling-stitch"));
         worker = new ScreenshotScrollingCaptureWorker;
         worker->moveToThread(thread);
-        QObject::connect(thread, &QThread::finished, worker, &QObject::deleteLater);
         thread->start();
     }
 
     void shutdownWorker() {
         stopCaptureStream();
         if (thread == nullptr) {
-            worker = nullptr;
+            delete std::exchange(worker, nullptr);
             return;
+        }
+
+        // Drain all queued frame work and release the native stitch session while the worker
+        // event loop is still running.  The explicit delete below is the final ownership edge;
+        // no QObject::deleteLater() event is required after the event loop exits.
+        if (worker != nullptr && thread->isRunning()) {
+            ScreenshotScrollingCaptureWorker* const target = worker;
+            static_cast<void>(QMetaObject::invokeMethod(
+                worker,
+                [target]() { target->shutdown(); },
+                Qt::BlockingQueuedConnection));
         }
         thread->quit();
         thread->wait();
+        delete std::exchange(worker, nullptr);
         delete thread;
         thread = nullptr;
-        worker = nullptr;
     }
 
     bool startCaptureStream(const QRect& physicalSelection) {

@@ -111,6 +111,7 @@ struct SceneRenderRequest {
 
 QColor toQColor(const SnowColorRgba8& color);
 std::size_t hatchTextureCacheEntryCountForCurrentThread();
+void resetHatchTextureCacheForCurrentThread();
 FilterRenderDiagnostics filterRenderDiagnosticsForCurrentThread();
 void resetFilterRenderDiagnosticsForCurrentThread();
 void accumulateFilterRenderDiagnostics(FilterRenderDiagnostics& target,

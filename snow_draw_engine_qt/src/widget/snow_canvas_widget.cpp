@@ -12,6 +12,7 @@
 #include "snow_canvas_lifecycle.h"
 #include "snow_canvas_pen_mask_atlas.h"
 #include "snow_canvas_render_geometry.h"
+#include "snow_canvas_renderer.h"
 #include "snow_canvas_state.h"
 #include "snow_canvas_text_editor_input.h"
 #include "snow_canvas_text_measurement.h"
@@ -1610,6 +1611,11 @@ void SnowCanvasWidget::Impl::releaseRetainedRenderResources() {
     snow_canvas_tile_cache::invalidateNamespace(&widget);
     filterWorkspace.finishFrame(true);
     penMaskAtlas.clear();
+    // Watermark rendering owns a process-wide, GUI-thread-affine glyph/pattern cache.  It is
+    // populated by the watermark tool and is intentionally independent of the canvas namespace,
+    // so release it alongside the other capture-scoped render resources.
+    snow_canvas_renderer::resetWatermarkRenderCacheForCurrentThread();
+    snow_canvas_renderer::resetHatchTextureCacheForCurrentThread();
 }
 
 void SnowCanvasWidget::releaseRetainedRenderResources() {

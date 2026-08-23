@@ -910,6 +910,10 @@ void resetWatermarkRenderCacheForCurrentThread() {
         removed.swap(g_cache.entries);
         g_cache.bytes = 0;
     }
+    // Placement vectors are capture-sized scratch storage and retain their capacity across
+    // renders. Release them with the glyph/pattern entries so ending a screenshot drops the
+    // complete watermark render footprint, not only the shared cache payloads.
+    g_workspace = {};
     g_fallbackCount = 0;
 }
 

@@ -2611,6 +2611,10 @@ std::size_t hatchTextureCacheEntryCountForCurrentThread() {
     return snow_canvas_fill_render::hatchTextureCacheEntryCountForCurrentThread();
 }
 
+void resetHatchTextureCacheForCurrentThread() {
+    snow_canvas_fill_render::resetHatchTextureCacheForCurrentThread();
+}
+
 void renderOverlayItems(QPainter& painter, const OverlayDisplayInfo& displayInfo,
                         const SnowCanvasOverlayItem* overlayItems, std::uint32_t overlayItemCount,
                         const QRegion& exposedRegion, const SceneDisplayInfo* sceneDisplayInfo,
