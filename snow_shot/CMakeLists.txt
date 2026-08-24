@@ -39,6 +39,7 @@ endif()
 snow_enable_clang_tidy()
 
 find_package(Qt6 6.11.1 EXACT REQUIRED COMPONENTS Widgets LinguistTools Svg Network)
+include(SnowTestCliGuard)
 
 if(SNOW_SHOT_QT_STATIC)
     if(NOT QT_FEATURE_static)
@@ -917,7 +918,16 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     enable_testing()
 
+    # Test binaries must report failures as stderr output plus a non-zero
+    # exit code instead of blocking on modal dialogs.
+    snow_link_test_cli_guard(qt)
+
+    # The image-codec backend smoke test is Qt-free; give it the Qt-free
+    # dialog guard so the guard does not add a Qt runtime dependency.
+    set_property(DIRECTORY PROPERTY LINK_LIBRARIES snow_test_cli_guard_native)
+
     snow_shot_add_image_codec_smoke_test()
+    set_property(DIRECTORY PROPERTY LINK_LIBRARIES snow_test_cli_guard_qt)
     add_test(NAME snow-shot-image-codec-backend-smoke-tests
              COMMAND snow-shot-image-codec-backend-smoke-tests)
 
@@ -1621,10 +1631,14 @@ if(SNOW_SHOT_BUILD_TESTS)
         )
     endif()
 
+    # This test is intentionally Qt-free; swap in the Qt-free dialog guard so
+    # linking the guard does not add a Qt runtime dependency.
+    set_property(DIRECTORY PROPERTY LINK_LIBRARIES snow_test_cli_guard_native)
     add_executable(snow-shot-latest-bridge-mailbox-tests
         tests/latest_bridge_mailbox_tests.cpp
         src/presentation/capture/latestbridgemailbox.h
     )
+    set_property(DIRECTORY PROPERTY LINK_LIBRARIES snow_test_cli_guard_qt)
     target_include_directories(snow-shot-latest-bridge-mailbox-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
     )
@@ -2683,9 +2697,13 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
 
     if(WIN32)
+        # This UIA end-to-end driver is Qt-free; give it the Qt-free dialog
+        # guard so the guard does not add a Qt runtime dependency.
+        set_property(DIRECTORY PROPERTY LINK_LIBRARIES snow_test_cli_guard_native)
         add_executable(snow-shot-scrolling-thumbnail-uia-e2e-test
             tests/scrolling_thumbnail_uia_e2e_test.cpp
         )
+        set_property(DIRECTORY PROPERTY LINK_LIBRARIES snow_test_cli_guard_qt)
         target_include_directories(snow-shot-scrolling-thumbnail-uia-e2e-test PRIVATE
             "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-stitch-images-c/include"
         )

@@ -16,6 +16,7 @@ snow_enable_clang_tidy()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Qt6 REQUIRED COMPONENTS Widgets Svg Network LinguistTools)
+include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowTestCliGuard.cmake")
 
 file(GLOB ADQT_ICON_CORE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/adqt_icon_core/src/*.cpp"
@@ -103,6 +104,9 @@ endif()
 if(ADQT_BUILD_TESTS)
     enable_testing()
     find_package(Qt6 REQUIRED COMPONENTS Test)
+    # Test binaries must report failures as stderr output plus a non-zero
+    # exit code instead of blocking on modal dialogs.
+    snow_link_test_cli_guard(qt)
     add_executable(adqt-icon-cache-tests tests/icon_cache_tests.cpp)
     target_link_libraries(adqt-icon-cache-tests PRIVATE adqt::icon_core Qt6::Widgets)
     add_test(NAME adqt-icon-cache-tests COMMAND adqt-icon-cache-tests)

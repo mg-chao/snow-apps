@@ -1,3 +1,10 @@
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/SnowTestCliGuard.cmake")
+    include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/SnowTestCliGuard.cmake")
+    # Keep failure reports on stderr instead of modal dialogs; the native
+    # guard variant adds no Qt dependency.
+    snow_link_test_cli_guard(native)
+endif()
+
 add_executable(snow_image_core_tests core_tests.cpp)
 target_link_libraries(snow_image_core_tests PRIVATE snow_image::snow_image)
 target_compile_features(snow_image_core_tests PRIVATE cxx_std_20)

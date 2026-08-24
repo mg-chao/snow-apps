@@ -23,6 +23,7 @@ snow_enable_clang_tidy()
 
 set(CMAKE_DISABLE_FIND_PACKAGE_WrapVulkanHeaders TRUE)
 find_package(Qt6 REQUIRED COMPONENTS Widgets Svg)
+include(SnowTestCliGuard)
 qt_standard_project_setup()
 
 if(NOT TARGET adqt::icons)
@@ -167,6 +168,10 @@ endif()
 
 if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
     enable_testing()
+
+    # Test binaries must report failures as stderr output plus a non-zero
+    # exit code instead of blocking on modal dialogs.
+    snow_link_test_cli_guard(qt)
 
     add_executable(snow-canvas-text-draft-tests
         tests/snow_canvas_text_draft_tests.cpp

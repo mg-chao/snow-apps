@@ -1,3 +1,8 @@
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/SnowTestCliGuard.cmake")
+# Test binaries must report failures as stderr output plus a non-zero exit
+# code instead of blocking on modal dialogs.
+snow_link_test_cli_guard(qt)
+
 add_executable(snow_image_viewer_tests viewer_tests.cpp)
 target_link_libraries(snow_image_viewer_tests
     PRIVATE
