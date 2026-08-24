@@ -7,6 +7,7 @@
 #include "snow_canvas_spotlight_renderer.h"
 #include "snow_canvas_state.h"
 #include "snow_canvas_viewport.h"
+#include "snow_draw_engine_qt/snow_transient_image.h"
 
 #include <QPainter>
 #include <QtMath>
@@ -185,7 +186,11 @@ QImage renderToImage(SnowRuntime runtime, const QRectF& virtualSelectionRect,
         return {};
     }
 
-    QImage output(outputSize, QImage::Format_ARGB32_Premultiplied);
+    QImage output = snow_draw_engine_qt::allocateTransientImage(
+        outputSize, QImage::Format_ARGB32_Premultiplied);
+    if (output.isNull()) {
+        return {};
+    }
     output.fill(Qt::transparent);
     if (!projection.isValid()) {
         return output;
@@ -207,7 +212,11 @@ QImage renderToImage(SnowRuntime runtime, const QRectF& virtualSelectionRect,
 
     const QSize sceneSize(static_cast<int>(positiveCeil(virtualSelectionRect.width())),
                           static_cast<int>(positiveCeil(virtualSelectionRect.height())));
-    QImage background(sceneSize, QImage::Format_ARGB32_Premultiplied);
+    QImage background = snow_draw_engine_qt::allocateTransientImage(
+        sceneSize, QImage::Format_ARGB32_Premultiplied);
+    if (background.isNull()) {
+        return {};
+    }
     background.fill(Qt::transparent);
     {
         QPainter backgroundPainter(&background);

@@ -2,6 +2,7 @@
 
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
+#include "snow_draw_engine_qt/snow_transient_image.h"
 
 #include <QPainter>
 
@@ -11,7 +12,11 @@ QImage composeScreenshotSourceSelection(const ScreenshotDisplaySession& displayS
         return {};
     }
 
-    QImage image(selection.size(), QImage::Format_RGBA8888);
+    QImage image = snow_draw_engine_qt::allocateTransientImage(selection.size(),
+                                                               QImage::Format_RGBA8888);
+    if (image.isNull()) {
+        return {};
+    }
     image.fill(Qt::transparent);
     QPainter painter(&image);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);

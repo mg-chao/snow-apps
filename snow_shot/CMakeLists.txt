@@ -762,6 +762,11 @@ set(PROJECT_CXX_SOURCES
     src/presentation/ocr/screenshottableeditor.cpp
     src/presentation/ocr/screenshotocrtexttransform.cpp
     src/presentation/ocr/screenshotocrrecognitionservice.cpp
+    src/presentation/ocr/screenshotocrworkerentry.cpp
+    src/presentation/ocr/screenshotocrworkerentry.h
+    src/presentation/ocr/screenshotocrworkerprotocol.h
+    src/presentation/ocr/screenshotrecognitionworkerprocess.cpp
+    src/presentation/ocr/screenshotrecognitionworkerprocess.h
     src/presentation/ocr/screenshotqrrecognitionservice.cpp
     src/presentation/ocr/screenshotocrpresentation.cpp
     src/presentation/ocr/screenshotocrtexteditingsession.cpp
@@ -832,6 +837,27 @@ qt_add_executable(snow_shot
 )
 
 if(WIN32)
+    add_executable(snow-shot-clipboard-worker WIN32
+        src/presentation/services/screenshotclipboardworker.cpp
+        src/presentation/services/screenshotclipboardworkerprotocol.h
+    )
+    target_compile_definitions(snow-shot-clipboard-worker PRIVATE
+        NOMINMAX
+        WIN32_LEAN_AND_MEAN
+    )
+    target_compile_features(snow-shot-clipboard-worker PRIVATE cxx_std_17)
+    set_target_properties(snow-shot-clipboard-worker PROPERTIES
+        AUTOMOC OFF
+        AUTORCC OFF
+        AUTOUIC OFF
+    )
+    add_dependencies(snow_shot snow-shot-clipboard-worker)
+
+    configure_file(
+        resources/windows-app.manifest
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/windows-app.manifest"
+        COPYONLY
+    )
     configure_file(
         resources/windows-app-resource.rc.in
         "${CMAKE_CURRENT_BINARY_DIR}/generated/windows-app-resource.rc"
@@ -1002,11 +1028,13 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenshotclipboardservice.h
         include/snow_shot/presentation/screenshotresultcompositor.h
         include/snow_shot/presentation/screenshotselectionshadowrenderer.h
+        "${SNOW_SHOT_DRAW_ENGINE_QT_DIR}/src/core/snow_transient_image.cpp"
         src/presentation/overlay/screenshotselectionshadowrenderer.cpp
         src/presentation/services/screenshotclipboardservice.cpp
     )
     target_include_directories(snow-shot-screenshot-result-compositor-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${SNOW_SHOT_DRAW_ENGINE_QT_DIR}/include"
     )
     target_link_libraries(snow-shot-screenshot-result-compositor-tests PRIVATE
         Qt6::Widgets
@@ -1730,7 +1758,10 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-screenshot-canvas-renderer-tests PRIVATE
         ant_design_qt
         Qt6::Widgets
+        Qt6::QOffscreenIntegrationPlugin
         snow_draw_engine_qt_canvas
+        onnxruntime::onnxruntime
+        PkgConfig::SNOW_SHOT_FFMPEG
     )
     add_test(
         NAME snow-shot-screenshot-canvas-renderer-tests
@@ -1839,6 +1870,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/services/screenshotcanvascolorsamplerwindow.cpp
         src/presentation/services/screenshotclipboardservice.cpp
         src/presentation/services/screenshotimagefileservice.cpp
+        src/presentation/services/screenshotlifecycleperfinstrumentation.cpp
         src/presentation/services/screenshotmessageservice.cpp
         src/presentation/selection/screenshotselectiongeometry.cpp
         src/presentation/selection/screenshotselectionmodel.cpp
@@ -2701,6 +2733,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenshotocrrecognitionservice.h
         src/presentation/ocr/screenshotocrpresentation.cpp
         src/presentation/ocr/screenshotocrrecognitionservice.cpp
+        src/presentation/ocr/screenshotrecognitionworkerprocess.cpp
     )
     target_include_directories(snow-shot-ocr-recognition-service-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -2711,6 +2744,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         Qt6::Core
         Qt6::Gui
     )
+    add_dependencies(snow-shot-ocr-recognition-service-tests snow_shot)
     if(WIN32)
         target_link_libraries(snow-shot-ocr-recognition-service-tests PRIVATE
             bcrypt
@@ -2727,11 +2761,15 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     set_tests_properties(snow-shot-ocr-cpu-recognition-service-tests PROPERTIES
         TIMEOUT 120
+        ENVIRONMENT
+            "SNOW_SHOT_OCR_WORKER_EXECUTABLE=$<TARGET_FILE:snow_shot>"
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
     set_tests_properties(snow-shot-ocr-directml-recognition-service-tests PROPERTIES
         TIMEOUT 120
+        ENVIRONMENT
+            "SNOW_SHOT_OCR_WORKER_EXECUTABLE=$<TARGET_FILE:snow_shot>"
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
@@ -2938,6 +2976,8 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     target_link_libraries(snow-shot-clipboard-performance-benchmark PRIVATE
         Qt6::Widgets
         snow_draw_engine_qt_canvas
+        onnxruntime::onnxruntime
+        PkgConfig::SNOW_SHOT_FFMPEG
         Psapi
         user32
     )
@@ -3139,6 +3179,10 @@ if(WIN32)
     set(ENV{PKG_CONFIG_PATH} "${_SNOW_SHOT_SAVED_PKG_CONFIG_PATH}")
     unset(_SNOW_SHOT_SAVED_PKG_CONFIG_PATH)
     target_link_libraries(snow_shot PRIVATE PkgConfig::SNOW_SHOT_FFMPEG)
+    if(TARGET snow-shot-ocr-recognition-service-tests)
+        target_link_libraries(snow-shot-ocr-recognition-service-tests PRIVATE
+            PkgConfig::SNOW_SHOT_FFMPEG)
+    endif()
     if(EXISTS "${SNOW_SHOT_FFMPEG_BIN_DIR}" AND NOT SNOW_SHOT_RELEASE_STATIC)
         set(SNOW_SHOT_FFMPEG_DLL_PATTERNS
             "avcodec-*.dll"
@@ -3253,6 +3297,33 @@ if(SNOW_SHOT_ENABLE_STRICT_COMPILE)
     endif()
 endif()
 
+if(WIN32)
+    # Tests and benchmarks compile the clipboard service directly, so make the
+    # publisher available beside every executable that contains the service.
+    get_property(_snow_shot_clipboard_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(_snow_shot_clipboard_target IN LISTS _snow_shot_clipboard_targets)
+        if(_snow_shot_clipboard_target STREQUAL "snow-shot-clipboard-worker")
+            continue()
+        endif()
+        get_target_property(_snow_shot_clipboard_sources
+            "${_snow_shot_clipboard_target}" SOURCES)
+        if(_snow_shot_clipboard_sources AND
+           "${_snow_shot_clipboard_sources}" MATCHES "screenshotclipboardservice\\.cpp")
+            add_dependencies("${_snow_shot_clipboard_target}" snow-shot-clipboard-worker)
+            add_custom_command(TARGET "${_snow_shot_clipboard_target}" POST_BUILD
+                COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                    "$<TARGET_FILE:snow-shot-clipboard-worker>"
+                    "$<TARGET_FILE_DIR:${_snow_shot_clipboard_target}>"
+                COMMENT "Staging the Snow Shot clipboard publisher"
+                VERBATIM
+            )
+        endif()
+    endforeach()
+    unset(_snow_shot_clipboard_sources)
+    unset(_snow_shot_clipboard_target)
+    unset(_snow_shot_clipboard_targets)
+endif()
+
 set_target_properties(snow_shot PROPERTIES
     MACOSX_BUNDLE_GUI_IDENTIFIER com.snowshot.snow_shot
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
@@ -3295,6 +3366,11 @@ install(TARGETS snow_shot
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
+if(WIN32)
+    install(TARGETS snow-shot-clipboard-worker
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+endif()
 if(EXISTS "${SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE}")
     install(FILES "${SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE}"
         DESTINATION "${CMAKE_INSTALL_BINDIR}/audios"

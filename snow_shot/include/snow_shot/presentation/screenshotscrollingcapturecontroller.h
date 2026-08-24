@@ -35,6 +35,7 @@ class ScreenshotScrollingCaptureController final : public QObject {
     [[nodiscard]] bool setRecognitionMode(ScreenshotScrollingRecognitionMode mode);
     [[nodiscard]] ScreenshotScrollingRecognitionMode recognitionMode() const;
     void stop(bool restoreScreenshotPresentation);
+    void releaseIdleResources();
     [[nodiscard]] bool active() const;
     [[nodiscard]] bool hasResult() const;
     [[nodiscard]] QSize trimmedSize() const;

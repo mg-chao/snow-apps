@@ -337,6 +337,30 @@ void clipboardCommitRetriesTransientContention() {
     require(completed, "clipboard commit did not finish after transient contention");
     require(result.succeeded() && result.attempts > 1 && result.attempts <= 5,
             "clipboard commit did not retry bounded transient contention");
+
+    const bool opened = OpenClipboard(nullptr) != FALSE;
+    const HANDLE clipboardImage = opened ? GetClipboardData(CF_DIBV5) : nullptr;
+    const auto* header = clipboardImage != nullptr
+                             ? static_cast<const BITMAPV5HEADER*>(GlobalLock(clipboardImage))
+                             : nullptr;
+    const bool validHeader = header != nullptr &&
+                             header->bV5Size == sizeof(BITMAPV5HEADER) &&
+                             header->bV5Width == image.width() &&
+                             header->bV5Height == -image.height() &&
+                             header->bV5BitCount == 32 &&
+                             header->bV5Compression == BI_BITFIELDS &&
+                             header->bV5AlphaMask == 0xff000000;
+    if (header != nullptr) {
+        GlobalUnlock(clipboardImage);
+    }
+    if (opened) {
+        CloseClipboard();
+    }
+    require(opened, "clipboard could not be reopened after the publisher exited");
+    require(clipboardImage != nullptr,
+            "clipboard image was unavailable after the publisher exited");
+    require(validHeader,
+            "clipboard image metadata changed after the publisher exited");
 }
 #endif
 } // namespace

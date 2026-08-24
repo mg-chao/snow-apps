@@ -35,6 +35,7 @@ class ScreenshotQrRecognitionService final : public ScreenshotQrRecognitionPort 
 
     RequestToken recognize(QImage image, QObject* receiver, Completion completion) override;
     void cancel(RequestToken token) override;
+    [[nodiscard]] bool releaseRetainedIdleResources(std::function<void(bool released)> completion);
 
   private:
     class Impl;

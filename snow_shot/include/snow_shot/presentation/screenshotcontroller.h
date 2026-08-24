@@ -19,9 +19,9 @@ class ScreenshotController : public QObject {
     void setUiPreferences(const ScreenshotUiPreferences& preferences);
     [[nodiscard]] bool hasActiveWork() const;
 
-    // The application keeps this controller alive for tray/shortcut commands, but its lazy
-    // implementation owns the capture worker, overlay pool, and canvas runtime. A lifecycle
-    // owner can request that idle implementation to be torn down after a visible surface closes.
+    // The application keeps this controller and its lightweight workflow graph alive for
+    // tray/shortcut commands. A lifecycle owner can request that captured rasters, native
+    // surfaces, render caches, and session workers be hibernated after a visible surface closes.
     // The request is ignored while capture/export/recording work or a presented window is live.
     void requestIdleResourceRelease();
     void cancelIdleResourceRelease();

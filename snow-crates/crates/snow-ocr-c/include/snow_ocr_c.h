@@ -79,6 +79,7 @@ SnowOcrEngine* snow_ocr_engine_create_with_config_v2(
 );
 uint8_t snow_ocr_directml_is_available(void);
 uint8_t snow_ocr_engine_uses_directml(const SnowOcrEngine* engine);
+uint8_t snow_ocr_runtime_initialize(void);
 uint8_t snow_ocr_runtime_info_v1(SnowOcrRuntimeInfoV1* out_info);
 uint8_t snow_ocr_resource_counts_v1(SnowOcrResourceCountsV1* out_counts);
 void snow_ocr_engine_destroy(SnowOcrEngine* engine);

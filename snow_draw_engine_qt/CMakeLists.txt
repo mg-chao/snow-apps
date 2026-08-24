@@ -168,6 +168,18 @@ endif()
 if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
     enable_testing()
 
+    add_executable(snow-transient-image-tests
+        tests/snow_transient_image_tests.cpp
+        src/core/snow_transient_image.cpp
+    )
+    target_include_directories(snow-transient-image-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+    target_link_libraries(snow-transient-image-tests PRIVATE
+        Qt6::Widgets
+    )
+    add_test(NAME snow-transient-image-tests COMMAND snow-transient-image-tests)
+
     add_executable(snow-canvas-text-draft-tests
         tests/snow_canvas_text_draft_tests.cpp
     )

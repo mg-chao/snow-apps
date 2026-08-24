@@ -42,8 +42,7 @@ QSize boundedDetectorSize(const QSize& sourceSize) {
                  std::max(1, static_cast<int>(std::floor(height * scale))));
 }
 
-ScreenshotQrRecognitionResult recognizeImage(QImage source,
-                                             const std::atomic_bool& cancellation) {
+ScreenshotQrRecognitionResult recognizeImage(QImage source, const std::atomic_bool& cancellation) {
     try {
         const QSize detectorSize = boundedDetectorSize(source.size());
         if (detectorSize.isEmpty() || cancellation.load(std::memory_order_relaxed)) {
@@ -104,8 +103,8 @@ class ScreenshotQrRecognitionService::Impl final {
         request->receiver = receiver;
         request->completion = std::move(completion);
         QPointer<ScreenshotQrRecognitionService> service(m_owner);
-        request->receiverDestroyed = QObject::connect(
-            receiver, &QObject::destroyed, m_owner, [service, token]() {
+        request->receiverDestroyed =
+            QObject::connect(receiver, &QObject::destroyed, m_owner, [service, token]() {
                 if (service != nullptr) {
                     service->cancel(token);
                 }
@@ -139,6 +138,22 @@ class ScreenshotQrRecognitionService::Impl final {
         }
     }
 
+    bool releaseRetainedIdleResources(std::function<void(bool released)> completion) {
+        if (!completion) {
+            return false;
+        }
+        m_idleReleaseCompletions.push_back(std::move(completion));
+        const QPointer<ScreenshotQrRecognitionService> service(m_owner);
+        return QMetaObject::invokeMethod(
+            m_owner,
+            [service]() {
+                if (service != nullptr && service->m_impl != nullptr) {
+                    service->m_impl->notifyIdleReleaseCompletionsIfIdle();
+                }
+            },
+            Qt::QueuedConnection);
+    }
+
   private:
     using RequestToken = ScreenshotQrRecognitionPort::RequestToken;
     using Completion = ScreenshotQrRecognitionPort::Completion;
@@ -149,8 +164,7 @@ class ScreenshotQrRecognitionService::Impl final {
         QPointer<QObject> receiver;
         Completion completion;
         QMetaObject::Connection receiverDestroyed;
-        std::shared_ptr<std::atomic_bool> cancellation =
-            std::make_shared<std::atomic_bool>(false);
+        std::shared_ptr<std::atomic_bool> cancellation = std::make_shared<std::atomic_bool>(false);
         ScreenshotQrRecognitionResult result;
     };
     using RequestHandle = std::shared_ptr<Request>;
@@ -175,8 +189,7 @@ class ScreenshotQrRecognitionService::Impl final {
 
         QThread* const thread = QThread::create([request]() {
             if (!request->cancellation->load(std::memory_order_acquire)) {
-                request->result =
-                    recognizeImage(std::move(request->image), *request->cancellation);
+                request->result = recognizeImage(std::move(request->image), *request->cancellation);
             }
         });
         thread->setObjectName(QStringLiteral("ScreenshotQrWorker"));
@@ -206,6 +219,7 @@ class ScreenshotQrRecognitionService::Impl final {
 
         startNext();
         deliver(request);
+        notifyIdleReleaseCompletionsIfIdle();
     }
 
     void deliver(const RequestHandle& request) {
@@ -232,6 +246,7 @@ class ScreenshotQrRecognitionService::Impl final {
             return;
         }
         m_stopping = true;
+        m_idleReleaseCompletions.clear();
         for (auto request = m_requests.begin(); request != m_requests.end(); ++request) {
             request.value()->cancellation->store(true, std::memory_order_release);
             QObject::disconnect(request.value()->receiverDestroyed);
@@ -247,11 +262,23 @@ class ScreenshotQrRecognitionService::Impl final {
         }
     }
 
+    void notifyIdleReleaseCompletionsIfIdle() {
+        if (m_workerThread != nullptr || !m_queue.empty() || !m_requests.isEmpty()) {
+            return;
+        }
+        std::vector<std::function<void(bool)>> completions =
+            std::exchange(m_idleReleaseCompletions, {});
+        for (auto& completion : completions) {
+            completion(true);
+        }
+    }
+
     ScreenshotQrRecognitionService* m_owner = nullptr;
     QHash<RequestToken, RequestHandle> m_requests;
     std::deque<RequestHandle> m_queue;
     QThread* m_workerThread = nullptr;
     RequestHandle m_runningRequest;
+    std::vector<std::function<void(bool)>> m_idleReleaseCompletions;
     bool m_stopping = false;
 };
 
@@ -275,4 +302,9 @@ void ScreenshotQrRecognitionService::cancel(RequestToken token) {
     if (m_impl != nullptr && token != 0) {
         m_impl->cancel(token);
     }
+}
+
+bool ScreenshotQrRecognitionService::releaseRetainedIdleResources(
+    std::function<void(bool released)> completion) {
+    return m_impl != nullptr && m_impl->releaseRetainedIdleResources(std::move(completion));
 }

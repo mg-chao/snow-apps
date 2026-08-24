@@ -118,10 +118,14 @@ void encodedImagesPrecedeDetachedImagesAndCorruptionFallsBack() {
             "encoded image MIME data should precede the detached image fallback");
 
     mime.setData(QStringLiteral("image/png"), QByteArrayLiteral("corrupt"));
+    mime.setData(QStringLiteral("image/jpeg"), QByteArrayLiteral("corrupt"));
+    mime.setData(QStringLiteral("image/webp"), QByteArrayLiteral("corrupt"));
+    mime.setData(QStringLiteral("image/jxl"), QByteArrayLiteral("corrupt"));
+    mime.setData(QStringLiteral("image/avif"), QByteArrayLiteral("corrupt"));
     const auto fallback = ScreenshotClipboardContentReader::readMimeData(&mime, 1.0);
     require(fallback.has_value() && fallback->image.size() == detached.size() &&
                 fallback->image.pixelColor(0, 0) == QColor(Qt::red),
-            "corrupt encoded image data should fall back to the detached image snapshot");
+            "corrupt encoded image MIME data should fall back to the detached image snapshot");
 }
 
 void localImageFilesAndPlainTextFallbackAreSupported() {

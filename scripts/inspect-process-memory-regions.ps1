@@ -3,7 +3,9 @@ param(
     [Parameter(Mandatory = $true)]
     [int]$ProcessId,
     [int]$Top = 40,
-    [switch]$SamplePrivateData
+    [switch]$SamplePrivateData,
+    [double]$SampleMinimumPrivateWorkingSetMiB = 0,
+    [string]$OutputPath
 )
 
 $ErrorActionPreference = "Stop"
@@ -411,7 +413,9 @@ $groups = $snapshot.Regions |
     ForEach-Object {
         $regions = @($_.Group)
         $sample = $null
-        if ($SamplePrivateData -and $regions[0].Type -eq "Private") {
+        $privateWorkingSetBytes = ($regions | Measure-Object PrivateWorkingSet -Sum).Sum
+        if ($SamplePrivateData -and $regions[0].Type -eq "Private" -and
+            $privateWorkingSetBytes -ge $SampleMinimumPrivateWorkingSetMiB * 1MB) {
             $largestRegion = $regions | Sort-Object Size -Descending | Select-Object -First 1
             $sample = [SnowShot.MemoryProbe]::AnalyzeMemory(
                 $ProcessId,
@@ -427,7 +431,7 @@ $groups = $snapshot.Regions |
             WorkingSetMiB = [Math]::Round(
                 (($regions | Measure-Object WorkingSet -Sum).Sum / 1MB), 3)
             PrivateWorkingSetMiB = [Math]::Round(
-                (($regions | Measure-Object PrivateWorkingSet -Sum).Sum / 1MB), 3)
+                ($privateWorkingSetBytes / 1MB), 3)
             Regions = $regions.Count
             HeapBase = $regions.HeapBase -contains $true
             ThreadIds = if ($threadStacksByAllocation.ContainsKey(
@@ -454,7 +458,7 @@ $groups = $snapshot.Regions |
     } |
     Sort-Object CommittedMiB -Descending
 
-[pscustomobject]@{
+$json = [pscustomobject]@{
     ProcessId = $ProcessId
     PrivateMiB = [Math]::Round($snapshot.PrivateBytes / 1MB, 3)
     WorkingSetMiB = [Math]::Round($snapshot.WorkingSet / 1MB, 3)
@@ -484,3 +488,14 @@ $groups = $snapshot.Regions |
         })
     TopAllocations = @($groups | Select-Object -First $Top)
 } | ConvertTo-Json -Depth 5
+
+if ([string]::IsNullOrWhiteSpace($OutputPath)) {
+    $json
+} else {
+    $resolvedOutput = [IO.Path]::GetFullPath($OutputPath)
+    $outputDirectory = [IO.Path]::GetDirectoryName($resolvedOutput)
+    if (-not [string]::IsNullOrEmpty($outputDirectory)) {
+        [IO.Directory]::CreateDirectory($outputDirectory) | Out-Null
+    }
+    [IO.File]::WriteAllText($resolvedOutput, $json, [Text.UTF8Encoding]::new($false))
+}

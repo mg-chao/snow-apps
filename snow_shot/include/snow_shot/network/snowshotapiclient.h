@@ -75,9 +75,11 @@ class SnowShotApiClient final : public QObject {
     [[nodiscard]] const QString& baseUrl() const;
     [[nodiscard]] bool usesSystemProxy() const;
     void setUseSystemProxy(bool enabled);
+    [[nodiscard]] bool hasPendingRequests() const noexcept;
+    [[nodiscard]] bool releaseRetainedIdleResources();
     [[nodiscard]] const QVector<SnowShotChatModel>& cachedChatModels() const;
     [[nodiscard]] RequestToken extractTable(const QImage& image, QObject* receiver,
-                                             Completion completion);
+                                            Completion completion);
     [[nodiscard]] RequestToken fetchChatModels(const QString& locale, QObject* receiver,
                                                ChatModelsCompletion completion);
     [[nodiscard]] RequestToken streamTranslation(const SnowShotTranslationRequest& request,

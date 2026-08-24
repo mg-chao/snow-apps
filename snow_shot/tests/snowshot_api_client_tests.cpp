@@ -62,19 +62,18 @@ QByteArray waitForHttpRequest(QTcpServer& server, const QByteArray& response) {
 void apiClientUsesModelCatalogAndStreamingChatContracts() {
     QTcpServer server;
     require(server.listen(QHostAddress::LocalHost), "local API test server should listen");
-    const QString baseUrl =
-        QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
+    const QString baseUrl = QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort());
     SnowShotApiClient client(baseUrl);
 
     SnowShotChatModelsResult modelsResult;
     bool modelsFinished = false;
     QEventLoop modelsCompletionLoop;
-    const auto modelsToken = client.fetchChatModels(
-        QStringLiteral("zh-CN"), &client, [&](SnowShotChatModelsResult result) {
-            modelsResult = std::move(result);
-            modelsFinished = true;
-            modelsCompletionLoop.quit();
-        });
+    const auto modelsToken = client.fetchChatModels(QStringLiteral("zh-CN"), &client,
+                                                    [&](SnowShotChatModelsResult result) {
+                                                        modelsResult = std::move(result);
+                                                        modelsFinished = true;
+                                                        modelsCompletionLoop.quit();
+                                                    });
     require(modelsToken != 0, "model catalog request should be prepared");
     const QByteArray modelsBody = QByteArrayLiteral(
         R"({"code":0,"message":"ok","data":[{"model":"model-a","name":"Model A","thinking":true,"support_vision":false}]})");
@@ -90,8 +89,7 @@ void apiClientUsesModelCatalogAndStreamingChatContracts() {
     require(modelsFinished && modelsResult.succeeded() && modelsResult.models.size() == 1 &&
                 modelsResult.models.first().id == QStringLiteral("model-a") &&
                 modelsResult.models.first().name == QStringLiteral("Model A") &&
-                modelsResult.models.first().thinking &&
-                !modelsResult.models.first().supportsVision,
+                modelsResult.models.first().thinking && !modelsResult.models.first().supportsVision,
             "model catalog envelope should preserve the public API descriptor fields");
     require(modelsRequest.startsWith("GET /api/v1/chat/models HTTP/1.1") &&
                 modelsRequest.toLower().contains("accept-language: zh-cn"),
@@ -123,12 +121,13 @@ void apiClientUsesModelCatalogAndStreamingChatContracts() {
             translationCompletionLoop.quit();
         });
     require(translationToken != 0, "streaming translation request should be prepared");
-    const QByteArray streamBody = QByteArrayLiteral(
-        "data: {\"choices\":[{\"delta\":{\"content\":\"Ni hao\"}}]}\n\n"
-        "data: {\"choices\":[{\"delta\":{\"content\":\" shijie\"}}]}\r\n\r\n"
-        "data: [DONE]\n\n");
-    const QByteArray streamResponse = QByteArrayLiteral(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: ") +
+    const QByteArray streamBody =
+        QByteArrayLiteral("data: {\"choices\":[{\"delta\":{\"content\":\"Ni hao\"}}]}\n\n"
+                          "data: {\"choices\":[{\"delta\":{\"content\":\" shijie\"}}]}\r\n\r\n"
+                          "data: [DONE]\n\n");
+    const QByteArray streamResponse =
+        QByteArrayLiteral(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: ") +
         QByteArray::number(streamBody.size()) + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") +
         streamBody;
     const QByteArray translationRequest = waitForHttpRequest(server, streamResponse);
@@ -150,14 +149,18 @@ void apiClientUsesModelCatalogAndStreamingChatContracts() {
                 requestBody.value(QStringLiteral("max_tokens")).toInt() == 4096,
             "translation chat request should use deterministic non-thinking model settings");
     const QJsonArray messages = requestBody.value(QStringLiteral("messages")).toArray();
-    require(messages.size() == 2 &&
-                messages.at(0).toObject().value(QStringLiteral("role")).toString() ==
-                    QStringLiteral("system") &&
-                messages.at(0).toObject().value(QStringLiteral("content")).toString().contains(
-                    QStringLiteral("Return only the translated text")) &&
-                messages.at(1).toObject().value(QStringLiteral("content")).toString() ==
-                    QStringLiteral("Hello\nworld"),
-            "translation request should carry the translation-only system prompt and original text");
+    require(
+        messages.size() == 2 &&
+            messages.at(0).toObject().value(QStringLiteral("role")).toString() ==
+                QStringLiteral("system") &&
+            messages.at(0)
+                .toObject()
+                .value(QStringLiteral("content"))
+                .toString()
+                .contains(QStringLiteral("Return only the translated text")) &&
+            messages.at(1).toObject().value(QStringLiteral("content")).toString() ==
+                QStringLiteral("Hello\nworld"),
+        "translation request should carry the translation-only system prompt and original text");
 
     SnowShotTranslationResult malformedResult;
     bool malformedFinished = false;
@@ -165,25 +168,50 @@ void apiClientUsesModelCatalogAndStreamingChatContracts() {
     const auto malformedToken = client.streamTranslation(
         SnowShotTranslationRequest{QStringLiteral("model-a"), QStringLiteral("English"),
                                    QStringLiteral("German"), QStringLiteral("Hello")},
-        &client, [](const QString&) {}, [&](SnowShotTranslationResult result) {
+        &client, [](const QString&) {},
+        [&](SnowShotTranslationResult result) {
             malformedResult = std::move(result);
             malformedFinished = true;
             malformedCompletionLoop.quit();
         });
     require(malformedToken != 0, "malformed-stream test request should be prepared");
     const QByteArray malformedBody = QByteArrayLiteral("data: not-json\n\ndata: [DONE]\n\n");
-    const QByteArray malformedResponse = QByteArrayLiteral(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: ") +
-        QByteArray::number(malformedBody.size()) + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") +
-        malformedBody;
+    const QByteArray malformedResponse =
+        QByteArrayLiteral(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: ") +
+        QByteArray::number(malformedBody.size()) +
+        QByteArrayLiteral("\r\nConnection: close\r\n\r\n") + malformedBody;
     static_cast<void>(waitForHttpRequest(server, malformedResponse));
     if (!malformedFinished) {
         QTimer::singleShot(5000, &malformedCompletionLoop, &QEventLoop::quit);
         malformedCompletionLoop.exec();
     }
-    require(malformedFinished && !malformedResult.succeeded() &&
-                !malformedResult.error.isEmpty(),
+    require(malformedFinished && !malformedResult.succeeded() && !malformedResult.error.isEmpty(),
             "a malformed nonempty SSE frame should fail even when followed by a done marker");
+
+    require(client.releaseRetainedIdleResources(),
+            "idle API client should release its network manager");
+    require(client.findChild<QNetworkAccessManager*>() == nullptr &&
+                client.cachedChatModels().size() == 1 &&
+                client.cachedChatModels().first().id == QStringLiteral("model-a"),
+            "network hibernation must preserve the API client and cached model catalog");
+
+    bool recreatedManagerCompleted = false;
+    QEventLoop recreatedManagerLoop;
+    const auto recreatedManagerToken = client.fetchChatModels(
+        QStringLiteral("zh-CN"), &client, [&](SnowShotChatModelsResult result) {
+            recreatedManagerCompleted = result.succeeded();
+            recreatedManagerLoop.quit();
+        });
+    require(recreatedManagerToken != 0 && client.findChild<QNetworkAccessManager*>() != nullptr,
+            "a request after network hibernation should recreate the manager");
+    static_cast<void>(waitForHttpRequest(server, modelsResponse));
+    if (!recreatedManagerCompleted) {
+        QTimer::singleShot(5000, &recreatedManagerLoop, &QEventLoop::quit);
+        recreatedManagerLoop.exec();
+    }
+    require(recreatedManagerCompleted,
+            "the API client did not complete a request after network hibernation");
 }
 } // namespace
 

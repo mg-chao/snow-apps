@@ -599,10 +599,18 @@ struct ScreenshotScrollingCaptureController::Impl {
         thumbnailHost = nullptr;
     }
 
+    void releaseIdleResources() {
+        stop(false);
+        shutdownWorker();
+    }
+
     bool excludeScrollingWindowsFromCapture(ScreenshotOverlayWindow* overlay) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
         ScreenshotToolbarWindow* const toolbar = context.overlayCoordinator.toolbar();
-        if (QCoreApplication::arguments().contains(QStringLiteral("--e2e-allow-overlay-capture"))) {
+        const QStringList arguments = QCoreApplication::arguments();
+        if (arguments.contains(QStringLiteral("--e2e-allow-overlay-capture")) &&
+            !arguments.contains(
+                QStringLiteral("--e2e-exclude-scrolling-windows-from-capture"))) {
             return overlay != nullptr && toolbar != nullptr;
         }
         if (overlay == nullptr || toolbar == nullptr ||
@@ -992,6 +1000,10 @@ ScreenshotScrollingRecognitionMode ScreenshotScrollingCaptureController::recogni
 
 void ScreenshotScrollingCaptureController::stop(bool restoreScreenshotPresentation) {
     m_impl->stop(restoreScreenshotPresentation);
+}
+
+void ScreenshotScrollingCaptureController::releaseIdleResources() {
+    m_impl->releaseIdleResources();
 }
 
 bool ScreenshotScrollingCaptureController::active() const {

@@ -231,9 +231,46 @@ void styledClipboardResultRetainsDibV5() {
             "styled clipboard export did not retain rounded-corner transparency");
 }
 
+void workerRuntimeHibernationDrainsAndReactivates() {
+    ExportFixture fixture;
+    require(fixture.isValid(), "hibernation fixture could not initialize the canvas runtime");
+
+    QObject receiver;
+    int callbacks = 0;
+    bool releaseCompleted = false;
+    bool releaseObservedDrainedRequest = false;
+    const QRect selection(5, 7, 32, 24);
+    const bool requestScheduled = fixture.service().requestSelectionResult(
+        selection, ScreenshotResultStyle{}, &receiver, [&](QImage image) {
+            require(image.size() == selection.size(),
+                    "pre-hibernation worker export produced the wrong image size");
+            ++callbacks;
+        });
+    require(requestScheduled, "pre-hibernation worker export was not scheduled");
+    const bool releaseScheduled =
+        fixture.service().releaseRetainedIdleResources([&](bool released) {
+            releaseCompleted = released;
+            releaseObservedDrainedRequest =
+                callbacks == 1 && !fixture.service().hasPendingRequests();
+        });
+    require(releaseScheduled, "worker runtime hibernation was not scheduled");
+    require(waitForCondition([&]() { return releaseCompleted; }),
+            "worker runtime hibernation did not complete");
+    require(releaseObservedDrainedRequest,
+            "worker runtime hibernation completed before accepted exports drained");
+
+    const QImage reactivated = waitForResult(
+        [&](QObject* callbackReceiver, auto callback) {
+            return fixture.service().requestSelectionResult(selection, ScreenshotResultStyle{},
+                                                            callbackReceiver, std::move(callback));
+        },
+        [](QImage image) { return image; });
+    require(reactivated.size() == selection.size(),
+            "an export after hibernation did not recreate the worker runtime");
+}
+
 void pendingRequestsReachIdleAfterTerminalPayloadDisposal() {
-    const int baselineActivity =
-        ScreenshotAsyncActivityTracker::shared().activeActivityCount();
+    const int baselineActivity = ScreenshotAsyncActivityTracker::shared().activeActivityCount();
     int idleNotifications = 0;
     bool idleObservedDisposedCallbacks = false;
     std::vector<std::weak_ptr<int>> callbackLifetimes;
@@ -272,15 +309,12 @@ void pendingRequestsReachIdleAfterTerminalPayloadDisposal() {
 
     require(fixture.service().hasPendingRequests(),
             "accepted exports were not reported as pending");
-    require(ScreenshotAsyncActivityTracker::shared().activeActivityCount() ==
-                baselineActivity + 2,
+    require(ScreenshotAsyncActivityTracker::shared().activeActivityCount() == baselineActivity + 2,
             "accepted exports did not retain independent activity leases");
-    require(waitForCondition([&]() {
-                return callbacks == 2 && !fixture.service().hasPendingRequests();
-            }),
+    require(waitForCondition(
+                [&]() { return callbacks == 2 && !fixture.service().hasPendingRequests(); }),
             "accepted exports did not reach their terminal callbacks");
-    require(callbacksObservedPending,
-            "pending state ended before a terminal callback returned");
+    require(callbacksObservedPending, "pending state ended before a terminal callback returned");
     require(callbacksObservedActivity,
             "activity tracking ended before a terminal callback returned");
     require(waitForCondition([&]() { return idleNotifications == 1; }),
@@ -293,16 +327,14 @@ void pendingRequestsReachIdleAfterTerminalPayloadDisposal() {
 }
 
 void destructionDrainsPendingRequestsWithoutPublishingCallbacks() {
-    const int baselineActivity =
-        ScreenshotAsyncActivityTracker::shared().activeActivityCount();
+    const int baselineActivity = ScreenshotAsyncActivityTracker::shared().activeActivityCount();
     bool callbackInvoked = false;
     bool idleNotificationInvoked = false;
     std::weak_ptr<int> callbackLifetime;
     QObject receiver;
     {
         ExportFixture fixture([&idleNotificationInvoked]() { idleNotificationInvoked = true; });
-        require(fixture.isValid(),
-                "teardown fixture could not initialize the canvas runtime");
+        require(fixture.isValid(), "teardown fixture could not initialize the canvas runtime");
         auto lifetime = std::make_shared<int>(1);
         callbackLifetime = lifetime;
         fixture.service().setNextSelectionSourceImage(patternedImage(QSize(640, 480), 47));
@@ -320,8 +352,7 @@ void destructionDrainsPendingRequestsWithoutPublishingCallbacks() {
     require(!callbackInvoked, "service teardown delivered a queued result callback");
     require(!idleNotificationInvoked,
             "service teardown published an idle callback after notifications were disabled");
-    require(callbackLifetime.expired(),
-            "service teardown retained a terminal callback capture");
+    require(callbackLifetime.expired(), "service teardown retained a terminal callback capture");
     require(ScreenshotAsyncActivityTracker::shared().activeActivityCount() == baselineActivity,
             "service teardown retained pending async activity");
 }
@@ -331,6 +362,7 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     directSourceKeepsFullWgcFrameForResultAndClipboard();
     styledClipboardResultRetainsDibV5();
+    workerRuntimeHibernationDrainsAndReactivates();
     pendingRequestsReachIdleAfterTerminalPayloadDisposal();
     destructionDrainsPendingRequestsWithoutPublishingCallbacks();
     std::cout << "All screenshot export service tests passed\n";

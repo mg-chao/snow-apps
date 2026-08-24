@@ -8,6 +8,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "../presentation/pinned/screenshotpintoperfinstrumentation.h"
+#include "../presentation/ocr/screenshotocrworkerentry.h"
 #include "../presentation/services/screenshotlifecycleperfinstrumentation.h"
 
 #include "icon_registry.h"
@@ -22,7 +23,13 @@
 #include <QString>
 #include <QTimer>
 
+#include <cstring>
+
 int main(int argc, char* argv[]) {
+    if (argc == 2 &&
+        std::strcmp(argv[1], snow_shot::presentation::kScreenshotOcrWorkerArgument) == 0) {
+        return snow_shot::presentation::runScreenshotOcrWorker();
+    }
     QCoreApplication::setOrganizationName(QStringLiteral("SnowShot"));
     QString applicationName = QStringLiteral("snow_shot");
     QString e2eInstanceId;

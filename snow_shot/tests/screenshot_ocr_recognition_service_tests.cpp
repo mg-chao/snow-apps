@@ -1,5 +1,7 @@
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 
+#include "snow_shot/presentation/screenshotocrpresentation.h"
+
 #include "snow_ocr_c.h"
 
 #include <QCoreApplication>
@@ -35,8 +37,7 @@ QImage whiteImage(int edge = 64) {
 SnowOcrResourceCountsV1 resourceCounts() {
     SnowOcrResourceCountsV1 counts{};
     counts.struct_size = static_cast<std::uint32_t>(sizeof(SnowOcrResourceCountsV1));
-    require(snow_ocr_resource_counts_v1(&counts) != 0,
-            "OCR resource counts should be available");
+    require(snow_ocr_resource_counts_v1(&counts) != 0, "OCR resource counts should be available");
     return counts;
 }
 
@@ -61,16 +62,27 @@ bool waitUntil(const std::function<bool()>& condition, int timeoutMs) {
     return condition();
 }
 
+void runtimePrewarmDoesNotCreateRecognitionResources() {
+    ScreenshotOcrRecognitionService service;
+    const SnowOcrResourceCountsV1 before = resourceCounts();
+    require(service.prewarmRuntime() && service.prewarmRuntime(),
+            "OCR runtime prewarm should be successful and idempotent");
+    const SnowOcrResourceCountsV1 after = resourceCounts();
+    require(service.liveWorkerCount() == 0 && after.engines == before.engines &&
+                after.results == before.results && after.owned_images == before.owned_images,
+            "OCR runtime prewarm must not create workers, engines, results, or images");
+}
+
 void processEventsFor(int durationMs) {
     QEventLoop loop;
     QTimer::singleShot(durationMs, &loop, &QEventLoop::quit);
     loop.exec();
 }
 
-void embeddedEngineCompletesThroughTheQtWorker(bool directMlEnabled) {
-    ScreenshotOcrRecognitionService service(
-        directMlEnabled ? ScreenshotOcrBackendPreference::DirectMl
-                        : ScreenshotOcrBackendPreference::Cpu);
+void isolatedEngineCompletesThroughTheQtWorker(bool directMlEnabled) {
+    ScreenshotOcrRecognitionService service(directMlEnabled
+                                                ? ScreenshotOcrBackendPreference::DirectMl
+                                                : ScreenshotOcrBackendPreference::Cpu);
     require(service.liveWorkerCount() == 0,
             "OCR service construction must not create worker threads eagerly");
     QEventLoop loop;
@@ -86,9 +98,8 @@ void embeddedEngineCompletesThroughTheQtWorker(bool directMlEnabled) {
 
     const QImage image = whiteImage();
     const ScreenshotOcrRecognitionPort::RequestToken token =
-        service.recognize(
-            ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size()))}, &loop,
-                          [&](ScreenshotOcrRecognitionResult result) {
+        service.recognize(ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size()))},
+                          &loop, [&](ScreenshotOcrRecognitionResult result) {
                               output = std::move(result);
                               completed = true;
                               loop.quit();
@@ -102,10 +113,14 @@ void embeddedEngineCompletesThroughTheQtWorker(bool directMlEnabled) {
     if (!output.error.isEmpty()) {
         std::cerr << "OCR error: " << output.error.toStdString() << '\n';
     }
-    require(output.error.isEmpty(), "the embedded OCR engine should not report an error");
+    require(output.error.isEmpty(), "the isolated OCR engine should not report an error");
     require(output.presentation != nullptr, "OCR recognition should return a presentation");
-    require(resourceCounts().engines == 0,
-            "OCR engines should be released before recognition completion is delivered");
+    require(!output.presentation->filledImage.isNull() &&
+                output.presentation->filledImage.size() == image.size(),
+            "OCR recognition should copy the filled image into the parent process");
+    const SnowOcrResourceCountsV1 counts = resourceCounts();
+    require(counts.engines == 0 && counts.results == 0 && counts.owned_images == 0,
+            "isolated OCR must not create FFI resources in the parent process");
     require(service.liveWorkerCount() == 0,
             "OCR workers should exit before recognition completion is delivered");
 }
@@ -131,10 +146,8 @@ void concurrentRequestsCompleteExactlyOnce() {
     for (int index = 0; index < kRequestCount; ++index) {
         const QImage image = whiteImage();
         const auto token = service.recognize(
-            ScreenshotOcrRequest{
-                image, QRectF(QPointF(index, index), QSizeF(image.size()))},
-            &receiver,
-            [&, index](ScreenshotOcrRecognitionResult result) {
+            ScreenshotOcrRequest{image, QRectF(QPointF(index, index), QSizeF(image.size()))},
+            &receiver, [&, index](ScreenshotOcrRecognitionResult result) {
                 ++completions;
                 completionOrder.push_back(index);
                 outputs.push_back(std::move(result));
@@ -162,16 +175,13 @@ void concurrentRequestsCompleteExactlyOnce() {
             "OCR workers should exit before concurrent recognition completion is delivered");
 
     SnowOcrResourceCountsV1 counts = resourceCounts();
-    require(counts.engines == 0,
-            "a completed OCR burst should not retain any OCR engines");
-    require(counts.results == 0, "FFI results should be released before Qt delivery");
-    require(counts.owned_images == kRequestCount,
-            "each live presentation should own exactly one transferred image");
+    require(counts.engines == 0 && counts.results == 0 && counts.owned_images == 0,
+            "concurrent isolated OCR must leave parent-process FFI resources untouched");
 
     outputs.clear();
     counts = resourceCounts();
     require(counts.owned_images == 0,
-            "releasing presentations should release every transferred image");
+            "copied presentation images must not use parent-process FFI ownership");
 }
 
 void interactiveRequestsPrecedeQueuedPrefetch() {
@@ -194,14 +204,15 @@ void interactiveRequestsPrecedeQueuedPrefetch() {
         const QImage image = whiteImage(imageEdge);
         const auto token = service.recognize(
             ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size())), priority},
-            &receiver,
-            [&, id](ScreenshotOcrRecognitionResult result) {
+            &receiver, [&, id](ScreenshotOcrRecognitionResult result) {
                 require(result.error.isEmpty() && result.presentation != nullptr,
                         "priority test OCR requests should succeed");
                 completionOrder.push_back(id);
                 if (completionOrder.size() == 1) {
-                    resourcesRetainedForQueuedTask = resourceCounts().engines == 1 &&
-                                                    service.liveWorkerCount() == 1;
+                    const SnowOcrResourceCountsV1 counts = resourceCounts();
+                    resourcesRetainedForQueuedTask = service.liveWorkerCount() == 1 &&
+                                                     counts.engines == 0 && counts.results == 0 &&
+                                                     counts.owned_images == 0;
                 }
                 if (completionOrder.size() == 3) {
                     loop.quit();
@@ -220,7 +231,7 @@ void interactiveRequestsPrecedeQueuedPrefetch() {
     require(completionOrder == std::vector<int>({0, 2, 1}),
             "queued interactive OCR must run before queued prefetch OCR");
     require(resourcesRetainedForQueuedTask,
-            "OCR resources should remain available while queued recognition tasks remain");
+            "the service worker should remain available while queued recognition tasks remain");
 }
 
 void resourcesAreReclaimedWhenRecognitionCompletes() {
@@ -240,12 +251,12 @@ void resourcesAreReclaimedWhenRecognitionCompletes() {
         loop.quit();
     });
     const QImage image = whiteImage();
-    const auto token = service.recognize(
-        ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size()))}, &receiver,
-        [&](ScreenshotOcrRecognitionResult result) {
-            output = std::move(result);
-            loop.quit();
-        });
+    const auto token =
+        service.recognize(ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size()))},
+                          &receiver, [&](ScreenshotOcrRecognitionResult result) {
+                              output = std::move(result);
+                              loop.quit();
+                          });
     require(token != 0, "the resource-reclamation OCR request should be accepted");
     timeout.start(kRecognitionTimeoutMs);
     loop.exec();
@@ -255,27 +266,52 @@ void resourcesAreReclaimedWhenRecognitionCompletes() {
             "a completed OCR request should release its engine before completion delivery");
     require(service.liveWorkerCount() == 0,
             "a completed OCR request should release its worker before completion delivery");
-    require(resourceCounts().owned_images == 1,
-            "the delivered OCR presentation should own its transferred image");
+    require(!output.presentation->filledImage.isNull(),
+            "the delivered OCR presentation should own a copied image");
+    require(resourceCounts().owned_images == 0,
+            "the copied presentation image must not retain an FFI owned image");
 
     output.presentation.reset();
     require(resourceCounts().owned_images == 0,
-            "releasing the presentation should release its transferred image");
+            "releasing the presentation should leave parent FFI ownership unchanged");
     const SnowOcrResourceCountsV1 counts = resourceCounts();
     require(counts.results == 0 && counts.owned_images == 0,
             "immediate reclamation should leave no live OCR result resources");
 
     bool recreated = false;
-    const auto secondToken = service.recognize(
-        ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size()))}, &receiver,
-        [&](ScreenshotOcrRecognitionResult result) {
-            recreated = result.presentation != nullptr && result.error.isEmpty();
-        });
+    const auto secondToken =
+        service.recognize(ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size()))},
+                          &receiver, [&](ScreenshotOcrRecognitionResult result) {
+                              recreated = result.presentation != nullptr && result.error.isEmpty();
+                          });
     require(secondToken != 0, "a request after resource reclamation should be accepted");
     require(waitUntil([&]() { return recreated; }, kRecognitionTimeoutMs),
             "a request after resource reclamation should create a new OCR engine");
     require(resourceCounts().engines == 0,
             "the recreated OCR engine should be released before completion delivery");
+}
+
+void idleReleaseWaitsForCancelledRecognition() {
+    ScreenshotOcrRecognitionService service;
+    QObject receiver;
+    bool completionDelivered = false;
+    const QImage image = whiteImage(256);
+    const auto token = service.recognize(
+        ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size()))}, &receiver,
+        [&](ScreenshotOcrRecognitionResult) { completionDelivered = true; });
+    require(token != 0, "idle-release OCR request should be accepted");
+    require(waitUntil([&]() { return service.liveWorkerCount() > 0; }, kRecognitionTimeoutMs),
+            "idle-release OCR request did not initialize its worker");
+    service.cancel(token);
+
+    bool released = false;
+    require(service.releaseRetainedIdleResources(
+                [&](bool resourcesReleased) { released = resourcesReleased; }),
+            "OCR idle-resource release should be scheduled");
+    require(waitUntil([&]() { return released; }, kRecognitionTimeoutMs),
+            "OCR idle-resource release completed before its worker drained");
+    require(!completionDelivered && service.liveWorkerCount() == 0 && resourceCounts().engines == 0,
+            "OCR idle-resource release retained a worker or delivered cancelled work");
 }
 
 void queuedCancellationSkipsExecution() {
@@ -289,14 +325,14 @@ void queuedCancellationSkipsExecution() {
     std::vector<ScreenshotOcrRecognitionPort::RequestToken> tokens;
     for (int index = 0; index < 3; ++index) {
         const QImage image = whiteImage(256);
-        tokens.push_back(service.recognize(
-            ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size()))}, &receiver,
-            [&](ScreenshotOcrRecognitionResult) {
-                ++completions;
-                if (completions == 2) {
-                    loop.quit();
-                }
-            }));
+        tokens.push_back(
+            service.recognize(ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size()))},
+                              &receiver, [&](ScreenshotOcrRecognitionResult) {
+                                  ++completions;
+                                  if (completions == 2) {
+                                      loop.quit();
+                                  }
+                              }));
         require(tokens.back() != 0, "queued cancellation requests should be accepted");
     }
     service.cancel(tokens.back());
@@ -310,9 +346,9 @@ void cancellationSuppressesCompletion() {
     QObject receiver;
     bool completed = false;
     const QImage image = whiteImage();
-    const auto token = service.recognize(
-        ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size()))}, &receiver,
-        [&](ScreenshotOcrRecognitionResult) { completed = true; });
+    const auto token =
+        service.recognize(ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size()))},
+                          &receiver, [&](ScreenshotOcrRecognitionResult) { completed = true; });
     require(token != 0, "the cancellable OCR request should be accepted");
     service.cancel(token);
     processEventsFor(250);
@@ -339,14 +375,14 @@ void serviceDestructionJoinsWorkersAndSuppressesLateDelivery() {
     auto service = std::make_unique<ScreenshotOcrRecognitionService>();
     for (int index = 0; index < 3; ++index) {
         const QImage image = whiteImage(256);
-        const auto token = service->recognize(
-            ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size()))}, &receiver,
-            [&](ScreenshotOcrRecognitionResult) { ++completions; });
+        const auto token =
+            service->recognize(ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size()))},
+                               &receiver, [&](ScreenshotOcrRecognitionResult) { ++completions; });
         require(token != 0, "requests queued before service shutdown should be accepted");
     }
 
-    require(waitUntil([]() { return resourceCounts().engines > 0; }, kRecognitionTimeoutMs),
-            "at least one OCR worker should initialize before shutdown");
+    require(waitUntil([&]() { return service->liveWorkerCount() > 0; }, kRecognitionTimeoutMs),
+            "at least one OCR service worker should initialize before shutdown");
     const int completionsBeforeDestruction = completions;
     service.reset();
     processEventsFor(250);
@@ -361,12 +397,14 @@ void serviceDestructionJoinsWorkersAndSuppressesLateDelivery() {
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     const bool directMlRequested = application.arguments().contains(QStringLiteral("--directml"));
-    embeddedEngineCompletesThroughTheQtWorker(directMlRequested);
+    runtimePrewarmDoesNotCreateRecognitionResources();
+    isolatedEngineCompletesThroughTheQtWorker(directMlRequested);
     if (!directMlRequested) {
         concurrentRequestsCompleteExactlyOnce();
         interactiveRequestsPrecedeQueuedPrefetch();
         queuedCancellationSkipsExecution();
         resourcesAreReclaimedWhenRecognitionCompletes();
+        idleReleaseWaitsForCancelledRecognition();
         cancellationSuppressesCompletion();
         receiverDestructionSuppressesCompletion();
         serviceDestructionJoinsWorkersAndSuppressesLateDelivery();

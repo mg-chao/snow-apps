@@ -336,7 +336,7 @@ void cancelClearsTheReusableCanvasDocument() {
             "the next capture must not depend on idle prewarm after cold cancellation");
 }
 
-void retainedCancellationHibernatesWithoutRebuildingTheObjectCore() {
+void retainedCancellationColdHibernatesWithoutRebuildingTheObjectCore() {
     ScreenshotCaptureState state;
     state.sessionState = ScreenshotSessionState::Editing;
     state.captureInProgress = true;
@@ -373,15 +373,17 @@ void retainedCancellationHibernatesWithoutRebuildingTheObjectCore() {
     require(workflow.releaseRetainedIdleResources(
                 [&releaseCompleted](bool released) { releaseCompleted = released; }),
             "retained idle release must schedule native resource hibernation");
-    require(releaseCompleted && runtime.hibernateDisplayPoolCalls == 1 &&
-                runtime.releaseIdleResourcesCalls == 1 && runtime.destroyDisplayPoolCalls == 0 &&
-                runtime.shutdownCaptureWorkerCalls == 0 && runtime.workerCreated &&
-                state.sessionState == ScreenshotSessionState::IdlePrepared,
-            "hibernation must release heavyweight payloads without destroying reusable objects");
+    require(releaseCompleted && runtime.hibernateDisplayPoolCalls == 0 &&
+                runtime.releaseIdleResourcesCalls == 1 && runtime.destroyDisplayPoolCalls == 1 &&
+                runtime.destroySelectorServiceCalls == 1 &&
+                runtime.shutdownCaptureWorkerCalls == 1 && !runtime.workerCreated &&
+                state.sessionState == ScreenshotSessionState::IdleCold,
+            "cold hibernation must retire capture leaves without destroying the workflow core");
 
     workflow.startCapture();
-    require(runtime.ensureCaptureWorkerCalls == 0 && runtime.captureAllAsyncCalls == 1,
-            "capture after hibernation must reuse the existing worker and session objects");
+    require(runtime.ensureCaptureWorkerCalls == 1 && runtime.captureAllAsyncCalls == 1 &&
+                state.sessionState == ScreenshotSessionState::Capturing,
+            "capture after cold hibernation must reuse the workflow while recreating leaf workers");
 }
 
 void captureStartsSelectorInitializationWhilePixelsAreInFlight() {
@@ -1096,7 +1098,7 @@ void captureSessionsApplyTheCurrentSmartSelectionSetting() {
 int main() {
     idlePrewarmDoesNotInitializeSelector();
     cancelClearsTheReusableCanvasDocument();
-    retainedCancellationHibernatesWithoutRebuildingTheObjectCore();
+    retainedCancellationColdHibernatesWithoutRebuildingTheObjectCore();
     captureStartsSelectorInitializationWhilePixelsAreInFlight();
     overlayPreparationWaitsForCaptureEnvironmentReadiness();
     staleCaptureEnvironmentReadinessDoesNotRestoreOverlays();

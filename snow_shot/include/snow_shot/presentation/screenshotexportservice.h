@@ -28,28 +28,32 @@ class ScreenshotExportService final : public ScreenshotSelectionImageComposerPor
     ~ScreenshotExportService() override;
 
     [[nodiscard]] bool hasPendingRequests() const noexcept;
+    [[nodiscard]] bool releaseRetainedIdleResources(std::function<void(bool released)> completion);
 
     // Consumed by the next result or clipboard request. Focused-window capture uses this to export
     // the WGC surface directly while display snapshots remain untouched for history.
     void setNextSelectionSourceImage(QImage image);
     void clearNextSelectionSourceImage();
 
-    [[nodiscard]] bool requestSelectionResult(
-        const QRect& selection, const ScreenshotResultStyle& style, QObject* receiver,
-        ImageCallback callback) override;
-    [[nodiscard]] bool requestSelectionClipboard(
-        const QRect& selection, const ScreenshotResultStyle& style, QObject* receiver,
-        ClipboardCallback callback) override;
+    [[nodiscard]] bool requestSelectionResult(const QRect& selection,
+                                              const ScreenshotResultStyle& style, QObject* receiver,
+                                              ImageCallback callback) override;
+    [[nodiscard]] bool requestSelectionClipboard(const QRect& selection,
+                                                 const ScreenshotResultStyle& style,
+                                                 QObject* receiver,
+                                                 ClipboardCallback callback) override;
     [[nodiscard]] std::optional<ScreenshotPinnedSelectionRequest>
     preparePinnedSelection(const QRect& selection,
                            const ScreenshotResultStyle& style) const override;
-    [[nodiscard]] bool schedulePinnedSelection(
-        ScreenshotPinnedSelectionRequest request, QObject* receiver,
-        PinRequestCallback callback) override;
+    [[nodiscard]] bool schedulePinnedSelection(ScreenshotPinnedSelectionRequest request,
+                                               QObject* receiver,
+                                               PinRequestCallback callback) override;
 
   private:
     class PendingRequest;
     struct PendingRequestState;
+
+    [[nodiscard]] bool ensureWorkerRunning();
 
     ScreenshotExportServiceContext m_context;
     std::unique_ptr<QThread> m_thread;

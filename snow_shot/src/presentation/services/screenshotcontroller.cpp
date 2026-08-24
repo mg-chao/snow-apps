@@ -85,6 +85,9 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+#include <QThreadPool>
+#include <private/qguiapplication_p.h>
+#include <private/qthreadpool_p.h>
 #include <windows.h>
 #include <dwmapi.h>
 #include <mmsystem.h>
@@ -95,6 +98,28 @@ constexpr auto kCopyMessageKey = "screenshot-copy";
 constexpr auto kSaveMessageKey = "screenshot-save";
 constexpr auto kPinClipboardMessageKey = "screenshot-pin-clipboard";
 #if defined(Q_OS_WIN) || defined(_WIN32)
+int limitQtGuiImageThreadPoolToRetainedWorkers() {
+    QThreadPool* const pool = QGuiApplicationPrivate::qtGuiThreadPool();
+    if (pool == nullptr) {
+        return 0;
+    }
+    const int configuredMaximum = pool->maxThreadCount();
+    int retainedWorkers = 0;
+    auto* const privatePool = static_cast<QThreadPoolPrivate*>(QObjectPrivate::get(pool));
+    {
+        QMutexLocker lock(&privatePool->mutex);
+        retainedWorkers = privatePool->allThreads.size();
+    }
+    pool->setMaxThreadCount(std::clamp(retainedWorkers, 1, configuredMaximum));
+    return configuredMaximum;
+}
+
+void restoreQtGuiImageThreadPoolMaximum(int configuredMaximum) {
+    if (configuredMaximum > 0) {
+        QGuiApplicationPrivate::qtGuiThreadPool()->setMaxThreadCount(configuredMaximum);
+    }
+}
+
 QString cameraShutterAudioPath() {
     const QString installedPath = QDir(QCoreApplication::applicationDirPath())
                                       .filePath(QStringLiteral("audios/camera_shutter.mp3"));
@@ -332,8 +357,8 @@ struct ScreenshotController::Impl final : public QObject,
                           std::shared_ptr<std::optional<ScreenshotHistoryEntry>> historyCandidate,
                           bool scrolling);
     void saveScrollingSnapshotForCopy(ScreenshotScrollingSnapshot snapshot, quint64 generation,
-                                       bool copyFileToClipboard,
-                                       snow_shot::storage::CaptureHistorySource historySource);
+                                      bool copyFileToClipboard,
+                                      snow_shot::storage::CaptureHistorySource historySource);
     void completeBackgroundSave(ScreenshotExportTaskResult result, quint64 generation);
     void completeCopyExport(bool success, quint64 generation,
                             snow_shot::storage::CaptureHistorySource historySource,
@@ -406,6 +431,9 @@ struct ScreenshotController::Impl final : public QObject,
     ScreenshotExportJobHandle m_clipboardPinJob;
     quint64 m_clipboardPinGeneration = 0;
     quint64 m_delayedCaptureGeneration = 0;
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    int m_qtGuiImageThreadPoolMaximum = 0;
+#endif
     bool m_delayedCapturePending = false;
     bool m_screenRecordingOpenPending = false;
     PendingSelectionAction m_pendingSelectionAction = PendingSelectionAction::None;
@@ -669,8 +697,7 @@ void ScreenshotController::Impl::createPresentationInfrastructure() {
     m_selectorCoordinator = new ScreenshotSelectorCoordinator(&owner);
     m_screenRecordingController = std::make_unique<ScreenRecordingController>(&owner);
     QObject::connect(m_screenRecordingController.get(),
-                     &ScreenRecordingController::activeWorkChanged,
-                     this, [this](bool active) {
+                     &ScreenRecordingController::activeWorkChanged, this, [this](bool active) {
                          if (!active) {
                              owner.retryIdleImplementationRelease();
                          }
@@ -944,8 +971,8 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                 [this]() { handleCapturePresented(); },
                 [this](quint64 sessionId) {
                     QTimer::singleShot(75, this, [this, sessionId]() {
-                        if (m_captureState.sessionId != sessionId ||
-                            m_interaction.inactive() || m_presentationServices == nullptr) {
+                        if (m_captureState.sessionId != sessionId || m_interaction.inactive() ||
+                            m_presentationServices == nullptr) {
                             return;
                         }
                         m_presentationServices->updateOverlayState();
@@ -2495,8 +2522,7 @@ void ScreenshotController::Impl::saveImageForCopy(
                 }
             });
         if (backgroundSaveJob.isValid()) {
-            m_backgroundSaveJobs.insert(backgroundSaveGeneration,
-                                        std::move(backgroundSaveJob));
+            m_backgroundSaveJobs.insert(backgroundSaveGeneration, std::move(backgroundSaveJob));
         } else {
             m_messages->warning(
                 QString::fromLatin1(kSaveMessageKey),
@@ -2672,8 +2698,7 @@ void ScreenshotController::Impl::saveScrollingSnapshotForCopy(
                 }
             });
         if (backgroundSaveJob.isValid()) {
-            m_backgroundSaveJobs.insert(backgroundSaveGeneration,
-                                        std::move(backgroundSaveJob));
+            m_backgroundSaveJobs.insert(backgroundSaveGeneration, std::move(backgroundSaveJob));
         } else {
             m_messages->warning(
                 QString::fromLatin1(kSaveMessageKey),
@@ -2806,13 +2831,11 @@ void ScreenshotController::Impl::completeBackgroundSave(ScreenshotExportTaskResu
         return;
     }
     m_backgroundSaveJobs.erase(job);
-    if (!result.succeeded() &&
-        result.failureStage != ScreenshotExportFailureStage::Cancelled) {
-        m_messages->warning(
-            QString::fromLatin1(kSaveMessageKey),
-            QCoreApplication::translate("ScreenshotController",
-                                        "Automatic screenshot saving failed: %1")
-                .arg(result.error));
+    if (!result.succeeded() && result.failureStage != ScreenshotExportFailureStage::Cancelled) {
+        m_messages->warning(QString::fromLatin1(kSaveMessageKey),
+                            QCoreApplication::translate("ScreenshotController",
+                                                        "Automatic screenshot saving failed: %1")
+                                .arg(result.error));
     }
     owner.retryIdleImplementationRelease();
 }
@@ -3162,8 +3185,72 @@ ScreenshotController::Impl::~Impl() {
 
 bool ScreenshotController::Impl::releaseRetainedIdleResources(
     std::function<void(bool released)> completion) {
-    return m_captureWorkflow != nullptr &&
-           m_captureWorkflow->releaseRetainedIdleResources(std::move(completion));
+    if (m_captureWorkflow == nullptr || !completion) {
+        return false;
+    }
+
+    struct ReleaseBarrier final {
+        int pending = 1;
+        bool released = true;
+        std::function<void(bool)> completion;
+
+        void finish(bool resourceReleased) {
+            released = released && resourceReleased;
+            --pending;
+            if (pending == 0) {
+                completion(released);
+            }
+        }
+    };
+    auto barrier = std::make_shared<ReleaseBarrier>();
+    barrier->completion = std::move(completion);
+    const auto addRelease = [barrier](auto&& schedule) {
+        ++barrier->pending;
+        if (!schedule([barrier](bool released) { barrier->finish(released); })) {
+            barrier->finish(false);
+        }
+    };
+
+    // Scrolling is a lazy sub-session, not part of the reusable screenshot core. Drain its
+    // worker before publishing the hibernation checkpoint so its stitch executor and frame tiles
+    // cannot survive a completed screenshot lifecycle.
+    if (m_scrollingCaptureController != nullptr) {
+        m_scrollingCaptureController->releaseIdleResources();
+    }
+
+    // Conversion work keeps an executor lease while it is in flight. Dropping the idle process
+    // reference here lets later sessions recreate the bounded pool on demand; the shadow cache is
+    // GUI-thread-local and belongs to the just-completed screenshot presentation.
+    snow_capture_release_conversion_pool();
+    ScreenshotSelectionShadowRenderer::resetCacheForCurrentThread();
+
+    if (m_tableRecognition != nullptr) {
+        barrier->released = m_tableRecognition->releaseRetainedIdleResources() && barrier->released;
+    }
+    if (m_exportService != nullptr) {
+        addRelease([this](auto callback) {
+            return m_exportService->releaseRetainedIdleResources(std::move(callback));
+        });
+    }
+    if (m_ocrRecognition != nullptr) {
+        addRelease([this](auto callback) {
+            return m_ocrRecognition->releaseRetainedIdleResources(std::move(callback));
+        });
+    }
+    if (m_qrRecognition != nullptr) {
+        addRelease([this](auto callback) {
+            return m_qrRecognition->releaseRetainedIdleResources(std::move(callback));
+        });
+    }
+    addRelease([this](auto callback) {
+        return m_captureWorkflow->releaseRetainedIdleResources(
+            [callback = std::move(callback)](bool released) mutable {
+                SnowCanvasRuntime::releaseRetainedRenderResourcesForCurrentThread();
+                callback(released);
+            });
+    });
+    barrier->finish(true);
+    return true;
 }
 
 void ScreenshotController::Impl::invalidateDelayedCapture() {
@@ -3194,11 +3281,9 @@ bool ScreenshotController::Impl::canBeginCapture() const {
 bool ScreenshotController::Impl::canReleaseAfterCancel() const {
     const bool idleSession = m_captureState.sessionState == ScreenshotSessionState::IdleCold ||
                              m_captureState.sessionState == ScreenshotSessionState::IdlePrepared;
-    return !m_captureState.captureInProgress && m_interaction.inactive() &&
-           idleSession && !m_delayedCapturePending && !m_imageExportInFlight &&
-           m_backgroundSaveJobs.isEmpty() &&
-           !m_clipboardPinJob.isValid() &&
-           !m_screenRecordingOpenPending &&
+    return !m_captureState.captureInProgress && m_interaction.inactive() && idleSession &&
+           !m_delayedCapturePending && !m_imageExportInFlight && m_backgroundSaveJobs.isEmpty() &&
+           !m_clipboardPinJob.isValid() && !m_screenRecordingOpenPending &&
            (m_screenRecordingController == nullptr ||
             !m_screenRecordingController->hasActiveWork()) &&
            (m_exportService == nullptr || !m_exportService->hasPendingRequests()) &&
@@ -3214,6 +3299,9 @@ bool ScreenshotController::Impl::beginCapture(
         return false;
     }
 
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    m_qtGuiImageThreadPoolMaximum = limitQtGuiImageThreadPoolToRetainedWorkers();
+#endif
     clearCanvasColorSampling();
     if (m_overlayInputHandler != nullptr) {
         m_overlayInputHandler->resetTransientShortcuts();
@@ -3483,27 +3571,9 @@ void ScreenshotController::scheduleIdleImplementationRelease(Impl* implementatio
     const QPointer<Impl> guardedImplementation(implementation);
     const quint64 releaseGeneration = m_operationGeneration;
     const quint64 idleReleaseGeneration = m_idleReleaseGeneration;
-    QTimer::singleShot(0, this,
-                       [guardedController, guardedImplementation, releaseGeneration,
-                        idleReleaseGeneration]() {
-        if (guardedController.isNull() || guardedImplementation.isNull() ||
-            guardedController->m_impl.get() != guardedImplementation.data() ||
-            guardedController->m_operationGeneration != releaseGeneration ||
-            guardedController->m_idleReleaseGeneration != idleReleaseGeneration ||
-            !guardedImplementation->canReleaseAfterCancel()) {
-            return;
-        }
-        QTimer::singleShot(0, guardedController,
-                           [guardedController, guardedImplementation, releaseGeneration,
-                            idleReleaseGeneration]() {
-#if defined(Q_OS_WIN) || defined(_WIN32)
-            // Overlay widgets may use deleteLater() while cancellation is
-            // dispatched from the overlay itself. Drain that destruction
-            // before beginning the retained-resource grace period.
-            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-#endif
-            // Cancellation may be superseded between queued turns; only release the same idle
-            // implementation that passed the first check.
+    QTimer::singleShot(
+        0, this,
+        [guardedController, guardedImplementation, releaseGeneration, idleReleaseGeneration]() {
             if (guardedController.isNull() || guardedImplementation.isNull() ||
                 guardedController->m_impl.get() != guardedImplementation.data() ||
                 guardedController->m_operationGeneration != releaseGeneration ||
@@ -3511,11 +3581,18 @@ void ScreenshotController::scheduleIdleImplementationRelease(Impl* implementatio
                 !guardedImplementation->canReleaseAfterCancel()) {
                 return;
             }
-            constexpr int kIdleResourceReleaseGraceMilliseconds = 750;
             QTimer::singleShot(
-                kIdleResourceReleaseGraceMilliseconds, guardedController,
+                0, guardedController,
                 [guardedController, guardedImplementation, releaseGeneration,
                  idleReleaseGeneration]() {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+                    // Overlay widgets may use deleteLater() while cancellation is
+                    // dispatched from the overlay itself. Drain that destruction
+                    // before beginning the retained-resource grace period.
+                    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+#endif
+                    // Cancellation may be superseded between queued turns; only release the same
+                    // idle implementation that passed the first check.
                     if (guardedController.isNull() || guardedImplementation.isNull() ||
                         guardedController->m_impl.get() != guardedImplementation.data() ||
                         guardedController->m_operationGeneration != releaseGeneration ||
@@ -3523,46 +3600,85 @@ void ScreenshotController::scheduleIdleImplementationRelease(Impl* implementatio
                         !guardedImplementation->canReleaseAfterCancel()) {
                         return;
                     }
+                    constexpr int kIdleResourceReleaseGraceMilliseconds = 750;
+                    QTimer::singleShot(
+                        kIdleResourceReleaseGraceMilliseconds, guardedController,
+                        [guardedController, guardedImplementation, releaseGeneration,
+                         idleReleaseGeneration]() {
+                            if (guardedController.isNull() || guardedImplementation.isNull() ||
+                                guardedController->m_impl.get() != guardedImplementation.data() ||
+                                guardedController->m_operationGeneration != releaseGeneration ||
+                                guardedController->m_idleReleaseGeneration !=
+                                    idleReleaseGeneration ||
+                                !guardedImplementation->canReleaseAfterCancel()) {
+                                return;
+                            }
 
-                    const auto queueFinalRelease =
-                        [guardedController, guardedImplementation,
-                         releaseGeneration, idleReleaseGeneration](bool released) {
-                        Q_UNUSED(released);
-                        if (guardedController.isNull()) {
-                            return;
-                        }
-                        QTimer::singleShot(
-                            0, guardedController, [guardedController, guardedImplementation,
-                                                   releaseGeneration,
-                                                   idleReleaseGeneration]() {
-                                if (guardedController.isNull() ||
-                                    guardedImplementation.isNull() ||
-                                    guardedController->m_impl.get() !=
-                                        guardedImplementation.data() ||
-                                    guardedController->m_operationGeneration != releaseGeneration ||
-                                    guardedController->m_idleReleaseGeneration !=
-                                        idleReleaseGeneration ||
-                                    !guardedImplementation->canReleaseAfterCancel()) {
+                            const auto queueFinalRelease = [guardedController,
+                                                            guardedImplementation,
+                                                            releaseGeneration,
+                                                            idleReleaseGeneration](bool released) {
+                                Q_UNUSED(released);
+                                if (guardedController.isNull()) {
                                     return;
                                 }
+                                QTimer::singleShot(
+                                    0, guardedController,
+                                    [guardedController, guardedImplementation, releaseGeneration,
+                                     idleReleaseGeneration]() {
+                                        if (guardedController.isNull() ||
+                                            guardedImplementation.isNull() ||
+                                            guardedController->m_impl.get() !=
+                                                guardedImplementation.data() ||
+                                            guardedController->m_operationGeneration !=
+                                                releaseGeneration ||
+                                            guardedController->m_idleReleaseGeneration !=
+                                                idleReleaseGeneration ||
+                                            !guardedImplementation->canReleaseAfterCancel()) {
+                                            return;
+                                        }
 
-                                guardedController->m_impl.reset();
-#if defined(SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION)
-                                snow_shot::presentation::screenshot_lifecycle_perf::
-                                    captureReleased();
+#if defined(Q_OS_WIN) || defined(_WIN32)
+                                        // Cold hibernation retires capture-scoped widgets with
+                                        // deleteLater(). This callback is already a queued turn, so
+                                        // drain those deletes before publishing captureReleased and
+                                        // allowing stabilized idle-memory sampling to begin.
+                                        QCoreApplication::sendPostedEvents(nullptr,
+                                                                           QEvent::DeferredDelete);
+                                        // Full-screen image operations can expand Qt's private GUI
+                                        // pool beyond its prewarmed baseline. The capture started
+                                        // with the pool capped to its resident worker count, so
+                                        // restoring the configured maximum here preserves the cold
+                                        // worker set without retaining capture-only threads.
+                                        restoreQtGuiImageThreadPoolMaximum(
+                                            guardedImplementation->m_qtGuiImageThreadPoolMaximum);
+                                        guardedImplementation->m_qtGuiImageThreadPoolMaximum = 0;
 #endif
-                            });
-                    };
-                    const bool scheduled = guardedImplementation->releaseRetainedIdleResources(
-                        [queueFinalRelease](bool released) { queueFinalRelease(released); });
-                    if (!scheduled) {
-                        // Never destroy Impl from inside one of its workflow methods. Queue the
-                        // same final revalidation used by the asynchronous completion path.
-                        queueFinalRelease(false);
-                    }
+                                        // Invalidate any duplicate timers which were queued for the
+                                        // same cancellation. The hibernated Impl remains the stable
+                                        // owner of lightweight models and dependencies for the next
+                                        // capture.
+                                        ++guardedController->m_idleReleaseGeneration;
+#if defined(SNOW_SHOT_SCREENSHOT_LIFECYCLE_PERF_INSTRUMENTATION)
+                                        snow_shot::presentation::screenshot_lifecycle_perf::
+                                            captureReleased();
+#endif
+                                    });
+                            };
+                            const bool scheduled =
+                                guardedImplementation->releaseRetainedIdleResources(
+                                    [queueFinalRelease](bool released) {
+                                        queueFinalRelease(released);
+                                    });
+                            if (!scheduled) {
+                                // Never destroy Impl from inside one of its workflow methods. Queue
+                                // the same final revalidation used by the asynchronous completion
+                                // path.
+                                queueFinalRelease(false);
+                            }
+                        });
                 });
         });
-    });
 }
 
 void ScreenshotController::setUiPreferences(const ScreenshotUiPreferences& preferences) {
@@ -3587,7 +3703,14 @@ void ScreenshotController::cancelIdleResourceRelease() {
 }
 
 void ScreenshotController::prewarmResources() {
-    QTimer::singleShot(0, this, [this]() { ensureImpl().m_captureWorkflow->prewarmResources(); });
+    QTimer::singleShot(0, this, [this]() {
+        Impl& implementation = ensureImpl();
+        implementation.m_captureWorkflow->prewarmResources();
+        if (implementation.m_ocrRecognition != nullptr &&
+            !implementation.m_ocrRecognition->prewarmRuntime()) {
+            qWarning("Unable to prewarm the OCR runtime");
+        }
+    });
 }
 
 void ScreenshotController::startCapture() {
@@ -3670,10 +3793,10 @@ void ScreenshotController::captureCurrentMonitor() {
 #else
     const QPoint cursorPosition = QCursor::pos();
 #endif
-    static_cast<void>(implementation.beginCapture(
-        Impl::PendingSelectionAction::Copy,
-        snow_shot::storage::CaptureHistorySource::CurrentMonitor,
-        Impl::AutomaticSelectionMode::CurrentMonitor, cursorPosition));
+    static_cast<void>(
+        implementation.beginCapture(Impl::PendingSelectionAction::Copy,
+                                    snow_shot::storage::CaptureHistorySource::CurrentMonitor,
+                                    Impl::AutomaticSelectionMode::CurrentMonitor, cursorPosition));
     scheduleIdleImplementationRelease(&implementation);
 }
 

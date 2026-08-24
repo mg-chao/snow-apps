@@ -61,10 +61,10 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
     explicit ScreenshotOcrRecognitionService(QObject* parent = nullptr);
     explicit ScreenshotOcrRecognitionService(ScreenshotOcrBackendPreference backendPreference,
                                              QObject* parent = nullptr);
-    explicit ScreenshotOcrRecognitionService(const Options& options,
-                                             ScreenshotOcrBackendPreference backendPreference =
-                                                 ScreenshotOcrBackendPreference::Cpu,
-                                             QObject* parent = nullptr);
+    explicit ScreenshotOcrRecognitionService(
+        const Options& options,
+        ScreenshotOcrBackendPreference backendPreference = ScreenshotOcrBackendPreference::Cpu,
+        QObject* parent = nullptr);
     ~ScreenshotOcrRecognitionService() override;
 
     RequestToken recognize(ScreenshotOcrRequest request, QObject* receiver,
@@ -72,6 +72,8 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
     void cancel(RequestToken token) override;
     bool reprioritize(RequestToken token, ScreenshotOcrRequestPriority priority) override;
     void setBackendPreference(ScreenshotOcrBackendPreference preference);
+    [[nodiscard]] bool prewarmRuntime();
+    [[nodiscard]] bool releaseRetainedIdleResources(std::function<void(bool released)> completion);
     [[nodiscard]] int liveWorkerCount() const;
 
   private:

@@ -159,8 +159,7 @@ void queuedRequestsReuseNoPersistentWorker() {
 
     const auto firstToken = service.recognize(image, &receiver, completion);
     const auto secondToken = service.recognize(image, &receiver, completion);
-    require(firstToken != 0 && secondToken != 0,
-            "queued QR requests should both be accepted");
+    require(firstToken != 0 && secondToken != 0, "queued QR requests should both be accepted");
     require(service.findChildren<QThread*>().size() == 1,
             "queued QR requests should share one active worker at a time");
 
@@ -179,9 +178,26 @@ void destroyingReceiverCancelsQueuedCompletion() {
     require(token != 0, "a cancellable QR request should be accepted");
 
     receiver.reset();
+    bool released = false;
+    require(service.releaseRetainedIdleResources(
+                [&](bool resourcesReleased) { released = resourcesReleased; }),
+            "QR idle-resource release should be scheduled");
     QEventLoop loop;
-    QTimer::singleShot(250, &loop, &QEventLoop::quit);
+    QTimer timeout;
+    timeout.setSingleShot(true);
+    timeout.setInterval(10'000);
+    QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+    QTimer poll;
+    poll.setInterval(5);
+    QObject::connect(&poll, &QTimer::timeout, &loop, [&]() {
+        if (released) {
+            loop.quit();
+        }
+    });
+    poll.start();
+    timeout.start();
     loop.exec();
+    require(released, "QR idle-resource release did not wait for its worker");
     require(!completed, "destroying the receiver must cancel QR result delivery");
     require(service.findChildren<QThread*>().isEmpty(),
             "canceled QR recognition should destroy its worker thread");

@@ -38,10 +38,10 @@ struct ScreenshotCaptureWorkflowContext {
     std::function<bool()> smartSelectionEnabled = []() { return true; };
     std::function<void(std::optional<ScreenshotWindowCaptureFrame>)> focusedWindowCaptured =
         [](std::optional<ScreenshotWindowCaptureFrame>) {};
-    // Keep the prepared capture/display core across a short idle gap so a
-    // follow-up screenshot can reuse it. The controller later hibernates its
-    // heavyweight payloads and native surfaces without destroying the object
-    // core. Lightweight workflow tests retain cold-release behavior by
+    // Keep the prepared capture/display leaves across a short idle gap so a
+    // follow-up screenshot can reuse them. The controller later cold-hibernates
+    // those leaves while retaining the workflow and service object core.
+    // Lightweight workflow tests retain immediate cold-release behavior by
     // leaving this disabled.
     bool retainIdleResourcesForFastRestart = false;
 };

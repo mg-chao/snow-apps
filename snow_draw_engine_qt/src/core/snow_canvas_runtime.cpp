@@ -1,9 +1,12 @@
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 
 #include "snow_canvas_export.h"
+#include "snow_canvas_fill_render.h"
+#include "snow_canvas_renderer.h"
 #include "snow_canvas_runtime_access.h"
 #include "snow_canvas_runtime_session.h"
 #include "snow_canvas_runtime_thread_affinity.h"
+#include "snow_canvas_tile_cache.h"
 
 #include <memory>
 
@@ -112,8 +115,7 @@ bool SnowCanvasRuntime::Impl::clearDocumentPreservingViewports() {
     return session.clearDocumentPreservingViewports();
 }
 
-bool SnowCanvasRuntime::Impl::setQuickSelectionDisabledTools(
-    const QSet<SnowCanvasTool>& tools) {
+bool SnowCanvasRuntime::Impl::setQuickSelectionDisabledTools(const QSet<SnowCanvasTool>& tools) {
     return hasThreadAccess("setQuickSelectionDisabledTools") &&
            session.setQuickSelectionDisabledTools(tools);
 }
@@ -229,6 +231,12 @@ bool SnowCanvasRuntime::setQuickSelectionDisabledTools(const QSet<SnowCanvasTool
 
 void SnowCanvasRuntime::destroyAsync() {
     m_impl->destroyAsync();
+}
+
+void SnowCanvasRuntime::releaseRetainedRenderResourcesForCurrentThread() {
+    snow_canvas_renderer::resetWatermarkRenderCacheForCurrentThread();
+    snow_canvas_fill_render::resetHatchTextureCacheForCurrentThread();
+    snow_canvas_tile_cache::clear();
 }
 
 QImage SnowCanvasRuntime::renderToImage(const QRectF& virtualSelectionRect, const QSize& outputSize,

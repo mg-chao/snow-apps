@@ -2478,6 +2478,7 @@ void scrollingThumbnailPresentsAcceptedFrameWithoutInput() {
     appended.fill(QColor(210, 50, 40));
     overlay.updateScrollingThumbnail(appended, QSize(128, 320),
                                      ScreenshotScrollingStitchChange::AppendedDown, 64);
+    QApplication::processEvents();
 
     require(thumbnail->size() == stableSize,
             "the refresh regression requires unchanged thumbnail geometry");

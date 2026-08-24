@@ -2,6 +2,7 @@
 
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 #include "snow_shot/presentation/screenshotselectionlimits.h"
+#include "snow_draw_engine_qt/snow_transient_image.h"
 
 #include <QBrush>
 #include <QPainter>
@@ -341,7 +342,11 @@ QImage ScreenshotResultCompositor::compose(const QImage& content,
         return {};
     }
 
-    QImage output(layout.outputRect.size(), QImage::Format_ARGB32_Premultiplied);
+    QImage output = snow_draw_engine_qt::allocateTransientImage(
+        layout.outputRect.size(), QImage::Format_ARGB32_Premultiplied);
+    if (output.isNull()) {
+        return {};
+    }
     output.setDevicePixelRatio(1.0);
     output.fill(Qt::transparent);
     QPainter painter(&output);
@@ -350,7 +355,11 @@ QImage ScreenshotResultCompositor::compose(const QImage& content,
 
     const qreal physicalRadius = normalized.cornerRadius * layout.devicePixelRatio;
     if (normalized.cornerRadius > 0) {
-        QImage mask(output.size(), QImage::Format_ARGB32_Premultiplied);
+        QImage mask = snow_draw_engine_qt::allocateTransientImage(
+            output.size(), QImage::Format_ARGB32_Premultiplied);
+        if (mask.isNull()) {
+            return {};
+        }
         mask.fill(Qt::transparent);
         {
             QPainter maskPainter(&mask);

@@ -250,11 +250,32 @@ bool ScreenshotCaptureWorkflow::releaseIdleResourcesInternal(
         return true;
     }
     if (policy == IdleResourcePolicy::Hibernate) {
-        clearDisplays();
-        m_context.runtime.resetForNewCapture(m_context.displaySession);
-        m_context.runtime.hibernateDisplayPool(m_context.displaySession);
-        m_state.sessionState = ScreenshotSessionState::IdlePrepared;
-        return m_context.runtime.releaseIdleResourcesAsync(sessionId, std::move(completion));
+        // The short RetainWarm window has elapsed. Preserve the workflow/service graph, but
+        // retire capture-scoped leaf objects so touched worker stacks, selector state, widgets,
+        // and native surfaces return to the same cold state used before the first capture.
+        m_context.runtime.destroySelectorService();
+        destroyDisplayPool();
+        const auto finishColdHibernation =
+            [this, sessionId, completion = std::move(completion)](bool released) mutable {
+                if (sessionId != m_state.sessionId || m_state.captureInProgress ||
+                    !m_context.interaction.inactive()) {
+                    if (completion) {
+                        completion(false);
+                    }
+                    return;
+                }
+                m_context.runtime.shutdownCaptureWorker();
+                m_state.sessionState = ScreenshotSessionState::IdleCold;
+                if (completion) {
+                    completion(released);
+                }
+            };
+        if (m_context.runtime.releaseIdleResourcesAsync(sessionId, finishColdHibernation)) {
+            return true;
+        }
+        m_context.runtime.shutdownCaptureWorker();
+        m_state.sessionState = ScreenshotSessionState::IdleCold;
+        return false;
     }
     destroyDisplayPool();
     m_context.runtime.shutdownCaptureWorker();

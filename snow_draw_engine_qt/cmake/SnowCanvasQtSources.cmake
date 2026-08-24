@@ -35,6 +35,7 @@ set(SNOW_CANVAS_QT_SOURCES
     src/core/snow_canvas_state.h
     src/core/snow_canvas_sync_plan.cpp
     src/core/snow_canvas_sync_plan.h
+    src/core/snow_transient_image.cpp
     src/core/snow_canvas_type_conversions.cpp
     src/core/snow_canvas_type_conversions.h
     src/core/snow_canvas_utf8.cpp
@@ -119,5 +120,6 @@ set(SNOW_CANVAS_QT_SOURCES
     include/snow_draw_engine_qt/snow_canvas_custom_renderer.h
     include/snow_draw_engine_qt/snow_canvas_runtime.h
     include/snow_draw_engine_qt/snow_canvas_types.h
+    include/snow_draw_engine_qt/snow_transient_image.h
     include/snow_draw_engine_qt/snow_canvas_widget.h
 )

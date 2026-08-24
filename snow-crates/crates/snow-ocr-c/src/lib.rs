@@ -324,6 +324,24 @@ pub extern "C" fn snow_ocr_directml_is_available() -> u8 {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn snow_ocr_runtime_initialize() -> u8 {
+    match catch_unwind(AssertUnwindSafe(ensure_onnx_runtime)) {
+        Ok(Ok(())) => {
+            clear_last_error();
+            1
+        }
+        Ok(Err(error)) => {
+            set_last_error(error);
+            0
+        }
+        Err(_) => {
+            set_last_error("OCR runtime initialization panicked");
+            0
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
 /// # Safety
 /// `engine` must be null or a live handle returned by an engine creation function.
 pub unsafe extern "C" fn snow_ocr_engine_uses_directml(engine: *const SnowOcrEngine) -> u8 {

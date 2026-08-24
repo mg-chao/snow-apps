@@ -82,19 +82,18 @@ mainInterfaceHistoryDraft(int index, const QDateTime& createdUtc,
     draft.selection.cornerRadius = index % 3 == 0 ? 8 : 0;
     draft.selection.shadowWidth = index % 3 == 0 ? 12 : 0;
     draft.selection.shadowColor = QColor(0, 0, 0, 96);
-    draft.canvasHistory =
-        QByteArrayLiteral("{\"schemaVersion\":1,\"document\":{},\"history\":{}}");
+    draft.canvasHistory = QByteArrayLiteral("{\"schemaVersion\":1,\"document\":{},\"history\":{}}");
 
     QImage displayImage(displaySize, QImage::Format_RGB32);
     displayImage.fill(QColor::fromHsv((index * 37) % 360, 120, 205));
-    draft.displays.push_back(CaptureHistoryDisplayDraft{
-        QStringLiteral("display-primary"), QStringLiteral("Primary display"),
-        std::move(displayImage)});
+    draft.displays.push_back(CaptureHistoryDisplayDraft{QStringLiteral("display-primary"),
+                                                        QStringLiteral("Primary display"),
+                                                        std::move(displayImage)});
     QImage secondaryDisplayImage(displaySize, QImage::Format_RGB32);
     secondaryDisplayImage.fill(QColor::fromHsv((index * 37 + 97) % 360, 135, 190));
-    draft.displays.push_back(CaptureHistoryDisplayDraft{
-        QStringLiteral("display-secondary"), QStringLiteral("Secondary display"),
-        std::move(secondaryDisplayImage)});
+    draft.displays.push_back(CaptureHistoryDisplayDraft{QStringLiteral("display-secondary"),
+                                                        QStringLiteral("Secondary display"),
+                                                        std::move(secondaryDisplayImage)});
 
     QImage resultImage(resultSize, QImage::Format_RGB32);
     resultImage.fill(QColor::fromHsv((index * 37 + 18) % 360, 145, 225));
@@ -117,18 +116,18 @@ mainInterfaceHistoryDraft(int index, const QDateTime& createdUtc,
     return draft;
 }
 
-MainInterfaceHistoryFixture seedMainInterfaceHistory(
-    const QString& storageDirectory, int recordCount = kMainInterfaceHistoryRecordCount,
-    const QSize& displaySize = kMainInterfaceHistoryDisplaySize,
-    const QSize& resultSize = kMainInterfaceHistoryResultSize) {
+MainInterfaceHistoryFixture
+seedMainInterfaceHistory(const QString& storageDirectory,
+                         int recordCount = kMainInterfaceHistoryRecordCount,
+                         const QSize& displaySize = kMainInterfaceHistoryDisplaySize,
+                         const QSize& resultSize = kMainInterfaceHistoryResultSize) {
     require(recordCount > 0, "main-interface history fixture must contain records");
     require(displaySize.isValid() && resultSize.isValid() &&
                 displaySize.width() >= resultSize.width() &&
                 displaySize.height() >= resultSize.height(),
             "main-interface history fixture image sizes are invalid");
 
-    auto repository =
-        snow_shot::storage::makeCaptureHistoryRepository(storageDirectory);
+    auto repository = snow_shot::storage::makeCaptureHistoryRepository(storageDirectory);
     const QDateTime createdUtc = QDateTime::currentDateTimeUtc();
     for (int index = 0; index < recordCount; ++index) {
         const snow_shot::storage::CaptureHistoryPublishResult result =
@@ -144,8 +143,8 @@ MainInterfaceHistoryFixture seedMainInterfaceHistory(
     return {records.constFirst().id, static_cast<int>(records.size())};
 }
 
-QJsonObject mainInterfaceHistoryFixtureDescription(
-    int recordCount = kMainInterfaceHistoryRecordCount) {
+QJsonObject
+mainInterfaceHistoryFixtureDescription(int recordCount = kMainInterfaceHistoryRecordCount) {
     return {{QStringLiteral("preexisting_before_measured_process"), true},
             {QStringLiteral("record_count"), recordCount},
             {QStringLiteral("displays_per_record"), 2},
@@ -602,8 +601,8 @@ void sendMouseWheel(int x, int y, int delta) {
     input.mi.dx = absoluteCoordinate(x, left, width);
     input.mi.dy = absoluteCoordinate(y, top, height);
     input.mi.mouseData = static_cast<DWORD>(delta);
-    input.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_WHEEL | MOUSEEVENTF_ABSOLUTE |
-                       MOUSEEVENTF_VIRTUALDESK;
+    input.mi.dwFlags =
+        MOUSEEVENTF_MOVE | MOUSEEVENTF_WHEEL | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK;
     require(SendInput(1, &input, sizeof(input)) == 1, "SendInput mouse wheel event failed");
 }
 
@@ -628,11 +627,9 @@ void sendUnicodeText(const QString& text) {
         input.type = INPUT_KEYBOARD;
         input.ki.dwFlags = KEYEVENTF_UNICODE;
         input.ki.wScan = character.unicode();
-        require(SendInput(1, &input, sizeof(input)) == 1,
-                "SendInput Unicode key-down failed");
+        require(SendInput(1, &input, sizeof(input)) == 1, "SendInput Unicode key-down failed");
         input.ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
-        require(SendInput(1, &input, sizeof(input)) == 1,
-                "SendInput Unicode key-up failed");
+        require(SendInput(1, &input, sizeof(input)) == 1, "SendInput Unicode key-up failed");
     }
 }
 
@@ -669,15 +666,15 @@ bool readAutomationValue(IUIAutomationElement& element, QString* value) {
     require(value != nullptr, "UI Automation value output is null");
 
     ComPtr<IUIAutomationValuePattern> valuePattern;
-    if (SUCCEEDED(element.GetCurrentPatternAs(UIA_ValuePatternId,
-                                               IID_PPV_ARGS(valuePattern.put()))) &&
+    if (SUCCEEDED(
+            element.GetCurrentPatternAs(UIA_ValuePatternId, IID_PPV_ARGS(valuePattern.put()))) &&
         valuePattern.get() != nullptr) {
         BSTR rawValue = nullptr;
         if (SUCCEEDED(valuePattern.get()->get_CurrentValue(&rawValue))) {
-            *value = rawValue != nullptr
-                         ? QString::fromWCharArray(rawValue,
-                                                   static_cast<int>(SysStringLen(rawValue)))
-                         : QString();
+            *value =
+                rawValue != nullptr
+                    ? QString::fromWCharArray(rawValue, static_cast<int>(SysStringLen(rawValue)))
+                    : QString();
             SysFreeString(rawValue);
             return true;
         }
@@ -719,9 +716,9 @@ void focusElementForKeyboardInput(IUIAutomationElement& element) {
 void setWatermarkText(IUIAutomation& automation, DWORD processId, const ChildProcess& process,
                       int timeoutMilliseconds) {
     const QString expectedText = QStringLiteral("MEMORY TEST WATERMARK");
-    ComPtr<IUIAutomationElement> editor = waitForVisibleElement(
-        automation, processId, QStringLiteral("screenshotWatermarkTextEdit"), process,
-        timeoutMilliseconds);
+    ComPtr<IUIAutomationElement> editor =
+        waitForVisibleElement(automation, processId, QStringLiteral("screenshotWatermarkTextEdit"),
+                              process, timeoutMilliseconds);
     require(editor.get() != nullptr, "watermark text editor did not become visible");
 
     clickElement(*editor.get());
@@ -730,7 +727,7 @@ void setWatermarkText(IUIAutomation& automation, DWORD processId, const ChildPro
     bool acceptedByValuePattern = false;
     ComPtr<IUIAutomationValuePattern> valuePattern;
     if (SUCCEEDED(editor.get()->GetCurrentPatternAs(UIA_ValuePatternId,
-                                                     IID_PPV_ARGS(valuePattern.put()))) &&
+                                                    IID_PPV_ARGS(valuePattern.put()))) &&
         valuePattern.get() != nullptr) {
         const std::wstring expectedWide = expectedText.toStdWString();
         BSTR expectedBstr = SysAllocString(expectedWide.c_str());
@@ -869,14 +866,13 @@ void drawCanvasCurve(const RECT& monitor, int offsetX = 0, int offsetY = 0) {
             "selected monitor cannot contain the canvas drawing fixture");
     const int x0 = monitor.left + (monitorWidth - kSelectionPixels) / 2;
     const int y0 = monitor.top + (monitorHeight - kSelectionPixels) / 2;
-    const QVector<QPoint> curve{
-        QPoint(x0 + offsetX + 130, y0 + offsetY + 360),
-        QPoint(x0 + offsetX + 165, y0 + offsetY + 315),
-        QPoint(x0 + offsetX + 210, y0 + offsetY + 280),
-        QPoint(x0 + offsetX + 260, y0 + offsetY + 275),
-        QPoint(x0 + offsetX + 305, y0 + offsetY + 315),
-        QPoint(x0 + offsetX + 345, y0 + offsetY + 370),
-        QPoint(x0 + offsetX + 390, y0 + offsetY + 400)};
+    const QVector<QPoint> curve{QPoint(x0 + offsetX + 130, y0 + offsetY + 360),
+                                QPoint(x0 + offsetX + 165, y0 + offsetY + 315),
+                                QPoint(x0 + offsetX + 210, y0 + offsetY + 280),
+                                QPoint(x0 + offsetX + 260, y0 + offsetY + 275),
+                                QPoint(x0 + offsetX + 305, y0 + offsetY + 315),
+                                QPoint(x0 + offsetX + 345, y0 + offsetY + 370),
+                                QPoint(x0 + offsetX + 390, y0 + offsetY + 400)};
     require(!curve.isEmpty(), "canvas curve fixture must contain points");
     sendMouse(curve.constFirst().x(), curve.constFirst().y(), MOUSEEVENTF_MOVE);
     sendMouse(curve.constFirst().x(), curve.constFirst().y(), MOUSEEVENTF_LEFTDOWN);
@@ -1172,11 +1168,10 @@ const ScenarioMetadata& scenarioMetadata(BenchmarkScenario scenario) {
 }
 
 BenchmarkScenario benchmarkScenario(const QString& name) {
-    const BenchmarkScenario scenarios[]{BenchmarkScenario::MainInterface,
-                                        BenchmarkScenario::ScreenshotWindow,
-                                        BenchmarkScenario::PinToScreen,
-                                        BenchmarkScenario::ScreenRecording,
-                                        BenchmarkScenario::RightClickMenu};
+    const BenchmarkScenario scenarios[]{
+        BenchmarkScenario::MainInterface, BenchmarkScenario::ScreenshotWindow,
+        BenchmarkScenario::PinToScreen, BenchmarkScenario::ScreenRecording,
+        BenchmarkScenario::RightClickMenu};
     for (const BenchmarkScenario scenario : scenarios) {
         const ScenarioMetadata& metadata = scenarioMetadata(scenario);
         if (metadata.commandLineName == name ||
@@ -1258,13 +1253,13 @@ QJsonObject stageObject(const StableMemorySample& sample) {
              QString::fromLatin1(privateWorkingSetMethodName(sample.method))}};
 }
 
-QJsonObject scenarioReclaimComparisonForBounds(const QString& scenario, qint64 coldStartBytes,
-                                               qint64 postScenarioBytes,
-                                               qint64 coldStartLowerBoundBytes,
-                                               qint64 postScenarioUpperBoundBytes,
-                                               qint64 toleranceBytes) {
+QJsonObject scenarioReclaimComparisonForBounds(
+    const QString& scenario, qint64 coldStartBytes, qint64 postScenarioBytes,
+    qint64 coldStartLowerBoundBytes, qint64 coldStartUpperBoundBytes,
+    qint64 postScenarioLowerBoundBytes, qint64 postScenarioUpperBoundBytes, qint64 toleranceBytes) {
     require(!scenario.isEmpty(), "memory comparison scenario must not be empty");
     require(coldStartBytes >= 0 && postScenarioBytes >= 0 && coldStartLowerBoundBytes >= 0 &&
+                coldStartUpperBoundBytes >= 0 && postScenarioLowerBoundBytes >= 0 &&
                 postScenarioUpperBoundBytes >= 0 && toleranceBytes >= 0,
             "memory comparison inputs must be nonnegative");
     const qint64 deltaBytes = postScenarioBytes - coldStartBytes;
@@ -1275,12 +1270,16 @@ QJsonObject scenarioReclaimComparisonForBounds(const QString& scenario, qint64 c
             ? std::numeric_limits<qint64>::max()
             : coldStartLowerBoundBytes + toleranceBytes;
     const bool withinUpperBound = postScenarioUpperBoundBytes <= limitBytes;
+    const bool atOrAboveColdStart = postScenarioLowerBoundBytes >= coldStartUpperBoundBytes;
+    const bool withinAcceptedRange = withinUpperBound && atOrAboveColdStart;
     return {
         {QStringLiteral("scenario"), scenario},
         {QStringLiteral("comparison_kind"),
-         QStringLiteral("one_sided_upper_bound_using_stability_bounds")},
+         QStringLiteral("two_sided_interval_using_stability_bounds")},
         {QStringLiteral("criterion"),
-         QStringLiteral("post_scenario_stability_max_bytes <= "
+         QStringLiteral("cold_start_stability_max_bytes <= "
+                        "post_scenario_stability_min_bytes && "
+                        "post_scenario_stability_max_bytes <= "
                         "cold_start_stability_min_bytes + tolerance_bytes")},
         {QStringLiteral("representative"), QStringLiteral("median_of_stability_window")},
         {QStringLiteral("cold_start_bytes"), coldStartBytes},
@@ -1291,6 +1290,10 @@ QJsonObject scenarioReclaimComparisonForBounds(const QString& scenario, qint64 c
         {QStringLiteral("excess_mib"), static_cast<double>(excessBytes) / kBytesPerMebibyte},
         {QStringLiteral("acceptance_cold_start_bytes"), coldStartLowerBoundBytes},
         {QStringLiteral("acceptance_post_scenario_bytes"), postScenarioUpperBoundBytes},
+        {QStringLiteral("acceptance_cold_start_lower_bound_bytes"), coldStartLowerBoundBytes},
+        {QStringLiteral("acceptance_cold_start_upper_bound_bytes"), coldStartUpperBoundBytes},
+        {QStringLiteral("acceptance_post_scenario_lower_bound_bytes"), postScenarioLowerBoundBytes},
+        {QStringLiteral("acceptance_post_scenario_upper_bound_bytes"), postScenarioUpperBoundBytes},
         {QStringLiteral("acceptance_delta_bytes"), acceptanceDeltaBytes},
         {QStringLiteral("acceptance_delta_mib"),
          static_cast<double>(acceptanceDeltaBytes) / kBytesPerMebibyte},
@@ -1300,22 +1303,26 @@ QJsonObject scenarioReclaimComparisonForBounds(const QString& scenario, qint64 c
         {QStringLiteral("tolerance_mib"), static_cast<double>(toleranceBytes) / kBytesPerMebibyte},
         {QStringLiteral("limit_bytes"), limitBytes},
         {QStringLiteral("within_upper_bound"), withinUpperBound},
-        {QStringLiteral("within_tolerance"), withinUpperBound}};
+        {QStringLiteral("at_or_above_cold_start"), atOrAboveColdStart},
+        {QStringLiteral("over_reclaimed"), !atOrAboveColdStart},
+        {QStringLiteral("within_accepted_range"), withinAcceptedRange},
+        {QStringLiteral("within_tolerance"), withinAcceptedRange}};
 }
 
 QJsonObject scenarioReclaimComparison(const QString& scenario, qint64 coldStartBytes,
                                       qint64 postScenarioBytes, qint64 toleranceBytes) {
     return scenarioReclaimComparisonForBounds(scenario, coldStartBytes, postScenarioBytes,
-                                              coldStartBytes, postScenarioBytes, toleranceBytes);
+                                              coldStartBytes, coldStartBytes, postScenarioBytes,
+                                              postScenarioBytes, toleranceBytes);
 }
 
-QJsonObject scenarioReclaimComparison(const QString& scenario,
-                                      const StableMemorySample& coldStart,
+QJsonObject scenarioReclaimComparison(const QString& scenario, const StableMemorySample& coldStart,
                                       const StableMemorySample& postScenario,
                                       qint64 toleranceBytes) {
-    return scenarioReclaimComparisonForBounds(
-        scenario, coldStart.bytes, postScenario.bytes, coldStart.minimumBytes,
-        postScenario.maximumBytes, toleranceBytes);
+    return scenarioReclaimComparisonForBounds(scenario, coldStart.bytes, postScenario.bytes,
+                                              coldStart.minimumBytes, coldStart.maximumBytes,
+                                              postScenario.minimumBytes, postScenario.maximumBytes,
+                                              toleranceBytes);
 }
 
 QJsonObject environmentReport(const QString& appPath, const MonitorInfo& monitor) {
@@ -1411,15 +1418,17 @@ QString reportHtml(const QJsonObject& report) {
                "th{text-align:left;background:#f8f9fa}pre{background:#f8f9fa;padding:16px;"
                "overflow:auto}</style></head><body><h1>Screenshot memory footprint</h1>"
                "<p><strong>Benchmark: %1</strong> (%2/%3 requested samples completed; %4/%5 "
-               "post-scenario reclaim checks were no more than %6 MiB above cold start using "
-               "conservative stability-window bounds; P95 signed median delta %7)</p>"
+               "post-scenario checks met the full accepted interval; upper limit %6 MiB above "
+               "cold start using conservative stability-window bounds; P95 signed median delta "
+               "%7)</p>"
                "<table><thead><tr><th>Stage</th><th>Min</th><th>Mean</th><th>P50</th><th>P90</th>"
                "<th>P95</th><th>Max</th></tr></thead><tbody>%8</tbody></table><pre>%9</pre>"
                "</body></html>")
         .arg(acceptance)
         .arg(reclaimSummary.value(QStringLiteral("sample_count")).toInteger())
         .arg(reclaimSummary.value(QStringLiteral("requested_sample_count")).toInteger())
-        .arg(reclaimSummary.value(QStringLiteral("within_upper_bound_comparison_count")).toInteger())
+        .arg(reclaimSummary.value(QStringLiteral("within_accepted_range_comparison_count"))
+                 .toInteger())
         .arg(reclaimSummary.value(QStringLiteral("requested_comparison_count")).toInteger())
         .arg(reclaimSummary.value(QStringLiteral("tolerance_mib")).toDouble())
         .arg(p95Delta)
@@ -1589,12 +1598,12 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
 
     const QString sampleStorageTemplate =
         QDir(QDir(configuration.outputDirectory).absolutePath())
-            .filePath(QStringLiteral("sample-%1-storage-XXXXXX")
-                          .arg(iteration, 3, 10, QLatin1Char('0')));
+            .filePath(
+                QStringLiteral("sample-%1-storage-XXXXXX").arg(iteration, 3, 10, QLatin1Char('0')));
     QTemporaryDir sampleStorage(sampleStorageTemplate);
     require(sampleStorage.isValid(), "could not create isolated sample storage");
-    const ScopedEnvironmentVariable storageEnvironment(
-        QByteArray(kE2eStorageDirectoryEnvironment), QFile::encodeName(sampleStorage.path()));
+    const ScopedEnvironmentVariable storageEnvironment(QByteArray(kE2eStorageDirectoryEnvironment),
+                                                       QFile::encodeName(sampleStorage.path()));
 
     MainInterfaceHistoryFixture historyFixture;
     if (configuration.scenario == BenchmarkScenario::MainInterface) {
@@ -1605,7 +1614,9 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
                                    .arg(GetCurrentProcessId())
                                    .arg(iteration)
                                    .arg(QDateTime::currentMSecsSinceEpoch() % 1000000);
-    const QStringList baseArguments{QStringLiteral("--e2e-allow-overlay-capture"),
+    const QStringList baseArguments{
+        QStringLiteral("--e2e-allow-overlay-capture"),
+        QStringLiteral("--e2e-exclude-scrolling-windows-from-capture"),
                                     QStringLiteral("--e2e-instance-id=%1").arg(instanceId)};
     ChildProcess primary;
     if (!primary.start(configuration.appPath, baseArguments)) {
@@ -1626,417 +1637,417 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
     QJsonObject scenarioTrace;
 
     if (configuration.scenario == BenchmarkScenario::MainInterface) {
-    // Exercise the main-window lifecycle, including its two heaviest lazy pages. Post
-    // WM_CLOSE directly to the validated HWND so unrelated foreground-window changes cannot
-    // redirect the close command.
-    forwardCommand(configuration, baseArguments, QStringLiteral("--e2e-open-main-interface"));
-    ComPtr<IUIAutomationElement> mainWindow =
-        waitForVisibleElement(automation, primary.processId(), QStringLiteral("snowShotMainWindow"),
-                              primary, configuration.timeoutMilliseconds);
-    require(mainWindow.get() != nullptr, "main interface did not become visible");
-    forwardCommand(configuration, baseArguments,
-                   QStringLiteral("--e2e-open-screenshot-history"));
-    require(waitForVisibleElement(automation, primary.processId(),
-                                  QStringLiteral("screenshotHistoryPage"), primary,
-                                  configuration.timeoutMilliseconds)
-                    .get() != nullptr,
-            "screenshot history did not become visible");
-    require(waitForVisibleElement(
-                automation, primary.processId(),
-                QStringLiteral("screenshotHistoryEntry-%1").arg(historyFixture.newestRecordId),
-                primary, configuration.timeoutMilliseconds)
-                    .get() != nullptr,
-            "screenshot history did not load the pre-existing records");
-    require(waitForVisibleElement(automation, primary.processId(),
-                                  QStringLiteral("screenshotHistoryImage"), primary,
-                                  configuration.timeoutMilliseconds)
-                    .get() != nullptr,
-            "screenshot history did not resolve a pre-existing record preview");
-    // Keep the populated page visible through a stable window so its thumbnail decode and cache
-    // work complete before the second lazy page replaces it.
-    static_cast<void>(
-        waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
-                            configuration.pollMilliseconds, configuration.stabilityWindowSamples,
-                            configuration.stabilityRangeBytes, configuration.timeoutMilliseconds));
-    forwardCommand(configuration, baseArguments,
-                   QStringLiteral("--e2e-open-interface-settings"));
-    require(waitForVisibleElement(automation, primary.processId(),
-                                  QStringLiteral("settings-page-interface-settings"), primary,
-                                  configuration.timeoutMilliseconds)
-                    .get() != nullptr,
-            "interface settings did not become visible");
-    require(waitForElementToDisappear(automation, primary.processId(),
+        // Exercise the main-window lifecycle, including its two heaviest lazy pages. Post
+        // WM_CLOSE directly to the validated HWND so unrelated foreground-window changes cannot
+        // redirect the close command.
+        forwardCommand(configuration, baseArguments, QStringLiteral("--e2e-open-main-interface"));
+        ComPtr<IUIAutomationElement> mainWindow = waitForVisibleElement(
+            automation, primary.processId(), QStringLiteral("snowShotMainWindow"), primary,
+            configuration.timeoutMilliseconds);
+        require(mainWindow.get() != nullptr, "main interface did not become visible");
+        forwardCommand(configuration, baseArguments,
+                       QStringLiteral("--e2e-open-screenshot-history"));
+        require(waitForVisibleElement(automation, primary.processId(),
                                       QStringLiteral("screenshotHistoryPage"), primary,
-                                      configuration.timeoutMilliseconds),
-            "screenshot history remained visible after opening interface settings");
-    stages.active =
-        waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
-                            configuration.pollMilliseconds, configuration.stabilityWindowSamples,
-                            configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
-    closeNativeWindow(*mainWindow.get(), primary.processId());
-    require(waitForElementToDisappear(automation, primary.processId(),
-                                      QStringLiteral("snowShotMainWindow"), primary,
-                                      configuration.timeoutMilliseconds),
-            "main interface did not close");
-    stages.closed =
-        waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
-                            configuration.pollMilliseconds, configuration.stabilityWindowSamples,
-                            configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
-    scenarioComparison = scenarioReclaimComparison(metadata.reportName, stages.coldStart,
-                                                   stages.closed,
-                                                   configuration.scenarioReclaimToleranceBytes);
+                                      configuration.timeoutMilliseconds)
+                        .get() != nullptr,
+                "screenshot history did not become visible");
+        require(waitForVisibleElement(
+                    automation, primary.processId(),
+                    QStringLiteral("screenshotHistoryEntry-%1").arg(historyFixture.newestRecordId),
+                    primary, configuration.timeoutMilliseconds)
+                        .get() != nullptr,
+                "screenshot history did not load the pre-existing records");
+        require(waitForVisibleElement(automation, primary.processId(),
+                                      QStringLiteral("screenshotHistoryImage"), primary,
+                                      configuration.timeoutMilliseconds)
+                        .get() != nullptr,
+                "screenshot history did not resolve a pre-existing record preview");
+        // Keep the populated page visible through a stable window so its thumbnail decode and cache
+        // work complete before the second lazy page replaces it.
+        static_cast<void>(waitForStableMemory(
+            primary, configuration.stageMinimumWaitMilliseconds, configuration.pollMilliseconds,
+            configuration.stabilityWindowSamples, configuration.stabilityRangeBytes,
+            configuration.timeoutMilliseconds));
+        forwardCommand(configuration, baseArguments,
+                       QStringLiteral("--e2e-open-interface-settings"));
+        require(waitForVisibleElement(automation, primary.processId(),
+                                      QStringLiteral("settings-page-interface-settings"), primary,
+                                      configuration.timeoutMilliseconds)
+                        .get() != nullptr,
+                "interface settings did not become visible");
+        require(waitForElementToDisappear(automation, primary.processId(),
+                                          QStringLiteral("screenshotHistoryPage"), primary,
+                                          configuration.timeoutMilliseconds),
+                "screenshot history remained visible after opening interface settings");
+        stages.active = waitForStableMemory(
+            primary, configuration.stageMinimumWaitMilliseconds, configuration.pollMilliseconds,
+            configuration.stabilityWindowSamples, configuration.stabilityRangeBytes,
+            configuration.timeoutMilliseconds);
+        closeNativeWindow(*mainWindow.get(), primary.processId());
+        require(waitForElementToDisappear(automation, primary.processId(),
+                                          QStringLiteral("snowShotMainWindow"), primary,
+                                          configuration.timeoutMilliseconds),
+                "main interface did not close");
+        stages.closed = waitForStableMemory(
+            primary, configuration.stageMinimumWaitMilliseconds, configuration.pollMilliseconds,
+            configuration.stabilityWindowSamples, configuration.stabilityRangeBytes,
+            configuration.timeoutMilliseconds);
+        scenarioComparison =
+            scenarioReclaimComparison(metadata.reportName, stages.coldStart, stages.closed,
+                                      configuration.scenarioReclaimToleranceBytes);
 
     } else if (configuration.scenario == BenchmarkScenario::ScreenshotWindow) {
-    // Exercise the normal screenshot window through every drawing-tool path, then enter a
-    // scrolling capture before ending the screenshot. Keep the selection fixed so memory samples
-    // remain comparable between iterations.
-    positionCursorForCapture(monitor.bounds);
-    forwardCommand(configuration, baseArguments, QStringLiteral("--e2e-start-screenshot"));
-    static_cast<void>(waitForLifecycleEvent(
-        lifecyclePath, primary.processId(), QStringLiteral("first_capture_presented"),
-        lifecycleCursor, primary, configuration.timeoutMilliseconds));
-    static_cast<void>(waitForLifecycleEvent(
-        lifecyclePath, primary.processId(), QStringLiteral("capture_interaction_ready"),
-        lifecycleCursor, primary, configuration.timeoutMilliseconds));
-    dragFixedSelection(monitor.bounds);
-    const char* const drawingToolError = "screenshot drawing tool did not become visible";
-    const auto clickDrawingTool = [&](const QString& automationId) {
-        clickVisibleElement(automation, primary.processId(), automationId, primary,
-                            configuration.timeoutMilliseconds, drawingToolError);
-    };
-    const auto clickGroupedDrawingTool = [&](const QString& triggerId,
-                                             const QString& optionId) {
-        clickDrawingTool(triggerId);
-        clickVisibleElement(automation, primary.processId(), optionId, primary,
-                            configuration.timeoutMilliseconds,
-                            "screenshot drawing-tool option did not become visible");
-    };
+        // Exercise the normal screenshot window through every drawing-tool path, then enter a
+        // scrolling capture before ending the screenshot. Keep the selection fixed so memory
+        // samples remain comparable between iterations.
+        positionCursorForCapture(monitor.bounds);
+        forwardCommand(configuration, baseArguments, QStringLiteral("--e2e-start-screenshot"));
+        static_cast<void>(waitForLifecycleEvent(
+            lifecyclePath, primary.processId(), QStringLiteral("first_capture_presented"),
+            lifecycleCursor, primary, configuration.timeoutMilliseconds));
+        static_cast<void>(waitForLifecycleEvent(
+            lifecyclePath, primary.processId(), QStringLiteral("capture_interaction_ready"),
+            lifecycleCursor, primary, configuration.timeoutMilliseconds));
+        dragFixedSelection(monitor.bounds);
+        const char* const drawingToolError = "screenshot drawing tool did not become visible";
+        const auto clickDrawingTool = [&](const QString& automationId) {
+            clickVisibleElement(automation, primary.processId(), automationId, primary,
+                                configuration.timeoutMilliseconds, drawingToolError);
+        };
+        const auto clickGroupedDrawingTool = [&](const QString& triggerId,
+                                                 const QString& optionId) {
+            clickDrawingTool(triggerId);
+            clickVisibleElement(automation, primary.processId(), optionId, primary,
+                                configuration.timeoutMilliseconds,
+                                "screenshot drawing-tool option did not become visible");
+        };
 
-    // Exercise the canvas, rather than only toggling toolbar state. Keep the gestures well inside
-    // the fixed selection so they cannot resize the selection border or hit the toolbar.
-    clickDrawingTool(QStringLiteral("screenshotShapeButton"));
-    dragCanvasRectangle(monitor.bounds, 100, 100, 260, 180);
-    clickDrawingTool(QStringLiteral("screenshotFreeDrawButton"));
-    drawCanvasCurve(monitor.bounds);
+        // Exercise the canvas, rather than only toggling toolbar state. Keep the gestures well
+        // inside the fixed selection so they cannot resize the selection border or hit the toolbar.
+        clickDrawingTool(QStringLiteral("screenshotShapeButton"));
+        dragCanvasRectangle(monitor.bounds, 100, 100, 260, 180);
+        clickDrawingTool(QStringLiteral("screenshotFreeDrawButton"));
+        drawCanvasCurve(monitor.bounds);
 
-    clickDrawingTool(QStringLiteral("screenshotWatermarkButton"));
-    setWatermarkText(automation, primary.processId(), primary,
-                     configuration.timeoutMilliseconds);
+        clickDrawingTool(QStringLiteral("screenshotWatermarkButton"));
+        setWatermarkText(automation, primary.processId(), primary,
+                         configuration.timeoutMilliseconds);
 
-    clickDrawingTool(QStringLiteral("screenshotTextButton"));
-    clickCanvasPoint(monitor.bounds, 470, 130);
-    sendUnicodeText(QStringLiteral("MEMORY TEST TEXT"));
-    commitCanvasText();
-    std::this_thread::sleep_for(100ms);
-
-    clickDrawingTool(QStringLiteral("screenshotSerialNumberButton"));
-    clickCanvasPoint(monitor.bounds, 520, 300);
-    std::this_thread::sleep_for(100ms);
-
-    clickDrawingTool(QStringLiteral("screenshotFilterButton"));
-    drawCanvasCurve(monitor.bounds, 0, 220);
-
-    // Erase through the original shape so the eraser exercises hit testing and deletion rather
-    // than only entering its mode.
-    clickDrawingTool(QStringLiteral("screenshotEraserButton"));
-    dragCanvasLine(monitor.bounds, 140, 140, 340, 240);
-
-    clickGroupedDrawingTool(QStringLiteral("screenshotArrowLineButton"),
-                            QStringLiteral("screenshotDrawingToolGroupOption-arrow"));
-    dragCanvasLine(monitor.bounds, 120, 500, 360, 500);
-    clickGroupedDrawingTool(QStringLiteral("screenshotArrowLineButton"),
-                            QStringLiteral("screenshotDrawingToolGroupOption-line"));
-    dragCanvasLine(monitor.bounds, 120, 540, 360, 540);
-    clickGroupedDrawingTool(QStringLiteral("screenshotHighlightButton"),
-                            QStringLiteral("screenshotDrawingToolGroupOption-highlighter"));
-    drawCanvasCurve(monitor.bounds, 250, 0);
-    clickGroupedDrawingTool(QStringLiteral("screenshotHighlightButton"),
-                            QStringLiteral("screenshotDrawingToolGroupOption-spotlight"));
-    dragCanvasRectangle(monitor.bounds, 470, 500, 180, 120);
-
-    // Exercise every recognition entry before entering scrolling mode. Table and QR share a
-    // popover, so explicitly select both options instead of relying on the remembered entry.
-    clickDrawingTool(QStringLiteral("screenshotTableQrButton"));
-    clickVisibleElement(automation, primary.processId(),
-                        QStringLiteral("screenshotTableRecognitionOptionButton"), primary,
-                        configuration.timeoutMilliseconds,
-                        "table recognition option did not become visible");
-    static_cast<void>(waitForLifecycleEvent(
-        lifecyclePath, primary.processId(), QStringLiteral("ocr_table_recognition_complete"),
-        lifecycleCursor, primary, configuration.timeoutMilliseconds));
-    clickDrawingTool(QStringLiteral("screenshotTableQrButton"));
-    // Opening the shared popover also activates its remembered table entry. Wait for that
-    // request before selecting QR so no table worker remains active when QR starts.
-    static_cast<void>(waitForLifecycleEvent(
-        lifecyclePath, primary.processId(), QStringLiteral("ocr_table_recognition_complete"),
-        lifecycleCursor, primary, configuration.timeoutMilliseconds));
-    clickVisibleElement(automation, primary.processId(),
-                        QStringLiteral("screenshotQrRecognitionOptionButton"), primary,
-                        configuration.timeoutMilliseconds,
-                        "QR recognition option did not become visible");
-    static_cast<void>(waitForLifecycleEvent(
-        lifecyclePath, primary.processId(), QStringLiteral("ocr_qr_recognition_complete"),
-        lifecycleCursor, primary, configuration.timeoutMilliseconds));
-    clickDrawingTool(QStringLiteral("screenshotOcrButton"));
-    static_cast<void>(waitForLifecycleEvent(
-        lifecyclePath, primary.processId(), QStringLiteral("ocr_text_recognition_complete"),
-        lifecycleCursor, primary, configuration.timeoutMilliseconds));
-
-    clickDrawingTool(QStringLiteral("screenshotScrollingScreenshotButton"));
-    require(waitForVisibleElement(automation, primary.processId(),
-                                  QStringLiteral("screenshot-scrolling-thumbnail"), primary,
-                                  configuration.timeoutMilliseconds)
-                    .get() != nullptr,
-            "scrolling screenshot thumbnail did not become visible");
-
-    const int monitorCenterX =
-        monitor.bounds.left + (monitor.bounds.right - monitor.bounds.left) / 2;
-    const int monitorCenterY =
-        monitor.bounds.top + (monitor.bounds.bottom - monitor.bounds.top) / 2;
-    // The scrolling overlay leaves the selected rectangle pass-through, so wheel input at its
-    // center reaches the captured window and drives the native scrolling stream.
-    for (int index = 0; index < 3; ++index) {
-        sendMouseWheel(monitorCenterX, monitorCenterY, -WHEEL_DELTA);
+        clickDrawingTool(QStringLiteral("screenshotTextButton"));
+        clickCanvasPoint(monitor.bounds, 470, 130);
+        sendUnicodeText(QStringLiteral("MEMORY TEST TEXT"));
+        commitCanvasText();
         std::this_thread::sleep_for(100ms);
-    }
-    stages.active =
-        waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
-                            configuration.pollMilliseconds, configuration.stabilityWindowSamples,
-                            configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
 
-    // Switching to Edit selection stops the scrolling stream and restores the selection toolbar;
-    // copy the resulting selection through the normal clipboard action to exercise its export
-    // path before the capture is released.
-    clickDrawingTool(QStringLiteral("screenshotMoveButton"));
-    require(waitForElementToDisappear(automation, primary.processId(),
+        clickDrawingTool(QStringLiteral("screenshotSerialNumberButton"));
+        clickCanvasPoint(monitor.bounds, 520, 300);
+        std::this_thread::sleep_for(100ms);
+
+        clickDrawingTool(QStringLiteral("screenshotFilterButton"));
+        drawCanvasCurve(monitor.bounds, 0, 220);
+
+        // Erase through the original shape so the eraser exercises hit testing and deletion rather
+        // than only entering its mode.
+        clickDrawingTool(QStringLiteral("screenshotEraserButton"));
+        dragCanvasLine(monitor.bounds, 140, 140, 340, 240);
+
+        clickGroupedDrawingTool(QStringLiteral("screenshotArrowLineButton"),
+                                QStringLiteral("screenshotDrawingToolGroupOption-arrow"));
+        dragCanvasLine(monitor.bounds, 120, 500, 360, 500);
+        clickGroupedDrawingTool(QStringLiteral("screenshotArrowLineButton"),
+                                QStringLiteral("screenshotDrawingToolGroupOption-line"));
+        dragCanvasLine(monitor.bounds, 120, 540, 360, 540);
+        clickGroupedDrawingTool(QStringLiteral("screenshotHighlightButton"),
+                                QStringLiteral("screenshotDrawingToolGroupOption-highlighter"));
+        drawCanvasCurve(monitor.bounds, 250, 0);
+        clickGroupedDrawingTool(QStringLiteral("screenshotHighlightButton"),
+                                QStringLiteral("screenshotDrawingToolGroupOption-spotlight"));
+        dragCanvasRectangle(monitor.bounds, 470, 500, 180, 120);
+
+        // Exercise every recognition entry before entering scrolling mode. Table and QR share a
+        // popover, so explicitly select both options instead of relying on the remembered entry.
+        clickDrawingTool(QStringLiteral("screenshotTableQrButton"));
+        clickVisibleElement(automation, primary.processId(),
+                            QStringLiteral("screenshotTableRecognitionOptionButton"), primary,
+                            configuration.timeoutMilliseconds,
+                            "table recognition option did not become visible");
+        static_cast<void>(waitForLifecycleEvent(
+            lifecyclePath, primary.processId(), QStringLiteral("ocr_table_recognition_complete"),
+            lifecycleCursor, primary, configuration.timeoutMilliseconds));
+        clickDrawingTool(QStringLiteral("screenshotTableQrButton"));
+        // Opening the shared popover also activates its remembered table entry. Wait for that
+        // request before selecting QR so no table worker remains active when QR starts.
+        static_cast<void>(waitForLifecycleEvent(
+            lifecyclePath, primary.processId(), QStringLiteral("ocr_table_recognition_complete"),
+            lifecycleCursor, primary, configuration.timeoutMilliseconds));
+        clickVisibleElement(automation, primary.processId(),
+                            QStringLiteral("screenshotQrRecognitionOptionButton"), primary,
+                            configuration.timeoutMilliseconds,
+                            "QR recognition option did not become visible");
+        static_cast<void>(waitForLifecycleEvent(
+            lifecyclePath, primary.processId(), QStringLiteral("ocr_qr_recognition_complete"),
+            lifecycleCursor, primary, configuration.timeoutMilliseconds));
+        clickDrawingTool(QStringLiteral("screenshotOcrButton"));
+        static_cast<void>(waitForLifecycleEvent(
+            lifecyclePath, primary.processId(), QStringLiteral("ocr_text_recognition_complete"),
+            lifecycleCursor, primary, configuration.timeoutMilliseconds));
+
+        clickDrawingTool(QStringLiteral("screenshotScrollingScreenshotButton"));
+        require(waitForVisibleElement(automation, primary.processId(),
                                       QStringLiteral("screenshot-scrolling-thumbnail"), primary,
-                                      configuration.timeoutMilliseconds),
-            "scrolling screenshot thumbnail did not close after selecting Edit selection");
-    require(waitForVisibleElement(automation, primary.processId(),
-                                  QStringLiteral("screenshotSelectionToolbarPanel"), primary,
-                                  configuration.timeoutMilliseconds)
-                    .get() != nullptr,
-            "selection toolbar did not return after selecting Edit selection");
-    clickDrawingTool(QStringLiteral("screenshotCopyButton"));
-    scenarioTrace = waitForLifecycleEvent(lifecyclePath, primary.processId(),
-                                          QStringLiteral("capture_released"), lifecycleCursor,
-                                          primary, configuration.timeoutMilliseconds);
-    require(waitForElementToDisappear(automation, primary.processId(),
-                                      QStringLiteral("screenshot-scrolling-thumbnail"), primary,
-                                      configuration.timeoutMilliseconds),
-            "scrolling screenshot thumbnail did not close after copying");
-    require(waitForElementToDisappear(automation, primary.processId(),
+                                      configuration.timeoutMilliseconds)
+                        .get() != nullptr,
+                "scrolling screenshot thumbnail did not become visible");
+
+        const int monitorCenterX =
+            monitor.bounds.left + (monitor.bounds.right - monitor.bounds.left) / 2;
+        const int monitorCenterY =
+            monitor.bounds.top + (monitor.bounds.bottom - monitor.bounds.top) / 2;
+        // The scrolling overlay leaves the selected rectangle pass-through, so wheel input at its
+        // center reaches the captured window and drives the native scrolling stream.
+        for (int index = 0; index < 3; ++index) {
+            sendMouseWheel(monitorCenterX, monitorCenterY, -WHEEL_DELTA);
+            std::this_thread::sleep_for(100ms);
+        }
+        stages.active = waitForStableMemory(
+            primary, configuration.stageMinimumWaitMilliseconds, configuration.pollMilliseconds,
+            configuration.stabilityWindowSamples, configuration.stabilityRangeBytes,
+            configuration.timeoutMilliseconds);
+
+        // Switching to Edit selection stops the scrolling stream and restores the selection
+        // toolbar; copy the resulting selection through the normal clipboard action to exercise its
+        // export path before the capture is released.
+        clickDrawingTool(QStringLiteral("screenshotMoveButton"));
+        require(waitForElementToDisappear(automation, primary.processId(),
+                                          QStringLiteral("screenshot-scrolling-thumbnail"), primary,
+                                          configuration.timeoutMilliseconds),
+                "scrolling screenshot thumbnail did not close after selecting Edit selection");
+        require(waitForVisibleElement(automation, primary.processId(),
                                       QStringLiteral("screenshotSelectionToolbarPanel"), primary,
-                                      configuration.timeoutMilliseconds),
-            "selection toolbar did not close after ending screenshot");
-    require(waitForElementToDisappear(automation, primary.processId(),
-                                      QStringLiteral("screenshotCancelButton"), primary,
-                                      configuration.timeoutMilliseconds),
-            "screenshot toolbar did not close after ending screenshot");
-    // Keep the historical stage name as a report compatibility alias. The sample now represents
-    // the normal screenshot teardown, rather than a pinned-window close.
-    stages.closed =
-        waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
-                            configuration.pollMilliseconds, configuration.stabilityWindowSamples,
-                            configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
-    scenarioComparison = scenarioReclaimComparison(metadata.reportName, stages.coldStart,
-                                                   stages.closed,
-                                                   configuration.scenarioReclaimToleranceBytes);
+                                      configuration.timeoutMilliseconds)
+                        .get() != nullptr,
+                "selection toolbar did not return after selecting Edit selection");
+        clickDrawingTool(QStringLiteral("screenshotCopyButton"));
+        scenarioTrace = waitForLifecycleEvent(lifecyclePath, primary.processId(),
+                                              QStringLiteral("capture_released"), lifecycleCursor,
+                                              primary, configuration.timeoutMilliseconds);
+        require(waitForElementToDisappear(automation, primary.processId(),
+                                          QStringLiteral("screenshot-scrolling-thumbnail"), primary,
+                                          configuration.timeoutMilliseconds),
+                "scrolling screenshot thumbnail did not close after copying");
+        require(waitForElementToDisappear(automation, primary.processId(),
+                                          QStringLiteral("screenshotSelectionToolbarPanel"),
+                                          primary, configuration.timeoutMilliseconds),
+                "selection toolbar did not close after ending screenshot");
+        require(waitForElementToDisappear(automation, primary.processId(),
+                                          QStringLiteral("screenshotCancelButton"), primary,
+                                          configuration.timeoutMilliseconds),
+                "screenshot toolbar did not close after ending screenshot");
+        // Keep the historical stage name as a report compatibility alias. The sample now represents
+        // the normal screenshot teardown, rather than a pinned-window close.
+        stages.closed = waitForStableMemory(
+            primary, configuration.stageMinimumWaitMilliseconds, configuration.pollMilliseconds,
+            configuration.stabilityWindowSamples, configuration.stabilityRangeBytes,
+            configuration.timeoutMilliseconds);
+        scenarioComparison =
+            scenarioReclaimComparison(metadata.reportName, stages.coldStart, stages.closed,
+                                      configuration.scenarioReclaimToleranceBytes);
 
     } else if (configuration.scenario == BenchmarkScenario::PinToScreen) {
-    // Pin a separate 800x800 selection, open drawing mode, visit every available drawing tool,
-    // confirm the edit, and close the pinned surface before measuring its reclaim checkpoint.
-    positionCursorForCapture(monitor.bounds);
-    forwardCommand(configuration, baseArguments, QStringLiteral("--e2e-start-fixed-screenshot"));
-    static_cast<void>(waitForLifecycleEvent(
-        lifecyclePath, primary.processId(), QStringLiteral("first_capture_presented"),
-        lifecycleCursor, primary, configuration.timeoutMilliseconds));
-    static_cast<void>(waitForLifecycleEvent(
-        lifecyclePath, primary.processId(), QStringLiteral("capture_interaction_ready"),
-        lifecycleCursor, primary, configuration.timeoutMilliseconds));
-    dragFixedSelection(monitor.bounds);
-    qsizetype pinCursor = 0;
-    static_cast<void>(waitForPinTrace(pinPath, primary, pinCursor,
-                                      configuration.timeoutMilliseconds));
-    ComPtr<IUIAutomationElement> pinnedWindow = waitForVisibleElement(
-        automation, primary.processId(), QStringLiteral("screenshotPinnedWindow"), primary,
-        configuration.timeoutMilliseconds);
-    require(pinnedWindow.get() != nullptr, "pinned window did not become visible");
-    const int pinCenterX =
-        monitor.bounds.left + (monitor.bounds.right - monitor.bounds.left) / 2;
-    const int pinCenterY =
-        monitor.bounds.top + (monitor.bounds.bottom - monitor.bounds.top) / 2;
-    sendMouse(pinCenterX, pinCenterY, MOUSEEVENTF_MOVE);
-    clickVisibleElement(automation, primary.processId(),
-                        QStringLiteral("screenshotPinnedEditButton"), primary,
-                        configuration.timeoutMilliseconds,
-                        "pinned drawing button did not become visible");
-    require(waitForVisibleElement(automation, primary.processId(),
-                                  QStringLiteral("screenshotPinnedDrawingToolbar"), primary,
-                                  configuration.timeoutMilliseconds)
-                    .get() != nullptr,
-            "pinned window did not enter drawing mode");
-    const auto clickPinnedDrawingTool = [&](const QString& buttonId) {
-        clickVisibleElement(automation, primary.processId(), buttonId, primary,
-                            configuration.timeoutMilliseconds,
-                            "pinned drawing tool did not become visible");
-    };
-    const auto clickPinnedDrawingGroupOption = [&](const QString& optionId) {
-        const QString triggerId = optionId.contains(QStringLiteral("arrow")) ||
-                                          optionId.contains(QStringLiteral("line"))
-                                      ? QStringLiteral("screenshotArrowLineButton")
-                                      : QStringLiteral("screenshotHighlightButton");
-        clickVisibleElement(automation, primary.processId(), triggerId, primary,
-                            configuration.timeoutMilliseconds,
-                            "pinned drawing-tool group did not become visible");
-        clickVisibleElement(automation, primary.processId(), optionId, primary,
-                            configuration.timeoutMilliseconds,
-                            "pinned drawing-tool option did not become visible");
-    };
-    clickPinnedDrawingTool(QStringLiteral("screenshotSelectButton"));
-    clickPinnedDrawingTool(QStringLiteral("screenshotShapeButton"));
-    clickPinnedDrawingGroupOption(QStringLiteral("screenshotDrawingToolGroupOption-arrow"));
-    clickPinnedDrawingGroupOption(QStringLiteral("screenshotDrawingToolGroupOption-line"));
-    clickPinnedDrawingTool(QStringLiteral("screenshotFreeDrawButton"));
-    clickPinnedDrawingTool(QStringLiteral("screenshotTextButton"));
-    clickPinnedDrawingTool(QStringLiteral("screenshotSerialNumberButton"));
-    clickPinnedDrawingTool(QStringLiteral("screenshotFilterButton"));
-    clickPinnedDrawingTool(QStringLiteral("screenshotEraserButton"));
-    clickPinnedDrawingTool(QStringLiteral("screenshotWatermarkButton"));
-    clickPinnedDrawingGroupOption(
-        QStringLiteral("screenshotDrawingToolGroupOption-highlighter"));
-    clickPinnedDrawingGroupOption(QStringLiteral("screenshotDrawingToolGroupOption-spotlight"));
-    stages.active =
-        waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
-                            configuration.pollMilliseconds, configuration.stabilityWindowSamples,
-                            configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
-    clickVisibleElement(automation, primary.processId(),
-                        QStringLiteral("screenshotConfirmButton"), primary,
-                        configuration.timeoutMilliseconds,
-                        "pinned drawing confirmation button did not become visible");
-    require(waitForElementToDisappear(automation, primary.processId(),
+        // Pin a separate 800x800 selection, open drawing mode, visit every available drawing tool,
+        // confirm the edit, and close the pinned surface before measuring its reclaim checkpoint.
+        positionCursorForCapture(monitor.bounds);
+        forwardCommand(configuration, baseArguments,
+                       QStringLiteral("--e2e-start-fixed-screenshot"));
+        static_cast<void>(waitForLifecycleEvent(
+            lifecyclePath, primary.processId(), QStringLiteral("first_capture_presented"),
+            lifecycleCursor, primary, configuration.timeoutMilliseconds));
+        static_cast<void>(waitForLifecycleEvent(
+            lifecyclePath, primary.processId(), QStringLiteral("capture_interaction_ready"),
+            lifecycleCursor, primary, configuration.timeoutMilliseconds));
+        dragFixedSelection(monitor.bounds);
+        qsizetype pinCursor = 0;
+        static_cast<void>(
+            waitForPinTrace(pinPath, primary, pinCursor, configuration.timeoutMilliseconds));
+        ComPtr<IUIAutomationElement> pinnedWindow = waitForVisibleElement(
+            automation, primary.processId(), QStringLiteral("screenshotPinnedWindow"), primary,
+            configuration.timeoutMilliseconds);
+        require(pinnedWindow.get() != nullptr, "pinned window did not become visible");
+        const int pinCenterX =
+            monitor.bounds.left + (monitor.bounds.right - monitor.bounds.left) / 2;
+        const int pinCenterY =
+            monitor.bounds.top + (monitor.bounds.bottom - monitor.bounds.top) / 2;
+        sendMouse(pinCenterX, pinCenterY, MOUSEEVENTF_MOVE);
+        clickVisibleElement(
+            automation, primary.processId(), QStringLiteral("screenshotPinnedEditButton"), primary,
+            configuration.timeoutMilliseconds, "pinned drawing button did not become visible");
+        require(waitForVisibleElement(automation, primary.processId(),
                                       QStringLiteral("screenshotPinnedDrawingToolbar"), primary,
-                                      configuration.timeoutMilliseconds),
-            "pinned drawing mode did not confirm");
-    closeNativeWindow(*pinnedWindow.get(), primary.processId());
-    require(waitForElementToDisappear(automation, primary.processId(),
-                                      QStringLiteral("screenshotPinnedWindow"), primary,
-                                      configuration.timeoutMilliseconds),
-            "pinned window did not close");
-    require(waitForElementToDisappear(automation, primary.processId(),
-                                      QStringLiteral("screenshotSelectionToolbarPanel"), primary,
-                                      configuration.timeoutMilliseconds),
-            "selection toolbar did not close after pinning");
-    scenarioTrace = waitForLifecycleEvent(lifecyclePath, primary.processId(),
-                                          QStringLiteral("capture_released"), lifecycleCursor,
-                                          primary, configuration.timeoutMilliseconds);
-    stages.closed =
-        waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
-                            configuration.pollMilliseconds, configuration.stabilityWindowSamples,
-                            configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
-    scenarioComparison = scenarioReclaimComparison(metadata.reportName, stages.coldStart,
-                                                   stages.closed,
-                                                   configuration.scenarioReclaimToleranceBytes);
+                                      configuration.timeoutMilliseconds)
+                        .get() != nullptr,
+                "pinned window did not enter drawing mode");
+        const auto clickPinnedDrawingTool = [&](const QString& buttonId) {
+            clickVisibleElement(automation, primary.processId(), buttonId, primary,
+                                configuration.timeoutMilliseconds,
+                                "pinned drawing tool did not become visible");
+        };
+        const auto clickPinnedDrawingGroupOption = [&](const QString& optionId) {
+            const QString triggerId = optionId.contains(QStringLiteral("arrow")) ||
+                                              optionId.contains(QStringLiteral("line"))
+                                          ? QStringLiteral("screenshotArrowLineButton")
+                                          : QStringLiteral("screenshotHighlightButton");
+            clickVisibleElement(automation, primary.processId(), triggerId, primary,
+                                configuration.timeoutMilliseconds,
+                                "pinned drawing-tool group did not become visible");
+            clickVisibleElement(automation, primary.processId(), optionId, primary,
+                                configuration.timeoutMilliseconds,
+                                "pinned drawing-tool option did not become visible");
+        };
+        clickPinnedDrawingTool(QStringLiteral("screenshotSelectButton"));
+        clickPinnedDrawingTool(QStringLiteral("screenshotShapeButton"));
+        clickPinnedDrawingGroupOption(QStringLiteral("screenshotDrawingToolGroupOption-arrow"));
+        clickPinnedDrawingGroupOption(QStringLiteral("screenshotDrawingToolGroupOption-line"));
+        clickPinnedDrawingTool(QStringLiteral("screenshotFreeDrawButton"));
+        clickPinnedDrawingTool(QStringLiteral("screenshotTextButton"));
+        clickPinnedDrawingTool(QStringLiteral("screenshotSerialNumberButton"));
+        clickPinnedDrawingTool(QStringLiteral("screenshotFilterButton"));
+        clickPinnedDrawingTool(QStringLiteral("screenshotEraserButton"));
+        clickPinnedDrawingTool(QStringLiteral("screenshotWatermarkButton"));
+        clickPinnedDrawingGroupOption(
+            QStringLiteral("screenshotDrawingToolGroupOption-highlighter"));
+        clickPinnedDrawingGroupOption(QStringLiteral("screenshotDrawingToolGroupOption-spotlight"));
+        stages.active = waitForStableMemory(
+            primary, configuration.stageMinimumWaitMilliseconds, configuration.pollMilliseconds,
+            configuration.stabilityWindowSamples, configuration.stabilityRangeBytes,
+            configuration.timeoutMilliseconds);
+        clickVisibleElement(automation, primary.processId(),
+                            QStringLiteral("screenshotConfirmButton"), primary,
+                            configuration.timeoutMilliseconds,
+                            "pinned drawing confirmation button did not become visible");
+        require(waitForElementToDisappear(automation, primary.processId(),
+                                          QStringLiteral("screenshotPinnedDrawingToolbar"), primary,
+                                          configuration.timeoutMilliseconds),
+                "pinned drawing mode did not confirm");
+        closeNativeWindow(*pinnedWindow.get(), primary.processId());
+        require(waitForElementToDisappear(automation, primary.processId(),
+                                          QStringLiteral("screenshotPinnedWindow"), primary,
+                                          configuration.timeoutMilliseconds),
+                "pinned window did not close");
+        require(waitForElementToDisappear(automation, primary.processId(),
+                                          QStringLiteral("screenshotSelectionToolbarPanel"),
+                                          primary, configuration.timeoutMilliseconds),
+                "selection toolbar did not close after pinning");
+        scenarioTrace = waitForLifecycleEvent(lifecyclePath, primary.processId(),
+                                              QStringLiteral("capture_released"), lifecycleCursor,
+                                              primary, configuration.timeoutMilliseconds);
+        stages.closed = waitForStableMemory(
+            primary, configuration.stageMinimumWaitMilliseconds, configuration.pollMilliseconds,
+            configuration.stabilityWindowSamples, configuration.stabilityRangeBytes,
+            configuration.timeoutMilliseconds);
+        scenarioComparison =
+            scenarioReclaimComparison(metadata.reportName, stages.coldStart, stages.closed,
+                                      configuration.scenarioReclaimToleranceBytes);
 
     } else if (configuration.scenario == BenchmarkScenario::ScreenRecording) {
-    // Reuse the same 800x800 screenshot gesture to enter screen recording, then exercise the
-    // complete recorder lifecycle before measuring its reclaimed working set.
-    positionCursorForCapture(monitor.bounds);
-    advanceLifecycleCursor(lifecyclePath, lifecycleCursor);
-    forwardCommand(configuration, baseArguments,
-                   QStringLiteral("--e2e-start-screen-recording"));
-    static_cast<void>(waitForLifecycleEvent(
-        lifecyclePath, primary.processId(), QStringLiteral("first_capture_presented"),
-        lifecycleCursor, primary, configuration.timeoutMilliseconds));
-    static_cast<void>(waitForLifecycleEvent(
-        lifecyclePath, primary.processId(), QStringLiteral("capture_interaction_ready"),
-        lifecycleCursor, primary, configuration.timeoutMilliseconds));
-    dragFixedSelection(monitor.bounds);
-    require(waitForVisibleElement(automation, primary.processId(),
-                                  QStringLiteral("screenRecordingAreaWindow"), primary,
-                                  configuration.timeoutMilliseconds)
-                    .get() != nullptr,
-            "screen recording area did not become visible");
-    require(waitForVisibleElement(automation, primary.processId(),
-                                  QStringLiteral("screenRecordingToolbar"), primary,
-                                  configuration.timeoutMilliseconds)
-                    .get() != nullptr,
-            "screen recording toolbar did not become visible");
-    stages.active =
-        waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
-                            configuration.pollMilliseconds, configuration.stabilityWindowSamples,
-                            configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
-
-    clickVisibleElement(automation, primary.processId(),
-                        QStringLiteral("screenRecordingStartButton"), primary,
-                        configuration.timeoutMilliseconds,
-                        "screen recording start button did not become visible");
-    require(waitForVisibleElement(automation, primary.processId(),
-                                  QStringLiteral("screenRecordingStopButton"), primary,
-                                  configuration.timeoutMilliseconds)
-                    .get() != nullptr,
-            "screen recording did not start");
-    std::this_thread::sleep_for(1s);
-    clickVisibleElement(automation, primary.processId(),
-                        QStringLiteral("screenRecordingStopButton"), primary,
-                        configuration.timeoutMilliseconds,
-                        "screen recording stop button did not become visible");
-    require(waitForVisibleElement(automation, primary.processId(),
-                                  QStringLiteral("screenRecordingStartButton"), primary,
-                                  configuration.timeoutMilliseconds)
-                    .get() != nullptr,
-            "screen recording export did not complete");
-    clickVisibleElement(automation, primary.processId(),
-                        QStringLiteral("screenRecordingCloseButton"), primary,
-                        configuration.timeoutMilliseconds,
-                        "screen recording close button did not become visible");
-    require(waitForElementToDisappear(automation, primary.processId(),
-                                      QStringLiteral("screenRecordingToolbar"), primary,
-                                      configuration.timeoutMilliseconds),
-            "screen recording toolbar did not close");
-    require(waitForElementToDisappear(automation, primary.processId(),
+        // Reuse the same 800x800 screenshot gesture to enter screen recording, then exercise the
+        // complete recorder lifecycle before measuring its reclaimed working set.
+        positionCursorForCapture(monitor.bounds);
+        advanceLifecycleCursor(lifecyclePath, lifecycleCursor);
+        forwardCommand(configuration, baseArguments,
+                       QStringLiteral("--e2e-start-screen-recording"));
+        static_cast<void>(waitForLifecycleEvent(
+            lifecyclePath, primary.processId(), QStringLiteral("first_capture_presented"),
+            lifecycleCursor, primary, configuration.timeoutMilliseconds));
+        static_cast<void>(waitForLifecycleEvent(
+            lifecyclePath, primary.processId(), QStringLiteral("capture_interaction_ready"),
+            lifecycleCursor, primary, configuration.timeoutMilliseconds));
+        dragFixedSelection(monitor.bounds);
+        require(waitForVisibleElement(automation, primary.processId(),
                                       QStringLiteral("screenRecordingAreaWindow"), primary,
-                                      configuration.timeoutMilliseconds),
-            "screen recording area did not close");
-    scenarioTrace = waitForLifecycleEvent(lifecyclePath, primary.processId(),
-                                          QStringLiteral("capture_released"), lifecycleCursor,
-                                          primary, configuration.timeoutMilliseconds);
-    stages.closed =
-        waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
-                            configuration.pollMilliseconds, configuration.stabilityWindowSamples,
-                            configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
-    scenarioComparison = scenarioReclaimComparison(metadata.reportName, stages.coldStart,
-                                                   stages.closed,
-                                                   configuration.scenarioReclaimToleranceBytes);
+                                      configuration.timeoutMilliseconds)
+                        .get() != nullptr,
+                "screen recording area did not become visible");
+        require(waitForVisibleElement(automation, primary.processId(),
+                                      QStringLiteral("screenRecordingToolbar"), primary,
+                                      configuration.timeoutMilliseconds)
+                        .get() != nullptr,
+                "screen recording toolbar did not become visible");
+        stages.active = waitForStableMemory(
+            primary, configuration.stageMinimumWaitMilliseconds, configuration.pollMilliseconds,
+            configuration.stabilityWindowSamples, configuration.stabilityRangeBytes,
+            configuration.timeoutMilliseconds);
+
+        clickVisibleElement(automation, primary.processId(),
+                            QStringLiteral("screenRecordingStartButton"), primary,
+                            configuration.timeoutMilliseconds,
+                            "screen recording start button did not become visible");
+        require(waitForVisibleElement(automation, primary.processId(),
+                                      QStringLiteral("screenRecordingStopButton"), primary,
+                                      configuration.timeoutMilliseconds)
+                        .get() != nullptr,
+                "screen recording did not start");
+        std::this_thread::sleep_for(1s);
+        clickVisibleElement(automation, primary.processId(),
+                            QStringLiteral("screenRecordingStopButton"), primary,
+                            configuration.timeoutMilliseconds,
+                            "screen recording stop button did not become visible");
+        require(waitForVisibleElement(automation, primary.processId(),
+                                      QStringLiteral("screenRecordingStartButton"), primary,
+                                      configuration.timeoutMilliseconds)
+                        .get() != nullptr,
+                "screen recording export did not complete");
+        clickVisibleElement(automation, primary.processId(),
+                            QStringLiteral("screenRecordingCloseButton"), primary,
+                            configuration.timeoutMilliseconds,
+                            "screen recording close button did not become visible");
+        require(waitForElementToDisappear(automation, primary.processId(),
+                                          QStringLiteral("screenRecordingToolbar"), primary,
+                                          configuration.timeoutMilliseconds),
+                "screen recording toolbar did not close");
+        require(waitForElementToDisappear(automation, primary.processId(),
+                                          QStringLiteral("screenRecordingAreaWindow"), primary,
+                                          configuration.timeoutMilliseconds),
+                "screen recording area did not close");
+        scenarioTrace = waitForLifecycleEvent(lifecyclePath, primary.processId(),
+                                              QStringLiteral("capture_released"), lifecycleCursor,
+                                              primary, configuration.timeoutMilliseconds);
+        stages.closed = waitForStableMemory(
+            primary, configuration.stageMinimumWaitMilliseconds, configuration.pollMilliseconds,
+            configuration.stabilityWindowSamples, configuration.stabilityRangeBytes,
+            configuration.timeoutMilliseconds);
+        scenarioComparison =
+            scenarioReclaimComparison(metadata.reportName, stages.coldStart, stages.closed,
+                                      configuration.scenarioReclaimToleranceBytes);
 
     } else if (configuration.scenario == BenchmarkScenario::RightClickMenu) {
-    // Open the tray menu only after every screenshot surface has closed. Escape is sent after
-    // focusing the menu so the hide operation is deterministic on a busy desktop.
-    forwardCommand(configuration, baseArguments, QStringLiteral("--e2e-open-tray-menu"));
-    ComPtr<IUIAutomationElement> trayMenu =
-        waitForVisibleElement(automation, primary.processId(), QStringLiteral("systemTrayMenu"),
-                              primary, configuration.timeoutMilliseconds);
-    require(trayMenu.get() != nullptr, "tray menu did not become visible");
-    stages.active =
-        waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
-                            configuration.pollMilliseconds, configuration.stabilityWindowSamples,
-                            configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
-    require(SUCCEEDED(trayMenu.get()->SetFocus()), "could not focus the tray menu");
-    sendEscape();
-    require(waitForElementToDisappear(automation, primary.processId(),
-                                      QStringLiteral("systemTrayMenu"), primary,
-                                      configuration.timeoutMilliseconds),
-            "tray menu did not close");
-    // One converged post-hide sample is both the explicit tray-menu-closed stage and the final
-    // idle sample. Keeping these as separate schema fields makes the close sequence auditable
-    // without adding another five-second stabilization window to every iteration.
-    stages.closed =
-        waitForStableMemory(primary, configuration.stageMinimumWaitMilliseconds,
-                            configuration.pollMilliseconds, configuration.stabilityWindowSamples,
-                            configuration.stabilityRangeBytes, configuration.timeoutMilliseconds);
-    scenarioComparison = scenarioReclaimComparison(metadata.reportName, stages.coldStart,
-                                                   stages.closed,
-                                                   configuration.scenarioReclaimToleranceBytes);
+        // Open the tray menu only after every screenshot surface has closed. Escape is sent after
+        // focusing the menu so the hide operation is deterministic on a busy desktop.
+        forwardCommand(configuration, baseArguments, QStringLiteral("--e2e-open-tray-menu"));
+        ComPtr<IUIAutomationElement> trayMenu =
+            waitForVisibleElement(automation, primary.processId(), QStringLiteral("systemTrayMenu"),
+                                  primary, configuration.timeoutMilliseconds);
+        require(trayMenu.get() != nullptr, "tray menu did not become visible");
+        stages.active = waitForStableMemory(
+            primary, configuration.stageMinimumWaitMilliseconds, configuration.pollMilliseconds,
+            configuration.stabilityWindowSamples, configuration.stabilityRangeBytes,
+            configuration.timeoutMilliseconds);
+        require(SUCCEEDED(trayMenu.get()->SetFocus()), "could not focus the tray menu");
+        sendEscape();
+        require(waitForElementToDisappear(automation, primary.processId(),
+                                          QStringLiteral("systemTrayMenu"), primary,
+                                          configuration.timeoutMilliseconds),
+                "tray menu did not close");
+        // One converged post-hide sample is both the explicit tray-menu-closed stage and the final
+        // idle sample. Keeping these as separate schema fields makes the close sequence auditable
+        // without adding another five-second stabilization window to every iteration.
+        stages.closed = waitForStableMemory(
+            primary, configuration.stageMinimumWaitMilliseconds, configuration.pollMilliseconds,
+            configuration.stabilityWindowSamples, configuration.stabilityRangeBytes,
+            configuration.timeoutMilliseconds);
+        scenarioComparison =
+            scenarioReclaimComparison(metadata.reportName, stages.coldStart, stages.closed,
+                                      configuration.scenarioReclaimToleranceBytes);
     }
 
     const auto mib = [](qint64 bytes) { return static_cast<double>(bytes) / kBytesPerMebibyte; };
@@ -2050,7 +2061,7 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
                          static_cast<qint64>(monitor.bounds.bottom - monitor.bounds.top));
     const QJsonObject reclaimComparisons{{metadata.reportName, scenarioComparison}};
     const QJsonObject record{
-        {QStringLiteral("schema_version"), 5},
+        {QStringLiteral("schema_version"), 6},
         {QStringLiteral("memory_stage_representative"),
          QStringLiteral("median_of_stability_window")},
         {QStringLiteral("acceptance_uses_conservative_stability_bounds"), true},
@@ -2074,20 +2085,19 @@ QJsonObject runSample(const BenchmarkConfiguration& configuration, const Monitor
          mib(stages.closed.bytes)},
         {QStringLiteral("main_interface_history_fixture"),
          configuration.scenario == BenchmarkScenario::MainInterface
-             ? QJsonValue(
-                   mainInterfaceHistoryFixtureDescription(historyFixture.recordCount))
+             ? QJsonValue(mainInterfaceHistoryFixtureDescription(historyFixture.recordCount))
              : QJsonValue(QJsonValue::Null)},
         {QStringLiteral("monitor"), monitorReport},
         {QStringLiteral("traces"),
          QJsonObject{{QStringLiteral("lifecycle"), QDir::toNativeSeparators(lifecyclePath)},
-                      {QStringLiteral("pin"), QDir::toNativeSeparators(pinPath)},
-                       {QStringLiteral("scenario_lifecycle"), scenarioTrace}}}};
+                     {QStringLiteral("pin"), QDir::toNativeSeparators(pinPath)},
+                     {QStringLiteral("scenario_lifecycle"), scenarioTrace}}}};
     std::cout << "sample " << iteration << ": cold_start=" << mib(stages.coldStart.bytes)
-               << " MiB, " << metadata.reportName.toStdString() << '=' << mib(stages.active.bytes)
-               << " MiB, closed=" << mib(stages.closed.bytes) << " MiB, reclaimed="
-               << (scenarioComparison.value(QStringLiteral("within_upper_bound")).toBool()
-                       ? "yes" : "no")
-               << '\n';
+              << " MiB, " << metadata.reportName.toStdString() << '=' << mib(stages.active.bytes)
+              << " MiB, closed=" << mib(stages.closed.bytes) << " MiB, reclaimed="
+              << (scenarioComparison.value(QStringLiteral("within_accepted_range")).toBool() ? "yes"
+                                                                                             : "no")
+              << '\n';
     require(primary.stop(), "could not terminate snow_shot after the sample");
     return record;
 }
@@ -2100,14 +2110,15 @@ QJsonObject metricFor(const QVector<QJsonObject>& records, const QString& stage)
     return statistics(std::move(values));
 }
 
-QJsonObject scenarioComparisonSummary(const QVector<QJsonObject>& records,
-                                      const QString& scenario, qint64 toleranceBytes,
-                                      qsizetype requestedSampleCount) {
+QJsonObject scenarioComparisonSummary(const QVector<QJsonObject>& records, const QString& scenario,
+                                      qint64 toleranceBytes, qsizetype requestedSampleCount) {
     require(!scenario.isEmpty(), "summary scenario must not be empty");
     require(requestedSampleCount > 0, "requested sample count must be positive");
     QVector<double> deltas;
     deltas.reserve(records.size());
     qsizetype withinUpperBound = 0;
+    qsizetype atOrAboveColdStart = 0;
+    qsizetype withinAcceptedRange = 0;
     for (const QJsonObject& record : records) {
         const QJsonObject comparison =
             record.value(QStringLiteral("scenario_reclaim_vs_cold_start"))
@@ -2121,28 +2132,49 @@ QJsonObject scenarioComparisonSummary(const QVector<QJsonObject>& records,
         if (comparison.value(QStringLiteral("within_upper_bound")).toBool()) {
             ++withinUpperBound;
         }
+        if (comparison.value(QStringLiteral("at_or_above_cold_start")).toBool()) {
+            ++atOrAboveColdStart;
+        }
+        if (comparison.value(QStringLiteral("within_accepted_range")).toBool()) {
+            ++withinAcceptedRange;
+        }
     }
     const qsizetype comparisonCount = deltas.size();
     const bool completeSampleSet = comparisonCount == requestedSampleCount;
     const bool allSuccessfulSamplesWithinUpperBound =
         comparisonCount > 0 && withinUpperBound == comparisonCount;
-    const bool benchmarkPassed = completeSampleSet && allSuccessfulSamplesWithinUpperBound;
+    const bool allSuccessfulSamplesAtOrAboveColdStart =
+        comparisonCount > 0 && atOrAboveColdStart == comparisonCount;
+    const bool allSuccessfulSamplesWithinAcceptedRange =
+        comparisonCount > 0 && withinAcceptedRange == comparisonCount;
+    const bool benchmarkPassed = completeSampleSet && allSuccessfulSamplesWithinAcceptedRange;
     return {
         {QStringLiteral("scenario"), scenario},
         {QStringLiteral("comparison_kind"),
-         QStringLiteral("one_sided_upper_bound_using_stability_bounds")},
+         QStringLiteral("two_sided_interval_using_stability_bounds")},
         {QStringLiteral("criterion"),
-         QStringLiteral("post_scenario_stability_max_bytes <= "
+         QStringLiteral("cold_start_stability_max_bytes <= "
+                        "post_scenario_stability_min_bytes && "
+                        "post_scenario_stability_max_bytes <= "
                         "cold_start_stability_min_bytes + tolerance_bytes")},
         {QStringLiteral("requested_sample_count"), requestedSampleCount},
         {QStringLiteral("sample_count"), comparisonCount},
         {QStringLiteral("within_upper_bound_sample_count"), withinUpperBound},
         {QStringLiteral("outside_upper_bound_sample_count"), comparisonCount - withinUpperBound},
-        {QStringLiteral("within_tolerance_sample_count"), withinUpperBound},
-        {QStringLiteral("outside_tolerance_sample_count"), comparisonCount - withinUpperBound},
+        {QStringLiteral("at_or_above_cold_start_sample_count"), atOrAboveColdStart},
+        {QStringLiteral("over_reclaimed_sample_count"), comparisonCount - atOrAboveColdStart},
+        {QStringLiteral("within_accepted_range_sample_count"), withinAcceptedRange},
+        {QStringLiteral("outside_accepted_range_sample_count"),
+         comparisonCount - withinAcceptedRange},
+        {QStringLiteral("within_tolerance_sample_count"), withinAcceptedRange},
+        {QStringLiteral("outside_tolerance_sample_count"), comparisonCount - withinAcceptedRange},
         {QStringLiteral("complete_sample_set"), completeSampleSet},
         {QStringLiteral("all_successful_samples_within_upper_bound"),
          allSuccessfulSamplesWithinUpperBound},
+        {QStringLiteral("all_successful_samples_at_or_above_cold_start"),
+         allSuccessfulSamplesAtOrAboveColdStart},
+        {QStringLiteral("all_successful_samples_within_accepted_range"),
+         allSuccessfulSamplesWithinAcceptedRange},
         {QStringLiteral("all_samples_within_tolerance"), benchmarkPassed},
         {QStringLiteral("benchmark_passed"), benchmarkPassed},
         {QStringLiteral("delta_representative"), QStringLiteral("median_of_stability_window")},
@@ -2159,17 +2191,23 @@ QJsonObject scenarioReclaimSummary(const QVector<QJsonObject>& records, const QS
     QVector<double> deltas;
     qsizetype comparisonCount = 0;
     qsizetype withinUpperBound = 0;
+    qsizetype atOrAboveColdStart = 0;
+    qsizetype withinAcceptedRange = 0;
     const QJsonObject summary =
         scenarioComparisonSummary(records, scenario, toleranceBytes, requestedSampleCount);
     scenarios.insert(scenario, summary);
     comparisonCount = summary.value(QStringLiteral("sample_count")).toInteger();
-    withinUpperBound =
-        summary.value(QStringLiteral("within_upper_bound_sample_count")).toInteger();
+    withinUpperBound = summary.value(QStringLiteral("within_upper_bound_sample_count")).toInteger();
+    atOrAboveColdStart =
+        summary.value(QStringLiteral("at_or_above_cold_start_sample_count")).toInteger();
+    withinAcceptedRange =
+        summary.value(QStringLiteral("within_accepted_range_sample_count")).toInteger();
     for (const QJsonObject& record : records) {
-        const QJsonObject comparison = record.value(QStringLiteral("scenario_reclaim_vs_cold_start"))
-                                           .toObject()
-                                           .value(scenario)
-                                           .toObject();
+        const QJsonObject comparison =
+            record.value(QStringLiteral("scenario_reclaim_vs_cold_start"))
+                .toObject()
+                .value(scenario)
+                .toObject();
         if (!comparison.isEmpty()) {
             deltas.push_back(comparison.value(QStringLiteral("delta_mib")).toDouble());
         }
@@ -2179,13 +2217,19 @@ QJsonObject scenarioReclaimSummary(const QVector<QJsonObject>& records, const QS
     const bool completeComparisonSet = comparisonCount == requestedComparisonCount;
     const bool allComparisonsWithinUpperBound =
         comparisonCount > 0 && withinUpperBound == comparisonCount;
+    const bool allComparisonsAtOrAboveColdStart =
+        comparisonCount > 0 && atOrAboveColdStart == comparisonCount;
+    const bool allComparisonsWithinAcceptedRange =
+        comparisonCount > 0 && withinAcceptedRange == comparisonCount;
     const bool benchmarkPassed =
-        completeSampleSet && completeComparisonSet && allComparisonsWithinUpperBound;
+        completeSampleSet && completeComparisonSet && allComparisonsWithinAcceptedRange;
     return {
         {QStringLiteral("comparison_kind"),
-         QStringLiteral("one_sided_upper_bound_using_stability_bounds")},
+         QStringLiteral("two_sided_interval_using_stability_bounds")},
         {QStringLiteral("criterion"),
-         QStringLiteral("each post_scenario_stability_max_bytes <= "
+         QStringLiteral("each cold_start_stability_max_bytes <= "
+                        "post_scenario_stability_min_bytes && each "
+                        "post_scenario_stability_max_bytes <= "
                         "cold_start_stability_min_bytes + tolerance_bytes")},
         {QStringLiteral("requested_sample_count"), requestedSampleCount},
         {QStringLiteral("sample_count"), records.size()},
@@ -2194,9 +2238,18 @@ QJsonObject scenarioReclaimSummary(const QVector<QJsonObject>& records, const QS
         {QStringLiteral("within_upper_bound_comparison_count"), withinUpperBound},
         {QStringLiteral("outside_upper_bound_comparison_count"),
          comparisonCount - withinUpperBound},
+        {QStringLiteral("at_or_above_cold_start_comparison_count"), atOrAboveColdStart},
+        {QStringLiteral("over_reclaimed_comparison_count"), comparisonCount - atOrAboveColdStart},
+        {QStringLiteral("within_accepted_range_comparison_count"), withinAcceptedRange},
+        {QStringLiteral("outside_accepted_range_comparison_count"),
+         comparisonCount - withinAcceptedRange},
         {QStringLiteral("complete_sample_set"), completeSampleSet},
         {QStringLiteral("complete_comparison_set"), completeComparisonSet},
         {QStringLiteral("all_comparisons_within_upper_bound"), allComparisonsWithinUpperBound},
+        {QStringLiteral("all_comparisons_at_or_above_cold_start"),
+         allComparisonsAtOrAboveColdStart},
+        {QStringLiteral("all_comparisons_within_accepted_range"),
+         allComparisonsWithinAcceptedRange},
         {QStringLiteral("benchmark_passed"), benchmarkPassed},
         {QStringLiteral("delta_representative"), QStringLiteral("median_of_stability_window")},
         {QStringLiteral("acceptance_uses_conservative_stability_bounds"), true},
@@ -2236,7 +2289,7 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
             record = runSample(configuration, displayList.at(configuration.screenIndex), iteration,
                                *automation.get());
         } catch (const std::exception& error) {
-            record = {{QStringLiteral("schema_version"), 5},
+            record = {{QStringLiteral("schema_version"), 6},
                       {QStringLiteral("scenario"), metadata.commandLineName},
                       {QStringLiteral("iteration"), iteration},
                       {QStringLiteral("error"), QString::fromLocal8Bit(error.what())}};
@@ -2257,18 +2310,17 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
         {QStringLiteral("cold_start"), metricFor(records, QStringLiteral("cold_start"))},
         {metadata.activeStage, metricFor(records, metadata.activeStage)},
         {metadata.closedStage, metricFor(records, metadata.closedStage)}};
-    const QJsonObject reclaimSummary = scenarioReclaimSummary(
-        records, metadata.reportName, configuration.scenarioReclaimToleranceBytes,
-        configuration.samples);
+    const QJsonObject reclaimSummary =
+        scenarioReclaimSummary(records, metadata.reportName,
+                               configuration.scenarioReclaimToleranceBytes, configuration.samples);
     const bool completeSampleSet = records.size() == configuration.samples;
-    const bool benchmarkPassed =
-        reclaimSummary.value(QStringLiteral("benchmark_passed")).toBool();
+    const bool benchmarkPassed = reclaimSummary.value(QStringLiteral("benchmark_passed")).toBool();
     const QString benchmarkStatus =
-        !completeSampleSet
-            ? QStringLiteral("incomplete")
-            : (benchmarkPassed ? QStringLiteral("pass") : QStringLiteral("retention_failed"));
+        !completeSampleSet ? QStringLiteral("incomplete")
+                           : (benchmarkPassed ? QStringLiteral("pass")
+                                              : QStringLiteral("memory_invariant_failed"));
     const QJsonObject report{
-        {QStringLiteral("schema_version"), 5},
+        {QStringLiteral("schema_version"), 6},
         {QStringLiteral("benchmark"), QStringLiteral("screenshot_memory_footprint")},
         {QStringLiteral("scenario"), metadata.commandLineName},
         {QStringLiteral("benchmark_status"), benchmarkStatus},
@@ -2278,8 +2330,8 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
          QJsonArray::fromStringList(benchmarkStageOrder(configuration.scenario))},
         {QStringLiteral("configuration"),
          QJsonObject{
-              {QStringLiteral("samples"), configuration.samples},
-              {QStringLiteral("scenario"), metadata.commandLineName},
+             {QStringLiteral("samples"), configuration.samples},
+             {QStringLiteral("scenario"), metadata.commandLineName},
              {QStringLiteral("screen_index"), configuration.screenIndex},
              {QStringLiteral("poll_ms"), configuration.pollMilliseconds},
              {QStringLiteral("cold_start_min_wait_ms"),
@@ -2304,9 +2356,7 @@ int runBenchmark(const BenchmarkConfiguration& configuration) {
         {QStringLiteral("metrics"), metrics},
         {QStringLiteral("scenario_reclaim_vs_cold_start"), reclaimSummary},
         {QStringLiteral("final_idle_vs_cold_start"),
-         reclaimSummary.value(QStringLiteral("scenarios"))
-             .toObject()
-             .value(metadata.reportName)},
+         reclaimSummary.value(QStringLiteral("scenarios")).toObject().value(metadata.reportName)},
         {QStringLiteral("successful_sample_count"), records.size()},
         {QStringLiteral("failed_sample_count"), configuration.samples - records.size()},
         {QStringLiteral("sample_errors"), sampleErrors},
@@ -2336,8 +2386,7 @@ bool runSelfTest() {
     const MainInterfaceHistoryFixture historyFixture =
         seedMainInterfaceHistory(historyStorage.path(), 3, QSize(64, 48), QSize(32, 24));
     {
-        auto recovered =
-            snow_shot::storage::makeCaptureHistoryRepository(historyStorage.path());
+        auto recovered = snow_shot::storage::makeCaptureHistoryRepository(historyStorage.path());
         const QVector<snow_shot::storage::CaptureHistoryRecord> records = recovered->records();
         require(records.size() == 3 && records.constFirst().id == historyFixture.newestRecordId &&
                     records.constFirst().result.has_value() &&
@@ -2406,7 +2455,7 @@ bool runSelfTest() {
     require(defaultParser.parse({QStringLiteral("benchmark-self-test")}),
             "default command-line self-test setup failed");
     require(configurationFromParser(defaultParser).scenarioReclaimToleranceBytes ==
-                3 * kBytesPerMebibyte &&
+                    3 * kBytesPerMebibyte &&
                 configurationFromParser(defaultParser).scenario ==
                     BenchmarkScenario::ScreenshotWindow &&
                 benchmarkScenario(QStringLiteral("right-click-menu")) ==
@@ -2437,20 +2486,26 @@ bool runSelfTest() {
                      QJsonObject{{QStringLiteral("window.native_paint_synchronized"), 1}}}});
     require(privateWorkingSet(GetCurrentProcess()).bytes > 0,
             "private working-set self-test failed");
-    const QJsonObject passingComparison = scenarioReclaimComparison(
-        QStringLiteral("main_interface"), 100 * kBytesPerMebibyte, 108 * kBytesPerMebibyte,
-        8 * kBytesPerMebibyte);
-    const QJsonObject failingComparison = scenarioReclaimComparison(
-        QStringLiteral("main_interface"), 100 * kBytesPerMebibyte,
-        108 * kBytesPerMebibyte + 1, 8 * kBytesPerMebibyte);
-    const QJsonObject belowColdComparison = scenarioReclaimComparison(
-        QStringLiteral("main_interface"), 100 * kBytesPerMebibyte, 60 * kBytesPerMebibyte,
-        8 * kBytesPerMebibyte);
+    const QJsonObject passingComparison =
+        scenarioReclaimComparison(QStringLiteral("main_interface"), 100 * kBytesPerMebibyte,
+                                  108 * kBytesPerMebibyte, 8 * kBytesPerMebibyte);
+    const QJsonObject failingComparison =
+        scenarioReclaimComparison(QStringLiteral("main_interface"), 100 * kBytesPerMebibyte,
+                                  108 * kBytesPerMebibyte + 1, 8 * kBytesPerMebibyte);
+    const QJsonObject belowColdComparison =
+        scenarioReclaimComparison(QStringLiteral("main_interface"), 100 * kBytesPerMebibyte,
+                                  60 * kBytesPerMebibyte, 8 * kBytesPerMebibyte);
     require(passingComparison.value(QStringLiteral("within_tolerance")).toBool() &&
                 passingComparison.value(QStringLiteral("within_upper_bound")).toBool() &&
+                passingComparison.value(QStringLiteral("at_or_above_cold_start")).toBool() &&
+                passingComparison.value(QStringLiteral("within_accepted_range")).toBool() &&
                 passingComparison.value(QStringLiteral("delta_mib")).toDouble() == 8.0 &&
                 !failingComparison.value(QStringLiteral("within_tolerance")).toBool() &&
                 belowColdComparison.value(QStringLiteral("within_upper_bound")).toBool() &&
+                !belowColdComparison.value(QStringLiteral("at_or_above_cold_start")).toBool() &&
+                belowColdComparison.value(QStringLiteral("over_reclaimed")).toBool() &&
+                !belowColdComparison.value(QStringLiteral("within_accepted_range")).toBool() &&
+                !belowColdComparison.value(QStringLiteral("within_tolerance")).toBool() &&
                 belowColdComparison.value(QStringLiteral("delta_mib")).toDouble() == -40.0,
             "scenario reclaim comparison self-test failed");
     StableMemorySample biasedCold;
@@ -2461,65 +2516,75 @@ bool runSelfTest() {
     biasedFinal.bytes = 104;
     biasedFinal.minimumBytes = 102;
     biasedFinal.maximumBytes = 106;
-    const QJsonObject conservativeComparison = scenarioReclaimComparison(
-        QStringLiteral("main_interface"), biasedCold, biasedFinal, 3);
+    const QJsonObject conservativeComparison =
+        scenarioReclaimComparison(QStringLiteral("main_interface"), biasedCold, biasedFinal, 3);
     require(
         conservativeComparison.value(QStringLiteral("delta_bytes")).toInteger() == 2 &&
             conservativeComparison.value(QStringLiteral("acceptance_delta_bytes")).toInteger() ==
                 6 &&
-            !conservativeComparison.value(QStringLiteral("within_upper_bound")).toBool(),
+            !conservativeComparison.value(QStringLiteral("within_upper_bound")).toBool() &&
+            !conservativeComparison.value(QStringLiteral("at_or_above_cold_start")).toBool() &&
+            !conservativeComparison.value(QStringLiteral("within_accepted_range")).toBool(),
         "conservative stability-bound comparison self-test failed");
     const auto syntheticRecord = [](const QJsonObject& comparison) {
         return QJsonObject{{QStringLiteral("scenario_reclaim_vs_cold_start"),
                             QJsonObject{{QStringLiteral("main_interface"), comparison}}}};
     };
-    const QJsonObject secondMainComparison = scenarioReclaimComparison(
-        QStringLiteral("main_interface"), 100 * kBytesPerMebibyte, 99 * kBytesPerMebibyte,
-        8 * kBytesPerMebibyte);
-    const QJsonObject syntheticSummary = scenarioReclaimSummary(
-        QVector<QJsonObject>{syntheticRecord(passingComparison),
-                             syntheticRecord(secondMainComparison)},
-        QStringLiteral("main_interface"), 8 * kBytesPerMebibyte, 2);
-    const QJsonObject incompleteSummary = scenarioReclaimSummary(
-        QVector<QJsonObject>{syntheticRecord(passingComparison)},
-        QStringLiteral("main_interface"), 8 * kBytesPerMebibyte, 2);
-    const QJsonObject retainedScenarioSummary = scenarioReclaimSummary(
-        QVector<QJsonObject>{syntheticRecord(failingComparison),
-                             syntheticRecord(secondMainComparison)},
-        QStringLiteral("main_interface"), 8 * kBytesPerMebibyte, 2);
-    require(
-        syntheticSummary.value(QStringLiteral("benchmark_passed")).toBool() &&
-            syntheticSummary.value(QStringLiteral("within_upper_bound_comparison_count"))
-                    .toInteger() == 2 &&
-            !incompleteSummary.value(QStringLiteral("complete_sample_set")).toBool() &&
-            !incompleteSummary.value(QStringLiteral("benchmark_passed")).toBool() &&
-            !retainedScenarioSummary.value(QStringLiteral("benchmark_passed")).toBool() &&
-            retainedScenarioSummary.value(QStringLiteral("scenarios"))
-                    .toObject()
-                    .value(QStringLiteral("main_interface"))
-                    .toObject()
-                    .value(QStringLiteral("benchmark_passed"))
-                    .toBool() == false,
-        "scenario reclaim summary self-test failed");
+    const QJsonObject secondMainComparison =
+        scenarioReclaimComparison(QStringLiteral("main_interface"), 100 * kBytesPerMebibyte,
+                                  101 * kBytesPerMebibyte, 8 * kBytesPerMebibyte);
+    const QJsonObject syntheticSummary =
+        scenarioReclaimSummary(QVector<QJsonObject>{syntheticRecord(passingComparison),
+                                                    syntheticRecord(secondMainComparison)},
+                               QStringLiteral("main_interface"), 8 * kBytesPerMebibyte, 2);
+    const QJsonObject incompleteSummary =
+        scenarioReclaimSummary(QVector<QJsonObject>{syntheticRecord(passingComparison)},
+                               QStringLiteral("main_interface"), 8 * kBytesPerMebibyte, 2);
+    const QJsonObject retainedScenarioSummary =
+        scenarioReclaimSummary(QVector<QJsonObject>{syntheticRecord(failingComparison),
+                                                    syntheticRecord(secondMainComparison)},
+                               QStringLiteral("main_interface"), 8 * kBytesPerMebibyte, 2);
+    const QJsonObject overReclaimedSummary =
+        scenarioReclaimSummary(QVector<QJsonObject>{syntheticRecord(passingComparison),
+                                                    syntheticRecord(belowColdComparison)},
+                               QStringLiteral("main_interface"), 8 * kBytesPerMebibyte, 2);
+    require(syntheticSummary.value(QStringLiteral("benchmark_passed")).toBool() &&
+                syntheticSummary.value(QStringLiteral("within_upper_bound_comparison_count"))
+                        .toInteger() == 2 &&
+                syntheticSummary.value(QStringLiteral("at_or_above_cold_start_comparison_count"))
+                        .toInteger() == 2 &&
+                syntheticSummary.value(QStringLiteral("within_accepted_range_comparison_count"))
+                        .toInteger() == 2 &&
+                !incompleteSummary.value(QStringLiteral("complete_sample_set")).toBool() &&
+                !incompleteSummary.value(QStringLiteral("benchmark_passed")).toBool() &&
+                !retainedScenarioSummary.value(QStringLiteral("benchmark_passed")).toBool() &&
+                !overReclaimedSummary.value(QStringLiteral("benchmark_passed")).toBool() &&
+                overReclaimedSummary.value(QStringLiteral("over_reclaimed_comparison_count"))
+                        .toInteger() == 1 &&
+                retainedScenarioSummary.value(QStringLiteral("scenarios"))
+                        .toObject()
+                        .value(QStringLiteral("main_interface"))
+                        .toObject()
+                        .value(QStringLiteral("benchmark_passed"))
+                        .toBool() == false,
+            "scenario reclaim summary self-test failed");
     const QJsonObject syntheticReport{
         {QStringLiteral("metrics"),
          QJsonObject{{QStringLiteral("cold_start"), statistics(QVector<double>{1.0})},
-                      {QStringLiteral("main_interface"), statistics(QVector<double>{3.0})},
-                      {QStringLiteral("main_interface_closed"),
-                       statistics(QVector<double>{1.5})}}},
+                     {QStringLiteral("main_interface"), statistics(QVector<double>{3.0})},
+                     {QStringLiteral("main_interface_closed"), statistics(QVector<double>{1.5})}}},
         {QStringLiteral("stage_order"),
          QJsonArray::fromStringList(benchmarkStageOrder(BenchmarkScenario::MainInterface))},
         {QStringLiteral("scenario_reclaim_vs_cold_start"), syntheticSummary}};
     const QString syntheticHtml = reportHtml(syntheticReport);
-    require(
-            syntheticHtml.contains(QStringLiteral("Screenshot memory footprint")) &&
-            syntheticHtml.contains(QStringLiteral("Benchmark: PASS")) &&
-            syntheticHtml.contains(QStringLiteral("no more than 8 MiB above cold start")) &&
-            syntheticHtml.contains(QStringLiteral("main_interface_closed")) &&
-            reportHtml(QJsonObject{{QStringLiteral("scenario_reclaim_vs_cold_start"),
-                                    incompleteSummary}})
-                .contains(QStringLiteral("Benchmark: INCOMPLETE")),
-        "HTML report self-test failed");
+    require(syntheticHtml.contains(QStringLiteral("Screenshot memory footprint")) &&
+                syntheticHtml.contains(QStringLiteral("Benchmark: PASS")) &&
+                syntheticHtml.contains(QStringLiteral("upper limit 8 MiB above cold start")) &&
+                syntheticHtml.contains(QStringLiteral("main_interface_closed")) &&
+                reportHtml(QJsonObject{{QStringLiteral("scenario_reclaim_vs_cold_start"),
+                                        incompleteSummary}})
+                    .contains(QStringLiteral("Benchmark: INCOMPLETE")),
+            "HTML report self-test failed");
     std::cout << "screenshot memory footprint benchmark self-tests passed\n";
     return true;
 }

@@ -117,14 +117,16 @@ void ScreenshotToolbarWindow::prewarmForScreen(QScreen* screen) {
     resetForNewCapture();
     setPlacementContext(screen, available);
     ensurePolished();
-    if (ScreenshotToolPaletteHost* host = paletteHost()) {
+    ScreenshotToolPaletteHost* const host = paletteHost();
+    ScreenshotToolPalette* const toolPalette = palette();
+    if (host != nullptr) {
         host->ensurePolished();
         host->prepareForDisplay();
         if (host->layout() != nullptr) {
             host->layout()->activate();
         }
     }
-    if (ScreenshotToolPalette* toolPalette = palette()) {
+    if (toolPalette != nullptr) {
         toolPalette->ensurePolished();
         if (toolPalette->layout() != nullptr) {
             toolPalette->layout()->activate();
@@ -133,10 +135,48 @@ void ScreenshotToolbarWindow::prewarmForScreen(QScreen* screen) {
     prepareForDisplay();
 
     const qreal dpr = std::max<qreal>(1.0, screen->devicePixelRatio());
-    QPixmap warmSurface(std::max(1, qCeil(width() * dpr)), std::max(1, qCeil(height() * dpr)));
-    warmSurface.setDevicePixelRatio(dpr);
-    warmSurface.fill(Qt::transparent);
-    render(&warmSurface);
+    const auto renderCurrentPresentation = [this, dpr]() {
+        QPixmap warmSurface(std::max(1, qCeil(width() * dpr)),
+                            std::max(1, qCeil(height() * dpr)));
+        warmSurface.setDevicePixelRatio(dpr);
+        warmSurface.fill(Qt::transparent);
+        render(&warmSurface);
+    };
+    renderCurrentPresentation();
+
+    if (toolPalette != nullptr) {
+        const QSignalBlocker blocker(toolPalette);
+        for (const ScreenshotToolPalette::Tool tool : {
+                 ScreenshotToolPalette::Tool::Select,
+                 ScreenshotToolPalette::Tool::Shape,
+                 ScreenshotToolPalette::Tool::Arrow,
+                 ScreenshotToolPalette::Tool::Line,
+                 ScreenshotToolPalette::Tool::FreeDraw,
+                 ScreenshotToolPalette::Tool::RectangleHighlight,
+                 ScreenshotToolPalette::Tool::PenHighlight,
+                 ScreenshotToolPalette::Tool::Spotlight,
+                 ScreenshotToolPalette::Tool::Text,
+                 ScreenshotToolPalette::Tool::SerialNumber,
+                 ScreenshotToolPalette::Tool::RectangleFilter,
+                 ScreenshotToolPalette::Tool::PenFilter,
+                 ScreenshotToolPalette::Tool::Eraser,
+                 ScreenshotToolPalette::Tool::Watermark,
+             }) {
+            toolPalette->setActiveTool(tool);
+            if (toolPalette->layout() != nullptr) {
+                toolPalette->layout()->activate();
+            }
+            if (host != nullptr) {
+                host->prepareForDisplay();
+                if (host->layout() != nullptr) {
+                    host->layout()->activate();
+                }
+            }
+            prepareForDisplay();
+            renderCurrentPresentation();
+        }
+    }
+    resetForNewCapture();
     hide();
     m_prewarmKey = key;
 }

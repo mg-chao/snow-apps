@@ -5,10 +5,9 @@ use std::mem::size_of;
 use std::path::{Path, PathBuf};
 use std::ptr;
 use std::slice;
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TryRecvError, sync_channel};
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 use snow_stitch_images::{
@@ -21,6 +20,27 @@ const DEFAULT_MAX_OUTPUT_PIXELS: u64 = 3_840 * 2_160 * 32;
 const DEFAULT_MIN_OVERLAP_ROWS: u32 = 48;
 const DEFAULT_MIN_OVERLAP_RATIO: f32 = 0.15;
 const DEFAULT_ACCEPTED_HISTORY_CAPACITY: usize = 4;
+const MAX_STITCH_WORKERS: usize = 4;
+
+fn stitch_worker_count() -> usize {
+    let available = thread::available_parallelism()
+        .map(|parallelism| parallelism.get())
+        .unwrap_or(1)
+        .max(1);
+    let physical = num_cpus::get_physical().max(1);
+    available.min(physical).min(MAX_STITCH_WORKERS).max(1)
+}
+
+fn build_stitch_executor() -> Result<Arc<rayon::ThreadPool>, StitchError> {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(stitch_worker_count())
+        .thread_name(|index| format!("snow-stitch-{index}"))
+        .build()
+        .map(Arc::new)
+        .map_err(|error| StitchError::InvalidOptions {
+            message: format!("unable to create stitch executor: {error}"),
+        })
+}
 
 #[derive(Clone, Copy)]
 struct FrameDimensions {
@@ -177,6 +197,7 @@ impl RgbaImage {
 #[derive(Clone)]
 struct StitchImageSnapshot {
     canvas: TiledCanvasSnapshot,
+    executor: Arc<rayon::ThreadPool>,
 }
 
 impl StitchImageSnapshot {
@@ -209,19 +230,33 @@ impl StitchImageSnapshot {
         }
         Ok(Self {
             canvas: self.canvas.slice_rows(top, bottom)?,
+            executor: Arc::clone(&self.executor),
         })
     }
 
     fn slice_axis(&self, start: u32, end: u32) -> Result<Self, StitchError> {
         Ok(Self {
             canvas: self.canvas.slice_axis(start, end)?,
+            executor: Arc::clone(&self.executor),
+        })
+    }
+
+    fn copy_rows_strided(
+        &self,
+        top: u32,
+        rows: u32,
+        destination_stride: usize,
+        destination: &mut [u8],
+    ) -> Result<(), StitchError> {
+        self.executor.install(|| {
+            self.canvas
+                .copy_rows_strided(top, rows, destination_stride, destination)
         })
     }
 
     fn materialize(&self) -> Result<RgbaImage, StitchError> {
-        Ok(RgbaImage {
-            frame: self.canvas.materialize()?,
-        })
+        let frame = self.executor.install(|| self.canvas.materialize())?;
+        Ok(RgbaImage { frame })
     }
 
     fn render_scaled(&self, width: u32, height: u32) -> Result<RgbaImage, StitchError> {
@@ -237,7 +272,7 @@ impl StitchImageSnapshot {
                 operation: "calculating scaled RGBA length",
             })?;
         let mut pixels = vec![0; length];
-        let source_frame = self.canvas.materialize()?;
+        let source_frame = self.executor.install(|| self.canvas.materialize())?;
         let source_width = self.width() as usize;
         let source_height = self.height() as usize;
         for y in 0..height as usize {
@@ -353,6 +388,7 @@ struct FrameOutcome {
 struct StitchSession {
     config: StitchConfig,
     stitcher: Stitcher,
+    executor: Arc<rayon::ThreadPool>,
 }
 
 impl StitchSession {
@@ -366,6 +402,7 @@ impl StitchSession {
                 collect_trace: true,
                 ..StitchOptions::default()
             })?,
+            executor: build_stitch_executor()?,
         })
     }
 
@@ -379,7 +416,7 @@ impl StitchSession {
     ) -> Result<FrameOutcome, StitchError> {
         let frame = frame?;
         let initial = self.stitcher.input_count() == 0;
-        let trace = self.stitcher.push(frame)?;
+        let trace = self.executor.install(|| self.stitcher.push(frame))?;
         let (width, height) = self
             .stitcher
             .image_dimensions()
@@ -439,25 +476,31 @@ impl StitchSession {
                 message: format!("row copy needs {expected} bytes, got {}", destination.len()),
             });
         }
-        self.stitcher.copy_rows(top, rows, destination)
+        self.executor
+            .install(|| self.stitcher.copy_rows(top, rows, destination))
     }
 
     fn snapshot(&self, top: u32, bottom: u32) -> Result<StitchImageSnapshot, StitchError> {
         Ok(StitchImageSnapshot {
-            canvas: self.stitcher.snapshot_axis(top, bottom)?,
+            canvas: self
+                .executor
+                .install(|| self.stitcher.snapshot_axis(top, bottom))?,
+            executor: Arc::clone(&self.executor),
         })
     }
 
     fn materialize_rows(&self, top: u32, bottom: u32) -> Result<RgbaImage, StitchError> {
-        Ok(RgbaImage {
-            frame: self.stitcher.materialize_rows(top, bottom)?,
-        })
+        let frame = self
+            .executor
+            .install(|| self.stitcher.materialize_rows(top, bottom))?;
+        Ok(RgbaImage { frame })
     }
 
     fn materialize_axis(&self, start: u32, end: u32) -> Result<RgbaImage, StitchError> {
-        Ok(RgbaImage {
-            frame: self.stitcher.materialize_axis(start, end)?,
-        })
+        let frame = self
+            .executor
+            .install(|| self.stitcher.materialize_axis(start, end))?;
+        Ok(RgbaImage { frame })
     }
 
     fn render_scaled_rows(
@@ -467,9 +510,10 @@ impl StitchSession {
         width: u32,
         height: u32,
     ) -> Result<RgbaImage, StitchError> {
-        Ok(RgbaImage {
-            frame: self.stitcher.render_scaled_rows(top, rows, width, height)?,
-        })
+        let frame = self
+            .executor
+            .install(|| self.stitcher.render_scaled_rows(top, rows, width, height))?;
+        Ok(RgbaImage { frame })
     }
 
     fn render_scaled_axis(
@@ -479,11 +523,10 @@ impl StitchSession {
         width: u32,
         height: u32,
     ) -> Result<RgbaImage, StitchError> {
-        Ok(RgbaImage {
-            frame: self
-                .stitcher
-                .render_scaled_axis(start, span, width, height)?,
-        })
+        let frame = self
+            .executor
+            .install(|| self.stitcher.render_scaled_axis(start, span, width, height))?;
+        Ok(RgbaImage { frame })
     }
 }
 
@@ -625,6 +668,7 @@ struct PngExportTask {
     cancel: Arc<AtomicBool>,
     progress: Receiver<PngExportProgress>,
     join: Option<JoinHandle<Result<(), PngExportError>>>,
+    executor: Option<Arc<rayon::ThreadPool>>,
 }
 
 impl PngExportTask {
@@ -656,6 +700,7 @@ impl PngExportTask {
         }
         let cancel = Arc::new(AtomicBool::new(false));
         let worker_cancel = Arc::clone(&cancel);
+        let executor = Arc::clone(&snapshot.executor);
         let (progress_tx, progress) = sync_channel(16);
         let join = thread::Builder::new()
             .name("snow-stitch-png-export".to_owned())
@@ -667,6 +712,7 @@ impl PngExportTask {
             cancel,
             progress,
             join: Some(join),
+            executor: Some(executor),
         })
     }
 
@@ -683,11 +729,14 @@ impl PngExportTask {
     }
 
     fn wait(mut self) -> Result<(), PngExportError> {
-        self.join
+        let result = self
+            .join
             .take()
             .expect("live export task has a worker")
             .join()
-            .map_err(|_| PngExportError::Failed("PNG export worker panicked".to_owned()))?
+            .map_err(|_| PngExportError::Failed("PNG export worker panicked".to_owned()))?;
+        self.executor.take();
+        result
     }
 }
 
@@ -1547,7 +1596,6 @@ pub unsafe extern "C" fn snow_stitch_snapshot_copy_rows(
     let bytes = unsafe { slice::from_raw_parts_mut(destination, destination_len) };
     match snapshot
         .snapshot
-        .canvas
         .copy_rows_strided(top, rows, destination_stride, bytes)
     {
         Ok(()) => {
@@ -1862,6 +1910,85 @@ pub extern "C" fn snow_stitch_last_error_message() -> *const c_char {
 mod tests {
     use super::*;
 
+    fn solid_session() -> StitchSession {
+        let mut session = StitchSession::new(StitchConfig::default()).unwrap();
+        session
+            .push_owned_frame(Frame::new(5, 5, PixelFormat::Rgba8, vec![0x7f; 5 * 5 * 4]))
+            .unwrap();
+        session
+    }
+
+    #[test]
+    fn session_executor_is_bounded_and_released_with_an_idle_session() {
+        let session = StitchSession::new(StitchConfig::default()).unwrap();
+        assert_eq!(
+            session.executor.current_num_threads(),
+            stitch_worker_count()
+        );
+        assert!(session.executor.current_num_threads() <= MAX_STITCH_WORKERS);
+        let executor = Arc::downgrade(&session.executor);
+
+        drop(session);
+
+        assert!(executor.upgrade().is_none());
+    }
+
+    #[test]
+    fn snapshot_owns_executor_until_the_last_snapshot_is_dropped() {
+        let session = solid_session();
+        let snapshot = session.snapshot(0, 5).unwrap();
+        let slice = snapshot.slice_rows(0, 1).unwrap();
+        let executor = Arc::downgrade(&session.executor);
+
+        drop(session);
+        drop(snapshot);
+        assert!(executor.upgrade().is_some());
+
+        drop(slice);
+        assert!(executor.upgrade().is_none());
+    }
+
+    #[test]
+    fn completed_export_releases_its_executor_lease() {
+        let temporary = tempfile::tempdir().unwrap();
+        let session = solid_session();
+        let snapshot = session.snapshot(0, 5).unwrap();
+        let executor = Arc::downgrade(&session.executor);
+        let task = snapshot
+            .export_png(PngExportRequest {
+                output_path: temporary.path().join("leased.png"),
+                compression: PngCompression::Fast,
+                overwrite: false,
+            })
+            .unwrap();
+
+        drop(snapshot);
+        drop(session);
+        assert!(executor.upgrade().is_some());
+
+        task.wait().unwrap();
+        assert!(executor.upgrade().is_none());
+    }
+
+    #[test]
+    fn repeated_sessions_do_not_accumulate_executor_owners() {
+        let executors = (0..8)
+            .map(|_| {
+                let session = StitchSession::new(StitchConfig::default()).unwrap();
+                let executor = Arc::downgrade(&session.executor);
+                session.executor.install(|| {});
+                drop(session);
+                executor
+            })
+            .collect::<Vec<_>>();
+
+        assert!(
+            executors
+                .into_iter()
+                .all(|executor| executor.upgrade().is_none())
+        );
+    }
+
     #[test]
     fn config_is_sized_and_rejects_truncated_callers() {
         let mut config = ffi_config(StitchConfig::default());
@@ -2019,6 +2146,7 @@ mod tests {
             canvas: TiledCanvasSnapshot::from_frame(
                 Frame::new(5, 5, PixelFormat::Rgba8, vec![0x7f; 5 * 5 * 4]).unwrap(),
             ),
+            executor: build_stitch_executor().unwrap(),
         };
         let task = snapshot
             .export_png(PngExportRequest {

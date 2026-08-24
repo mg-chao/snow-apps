@@ -1,9 +1,242 @@
-use std::{fmt, path::Path};
+use std::{
+    fmt,
+    ops::{Deref, DerefMut},
+    path::Path,
+};
+
+#[cfg(windows)]
+use std::{
+    alloc::{Layout, handle_alloc_error},
+    ffi::c_void,
+    ptr::NonNull,
+    slice,
+};
 
 use image::{DynamicImage, GrayImage, RgbImage, RgbaImage};
 use serde::{Deserialize, Serialize};
 
 use crate::StitchError;
+
+#[cfg(windows)]
+const RECLAIMABLE_PIXEL_ALLOCATION_THRESHOLD: usize = 1024 * 1024;
+
+#[cfg(windows)]
+const MEM_COMMIT: u32 = 0x0000_1000;
+#[cfg(windows)]
+const MEM_RESERVE: u32 = 0x0000_2000;
+#[cfg(windows)]
+const MEM_RELEASE: u32 = 0x0000_8000;
+#[cfg(windows)]
+const PAGE_READWRITE: u32 = 0x04;
+
+#[cfg(windows)]
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn VirtualAlloc(
+        address: *mut c_void,
+        size: usize,
+        allocation_type: u32,
+        protect: u32,
+    ) -> *mut c_void;
+    fn VirtualFree(address: *mut c_void, size: usize, free_type: u32) -> i32;
+}
+
+#[cfg(windows)]
+pub(crate) struct VirtualPixels {
+    pointer: NonNull<u8>,
+    len: usize,
+    capacity: usize,
+}
+
+#[cfg(windows)]
+impl VirtualPixels {
+    fn zeroed(len: usize) -> Self {
+        debug_assert!(len > 0);
+        let allocation = unsafe {
+            VirtualAlloc(
+                std::ptr::null_mut(),
+                len,
+                MEM_RESERVE | MEM_COMMIT,
+                PAGE_READWRITE,
+            )
+        };
+        let Some(pointer) = NonNull::new(allocation.cast::<u8>()) else {
+            let layout = Layout::from_size_align(len, 1).unwrap_or_else(|_| Layout::new::<u8>());
+            handle_alloc_error(layout);
+        };
+        Self {
+            pointer,
+            len,
+            capacity: len,
+        }
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        unsafe { slice::from_raw_parts(self.pointer.as_ptr(), self.len) }
+    }
+
+    fn as_mut_slice(&mut self) -> &mut [u8] {
+        unsafe { slice::from_raw_parts_mut(self.pointer.as_ptr(), self.len) }
+    }
+
+    fn resize(&mut self, new_len: usize, value: u8) {
+        if new_len <= self.capacity {
+            if new_len > self.len {
+                unsafe {
+                    slice::from_raw_parts_mut(
+                        self.pointer.as_ptr().add(self.len),
+                        new_len - self.len,
+                    )
+                }
+                .fill(value);
+            }
+            self.len = new_len;
+            return;
+        }
+
+        let mut replacement = Self::zeroed(new_len);
+        replacement.as_mut_slice()[..self.len].copy_from_slice(self.as_slice());
+        replacement.as_mut_slice()[self.len..].fill(value);
+        *self = replacement;
+    }
+
+    fn truncate(&mut self, new_len: usize) {
+        self.len = self.len.min(new_len);
+    }
+}
+
+#[cfg(windows)]
+impl Clone for VirtualPixels {
+    fn clone(&self) -> Self {
+        let mut pixels = Self::zeroed(self.len);
+        pixels.as_mut_slice().copy_from_slice(self.as_slice());
+        pixels
+    }
+}
+
+#[cfg(windows)]
+impl Drop for VirtualPixels {
+    fn drop(&mut self) {
+        let _ = unsafe {
+            VirtualFree(self.pointer.as_ptr().cast::<c_void>(), 0, MEM_RELEASE);
+        };
+    }
+}
+
+#[cfg(windows)]
+unsafe impl Send for VirtualPixels {}
+#[cfg(windows)]
+unsafe impl Sync for VirtualPixels {}
+
+#[derive(Clone)]
+pub(crate) enum PixelStorage {
+    Heap(Vec<u8>),
+    #[cfg(windows)]
+    Virtual(VirtualPixels),
+}
+
+impl PixelStorage {
+    fn from_vec(pixels: Vec<u8>) -> Self {
+        Self::Heap(pixels)
+    }
+
+    pub(crate) fn zeroed(len: usize) -> Self {
+        #[cfg(windows)]
+        if len >= RECLAIMABLE_PIXEL_ALLOCATION_THRESHOLD {
+            return Self::Virtual(VirtualPixels::zeroed(len));
+        }
+        Self::Heap(vec![0; len])
+    }
+
+    pub(crate) fn copied_from_slice(source: &[u8]) -> Self {
+        let mut pixels = Self::zeroed(source.len());
+        pixels.copy_from_slice(source);
+        pixels
+    }
+
+    fn into_vec(self) -> Vec<u8> {
+        match self {
+            Self::Heap(pixels) => pixels,
+            #[cfg(windows)]
+            Self::Virtual(pixels) => pixels.as_slice().to_vec(),
+        }
+    }
+
+    pub(crate) fn resize(&mut self, new_len: usize, value: u8) {
+        match self {
+            Self::Heap(pixels) => pixels.resize(new_len, value),
+            #[cfg(windows)]
+            Self::Virtual(pixels) => pixels.resize(new_len, value),
+        }
+    }
+
+    pub(crate) fn truncate(&mut self, new_len: usize) {
+        match self {
+            Self::Heap(pixels) => pixels.truncate(new_len),
+            #[cfg(windows)]
+            Self::Virtual(pixels) => pixels.truncate(new_len),
+        }
+    }
+
+    pub(crate) fn extend_from_slice(&mut self, additional: &[u8]) {
+        match self {
+            Self::Heap(pixels) => pixels.extend_from_slice(additional),
+            #[cfg(windows)]
+            Self::Virtual(pixels) => {
+                let previous_len = pixels.len;
+                let new_len = previous_len
+                    .checked_add(additional.len())
+                    .expect("pixel buffer length overflow");
+                pixels.resize(new_len, 0);
+                pixels.as_mut_slice()[previous_len..].copy_from_slice(additional);
+            }
+        }
+    }
+
+    #[cfg(all(test, windows))]
+    fn is_reclaimable(&self) -> bool {
+        matches!(self, Self::Virtual(_))
+    }
+}
+
+impl Deref for PixelStorage {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            Self::Heap(pixels) => pixels,
+            #[cfg(windows)]
+            Self::Virtual(pixels) => pixels.as_slice(),
+        }
+    }
+}
+
+impl DerefMut for PixelStorage {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            Self::Heap(pixels) => pixels,
+            #[cfg(windows)]
+            Self::Virtual(pixels) => pixels.as_mut_slice(),
+        }
+    }
+}
+
+impl fmt::Debug for PixelStorage {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PixelStorage")
+            .field("len", &self.len())
+            .finish()
+    }
+}
+
+impl PartialEq for PixelStorage {
+    fn eq(&self, other: &Self) -> bool {
+        self.deref() == other.deref()
+    }
+}
+
+impl Eq for PixelStorage {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -51,7 +284,7 @@ pub struct Frame {
     width: u32,
     height: u32,
     pixel_format: PixelFormat,
-    pixels: Vec<u8>,
+    pixels: PixelStorage,
 }
 
 impl Frame {
@@ -60,6 +293,15 @@ impl Frame {
         height: u32,
         pixel_format: PixelFormat,
         pixels: Vec<u8>,
+    ) -> Result<Self, StitchError> {
+        Self::from_storage(width, height, pixel_format, PixelStorage::from_vec(pixels))
+    }
+
+    fn from_storage(
+        width: u32,
+        height: u32,
+        pixel_format: PixelFormat,
+        pixels: PixelStorage,
     ) -> Result<Self, StitchError> {
         let expected = Self::buffer_len(width, height, pixel_format)?;
         if pixels.len() != expected {
@@ -108,14 +350,17 @@ impl Frame {
                 ),
             });
         }
-        let mut pixels = Vec::with_capacity(Self::buffer_len(width, height, pixel_format)?);
+        let packed_len = Self::buffer_len(width, height, pixel_format)?;
+        let mut pixels = PixelStorage::zeroed(packed_len);
         for y in 0..height as usize {
             let start = y.checked_mul(row_stride).ok_or(StitchError::Arithmetic {
                 operation: "calculating strided row offset",
             })?;
-            pixels.extend_from_slice(&storage[start..start + packed_row]);
+            let packed_start = y * packed_row;
+            pixels[packed_start..packed_start + packed_row]
+                .copy_from_slice(&storage[start..start + packed_row]);
         }
-        Self::new(width, height, pixel_format, pixels)
+        Self::from_storage(width, height, pixel_format, pixels)
     }
 
     pub fn decode(path: impl AsRef<Path>) -> Result<Self, StitchError> {
@@ -132,21 +377,21 @@ impl Frame {
         let path = path.as_ref();
         let image = match self.pixel_format {
             PixelFormat::Gray8 => DynamicImage::ImageLuma8(
-                GrayImage::from_raw(self.width, self.height, self.pixels.clone()).ok_or_else(
+                GrayImage::from_raw(self.width, self.height, self.pixels.to_vec()).ok_or_else(
                     || StitchError::InvalidFrame {
                         message: "could not create gray encoder buffer".to_owned(),
                     },
                 )?,
             ),
             PixelFormat::Rgb8 => DynamicImage::ImageRgb8(
-                RgbImage::from_raw(self.width, self.height, self.pixels.clone()).ok_or_else(
+                RgbImage::from_raw(self.width, self.height, self.pixels.to_vec()).ok_or_else(
                     || StitchError::InvalidFrame {
                         message: "could not create RGB encoder buffer".to_owned(),
                     },
                 )?,
             ),
             PixelFormat::Rgba8 => DynamicImage::ImageRgba8(
-                RgbaImage::from_raw(self.width, self.height, self.pixels.clone()).ok_or_else(
+                RgbaImage::from_raw(self.width, self.height, self.pixels.to_vec()).ok_or_else(
                     || StitchError::InvalidFrame {
                         message: "could not create RGBA encoder buffer".to_owned(),
                     },
@@ -184,10 +429,10 @@ impl Frame {
     }
 
     pub fn into_pixels(self) -> Vec<u8> {
-        self.pixels
+        self.pixels.into_vec()
     }
 
-    pub(crate) fn pixels_mut(&mut self) -> &mut Vec<u8> {
+    pub(crate) fn pixels_mut(&mut self) -> &mut PixelStorage {
         &mut self.pixels
     }
 
@@ -374,6 +619,34 @@ impl Frame {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn large_strided_frames_use_release_on_drop_storage() {
+        const WIDTH: usize = 1024;
+        const HEIGHT: usize = 256;
+        const PACKED_ROW: usize = WIDTH * 4;
+        const STRIDE: usize = PACKED_ROW + 16;
+
+        let mut source = vec![0_u8; STRIDE * HEIGHT];
+        source[0] = 17;
+        source[(HEIGHT - 1) * STRIDE + PACKED_ROW - 1] = 29;
+        let frame = Frame::from_strided(
+            WIDTH as u32,
+            HEIGHT as u32,
+            PixelFormat::Rgba8,
+            STRIDE,
+            &source,
+        )
+        .unwrap();
+
+        assert!(frame.pixels.is_reclaimable());
+        assert_eq!(frame.pixels().len(), PACKED_ROW * HEIGHT);
+        assert_eq!(frame.pixels()[0], 17);
+        assert_eq!(frame.pixels()[PACKED_ROW * HEIGHT - 1], 29);
+        assert_eq!(frame.clone(), frame);
+        assert_eq!(frame.into_pixels().len(), PACKED_ROW * HEIGHT);
+    }
 
     #[test]
     fn visible_equality_preserves_color() {

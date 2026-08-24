@@ -111,6 +111,18 @@ void SnowShotApiClient::setUseSystemProxy(bool enabled) {
     }
 }
 
+bool SnowShotApiClient::hasPendingRequests() const noexcept {
+    return !m_requests.isEmpty();
+}
+
+bool SnowShotApiClient::releaseRetainedIdleResources() {
+    if (hasPendingRequests()) {
+        return false;
+    }
+    delete findChild<QNetworkAccessManager*>();
+    return true;
+}
+
 QNetworkAccessManager* SnowShotApiClient::networkAccessManager() {
     auto* manager = findChild<QNetworkAccessManager*>();
     if (manager == nullptr) {
@@ -128,8 +140,7 @@ QImage SnowShotApiClient::prepareImage(const QImage& image) {
     if (longestSide <= kMaximumSide) {
         return image;
     }
-    return image.scaled(kMaximumSide, kMaximumSide, Qt::KeepAspectRatio,
-                        Qt::SmoothTransformation);
+    return image.scaled(kMaximumSide, kMaximumSide, Qt::KeepAspectRatio, Qt::SmoothTransformation);
 }
 
 QByteArray SnowShotApiClient::encodeWebp(const QImage& image) {
@@ -139,9 +150,8 @@ QByteArray SnowShotApiClient::encodeWebp(const QImage& image) {
 QString SnowShotApiClient::formatFailure(int httpStatus, const QString& failureCode,
                                          const QString& description) {
     const QString conciseDescription = description.simplified();
-    const QString code = httpStatus > 0 && httpStatus != 200
-                             ? QString::number(httpStatus)
-                             : failureCode.trimmed();
+    const QString code =
+        httpStatus > 0 && httpStatus != 200 ? QString::number(httpStatus) : failureCode.trimmed();
     if (code.isEmpty()) {
         return conciseDescription;
     }
@@ -151,9 +161,8 @@ QString SnowShotApiClient::formatFailure(int httpStatus, const QString& failureC
     return QStringLiteral("%1: %2").arg(code, conciseDescription);
 }
 
-SnowShotApiClient::RequestToken SnowShotApiClient::extractTable(const QImage& source,
-                                                               QObject* receiver,
-                                                               Completion completion) {
+SnowShotApiClient::RequestToken
+SnowShotApiClient::extractTable(const QImage& source, QObject* receiver, Completion completion) {
     if (receiver == nullptr || !completion || m_baseUrl.isEmpty()) {
         return 0;
     }
@@ -172,13 +181,15 @@ SnowShotApiClient::RequestToken SnowShotApiClient::extractTable(const QImage& so
     m_requests.insert(token, requestState);
 
     QNetworkRequest request(QUrl(m_baseUrl + QStringLiteral("/api/v1/table/extract")));
-    request.setRawHeader("X-Request-ID", QUuid::createUuid().toString(QUuid::WithoutBraces).toUtf8());
+    request.setRawHeader("X-Request-ID",
+                         QUuid::createUuid().toString(QUuid::WithoutBraces).toUtf8());
     request.setTransferTimeout(kRequestTimeoutMs);
 
     auto* multipart = new QHttpMultiPart(QHttpMultiPart::FormDataType);
     QHttpPart imagePart;
-    imagePart.setHeader(QNetworkRequest::ContentDispositionHeader,
-                        QVariant(QStringLiteral("form-data; name=\"image\"; filename=\"table.webp\"")));
+    imagePart.setHeader(
+        QNetworkRequest::ContentDispositionHeader,
+        QVariant(QStringLiteral("form-data; name=\"image\"; filename=\"table.webp\"")));
     imagePart.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("image/webp"));
     imagePart.setBody(webp);
     multipart->append(imagePart);
@@ -221,9 +232,8 @@ SnowShotApiClient::RequestToken SnowShotApiClient::extractTable(const QImage& so
                 } else {
                     QString description = problemDetail(root);
                     if (description.isEmpty() && result.httpStatus > 0) {
-                        description = reply
-                                          ->attribute(QNetworkRequest::HttpReasonPhraseAttribute)
-                                          .toString();
+                        description =
+                            reply->attribute(QNetworkRequest::HttpReasonPhraseAttribute).toString();
                     }
                     if (description.isEmpty()) {
                         description = reply->errorString();
@@ -258,8 +268,9 @@ const QVector<SnowShotChatModel>& SnowShotApiClient::cachedChatModels() const {
     return m_cachedChatModels;
 }
 
-SnowShotApiClient::RequestToken SnowShotApiClient::fetchChatModels(
-    const QString& locale, QObject* receiver, ChatModelsCompletion completion) {
+SnowShotApiClient::RequestToken
+SnowShotApiClient::fetchChatModels(const QString& locale, QObject* receiver,
+                                   ChatModelsCompletion completion) {
     if (receiver == nullptr || !completion || m_baseUrl.isEmpty()) {
         return 0;
     }
@@ -272,7 +283,8 @@ SnowShotApiClient::RequestToken SnowShotApiClient::fetchChatModels(
     m_requests.insert(token, state);
 
     QNetworkRequest request(QUrl(m_baseUrl + QStringLiteral("/api/v1/chat/models")));
-    request.setRawHeader("X-Request-ID", QUuid::createUuid().toString(QUuid::WithoutBraces).toUtf8());
+    request.setRawHeader("X-Request-ID",
+                         QUuid::createUuid().toString(QUuid::WithoutBraces).toUtf8());
     if (!locale.trimmed().isEmpty()) {
         request.setRawHeader("Accept-Language", locale.toUtf8());
     }
@@ -322,9 +334,9 @@ SnowShotApiClient::RequestToken SnowShotApiClient::fetchChatModels(
     return token;
 }
 
-SnowShotApiClient::RequestToken SnowShotApiClient::streamTranslation(
-    const SnowShotTranslationRequest& input, QObject* receiver, TranslationDelta delta,
-    TranslationCompletion completion) {
+SnowShotApiClient::RequestToken
+SnowShotApiClient::streamTranslation(const SnowShotTranslationRequest& input, QObject* receiver,
+                                     TranslationDelta delta, TranslationCompletion completion) {
     if (receiver == nullptr || !delta || !completion || m_baseUrl.isEmpty() ||
         input.model.trimmed().isEmpty() || input.text.isEmpty()) {
         return 0;
@@ -341,7 +353,8 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamTranslation(
     QNetworkRequest request(QUrl(m_baseUrl + QStringLiteral("/api/v1/chat/completions")));
     request.setRawHeader("Content-Type", "application/json");
     request.setRawHeader("Accept", "text/event-stream");
-    request.setRawHeader("X-Request-ID", QUuid::createUuid().toString(QUuid::WithoutBraces).toUtf8());
+    request.setRawHeader("X-Request-ID",
+                         QUuid::createUuid().toString(QUuid::WithoutBraces).toUtf8());
     request.setTransferTimeout(kTranslationTimeoutMs);
     const QJsonArray messages{
         QJsonObject{{QStringLiteral("role"), QStringLiteral("system")},
@@ -354,7 +367,8 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamTranslation(
                            {QStringLiteral("enable_thinking"), false},
                            {QStringLiteral("temperature"), 0},
                            {QStringLiteral("max_tokens"), 4096}};
-    QNetworkReply* reply = manager->post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
+    QNetworkReply* reply =
+        manager->post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
     state->reply = reply;
 
     const auto parseAvailable = [this, token]() {
@@ -419,7 +433,9 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamTranslation(
             }
             QString content;
             for (const QJsonValue& choice : object.value(QStringLiteral("choices")).toArray()) {
-                content += choice.toObject().value(QStringLiteral("delta")).toObject()
+                content += choice.toObject()
+                               .value(QStringLiteral("delta"))
+                               .toObject()
                                .value(QStringLiteral("content"))
                                .toString();
             }
@@ -446,7 +462,7 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamTranslation(
             const QJsonObject problem = QJsonDocument::fromJson(current->streamBuffer).object();
             result.error = formatFailure(result.httpStatus, {},
                                          problemDetail(problem).isEmpty() ? reply->errorString()
-                                                                         : problemDetail(problem));
+                                                                          : problemDetail(problem));
         } else if (current->streamFailed) {
             result.error = tr("Invalid translation stream response");
         } else if (!current->streamDone) {

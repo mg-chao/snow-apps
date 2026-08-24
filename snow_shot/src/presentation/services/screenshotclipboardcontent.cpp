@@ -22,7 +22,9 @@
 #include <QVariant>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 
 #include <snow/image/format.h>
@@ -93,6 +95,85 @@ constexpr FileImageFormat kFileImageFormats[] = {
     {"jpeg", snow::image::Format::jpeg}, {"webp", snow::image::Format::webp},
     {"jxl", snow::image::Format::jxl},   {"avif", snow::image::Format::avif},
 };
+
+template <std::size_t Size>
+bool bytesMatch(const QByteArray& bytes, qsizetype offset,
+                const std::array<std::uint8_t, Size>& expected) {
+    if (offset < 0 || offset > bytes.size() ||
+        static_cast<qsizetype>(Size) > bytes.size() - offset) {
+        return false;
+    }
+    for (std::size_t index = 0; index < Size; ++index) {
+        if (static_cast<std::uint8_t>(bytes.at(offset + static_cast<qsizetype>(index))) !=
+            expected[index]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::uint32_t readBigEndian32(const QByteArray& bytes, qsizetype offset) {
+    std::uint32_t value = 0;
+    for (qsizetype index = 0; index < 4; ++index) {
+        value = (value << 8U) |
+                static_cast<std::uint8_t>(bytes.at(offset + index));
+    }
+    return value;
+}
+
+bool hasAvifSignature(const QByteArray& bytes) {
+    constexpr std::array<std::uint8_t, 4> kFileTypeBox{'f', 't', 'y', 'p'};
+    constexpr std::array<std::uint8_t, 4> kAvifBrand{'a', 'v', 'i', 'f'};
+    constexpr std::array<std::uint8_t, 4> kAvifSequenceBrand{'a', 'v', 'i', 's'};
+    if (bytes.size() < 16 || !bytesMatch(bytes, 4, kFileTypeBox)) {
+        return false;
+    }
+
+    const std::uint32_t declaredBoxBytes = readBigEndian32(bytes, 0);
+    if (declaredBoxBytes != 0 &&
+        (declaredBoxBytes < 16 || declaredBoxBytes > static_cast<std::uint64_t>(bytes.size()))) {
+        return false;
+    }
+    const qsizetype boxBytes =
+        declaredBoxBytes == 0 ? bytes.size() : static_cast<qsizetype>(declaredBoxBytes);
+    if (bytesMatch(bytes, 8, kAvifBrand) || bytesMatch(bytes, 8, kAvifSequenceBrand)) {
+        return true;
+    }
+    for (qsizetype offset = 16; offset + 4 <= boxBytes; offset += 4) {
+        if (bytesMatch(bytes, offset, kAvifBrand) ||
+            bytesMatch(bytes, offset, kAvifSequenceBrand)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool hasDeclaredImageSignature(const QByteArray& bytes, snow::image::Format format) {
+    constexpr std::array<std::uint8_t, 8> kPngSignature{
+        0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a};
+    constexpr std::array<std::uint8_t, 3> kJpegSignature{0xff, 0xd8, 0xff};
+    constexpr std::array<std::uint8_t, 4> kRiffSignature{'R', 'I', 'F', 'F'};
+    constexpr std::array<std::uint8_t, 4> kWebpSignature{'W', 'E', 'B', 'P'};
+    constexpr std::array<std::uint8_t, 2> kJxlCodestreamSignature{0xff, 0x0a};
+    constexpr std::array<std::uint8_t, 12> kJxlContainerSignature{
+        0x00, 0x00, 0x00, 0x0c, 'J', 'X', 'L', ' ', 0x0d, 0x0a, 0x87, 0x0a};
+
+    switch (format) {
+    case snow::image::Format::png:
+        return bytesMatch(bytes, 0, kPngSignature);
+    case snow::image::Format::jpeg:
+        return bytesMatch(bytes, 0, kJpegSignature);
+    case snow::image::Format::webp:
+        return bytesMatch(bytes, 0, kRiffSignature) && bytesMatch(bytes, 8, kWebpSignature);
+    case snow::image::Format::jxl:
+        return bytesMatch(bytes, 0, kJxlCodestreamSignature) ||
+               bytesMatch(bytes, 0, kJxlContainerSignature);
+    case snow::image::Format::avif:
+        return hasAvifSignature(bytes);
+    default:
+        return false;
+    }
+}
 
 QImage normalizedImage(QImage image) {
     if (image.isNull() || image.width() <= 0 || image.height() <= 0) {
@@ -283,7 +364,8 @@ readEncodedImage(const QList<ScreenshotClipboardEncodedImage>& images,
                              return imageData.mimeType == QLatin1String(candidate.mimeType);
                          });
         if (format == std::end(kEncodedImageFormats) || imageData.bytes.isEmpty() ||
-            imageData.bytes.size() > kMaximumEncodedImageBytes) {
+            imageData.bytes.size() > kMaximumEncodedImageBytes ||
+            !hasDeclaredImageSignature(imageData.bytes, format->format)) {
             continue;
         }
         if (QImage image =
@@ -322,6 +404,7 @@ readFileImage(const ScreenshotClipboardLocalImage& localImage,
     file.close();
     const QFileInfo after(localImage.absolutePath);
     if (encoded.isEmpty() || encoded.size() > kMaximumEncodedImageBytes ||
+        !hasDeclaredImageSignature(encoded, format->format) ||
         after.size() != localImage.size ||
         after.lastModified().toUTC() != localImage.lastModifiedUtc ||
         cancellationRequested(cancelled)) {

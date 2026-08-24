@@ -1068,12 +1068,12 @@ void invalidateNamespace(const void* canvasNamespace) {
 void clear() {
     Cache& state = cache();
     std::lock_guard<std::mutex> lock(state.mutex);
-    state.tiles.clear();
-    state.masks.clear();
-    state.namespaces.clear();
-    state.lru[0].clear();
-    state.lru[1].clear();
-    state.maskLru.clear();
+    decltype(state.tiles){}.swap(state.tiles);
+    decltype(state.masks){}.swap(state.masks);
+    decltype(state.namespaces){}.swap(state.namespaces);
+    std::list<TileKey>{}.swap(state.lru[0]);
+    std::list<TileKey>{}.swap(state.lru[1]);
+    std::list<MaskKey>{}.swap(state.maskLru);
     state.layerBytes = {};
     state.maskBytes = 0;
     state.pendingEvictions = {};

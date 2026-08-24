@@ -1,14 +1,14 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use crate::{Frame, PixelFormat, StitchAxis, StitchError};
+use crate::{Frame, PixelFormat, StitchAxis, StitchError, frame::PixelStorage};
 
 pub const CANVAS_TILE_SPAN: u32 = 256;
 pub const CANVAS_TILE_ROWS: u32 = CANVAS_TILE_SPAN;
 
 #[derive(Debug, Clone)]
 struct CanvasTile {
-    pixels: Vec<u8>,
+    pixels: PixelStorage,
     span: u32,
 }
 
@@ -107,22 +107,26 @@ impl TiledCanvas {
         frame: &Frame,
         start: u32,
         end: u32,
-    ) -> Result<Vec<u8>, StitchError> {
+    ) -> Result<PixelStorage, StitchError> {
         self.validate_axis_range(frame, start, end)?;
         let channels = self.channels();
         match self.axis {
             StitchAxis::Vertical => {
                 let row_bytes = frame.width() as usize * channels;
-                Ok(frame.pixels()[start as usize * row_bytes..end as usize * row_bytes].to_vec())
+                Ok(PixelStorage::copied_from_slice(
+                    &frame.pixels()[start as usize * row_bytes..end as usize * row_bytes],
+                ))
             }
             StitchAxis::Horizontal => {
                 let span_bytes = (end - start) as usize * channels;
                 let source_row_bytes = frame.width() as usize * channels;
-                let mut pixels = Vec::with_capacity(span_bytes * frame.height() as usize);
+                let mut pixels = PixelStorage::zeroed(span_bytes * frame.height() as usize);
                 for y in 0..frame.height() as usize {
                     let row = y * source_row_bytes;
                     let first = row + start as usize * channels;
-                    pixels.extend_from_slice(&frame.pixels()[first..first + span_bytes]);
+                    let destination = y * span_bytes;
+                    pixels[destination..destination + span_bytes]
+                        .copy_from_slice(&frame.pixels()[first..first + span_bytes]);
                 }
                 Ok(pixels)
             }
@@ -240,15 +244,19 @@ impl TiledCanvas {
         let pixels = match self.axis {
             StitchAxis::Vertical => {
                 let row_bytes = self.cross_extent as usize * channels;
-                tile.pixels[start as usize * row_bytes..end as usize * row_bytes].to_vec()
+                PixelStorage::copied_from_slice(
+                    &tile.pixels[start as usize * row_bytes..end as usize * row_bytes],
+                )
             }
             StitchAxis::Horizontal => {
                 let source_row_bytes = tile.span as usize * channels;
                 let slice_row_bytes = (end - start) as usize * channels;
-                let mut pixels = Vec::with_capacity(slice_row_bytes * self.cross_extent as usize);
+                let mut pixels = PixelStorage::zeroed(slice_row_bytes * self.cross_extent as usize);
                 for y in 0..self.cross_extent as usize {
                     let first = y * source_row_bytes + start as usize * channels;
-                    pixels.extend_from_slice(&tile.pixels[first..first + slice_row_bytes]);
+                    let destination = y * slice_row_bytes;
+                    pixels[destination..destination + slice_row_bytes]
+                        .copy_from_slice(&tile.pixels[first..first + slice_row_bytes]);
                 }
                 pixels
             }

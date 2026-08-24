@@ -8,6 +8,8 @@ license.workspace = true
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
+num_cpus.workspace = true
 png.workspace = true
+rayon.workspace = true
 snow-stitch-images = { path = "../snow-stitch-images", default-features = false }
 tempfile.workspace = true
