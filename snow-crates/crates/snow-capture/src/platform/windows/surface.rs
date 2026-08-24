@@ -708,7 +708,9 @@ pub(crate) fn copy_mapped_surface_to_frame(
 ) -> CaptureResult<()> {
     let width_u32 = desc.Width;
     let height_u32 = desc.Height;
+    let frame_alloc_begin = crate::timing::stage_checkpoint();
     frame.ensure_rgba_capacity(width_u32, height_u32)?;
+    crate::timing::stage_record_since("readback.frame_alloc", frame_alloc_begin);
     mark_frame_srgb(frame);
 
     let width = usize::try_from(width_u32).map_err(|_| CaptureError::BufferOverflow)?;
@@ -774,16 +776,20 @@ fn map_staging_to_frame_internal(
         }
     };
 
+    let map_begin = crate::timing::stage_checkpoint();
     let mapped = if use_spin_map {
         map_resource_read_with_spin(context, resource, map_context)?
     } else {
         map_resource_read_blocking(context, resource, map_context)?
     };
+    crate::timing::stage_record_since("readback.map", map_begin);
 
+    let convert_begin = crate::timing::stage_checkpoint();
     let result = copy_mapped_surface_to_frame(frame, desc, &mapped, options);
     unsafe {
         context.Unmap(resource, 0);
     }
+    crate::timing::stage_record_since("readback.convert", convert_begin);
     result
 }
 
@@ -896,12 +902,15 @@ fn map_staging_rect_to_frame_internal(
         }
     };
 
+    let map_begin = crate::timing::stage_checkpoint();
     let mapped = if use_spin_map {
         map_resource_read_with_spin(context, resource, map_context)?
     } else {
         map_resource_read_blocking(context, resource, map_context)?
     };
+    crate::timing::stage_record_since("readback.map", map_begin);
 
+    let convert_begin = crate::timing::stage_checkpoint();
     let convert_result = (|| -> CaptureResult<()> {
         let src_pitch = mapped.RowPitch as usize;
         let src_base = mapped.pData as *const u8;
@@ -968,6 +977,7 @@ fn map_staging_rect_to_frame_internal(
     unsafe {
         context.Unmap(resource, 0);
     }
+    crate::timing::stage_record_since("readback.convert", convert_begin);
     if convert_result.is_ok()
         && options.force_opaque_alpha
         && source_surface_format(desc.Format)
@@ -1116,8 +1126,11 @@ pub(crate) fn map_staging_dirty_rects_to_frame_with_offset(
         }
     };
 
+    let map_begin = crate::timing::stage_checkpoint();
     let mapped = map_resource_read_with_spin(context, resource, map_context)?;
+    crate::timing::stage_record_since("readback.map", map_begin);
 
+    let convert_begin = crate::timing::stage_checkpoint();
     let convert_result = (|| -> CaptureResult<usize> {
         let src_pitch = mapped.RowPitch as usize;
         let src_base = mapped.pData as *const u8;
@@ -1363,6 +1376,7 @@ pub(crate) fn map_staging_dirty_rects_to_frame_with_offset(
     unsafe {
         context.Unmap(resource, 0);
     }
+    crate::timing::stage_record_since("readback.convert", convert_begin);
     match convert_result {
         Ok(converted)
             if converted > 0

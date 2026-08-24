@@ -103,6 +103,8 @@ struct AutomaticWindowsCapturer {
     gpu_hdr_conversion_enabled: bool,
     hdr_tonemap_lut_enabled: bool,
     wgc_update_mode: WgcUpdateMode,
+    #[cfg(feature = "stage-timing")]
+    record_stage_timings: bool,
 }
 
 impl AutomaticWindowsCapturer {
@@ -129,6 +131,8 @@ impl AutomaticWindowsCapturer {
             gpu_hdr_conversion_enabled: true,
             hdr_tonemap_lut_enabled: true,
             wgc_update_mode: WgcUpdateMode::Auto,
+            #[cfg(feature = "stage-timing")]
+            record_stage_timings: false,
         }
     }
 
@@ -160,6 +164,8 @@ impl AutomaticWindowsCapturer {
             capturer.set_gpu_hdr_conversion(self.gpu_hdr_conversion_enabled)?;
             capturer.set_hdr_tonemap_lut(self.hdr_tonemap_lut_enabled)?;
             capturer.set_capture_mode(self.capture_mode)?;
+            #[cfg(feature = "stage-timing")]
+            capturer.set_record_stage_timings(self.record_stage_timings)?;
             self.candidates[index].capturer = Some(capturer);
         }
         self.candidates[index]
@@ -487,6 +493,12 @@ impl MonitorCapturer for AutomaticWindowsCapturer {
         self.apply_to_prepared(|capturer| capturer.set_wgc_update_mode(mode))
     }
 
+    #[cfg(feature = "stage-timing")]
+    fn set_record_stage_timings(&mut self, enabled: bool) -> CaptureResult<()> {
+        self.record_stage_timings = enabled;
+        self.apply_to_prepared(|capturer| capturer.set_record_stage_timings(enabled))
+    }
+
     fn release_capture_access(&mut self) {
         for candidate in &mut self.candidates {
             if let Some(capturer) = candidate.capturer.as_mut() {
@@ -637,7 +649,7 @@ impl WindowsBackend {
         let priority = window_auto_priority(&self.auto_policy, self.auto_policy_is_explicit);
         Ok(Box::new(AutomaticWindowsCapturer::new(
             self.resolver.clone(),
-            AutoTarget::Window(window.clone()),
+            AutoTarget::Window(*window),
             priority,
         )))
     }

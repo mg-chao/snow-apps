@@ -20,6 +20,9 @@ use crate::convert;
 use crate::error::{CaptureError, CaptureResult};
 use crate::frame::Frame;
 use crate::monitor::MonitorId;
+#[cfg(feature = "stage-timing")]
+use crate::timing::{StageScope, attach_stage_timings};
+use crate::timing::{stage_checkpoint, stage_record_since};
 
 use super::com::CoInitGuard;
 use super::monitor::MonitorResolver;
@@ -1971,7 +1974,9 @@ impl GdiResources {
 
         let mut frame = reuse.unwrap_or_else(Frame::empty);
         frame.reset_metadata();
+        let frame_alloc_begin = stage_checkpoint();
         frame.ensure_rgba_capacity(width_u32, height_u32)?;
+        stage_record_since("readback.frame_alloc", frame_alloc_begin);
         let track_incremental_history =
             mode != CaptureMode::Snapshot && pixel_count >= GDI_INCREMENTAL_MIN_PIXELS;
         let total_bytes = if track_incremental_history {
@@ -1988,6 +1993,10 @@ impl GdiResources {
         let use_surface_history = track_incremental_history;
         let mut next_too_dirty_hint = false;
         if incremental_enabled {
+            // The incremental path fuses dirty-row detection with conversion
+            // of the changed rows, so this span covers both scan and the
+            // incremental convert work.
+            let dirty_scan_begin = stage_checkpoint();
             let incremental_status = if use_surface_history {
                 self.try_convert_incremental_rows_with_surface_history_into(
                     frame.as_mut_rgba_ptr(),
@@ -2003,6 +2012,7 @@ impl GdiResources {
                     height,
                 )
             }?;
+            stage_record_since("gdi.dirty_scan", dirty_scan_begin);
 
             match incremental_status {
                 IncrementalConvertStatus::Duplicate => {
@@ -2029,6 +2039,7 @@ impl GdiResources {
             }
         }
 
+        let convert_begin = stage_checkpoint();
         unsafe {
             convert_gdi_bgra_surface_to_rgba(
                 self.bits.cast_const(),
@@ -2038,6 +2049,7 @@ impl GdiResources {
                 destination_has_history,
             )
         }
+        stage_record_since("gdi.convert", convert_begin);
 
         if let Some(total_bytes) = total_bytes {
             self.commit_incremental_history(total_bytes)?;
@@ -2055,8 +2067,11 @@ impl GdiResources {
         mode: CaptureMode,
         destination_has_history: bool,
     ) -> CaptureResult<Frame> {
+        let surface_prepare_begin = stage_checkpoint();
         self.ensure_surface(geometry.width, geometry.height)?;
+        stage_record_since("gdi.surface_prepare", surface_prepare_begin);
 
+        let bitblt_begin = stage_checkpoint();
         unsafe {
             BitBlt(
                 self.mem_dc,
@@ -2072,6 +2087,7 @@ impl GdiResources {
         }
         .context("BitBlt failed during GDI monitor capture")
         .map_err(CaptureError::platform)?;
+        stage_record_since("gdi.sys.bitblt", bitblt_begin);
         self.read_surface_to_rgba(
             geometry.width,
             geometry.height,
@@ -2475,6 +2491,8 @@ pub(crate) struct WindowsMonitorCapturer {
     monitor_source_dc_local: bool,
     geometry: MonitorGeometry,
     capture_mode: CaptureMode,
+    #[cfg(feature = "stage-timing")]
+    record_stage_timings: bool,
     /// Tracks the `DisplayInfoCache` generation so we only re-query
     /// monitor geometry when `WM_DISPLAYCHANGE` has actually fired.
     last_display_generation: Option<u64>,
@@ -2505,6 +2523,8 @@ impl WindowsMonitorCapturer {
             monitor_source_dc_local,
             geometry,
             capture_mode: CaptureMode::Snapshot,
+            #[cfg(feature = "stage-timing")]
+            record_stage_timings: false,
             last_display_generation,
         })
     }
@@ -2564,6 +2584,8 @@ impl crate::backend::MonitorCapturer for WindowsMonitorCapturer {
         reuse: Option<Frame>,
         destination_has_history: bool,
     ) -> CaptureResult<Frame> {
+        #[cfg(feature = "stage-timing")]
+        let stages = StageScope::enter(self.record_stage_timings);
         self.refresh_geometry()?;
         let capture_time = Instant::now();
         let mut frame = self.resources.capture_to_rgba(
@@ -2575,6 +2597,8 @@ impl crate::backend::MonitorCapturer for WindowsMonitorCapturer {
         frame
             .metadata
             .set_timing(Some(capture_time), crate::frame::query_qpc_now());
+        #[cfg(feature = "stage-timing")]
+        attach_stage_timings(&mut frame, stages);
         Ok(frame)
     }
 
@@ -2656,6 +2680,12 @@ impl crate::backend::MonitorCapturer for WindowsMonitorCapturer {
         Ok(())
     }
 
+    #[cfg(feature = "stage-timing")]
+    fn set_record_stage_timings(&mut self, enabled: bool) -> CaptureResult<()> {
+        self.record_stage_timings = enabled;
+        Ok(())
+    }
+
     fn release_capture_access(&mut self) {
         if self.capture_mode == CaptureMode::Snapshot {
             self.resources.release_capture_surface();
@@ -2671,6 +2701,8 @@ pub(crate) struct WindowsWindowCapturer {
     resources: GdiResources,
     hwnd: HWND,
     capture_mode: CaptureMode,
+    #[cfg(feature = "stage-timing")]
+    record_stage_timings: bool,
     preferred_path: Option<WindowCapturePath>,
     cached_rect: Option<RECT>,
     frames_until_state_refresh: u32,
@@ -2703,6 +2735,8 @@ impl WindowsWindowCapturer {
             resources,
             hwnd,
             capture_mode: CaptureMode::Snapshot,
+            #[cfg(feature = "stage-timing")]
+            record_stage_timings: false,
             preferred_path: None,
             cached_rect: None,
             frames_until_state_refresh: 0,
@@ -2766,6 +2800,8 @@ impl MonitorCapturer for WindowsWindowCapturer {
         reuse: Option<Frame>,
         destination_has_history: bool,
     ) -> CaptureResult<Frame> {
+        #[cfg(feature = "stage-timing")]
+        let stages = StageScope::enter(self.record_stage_timings);
         if !unsafe { IsWindow(Some(self.hwnd)) }.as_bool() {
             return Err(CaptureError::InvalidTarget(
                 "window no longer exists".into(),
@@ -2827,6 +2863,8 @@ impl MonitorCapturer for WindowsWindowCapturer {
         frame
             .metadata
             .set_timing(Some(capture_time), crate::frame::query_qpc_now());
+        #[cfg(feature = "stage-timing")]
+        attach_stage_timings(&mut frame, stages);
         Ok(frame)
     }
 
@@ -2836,6 +2874,12 @@ impl MonitorCapturer for WindowsWindowCapturer {
             self.invalidate_window_state_cache();
         }
         self.capture_mode = mode;
+        Ok(())
+    }
+
+    #[cfg(feature = "stage-timing")]
+    fn set_record_stage_timings(&mut self, enabled: bool) -> CaptureResult<()> {
+        self.record_stage_timings = enabled;
         Ok(())
     }
 

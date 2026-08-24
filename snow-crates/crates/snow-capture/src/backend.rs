@@ -235,6 +235,16 @@ pub(crate) trait MonitorCapturer: Send {
         Ok(())
     }
 
+    /// Enable/disable per-stage timing recording onto frame metadata.
+    ///
+    /// When enabled, backends attach a `backend.stage`-labelled breakdown of
+    /// the capture call to each produced frame. Other capture behavior is
+    /// unchanged. Only present in builds with the `stage-timing` feature.
+    #[cfg(feature = "stage-timing")]
+    fn set_record_stage_timings(&mut self, _enabled: bool) -> CaptureResult<()> {
+        Ok(())
+    }
+
     /// Close active access to the capture source. Snapshot backends may also
     /// discard capture-time pixel surfaces that are expensive to retain while
     /// idle. This method is idempotent.

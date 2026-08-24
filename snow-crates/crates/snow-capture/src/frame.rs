@@ -6,6 +6,8 @@ use crate::backend::CaptureBackendKind;
 use crossbeam_channel as mpsc;
 
 use crate::error::{CaptureError, CaptureResult};
+#[cfg(feature = "stage-timing")]
+use crate::timing::StageTiming;
 use snow_core::event::{DeliveryLane, StreamEvent};
 use snow_core::timestamp::{StreamTimestamp, TickFormat};
 use snow_cursor::AttachedCursorSample;
@@ -71,6 +73,11 @@ pub struct FrameMetadata {
     /// Concrete backend that produced this frame. `Auto` means the producer
     /// did not report a concrete backend.
     pub(crate) backend_kind: CaptureBackendKind,
+    /// Per-stage timing breakdown of the capture call. Empty unless the
+    /// session was opened with `CaptureOptions::record_stage_timings`.
+    /// Only present in builds with the `stage-timing` feature.
+    #[cfg(feature = "stage-timing")]
+    pub(crate) stage_timings: Vec<StageTiming>,
 }
 
 impl FrameMetadata {
@@ -96,6 +103,19 @@ impl FrameMetadata {
 
     pub fn stream_timestamp(&self) -> Option<&StreamTimestamp> {
         self.stream_timestamp.as_ref()
+    }
+
+    /// Per-stage timing breakdown recorded inside the backend. Empty unless
+    /// the session was opened with `CaptureOptions::record_stage_timings`.
+    /// Only present in builds with the `stage-timing` feature.
+    ///
+    /// Entries produced by `record` (OS-call detail such as
+    /// `dxgi.sys.acquire_next_frame`, or frame-age metrics) may overlap the
+    /// additive `mark`-based entries; consumers interested in an additive
+    /// breakdown should select the mark-based stages for the backend.
+    #[cfg(feature = "stage-timing")]
+    pub fn stage_timings(&self) -> &[StageTiming] {
+        &self.stage_timings
     }
 
     pub fn cursor(&self) -> Option<&AttachedCursorSample> {
@@ -448,6 +468,8 @@ impl Frame {
         self.metadata.color_space = ColorSpace::default();
         self.metadata.cursor = None;
         self.metadata.backend_kind = CaptureBackendKind::Auto;
+        #[cfg(feature = "stage-timing")]
+        self.metadata.stage_timings.clear();
         // sequence is set by the session, not reset here
     }
 }
@@ -681,6 +703,26 @@ mod tests {
     use crossbeam_channel as mpsc;
     use proptest::prelude::*;
     use snow_core::timestamp::TickFormat;
+
+    #[cfg(feature = "stage-timing")]
+    #[test]
+    fn frame_metadata_stage_timings_roundtrip_and_reset() {
+        let mut frame = Frame::empty();
+        assert!(frame.metadata().stage_timings().is_empty());
+
+        frame.metadata.stage_timings = vec![StageTiming {
+            name: "dxgi.acquire_loop",
+            duration: Duration::from_micros(10),
+        }];
+        assert_eq!(frame.metadata().stage_timings().len(), 1);
+        assert_eq!(
+            frame.metadata().stage_timings()[0].name,
+            "dxgi.acquire_loop"
+        );
+
+        frame.reset_metadata();
+        assert!(frame.metadata().stage_timings().is_empty());
+    }
 
     // **Validates: Requirements 1.2, 1.3**
     //

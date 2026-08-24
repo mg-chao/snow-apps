@@ -10,6 +10,7 @@ mod platform;
 pub mod region;
 pub mod streaming;
 pub mod system;
+pub mod timing;
 pub mod window;
 
 use error::CaptureResult;
@@ -44,6 +45,8 @@ pub use streaming::{
     CaptureStream, CaptureStreamConfig, CaptureStreamStats, CaptureStreamStatsSnapshot,
 };
 pub use system::{CaptureOptions, CaptureSystem, CaptureSystemBuilder};
+#[cfg(feature = "stage-timing")]
+pub use timing::StageTiming;
 pub use window::WindowId;
 
 pub fn capture_once(target: &CaptureTarget) -> CaptureResult<Frame> {

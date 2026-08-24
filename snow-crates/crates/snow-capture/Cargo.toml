@@ -49,6 +49,17 @@ proptest = "1.11.0"
 [target.'cfg(windows)'.dev-dependencies]
 windows = { workspace = true, features = ["Win32_UI_HiDpi"] }
 
+[features]
+# Compile-time switch for capture performance instrumentation.
+#
+# When enabled, capture backends record a per-stage timing breakdown onto
+# frame metadata (`CaptureOptions::record_stage_timings` activates it per
+# session) and the screenshot_benchmark example / stage-timing tests build.
+# When disabled (the default, used by all production/release builds) every
+# instrumentation marker compiles to nothing: no API surface, no fields,
+# no clock reads, no code.
+stage-timing = []
+
 [[bench]]
 name = "conversion_hot_path"
 harness = false
@@ -61,6 +72,14 @@ name = "benchmark"
 
 [[example]]
 name = "action_benchmark"
+
+[[example]]
+name = "screenshot_benchmark"
+required-features = ["stage-timing"]
+
+[[test]]
+name = "screenshot_stage_timing_smoke"
+required-features = ["stage-timing"]
 
 [[example]]
 name = "snapshot_policy_benchmark"

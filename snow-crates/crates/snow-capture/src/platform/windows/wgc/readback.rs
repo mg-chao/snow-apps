@@ -11,6 +11,7 @@ use crate::backend::CaptureBlitRegion;
 use crate::convert::{HdrFrameContext, SurfaceConversionOptions};
 use crate::error::{CaptureError, CaptureResult};
 use crate::frame::{DirtyRect, Frame};
+use crate::timing::{stage_checkpoint, stage_record_since};
 
 use super::super::{d3d11, surface};
 use super::update::CanonicalFrameMetadata;
@@ -266,6 +267,7 @@ impl ReadbackPipeline {
                 .is_some_and(|metadata| metadata.generation == canonical.parent_generation);
 
         let mut submitted_gpu_work = false;
+        let gpu_copy_begin = stage_checkpoint();
         if can_patch_parent {
             if !local_dirty_rects.is_empty() {
                 copy_dirty_regions(
@@ -295,6 +297,7 @@ impl ReadbackPipeline {
             )?;
             submitted_gpu_work = true;
         }
+        stage_record_since("wgc.gpu_copy", gpu_copy_begin);
 
         if submitted_gpu_work && let Some(query) = self.slots[slot_index].query.as_ref() {
             unsafe { context.End(query) };
@@ -338,7 +341,9 @@ impl ReadbackPipeline {
                 })
             })
             .ok_or(CaptureError::Timeout)?;
+        let readback_wait_begin = stage_checkpoint();
         wait_for_slot(context, &self.slots[slot_index])?;
+        stage_record_since("wgc.readback_wait", readback_wait_begin);
         self.slots[slot_index].query_pending = false;
 
         let metadata = self.slots[slot_index]

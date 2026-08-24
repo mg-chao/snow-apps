@@ -24,6 +24,9 @@ use crate::convert::{HdrFrameContext, SurfaceConversionOptions};
 use crate::error::{CaptureError, CaptureResult};
 use crate::frame::{DirtyRect, Frame};
 use crate::monitor::MonitorId;
+#[cfg(feature = "stage-timing")]
+use crate::timing::{StageScope, attach_stage_timings, qpc_duration_between, stage_record};
+use crate::timing::{stage_checkpoint, stage_mark, stage_record_since};
 
 use super::cursor::decode_dxgi_pointer_shape;
 use super::d3d11;
@@ -946,7 +949,9 @@ fn try_acquire_frame(
 ) -> CaptureResult<TryAcquireResult> {
     let mut info = DXGI_OUTDUPL_FRAME_INFO::default();
     let mut resource: Option<IDXGIResource> = None;
+    let sys_acquire_begin = stage_checkpoint();
     let acquired = unsafe { duplication.AcquireNextFrame(timeout_ms, &mut info, &mut resource) };
+    stage_record_since("dxgi.sys.acquire_next_frame", sys_acquire_begin);
     if let Err(error) = acquired {
         if error.code() == DXGI_ERROR_WAIT_TIMEOUT {
             return Ok(TryAcquireResult::Retry);
@@ -1312,6 +1317,7 @@ impl StagingRing {
             self.write_idx
         };
 
+        let gpu_copy_begin = stage_checkpoint();
         self.copy_source_to_slot(context, source, write_idx, &[], false)?;
 
         // Only flush when there is a pending read slot whose query
@@ -1338,6 +1344,7 @@ impl StagingRing {
         } else {
             unsafe { context.Flush() };
         }
+        stage_record_since("dxgi.gpu_copy", gpu_copy_begin);
 
         self.write_idx = write_idx;
         self.pending = true;
@@ -1387,6 +1394,7 @@ impl StagingRing {
             let mut data: u32 = 0;
             let mut completed_in_spin = false;
             let polls = self.adaptive_spin_polls;
+            let readback_wait_begin = stage_checkpoint();
             for _ in 0..polls {
                 let hr = unsafe {
                     context.GetData(
@@ -1416,6 +1424,7 @@ impl StagingRing {
                     .saturating_add(Self::SPIN_INCREASE_STEP))
                 .min(Self::MAX_SPIN_POLLS);
             }
+            stage_record_since("dxgi.readback_wait", readback_wait_begin);
         }
 
         let staging = self.slots[slot].as_ref().unwrap();
@@ -1527,6 +1536,7 @@ impl StagingRing {
             CaptureError::platform(anyhow::anyhow!("missing DXGI screenshot staging resource"))
         })?;
 
+        let gpu_copy_begin = stage_checkpoint();
         d3d11::with_texture_resource(
             source,
             "failed to cast DXGI source texture to ID3D11Resource",
@@ -1538,6 +1548,7 @@ impl StagingRing {
             },
         )?;
         unsafe { context.Flush() };
+        stage_record_since("dxgi.gpu_copy", gpu_copy_begin);
         surface::map_staging_to_frame_blocking(
             context,
             staging,
@@ -1831,6 +1842,9 @@ struct OutputCapturer {
     /// Capture intent controls whether recording-oriented buffering
     /// should be enabled.
     capture_mode: CaptureMode,
+    /// Whether per-stage capture timings are recorded onto frame metadata.
+    #[cfg(feature = "stage-timing")]
+    record_stage_timings: bool,
 }
 
 impl OutputCapturer {
@@ -1877,6 +1891,8 @@ impl OutputCapturer {
             cached_pointer_shape: None,
             pointer_shape_buffer: Vec::new(),
             capture_mode: CaptureMode::Snapshot,
+            #[cfg(feature = "stage-timing")]
+            record_stage_timings: false,
         })
     }
 
@@ -2134,6 +2150,11 @@ impl OutputCapturer {
         self.clear_full_frame_pipeline_state();
         self.staging_ring.reset_pipeline();
         self.region.reset();
+    }
+
+    #[cfg(feature = "stage-timing")]
+    fn set_record_stage_timings(&mut self, enabled: bool) {
+        self.record_stage_timings = enabled;
     }
 
     fn effective_source(
@@ -2899,7 +2920,13 @@ impl OutputCapturer {
     }
 
     fn capture(&mut self, reuse: Option<Frame>) -> CaptureResult<Frame> {
+        #[cfg(feature = "stage-timing")]
+        let stages = StageScope::enter(self.record_stage_timings);
+        let access_begin = stage_checkpoint();
         let (mut duplication, opened_capture_access) = self.ensure_capture_access()?;
+        if opened_capture_access {
+            stage_record_since("dxgi.lazy_init", access_begin);
+        }
         // Full-frame capture and region/window capture keep independent
         // pipelines. Reset region state when callers switch back to full
         // monitor capture to avoid consuming stale region slots later.
@@ -2947,6 +2974,9 @@ impl OutputCapturer {
                             .metadata
                             .set_timing(Some(capture_time), previous_present_time_qpc);
                         self.needs_presented_first_frame = false;
+                        stage_mark("dxgi.acquire_loop");
+                        #[cfg(feature = "stage-timing")]
+                        attach_stage_timings(&mut frame, stages);
                         return Ok(frame);
                     }
                 }
@@ -2999,6 +3029,14 @@ impl OutputCapturer {
                 None
             },
         );
+        stage_mark("dxgi.acquire_loop");
+        #[cfg(feature = "stage-timing")]
+        if frame_info.LastPresentTime != 0
+            && let Some(now_qpc) = crate::frame::query_qpc_now()
+            && let Some(frame_age) = qpc_duration_between(frame_info.LastPresentTime, now_qpc)
+        {
+            stage_record("dxgi.frame_age", frame_age);
+        }
         frame.metadata.is_duplicate =
             frame_info.LastPresentTime != 0 && frame_info.LastPresentTime == self.last_present_time;
         if frame_info.LastPresentTime != 0 {
@@ -3038,9 +3076,11 @@ impl OutputCapturer {
                 desc
             }
         };
+        stage_mark("dxgi.frame_metadata");
 
         let (effective_source, effective_desc, effective_hdr) =
             self.effective_source(&desktop_texture, src_desc)?;
+        stage_mark("dxgi.hdr_prepare");
 
         let output_matches_source = has_frame_history
             && frame.width() == effective_desc.Width
@@ -3162,6 +3202,7 @@ impl OutputCapturer {
             }
         }
 
+        stage_mark("dxgi.dirty_eval");
         let convert_result = (|| -> CaptureResult<()> {
             if should_short_circuit_screenshot_readback(
                 self.capture_mode,
@@ -3412,6 +3453,8 @@ impl OutputCapturer {
             return Err(err);
         }
 
+        #[cfg(feature = "stage-timing")]
+        attach_stage_timings(&mut frame, stages);
         Ok(frame)
     }
 }
@@ -3424,6 +3467,8 @@ pub(crate) struct WindowsMonitorCapturer {
     capture_mode: CaptureMode,
     gpu_hdr_conversion_enabled: bool,
     hdr_tonemap_lut_enabled: bool,
+    #[cfg(feature = "stage-timing")]
+    record_stage_timings: bool,
     // Keep last so all D3D/DXGI interfaces drop before CoUninitialize.
     _com: super::com::CoInitGuard,
 }
@@ -3444,6 +3489,8 @@ impl WindowsMonitorCapturer {
             capture_mode: CaptureMode::Snapshot,
             gpu_hdr_conversion_enabled: true,
             hdr_tonemap_lut_enabled: true,
+            #[cfg(feature = "stage-timing")]
+            record_stage_timings: false,
             _com: com,
         })
     }
@@ -3458,6 +3505,8 @@ impl WindowsMonitorCapturer {
         output.set_capture_mode(self.capture_mode);
         output.set_gpu_hdr_conversion(self.gpu_hdr_conversion_enabled);
         output.set_hdr_tonemap_lut(self.hdr_tonemap_lut_enabled);
+        #[cfg(feature = "stage-timing")]
+        output.set_record_stage_timings(self.record_stage_timings);
         self.output = Some(output);
         Ok(())
     }
@@ -3574,6 +3623,15 @@ impl crate::backend::MonitorCapturer for WindowsMonitorCapturer {
         Ok(())
     }
 
+    #[cfg(feature = "stage-timing")]
+    fn set_record_stage_timings(&mut self, enabled: bool) -> CaptureResult<()> {
+        self.record_stage_timings = enabled;
+        if let Some(output) = self.output.as_mut() {
+            output.set_record_stage_timings(enabled);
+        }
+        Ok(())
+    }
+
     fn sample_cursor(&mut self) -> CaptureResult<Option<CursorSnapshot>> {
         match self.output.as_mut() {
             Some(output) => output.sample_cursor(),
@@ -3677,6 +3735,8 @@ pub(crate) struct WindowsDxgiWindowCapturer {
     capture_mode: CaptureMode,
     gpu_hdr_conversion_enabled: bool,
     hdr_tonemap_lut_enabled: bool,
+    #[cfg(feature = "stage-timing")]
+    record_stage_timings: bool,
     // Keep last so all D3D/DXGI interfaces drop before CoUninitialize.
     _com: super::com::CoInitGuard,
 }
@@ -3717,6 +3777,8 @@ impl WindowsDxgiWindowCapturer {
             capture_mode: CaptureMode::Snapshot,
             gpu_hdr_conversion_enabled: true,
             hdr_tonemap_lut_enabled: true,
+            #[cfg(feature = "stage-timing")]
+            record_stage_timings: false,
             _com: com,
         })
     }
@@ -3745,6 +3807,8 @@ impl WindowsDxgiWindowCapturer {
         let capture_mode = self.capture_mode;
         let gpu_hdr_conversion_enabled = self.gpu_hdr_conversion_enabled;
         let hdr_tonemap_lut_enabled = self.hdr_tonemap_lut_enabled;
+        #[cfg(feature = "stage-timing")]
+        let record_stage_timings = self.record_stage_timings;
         self.output = Some(OutputCapturer::new(&resolved).map_err(|error| {
             CaptureError::BackendUnavailable(format!(
                 "failed to initialize DXGI capture for window's monitor: {error}"
@@ -3755,6 +3819,9 @@ impl WindowsDxgiWindowCapturer {
             .set_gpu_hdr_conversion(gpu_hdr_conversion_enabled);
         self.output_mut()
             .set_hdr_tonemap_lut(hdr_tonemap_lut_enabled);
+        #[cfg(feature = "stage-timing")]
+        self.output_mut()
+            .set_record_stage_timings(record_stage_timings);
         self.current_hmon = SendHmon(hmon);
         self.current_monitor_rect = monitor_rect(hmon)?;
         Ok(())
@@ -3952,6 +4019,15 @@ impl crate::backend::MonitorCapturer for WindowsDxgiWindowCapturer {
         Ok(())
     }
 
+    #[cfg(feature = "stage-timing")]
+    fn set_record_stage_timings(&mut self, enabled: bool) -> CaptureResult<()> {
+        self.record_stage_timings = enabled;
+        if let Some(output) = self.output.as_mut() {
+            output.set_record_stage_timings(enabled);
+        }
+        Ok(())
+    }
+
     fn sample_cursor(&mut self) -> CaptureResult<Option<CursorSnapshot>> {
         match self.output.as_mut() {
             Some(output) => output.sample_cursor(),
@@ -3986,7 +4062,7 @@ mod tests {
     fn snapshot_acquisition_is_bounded_and_requires_a_presented_frame() {
         assert_eq!(SNAPSHOT_ACQUISITION_POLICY.attempts, 3);
         assert_eq!(SNAPSHOT_ACQUISITION_POLICY.timeout_ms, 16);
-        assert!(SNAPSHOT_ACQUISITION_POLICY.require_present_time);
+        const _: () = assert!(SNAPSHOT_ACQUISITION_POLICY.require_present_time);
     }
 
     #[test]

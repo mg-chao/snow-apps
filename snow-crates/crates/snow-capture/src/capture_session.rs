@@ -133,6 +133,9 @@ pub(crate) struct CaptureSessionConfig {
     pub(crate) hdr_tonemap_lut: bool,
     /// WGC complete-surface versus ordered-delta policy.
     pub(crate) wgc_update_mode: WgcUpdateMode,
+    /// Record per-stage capture timings onto frame metadata.
+    #[cfg(feature = "stage-timing")]
+    pub(crate) record_stage_timings: bool,
 }
 
 impl Default for CaptureSessionConfig {
@@ -143,6 +146,8 @@ impl Default for CaptureSessionConfig {
             gpu_hdr_conversion: true,
             hdr_tonemap_lut: true,
             wgc_update_mode: WgcUpdateMode::Auto,
+            #[cfg(feature = "stage-timing")]
+            record_stage_timings: false,
         }
     }
 }
@@ -155,6 +160,8 @@ impl From<CaptureOptions> for CaptureSessionConfig {
             gpu_hdr_conversion: value.gpu_hdr_conversion,
             hdr_tonemap_lut: value.hdr_tonemap_lut,
             wgc_update_mode: value.wgc_update_mode,
+            #[cfg(feature = "stage-timing")]
+            record_stage_timings: value.record_stage_timings,
         }
     }
 }
@@ -436,6 +443,8 @@ where
                 capturer.set_gpu_hdr_conversion(config.gpu_hdr_conversion)?;
                 capturer.set_hdr_tonemap_lut(config.hdr_tonemap_lut)?;
                 capturer.set_capture_mode(config.mode)?;
+                #[cfg(feature = "stage-timing")]
+                capturer.set_record_stage_timings(config.record_stage_timings)?;
                 Ok(entry.insert(capturer))
             }
         }

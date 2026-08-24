@@ -1,6 +1,7 @@
 # Local agent state
 /.agents/
 /.codex/
+.zcode
 
 # Rust build output
 **/target/

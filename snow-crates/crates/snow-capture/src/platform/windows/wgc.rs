@@ -37,6 +37,11 @@ use crate::convert::HdrFrameContext;
 use crate::error::{CaptureError, CaptureResult};
 use crate::frame::Frame;
 use crate::monitor::MonitorId;
+use crate::timing::stage_mark;
+#[cfg(feature = "stage-timing")]
+use crate::timing::{
+    StageScope, attach_stage_timings, qpc_ticks_to_duration, stage_record, stage_recording,
+};
 use crate::window::WindowId;
 
 use super::com::CoInitGuard;
@@ -61,6 +66,27 @@ const WGC_FRAME_POOL_BUFFERS: i32 = 3;
 const WGC_ORDERED_QUEUE_CAPACITY: usize = 32;
 const WGC_COMMAND_CAPACITY: usize = 8;
 const WGC_ORDERED_FAULT_LIMIT: u8 = 3;
+
+/// Record the age of the OS-delivered frame relative to now, derived from
+/// the WGC system-relative timestamp (100 ns units since boot, the same
+/// clock base as QPC on current Windows releases).
+#[cfg(feature = "stage-timing")]
+fn record_wgc_frame_age(system_relative_time_hns: i64) {
+    if !stage_recording() || system_relative_time_hns <= 0 {
+        return;
+    }
+    let Some(now_qpc) = crate::frame::query_qpc_now() else {
+        return;
+    };
+    let Some(now_since_boot) = qpc_ticks_to_duration(now_qpc) else {
+        return;
+    };
+    let frame_since_boot = Duration::from_nanos(system_relative_time_hns as u64 * 100);
+    stage_record(
+        "wgc.frame_age",
+        now_since_boot.saturating_sub(frame_since_boot),
+    );
+}
 
 fn is_device_lost_hresult(code: windows::core::HRESULT) -> bool {
     matches!(
@@ -177,6 +203,11 @@ enum WorkerCommand {
         mode: WgcUpdateMode,
         response: Sender<CaptureResult<()>>,
     },
+    #[cfg(feature = "stage-timing")]
+    SetRecordStageTimings {
+        enabled: bool,
+        response: Sender<CaptureResult<()>>,
+    },
     Shutdown,
 }
 
@@ -280,6 +311,11 @@ impl WindowsGraphicsCaptureCapturer {
         self.configure(|response| WorkerCommand::SetUpdateMode { mode, response })
     }
 
+    #[cfg(feature = "stage-timing")]
+    fn set_record_stage_timings(&mut self, enabled: bool) -> CaptureResult<()> {
+        self.configure(|response| WorkerCommand::SetRecordStageTimings { enabled, response })
+    }
+
     fn configure(
         &self,
         command: impl FnOnce(Sender<CaptureResult<()>>) -> WorkerCommand,
@@ -299,6 +335,8 @@ struct PreparedWgcCapturer {
     gpu_hdr_conversion_enabled: bool,
     hdr_tonemap_lut_enabled: bool,
     update_mode: WgcUpdateMode,
+    #[cfg(feature = "stage-timing")]
+    record_stage_timings: bool,
 }
 
 impl PreparedWgcCapturer {
@@ -310,6 +348,8 @@ impl PreparedWgcCapturer {
             gpu_hdr_conversion_enabled: true,
             hdr_tonemap_lut_enabled: true,
             update_mode: WgcUpdateMode::Auto,
+            #[cfg(feature = "stage-timing")]
+            record_stage_timings: false,
         }
     }
 
@@ -325,6 +365,8 @@ impl PreparedWgcCapturer {
             active.set_gpu_hdr_conversion(self.gpu_hdr_conversion_enabled)?;
             active.set_hdr_tonemap_lut(self.hdr_tonemap_lut_enabled)?;
             active.set_capture_mode(self.capture_mode)?;
+            #[cfg(feature = "stage-timing")]
+            active.set_record_stage_timings(self.record_stage_timings)?;
             self.active = Some(active);
         }
         self.active.as_mut().ok_or(CaptureError::WorkerDead)
@@ -377,6 +419,15 @@ impl PreparedWgcCapturer {
         self.update_mode = mode;
         if let Some(active) = self.active.as_mut() {
             active.set_wgc_update_mode(mode)?;
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "stage-timing")]
+    fn set_record_stage_timings(&mut self, enabled: bool) -> CaptureResult<()> {
+        self.record_stage_timings = enabled;
+        if let Some(active) = self.active.as_mut() {
+            active.set_record_stage_timings(enabled)?;
         }
         Ok(())
     }
@@ -476,6 +527,8 @@ struct WgcWorker {
     hdr_tonemap_lut_enabled: bool,
     last_delivery: Option<DeliveredGeneration>,
     pending_complete_snapshot: Option<FramePacket>,
+    #[cfg(feature = "stage-timing")]
+    record_stage_timings: bool,
     closed: bool,
     terminal_error: Option<CaptureError>,
     _com: CoInitGuard,
@@ -604,6 +657,8 @@ impl WgcWorker {
             hdr_tonemap_lut_enabled: true,
             last_delivery: None,
             pending_complete_snapshot: None,
+            #[cfg(feature = "stage-timing")]
+            record_stage_timings: false,
             closed: false,
             terminal_error: None,
             _com: com,
@@ -696,6 +751,11 @@ impl WgcWorker {
                 let result = self.configure_update_mode(mode);
                 let _ = response
                     .send(result.map_err(|error| normalize_device_error(&self.device, error)));
+            }
+            #[cfg(feature = "stage-timing")]
+            WorkerCommand::SetRecordStageTimings { enabled, response } => {
+                self.record_stage_timings = enabled;
+                let _ = response.send(Ok(()));
             }
             WorkerCommand::Shutdown => return false,
         }
@@ -1138,14 +1198,19 @@ impl WgcWorker {
         mut frame: Frame,
         destination_has_history: bool,
     ) -> CaptureResult<Frame> {
+        #[cfg(feature = "stage-timing")]
+        let stages = StageScope::enter(self.record_stage_timings);
         frame.reset_metadata();
         let target = ReadbackTarget::Full;
         self.acquire_current(target, destination_has_history)?;
+        stage_mark("wgc.transport_wait");
         let canonical = self
             .canonical
             .latest()
             .cloned()
             .ok_or(CaptureError::Timeout)?;
+        #[cfg(feature = "stage-timing")]
+        record_wgc_frame_age(canonical.system_relative_time_hns);
 
         if self.same_delivered_generation(target, &canonical, destination_has_history) {
             frame.metadata.set_timing_with_format(
@@ -1155,10 +1220,13 @@ impl WgcWorker {
             );
             frame.metadata.is_duplicate = true;
             frame.metadata.dirty_rects.clear();
+            #[cfg(feature = "stage-timing")]
+            attach_stage_timings(&mut frame, stages);
             return Ok(frame);
         }
 
         self.ensure_current_submitted(&canonical, target)?;
+        stage_mark("wgc.submit");
         let delivery = self.readback.read_into(
             &self.context,
             canonical.epoch,
@@ -1180,6 +1248,8 @@ impl WgcWorker {
             generation: delivery.generation,
             target: delivery.target,
         });
+        #[cfg(feature = "stage-timing")]
+        attach_stage_timings(&mut frame, stages);
         Ok(frame)
     }
 
@@ -1194,16 +1264,23 @@ impl WgcWorker {
                 "capture region dimensions must be non-zero".into(),
             ));
         }
+        #[cfg(feature = "stage-timing")]
+        let stages = StageScope::enter(self.record_stage_timings);
         frame.reset_metadata();
         let target = ReadbackTarget::Region(blit);
         self.acquire_current(target, destination_has_history)?;
+        stage_mark("wgc.transport_wait");
         let canonical = self
             .canonical
             .latest()
             .cloned()
             .ok_or(CaptureError::Timeout)?;
+        #[cfg(feature = "stage-timing")]
+        record_wgc_frame_age(canonical.system_relative_time_hns);
 
         if self.same_delivered_generation(target, &canonical, destination_has_history) {
+            #[cfg(feature = "stage-timing")]
+            attach_stage_timings(frame, stages);
             return Ok(CaptureSampleMetadata {
                 capture_time: Some(Instant::now()),
                 raw_os_ticks: nonzero_timestamp(canonical.system_relative_time_hns),
@@ -1214,6 +1291,7 @@ impl WgcWorker {
         }
 
         self.ensure_current_submitted(&canonical, target)?;
+        stage_mark("wgc.submit");
         let delivery = self.readback.read_into(
             &self.context,
             canonical.epoch,
@@ -1228,6 +1306,8 @@ impl WgcWorker {
             generation: delivery.generation,
             target: delivery.target,
         });
+        #[cfg(feature = "stage-timing")]
+        attach_stage_timings(frame, stages);
         Ok(CaptureSampleMetadata {
             capture_time: Some(delivery.capture_time),
             raw_os_ticks: nonzero_timestamp(delivery.system_relative_time_hns),
@@ -1350,6 +1430,11 @@ impl crate::backend::MonitorCapturer for WindowsMonitorCapturer {
         self.inner.set_wgc_update_mode(mode)
     }
 
+    #[cfg(feature = "stage-timing")]
+    fn set_record_stage_timings(&mut self, enabled: bool) -> CaptureResult<()> {
+        self.inner.set_record_stage_timings(enabled)
+    }
+
     fn release_capture_access(&mut self) {
         self.inner.release_capture_access();
     }
@@ -1416,6 +1501,11 @@ impl crate::backend::MonitorCapturer for WindowsWindowCapturer {
 
     fn set_wgc_update_mode(&mut self, mode: WgcUpdateMode) -> CaptureResult<()> {
         self.inner.set_wgc_update_mode(mode)
+    }
+
+    #[cfg(feature = "stage-timing")]
+    fn set_record_stage_timings(&mut self, enabled: bool) -> CaptureResult<()> {
+        self.inner.set_record_stage_timings(enabled)
     }
 
     fn release_capture_access(&mut self) {

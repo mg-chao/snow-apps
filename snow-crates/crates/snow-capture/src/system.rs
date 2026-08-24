@@ -21,6 +21,16 @@ pub struct CaptureOptions {
     /// and backpressure behavior, while this option selects the WGC surface
     /// correctness contract.
     pub wgc_update_mode: WgcUpdateMode,
+    /// Record a per-stage timing breakdown inside participating backends and
+    /// attach it to each frame's metadata (`FrameMetadata::stage_timings`).
+    ///
+    /// Compile-time gated by the `stage-timing` cargo feature: this field,
+    /// the metadata it feeds, and all backend instrumentation only exist in
+    /// builds that enable that feature (benchmarks and diagnostics). When
+    /// the feature is disabled the capture hot path contains no
+    /// instrumentation code at all.
+    #[cfg(feature = "stage-timing")]
+    pub record_stage_timings: bool,
 }
 
 impl Default for CaptureOptions {
@@ -31,6 +41,8 @@ impl Default for CaptureOptions {
             gpu_hdr_conversion: true,
             hdr_tonemap_lut: true,
             wgc_update_mode: WgcUpdateMode::Auto,
+            #[cfg(feature = "stage-timing")]
+            record_stage_timings: false,
         }
     }
 }

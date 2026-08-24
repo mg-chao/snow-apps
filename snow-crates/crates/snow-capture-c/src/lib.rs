@@ -371,6 +371,9 @@ fn default_options(
             gpu_hdr_conversion: true,
             hdr_tonemap_lut: true,
             wgc_update_mode,
+            // Keeps the literal valid whether or not snow-capture was built
+            // with its optional `stage-timing` instrumentation feature.
+            ..Default::default()
         },
         capture_backend,
     ))
@@ -386,6 +389,9 @@ fn snapshot_options(
         gpu_hdr_conversion: true,
         hdr_tonemap_lut: true,
         wgc_update_mode: parse_wgc_update_mode(wgc_update_mode)?,
+        // Keeps the literal valid whether or not snow-capture was built
+        // with its optional `stage-timing` instrumentation feature.
+        ..Default::default()
     })
 }
 
