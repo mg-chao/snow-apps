@@ -2282,12 +2282,24 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-floating-toolbar-drag-tests
         COMMAND snow-shot-floating-toolbar-drag-tests
     )
+    add_test(
+        NAME snow-shot-floating-toolbar-reverse-drag-tests
+        COMMAND snow-shot-floating-toolbar-drag-tests --reverse-hardware-drag-only
+    )
     set_tests_properties(snow-shot-floating-toolbar-drag-tests PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+    set_tests_properties(snow-shot-floating-toolbar-reverse-drag-tests PROPERTIES
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
     if(NOT WIN32)
         set_tests_properties(snow-shot-floating-toolbar-drag-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+        )
+        set_tests_properties(snow-shot-floating-toolbar-reverse-drag-tests PROPERTIES
             ENVIRONMENT
                 "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
         )
