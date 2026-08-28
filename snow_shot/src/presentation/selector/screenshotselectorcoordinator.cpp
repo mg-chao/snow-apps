@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshotselectorcoordinator.h"
 
+#include "../capture/screenshotcaptureperfinstrumentation.h"
 #include "screenshotselectorserviceclient.h"
 #include "snow_shot/storage/applicationstorage.h"
 
@@ -131,6 +132,8 @@ void ScreenshotSelectorCoordinator::handleRefreshFinished(quint64 requestId, boo
 
     m_refreshInFlight = false;
     m_ready = ok;
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.refresh_finished");
+    SNOW_SHOT_CAPTURE_PERF_COUNTER("selector.refresh_ok", ok ? 1 : 0);
     emit refreshFinished(ok);
 }
 
@@ -141,5 +144,7 @@ void ScreenshotSelectorCoordinator::handleHitTestFinished(quint64 requestId, boo
     }
 
     m_hitTestInFlight = false;
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.hit_test_finished");
+    SNOW_SHOT_CAPTURE_PERF_COUNTER("selector.hit_test_ok", ok ? 1 : 0);
     emit hitTestFinished(ok, hitRects);
 }

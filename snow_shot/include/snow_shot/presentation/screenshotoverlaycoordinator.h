@@ -112,11 +112,11 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
 
     ScreenshotToolbarWindow* ensureToolbar();
     void prewarmToolbar();
+    void prewarmOverlayTransientUi(const ScreenshotDisplaySession& displaySession);
     ScreenshotToolbarWindow* toolbar() const;
     void attachToolbarToOverlay(ScreenshotOverlayWindow* overlay);
     void undoCanvasEdit();
     void redoCanvasEdit();
-    ScreenshotSelectionToolbarWindow* ensureSelectionToolbar();
     ScreenshotSelectionToolbarWindow* selectionToolbar() const;
     void attachSelectionToolbarToOverlay(ScreenshotOverlayWindow* overlay);
     ScreenshotColorPickerWidget* ensureColorPicker();

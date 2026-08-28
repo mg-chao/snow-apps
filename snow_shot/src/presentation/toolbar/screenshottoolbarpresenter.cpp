@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshottoolbarpresenter.h"
 
+#include "../capture/screenshotcaptureperfinstrumentation.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotoverlaycoordinator.h"
@@ -45,7 +46,6 @@ void ScreenshotToolbarPresenter::hideMainToolbar() {
 
 void ScreenshotToolbarPresenter::showToolbar(const ScreenshotToolbarPresentationState& state) {
     m_overlayCoordinator.ensureToolbar();
-    m_overlayCoordinator.ensureSelectionToolbar();
     updateOcrAvailability(m_overlayCoordinator, state.ocrAvailable);
     updateSelectionToolbarState(state);
     moveToolbar(state);
@@ -90,20 +90,27 @@ void ScreenshotToolbarPresenter::updateSelectionToolbarState(
         return;
     }
 
-    ScreenshotSelectionToolbarWindow* toolbar = m_overlayCoordinator.ensureSelectionToolbar();
+    ScreenshotSelectionToolbarWindow* toolbar = m_overlayCoordinator.selectionToolbar();
     if (toolbar == nullptr) {
         return;
     }
 
-    toolbar->setSelectionState(
-        state.selectionPixels, state.aspectRatioLocked, state.cornerRadius, state.shadowWidth,
-        state.intelligentSelecting ? ScreenshotSelectionToolbarWindow::DisplayMode::SizeOnly
-                                   : ScreenshotSelectionToolbarWindow::DisplayMode::Full);
+    {
+        SNOW_SHOT_CAPTURE_PERF_SCOPE("toolbar.set_selection_state");
+        toolbar->setSelectionState(
+            state.selectionPixels, state.aspectRatioLocked, state.cornerRadius,
+            state.shadowWidth,
+            state.intelligentSelecting
+                ? ScreenshotSelectionToolbarWindow::DisplayMode::SizeOnly
+                : ScreenshotSelectionToolbarWindow::DisplayMode::Full);
+    }
 
     if (reposition) {
+        SNOW_SHOT_CAPTURE_PERF_SCOPE("toolbar.move_selection_toolbar");
         moveSelectionToolbar(state);
     }
     if (!toolbar->isVisible()) {
+        SNOW_SHOT_CAPTURE_PERF_SCOPE("toolbar.show_selection_toolbar");
         m_overlayCoordinator.showSelectionToolbar();
     }
 }
@@ -195,7 +202,10 @@ void ScreenshotToolbarPresenter::moveSelectionToolbar(
         return;
     }
 
-    m_overlayCoordinator.attachSelectionToolbarToOverlay(overlay);
+    {
+        SNOW_SHOT_CAPTURE_PERF_SCOPE("toolbar.attach_to_overlay");
+        m_overlayCoordinator.attachSelectionToolbarToOverlay(overlay);
+    }
     const ScreenshotDisplayPlacementGeometry placementGeometry =
         ScreenshotGeometryMapper::displayPlacementGeometry(display, overlay->geometry());
     if (!placementGeometry.valid) {

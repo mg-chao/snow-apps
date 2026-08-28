@@ -729,6 +729,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/capture/screenshotcapturedisplaymodelreconciler.cpp
     src/presentation/capture/screenshotcaptureruntimeadapter.cpp
     src/presentation/capture/screenshotcaptureworker.cpp
+    src/presentation/capture/screenshotcaptureperfinstrumentation.cpp
     src/presentation/capture/screenshotwindowcapture.cpp
     src/presentation/capture/screenshotcaptureworkflow.cpp
     src/presentation/capture/adaptivescrollingcapturecadence.h
@@ -2932,6 +2933,31 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
 
     target_compile_definitions(snow_shot PRIVATE
         SNOW_SHOT_PIN_PERF_INSTRUMENTATION=1
+    )
+
+    # Not registered with CTest: drives the real snow_shot.exe through UIA and
+    # reports hardware-sensitive first/second-capture timing for explicit
+    # Windows performance sessions.
+    add_executable(snow-shot-capture-startup-performance-benchmark
+        tests/screenshot_capture_startup_performance_benchmark.cpp
+    )
+    target_include_directories(snow-shot-capture-startup-performance-benchmark PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+    target_link_libraries(snow-shot-capture-startup-performance-benchmark PRIVATE
+        Qt6::Core
+        dwmapi
+        gdi32
+        ole32
+        oleaut32
+        psapi
+        Uiautomationcore
+        user32
+    )
+    target_compile_definitions(snow-shot-capture-startup-performance-benchmark PRIVATE NOMINMAX)
+
+    target_compile_definitions(snow_shot PRIVATE
+        SNOW_SHOT_CAPTURE_PERF_INSTRUMENTATION=1
     )
 endif()
 

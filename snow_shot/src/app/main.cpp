@@ -7,6 +7,7 @@
 #include "snow_shot/platform/windows/autostartregistration.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "../presentation/capture/screenshotcaptureperfinstrumentation.h"
 #include "../presentation/pinned/screenshotpintoperfinstrumentation.h"
 
 #include "icon_registry.h"
@@ -46,6 +47,10 @@ int main(int argc, char* argv[]) {
 #if defined(SNOW_SHOT_PIN_PERF_INSTRUMENTATION)
     snow_shot::presentation::pin_perf::configureTrace(
         qEnvironmentVariable("SNOW_SHOT_PIN_PERF_TRACE"));
+#endif
+#if defined(SNOW_SHOT_CAPTURE_PERF_INSTRUMENTATION)
+    snow_shot::presentation::capture_perf::configureTrace(
+        qEnvironmentVariable("SNOW_SHOT_CAPTURE_PERF_TRACE"));
 #endif
     snow_shot::app::SingleInstanceCoordinator singleInstance;
     const snow_shot::app::SingleInstanceResult instanceResult =

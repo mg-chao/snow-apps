@@ -1,5 +1,6 @@
 #include "screenshotcaptureworker.h"
 
+#include "screenshotcaptureperfinstrumentation.h"
 #include "snow_shot/presentation/screenshotcapturecoordinator.h"
 
 #include "snow_capture.h"
@@ -128,6 +129,7 @@ void ScreenshotCaptureWorker::capture(
     const ScreenshotCaptureRequest& request,
     const QPointer<ScreenshotCaptureCoordinator>& coordinator,
     SnowCaptureCancellationToken* cancellationToken) {
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.worker_entry");
     ScreenshotCaptureResult captureResult;
     captureResult.requestId = request.requestId;
     if (!ensureSession()) {
@@ -135,6 +137,7 @@ void ScreenshotCaptureWorker::capture(
         postCaptureResult(coordinator, std::move(captureResult));
         return;
     }
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.session_ready");
 
     SnowCaptureScreenshotRequestV1 nativeRequest{};
     nativeRequest.version = SNOW_CAPTURE_SCREENSHOT_REQUEST_VERSION;
@@ -143,8 +146,12 @@ void ScreenshotCaptureWorker::capture(
     nativeRequest.focused_window = static_cast<intptr_t>(request.focusedWindowHandle);
     nativeRequest.cancellation_token = cancellationToken;
 
-    SnowCaptureScreenshotResult* nativeResult =
-        snow_capture_desktop_session_capture_v1(m_session, &nativeRequest);
+    SnowCaptureScreenshotResult* nativeResult = nullptr;
+    {
+        SNOW_SHOT_CAPTURE_PERF_SCOPE("capture.native_ffi");
+        nativeResult = snow_capture_desktop_session_capture_v1(m_session, &nativeRequest);
+    }
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.native_returned");
     if (nativeResult == nullptr) {
         captureResult.errorMessage = nativeCaptureError("Screenshot capture failed");
         postCaptureResult(coordinator, std::move(captureResult));
@@ -216,6 +223,8 @@ void ScreenshotCaptureWorker::capture(
     }
     captureResult.succeeded = valid;
     snow_capture_screenshot_result_destroy(nativeResult);
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.frames_wrapped");
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.result_posted");
     postCaptureResult(coordinator, std::move(captureResult));
 }
 

@@ -1,6 +1,7 @@
 #include "screenshotselectorserviceclient.h"
 #include "screenshotselectorpolicy.h"
 
+#include "../capture/screenshotcaptureperfinstrumentation.h"
 #include "snow_ui_selector.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationschema.h"
@@ -92,9 +93,16 @@ bool ScreenshotSelectorServiceClient::ensureService() {
         return true;
     }
 
-    m_service = snow_ui_selector_service_create(desiredBackend);
+    {
+        SNOW_SHOT_CAPTURE_PERF_SCOPE("selector.service_create");
+        m_service = snow_ui_selector_service_create(desiredBackend);
+        if (m_service != nullptr) {
+            m_serviceBackend = static_cast<int>(desiredBackend);
+        }
+    }
     if (m_service != nullptr) {
-        m_serviceBackend = static_cast<int>(desiredBackend);
+        SNOW_SHOT_CAPTURE_PERF_COUNTER("selector.service_created", 1);
+        SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.service_ready");
     }
     return m_service != nullptr;
 }
@@ -133,6 +141,7 @@ bool ScreenshotSelectorServiceClient::startRefresh(quint64 requestId,
         delete context;
         return false;
     }
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.refresh_dispatched");
     return true;
 }
 
@@ -152,6 +161,7 @@ bool ScreenshotSelectorServiceClient::startHitTest(quint64 requestId,
         delete context;
         return false;
     }
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.hit_test_dispatched");
     return true;
 }
 

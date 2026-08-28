@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshotselectorworkflow.h"
 
+#include "../capture/screenshotcaptureperfinstrumentation.h"
 #include "snow_shot/presentation/screenshotcapturestate.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
@@ -84,12 +85,15 @@ void ScreenshotSelectorWorkflow::handleHitTestFinished(bool ok, const QVector<QR
 
     if (m_context.interaction.intelligentSelecting()) {
         if (ok) {
+            SNOW_SHOT_CAPTURE_PERF_SCOPE("selector.chain_apply_hit_path");
             applyHitPath(hitRects);
         }
         if (m_context.presentation.updateOverlayState) {
+            SNOW_SHOT_CAPTURE_PERF_SCOPE("selector.chain_update_overlay_state");
             m_context.presentation.updateOverlayState();
         }
         if (m_context.presentation.smartSelectionResultReady) {
+            SNOW_SHOT_CAPTURE_PERF_SCOPE("selector.chain_initial_resolved");
             m_context.presentation.smartSelectionResultReady(m_context.captureState.sessionId);
         }
         startNextHitTest();

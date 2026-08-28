@@ -146,6 +146,11 @@ void ScreenshotCaptureRuntimeAdapter::prewarmToolbar() {
     m_context.overlayCoordinator.prewarmToolbar();
 }
 
+void ScreenshotCaptureRuntimeAdapter::prewarmOverlayTransientUi(
+    ScreenshotDisplaySession& displaySession) {
+    m_context.overlayCoordinator.prewarmOverlayTransientUi(displaySession);
+}
+
 void ScreenshotCaptureRuntimeAdapter::clearOverlayCanvases(
     const ScreenshotDisplaySession& displaySession) const {
     m_context.overlayCoordinator.clearOverlayCanvases(displaySession);

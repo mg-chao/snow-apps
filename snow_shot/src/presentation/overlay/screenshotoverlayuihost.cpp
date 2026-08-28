@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshotoverlayuihost.h"
 
+#include "../capture/screenshotcaptureperfinstrumentation.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_shot/presentation/components/icons/iconrenderutils.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
@@ -23,8 +24,10 @@
 #include <QPainter>
 #include <QPaintEvent>
 #include <QPen>
+#include <QPixmap>
 #include <QVector>
 #include <QWidget>
+#include <QtMath>
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #include <qt_windows.h>
@@ -116,6 +119,21 @@ class ScreenshotShortcutHintsWidget final : public QWidget {
         if (visible) {
             raise();
         }
+    }
+
+    void prewarm() {
+        // Materialize the smart-selection presentation and paint it once so
+        // translations, fonts, hint icons, and text metrics are warm before
+        // the first capture session.
+        setPresentation(ScreenshotShortcutHintMode::SmartSelection, 1.0);
+        ensurePolished();
+        const qreal dpr = std::max<qreal>(1.0, devicePixelRatioF());
+        QPixmap warmSurface(std::max(1, qCeil(width() * dpr)),
+                            std::max(1, qCeil(height() * dpr)));
+        warmSurface.setDevicePixelRatio(dpr);
+        warmSurface.fill(Qt::transparent);
+        render(&warmSurface);
+        setPresentation(ScreenshotShortcutHintMode::Hidden, 0.0);
     }
 
   protected:
@@ -280,12 +298,22 @@ void showPreparedWidget(QWidget* widget) {
         widget->setWindowOpacity(0.0);
     }
 
-    widget->show();
-    widget->repaint();
-    QCoreApplication::sendPostedEvents(widget->window(), QEvent::UpdateRequest);
+    {
+        SNOW_SHOT_CAPTURE_PERF_SCOPE("show_prepared.show");
+        widget->show();
+    }
+    {
+        SNOW_SHOT_CAPTURE_PERF_SCOPE("show_prepared.repaint");
+        widget->repaint();
+    }
+    {
+        SNOW_SHOT_CAPTURE_PERF_SCOPE("show_prepared.posted_events");
+        QCoreApplication::sendPostedEvents(widget->window(), QEvent::UpdateRequest);
+    }
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
     if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+        SNOW_SHOT_CAPTURE_PERF_SCOPE("show_prepared.redraw_window");
         const HWND hwnd = reinterpret_cast<HWND>(widget->winId());
         if (hwnd != nullptr) {
             static_cast<void>(RedrawWindow(hwnd, nullptr, nullptr,
@@ -333,6 +361,46 @@ void ScreenshotOverlayUiHost::prewarmToolbar() {
     if (ScreenshotToolbarWindow* toolbarWindow = ensureToolbar()) {
         toolbarWindow->prewarmForScreen(QGuiApplication::primaryScreen());
     }
+}
+
+void ScreenshotOverlayUiHost::prewarmOverlayTransientUi() {
+    if (m_transientUiPrewarmed) {
+        return;
+    }
+    m_transientUiPrewarmed = true;
+
+    if (m_selectionToolbar == nullptr && m_selectionToolbarCommands != nullptr) {
+        auto* selectionToolbar = new ScreenshotSelectionToolbarWindow(*m_selectionToolbarCommands);
+        m_ownedWidgets.add(selectionToolbar);
+        m_selectionToolbar = selectionToolbar;
+        selectionToolbar->hide();
+        selectionToolbar->prewarm();
+    }
+
+    if (m_shortcutHints == nullptr) {
+        auto* hints = new ScreenshotShortcutHintsWidget();
+        m_ownedWidgets.add(hints);
+        m_shortcutHints = hints;
+        hints->prewarm();
+    }
+}
+
+void ScreenshotOverlayUiHost::prewarmSelectionToolbarOverlayCycle(ScreenshotOverlayWindow* overlay) {
+    ScreenshotSelectionToolbarWindow* toolbar = trackedWidget(m_selectionToolbar);
+    if (toolbar == nullptr || overlay == nullptr) {
+        return;
+    }
+
+    // The first capture parents this toolbar into a pooled overlay and shows
+    // it while that overlay is still hidden; the first parenting, native child
+    // creation, and synchronous RedrawWindow pass dominate that session's
+    // smart-selection latency. Running one attach/show/detach cycle inside
+    // each pooled overlay at startup keeps every later cycle on the steady
+    // path, whichever display the first selection lands on.
+    attachSelectionToolbarToOverlay(overlay);
+    showSelectionToolbar();
+    detachOverlayTransientUi(overlay);
+    toolbar->resetForNewCapture();
 }
 
 void ScreenshotOverlayUiHost::attachToolbarToOverlay(ScreenshotOverlayWindow* overlay) {
@@ -406,25 +474,12 @@ void ScreenshotOverlayUiHost::redoCanvasEdit() {
     }
 }
 
-ScreenshotSelectionToolbarWindow* ScreenshotOverlayUiHost::ensureSelectionToolbar() {
-    if (m_selectionToolbar == nullptr) {
-        if (m_selectionToolbarCommands == nullptr) {
-            return nullptr;
-        }
-        auto* selectionToolbar = new ScreenshotSelectionToolbarWindow(*m_selectionToolbarCommands);
-        m_ownedWidgets.add(selectionToolbar);
-        m_selectionToolbar = selectionToolbar;
-        selectionToolbar->hide();
-    }
-    return trackedWidget(m_selectionToolbar);
-}
-
 ScreenshotSelectionToolbarWindow* ScreenshotOverlayUiHost::selectionToolbar() const {
     return m_selectionToolbar.data();
 }
 
 void ScreenshotOverlayUiHost::attachSelectionToolbarToOverlay(ScreenshotOverlayWindow* overlay) {
-    ScreenshotSelectionToolbarWindow* toolbarWindow = ensureSelectionToolbar();
+    ScreenshotSelectionToolbarWindow* toolbarWindow = trackedWidget(m_selectionToolbar);
     if (toolbarWindow == nullptr) {
         return;
     }
@@ -539,17 +594,13 @@ bool ScreenshotOverlayUiHost::screenshotUiContainsGlobalCursor() const {
 void ScreenshotOverlayUiHost::updateShortcutHints(ScreenshotOverlayWindow* overlay,
                                                   ScreenshotShortcutHintMode mode, qreal opacity,
                                                   const QRectF& selectionGlobal) {
-    if (overlay == nullptr || mode == ScreenshotShortcutHintMode::Hidden || opacity <= 0.0) {
+    auto* hints = static_cast<ScreenshotShortcutHintsWidget*>(m_shortcutHints.data());
+    if (overlay == nullptr || hints == nullptr || mode == ScreenshotShortcutHintMode::Hidden ||
+        opacity <= 0.0) {
         hideShortcutHints();
         return;
     }
 
-    auto* hints = static_cast<ScreenshotShortcutHintsWidget*>(m_shortcutHints.data());
-    if (hints == nullptr) {
-        hints = new ScreenshotShortcutHintsWidget();
-        m_ownedWidgets.add(hints);
-        m_shortcutHints = hints;
-    }
     if (hints->parentWidget() != overlay) {
         hints->hide();
         hints->setParent(overlay);
@@ -569,20 +620,16 @@ void ScreenshotOverlayUiHost::updateShortcutHints(ScreenshotOverlayWindow* overl
 }
 
 void ScreenshotOverlayUiHost::updateShortcutHints(
-    ScreenshotOverlayWindow* overlay, const ScreenshotShortcutHintContext& context,
-    qreal opacity, const QRectF& selectionGlobal) {
+    ScreenshotOverlayWindow* overlay, const ScreenshotShortcutHintContext& context, qreal opacity,
+    const QRectF& selectionGlobal) {
     const ScreenshotShortcutHintMode mode = screenshotShortcutHintModeForContext(context);
-    if (overlay == nullptr || mode == ScreenshotShortcutHintMode::Hidden || opacity <= 0.0) {
+    auto* hints = static_cast<ScreenshotShortcutHintsWidget*>(m_shortcutHints.data());
+    if (overlay == nullptr || hints == nullptr || mode == ScreenshotShortcutHintMode::Hidden ||
+        opacity <= 0.0) {
         hideShortcutHints();
         return;
     }
 
-    auto* hints = static_cast<ScreenshotShortcutHintsWidget*>(m_shortcutHints.data());
-    if (hints == nullptr) {
-        hints = new ScreenshotShortcutHintsWidget();
-        m_ownedWidgets.add(hints);
-        m_shortcutHints = hints;
-    }
     if (hints->parentWidget() != overlay) {
         hints->hide();
         hints->setParent(overlay);
@@ -686,7 +733,7 @@ void ScreenshotOverlayUiHost::hideSelectionToolbar() {
 }
 
 void ScreenshotOverlayUiHost::showSelectionToolbar() {
-    ScreenshotSelectionToolbarWindow* toolbarWindow = ensureSelectionToolbar();
+    ScreenshotSelectionToolbarWindow* toolbarWindow = trackedWidget(m_selectionToolbar);
     if (toolbarWindow == nullptr) {
         return;
     }

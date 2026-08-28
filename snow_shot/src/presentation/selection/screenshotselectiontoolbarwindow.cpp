@@ -17,12 +17,14 @@
 #include <QMargins>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPixmap>
 #include <QPoint>
 #include <QSizePolicy>
 #include <QShowEvent>
 #include <QTimer>
 #include <QVariant>
 #include <QWheelEvent>
+#include <QtMath>
 
 #include <algorithm>
 #include <cmath>
@@ -272,6 +274,30 @@ void ScreenshotSelectionToolbarWindow::prepareForDisplay() {
     updateIconPixmaps();
     updateDisplayMode();
     updateWindowSize();
+}
+
+void ScreenshotSelectionToolbarWindow::prewarm() {
+    if (isVisible()) {
+        return;
+    }
+
+    ensurePolished();
+    if (m_panel != nullptr && m_panel->layout() != nullptr) {
+        m_panel->layout()->activate();
+    }
+    if (layout() != nullptr) {
+        layout()->activate();
+    }
+    prepareForDisplay();
+
+    const qreal dpr = std::max<qreal>(1.0, devicePixelRatioF());
+    QPixmap warmSurface(std::max(1, qCeil(width() * dpr)), std::max(1, qCeil(height() * dpr)));
+    warmSurface.setDevicePixelRatio(dpr);
+    warmSurface.fill(Qt::transparent);
+    render(&warmSurface);
+
+    hide();
+    resetForNewCapture();
 }
 
 void ScreenshotSelectionToolbarWindow::setSelectionState(const QRect& selection,

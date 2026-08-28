@@ -35,7 +35,6 @@ class ScreenshotOverlayUiHost final {
     void attachToolbarToOverlay(ScreenshotOverlayWindow* overlay);
     void undoCanvasEdit();
     void redoCanvasEdit();
-    ScreenshotSelectionToolbarWindow* ensureSelectionToolbar();
     ScreenshotSelectionToolbarWindow* selectionToolbar() const;
     void attachSelectionToolbarToOverlay(ScreenshotOverlayWindow* overlay);
     ScreenshotColorPickerWidget* ensureColorPicker();
@@ -71,6 +70,12 @@ class ScreenshotOverlayUiHost final {
     void raiseSelectionToolbar();
     void detachOverlayTransientUi(ScreenshotOverlayWindow* overlay);
     void destroyUiResources();
+    // Constructs the selection toolbar and shortcut hints eagerly and renders
+    // them once offscreen so the first capture never pays their cold costs.
+    void prewarmOverlayTransientUi();
+    // Runs one attach/show/detach cycle of the selection toolbar inside a
+    // pooled overlay so its native window path is warm before first use.
+    void prewarmSelectionToolbarOverlayCycle(ScreenshotOverlayWindow* overlay);
 
   private:
     ScreenshotToolbarCommandSink* m_toolbarCommands = nullptr;
@@ -86,6 +91,7 @@ class ScreenshotOverlayUiHost final {
     QPointer<ScreenshotColorPickerWidget> m_colorPicker;
     QPointer<QWidget> m_shortcutHints;
     QColor m_colorPickerCenterGuideLineColor = QColor(0, 0, 0, 0);
+    bool m_transientUiPrewarmed = false;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTOVERLAYUIHOST_H

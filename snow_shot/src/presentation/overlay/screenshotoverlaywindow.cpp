@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 
+#include "../capture/screenshotcaptureperfinstrumentation.h"
 #include "snow_shot/presentation/screenshotmessageservice.h"
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
 #include "snow_shot/presentation/screenshotoverlayeventsink.h"
@@ -388,7 +389,10 @@ void ScreenshotOverlayWindow::showPreparedFrame() {
         setWindowOpacity(0.0);
     }
 
+    SNOW_SHOT_CAPTURE_PERF_SCOPE("presentation.window.sync_reveal");
+    SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.windows_shown", 1);
     show();
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.show_returned");
     // show() queues a normal update, but a translucent native window can be
     // composited from its previous backing surface first. Commit the prepared
     // frame synchronously before making the window opaque.
@@ -404,6 +408,7 @@ void ScreenshotOverlayWindow::showPreparedFrame() {
         }
     }
 #endif
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.redraw_done");
 
     if (concealFirstPaint) {
         setWindowOpacity(previousOpacity);

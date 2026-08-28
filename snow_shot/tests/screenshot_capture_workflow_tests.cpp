@@ -86,6 +86,9 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     void prewarmToolbar() override {
         ++prewarmToolbarCalls;
     }
+    void prewarmOverlayTransientUi(ScreenshotDisplaySession&) override {
+        ++prewarmOverlayTransientUiCalls;
+    }
     void clearOverlayCanvases(const ScreenshotDisplaySession&) const override {
         ++clearOverlayCanvasCalls;
     }
@@ -136,6 +139,7 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     int hideOverlayCalls = 0;
     int clearDocumentCalls = 0;
     int prewarmToolbarCalls = 0;
+    int prewarmOverlayTransientUiCalls = 0;
     bool selectorIsReady = false;
     bool selectorRefreshActive = false;
     bool captureWasQueuedBeforeSelectorRefresh = false;
@@ -187,6 +191,8 @@ void idlePrewarmDoesNotInitializeSelector() {
     workflow.prewarmResources();
     require(runtime.prewarmToolbarCalls == 1,
             "idle toolbar prewarm must be idempotent once resources are prepared");
+    require(runtime.prewarmOverlayTransientUiCalls == 1,
+            "idle prewarm must construct the transient overlay UI exactly once");
     require(state.sessionState == ScreenshotSessionState::IdlePrepared,
             "idle prewarm must leave the workflow prepared");
     require(runtime.startWorkflowRefreshCalls == 0 && !runtime.selectorRefreshActive,
@@ -195,6 +201,8 @@ void idlePrewarmDoesNotInitializeSelector() {
     workflow.startCapture();
     workflow.prewarmResources();
     require(runtime.prewarmToolbarCalls == 1, "active capture must not run idle toolbar prewarm");
+    require(runtime.prewarmOverlayTransientUiCalls == 1,
+            "active capture must not run transient overlay UI prewarm");
     require(runtime.startWorkflowRefreshCalls == 1 && runtime.selectorRefreshActive,
             "capture start must initialize the selector cache");
 }

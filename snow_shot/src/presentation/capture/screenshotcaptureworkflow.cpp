@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshotcaptureworkflow.h"
 
+#include "screenshotcaptureperfinstrumentation.h"
 #include "snow_shot/presentation/screenshotcapturedisplaymodelreconciler.h"
 #include "snow_shot/presentation/screenshotcapturestate.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
@@ -68,6 +69,13 @@ void ScreenshotCaptureWorkflow::startCapture(
     ScreenshotCapturePresentationMode presentationMode, quintptr focusedWindowHandle) {
     bool reusePriorCleanup = false;
     const bool coldStart = m_state.sessionState == ScreenshotSessionState::IdleCold;
+    SNOW_SHOT_CAPTURE_PERF_BEGIN(presentationMode ==
+                                         ScreenshotCapturePresentationMode::Silent
+                                     ? "silent"
+                                     : "overlay",
+                                 0, 0);
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("workflow.start");
+    SNOW_SHOT_CAPTURE_PERF_COUNTER("workflow.cold_start", coldStart ? 1 : 0);
     if (m_state.sessionState != ScreenshotSessionState::IdleCold &&
         m_state.sessionState != ScreenshotSessionState::IdlePrepared) {
         cleanupActiveSessionForRestart();
@@ -97,11 +105,14 @@ void ScreenshotCaptureWorkflow::handleInitialSmartSelectionResolved(quint64 sess
         return;
     }
 
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("selector.initial_resolved");
     m_initialSmartSelectionResolvedSessionId = sessionId;
     showCapturePresentationWhenReady(sessionId);
 }
 
 void ScreenshotCaptureWorkflow::cancelCapture() {
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("workflow.cancel_requested");
+    SNOW_SHOT_CAPTURE_PERF_FINISH(false);
     m_context.runtime.cancelActiveCapture();
     if (m_context.captureTerminated) {
         m_context.captureTerminated();
@@ -219,11 +230,13 @@ void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
     }
     const bool preCapturePrepared =
         m_context.runtime.preparePreCaptureOverlayWindows(m_context.displaySession);
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.overlay_prep_done");
     // Once Snow Shot's windows are excluded, start native acquisition at
     // once. The capture worker can initialize lazy GPU resources while the
     // UI thread prepares selector and presentation state.
     m_context.runtime.captureAsync(
         ScreenshotCaptureRequest{sessionId, m_state.layoutDirty, m_focusedWindowHandle});
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.async_dispatched");
     if (sessionId != m_state.sessionId || !m_state.captureInProgress) {
         return;
     }
@@ -272,6 +285,7 @@ void ScreenshotCaptureWorkflow::prepareOverlayPresentation(quint64 sessionId) {
 
 void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCaptureResult& result) {
     const quint64 sessionId = result.requestId;
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.ui_finish_entry");
     if (sessionId != m_state.sessionId || !m_state.captureInProgress) {
         return;
     }
@@ -318,6 +332,7 @@ void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCapture
     if (m_context.presentation.updateOverlayState) {
         m_context.presentation.updateOverlayState();
     }
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.displays_applied");
 
     m_capturedPresentationSessionId = sessionId;
     showCapturePresentationWhenReady(sessionId);
@@ -335,12 +350,16 @@ void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 session
     }
 
     m_visiblePresentationSessionId = sessionId;
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.reveal_begin");
 
     // The desktop frame and initial smart-selection result have both arrived.
     // Reveal only this complete first frame, avoiding a visible selection jump
     // while keeping capture and selection work fully asynchronous.
     m_context.runtime.showOverlayWindows(m_context.displaySession,
                                          ScreenshotOverlayShowMode::CapturedImage);
+    SNOW_SHOT_CAPTURE_PERF_FLUSH_COMPOSITION();
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.composited");
+    SNOW_SHOT_CAPTURE_PERF_FINISH(true);
     if (m_context.presentation.updateColorPicker) {
         m_context.presentation.updateColorPicker();
     }
@@ -401,6 +420,7 @@ void ScreenshotCaptureWorkflow::initializeIdleResources(quint64 requestId) {
     m_context.runtime.prepareAsync(requestId);
     prewarmOverlayPool();
     m_context.runtime.prewarmToolbar();
+    m_context.runtime.prewarmOverlayTransientUi(m_context.displaySession);
     if (!m_captureModelsClean) {
         resetCaptureModels();
     }

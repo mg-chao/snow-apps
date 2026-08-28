@@ -31,6 +31,7 @@ class ScreenshotSelectionToolbarWindow final : public QWidget {
 
     void resetForNewCapture();
     void prepareForDisplay();
+    void prewarm();
     void setSelectionState(const QRect& selection, bool aspectRatioLocked, int cornerRadius,
                            int shadowWidth, DisplayMode displayMode = DisplayMode::Full);
     QSize contentSizeHint() const;
