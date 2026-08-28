@@ -709,7 +709,7 @@ pub(crate) fn copy_mapped_surface_to_frame(
     let width_u32 = desc.Width;
     let height_u32 = desc.Height;
     let frame_alloc_begin = crate::timing::stage_checkpoint();
-    frame.ensure_rgba_capacity(width_u32, height_u32)?;
+    frame.ensure_capacity(width_u32, height_u32, options.output_pixel_format)?;
     crate::timing::stage_record_since("readback.frame_alloc", frame_alloc_begin);
     mark_frame_srgb(frame);
 
@@ -1060,7 +1060,7 @@ pub(crate) fn map_staging_dirty_rects_to_frame(
     options: SurfaceConversionOptions,
     map_context: &'static str,
 ) -> CaptureResult<usize> {
-    frame.ensure_rgba_capacity(desc.Width, desc.Height)?;
+    frame.ensure_capacity(desc.Width, desc.Height, options.output_pixel_format)?;
     mark_frame_srgb(frame);
     map_staging_dirty_rects_to_frame_with_offset(
         context,

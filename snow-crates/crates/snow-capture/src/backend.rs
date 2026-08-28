@@ -4,7 +4,7 @@ use std::time::Instant;
 use crate::capture_session::CaptureTargetInfo;
 use crate::error::CaptureError;
 use crate::error::CaptureResult;
-use crate::frame::{DirtyRect, Frame};
+use crate::frame::{CapturePixelFormat, DirtyRect, Frame};
 use crate::monitor::MonitorId;
 use crate::region::MonitorLayout;
 use crate::window::WindowId;
@@ -227,6 +227,11 @@ pub(crate) trait MonitorCapturer: Send {
     ///
     /// When disabled, backends should prefer precise HDR->SDR mapping.
     fn set_hdr_tonemap_lut(&mut self, _enabled: bool) -> CaptureResult<()> {
+        Ok(())
+    }
+
+    /// Select the packed 8-bit layout returned by this capturer.
+    fn set_output_pixel_format(&mut self, _format: CapturePixelFormat) -> CaptureResult<()> {
         Ok(())
     }
 

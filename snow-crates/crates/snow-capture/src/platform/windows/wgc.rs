@@ -35,7 +35,7 @@ use crate::backend::{
 };
 use crate::convert::HdrFrameContext;
 use crate::error::{CaptureError, CaptureResult};
-use crate::frame::Frame;
+use crate::frame::{CapturePixelFormat, Frame};
 use crate::monitor::MonitorId;
 use crate::timing::stage_mark;
 #[cfg(feature = "stage-timing")]
@@ -203,6 +203,10 @@ enum WorkerCommand {
         mode: WgcUpdateMode,
         response: Sender<CaptureResult<()>>,
     },
+    SetOutputPixelFormat {
+        format: CapturePixelFormat,
+        response: Sender<CaptureResult<()>>,
+    },
     #[cfg(feature = "stage-timing")]
     SetRecordStageTimings {
         enabled: bool,
@@ -311,6 +315,10 @@ impl WindowsGraphicsCaptureCapturer {
         self.configure(|response| WorkerCommand::SetUpdateMode { mode, response })
     }
 
+    fn set_output_pixel_format(&mut self, format: CapturePixelFormat) -> CaptureResult<()> {
+        self.configure(|response| WorkerCommand::SetOutputPixelFormat { format, response })
+    }
+
     #[cfg(feature = "stage-timing")]
     fn set_record_stage_timings(&mut self, enabled: bool) -> CaptureResult<()> {
         self.configure(|response| WorkerCommand::SetRecordStageTimings { enabled, response })
@@ -335,6 +343,7 @@ struct PreparedWgcCapturer {
     gpu_hdr_conversion_enabled: bool,
     hdr_tonemap_lut_enabled: bool,
     update_mode: WgcUpdateMode,
+    output_pixel_format: CapturePixelFormat,
     #[cfg(feature = "stage-timing")]
     record_stage_timings: bool,
 }
@@ -348,6 +357,7 @@ impl PreparedWgcCapturer {
             gpu_hdr_conversion_enabled: true,
             hdr_tonemap_lut_enabled: true,
             update_mode: WgcUpdateMode::Auto,
+            output_pixel_format: CapturePixelFormat::Rgba8,
             #[cfg(feature = "stage-timing")]
             record_stage_timings: false,
         }
@@ -365,6 +375,7 @@ impl PreparedWgcCapturer {
             active.set_gpu_hdr_conversion(self.gpu_hdr_conversion_enabled)?;
             active.set_hdr_tonemap_lut(self.hdr_tonemap_lut_enabled)?;
             active.set_capture_mode(self.capture_mode)?;
+            active.set_output_pixel_format(self.output_pixel_format)?;
             #[cfg(feature = "stage-timing")]
             active.set_record_stage_timings(self.record_stage_timings)?;
             self.active = Some(active);
@@ -395,6 +406,14 @@ impl PreparedWgcCapturer {
         self.capture_mode = mode;
         if let Some(active) = self.active.as_mut() {
             active.set_capture_mode(mode)?;
+        }
+        Ok(())
+    }
+
+    fn set_output_pixel_format(&mut self, format: CapturePixelFormat) -> CaptureResult<()> {
+        self.output_pixel_format = format;
+        if let Some(active) = self.active.as_mut() {
+            active.set_output_pixel_format(format)?;
         }
         Ok(())
     }
@@ -520,6 +539,7 @@ struct WgcWorker {
     canonical: CanonicalSurface,
     readback: ReadbackPipeline,
     capture_mode: CaptureMode,
+    output_pixel_format: CapturePixelFormat,
     hdr_to_sdr: Option<HdrFrameContext>,
     gpu_tonemapper: Option<GpuTonemapper>,
     gpu_f16_converter: Option<GpuF16Converter>,
@@ -650,6 +670,7 @@ impl WgcWorker {
             canonical: CanonicalSurface::new(),
             readback: ReadbackPipeline::new(),
             capture_mode: CaptureMode::Snapshot,
+            output_pixel_format: CapturePixelFormat::Rgba8,
             hdr_to_sdr,
             gpu_tonemapper: None,
             gpu_f16_converter: None,
@@ -751,6 +772,11 @@ impl WgcWorker {
                 let result = self.configure_update_mode(mode);
                 let _ = response
                     .send(result.map_err(|error| normalize_device_error(&self.device, error)));
+            }
+            WorkerCommand::SetOutputPixelFormat { format, response } => {
+                self.output_pixel_format = format;
+                self.readback.set_output_pixel_format(format);
+                let _ = response.send(Ok(()));
             }
             #[cfg(feature = "stage-timing")]
             WorkerCommand::SetRecordStageTimings { enabled, response } => {
@@ -1430,6 +1456,10 @@ impl crate::backend::MonitorCapturer for WindowsMonitorCapturer {
         self.inner.set_wgc_update_mode(mode)
     }
 
+    fn set_output_pixel_format(&mut self, format: CapturePixelFormat) -> CaptureResult<()> {
+        self.inner.set_output_pixel_format(format)
+    }
+
     #[cfg(feature = "stage-timing")]
     fn set_record_stage_timings(&mut self, enabled: bool) -> CaptureResult<()> {
         self.inner.set_record_stage_timings(enabled)
@@ -1501,6 +1531,10 @@ impl crate::backend::MonitorCapturer for WindowsWindowCapturer {
 
     fn set_wgc_update_mode(&mut self, mode: WgcUpdateMode) -> CaptureResult<()> {
         self.inner.set_wgc_update_mode(mode)
+    }
+
+    fn set_output_pixel_format(&mut self, format: CapturePixelFormat) -> CaptureResult<()> {
+        self.inner.set_output_pixel_format(format)
     }
 
     #[cfg(feature = "stage-timing")]

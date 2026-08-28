@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <new>
 
 #include <QFile>
 #include <QFileDevice>
@@ -29,6 +30,15 @@ class BackendBuffer final {
 
     SnowShotImageCodecBuffer value{};
 };
+
+void releaseBackendBuffer(void* rawBuffer) {
+    auto* buffer = static_cast<SnowShotImageCodecBuffer*>(rawBuffer);
+    if (buffer == nullptr) {
+        return;
+    }
+    snow_shot_image_codec_release_buffer(buffer);
+    delete buffer;
+}
 
 struct StreamingBridgeContext final {
     const ScreenshotImageRowSource* source = nullptr;
@@ -310,6 +320,51 @@ QImage decodeBytes(const QByteArray& encoded, snow::image::Format expectedFormat
     return result;
 }
 
+QImage decodeBgraBytes(const QByteArray& encoded, snow::image::Format expectedFormat) {
+    const uint32_t bridgeExpectedFormat = bridgeFormat(expectedFormat);
+    if (!backendAbiIsCompatible() || encoded.isEmpty() ||
+        bridgeExpectedFormat == SNOW_SHOT_IMAGE_CODEC_FORMAT_UNKNOWN) {
+        return {};
+    }
+
+    auto* output = new (std::nothrow) SnowShotImageCodecBuffer{};
+    if (output == nullptr) {
+        return {};
+    }
+    std::array<char, kBackendErrorCapacity> backendError{};
+    const int32_t succeeded = snow_shot_image_codec_decode_bgra8(
+        reinterpret_cast<const uint8_t*>(encoded.constData()),
+        static_cast<uint64_t>(encoded.size()), bridgeExpectedFormat, output,
+        backendError.data(), static_cast<uint64_t>(backendError.size()));
+    if (succeeded == 0 || output->data == nullptr || output->width == 0 || output->height == 0 ||
+        output->width > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
+        output->height > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
+        releaseBackendBuffer(output);
+        return {};
+    }
+
+    const uint64_t rowBytes = static_cast<uint64_t>(output->width) * 4U;
+    if (output->row_stride != rowBytes ||
+        output->height > std::numeric_limits<uint64_t>::max() / rowBytes) {
+        releaseBackendBuffer(output);
+        return {};
+    }
+    const uint64_t requiredSize = rowBytes * output->height;
+    if (requiredSize > output->size ||
+        requiredSize > static_cast<uint64_t>(std::numeric_limits<std::size_t>::max())) {
+        releaseBackendBuffer(output);
+        return {};
+    }
+
+    QImage result(output->data, static_cast<int>(output->width), static_cast<int>(output->height),
+                  static_cast<int>(output->row_stride), QImage::Format_ARGB32,
+                  &releaseBackendBuffer, output);
+    if (result.isNull()) {
+        releaseBackendBuffer(output);
+    }
+    return result;
+}
+
 bool inspectBytes(const QByteArray& encoded, snow::image::Format expectedFormat,
                   const QSize& expectedSize) {
     const uint32_t bridgeExpectedFormat = bridgeFormat(expectedFormat);
@@ -444,8 +499,17 @@ QImage decode(const QByteArray& encoded, snow::image::Format expectedFormat,
     return decodeBytes(encoded, expectedFormat);
 }
 
+QImage decodeBgra(const QByteArray& encoded, snow::image::Format expectedFormat,
+                 const char* /*nameHint*/) {
+    return decodeBgraBytes(encoded, expectedFormat);
+}
+
 QImage decodeFile(const QString& path, snow::image::Format expectedFormat) {
     return decodeBytes(readFile(path), expectedFormat);
+}
+
+QImage decodeFileBgra(const QString& path, snow::image::Format expectedFormat) {
+    return decodeBgraBytes(readFile(path), expectedFormat);
 }
 
 bool inspect(const QByteArray& encoded, snow::image::Format expectedFormat,

@@ -70,7 +70,8 @@ fn main() -> Result<()> {
         capture_retry_count: 1,
         wgc_update_mode: 0,
         capture_backend: 0,
-        reserved: [0; 30],
+        pixel_format: 0,
+        reserved: [0; 29],
     };
     let region = Region(unsafe { snow_capture_region_session_create(&config) });
     if region.0.is_null() || unsafe { snow_capture_region_session_prepare(region.0) } == 0 {
@@ -231,7 +232,8 @@ fn capture_region(
         height: 0,
         stride_bytes: 0,
         is_duplicate: 0,
-        reserved0: [0; 3],
+        pixel_format: 0,
+        reserved0: [0; 2],
         rgba_bytes: ptr::null(),
         rgba_len: 0,
     };
@@ -253,7 +255,8 @@ fn empty_desktop_info() -> SnowCaptureFrameInfo {
         height: 0,
         is_primary: 0,
         backend_kind: 0,
-        reserved0: [0; 2],
+        pixel_format: 0,
+        reserved0: 0,
         stride_bytes: 0,
         rgba_bytes: ptr::null(),
         rgba_len: 0,

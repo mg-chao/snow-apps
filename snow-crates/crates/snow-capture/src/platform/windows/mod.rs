@@ -20,7 +20,7 @@ use crate::backend::{
 };
 use crate::capture_session::CaptureTargetInfo;
 use crate::error::{CaptureError, CaptureResult};
-use crate::frame::Frame;
+use crate::frame::{CapturePixelFormat, Frame};
 use crate::monitor::MonitorId;
 use crate::region::MonitorLayout;
 use crate::window::WindowId;
@@ -103,6 +103,7 @@ struct AutomaticWindowsCapturer {
     gpu_hdr_conversion_enabled: bool,
     hdr_tonemap_lut_enabled: bool,
     wgc_update_mode: WgcUpdateMode,
+    output_pixel_format: CapturePixelFormat,
     #[cfg(feature = "stage-timing")]
     record_stage_timings: bool,
 }
@@ -131,6 +132,7 @@ impl AutomaticWindowsCapturer {
             gpu_hdr_conversion_enabled: true,
             hdr_tonemap_lut_enabled: true,
             wgc_update_mode: WgcUpdateMode::Auto,
+            output_pixel_format: CapturePixelFormat::Rgba8,
             #[cfg(feature = "stage-timing")]
             record_stage_timings: false,
         }
@@ -163,6 +165,7 @@ impl AutomaticWindowsCapturer {
             capturer.set_wgc_update_mode(self.wgc_update_mode)?;
             capturer.set_gpu_hdr_conversion(self.gpu_hdr_conversion_enabled)?;
             capturer.set_hdr_tonemap_lut(self.hdr_tonemap_lut_enabled)?;
+            capturer.set_output_pixel_format(self.output_pixel_format)?;
             capturer.set_capture_mode(self.capture_mode)?;
             #[cfg(feature = "stage-timing")]
             capturer.set_record_stage_timings(self.record_stage_timings)?;
@@ -491,6 +494,11 @@ impl MonitorCapturer for AutomaticWindowsCapturer {
     fn set_wgc_update_mode(&mut self, mode: WgcUpdateMode) -> CaptureResult<()> {
         self.wgc_update_mode = mode;
         self.apply_to_prepared(|capturer| capturer.set_wgc_update_mode(mode))
+    }
+
+    fn set_output_pixel_format(&mut self, format: CapturePixelFormat) -> CaptureResult<()> {
+        self.output_pixel_format = format;
+        self.apply_to_prepared(|capturer| capturer.set_output_pixel_format(format))
     }
 
     #[cfg(feature = "stage-timing")]

@@ -11,7 +11,7 @@ use std::sync::{
 };
 use std::thread::{self, JoinHandle};
 
-use snow_capture::frame::Frame;
+use snow_capture::frame::{CapturePixelFormat, Frame};
 use snow_capture::{
     CaptureOptions, CaptureRegion, CaptureSession, CaptureSystem, CaptureTarget, CaptureWorkload,
     MonitorId, MonitorLayout, WgcUpdateMode, WindowId, backend::CaptureBackendKind,
@@ -27,6 +27,13 @@ pub struct SnowCaptureDesktopSessionImpl {
     options: CaptureOptions,
     workers: Vec<MonitorWorker>,
     prepared: bool,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SnowCapturePixelFormat {
+    Rgba8 = 0,
+    Bgra8 = 1,
 }
 
 pub struct SnowCaptureRegionSessionImpl {
@@ -66,7 +73,8 @@ pub struct SnowCaptureDesktopSessionConfig {
     capture_retry_count: usize,
     wgc_update_mode: u8,
     capture_backend: u8,
-    reserved: [u8; 30],
+    pixel_format: u8,
+    reserved: [u8; 29],
 }
 
 #[repr(C)]
@@ -89,7 +97,8 @@ pub struct SnowCaptureFrameInfo {
     pub height: u32,
     pub is_primary: u8,
     pub backend_kind: u8,
-    pub reserved0: [u8; 2],
+    pub pixel_format: u8,
+    pub reserved0: u8,
     pub stride_bytes: u32,
     pub rgba_bytes: *const u8,
     pub rgba_len: usize,
@@ -104,7 +113,8 @@ pub struct SnowCaptureRegionSessionConfig {
     pub capture_retry_count: usize,
     pub wgc_update_mode: u8,
     pub capture_backend: u8,
-    pub reserved: [u8; 30],
+    pub pixel_format: u8,
+    pub reserved: [u8; 29],
 }
 
 #[repr(C)]
@@ -113,7 +123,8 @@ pub struct SnowCaptureWindowSessionConfig {
     capture_retry_count: usize,
     wgc_update_mode: u8,
     capture_backend: u8,
-    reserved: [u8; 30],
+    pixel_format: u8,
+    reserved: [u8; 29],
 }
 
 #[repr(C)]
@@ -139,7 +150,8 @@ pub struct SnowCaptureWindowFrameInfoV1 {
     rgba_bytes: *const u8,
     rgba_len: usize,
     backend_kind: u8,
-    reserved: [u8; 7],
+    pixel_format: u8,
+    reserved: [u8; 6],
 }
 
 #[repr(C)]
@@ -167,7 +179,8 @@ pub struct SnowCaptureRegionFrameInfo {
     pub height: u32,
     pub stride_bytes: u32,
     pub is_duplicate: u8,
-    pub reserved0: [u8; 3],
+    pub pixel_format: u8,
+    pub reserved0: [u8; 2],
     pub rgba_bytes: *const u8,
     pub rgba_len: usize,
 }
@@ -315,6 +328,21 @@ fn parse_capture_backend(value: u8) -> Result<CaptureBackendKind, String> {
     }
 }
 
+fn parse_pixel_format(value: u8) -> Result<CapturePixelFormat, String> {
+    match value {
+        0 => Ok(CapturePixelFormat::Rgba8),
+        1 => Ok(CapturePixelFormat::Bgra8),
+        _ => Err(format!("invalid capture pixel format: {value}")),
+    }
+}
+
+fn pixel_format_value(format: CapturePixelFormat) -> u8 {
+    match format {
+        CapturePixelFormat::Rgba8 => 0,
+        CapturePixelFormat::Bgra8 => 1,
+    }
+}
+
 fn capture_backend_value(kind: CaptureBackendKind) -> u8 {
     match kind {
         CaptureBackendKind::Auto => 0,
@@ -353,16 +381,23 @@ const RECORDING_EXPORT_CONFIG_V1_SIZE: u32 =
 fn default_options(
     config: *const SnowCaptureDesktopSessionConfig,
 ) -> Result<(CaptureOptions, CaptureBackendKind), String> {
-    let (capture_retry_count, wgc_update_mode, capture_backend) = if config.is_null() {
-        (1, WgcUpdateMode::Auto, CaptureBackendKind::Auto)
-    } else {
-        let config = unsafe { &*config };
-        (
-            config.capture_retry_count.max(1),
-            parse_wgc_update_mode(config.wgc_update_mode)?,
-            parse_capture_backend(config.capture_backend)?,
-        )
-    };
+    let (capture_retry_count, wgc_update_mode, capture_backend, output_pixel_format) =
+        if config.is_null() {
+            (
+                1,
+                WgcUpdateMode::Auto,
+                CaptureBackendKind::Auto,
+                CapturePixelFormat::Rgba8,
+            )
+        } else {
+            let config = unsafe { &*config };
+            (
+                config.capture_retry_count.max(1),
+                parse_wgc_update_mode(config.wgc_update_mode)?,
+                parse_capture_backend(config.capture_backend)?,
+                parse_pixel_format(config.pixel_format)?,
+            )
+        };
 
     Ok((
         CaptureOptions {
@@ -370,6 +405,7 @@ fn default_options(
             workload: CaptureWorkload::Snapshot,
             gpu_hdr_conversion: true,
             hdr_tonemap_lut: true,
+            output_pixel_format,
             wgc_update_mode,
             // Keeps the literal valid whether or not snow-capture was built
             // with its optional `stage-timing` instrumentation feature.
@@ -382,12 +418,14 @@ fn default_options(
 fn snapshot_options(
     capture_retry_count: usize,
     wgc_update_mode: u8,
+    output_pixel_format: CapturePixelFormat,
 ) -> Result<CaptureOptions, String> {
     Ok(CaptureOptions {
         capture_retry_count: capture_retry_count.max(1),
         workload: CaptureWorkload::Snapshot,
         gpu_hdr_conversion: true,
         hdr_tonemap_lut: true,
+        output_pixel_format,
         wgc_update_mode: parse_wgc_update_mode(wgc_update_mode)?,
         // Keeps the literal valid whether or not snow-capture was built
         // with its optional `stage-timing` instrumentation feature.
@@ -778,7 +816,7 @@ fn write_snapshot_frame_info(
     frame: &SnapshotFrame,
     out_info: *mut SnowCaptureFrameInfo,
 ) -> Result<(), String> {
-    let rgba = frame.frame.as_rgba_bytes();
+    let rgba = frame.frame.as_bytes();
     let stride_bytes = frame
         .frame
         .width()
@@ -802,7 +840,8 @@ fn write_snapshot_frame_info(
             height: frame.frame.height(),
             is_primary: u8::from(frame.entry.is_primary),
             backend_kind: capture_backend_value(frame.frame.metadata().backend_kind()),
-            reserved0: [0; 2],
+            pixel_format: pixel_format_value(frame.frame.pixel_format()),
+            reserved0: 0,
             stride_bytes,
             rgba_bytes: rgba.as_ptr(),
             rgba_len: rgba.len(),
@@ -815,7 +854,7 @@ fn write_window_frame_info_v1(
     frame: &SnapshotWindowFrame,
     out_info: *mut SnowCaptureWindowFrameInfoV1,
 ) -> Result<(), String> {
-    let rgba = frame.frame.as_rgba_bytes();
+    let rgba = frame.frame.as_bytes();
     let stride_bytes = frame
         .frame
         .width()
@@ -840,7 +879,8 @@ fn write_window_frame_info_v1(
             rgba_bytes: rgba.as_ptr(),
             rgba_len: rgba.len(),
             backend_kind: capture_backend_value(frame.frame.metadata().backend_kind()),
-            reserved: [0; 7],
+            pixel_format: pixel_format_value(frame.frame.pixel_format()),
+            reserved: [0; 6],
         };
     }
     Ok(())
@@ -1221,7 +1261,18 @@ pub unsafe extern "C" fn snow_capture_region_session_create(
             return ptr::null_mut();
         }
     };
-    let options = match snapshot_options(config.capture_retry_count, config.wgc_update_mode) {
+    let output_pixel_format = match parse_pixel_format(config.pixel_format) {
+        Ok(format) => format,
+        Err(error) => {
+            set_last_error(error);
+            return ptr::null_mut();
+        }
+    };
+    let options = match snapshot_options(
+        config.capture_retry_count,
+        config.wgc_update_mode,
+        output_pixel_format,
+    ) {
         Ok(options) => options,
         Err(error) => {
             set_last_error(error);
@@ -1314,14 +1365,15 @@ pub unsafe extern "C" fn snow_capture_region_session_capture(
             return 0;
         }
     };
-    let rgba = session.frame.as_rgba_bytes();
+    let rgba = session.frame.as_bytes();
     unsafe {
         *out_info = SnowCaptureRegionFrameInfo {
             width: session.frame.width(),
             height: session.frame.height(),
             stride_bytes,
             is_duplicate: u8::from(session.frame.metadata().is_duplicate()),
-            reserved0: [0; 3],
+            pixel_format: pixel_format_value(session.frame.pixel_format()),
+            reserved0: [0; 2],
             rgba_bytes: rgba.as_ptr(),
             rgba_len: rgba.len(),
         };
@@ -1343,7 +1395,18 @@ pub unsafe extern "C" fn snow_capture_window_session_create(
         set_last_error("window handle is null");
         return ptr::null_mut();
     }
-    let options = match snapshot_options(config.capture_retry_count, config.wgc_update_mode) {
+    let output_pixel_format = match parse_pixel_format(config.pixel_format) {
+        Ok(format) => format,
+        Err(error) => {
+            set_last_error(error);
+            return ptr::null_mut();
+        }
+    };
+    let options = match snapshot_options(
+        config.capture_retry_count,
+        config.wgc_update_mode,
+        output_pixel_format,
+    ) {
         Ok(options) => options,
         Err(error) => {
             set_last_error(error);
@@ -1443,7 +1506,7 @@ pub unsafe extern "C" fn snow_capture_window_session_capture(
             return 0;
         }
     };
-    let rgba = session.frame.as_rgba_bytes();
+    let rgba = session.frame.as_bytes();
     let target_info = match session
         .session
         .target_info_for_backend(session.frame.metadata().backend_kind())
@@ -1470,6 +1533,51 @@ pub unsafe extern "C" fn snow_capture_window_session_capture(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_window_session_capture_v1(
+    session: *mut SnowCaptureWindowSessionImpl,
+    out_info: *mut SnowCaptureWindowFrameInfoV1,
+) -> u8 {
+    if out_info.is_null() {
+        set_last_error("window frame out_info is null");
+        return 0;
+    }
+    if session.is_null() {
+        set_last_error("window session is null");
+        return 0;
+    }
+    let session = unsafe { &mut *session };
+    if let Err(error) = session.session.capture_once_into(&mut session.frame) {
+        set_last_error(error);
+        return 0;
+    }
+    if session.session.active_capture_access_count() != 0 {
+        set_last_error("capture access remained active after one-shot window capture");
+        return 0;
+    }
+    let target = match session
+        .session
+        .target_info_for_backend(session.frame.metadata().backend_kind())
+    {
+        Ok(info) => info,
+        Err(error) => {
+            set_last_error(error);
+            return 0;
+        }
+    };
+    let frame = SnapshotWindowFrame {
+        x: target.origin_x,
+        y: target.origin_y,
+        frame: Arc::new(session.frame.clone()),
+    };
+    if let Err(error) = write_window_frame_info_v1(&frame, out_info) {
+        set_last_error(error);
+        return 0;
+    }
+    clear_last_error();
+    1
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_capture_window_session_frame_retain(
     session: *const SnowCaptureWindowSessionImpl,
 ) -> *mut SnowCaptureFrameLeaseImpl {
@@ -1478,7 +1586,7 @@ pub unsafe extern "C" fn snow_capture_window_session_frame_retain(
         return ptr::null_mut();
     }
     let session = unsafe { &*session };
-    if session.frame.as_rgba_bytes().is_empty() {
+    if session.frame.as_bytes().is_empty() {
         set_last_error("window session has no captured frame");
         return ptr::null_mut();
     }
@@ -2242,7 +2350,8 @@ mod tests {
             height: 0,
             is_primary: 0,
             backend_kind: 0,
-            reserved0: [0; 2],
+            pixel_format: 0,
+            reserved0: 0,
             stride_bytes: 0,
             rgba_bytes: ptr::null(),
             rgba_len: 0,
@@ -2265,7 +2374,8 @@ mod tests {
             height: 0,
             is_primary: 0,
             backend_kind: 0,
-            reserved0: [0; 2],
+            pixel_format: 0,
+            reserved0: 0,
             stride_bytes: 0,
             rgba_bytes: ptr::null(),
             rgba_len: 0,
@@ -2324,7 +2434,8 @@ mod tests {
             capture_retry_count: 1,
             wgc_update_mode: 0,
             capture_backend: 0,
-            reserved: [0; 30],
+            pixel_format: 0,
+            reserved: [0; 29],
         };
         assert!(unsafe { snow_capture_region_session_create(&config) }.is_null());
     }
@@ -2336,7 +2447,8 @@ mod tests {
             height: 0,
             stride_bytes: 0,
             is_duplicate: 0,
-            reserved0: [0; 3],
+            pixel_format: 0,
+            reserved0: [0; 2],
             rgba_bytes: ptr::null(),
             rgba_len: 0,
         };
@@ -2359,7 +2471,8 @@ mod tests {
             capture_retry_count: 1,
             wgc_update_mode: 0,
             capture_backend: 0,
-            reserved: [0; 30],
+            pixel_format: 0,
+            reserved: [0; 29],
         };
         assert!(unsafe { snow_capture_window_session_create(&config) }.is_null());
     }
@@ -2478,18 +2591,28 @@ mod tests {
     }
 
     #[test]
+    fn pixel_format_parser_maps_rgba_and_bgra_and_rejects_unknown_values() {
+        assert_eq!(parse_pixel_format(0), Ok(CapturePixelFormat::Rgba8));
+        assert_eq!(parse_pixel_format(1), Ok(CapturePixelFormat::Bgra8));
+        assert!(parse_pixel_format(2).is_err());
+        assert!(parse_pixel_format(u8::MAX).is_err());
+    }
+
+    #[test]
     fn desktop_config_selects_wgc() {
         let config = SnowCaptureDesktopSessionConfig {
             capture_retry_count: 2,
             wgc_update_mode: 1,
             capture_backend: 2,
-            reserved: [0; 30],
+            pixel_format: 0,
+            reserved: [0; 29],
         };
 
         let (options, backend) = default_options(&raw const config).unwrap();
 
         assert_eq!(options.capture_retry_count, 2);
         assert_eq!(options.wgc_update_mode, WgcUpdateMode::CompleteOnly);
+        assert_eq!(options.output_pixel_format, CapturePixelFormat::Rgba8);
         assert_eq!(backend, CaptureBackendKind::WindowsGraphicsCapture);
     }
 

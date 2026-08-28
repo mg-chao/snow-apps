@@ -9,7 +9,7 @@ use crate::backend::{
     WgcUpdateMode,
 };
 use crate::error::{CaptureError, CaptureResult};
-use crate::frame::{DirtyRect, Frame};
+use crate::frame::{CapturePixelFormat, DirtyRect, Frame};
 use crate::monitor::{MonitorId, MonitorKey};
 use crate::region::{CaptureRegion, MonitorLayout};
 use crate::system::CaptureOptions;
@@ -131,6 +131,8 @@ pub(crate) struct CaptureSessionConfig {
     /// When `true`, HDR tone mapping may use LUT-approximated BT.2390.
     /// When `false`, backends should use the precise curve implementation.
     pub(crate) hdr_tonemap_lut: bool,
+    /// Packed output layout requested by the caller.
+    pub(crate) output_pixel_format: CapturePixelFormat,
     /// WGC complete-surface versus ordered-delta policy.
     pub(crate) wgc_update_mode: WgcUpdateMode,
     /// Record per-stage capture timings onto frame metadata.
@@ -145,6 +147,7 @@ impl Default for CaptureSessionConfig {
             mode: CaptureMode::Snapshot,
             gpu_hdr_conversion: true,
             hdr_tonemap_lut: true,
+            output_pixel_format: CapturePixelFormat::Rgba8,
             wgc_update_mode: WgcUpdateMode::Auto,
             #[cfg(feature = "stage-timing")]
             record_stage_timings: false,
@@ -159,6 +162,7 @@ impl From<CaptureOptions> for CaptureSessionConfig {
             mode: value.workload,
             gpu_hdr_conversion: value.gpu_hdr_conversion,
             hdr_tonemap_lut: value.hdr_tonemap_lut,
+            output_pixel_format: value.output_pixel_format,
             wgc_update_mode: value.wgc_update_mode,
             #[cfg(feature = "stage-timing")]
             record_stage_timings: value.record_stage_timings,
@@ -442,6 +446,7 @@ where
                 capturer.set_wgc_update_mode(config.wgc_update_mode)?;
                 capturer.set_gpu_hdr_conversion(config.gpu_hdr_conversion)?;
                 capturer.set_hdr_tonemap_lut(config.hdr_tonemap_lut)?;
+                capturer.set_output_pixel_format(config.output_pixel_format)?;
                 capturer.set_capture_mode(config.mode)?;
                 #[cfg(feature = "stage-timing")]
                 capturer.set_record_stage_timings(config.record_stage_timings)?;
@@ -873,6 +878,7 @@ impl CaptureSession {
     /// operation-scoped session continue to use `capture_into`.
     pub fn capture_once_into(&mut self, frame: &mut Frame) -> CaptureResult<()> {
         let previous_dimensions = frame.dimensions();
+        let previous_pixel_format = frame.pixel_format();
         let reused = std::mem::replace(frame, Frame::empty());
         let result = self
             .capture_with_cursor(Some(reused))
@@ -886,8 +892,11 @@ impl CaptureSession {
             }
             Err(error) => {
                 if previous_dimensions.0 != 0 && previous_dimensions.1 != 0 {
-                    let _ =
-                        frame.ensure_rgba_capacity(previous_dimensions.0, previous_dimensions.1);
+                    let _ = frame.ensure_capacity(
+                        previous_dimensions.0,
+                        previous_dimensions.1,
+                        previous_pixel_format,
+                    );
                 }
                 Err(error)
             }
@@ -1286,9 +1295,10 @@ impl CaptureSession {
         ) && !plan_changed
             && out_frame.width() == out_w
             && out_frame.height() == out_h
+            && out_frame.pixel_format() == self.config.output_pixel_format
             && !out_frame.as_rgba_bytes().is_empty();
         self.region_runtime_mut().output_history_seq = None;
-        out_frame.ensure_rgba_capacity(out_w, out_h)?;
+        out_frame.ensure_capacity(out_w, out_h, self.config.output_pixel_format)?;
         out_frame.reset_metadata();
         if !destination_has_history && !region_fully_covered {
             out_frame.as_mut_rgba_bytes().fill(0);

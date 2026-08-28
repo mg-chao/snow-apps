@@ -401,6 +401,173 @@ class CallbackByteSink final : public snow::image::ByteSink {
     SnowShotImageCodecByteSink sink_{};
 };
 
+class PackedDecodeSink final : public snow::image::PixelSink {
+  public:
+    PackedDecodeSink(snow::image::Format expectedDocumentFormat,
+                     snow::image::PixelFormat expectedPixelFormat)
+        : expectedDocumentFormat_(expectedDocumentFormat),
+          expectedPixelFormat_(expectedPixelFormat) {}
+
+    snow::image::Result<void> begin(const snow::image::DocumentInfo& document) override {
+        if (document.format != expectedDocumentFormat_) {
+            return snow::image::Status::error(
+                snow::image::ErrorCode::decode_failed,
+                "The decoded image format is not the expected format.");
+        }
+        if (document.frames.empty()) {
+            return snow::image::Status::error(snow::image::ErrorCode::decode_failed,
+                                               "The decoded image has no frames.");
+        }
+        return {};
+    }
+
+    snow::image::Result<void> begin_frame(std::uint32_t frameIndex,
+                                           const snow::image::FrameInfo& frame) override {
+        if (activeFrame_ != kNoFrame) {
+            return snow::image::Status::error(
+                snow::image::ErrorCode::corrupt_data,
+                "The decoder began a frame before ending the prior frame.");
+        }
+        activeFrame_ = frameIndex;
+        expectedRow_ = 0;
+        storageUsed_ = false;
+        if (frameIndex != 0) {
+            return {};
+        }
+        if (frame.native_format != expectedPixelFormat_ || frame.width == 0 || frame.height == 0) {
+            return snow::image::Status::error(
+                snow::image::ErrorCode::unsupported_feature,
+                "The decoder did not produce the requested packed pixel format.");
+        }
+        const snow::image::Result<std::size_t> bytesPerPixel =
+            expectedPixelFormat_.bytes_per_pixel();
+        if (!bytesPerPixel || bytesPerPixel.value() != 4 ||
+            frame.width > std::numeric_limits<std::size_t>::max() / bytesPerPixel.value()) {
+            return snow::image::Status::error(snow::image::ErrorCode::limit_exceeded,
+                                               "The decoded image row size overflows.");
+        }
+        rowStride_ = static_cast<std::size_t>(frame.width) * bytesPerPixel.value();
+        if (frame.height > std::numeric_limits<std::size_t>::max() / rowStride_) {
+            return snow::image::Status::error(snow::image::ErrorCode::limit_exceeded,
+                                               "The decoded image size overflows.");
+        }
+        const std::size_t outputSize = rowStride_ * static_cast<std::size_t>(frame.height);
+        pixels_.reset(new (std::nothrow) std::uint8_t[outputSize]);
+        if (!pixels_) {
+            return snow::image::Status::error(snow::image::ErrorCode::out_of_memory,
+                                               "The decoded image could not be allocated.");
+        }
+        width_ = frame.width;
+        height_ = frame.height;
+        return {};
+    }
+
+    std::span<std::byte> frame_storage(std::uint32_t frameIndex, std::size_t rowStride,
+                                        std::size_t byteSize) override {
+        if (activeFrame_ != 0 || frameIndex != 0 || !pixels_ || rowStride != rowStride_ ||
+            byteSize != rowStride_ * static_cast<std::size_t>(height_)) {
+            return {};
+        }
+        storageUsed_ = true;
+        return {reinterpret_cast<std::byte*>(pixels_.get()), byteSize};
+    }
+
+    snow::image::Result<void> write_rows(std::uint32_t firstRow, std::uint32_t rowCount,
+                                         std::size_t sourceStride,
+                                         std::span<const std::byte> sourcePixels) override {
+        if (activeFrame_ == kNoFrame) {
+            return snow::image::Status::error(snow::image::ErrorCode::corrupt_data,
+                                               "The decoder wrote rows outside a frame.");
+        }
+        if (activeFrame_ != 0) {
+            return {};
+        }
+        if (!pixels_ || rowCount == 0 || firstRow != expectedRow_ || firstRow > height_ ||
+            rowCount > height_ - firstRow ||
+            sourceStride < rowStride_ ||
+            rowCount > std::numeric_limits<std::uint32_t>::max() - expectedRow_) {
+            return snow::image::Status::error(snow::image::ErrorCode::corrupt_data,
+                                               "The decoder produced invalid packed rows.");
+        }
+        const std::size_t sourceRowCount = static_cast<std::size_t>(rowCount - 1U);
+        if (sourceRowCount > std::numeric_limits<std::size_t>::max() / sourceStride) {
+            return snow::image::Status::error(snow::image::ErrorCode::limit_exceeded,
+                                               "The decoder row stride overflows.");
+        }
+        const std::size_t lastSourceOffset = sourceRowCount * sourceStride;
+        if (lastSourceOffset > sourcePixels.size() ||
+            sourcePixels.size() - lastSourceOffset < rowStride_) {
+            return snow::image::Status::error(snow::image::ErrorCode::corrupt_data,
+                                               "The decoder produced invalid packed rows.");
+        }
+        for (std::uint32_t rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
+            std::memcpy(pixels_.get() + static_cast<std::size_t>(firstRow + rowIndex) * rowStride_,
+                        sourcePixels.data() + static_cast<std::size_t>(rowIndex) * sourceStride,
+                        rowStride_);
+        }
+        expectedRow_ += rowCount;
+        return {};
+    }
+
+    snow::image::Result<void> end_frame(std::uint32_t frameIndex) override {
+        if (activeFrame_ != frameIndex) {
+            return snow::image::Status::error(snow::image::ErrorCode::corrupt_data,
+                                               "The decoder ended an unexpected frame.");
+        }
+        if (frameIndex == 0 && !storageUsed_ && expectedRow_ != height_) {
+            return snow::image::Status::error(snow::image::ErrorCode::truncated_data,
+                                               "The decoder ended an incomplete packed frame.");
+        }
+        if (frameIndex == 0) {
+            completed_ = true;
+        }
+        activeFrame_ = kNoFrame;
+        return {};
+    }
+
+    snow::image::Result<void> end() override {
+        if (activeFrame_ != kNoFrame || !completed_) {
+            return snow::image::Status::error(snow::image::ErrorCode::truncated_data,
+                                               "The decoder ended without a packed frame.");
+        }
+        return {};
+    }
+
+    [[nodiscard]] bool hasImage() const noexcept {
+        return completed_ && pixels_ && width_ != 0 && height_ != 0 && rowStride_ != 0;
+    }
+
+    [[nodiscard]] std::uint8_t* releasePixels() noexcept {
+        return pixels_.release();
+    }
+
+    [[nodiscard]] std::uint32_t width() const noexcept {
+        return width_;
+    }
+
+    [[nodiscard]] std::uint32_t height() const noexcept {
+        return height_;
+    }
+
+    [[nodiscard]] std::size_t rowStride() const noexcept {
+        return rowStride_;
+    }
+
+  private:
+    static constexpr std::uint32_t kNoFrame = std::numeric_limits<std::uint32_t>::max();
+
+    snow::image::Format expectedDocumentFormat_;
+    snow::image::PixelFormat expectedPixelFormat_;
+    std::unique_ptr<std::uint8_t[]> pixels_;
+    std::uint32_t width_ = 0;
+    std::uint32_t height_ = 0;
+    std::size_t rowStride_ = 0;
+    std::uint32_t activeFrame_ = kNoFrame;
+    std::uint32_t expectedRow_ = 0;
+    bool storageUsed_ = false;
+    bool completed_ = false;
+};
+
 } // namespace
 
 uint32_t snow_shot_image_codec_abi_version(void) {
@@ -523,10 +690,10 @@ int32_t snow_shot_image_codec_encode_rgba8_stream(
     }
 }
 
-int32_t snow_shot_image_codec_decode_rgba8(const uint8_t* encoded, uint64_t encodedSize,
-                                           uint32_t expectedFormat,
-                                           SnowShotImageCodecBuffer* output, char* error,
-                                           uint64_t errorCapacity) {
+int32_t decodePacked8(const uint8_t* encoded, uint64_t encodedSize, uint32_t expectedFormat,
+                      snow::image::PixelFormat outputFormat, const char* pixelDescription,
+                      SnowShotImageCodecBuffer* output, char* error,
+                      uint64_t errorCapacity) {
     clearError(error, errorCapacity);
     if (!prepareBuffer(output, error, errorCapacity)) {
         return 0;
@@ -541,47 +708,25 @@ int32_t snow_shot_image_codec_decode_rgba8(const uint8_t* encoded, uint64_t enco
         }
         const auto bytes = ownedInput(encoded, inputSize);
         snow::image::DecodeOptions options;
-        options.output_format = snow::image::kRgba8;
+        options.output_format = outputFormat;
         options.raster_layout = snow::image::RasterLayoutPolicy::packed;
-        snow::image::Result<snow::image::Document> decoded =
-            service().decode(snow::image::memory_input(bytes, nameHint(format)), options);
+        PackedDecodeSink sink(format, outputFormat);
+        snow::image::Result<void> decoded =
+            service().decode_to_sink(snow::image::memory_input(bytes, nameHint(format)), sink,
+                                     options);
         if (!decoded) {
             setError(error, errorCapacity, decoded.error().message);
             return 0;
         }
-        if (decoded.value().format != format || decoded.value().frames.empty()) {
-            setError(error, errorCapacity, "The decoded image format is not the expected format.");
+        if (!sink.hasImage()) {
+            setError(error, errorCapacity, pixelDescription);
             return 0;
         }
-        const snow::image::Image& image = decoded.value().frames.front().image;
-        if (image.format() != snow::image::kRgba8 || image.width() == 0 || image.height() == 0) {
-            setError(error, errorCapacity, "The decoded image does not contain RGBA pixels.");
-            return 0;
-        }
-        uint64_t rowBytes = 0;
-        uint64_t outputSize = 0;
-        if (!checkedProduct(image.width(), 4, &rowBytes) ||
-            !checkedProduct(rowBytes, image.height(), &outputSize) ||
-            outputSize > std::numeric_limits<std::size_t>::max()) {
-            setError(error, errorCapacity, "The decoded image is too large.");
-            return 0;
-        }
-        auto* pixels = new (std::nothrow) uint8_t[static_cast<std::size_t>(outputSize)];
-        if (pixels == nullptr) {
-            setError(error, errorCapacity, "The decoded image could not be allocated.");
-            return 0;
-        }
-        const std::size_t destinationStride = static_cast<std::size_t>(rowBytes);
-        for (uint32_t row = 0; row < image.height(); ++row) {
-            std::memcpy(pixels + static_cast<std::size_t>(row) * destinationStride,
-                        image.pixels().data() + static_cast<std::size_t>(row) * image.row_stride(),
-                        destinationStride);
-        }
-        output->data = pixels;
-        output->size = outputSize;
-        output->width = image.width();
-        output->height = image.height();
-        output->row_stride = rowBytes;
+        output->data = sink.releasePixels();
+        output->width = sink.width();
+        output->height = sink.height();
+        output->row_stride = sink.rowStride();
+        output->size = static_cast<uint64_t>(output->row_stride) * output->height;
         return 1;
     } catch (const std::exception& exception) {
         setError(error, errorCapacity, exception.what());
@@ -589,6 +734,24 @@ int32_t snow_shot_image_codec_decode_rgba8(const uint8_t* encoded, uint64_t enco
         setError(error, errorCapacity, "Image decoding failed unexpectedly.");
     }
     return 0;
+}
+
+int32_t snow_shot_image_codec_decode_rgba8(const uint8_t* encoded, uint64_t encodedSize,
+                                           uint32_t expectedFormat,
+                                           SnowShotImageCodecBuffer* output, char* error,
+                                           uint64_t errorCapacity) {
+    return decodePacked8(encoded, encodedSize, expectedFormat, snow::image::kRgba8,
+                         "The decoded image does not contain RGBA pixels.", output, error,
+                         errorCapacity);
+}
+
+int32_t snow_shot_image_codec_decode_bgra8(const uint8_t* encoded, uint64_t encodedSize,
+                                           uint32_t expectedFormat,
+                                           SnowShotImageCodecBuffer* output, char* error,
+                                           uint64_t errorCapacity) {
+    return decodePacked8(encoded, encodedSize, expectedFormat, snow::image::kBgra8,
+                         "The decoded image does not contain BGRA pixels.", output, error,
+                         errorCapacity);
 }
 
 int32_t snow_shot_image_codec_inspect(const uint8_t* encoded, uint64_t encodedSize,

@@ -10,6 +10,7 @@ use windows::core::Interface;
 use crate::backend::CaptureBlitRegion;
 use crate::convert::{HdrFrameContext, SurfaceConversionOptions};
 use crate::error::{CaptureError, CaptureResult};
+use crate::frame::CapturePixelFormat;
 use crate::frame::{DirtyRect, Frame};
 use crate::timing::{stage_checkpoint, stage_record_since};
 
@@ -115,6 +116,7 @@ pub(super) struct ReadbackPipeline {
     slots: [ReadbackSlot; READBACK_SLOT_COUNT],
     next_slot: usize,
     target: Option<ReadbackTarget>,
+    output_pixel_format: CapturePixelFormat,
 }
 
 impl ReadbackPipeline {
@@ -123,6 +125,7 @@ impl ReadbackPipeline {
             slots: std::array::from_fn(|_| ReadbackSlot::default()),
             next_slot: 0,
             target: None,
+            output_pixel_format: CapturePixelFormat::Rgba8,
         }
     }
 
@@ -136,6 +139,10 @@ impl ReadbackPipeline {
         }
         self.target = Some(target);
         self.invalidate_submissions();
+    }
+
+    pub fn set_output_pixel_format(&mut self, format: CapturePixelFormat) {
+        self.output_pixel_format = format;
     }
 
     pub fn invalidate_submissions(&mut self) {
@@ -401,6 +408,7 @@ impl ReadbackPipeline {
         })?;
         let options = SurfaceConversionOptions {
             hdr_to_sdr: metadata.hdr_to_sdr,
+            output_pixel_format: self.output_pixel_format,
             ..SurfaceConversionOptions::default()
         };
         match metadata.target {
@@ -462,6 +470,7 @@ impl ReadbackPipeline {
         })?;
         let options = SurfaceConversionOptions {
             hdr_to_sdr: metadata.hdr_to_sdr,
+            output_pixel_format: self.output_pixel_format,
             ..SurfaceConversionOptions::default()
         };
         let hints = surface::DirtyRectConversionHints {

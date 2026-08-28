@@ -22,6 +22,7 @@ use windows::core::Interface;
 use crate::backend::{CaptureBackendKind, CaptureBlitRegion, CaptureMode, CaptureSampleMetadata};
 use crate::convert::{HdrFrameContext, SurfaceConversionOptions};
 use crate::error::{CaptureError, CaptureResult};
+use crate::frame::CapturePixelFormat;
 use crate::frame::{DirtyRect, Frame};
 use crate::monitor::MonitorId;
 #[cfg(feature = "stage-timing")]
@@ -40,10 +41,14 @@ use super::region_pipeline::{self, RegionPipelineState, RegionSlot, RegionStagin
 use super::surface::{self, StagingSampleDesc};
 
 #[inline(always)]
-fn surface_options(hdr_to_sdr: Option<HdrFrameContext>) -> SurfaceConversionOptions {
+fn surface_options(
+    hdr_to_sdr: Option<HdrFrameContext>,
+    output_pixel_format: CapturePixelFormat,
+) -> SurfaceConversionOptions {
     SurfaceConversionOptions {
         hdr_to_sdr,
         force_opaque_alpha: true,
+        output_pixel_format,
     }
 }
 
@@ -1095,6 +1100,7 @@ struct StagingRing {
     adaptive_spin_polls: u32,
     /// Number of staging slots currently allocated for the active mode.
     allocated_slots: usize,
+    output_pixel_format: CapturePixelFormat,
 }
 
 impl StagingRing {
@@ -1121,6 +1127,7 @@ impl StagingRing {
             cached_desc: None,
             adaptive_spin_polls: Self::INITIAL_SPIN_POLLS,
             allocated_slots: 0,
+            output_pixel_format: CapturePixelFormat::Rgba8,
         }
     }
 
@@ -1444,7 +1451,7 @@ impl StagingRing {
                 dirty_rects,
                 true,
                 hints,
-                surface_options(hdr_to_sdr),
+                surface_options(hdr_to_sdr, self.output_pixel_format),
                 "failed to map staging texture (dirty regions)",
             ) {
                 Ok(converted) if converted > 0 => {
@@ -1458,7 +1465,7 @@ impl StagingRing {
                         staging_res,
                         desc,
                         frame,
-                        surface_options(hdr_to_sdr),
+                        surface_options(hdr_to_sdr, self.output_pixel_format),
                         "failed to map staging texture",
                     )?;
                     Ok(())
@@ -1471,7 +1478,7 @@ impl StagingRing {
                 staging_res,
                 desc,
                 frame,
-                surface_options(hdr_to_sdr),
+                surface_options(hdr_to_sdr, self.output_pixel_format),
                 "failed to map staging texture",
             )?;
             Ok(())
@@ -1555,7 +1562,7 @@ impl StagingRing {
             Some(staging_res),
             desc,
             frame,
-            surface_options(hdr_to_sdr),
+            surface_options(hdr_to_sdr, self.output_pixel_format),
             "failed to map staging texture",
         )?;
         self.pending = false;
@@ -1842,6 +1849,7 @@ struct OutputCapturer {
     /// Capture intent controls whether recording-oriented buffering
     /// should be enabled.
     capture_mode: CaptureMode,
+    output_pixel_format: CapturePixelFormat,
     /// Whether per-stage capture timings are recorded onto frame metadata.
     #[cfg(feature = "stage-timing")]
     record_stage_timings: bool,
@@ -1891,6 +1899,7 @@ impl OutputCapturer {
             cached_pointer_shape: None,
             pointer_shape_buffer: Vec::new(),
             capture_mode: CaptureMode::Snapshot,
+            output_pixel_format: CapturePixelFormat::Rgba8,
             #[cfg(feature = "stage-timing")]
             record_stage_timings: false,
         })
@@ -2382,7 +2391,7 @@ impl OutputCapturer {
                     Some(staging_resource),
                     &source_desc,
                     out,
-                    surface_options(slot.hdr_to_sdr),
+                    surface_options(slot.hdr_to_sdr, self.output_pixel_format),
                     "failed to map DXGI region staging texture",
                 )?;
             } else {
@@ -2393,7 +2402,7 @@ impl OutputCapturer {
                     &source_desc,
                     out,
                     staging_blit,
-                    surface_options(slot.hdr_to_sdr),
+                    surface_options(slot.hdr_to_sdr, self.output_pixel_format),
                     "failed to map DXGI region staging texture",
                 )?;
             }
@@ -2416,7 +2425,7 @@ impl OutputCapturer {
                     &slot.dirty_rects,
                     true,
                     dirty_hints,
-                    surface_options(slot.hdr_to_sdr),
+                    surface_options(slot.hdr_to_sdr, self.output_pixel_format),
                     "failed to map DXGI region staging texture (dirty regions)",
                 )
             } else {
@@ -2431,7 +2440,7 @@ impl OutputCapturer {
                     blit.dst_y,
                     true,
                     dirty_hints,
-                    surface_options(slot.hdr_to_sdr),
+                    surface_options(slot.hdr_to_sdr, self.output_pixel_format),
                     "failed to map DXGI region staging texture (dirty regions)",
                 )
             };
@@ -2510,7 +2519,7 @@ impl OutputCapturer {
                 Some(staging_resource),
                 &source_desc,
                 out,
-                surface_options(slot.hdr_to_sdr),
+                surface_options(slot.hdr_to_sdr, self.output_pixel_format),
                 "failed to map DXGI region staging texture",
             )?;
         } else {
@@ -2521,7 +2530,7 @@ impl OutputCapturer {
                 &source_desc,
                 out,
                 staging_blit,
-                surface_options(slot.hdr_to_sdr),
+                surface_options(slot.hdr_to_sdr, self.output_pixel_format),
                 "failed to map DXGI region staging texture",
             )?;
         }
@@ -2948,6 +2957,7 @@ impl OutputCapturer {
             .unwrap_or_else(Frame::empty);
         let has_frame_history = !opened_capture_access
             && frame.metadata.stream_timestamp.is_some()
+            && frame.pixel_format() == self.output_pixel_format
             && !frame.as_rgba_bytes().is_empty();
         let capture_time = Instant::now();
         let maybe_screenshot_frame =
@@ -3465,6 +3475,7 @@ pub(crate) struct WindowsMonitorCapturer {
     /// Created on demand and retained only until explicit idle cleanup.
     output: Option<OutputCapturer>,
     capture_mode: CaptureMode,
+    output_pixel_format: CapturePixelFormat,
     gpu_hdr_conversion_enabled: bool,
     hdr_tonemap_lut_enabled: bool,
     #[cfg(feature = "stage-timing")]
@@ -3487,6 +3498,7 @@ impl WindowsMonitorCapturer {
             resolver,
             output: None,
             capture_mode: CaptureMode::Snapshot,
+            output_pixel_format: CapturePixelFormat::Rgba8,
             gpu_hdr_conversion_enabled: true,
             hdr_tonemap_lut_enabled: true,
             #[cfg(feature = "stage-timing")]
@@ -3503,6 +3515,8 @@ impl WindowsMonitorCapturer {
         let mut output =
             with_monitor_context(OutputCapturer::new(&resolved), &self.monitor, action)?;
         output.set_capture_mode(self.capture_mode);
+        output.output_pixel_format = self.output_pixel_format;
+        output.staging_ring.output_pixel_format = self.output_pixel_format;
         output.set_gpu_hdr_conversion(self.gpu_hdr_conversion_enabled);
         output.set_hdr_tonemap_lut(self.hdr_tonemap_lut_enabled);
         #[cfg(feature = "stage-timing")]
@@ -3549,7 +3563,7 @@ impl crate::backend::MonitorCapturer for WindowsMonitorCapturer {
                         .take()
                         .unwrap_or_else(Frame::empty);
                     if spare
-                        .ensure_rgba_capacity(frame.width(), frame.height())
+                        .ensure_capacity(frame.width(), frame.height(), frame.pixel_format())
                         .is_ok()
                     {
                         self.output_mut().spare_frame = Some(spare);
@@ -3603,6 +3617,15 @@ impl crate::backend::MonitorCapturer for WindowsMonitorCapturer {
         self.capture_mode = mode;
         if let Some(output) = self.output.as_mut() {
             output.set_capture_mode(mode);
+        }
+        Ok(())
+    }
+
+    fn set_output_pixel_format(&mut self, format: CapturePixelFormat) -> CaptureResult<()> {
+        self.output_pixel_format = format;
+        if let Some(output) = self.output.as_mut() {
+            output.output_pixel_format = format;
+            output.staging_ring.output_pixel_format = format;
         }
         Ok(())
     }
@@ -3733,6 +3756,7 @@ pub(crate) struct WindowsDxgiWindowCapturer {
     /// Cached monitor desktop bounds. Avoids `GetMonitorInfoW` on every frame.
     current_monitor_rect: RECT,
     capture_mode: CaptureMode,
+    output_pixel_format: CapturePixelFormat,
     gpu_hdr_conversion_enabled: bool,
     hdr_tonemap_lut_enabled: bool,
     #[cfg(feature = "stage-timing")]
@@ -3775,6 +3799,7 @@ impl WindowsDxgiWindowCapturer {
             current_hmon,
             current_monitor_rect,
             capture_mode: CaptureMode::Snapshot,
+            output_pixel_format: CapturePixelFormat::Rgba8,
             gpu_hdr_conversion_enabled: true,
             hdr_tonemap_lut_enabled: true,
             #[cfg(feature = "stage-timing")]
@@ -3815,6 +3840,8 @@ impl WindowsDxgiWindowCapturer {
             ))
         })?);
         self.output_mut().set_capture_mode(capture_mode);
+        self.output_mut().output_pixel_format = self.output_pixel_format;
+        self.output_mut().staging_ring.output_pixel_format = self.output_pixel_format;
         self.output_mut()
             .set_gpu_hdr_conversion(gpu_hdr_conversion_enabled);
         self.output_mut()
@@ -3924,10 +3951,12 @@ impl WindowsDxgiWindowCapturer {
 
         let mut frame = reuse.unwrap_or_else(Frame::empty);
         let has_pixels = !frame.as_rgba_bytes().is_empty();
-        let history_enabled = destination_history_hint.unwrap_or(has_pixels) && has_pixels;
+        let history_enabled = destination_history_hint.unwrap_or(has_pixels)
+            && has_pixels
+            && frame.pixel_format() == self.output_pixel_format;
         let destination_has_history =
             history_enabled && frame.width() == blit.width && frame.height() == blit.height;
-        frame.ensure_rgba_capacity(blit.width, blit.height)?;
+        frame.ensure_capacity(blit.width, blit.height, self.output_pixel_format)?;
         frame.reset_metadata();
 
         let sample = match self.output_mut().capture_region_into(
@@ -3952,7 +3981,11 @@ impl WindowsDxgiWindowCapturer {
                     && frame.width() == retry_blit.width
                     && frame.height() == retry_blit.height
                     && !frame.as_rgba_bytes().is_empty();
-                frame.ensure_rgba_capacity(retry_blit.width, retry_blit.height)?;
+                frame.ensure_capacity(
+                    retry_blit.width,
+                    retry_blit.height,
+                    self.output_pixel_format,
+                )?;
                 self.output_mut().capture_region_into(
                     retry_blit,
                     &mut frame,
@@ -3999,6 +4032,15 @@ impl crate::backend::MonitorCapturer for WindowsDxgiWindowCapturer {
         self.capture_mode = mode;
         if let Some(output) = self.output.as_mut() {
             output.set_capture_mode(mode);
+        }
+        Ok(())
+    }
+
+    fn set_output_pixel_format(&mut self, format: CapturePixelFormat) -> CaptureResult<()> {
+        self.output_pixel_format = format;
+        if let Some(output) = self.output.as_mut() {
+            output.output_pixel_format = format;
+            output.staging_ring.output_pixel_format = format;
         }
         Ok(())
     }

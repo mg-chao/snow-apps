@@ -29,11 +29,17 @@ typedef enum SnowCaptureWgcUpdateMode {
     SNOW_CAPTURE_WGC_UPDATE_MODE_ORDERED_INCREMENTAL = 2,
 } SnowCaptureWgcUpdateMode;
 
+typedef enum SnowCapturePixelFormat {
+    SNOW_CAPTURE_PIXEL_FORMAT_RGBA8 = 0,
+    SNOW_CAPTURE_PIXEL_FORMAT_BGRA8 = 1,
+} SnowCapturePixelFormat;
+
 typedef struct SnowCaptureDesktopSessionConfig {
     size_t capture_retry_count;
     uint8_t wgc_update_mode;
     uint8_t capture_backend;
-    uint8_t reserved[30];
+    uint8_t pixel_format;
+    uint8_t reserved[29];
 } SnowCaptureDesktopSessionConfig;
 
 typedef struct SnowCaptureDesktopSessionState {
@@ -54,7 +60,8 @@ typedef struct SnowCaptureFrameInfo {
     uint32_t height;
     uint8_t is_primary;
     uint8_t backend_kind;
-    uint8_t reserved0[2];
+    uint8_t pixel_format;
+    uint8_t reserved0;
     uint32_t stride_bytes;
     const uint8_t* rgba_bytes;
     size_t rgba_len;
@@ -68,7 +75,8 @@ typedef struct SnowCaptureRegionSessionConfig {
     size_t capture_retry_count;
     uint8_t wgc_update_mode;
     uint8_t capture_backend;
-    uint8_t reserved[30];
+    uint8_t pixel_format;
+    uint8_t reserved[29];
 } SnowCaptureRegionSessionConfig;
 
 typedef struct SnowCaptureRegionFrameInfo {
@@ -76,7 +84,8 @@ typedef struct SnowCaptureRegionFrameInfo {
     uint32_t height;
     uint32_t stride_bytes;
     uint8_t is_duplicate;
-    uint8_t reserved0[3];
+    uint8_t pixel_format;
+    uint8_t reserved0[2];
     const uint8_t* rgba_bytes;
     size_t rgba_len;
 } SnowCaptureRegionFrameInfo;
@@ -89,7 +98,8 @@ typedef struct SnowCaptureWindowSessionConfig {
     size_t capture_retry_count;
     uint8_t wgc_update_mode;
     uint8_t capture_backend;
-    uint8_t reserved[30];
+    uint8_t pixel_format;
+    uint8_t reserved[29];
 } SnowCaptureWindowSessionConfig;
 
 typedef struct SnowCaptureWindowFrameInfo {
@@ -115,7 +125,8 @@ typedef struct SnowCaptureWindowFrameInfoV1 {
     const uint8_t* rgba_bytes;
     size_t rgba_len;
     uint8_t backend_kind;
-    uint8_t reserved[7];
+    uint8_t pixel_format;
+    uint8_t reserved[6];
 } SnowCaptureWindowFrameInfoV1;
 
 #define SNOW_CAPTURE_SCREENSHOT_REQUEST_VERSION 1u
@@ -247,6 +258,9 @@ uint8_t snow_capture_window_session_prepare(SnowCaptureWindowSession* session);
 uint8_t snow_capture_window_session_capture(
     SnowCaptureWindowSession* session,
     SnowCaptureWindowFrameInfo* out_info);
+uint8_t snow_capture_window_session_capture_v1(
+    SnowCaptureWindowSession* session,
+    SnowCaptureWindowFrameInfoV1* out_info);
 SnowCaptureFrameLease* snow_capture_window_session_frame_retain(
     const SnowCaptureWindowSession* session);
 

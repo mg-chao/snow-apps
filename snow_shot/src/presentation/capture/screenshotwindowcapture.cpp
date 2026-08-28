@@ -39,6 +39,7 @@ struct ScreenshotWindowCapture::Impl final {
         config.capture_retry_count = 1;
         config.wgc_update_mode = SNOW_CAPTURE_WGC_UPDATE_MODE_COMPLETE_ONLY;
         config.capture_backend = SNOW_CAPTURE_BACKEND_AUTO;
+        config.pixel_format = SNOW_CAPTURE_PIXEL_FORMAT_BGRA8;
         session = snow_capture_window_session_create(&config);
         if (session == nullptr) {
             error = nativeCaptureError("Failed to create window capture session");
@@ -92,8 +93,10 @@ struct ScreenshotWindowCapture::Impl final {
             return std::nullopt;
         }
 
-        SnowCaptureWindowFrameInfo info{};
-        if (snow_capture_window_session_capture(session, &info) == 0) {
+        SnowCaptureWindowFrameInfoV1 info{};
+        info.version = SNOW_CAPTURE_WINDOW_FRAME_INFO_VERSION;
+        info.struct_size = sizeof(info);
+        if (snow_capture_window_session_capture_v1(session, &info) == 0) {
             error = nativeCaptureError("Failed to capture focused window");
             return std::nullopt;
         }
@@ -112,7 +115,12 @@ struct ScreenshotWindowCapture::Impl final {
             info.stride_bytes != static_cast<std::uint32_t>(expectedStride) || width > maxInt ||
             height > maxInt || expectedStride > maxInt ||
             expectedBytes > static_cast<quint64>(std::numeric_limits<std::size_t>::max())) {
-            error = QStringLiteral("Window capture returned an invalid RGBA frame");
+            error = QStringLiteral("Window capture returned an invalid packed frame");
+            return std::nullopt;
+        }
+        if (info.pixel_format != SNOW_CAPTURE_PIXEL_FORMAT_RGBA8 &&
+            info.pixel_format != SNOW_CAPTURE_PIXEL_FORMAT_BGRA8) {
+            error = QStringLiteral("Window capture returned an unknown pixel format");
             return std::nullopt;
         }
 
@@ -123,8 +131,11 @@ struct ScreenshotWindowCapture::Impl final {
             error = nativeCaptureError("Failed to retain window capture frame");
             return std::nullopt;
         }
+        const QImage::Format format =
+            info.pixel_format == SNOW_CAPTURE_PIXEL_FORMAT_BGRA8 ? QImage::Format_ARGB32
+                                                                  : QImage::Format_RGBA8888;
         QImage image(info.rgba_bytes, imageWidth, imageHeight,
-                     static_cast<int>(info.stride_bytes), QImage::Format_RGBA8888,
+                     static_cast<int>(info.stride_bytes), format,
                      &releaseFrameLease, lease);
         if (image.isNull()) {
             snow_capture_frame_lease_release(lease);

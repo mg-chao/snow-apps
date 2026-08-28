@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::CapturePixelFormat;
 use crate::CaptureTarget;
 use crate::backend::{
     self, AutoBackendPolicy, CaptureBackend, CaptureBackendKind, CaptureWorkload, WgcUpdateMode,
@@ -15,6 +16,8 @@ pub struct CaptureOptions {
     pub workload: CaptureWorkload,
     pub gpu_hdr_conversion: bool,
     pub hdr_tonemap_lut: bool,
+    /// Packed 8-bit pixel layout returned by capture sessions.
+    pub output_pixel_format: CapturePixelFormat,
     /// Controls how Windows Graphics Capture updates its canonical GPU frame.
     ///
     /// This is independent from [`CaptureWorkload`]: workload selects latency
@@ -40,6 +43,7 @@ impl Default for CaptureOptions {
             workload: CaptureWorkload::Snapshot,
             gpu_hdr_conversion: true,
             hdr_tonemap_lut: true,
+            output_pixel_format: CapturePixelFormat::Rgba8,
             wgc_update_mode: WgcUpdateMode::Auto,
             #[cfg(feature = "stage-timing")]
             record_stage_timings: false,

@@ -177,6 +177,17 @@ int main() {
                                  output.data[0] == 0x89 && output.data[1] == 'P' &&
                                  output.data[2] == 'N' && output.data[3] == 'G';
 
+    SnowShotImageCodecBuffer bgra{};
+    error.fill('\0');
+    const int32_t decodedBgra = snow_shot_image_codec_decode_bgra8(
+        output.data, output.size, SNOW_SHOT_IMAGE_CODEC_FORMAT_PNG, &bgra, error.data(),
+        error.size());
+    const bool hasBgraPixels =
+        decodedBgra != 0 && bgra.data != nullptr && bgra.width == 3 && bgra.height == 2 &&
+        bgra.row_stride == 3U * 4U && bgra.size == 3U * 2U * 4U && bgra.data[0] == 0 &&
+        bgra.data[1] == 0 && bgra.data[2] == 255 && bgra.data[3] == 255;
+    snow_shot_image_codec_release_buffer(&bgra);
+
     uint8_t* const originalData = output.data;
     const uint64_t originalSize = output.size;
     error.fill('\0');
@@ -266,7 +277,7 @@ int main() {
     if (snow_shot_image_codec_abi_version() != SNOW_SHOT_IMAGE_CODEC_ABI_VERSION ||
         succeeded == 0 || !hasPngSignature || !rejectedUnsafeReuse || output.data != nullptr ||
         output.size != 0 || !streamedPng || !tallPngStreamedRows || !tallJpegStreamedRows ||
-        !propagatedCancellation || !requiredFormatsRoundTrip) {
+        !propagatedCancellation || !requiredFormatsRoundTrip || !hasBgraPixels) {
         std::cerr << (error[0] == '\0' ? "The C ABI PNG smoke test failed." : error.data()) << '\n';
         return EXIT_FAILURE;
     }

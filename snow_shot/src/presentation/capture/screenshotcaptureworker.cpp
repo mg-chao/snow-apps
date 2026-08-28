@@ -22,6 +22,11 @@ bool validFrameInfo(const SnowCaptureFrameInfo& info) {
         return false;
     }
 
+    if (info.pixel_format != SNOW_CAPTURE_PIXEL_FORMAT_RGBA8 &&
+        info.pixel_format != SNOW_CAPTURE_PIXEL_FORMAT_BGRA8) {
+        return false;
+    }
+
     if (info.width > static_cast<std::uint32_t>(std::numeric_limits<int>::max()) ||
         info.height > static_cast<std::uint32_t>(std::numeric_limits<int>::max())) {
         return false;
@@ -41,8 +46,10 @@ bool validFrameInfo(const SnowCaptureFrameInfo& info) {
 
 QImage imageFromFrameLease(SnowCaptureFrameLease* lease, const std::uint8_t* rgbaBytes,
                            std::size_t rgbaLen, std::uint32_t width, std::uint32_t height,
-                           std::uint32_t strideBytes) {
-    if (lease == nullptr || rgbaBytes == nullptr || rgbaLen == 0 || width == 0 || height == 0) {
+                           std::uint32_t strideBytes, std::uint8_t pixelFormat) {
+    if (lease == nullptr || rgbaBytes == nullptr || rgbaLen == 0 || width == 0 || height == 0 ||
+        (pixelFormat != SNOW_CAPTURE_PIXEL_FORMAT_RGBA8 &&
+         pixelFormat != SNOW_CAPTURE_PIXEL_FORMAT_BGRA8)) {
         if (lease != nullptr) {
             snow_capture_frame_lease_release(lease);
         }
@@ -69,8 +76,11 @@ QImage imageFromFrameLease(SnowCaptureFrameLease* lease, const std::uint8_t* rgb
         return {};
     }
 
+    const QImage::Format format =
+        pixelFormat == SNOW_CAPTURE_PIXEL_FORMAT_BGRA8 ? QImage::Format_ARGB32
+                                                       : QImage::Format_RGBA8888;
     QImage image(rgbaBytes, static_cast<int>(width), static_cast<int>(height),
-                 static_cast<int>(strideBytes), QImage::Format_RGBA8888, &releaseFrameLease, lease);
+                 static_cast<int>(strideBytes), format, &releaseFrameLease, lease);
     if (image.isNull()) {
         snow_capture_frame_lease_release(lease);
     }
@@ -172,7 +182,7 @@ void ScreenshotCaptureWorker::capture(
         SnowCaptureFrameLease* lease =
             snow_capture_screenshot_result_display_retain(nativeResult, index);
         QImage image = imageFromFrameLease(lease, info.rgba_bytes, info.rgba_len, info.width,
-                                           info.height, info.stride_bytes);
+                                           info.height, info.stride_bytes, info.pixel_format);
         if (image.isNull()) {
             valid = false;
             break;
@@ -200,7 +210,7 @@ void ScreenshotCaptureWorker::capture(
             SnowCaptureFrameLease* lease =
                 snow_capture_screenshot_result_focused_window_retain(nativeResult);
             QImage image = imageFromFrameLease(lease, info.rgba_bytes, info.rgba_len, info.width,
-                                               info.height, info.stride_bytes);
+                                               info.height, info.stride_bytes, info.pixel_format);
             ScreenshotWindowCaptureFrame focused;
             focused.image = std::move(image);
             focused.physicalRect = QRect(info.x, info.y, static_cast<int>(info.width),
@@ -235,6 +245,9 @@ bool ScreenshotCaptureWorker::ensureSession() {
 
     SnowCaptureDesktopSessionConfig config{};
     config.capture_retry_count = 1;
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    config.pixel_format = SNOW_CAPTURE_PIXEL_FORMAT_BGRA8;
+#endif
     m_session = snow_capture_desktop_session_create(&config);
     if (m_session == nullptr) {
         qWarning("Failed to create desktop capture session: %s", snow_capture_last_error_message());

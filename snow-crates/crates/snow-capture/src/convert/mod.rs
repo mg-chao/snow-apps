@@ -4,6 +4,7 @@ mod scalar;
 #[cfg(target_arch = "x86_64")]
 mod simd_x86;
 
+use crate::frame::CapturePixelFormat;
 pub(crate) use f16::{
     HDR_LUMA_LUT_SIZE, HdrPreparedContext, build_bt2390_luma_lut, prepare_hdr_context_cached,
 };
@@ -146,6 +147,16 @@ impl Default for HdrFrameContext {
 pub struct SurfaceConversionOptions {
     pub hdr_to_sdr: Option<HdrFrameContext>,
     pub force_opaque_alpha: bool,
+    pub output_pixel_format: CapturePixelFormat,
+}
+
+#[inline(always)]
+fn requires_channel_swap(format: SurfacePixelFormat, output: CapturePixelFormat) -> bool {
+    matches!(
+        format,
+        SurfacePixelFormat::Bgra8 | SurfacePixelFormat::Rgba8
+    ) && ((format == SurfacePixelFormat::Bgra8 && output == CapturePixelFormat::Rgba8)
+        || (format == SurfacePixelFormat::Rgba8 && output == CapturePixelFormat::Bgra8))
 }
 
 #[inline(always)]
@@ -270,6 +281,7 @@ struct SurfaceFormatPlan {
 #[derive(Clone, Copy)]
 pub(crate) struct SurfaceRowConverter {
     format: SurfacePixelFormat,
+    output_pixel_format: CapturePixelFormat,
     plan: SurfaceFormatPlan,
     hdr_params: Option<HdrFrameContext>,
     force_opaque_alpha: bool,
@@ -285,6 +297,7 @@ impl SurfaceRowConverter {
         };
         Self {
             format,
+            output_pixel_format: options.output_pixel_format,
             plan: surface_format_plan(format, options),
             hdr_params,
             force_opaque_alpha: options.force_opaque_alpha,
@@ -361,6 +374,12 @@ impl SurfaceRowConverter {
                         self.plan.parallel.max_workers,
                         move |row_src, row_dst, row_width| {
                             kernel(row_src, row_dst, row_width, &prepared_for_parallel);
+                            if self.output_pixel_format == CapturePixelFormat::Bgra8 {
+                                swap_rgba_to_bgra_in_place(
+                                    std::slice::from_raw_parts_mut(row_dst, row_width * 4),
+                                    row_width,
+                                );
+                            }
                         },
                     );
                 }
@@ -369,6 +388,50 @@ impl SurfaceRowConverter {
             unsafe {
                 run_rows_serial_with(layout, move |row_src, row_dst, row_width| {
                     kernel(row_src, row_dst, row_width, &prepared);
+                    if self.output_pixel_format == CapturePixelFormat::Bgra8 {
+                        swap_rgba_to_bgra_in_place(
+                            std::slice::from_raw_parts_mut(row_dst, row_width * 4),
+                            row_width,
+                        );
+                    }
+                });
+            }
+            return;
+        }
+
+        if self.format == SurfacePixelFormat::Rgba16Float
+            && self.output_pixel_format == CapturePixelFormat::Bgra8
+        {
+            let _ = layout.assert_pitches(self.plan.src_bytes_per_pixel);
+            let total_pixels = layout.total_pixels();
+            let kernel = self.plan.row_kernel;
+            if allow_parallel
+                && let Some(chunks) =
+                    maybe_parallel_row_chunks(layout, self.plan.parallel, total_pixels)
+            {
+                unsafe {
+                    run_rows_parallel_with(
+                        layout,
+                        chunks,
+                        self.plan.parallel.max_workers,
+                        move |row_src, row_dst, row_width| {
+                            kernel(row_src, row_dst, row_width);
+                            swap_rgba_to_bgra_in_place(
+                                std::slice::from_raw_parts_mut(row_dst, row_width * 4),
+                                row_width,
+                            );
+                        },
+                    );
+                }
+                return;
+            }
+            unsafe {
+                run_rows_serial_with(layout, move |row_src, row_dst, row_width| {
+                    kernel(row_src, row_dst, row_width);
+                    swap_rgba_to_bgra_in_place(
+                        std::slice::from_raw_parts_mut(row_dst, row_width * 4),
+                        row_width,
+                    );
                 });
             }
             return;
@@ -376,7 +439,7 @@ impl SurfaceRowConverter {
 
         let _ = layout.assert_pitches(self.plan.src_bytes_per_pixel);
         let total_pixels = layout.total_pixels();
-        let bgra_row_nt_kernel = if self.format == SurfacePixelFormat::Bgra8 {
+        let bgra_row_nt_kernel = if requires_channel_swap(self.format, self.output_pixel_format) {
             bgra_nt_kernel_for_rows(
                 layout.dst as *const u8,
                 layout.dst_pitch,
@@ -413,15 +476,16 @@ impl SurfaceRowConverter {
             return;
         }
 
-        let bgra_row_nt_kernel_nofence = if self.format == SurfacePixelFormat::Bgra8 {
-            bgra_nt_kernel_for_rows_nofence(
-                layout.dst as *const u8,
-                layout.dst_pitch,
-                self.force_opaque_alpha,
-            )
-        } else {
-            None
-        };
+        let bgra_row_nt_kernel_nofence =
+            if requires_channel_swap(self.format, self.output_pixel_format) {
+                bgra_nt_kernel_for_rows_nofence(
+                    layout.dst as *const u8,
+                    layout.dst_pitch,
+                    self.force_opaque_alpha,
+                )
+            } else {
+                None
+            };
         let kernel = if use_nt {
             bgra_row_nt_kernel_nofence.unwrap_or(self.plan.row_kernel_nt_nofence)
         } else {
@@ -467,15 +531,21 @@ pub fn convert_row_to_rgba_with_options(
 ) {
     match format {
         SurfacePixelFormat::Bgra8 => {
-            if options.force_opaque_alpha {
+            if options.output_pixel_format == CapturePixelFormat::Bgra8 {
+                copy_bgra_with_options(src_row, dst_row, pixel_count, options.force_opaque_alpha)
+            } else if options.force_opaque_alpha {
                 convert_bgra_to_rgba_opaque(src_row, dst_row, pixel_count)
             } else {
                 convert_bgra_to_rgba(src_row, dst_row, pixel_count)
             }
         }
         SurfacePixelFormat::Rgba8 => {
-            let byte_count = pixel_count * 4;
-            dst_row[..byte_count].copy_from_slice(&src_row[..byte_count]);
+            if options.output_pixel_format == CapturePixelFormat::Bgra8 {
+                convert_bgra_to_rgba(src_row, dst_row, pixel_count);
+            } else {
+                let byte_count = pixel_count * 4;
+                dst_row[..byte_count].copy_from_slice(&src_row[..byte_count]);
+            }
         }
         SurfacePixelFormat::Rgba16Float => {
             if let Some(params) = options.hdr_to_sdr {
@@ -511,10 +581,19 @@ pub fn convert_row_to_rgba_with_options(
                         &prepared,
                     );
                 }
+                if options.output_pixel_format == CapturePixelFormat::Bgra8 {
+                    swap_rgba_to_bgra_in_place(dst_row, pixel_count);
+                }
             } else if options.force_opaque_alpha {
                 convert_f16_rgba_to_srgb_opaque(src_row, dst_row, pixel_count);
+                if options.output_pixel_format == CapturePixelFormat::Bgra8 {
+                    swap_rgba_to_bgra_in_place(dst_row, pixel_count);
+                }
             } else {
                 convert_f16_rgba_to_srgb(src_row, dst_row, pixel_count);
+                if options.output_pixel_format == CapturePixelFormat::Bgra8 {
+                    swap_rgba_to_bgra_in_place(dst_row, pixel_count);
+                }
             }
         }
     }
@@ -603,6 +682,28 @@ fn surface_format_plan(
     options: SurfaceConversionOptions,
 ) -> SurfaceFormatPlan {
     match format {
+        SurfacePixelFormat::Bgra8 if options.output_pixel_format == CapturePixelFormat::Bgra8 => {
+            SurfaceFormatPlan {
+                src_bytes_per_pixel: 4,
+                contiguous_kernel: if options.force_opaque_alpha {
+                    copy_bgra_opaque_unchecked
+                } else {
+                    memcpy_rgba_unchecked
+                },
+                row_kernel: if options.force_opaque_alpha {
+                    copy_bgra_opaque_unchecked
+                } else {
+                    memcpy_rgba_unchecked
+                },
+                row_kernel_nt: memcpy_rgba_nt_unchecked,
+                row_kernel_nt_nofence: memcpy_rgba_nt_nofence_unchecked,
+                parallel: ParallelConfig {
+                    min_pixels: usize::MAX,
+                    min_chunk_pixels: usize::MAX,
+                    max_workers: 1,
+                },
+            }
+        }
         SurfacePixelFormat::Bgra8 => SurfaceFormatPlan {
             src_bytes_per_pixel: 4,
             contiguous_kernel: if options.force_opaque_alpha {
@@ -631,6 +732,36 @@ fn surface_format_plan(
                 max_workers: BGRA_PARALLEL_MAX_WORKERS,
             },
         },
+        SurfacePixelFormat::Rgba8 if options.output_pixel_format == CapturePixelFormat::Bgra8 => {
+            SurfaceFormatPlan {
+                src_bytes_per_pixel: 4,
+                contiguous_kernel: if options.force_opaque_alpha {
+                    convert_bgra_to_rgba_opaque_unchecked
+                } else {
+                    convert_bgra_to_rgba_unchecked
+                },
+                row_kernel: if options.force_opaque_alpha {
+                    bgra_opaque_kernel()
+                } else {
+                    bgra_kernel()
+                },
+                row_kernel_nt: if options.force_opaque_alpha {
+                    bgra_opaque_kernel_nt()
+                } else {
+                    bgra_kernel_nt()
+                },
+                row_kernel_nt_nofence: if options.force_opaque_alpha {
+                    bgra_opaque_kernel_nt_nofence()
+                } else {
+                    bgra_kernel_nt_nofence()
+                },
+                parallel: ParallelConfig {
+                    min_pixels: BGRA_PARALLEL_MIN_PIXELS,
+                    min_chunk_pixels: BGRA_PARALLEL_MIN_CHUNK_PIXELS,
+                    max_workers: BGRA_PARALLEL_MAX_WORKERS,
+                },
+            }
+        }
         SurfacePixelFormat::Rgba8 => SurfaceFormatPlan {
             src_bytes_per_pixel: 4,
             contiguous_kernel: memcpy_rgba_unchecked,
@@ -1162,6 +1293,23 @@ pub(crate) unsafe fn convert_surface_to_rgba_unchecked(
                 layout,
                 params.sanitized(),
                 options.force_opaque_alpha,
+                options.output_pixel_format,
+            );
+        }
+        return;
+    }
+
+    if format == SurfacePixelFormat::Rgba16Float
+        && options.output_pixel_format == CapturePixelFormat::Bgra8
+    {
+        unsafe {
+            SurfaceRowConverter::new(format, options).convert_rows_maybe_parallel_unchecked(
+                layout.src,
+                layout.src_pitch,
+                layout.dst,
+                layout.dst_pitch,
+                layout.width,
+                layout.height,
             );
         }
         return;
@@ -1170,6 +1318,7 @@ pub(crate) unsafe fn convert_surface_to_rgba_unchecked(
     let plan = surface_format_plan(format, options);
     let (src_row_bytes, dst_row_bytes) = layout.assert_pitches(plan.src_bytes_per_pixel);
     let total_pixels = layout.total_pixels();
+    let channel_swap = requires_channel_swap(format, options.output_pixel_format);
 
     if layout.is_contiguous(src_row_bytes, dst_row_bytes) {
         let non_overlapping = !parallel::ranges_overlap(
@@ -1184,18 +1333,21 @@ pub(crate) unsafe fn convert_surface_to_rgba_unchecked(
         let use_nt = non_overlapping
             && total_pixels >= NT_STORE_MIN_PIXELS
             && match format {
-                SurfacePixelFormat::Bgra8 => bgra_nt_kernel_for_destination(
+                SurfacePixelFormat::Bgra8 if channel_swap => bgra_nt_kernel_for_destination(
                     layout.dst as *const u8,
                     options.force_opaque_alpha,
                 )
                 .is_some(),
-                SurfacePixelFormat::Rgba8 => nt_destination_is_aligned(layout.dst as *const u8),
+                SurfacePixelFormat::Bgra8 => false,
+                SurfacePixelFormat::Rgba8 => {
+                    channel_swap && nt_destination_is_aligned(layout.dst as *const u8)
+                }
                 SurfacePixelFormat::Rgba16Float => {
                     nt_destination_is_aligned(layout.dst as *const u8) && f16_nt_supported()
                 }
             };
         if use_nt {
-            if format == SurfacePixelFormat::Bgra8 {
+            if format == SurfacePixelFormat::Bgra8 && channel_swap {
                 unsafe {
                     if options.force_opaque_alpha {
                         convert_bgra_to_rgba_opaque_nt_unchecked(
@@ -1231,7 +1383,7 @@ pub(crate) unsafe fn convert_surface_to_rgba_unchecked(
     }
 
     if let Some(chunks) = maybe_parallel_row_chunks(layout, plan.parallel, total_pixels) {
-        let bgra_row_nt_kernel = if format == SurfacePixelFormat::Bgra8 {
+        let bgra_row_nt_kernel = if channel_swap {
             bgra_nt_kernel_for_rows(
                 layout.dst as *const u8,
                 layout.dst_pitch,
@@ -1243,9 +1395,9 @@ pub(crate) unsafe fn convert_surface_to_rgba_unchecked(
         let use_nt = layout.allow_parallel_rows()
             && total_pixels >= NT_STORE_MIN_PIXELS
             && match format {
-                SurfacePixelFormat::Bgra8 => bgra_row_nt_kernel.is_some(),
+                SurfacePixelFormat::Bgra8 => channel_swap && bgra_row_nt_kernel.is_some(),
                 SurfacePixelFormat::Rgba8 => {
-                    nt_rows_are_aligned(layout.dst as *const u8, layout.dst_pitch)
+                    channel_swap && nt_rows_are_aligned(layout.dst as *const u8, layout.dst_pitch)
                 }
                 SurfacePixelFormat::Rgba16Float => {
                     nt_rows_are_aligned(layout.dst as *const u8, layout.dst_pitch)
@@ -1263,7 +1415,7 @@ pub(crate) unsafe fn convert_surface_to_rgba_unchecked(
         return;
     }
 
-    let bgra_row_nt_kernel = if format == SurfacePixelFormat::Bgra8 {
+    let bgra_row_nt_kernel = if channel_swap {
         bgra_nt_kernel_for_rows(
             layout.dst as *const u8,
             layout.dst_pitch,
@@ -1272,7 +1424,7 @@ pub(crate) unsafe fn convert_surface_to_rgba_unchecked(
     } else {
         None
     };
-    let bgra_row_nt_kernel_nofence = if format == SurfacePixelFormat::Bgra8 {
+    let bgra_row_nt_kernel_nofence = if channel_swap {
         bgra_nt_kernel_for_rows_nofence(
             layout.dst as *const u8,
             layout.dst_pitch,
@@ -1284,9 +1436,9 @@ pub(crate) unsafe fn convert_surface_to_rgba_unchecked(
     let use_nt = layout.allow_parallel_rows()
         && total_pixels >= NT_STORE_MIN_PIXELS
         && match format {
-            SurfacePixelFormat::Bgra8 => bgra_row_nt_kernel.is_some(),
+            SurfacePixelFormat::Bgra8 => channel_swap && bgra_row_nt_kernel.is_some(),
             SurfacePixelFormat::Rgba8 => {
-                nt_rows_are_aligned(layout.dst as *const u8, layout.dst_pitch)
+                channel_swap && nt_rows_are_aligned(layout.dst as *const u8, layout.dst_pitch)
             }
             SurfacePixelFormat::Rgba16Float => {
                 nt_rows_are_aligned(layout.dst as *const u8, layout.dst_pitch) && f16_nt_supported()
@@ -1310,6 +1462,7 @@ unsafe fn convert_f16_surface_to_srgb_hdr_unchecked(
     layout: SurfaceLayout,
     params: HdrFrameContext,
     force_opaque_alpha: bool,
+    output_pixel_format: CapturePixelFormat,
 ) {
     let params = params.sanitized();
     let (src_row_bytes, dst_row_bytes) = layout.assert_pitches(8);
@@ -1348,12 +1501,24 @@ unsafe fn convert_f16_surface_to_srgb_hdr_unchecked(
                     parallel.max_workers,
                     move |src, dst, pixels| {
                         kernel(src, dst, pixels, &prepared_for_parallel);
+                        if output_pixel_format == CapturePixelFormat::Bgra8 {
+                            swap_rgba_to_bgra_in_place(
+                                std::slice::from_raw_parts_mut(dst, pixels * 4),
+                                pixels,
+                            );
+                        }
                     },
                 );
             }
         } else {
             unsafe {
                 kernel(layout.src, layout.dst, total_pixels, &prepared);
+                if output_pixel_format == CapturePixelFormat::Bgra8 {
+                    swap_rgba_to_bgra_in_place(
+                        std::slice::from_raw_parts_mut(layout.dst, total_pixels * 4),
+                        total_pixels,
+                    );
+                }
             }
         }
         return;
@@ -1373,6 +1538,12 @@ unsafe fn convert_f16_surface_to_srgb_hdr_unchecked(
                 parallel.max_workers,
                 move |src, dst, width| {
                     kernel(src, dst, width, &prepared_for_parallel);
+                    if output_pixel_format == CapturePixelFormat::Bgra8 {
+                        swap_rgba_to_bgra_in_place(
+                            std::slice::from_raw_parts_mut(dst, width * 4),
+                            width,
+                        );
+                    }
                 },
             );
         }
@@ -1382,6 +1553,9 @@ unsafe fn convert_f16_surface_to_srgb_hdr_unchecked(
     unsafe {
         run_rows_serial_with(layout, move |src, dst, width| {
             kernel(src, dst, width, &prepared);
+            if output_pixel_format == CapturePixelFormat::Bgra8 {
+                swap_rgba_to_bgra_in_place(std::slice::from_raw_parts_mut(dst, width * 4), width);
+            }
         });
     }
 }
@@ -1392,6 +1566,34 @@ unsafe fn convert_f16_surface_to_srgb_hdr_unchecked(
 unsafe fn memcpy_rgba_unchecked(src: *const u8, dst: *mut u8, pixel_count: usize) {
     unsafe {
         std::ptr::copy_nonoverlapping(src, dst, pixel_count * 4);
+    }
+}
+
+unsafe fn copy_bgra_opaque_unchecked(src: *const u8, dst: *mut u8, pixel_count: usize) {
+    unsafe {
+        std::ptr::copy_nonoverlapping(src, dst, pixel_count * 4);
+        for index in 0..pixel_count {
+            *dst.add(index * 4 + 3) = 255;
+        }
+    }
+}
+
+fn copy_bgra_with_options(src: &[u8], dst: &mut [u8], pixel_count: usize, force_opaque: bool) {
+    let byte_count = pixel_count * 4;
+    dst[..byte_count].copy_from_slice(&src[..byte_count]);
+    if force_opaque {
+        for alpha in dst[..byte_count]
+            .chunks_exact_mut(4)
+            .map(|pixel| &mut pixel[3])
+        {
+            *alpha = 255;
+        }
+    }
+}
+
+fn swap_rgba_to_bgra_in_place(bytes: &mut [u8], pixel_count: usize) {
+    for pixel in bytes[..pixel_count * 4].chunks_exact_mut(4) {
+        pixel.swap(0, 2);
     }
 }
 
@@ -2598,6 +2800,49 @@ mod tests {
     }
 
     #[test]
+    fn convert_surface_to_bgra_preserves_bgra_channels_and_forces_alpha() {
+        let src = [3, 5, 7, 11, 13, 17, 19, 23];
+        let mut dst = [0u8; 8];
+        convert_surface_to_rgba(
+            SurfacePixelFormat::Bgra8,
+            &src,
+            8,
+            &mut dst,
+            8,
+            2,
+            1,
+            SurfaceConversionOptions {
+                force_opaque_alpha: true,
+                output_pixel_format: CapturePixelFormat::Bgra8,
+                ..SurfaceConversionOptions::default()
+            },
+        );
+
+        assert_eq!(dst, [3, 5, 7, 255, 13, 17, 19, 255]);
+    }
+
+    #[test]
+    fn convert_surface_to_bgra_swaps_rgba_channels() {
+        let src = [7, 5, 3, 11, 19, 17, 13, 23];
+        let mut dst = [0u8; 8];
+        convert_surface_to_rgba(
+            SurfacePixelFormat::Rgba8,
+            &src,
+            8,
+            &mut dst,
+            8,
+            2,
+            1,
+            SurfaceConversionOptions {
+                output_pixel_format: CapturePixelFormat::Bgra8,
+                ..SurfaceConversionOptions::default()
+            },
+        );
+
+        assert_eq!(dst, [3, 5, 7, 11, 13, 17, 19, 23]);
+    }
+
+    #[test]
     #[ignore = "performance benchmark guard; run explicitly with --ignored --nocapture"]
     fn bench_bgra_opaque_conversion_vs_post_alpha() {
         use std::hint::black_box;
@@ -3022,6 +3267,136 @@ mod tests {
                 assert!(dst[row_end..pad_end].iter().all(|&v| v == 0xCD));
             }
         }
+    }
+
+    #[test]
+    fn rgba16f_sdr_surface_and_row_converter_produce_bgra() {
+        let width = 7usize;
+        let height = 3usize;
+        let src_pitch = 64usize;
+        let dst_pitch = 36usize;
+        let src = build_sdr_f16_surface(width, height, src_pitch);
+        let mut expected_rgba = vec![0u8; dst_pitch * height];
+        convert_surface_to_rgba(
+            SurfacePixelFormat::Rgba16Float,
+            &src,
+            src_pitch,
+            &mut expected_rgba,
+            dst_pitch,
+            width,
+            height,
+            SurfaceConversionOptions::default(),
+        );
+
+        let options = SurfaceConversionOptions {
+            output_pixel_format: CapturePixelFormat::Bgra8,
+            ..SurfaceConversionOptions::default()
+        };
+        let mut actual = vec![0u8; dst_pitch * height];
+        convert_surface_to_rgba(
+            SurfacePixelFormat::Rgba16Float,
+            &src,
+            src_pitch,
+            &mut actual,
+            dst_pitch,
+            width,
+            height,
+            options,
+        );
+
+        let mut row_actual = vec![0u8; dst_pitch * height];
+        let converter = SurfaceRowConverter::new(SurfacePixelFormat::Rgba16Float, options);
+        unsafe {
+            converter.convert_rows_unchecked(
+                src.as_ptr(),
+                src_pitch,
+                row_actual.as_mut_ptr(),
+                dst_pitch,
+                width,
+                height,
+            );
+        }
+
+        for y in 0..height {
+            for x in 0..width {
+                let index = y * dst_pitch + x * 4;
+                assert_eq!(actual[index], expected_rgba[index + 2]);
+                assert_eq!(actual[index + 1], expected_rgba[index + 1]);
+                assert_eq!(actual[index + 2], expected_rgba[index]);
+                assert_eq!(actual[index + 3], expected_rgba[index + 3]);
+            }
+        }
+        assert_eq!(row_actual, actual);
+    }
+
+    #[test]
+    fn rgba16f_hdr_surface_and_row_converter_produce_bgra() {
+        let width = 11usize;
+        let height = 4usize;
+        let src_pitch = 96usize;
+        let dst_pitch = 52usize;
+        let src = build_hdr_f16_surface(width, height, src_pitch);
+        let params = HdrFrameContext {
+            sdr_white_nits: 160.0,
+            hdr_peak_nits: 1000.0,
+            tonemap_use_lut: true,
+            ..HdrFrameContext::default()
+        };
+        let rgba_options = SurfaceConversionOptions {
+            hdr_to_sdr: Some(params),
+            ..SurfaceConversionOptions::default()
+        };
+        let mut expected_rgba = vec![0u8; dst_pitch * height];
+        convert_surface_to_rgba(
+            SurfacePixelFormat::Rgba16Float,
+            &src,
+            src_pitch,
+            &mut expected_rgba,
+            dst_pitch,
+            width,
+            height,
+            rgba_options,
+        );
+
+        let bgra_options = SurfaceConversionOptions {
+            output_pixel_format: CapturePixelFormat::Bgra8,
+            ..rgba_options
+        };
+        let mut actual = vec![0u8; dst_pitch * height];
+        convert_surface_to_rgba(
+            SurfacePixelFormat::Rgba16Float,
+            &src,
+            src_pitch,
+            &mut actual,
+            dst_pitch,
+            width,
+            height,
+            bgra_options,
+        );
+
+        let mut row_actual = vec![0u8; dst_pitch * height];
+        let converter = SurfaceRowConverter::new(SurfacePixelFormat::Rgba16Float, bgra_options);
+        unsafe {
+            converter.convert_rows_unchecked(
+                src.as_ptr(),
+                src_pitch,
+                row_actual.as_mut_ptr(),
+                dst_pitch,
+                width,
+                height,
+            );
+        }
+
+        for y in 0..height {
+            for x in 0..width {
+                let index = y * dst_pitch + x * 4;
+                assert_eq!(actual[index], expected_rgba[index + 2]);
+                assert_eq!(actual[index + 1], expected_rgba[index + 1]);
+                assert_eq!(actual[index + 2], expected_rgba[index]);
+                assert_eq!(actual[index + 3], expected_rgba[index + 3]);
+            }
+        }
+        assert_eq!(row_actual, actual);
     }
 
     #[test]

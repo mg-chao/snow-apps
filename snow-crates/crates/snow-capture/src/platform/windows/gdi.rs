@@ -18,6 +18,7 @@ use windows::core::{PCWSTR, w};
 use crate::backend::{CaptureBackendKind, CaptureBlitRegion, CaptureMode, CaptureSampleMetadata};
 use crate::convert;
 use crate::error::{CaptureError, CaptureResult};
+use crate::frame::CapturePixelFormat;
 use crate::frame::Frame;
 use crate::monitor::MonitorId;
 #[cfg(feature = "stage-timing")]
@@ -153,7 +154,17 @@ unsafe fn convert_gdi_bgra_surface_to_rgba(
     pixel_count: usize,
     mode: CaptureMode,
     destination_has_history: bool,
+    output_pixel_format: CapturePixelFormat,
 ) {
+    if output_pixel_format == CapturePixelFormat::Bgra8 {
+        unsafe {
+            std::ptr::copy_nonoverlapping(src, dst, pixel_count * 4);
+            for index in 0..pixel_count {
+                *dst.add(index * 4 + 3) = 255;
+            }
+        }
+        return;
+    }
     if mode == CaptureMode::Snapshot {
         if use_gdi_nt_bgra_conversion(mode, destination_has_history, pixel_count) {
             unsafe {
@@ -1154,6 +1165,7 @@ struct GdiResources {
     width: i32,
     height: i32,
     stride: usize,
+    output_pixel_format: CapturePixelFormat,
     incremental_duplicate_hint: bool,
     incremental_too_dirty_hint: bool,
     parallel_span_mode_hint: Option<ParallelSpanScanMode>,
@@ -1210,6 +1222,7 @@ impl GdiResources {
             width: 0,
             height: 0,
             stride: 0,
+            output_pixel_format: CapturePixelFormat::Rgba8,
             incremental_duplicate_hint: false,
             incremental_too_dirty_hint: false,
             parallel_span_mode_hint: None,
@@ -1975,10 +1988,11 @@ impl GdiResources {
         let mut frame = reuse.unwrap_or_else(Frame::empty);
         frame.reset_metadata();
         let frame_alloc_begin = stage_checkpoint();
-        frame.ensure_rgba_capacity(width_u32, height_u32)?;
+        frame.ensure_capacity(width_u32, height_u32, self.output_pixel_format)?;
         stage_record_since("readback.frame_alloc", frame_alloc_begin);
-        let track_incremental_history =
-            mode != CaptureMode::Snapshot && pixel_count >= GDI_INCREMENTAL_MIN_PIXELS;
+        let track_incremental_history = self.output_pixel_format == CapturePixelFormat::Rgba8
+            && mode != CaptureMode::Snapshot
+            && pixel_count >= GDI_INCREMENTAL_MIN_PIXELS;
         let total_bytes = if track_incremental_history {
             Some(
                 width
@@ -2047,6 +2061,7 @@ impl GdiResources {
                 pixel_count,
                 mode,
                 destination_has_history,
+                self.output_pixel_format,
             )
         }
         stage_record_since("gdi.convert", convert_begin);
@@ -2177,8 +2192,9 @@ impl GdiResources {
         let pixel_count = copy_w
             .checked_mul(copy_h)
             .ok_or(CaptureError::BufferOverflow)?;
-        let track_incremental_history =
-            mode != CaptureMode::Snapshot && pixel_count >= GDI_INCREMENTAL_MIN_PIXELS;
+        let track_incremental_history = self.output_pixel_format == CapturePixelFormat::Rgba8
+            && mode != CaptureMode::Snapshot
+            && pixel_count >= GDI_INCREMENTAL_MIN_PIXELS;
         let total_bytes = if track_incremental_history {
             Some(
                 pixel_count
@@ -2236,6 +2252,7 @@ impl GdiResources {
                     pixel_count,
                     mode,
                     destination_has_history,
+                    self.output_pixel_format,
                 )
             }
         } else {
@@ -2254,6 +2271,7 @@ impl GdiResources {
                     ),
                     convert::SurfaceConversionOptions {
                         force_opaque_alpha: true,
+                        output_pixel_format: self.output_pixel_format,
                         ..convert::SurfaceConversionOptions::default()
                     },
                 );
@@ -2491,6 +2509,7 @@ pub(crate) struct WindowsMonitorCapturer {
     monitor_source_dc_local: bool,
     geometry: MonitorGeometry,
     capture_mode: CaptureMode,
+    output_pixel_format: CapturePixelFormat,
     #[cfg(feature = "stage-timing")]
     record_stage_timings: bool,
     /// Tracks the `DisplayInfoCache` generation so we only re-query
@@ -2523,6 +2542,7 @@ impl WindowsMonitorCapturer {
             monitor_source_dc_local,
             geometry,
             capture_mode: CaptureMode::Snapshot,
+            output_pixel_format: CapturePixelFormat::Rgba8,
             #[cfg(feature = "stage-timing")]
             record_stage_timings: false,
             last_display_generation,
@@ -2587,6 +2607,7 @@ impl crate::backend::MonitorCapturer for WindowsMonitorCapturer {
         #[cfg(feature = "stage-timing")]
         let stages = StageScope::enter(self.record_stage_timings);
         self.refresh_geometry()?;
+        self.resources.output_pixel_format = self.output_pixel_format;
         let capture_time = Instant::now();
         let mut frame = self.resources.capture_to_rgba(
             self.source_geometry(),
@@ -2680,6 +2701,12 @@ impl crate::backend::MonitorCapturer for WindowsMonitorCapturer {
         Ok(())
     }
 
+    fn set_output_pixel_format(&mut self, format: CapturePixelFormat) -> CaptureResult<()> {
+        self.output_pixel_format = format;
+        self.resources.output_pixel_format = format;
+        Ok(())
+    }
+
     #[cfg(feature = "stage-timing")]
     fn set_record_stage_timings(&mut self, enabled: bool) -> CaptureResult<()> {
         self.record_stage_timings = enabled;
@@ -2701,6 +2728,7 @@ pub(crate) struct WindowsWindowCapturer {
     resources: GdiResources,
     hwnd: HWND,
     capture_mode: CaptureMode,
+    output_pixel_format: CapturePixelFormat,
     #[cfg(feature = "stage-timing")]
     record_stage_timings: bool,
     preferred_path: Option<WindowCapturePath>,
@@ -2735,6 +2763,7 @@ impl WindowsWindowCapturer {
             resources,
             hwnd,
             capture_mode: CaptureMode::Snapshot,
+            output_pixel_format: CapturePixelFormat::Rgba8,
             #[cfg(feature = "stage-timing")]
             record_stage_timings: false,
             preferred_path: None,
@@ -2826,6 +2855,7 @@ impl MonitorCapturer for WindowsWindowCapturer {
         }
 
         let capture_time = Instant::now();
+        self.resources.output_pixel_format = self.output_pixel_format;
         let first_attempt = self.resources.capture_window_to_rgba(
             self.hwnd,
             width,
@@ -2874,6 +2904,12 @@ impl MonitorCapturer for WindowsWindowCapturer {
             self.invalidate_window_state_cache();
         }
         self.capture_mode = mode;
+        Ok(())
+    }
+
+    fn set_output_pixel_format(&mut self, format: CapturePixelFormat) -> CaptureResult<()> {
+        self.output_pixel_format = format;
+        self.resources.output_pixel_format = format;
         Ok(())
     }
 

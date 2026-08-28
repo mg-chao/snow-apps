@@ -97,6 +97,14 @@ bool sourceFromManifest(const QString& value, CaptureHistorySource* source) {
     return false;
 }
 
+QImage decodeHistoryImage(const QString& path) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    return snow_shot::image_codec::decodeFileBgra(path, snow::image::Format::png);
+#else
+    return snow_shot::image_codec::decodeFile(path, snow::image::Format::png);
+#endif
+}
+
 QJsonObject rectangleToJson(const QRect& rectangle) {
     return {
         {QStringLiteral("x"), rectangle.x()},
@@ -824,8 +832,7 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
             if (!pathInsideRoot(directoryPath, imagePath)) {
                 return std::nullopt;
             }
-            const QImage image =
-                snow_shot::image_codec::decodeFile(imagePath, snow::image::Format::png);
+            const QImage image = decodeHistoryImage(imagePath);
             if (image.isNull() ||
                 image.size() != stored.record.displays[index].imageSize) {
                 return std::nullopt;
@@ -942,8 +949,7 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
                 record.id, validationError);
             return std::nullopt;
         }
-        const QImage image =
-            snow_shot::image_codec::decodeFile(imagePath, snow::image::Format::png);
+        const QImage image = decodeHistoryImage(imagePath);
         if (image.isNull() || image.size() != stored.record.result->imageSize) {
             return std::nullopt;
         }

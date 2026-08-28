@@ -38,7 +38,9 @@ pub enum CaptureTarget {
 
 pub use backend::{CaptureWorkload, WgcUpdateMode};
 pub use capture_session::{CaptureSession, CaptureTargetInfo};
-pub use frame::{CaptureEvent, CapturedFrame, ColorSpace, DirtyRect, FrameMetadata};
+pub use frame::{
+    CaptureEvent, CapturePixelFormat, CapturedFrame, ColorSpace, DirtyRect, FrameMetadata,
+};
 pub use monitor::MonitorId;
 pub use region::{CaptureRegion, MonitorLayout};
 pub use streaming::{

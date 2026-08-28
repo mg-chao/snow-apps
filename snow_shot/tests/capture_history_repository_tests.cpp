@@ -72,9 +72,11 @@ void publicationAndRecovery() {
     require(temporary.isValid(), "failed to create publication directory");
     const QDateTime now =
         QDateTime::fromString(QStringLiteral("2026-08-05T12:30:00.000Z"), Qt::ISODateWithMs);
+    storage::CaptureHistoryRepositoryOptions options;
+    options.clock = [now]() { return now; };
     storage::CaptureHistoryRecord published;
     {
-        auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+        auto repository = storage::makeCaptureHistoryRepository(temporary.path(), options);
         storage::CaptureHistoryDraft draft = draftAt(now);
         QImage resultImage(QSize(20, 12), QImage::Format_RGBA8888);
         resultImage.fill(qRgba(210, 80, 40, 220));
@@ -117,10 +119,18 @@ void publicationAndRecovery() {
         require(payload.has_value() && payload->displayImages.size() == 1 &&
                     payload->displayImages.constFirst().size() == QSize(32, 24),
                 "published record could not be loaded");
+#if defined(Q_OS_WIN) || defined(_WIN32)
+        require(payload->displayImages.constFirst().format() == QImage::Format_ARGB32,
+                "Windows history display image should use BGRA-backed ARGB32 pixels");
+#endif
         const auto loadedResult = repository->loadResultImage(published);
         require(loadedResult.has_value() && loadedResult->size() == QSize(20, 12) &&
                     loadedResult->pixelColor(3, 4) == resultImage.pixelColor(3, 4),
                 "published result image could not be loaded");
+#if defined(Q_OS_WIN) || defined(_WIN32)
+        require(loadedResult->format() == QImage::Format_ARGB32,
+                "Windows history result image should use BGRA-backed ARGB32 pixels");
+#endif
         require(
             !QFileInfo::exists(
                 QDir(temporary.path()).filePath(QStringLiteral("capture_history_catalog.json"))),
@@ -128,7 +138,7 @@ void publicationAndRecovery() {
     }
 
     {
-        auto recovered = storage::makeCaptureHistoryRepository(temporary.path());
+        auto recovered = storage::makeCaptureHistoryRepository(temporary.path(), options);
         require(recovered->records().size() == 1 &&
                     recovered->records().constFirst().id == published.id &&
                     recovered->records().constFirst().source ==
@@ -144,10 +154,12 @@ void quickCaptureSourcesRoundTrip() {
         require(temporary.isValid(), "failed to create quick-capture source directory");
         const QDateTime createdUtc =
             QDateTime::fromString(QStringLiteral("2026-08-12T04:30:00.000Z"), Qt::ISODateWithMs);
+        storage::CaptureHistoryRepositoryOptions options;
+        options.clock = [createdUtc]() { return createdUtc; };
         QString recordId;
 
         {
-            auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+            auto repository = storage::makeCaptureHistoryRepository(temporary.path(), options);
             storage::CaptureHistoryDraft draft = draftAt(createdUtc);
             draft.source = source;
             const storage::CaptureHistoryPublishResult result = repository->publish(draft).get();
@@ -162,7 +174,7 @@ void quickCaptureSourcesRoundTrip() {
                     "quick-capture source was not encoded in the manifest");
         }
 
-        auto recovered = storage::makeCaptureHistoryRepository(temporary.path());
+        auto recovered = storage::makeCaptureHistoryRepository(temporary.path(), options);
         require(recovered->records().size() == 1 &&
                     recovered->records().constFirst().id == recordId &&
                     recovered->records().constFirst().source == source,

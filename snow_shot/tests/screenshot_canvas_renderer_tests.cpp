@@ -1097,6 +1097,27 @@ void reusedRendererReplacesCachedScreenshotImage() {
     canvas.setCustomRenderer(nullptr);
 }
 
+void bgraScreenshotImagesRenderWithCorrectColors() {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    QImage source(2, 1, QImage::Format_ARGB32);
+    auto* pixels = source.bits();
+    pixels[0] = 0;
+    pixels[1] = 0;
+    pixels[2] = 255;
+    pixels[3] = 255;
+    pixels[4] = 255;
+    pixels[5] = 0;
+    pixels[6] = 0;
+    pixels[7] = 255;
+
+    const QImage rendered =
+        renderMaterializedImage(source, source.size(), QRegion(source.rect()), Qt::transparent);
+    require(rendered.pixelColor(0, 0) == QColor(255, 0, 0, 255) &&
+                rendered.pixelColor(1, 0) == QColor(0, 0, 255, 255),
+            "BGRA screenshot pixels should render with their original colors");
+#endif
+}
+
 void hoveredSelectionToolbarHidesBorderAndRendersShadowPreview() {
     SnowCanvasWidget canvas;
     canvas.resize(80, 80);
@@ -3002,6 +3023,7 @@ int main(int argc, char** argv) {
     partialRoundedMaskMatchesFullViewportMaskAtFractionalDpr();
     overlayWatermarkRendersOnlyInsideScreenshotSelection();
     reusedRendererReplacesCachedScreenshotImage();
+    bgraScreenshotImagesRenderWithCorrectColors();
     hoveredSelectionToolbarHidesBorderAndRendersShadowPreview();
     roundedSelectionPreviewKeepsTheSameContentBoundsWithAndWithoutShadow();
     squareSelectionPreviewKeepsTheSameContentBoundsWithAndWithoutShadow();

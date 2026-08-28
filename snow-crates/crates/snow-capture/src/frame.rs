@@ -12,6 +12,16 @@ use snow_core::event::{DeliveryLane, StreamEvent};
 use snow_core::timestamp::{StreamTimestamp, TickFormat};
 use snow_cursor::AttachedCursorSample;
 
+/// Packed 8-bit pixel layout used by captured frames.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CapturePixelFormat {
+    /// Bytes are ordered red, green, blue, alpha.
+    #[default]
+    Rgba8,
+    /// Bytes are ordered blue, green, red, alpha.
+    Bgra8,
+}
+
 /// Color space / transfer function describing the frame's pixel data.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ColorSpace {
@@ -157,6 +167,7 @@ pub struct Frame {
     data: FrameBuffer,
     width: u32,
     height: u32,
+    pixel_format: CapturePixelFormat,
     /// Per-frame metadata for recording pipelines.
     pub(crate) metadata: FrameMetadata,
 }
@@ -167,6 +178,7 @@ impl Clone for Frame {
             data: self.data.clone(),
             width: self.width,
             height: self.height,
+            pixel_format: self.pixel_format,
             metadata: self.metadata.clone(),
         }
     }
@@ -380,12 +392,13 @@ impl Frame {
             data: FrameBuffer::new(),
             width: 0,
             height: 0,
+            pixel_format: CapturePixelFormat::Rgba8,
             metadata: FrameMetadata::default(),
         }
     }
 
     pub fn from_rgba8(width: u32, height: u32, data: Vec<u8>) -> CaptureResult<Self> {
-        let expected = rgba_len(width, height)?;
+        let expected = packed_8bit_len(width, height)?;
         if data.len() != expected {
             return Err(CaptureError::InvalidConfig(format!(
                 "RGBA frame data length mismatch: got {}, expected {} for {}x{}",
@@ -402,6 +415,30 @@ impl Frame {
             },
             width,
             height,
+            pixel_format: CapturePixelFormat::Rgba8,
+            metadata: FrameMetadata::default(),
+        })
+    }
+
+    pub fn from_bgra8(width: u32, height: u32, data: Vec<u8>) -> CaptureResult<Self> {
+        let expected = packed_8bit_len(width, height)?;
+        if data.len() != expected {
+            return Err(CaptureError::InvalidConfig(format!(
+                "BGRA frame data length mismatch: got {}, expected {} for {}x{}",
+                data.len(),
+                expected,
+                width,
+                height
+            )));
+        }
+
+        Ok(Self {
+            data: FrameBuffer {
+                storage: Arc::new(FrameBufferStorage::Vec(data)),
+            },
+            width,
+            height,
+            pixel_format: CapturePixelFormat::Bgra8,
             metadata: FrameMetadata::default(),
         })
     }
@@ -418,12 +455,24 @@ impl Frame {
         (self.width, self.height)
     }
 
-    pub fn as_rgba_bytes(&self) -> &[u8] {
+    pub fn pixel_format(&self) -> CapturePixelFormat {
+        self.pixel_format
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
         self.data.as_slice()
     }
 
-    pub fn as_mut_rgba_bytes(&mut self) -> &mut [u8] {
+    pub fn as_mut_bytes(&mut self) -> &mut [u8] {
         self.data.as_mut_slice()
+    }
+
+    pub fn as_rgba_bytes(&self) -> &[u8] {
+        self.as_bytes()
+    }
+
+    pub fn as_mut_rgba_bytes(&mut self) -> &mut [u8] {
+        self.as_mut_bytes()
     }
 
     pub fn metadata(&self) -> &FrameMetadata {
@@ -434,6 +483,20 @@ impl Frame {
         self.data.as_mut_ptr()
     }
 
+    pub fn ensure_capacity(
+        &mut self,
+        width: u32,
+        height: u32,
+        pixel_format: CapturePixelFormat,
+    ) -> CaptureResult<()> {
+        let len = packed_8bit_len(width, height)?;
+        self.data.ensure_len(len);
+        self.width = width;
+        self.height = height;
+        self.pixel_format = pixel_format;
+        Ok(())
+    }
+
     /// Resize this frame's RGBA storage for `width` by `height` pixels while
     /// retaining an existing allocation when it is large enough.
     ///
@@ -441,18 +504,13 @@ impl Frame {
     /// sensitive capture. Existing pixel contents are unspecified when the
     /// dimensions change; capture code is expected to overwrite them.
     pub fn ensure_rgba_capacity(&mut self, width: u32, height: u32) -> CaptureResult<()> {
-        let len = rgba_len(width, height)?;
-        self.data.ensure_len(len);
-        self.width = width;
-        self.height = height;
-        Ok(())
+        self.ensure_capacity(width, height, CapturePixelFormat::Rgba8)
     }
 
     #[cfg(test)]
     pub(crate) fn copy_from_frame(&mut self, source: &Frame) -> CaptureResult<()> {
-        self.ensure_rgba_capacity(source.width, source.height)?;
-        self.as_mut_rgba_bytes()
-            .copy_from_slice(source.as_rgba_bytes());
+        self.ensure_capacity(source.width, source.height, source.pixel_format)?;
+        self.as_mut_bytes().copy_from_slice(source.as_bytes());
         self.metadata = source.metadata.clone();
         Ok(())
     }
@@ -523,6 +581,14 @@ impl CapturedFrame {
 
     pub fn dimensions(&self) -> (u32, u32) {
         self.frame().dimensions()
+    }
+
+    pub fn pixel_format(&self) -> CapturePixelFormat {
+        self.frame().pixel_format()
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.frame().as_bytes()
     }
 
     pub fn as_rgba_bytes(&self) -> &[u8] {
@@ -678,7 +744,7 @@ impl StreamEvent for CaptureEvent {
     }
 }
 
-fn rgba_len(width: u32, height: u32) -> CaptureResult<usize> {
+fn packed_8bit_len(width: u32, height: u32) -> CaptureResult<usize> {
     let w = usize::try_from(width).map_err(|_| CaptureError::BufferOverflow)?;
     let h = usize::try_from(height).map_err(|_| CaptureError::BufferOverflow)?;
     w.checked_mul(h)
@@ -691,6 +757,7 @@ impl std::fmt::Debug for Frame {
         f.debug_struct("Frame")
             .field("width", &self.width)
             .field("height", &self.height)
+            .field("pixel_format", &self.pixel_format)
             .field("data_len", &self.data.len())
             .field("metadata", &self.metadata)
             .finish()

@@ -20,7 +20,7 @@
 #define SNOW_SHOT_IMAGE_CODEC_CALL
 #endif
 
-#define SNOW_SHOT_IMAGE_CODEC_ABI_VERSION 2U
+#define SNOW_SHOT_IMAGE_CODEC_ABI_VERSION 3U
 
 #ifdef __cplusplus
 extern "C" {
@@ -147,6 +147,10 @@ snow_shot_image_codec_encode_rgba8_stream(const SnowShotImageCodecRgba8Source* s
                                           uint64_t error_capacity);
 
 SNOW_SHOT_IMAGE_CODEC_API int32_t SNOW_SHOT_IMAGE_CODEC_CALL snow_shot_image_codec_decode_rgba8(
+    const uint8_t* encoded, uint64_t encoded_size, uint32_t expected_format,
+    SnowShotImageCodecBuffer* output, char* error, uint64_t error_capacity);
+
+SNOW_SHOT_IMAGE_CODEC_API int32_t SNOW_SHOT_IMAGE_CODEC_CALL snow_shot_image_codec_decode_bgra8(
     const uint8_t* encoded, uint64_t encoded_size, uint32_t expected_format,
     SnowShotImageCodecBuffer* output, char* error, uint64_t error_capacity);
 
