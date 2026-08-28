@@ -32,6 +32,11 @@ enum class SnowCanvasTool {
     Spotlight,
 };
 
+enum class SnowCanvasCursorLayer {
+    CanvasTool,
+    Host,
+};
+
 enum class SnowCanvasStyleToolbarSource {
     DefaultRectangle,
     SelectedRectangle,

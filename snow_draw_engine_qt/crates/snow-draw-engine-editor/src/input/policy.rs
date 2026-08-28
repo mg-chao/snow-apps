@@ -24,7 +24,7 @@ impl Editor {
                 clear_selection_on_activate: true,
                 empty_canvas_action: ToolEmptyCanvasAction::CreateRectangle,
                 allow_shift_toggle: true,
-                default_cursor: CursorStyle::Default,
+                default_cursor: CursorStyle::Crosshair,
             },
             ActiveTool::Arrow => ToolPolicy {
                 selection_scope: ToolSelectionScope::ArrowOnly,
@@ -180,6 +180,14 @@ impl Editor {
 #[cfg(test)]
 mod line_policy_tests {
     use super::*;
+
+    #[test]
+    fn shape_uses_a_crosshair_creation_cursor() {
+        assert_eq!(
+            Editor::tool_policy_for(ActiveTool::Shape).default_cursor,
+            CursorStyle::Crosshair
+        );
+    }
 
     #[test]
     fn arrow_and_line_creation_scopes_are_distinct() {

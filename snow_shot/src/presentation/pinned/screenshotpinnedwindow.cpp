@@ -1491,7 +1491,7 @@ bool ScreenshotPinnedWindow::present(const Config& config) {
                     if (active) {
                         m_canvas->setFocus(Qt::OtherFocusReason);
                     } else {
-                        m_canvas->unsetCursor();
+                        m_canvas->clearCursorForLayer(SnowCanvasCursorLayer::Host);
                     }
                 }
                 if (m_recognitionContent != nullptr) {
@@ -1781,9 +1781,10 @@ bool ScreenshotPinnedWindow::eventFilter(QObject* watched, QEvent* event) {
                 m_displayOcrPresentation->textPositionAt(canvasPosition, true));
             m_screenshotRenderer->updateOcrSelection();
         }
-        m_canvas->setCursor(m_displayOcrPresentation->lineAt(canvasPosition) >= 0
-                                ? Qt::IBeamCursor
-                                : Qt::ArrowCursor);
+        m_canvas->setCursorForLayer(
+            SnowCanvasCursorLayer::Host,
+            QCursor(m_displayOcrPresentation->lineAt(canvasPosition) >= 0 ? Qt::IBeamCursor
+                                                                         : Qt::ArrowCursor));
         mouseEvent->accept();
         return true;
     } else if (event->type() == QEvent::MouseButtonRelease) {
@@ -3884,7 +3885,7 @@ void ScreenshotPinnedWindow::updateWindowDragCursor(const QPoint& position) {
 void ScreenshotPinnedWindow::setWindowDragCursor(Qt::CursorShape shape) {
     const QCursor cursor(shape);
     if (m_canvas != nullptr) {
-        m_canvas->setCursor(cursor);
+        m_canvas->setCursorForLayer(SnowCanvasCursorLayer::Host, cursor);
     }
     setCursor(cursor);
     if (QWindow* handle = windowHandle()) {
@@ -3898,7 +3899,7 @@ void ScreenshotPinnedWindow::clearWindowDragCursor() {
         return;
     }
     if (m_canvas != nullptr) {
-        m_canvas->unsetCursor();
+        m_canvas->clearCursorForLayer(SnowCanvasCursorLayer::Host);
     }
     unsetCursor();
     if (QWindow* handle = windowHandle()) {

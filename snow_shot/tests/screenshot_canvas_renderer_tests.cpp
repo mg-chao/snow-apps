@@ -2910,6 +2910,39 @@ void overlayCanvasesAreDisabledUntilCanvasInteractionIsEnabled() {
             "activating a non-drawing tool must disable every reusable overlay canvas");
 }
 
+void canvasCursorLayersKeepToolCursorAfterScreenshotSelection() {
+    SnowCanvasWidget toolCanvas;
+    require(toolCanvas.setCanvasTool(SnowCanvasTool::Shape),
+            "the shape cursor test should activate the shape tool");
+    require(toolCanvas.cursor().shape() == Qt::CrossCursor,
+            "the shape tool should publish a crosshair cursor immediately");
+
+    NoopOverlayEventSink eventSink;
+    auto* canvas = new SnowCanvasWidget;
+    ScreenshotOverlayWindow overlay(eventSink, canvas);
+    CapturedDisplayModel display;
+    display.active = true;
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(display, &overlay);
+    ScreenshotOverlayCanvasPresenter presenter({});
+
+    canvas->setCursorForLayer(SnowCanvasCursorLayer::CanvasTool, QCursor(Qt::IBeamCursor));
+    require(canvas->cursor().shape() == Qt::IBeamCursor,
+            "the canvas tool cursor should be applied to the widget");
+
+    presenter.updateOverlayCursors(displays, true, false);
+    require(canvas->cursor().shape() == Qt::CrossCursor,
+            "the screenshot selection cursor should override the canvas tool cursor");
+
+    canvas->setCursorForLayer(SnowCanvasCursorLayer::CanvasTool, QCursor(Qt::ArrowCursor));
+    require(canvas->cursor().shape() == Qt::CrossCursor,
+            "canvas tool updates must not contend with an active screenshot cursor");
+
+    presenter.updateOverlayCursors(displays, false, false);
+    require(canvas->cursor().shape() == Qt::ArrowCursor,
+            "clearing the screenshot cursor should reveal the latest canvas tool cursor");
+}
+
 void overlayPresenterRespectsSelectionHandleVisibility() {
     NoopOverlayEventSink eventSink;
     auto* canvas = new SnowCanvasWidget;
@@ -2977,6 +3010,10 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--guide-line-initialization"))) {
         guideLinesInitializeFromGlobalCursorPosition();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--cursor-layer-priority"))) {
+        canvasCursorLayersKeepToolCursorAfterScreenshotSelection();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--screenshot-ui-preferences"))) {
@@ -3065,6 +3102,7 @@ int main(int argc, char** argv) {
     canvasWheelZoomCanBeDisabled();
     disabledCanvasBlocksWidgetLevelToolInput();
     overlayCanvasesAreDisabledUntilCanvasInteractionIsEnabled();
+    canvasCursorLayersKeepToolCursorAfterScreenshotSelection();
     overlayPresenterRespectsSelectionHandleVisibility();
     resettingDisplaySessionEditingStateResetsEveryCanvas();
     screenshotUiPreferencesNormalizeAndApplyPickerVisibilityPolicies();

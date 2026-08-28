@@ -1,5 +1,6 @@
 #include "snow_canvas_interaction.h"
 
+#include "snow_canvas_cursor_controller.h"
 #include "snow_canvas_input_adapter.h"
 
 #include <QWidget>
@@ -14,26 +15,29 @@ std::uint32_t Controller::capturedPointerId() const {
     return m_capturedPointerId;
 }
 
-void Controller::setEnabled(QWidget& widget, bool enabled) {
+void Controller::setEnabled(QWidget& widget, SnowCanvasCursorController& cursorController,
+                            bool enabled) {
     if (m_enabled == enabled) {
         return;
     }
 
     m_enabled = enabled;
     if (!m_enabled) {
-        clearTransientState(widget);
+        clearTransientState(widget, cursorController);
     }
 }
 
-void Controller::clearTransientState(QWidget& widget) {
+void Controller::clearTransientState(QWidget& widget,
+                                     SnowCanvasCursorController& cursorController) {
     if (m_capturedPointerId != 0) {
         widget.releaseMouse();
         m_capturedPointerId = 0;
     }
-    widget.unsetCursor();
+    cursorController.clearCursor(SnowCanvasCursorLayer::CanvasTool);
 }
 
-void Controller::applyOutput(QWidget& widget, const SnowInteractionOutput& output) {
+void Controller::applyOutput(QWidget& widget, SnowCanvasCursorController& cursorController,
+                             const SnowInteractionOutput& output) {
     if (!m_enabled) {
         return;
     }
@@ -57,8 +61,9 @@ void Controller::applyOutput(QWidget& widget, const SnowInteractionOutput& outpu
     }
 
     if (output.cursor_kind == SNOW_CURSOR_SET) {
-        widget.setCursor(snow_canvas_input::cursorForSnowCursor(output.cursor_style,
-                                                                widget.devicePixelRatioF()));
+        cursorController.setCursor(
+            SnowCanvasCursorLayer::CanvasTool,
+            snow_canvas_input::cursorForSnowCursor(output.cursor_style, widget.devicePixelRatioF()));
     }
 }
 

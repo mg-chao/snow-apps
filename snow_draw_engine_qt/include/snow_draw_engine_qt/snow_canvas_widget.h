@@ -12,6 +12,7 @@
 
 #include "snow_draw_engine_qt/snow_canvas_types.h"
 
+class QCursor;
 class QEnterEvent;
 class QEvent;
 class QFocusEvent;
@@ -40,6 +41,9 @@ class SnowCanvasWidget : public QWidget {
 
     SnowCanvasTool canvasTool() const;
     bool setCanvasTool(SnowCanvasTool tool);
+
+    void setCursorForLayer(SnowCanvasCursorLayer layer, const QCursor& cursor);
+    void clearCursorForLayer(SnowCanvasCursorLayer layer);
 
     SnowCanvasStyleToolbarState canvasStyleToolbarState() const;
     SnowCanvasSerialNumberToolbarState serialNumberToolbarState() const;

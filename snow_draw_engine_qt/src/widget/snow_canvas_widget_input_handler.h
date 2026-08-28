@@ -9,6 +9,7 @@
 
 class QEvent;
 class QWidget;
+class SnowCanvasCursorController;
 
 class SnowCanvasWidgetInputHandler final {
   public:
@@ -34,7 +35,7 @@ class SnowCanvasWidgetInputHandler final {
         ProcessResult process;
     };
 
-    explicit SnowCanvasWidgetInputHandler(QWidget& widget);
+    SnowCanvasWidgetInputHandler(QWidget& widget, SnowCanvasCursorController& cursorController);
 
     bool interactionEnabled() const;
     void setInteractionEnabled(bool enabled);
@@ -46,5 +47,6 @@ class SnowCanvasWidgetInputHandler final {
 
   private:
     QWidget& m_widget;
+    SnowCanvasCursorController& m_cursorController;
     snow_canvas_interaction::Controller m_interaction;
 };

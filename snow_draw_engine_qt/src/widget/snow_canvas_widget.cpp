@@ -3,6 +3,7 @@
 #include "icon_registry.h"
 
 #include "snow_canvas_commands.h"
+#include "snow_canvas_cursor_controller.h"
 #include "snow_canvas_changed_viewports.h"
 #include "snow_canvas_compositor.h"
 #include "snow_canvas_display_cache.h"
@@ -66,6 +67,30 @@
 #include <vector>
 
 namespace {
+
+std::optional<QCursor> baselineCursorForCanvasTool(SnowCanvasTool tool) {
+    switch (tool) {
+    case SnowCanvasTool::Shape:
+    case SnowCanvasTool::Arrow:
+    case SnowCanvasTool::Line:
+    case SnowCanvasTool::FreeDraw:
+    case SnowCanvasTool::RectangleHighlight:
+    case SnowCanvasTool::RectangleFilter:
+    case SnowCanvasTool::PenHighlight:
+    case SnowCanvasTool::PenFilter:
+    case SnowCanvasTool::Spotlight:
+    case SnowCanvasTool::SerialNumber:
+        return QCursor(Qt::CrossCursor);
+    case SnowCanvasTool::Eraser:
+        return QCursor(Qt::BlankCursor);
+    case SnowCanvasTool::Text:
+        return QCursor(Qt::IBeamCursor);
+    case SnowCanvasTool::Select:
+    case SnowCanvasTool::Watermark:
+    default:
+        return std::nullopt;
+    }
+}
 
 bool hasExposedRect(const QRegion& exposedRegion, const QRect& widgetRect) {
     return !exposedRegion.boundingRect().intersected(widgetRect).isEmpty();
@@ -296,10 +321,12 @@ void accept(QKeyEvent& event) {
 
 struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     explicit Impl(SnowCanvasWidget& widget)
-        : widget(widget), inputHandler(widget), textInteraction(widget) {}
+        : widget(widget), cursorController(widget), inputHandler(widget, cursorController),
+          textInteraction(widget, cursorController) {}
 
     Impl(SnowCanvasWidget& widget, SnowCanvasRuntime& runtime)
-        : widget(widget), runtimeBinding(runtime), inputHandler(widget), textInteraction(widget) {}
+        : widget(widget), runtimeBinding(runtime), cursorController(widget),
+          inputHandler(widget, cursorController), textInteraction(widget, cursorController) {}
 
     void initializeWidget();
     void initializeViewport();
@@ -322,6 +349,8 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
 
     SnowCanvasTool canvasTool() const;
     bool setCanvasTool(SnowCanvasTool tool);
+    void setCursorForLayer(SnowCanvasCursorLayer layer, const QCursor& cursor);
+    void clearCursorForLayer(SnowCanvasCursorLayer layer);
     SnowCanvasStyleToolbarState canvasStyleToolbarState() const;
     SnowCanvasSerialNumberToolbarState serialNumberToolbarState() const;
     SnowCanvasWatermarkConfig canvasWatermarkConfig() const;
@@ -449,6 +478,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
 
     SnowCanvasWidget& widget;
     SnowCanvasWidgetRuntimeBinding runtimeBinding;
+    SnowCanvasCursorController cursorController;
     SnowCanvasWidgetInputHandler inputHandler;
     SnowCanvasWidgetDisplayState displayState;
     QWidget* serialNumberToolbar = nullptr;
@@ -792,6 +822,23 @@ bool SnowCanvasWidget::Impl::setCanvasTool(SnowCanvasTool tool) {
 
 bool SnowCanvasWidget::setCanvasTool(SnowCanvasTool tool) {
     return m_impl->setCanvasTool(tool);
+}
+
+void SnowCanvasWidget::Impl::setCursorForLayer(SnowCanvasCursorLayer layer,
+                                               const QCursor& cursor) {
+    cursorController.setCursor(layer, cursor);
+}
+
+void SnowCanvasWidget::setCursorForLayer(SnowCanvasCursorLayer layer, const QCursor& cursor) {
+    m_impl->setCursorForLayer(layer, cursor);
+}
+
+void SnowCanvasWidget::Impl::clearCursorForLayer(SnowCanvasCursorLayer layer) {
+    cursorController.clearCursor(layer);
+}
+
+void SnowCanvasWidget::clearCursorForLayer(SnowCanvasCursorLayer layer) {
+    m_impl->clearCursorForLayer(layer);
 }
 
 SnowCanvasStyleToolbarState SnowCanvasWidget::Impl::canvasStyleToolbarState() const {
@@ -1929,11 +1976,12 @@ void SnowCanvasWidget::Impl::emitChangedStateSignals(const snow_canvas_state::Ch
 }
 
 void SnowCanvasWidget::Impl::applyCanvasToolCursor(SnowCanvasTool tool) {
-    if (tool == SnowCanvasTool::Text) {
-        widget.setCursor(Qt::IBeamCursor);
+    const std::optional<QCursor> cursor = baselineCursorForCanvasTool(tool);
+    if (cursor.has_value()) {
+        cursorController.setCursor(SnowCanvasCursorLayer::CanvasTool, *cursor);
         return;
     }
-    widget.unsetCursor();
+    cursorController.clearCursor(SnowCanvasCursorLayer::CanvasTool);
 }
 
 void SnowCanvasWidget::Impl::refocusWidget() {

@@ -2,6 +2,7 @@
 #include "snow_canvas_text_editor_input.h"
 #include "snow_canvas_text_editor_session.h"
 #include "snow_canvas_text_editor_view.h"
+#include "snow_canvas_cursor_controller.h"
 #include "snow_canvas_text.h"
 #include "snow_canvas_text_draft.h"
 #include "snow_canvas_text_edit_target.h"
@@ -937,7 +938,8 @@ void textEditorCaretBlinksResetsAndHonorsSystemFlashTime() {
     const SnowTextElementInfo info =
         snow_canvas_text::newTextInfoAt(QPointF(0.0, 0.0), editorHost.font(), style);
 
-    SnowCanvasWidgetTextInteraction interaction(editorHost);
+    SnowCanvasCursorController cursorController(editorHost);
+    SnowCanvasWidgetTextInteraction interaction(editorHost, cursorController);
     require(interaction.beginForElement(
                 info, displayCache, QPointF(surfaceSize.width() / 2.0, surfaceSize.height() / 2.0),
                 &style, false),
@@ -1371,7 +1373,8 @@ void textEditorActivationPreservesSelectToolSelectionBox() {
             "selection box consistency test should synchronize the text tool");
 
     QWidget editorHost;
-    SnowCanvasWidgetTextInteraction interaction(editorHost);
+    SnowCanvasCursorController cursorController(editorHost);
+    SnowCanvasWidgetTextInteraction interaction(editorHost, cursorController);
     const SnowCanvasWidgetTextInteraction::BeginResult beginResult = interaction.beginAt(
         runtime.get(), viewport.get(), displayCache, QPointF(300.0, 200.0), SnowTextStyle{}, false);
     require(beginResult.started, "selection box consistency test should activate text editing");
@@ -1461,7 +1464,8 @@ void newTextDraftClearsPreviouslySelectedText() {
             "new text selection test should synchronize the selected text");
 
     QWidget editorHost;
-    SnowCanvasWidgetTextInteraction interaction(editorHost);
+    SnowCanvasCursorController cursorController(editorHost);
+    SnowCanvasWidgetTextInteraction interaction(editorHost, cursorController);
     const SnowCanvasWidgetTextInteraction::BeginResult beginResult = interaction.beginAt(
         runtime.get(), viewport.get(), displayCache, QPointF(500.0, 300.0), SnowTextStyle{}, true);
     require(beginResult.started, "blank canvas press should begin a new text draft");
@@ -1609,7 +1613,8 @@ void textEditorDoesNotSynthesizeSelectionControlsWithoutEngineOverlay() {
     require(target.has_value(), "canonical text selection test should resolve the created text");
 
     QWidget editorHost;
-    SnowCanvasWidgetTextInteraction interaction(editorHost);
+    SnowCanvasCursorController cursorController(editorHost);
+    SnowCanvasWidgetTextInteraction interaction(editorHost, cursorController);
     require(
         interaction.beginForElement(*target, displayCache, QPointF(100.0, 100.0), nullptr, false),
         "canonical text selection test should begin an existing text edit");

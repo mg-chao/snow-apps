@@ -136,13 +136,19 @@ bool isTitleBarDragArea(QWidget* titleBar) {
         return false;
     }
 
-    const QPoint localPos = titleBar->mapFromGlobal(QCursor::pos());
+    const QPoint globalPos = QCursor::pos();
+    const QPoint localPos = titleBar->mapFromGlobal(globalPos);
     if (!titleBar->rect().contains(localPos)) {
         return false;
     }
 
-    const QWidget* const child = titleBar->childAt(localPos);
-    return child == nullptr || child == titleBar;
+    QWidget* const window = titleBar->window();
+    if (window == nullptr) {
+        return false;
+    }
+
+    const QWidget* const hitWidget = window->childAt(window->mapFromGlobal(globalPos));
+    return hitWidget == titleBar || (hitWidget == nullptr && window == titleBar);
 }
 
 bool handleNcHitTest(QWidget* titleBar, const MSG* msg, qintptr* result) {

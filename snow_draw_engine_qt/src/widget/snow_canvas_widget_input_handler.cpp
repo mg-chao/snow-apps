@@ -2,24 +2,27 @@
 
 #include "snow_canvas_event_flow.h"
 #include "snow_canvas_interaction.h"
+#include "snow_canvas_cursor_controller.h"
 
 #include <QEvent>
 #include <QWidget>
 
 #include <utility>
 
-SnowCanvasWidgetInputHandler::SnowCanvasWidgetInputHandler(QWidget& widget) : m_widget(widget) {}
+SnowCanvasWidgetInputHandler::SnowCanvasWidgetInputHandler(
+    QWidget& widget, SnowCanvasCursorController& cursorController)
+    : m_widget(widget), m_cursorController(cursorController) {}
 
 bool SnowCanvasWidgetInputHandler::interactionEnabled() const {
     return m_interaction.isEnabled();
 }
 
 void SnowCanvasWidgetInputHandler::setInteractionEnabled(bool enabled) {
-    m_interaction.setEnabled(m_widget, enabled);
+    m_interaction.setEnabled(m_widget, m_cursorController, enabled);
 }
 
 void SnowCanvasWidgetInputHandler::clearTransientState() {
-    m_interaction.clearTransientState(m_widget);
+    m_interaction.clearTransientState(m_widget, m_cursorController);
 }
 
 SnowCanvasWidgetInputHandler::ProcessResult
@@ -34,7 +37,7 @@ SnowCanvasWidgetInputHandler::process(const Context& context, const SnowInputEve
         return output;
     }
 
-    m_interaction.applyOutput(m_widget, result.output);
+    m_interaction.applyOutput(m_widget, m_cursorController, result.output);
 
     output.success = true;
     output.output = result.output;
@@ -54,7 +57,7 @@ SnowCanvasWidgetInputHandler::processBatch(const Context& context,
     if (!result.success) {
         return output;
     }
-    m_interaction.applyOutput(m_widget, result.output);
+    m_interaction.applyOutput(m_widget, m_cursorController, result.output);
     output.success = true;
     output.output = result.output;
     output.changedViewports = std::move(result.changedViewports);
