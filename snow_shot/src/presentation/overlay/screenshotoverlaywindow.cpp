@@ -1,14 +1,13 @@
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 
 #include "../capture/screenshotcaptureperfinstrumentation.h"
+#include "screenshotoverlayframepresenter.h"
 #include "snow_shot/presentation/screenshotmessageservice.h"
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
 #include "snow_shot/presentation/screenshotoverlayeventsink.h"
 #include "snow_shot/presentation/screenshotscrollingthumbnailwidget.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include <QEvent>
-#include <QCoreApplication>
-#include <QGuiApplication>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
@@ -26,6 +25,16 @@ namespace {
 constexpr int kScrollingThumbnailGap = 8;
 constexpr int kScrollingThumbnailMargin = 8;
 constexpr auto kHistoryLoadingMessageKey = "screenshot-history-loading";
+
+#if defined(SNOW_SHOT_CAPTURE_PERF_INSTRUMENTATION)
+qint64 paintRegionArea(const QRegion& region) {
+    qint64 area = 0;
+    for (const QRect& rect : region) {
+        area += static_cast<qint64>(rect.width()) * static_cast<qint64>(rect.height());
+    }
+    return area;
+}
+#endif
 } // namespace
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -50,6 +59,7 @@ ScreenshotOverlayWindow::ScreenshotOverlayWindow(ScreenshotOverlayEventSink& eve
 
     m_scrollingThumbnail = new ScreenshotScrollingThumbnailWidget(*this);
     m_scrollingThumbnail->hide();
+    m_framePresenter = std::make_unique<ScreenshotOverlayFramePresenter>(*this);
 
     if (m_canvas != nullptr) {
         m_screenshotRenderer = std::make_unique<ScreenshotCanvasRenderer>(*m_canvas);
@@ -381,37 +391,8 @@ void ScreenshotOverlayWindow::restorePresentationCanvas() {
 }
 
 void ScreenshotOverlayWindow::showPreparedFrame() {
-    const bool wasVisible = isVisible();
-    const bool concealFirstPaint = !wasVisible && isWindow() &&
-                                   QGuiApplication::platformName() == QStringLiteral("windows");
-    const qreal previousOpacity = windowOpacity();
-    if (concealFirstPaint) {
-        setWindowOpacity(0.0);
-    }
-
-    SNOW_SHOT_CAPTURE_PERF_SCOPE("presentation.window.sync_reveal");
-    SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.windows_shown", 1);
-    show();
-    SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.show_returned");
-    // show() queues a normal update, but a translucent native window can be
-    // composited from its previous backing surface first. Commit the prepared
-    // frame synchronously before making the window opaque.
-    repaint();
-    QCoreApplication::sendPostedEvents(this, QEvent::UpdateRequest);
-
-#if defined(Q_OS_WIN) || defined(_WIN32)
-    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
-        const HWND hwnd = reinterpret_cast<HWND>(winId());
-        if (hwnd != nullptr) {
-            static_cast<void>(RedrawWindow(hwnd, nullptr, nullptr,
-                                           RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN));
-        }
-    }
-#endif
-    SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.redraw_done");
-
-    if (concealFirstPaint) {
-        setWindowOpacity(previousOpacity);
+    if (m_framePresenter != nullptr) {
+        m_framePresenter->presentPreparedFrame();
     }
 }
 
@@ -432,7 +413,31 @@ void ScreenshotOverlayWindow::initializeScreenshotSurface() {
     m_canvas->setAttribute(Qt::WA_TransparentForMouseEvents, false);
 }
 
+bool ScreenshotOverlayWindow::event(QEvent* event) {
+    if (event == nullptr || event->type() != QEvent::UpdateRequest) {
+        return QWidget::event(event);
+    }
+
+    SNOW_SHOT_CAPTURE_PERF_SCOPE("presentation.window.update_request");
+    SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.window.update_request_events", 1);
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.update_request_begin");
+    const bool handled = QWidget::event(event);
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.update_request_end");
+    return handled;
+}
+
 bool ScreenshotOverlayWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == m_canvas && event != nullptr && event->type() == QEvent::Paint) {
+        SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.window.canvas.paint_dispatches", 1);
+#if defined(SNOW_SHOT_CAPTURE_PERF_INSTRUMENTATION)
+        const auto* paintEvent = static_cast<QPaintEvent*>(event);
+        const QRegion region = paintEvent->region().intersected(m_canvas->rect());
+        SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.window.canvas.dispatch_rects",
+                                       region.rectCount());
+        SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.window.canvas.dispatch_logical_pixels",
+                                       paintRegionArea(region));
+#endif
+    }
     if (watched == m_canvas && handleCanvasEvent(event)) {
         return true;
     }
@@ -457,6 +462,11 @@ bool ScreenshotOverlayWindow::nativeEvent(const QByteArray& eventType, void* mes
     }
 
     const auto* msg = static_cast<const MSG*>(message);
+    if (msg->message == WM_PAINT) {
+        SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.window.native.wm_paint", 1);
+    } else if (msg->message == WM_SYNCPAINT) {
+        SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.window.native.wm_syncpaint", 1);
+    }
     if (msg->message == WM_NCHITTEST) {
         *result = HTCLIENT;
         return true;
@@ -470,7 +480,20 @@ bool ScreenshotOverlayWindow::nativeEvent(const QByteArray& eventType, void* mes
 }
 
 void ScreenshotOverlayWindow::paintEvent(QPaintEvent* event) {
-    const QRect targetRect = event != nullptr ? event->rect().intersected(rect()) : rect();
+    SNOW_SHOT_CAPTURE_PERF_SCOPE("presentation.window.paint_event");
+    SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.window.paint_events", 1);
+    const QRegion paintRegion =
+        event != nullptr ? event->region().intersected(rect()) : QRegion(rect());
+#if defined(SNOW_SHOT_CAPTURE_PERF_INSTRUMENTATION)
+    SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.window.paint_rects", paintRegion.rectCount());
+    SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.window.paint_logical_pixels",
+                                   paintRegionArea(paintRegion));
+    if (paintRegion.contains(rect())) {
+        SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.window.full_paint_events", 1);
+    }
+#endif
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.paint_begin");
+    const QRect targetRect = paintRegion.boundingRect();
     if (testAttribute(Qt::WA_TranslucentBackground) && !targetRect.isEmpty()) {
         QPainter painter(this);
         painter.setCompositionMode(QPainter::CompositionMode_Source);
@@ -478,6 +501,7 @@ void ScreenshotOverlayWindow::paintEvent(QPaintEvent* event) {
     }
 
     QWidget::paintEvent(event);
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.paint_end");
 }
 
 void ScreenshotOverlayWindow::resizeEvent(QResizeEvent* event) {

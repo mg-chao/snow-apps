@@ -1,0 +1,241 @@
+#include "screenshotoverlayframepresenter.h"
+
+#include <QApplication>
+#include <QColor>
+#include <QCoreApplication>
+#include <QGuiApplication>
+#include <QImage>
+#include <QPaintEvent>
+#include <QPainter>
+#include <QScreen>
+#include <QVBoxLayout>
+#include <QWidget>
+
+#if defined(Q_OS_WIN)
+#include <dwmapi.h>
+#include <qt_windows.h>
+#endif
+
+#include <cstdlib>
+#include <iostream>
+
+namespace {
+void require(bool condition, const char* message) {
+    if (!condition) {
+        std::cerr << message << '\n';
+        std::exit(1);
+    }
+}
+
+void revealStrategiesHaveExplicitCommitPlans() {
+    const auto fallback = ScreenshotOverlayRevealStrategy::Legacy;
+    require(
+        ScreenshotOverlayFramePresenter::strategyForName(QByteArrayLiteral("repaint"), fallback) ==
+            ScreenshotOverlayRevealStrategy::SingleRepaint,
+        "the repaint alias should select the single-repaint reveal strategy");
+    require(ScreenshotOverlayFramePresenter::strategyForName(QByteArrayLiteral("invalid"),
+                                                             fallback) == fallback,
+            "an unknown reveal strategy should preserve the requested fallback");
+
+    const ScreenshotOverlayRevealPlan singleRepaint =
+        ScreenshotOverlayFramePresenter::planFor(ScreenshotOverlayRevealStrategy::SingleRepaint);
+    require(!singleRepaint.suppressShowPaint && singleRepaint.repaint &&
+                !singleRepaint.sendPostedUpdate && !singleRepaint.nativeUpdate &&
+                !singleRepaint.nativeInvalidate,
+            "the single-repaint reveal should issue exactly one explicit commit request");
+
+    require(ScreenshotOverlayFramePresenter::strategyForName(
+                QByteArrayLiteral("native-invalidate-suppressed"), fallback) ==
+                ScreenshotOverlayRevealStrategy::NativeInvalidateSuppressed,
+            "the redraw-suppressed native reveal strategy should be selectable by name");
+    const ScreenshotOverlayRevealPlan suppressedNativeInvalidate =
+        ScreenshotOverlayFramePresenter::planFor(
+            ScreenshotOverlayRevealStrategy::NativeInvalidateSuppressed);
+    require(suppressedNativeInvalidate.suppressShowPaint && !suppressedNativeInvalidate.repaint &&
+                !suppressedNativeInvalidate.sendPostedUpdate &&
+                !suppressedNativeInvalidate.nativeUpdate &&
+                suppressedNativeInvalidate.nativeInvalidate,
+            "the redraw-suppressed native reveal should suppress show and commit once");
+
+    const ScreenshotOverlayRevealPlan legacy =
+        ScreenshotOverlayFramePresenter::planFor(ScreenshotOverlayRevealStrategy::Legacy);
+    require(!legacy.suppressShowPaint && legacy.repaint && legacy.sendPostedUpdate &&
+                !legacy.nativeUpdate && legacy.nativeInvalidate,
+            "the legacy ablation should preserve every previous reveal operation");
+}
+
+#if defined(Q_OS_WIN)
+class RevealProbeCanvas final : public QWidget {
+  public:
+    explicit RevealProbeCanvas(QWidget* parent) : QWidget(parent) {}
+
+    void setFrameColor(const QColor& color) {
+        m_color = color;
+        update();
+    }
+
+    void resetPaintCount() {
+        m_paintCount = 0;
+    }
+
+    [[nodiscard]] int paintCount() const {
+        return m_paintCount;
+    }
+
+  protected:
+    void paintEvent(QPaintEvent* event) override {
+        ++m_paintCount;
+        QPainter painter(this);
+        painter.setCompositionMode(QPainter::CompositionMode_Source);
+        painter.fillRect(event->rect(), m_color);
+    }
+
+  private:
+    QColor m_color = Qt::transparent;
+    int m_paintCount = 0;
+};
+
+class RevealProbeWindow final : public QWidget {
+  public:
+    RevealProbeWindow() : m_canvas(new RevealProbeCanvas(this)) {
+        setAttribute(Qt::WA_TranslucentBackground, true);
+        setAttribute(Qt::WA_NoSystemBackground, true);
+        setAttribute(Qt::WA_ShowWithoutActivating, true);
+        setWindowFlags(Qt::FramelessWindowHint | Qt::Tool | Qt::WindowStaysOnTopHint);
+
+        auto* layout = new QVBoxLayout(this);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(0);
+        layout->addWidget(m_canvas);
+    }
+
+    void setFrameColor(const QColor& color) {
+        m_canvas->setFrameColor(color);
+    }
+
+    void resetPaintCount() {
+        m_canvas->resetPaintCount();
+    }
+
+    [[nodiscard]] int paintCount() const {
+        return m_canvas->paintCount();
+    }
+
+  private:
+    RevealProbeCanvas* m_canvas = nullptr;
+};
+
+QPoint nativeGlobalPosition(QWidget& window, const QPoint& localPosition) {
+    const HWND hwnd = reinterpret_cast<HWND>(window.winId());
+    require(hwnd != nullptr, "native reveal test could not access the probe HWND");
+    POINT native{localPosition.x(), localPosition.y()};
+    require(ClientToScreen(hwnd, &native) != FALSE,
+            "native reveal test could not map the probe point to the desktop");
+    return QPoint(native.x, native.y);
+}
+
+COLORREF desktopPixel(const QPoint& position) {
+    HDC screen = GetDC(nullptr);
+    require(screen != nullptr, "native reveal test could not access the desktop DC");
+    const COLORREF pixel = GetPixel(screen, position.x(), position.y());
+    ReleaseDC(nullptr, screen);
+    require(pixel != CLR_INVALID, "native reveal test could not read the desktop pixel");
+    return pixel;
+}
+
+bool colorNear(COLORREF actual, const QColor& expected, int tolerance = 12) {
+    return std::abs(GetRValue(actual) - expected.red()) <= tolerance &&
+           std::abs(GetGValue(actual) - expected.green()) <= tolerance &&
+           std::abs(GetBValue(actual) - expected.blue()) <= tolerance;
+}
+
+void preparedRevealPublishesExactlyOneFreshFrame() {
+    require(QGuiApplication::platformName() == QStringLiteral("windows"),
+            "native reveal test requires the Windows Qt platform");
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "native reveal test requires a primary screen");
+
+    constexpr QSize probeSize(192, 128);
+    const QRect available = screen->availableGeometry();
+    require(available.width() >= probeSize.width() + 64 &&
+                available.height() >= probeSize.height() + 64,
+            "native reveal test requires a 256 by 192 pixel desktop area");
+
+    RevealProbeWindow window;
+    window.setGeometry(QRect(available.topLeft() + QPoint(32, 32), probeSize));
+    static_cast<void>(window.winId());
+
+    const QColor staleColor(194, 33, 71);
+    const QColor preparedColor(20, 173, 109);
+    window.setFrameColor(staleColor);
+    window.show();
+    window.repaint();
+    QApplication::processEvents();
+    require(SUCCEEDED(DwmFlush()), "native reveal test could not flush the initial DWM frame");
+
+    const QPoint samplePosition = nativeGlobalPosition(window, window.rect().center());
+    require(colorNear(desktopPixel(samplePosition), staleColor),
+            "native reveal test could not observe the stale frame fixture");
+
+    window.hide();
+    QApplication::processEvents();
+    window.setFrameColor(preparedColor);
+    window.resetPaintCount();
+
+    ScreenshotOverlayFramePresenter presenter(window);
+    presenter.setStrategyForTesting(ScreenshotOverlayRevealStrategy::NativeInvalidateSuppressed);
+    presenter.presentPreparedFrame();
+    const int immediatePaintCount = window.paintCount();
+    require(SUCCEEDED(DwmFlush()), "native reveal test could not flush the prepared DWM frame");
+    QApplication::processEvents();
+    require(SUCCEEDED(DwmFlush()), "native reveal test could not flush deferred presentation work");
+    const int settledPaintCount = window.paintCount();
+
+    require(window.isVisible(), "prepared reveal left the probe logically hidden");
+    require(IsWindowVisible(reinterpret_cast<HWND>(window.winId())) != FALSE,
+            "prepared reveal left the native probe hidden");
+
+    const COLORREF revealedPixel = desktopPixel(samplePosition);
+    if (!colorNear(revealedPixel, preparedColor)) {
+        std::cerr << "native reveal pixel: rgb(" << static_cast<int>(GetRValue(revealedPixel))
+                  << ',' << static_cast<int>(GetGValue(revealedPixel)) << ','
+                  << static_cast<int>(GetBValue(revealedPixel)) << ")\n";
+    }
+    require(colorNear(revealedPixel, preparedColor),
+            "prepared reveal exposed a stale composited frame");
+    if (immediatePaintCount != 1 || settledPaintCount != 1) {
+        std::cerr << "native reveal paint counts: immediate=" << immediatePaintCount
+                  << ", settled=" << settledPaintCount << '\n';
+    }
+    require(immediatePaintCount == 1 && settledPaintCount == 1,
+            "prepared reveal must publish the frame with exactly one paint event");
+
+    const QColor subsequentColor(47, 91, 213);
+    window.setFrameColor(subsequentColor);
+    QApplication::processEvents();
+    require(SUCCEEDED(DwmFlush()), "native reveal test could not flush a subsequent DWM frame");
+    require(colorNear(desktopPixel(samplePosition), subsequentColor),
+            "prepared reveal left subsequent widget updates unable to publish");
+    require(window.paintCount() == 2,
+            "the first post-reveal update should add exactly one paint event");
+    window.hide();
+}
+#endif
+} // namespace
+
+int main(int argc, char** argv) {
+#if defined(Q_OS_WIN)
+    for (int index = 1; index < argc; ++index) {
+        if (QByteArray(argv[index]) != QByteArrayLiteral("--native-reveal")) {
+            continue;
+        }
+        QApplication application(argc, argv);
+        revealStrategiesHaveExplicitCommitPlans();
+        preparedRevealPublishesExactlyOneFreshFrame();
+        return 0;
+    }
+#endif
+    QCoreApplication application(argc, argv);
+    revealStrategiesHaveExplicitCommitPlans();
+    return 0;
+}

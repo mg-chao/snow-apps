@@ -789,6 +789,8 @@ set(PROJECT_CXX_SOURCES
     src/presentation/selection/screenshotselectiontoolbarwindow.cpp
     src/presentation/selection/screenshotselectiontoolbarwidgets.cpp
     src/presentation/overlay/screenshotoverlaycanvaspresenter.cpp
+    src/presentation/overlay/screenshotoverlaycanvaswidget.cpp
+    src/presentation/overlay/screenshotoverlaycanvaswidget.h
     src/presentation/overlay/screenshotcanvasrenderer.cpp
     src/presentation/overlay/screenshotselectionshadowrenderer.cpp
     src/presentation/overlay/screenshotoverlaycoordinator.cpp
@@ -797,6 +799,8 @@ set(PROJECT_CXX_SOURCES
     src/presentation/overlay/screenshotoverlayshortcutcontroller.cpp
     src/presentation/overlay/screenshotoverlaypool.cpp
     src/presentation/overlay/screenshotoverlayuihost.cpp
+    src/presentation/overlay/screenshotoverlayframepresenter.cpp
+    src/presentation/overlay/screenshotoverlayframepresenter.h
     src/presentation/overlay/screenshotoverlaywindow.cpp
     src/presentation/selector/screenshotselectorserviceclient.cpp
     src/presentation/selector/screenshotselectorcoordinator.cpp
@@ -1675,6 +1679,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/overlay/screenshotcanvasrenderer.cpp
         src/presentation/overlay/screenshotselectionshadowrenderer.cpp
         src/presentation/overlay/screenshotoverlaycanvaspresenter.cpp
+        src/presentation/overlay/screenshotoverlayframepresenter.cpp
+        src/presentation/overlay/screenshotoverlayframepresenter.h
         src/presentation/overlay/screenshotoverlaywindow.cpp
         src/presentation/services/screenshotmessageservice.cpp
         src/presentation/ocr/screenshotocrpresentation.cpp
@@ -1689,6 +1695,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-screenshot-canvas-renderer-tests PRIVATE
         ant_design_qt
         Qt6::Widgets
+        Qt6::QOffscreenIntegrationPlugin
         snow_draw_engine_qt_canvas
     )
     add_test(
@@ -1697,11 +1704,47 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     set_tests_properties(snow-shot-screenshot-canvas-renderer-tests PROPERTIES
         ENVIRONMENT
-            "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+            "QT_QPA_PLATFORM=offscreen"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
+    add_executable(snow-shot-overlay-frame-presenter-tests
+        tests/screenshot_overlay_frame_presenter_tests.cpp
+        src/presentation/overlay/screenshotoverlayframepresenter.cpp
+        src/presentation/overlay/screenshotoverlayframepresenter.h
+    )
+    target_include_directories(snow-shot-overlay-frame-presenter-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/overlay"
+    )
+    target_compile_definitions(snow-shot-overlay-frame-presenter-tests PRIVATE
+        SNOW_SHOT_BENCH_INTERNALS=1
+    )
+    target_link_libraries(snow-shot-overlay-frame-presenter-tests PRIVATE
+        Qt6::Widgets
+    )
+    add_test(
+        NAME snow-shot-overlay-frame-presenter-tests
+        COMMAND snow-shot-overlay-frame-presenter-tests
+    )
+    set_tests_properties(snow-shot-overlay-frame-presenter-tests PROPERTIES
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
     if(WIN32)
+        target_link_libraries(snow-shot-overlay-frame-presenter-tests PRIVATE dwmapi)
+        add_test(
+            NAME snow-shot-overlay-frame-presenter-native-reveal-test
+            COMMAND snow-shot-overlay-frame-presenter-tests --native-reveal
+        )
+        set_tests_properties(snow-shot-overlay-frame-presenter-native-reveal-test PROPERTIES
+            LABELS "e2e;interactive;windows"
+            RUN_SERIAL TRUE
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
         add_test(
             NAME snow-shot-scrolling-thumbnail-native-presentation-test
             COMMAND snow-shot-screenshot-canvas-renderer-tests
@@ -3046,6 +3089,12 @@ if(WIN32)
     set(ENV{PKG_CONFIG_PATH} "${_SNOW_SHOT_SAVED_PKG_CONFIG_PATH}")
     unset(_SNOW_SHOT_SAVED_PKG_CONFIG_PATH)
     target_link_libraries(snow_shot PRIVATE PkgConfig::SNOW_SHOT_FFMPEG)
+    if(TARGET snow-shot-screenshot-canvas-renderer-tests)
+        target_link_libraries(snow-shot-screenshot-canvas-renderer-tests PRIVATE
+            onnxruntime::onnxruntime
+            PkgConfig::SNOW_SHOT_FFMPEG
+        )
+    endif()
     if(EXISTS "${SNOW_SHOT_FFMPEG_BIN_DIR}" AND NOT SNOW_SHOT_RELEASE_STATIC)
         set(SNOW_SHOT_FFMPEG_DLL_PATTERNS
             "avcodec-*.dll"

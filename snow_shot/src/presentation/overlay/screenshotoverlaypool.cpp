@@ -1,6 +1,6 @@
 #include "snow_shot/presentation/screenshotoverlaypool.h"
 
-#include "snow_draw_engine_qt/snow_canvas_widget.h"
+#include "screenshotoverlaycanvaswidget.h"
 #include "snow_shot/presentation/screenshotcapturedisplaymodelreconciler.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotoverlayeventsink.h"
@@ -10,13 +10,12 @@
 #include <algorithm>
 #include <utility>
 
-ScreenshotOverlayPool::ScreenshotOverlayPool(ScreenshotOverlayEventSink& eventSink,
-                                             SnowCanvasRuntime& canvasRuntime,
-                                             snow_shot::presentation::WindowShortcutManager&
-                                                 shortcutManager,
-                                             ScreenshotOverlayPoolCallbacks callbacks)
-    : m_eventSink(eventSink), m_canvasRuntime(canvasRuntime),
-      m_shortcutManager(shortcutManager), m_callbacks(std::move(callbacks)) {}
+ScreenshotOverlayPool::ScreenshotOverlayPool(
+    ScreenshotOverlayEventSink& eventSink, SnowCanvasRuntime& canvasRuntime,
+    snow_shot::presentation::WindowShortcutManager& shortcutManager,
+    ScreenshotOverlayPoolCallbacks callbacks)
+    : m_eventSink(eventSink), m_canvasRuntime(canvasRuntime), m_shortcutManager(shortcutManager),
+      m_callbacks(std::move(callbacks)) {}
 
 void ScreenshotOverlayPool::prewarmDisplayPool(ScreenshotDisplaySession& displaySession,
                                                int displayCount) {
@@ -74,7 +73,7 @@ ScreenshotOverlayWindow*
 ScreenshotOverlayPool::ensureOverlay(ScreenshotOverlayWindow* overlay) const {
     const bool created = overlay == nullptr;
     if (created) {
-        auto* canvas = new SnowCanvasWidget(m_canvasRuntime);
+        auto* canvas = new ScreenshotOverlayCanvasWidget(m_canvasRuntime);
         overlay = new ScreenshotOverlayWindow(m_eventSink, canvas);
         m_shortcutManager.addScopeWindow(overlay);
         static_cast<void>(overlay->winId());

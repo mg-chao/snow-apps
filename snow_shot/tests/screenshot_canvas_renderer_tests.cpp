@@ -12,7 +12,6 @@
 #include "snow_shot/presentation/screenshotscrollingthumbnailwidget.h"
 #include "snow_shot/presentation/screenshotshortcuthints.h"
 #include "snow_shot/presentation/screenshotuipreferences.h"
-
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "widgets/message.h"
@@ -275,8 +274,7 @@ QImage renderMaterializedImage(const QImage& source, const QSize& targetSize,
 QImage verticalRasterPattern(const QSize& size) {
     QImage image(size, QImage::Format_ARGB32_Premultiplied);
     for (int y = 0; y < image.height(); ++y) {
-        const QRgb pixel = qRgb((y * 17 + 3) % 256, (y * 29 + 11) % 256,
-                                (y * 47 + 19) % 256);
+        const QRgb pixel = qRgb((y * 17 + 3) % 256, (y * 29 + 11) % 256, (y * 47 + 19) % 256);
         std::fill_n(reinterpret_cast<QRgb*>(image.scanLine(y)), image.width(), pixel);
     }
     return image;
@@ -287,8 +285,7 @@ QImage horizontalRasterPattern(const QSize& size) {
     for (int y = 0; y < image.height(); ++y) {
         auto* row = reinterpret_cast<QRgb*>(image.scanLine(y));
         for (int x = 0; x < image.width(); ++x) {
-            row[x] = qRgb((x * 13 + 5) % 256, (x * 31 + 7) % 256,
-                          (x * 43 + 23) % 256);
+            row[x] = qRgb((x * 13 + 5) % 256, (x * 31 + 7) % 256, (x * 43 + 23) % 256);
         }
     }
     return image;
@@ -306,8 +303,7 @@ QImage renderWithSafeReferenceTiles(const QImage& source, const QSize& targetSiz
     constexpr int kTargetTileSize = 100;
     for (int targetTop = 0; targetTop < targetSize.height(); targetTop += kTargetTileSize) {
         const int targetBottom = qMin(targetTop + kTargetTileSize, targetSize.height());
-        for (int targetLeft = 0; targetLeft < targetSize.width();
-             targetLeft += kTargetTileSize) {
+        for (int targetLeft = 0; targetLeft < targetSize.width(); targetLeft += kTargetTileSize) {
             const int targetRight = qMin(targetLeft + kTargetTileSize, targetSize.width());
             const QRectF targetTile(targetLeft, targetTop, targetRight - targetLeft,
                                     targetBottom - targetTop);
@@ -319,8 +315,7 @@ QImage renderWithSafeReferenceTiles(const QImage& source, const QSize& targetSiz
                 static_cast<qreal>(source.width()) * sampledTarget.left() / targetSize.width(),
                 static_cast<qreal>(source.height()) * sampledTarget.top() / targetSize.height(),
                 static_cast<qreal>(source.width()) * sampledTarget.width() / targetSize.width(),
-                static_cast<qreal>(source.height()) * sampledTarget.height() /
-                    targetSize.height());
+                static_cast<qreal>(source.height()) * sampledTarget.height() / targetSize.height());
             const QRect sourceBounds = sourceTile.toAlignedRect().intersected(source.rect());
             const QImage sourceWindow = source.copy(sourceBounds);
             require(!sourceWindow.isNull(), "the safe reference source tile should be available");
@@ -354,15 +349,15 @@ void largeRasterSourceExtentsRenderWithoutFixedPointWrap() {
 
     const QImage tall = verticalRasterPattern(QSize(5, kLargeDimension));
     const QImage expectedTall = renderWithSafeReferenceTiles(tall, QSize(5, kScaledDimension));
-    const QImage actualTall =
-        renderMaterializedImage(tall, expectedTall.size(), QRegion(expectedTall.rect()), background);
+    const QImage actualTall = renderMaterializedImage(tall, expectedTall.size(),
+                                                      QRegion(expectedTall.rect()), background);
     require(actualTall == expectedTall,
             "a source taller than the raster fixed-point range should downscale without wrapping");
 
     const QImage wide = horizontalRasterPattern(QSize(kLargeDimension, 5));
     const QImage expectedWide = renderWithSafeReferenceTiles(wide, QSize(kScaledDimension, 5));
-    const QImage actualWide =
-        renderMaterializedImage(wide, expectedWide.size(), QRegion(expectedWide.rect()), background);
+    const QImage actualWide = renderMaterializedImage(wide, expectedWide.size(),
+                                                      QRegion(expectedWide.rect()), background);
     require(actualWide == expectedWide,
             "a source wider than the raster fixed-point range should downscale without wrapping");
 }
@@ -388,8 +383,8 @@ void extremeImageDownscaleUsesSafePreprocessing() {
 void indexedLargeImageWindowsPreserveTheirColorTable() {
     constexpr int kLargeDimension = 70000;
     QImage source(QSize(4, kLargeDimension), QImage::Format_Indexed8);
-    source.setColorTable({qRgb(17, 31, 47), qRgb(83, 97, 113), qRgb(149, 163, 179),
-                          qRgb(211, 223, 239)});
+    source.setColorTable(
+        {qRgb(17, 31, 47), qRgb(83, 97, 113), qRgb(149, 163, 179), qRgb(211, 223, 239)});
     for (int y = 0; y < source.height(); ++y) {
         std::fill_n(source.scanLine(y), source.width(), static_cast<uchar>((y / 7) % 4));
     }
@@ -434,12 +429,10 @@ void ordinaryExposedImageRenderingRemainsPixelEquivalent() {
     QPainter expectedPainter(&expected);
     expectedPainter.setRenderHint(QPainter::SmoothPixmapTransform, true);
     expectedPainter.setClipRegion(exposed);
-    expectedPainter.drawImage(QRectF(QPointF(), QSizeF(targetSize)), source,
-                              QRectF(source.rect()));
+    expectedPainter.drawImage(QRectF(QPointF(), QSizeF(targetSize)), source, QRectF(source.rect()));
     expectedPainter.end();
 
-    const QImage actual =
-        renderMaterializedImage(source, targetSize, exposed, background, true);
+    const QImage actual = renderMaterializedImage(source, targetSize, exposed, background, true);
     require(actual == expected,
             "ordinary exposed image rendering should remain pixel equivalent to one drawImage");
 }
@@ -471,8 +464,9 @@ void tileCachePaintersRenderPastTheRasterCoordinateLimit() {
                 std::abs(actualColor.green() - expectedColor.green()) <= 1 &&
                 std::abs(actualColor.blue() - expectedColor.blue()) <= 1 &&
                 std::abs(actualColor.alpha() - expectedColor.alpha()) <= 1;
-            require(withinTileCompositingTolerance,
-                    "translated tile painters should preserve pixels above source coordinate 65535");
+            require(
+                withinTileCompositingTolerance,
+                "translated tile painters should preserve pixels above source coordinate 65535");
         }
     }
     canvas.setCustomRenderer(nullptr);
@@ -584,7 +578,7 @@ void screenshotUiPreferencesNormalizeAndApplyPickerVisibilityPolicies() {
     require(preferences.normalized().shortcutHintOpacity == 0.0,
             "shortcut hint opacity must normalize to its minimum");
     require(screenshotColorPickerDisplayModeFromString(QStringLiteral("always_show")) ==
-                ScreenshotColorPickerDisplayMode::AlwaysShow &&
+                    ScreenshotColorPickerDisplayMode::AlwaysShow &&
                 screenshotColorPickerDisplayModeFromString(QStringLiteral("always_hide")) ==
                     ScreenshotColorPickerDisplayMode::AlwaysHide &&
                 screenshotColorPickerDisplayModeFromString(QStringLiteral("unknown")) ==
@@ -595,8 +589,8 @@ void screenshotUiPreferencesNormalizeAndApplyPickerVisibilityPolicies() {
     state.manualSelecting = true;
     state.hasSelection = true;
     state.pointInsideSelection = false;
-    require(screenshotColorPickerOpacity(
-                ScreenshotColorPickerDisplayMode::HideOutsideSelection, state) == 0.0,
+    require(screenshotColorPickerOpacity(ScreenshotColorPickerDisplayMode::HideOutsideSelection,
+                                         state) == 0.0,
             "hide-outside-selection mode must hide the picker outside the selection");
     require(screenshotColorPickerOpacity(ScreenshotColorPickerDisplayMode::AlwaysShow, state) ==
                 1.0,
@@ -640,13 +634,11 @@ void shortcutHintStagesUseTheExactRequiredLines() {
     hintContext.activeTool = ScreenshotActiveTool::Move;
 
     hintContext.captureMode = ScreenshotCaptureMode::IntelligentSelecting;
-    const ScreenshotShortcutHintMode smartMode =
-        screenshotShortcutHintModeForContext(hintContext);
+    const ScreenshotShortcutHintMode smartMode = screenshotShortcutHintModeForContext(hintContext);
     const QStringList smartContextLines = screenshotShortcutHintLines(hintContext);
 
     hintContext.captureMode = ScreenshotCaptureMode::ManualSelecting;
-    const ScreenshotShortcutHintMode manualMode =
-        screenshotShortcutHintModeForContext(hintContext);
+    const ScreenshotShortcutHintMode manualMode = screenshotShortcutHintModeForContext(hintContext);
     const QStringList manualContextLines = screenshotShortcutHintLines(hintContext);
 
     hintContext.captureMode = ScreenshotCaptureMode::MovingSelection;
@@ -729,8 +721,7 @@ void cursorAndMonitorGuideLinesUseDashedAndSolidPixels() {
     cursorGuide.fill(Qt::transparent);
     {
         QPainter painter(&cursorGuide);
-        paintScreenshotGuideLineCrosshair(painter, bounds, QPointF(13.0, 19.0), cursorColor,
-                                          true);
+        paintScreenshotGuideLineCrosshair(painter, bounds, QPointF(13.0, 19.0), cursorColor, true);
     }
     const int dashedColumnPixels = maximumPixelsOfColorInAnyColumn(cursorGuide, cursorColor);
     require(dashedColumnPixels > 0 && dashedColumnPixels < kGuideSize - 2,
@@ -749,8 +740,8 @@ void cursorAndMonitorGuideLinesUseDashedAndSolidPixels() {
     disabledGuide.fill(Qt::transparent);
     {
         QPainter painter(&disabledGuide);
-        paintScreenshotGuideLineCrosshair(painter, bounds, bounds.center(),
-                                          QColor(10, 20, 30, 0), true);
+        paintScreenshotGuideLineCrosshair(painter, bounds, bounds.center(), QColor(10, 20, 30, 0),
+                                          true);
     }
     for (int y = 0; y < disabledGuide.height(); ++y) {
         for (int x = 0; x < disabledGuide.width(); ++x) {
@@ -922,8 +913,8 @@ void onlyTheInputOverlayOwnsGuideLines() {
     require(!firstRenderer->guideLinesVisible() && !secondRenderer->guideLinesVisible(),
             "guide lines must clear outside smart and manual selection");
 
-    presenter.updateGuideLines(displays, &firstOverlay, QPointF(12.0, 14.0), true,
-                               Qt::transparent, Qt::transparent);
+    presenter.updateGuideLines(displays, &firstOverlay, QPointF(12.0, 14.0), true, Qt::transparent,
+                               Qt::transparent);
     require(!firstRenderer->guideLinesVisible() && !secondRenderer->guideLinesVisible(),
             "transparent configured colors must keep every overlay guide-free");
 }
@@ -2581,16 +2572,17 @@ void scrollingThumbnailPublishesAcceptedFrameToNativeSurface(bool excludedFromCa
     QApplication::processEvents();
 
     const QPoint samplePosition = nativeGlobalPosition(
-        overlay, thumbnail->mapTo(&overlay,
-                                  QPoint(thumbnail->width() / 2, thumbnail->height() - 20)));
+        overlay,
+        thumbnail->mapTo(&overlay, QPoint(thumbnail->width() / 2, thumbnail->height() - 20)));
     const COLORREF initialPixel = desktopPixel(samplePosition);
     if (!colorNear(initialPixel, initialColor)) {
         std::cerr << "native thumbnail initial pixel at " << samplePosition.x() << ','
                   << samplePosition.y() << ": rgb(" << static_cast<int>(GetRValue(initialPixel))
                   << ',' << static_cast<int>(GetGValue(initialPixel)) << ','
-                  << static_cast<int>(GetBValue(initialPixel)) << "), thumbnail="
-                  << thumbnail->geometry().x() << ',' << thumbnail->geometry().y() << ' '
-                  << thumbnail->width() << 'x' << thumbnail->height() << '\n';
+                  << static_cast<int>(GetBValue(initialPixel))
+                  << "), thumbnail=" << thumbnail->geometry().x() << ','
+                  << thumbnail->geometry().y() << ' ' << thumbnail->width() << 'x'
+                  << thumbnail->height() << '\n';
     }
     require(colorNear(initialPixel, initialColor),
             "native thumbnail test could not observe the initial composed preview");
@@ -2910,14 +2902,14 @@ void overlayPresenterRespectsSelectionHandleVisibility() {
 
     ScreenshotOverlayCanvasPresenter presenter({});
     const QRectF selection(10.0, 10.0, 60.0, 40.0);
-    presenter.updateOverlayState(displays, selection, 0, 0, QColor(0x33, 0x33, 0x33),
-                                 false, false, false, false, false);
+    presenter.updateOverlayState(displays, selection, 0, 0, QColor(0x33, 0x33, 0x33), false, false,
+                                 false, false, false);
     require(overlay.hasScreenshotSelection() && !overlay.screenshotSelectionHandlesVisible() &&
                 overlay.screenshotSelectionBorderVisible(),
             "hidden selection control points must retain the recognition selection border");
 
-    presenter.updateOverlayState(displays, selection, 0, 0, QColor(0x33, 0x33, 0x33),
-                                 false, true, false, false, false);
+    presenter.updateOverlayState(displays, selection, 0, 0, QColor(0x33, 0x33, 0x33), false, true,
+                                 false, false, false);
     require(overlay.screenshotSelectionHandlesVisible(),
             "the overlay presenter must restore explicitly visible selection control points");
 }

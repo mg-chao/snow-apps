@@ -21,6 +21,7 @@ class SnowCanvasWidget;
 class ScreenshotCanvasRenderer;
 class ScreenshotOcrPresentation;
 class ScreenshotOverlayEventSink;
+class ScreenshotOverlayFramePresenter;
 class ScreenshotScrollingThumbnailWidget;
 
 class ScreenshotOverlayWindow final : public QWidget {
@@ -74,6 +75,7 @@ class ScreenshotOverlayWindow final : public QWidget {
     void showPreparedFrame();
 
   protected:
+    bool event(QEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
     bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
@@ -93,6 +95,7 @@ class ScreenshotOverlayWindow final : public QWidget {
     ScreenshotOverlayEventSink& m_eventSink;
     SnowCanvasWidget* m_canvas = nullptr;
     ScreenshotScrollingThumbnailWidget* m_scrollingThumbnail = nullptr;
+    std::unique_ptr<ScreenshotOverlayFramePresenter> m_framePresenter;
     std::unique_ptr<ScreenshotCanvasRenderer> m_screenshotRenderer;
     QRect m_inputPassThroughRect;
     QRegion m_appliedWindowMask;
