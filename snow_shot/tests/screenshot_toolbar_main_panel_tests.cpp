@@ -19,6 +19,7 @@
 #include <QMargins>
 #include <QPainter>
 #include <QPixmap>
+#include <QVector>
 
 #include <cstdlib>
 #include <iostream>
@@ -376,6 +377,86 @@ void recordingToolbarUsesTheScreenshotMainPanelContract() {
             "recording shadow should preserve the reference visual parameters");
 }
 
+void mainToolbarSpacingUsesReferenceItemMetrics() {
+    ScreenshotToolPalette::Options options;
+    options.enableStyleToolbar = false;
+    ScreenshotToolPalette toolbar(options);
+    prepare(toolbar);
+
+    QLayout* layout = toolbar.mainPanel()->layout();
+    require(layout != nullptr, "scaled toolbar should expose its main layout");
+    layout->activate();
+
+    const int referencePanelWidth = toolbar.mainPanel()->sizeHint().width();
+    const QMargins referenceMargins = layout->contentsMargins();
+    QVector<int> referenceWidths{referenceMargins.left()};
+    referenceWidths.reserve(layout->count() + 2);
+    for (int index = 0; index < layout->count(); ++index) {
+        QLayoutItem* item = layout->itemAt(index);
+        require(item != nullptr, "reference toolbar layout contains an empty item");
+        referenceWidths.append(item->geometry().width());
+    }
+    referenceWidths.append(referenceMargins.right());
+
+    int referenceTotalWidth = 0;
+    for (int width : referenceWidths) {
+        referenceTotalWidth += width;
+    }
+    require(referenceTotalWidth == referencePanelWidth,
+            "reference toolbar metrics do not span the panel width");
+
+    constexpr qreal exactMetricScale = 1.5;
+    toolbar.setPhysicalScale(exactMetricScale);
+    flushEvents();
+    layout->activate();
+
+    int spacerCount = 0;
+    int buttonCount = 0;
+    for (int index = 0; index < layout->count(); ++index) {
+        QLayoutItem* item = layout->itemAt(index);
+        if (item == nullptr) {
+            continue;
+        }
+        if (item->spacerItem() != nullptr) {
+            ++spacerCount;
+            require(item->geometry().width() == qRound(8.0 * exactMetricScale),
+                    "main toolbar item spacing should remain 8 reference pixels at 1.5x");
+            continue;
+        }
+        if (qobject_cast<adqt::widgets::AdButton*>(item->widget()) != nullptr) {
+            ++buttonCount;
+            require(item->geometry().width() == qRound(32.0 * exactMetricScale),
+                    "main toolbar buttons should retain their 32 reference pixel width at 1.5x");
+        }
+    }
+    require(spacerCount > 0 && buttonCount > 0,
+            "scaled main toolbar should contain buttons and explicit item spacers");
+
+    constexpr qreal fractionalScale = 0.8;
+    toolbar.setPhysicalScale(fractionalScale);
+    flushEvents();
+    layout->activate();
+
+    const int targetWidth = qRound(referencePanelWidth * fractionalScale);
+    require(toolbar.mainPanel()->sizeHint().width() == targetWidth,
+            "fractionally scaled toolbar did not preserve the rounded total width");
+    int referenceEdge = referenceWidths.constFirst();
+    bool observedCumulativeRedistribution = false;
+    for (int index = 0; index < layout->count(); ++index) {
+        QLayoutItem* item = layout->itemAt(index);
+        referenceEdge += referenceWidths.at(index + 1);
+        const int expectedEdge = qRound(static_cast<qreal>(referenceEdge) * targetWidth /
+                                        referencePanelWidth);
+        require(item->geometry().x() + item->geometry().width() == expectedEdge,
+                "main toolbar item edge was not allocated from cumulative reference widths");
+        observedCumulativeRedistribution =
+            observedCumulativeRedistribution ||
+            item->geometry().width() != qRound(referenceWidths.at(index + 1) * fractionalScale);
+    }
+    require(observedCumulativeRedistribution,
+            "fractional toolbar scale did not exercise cumulative rounding redistribution");
+}
+
 void toolbarTooltipsUseApplicationBridge() {
     ScreenshotToolPalette toolbar(screenshotOptions());
     prepare(toolbar);
@@ -664,6 +745,7 @@ int main(int argc, char** argv) {
     secondaryToolbarUsesEqualHorizontalMargins();
     cachedToolbarIconsFollowThemeColors();
     recordingToolbarUsesTheScreenshotMainPanelContract();
+    mainToolbarSpacingUsesReferenceItemMetrics();
     screenshotToolbarRendersShadowOutsideItsPanel();
     toolbarTooltipsUseApplicationBridge();
     cornerRadiusTextKeepsItsPhysicalSizeAcrossDpiChanges();

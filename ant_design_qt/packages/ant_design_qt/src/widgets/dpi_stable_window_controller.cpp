@@ -80,11 +80,17 @@ bool AdDpiStableWindowController::captureBaseline(qreal referenceDpr) {
   if (!window_) {
     return false;
   }
+  if (nativeTransitionActive_) {
+    return hasBaseline();
+  }
   window_->winId();
   installForCurrentWinId();
   const qreal windowDpr = currentDpr();
-  referenceDpr_ =
+  PhysicalBaseline next;
+  next.windowId = subclassWinId_;
+  next.referenceDpr =
       referenceDpr > 0.0 ? AdControlScaleContext::normalizeDpr(referenceDpr) : windowDpr;
+  next.generation = baseline_.generation + 1;
   lastCommittedDpr_ = windowDpr;
 #if defined(Q_OS_WIN) || defined(_WIN32)
   if (usesWindowsNativeWindows()) {
@@ -95,45 +101,45 @@ bool AdDpiStableWindowController::captureBaseline(qreal referenceDpr) {
       resetBaseline();
       return false;
     }
-    nativeFrameGeometry_ = QRect(frame.left, frame.top, std::max(1L, frame.right - frame.left),
-                                 std::max(1L, frame.bottom - frame.top));
-    stablePhysicalFrameSize_ = nativeFrameGeometry_.size();
-    stablePhysicalClientSize_ =
+    next.frameGeometry = QRect(frame.left, frame.top, std::max(1L, frame.right - frame.left),
+                               std::max(1L, frame.bottom - frame.top));
+    next.frameSize = next.frameGeometry.size();
+    next.clientSize =
         QSize(std::max(1L, client.right - client.left), std::max(1L, client.bottom - client.top));
   } else
 #endif
   {
-    stablePhysicalClientSize_ = QSize(std::max(1, qRound(window_->width() * windowDpr)),
-                                      std::max(1, qRound(window_->height() * windowDpr)));
-    stablePhysicalFrameSize_ = stablePhysicalClientSize_;
-    nativeFrameGeometry_ = QRect(window_->pos(), stablePhysicalFrameSize_);
+    next.clientSize = QSize(std::max(1, qRound(window_->width() * windowDpr)),
+                            std::max(1, qRound(window_->height() * windowDpr)));
+    next.frameSize = next.clientSize;
+    next.frameGeometry = QRect(window_->pos(), next.frameSize);
   }
-  diagnostics_.finalPhysicalGeometry = nativeFrameGeometry_;
-  baselineWinId_ = subclassWinId_;
+  baseline_ = next;
+  diagnostics_.finalPhysicalGeometry = baseline_.frameGeometry;
   return true;
 }
 
 void AdDpiStableWindowController::resetBaseline() {
-  stablePhysicalFrameSize_ = QSize();
-  stablePhysicalClientSize_ = QSize();
-  nativeFrameGeometry_ = QRect();
-  referenceDpr_ = 1.0;
-  baselineWinId_ = 0;
+  const quint64 nextGeneration = baseline_.generation + 1;
+  baseline_ = PhysicalBaseline{};
+  baseline_.generation = nextGeneration;
+  dragSession_.reset();
+  pendingCommit_ = PendingScaleCommit{};
+  finishNativeTransition();
 }
 
-bool AdDpiStableWindowController::hasBaseline() const {
-  return stablePhysicalFrameSize_.isValid() && !stablePhysicalFrameSize_.isEmpty() &&
-         stablePhysicalClientSize_.isValid() && !stablePhysicalClientSize_.isEmpty();
-}
+bool AdDpiStableWindowController::hasBaseline() const { return baseline_.valid(); }
 
-qreal AdDpiStableWindowController::referenceDpr() const { return referenceDpr_; }
+qreal AdDpiStableWindowController::referenceDpr() const { return baseline_.referenceDpr; }
 QSize AdDpiStableWindowController::stablePhysicalFrameSize() const {
-  return stablePhysicalFrameSize_;
+  return baseline_.frameSize;
 }
 QSize AdDpiStableWindowController::stablePhysicalClientSize() const {
-  return stablePhysicalClientSize_;
+  return baseline_.clientSize;
 }
-QRect AdDpiStableWindowController::nativeFrameGeometry() const { return nativeFrameGeometry_; }
+QRect AdDpiStableWindowController::nativeFrameGeometry() const {
+  return baseline_.frameGeometry;
+}
 
 bool AdDpiStableWindowController::beginPhysicalDrag() {
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -154,28 +160,34 @@ bool AdDpiStableWindowController::beginPhysicalDrag(const QPointF& cursor) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
   if (usesWindowsNativeWindows()) {
     RECT frame{};
+    RECT client{};
     const HWND hwnd = nativePointerFromInteger<HWND>(subclassWinId_);
-    if (!hwnd || !GetWindowRect(hwnd, &frame)) {
+    if (!hwnd || !GetWindowRect(hwnd, &frame) || !GetClientRect(hwnd, &client)) {
       return false;
     }
-    nativeFrameGeometry_ = QRect(frame.left, frame.top, std::max(1L, frame.right - frame.left),
-                                 std::max(1L, frame.bottom - frame.top));
+    baseline_.frameGeometry =
+        QRect(frame.left, frame.top, std::max(1L, frame.right - frame.left),
+              std::max(1L, frame.bottom - frame.top));
+    baseline_.frameSize = baseline_.frameGeometry.size();
+    baseline_.clientSize =
+        QSize(std::max(1L, client.right - client.left), std::max(1L, client.bottom - client.top));
   }
 #endif
-  lastPhysicalCursor_ = cursor;
-  physicalDragAnchor_ = cursor - QPointF(nativeFrameGeometry_.topLeft());
-  physicalDragActive_ = true;
+  PhysicalDragSession drag;
+  drag.lastCursor = cursor;
+  drag.cursorToFrameOffset = cursor - QPointF(baseline_.frameGeometry.topLeft());
+  dragSession_ = drag;
   return true;
 }
 
 bool AdDpiStableWindowController::moveForPhysicalCursor(const QPointF& cursor) {
-  if (!physicalDragActive_ || !window_) {
+  if (!dragSession_.has_value() || !window_) {
     return false;
   }
-  lastPhysicalCursor_ = cursor;
-  const QPoint topLeft(qRound(cursor.x() - physicalDragAnchor_.x()),
-                       qRound(cursor.y() - physicalDragAnchor_.y()));
-  const QPoint physicalDelta = topLeft - nativeFrameGeometry_.topLeft();
+  dragSession_->lastCursor = cursor;
+  const QPoint topLeft(qRound(cursor.x() - dragSession_->cursorToFrameOffset.x()),
+                       qRound(cursor.y() - dragSession_->cursorToFrameOffset.y()));
+  const QPoint physicalDelta = topLeft - baseline_.frameGeometry.topLeft();
 #if defined(Q_OS_WIN) || defined(_WIN32)
   if (usesWindowsNativeWindows()) {
     const HWND hwnd = nativePointerFromInteger<HWND>(subclassWinId_);
@@ -188,14 +200,21 @@ bool AdDpiStableWindowController::moveForPhysicalCursor(const QPointF& cursor) {
   {
     window_->move(topLeft);
   }
-  nativeFrameGeometry_.moveTopLeft(topLeft);
+  baseline_.frameGeometry.moveTopLeft(topLeft);
+  if (pendingCommit_.queued && pendingCommit_.baselineGeneration == baseline_.generation) {
+    pendingCommit_.physicalGeometry.moveTopLeft(topLeft);
+  }
   syncAuxiliarySurfaces(physicalDelta);
   return true;
 }
 
-void AdDpiStableWindowController::endPhysicalDrag() { physicalDragActive_ = false; }
-bool AdDpiStableWindowController::physicalDragActive() const { return physicalDragActive_; }
-QPointF AdDpiStableWindowController::physicalDragAnchor() const { return physicalDragAnchor_; }
+void AdDpiStableWindowController::endPhysicalDrag() { dragSession_.reset(); }
+bool AdDpiStableWindowController::physicalDragActive() const {
+  return dragSession_.has_value();
+}
+QPointF AdDpiStableWindowController::physicalDragAnchor() const {
+  return dragSession_.has_value() ? dragSession_->cursorToFrameOffset : QPointF();
+}
 
 void AdDpiStableWindowController::registerAuxiliarySurface(QWidget* surface) {
   if (!surface) return;
@@ -254,10 +273,10 @@ bool AdDpiStableWindowController::eventFilter(QObject* watched, QEvent* event) {
       installForCurrentWinId();
       if (!subclassWinId_) {
         resetBaseline();
-      } else if (baselineWinId_ != subclassWinId_) {
+      } else if (baseline_.windowId != subclassWinId_) {
         resetBaseline();
         QTimer::singleShot(0, this, [this]() {
-          if (window_ && subclassWinId_ && baselineWinId_ != subclassWinId_) {
+          if (window_ && subclassWinId_ && baseline_.windowId != subclassWinId_) {
             captureBaseline();
           }
         });
@@ -317,42 +336,54 @@ qreal AdDpiStableWindowController::currentDpr() const {
 }
 
 void AdDpiStableWindowController::queueScaleCommit(qreal dpr, const QRect& geometry) {
-  pendingDpr_ = AdControlScaleContext::normalizeDpr(dpr);
-  pendingPhysicalGeometry_ = geometry;
-  if (commitQueued_) {
+  pendingCommit_.dpr = AdControlScaleContext::normalizeDpr(dpr);
+  pendingCommit_.physicalGeometry = geometry;
+  pendingCommit_.baselineGeneration = baseline_.generation;
+  if (pendingCommit_.queued) {
     ++diagnostics_.coalescedCount;
     return;
   }
-  commitQueued_ = true;
+  pendingCommit_.queued = true;
   QCoreApplication::postEvent(this, new QEvent(kScaleCommitEvent), Qt::HighEventPriority);
 }
 
 void AdDpiStableWindowController::commitPendingScale() {
-  if (!commitQueued_) return;
+  if (!pendingCommit_.queued) return;
   QElapsedTimer commitTimer;
   commitTimer.start();
-  commitQueued_ = false;
-  const qreal dpr = pendingDpr_;
+  const PendingScaleCommit commit = pendingCommit_;
+  pendingCommit_.queued = false;
+  if (!hasBaseline() || commit.baselineGeneration != baseline_.generation) {
+    finishNativeTransition();
+    return;
+  }
+  const qreal dpr = commit.dpr;
   const QSize logicalExtent(
-      hasBaseline() ? QSize(std::max(1, qRound(stablePhysicalClientSize_.width() / dpr)),
-                            std::max(1, qRound(stablePhysicalClientSize_.height() / dpr)))
+      hasBaseline() ? QSize(std::max(1, qRound(baseline_.clientSize.width() / dpr)),
+                            std::max(1, qRound(baseline_.clientSize.height() / dpr)))
                     : QSize());
   AdControlScaleContext context =
-      AdControlScaleContext::fromDprs(referenceDpr_, dpr, diagnostics_.transitionCount + 1);
+      AdControlScaleContext::fromDprs(baseline_.referenceDpr, dpr,
+                                      diagnostics_.transitionCount + 1);
   if (scaleScope_) scaleScope_->publishScale(context, logicalExtent);
   lastCommittedDpr_ = dpr;
-  nativeFrameGeometry_ = pendingPhysicalGeometry_;
+  baseline_.frameGeometry = commit.physicalGeometry;
   diagnostics_.newDpr = dpr;
-  diagnostics_.finalPhysicalGeometry = nativeFrameGeometry_;
+  diagnostics_.finalPhysicalGeometry = baseline_.frameGeometry;
   emit scaleCommitCompleted(context, logicalExtent);
-  if (window_ && windowUpdatesWereEnabled_) {
+  finishNativeTransition();
+  syncAuxiliarySurfaces();
+  ++diagnostics_.transitionCount;
+  diagnostics_.queuedCommitNanoseconds = commitTimer.nsecsElapsed();
+}
+
+void AdDpiStableWindowController::finishNativeTransition() {
+  if (window_ && nativeTransitionActive_ && windowUpdatesWereEnabled_) {
     window_->setUpdatesEnabled(true);
     window_->update();
   }
   nativeTransitionActive_ = false;
-  syncAuxiliarySurfaces();
-  ++diagnostics_.transitionCount;
-  diagnostics_.queuedCommitNanoseconds = commitTimer.nsecsElapsed();
+  windowUpdatesWereEnabled_ = true;
 }
 
 void AdDpiStableWindowController::syncAuxiliarySurfaces(const QPoint& physicalDelta) {
@@ -380,15 +411,17 @@ void AdDpiStableWindowController::syncAuxiliarySurfaces(const QPoint& physicalDe
 
 bool AdDpiStableWindowController::handleNativeMessage(void* message, qintptr* result) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
-  if (!message || !hasBaseline() || !subclassWinId_ || baselineWinId_ != subclassWinId_)
+  if (!message || !hasBaseline() || !subclassWinId_ || baseline_.windowId != subclassWinId_)
     return false;
   const auto* msg = static_cast<const MSG*>(message);
   if (msg->hwnd != nativePointerFromInteger<HWND>(subclassWinId_)) return false;
-  if (enforceStablePhysicalSizeForMessage(message, subclassWinId_, stablePhysicalFrameSize_,
-                                          nativeTransitionActive_ || physicalDragActive_, result)) {
+  if (enforceStablePhysicalSizeForMessage(message, subclassWinId_, baseline_.frameSize,
+                                          nativeTransitionActive_ || dragSession_.has_value(),
+                                          result)) {
     return true;
   }
-  if (msg->message == WM_WINDOWPOSCHANGING && (nativeTransitionActive_ || physicalDragActive_)) {
+  if (msg->message == WM_WINDOWPOSCHANGING &&
+      (nativeTransitionActive_ || dragSession_.has_value())) {
     return false;
   }
   if (msg->message != WM_DPICHANGED || !msg->lParam) return false;
@@ -397,14 +430,15 @@ bool AdDpiStableWindowController::handleNativeMessage(void* message, qintptr* re
   timer.start();
   auto* rect = nativePointerFromInteger<RECT*>(msg->lParam);
   QPoint topLeft(rect->left, rect->top);
-  if (physicalDragActive_) {
-    topLeft = QPoint(qRound(lastPhysicalCursor_.x() - physicalDragAnchor_.x()),
-                     qRound(lastPhysicalCursor_.y() - physicalDragAnchor_.y()));
+  if (dragSession_.has_value()) {
+    topLeft =
+        QPoint(qRound(dragSession_->lastCursor.x() - dragSession_->cursorToFrameOffset.x()),
+               qRound(dragSession_->lastCursor.y() - dragSession_->cursorToFrameOffset.y()));
   }
   rect->left = topLeft.x();
   rect->top = topLeft.y();
-  rect->right = rect->left + stablePhysicalFrameSize_.width();
-  rect->bottom = rect->top + stablePhysicalFrameSize_.height();
+  rect->right = rect->left + baseline_.frameSize.width();
+  rect->bottom = rect->top + baseline_.frameSize.height();
   const qreal newDpr = std::max<qreal>(1.0 / 96.0, HIWORD(msg->wParam) / 96.0);
   diagnostics_.oldDpr = lastCommittedDpr_;
   diagnostics_.newDpr = newDpr;
@@ -414,10 +448,10 @@ bool AdDpiStableWindowController::handleNativeMessage(void* message, qintptr* re
   }
   nativeTransitionActive_ = true;
   DefSubclassProc(msg->hwnd, msg->message, msg->wParam, msg->lParam);
-  const QRect geometry(rect->left, rect->top, stablePhysicalFrameSize_.width(),
-                       stablePhysicalFrameSize_.height());
-  if (!physicalDragActive_) {
-    syncAuxiliarySurfaces(geometry.topLeft() - nativeFrameGeometry_.topLeft());
+  const QRect geometry(rect->left, rect->top, baseline_.frameSize.width(),
+                       baseline_.frameSize.height());
+  if (!dragSession_.has_value()) {
+    syncAuxiliarySurfaces(geometry.topLeft() - baseline_.frameGeometry.topLeft());
   }
   queueScaleCommit(newDpr, geometry);
   diagnostics_.nativeHandlerNanoseconds = timer.nsecsElapsed();

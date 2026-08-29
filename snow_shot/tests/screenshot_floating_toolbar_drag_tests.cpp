@@ -11,6 +11,7 @@
 #include <QCursor>
 #include <QElapsedTimer>
 #include <QGuiApplication>
+#include <QLayout>
 #include <QPoint>
 #include <QRect>
 #include <QScreen>
@@ -287,6 +288,7 @@ struct MainToolbarButtonSizeSnapshot {
 };
 
 struct ToolbarSizeSnapshot {
+    QSize visualContentSize;
     QSize mainToolbarContentSize;
     QSize mainPanelSize;
     QSize secondaryPanelSize;
@@ -318,6 +320,7 @@ ToolbarSizeSnapshot captureToolbarSizeSnapshot(const ScreenshotToolbarWindow& wi
     require(palette != nullptr && mainPanel != nullptr, "toolbar size snapshot lacks its main panel");
 
     ToolbarSizeSnapshot snapshot;
+    snapshot.visualContentSize = snapshotPhysicalSize(window.visualContentRect().size(), dpi);
     snapshot.mainToolbarContentSize =
         snapshotPhysicalSize(palette->mainToolbarContentRect().size(), dpi);
     snapshot.mainPanelSize = snapshotPhysicalSize(mainPanel->size(), dpi);
@@ -339,32 +342,28 @@ ToolbarSizeSnapshot captureToolbarSizeSnapshot(const ScreenshotToolbarWindow& wi
     return snapshot;
 }
 
-void appendToolbarSizeFailures(const ToolbarSizeSnapshot& expected,
-                               const ScreenshotToolbarWindow& window,
-                               const QWidget* secondaryPanel, qreal dpi,
-                               const char* stateDescription,
+void appendPhysicalSizeFailure(const QSize& expectedSize, const QSize& actualSize,
+                               const QString& component, const char* stateDescription,
                                std::vector<std::string>* failures) {
-    const ToolbarSizeSnapshot actual = captureToolbarSizeSnapshot(window, secondaryPanel, dpi);
-    const auto requireSize = [stateDescription, failures](const QSize& expectedSize,
-                                                           const QSize& actualSize,
-                                                           const QString& component) {
-        if (sizesMatchWithinOnePhysicalPixel(expectedSize, actualSize)) {
-            return;
-        }
-        std::ostringstream message;
-        message << stateDescription << " " << component.toStdString()
-                << " physical size changed from " << expectedSize.width() << "x"
-                << expectedSize.height() << " to " << actualSize.width() << "x"
-                << actualSize.height() << " (more than 1px)";
-        failures->push_back(message.str());
-    };
+    if (sizesMatchWithinOnePhysicalPixel(expectedSize, actualSize)) {
+        return;
+    }
+    std::ostringstream message;
+    message << stateDescription << " " << component.toStdString()
+            << " physical size changed from " << expectedSize.width() << "x"
+            << expectedSize.height() << " to " << actualSize.width() << "x"
+            << actualSize.height() << " (more than 1px)";
+    failures->push_back(message.str());
+}
 
-    requireSize(expected.mainToolbarContentSize, actual.mainToolbarContentSize,
-                QStringLiteral("main toolbar content"));
-    requireSize(expected.mainPanelSize, actual.mainPanelSize,
-                QStringLiteral("main toolbar panel"));
-    requireSize(expected.secondaryPanelSize, actual.secondaryPanelSize,
-                QStringLiteral("secondary toolbar panel"));
+void appendMainToolbarSizeFailures(const ToolbarSizeSnapshot& expected,
+                                   const ToolbarSizeSnapshot& actual,
+                                   const char* stateDescription,
+                                   std::vector<std::string>* failures) {
+    appendPhysicalSizeFailure(expected.mainToolbarContentSize, actual.mainToolbarContentSize,
+                              QStringLiteral("main toolbar content"), stateDescription, failures);
+    appendPhysicalSizeFailure(expected.mainPanelSize, actual.mainPanelSize,
+                              QStringLiteral("main toolbar panel"), stateDescription, failures);
     if (actual.buttons.size() != expected.buttons.size()) {
         failures->push_back("main toolbar button count changed during a display transition");
         return;
@@ -376,11 +375,40 @@ void appendToolbarSizeFailures(const ToolbarSizeSnapshot& expected,
             failures->push_back("main toolbar button identity changed during a display transition");
             continue;
         }
-        requireSize(expectedButton.size, actualButton.size,
-                    expectedButton.description + QStringLiteral(" size"));
-        requireSize(expectedButton.iconSize, actualButton.iconSize,
-                    expectedButton.description + QStringLiteral(" icon size"));
+        appendPhysicalSizeFailure(expectedButton.size, actualButton.size,
+                                  expectedButton.description + QStringLiteral(" size"),
+                                  stateDescription, failures);
+        appendPhysicalSizeFailure(expectedButton.iconSize, actualButton.iconSize,
+                                  expectedButton.description + QStringLiteral(" icon size"),
+                                  stateDescription, failures);
     }
+}
+
+void appendToolbarSizeFailures(const ToolbarSizeSnapshot& expected,
+                               const ToolbarSizeSnapshot& actual,
+                               const char* stateDescription,
+                               std::vector<std::string>* failures) {
+    appendMainToolbarSizeFailures(expected, actual, stateDescription, failures);
+    appendPhysicalSizeFailure(expected.visualContentSize, actual.visualContentSize,
+                              QStringLiteral("visible toolbar content"), stateDescription,
+                              failures);
+    appendPhysicalSizeFailure(expected.secondaryPanelSize, actual.secondaryPanelSize,
+                              QStringLiteral("secondary toolbar panel"), stateDescription,
+                              failures);
+}
+
+void appendSecondaryPanelLayoutFailure(QWidget* panel, qreal dpi, const char* stateDescription,
+                                       std::vector<std::string>* failures) {
+    if (panel == nullptr || panel->layout() == nullptr) {
+        failures->push_back(std::string(stateDescription) +
+                            " secondary toolbar does not have a layout");
+        return;
+    }
+    panel->layout()->activate();
+    appendPhysicalSizeFailure(snapshotPhysicalSize(panel->layout()->sizeHint(), dpi),
+                              snapshotPhysicalSize(panel->size(), dpi),
+                              QStringLiteral("secondary toolbar layout"), stateDescription,
+                              failures);
 }
 
 bool positionsMatchWithinDpiRounding(const QPoint& actual, const QPoint& expected) {
@@ -572,16 +600,30 @@ void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable(bool reverseD
     QWidget* selectActionPanel = window.palette()->actionPanel();
     require(shapeStylePanel != nullptr && selectActionPanel != nullptr,
             "toolbar did not create both secondary toolbar panels");
+    std::vector<std::string> failures;
 
     const UINT sourceWindowDpi = GetDpiForWindow(nativeWindow);
     window.setActiveTool(ScreenshotToolPalette::Tool::Shape);
     settleQueuedRefreshes();
+    if (!window.palette()->styleToolbarVisible() || window.palette()->actionToolbarVisible()) {
+        failures.push_back("Shape should show only the style toolbar on the source display");
+    }
+    appendSecondaryPanelLayoutFailure(shapeStylePanel, sourceWindowDpi,
+                                      "Shape toolbar on source display", &failures);
     const ToolbarSizeSnapshot sourceShapeSizes =
         captureToolbarSizeSnapshot(window, shapeStylePanel, sourceWindowDpi);
     window.setActiveTool(ScreenshotToolPalette::Tool::Select);
     settleQueuedRefreshes();
+    if (!window.palette()->actionToolbarVisible() || window.palette()->styleToolbarVisible()) {
+        failures.push_back("Select should show only the action toolbar on the source display");
+    }
+    appendSecondaryPanelLayoutFailure(selectActionPanel, sourceWindowDpi,
+                                      "Select toolbar on source display", &failures);
     const ToolbarSizeSnapshot sourceSelectSizes =
         captureToolbarSizeSnapshot(window, selectActionPanel, sourceWindowDpi);
+    appendMainToolbarSizeFailures(sourceShapeSizes, sourceSelectSizes,
+                                  "when switching from Shape to Select on the source display",
+                                  &failures);
     window.setActiveTool(ScreenshotToolPalette::Tool::Move);
     settleQueuedRefreshes();
 
@@ -606,7 +648,8 @@ void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable(bool reverseD
 
     bool reachedDestination = false;
     bool observedDpiTransition = false;
-    std::vector<std::string> failures;
+    const QSize stableMoveVisualSize =
+        snapshotPhysicalSize(window.visualContentRect().size(), sourceWindowDpi);
     const int distance = qMax(qAbs(finish.x() - start.x()), qAbs(finish.y() - start.y()));
     const int steps = qMax(1, distance / 2);
     QPoint expectedFinalTopLeft;
@@ -642,6 +685,13 @@ void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable(bool reverseD
             break;
         }
         const UINT currentWindowDpi = GetDpiForWindow(nativeWindow);
+        if (!sizesMatchWithinOnePhysicalPixel(
+                stableMoveVisualSize,
+                snapshotPhysicalSize(window.visualContentRect().size(), currentWindowDpi))) {
+            failures.push_back(
+                "visible toolbar content changed physical size during the monitor move");
+            break;
+        }
         const HMONITOR windowMonitor = MonitorFromWindow(nativeWindow, MONITOR_DEFAULTTONULL);
         reachedDestination = reachedDestination || windowMonitor == destination->handle;
         observedDpiTransition = observedDpiTransition || currentWindowDpi != sourceWindowDpi;
@@ -663,91 +713,131 @@ void physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable(bool reverseD
     window.setActiveTool(ScreenshotToolPalette::Tool::Shape);
     settleQueuedRefreshes();
 
-        const qreal expectedDestinationScale =
-            sourceScreen->devicePixelRatio() / destinationScreen->devicePixelRatio();
-        if (!qFuzzyCompare(window.paletteHost()->physicalScale() + 1.0,
-                           expectedDestinationScale + 1.0)) {
-            failures.push_back("style toolbar did not retain the selection display as its scale reference");
+    const qreal expectedDestinationScale =
+        sourceScreen->devicePixelRatio() / destinationScreen->devicePixelRatio();
+    if (!qFuzzyCompare(window.paletteHost()->physicalScale() + 1.0,
+                       expectedDestinationScale + 1.0)) {
+        failures.push_back(
+            "style toolbar did not retain the selection display as its scale reference");
+    }
+    if (!window.palette()->styleToolbarVisible() || window.palette()->actionToolbarVisible()) {
+        failures.push_back("Shape should show only the style toolbar on the destination display");
+    }
+    if (nativeWindowSize(nativeWindow) != stablePhysicalSize) {
+        failures.push_back("toolbar physical frame size changed after activating Shape");
+    }
+    const QWidget* shapeControls = window.palette()->findChild<QWidget*>(
+        QStringLiteral("screenshotRectangleStyleControls"));
+    if (shapeControls == nullptr) {
+        failures.push_back("shape style controls should exist after activating the shape tool");
+    } else {
+        const int rowTop = shapeControls->rect().top();
+        if (shapeColorTriggerTop(QStringLiteral("Stroke color")) != rowTop ||
+            shapeColorTriggerTop(QStringLiteral("Fill color")) != rowTop) {
+            failures.push_back(
+                "shape color editor triggers should stay aligned after activating Shape");
         }
-        const QWidget* shapeControls = window.palette()->findChild<QWidget*>(
-            QStringLiteral("screenshotRectangleStyleControls"));
-        if (shapeControls == nullptr) {
-            failures.push_back("shape style controls should exist after activating the shape tool");
-        } else {
-            const int rowTop = shapeControls->rect().top();
-            if (shapeColorTriggerTop(QStringLiteral("Stroke color")) != rowTop ||
-                shapeColorTriggerTop(QStringLiteral("Fill color")) != rowTop) {
-                failures.push_back("shape color editor triggers should stay aligned after activating Shape");
-            }
-        }
-        appendToolbarSizeFailures(sourceShapeSizes, window, shapeStylePanel,
-                                  GetDpiForWindow(nativeWindow),
-                                  "Shape toolbar on destination display", &failures);
+    }
+    const qreal destinationWindowDpi = GetDpiForWindow(nativeWindow);
+    appendSecondaryPanelLayoutFailure(shapeStylePanel, destinationWindowDpi,
+                                      "Shape toolbar on destination display", &failures);
+    const ToolbarSizeSnapshot destinationShapeSizes =
+        captureToolbarSizeSnapshot(window, shapeStylePanel, destinationWindowDpi);
+    appendToolbarSizeFailures(sourceShapeSizes, destinationShapeSizes,
+                              "Shape toolbar on destination display", &failures);
 
-        window.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    window.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    settleQueuedRefreshes();
+    if (window.palette()->activeToolForTests() != ScreenshotToolPalette::Tool::Select) {
+        failures.push_back("toolbar did not switch to the Select tool on the destination display");
+    }
+    if (!window.palette()->actionToolbarVisible() || window.palette()->styleToolbarVisible()) {
+        failures.push_back("Select should show only the action toolbar on the destination display");
+    }
+    if (nativeWindowSize(nativeWindow) != stablePhysicalSize) {
+        failures.push_back("toolbar physical frame size changed after activating Select");
+    }
+    appendSecondaryPanelLayoutFailure(selectActionPanel, destinationWindowDpi,
+                                      "Select toolbar on destination display", &failures);
+    const ToolbarSizeSnapshot destinationSelectSizes =
+        captureToolbarSizeSnapshot(window, selectActionPanel, destinationWindowDpi);
+    appendToolbarSizeFailures(sourceSelectSizes, destinationSelectSizes,
+                              "Select toolbar on destination display", &failures);
+    appendMainToolbarSizeFailures(destinationShapeSizes, destinationSelectSizes,
+                                  "when switching from Shape to Select on the destination display",
+                                  &failures);
+
+    const QPoint returnStart = finish;
+    const QPoint returnFinish = start;
+    const QRect returnInitialGeometry = nativeWindowGeometry(nativeWindow);
+    const QPoint returnCursorToWindowOffset = returnStart - returnInitialGeometry.topLeft();
+    const QSize stableSelectVisualSize = destinationSelectSizes.visualContentSize;
+    if (SetCursorPos(returnStart.x(), returnStart.y()) == FALSE) {
+        failures.push_back("failed to position the cursor before returning to the source monitor");
+    }
+    ScreenshotFloatingToolPaletteWindowTestAccess::beginPhysicalDrag(window, QCursor::pos());
+    if (!ScreenshotFloatingToolPaletteWindowTestAccess::hasPhysicalDragAnchor(window)) {
+        failures.push_back("toolbar did not restart a native physical drag after switching to Select");
+    }
+
+    const int returnDistance =
+        qMax(qAbs(returnFinish.x() - returnStart.x()), qAbs(returnFinish.y() - returnStart.y()));
+    const int returnSteps = qMax(1, returnDistance / 2);
+    QPoint expectedReturnTopLeft;
+    for (int step = 1; step <= returnSteps; ++step) {
+        const QPoint cursor(
+            returnStart.x() +
+                qRound(static_cast<qreal>(returnFinish.x() - returnStart.x()) * step / returnSteps),
+            returnStart.y() +
+                qRound(static_cast<qreal>(returnFinish.y() - returnStart.y()) * step / returnSteps));
+        if (SetCursorPos(cursor.x(), cursor.y()) == FALSE) {
+            failures.push_back("failed to move the hardware cursor back to the source monitor");
+            break;
+        }
+        ScreenshotFloatingToolPaletteWindowTestAccess::updateDrag(window, QCursor::pos());
         settleQueuedRefreshes();
-        if (window.palette()->activeToolForTests() != ScreenshotToolPalette::Tool::Select) {
-            failures.push_back("toolbar did not switch to the Select tool on the destination display");
-        }
-        appendToolbarSizeFailures(sourceSelectSizes, window, selectActionPanel,
-                                  GetDpiForWindow(nativeWindow),
-                                  "Select toolbar on destination display", &failures);
 
-        const QPoint returnStart = finish;
-        const QPoint returnFinish = start;
-        const QRect returnInitialGeometry = nativeWindowGeometry(nativeWindow);
-        const QPoint returnCursorToWindowOffset = returnStart - returnInitialGeometry.topLeft();
-        if (SetCursorPos(returnStart.x(), returnStart.y()) == FALSE) {
-            failures.push_back("failed to position the cursor before returning to the source monitor");
+        POINT actualCursor{};
+        if (GetCursorPos(&actualCursor) == FALSE) {
+            failures.push_back("failed to read the physical cursor during the return move");
+            break;
         }
-        ScreenshotFloatingToolPaletteWindowTestAccess::beginPhysicalDrag(window, QCursor::pos());
-        if (!ScreenshotFloatingToolPaletteWindowTestAccess::hasPhysicalDragAnchor(window)) {
-            failures.push_back("toolbar did not restart a native physical drag after switching to Select");
+        expectedReturnTopLeft = QPoint(actualCursor.x - returnCursorToWindowOffset.x(),
+                                       actualCursor.y - returnCursorToWindowOffset.y());
+        waitForNativePosition(nativeWindow, expectedReturnTopLeft, 10);
+        if (nativeWindowSize(nativeWindow) != stablePhysicalSize) {
+            failures.push_back("toolbar physical frame size changed during the return monitor move");
         }
-
-        const int returnDistance =
-            qMax(qAbs(returnFinish.x() - returnStart.x()), qAbs(returnFinish.y() - returnStart.y()));
-        const int returnSteps = qMax(1, returnDistance / 2);
-        QPoint expectedReturnTopLeft;
-        for (int step = 1; step <= returnSteps; ++step) {
-            const QPoint cursor(
-                returnStart.x() +
-                    qRound(static_cast<qreal>(returnFinish.x() - returnStart.x()) * step /
-                           returnSteps),
-                returnStart.y() +
-                    qRound(static_cast<qreal>(returnFinish.y() - returnStart.y()) * step /
-                           returnSteps));
-            if (SetCursorPos(cursor.x(), cursor.y()) == FALSE) {
-                failures.push_back("failed to move the hardware cursor back to the source monitor");
-                break;
-            }
-            ScreenshotFloatingToolPaletteWindowTestAccess::updateDrag(window, QCursor::pos());
-            settleQueuedRefreshes();
-
-            POINT actualCursor{};
-            if (GetCursorPos(&actualCursor) == FALSE) {
-                failures.push_back("failed to read the physical cursor during the return move");
-                break;
-            }
-            expectedReturnTopLeft =
-                QPoint(actualCursor.x - returnCursorToWindowOffset.x(),
-                       actualCursor.y - returnCursorToWindowOffset.y());
-            waitForNativePosition(nativeWindow, expectedReturnTopLeft, 10);
-            if (nativeWindowSize(nativeWindow) != stablePhysicalSize) {
-                failures.push_back("toolbar physical frame size changed during the return monitor move");
-            }
+        const qreal returnWindowDpi = GetDpiForWindow(nativeWindow);
+        if (!sizesMatchWithinOnePhysicalPixel(
+                stableSelectVisualSize,
+                snapshotPhysicalSize(window.visualContentRect().size(), returnWindowDpi))) {
+            failures.push_back(
+                "Select visible content changed physical size during the return monitor move");
+            break;
         }
-        if (!expectedReturnTopLeft.isNull() &&
-            !waitForNativePosition(nativeWindow, expectedReturnTopLeft, 3000)) {
-            failures.push_back("toolbar HWND did not finish at the source position after returning");
-        }
-        ScreenshotFloatingToolPaletteWindowTestAccess::finishDrag(window);
-        settleQueuedRefreshes();
-        if (MonitorFromWindow(nativeWindow, MONITOR_DEFAULTTONULL) != source->handle) {
-            failures.push_back("Select toolbar did not return to the source monitor");
-        }
-    appendToolbarSizeFailures(sourceSelectSizes, window, selectActionPanel,
-                              GetDpiForWindow(nativeWindow),
+    }
+    if (!expectedReturnTopLeft.isNull() &&
+        !waitForNativePosition(nativeWindow, expectedReturnTopLeft, 3000)) {
+        failures.push_back("toolbar HWND did not finish at the source position after returning");
+    }
+    ScreenshotFloatingToolPaletteWindowTestAccess::finishDrag(window);
+    settleQueuedRefreshes();
+    if (MonitorFromWindow(nativeWindow, MONITOR_DEFAULTTONULL) != source->handle) {
+        failures.push_back("Select toolbar did not return to the source monitor");
+    }
+    if (!qFuzzyCompare(window.paletteHost()->physicalScale() + 1.0, 2.0)) {
+        failures.push_back("Select toolbar did not restore its reference scale after returning");
+    }
+    if (!window.palette()->actionToolbarVisible() || window.palette()->styleToolbarVisible()) {
+        failures.push_back("Select should show only the action toolbar after returning");
+    }
+    const qreal returnedWindowDpi = GetDpiForWindow(nativeWindow);
+    appendSecondaryPanelLayoutFailure(selectActionPanel, returnedWindowDpi,
+                                      "Select toolbar on source display after return", &failures);
+    const ToolbarSizeSnapshot returnedSelectSizes =
+        captureToolbarSizeSnapshot(window, selectActionPanel, returnedWindowDpi);
+    appendToolbarSizeFailures(sourceSelectSizes, returnedSelectSizes,
                               "Select toolbar on source display after return", &failures);
     window.hide();
     settleQueuedRefreshes();

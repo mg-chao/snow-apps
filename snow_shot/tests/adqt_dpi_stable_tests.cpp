@@ -10,12 +10,14 @@
 
 #include <QApplication>
 #include <QHBoxLayout>
+#include <QIconEngine>
 #include <QImage>
 #include <QPainter>
 
 #include <cmath>
 #include <atomic>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <thread>
 #include <vector>
@@ -28,6 +30,15 @@ class AdDpiStableWindowControllerTestAccess {
                                  const QRect& geometry) {
         controller.queueScaleCommit(dpr, geometry);
     }
+
+    static void commitPendingScale(AdDpiStableWindowController& controller) {
+        controller.commitPendingScale();
+    }
+
+    static void setNativeTransitionActive(AdDpiStableWindowController& controller, bool active) {
+        controller.nativeTransitionActive_ = active;
+        controller.windowUpdatesWereEnabled_ = false;
+    }
 };
 
 } // namespace adqt::widgets
@@ -39,19 +50,72 @@ void require(bool condition, const char* message) {
         throw std::runtime_error(message);
 }
 
+QImage renderWidget(QWidget* widget) {
+    QImage image(widget->size(), QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    QPainter painter(&image);
+    widget->render(&painter);
+    return image;
+}
+
+struct IconPaintTrace final {
+    QVector<qreal> painterDprs;
+    QVector<QRect> paintRects;
+    QVector<QSize> pixmapSizes;
+    int pixmapRequestCount = 0;
+};
+
+class DpiTrackingIconEngine final : public QIconEngine {
+  public:
+    explicit DpiTrackingIconEngine(std::shared_ptr<IconPaintTrace> trace)
+        : trace_(std::move(trace)) {}
+
+    QIconEngine* clone() const override { return new DpiTrackingIconEngine(trace_); }
+
+    void paint(QPainter* painter, const QRect& rect, QIcon::Mode mode,
+               QIcon::State state) override {
+        Q_UNUSED(mode)
+        Q_UNUSED(state)
+        trace_->painterDprs.append(painter && painter->device()
+                                       ? painter->device()->devicePixelRatioF()
+                                       : 1.0);
+        trace_->paintRects.append(rect);
+        if (painter != nullptr) {
+            painter->fillRect(rect, Qt::black);
+        }
+    }
+
+    QPixmap pixmap(const QSize& size, QIcon::Mode mode, QIcon::State state) override {
+        Q_UNUSED(mode)
+        Q_UNUSED(state)
+        ++trace_->pixmapRequestCount;
+        trace_->pixmapSizes.append(size);
+        QPixmap result(size);
+        result.fill(Qt::black);
+        return result;
+    }
+
+  private:
+    std::shared_ptr<IconPaintTrace> trace_;
+};
+
 class ParticipantWidget final : public QWidget, public adqt::widgets::AdControlScaleParticipant {
   public:
     using QWidget::QWidget;
     void prepareControlScale(const adqt::widgets::AdControlScaleContext& context) override {
         ++prepareCount;
+        lastPreparedContext = context;
         lastPreparedRevision = context.revision;
     }
     void commitControlScale(const adqt::widgets::AdControlScaleContext& context) override {
         ++commitCount;
+        lastCommittedContext = context;
         lastCommittedRevision = context.revision;
     }
     int prepareCount = 0;
     int commitCount = 0;
+    adqt::widgets::AdControlScaleContext lastPreparedContext;
+    adqt::widgets::AdControlScaleContext lastCommittedContext;
     quint64 lastPreparedRevision = 0;
     quint64 lastCommittedRevision = 0;
 };
@@ -107,6 +171,61 @@ void scopeIsBatchedAndNoOpsRepeatRequests() {
             "no-op scale publication produced work");
 }
 
+void contentScaleComposesWithDpiAndParticipatesInEquivalence() {
+    const auto context = adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(
+        1.5, 2.0, 0.8, 9);
+    require(qFuzzyCompare(context.logicalScale + 1.0, 1.6),
+            "content scale did not compose with the reference/current DPI ratio");
+    require(qFuzzyCompare(context.contentScale + 1.0, 1.8) && context.revision == 9,
+            "content-scale context did not retain its normalized inputs");
+    auto independentlyChangedContentScale = context;
+    independentlyChangedContentScale.contentScale = 1.0;
+    independentlyChangedContentScale.revision = 10;
+    require(!context.equivalentTo(independentlyChangedContentScale),
+            "content scale must participate in equivalence independently of logical scale");
+
+    QWidget root;
+    adqt::widgets::AdControlScaleScope scope(&root);
+    require(scope.publishScale(context), "first content-scale publication should commit");
+    require(!scope.publishScale(context), "equivalent content-scale publication should be a no-op");
+    const auto changed = adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(
+        1.5, 2.0, 1.0, 10);
+    require(scope.publishScale(changed),
+            "changing only content scale must produce a new scale commit");
+}
+
+void currentScaleCanBeAppliedToANewSubtree() {
+    QWidget root;
+    adqt::widgets::AdControlScaleScope scope(&root);
+    const auto published = adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(
+        1.5, 2.0, 0.8);
+    require(scope.publishScale(published), "subtree reference publication failed");
+
+    QWidget subtree(&root);
+    ParticipantWidget participant(&subtree);
+    require(scope.applyCurrentScaleToSubtree(&subtree),
+            "current scale was not applied to the new subtree");
+    require(participant.prepareCount == 1 && participant.commitCount == 1 &&
+                participant.lastCommittedRevision == scope.context().revision,
+            "new subtree did not receive one paired prepare/commit at the current revision");
+    const auto expected = scope.context();
+    const auto contextMatches = [&expected](
+                                    const adqt::widgets::AdControlScaleContext& actual) {
+        return qFuzzyCompare(actual.referenceDpr + 1.0, expected.referenceDpr + 1.0) &&
+               qFuzzyCompare(actual.currentDpr + 1.0, expected.currentDpr + 1.0) &&
+               qFuzzyCompare(actual.contentScale + 1.0, expected.contentScale + 1.0) &&
+               qFuzzyCompare(actual.logicalScale + 1.0, expected.logicalScale + 1.0) &&
+               actual.revision == expected.revision;
+    };
+    require(contextMatches(participant.lastPreparedContext) &&
+                contextMatches(participant.lastCommittedContext),
+            "new subtree did not receive the complete current scale context");
+
+    QWidget unrelated;
+    require(!scope.applyCurrentScaleToSubtree(&unrelated),
+            "scale scope accepted a subtree outside its root");
+}
+
 void controllerCoalescesToTheLatestPendingScale() {
     QWidget window;
     window.resize(320, 80);
@@ -160,6 +279,53 @@ void controllerCanKeepReferenceDpiSeparateFromWindowDpi() {
             "controller lost the current window's physical baseline");
 }
 
+void staleQueuedScaleIsRejectedAfterBaselineChanges() {
+    QWidget window;
+    window.resize(320, 80);
+    window.show();
+    QApplication::processEvents();
+
+    adqt::widgets::AdDpiStableWindowController controller(&window);
+    require(controller.captureBaseline(), "stale-commit test baseline capture failed");
+    int commitCount = 0;
+    QObject::connect(&controller, &adqt::widgets::AdDpiStableWindowController::scaleCommitCompleted,
+                     [&commitCount]() { ++commitCount; });
+    adqt::widgets::AdDpiStableWindowControllerTestAccess::queueScaleCommit(
+        controller, 1.5, QRect(10, 20, 320, 80));
+    require(controller.captureBaseline(), "replacement baseline capture failed");
+    adqt::widgets::AdDpiStableWindowControllerTestAccess::commitPendingScale(controller);
+    require(commitCount == 0,
+            "queued scale commit from an older baseline generation was not rejected");
+
+    adqt::widgets::AdDpiStableWindowControllerTestAccess::queueScaleCommit(
+        controller, 1.75, QRect(30, 40, 320, 80));
+    controller.resetBaseline();
+    adqt::widgets::AdDpiStableWindowControllerTestAccess::commitPendingScale(controller);
+    require(commitCount == 0, "baseline reset did not discard its queued scale commit");
+}
+
+void baselineCaptureIsBlockedDuringNativeTransition() {
+    QWidget window;
+    window.resize(320, 80);
+    window.show();
+    QApplication::processEvents();
+
+    adqt::widgets::AdDpiStableWindowController controller(&window);
+    require(controller.captureBaseline(1.25), "transition test baseline capture failed");
+    const QSize frameSize = controller.stablePhysicalFrameSize();
+    const qreal referenceDpr = controller.referenceDpr();
+    window.resize(640, 160);
+    adqt::widgets::AdDpiStableWindowControllerTestAccess::setNativeTransitionActive(controller,
+                                                                                     true);
+    require(controller.captureBaseline(2.0),
+            "capture during an active transition should preserve an existing baseline");
+    require(controller.stablePhysicalFrameSize() == frameSize &&
+                qFuzzyCompare(controller.referenceDpr() + 1.0, referenceDpr + 1.0),
+            "capture during an active transition replaced the authoritative baseline");
+    adqt::widgets::AdDpiStableWindowControllerTestAccess::setNativeTransitionActive(controller,
+                                                                                     false);
+}
+
 void componentHintsFollowTheScope() {
     QWidget root;
     auto* layout = new QHBoxLayout(&root);
@@ -184,6 +350,88 @@ void componentHintsFollowTheScope() {
             "one or more migrated component hints ignored the scale context");
     require(button->isEnabled() && radio->isEnabled() && slider->isEnabled() && select->isEnabled(),
             "scale commit changed component enabled state");
+}
+
+void radioIconUsesDirectPaintingAfterScaleChanges() {
+    QWidget root;
+    auto* radio = new adqt::widgets::AdRadio(&root);
+    radio->setVariant(adqt::widgets::AdRadio::Variant::Button);
+    radio->setIconSize(QSize(16, 16));
+    radio->setFixedSize(32, 24);
+
+    const auto trace = std::make_shared<IconPaintTrace>();
+    radio->setIcon(QIcon(new DpiTrackingIconEngine(trace)));
+
+    adqt::widgets::AdControlScaleScope scope(&root);
+    require(scope.publishScale(1.5, 1.0), "radio scale-up commit failed");
+    renderWidget(radio);
+    require(scope.publishScale(1.0, 1.0), "radio scale-down commit failed");
+    renderWidget(radio);
+
+    require(trace->painterDprs.size() == 2,
+            "radio icons did not paint through the current painter after scale changes");
+    require(trace->pixmapRequestCount == 0,
+            "radio icons fell back to cached pixmap scaling instead of direct painting");
+}
+
+void buttonExplicitIconSizeSurvivesDpiScale() {
+    QWidget root;
+    auto* button = new adqt::widgets::AdButton(&root);
+    button->setIconSize(QSize(24, 24));
+    button->setFixedSize(32, 32);
+
+    const auto trace = std::make_shared<IconPaintTrace>();
+    button->setIcon(QIcon(new DpiTrackingIconEngine(trace)));
+
+    adqt::widgets::AdControlScaleScope scope(&root);
+    require(scope.publishScale(1.5, 1.0), "button reference scale commit failed");
+    require(scope.publishScale(1.0, 1.0), "button baseline scale commit failed");
+    trace->pixmapSizes.clear();
+    renderWidget(button);
+
+    button->setFixedSize(22, 21);
+    require(scope.publishScale(1.0, 1.5), "button destination scale commit failed");
+    renderWidget(button);
+
+    const qreal renderDpr = button->devicePixelRatioF();
+    const QSize sourceRequest(qRound(24 * renderDpr), qRound(24 * renderDpr));
+    const QSize destinationRequest(qRound(16 * renderDpr), qRound(16 * renderDpr));
+    require(trace->pixmapSizes.size() == 2 && trace->pixmapSizes.at(0) == sourceRequest &&
+                trace->pixmapSizes.at(1) == destinationRequest,
+            "an explicitly sized button icon was reclassified as the default after DPI scaling");
+}
+
+void radioButtonContentInsetsFollowDpiScale() {
+    QWidget root;
+    auto* radio = new adqt::widgets::AdRadio(&root);
+    radio->setVariant(adqt::widgets::AdRadio::Variant::Button);
+    radio->setIconSize(QSize(16, 16));
+    radio->setFixedSize(32, 26);
+
+    const auto trace = std::make_shared<IconPaintTrace>();
+    radio->setIcon(QIcon(new DpiTrackingIconEngine(trace)));
+
+    adqt::widgets::AdControlScaleScope scope(&root);
+    require(scope.publishScale(1.5, 1.0), "radio reference scale commit failed");
+    require(scope.publishScale(1.0, 1.0), "radio baseline scale commit failed");
+    trace->paintRects.clear();
+    renderWidget(radio);
+
+    radio->setFixedSize(21, 17);
+    require(scope.publishScale(1.0, 1.5), "radio destination scale commit failed");
+    renderWidget(radio);
+
+    require(trace->paintRects.size() == 2, "radio scale test did not paint both icon states");
+    const QRect sourceRect = trace->paintRects.at(0);
+    const QRect destinationRect = trace->paintRects.at(1);
+    const QRect destinationPhysicalRect(
+        qRound(destinationRect.x() * 1.5), qRound(destinationRect.y() * 1.5),
+        qRound(destinationRect.width() * 1.5), qRound(destinationRect.height() * 1.5));
+    require(qAbs(destinationPhysicalRect.x() - sourceRect.x()) <= 1 &&
+                qAbs(destinationPhysicalRect.y() - sourceRect.y()) <= 1 &&
+                qAbs(destinationPhysicalRect.width() - sourceRect.width()) <= 1 &&
+                qAbs(destinationPhysicalRect.height() - sourceRect.height()) <= 1,
+            "radio button padding moved or resized its icon after DPI scaling");
 }
 
 const adqt::icons::ExternalIconPack& testIconPack() {
@@ -345,9 +593,16 @@ int main(int argc, char** argv) {
     try {
         cumulativeEdgesAreStable();
         scopeIsBatchedAndNoOpsRepeatRequests();
+        contentScaleComposesWithDpiAndParticipatesInEquivalence();
+        currentScaleCanBeAppliedToANewSubtree();
         controllerCoalescesToTheLatestPendingScale();
         controllerCanKeepReferenceDpiSeparateFromWindowDpi();
+        staleQueuedScaleIsRejectedAfterBaselineChanges();
+        baselineCaptureIsBlockedDuringNativeTransition();
         componentHintsFollowTheScope();
+        radioIconUsesDirectPaintingAfterScaleChanges();
+        buttonExplicitIconSizeSurvivesDpiScale();
+        radioButtonContentInsetsFollowDpiScale();
         iconCacheSharesPhysicalRasters();
         iconCacheSeparatesVisualKeys();
         concurrentIconMissesRasterizeOnce();

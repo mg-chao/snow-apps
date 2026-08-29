@@ -314,10 +314,9 @@ class ScreenshotToolPalette final : public QWidget {
     void updateTableQrEnabled();
     void updateToolbarGeometry();
     void updateStyleToolbarGeometryOnly();
-    void updateToolbarGeometryLegacy();
-    // Geometry is queried from placement code, so deferred layout must still be
-    // resolved synchronously at that boundary.  Keeping the dirty bit here
-    // prevents position-only window movement from touching QWidget layouts.
+    void commitLayout();
+    // Geometry queries are synchronous boundaries. A dirty profile is committed
+    // once here; movement reads the immutable result without touching layouts.
     void ensureLayoutApplied() const;
     void markLayoutDirty(bool rowOrderChanged = false);
     void updateToolbarRowGeometry(bool styleToolbarVisible);
@@ -349,6 +348,8 @@ class ScreenshotToolPalette final : public QWidget {
     int scaledMetric(int value) const;
     qreal scaledMetric(qreal value) const;
     QMargins scaledMargins(int left, int top, int right, int bottom) const;
+    QMargins scaledPanelMargins(int horizontalMargin, int verticalMargin,
+                                int baseContentHeight) const;
     void addMainToolbarSpacing(int baseSpacing);
     void addMainToolbarSeparator();
     QSpacerItem* addStyleToolbarSpacing(QBoxLayout* layout, int baseSpacing);
@@ -357,6 +358,8 @@ class ScreenshotToolPalette final : public QWidget {
     QFrame* createStyleToolbarSeparator(QWidget* parent);
     void applyScaledToolbarMetrics();
     void applyStyleMetricsForScope(QWidget* scope);
+    void initializeStyleLayoutProfiles();
+    void applyCumulativeStyleLayoutMetrics(QWidget* scope);
     void updatePanelMetrics(QFrame* panel);
     void updatePanelStyle(QFrame* panel);
     void retranslateUi();
@@ -366,6 +369,21 @@ class ScreenshotToolPalette final : public QWidget {
         QWidget* owner = nullptr;
         int baseSpacing = 0;
         bool visible = true;
+    };
+
+    struct StyleLayoutSegment {
+        QWidget* widget = nullptr;
+        QSpacerItem* spacer = nullptr;
+        int referenceWidth = 0;
+    };
+
+    struct StyleLayoutProfile {
+        QBoxLayout* layout = nullptr;
+        QWidget* owner = nullptr;
+        QVector<StyleLayoutSegment> segments;
+        QVector<QSpacerItem*> automaticGaps;
+        int referenceAutomaticSpacing = 0;
+        int referenceWidthAdjustment = 0;
     };
 
     struct FilterEditor {
@@ -509,6 +527,7 @@ class ScreenshotToolPalette final : public QWidget {
     QVector<QFrame*> m_styleSeparatorFrames;
     QVector<QFrame*> m_panelFrames;
     QVector<SpacingItem> m_styleSpacingItems;
+    QVector<StyleLayoutProfile> m_styleLayoutProfiles;
     std::unique_ptr<ScreenshotToolPaletteStyleControls> m_styleControls;
     QMargins m_baseShadowMargins;
     QMargins m_shadowMargins;

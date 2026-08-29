@@ -11,6 +11,8 @@
 #include <QSize>
 #include <QtGui/qwindowdefs.h>
 
+#include <optional>
+
 class QEvent;
 class QWidget;
 
@@ -80,31 +82,50 @@ class AdDpiStableWindowController final : public QObject {
  private:
   friend class AdDpiStableWindowControllerTestAccess;
 
+  struct PhysicalBaseline {
+    WId windowId = 0;
+    qreal referenceDpr = 1.0;
+    QSize frameSize;
+    QSize clientSize;
+    QRect frameGeometry;
+    quint64 generation = 0;
+
+    [[nodiscard]] bool valid() const {
+      return windowId != 0 && frameSize.isValid() && !frameSize.isEmpty() &&
+             clientSize.isValid() && !clientSize.isEmpty();
+    }
+  };
+
+  struct PhysicalDragSession {
+    QPointF cursorToFrameOffset;
+    QPointF lastCursor;
+  };
+
+  struct PendingScaleCommit {
+    qreal dpr = 1.0;
+    QRect physicalGeometry;
+    quint64 baselineGeneration = 0;
+    bool queued = false;
+  };
+
   void installForCurrentWinId();
   void removeSubclass();
   qreal currentDpr() const;
   void queueScaleCommit(qreal dpr, const QRect& physicalGeometry);
   void commitPendingScale();
+  void finishNativeTransition();
   void syncAuxiliarySurfaces(const QPoint& physicalDelta = QPoint());
 
   QPointer<QWidget> window_;
   QPointer<AdControlScaleScope> scaleScope_;
   QList<QPointer<QWidget>> auxiliarySurfaces_;
   WId subclassWinId_ = 0;
-  WId baselineWinId_ = 0;
-  QSize stablePhysicalFrameSize_;
-  QSize stablePhysicalClientSize_;
-  QRect nativeFrameGeometry_;
-  qreal referenceDpr_ = 1.0;
+  PhysicalBaseline baseline_;
+  std::optional<PhysicalDragSession> dragSession_;
+  PendingScaleCommit pendingCommit_;
   qreal lastCommittedDpr_ = 1.0;
-  QPointF physicalDragAnchor_;
-  QPointF lastPhysicalCursor_;
-  bool physicalDragActive_ = false;
   bool nativeTransitionActive_ = false;
   bool windowUpdatesWereEnabled_ = true;
-  bool commitQueued_ = false;
-  qreal pendingDpr_ = 1.0;
-  QRect pendingPhysicalGeometry_;
   AdDpiStableWindowDiagnostics diagnostics_;
 };
 

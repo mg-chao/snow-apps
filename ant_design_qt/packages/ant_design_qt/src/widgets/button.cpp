@@ -175,7 +175,7 @@ QColor compositeOn(const QColor& foreground, const QColor& background) {
 }
 
 int resolveIconSide(const QAbstractButton* button, const QFontMetrics& fm,
-                    const QFont& contentFont) {
+                    const QFont& contentFont, const QSize& referenceIconSize) {
   int iconSide = contentFont.pixelSize();
   if (iconSide <= 0) {
     const qreal pointSize = contentFont.pointSizeF();
@@ -199,7 +199,12 @@ int resolveIconSide(const QAbstractButton* button, const QFontMetrics& fm,
     defaultStyleSide = button->style()->pixelMetric(QStyle::PM_ButtonIconSize, nullptr,
                                                     const_cast<QAbstractButton*>(button));
   }
-  if (defaultStyleSide > 0 && requestedSide == defaultStyleSide) {
+  // Preserve whether the caller chose an explicit size even when its scaled
+  // value happens to equal the current platform default.
+  const QSize semanticIconSize =
+      referenceIconSize.isValid() ? referenceIconSize : requestedIconSize;
+  const int semanticSide = std::max(semanticIconSize.width(), semanticIconSize.height());
+  if (defaultStyleSide > 0 && semanticSide == defaultStyleSide) {
     return iconSide;
   }
   return requestedSide;
@@ -858,9 +863,11 @@ void AdButton::paintEvent(QPaintEvent* event) {
   const bool hasIcon = iconState.hasVisibleIcon();
   const bool iconOnly = hasIcon && textToRender.isEmpty();
 
-  int iconSide = resolveIconSide(this, fm, style.metrics.font);
+  int iconSide = resolveIconSide(this, fm, style.metrics.font, d_->referenceIconSize);
   if (visualShape == Shape::Circle || iconOnly) {
-    iconSide = std::min(iconSide, std::max(8, qRound(shapeRect.height()) - 8));
+    const int iconInset = qMax(1, qRound(8.0 * d_->controlScale.logicalScale));
+    const int availableSide = std::max(8, height() - iconInset);
+    iconSide = std::min(iconSide, availableSide);
   }
 
   const int horizontalPadding =
@@ -990,7 +997,7 @@ QSize AdButton::sizeHint() const {
   const ButtonIconRenderState iconState = resolveIconRenderState(*this, d_->busyIndicatorVisible);
   const bool hasIcon = iconState.hasVisibleIcon();
   const bool iconOnly = hasIcon && textToMeasure.isEmpty();
-  int iconSide = resolveIconSide(this, fm, style.metrics.font);
+  int iconSide = resolveIconSide(this, fm, style.metrics.font, d_->referenceIconSize);
   if (visualShape == Shape::Circle || iconOnly) {
     iconSide = std::min(iconSide, std::max(8, style.metrics.height - 8));
   }
@@ -1522,10 +1529,12 @@ QRect AdButton::busyIndicatorRect() const {
   }
 
   QFontMetrics fm(style.metrics.font);
-  int iconSide = resolveIconSide(this, fm, style.metrics.font);
+  int iconSide = resolveIconSide(this, fm, style.metrics.font, d_->referenceIconSize);
   const bool iconOnly = displayText.isEmpty();
   if (visualShape == Shape::Circle || iconOnly) {
-    iconSide = std::min(iconSide, std::max(8, qRound(shapeRect.height()) - 8));
+    const int iconInset = qMax(1, qRound(8.0 * d_->controlScale.logicalScale));
+    const int availableSide = std::max(8, height() - iconInset);
+    iconSide = std::min(iconSide, availableSide);
   }
   const int horizontalPadding =
       (iconOnly || visualShape == Shape::Circle) ? 0 : style.metrics.horizontalPadding;

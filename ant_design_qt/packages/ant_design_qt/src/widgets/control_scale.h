@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QList>
 #include <QObject>
 #include <QPointer>
 #include <QSize>
@@ -12,12 +13,16 @@ namespace adqt::widgets {
 struct AdControlScaleContext {
   qreal referenceDpr = 1.0;
   qreal currentDpr = 1.0;
+  qreal contentScale = 1.0;
   qreal logicalScale = 1.0;
   quint64 revision = 0;
 
   static qreal normalizeScale(qreal value);
   static qreal normalizeDpr(qreal value);
   static AdControlScaleContext fromDprs(qreal referenceDpr, qreal currentDpr, quint64 revision = 0);
+  static AdControlScaleContext fromDprsAndContentScale(qreal referenceDpr, qreal currentDpr,
+                                                       qreal contentScale,
+                                                       quint64 revision = 0);
 
   bool equivalentTo(const AdControlScaleContext& other) const;
 };
@@ -46,12 +51,15 @@ class AdControlScaleScope final : public QObject {
                     const QSize& logicalClientExtent = QSize());
   bool publishScale(const AdControlScaleContext& requested,
                     const QSize& logicalClientExtent = QSize());
+  bool applyCurrentScaleToSubtree(QWidget* subtree);
 
  signals:
   void scaleCommitted(const adqt::widgets::AdControlScaleContext& context,
                       const QSize& logicalClientExtent);
 
  private:
+  QList<AdControlScaleParticipant*> participantsInSubtree(QWidget* subtree) const;
+
   QPointer<QWidget> root_;
   AdControlScaleContext context_;
   QSize logicalClientExtent_;

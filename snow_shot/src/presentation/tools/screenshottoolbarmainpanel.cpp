@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 
 #include "antd_icons.h"
+#include "widgets/control_scale.h"
 
 #include <QBoxLayout>
 #include <QEvent>
@@ -22,6 +23,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numeric>
 #include <utility>
 
 namespace {
@@ -138,6 +140,19 @@ qreal ScreenshotToolbarMainPanel::physicalScale() const {
     return m_physicalScale;
 }
 
+QSize ScreenshotToolbarMainPanel::sizeHint() const {
+    const QSize intrinsicHint = QFrame::sizeHint();
+    if (qFuzzyCompare(m_physicalScale + 1.0, 2.0)) {
+        m_referenceSizeHint = intrinsicHint;
+        return intrinsicHint;
+    }
+    if (!m_referenceSizeHint.isValid() || m_referenceSizeHint.isEmpty()) {
+        return intrinsicHint;
+    }
+    return QSize(qMax(1, qRound(m_referenceSizeHint.width() * m_physicalScale)),
+                 qMax(1, qRound(m_referenceSizeHint.height() * m_physicalScale)));
+}
+
 QMargins ScreenshotToolbarMainPanel::shadowMargins() {
     return QMargins(24, 24, 24, 28);
 }
@@ -205,6 +220,7 @@ void ScreenshotToolbarMainPanel::resetContentLayout() {
     }
     m_separatorFrames.clear();
     m_spacingItems.clear();
+    m_referenceSizeHint = QSize();
 
     if (m_dragHandle != nullptr) {
         m_dragHandle->show();
@@ -269,12 +285,7 @@ void ScreenshotToolbarMainPanel::applyMetrics() {
         return;
     }
 
-    m_layout->setContentsMargins(scaledMetric(kPanelHorizontalMargin, m_physicalScale),
-                                 scaledMetric(kPanelMarginTop, m_physicalScale),
-                                 scaledMetric(kPanelHorizontalMargin, m_physicalScale),
-                                 scaledMetric(kPanelMarginBottom, m_physicalScale));
     m_layout->setSpacing(0);
-    m_layout->invalidate();
 
     const ScreenshotToolPaletteButtonMetrics metrics = buttonMetrics(m_physicalScale);
     for (adqt::widgets::AdButton* button : m_buttons) {
@@ -297,6 +308,69 @@ void ScreenshotToolbarMainPanel::applyMetrics() {
 
     updateDragHandle(m_dragHandle);
     updateDragHandle(m_trailingDragHandle);
+
+    QVector<int> referenceWidths{kPanelHorizontalMargin};
+    referenceWidths.reserve(m_layout->count() + 2);
+    for (int index = 0; index < m_layout->count(); ++index) {
+        QLayoutItem* layoutItem = m_layout->itemAt(index);
+        QWidget* widget = layoutItem != nullptr ? layoutItem->widget() : nullptr;
+        int referenceWidth = 0;
+        if (qobject_cast<adqt::widgets::AdButton*>(widget) != nullptr) {
+            referenceWidth = kButtonSize;
+        } else if (widget != nullptr &&
+                   (widget == m_dragHandle || widget == m_trailingDragHandle)) {
+            referenceWidth = kDragHandleWidth;
+        } else if (m_separatorFrames.contains(qobject_cast<QFrame*>(widget))) {
+            referenceWidth = kSeparatorWidth;
+        } else if (layoutItem != nullptr && layoutItem->spacerItem() != nullptr) {
+            for (const SpacingItem& spacing : std::as_const(m_spacingItems)) {
+                if (spacing.item == layoutItem->spacerItem()) {
+                    referenceWidth = spacing.baseSpacing;
+                    break;
+                }
+            }
+        } else if (layoutItem != nullptr) {
+            referenceWidth = qMax(
+                0, qRound(static_cast<qreal>(layoutItem->sizeHint().width()) / m_physicalScale));
+        }
+        referenceWidths.append(referenceWidth);
+    }
+    referenceWidths.append(kPanelHorizontalMargin);
+
+    const int referenceWidth =
+        std::accumulate(referenceWidths.cbegin(), referenceWidths.cend(), 0);
+    const int targetWidth =
+        m_referenceSizeHint.isValid() && !m_referenceSizeHint.isEmpty()
+            ? qMax(1, qRound(m_referenceSizeHint.width() * m_physicalScale))
+            : qMax(1, qRound(referenceWidth * m_physicalScale));
+    const qreal cumulativeScale =
+        referenceWidth > 0 ? static_cast<qreal>(targetWidth) / referenceWidth : m_physicalScale;
+    const QVector<int> scaledEdges = adqt::widgets::scaleCumulativeWidths(
+        referenceWidths, cumulativeScale, targetWidth);
+    const auto scaledWidthAt = [&scaledEdges](int index) {
+        return qMax(0, scaledEdges.at(index + 1) - scaledEdges.at(index));
+    };
+    m_layout->setContentsMargins(scaledWidthAt(0),
+                                 scaledMetric(kPanelMarginTop, m_physicalScale),
+                                 scaledWidthAt(referenceWidths.size() - 1),
+                                 scaledMetric(kPanelMarginBottom, m_physicalScale));
+    for (int index = 0; index < m_layout->count(); ++index) {
+        QLayoutItem* layoutItem = m_layout->itemAt(index);
+        if (layoutItem == nullptr) {
+            continue;
+        }
+        const int width = scaledWidthAt(index + 1);
+        if (QWidget* widget = layoutItem->widget()) {
+            if (widget->sizePolicy().horizontalPolicy() == QSizePolicy::Fixed) {
+                widget->setFixedWidth(width);
+            }
+        } else if (QSpacerItem* spacer = layoutItem->spacerItem()) {
+            spacer->changeSize(width, spacer->sizeHint().height(), QSizePolicy::Fixed,
+                               QSizePolicy::Minimum);
+        }
+    }
+
+    m_layout->invalidate();
     updatePanelStyle();
 }
 

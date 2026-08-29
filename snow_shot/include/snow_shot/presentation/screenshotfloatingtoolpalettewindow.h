@@ -89,28 +89,6 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     [[nodiscard]] qreal paletteScaleMultiplier() const;
 
   private:
-    class GeometryUpdateTransaction final {
-      public:
-        explicit GeometryUpdateTransaction(ScreenshotFloatingToolPaletteWindow& owner);
-        ~GeometryUpdateTransaction();
-
-        GeometryUpdateTransaction(const GeometryUpdateTransaction&) = delete;
-        GeometryUpdateTransaction& operator=(const GeometryUpdateTransaction&) = delete;
-
-      private:
-        ScreenshotFloatingToolPaletteWindow& m_owner;
-    };
-
-    struct GeometrySnapshot {
-        QScreen* screen = nullptr;
-        qreal devicePixelRatio = 0.0;
-        quint64 paletteRevision = 0;
-        QSize hostSize;
-        QSize windowSize;
-        QPoint contentOffset;
-        QRect mainToolbarRect;
-    };
-
     void updatePaletteGeometryForVisibleContent();
     void refreshPaletteWindow(bool forceRepaint = false);
     bool handleNativeHitTest(void* message, qintptr* result) const;
@@ -121,13 +99,7 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     void syncPalettePhysicalScale();
     void refreshStablePhysicalWindowSize();
     void refreshGeometryForVisibleContent(bool preserveContentPosition, bool forceRepaint = false);
-    void beginGeometryUpdate();
-    void endGeometryUpdate();
-    void requestGeometryUpdate(bool preserveContentPosition, bool forceRepaint);
-    void drainGeometryUpdates();
     bool commitGeometryUpdate(bool preserveContentPosition);
-    GeometrySnapshot geometrySnapshot() const;
-    static bool geometrySnapshotsEqual(const GeometrySnapshot& lhs, const GeometrySnapshot& rhs);
     static QRect nativeWindowGeometryForPhysicalDrag(const QPointF& physicalCursorPosition,
                                                      const QPointF& physicalCursorToWindowOffset,
                                                      const QSize& stablePhysicalWindowSize);
@@ -136,7 +108,11 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     qreal currentWindowDevicePixelRatio() const;
     qreal targetDevicePixelRatio() const;
     void beginPaletteDrag(const QPoint& globalPosition);
+    void beginPaletteDragAtPhysicalPosition(const QPoint& globalPosition,
+                                            const QPointF& physicalPosition);
     void updatePaletteDrag(const QPoint& globalPosition);
+    bool updatePaletteDragAtPhysicalPosition(const QPoint& globalPosition,
+                                             const QPointF& physicalPosition);
     void moveContentDuringDrag(const QPoint& position);
     void finishPaletteDrag(bool emitFinished);
     bool handleToolbarWheel(QWheelEvent* event);
@@ -144,6 +120,8 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     QSize fixedWindowSizeHint() const;
     QPoint contentOffset() const;
     QPointF dragPositionForEvent(const QPoint& globalPosition) const;
+    QPointF dragPositionForEvent(const QPoint& globalPosition,
+                                 const QPointF& physicalPosition) const;
 
     QWidget* m_panel = nullptr;
     ScreenshotToolPaletteHost* m_paletteHost = nullptr;
@@ -163,6 +141,7 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     QPointer<QWidget> m_watermarkTextEditor;
     QSize m_stablePhysicalWindowSize;
     qreal m_referenceDevicePixelRatio = 0.0;
+    qreal m_committedWindowDevicePixelRatio = 0.0;
     qreal m_paletteScaleMultiplier = 1.0;
     qreal m_lastAppliedWindowDevicePixelRatio = 0.0;
     QSize m_lastAppliedHostSize;
@@ -175,13 +154,10 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     bool m_movementClampingEnabled = false;
     bool m_processingNativeDpiChange = false;
     bool m_keyboardFocusInteractionActive = false;
-    int m_geometryUpdateDepth = 0;
-    bool m_drainingGeometryUpdates = false;
+    bool m_geometryCommitActive = false;
     bool m_geometryUpdatePending = false;
     bool m_pendingPreserveContentPosition = false;
     bool m_pendingForceRepaint = false;
-    bool m_geometrySnapshotValid = false;
-    GeometrySnapshot m_lastGeometrySnapshot;
 
 #if defined(SNOW_SHOT_TEST_HOOKS)
     quint64 m_paletteGeometryRefreshCount = 0;

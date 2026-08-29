@@ -14,6 +14,7 @@
 
 #include "antd_icons.h"
 #include "widgets/button.h"
+#include "widgets/control_scale.h"
 #include "widgets/radio.h"
 #include "widgets/radio_button_group.h"
 #include "widgets/select.h"
@@ -44,6 +45,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numeric>
 #include <utility>
 
 namespace {
@@ -684,75 +686,11 @@ QSize ScreenshotToolPalette::contentSizeHint() const {
 QRect ScreenshotToolPalette::occupiedContentRect() const {
     ensureLayoutApplied();
     return m_layoutResult.occupiedContentRect;
-
-#if 0
-    QRect occupied;
-    bool hasOccupiedPanel = false;
-    const auto appendPanel = [&](const QWidget* panel, bool contributes)
-    {
-        if (panel == nullptr || !contributes)
-        {
-            return;
-        }
-
-        const QRect panelRect = panelContentRect(panel);
-        if (panelRect.isEmpty())
-        {
-            return;
-        }
-
-        occupied = hasOccupiedPanel ? occupied.united(panelRect) : panelRect;
-        hasOccupiedPanel = true;
-    };
-
-    appendPanel(m_mainPanel, m_mainPanel != nullptr);
-    appendPanel(m_selectActionPanel, m_actionToolbarTargetVisible);
-    appendPanel(m_rectangleStylePanel, m_styleToolbarTargetVisible);
-
-    if (hasOccupiedPanel)
-    {
-        return occupied;
-    }
-
-    return QRect(QPoint(0, 0), contentSizeHint());
-#endif
 }
 
 QRect ScreenshotToolPalette::visualContentRect() const {
     ensureLayoutApplied();
     return m_layoutResult.occupiedContentRect;
-
-#if 0
-    QRect visual;
-    bool hasVisualPanel = false;
-    const auto appendPanel = [&](const QWidget* panel, bool contributes)
-    {
-        if (panel == nullptr || !contributes)
-        {
-            return;
-        }
-
-        const QRect panelRect = panelVisualRect(panel);
-        if (panelRect.isEmpty())
-        {
-            return;
-        }
-
-        visual = hasVisualPanel ? visual.united(panelRect) : panelRect;
-        hasVisualPanel = true;
-    };
-
-    appendPanel(m_mainPanel, m_mainPanel != nullptr);
-    appendPanel(m_selectActionPanel, m_actionToolbarTargetVisible);
-    appendPanel(m_rectangleStylePanel, m_styleToolbarTargetVisible);
-
-    if (hasVisualPanel)
-    {
-        return visual;
-    }
-
-    return QRect(QPoint(0, 0), contentSizeHint());
-#endif
 }
 
 QRect ScreenshotToolPalette::fullContentRect() const {
@@ -1035,6 +973,7 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
     if (m_selectActionLayout != nullptr) {
         m_selectActionLayout->invalidate();
         m_selectActionPanel->updateGeometry();
+        applyCumulativeStyleLayoutMetrics(m_selectActionPanel);
     }
     // The reserve widget permanently owns the secondary row. Visibility only
     // changes which manually positioned panel occupies that reserve; it does
@@ -1868,7 +1807,7 @@ void ScreenshotToolPalette::ensureLayoutApplied() const {
         return;
     }
 
-    self->updateToolbarGeometryLegacy();
+    self->commitLayout();
     self->m_layoutResult.paletteSize = self->size();
     self->m_layoutResult.contentSize = self->contentSizeForStyleToolbarVisibility(true);
     self->m_layoutResult.contentOffset = self->contentOffset();
@@ -1887,96 +1826,9 @@ void ScreenshotToolPalette::ensureLayoutApplied() const {
 #if defined(SNOW_SHOT_TEST_HOOKS)
     ++self->m_layoutCommitCount;
 #endif
-
-#if 0
-    // Layout activation is intentionally limited to committed dirty changes.
-    // Geometry queries and movement after this point use the cache below.
-    self->m_mainPanel->ensurePolished();
-    if (self->m_mainPanel->layout() != nullptr)
-    {
-        self->m_mainPanel->layout()->activate();
-    }
-    const QSize mainSize = self->m_mainPanel->sizeHint();
-    if (self->m_mainPanel->size() != mainSize)
-    {
-        self->m_mainPanel->setFixedSize(mainSize);
-    }
-    if (self->m_rectangleStylePanel != nullptr)
-    {
-        self->m_rectangleStylePanel->ensurePolished();
-        const QSize styleSize = self->styleToolbarSizeHint();
-        if (self->m_rectangleStylePanel->size() != styleSize)
-        {
-            self->m_rectangleStylePanel->setFixedSize(styleSize);
-        }
-        if (self->m_styleReserveWidget != nullptr)
-        {
-            QSize actionSize;
-            if (self->m_selectActionPanel != nullptr)
-            {
-                self->m_selectActionPanel->ensurePolished();
-                actionSize = self->m_selectActionPanel->sizeHint();
-                if (self->m_selectActionPanel->size() != actionSize)
-                {
-                    self->m_selectActionPanel->setFixedSize(actionSize);
-                }
-            }
-            if (self->m_secondaryToolbarPresetSize.isEmpty())
-            {
-                self->m_secondaryToolbarPresetSize =
-                    self->styleToolbarPresetSizeHint().expandedTo(actionSize);
-            }
-            if (self->m_styleReserveWidget->size() != self->m_secondaryToolbarPresetSize)
-            {
-                self->m_styleReserveWidget->setFixedSize(self->m_secondaryToolbarPresetSize);
-            }
-        }
-    }
-    const QSize contentSize = self->contentSizeForStyleToolbarVisibility(true);
-    const QSize paletteSize = contentSize + QSize(
-        self->m_shadowMargins.left() + self->m_shadowMargins.right(),
-        self->m_shadowMargins.top() + self->m_shadowMargins.bottom()
-    );
-    self->m_rootLayout->setContentsMargins(
-        self->m_shadowMargins.left(), self->m_shadowMargins.top(),
-        self->m_shadowMargins.right(), self->m_shadowMargins.bottom()
-    );
-    self->m_rootLayout->setSpacing(self->scaledMetric(TOOLBAR_ROW_SPACING));
-    if (self->size() != paletteSize)
-    {
-        self->setFixedSize(paletteSize);
-    }
-    self->updateToolbarRowGeometry(self->m_styleToolbarTargetVisible);
-    if (self->layout() != nullptr)
-    {
-        self->layout()->activate();
-    }
-    self->updateSecondaryToolbarPanelGeometry();
-
-    self->m_layoutResult.paletteSize = paletteSize;
-    self->m_layoutResult.contentSize = contentSize;
-    self->m_layoutResult.contentOffset = self->contentOffset();
-    self->m_layoutResult.fullContentRect = QRect(QPoint(0, 0), contentSize);
-    self->m_layoutResult.mainToolbarContentRect = self->panelContentRect(self->m_mainPanel);
-    QRect occupied = self->m_layoutResult.mainToolbarContentRect;
-    if (self->m_actionToolbarTargetVisible)
-    {
-        occupied = occupied.united(self->panelContentRect(self->m_selectActionPanel));
-    }
-    if (self->m_styleToolbarTargetVisible)
-    {
-        occupied = occupied.united(self->panelContentRect(self->m_rectangleStylePanel));
-    }
-    self->m_layoutResult.occupiedContentRect = occupied;
-    ++self->m_layoutResult.revision;
-#if defined(SNOW_SHOT_TEST_HOOKS)
-    ++self->m_layoutCommitCount;
-#endif
-    self->update();
-#endif
 }
 
-void ScreenshotToolPalette::updateToolbarGeometryLegacy() {
+void ScreenshotToolPalette::commitLayout() {
     SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.layout_commit");
     if (m_rootLayout == nullptr || m_mainPanel == nullptr) {
         return;
@@ -2011,7 +1863,17 @@ void ScreenshotToolPalette::updateToolbarGeometryLegacy() {
                 }
             }
             if (m_secondaryToolbarPresetSize.isEmpty()) {
-                m_secondaryToolbarPresetSize = styleToolbarPresetSizeHint().expandedTo(actionSize);
+                static_cast<void>(styleToolbarPresetSizeHint());
+                if (!actionSize.isEmpty()) {
+                    const QSize baseActionSize(
+                        qMax(1, qRound(actionSize.width() / m_physicalScale)),
+                        qMax(1, qRound(actionSize.height() / m_physicalScale)));
+                    m_secondaryToolbarBasePresetSize =
+                        m_secondaryToolbarBasePresetSize.expandedTo(baseActionSize);
+                }
+                m_secondaryToolbarPresetSize = QSize(
+                    qMax(1, qRound(m_secondaryToolbarBasePresetSize.width() * m_physicalScale)),
+                    qMax(1, qRound(m_secondaryToolbarBasePresetSize.height() * m_physicalScale)));
             }
             if (m_styleReserveWidget->size() != m_secondaryToolbarPresetSize ||
                 m_styleReserveWidget->minimumSize() != m_secondaryToolbarPresetSize ||
@@ -2077,7 +1939,7 @@ QSize ScreenshotToolPalette::styleToolbarPresetSizeHint() {
         return {};
     }
 
-    if (m_secondaryToolbarBasePresetSize.isValid() && !qFuzzyCompare(m_physicalScale + 1.0, 2.0)) {
+    if (m_secondaryToolbarBasePresetSize.isValid()) {
         return QSize(qMax(1, qRound(m_secondaryToolbarBasePresetSize.width() * m_physicalScale)),
                      qMax(1, qRound(m_secondaryToolbarBasePresetSize.height() * m_physicalScale)));
     }
@@ -2103,9 +1965,9 @@ QSize ScreenshotToolPalette::styleToolbarPresetSizeHint() {
     const QMargins margins = m_rectangleStyleLayout->contentsMargins();
     const QSize result =
         controlsSize + QSize(margins.left() + margins.right(), margins.top() + margins.bottom());
-    if (qFuzzyCompare(m_physicalScale + 1.0, 2.0)) {
-        m_secondaryToolbarBasePresetSize = result;
-    }
+    m_secondaryToolbarBasePresetSize =
+        QSize(qMax(1, qRound(result.width() / m_physicalScale)),
+              qMax(1, qRound(result.height() / m_physicalScale)));
     return result;
 }
 
@@ -2123,6 +1985,17 @@ qreal ScreenshotToolPalette::scaledMetric(qreal value) const {
 QMargins ScreenshotToolPalette::scaledMargins(int left, int top, int right, int bottom) const {
     return QMargins(scaledMetric(left), scaledMetric(top), scaledMetric(right),
                     scaledMetric(bottom));
+}
+
+QMargins ScreenshotToolPalette::scaledPanelMargins(int horizontalMargin, int verticalMargin,
+                                                   int baseContentHeight) const {
+    const int horizontal = scaledMetric(horizontalMargin);
+    const int contentHeight = scaledMetric(baseContentHeight);
+    const int totalHeight = scaledMetric(baseContentHeight + verticalMargin * 2);
+    const int top = std::min(scaledMetric(verticalMargin),
+                             std::max(0, totalHeight - contentHeight));
+    const int bottom = std::max(0, totalHeight - contentHeight - top);
+    return QMargins(horizontal, top, horizontal, bottom);
 }
 
 void ScreenshotToolPalette::addMainToolbarSpacing(int baseSpacing) {
@@ -2238,7 +2111,7 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
 
     applyStyleMetricsForScope(m_activeStyleControlsWidget);
 
-    if (m_selectActionPanel != nullptr && m_actionToolbarTargetVisible) {
+    if (m_selectActionPanel != nullptr) {
         const auto metrics = actionButtonMetrics(m_physicalScale);
         for (adqt::widgets::AdButton* button :
              m_selectActionPanel->findChildren<adqt::widgets::AdButton*>()) {
@@ -2266,20 +2139,34 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
     }
 
     if (m_rectangleStyleLayout != nullptr) {
-        m_rectangleStyleLayout->setContentsMargins(
-            scaledMetric(STYLE_PANEL_HORIZONTAL_MARGIN), scaledMetric(STYLE_PANEL_VERTICAL_MARGIN),
-            scaledMetric(STYLE_PANEL_HORIZONTAL_MARGIN), scaledMetric(STYLE_PANEL_VERTICAL_MARGIN));
+        m_rectangleStyleLayout->setContentsMargins(scaledPanelMargins(
+            STYLE_PANEL_HORIZONTAL_MARGIN, STYLE_PANEL_VERTICAL_MARGIN, STYLE_BUTTON_SIZE));
         m_rectangleStyleLayout->setSpacing(0);
         m_rectangleStyleLayout->invalidate();
     }
-    if (m_selectActionLayout != nullptr && m_actionToolbarTargetVisible) {
-        m_selectActionLayout->setContentsMargins(scaledMetric(TOOLBAR_PANEL_HORIZONTAL_MARGIN),
-                                                 scaledMetric(TOOLBAR_PANEL_VERTICAL_MARGIN),
-                                                 scaledMetric(TOOLBAR_PANEL_HORIZONTAL_MARGIN),
-                                                 scaledMetric(TOOLBAR_PANEL_VERTICAL_MARGIN));
+    if (m_selectActionLayout != nullptr) {
+        m_selectActionLayout->setContentsMargins(scaledPanelMargins(
+            TOOLBAR_PANEL_HORIZONTAL_MARGIN, TOOLBAR_PANEL_VERTICAL_MARGIN, 32));
         m_selectActionLayout->setSpacing(0);
         m_selectActionLayout->invalidate();
     }
+
+    for (QFrame* separator : std::as_const(m_styleSeparatorFrames)) {
+        if (separator != nullptr && m_selectActionPanel != nullptr &&
+            (separator->parentWidget() == m_selectActionPanel ||
+             m_selectActionPanel->isAncestorOf(separator))) {
+            separator->setFixedSize(scaledMetric(TOOLBAR_SEPARATOR_WIDTH),
+                                    scaledMetric(TOOLBAR_SEPARATOR_HEIGHT));
+        }
+    }
+    for (const SpacingItem& item : std::as_const(m_styleSpacingItems)) {
+        if (item.item != nullptr && item.owner != nullptr && m_selectActionPanel != nullptr &&
+            (item.owner == m_selectActionPanel || m_selectActionPanel->isAncestorOf(item.owner))) {
+            item.item->changeSize(item.visible ? scaledMetric(item.baseSpacing) : 0, 0,
+                                  QSizePolicy::Fixed, QSizePolicy::Minimum);
+        }
+    }
+    applyCumulativeStyleLayoutMetrics(m_selectActionPanel);
 
     for (QFrame* panel : m_panelFrames) {
         updatePanelMetrics(panel);
@@ -2343,10 +2230,166 @@ void ScreenshotToolPalette::applyStyleMetricsForScope(QWidget* scope) {
         }
     }
     if (QBoxLayout* layout = qobject_cast<QBoxLayout*>(scope->layout())) {
-        layout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
         layout->invalidate();
     }
+    applyCumulativeStyleLayoutMetrics(scope);
     m_styleMetricRevisions.insert(scope, m_metricProfileRevision);
+}
+
+void ScreenshotToolPalette::initializeStyleLayoutProfiles() {
+    m_styleLayoutProfiles.clear();
+    for (QBoxLayout* layout : std::as_const(m_styleControlLayouts)) {
+        if (layout == nullptr) {
+            continue;
+        }
+
+        layout->activate();
+        const QMargins margins = layout->contentsMargins();
+        const int originalReferenceWidth =
+            std::max(0, layout->sizeHint().width() - margins.left() - margins.right());
+        const int originalSpacing = std::max(0, layout->spacing());
+        QVector<QLayoutItem*> items;
+        while (layout->count() > 0) {
+            if (QLayoutItem* item = layout->takeAt(0)) {
+                items.append(item);
+            }
+        }
+
+        StyleLayoutProfile profile;
+        profile.layout = layout;
+        profile.owner = layout->parentWidget();
+        profile.referenceAutomaticSpacing = originalSpacing;
+        profile.segments.reserve(items.size());
+        profile.automaticGaps.reserve(std::max<qsizetype>(0, items.size() - 1));
+        layout->setSpacing(0);
+        for (qsizetype index = 0; index < items.size(); ++index) {
+            QLayoutItem* item = items.at(index);
+            StyleLayoutSegment segment;
+            segment.widget = item->widget();
+            segment.spacer = item->spacerItem();
+            segment.referenceWidth = std::max(0, item->sizeHint().width());
+            if (segment.referenceWidth == 0 && segment.widget != nullptr) {
+                const QSize widgetHint = segment.widget->sizeHint()
+                                             .expandedTo(segment.widget->minimumSizeHint())
+                                             .boundedTo(segment.widget->maximumSize())
+                                             .expandedTo(segment.widget->minimumSize());
+                segment.referenceWidth = std::max(0, widgetHint.width());
+            }
+            profile.segments.append(segment);
+            layout->addItem(item);
+
+            if (index + 1 < items.size()) {
+                auto* gap = new QSpacerItem(STYLE_ITEM_SPACING, 0, QSizePolicy::Fixed,
+                                            QSizePolicy::Minimum);
+                layout->addSpacerItem(gap);
+                profile.automaticGaps.append(gap);
+            }
+        }
+        int representedReferenceWidth = 0;
+        bool hasActiveWidget = false;
+        for (const StyleLayoutSegment& segment : std::as_const(profile.segments)) {
+            bool active = segment.widget == nullptr || !segment.widget->isHidden();
+            if (segment.spacer != nullptr) {
+                const auto spacing = std::find_if(
+                    m_styleSpacingItems.cbegin(), m_styleSpacingItems.cend(),
+                    [&segment](const SpacingItem& candidate) {
+                        return candidate.item == segment.spacer;
+                    });
+                active = spacing == m_styleSpacingItems.cend() || spacing->visible;
+            }
+            if (!active || segment.referenceWidth <= 0) {
+                continue;
+            }
+            if (segment.widget != nullptr) {
+                if (hasActiveWidget) {
+                    representedReferenceWidth += profile.referenceAutomaticSpacing;
+                }
+                hasActiveWidget = true;
+            }
+            representedReferenceWidth += segment.referenceWidth;
+        }
+        profile.referenceWidthAdjustment = originalReferenceWidth - representedReferenceWidth;
+        m_styleLayoutProfiles.append(std::move(profile));
+    }
+}
+
+void ScreenshotToolPalette::applyCumulativeStyleLayoutMetrics(QWidget* scope) {
+    if (scope == nullptr) {
+        return;
+    }
+
+    for (StyleLayoutProfile& profile : m_styleLayoutProfiles) {
+        if (profile.layout == nullptr || profile.owner != scope) {
+            continue;
+        }
+
+        QVector<bool> activeSegments;
+        activeSegments.reserve(profile.segments.size());
+        for (const StyleLayoutSegment& segment : std::as_const(profile.segments)) {
+            bool active = segment.widget == nullptr || !segment.widget->isHidden();
+            if (segment.spacer != nullptr) {
+                const auto spacing = std::find_if(
+                    m_styleSpacingItems.cbegin(), m_styleSpacingItems.cend(),
+                    [&segment](const SpacingItem& candidate) {
+                        return candidate.item == segment.spacer;
+                    });
+                active = spacing == m_styleSpacingItems.cend() || spacing->visible;
+            }
+            activeSegments.append(active && segment.referenceWidth > 0);
+        }
+
+        QVector<int> referenceWidths;
+        referenceWidths.reserve(profile.segments.size() + profile.automaticGaps.size());
+        bool hasActiveWidget = false;
+        for (qsizetype index = 0; index < profile.segments.size(); ++index) {
+            referenceWidths.append(activeSegments.at(index)
+                                       ? profile.segments.at(index).referenceWidth
+                                       : 0);
+            hasActiveWidget =
+                hasActiveWidget ||
+                (activeSegments.at(index) && profile.segments.at(index).widget != nullptr);
+            if (index < profile.automaticGaps.size()) {
+                const StyleLayoutSegment& next = profile.segments.at(index + 1);
+                const bool nextIsActiveWidget =
+                    activeSegments.at(index + 1) && next.widget != nullptr;
+                referenceWidths.append(hasActiveWidget && nextIsActiveWidget
+                                           ? profile.referenceAutomaticSpacing
+                                           : 0);
+            }
+        }
+
+        const int activeReferenceWidth =
+            std::accumulate(referenceWidths.cbegin(), referenceWidths.cend(), 0) +
+            profile.referenceWidthAdjustment;
+        const int targetWidth =
+            qMax(0, qRound(std::max(0, activeReferenceWidth) * m_physicalScale));
+        const QVector<int> edges = adqt::widgets::scaleCumulativeWidths(
+            referenceWidths, m_physicalScale, targetWidth);
+        qsizetype edgeIndex = 0;
+        for (qsizetype index = 0; index < profile.segments.size(); ++index) {
+            const int activeWidth = edges.at(edgeIndex + 1) - edges.at(edgeIndex);
+            StyleLayoutSegment& segment = profile.segments[index];
+            if (segment.widget != nullptr) {
+                const int standaloneWidth =
+                    qMax(1, qRound(segment.referenceWidth * m_physicalScale));
+                segment.widget->setFixedWidth(activeSegments.at(index) ? activeWidth
+                                                                        : standaloneWidth);
+            } else if (segment.spacer != nullptr) {
+                segment.spacer->changeSize(activeWidth, 0, QSizePolicy::Fixed,
+                                           QSizePolicy::Minimum);
+            }
+            ++edgeIndex;
+
+            if (index < profile.automaticGaps.size()) {
+                const int gapWidth = edges.at(edgeIndex + 1) - edges.at(edgeIndex);
+                profile.automaticGaps.at(index)->changeSize(
+                    gapWidth, 0, QSizePolicy::Fixed, QSizePolicy::Minimum);
+                ++edgeIndex;
+            }
+        }
+        profile.layout->invalidate();
+        return;
+    }
 }
 
 void ScreenshotToolPalette::installWheelFilters(QObject* receiver) {
@@ -3636,9 +3679,9 @@ void ScreenshotToolPalette::createRectangleStyleToolbar() {
     }
     auto* selectLayout = new QHBoxLayout(m_selectActionPanel);
     m_selectActionLayout = selectLayout;
-    selectLayout->setContentsMargins(
-        scaledMetric(TOOLBAR_PANEL_HORIZONTAL_MARGIN), scaledMetric(TOOLBAR_PANEL_VERTICAL_MARGIN),
-        scaledMetric(TOOLBAR_PANEL_HORIZONTAL_MARGIN), scaledMetric(TOOLBAR_PANEL_VERTICAL_MARGIN));
+    m_styleControlLayouts.push_back(selectLayout);
+    selectLayout->setContentsMargins(scaledPanelMargins(
+        TOOLBAR_PANEL_HORIZONTAL_MARGIN, TOOLBAR_PANEL_VERTICAL_MARGIN, 32));
     selectLayout->setSpacing(0);
     const auto addSelectButton =
         [this, selectLayout](const char* tooltip, const adqt::icons::IconRef& icon, auto signal) {
@@ -3662,9 +3705,8 @@ void ScreenshotToolPalette::createRectangleStyleToolbar() {
 
     auto* layout = new QVBoxLayout(m_rectangleStylePanel);
     m_rectangleStyleLayout = layout;
-    layout->setContentsMargins(
-        scaledMetric(STYLE_PANEL_HORIZONTAL_MARGIN), scaledMetric(STYLE_PANEL_VERTICAL_MARGIN),
-        scaledMetric(STYLE_PANEL_HORIZONTAL_MARGIN), scaledMetric(STYLE_PANEL_VERTICAL_MARGIN));
+    layout->setContentsMargins(scaledPanelMargins(
+        STYLE_PANEL_HORIZONTAL_MARGIN, STYLE_PANEL_VERTICAL_MARGIN, STYLE_BUTTON_SIZE));
     layout->setSpacing(0);
 
     addSelectButton("Send to back", outlined_icons::VerticalAlignBottom(),
@@ -4069,6 +4111,10 @@ void ScreenshotToolPalette::createRectangleStyleToolbar() {
     layout->addWidget(m_filterStyleControlsWidget);
     layout->addWidget(m_penFilterStyleControlsWidget);
     layout->addWidget(m_watermarkStyleControlsWidget);
+    initializeStyleLayoutProfiles();
+    for (const StyleEditorBinding& binding : std::as_const(m_styleEditorBindings)) {
+        applyCumulativeStyleLayoutMetrics(binding.controls);
+    }
     setStyleControlsActive(Tool::Shape);
     updateSerialNumberControls();
 
@@ -4357,6 +4403,7 @@ bool ScreenshotToolPalette::setStyleControlsActive(Tool tool) {
     if (m_rectangleStyleLayout != nullptr) {
         m_rectangleStyleLayout->invalidate();
     }
+    applyCumulativeStyleLayoutMetrics(m_activeStyleControlsWidget);
     return true;
 }
 
@@ -4541,12 +4588,12 @@ QSize ScreenshotToolPalette::contentSizeForStyleToolbarVisibility(bool styleTool
     };
 
     appendPanel(m_mainPanel, m_mainPanel != nullptr);
-    if (m_rectangleStylePanel != nullptr && styleToolbarVisible) {
+    if (m_styleReserveWidget != nullptr && styleToolbarVisible) {
         QSize styleSize = m_styleReserveWidget != nullptr ? m_styleReserveWidget->size() : QSize();
-        if (styleSize.isEmpty()) {
+        if (styleSize.isEmpty() && m_rectangleStylePanel != nullptr) {
             styleSize = m_rectangleStylePanel->size();
         }
-        if (styleSize.isEmpty()) {
+        if (styleSize.isEmpty() && m_rectangleStylePanel != nullptr) {
             styleSize = m_rectangleStylePanel->sizeHint();
         }
         if (!styleSize.isEmpty()) {

@@ -31,6 +31,7 @@ class ScreenshotToolbarMainPanel final : public QFrame {
     [[nodiscard]] QWidget* trailingDragHandle() const;
     [[nodiscard]] int buttonSize() const;
     [[nodiscard]] qreal physicalScale() const;
+    [[nodiscard]] QSize sizeHint() const override;
 
     static QMargins shadowMargins();
 
@@ -65,6 +66,7 @@ class ScreenshotToolbarMainPanel final : public QFrame {
     QVector<adqt::widgets::AdButton*> m_buttons;
     QVector<QFrame*> m_separatorFrames;
     QVector<SpacingItem> m_spacingItems;
+    mutable QSize m_referenceSizeHint;
     qreal m_physicalScale = 1.0;
 };
 
