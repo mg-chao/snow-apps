@@ -255,6 +255,22 @@ target_include_directories(snow_shot_image_codec_backend PUBLIC
 target_link_libraries(snow_shot_image_codec_backend PRIVATE
     snow_image::snow_image_static
 )
+if(NOT SNOW_SHOT_IMAGE_CODEC_BACKEND_STATIC)
+    # This backend is a DLL in the Debug/performance workspace builds and
+    # cannot borrow codec symbols from the Qt executable. Keep its suppressed
+    # static-library dependencies local to the DLL.
+    if(NOT SNOW_IMAGE_LINK_PNG_DEPENDENCIES)
+        find_package(PNG REQUIRED)
+        target_link_libraries(snow_shot_image_codec_backend PRIVATE PNG::PNG)
+    endif()
+    if(NOT SNOW_IMAGE_LINK_JPEG_DEPENDENCIES)
+        find_package(libjpeg-turbo CONFIG REQUIRED)
+        target_link_libraries(snow_shot_image_codec_backend PRIVATE
+            $<IF:$<TARGET_EXISTS:libjpeg-turbo::jpeg>,libjpeg-turbo::jpeg,libjpeg-turbo::jpeg-static>
+            $<IF:$<TARGET_EXISTS:libjpeg-turbo::turbojpeg>,libjpeg-turbo::turbojpeg,libjpeg-turbo::turbojpeg-static>
+        )
+    endif()
+endif()
 if(SNOW_SHOT_IMAGE_CODEC_BACKEND_STATIC)
     target_compile_definitions(snow_shot_image_codec_backend PUBLIC
         SNOW_SHOT_IMAGE_CODEC_BACKEND_STATIC=1

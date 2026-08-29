@@ -66,6 +66,44 @@ function(snow_workspace_configure_options)
     set(SNOW_IMAGE_DEFAULT_LINKAGE static CACHE STRING
         "Default Snow Image target linkage." FORCE)
 
+    # Development workspace presets use static Qt kits whose GUI module ships
+    # bundled image codecs. Avoid propagating second vcpkg archives from the
+    # static Snow Image target, which otherwise produces duplicate png_*
+    # static Snow Image target, which otherwise produces duplicate codec
+    # symbols in the final executable. Production static Qt is validated to
+    # use system codecs and keeps the normal Snow Image dependencies.
+    set(SNOW_IMAGE_LINK_PNG_DEPENDENCIES ON CACHE BOOL
+        "Link the PNG dependency into the static Snow Image target." FORCE)
+    set(SNOW_IMAGE_LINK_JPEG_DEPENDENCIES ON CACHE BOOL
+        "Link JPEG dependencies into the static Snow Image target." FORCE)
+    set(_snow_workspace_qt_gui_targets "")
+    if(DEFINED Qt6_DIR AND NOT Qt6_DIR STREQUAL "")
+        set(_snow_workspace_qt_gui_targets
+            "${Qt6_DIR}/../Qt6Gui/Qt6GuiTargets.cmake")
+    elseif(DEFINED ENV{SNOW_QT_STATIC_DIR} AND
+           NOT "$ENV{SNOW_QT_STATIC_DIR}" STREQUAL "")
+        set(_snow_workspace_qt_gui_targets
+            "$ENV{SNOW_QT_STATIC_DIR}/../Qt6Gui/Qt6GuiTargets.cmake")
+    endif()
+    if(EXISTS "${_snow_workspace_qt_gui_targets}")
+        file(READ "${_snow_workspace_qt_gui_targets}" _snow_workspace_qt_gui_text)
+        if(_snow_workspace_qt_gui_text MATCHES
+           "add_library\\(Qt6::Gui STATIC IMPORTED\\)")
+            if(NOT _snow_workspace_qt_gui_text MATCHES
+               "QT_ENABLED_PRIVATE_FEATURES [^\"]*system_png")
+                set(SNOW_IMAGE_LINK_PNG_DEPENDENCIES OFF CACHE BOOL
+                    "Link the PNG dependency into the static Snow Image target." FORCE)
+            endif()
+            if(NOT _snow_workspace_qt_gui_text MATCHES
+               "QT_ENABLED_PRIVATE_FEATURES [^\"]*system_jpeg")
+                set(SNOW_IMAGE_LINK_JPEG_DEPENDENCIES OFF CACHE BOOL
+                    "Link JPEG dependencies into the static Snow Image target." FORCE)
+            endif()
+        endif()
+        unset(_snow_workspace_qt_gui_text)
+    endif()
+    unset(_snow_workspace_qt_gui_targets)
+
     # The repository's portable Qt kit is static. Qt's imported targets carry
     # a static CRT requirement, so align every workspace target before nested
     # projects are added. Otherwise a static-CRT executable can link against

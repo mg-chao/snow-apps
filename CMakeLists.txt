@@ -139,16 +139,15 @@ endif()
 if(SNOW_APPS_BUILD_IMAGE_VIEWER AND NOT SNOW_APPS_BUILD_SNOW_IMAGE)
     message(FATAL_ERROR "SNOW_APPS_BUILD_IMAGE_VIEWER requires SNOW_APPS_BUILD_SNOW_IMAGE=ON")
 endif()
+if(SNOW_APPS_BUILD_ANT_DESIGN_QT AND NOT SNOW_APPS_BUILD_SNOW_IMAGE)
+    message(FATAL_ERROR "SNOW_APPS_BUILD_ANT_DESIGN_QT requires SNOW_APPS_BUILD_SNOW_IMAGE=ON")
+endif()
 if(SNOW_APPS_BUILD_SNOW_SHOT AND
    (NOT SNOW_APPS_BUILD_ANT_DESIGN_QT OR
     NOT SNOW_APPS_BUILD_SNOW_IMAGE OR
     NOT SNOW_APPS_BUILD_DRAW_ENGINE))
     message(FATAL_ERROR
         "SNOW_APPS_BUILD_SNOW_SHOT requires Ant Design Qt, Snow Image, and the Draw Engine")
-endif()
-
-if(SNOW_APPS_BUILD_ANT_DESIGN_QT)
-    add_subdirectory(ant_design_qt "${CMAKE_BINARY_DIR}/ant_design_qt")
 endif()
 
 if(SNOW_APPS_BUILD_SNOW_IMAGE)
@@ -168,6 +167,10 @@ if(SNOW_APPS_BUILD_SNOW_IMAGE)
     set(SNOW_IMAGE_ENABLE_INSTALL OFF CACHE BOOL
         "Install Snow Image as a standalone package." FORCE)
     add_subdirectory(snow_image "${CMAKE_BINARY_DIR}/snow_image")
+endif()
+
+if(SNOW_APPS_BUILD_ANT_DESIGN_QT)
+    add_subdirectory(ant_design_qt "${CMAKE_BINARY_DIR}/ant_design_qt")
 endif()
 
 if(SNOW_APPS_BUILD_DRAW_ENGINE)

@@ -1,6 +1,6 @@
 .codex-build/
 
-# Qt / qmake build directories
+# Qt build directories
 build/
 build-*/
 **/build-*/

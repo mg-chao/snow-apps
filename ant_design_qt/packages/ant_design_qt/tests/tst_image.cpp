@@ -250,7 +250,7 @@ class ImageTests final : public QObject {
     QCOMPARE(second->image().size(), source.size());
   }
 
-  void localCacheSeparatesSizesAndInvalidatesModifiedFiles() {
+  void localDecodesRequestedSizesAndReflectsModifiedFilesWithoutCache() {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
     const QString path = directory.filePath(QStringLiteral("mutable.png"));
@@ -284,6 +284,26 @@ class ImageTests final : public QObject {
     QVERIFY(modifiedFinished.wait());
     QVERIFY(modified->isSuccessful());
     QCOMPARE(modified->image().size(), QSize(128, 42));
+  }
+
+  void sequentialRequestsDecodeAgainWithoutCompletedCache() {
+    QImage source(96, 48, QImage::Format_ARGB32_Premultiplied);
+    source.fill(Qt::magenta);
+    const QUrl url = dataUrl(source);
+    QObject owner;
+
+    AdImageReply* first = defaultAdImageLoader()->load(url, &owner);
+    QSignalSpy firstFinished(first, &AdImageReply::finished);
+    QVERIFY(firstFinished.wait());
+    QVERIFY(first->isSuccessful());
+    const quint64 firstKey = first->image().cacheKey();
+
+    AdImageReply* second = defaultAdImageLoader()->load(url, &owner);
+    QVERIFY(!second->isFinished());
+    QSignalSpy secondFinished(second, &AdImageReply::finished);
+    QVERIFY(secondFinished.wait());
+    QVERIFY(second->isSuccessful());
+    QVERIFY(static_cast<quint64>(second->image().cacheKey()) != firstKey);
   }
 
   void destroyedWidgetCancelsAndReleasesReply() {

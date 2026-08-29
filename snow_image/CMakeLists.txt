@@ -27,6 +27,14 @@ option(SNOW_IMAGE_CODEC_HEIF "Enable HEIF, HEIC, HIF, and AVIF codecs." OFF)
 option(SNOW_IMAGE_CODEC_JXL "Enable JPEG XL codecs." OFF)
 option(SNOW_IMAGE_CODEC_EXR "Enable OpenEXR codecs." OFF)
 option(SNOW_IMAGE_CODEC_WEBP "Enable WebP codecs." OFF)
+option(SNOW_IMAGE_LINK_PNG_DEPENDENCIES
+    "Link the PNG dependency into the static Snow Image target."
+    ON
+)
+option(SNOW_IMAGE_LINK_JPEG_DEPENDENCIES
+    "Link JPEG dependencies into the static Snow Image target."
+    ON
+)
 set(SNOW_IMAGE_PROFILE "full" CACHE STRING "Codec profile: full or redistributable.")
 set_property(CACHE SNOW_IMAGE_PROFILE PROPERTY STRINGS full redistributable)
 set(SNOW_IMAGE_DEFAULT_LINKAGE "static" CACHE STRING "Default snow_image target linkage.")
@@ -258,7 +266,23 @@ function(snow_image_configure_target target_name linkage)
             ${SNOW_IMAGE_PRIVATE_DEFINITIONS}
             $<$<STREQUAL:${SNOW_IMAGE_PROFILE},full>:SNOW_IMAGE_FULL_PROFILE=1>
     )
-    target_link_libraries(${target_name} PRIVATE ${SNOW_IMAGE_PRIVATE_LIBRARIES})
+    set(_snow_image_target_libraries ${SNOW_IMAGE_PRIVATE_LIBRARIES})
+    if(linkage STREQUAL "STATIC" AND NOT SNOW_IMAGE_LINK_PNG_DEPENDENCIES)
+        # A static Qt kit without system_png already supplies the bundled PNG
+        # objects. Linking vcpkg's libpng as well creates duplicate png_*
+        # definitions in the final executable. Keep ZLIB::ZLIB because SVG
+        # gzip helpers require the zlib API directly.
+        list(REMOVE_ITEM _snow_image_target_libraries PNG::PNG)
+    endif()
+    if(linkage STREQUAL "STATIC" AND NOT SNOW_IMAGE_LINK_JPEG_DEPENDENCIES)
+        # Static Qt kits without system_jpeg provide the JPEG implementation
+        # through Qt's image plugin. Avoid pulling a second libjpeg archive
+        # into the same executable.
+        list(FILTER _snow_image_target_libraries EXCLUDE
+            REGEX "TARGET_EXISTS:libjpeg-turbo::jpeg>")
+    endif()
+    target_link_libraries(${target_name} PRIVATE ${_snow_image_target_libraries})
+    unset(_snow_image_target_libraries)
     if(SNOW_IMAGE_ENABLE_SANITIZERS)
         target_link_libraries(${target_name} PUBLIC snow_image_sanitizers)
     endif()

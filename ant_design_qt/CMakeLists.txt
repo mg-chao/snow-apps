@@ -13,9 +13,12 @@ if(ADQT_STRICT_COMPILE)
 endif()
 snow_enable_clang_tidy()
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Qt6 REQUIRED COMPONENTS Widgets Svg Network LinguistTools)
+if(NOT TARGET snow_image::snow_image)
+    find_package(snow_image CONFIG REQUIRED)
+endif()
 include("${CMAKE_CURRENT_SOURCE_DIR}/../cmake/SnowTestCliGuard.cmake")
 
 file(GLOB ADQT_ICON_CORE_SOURCES CONFIGURE_DEPENDS
@@ -58,7 +61,7 @@ target_include_directories(ant_design_qt SYSTEM PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/packages/ant_design_qt/src"
 )
 target_link_libraries(ant_design_qt PUBLIC adqt::icon_core adqt::icons
-    Qt6::Widgets Qt6::Svg Qt6::Network)
+    Qt6::Widgets Qt6::Svg Qt6::Network snow_image::snow_image_static)
 target_precompile_headers(ant_design_qt PRIVATE
     <algorithm>
     <memory>
@@ -140,7 +143,16 @@ if(ADQT_BUILD_TESTS)
     set_target_properties(adqt-image-tests PROPERTIES AUTOMOC ON)
     target_link_libraries(adqt-image-tests PRIVATE adqt::widgets Qt6::Test)
     add_test(NAME adqt-image-tests COMMAND adqt-image-tests)
-    set_tests_properties(adqt-image-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    if(WIN32)
+        set_tests_properties(adqt-image-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    else()
+        set_tests_properties(adqt-image-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endif()
 
     add_executable(adqt-pagination-tests packages/ant_design_qt/tests/tst_pagination.cpp)
     set_target_properties(adqt-pagination-tests PROPERTIES AUTOMOC ON)

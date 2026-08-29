@@ -158,7 +158,7 @@ class SNOW_IMAGE_API Image final {
     std::shared_ptr<detail::AlphaAnalysisState> alpha_analysis_;
 
     friend class MutableImage;
-    friend Result<AlphaContent> classify_alpha(const Image&, std::stop_token);
+    friend SNOW_IMAGE_API Result<AlphaContent> classify_alpha(const Image&, std::stop_token);
 };
 
 class SNOW_IMAGE_API MutableImage final {

@@ -21,13 +21,11 @@ Set `ADQT_PERF_MIN_DRAG_FPS` to a machine-specific positive integer to enable a 
 regression gate; the default `0` records timings without applying a platform-dependent limit.
 Set `ADQT_PERF_SCREENSHOT_DIR` to capture the first measured frame of each popup mode.
 
-Build the three static libraries in release mode first, then run:
+Build the benchmark through the supported top-level CMake project, then run the resulting
+benchmark target from its build directory:
 
 ```powershell
-qmake.exe ..\color-picker-perf.pro CONFIG+=release
-nmake release
-.\release\color-picker-perf.exe
+cmake --build ..\..\build\windows-msvc-performance --config Release --target adqt-color-picker-perf
 ```
 
-Use a Visual Studio x64 developer shell so `cl.exe`, the standard-library headers, and
-`nmake.exe` resolve from the same MSVC toolchain.
+The benchmark is not available as a standalone project.

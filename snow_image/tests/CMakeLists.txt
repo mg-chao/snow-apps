@@ -7,6 +7,17 @@ endif()
 
 add_executable(snow_image_core_tests core_tests.cpp)
 target_link_libraries(snow_image_core_tests PRIVATE snow_image::snow_image)
+if(NOT SNOW_IMAGE_LINK_PNG_DEPENDENCIES)
+    # The workspace's static Qt executable supplies bundled codec symbols,
+    # but this non-Qt test executable still needs explicit codec archives.
+    target_link_libraries(snow_image_core_tests PRIVATE PNG::PNG)
+endif()
+if(NOT SNOW_IMAGE_LINK_JPEG_DEPENDENCIES)
+    target_link_libraries(snow_image_core_tests PRIVATE
+        $<IF:$<TARGET_EXISTS:libjpeg-turbo::jpeg>,libjpeg-turbo::jpeg,libjpeg-turbo::jpeg-static>
+        $<IF:$<TARGET_EXISTS:libjpeg-turbo::turbojpeg>,libjpeg-turbo::turbojpeg,libjpeg-turbo::turbojpeg-static>
+    )
+endif()
 target_compile_features(snow_image_core_tests PRIVATE cxx_std_20)
 
 if(MSVC)

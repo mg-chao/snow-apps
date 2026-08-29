@@ -6,11 +6,9 @@
 
 #include <QAbstractItemModel>
 #include <QApplication>
-#include <QBuffer>
-#include <QCache>
+#include <QByteArray>
 #include <QCloseEvent>
-#include <QCryptographicHash>
-#include <QDir>
+#include <QColorSpace>
 #include <QEnterEvent>
 #include <QEvent>
 #include <QFile>
@@ -20,7 +18,6 @@
 #include <QHBoxLayout>
 #include <QHideEvent>
 #include <QImage>
-#include <QImageReader>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QMouseEvent>
@@ -45,9 +42,19 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <filesystem>
 #include <memory>
 #include <limits>
+#include <new>
+#include <string>
 #include <utility>
+#include <vector>
+
+#include <snow/image/io.h>
+#include <snow/image/service.h>
 
 namespace adqt::widgets {
 
@@ -98,21 +105,9 @@ bool decodeDataUrl(const QUrl& source, QByteArray* bytes) {
   if (meta.contains(QStringLiteral(";base64"), Qt::CaseInsensitive)) {
     *bytes = QByteArray::fromBase64(payload.toUtf8());
   } else {
-    *bytes = QUrl::fromPercentEncoding(payload.toUtf8()).toUtf8();
+    *bytes = QByteArray::fromPercentEncoding(payload.toUtf8());
   }
   return !bytes->isEmpty();
-}
-
-int imageCostBytes(const QImage& image) {
-  if (image.isNull()) {
-    return 1;
-  }
-
-  qint64 bytes = image.sizeInBytes();
-  if (bytes <= 0) {
-    bytes = static_cast<qint64>(image.width()) * static_cast<qint64>(image.height()) * 4;
-  }
-  return static_cast<int>(std::clamp<qint64>(bytes, 1, std::numeric_limits<int>::max()));
 }
 
 QSize boundedDecodeSize(const QSize& naturalSize, const AdImageLoadOptions& options) {
@@ -134,49 +129,236 @@ QSize boundedDecodeSize(const QSize& naturalSize, const AdImageLoadOptions& opti
 struct DecodedImage {
   QImage image;
   QSize naturalSize;
+  QString errorString;
 };
 
-DecodedImage decodeWithReader(QImageReader* reader, const AdImageLoadOptions& options) {
-  if (!reader) {
-    return {};
+QString snowStatusText(const snow::image::Status& status) {
+  QString message = QString::fromStdString(status.message).trimmed();
+  if (message.isEmpty()) {
+    message = QStringLiteral("Failed to decode image data");
   }
-  reader->setAutoTransform(true);
-  const QSize naturalSize = reader->size();
-  const QSize decodeSize = boundedDecodeSize(naturalSize, options);
-  if (decodeSize.isValid() && decodeSize != naturalSize) {
-    reader->setScaledSize(decodeSize);
+  if (!status.codec.empty()) {
+    message += QStringLiteral(" (%1)").arg(QString::fromStdString(status.codec));
   }
-  return {reader->read(), naturalSize};
+  return message;
 }
 
-DecodedImage decodeImage(const QUrl& source, const QByteArray& suppliedBytes,
-                         const AdImageLoadOptions& options) {
-  QByteArray bytes = suppliedBytes;
-  if (bytes.isEmpty() && decodeDataUrl(source, &bytes)) {
-    QBuffer buffer(&bytes);
-    buffer.open(QIODevice::ReadOnly);
-    QImageReader reader(&buffer);
-    return decodeWithReader(&reader, options);
-  }
+std::shared_ptr<const std::vector<std::byte>> sharedBytes(const QByteArray& bytes) {
+  auto result = std::make_shared<std::vector<std::byte>>();
+  result->resize(static_cast<std::size_t>(bytes.size()));
   if (!bytes.isEmpty()) {
-    QBuffer buffer(&bytes);
-    buffer.open(QIODevice::ReadOnly);
-    QImageReader reader(&buffer);
-    return decodeWithReader(&reader, options);
+    std::memcpy(result->data(), bytes.constData(), static_cast<std::size_t>(bytes.size()));
+  }
+  return result;
+}
+
+QString sourceNameHint(const QUrl& source) {
+  if (source.isLocalFile()) {
+    return QFileInfo(source.toLocalFile()).fileName();
+  }
+  if (source.scheme().compare(QStringLiteral("qrc"), Qt::CaseInsensitive) == 0 ||
+      source.toString().startsWith(QStringLiteral(":/"))) {
+    return QFileInfo(source.path()).fileName();
+  }
+  if (source.isRelative()) {
+    return QFileInfo(sourceToString(source)).fileName();
+  }
+  return QFileInfo(source.path()).fileName();
+}
+
+QString dataUrlNameHint(const QUrl& source) {
+  const QString encoded = source.toString(QUrl::FullyEncoded);
+  const qsizetype commaIndex = encoded.indexOf(',');
+  if (commaIndex <= 5) {
+    return QStringLiteral("image.bin");
+  }
+  const QString metadata = encoded.mid(5, commaIndex - 5).toLower();
+  if (metadata.startsWith(QStringLiteral("image/svg"))) {
+    return QStringLiteral("image.svg");
+  }
+  if (metadata.startsWith(QStringLiteral("image/png"))) {
+    return QStringLiteral("image.png");
+  }
+  if (metadata.startsWith(QStringLiteral("image/jpeg"))) {
+    return QStringLiteral("image.jpg");
+  }
+  if (metadata.startsWith(QStringLiteral("image/webp"))) {
+    return QStringLiteral("image.webp");
+  }
+  if (metadata.startsWith(QStringLiteral("image/gif"))) {
+    return QStringLiteral("image.gif");
+  }
+  if (metadata.startsWith(QStringLiteral("image/bmp"))) {
+    return QStringLiteral("image.bmp");
+  }
+  return QStringLiteral("image.bin");
+}
+
+snow::image::Result<snow::image::Input> makeSnowInput(const QUrl& source,
+                                                       const QByteArray& suppliedBytes) {
+  if (!suppliedBytes.isEmpty()) {
+    return snow::image::memory_input(sharedBytes(suppliedBytes),
+                                     sourceNameHint(source).toUtf8().toStdString());
+  }
+
+  QByteArray dataBytes;
+  if (source.scheme().compare(QStringLiteral("data"), Qt::CaseInsensitive) == 0) {
+    if (!decodeDataUrl(source, &dataBytes)) {
+      return snow::image::Status::error(snow::image::ErrorCode::invalid_argument,
+                                         "The data URL payload is invalid.");
+    }
+    return snow::image::memory_input(sharedBytes(dataBytes),
+                                     dataUrlNameHint(source).toUtf8().toStdString());
+  }
+
+  if (source.scheme().compare(QStringLiteral("qrc"), Qt::CaseInsensitive) == 0 ||
+      source.toString().startsWith(QStringLiteral(":/"))) {
+    const QString resourcePath = source.scheme().compare(QStringLiteral("qrc"),
+                                                          Qt::CaseInsensitive) == 0
+                                      ? QStringLiteral(":") + source.path()
+                                      : source.toString();
+    QFile resource(resourcePath);
+    if (!resource.open(QIODevice::ReadOnly)) {
+      return snow::image::Status::error(snow::image::ErrorCode::io_error,
+                                         "Could not open the image resource.");
+    }
+    const QByteArray resourceBytes = resource.readAll();
+    if (resourceBytes.isEmpty()) {
+      return snow::image::Status::error(snow::image::ErrorCode::io_error,
+                                         "The image resource is empty.");
+    }
+    return snow::image::memory_input(sharedBytes(resourceBytes),
+                                     sourceNameHint(source).toUtf8().toStdString());
+  }
+
+  if (isRemoteSource(source)) {
+    return snow::image::Status::error(snow::image::ErrorCode::invalid_argument,
+                                       "A remote image response was not provided.");
   }
 
   QString path;
   if (source.isLocalFile()) {
     path = source.toLocalFile();
-  } else if (source.scheme().compare(QStringLiteral("qrc"), Qt::CaseInsensitive) == 0) {
-    path = source.path();
   } else if (source.isRelative()) {
     path = QFileInfo(sourceToString(source)).filePath();
-  } else {
+  } else if (source.scheme().isEmpty()) {
     path = sourceToString(source);
+  } else {
+    return snow::image::Status::error(snow::image::ErrorCode::invalid_argument,
+                                       "The image URL scheme is unsupported.");
   }
-  QImageReader reader(path);
-  return decodeWithReader(&reader, options);
+  return snow::image::file_input(std::filesystem::path(path.toStdU16String()));
+}
+
+QImage imageFromSnow(const snow::image::Image& source, QString* error) {
+  if (source.width() == 0 || source.height() == 0 ||
+      source.width() > static_cast<std::uint32_t>(std::numeric_limits<int>::max()) ||
+      source.height() > static_cast<std::uint32_t>(std::numeric_limits<int>::max()) ||
+      source.format() != snow::image::kRgba8) {
+    if (error) {
+      *error = QStringLiteral("The decoded image format or dimensions are not supported by Qt.");
+    }
+    return {};
+  }
+  const std::size_t rowBytes = static_cast<std::size_t>(source.width()) * 4U;
+  if (source.row_stride() < rowBytes || source.pixels().size() <
+                                            source.row_stride() *
+                                                static_cast<std::size_t>(source.height())) {
+    if (error) {
+      *error = QStringLiteral("The decoded image raster is invalid.");
+    }
+    return {};
+  }
+  QImage image(static_cast<int>(source.width()), static_cast<int>(source.height()),
+               QImage::Format_RGBA8888);
+  if (image.isNull()) {
+    if (error) {
+      *error = QStringLiteral("Could not allocate the decoded image.");
+    }
+    return {};
+  }
+  for (std::uint32_t row = 0; row < source.height(); ++row) {
+    std::memcpy(image.scanLine(static_cast<int>(row)),
+                source.pixels().data() + static_cast<std::size_t>(row) * source.row_stride(),
+                rowBytes);
+  }
+  image.setColorSpace(QColorSpace(QColorSpace::SRgb));
+  return image;
+}
+
+DecodedImage decodeImage(const QUrl& source, const QByteArray& suppliedBytes,
+                         const AdImageLoadOptions& options) {
+  try {
+    const auto input = makeSnowInput(source, suppliedBytes);
+    if (!input) {
+      return {QImage(), QSize(), snowStatusText(input.error())};
+    }
+
+    snow::image::Service service;
+    snow::image::DecodeOptions decodeOptions;
+    decodeOptions.orientation = snow::image::OrientationPolicy::apply;
+    decodeOptions.output_format = snow::image::kRgba8;
+    // AdImage exposes a single raster, so preserve the legacy first-frame behavior
+    // for animated and multi-image documents without decoding unused frames.
+    decodeOptions.frame_index = 0;
+
+    QSize naturalSize;
+    if (options.targetPixelSize.isValid() && !options.targetPixelSize.isEmpty()) {
+      const auto inspected = service.inspect(input.value(), decodeOptions);
+      if (!inspected) {
+        return {QImage(), QSize(), snowStatusText(inspected.error())};
+      }
+      if (inspected.value().canvas_width >
+              static_cast<std::uint32_t>(std::numeric_limits<int>::max()) ||
+          inspected.value().canvas_height >
+              static_cast<std::uint32_t>(std::numeric_limits<int>::max())) {
+        return {QImage(), QSize(), QStringLiteral("The image dimensions exceed Qt's limits.")};
+      }
+      naturalSize = QSize(static_cast<int>(inspected.value().canvas_width),
+                          static_cast<int>(inspected.value().canvas_height));
+      const QSize target = boundedDecodeSize(naturalSize, options);
+      if (target.isValid() && !target.isEmpty()) {
+        decodeOptions.maximum_extent = static_cast<std::uint32_t>(
+            std::max(target.width(), target.height()));
+      }
+    }
+
+    const auto decoded = service.decode(input.value(), decodeOptions);
+    if (!decoded) {
+      return {QImage(), QSize(), snowStatusText(decoded.error())};
+    }
+    if (decoded.value().frames.empty()) {
+      return {QImage(), naturalSize,
+              QStringLiteral("The image document contains no display frame.")};
+    }
+    if (!naturalSize.isValid() &&
+        decoded.value().canvas_width <=
+            static_cast<std::uint32_t>(std::numeric_limits<int>::max()) &&
+        decoded.value().canvas_height <=
+            static_cast<std::uint32_t>(std::numeric_limits<int>::max())) {
+      naturalSize = QSize(static_cast<int>(decoded.value().canvas_width),
+                          static_cast<int>(decoded.value().canvas_height));
+    }
+
+    QString conversionError;
+    QImage image = imageFromSnow(decoded.value().frames.front().image, &conversionError);
+    if (image.isNull()) {
+      return {QImage(), naturalSize, conversionError};
+    }
+
+    if (options.targetPixelSize.isValid() && !options.targetPixelSize.isEmpty() &&
+        naturalSize.isValid()) {
+      const QSize target = boundedDecodeSize(naturalSize, options);
+      if (target.isValid() && !target.isEmpty() && image.size() != target) {
+        image = image.scaled(target, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+      }
+    }
+    return {std::move(image), naturalSize, {}};
+  } catch (const std::bad_alloc&) {
+    return {QImage(), QSize(), QStringLiteral("Image decoding ran out of memory")};
+  } catch (...) {
+    return {QImage(), QSize(), QStringLiteral("Image decoding failed unexpectedly")};
+  }
 }
 
 QString loadOptionsKey(const AdImageLoadOptions& options) {
@@ -187,20 +369,10 @@ QString loadOptionsKey(const AdImageLoadOptions& options) {
       .arg(options.allowUpscale ? 1 : 0);
 }
 
-QString imageCacheKey(const QUrl& source, const AdImageLoadOptions& options) {
-  QString sourceKey;
-  if (source.isLocalFile()) {
-    const QFileInfo info(source.toLocalFile());
-    sourceKey = QStringLiteral("file:%1:%2:%3")
-                    .arg(QDir::fromNativeSeparators(info.absoluteFilePath()))
-                    .arg(info.size())
-                    .arg(info.lastModified().toMSecsSinceEpoch());
-  } else if (source.scheme().compare(QStringLiteral("data"), Qt::CaseInsensitive) == 0) {
-    const QByteArray digest =
-        QCryptographicHash::hash(source.toEncoded(), QCryptographicHash::Sha256).toHex();
-    sourceKey = QStringLiteral("data:%1").arg(QString::fromLatin1(digest));
-  } else {
-    sourceKey = normalizeSourceKey(source);
+QString imageOperationKey(const QUrl& source, const AdImageLoadOptions& options) {
+  const QString sourceKey = normalizeSourceKey(source);
+  if (sourceKey.trimmed().isEmpty()) {
+    return {};
   }
   return sourceKey + u'|' + loadOptionsKey(options);
 }
@@ -331,10 +503,13 @@ class DefaultImageReply final : public AdImageReply {
 
 class DefaultImageLoader final : public AdImageLoader {
  public:
-  explicit DefaultImageLoader(QObject* parent = nullptr)
-      : AdImageLoader(parent), cache_(64 * 1024 * 1024) {
-    decodePool_.setMaxThreadCount(2);
-    decodePool_.setExpiryTimeout(30'000);
+  explicit DefaultImageLoader(QObject* parent = nullptr) : AdImageLoader(parent) {}
+
+  ~DefaultImageLoader() override {
+    if (decodePool_) {
+      decodePool_->waitForDone();
+      decodePool_.reset();
+    }
   }
 
   AdImageReply* load(const QUrl& source, QObject* parent = nullptr) override {
@@ -346,20 +521,10 @@ class DefaultImageLoader final : public AdImageLoader {
     Q_UNUSED(kImageMetaTypeRegistration);
 
     auto* reply = new DefaultImageReply(parent);
-    const QString key = imageCacheKey(source, options);
+    const QString key = imageOperationKey(source, options);
     if (key.isEmpty()) {
       QTimer::singleShot(
           0, reply, [reply]() { reply->completeFailure(QStringLiteral("Empty image source")); });
-      return reply;
-    }
-
-    if (const DecodedImage* cached = cache_.object(key)) {
-      const DecodedImage decoded = *cached;
-      QTimer::singleShot(0, reply, [reply, decoded]() {
-        if (!reply->isFinished()) {
-          reply->completeSuccess(decoded.image, decoded.naturalSize);
-        }
-      });
       return reply;
     }
 
@@ -417,21 +582,29 @@ class DefaultImageLoader final : public AdImageLoader {
 
   void startDecode(const std::shared_ptr<Operation>& operation, QByteArray bytes) {
     const QPointer<DefaultImageLoader> guardedLoader(this);
-    decodePool_.start([guardedLoader, operation, bytes = std::move(bytes)]() mutable {
+    if (!decodePool_) {
+      decodePool_ = std::make_unique<QThreadPool>();
+      decodePool_->setMaxThreadCount(2);
+      decodePool_->setExpiryTimeout(0);
+    }
+    ++activeDecodeTasks_;
+    const std::uint64_t poolGeneration = poolGeneration_;
+    decodePool_->start([guardedLoader, operation, bytes = std::move(bytes), poolGeneration]() mutable {
       const DecodedImage decoded = decodeImage(operation->source, bytes, operation->options);
       if (!guardedLoader) {
         return;
       }
       QMetaObject::invokeMethod(
           guardedLoader,
-          [guardedLoader, operation, decoded]() {
+          [guardedLoader, operation, decoded, poolGeneration]() {
             if (!guardedLoader) {
               return;
             }
             guardedLoader->finishOperation(
                 operation, decoded,
-                decoded.image.isNull() ? QStringLiteral("Failed to decode image data")
+                decoded.image.isNull() ? decoded.errorString
                                        : QString());
+            guardedLoader->finishDecodeTask(poolGeneration);
           },
           Qt::QueuedConnection);
     });
@@ -445,9 +618,6 @@ class DefaultImageLoader final : public AdImageLoader {
     operations_.remove(operation->key);
     if (operation->subscribers.isEmpty()) {
       return;
-    }
-    if (!decoded.image.isNull()) {
-      cache_.insert(operation->key, new DecodedImage(decoded), imageCostBytes(decoded.image));
     }
     const QVector<QPointer<DefaultImageReply>> subscribers = operation->subscribers;
     operation->subscribers.clear();
@@ -493,9 +663,32 @@ class DefaultImageLoader final : public AdImageLoader {
     return manager;
   }
 
-  QCache<QString, DecodedImage> cache_;
   QHash<QString, std::shared_ptr<Operation>> operations_;
-  QThreadPool decodePool_;
+  std::unique_ptr<QThreadPool> decodePool_;
+  int activeDecodeTasks_ = 0;
+  std::uint64_t poolGeneration_ = 0;
+  bool poolTeardownScheduled_ = false;
+
+  void finishDecodeTask(std::uint64_t generation) {
+    if (generation != poolGeneration_ || activeDecodeTasks_ <= 0) {
+      return;
+    }
+    --activeDecodeTasks_;
+    if (activeDecodeTasks_ == 0 && decodePool_ && !poolTeardownScheduled_) {
+      poolTeardownScheduled_ = true;
+      QTimer::singleShot(0, this, [this, generation]() {
+        poolTeardownScheduled_ = false;
+        if (generation != poolGeneration_ || activeDecodeTasks_ != 0 || !decodePool_) {
+          return;
+        }
+        decodePool_->waitForDone();
+        if (generation == poolGeneration_ && activeDecodeTasks_ == 0) {
+          decodePool_.reset();
+          ++poolGeneration_;
+        }
+      });
+    }
+  }
 };
 
 AdImageLoader* defaultImageLoaderInstance() {
