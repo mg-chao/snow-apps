@@ -45,6 +45,7 @@ class ScreenshotScrollingCaptureController final : public QObject {
     [[nodiscard]] bool requestTrimmedImage(ImageResultCallback callback);
     [[nodiscard]] bool requestTrimmedClipboardPayload(ClipboardResultCallback callback);
     [[nodiscard]] bool requestTrimmedSnapshot(SnapshotResultCallback callback);
+    void detachPendingResultRequest();
     [[nodiscard]] QRect canvasSelection() const;
 
   private:

@@ -78,6 +78,13 @@ class ScreenshotSelectionExportDestinationPort {
     [[nodiscard]] virtual bool publishClipboard(QObject* receiver,
                                                 ScreenshotClipboardPayload payload,
                                                 ClipboardCompletion completion) = 0;
+    [[nodiscard]] virtual bool publishClipboard(QObject* receiver,
+                                                ScreenshotClipboardPayload payload,
+                                                ClipboardCompletion completion,
+                                                quint64 publicationId) {
+        Q_UNUSED(publicationId);
+        return publishClipboard(receiver, std::move(payload), std::move(completion));
+    }
 
     [[nodiscard]] virtual bool
     presentPinnedSelection(const ScreenshotPinnedSelectionRequest& request) = 0;

@@ -18,15 +18,17 @@ ScreenshotSelectionExportWorkflow::ScreenshotSelectionExportWorkflow(
     : m_context(context) {}
 
 bool ScreenshotSelectionExportWorkflow::copySelectionToClipboard(ResultValidator validator,
-                                                                 CopyCompletion completion) {
+                                                                 CopyCompletion completion,
+                                                                 quint64 publicationId) {
     const QRect selection = m_context.selection.pixelSelection();
     if (selection.width() < 1 || selection.height() < 1) {
         return false;
     }
+    const ScreenshotSelectionParams savedSelectionParams = currentSelectionParams();
 
     return m_context.imageComposer.requestSelectionClipboard(
         selection, resultStyle(m_context.selection), &m_context.callbackContext,
-        [this, validator = std::move(validator),
+        [this, savedSelectionParams, publicationId, validator = std::move(validator),
          completion = std::move(completion)](ScreenshotSelectionClipboardResult result) mutable {
             if (validator && !validator()) {
                 if (completion) {
@@ -43,7 +45,8 @@ bool ScreenshotSelectionExportWorkflow::copySelectionToClipboard(ResultValidator
             QImage resultImage = std::move(result.image);
             auto terminal = std::make_shared<bool>(false);
             auto publishCompletion = std::make_shared<std::function<void(bool)>>();
-            *publishCompletion = [this, terminal, validator = std::move(validator),
+            *publishCompletion = [this, terminal, savedSelectionParams,
+                                  validator = std::move(validator),
                                   completion = std::move(completion),
                                   resultImage = std::move(resultImage)](bool success) mutable {
                 if (*terminal) {
@@ -54,7 +57,7 @@ bool ScreenshotSelectionExportWorkflow::copySelectionToClipboard(ResultValidator
                     success = false;
                 }
                 if (success) {
-                    persistCurrentSelectionParams();
+                    persistSelectionParams(savedSelectionParams);
                 }
                 if (completion) {
                     completion(success, success ? std::move(resultImage) : QImage{});
@@ -62,7 +65,8 @@ bool ScreenshotSelectionExportWorkflow::copySelectionToClipboard(ResultValidator
             };
             const bool scheduled = m_context.destination.publishClipboard(
                 &m_context.callbackContext, std::move(result.payload),
-                [publishCompletion](bool success) { (*publishCompletion)(success); });
+                [publishCompletion](bool success) { (*publishCompletion)(success); },
+                publicationId);
             if (!scheduled) {
                 (*publishCompletion)(false);
             }
@@ -82,11 +86,12 @@ bool ScreenshotSelectionExportWorkflow::pinSelectionToScreen(ResultValidator val
     if (!request.has_value()) {
         return false;
     }
+    const ScreenshotSelectionParams savedSelectionParams = currentSelectionParams();
 
     return m_context.imageComposer.schedulePinnedSelection(
         std::move(*request), &m_context.callbackContext,
         [this, validator = std::move(validator),
-         completion = std::move(completion)](ScreenshotPinnedSelectionRequest pinRequest) mutable {
+         completion = std::move(completion), savedSelectionParams](ScreenshotPinnedSelectionRequest pinRequest) mutable {
             if (validator && !validator()) {
                 if (completion) {
                     completion(false);
@@ -97,7 +102,7 @@ bool ScreenshotSelectionExportWorkflow::pinSelectionToScreen(ResultValidator val
                 pinRequest.isValid() && m_context.destination.presentPinnedSelection(pinRequest);
             SNOW_SHOT_PIN_PERF_MILESTONE("workflow.destination_complete");
             if (success) {
-                persistCurrentSelectionParams();
+                persistSelectionParams(savedSelectionParams);
             }
             if (completion) {
                 completion(success);

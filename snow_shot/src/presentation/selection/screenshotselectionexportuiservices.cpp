@@ -152,27 +152,44 @@ ScreenshotSelectionExportUiServices::~ScreenshotSelectionExportUiServices() {
 bool ScreenshotSelectionExportUiServices::publishClipboard(QObject* receiver,
                                                            ScreenshotClipboardPayload payload,
                                                            ClipboardCompletion completion) {
-    cancelClipboardPublication();
+    return publishClipboard(receiver, std::move(payload), std::move(completion),
+                            ScreenshotClipboardService::reservePublication());
+}
+
+bool ScreenshotSelectionExportUiServices::publishClipboard(QObject* receiver,
+                                                           ScreenshotClipboardPayload payload,
+                                                           ClipboardCompletion completion,
+                                                           quint64 publicationId) {
+    if (publicationId == 0) {
+        publicationId = ScreenshotClipboardService::reservePublication();
+    }
     auto completionEnabled = std::make_shared<std::atomic_bool>(true);
-    m_clipboardCompletionEnabled = completionEnabled;
-    m_clipboardCommit = ScreenshotClipboardService::commit(
-        QApplication::clipboard(), receiver, std::move(payload),
+    m_clipboardCompletionEnabled.push_back(completionEnabled);
+    auto commit = ScreenshotClipboardService::commit(
+        QApplication::clipboard(), receiver, std::move(payload), publicationId,
         [completionEnabled,
          completion = std::move(completion)](ScreenshotClipboardCommitResult result) mutable {
             if (completionEnabled->exchange(false, std::memory_order_acq_rel)) {
                 completion(result.succeeded());
             }
         });
-    return m_clipboardCommit.isValid();
+    if (commit.isValid()) {
+        m_clipboardCommits.push_back(commit);
+    }
+    return commit.isValid();
 }
 
 void ScreenshotSelectionExportUiServices::cancelClipboardPublication() {
-    if (m_clipboardCompletionEnabled != nullptr) {
-        m_clipboardCompletionEnabled->store(false, std::memory_order_release);
-        m_clipboardCompletionEnabled.reset();
+    for (const auto& completionEnabled : m_clipboardCompletionEnabled) {
+        if (completionEnabled != nullptr) {
+            completionEnabled->store(false, std::memory_order_release);
+        }
     }
-    m_clipboardCommit.cancel();
-    m_clipboardCommit = {};
+    for (const auto& commit : m_clipboardCommits) {
+        commit.cancel();
+    }
+    m_clipboardCompletionEnabled.clear();
+    m_clipboardCommits.clear();
 }
 
 void ScreenshotSelectionExportUiServices::setClipboardImage(const QImage& image) {

@@ -22,6 +22,7 @@
 #include <QMetaObject>
 #include <QPointer>
 #include <QThread>
+#include <QSet>
 
 #include <algorithm>
 #include <atomic>
@@ -954,6 +955,13 @@ struct ScreenshotScrollingCaptureController::Impl {
         thumbnailHost = nullptr;
     }
 
+    void detachPendingResultRequest() {
+        if (pendingResultRequestId.has_value()) {
+            detachedResultRequestIds.insert(*pendingResultRequestId);
+            pendingResultRequestId.reset();
+        }
+    }
+
     bool excludeScrollingWindowsFromCapture(ScreenshotOverlayWindow* overlay) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
         ScreenshotToolbarWindow* const toolbar = context.overlayCoordinator.toolbar();
@@ -1249,12 +1257,19 @@ struct ScreenshotScrollingCaptureController::Impl {
                     [receiver, requestId, requestGeneration, result = std::move(result),
                      callback = std::move(callback)]() mutable {
                         if (receiver.isNull() || receiver->m_impl == nullptr ||
-                            receiver->m_impl->pendingResultRequestId != requestId) {
+                            (receiver->m_impl->pendingResultRequestId != requestId &&
+                             !receiver->m_impl->detachedResultRequestIds.contains(requestId))) {
                             return;
                         }
-                        receiver->m_impl->pendingResultRequestId.reset();
-                        if (!receiver->m_impl->active ||
-                            receiver->m_impl->generation != requestGeneration) {
+                        const bool detached =
+                            receiver->m_impl->detachedResultRequestIds.contains(requestId);
+                        if (detached) {
+                            receiver->m_impl->detachedResultRequestIds.remove(requestId);
+                        } else {
+                            receiver->m_impl->pendingResultRequestId.reset();
+                        }
+                        if (!detached && (!receiver->m_impl->active ||
+                                          receiver->m_impl->generation != requestGeneration)) {
                             return;
                         }
                         callback(std::move(result));
@@ -1304,12 +1319,19 @@ struct ScreenshotScrollingCaptureController::Impl {
                     [receiver, requestId, requestGeneration, payload,
                      callback = std::move(callback)]() mutable {
                         if (receiver.isNull() || receiver->m_impl == nullptr ||
-                            receiver->m_impl->pendingResultRequestId != requestId) {
+                            (receiver->m_impl->pendingResultRequestId != requestId &&
+                             !receiver->m_impl->detachedResultRequestIds.contains(requestId))) {
                             return;
                         }
-                        receiver->m_impl->pendingResultRequestId.reset();
-                        if (!receiver->m_impl->active ||
-                            receiver->m_impl->generation != requestGeneration) {
+                        const bool detached =
+                            receiver->m_impl->detachedResultRequestIds.contains(requestId);
+                        if (detached) {
+                            receiver->m_impl->detachedResultRequestIds.remove(requestId);
+                        } else {
+                            receiver->m_impl->pendingResultRequestId.reset();
+                        }
+                        if (!detached && (!receiver->m_impl->active ||
+                                          receiver->m_impl->generation != requestGeneration)) {
                             return;
                         }
                         callback(std::move(*payload));
@@ -1354,12 +1376,19 @@ struct ScreenshotScrollingCaptureController::Impl {
                     [receiver, requestId, requestGeneration, result = std::move(result),
                      callback = std::move(callback)]() mutable {
                         if (receiver.isNull() || receiver->m_impl == nullptr ||
-                            receiver->m_impl->pendingResultRequestId != requestId) {
+                            (receiver->m_impl->pendingResultRequestId != requestId &&
+                             !receiver->m_impl->detachedResultRequestIds.contains(requestId))) {
                             return;
                         }
-                        receiver->m_impl->pendingResultRequestId.reset();
-                        if (!receiver->m_impl->active ||
-                            receiver->m_impl->generation != requestGeneration) {
+                        const bool detached =
+                            receiver->m_impl->detachedResultRequestIds.contains(requestId);
+                        if (detached) {
+                            receiver->m_impl->detachedResultRequestIds.remove(requestId);
+                        } else {
+                            receiver->m_impl->pendingResultRequestId.reset();
+                        }
+                        if (!detached && (!receiver->m_impl->active ||
+                                          receiver->m_impl->generation != requestGeneration)) {
                             return;
                         }
                         callback(std::move(result));
@@ -1386,6 +1415,7 @@ struct ScreenshotScrollingCaptureController::Impl {
     QPointer<ScreenshotToolbarWindow> excludedToolbar;
     QSize latestOutputSize;
     std::optional<quint64> pendingResultRequestId;
+    QSet<quint64> detachedResultRequestIds;
     QRect canvasSelection;
     quint64 generation = 0;
     quint64 nextResultRequestId = 0;
@@ -1448,6 +1478,10 @@ bool ScreenshotScrollingCaptureController::requestTrimmedClipboardPayload(
 
 bool ScreenshotScrollingCaptureController::requestTrimmedSnapshot(SnapshotResultCallback callback) {
     return m_impl->requestTrimmedSnapshot(std::move(callback));
+}
+
+void ScreenshotScrollingCaptureController::detachPendingResultRequest() {
+    m_impl->detachPendingResultRequest();
 }
 
 QRect ScreenshotScrollingCaptureController::canvasSelection() const {

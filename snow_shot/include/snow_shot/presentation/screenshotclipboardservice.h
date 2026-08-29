@@ -50,6 +50,7 @@ class ScreenshotClipboardPixelSource final {
 };
 
 class QClipboard;
+class QMimeData;
 class QObject;
 struct ScreenshotClipboardPayloadTestAccess;
 
@@ -121,7 +122,10 @@ class ScreenshotClipboardCommitHandle final {
 
 class ScreenshotClipboardService final {
   public:
+    using PublicationId = quint64;
     using CommitCompletion = std::function<void(ScreenshotClipboardCommitResult)>;
+
+    [[nodiscard]] static PublicationId reservePublication();
 
     [[nodiscard]] static ScreenshotClipboardPayload prepare(
         ScreenshotClipboardPixelSource source,
@@ -139,6 +143,15 @@ class ScreenshotClipboardService final {
                                                                 QObject* receiver,
                                                                 ScreenshotClipboardPayload payload,
                                                                 CommitCompletion completion);
+    [[nodiscard]] static ScreenshotClipboardCommitHandle commit(
+        QClipboard* clipboard, QObject* receiver, ScreenshotClipboardPayload payload,
+        PublicationId publicationId, CommitCompletion completion);
+    [[nodiscard]] static ScreenshotClipboardCommitHandle commitMimeData(
+        QClipboard* clipboard, QObject* receiver, QMimeData* mimeData,
+        CommitCompletion completion);
+    [[nodiscard]] static ScreenshotClipboardCommitHandle commitMimeData(
+        QClipboard* clipboard, QObject* receiver, QMimeData* mimeData,
+        PublicationId publicationId, CommitCompletion completion);
     [[nodiscard]] static bool publish(QClipboard* clipboard, ScreenshotClipboardPayload payload);
     [[nodiscard]] static bool publishImage(
         QClipboard* clipboard, const QImage& image,

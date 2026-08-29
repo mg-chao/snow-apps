@@ -7,6 +7,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <vector>
 
 class SnowCanvasRuntime;
 class QScreen;
@@ -27,6 +28,9 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
 
     [[nodiscard]] bool publishClipboard(QObject* receiver, ScreenshotClipboardPayload payload,
                                         ClipboardCompletion completion) override;
+    [[nodiscard]] bool publishClipboard(QObject* receiver, ScreenshotClipboardPayload payload,
+                                        ClipboardCompletion completion,
+                                        quint64 publicationId) override;
     void cancelClipboardPublication();
     void setClipboardImage(const QImage& image);
     [[nodiscard]] bool presentPinnedImage(const QImage& image, QScreen* screen,
@@ -46,8 +50,8 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     SnowShotApiClient* m_tableRecognition = nullptr;
     std::function<void()> m_showMainWindowRequested;
     std::unique_ptr<ScreenshotPinnedWindowPool> m_windowPool;
-    ScreenshotClipboardCommitHandle m_clipboardCommit;
-    std::shared_ptr<std::atomic_bool> m_clipboardCompletionEnabled;
+    std::vector<ScreenshotClipboardCommitHandle> m_clipboardCommits;
+    std::vector<std::shared_ptr<std::atomic_bool>> m_clipboardCompletionEnabled;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONEXPORTUISERVICES_H

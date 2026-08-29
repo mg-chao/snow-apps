@@ -33,7 +33,8 @@ class ScreenshotSelectionExportWorkflow final {
     using ResultValidator = std::function<bool()>;
 
     [[nodiscard]] bool copySelectionToClipboard(ResultValidator validator,
-                                                CopyCompletion completion);
+                                                CopyCompletion completion,
+                                                quint64 publicationId = 0);
     [[nodiscard]] bool pinSelectionToScreen(ResultValidator validator,
                                             Completion completion);
 
