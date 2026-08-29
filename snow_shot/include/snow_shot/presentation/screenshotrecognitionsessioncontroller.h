@@ -17,6 +17,7 @@
 #include <memory>
 
 class QUrl;
+class QMimeData;
 class QTextDocument;
 class QWidget;
 class ScreenshotOcrPresentation;
@@ -114,6 +115,8 @@ class ScreenshotRecognitionSessionController final : public QObject {
     [[nodiscard]] bool hasTextResult() const;
     [[nodiscard]] QString textDraft() const;
     [[nodiscard]] QString originalText() const;
+    [[nodiscard]] std::unique_ptr<QMimeData> recognitionClipboardMimeData(
+        const ScreenshotOcrPresentation* displayedPresentation = nullptr) const;
     [[nodiscard]] std::shared_ptr<ScreenshotTableEditingSession> tableSession() const;
     [[nodiscard]] QStringList qrContents() const;
     void setTextDraft(const QString& text);

@@ -3684,29 +3684,6 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::HMONITOR;
 use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, IsIconic, IsWindow};
 
-/// Find the monitor that contains the majority of the given window.
-fn monitor_from_window(hwnd: HWND) -> Option<HMONITOR> {
-    use windows::Win32::Graphics::Gdi::MONITOR_DEFAULTTONULL;
-    use windows::Win32::Graphics::Gdi::MonitorFromWindow;
-    let hmon = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONULL) };
-    if hmon.0.is_null() { None } else { Some(hmon) }
-}
-
-/// Resolve a `HMONITOR` handle to a `MonitorId` by matching against the
-/// known monitor set from the resolver.
-fn hmonitor_to_monitor_id(hmon: HMONITOR, resolver: &MonitorResolver) -> CaptureResult<MonitorId> {
-    let monitors = resolver.enumerate_monitors()?;
-    let target_handle = hmon.0 as isize;
-    monitors
-        .into_iter()
-        .find(|m| m.raw_handle() == target_handle)
-        .ok_or_else(|| {
-            CaptureError::BackendUnavailable(
-                "could not resolve HMONITOR to a known MonitorId".into(),
-            )
-        })
-}
-
 /// Get the monitor's desktop rectangle via `GetMonitorInfoW`.
 fn monitor_rect(hmon: HMONITOR) -> CaptureResult<RECT> {
     use std::mem::size_of;
@@ -3783,12 +3760,8 @@ impl WindowsDxgiWindowCapturer {
             )));
         }
 
-        let hmon = monitor_from_window(hwnd).ok_or_else(|| {
-            CaptureError::BackendUnavailable("window is not on any monitor".into())
-        })?;
-
-        let monitor_id = hmonitor_to_monitor_id(hmon, &resolver)?;
-        resolver.resolve_monitor(&monitor_id)?;
+        let resolved = resolver.resolve_window_monitor(hwnd)?;
+        let hmon = resolved.handle;
         let current_hmon = SendHmon(hmon);
         let current_monitor_rect = monitor_rect(hmon)?;
 
@@ -3827,8 +3800,7 @@ impl WindowsDxgiWindowCapturer {
         if let Some(mut output) = self.output.take() {
             output.release_capture_access();
         }
-        let monitor_id = hmonitor_to_monitor_id(hmon, &self.resolver)?;
-        let resolved = self.resolver.resolve_monitor(&monitor_id)?;
+        let resolved = self.resolver.resolve_monitor_handle(hmon)?;
         let capture_mode = self.capture_mode;
         let gpu_hdr_conversion_enabled = self.gpu_hdr_conversion_enabled;
         let hdr_tonemap_lut_enabled = self.hdr_tonemap_lut_enabled;
@@ -3888,9 +3860,7 @@ impl WindowsDxgiWindowCapturer {
         win_rect: &RECT,
     ) -> CaptureResult<CaptureBlitRegion> {
         if !rect_within_rect(win_rect, &self.current_monitor_rect) {
-            let hmon = monitor_from_window(hwnd).ok_or_else(|| {
-                CaptureError::BackendUnavailable("window is not on any monitor".into())
-            })?;
+            let hmon = self.resolver.resolve_window_monitor(hwnd)?.handle;
             if SendHmon(hmon) != self.current_hmon {
                 self.reinit_for_monitor(hmon)?;
             }
@@ -3967,9 +3937,7 @@ impl WindowsDxgiWindowCapturer {
         ) {
             Ok(sample) => sample,
             Err(CaptureError::MonitorLost) | Err(CaptureError::AccessLost) => {
-                let retry_hmon = monitor_from_window(hwnd).ok_or_else(|| {
-                    CaptureError::BackendUnavailable("window is not on any monitor".into())
-                })?;
+                let retry_hmon = self.resolver.resolve_window_monitor(hwnd)?.handle;
                 self.reinit_for_monitor(retry_hmon)?;
                 win_rect = RECT::default();
                 unsafe { GetWindowRect(hwnd, &mut win_rect) }

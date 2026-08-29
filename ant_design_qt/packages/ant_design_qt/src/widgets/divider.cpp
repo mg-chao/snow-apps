@@ -592,7 +592,7 @@ void AdDivider::paintEvent(QPaintEvent* event) {
   if (orientation_ == Orientation::Vertical) {
     if (railVisible) {
       setRailPen();
-      const qreal x = alignedStrokeCenter((width() - 1) / 2.0, true);
+      const qreal x = alignedStrokeCenter(width() / 2.0, true);
       painter.drawLine(QPointF(x, 0.0), QPointF(x, std::max(0, height() - 1)));
     }
     return;

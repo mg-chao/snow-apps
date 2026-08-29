@@ -238,7 +238,7 @@ class CursorPositionRestorer final {
     QPoint m_position;
 };
 
-void clickTextEditor(QLineEdit& editor) {
+void clickTextEditor(QWidget& editor) {
     const QPointF center(editor.rect().center());
     QMouseEvent press(QEvent::MouseButtonPress, center, editor.mapToGlobal(center.toPoint()),
                       Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
@@ -280,6 +280,16 @@ void clickTextEditor(QLineEdit& editor) {
 void typeText(const QString& text, QLineEdit& editor);
 QPushButton* buttonNamed(QWidget& window, const QString& accessibleName);
 bool processUntilDeleted(QPointer<ScreenshotPinnedWindow>& window, int timeoutMs);
+
+adqt::widgets::AdButton* toolbarButtonNamed(ScreenshotToolPalette& toolbar,
+                                             const QString& tooltip) {
+    for (adqt::widgets::AdButton* button : toolbar.findChildren<adqt::widgets::AdButton*>()) {
+        if (button != nullptr && button->toolTip().startsWith(tooltip)) {
+            return button;
+        }
+    }
+    return nullptr;
+}
 
 QImage waitForClipboardImage(const std::function<bool(const QImage&)>& predicate,
                              int timeoutMs = 5000) {
@@ -532,10 +542,26 @@ void pinnedCopyIncludesSourceCanvasDrawing() {
     require(containsRedDrawing(canvas->grab().toImage()),
             "pinned canvas display should contain the cloned source rectangle");
 
-    auto* copyAction =
-        pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedCopyAction"));
-    require(copyAction != nullptr, "pinned copy action was not found");
-    copyAction->trigger();
+    QPushButton* editButton = buttonNamed(*pinnedWindow, QStringLiteral("Enable drawing mode"));
+    require(editButton != nullptr, "pinned edit button was not found before toolbar copy");
+    editButton->click();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    auto* editController = pinnedWindow->findChild<ScreenshotPinnedEditController*>();
+    ScreenshotFloatingToolPaletteWindow* toolbarWindow =
+        editController != nullptr ? editController->toolbarWindow() : nullptr;
+    ScreenshotToolPalette* toolbar = toolbarWindow != nullptr ? toolbarWindow->palette() : nullptr;
+    adqt::widgets::AdButton* saveButton =
+        toolbar != nullptr ? toolbarButtonNamed(*toolbar, QStringLiteral("Save as file")) : nullptr;
+    adqt::widgets::AdButton* copyButton = toolbar != nullptr
+                                                 ? toolbarButtonNamed(
+                                                       *toolbar, QStringLiteral("Copy to clipboard"))
+                                                 : nullptr;
+    require(editController != nullptr && editController->editMode() && toolbarWindow != nullptr &&
+                toolbarWindow->isVisible() && saveButton != nullptr && copyButton != nullptr,
+            "pinned edit toolbar should expose live Save and Copy actions");
+
+    QApplication::clipboard()->clear();
+    copyButton->click();
     const QImage copied =
         waitForClipboardImage([&pinnedWindow, &containsRedDrawing](const QImage& image) {
             return image.size() == pinnedWindow->currentNativeGeometry().size() &&
@@ -546,6 +572,8 @@ void pinnedCopyIncludesSourceCanvasDrawing() {
 
     require(containsRedDrawing(copied),
             "pinned clipboard image should include canvas-drawn elements");
+    require(editController->editMode() && toolbarWindow->isVisible(),
+            "copying from the pinned toolbar must keep the editing session open");
 
     QPushButton* closeButton = buttonNamed(*pinnedWindow, QStringLiteral("Close"));
     require(closeButton != nullptr, "pinned copy close button was not found");
@@ -1390,7 +1418,15 @@ void pinnedFormattedClipboardTextSkipsOcrAndSeedsPlainTextEditing(
             "pinned image on the current DPI");
 
     auto* session = pinnedWindow->findChild<ScreenshotRecognitionSessionController*>();
-    require(session != nullptr && session->originalText() == plainText,
+    auto* editController = pinnedWindow->findChild<ScreenshotPinnedEditController*>();
+    ScreenshotFloatingToolPaletteWindow* toolbarWindow =
+        editController != nullptr ? editController->toolbarWindow() : nullptr;
+    ScreenshotToolPalette* toolbar = toolbarWindow != nullptr ? toolbarWindow->palette() : nullptr;
+    adqt::widgets::AdButton* toolbarCopy = toolbar != nullptr
+                                                  ? toolbarButtonNamed(
+                                                        *toolbar, QStringLiteral("Copy to clipboard"))
+                                                  : nullptr;
+    require(session != nullptr && session->originalText() == plainText && toolbarCopy != nullptr,
             "formatted clipboard text should seed the recognition session with plain text");
     session->beginTextEditing();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
@@ -1398,8 +1434,37 @@ void pinnedFormattedClipboardTextSkipsOcrAndSeedsPlainTextEditing(
     require(editor != nullptr && editor->toPlainText() == plainText,
             "editing formatted clipboard text should use its plain-text projection");
 
+    const snow_shot::storage::ScreenshotShortcutSettings screenshotShortcuts;
+    const QStringList originalTextRecognitionShortcuts =
+        screenshotShortcuts.shortcuts(QStringLiteral("text_recognition"));
+    require(screenshotShortcuts.setShortcuts(QStringLiteral("text_recognition"),
+                                             {QStringLiteral("Alt+D")}),
+            "the Text Recognition shortcut fixture should accept a runtime mapping");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    clickTextEditor(*editor);
+    require(editor->hasFocus(), "the pinned recognition editor should own keyboard focus");
+    sendShortcut(*editor, Qt::Key_D, Qt::AltModifier);
+    require(recognition.nextToken == 0 && recognition.pending.token == 0 &&
+                editor->toPlainText() == plainText,
+            "configured screenshot shortcuts must not interrupt pinned text editing");
+    require(screenshotShortcuts.setShortcuts(QStringLiteral("text_recognition"),
+                                             originalTextRecognitionShortcuts),
+            "the Text Recognition shortcut fixture should restore its original mapping");
+
+    const QString editedDraft = QStringLiteral("Edited formatted clipboard text");
+    session->setTextDraft(editedDraft);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    toolbarCopy->click();
+    require(QApplication::clipboard()->text() == editedDraft && session->editing() &&
+                editController->editMode() && toolbarWindow->isVisible(),
+            "toolbar Copy should export the current text draft without ending editing");
+
     session->endTextEditing();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    toolbarCopy->click();
+    require(QApplication::clipboard()->text() == plainText && session->active() &&
+                editController->editMode() && toolbarWindow->isVisible(),
+            "toolbar Copy should export formatted pins as plain text without ending recognition");
     textLayer = pinnedWindow->findChild<QGraphicsView*>(QStringLiteral("screenshotClipboardText"));
     textItem = formattedTextItem(textLayer);
     require(textLayer != nullptr && textItem != nullptr && textItem->document() == document.get(),

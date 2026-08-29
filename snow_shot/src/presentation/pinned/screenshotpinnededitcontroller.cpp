@@ -19,10 +19,13 @@
 #include <QApplication>
 #include <QEvent>
 #include <QKeyEvent>
+#include <QLineEdit>
 #include <QMouseEvent>
 #include <QPointer>
+#include <QPlainTextEdit>
 #include <QScreen>
 #include <QTimer>
+#include <QTextEdit>
 #include <QWheelEvent>
 #include <QWindow>
 
@@ -50,9 +53,13 @@ ScreenshotToolPalette::Options pinnedEditToolbarOptions() {
     options.showTextTranslationTool = true;
     options.showTableTool = true;
     options.showQrTool = true;
+    options.showSaveButton = true;
+    options.saveButtonWithResultActions = true;
+    options.copyButtonWithNeutralIcon = true;
     options.separatorAfterSelect = true;
     options.separatorBeforeConfirm = true;
-    options.actions = ScreenshotToolPalette::ConfirmAction;
+    options.actions =
+        ScreenshotToolPalette::CopyAction | ScreenshotToolPalette::ConfirmAction;
     options.styleDefaults = snow_shot::presentation::screenshotCanvasStyleDefaults();
     return options;
 }
@@ -69,6 +76,12 @@ bool wheelAdjustsStrokeWidth(SnowCanvasTool tool) {
     default:
         return false;
     }
+}
+
+bool focusAcceptsTextInput(QWidget* focusWidget) {
+    return qobject_cast<QLineEdit*>(focusWidget) != nullptr ||
+           qobject_cast<QTextEdit*>(focusWidget) != nullptr ||
+           qobject_cast<QPlainTextEdit*>(focusWidget) != nullptr;
 }
 } // namespace
 
@@ -339,8 +352,9 @@ void ScreenshotPinnedEditController::registerDrawingShortcuts() {
         binding.id = QStringLiteral("pinned.drawing.") + tool.key();
         binding.priority =
             snow_shot::presentation::WindowShortcutManager::StandardPriority::DrawingShortcut;
-        binding.canActivate = [this](const auto&) {
-            return m_editMode && !m_canvas.hasActiveTextEditing() && m_toolbarWindow != nullptr &&
+        binding.canActivate = [this](const auto& context) {
+            return m_editMode && !focusAcceptsTextInput(context.focusWidget) &&
+                   !m_canvas.hasActiveTextEditing() && m_toolbarWindow != nullptr &&
                    m_toolbarWindow->palette() != nullptr;
         };
         binding.activate = [this, toolId = tool.key()](const auto&) {
@@ -376,8 +390,9 @@ void ScreenshotPinnedEditController::registerRecognitionShortcuts() {
         binding.id = QStringLiteral("pinned.screenshot.") + actionId;
         binding.priority =
             snow_shot::presentation::WindowShortcutManager::StandardPriority::ScreenshotShortcut;
-        binding.canActivate = [this](const auto&) {
-            return m_editMode && !m_canvas.hasActiveTextEditing() && m_toolbarWindow != nullptr &&
+        binding.canActivate = [this](const auto& context) {
+            return m_editMode && !focusAcceptsTextInput(context.focusWidget) &&
+                   !m_canvas.hasActiveTextEditing() && m_toolbarWindow != nullptr &&
                    m_toolbarWindow->palette() != nullptr;
         };
         binding.activate = [this, actionId](const auto&) {

@@ -4,6 +4,7 @@
 #include "../src/presentation/tools/screenshottoolpalettebuttons.h"
 
 #include "widgets/button.h"
+#include "widgets/divider.h"
 #include "widgets/radio.h"
 #include "widgets/tooltip.h"
 
@@ -21,6 +22,7 @@
 #include <QPixmap>
 #include <QVector>
 
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 
@@ -98,6 +100,36 @@ bool imageContainsColor(const QImage& image, const QColor& expected) {
         }
     }
     return false;
+}
+
+qreal verticalRailCoverage(const QImage& image, const QColor& background,
+                           const QColor& railColor) {
+    if (image.isNull() || background == railColor) {
+        return 0.0;
+    }
+
+    const int y = image.height() / 2;
+    const qreal denominator = static_cast<qreal>(background.red() - railColor.red());
+    if (qFuzzyIsNull(denominator)) {
+        return 0.0;
+    }
+
+    qreal coverage = 0.0;
+    for (int x = 0; x < image.width(); ++x) {
+        coverage += std::clamp(
+            static_cast<qreal>(background.red() - image.pixelColor(x, y).red()) / denominator,
+            0.0, 1.0);
+    }
+    return coverage;
+}
+
+QImage renderWidget(QWidget& widget, const QColor& background) {
+    QImage image(widget.size(), QImage::Format_ARGB32_Premultiplied);
+    image.fill(background);
+    QPainter painter(&image);
+    widget.render(&painter);
+    painter.end();
+    return image;
 }
 
 adqt::widgets::AdButton* buttonWithTooltip(ScreenshotToolPalette& palette, const QString& tooltip) {
@@ -202,8 +234,11 @@ void toolbarSurfacesFollowThemeBackground() {
     QFrame* separator = panel.findChild<QFrame*>();
     require(separator != nullptr, "toolbar main panel should expose its separator");
     const QColor lightBorder = themeManager.themeColorScheme().map.colorBorder;
-    require(separator->styleSheet().contains(lightBorder.name(QColor::HexRgb)),
-            "toolbar separator should use the light theme border color");
+    auto* divider = qobject_cast<adqt::widgets::AdDivider*>(separator);
+    require(divider != nullptr, "toolbar separator should use the ant-design divider renderer");
+    require(divider->semanticStyles().rail.borderColor.value() == lightBorder &&
+                divider->semanticStyles().rail.borderWidth.value() == 1.0,
+            "toolbar separator should use the light theme border color and one-pixel rail");
 
     themeManager.setThemeAppearance(snow_shot::presentation::styles::ThemeAppearance::Dark);
     flushEvents();
@@ -221,7 +256,7 @@ void toolbarSurfacesFollowThemeBackground() {
     flushEvents();
     require(darkBackground != lightBackground && renderedCenterColor(darkPanel) == darkBackground,
             "toolbar main panel should refresh its background when the theme changes");
-    require(separator->styleSheet().contains(darkBorder.name(QColor::HexRgb)),
+    require(divider->semanticStyles().rail.borderColor.value() == darkBorder,
             "toolbar separator should refresh with the dark theme border color");
 
     themeManager.setThemeAppearance(snow_shot::presentation::styles::ThemeAppearance::Light);
@@ -237,6 +272,37 @@ void toolbarSurfacesFollowThemeBackground() {
     flushEvents();
     require(renderedCenterColor(restoredPanel) == lightBackground,
             "toolbar main panel should use the light theme after a theme switch");
+}
+
+void toolbarSeparatorsUseDeviceAlignedRails() {
+    auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
+    themeManager.setThemeAppearance(snow_shot::presentation::styles::ThemeAppearance::Light);
+
+    QWidget host;
+    ScreenshotToolbarMainPanel panel(ScreenshotToolbarMainPanel::Options{}, &host);
+    panel.addSeparator();
+    panel.setPhysicalScale(1.5);
+    panel.resize(panel.sizeHint());
+    panel.show();
+    flushEvents();
+
+    auto* divider = panel.findChild<adqt::widgets::AdDivider*>();
+    require(divider != nullptr, "toolbar separator should be an AdDivider");
+    const QColor background = themeManager.themeColorScheme().map.colorBgContainer;
+    const QColor railColor = divider->semanticStyles().rail.borderColor.value();
+    require(divider->width() == 2,
+            "a 1px toolbar separator should occupy the rounded two-pixel layout slot at 1.5x");
+    const qreal wideSlotCoverage =
+        verticalRailCoverage(renderWidget(*divider, background), background, railColor);
+    require(wideSlotCoverage > 0.8 && wideSlotCoverage < 1.2,
+            "toolbar separator rail should remain one physical pixel in a two-pixel slot");
+
+    panel.setPhysicalScale(0.8);
+    flushEvents();
+    const qreal narrowSlotCoverage =
+        verticalRailCoverage(renderWidget(*divider, background), background, railColor);
+    require(divider->width() == 1 && narrowSlotCoverage > 0.8 && narrowSlotCoverage < 1.2,
+            "toolbar separator rail should remain one physical pixel in a one-pixel slot");
 }
 
 void cachedToolbarIconsFollowThemeColors() {
@@ -742,6 +808,7 @@ int main(int argc, char** argv) {
     QApplication application(argc, argv);
     historyButtonsFollowCanvasAvailability();
     toolbarSurfacesFollowThemeBackground();
+    toolbarSeparatorsUseDeviceAlignedRails();
     secondaryToolbarUsesEqualHorizontalMargins();
     cachedToolbarIconsFollowThemeColors();
     recordingToolbarUsesTheScreenshotMainPanelContract();

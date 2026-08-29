@@ -13,7 +13,7 @@ use windows::Win32::Devices::Display::{
     DISPLAYCONFIG_SOURCE_DEVICE_NAME, DisplayConfigGetDeviceInfo, GetDisplayConfigBufferSizes,
     QDC_ONLY_ACTIVE_PATHS, QueryDisplayConfig,
 };
-use windows::Win32::Foundation::POINT;
+use windows::Win32::Foundation::{HWND, POINT};
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020, DXGI_COLOR_SPACE_RGB_STUDIO_G2084_NONE_P2020,
 };
@@ -21,7 +21,9 @@ use windows::Win32::Graphics::Dxgi::{
     CreateDXGIFactory1, DXGI_ERROR_NOT_FOUND, IDXGIAdapter, IDXGIFactory1, IDXGIOutput,
     IDXGIOutput6,
 };
-use windows::Win32::Graphics::Gdi::{HMONITOR, MONITOR_DEFAULTTOPRIMARY, MonitorFromPoint};
+use windows::Win32::Graphics::Gdi::{
+    HMONITOR, MONITOR_DEFAULTTONULL, MONITOR_DEFAULTTOPRIMARY, MonitorFromPoint, MonitorFromWindow,
+};
 use windows::core::Interface;
 
 use crate::convert::HdrFrameContext;
@@ -128,6 +130,42 @@ impl MonitorResolver {
             .into_iter()
             .find(|candidate| candidate.key == id.key())
             .ok_or(CaptureError::MonitorLost)
+    }
+
+    /// Resolve the display containing the largest portion of a native window.
+    pub(crate) fn resolve_window_monitor(&self, hwnd: HWND) -> CaptureResult<ResolvedMonitor> {
+        if hwnd.0.is_null() {
+            return Err(CaptureError::InvalidTarget(
+                "window handle is null".to_owned(),
+            ));
+        }
+
+        let handle = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONULL) };
+        if handle.0.is_null() {
+            return Err(CaptureError::BackendUnavailable(
+                "window is not on any monitor".to_owned(),
+            ));
+        }
+
+        self.resolve_monitor_handle(handle)
+    }
+
+    /// Resolve a native monitor handle through the current display cache.
+    pub(crate) fn resolve_monitor_handle(
+        &self,
+        handle: HMONITOR,
+    ) -> CaptureResult<ResolvedMonitor> {
+        let raw_handle = handle.0 as isize;
+        let monitor = self
+            .enumerate_monitors()?
+            .into_iter()
+            .find(|monitor| monitor.raw_handle() == raw_handle)
+            .ok_or_else(|| {
+                CaptureError::BackendUnavailable(
+                    "could not resolve HMONITOR to a known display".to_owned(),
+                )
+            })?;
+        self.resolve_monitor(&monitor)
     }
 
     fn current_monitors(&self, force_refresh: bool) -> CaptureResult<Vec<MonitorId>> {
@@ -512,4 +550,52 @@ pub(crate) fn hdr_to_sdr_params(hdr: HdrMonitorMetadata) -> Option<HdrFrameConte
         hdr_peak_nits,
         ..HdrFrameContext::default()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hdr_conversion_requires_advanced_color_and_hdr() {
+        let hdr_only = HdrMonitorMetadata {
+            hdr_enabled: true,
+            ..HdrMonitorMetadata::default()
+        };
+        assert!(hdr_to_sdr_params(hdr_only).is_none());
+
+        let advanced_color_only = HdrMonitorMetadata {
+            advanced_color_enabled: true,
+            ..HdrMonitorMetadata::default()
+        };
+        assert!(hdr_to_sdr_params(advanced_color_only).is_none());
+    }
+
+    #[test]
+    fn hdr_conversion_preserves_display_luminance() {
+        let params = hdr_to_sdr_params(HdrMonitorMetadata {
+            advanced_color_enabled: true,
+            hdr_enabled: true,
+            sdr_white_nits: Some(203.0),
+            hdr_peak_nits: Some(1600.0),
+            ..HdrMonitorMetadata::default()
+        })
+        .expect("HDR display metadata should produce conversion parameters");
+
+        assert_eq!(params.sdr_white_nits, 203.0);
+        assert_eq!(params.hdr_peak_nits, 1600.0);
+    }
+
+    #[test]
+    fn hdr_conversion_uses_luminance_defaults_when_metadata_is_missing() {
+        let params = hdr_to_sdr_params(HdrMonitorMetadata {
+            advanced_color_enabled: true,
+            hdr_enabled: true,
+            ..HdrMonitorMetadata::default()
+        })
+        .expect("HDR display metadata should use conservative luminance defaults");
+
+        assert_eq!(params.sdr_white_nits, 80.0);
+        assert_eq!(params.hdr_peak_nits, 1000.0);
+    }
 }

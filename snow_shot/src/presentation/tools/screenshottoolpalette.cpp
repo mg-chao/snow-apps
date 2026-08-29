@@ -15,6 +15,7 @@
 #include "antd_icons.h"
 #include "widgets/button.h"
 #include "widgets/control_scale.h"
+#include "widgets/divider.h"
 #include "widgets/radio.h"
 #include "widgets/radio_button_group.h"
 #include "widgets/select.h"
@@ -151,22 +152,18 @@ QColor toolbarSeparatorColor(const snow_shot::presentation::styles::ThemeColorSc
     return scheme.map.colorBorder.isValid() ? scheme.map.colorBorder : QColor(0xd9, 0xd9, 0xd9);
 }
 
-QString cssColor(const QColor& color) {
-    if (color.alpha() == 255) {
-        return color.name(QColor::HexRgb);
+void updateStyleToolbarSeparatorStyle(QFrame* separator) {
+    auto* divider = qobject_cast<adqt::widgets::AdDivider*>(separator);
+    if (divider == nullptr) {
+        return;
     }
 
-    return QStringLiteral("rgba(%1, %2, %3, %4)")
-        .arg(color.red())
-        .arg(color.green())
-        .arg(color.blue())
-        .arg(color.alpha());
-}
-
-QString styleToolbarSeparatorStyleSheet() {
-    return QStringLiteral("QFrame { background: %1; border: 0px; }")
-        .arg(cssColor(
-            toolbarSeparatorColor(snow_shot::presentation::styles::generateThemeColorScheme())));
+    const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
+    adqt::widgets::AdDivider::SemanticStyles styles;
+    styles.root.backgroundColor = toolbarSurfaceColor(scheme);
+    styles.rail.borderColor = toolbarSeparatorColor(scheme);
+    styles.rail.borderWidth = static_cast<qreal>(TOOLBAR_SEPARATOR_WIDTH);
+    divider->setSemanticStyles(styles);
 }
 
 void applyMainToolbarToolActiveStyle(adqt::widgets::AdButton* button, bool active) {
@@ -624,10 +621,9 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
     const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
     connect(&themeManager, &snow_shot::presentation::styles::ThemeManager::themeChanged, this,
             [this](const snow_shot::presentation::styles::ThemeColorScheme&) {
-                const QString separatorStyle = styleToolbarSeparatorStyleSheet();
                 for (QFrame* separator : std::as_const(m_styleSeparatorFrames)) {
                     if (separator != nullptr) {
-                        separator->setStyleSheet(separatorStyle);
+                        updateStyleToolbarSeparatorStyle(separator);
                     }
                 }
                 refreshThemeDependentIcons();
@@ -1035,7 +1031,7 @@ void ScreenshotToolPalette::refreshThemeDependentIcons() {
     m_styleControls->refreshThemeIcons(styleButtonMetrics(m_physicalScale));
 
     const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
-    if (m_copyButton != nullptr) {
+    if (m_copyButton != nullptr && !m_options.copyButtonWithNeutralIcon) {
         m_copyButton->setIconRef(snow_shot::presentation::icons::withPrimaryColor(
             outlined_icons::Copy(), scheme.map.colorPrimary));
     }
@@ -2059,12 +2055,12 @@ void ScreenshotToolPalette::setStyleToolbarSpacingVisible(QSpacerItem* spacer, b
 }
 
 QFrame* ScreenshotToolPalette::createStyleToolbarSeparator(QWidget* parent) {
-    auto* separator = new QFrame(parent);
-    separator->setFrameShape(QFrame::NoFrame);
+    auto* separator = new adqt::widgets::AdDivider(parent);
+    separator->setOrientation(adqt::widgets::AdDivider::Orientation::Vertical);
     separator->setFixedSize(scaledMetric(TOOLBAR_SEPARATOR_WIDTH),
                             scaledMetric(TOOLBAR_SEPARATOR_HEIGHT));
     separator->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    separator->setStyleSheet(styleToolbarSeparatorStyleSheet());
+    updateStyleToolbarSeparatorStyle(separator);
     m_styleSeparatorFrames.push_back(separator);
     return separator;
 }
@@ -2601,7 +2597,8 @@ void ScreenshotToolPalette::createMainToolbar(const Options& options) {
     const bool hasSecondaryTools =
         options.showScreenRecordButton || options.showOcrTool || options.showTextTranslationTool ||
         options.showTableTool ||
-        options.showQrTool || options.showScrollingScreenshotTool || options.showSaveButton ||
+        options.showQrTool || options.showScrollingScreenshotTool ||
+        (options.showSaveButton && !options.saveButtonWithResultActions) ||
         (!options.showRecordingControls && (options.actions & PinAction) != 0);
     if (hasEditingTools && hasSecondaryTools) {
         addMainToolbarSeparator();
@@ -2612,6 +2609,7 @@ void ScreenshotToolPalette::createMainToolbar(const Options& options) {
     } else {
         const bool hasResultActions =
             (options.actions & (CancelAction | CopyAction)) != 0 ||
+            (options.showSaveButton && options.saveButtonWithResultActions) ||
             ((options.actions & ConfirmAction) != 0 &&
              (options.separatorBeforeConfirm || (options.actions & PinAction) != 0));
         if ((hasEditingTools || hasSecondaryTools) && hasResultActions) {
@@ -2951,7 +2949,7 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
 
     QVector<QWidget*> secondaryTools{m_tableButton, m_screenRecordButton, m_pinButton, m_ocrButton,
                                      m_textTranslationButton, m_scrollingScreenshotButton,
-                                     m_saveButton};
+                                     m_options.saveButtonWithResultActions ? nullptr : m_saveButton};
     secondaryTools.erase(std::remove(secondaryTools.begin(), secondaryTools.end(), nullptr),
                          secondaryTools.end());
     if (!secondaryTools.isEmpty() && hasContent) {
@@ -2961,7 +2959,9 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
         addFixedWidget(widget);
     }
 
-    QVector<QWidget*> resultActions{m_cancelButton, m_copyButton, m_confirmButton};
+    QVector<QWidget*> resultActions{m_cancelButton, m_copyButton,
+                                    m_options.saveButtonWithResultActions ? m_saveButton : nullptr,
+                                    m_confirmButton};
     resultActions.erase(std::remove(resultActions.begin(), resultActions.end(), nullptr),
                         resultActions.end());
     if (!resultActions.isEmpty() && hasContent) {
@@ -3360,7 +3360,7 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
         });
     }
 
-    if (options.showSaveButton) {
+    if (options.showSaveButton && !options.saveButtonWithResultActions) {
         m_saveButton = addActionButton("Save as file", custom_outlined_icons::Save());
         applyScreenshotShortcutTooltip(m_saveButton, QStringLiteral("Save as file"),
                                        QStringLiteral("save_as_file"));
@@ -3443,12 +3443,25 @@ void ScreenshotToolPalette::addMainActionButtons(const Options& options, QBoxLay
     }
 
     if ((options.actions & CopyAction) != 0) {
-        m_copyButton = addActionButton("Copy to clipboard", primaryIcon(outlined_icons::Copy()));
+        m_copyButton = addActionButton(
+            "Copy to clipboard",
+            options.copyButtonWithNeutralIcon ? outlined_icons::Copy()
+                                               : primaryIcon(outlined_icons::Copy()));
         applyScreenshotShortcutTooltip(m_copyButton, QStringLiteral("Copy to clipboard"),
                                        QStringLiteral("copy_to_clipboard"));
         addButton(m_copyButton);
         connect(m_copyButton, &adqt::widgets::AdButton::clicked, this,
                 &ScreenshotToolPalette::copyRequested);
+    }
+
+    if (options.showSaveButton && options.saveButtonWithResultActions) {
+        m_saveButton = addActionButton("Save as file", custom_outlined_icons::Save());
+        applyScreenshotShortcutTooltip(m_saveButton, QStringLiteral("Save as file"),
+                                       QStringLiteral("save_as_file"));
+        m_saveButton->setObjectName(QStringLiteral("screenshotSaveAsFileButton"));
+        addButton(m_saveButton);
+        connect(m_saveButton, &adqt::widgets::AdButton::clicked, this,
+                &ScreenshotToolPalette::saveRequested);
     }
 
     if (options.separatorBeforeConfirm && (options.actions & ConfirmAction) != 0 && hasButton) {

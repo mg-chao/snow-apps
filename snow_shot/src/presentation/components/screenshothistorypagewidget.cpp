@@ -487,6 +487,9 @@ class HistoryEntryWidget final : public QFrame {
             slideLayout->setSpacing(4);
             auto* image = new adqt::widgets::AdImage(slide);
             image->setObjectName(QStringLiteral("screenshotHistoryImage"));
+            adqt::widgets::AdImage::SemanticStyles imageStyles;
+            imageStyles.root.borderColor = QColor(Qt::transparent);
+            image->setSemanticStyles(imageStyles);
             image->setLoadingPolicy(adqt::widgets::AdImage::LoadingPolicy::WhenVisible);
             image->setDecodePolicy(adqt::widgets::AdImage::DecodePolicy::FitWidget);
             image->setViewer(m_viewer);
@@ -501,9 +504,11 @@ class HistoryEntryWidget final : public QFrame {
         }
 
         if (m_carousel->count() == 0) {
-            auto* unavailable = new QLabel(HistoryEntryWidget::tr("Preview unavailable"));
-            unavailable->setAlignment(Qt::AlignCenter);
-            m_carousel->addSlide(unavailable);
+            m_previewPlaceholder = new QLabel(this);
+            m_previewPlaceholder->setObjectName(
+                QStringLiteral("screenshotHistoryPreviewPlaceholder"));
+            m_previewPlaceholder->setAlignment(Qt::AlignCenter);
+            m_carousel->addSlide(m_previewPlaceholder);
         }
         const bool multiple = m_carousel->count() > 1;
         m_carousel->setArrowsVisible(multiple);
@@ -609,6 +614,11 @@ class HistoryEntryWidget final : public QFrame {
         m_deleteConfirmation->setButtonText(
             adqt::widgets::AdPopconfirm::StandardButton::Cancel,
             HistoryEntryWidget::tr("Cancel"));
+        if (m_previewPlaceholder != nullptr) {
+            m_previewPlaceholder->setText(
+                m_assets.has_value() ? HistoryEntryWidget::tr("Preview unavailable")
+                                     : HistoryEntryWidget::tr("Loading preview…"));
+        }
     }
 
   protected:
@@ -652,6 +662,7 @@ class HistoryEntryWidget final : public QFrame {
     adqt::widgets::AdButton* m_deleteButton = nullptr;
     adqt::widgets::AdPopconfirm* m_deleteConfirmation = nullptr;
     adqt::widgets::AdCarousel* m_carousel = nullptr;
+    QLabel* m_previewPlaceholder = nullptr;
     adqt::widgets::AdImageViewer* m_viewer = nullptr;
     adqt::widgets::AdImageListModel* m_previewModel = nullptr;
     styles::ThemeColorScheme m_scheme;

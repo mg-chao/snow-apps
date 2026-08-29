@@ -172,7 +172,18 @@ enum WorkerTarget {
     },
     Window {
         hwnd: usize,
+        hdr_metadata: HdrMonitorMetadata,
     },
+}
+
+impl WorkerTarget {
+    fn hdr_to_sdr(self) -> Option<HdrFrameContext> {
+        match self {
+            Self::Monitor { hdr_metadata, .. } | Self::Window { hdr_metadata, .. } => {
+                hdr_to_sdr_params(hdr_metadata)
+            }
+        }
+    }
 }
 
 enum WorkerCommand {
@@ -557,25 +568,26 @@ struct WgcWorker {
 impl WgcWorker {
     fn new(target: WorkerTarget) -> CaptureResult<Self> {
         let com = CoInitGuard::init_multithreaded().map_err(CaptureError::platform)?;
-        let (device, context, item, hdr_to_sdr) = match target {
+        let hdr_to_sdr = target.hdr_to_sdr();
+        let (device, context, item) = match target {
             WorkerTarget::Monitor {
                 adapter_luid,
                 monitor,
-                hdr_metadata,
+                ..
             } => {
                 let adapter = super::monitor::resolve_adapter_by_luid(adapter_luid)?;
                 let (device, context) = d3d11::create_d3d11_device_for_adapter(&adapter, false)
                     .map_err(CaptureError::platform)?;
                 let monitor = HMONITOR(monitor as *mut c_void);
                 let item = create_monitor_capture_item(monitor)?;
-                (device, context, item, hdr_to_sdr_params(hdr_metadata))
+                (device, context, item)
             }
-            WorkerTarget::Window { hwnd } => {
+            WorkerTarget::Window { hwnd, .. } => {
                 let (device, context) =
                     d3d11::create_d3d11_device_default(false).map_err(CaptureError::platform)?;
                 let hwnd = HWND(hwnd as *mut c_void);
                 let item = create_window_capture_item(hwnd)?;
-                (device, context, item, None)
+                (device, context, item)
             }
         };
         let winrt_device = create_winrt_device(&device)?;
@@ -1479,7 +1491,7 @@ pub(crate) struct WindowsWindowCapturer {
 }
 
 impl WindowsWindowCapturer {
-    pub(crate) fn new(window: &WindowId) -> CaptureResult<Self> {
+    pub(crate) fn new(window: &WindowId, resolver: Arc<MonitorResolver>) -> CaptureResult<Self> {
         validate_support()?;
         let hwnd = window.raw_handle();
         if hwnd == 0 {
@@ -1488,8 +1500,14 @@ impl WindowsWindowCapturer {
                 window.stable_id()
             )));
         }
+        let native_hwnd = HWND(hwnd as *mut c_void);
+        let hdr_metadata = resolver
+            .resolve_window_monitor(native_hwnd)
+            .map(|monitor| monitor.hdr_metadata)
+            .unwrap_or_default();
         let inner = PreparedWgcCapturer::new(WorkerTarget::Window {
             hwnd: hwnd as usize,
+            hdr_metadata,
         });
         Ok(Self { inner })
     }
@@ -1580,6 +1598,34 @@ mod tests {
     fn zero_wgc_timestamp_is_not_exported() {
         assert_eq!(nonzero_timestamp(0), None);
         assert_eq!(nonzero_timestamp(42), Some(42));
+    }
+
+    #[test]
+    fn window_target_uses_its_display_hdr_metadata() {
+        let params = WorkerTarget::Window {
+            hwnd: 1,
+            hdr_metadata: HdrMonitorMetadata {
+                advanced_color_enabled: true,
+                hdr_enabled: true,
+                sdr_white_nits: Some(160.0),
+                hdr_peak_nits: Some(1200.0),
+                ..HdrMonitorMetadata::default()
+            },
+        }
+        .hdr_to_sdr()
+        .expect("HDR window target should produce conversion parameters");
+
+        assert_eq!(params.sdr_white_nits, 160.0);
+        assert_eq!(params.hdr_peak_nits, 1200.0);
+    }
+
+    #[test]
+    fn window_target_without_display_hdr_metadata_stays_sdr() {
+        let target = WorkerTarget::Window {
+            hwnd: 1,
+            hdr_metadata: HdrMonitorMetadata::default(),
+        };
+        assert!(target.hdr_to_sdr().is_none());
     }
 
     #[test]

@@ -876,39 +876,70 @@ void confirmActionRemainsSeparatedAndCallableForPinnedEditing() {
     options.showWatermarkTool = true;
     options.showTextTool = true;
     options.showSerialNumberTool = true;
+    options.showSaveButton = true;
+    options.saveButtonWithResultActions = true;
+    options.copyButtonWithNeutralIcon = true;
     options.separatorAfterSelect = true;
     options.separatorBeforeConfirm = true;
     options.enableStyleToolbar = false;
-    options.actions = ScreenshotToolPalette::ConfirmAction;
+    options.actions =
+        ScreenshotToolPalette::CopyAction | ScreenshotToolPalette::ConfirmAction;
 
     ScreenshotToolPalette palette(options);
+    auto* save = qobject_cast<adqt::widgets::AdButton*>(
+        controlWithTooltip(palette, "Save as file"));
+    auto* copy = qobject_cast<adqt::widgets::AdButton*>(
+        controlWithTooltip(palette, "Copy to clipboard"));
     auto* confirm =
         qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Confirm edit"));
-    require(confirm != nullptr, "pinned editing should expose Confirm edit");
+    require(save != nullptr && copy != nullptr && confirm != nullptr,
+            "pinned editing should expose Save, Copy, and Confirm actions");
 
-    ScreenshotToolPalette::Options copyOptions;
-    copyOptions.showSelectTool = false;
-    copyOptions.enableStyleToolbar = false;
-    copyOptions.actions = ScreenshotToolPalette::CopyAction;
-    ScreenshotToolPalette copyPalette(copyOptions);
-    auto* copy = qobject_cast<adqt::widgets::AdButton*>(
-        controlWithTooltip(copyPalette, "Copy to clipboard"));
-    require(copy != nullptr, "reference screenshot toolbar should expose Copy");
+    const QList<adqt::widgets::AdButton*> buttons = mainToolbarButtons(palette);
+    require(buttons.size() >= 3 && buttons.at(buttons.size() - 3) == copy &&
+                buttons.at(buttons.size() - 2) == save && buttons.constLast() == confirm,
+            "pinned result actions should end with Copy, Save, and Confirm in that order");
+    QLayout* layout = palette.mainPanel()->layout();
+    const auto hasSeparatorBetween = [layout](QWidget* first, QWidget* second) {
+        const int firstIndex = layout->indexOf(first);
+        const int secondIndex = layout->indexOf(second);
+        for (int index = firstIndex + 1; index < secondIndex; ++index) {
+            if (qobject_cast<QFrame*>(layout->itemAt(index)->widget()) != nullptr) {
+                return true;
+            }
+        }
+        return false;
+    };
+    require(!hasSeparatorBetween(copy, save) && hasSeparatorBetween(save, confirm),
+            "pinned Copy and Save should share a section before the Confirm divider");
+
     require(confirm->buttonStyle() == copy->buttonStyle() &&
                 confirm->accentRole() == copy->accentRole() &&
-                confirm->iconRef().colors() == copy->iconRef().colors(),
-            "pinned edit confirmation should match the screenshot Copy button style");
-    require(adqt::icons::describeIcon(confirm->iconRef()).key.name == QStringLiteral("check"),
-            "matching the Copy button style must preserve the confirmation icon");
+                copy->iconRef().colors().isEmpty(),
+            "pinned Copy should use the neutral icon color");
+    require(save->buttonStyle() == copy->buttonStyle() &&
+                save->accentRole() == copy->accentRole() &&
+                adqt::icons::describeIcon(save->iconRef()).key.name == QStringLiteral("save") &&
+                adqt::icons::describeIcon(copy->iconRef()).key.name == QStringLiteral("copy") &&
+                adqt::icons::describeIcon(confirm->iconRef()).key.name == QStringLiteral("check"),
+            "pinned result actions should retain the established styles and icons");
     require(controlWithTooltip(palette, "Cancel screenshot") == nullptr &&
-                controlWithTooltip(palette, "Copy to clipboard") == nullptr &&
                 controlWithTooltip(palette, "Pin to screen") == nullptr,
-            "ConfirmAction should not add screenshot result or pin actions");
+            "pinned result actions should not add cancel or pin controls");
+    int saveRequests = 0;
+    int copyRequests = 0;
     int confirmRequests = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::saveRequested,
+                     [&saveRequests]() { ++saveRequests; });
+    QObject::connect(&palette, &ScreenshotToolPalette::copyRequested,
+                     [&copyRequests]() { ++copyRequests; });
     QObject::connect(&palette, &ScreenshotToolPalette::confirmRequested,
                      [&confirmRequests]() { ++confirmRequests; });
+    save->click();
+    copy->click();
     confirm->click();
-    require(confirmRequests == 1, "Confirm edit should remain callable");
+    require(saveRequests == 1 && copyRequests == 1 && confirmRequests == 1,
+            "each pinned result action should emit exactly once per click");
 }
 
 void ocrControlReflectsLoadingState() {
@@ -5328,6 +5359,10 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--canvas-color-sampling-only"))) {
         canvasColorSamplerButtonRequestsAndCommits();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--pinned-actions-only"))) {
+        confirmActionRemainsSeparatedAndCallableForPinnedEditing();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--toolbar-layout-only"))) {

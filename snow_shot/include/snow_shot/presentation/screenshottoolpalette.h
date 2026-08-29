@@ -110,6 +110,8 @@ class ScreenshotToolPalette final : public QWidget {
         bool showQrTool = false;
         bool showScrollingScreenshotTool = false;
         bool showSaveButton = false;
+        bool saveButtonWithResultActions = false;
+        bool copyButtonWithNeutralIcon = false;
         bool showScreenRecordButton = false;
         bool showRecordingControls = false;
         bool showTrailingDragHandle = false;

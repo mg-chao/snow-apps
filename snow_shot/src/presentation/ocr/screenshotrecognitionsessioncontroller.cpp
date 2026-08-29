@@ -11,6 +11,7 @@
 #include <QDesktopServices>
 #include <QCoreApplication>
 #include <QLocale>
+#include <QMimeData>
 #include <QPushButton>
 #include <QTextDocument>
 #include <QTimer>
@@ -887,6 +888,43 @@ QString ScreenshotRecognitionSessionController::originalText() const {
     const QString key = m_editingKey.isEmpty() ? m_textCacheKey : m_editingKey;
     const auto session = m_textCache.value(key).editingSession;
     return session != nullptr ? session->originalText() : QString{};
+}
+
+std::unique_ptr<QMimeData>
+ScreenshotRecognitionSessionController::recognitionClipboardMimeData(
+    const ScreenshotOcrPresentation* displayedPresentation) const {
+    auto mimeData = std::make_unique<QMimeData>();
+    if (m_mode == Mode::Qr) {
+        if (m_qrContents.isEmpty()) {
+            return {};
+        }
+        mimeData->setText(m_qrContents.join(QLatin1Char('\n')));
+        return mimeData;
+    }
+    if (m_mode == Mode::Table) {
+        if (m_tableSession == nullptr || m_tableSession->document.empty()) {
+            return {};
+        }
+        mimeData->setHtml(m_tableSession->document.toHtml());
+        mimeData->setText(m_tableSession->document.toPlainText());
+        return mimeData;
+    }
+
+    QString text;
+    if (editing()) {
+        text = textDraft();
+    } else if (displayedPresentation != nullptr) {
+        text = displayedPresentation->hasTextSelection()
+                   ? displayedPresentation->selectedText()
+                   : snow_shot::presentation::originalOcrText(*displayedPresentation);
+    } else {
+        text = originalText();
+    }
+    if (text.isEmpty()) {
+        return {};
+    }
+    mimeData->setText(text);
+    return mimeData;
 }
 
 std::shared_ptr<ScreenshotTableEditingSession>

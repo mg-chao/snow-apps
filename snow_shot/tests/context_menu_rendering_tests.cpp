@@ -331,6 +331,43 @@ void nativePopupCornersCompositeOverTheirBackdrop() {
     backdrop.hide();
 }
 
+void hiddenMenuReleasesAndRebuildsItsWindowSurface() {
+    QWidget parent;
+    parent.resize(480, 320);
+    parent.show();
+    require(waitUntil([&parent]() {
+                return parent.windowHandle() != nullptr && parent.windowHandle()->isExposed();
+            }),
+            "window surface parent was not exposed");
+
+    adqt::widgets::AdContextMenu menu(&parent);
+    populateProductionSizedMenu(menu);
+    menu.popupAt(parent.mapToGlobal(QPoint(60, 40)));
+    require(waitUntil([&menu]() {
+                return menu.isVisible() && menu.windowHandle() != nullptr &&
+                       menu.windowHandle()->isExposed();
+            }),
+            "context menu was not exposed before hiding");
+
+    menu.hide();
+    require(waitUntil([&menu]() { return menu.windowHandle() == nullptr; }),
+            "a hidden context menu must release its native window and backing store");
+
+    menu.popupAt(parent.mapToGlobal(QPoint(90, 60)));
+    require(waitUntil([&menu]() {
+                return menu.isVisible() && menu.windowHandle() != nullptr &&
+                       menu.windowHandle()->isExposed();
+            }),
+            "context menu did not rebuild its window surface after being re-shown");
+    const QImage image = menu.grab().toImage().convertToFormat(QImage::Format_ARGB32);
+    require(!image.isNull(), "re-shown context menu did not render");
+    require(image.pixelColor(image.rect().bottomRight()).alpha() == 0,
+            "re-shown context menu lost its rounded-corner alpha");
+
+    menu.hide();
+    parent.hide();
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -340,6 +377,7 @@ int main(int argc, char** argv) {
         borderGeometryUsesWholeDevicePixels();
         constrainedPopupKeepsActionGeometryInsideSurface();
         nativePopupCornersCompositeOverTheirBackdrop();
+        hiddenMenuReleasesAndRebuildsItsWindowSurface();
         dirtyRenderTargetCornersAreCleared();
         return 0;
     } catch (const std::exception& error) {

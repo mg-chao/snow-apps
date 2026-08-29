@@ -119,6 +119,7 @@ constexpr auto kOcrTooLargeDescription = "Image size is too large.";
 [[maybe_unused]] constexpr const char* kPinnedTranslations[] = {
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Enable drawing mode"),
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Close"),
+    QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Save as File"),
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Image size is too large."),
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "The pinned image could not be prepared"),
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "The pinned image copy could not be started"),
@@ -565,7 +566,7 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
     ShortcutManager::Binding closeWindow;
     closeWindow.id = QStringLiteral("pinned.close");
     closeWindow.priority = ShortcutManager::StandardPriority::WindowCommand + 1;
-    closeWindow.canActivate = [this](const auto&) { return !m_closing; };
+    closeWindow.canActivate = localCommandsAllowed;
     closeWindow.activate = [this](const auto&) {
         close();
         return true;
@@ -612,8 +613,9 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
         QKeyCombination(Qt::MetaModifier, Qt::Key_A),
     };
     selectAll.priority = ShortcutManager::StandardPriority::WindowCommand;
-    selectAll.canActivate = [this](const auto&) {
-        return m_ocrMode && m_displayOcrPresentation != nullptr;
+    selectAll.canActivate = [this, localCommandsAllowed](const auto& context) {
+        return m_ocrMode && m_displayOcrPresentation != nullptr &&
+               localCommandsAllowed(context);
     };
     selectAll.activate = [this](const auto&) {
         m_displayOcrPresentation->selectAll();
@@ -629,8 +631,9 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
         QKeyCombination(Qt::MetaModifier, Qt::Key_C),
     };
     copy.priority = ShortcutManager::StandardPriority::WindowCommand;
-    copy.canActivate = [this](const auto&) {
-        return m_ocrMode && m_displayOcrPresentation != nullptr;
+    copy.canActivate = [this, localCommandsAllowed](const auto& context) {
+        return m_ocrMode && m_displayOcrPresentation != nullptr &&
+               localCommandsAllowed(context);
     };
     copy.activate = [this](const auto&) {
         const QString text = m_displayOcrPresentation->selectedText();
@@ -2520,6 +2523,15 @@ void ScreenshotPinnedWindow::ensureEditController() {
                 updateControlsGeometry();
             });
 
+    if (m_editController->toolbarWindow() != nullptr) {
+        if (ScreenshotToolPalette* toolbar = m_editController->toolbarWindow()->palette()) {
+            connect(toolbar, &ScreenshotToolPalette::saveRequested, this,
+                    &ScreenshotPinnedWindow::saveAsFile);
+            connect(toolbar, &ScreenshotToolPalette::copyRequested, this,
+                    &ScreenshotPinnedWindow::copyEditToolbarContent);
+        }
+    }
+
     if (m_recognitionSession != nullptr && m_editController->toolbarWindow() != nullptr) {
         connect(m_editController, &ScreenshotPinnedEditController::textRecognitionRequested, this,
                 [this]() {
@@ -2872,6 +2884,29 @@ QRectF ScreenshotPinnedWindow::visibleCanvasRect() const {
     return QRectF(topLeft, visibleSize);
 }
 
+void ScreenshotPinnedWindow::copyEditToolbarContent() {
+    if (m_recognitionSession == nullptr || !m_recognitionSession->active()) {
+        copyCurrentViewport();
+        return;
+    }
+    invalidatePendingCopy();
+    if (m_recognitionSession->tableModeActive() && m_recognitionContent != nullptr) {
+        m_recognitionContent->commitActiveTableEdit();
+    }
+    std::unique_ptr<QMimeData> mimeData =
+        m_recognitionSession->recognitionClipboardMimeData(m_displayOcrPresentation.get());
+    QClipboard* clipboard = QApplication::clipboard();
+    if (mimeData == nullptr || clipboard == nullptr) {
+        showPinnedRecognitionMessage(
+            this,
+            QCoreApplication::translate("ScreenshotController",
+                                        "No recognized result is available to copy"),
+            true);
+        return;
+    }
+    clipboard->setMimeData(mimeData.release(), QClipboard::Clipboard);
+}
+
 void ScreenshotPinnedWindow::copyCurrentViewport() {
     if (m_copyService == nullptr) {
         return;
@@ -3009,7 +3044,7 @@ void ScreenshotPinnedWindow::saveAsFile() {
     QString selectedFilter =
         ScreenshotImageFileService::dialogFilter(ScreenshotImageFileFormat::Png);
     const QString selectedPath = QFileDialog::getSaveFileName(
-        this, QCoreApplication::translate("ScreenshotController", "Save screenshot"), initialPath,
+        this, translatePinnedText("Save as File"), initialPath,
         ScreenshotImageFileService::saveDialogFilter(), &selectedFilter);
     if (selectedPath.isEmpty()) {
         return;

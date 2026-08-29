@@ -177,6 +177,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void handleTableSplitRequested();
     void handleTableResetRequested();
     QPointF canvasPositionForViewPosition(const QPointF& position) const;
+    void copyEditToolbarContent();
     void copyCurrentViewport();
     void copyOriginalContent();
     void saveAsFile();

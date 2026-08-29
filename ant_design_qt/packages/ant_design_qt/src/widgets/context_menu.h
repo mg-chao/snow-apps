@@ -9,6 +9,7 @@
 
 #include "icon_core.h"
 
+class QHideEvent;
 class QPaintEvent;
 
 namespace adqt::widgets {
@@ -97,6 +98,7 @@ class AdContextMenu final : public QMenu {
   void changeEvent(QEvent* event) override;
   void paintEvent(QPaintEvent* event) override;
   void showEvent(QShowEvent* event) override;
+  void hideEvent(QHideEvent* event) override;
 
  private:
   friend class detail::AdContextMenuStyle;

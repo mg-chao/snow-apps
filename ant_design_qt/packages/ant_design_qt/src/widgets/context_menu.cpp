@@ -8,6 +8,7 @@
 #include <QCoreApplication>
 #include <QEvent>
 #include <QFontMetrics>
+#include <QHideEvent>
 #include <QPaintEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -723,6 +724,25 @@ void AdContextMenu::changeEvent(QEvent* event) {
 void AdContextMenu::showEvent(QShowEvent* event) {
   refreshVisuals(false);
   QMenu::showEvent(event);
+}
+
+void AdContextMenu::hideEvent(QHideEvent* event) {
+  QMenu::hideEvent(event);
+  // The translucent popup's backing store is the dominant resident cost of a
+  // hidden menu (its full physical-size ARGB surface stays allocated until the
+  // widget is destroyed).  Destroying the native window releases it while
+  // keeping every widget-level state intact; Qt rebuilds the window on the next
+  // popup.  Destroying from inside the hide sequence would re-enter popup
+  // teardown, so defer to the event loop, and skip when the menu was re-shown
+  // in the meantime (submenu chains, immediate re-popup).
+  QMetaObject::invokeMethod(
+      this,
+      [this]() {
+        if (!isVisible() && windowHandle() != nullptr) {
+          destroy();
+        }
+      },
+      Qt::QueuedConnection);
 }
 
 void AdContextMenu::paintEvent(QPaintEvent* event) {

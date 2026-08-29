@@ -4,7 +4,6 @@
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
-#include "snow_shot/presentation/screenshotocrtexttransform.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include "snow_shot/presentation/screenshotoverlaycoordinator.h"
@@ -320,47 +319,17 @@ bool ScreenshotOcrController::copyRecognitionToClipboard(bool endCapture) {
     if (!m_active || QApplication::clipboard() == nullptr) {
         return false;
     }
-    if (m_session->qrModeActive()) {
-        const QStringList contents = m_session->qrContents();
-        if (contents.isEmpty()) {
-            return false;
-        }
-        QApplication::clipboard()->setText(contents.join(QLatin1Char('\n')));
-        if (endCapture) {
-            m_context.cancelCapture();
-        }
-        return true;
-    }
     if (m_session->tableModeActive()) {
         if (m_recognitionWindow != nullptr) {
             m_recognitionWindow->commitActiveTableEdit();
         }
-        const auto session = m_session->tableSession();
-        if (session == nullptr || session->document.empty()) {
-            return false;
-        }
-        auto* mimeData = new QMimeData;
-        mimeData->setData(QStringLiteral("text/html"), session->document.toHtml().toUtf8());
-        mimeData->setText(session->document.toPlainText());
-        QApplication::clipboard()->setMimeData(mimeData, QClipboard::Clipboard);
-        if (endCapture) {
-            m_context.cancelCapture();
-        }
-        return true;
     }
-
-    QString text;
-    if (m_session->editing()) {
-        text = m_session->textDraft();
-    } else if (m_presentation != nullptr) {
-        text = m_presentation->hasTextSelection()
-                   ? m_presentation->selectedText()
-                   : snow_shot::presentation::originalOcrText(*m_presentation);
-    }
-    if (text.isEmpty()) {
+    std::unique_ptr<QMimeData> mimeData =
+        m_session->recognitionClipboardMimeData(m_presentation.get());
+    if (mimeData == nullptr) {
         return false;
     }
-    QApplication::clipboard()->setText(text);
+    QApplication::clipboard()->setMimeData(mimeData.release(), QClipboard::Clipboard);
     if (endCapture) {
         m_context.cancelCapture();
     }
