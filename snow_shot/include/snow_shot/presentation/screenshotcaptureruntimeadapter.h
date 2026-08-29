@@ -31,6 +31,7 @@ class ScreenshotCaptureRuntimeAdapter final : public ScreenshotCaptureRuntimePor
     [[nodiscard]] bool hasCaptureWorker() const override;
     void ensureCaptureWorker() override;
     void prepareAsync(quint64 requestId) override;
+    void refreshLayoutAsync(quint64 requestId) override;
     void captureAsync(const ScreenshotCaptureRequest& request) override;
     void cancelActiveCapture() override;
     void releaseIdleResourcesAsync(quint64 requestId) override;

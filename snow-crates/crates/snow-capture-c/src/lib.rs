@@ -331,6 +331,7 @@ struct SnapshotWindowFrame {
 enum WorkerCommand {
     Prepare(mpsc::Sender<Result<(), String>>),
     Capture(mpsc::Sender<Result<Frame, String>>),
+    ResetToPrepared(mpsc::Sender<Result<(), String>>),
     ReleaseIdleResources(mpsc::Sender<Result<(), String>>),
     ActiveCaptureAccessCount(mpsc::Sender<Result<usize, String>>),
     Stop,
@@ -628,6 +629,15 @@ impl MonitorWorker {
                             };
                             let _ = reply.send(result);
                         }
+                        WorkerCommand::ResetToPrepared(reply) => {
+                            let result = match session.as_mut() {
+                                Ok(capture_session) => capture_session
+                                    .reset_to_prepared()
+                                    .map_err(|err| err.to_string()),
+                                Err(error) => Err(error.clone()),
+                            };
+                            let _ = reply.send(result);
+                        }
                         WorkerCommand::ReleaseIdleResources(reply) => {
                             let result = match session.as_mut() {
                                 Ok(capture_session) => {
@@ -691,6 +701,14 @@ impl MonitorWorker {
         Ok(rx)
     }
 
+    fn request_reset_to_prepared(&self) -> Result<mpsc::Receiver<Result<(), String>>, String> {
+        let (tx, rx) = mpsc::channel();
+        self.tx
+            .send(WorkerCommand::ResetToPrepared(tx))
+            .map_err(|_| "capture worker is not running".to_owned())?;
+        Ok(rx)
+    }
+
     fn request_active_capture_access_count(
         &self,
     ) -> Result<mpsc::Receiver<Result<usize, String>>, String> {
@@ -732,33 +750,90 @@ fn snapshot_ref<'a>(
     }
 }
 
-fn replace_workers(
+fn reconcile_workers(
     session: &mut SnowCaptureDesktopSessionImpl,
     entries: Vec<MonitorEntry>,
 ) -> Result<(), String> {
     let old_workers = std::mem::take(&mut session.workers);
-    let mut next_workers = Vec::with_capacity(entries.len());
+    let was_prepared = session.prepared;
+    let mut unmatched = old_workers;
+    let mut retained = Vec::with_capacity(entries.len());
+    let mut retained_updates = Vec::with_capacity(entries.len());
+    let mut created = Vec::new();
 
     for entry in entries {
-        match MonitorWorker::start(session.system.clone(), session.options, entry) {
-            Ok(worker) => next_workers.push(worker),
-            Err(error) => {
-                for worker in next_workers {
-                    worker.stop();
+        if let Some(index) = unmatched.iter().position(|worker| {
+            worker.entry.id.stable_id() == entry.id.stable_id()
+                && worker.entry.x == entry.x
+                && worker.entry.y == entry.y
+                && worker.entry.expected_width == entry.expected_width
+                && worker.entry.expected_height == entry.expected_height
+        }) {
+            retained.push(unmatched.swap_remove(index));
+            retained_updates.push(entry);
+        } else {
+            match MonitorWorker::start(session.system.clone(), session.options, entry) {
+                Ok(worker) => created.push(worker),
+                Err(error) => {
+                    for worker in created.drain(..) {
+                        worker.stop();
+                    }
+                    retained.extend(unmatched);
+                    session.workers = retained;
+                    return Err(error);
                 }
-                session.workers = old_workers;
-                session.prepared = false;
-                return Err(error);
             }
         }
     }
 
-    for worker in old_workers {
-        worker.stop();
+    if was_prepared {
+        let receivers = match created
+            .iter()
+            .map(MonitorWorker::request_prepare)
+            .collect::<Result<Vec<_>, _>>()
+        {
+            Ok(receivers) => receivers,
+            Err(error) => {
+                for worker in created.drain(..) {
+                    worker.stop();
+                }
+                retained.extend(unmatched);
+                session.workers = retained;
+                return Err(error);
+            }
+        };
+        for receiver in receivers {
+            match receiver.recv() {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    for worker in created.drain(..) {
+                        worker.stop();
+                    }
+                    retained.extend(unmatched);
+                    session.workers = retained;
+                    return Err(error);
+                }
+                Err(_) => {
+                    for worker in created.drain(..) {
+                        worker.stop();
+                    }
+                    retained.extend(unmatched);
+                    session.workers = retained;
+                    return Err("capture worker stopped before prepare completed".to_owned());
+                }
+            }
+        }
     }
 
-    session.workers = next_workers;
-    session.prepared = false;
+    for worker in unmatched {
+        worker.stop();
+    }
+    for (worker, entry) in retained.iter_mut().zip(retained_updates) {
+        worker.entry = entry;
+    }
+    retained.extend(created);
+    session.workers = retained;
+    session.prepared = was_prepared;
     Ok(())
 }
 
@@ -768,7 +843,7 @@ fn rebuild_workers(session: &mut SnowCaptureDesktopSessionImpl) -> Result<(), St
         .refresh_display_configuration()
         .map_err(|err| err.to_string())?;
     let entries = build_monitor_entries(&session.system)?;
-    replace_workers(session, entries)
+    reconcile_workers(session, entries)
 }
 
 fn same_monitor_layout(left: &[MonitorEntry], right: &[MonitorEntry]) -> bool {
@@ -853,7 +928,7 @@ fn capture_all_frames_with_layout_retry(
             if same_monitor_layout(&entries, &current_entries) {
                 return Err(first_error);
             }
-            if let Err(refresh_error) = replace_workers(session, entries) {
+            if let Err(refresh_error) = reconcile_workers(session, entries) {
                 return Err(format!(
                     "{first_error}; layout refresh failed: {refresh_error}"
                 ));
@@ -903,6 +978,25 @@ fn active_capture_access_count(session: &SnowCaptureDesktopSessionImpl) -> Resul
     }
 }
 
+fn reset_workers_to_prepared(session: &mut SnowCaptureDesktopSessionImpl) -> Result<(), String> {
+    let receivers = session
+        .workers
+        .iter()
+        .map(MonitorWorker::request_reset_to_prepared)
+        .collect::<Result<Vec<_>, _>>()?;
+    for receiver in receivers {
+        match receiver.recv() {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => return Err(error),
+            Err(_) => {
+                return Err("capture worker stopped before prepared reset completed".to_owned());
+            }
+        }
+    }
+    session.prepared = true;
+    Ok(())
+}
+
 fn backend_kind_ptr(session: &SnowCaptureDesktopSessionImpl) -> *const c_char {
     match session.system.backend_kind().as_str() {
         "auto" => c"auto".as_ptr(),
@@ -927,8 +1021,16 @@ fn capture_window_snapshot(
             options,
         )
         .map_err(|error| error.to_string())?;
-    let frame = session.capture_once().map_err(|error| error.to_string())?;
+    let capture_result = session.capture_once();
+    let frame = match capture_result {
+        Ok(frame) => frame,
+        Err(error) => {
+            let _ = session.reset_to_prepared();
+            return Err(error.to_string());
+        }
+    };
     if session.active_capture_access_count() != 0 {
+        let _ = session.reset_to_prepared();
         return Err("capture access remained active after focused-window capture".to_owned());
     }
     let target = session
@@ -1161,11 +1263,8 @@ pub extern "C" fn snow_capture_desktop_session_refresh_layout(
 
     match rebuild_workers(session) {
         Ok(()) => {
-            let ok = snow_capture_desktop_session_prepare(session);
-            if ok != 0 {
-                clear_last_error();
-            }
-            ok
+            clear_last_error();
+            1
         }
         Err(error) => {
             set_last_error(error);
@@ -1215,12 +1314,36 @@ pub extern "C" fn snow_capture_desktop_session_release_idle_resources(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn snow_capture_desktop_session_reset_to_prepared(
+    session: *mut SnowCaptureDesktopSessionImpl,
+) -> u8 {
+    let Some(session) = session_mut(session) else {
+        return 0;
+    };
+
+    match reset_workers_to_prepared(session) {
+        Ok(()) => {
+            clear_last_error();
+            1
+        }
+        Err(error) => {
+            set_last_error(error);
+            0
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn snow_capture_desktop_session_capture_all(
     session: *mut SnowCaptureDesktopSessionImpl,
 ) -> *mut SnowCaptureSnapshotImpl {
     let Some(session) = session_mut(session) else {
         return ptr::null_mut();
     };
+
+    if !session.prepared && snow_capture_desktop_session_prepare(session as *mut _) == 0 {
+        return ptr::null_mut();
+    }
 
     let frames = match capture_all_frames_with_layout_retry(session) {
         Ok(frames) => frames,
@@ -1290,6 +1413,10 @@ pub unsafe extern "C" fn snow_capture_desktop_session_capture_v1(
     };
     if is_canceled() {
         set_last_error("screenshot capture canceled");
+        return ptr::null_mut();
+    }
+
+    if !session.prepared && snow_capture_desktop_session_prepare(session as *mut _) == 0 {
         return ptr::null_mut();
     }
 
@@ -2050,6 +2177,31 @@ pub unsafe extern "C" fn snow_capture_window_session_frame_retain(
     Box::into_raw(Box::new(SnowCaptureFrameLeaseImpl {
         _frame: Arc::new(session.frame.clone()),
     }))
+}
+
+/// Clears the session-owned frame and returns the window session to its
+/// lightweight prepared state. Any previously retained frame lease remains
+/// valid until that lease is released.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_window_session_release_frame(
+    session: *mut SnowCaptureWindowSessionImpl,
+) -> u8 {
+    if session.is_null() {
+        set_last_error("window session is null");
+        return 0;
+    }
+    let session = unsafe { &mut *session };
+    session.frame = Frame::empty();
+    match session.session.reset_to_prepared() {
+        Ok(()) => {
+            clear_last_error();
+            1
+        }
+        Err(error) => {
+            set_last_error(error);
+            0
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -2874,6 +3026,20 @@ mod tests {
     #[test]
     fn release_idle_resources_null_session_fails() {
         let ok = snow_capture_desktop_session_release_idle_resources(ptr::null_mut());
+        assert_eq!(ok, 0);
+        assert!(!snow_capture_last_error_message().is_null());
+    }
+
+    #[test]
+    fn reset_to_prepared_null_session_fails() {
+        let ok = snow_capture_desktop_session_reset_to_prepared(ptr::null_mut());
+        assert_eq!(ok, 0);
+        assert!(!snow_capture_last_error_message().is_null());
+    }
+
+    #[test]
+    fn window_frame_release_null_session_fails() {
+        let ok = unsafe { snow_capture_window_session_release_frame(ptr::null_mut()) };
         assert_eq!(ok, 0);
         assert!(!snow_capture_last_error_message().is_null());
     }

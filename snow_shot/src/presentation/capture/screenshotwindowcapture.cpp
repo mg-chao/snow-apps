@@ -43,6 +43,8 @@ struct ScreenshotWindowCapture::Impl final {
         session = snow_capture_window_session_create(&config);
         if (session == nullptr) {
             error = nativeCaptureError("Failed to create window capture session");
+        } else {
+            prepare();
         }
 #else
         Q_UNUSED(nativeWindowHandle);
@@ -115,11 +117,13 @@ struct ScreenshotWindowCapture::Impl final {
             info.stride_bytes != static_cast<std::uint32_t>(expectedStride) || width > maxInt ||
             height > maxInt || expectedStride > maxInt ||
             expectedBytes > static_cast<quint64>(std::numeric_limits<std::size_t>::max())) {
+            static_cast<void>(snow_capture_window_session_release_frame(session));
             error = QStringLiteral("Window capture returned an invalid packed frame");
             return std::nullopt;
         }
         if (info.pixel_format != SNOW_CAPTURE_PIXEL_FORMAT_RGBA8 &&
             info.pixel_format != SNOW_CAPTURE_PIXEL_FORMAT_BGRA8) {
+            static_cast<void>(snow_capture_window_session_release_frame(session));
             error = QStringLiteral("Window capture returned an unknown pixel format");
             return std::nullopt;
         }
@@ -128,6 +132,7 @@ struct ScreenshotWindowCapture::Impl final {
         const int imageHeight = static_cast<int>(height);
         SnowCaptureFrameLease* lease = snow_capture_window_session_frame_retain(session);
         if (lease == nullptr) {
+            static_cast<void>(snow_capture_window_session_release_frame(session));
             error = nativeCaptureError("Failed to retain window capture frame");
             return std::nullopt;
         }
@@ -139,6 +144,7 @@ struct ScreenshotWindowCapture::Impl final {
                      &releaseFrameLease, lease);
         if (image.isNull()) {
             snow_capture_frame_lease_release(lease);
+            snow_capture_window_session_release_frame(session);
             error = QStringLiteral("Failed to lease window capture frame");
             return std::nullopt;
         }
@@ -147,6 +153,7 @@ struct ScreenshotWindowCapture::Impl final {
         const qint64 bottomExclusive = static_cast<qint64>(info.y) + height;
         if (rightExclusive > static_cast<qint64>(std::numeric_limits<int>::max()) + 1 ||
             bottomExclusive > static_cast<qint64>(std::numeric_limits<int>::max()) + 1) {
+            snow_capture_window_session_release_frame(session);
             error = QStringLiteral("Window capture geometry is outside the supported range");
             return std::nullopt;
         }
@@ -154,6 +161,10 @@ struct ScreenshotWindowCapture::Impl final {
         ScreenshotWindowCaptureFrame result;
         result.image = std::move(image);
         result.physicalRect = QRect(info.x, info.y, imageWidth, imageHeight);
+        if (snow_capture_window_session_release_frame(session) == 0) {
+            error = nativeCaptureError("Failed to release window capture frame");
+            return std::nullopt;
+        }
         error.clear();
         return result;
 #else

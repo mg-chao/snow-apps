@@ -16,6 +16,7 @@ class ScreenshotCaptureWorkerEventSink {
 
     virtual void handleCapturePrepared(quint64 requestId, bool ok) = 0;
     virtual void handleCaptureFinished(const ScreenshotCaptureResult& result) = 0;
+    virtual void handleLayoutRefreshed(quint64 requestId, bool ok) = 0;
 };
 
 class ScreenshotCaptureRuntimePort {
@@ -27,6 +28,7 @@ class ScreenshotCaptureRuntimePort {
     [[nodiscard]] virtual bool hasCaptureWorker() const = 0;
     virtual void ensureCaptureWorker() = 0;
     virtual void prepareAsync(quint64 requestId) = 0;
+    virtual void refreshLayoutAsync(quint64 requestId) = 0;
     virtual void captureAsync(const ScreenshotCaptureRequest& request) = 0;
     virtual void cancelActiveCapture() = 0;
     virtual void releaseIdleResourcesAsync(quint64 requestId) = 0;

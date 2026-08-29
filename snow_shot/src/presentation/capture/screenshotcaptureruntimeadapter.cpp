@@ -34,6 +34,12 @@ void ScreenshotCaptureRuntimeAdapter::ensureCaptureCoordinator() {
                              m_captureEventSink->handleCapturePrepared(requestId, ok);
                          }
                      });
+    QObject::connect(m_captureCoordinator.get(), &ScreenshotCaptureCoordinator::layoutRefreshed,
+                     m_captureCoordinator.get(), [this](quint64 requestId, bool ok) {
+                         if (m_captureEventSink != nullptr) {
+                             m_captureEventSink->handleLayoutRefreshed(requestId, ok);
+                         }
+                     });
     QObject::connect(m_captureCoordinator.get(), &ScreenshotCaptureCoordinator::captureFinished,
                      m_captureCoordinator.get(),
                      [this](const ScreenshotCaptureResult& result) {
@@ -63,6 +69,11 @@ void ScreenshotCaptureRuntimeAdapter::ensureCaptureWorker() {
 void ScreenshotCaptureRuntimeAdapter::prepareAsync(quint64 requestId) {
     ensureCaptureCoordinator();
     m_captureCoordinator->prepareAsync(requestId);
+}
+
+void ScreenshotCaptureRuntimeAdapter::refreshLayoutAsync(quint64 requestId) {
+    ensureCaptureCoordinator();
+    m_captureCoordinator->refreshLayoutAsync(requestId);
 }
 
 void ScreenshotCaptureRuntimeAdapter::captureAsync(const ScreenshotCaptureRequest& request) {

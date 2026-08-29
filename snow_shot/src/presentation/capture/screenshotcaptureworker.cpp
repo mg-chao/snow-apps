@@ -119,10 +119,15 @@ void ScreenshotCaptureWorker::prepare(quint64 requestId,
     postPrepared(requestId, coordinator, ok);
 }
 
-void ScreenshotCaptureWorker::refreshLayout(quint64 requestId) {
-    Q_UNUSED(requestId);
-    if (ensureSession()) {
-        snow_capture_desktop_session_refresh_layout(m_session);
+void ScreenshotCaptureWorker::refreshLayout(
+    quint64 requestId, const QPointer<ScreenshotCaptureCoordinator>& coordinator) {
+    const bool ok = ensureSession() && snow_capture_desktop_session_refresh_layout(m_session) != 0;
+    if (!coordinator.isNull()) {
+        QMetaObject::invokeMethod(coordinator, [coordinator, requestId, ok]() {
+            if (!coordinator.isNull()) {
+                emit coordinator->layoutRefreshed(requestId, ok);
+            }
+        }, Qt::QueuedConnection);
     }
 }
 
@@ -163,7 +168,9 @@ void ScreenshotCaptureWorker::capture(
     }
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.native_returned");
     if (nativeResult == nullptr) {
-        captureResult.errorMessage = nativeCaptureError("Screenshot capture failed");
+        const QString captureError = nativeCaptureError("Screenshot capture failed");
+        static_cast<void>(snow_capture_desktop_session_reset_to_prepared(m_session));
+        captureResult.errorMessage = captureError;
         postCaptureResult(coordinator, std::move(captureResult));
         return;
     }

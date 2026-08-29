@@ -28,6 +28,7 @@ class ScreenshotCaptureCoordinator final : public QObject {
 
   signals:
     void prepared(quint64 requestId, bool ok);
+    void layoutRefreshed(quint64 requestId, bool ok);
     void captureFinished(ScreenshotCaptureResult result);
 
   private:

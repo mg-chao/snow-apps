@@ -111,6 +111,7 @@ void ScreenshotCaptureWorkflow::handleInitialSmartSelectionResolved(quint64 sess
 }
 
 void ScreenshotCaptureWorkflow::cancelCapture() {
+    const bool refreshAfterCancel = m_refreshAfterCapture || m_state.layoutDirty;
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("workflow.cancel_requested");
     SNOW_SHOT_CAPTURE_PERF_FINISH(false);
     m_context.runtime.cancelActiveCapture();
@@ -121,9 +122,13 @@ void ScreenshotCaptureWorkflow::cancelCapture() {
     m_state.sessionState = ScreenshotSessionState::Releasing;
     m_state.captureInProgress = false;
     m_focusedWindowHandle = 0;
+    m_refreshAfterCapture = false;
     resetCaptureModels();
     resetCanvasRuntimeState();
     releaseIdleResources(m_state.sessionId);
+    if (refreshAfterCancel) {
+        scheduleLayoutRefresh(m_layoutChangeSerial);
+    }
 }
 
 void ScreenshotCaptureWorkflow::clearCapturePresentationReadiness() {
@@ -165,6 +170,7 @@ void ScreenshotCaptureWorkflow::cleanupActiveSessionForRestart() {
     ++m_state.sessionId;
     m_state.sessionState = ScreenshotSessionState::Releasing;
     m_state.captureInProgress = false;
+    m_refreshAfterCapture = false;
     m_context.runtime.releaseSelectorCache();
     resetCaptureModels();
     m_context.runtime.hideOverlayWindows(m_context.displaySession);
@@ -182,6 +188,8 @@ void ScreenshotCaptureWorkflow::destroyUiSelectorService() {
 
 void ScreenshotCaptureWorkflow::shutdownCaptureWorker() {
     m_context.runtime.shutdownCaptureWorker();
+    m_layoutRefreshInFlight = false;
+    m_refreshAfterCapture = false;
 }
 
 void ScreenshotCaptureWorkflow::releaseIdleResources(quint64 sessionId) {
@@ -198,14 +206,6 @@ void ScreenshotCaptureWorkflow::releaseIdleResources(quint64 sessionId) {
     initializeIdleResources(sessionId);
 }
 
-void ScreenshotCaptureWorkflow::releaseResourcesForExternalInvalidation() {
-    if (!m_context.interaction.inactive() || m_state.captureInProgress) {
-        cancelCapture();
-        return;
-    }
-    releaseIdleResources(m_state.sessionId);
-}
-
 void ScreenshotCaptureWorkflow::handleDisplayConfigurationChanged() {
     if (!m_context.runtime.captureWorkerCreated() &&
         m_state.sessionState == ScreenshotSessionState::IdleCold &&
@@ -215,8 +215,21 @@ void ScreenshotCaptureWorkflow::handleDisplayConfigurationChanged() {
 
     if (m_context.runtime.captureWorkerCreated()) {
         m_state.layoutDirty = true;
+        const quint64 refreshId = ++m_layoutChangeSerial;
+        if (m_state.captureInProgress) {
+            m_refreshAfterCapture = true;
+        } else {
+            scheduleLayoutRefresh(refreshId);
+        }
     }
-    releaseResourcesForExternalInvalidation();
+}
+
+void ScreenshotCaptureWorkflow::scheduleLayoutRefresh(quint64 refreshId) {
+    if (m_layoutRefreshInFlight || !m_context.runtime.captureWorkerCreated()) {
+        return;
+    }
+    m_layoutRefreshInFlight = true;
+    m_context.runtime.refreshLayoutAsync(refreshId);
 }
 
 void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
@@ -311,7 +324,11 @@ void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCapture
         return;
     }
     m_context.geometry.rebuild(m_context.displaySession);
-    m_state.layoutDirty = false;
+    const bool refreshAfterCapture = m_refreshAfterCapture;
+    m_refreshAfterCapture = false;
+    if (!refreshAfterCapture) {
+        m_state.layoutDirty = false;
+    }
 
     m_state.captureInProgress = false;
     if (m_presentationMode == ScreenshotCapturePresentationMode::Silent) {
@@ -319,6 +336,9 @@ void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCapture
         m_capturedPresentationSessionId = sessionId;
         if (m_context.presentation.capturePresented) {
             m_context.presentation.capturePresented();
+        }
+        if (refreshAfterCapture) {
+            scheduleLayoutRefresh(m_layoutChangeSerial);
         }
         return;
     }
@@ -336,6 +356,9 @@ void ScreenshotCaptureWorkflow::finishCapturePreparation(const ScreenshotCapture
 
     m_capturedPresentationSessionId = sessionId;
     showCapturePresentationWhenReady(sessionId);
+    if (refreshAfterCapture) {
+        scheduleLayoutRefresh(m_layoutChangeSerial);
+    }
 }
 
 void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 sessionId) {
@@ -407,6 +430,16 @@ void ScreenshotCaptureWorkflow::handleCapturePrepared(quint64, bool ok) {
 
 void ScreenshotCaptureWorkflow::handleCaptureFinished(const ScreenshotCaptureResult& result) {
     finishCapturePreparation(result);
+}
+
+void ScreenshotCaptureWorkflow::handleLayoutRefreshed(quint64 refreshId, bool ok) {
+    m_layoutRefreshInFlight = false;
+    if (ok && refreshId == m_layoutChangeSerial && !m_state.captureInProgress) {
+        m_state.layoutDirty = false;
+    }
+    if (ok && m_state.layoutDirty && !m_state.captureInProgress) {
+        scheduleLayoutRefresh(m_layoutChangeSerial);
+    }
 }
 
 void ScreenshotCaptureWorkflow::prewarmOverlayPool() {

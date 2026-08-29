@@ -35,6 +35,10 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
         ++prepareAsyncCalls;
         prepareAsyncOrder = ++lifecycleOperationOrder;
     }
+    void refreshLayoutAsync(quint64 requestId) override {
+        ++refreshLayoutCalls;
+        lastRefreshRequestId = requestId;
+    }
     void captureAsync(const ScreenshotCaptureRequest& request) override {
         ++captureAllAsyncCalls;
         lastCaptureRequest = request;
@@ -127,6 +131,8 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     int captureAllAsyncCalls = 0;
     int cancelActiveCaptureCalls = 0;
     int releaseIdleResourcesCalls = 0;
+    int refreshLayoutCalls = 0;
+    quint64 lastRefreshRequestId = 0;
     int releaseIdleResourcesOrder = 0;
     int lifecycleOperationOrder = 0;
     int startWorkflowRefreshCalls = 0;
@@ -439,6 +445,50 @@ void silentCaptureNeverPreparesOrShowsOverlays() {
             "silent capture must notify the controller when pixels are ready");
 }
 
+void displayChangesRefreshWithoutCancelingIdleOrActiveCapture() {
+    ScreenshotCaptureState idleState;
+    idleState.sessionState = ScreenshotSessionState::IdlePrepared;
+    ScreenshotDisplaySession idleDisplays;
+    ScreenshotGeometryMapper idleGeometry;
+    ScreenshotInteractionState idleInteraction;
+    ScreenshotSelectionModel idleSelection;
+    ScreenshotIntelligentSelectionModel idleSmartSelection;
+    CaptureRuntime idleRuntime;
+    auto idleWorkflow = makeWorkflow(idleState, idleDisplays, idleGeometry, idleInteraction,
+                                      idleSelection, idleSmartSelection, idleRuntime);
+
+    idleWorkflow.handleDisplayConfigurationChanged();
+    require(idleState.layoutDirty && idleRuntime.refreshLayoutCalls == 1 &&
+                idleRuntime.cancelActiveCaptureCalls == 0 &&
+                idleRuntime.releaseIdleResourcesCalls == 0,
+            "idle display changes must schedule a refined refresh without cancellation or release");
+
+    ScreenshotCaptureState activeState;
+    activeState.sessionState = ScreenshotSessionState::IdlePrepared;
+    ScreenshotDisplaySession activeDisplays;
+    ScreenshotGeometryMapper activeGeometry;
+    ScreenshotInteractionState activeInteraction;
+    ScreenshotSelectionModel activeSelection;
+    ScreenshotIntelligentSelectionModel activeSmartSelection;
+    CaptureRuntime activeRuntime;
+    auto activeWorkflow = makeWorkflow(activeState, activeDisplays, activeGeometry, activeInteraction,
+                                       activeSelection, activeSmartSelection, activeRuntime);
+    activeWorkflow.startCapture(ScreenshotCapturePresentationMode::Silent);
+    activeWorkflow.handleDisplayConfigurationChanged();
+    require(activeState.captureInProgress && activeRuntime.refreshLayoutCalls == 0 &&
+                activeRuntime.cancelActiveCaptureCalls == 0,
+            "display changes during capture must leave capture running");
+
+    CapturedDisplayModel snapshot;
+    snapshot.stableId = QStringLiteral("primary");
+    snapshot.name = QStringLiteral("Primary");
+    snapshot.physicalRect = QRect(0, 0, 64, 48);
+    snapshot.image = QImage(snapshot.physicalRect.size(), QImage::Format_RGBA8888);
+    activeRuntime.eventSink->handleCaptureFinished(successfulResult(activeState.sessionId, snapshot));
+    require(activeRuntime.refreshLayoutCalls == 1 && activeState.layoutDirty,
+            "a display change during capture must refresh after capture completion");
+}
+
 void focusedWindowCaptureUsesOneCompoundWorkerTransaction() {
     ScreenshotCaptureState state;
     state.sessionState = ScreenshotSessionState::IdlePrepared;
@@ -652,6 +702,7 @@ int main() {
     restartingCaptureReleasesPreviousSelectorCache();
     capturePresentedRunsAfterCapturedOverlayIsShown();
     silentCaptureNeverPreparesOrShowsOverlays();
+    displayChangesRefreshWithoutCancelingIdleOrActiveCapture();
     focusedWindowCaptureUsesOneCompoundWorkerTransaction();
     focusedWindowCaptureIsAllOrNothing();
     capturedImagePlacementFollowsNormalizedCanvasGeometry();

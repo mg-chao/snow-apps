@@ -166,7 +166,7 @@ typedef struct SnowCaptureStreamStatsV1 {
 
 /* A native top-level window capture backed by Windows Graphics Capture when
  * the platform supports it. The returned pixel pointer remains valid until
- * the next capture or destroy. */
+ * the next capture, explicit frame release, or destroy. */
 typedef struct SnowCaptureWindowSessionConfig {
     intptr_t hwnd;
     size_t capture_retry_count;
@@ -281,6 +281,7 @@ uint8_t snow_capture_desktop_session_state(
     SnowCaptureDesktopSession* session,
     SnowCaptureDesktopSessionState* out_state);
 uint8_t snow_capture_desktop_session_refresh_layout(SnowCaptureDesktopSession* session);
+uint8_t snow_capture_desktop_session_reset_to_prepared(SnowCaptureDesktopSession* session);
 uint8_t snow_capture_desktop_session_release_idle_resources(SnowCaptureDesktopSession* session);
 SnowCaptureSnapshot* snow_capture_desktop_session_capture_all(
     SnowCaptureDesktopSession* session);
@@ -360,6 +361,10 @@ uint8_t snow_capture_window_session_capture_v1(
     SnowCaptureWindowFrameInfoV1* out_info);
 SnowCaptureFrameLease* snow_capture_window_session_frame_retain(
     const SnowCaptureWindowSession* session);
+/* Clears the session-owned frame and restores the prepared state. Retained
+ * frame leases remain valid; pointers obtained from frame-info calls are
+ * invalid after this function returns. */
+uint8_t snow_capture_window_session_release_frame(SnowCaptureWindowSession* session);
 
 size_t snow_capture_snapshot_count(const SnowCaptureSnapshot* snapshot);
 uint8_t snow_capture_snapshot_frame_info(

@@ -785,9 +785,20 @@ impl CaptureSession {
         if self.config.mode != CaptureMode::Snapshot {
             return;
         }
+        self.release_capture_access();
         self.runtime.release_idle_resources();
         self.cursor_fallback_sampler = None;
         self.cursor_projector = CursorProjector::new();
+    }
+
+    /// Release all snapshot capture-time allocations and restore the
+    /// lightweight state used between one-shot requests.
+    ///
+    /// The session remains reusable and no active backend access is retained,
+    /// even when prewarming the next request fails.
+    pub fn reset_to_prepared(&mut self) -> CaptureResult<()> {
+        self.release_idle_resources();
+        self.prewarm_environment().map(|_| ())
     }
 
     pub fn prepare_target(&mut self) -> CaptureResult<CaptureTargetInfo> {
@@ -873,9 +884,10 @@ impl CaptureSession {
         Ok(frame)
     }
 
-    /// Capture one frame and unconditionally close active backend access
-    /// before returning. Region/scrolling and recording callers that need an
-    /// operation-scoped session continue to use `capture_into`.
+    /// Capture one frame, release all snapshot capture-time resources, and
+    /// restore the lightweight prepared state before returning. Region/
+    /// scrolling and recording callers that need an operation-scoped session
+    /// continue to use `capture_into`.
     pub fn capture_once_into(&mut self, frame: &mut Frame) -> CaptureResult<()> {
         let previous_dimensions = frame.dimensions();
         let previous_pixel_format = frame.pixel_format();
@@ -883,14 +895,24 @@ impl CaptureSession {
         let result = self
             .capture_with_cursor(Some(reused))
             .map(|(frame, _)| frame);
-        self.release_capture_access();
+        let reset_result = self.reset_to_prepared();
         debug_assert_eq!(self.active_capture_access_count(), 0);
-        match result {
-            Ok(captured) => {
+        match (result, reset_result) {
+            (Ok(captured), Ok(())) => {
                 *frame = captured;
                 Ok(())
             }
-            Err(error) => {
+            (Err(error), Ok(())) => {
+                if previous_dimensions.0 != 0 && previous_dimensions.1 != 0 {
+                    let _ = frame.ensure_capacity(
+                        previous_dimensions.0,
+                        previous_dimensions.1,
+                        previous_pixel_format,
+                    );
+                }
+                Err(error)
+            }
+            (_, Err(error)) => {
                 if previous_dimensions.0 != 0 && previous_dimensions.1 != 0 {
                     let _ = frame.ensure_capacity(
                         previous_dimensions.0,
@@ -2146,7 +2168,28 @@ mod tests {
         );
         let state = state.lock().unwrap();
         assert_eq!(state.capture_calls, 1);
-        assert_eq!(state.release_calls, 1);
+        assert_eq!(state.release_calls, 2);
+        assert!(!state.active);
+        Ok(())
+    }
+
+    #[test]
+    fn one_shot_capture_returns_to_prepared_state_and_is_reusable() -> CaptureResult<()> {
+        let state = Arc::new(Mutex::new(LifecycleState::default()));
+        let mut session = lifecycle_session(Arc::clone(&state))?;
+
+        session.prewarm_environment()?;
+        let first = session.capture_once()?;
+        assert_eq!(session.active_capture_access_count(), 0);
+        assert!(session.monitor_output_cache_is_empty());
+        let _second = session.capture_once()?;
+
+        assert_eq!(first.dimensions(), (4, 4));
+
+        let state = state.lock().unwrap();
+        assert_eq!(state.capture_calls, 2);
+        assert_eq!(state.prewarm_calls, 3);
+        assert_eq!(state.release_calls, 5);
         assert!(!state.active);
         Ok(())
     }
@@ -2171,7 +2214,7 @@ mod tests {
         assert_eq!(frame.as_rgba_bytes().len(), 4 * 4 * 4);
         let state = state.lock().unwrap();
         assert_eq!(state.capture_calls, 1);
-        assert_eq!(state.release_calls, 1);
+        assert_eq!(state.release_calls, 2);
         assert!(!state.active);
         Ok(())
     }

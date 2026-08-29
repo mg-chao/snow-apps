@@ -66,7 +66,6 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     void resetCaptureModels();
     void clearDisplays();
     void cleanupActiveSessionForRestart();
-    void releaseResourcesForExternalInvalidation();
     void beginCapturePreparation(quint64 sessionId);
     [[nodiscard]] bool beginCapturePresentation(quint64 sessionId);
     void prepareOverlayPresentation(quint64 sessionId);
@@ -75,8 +74,10 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     void enterOverlaySelectionModeAtCursor();
     void handleCapturePrepared(quint64 requestId, bool ok) override;
     void handleCaptureFinished(const ScreenshotCaptureResult& result) override;
+    void handleLayoutRefreshed(quint64 requestId, bool ok) override;
     void prewarmOverlayPool();
     void initializeIdleResources(quint64 requestId);
+    void scheduleLayoutRefresh(quint64 refreshId);
     void resetCanvasRuntimeState();
     [[nodiscard]] bool capturePresentationPrepared(quint64 sessionId) const;
 
@@ -92,6 +93,9 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     quintptr m_focusedWindowHandle = 0;
     bool m_captureModelsClean = false;
     bool m_canvasRuntimeClean = false;
+    bool m_layoutRefreshInFlight = false;
+    bool m_refreshAfterCapture = false;
+    quint64 m_layoutChangeSerial = 0;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTCAPTUREWORKFLOW_H
