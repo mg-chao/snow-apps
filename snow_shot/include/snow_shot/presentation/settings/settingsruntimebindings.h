@@ -1,7 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_SETTINGS_SETTINGSRUNTIMEBINDINGS_H
 #define SNOW_SHOT_PRESENTATION_SETTINGS_SETTINGSRUNTIMEBINDINGS_H
 
-#include "snow_shot/presentation/globalshortcutmanager.h"
+#include "snow_shot/presentation/globalshortcuttypes.h"
 #include "snow_shot/presentation/settings/settingscatalog.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -10,7 +10,9 @@
 #include <QVariant>
 #include <QVector>
 
-namespace snow_shot::presentation::settings {
+namespace snow_shot::presentation {
+class GlobalShortcutManager;
+namespace settings {
 
 struct SettingsRuntimeOption {
     QVariant value;
@@ -109,8 +111,9 @@ class SettingsRuntimeBindings : public QObject {
 
 class BuiltInSettingsRuntimeBindings final : public SettingsRuntimeBindings {
   public:
-    explicit BuiltInSettingsRuntimeBindings(GlobalShortcutManager& shortcutManager,
-                                            QObject* parent = nullptr);
+    explicit BuiltInSettingsRuntimeBindings(
+        ::snow_shot::presentation::GlobalShortcutManager& shortcutManager,
+        QObject* parent = nullptr);
 
     [[nodiscard]] QVariant selectValue(SettingsSelectBinding binding) const override;
     [[nodiscard]] QVector<SettingsRuntimeOption>
@@ -168,9 +171,10 @@ class BuiltInSettingsRuntimeBindings final : public SettingsRuntimeBindings {
     [[nodiscard]] bool resetSection(SettingsSectionReset reset) override;
 
   private:
-    GlobalShortcutManager& m_shortcutManager;
+    ::snow_shot::presentation::GlobalShortcutManager& m_shortcutManager;
 };
 
-} // namespace snow_shot::presentation::settings
+} // namespace settings
+} // namespace snow_shot::presentation
 
 #endif // SNOW_SHOT_PRESENTATION_SETTINGS_SETTINGSRUNTIMEBINDINGS_H

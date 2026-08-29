@@ -7,13 +7,13 @@
 
 #include <memory>
 
+#include "snow_shot/presentation/globalshortcuttypes.h"
+
 namespace snow_shot::presentation::settings {
 class SettingsCatalog;
 }
 
 namespace snow_shot::presentation {
-enum class GlobalShortcutAction;
-
 class SystemTrayController final : public QObject {
     Q_OBJECT
 

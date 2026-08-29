@@ -4,6 +4,7 @@
 #include "snow_shot/platform/windows/autostartregistration.h"
 
 #include "snow_shot/presentation/languagemanager.h"
+#include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -96,7 +97,7 @@ bool applyAutoStartAtBoot(bool enabled) {
 } // namespace
 
 BuiltInSettingsRuntimeBindings::BuiltInSettingsRuntimeBindings(
-    GlobalShortcutManager& shortcutManager, QObject* parent)
+    ::snow_shot::presentation::GlobalShortcutManager& shortcutManager, QObject* parent)
     : SettingsRuntimeBindings(parent), m_shortcutManager(shortcutManager) {
     auto& themeManager = styles::ThemeManager::instance();
     connect(&themeManager, &styles::ThemeManager::themeModeChanged, this,

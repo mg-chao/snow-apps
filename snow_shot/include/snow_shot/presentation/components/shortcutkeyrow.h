@@ -2,7 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_COMPONENTS_SHORTCUTKEYROW_H
 
 #include "icon_core.h"
-#include "snow_shot/presentation/globalshortcutmanager.h"
+#include "snow_shot/presentation/globalshortcuttypes.h"
 #include "widgets/button.h"
 
 #include <QString>

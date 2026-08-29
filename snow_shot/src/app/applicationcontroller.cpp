@@ -5,12 +5,14 @@
 #include "snow_shot/presentation/screenshotcontroller.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/systemtraycontroller.h"
+#include "snow_shot/presentation/settings/settingsruntimebindings.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 
 #include <QApplication>
 #include <QJsonArray>
 #include <QJsonValue>
+#include <QPointer>
 #include <QTimer>
 
 #include <memory>
@@ -37,6 +39,8 @@ QStringList stringList(const QJsonValue& value) {
 class ApplicationController::Impl {
   public:
     Impl(ApplicationController& owner, QApplication& application) : q(owner), app(application) {
+        runtimeBindings = std::make_unique<presentation::settings::BuiltInSettingsRuntimeBindings>(
+            globalShortcutManager);
         QObject::connect(&systemTray, &presentation::SystemTrayController::screenshotRequested, &q,
                          [this]() {
                              if (ScreenshotController* controller = ensureScreenshotController()) {
@@ -93,6 +97,13 @@ class ApplicationController::Impl {
                          });
     }
 
+    ~Impl() {
+        if (mainWindow != nullptr) {
+            mainWindow->setAttribute(Qt::WA_DeleteOnClose, false);
+            delete mainWindow;
+        }
+    }
+
     void start() {
         if (started) {
             return;
@@ -144,13 +155,26 @@ class ApplicationController::Impl {
 
     MainWindow& ensureMainWindow() {
         if (mainWindow == nullptr) {
-            ScreenshotController* controller = ensureScreenshotController();
-            Q_ASSERT(controller != nullptr);
-            mainWindow = std::make_unique<MainWindow>(*controller, globalShortcutManager);
-            QObject::connect(mainWindow.get(), &MainWindow::quickActionRequested, &q,
+            mainWindow = new MainWindow(*runtimeBindings);
+            QObject::connect(mainWindow, &QObject::destroyed, &q,
+                             [this]() { mainWindow = nullptr; });
+            QObject::connect(
+                mainWindow, &MainWindow::screenshotRequested, &q, [this]() {
+                    if (ScreenshotController* controller = ensureScreenshotController()) {
+                        controller->startCapture();
+                    }
+                });
+            QObject::connect(mainWindow, &MainWindow::quickActionRequested, &q,
                              [this](presentation::GlobalShortcutAction action) {
                                  dispatchQuickAction(action);
                              });
+            QObject::connect(
+                mainWindow, &MainWindow::screenshotHistoryEditRequested, &q,
+                [this](const QString& recordId) {
+                    if (ScreenshotController* controller = ensureScreenshotController()) {
+                        controller->editHistoryRecord(recordId);
+                    }
+                });
         }
         return *mainWindow;
     }
@@ -232,10 +256,12 @@ class ApplicationController::Impl {
 
     ApplicationController& q;
     QApplication& app;
+    // These services outlive the disposable configuration window.
     presentation::SystemTrayController systemTray;
     presentation::GlobalShortcutManager globalShortcutManager;
+    std::unique_ptr<presentation::settings::SettingsRuntimeBindings> runtimeBindings;
     std::unique_ptr<ScreenshotController> screenshotController;
-    std::unique_ptr<MainWindow> mainWindow;
+    QPointer<MainWindow> mainWindow;
     bool started = false;
 };
 

@@ -548,6 +548,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/platform/windows/autostartregistration.h
     include/snow_shot/platform/windows/focusedfullscreenwindow.h
     include/snow_shot/presentation/globalshortcutmanager.h
+    include/snow_shot/presentation/globalshortcuttypes.h
     include/snow_shot/presentation/components/drawingtoolbareditorsettingswidget.h
     include/snow_shot/presentation/components/infotooltipicon.h
     include/snow_shot/presentation/components/pagecontainerwidget.h
@@ -632,6 +633,7 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshotcolorpickercontroller.h
     include/snow_shot/presentation/screenshotcolorpickerwidget.h
     include/snow_shot/presentation/screenshotcontroller.h
+    include/snow_shot/presentation/globalshortcuttypes.h
     include/snow_shot/presentation/screenshotdefaultstyles.h
     include/snow_shot/presentation/screenshotdisplayconfigurationobserver.h
     include/snow_shot/presentation/screenshotdisplaysession.h
@@ -1159,13 +1161,18 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-settings-page-tests
         tests/settings_page_tests.cpp
+        include/snow_shot/presentation/mainwindow.h
+        include/snow_shot/presentation/components/titlebarwidget.h
         include/snow_shot/presentation/components/contentcardwidget.h
         include/snow_shot/presentation/components/maincontentheaderwidget.h
         include/snow_shot/presentation/components/sidebarwidget.h
         src/presentation/components/contentcardwidget.cpp
         src/presentation/components/maincontentheaderwidget.cpp
         src/presentation/components/sidebarwidget.cpp
+        src/presentation/components/titlebarwidget.cpp
+        src/presentation/mainwindow.cpp
         src/presentation/services/screenshotclipboardservice.cpp
+        src/platform/windows/windowchrome.cpp
     )
     target_include_directories(snow-shot-settings-page-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"

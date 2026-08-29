@@ -10,6 +10,7 @@
 #include "snow_shot/presentation/components/shortcutkeyrow.h"
 #include "snow_shot/presentation/components/sidebarwidget.h"
 #include "snow_shot/presentation/components/storagestatussettingswidget.h"
+#include "snow_shot/presentation/mainwindow.h"
 #include "snow_shot/presentation/settings/settingsruntimebindings.h"
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "snow_shot/presentation/styles/thememanager.h"
@@ -58,6 +59,7 @@
 #include <QTranslator>
 #include <QVBoxLayout>
 #include <QWheelEvent>
+#include <QPointer>
 #include <QUuid>
 
 #include <algorithm>
@@ -1128,7 +1130,7 @@ void screenshotHistorySurvivesSidebarWidthTransitions() {
             "history collapse test fixture must publish");
 
     const auto& builtInCatalog = settings::builtInSettingsCatalog();
-    snow_shot::presentation::GlobalShortcutManager shortcutManager;
+    FakeRuntimeBindings bindings;
     QWidget window;
     auto* rootLayout = new QHBoxLayout(&window);
     rootLayout->setContentsMargins(0, 0, 0, 0);
@@ -1145,7 +1147,7 @@ void screenshotHistorySurvivesSidebarWidthTransitions() {
         builtInCatalog,
         snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme().metricAlias,
         contentShell);
-    auto* content = new ContentCardWidget(builtInCatalog, shortcutManager, contentShell);
+    auto* content = new ContentCardWidget(builtInCatalog, bindings, contentShell);
     contentLayout->addWidget(header, 0);
     contentLayout->addWidget(content, 1);
     rootLayout->addWidget(contentShell, 1);
@@ -1950,8 +1952,8 @@ void quickActionCommandsDispatchThroughContentCard() {
     using Action = snow_shot::presentation::GlobalShortcutAction;
 
     const auto& catalog = settings::builtInSettingsCatalog();
-    snow_shot::presentation::GlobalShortcutManager shortcutManager;
-    ContentCardWidget content(catalog, shortcutManager);
+    FakeRuntimeBindings bindings;
+    ContentCardWidget content(catalog, bindings);
     content.setCurrentRoute(QStringLiteral("/"));
 
     QVector<Action> requestedActions;
@@ -2002,6 +2004,34 @@ void quickActionCommandsDispatchThroughContentCard() {
             "the external settings action must navigate without emitting execution signals");
 }
 
+void mainWindowIsDisposableConfigurationSurface() {
+    FakeRuntimeBindings bindings;
+    QPointer<MainWindow> window = new MainWindow(bindings);
+    require(window != nullptr && window->testAttribute(Qt::WA_DeleteOnClose),
+            "the main interface must be a disposable configuration window");
+
+    int screenshotRequests = 0;
+    int historyEditRequests = 0;
+    QObject::connect(window, &MainWindow::screenshotRequested,
+                     [&screenshotRequests]() { ++screenshotRequests; });
+    QObject::connect(window, &MainWindow::screenshotHistoryEditRequested,
+                     [&historyEditRequests](const QString&) { ++historyEditRequests; });
+
+    window->close();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(window == nullptr,
+            "closing the main interface must destroy only the configuration window");
+    require(bindings.parent() == nullptr && screenshotRequests == 0 && historyEditRequests == 0,
+            "destroying the main interface must not own or invoke background runtime services");
+
+    QPointer<MainWindow> replacement = new MainWindow(bindings);
+    require(replacement != nullptr && replacement->testAttribute(Qt::WA_DeleteOnClose),
+            "the configuration window must be recreatable after close");
+    replacement->close();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(replacement == nullptr, "the recreated configuration window must be disposable");
+}
+
 void actionsMayExecuteWithoutConfirmation() {
     FakeRuntimeBindings bindings;
     settings::SettingsActionDefinition action;
@@ -2042,8 +2072,8 @@ void catalogExpansionUpdatesAllConsumers() {
     settings::SettingsCatalog catalog = expandedCatalog();
     require(catalog.validationErrors().isEmpty(), "expanded integration catalog must validate");
 
-    snow_shot::presentation::GlobalShortcutManager shortcutManager;
-    ContentCardWidget content(catalog, shortcutManager);
+    FakeRuntimeBindings bindings;
+    ContentCardWidget content(catalog, bindings);
     SidebarWidget sidebar(catalog);
     MainContentHeaderWidget header(
         catalog,
@@ -2349,8 +2379,8 @@ void sectionTabsAndScrollingStaySynchronized() {
     require(pageDefinition != nullptr && !pageDefinition->sections.isEmpty(),
             "section navigation integration requires a non-empty storage page");
     const QString firstSectionId = pageDefinition->sections.constFirst().id;
-    snow_shot::presentation::GlobalShortcutManager shortcutManager;
-    ContentCardWidget content(catalog, shortcutManager);
+    FakeRuntimeBindings bindings;
+    ContentCardWidget content(catalog, bindings);
     MainContentHeaderWidget header(
         catalog,
         snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme().metricAlias);
@@ -2526,6 +2556,7 @@ int main(int argc, char** argv) {
     bool settingsLayoutOnly = false;
     bool pinnedShortcutsOnly = false;
     bool screenshotShortcutsOnly = false;
+    bool mainWindowLifecycleOnly = false;
     for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex) {
         if (QString::fromLocal8Bit(argv[argumentIndex]) ==
             QStringLiteral("--drawing-toolbar-editor-only")) {
@@ -2542,6 +2573,9 @@ int main(int argc, char** argv) {
         } else if (QString::fromLocal8Bit(argv[argumentIndex]) ==
                    QStringLiteral("--screenshot-shortcuts-only")) {
             screenshotShortcutsOnly = true;
+        } else if (QString::fromLocal8Bit(argv[argumentIndex]) ==
+                   QStringLiteral("--main-window-lifecycle-only")) {
+            mainWindowLifecycleOnly = true;
         }
     }
 #if defined(Q_OS_WIN)
@@ -2592,7 +2626,13 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (mainWindowLifecycleOnly) {
+        mainWindowIsDisposableConfigurationSurface();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     generatedPagesRenderEveryItemTypeAndResynchronize();
+    mainWindowIsDisposableConfigurationSurface();
     quickActionCommandsDispatchThroughContentCard();
     actionsMayExecuteWithoutConfirmation();
     screenshotHistoryPageUsesRepositoryAndAntDesignComponents();

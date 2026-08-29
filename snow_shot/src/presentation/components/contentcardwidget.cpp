@@ -13,11 +13,8 @@
 
 ContentCardWidget::ContentCardWidget(
     const snow_shot::presentation::settings::SettingsCatalog& catalog,
-    snow_shot::presentation::GlobalShortcutManager& shortcutManager, QWidget* parent)
-    : QFrame(parent), m_catalog(catalog),
-      m_runtimeBindings(
-          std::make_unique<snow_shot::presentation::settings::BuiltInSettingsRuntimeBindings>(
-              shortcutManager, this)),
+    snow_shot::presentation::settings::SettingsRuntimeBindings& runtimeBindings, QWidget* parent)
+    : QFrame(parent), m_catalog(catalog), m_runtimeBindings(runtimeBindings),
       m_colorScheme(snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme()) {
     setFrameShape(QFrame::NoFrame);
     setLineWidth(0);
@@ -42,7 +39,7 @@ ContentCardWidget::ContentCardWidget(
             routeWidget = m_historyPlaceholder;
         } else {
             auto* page =
-                new SettingsPageWidget(m_catalog, pageDefinition.id, *m_runtimeBindings, m_stack);
+                new SettingsPageWidget(m_catalog, pageDefinition.id, m_runtimeBindings, m_stack);
             routeWidget = page;
             m_pagesById.insert(pageDefinition.id, page);
             connect(page, &SettingsPageWidget::commandRequested, this,

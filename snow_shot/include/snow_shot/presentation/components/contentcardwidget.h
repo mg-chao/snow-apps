@@ -15,9 +15,6 @@ class QStackedWidget;
 class SettingsPageWidget;
 class ScreenshotHistoryPageWidget;
 class QWidget;
-namespace snow_shot::presentation {
-class GlobalShortcutManager;
-}
 namespace snow_shot::presentation::settings {
 class SettingsRuntimeBindings;
 }
@@ -27,7 +24,7 @@ class ContentCardWidget final : public QFrame {
 
   public:
     ContentCardWidget(const snow_shot::presentation::settings::SettingsCatalog& catalog,
-                      snow_shot::presentation::GlobalShortcutManager& shortcutManager,
+                      snow_shot::presentation::settings::SettingsRuntimeBindings& runtimeBindings,
                       QWidget* parent = nullptr);
     ~ContentCardWidget() override;
 
@@ -59,7 +56,7 @@ class ContentCardWidget final : public QFrame {
     void handleCommand(const snow_shot::presentation::settings::SettingsCommand& command);
 
     const snow_shot::presentation::settings::SettingsCatalog& m_catalog;
-    std::unique_ptr<snow_shot::presentation::settings::SettingsRuntimeBindings> m_runtimeBindings;
+    snow_shot::presentation::settings::SettingsRuntimeBindings& m_runtimeBindings;
     QStackedWidget* m_stack = nullptr;
     QHash<QString, int> m_routePageIndices;
     QHash<QString, QWidget*> m_routeWidgetsById;

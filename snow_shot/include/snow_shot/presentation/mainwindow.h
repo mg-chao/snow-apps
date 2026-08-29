@@ -4,7 +4,7 @@
 #include <QByteArray>
 #include <QMainWindow>
 
-#include "snow_shot/presentation/globalshortcutmanager.h"
+#include "snow_shot/presentation/globalshortcuttypes.h"
 
 class QEvent;
 class QResizeEvent;
@@ -12,21 +12,19 @@ class QWidget;
 class SidebarWidget;
 class ContentCardWidget;
 class MainContentHeaderWidget;
-class ScreenshotController;
 class TitleBarWidget;
 namespace snow_shot::presentation::styles {
 struct ThemeColorScheme;
 }
-namespace snow_shot::presentation {
-class GlobalShortcutManager;
+namespace snow_shot::presentation::settings {
+class SettingsRuntimeBindings;
 }
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
   public:
-    explicit MainWindow(ScreenshotController& screenshotController,
-                        snow_shot::presentation::GlobalShortcutManager& globalShortcutManager,
+    explicit MainWindow(snow_shot::presentation::settings::SettingsRuntimeBindings& runtimeBindings,
                         QWidget* parent = nullptr);
     ~MainWindow() override = default;
 
@@ -35,7 +33,9 @@ class MainWindow : public QMainWindow {
     void showScreenshotHistory();
 
   signals:
+    void screenshotRequested();
     void quickActionRequested(snow_shot::presentation::GlobalShortcutAction action);
+    void screenshotHistoryEditRequested(const QString& recordId);
 
   protected:
     bool event(QEvent* event) override;
@@ -54,8 +54,7 @@ class MainWindow : public QMainWindow {
     SidebarWidget* m_sidebar = nullptr;
     MainContentHeaderWidget* m_contentHeader = nullptr;
     ContentCardWidget* m_contentCard = nullptr;
-    ScreenshotController* m_screenshotController = nullptr;
-    snow_shot::presentation::GlobalShortcutManager* m_globalShortcutManager = nullptr;
+    snow_shot::presentation::settings::SettingsRuntimeBindings& m_runtimeBindings;
     QWidget* m_titleBarBottomShadow = nullptr;
     bool m_isApplyingTheme = false;
 };
