@@ -5,7 +5,7 @@
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 
 #include <QFrame>
-#include <QHash>
+#include <QPointer>
 
 #include <memory>
 
@@ -52,17 +52,16 @@ class ContentCardWidget final : public QFrame {
     void changeEvent(QEvent* event) override;
 
   private:
-    ScreenshotHistoryPageWidget* ensureHistoryPage(const QString& pageId);
+    QWidget* createPage(
+        const snow_shot::presentation::settings::SettingsPageDefinition& definition);
+    void destroyActivePage();
     void handleCommand(const snow_shot::presentation::settings::SettingsCommand& command);
 
     const snow_shot::presentation::settings::SettingsCatalog& m_catalog;
     snow_shot::presentation::settings::SettingsRuntimeBindings& m_runtimeBindings;
     QStackedWidget* m_stack = nullptr;
-    QHash<QString, int> m_routePageIndices;
-    QHash<QString, QWidget*> m_routeWidgetsById;
-    QHash<QString, SettingsPageWidget*> m_pagesById;
-    ScreenshotHistoryPageWidget* m_historyPage = nullptr;
-    QWidget* m_historyPlaceholder = nullptr;
+    QPointer<QWidget> m_activePage;
+    QString m_activePageId;
     snow_shot::presentation::settings::SettingsLocation m_currentLocation;
     snow_shot::presentation::styles::ThemeColorScheme m_colorScheme;
 };

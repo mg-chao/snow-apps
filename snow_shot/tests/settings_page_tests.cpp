@@ -2089,8 +2089,13 @@ void catalogExpansionUpdatesAllConsumers() {
     auto* search = header.findChild<ApplicationSearchWidget*>(QStringLiteral("globalTopSearchBar"));
     auto* searchSelect =
         search != nullptr ? search->findChild<adqt::widgets::AdSelect*>() : nullptr;
-    require(stack != nullptr && stack->count() == 8,
-            "route stack must add catalog pages automatically");
+    const auto* defaultPage = catalog.page(catalog.defaultLocation().pageId);
+    auto* activeDefaultPage = stack != nullptr
+                                  ? dynamic_cast<SettingsPageWidget*>(stack->currentWidget())
+                                  : nullptr;
+    require(stack != nullptr && stack->count() == 1 && defaultPage != nullptr &&
+                activeDefaultPage != nullptr && activeDefaultPage->pageId() == defaultPage->id,
+            "route stack must mount only the default catalog page at startup");
     require(content.findChild<ScreenshotHistoryPageWidget*>(
                 QStringLiteral("screenshotHistoryPage")) == nullptr,
             "main-content construction eagerly instantiated screenshot history");
@@ -2122,7 +2127,89 @@ void catalogExpansionUpdatesAllConsumers() {
             "content routes, generated page, and item anchors must follow the expanded catalog");
     require(tabs != nullptr && tabs->count() == 1 &&
                 tabs->tabKey(0) == QStringLiteral("extra-section"),
-            "header tabs must follow the current generated page sections");
+                "header tabs must follow the current generated page sections");
+}
+
+void contentCardStrictlyLazyLoadsAndDestroysRoutes() {
+    const settings::SettingsCatalog catalog = expandedCatalog();
+    FakeRuntimeBindings bindings;
+    ContentCardWidget content(catalog, bindings);
+    auto* stack = content.findChild<QStackedWidget*>();
+    require(stack != nullptr && stack->count() == 1,
+            "strict lazy routing must mount exactly one page at construction");
+
+    const auto* defaultPage = catalog.page(catalog.defaultLocation().pageId);
+    const settings::SettingsPageDefinition* secondPage = nullptr;
+    const settings::SettingsPageDefinition* historyPageDefinition = nullptr;
+    for (const auto& page : catalog.pages()) {
+        if (page.kind == settings::SettingsPageKind::ScreenshotHistory) {
+            historyPageDefinition = &page;
+        } else if (secondPage == nullptr && defaultPage != nullptr && page.id != defaultPage->id) {
+            secondPage = &page;
+        }
+    }
+    require(defaultPage != nullptr && secondPage != nullptr && historyPageDefinition != nullptr,
+            "lifecycle coverage requires default, generated, and history routes");
+
+    auto* initialPage = dynamic_cast<SettingsPageWidget*>(stack->currentWidget());
+    QPointer<SettingsPageWidget> initialPageGuard(initialPage);
+    require(initialPage != nullptr && initialPage->pageId() == defaultPage->id,
+            "the default route must create its generated page lazily");
+
+    int routeChanges = 0;
+    int sectionListChanges = 0;
+    int locationChanges = 0;
+    QObject::connect(&content, &ContentCardWidget::routeChanged, &content,
+                     [&routeChanges](const QString&) { ++routeChanges; });
+    QObject::connect(&content, &ContentCardWidget::sectionListChanged, &content,
+                     [&sectionListChanges]() { ++sectionListChanges; });
+    QObject::connect(&content, &ContentCardWidget::locationChanged, &content,
+                     [&locationChanges](const settings::SettingsLocation&) {
+                         ++locationChanges;
+                     });
+
+    content.setCurrentRoute(secondPage->route);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    auto* secondPageWidget = dynamic_cast<SettingsPageWidget*>(stack->currentWidget());
+    QPointer<SettingsPageWidget> secondPageGuard(secondPageWidget);
+    require(initialPageGuard == nullptr && stack->count() == 1 && secondPageWidget != nullptr &&
+                secondPageWidget->pageId() == secondPage->id,
+            "changing routes must destroy the previous generated page and mount one new page");
+    require(routeChanges == 1 && sectionListChanges == 1 && locationChanges == 1,
+            "changing routes must preserve the existing routing signal contract");
+
+    if (!secondPage->sections.isEmpty()) {
+        content.activateSection(secondPage->sections.constFirst().id);
+        require(secondPageGuard != nullptr && stack->currentWidget() == secondPageWidget,
+                "section navigation within a route must reuse its active page");
+        require(routeChanges == 1 && sectionListChanges == 1 && locationChanges == 2,
+                "section navigation must update location without recreating the route");
+    }
+
+    content.setCurrentRoute(historyPageDefinition->route);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    auto* historyWidget =
+        dynamic_cast<ScreenshotHistoryPageWidget*>(stack->currentWidget());
+    QPointer<ScreenshotHistoryPageWidget> historyGuard(historyWidget);
+    require(secondPageGuard == nullptr && stack->count() == 1 && historyWidget != nullptr,
+            "activating history must destroy the generated page and create history on demand");
+    require(routeChanges == 2 && sectionListChanges == 2 &&
+                locationChanges == (secondPage->sections.isEmpty() ? 2 : 3),
+            "history activation must emit one route transition and one location update");
+
+    content.setCurrentRoute(secondPage->route);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    auto* recreatedSecondPage = dynamic_cast<SettingsPageWidget*>(stack->currentWidget());
+    require(historyGuard == nullptr && recreatedSecondPage != nullptr &&
+                stack->count() == 1,
+            "leaving history must destroy it and recreate generated pages on return");
+
+    content.setCurrentRoute(historyPageDefinition->route);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    auto* recreatedHistoryWidget =
+        dynamic_cast<ScreenshotHistoryPageWidget*>(stack->currentWidget());
+    require(historyGuard == nullptr && recreatedHistoryWidget != nullptr && stack->count() == 1,
+            "returning to history must create a fresh page instance");
 }
 
 void pinToScreenShortcutSettingsRenderAndReset() {
@@ -2557,6 +2644,7 @@ int main(int argc, char** argv) {
     bool pinnedShortcutsOnly = false;
     bool screenshotShortcutsOnly = false;
     bool mainWindowLifecycleOnly = false;
+    bool lazyRoutingOnly = false;
     for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex) {
         if (QString::fromLocal8Bit(argv[argumentIndex]) ==
             QStringLiteral("--drawing-toolbar-editor-only")) {
@@ -2576,11 +2664,14 @@ int main(int argc, char** argv) {
         } else if (QString::fromLocal8Bit(argv[argumentIndex]) ==
                    QStringLiteral("--main-window-lifecycle-only")) {
             mainWindowLifecycleOnly = true;
+        } else if (QString::fromLocal8Bit(argv[argumentIndex]) ==
+                   QStringLiteral("--lazy-routing-only")) {
+            lazyRoutingOnly = true;
         }
     }
 #if defined(Q_OS_WIN)
     if (drawingToolbarEditorOnly || settingsLayoutOnly || pinnedShortcutsOnly ||
-        screenshotShortcutsOnly) {
+        screenshotShortcutsOnly || lazyRoutingOnly) {
         qunsetenv("QT_QPA_PLATFORM");
     } else if (!qEnvironmentVariableIsSet("QT_QPA_PLATFORM")) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
@@ -2631,9 +2722,15 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (lazyRoutingOnly) {
+        contentCardStrictlyLazyLoadsAndDestroysRoutes();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     generatedPagesRenderEveryItemTypeAndResynchronize();
     mainWindowIsDisposableConfigurationSurface();
     quickActionCommandsDispatchThroughContentCard();
+    contentCardStrictlyLazyLoadsAndDestroysRoutes();
     actionsMayExecuteWithoutConfirmation();
     screenshotHistoryPageUsesRepositoryAndAntDesignComponents();
     screenshotHistorySurvivesSidebarWidthTransitions();
