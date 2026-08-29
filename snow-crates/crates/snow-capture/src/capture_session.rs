@@ -907,8 +907,7 @@ impl CaptureSession {
         &mut self,
         reuse: Option<Frame>,
     ) -> CaptureResult<(Frame, Option<CursorAttachOutcome>)> {
-        self.warmup_runtime();
-        let mut frame = self.do_capture(reuse)?;
+        let mut frame = self.capture_frame(reuse)?;
         let cursor_outcome = self.target_info().ok().map(|target_info| {
             let start = Instant::now();
             let stats = self.attach_cursor_to_frame(&target_info, &mut frame);
@@ -918,6 +917,11 @@ impl CaptureSession {
             }
         });
         Ok((frame, cursor_outcome))
+    }
+
+    pub(crate) fn capture_frame(&mut self, reuse: Option<Frame>) -> CaptureResult<Frame> {
+        self.warmup_runtime();
+        self.do_capture(reuse)
     }
 
     /// Returns the active capture workload.

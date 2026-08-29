@@ -103,6 +103,10 @@ impl FrameMetadata {
         self.is_duplicate
     }
 
+    pub fn sequence(&self) -> u64 {
+        self.sequence
+    }
+
     pub fn dirty_rects(&self) -> &[DirtyRect] {
         &self.dirty_rects
     }

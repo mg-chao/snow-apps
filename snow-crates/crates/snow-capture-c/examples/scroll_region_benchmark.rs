@@ -1,3 +1,4 @@
+use std::ffi::CStr;
 use std::fs;
 use std::hint::black_box;
 use std::path::PathBuf;
@@ -12,6 +13,10 @@ const DEFAULT_WIDTH: u32 = 800;
 const DEFAULT_HEIGHT: u32 = 600;
 const DEFAULT_WARMUPS: usize = 30;
 const DEFAULT_SAMPLES: usize = 240;
+const STREAM_CONFIG_VERSION: u32 = 1;
+const WGC_UPDATE_MODE_COMPLETE_ONLY: u8 = 1;
+const CAPTURE_BACKEND_AUTO: u8 = 0;
+const PIXEL_FORMAT_RGBA8: u8 = 0;
 
 struct Options {
     output: PathBuf,
@@ -26,6 +31,8 @@ struct Options {
 struct Desktop(*mut SnowCaptureDesktopSessionImpl);
 struct Region(*mut SnowCaptureRegionSessionImpl);
 
+struct Stream(*mut SnowCaptureStreamImpl);
+
 impl Drop for Desktop {
     fn drop(&mut self) {
         unsafe { snow_capture_desktop_session_destroy(self.0) };
@@ -36,6 +43,24 @@ impl Drop for Region {
     fn drop(&mut self) {
         unsafe { snow_capture_region_session_destroy(self.0) };
     }
+}
+
+impl Drop for Stream {
+    fn drop(&mut self) {
+        unsafe { snow_capture_stream_destroy(self.0) };
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ContinuousMetrics {
+    elapsed: Duration,
+    frame_count: u64,
+    duplicate_count: u64,
+    dropped_count: u64,
+    effective_fps: f64,
+    current_fps: f64,
+    queue_fill: u32,
+    capture_latency_ms: f64,
 }
 
 fn main() -> Result<()> {
@@ -104,9 +129,23 @@ fn main() -> Result<()> {
     let desktop_stats = stats(&mut desktop_times);
     let region_stats = stats(&mut region_times);
     let improvement = (desktop_stats.1 - region_stats.1) / desktop_stats.1 * 100.0;
+    let continuous =
+        run_continuous_stream((x, y, width, height), options.warmups, options.samples)?;
     println!(
         "desktop p50={:.3}ms p95={:.3}ms; region p50={:.3}ms p95={:.3}ms; p95 improvement={:.2}%",
         desktop_stats.0, desktop_stats.1, region_stats.0, region_stats.1, improvement
+    );
+    println!(
+        "continuous frames={} elapsed={:.3}s effective_fps={:.2} current_fps={:.2} \
+         dropped={} duplicates={} queue_fill={} capture_latency={:.3}ms",
+        continuous.frame_count,
+        continuous.elapsed.as_secs_f64(),
+        continuous.effective_fps,
+        continuous.current_fps,
+        continuous.dropped_count,
+        continuous.duplicate_count,
+        continuous.queue_fill,
+        continuous.capture_latency_ms,
     );
     if let Some(parent) = options.output.parent() {
         fs::create_dir_all(parent)?;
@@ -114,7 +153,7 @@ fn main() -> Result<()> {
     fs::write(
         &options.output,
         format!(
-            "{{\n  \"region\": [{x},{y},{width},{height}],\n  \"samples\": {},\n  \"warmups\": {},\n  \"desktop\": {{\"p50_ms\": {:.6}, \"p95_ms\": {:.6}}},\n  \"region_capture\": {{\"p50_ms\": {:.6}, \"p95_ms\": {:.6}}},\n  \"p95_improvement_pct\": {:.6}\n}}\n",
+            "{{\n  \"region\": [{x},{y},{width},{height}],\n  \"samples\": {},\n  \"warmups\": {},\n  \"desktop\": {{\"p50_ms\": {:.6}, \"p95_ms\": {:.6}}},\n  \"region_capture\": {{\"p50_ms\": {:.6}, \"p95_ms\": {:.6}}},\n  \"p95_improvement_pct\": {:.6},\n  \"continuous_stream\": {{\"elapsed_ms\": {:.6}, \"frames\": {}, \"duplicates\": {}, \"dropped\": {}, \"effective_fps\": {:.6}, \"current_fps\": {:.6}, \"queue_fill\": {}, \"capture_latency_ms\": {:.6}}}\n}}\n",
             options.samples,
             options.warmups,
             desktop_stats.0,
@@ -122,6 +161,14 @@ fn main() -> Result<()> {
             region_stats.0,
             region_stats.1,
             improvement,
+            continuous.elapsed.as_secs_f64() * 1000.0,
+            continuous.frame_count,
+            continuous.duplicate_count,
+            continuous.dropped_count,
+            continuous.effective_fps,
+            continuous.current_fps,
+            continuous.queue_fill,
+            continuous.capture_latency_ms,
         ),
     )?;
     Ok(())
@@ -243,6 +290,162 @@ fn capture_region(
     let source = unsafe { slice::from_raw_parts(info.rgba_bytes, info.rgba_len) };
     destination.copy_from_slice(source);
     Ok(())
+}
+
+fn run_continuous_stream(
+    region: (i32, i32, u32, u32),
+    warmups: usize,
+    samples: usize,
+) -> Result<ContinuousMetrics> {
+    let config = SnowCaptureStreamConfigV1 {
+        version: STREAM_CONFIG_VERSION,
+        struct_size: std::mem::size_of::<SnowCaptureStreamConfigV1>() as u32,
+        x: region.0,
+        y: region.1,
+        width: region.2,
+        height: region.3,
+        target_fps: 30,
+        min_fps: 1,
+        buffer_depth: 3,
+        max_consecutive_errors: 30,
+        capture_retry_count: 1,
+        wgc_update_mode: WGC_UPDATE_MODE_COMPLETE_ONLY,
+        capture_backend: CAPTURE_BACKEND_AUTO,
+        pixel_format: PIXEL_FORMAT_RGBA8,
+        adaptive_fps: 1,
+        include_cursor: 0,
+        reserved: [0; 27],
+    };
+    let stream = Stream(unsafe { snow_capture_stream_create_region_v1(&config) });
+    if stream.0.is_null() {
+        bail!(
+            "failed to create continuous region stream: {}",
+            last_error()
+        );
+    }
+
+    let mut duplicate_count = 0u64;
+    let mut dropped_count = 0u64;
+    for _ in 0..warmups {
+        receive_stream_frame(stream.0, region, &mut duplicate_count, &mut dropped_count)?;
+    }
+
+    let start = Instant::now();
+    for _ in 0..samples {
+        receive_stream_frame(stream.0, region, &mut duplicate_count, &mut dropped_count)?;
+    }
+    let elapsed = start.elapsed();
+
+    let mut stream_stats = SnowCaptureStreamStatsV1 {
+        frames_captured: 0,
+        frames_dropped: 0,
+        errors_recovered: 0,
+        current_fps: 0.0,
+        target_fps: 0,
+        buffer_fill: 0,
+        capture_latency_ns: 0,
+    };
+    if unsafe { snow_capture_stream_stats_v1(stream.0, &mut stream_stats) } == 0 {
+        bail!("failed to read continuous stream stats: {}", last_error());
+    }
+
+    let frame_count = samples as u64;
+    let effective_fps = frame_count as f64 / elapsed.as_secs_f64().max(f64::EPSILON);
+    Ok(ContinuousMetrics {
+        elapsed,
+        frame_count,
+        duplicate_count,
+        dropped_count: dropped_count.max(stream_stats.frames_dropped),
+        effective_fps,
+        current_fps: stream_stats.current_fps,
+        queue_fill: stream_stats.buffer_fill,
+        capture_latency_ms: stream_stats.capture_latency_ns as f64 / 1_000_000.0,
+    })
+}
+
+fn receive_stream_frame(
+    stream: *mut SnowCaptureStreamImpl,
+    region: (i32, i32, u32, u32),
+    duplicate_count: &mut u64,
+    dropped_count: &mut u64,
+) -> Result<()> {
+    for _ in 0..20 {
+        let mut event = empty_stream_event();
+        if unsafe { snow_capture_stream_receive_v1(stream, 1000, &mut event) } == 0 {
+            bail!("continuous stream receive failed: {}", last_error());
+        }
+        match event.kind {
+            SnowCaptureStreamEventKind::Timeout => continue,
+            SnowCaptureStreamEventKind::Frame => {
+                if event.frame.is_null() {
+                    bail!("continuous stream returned a null frame");
+                }
+                let mut info = SnowCaptureStreamFrameInfoV1 {
+                    version: 0,
+                    struct_size: 0,
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: 0,
+                    stride_bytes: 0,
+                    is_duplicate: 0,
+                    pixel_format: 0,
+                    reserved0: [0; 2],
+                    sequence: 0,
+                    rgba_bytes: ptr::null(),
+                    rgba_len: 0,
+                };
+                let info_ok =
+                    unsafe { snow_capture_stream_frame_info_v1(event.frame, &mut info) } != 0;
+                if !info_ok {
+                    unsafe { snow_capture_stream_frame_release(event.frame) };
+                    bail!("continuous stream frame info failed: {}", last_error());
+                }
+                let expected_len = region.2 as usize * region.3 as usize * 4;
+                let valid = info.width == region.2
+                    && info.height == region.3
+                    && info.stride_bytes == region.2 * 4
+                    && info.rgba_bytes != ptr::null()
+                    && info.rgba_len >= expected_len;
+                if !valid {
+                    unsafe { snow_capture_stream_frame_release(event.frame) };
+                    bail!("continuous stream returned an invalid frame");
+                }
+                black_box(info.rgba_bytes);
+                if info.is_duplicate != 0 {
+                    *duplicate_count += 1;
+                }
+                unsafe { snow_capture_stream_frame_release(event.frame) };
+                return Ok(());
+            }
+            SnowCaptureStreamEventKind::FramesDropped => {
+                *dropped_count += event.dropped_count;
+            }
+            SnowCaptureStreamEventKind::Ended => bail!("continuous stream ended unexpectedly"),
+            SnowCaptureStreamEventKind::Error => bail!("continuous stream error: {}", last_error()),
+            _ => {}
+        }
+    }
+    bail!("continuous stream timed out waiting for a frame")
+}
+
+fn empty_stream_event() -> SnowCaptureStreamEventV1 {
+    SnowCaptureStreamEventV1 {
+        kind: SnowCaptureStreamEventKind::Timeout,
+        frame: ptr::null_mut(),
+        dropped_count: 0,
+        old_width: 0,
+        old_height: 0,
+        new_width: 0,
+        new_height: 0,
+        reserved: [0; 32],
+    }
+}
+
+fn last_error() -> String {
+    unsafe { CStr::from_ptr(snow_capture_last_error_message()) }
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn empty_desktop_info() -> SnowCaptureFrameInfo {

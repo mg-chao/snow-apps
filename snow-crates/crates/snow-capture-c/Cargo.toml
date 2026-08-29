@@ -9,6 +9,7 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 snow-capture = { path = "../snow-capture" }
+snow-core = { path = "../snow-core" }
 snow-screen-recorder = { path = "../snow-screen-recorder" }
 anyhow.workspace = true
 windows = { workspace = true, features = [

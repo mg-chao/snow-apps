@@ -2810,6 +2810,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "snow-capture",
+ "snow-core",
  "snow-screen-recorder",
  "windows",
 ]

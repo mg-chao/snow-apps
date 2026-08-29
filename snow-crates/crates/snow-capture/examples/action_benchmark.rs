@@ -882,6 +882,7 @@ fn make_stream_config(config: &Config) -> CaptureStreamConfig {
         adaptive_fps: config.recording_adaptive_fps,
         min_fps: config.recording_min_fps,
         pause_on_resolution_change: false,
+        include_cursor: true,
     }
 }
 

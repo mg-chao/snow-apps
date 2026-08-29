@@ -8,7 +8,7 @@
 //! while control-plane lifecycle events remain reliable.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel as mpsc;
@@ -46,6 +46,10 @@ pub struct CaptureStreamConfig {
     /// `ResolutionChanged` event, giving the consumer time to
     /// reconfigure its encoder before calling `resume()`.
     pub pause_on_resolution_change: bool,
+    /// Attach the current cursor sample to every frame. Recording keeps this
+    /// enabled by default; screenshot consumers can disable it to preserve
+    /// the captured desktop pixels exactly.
+    pub include_cursor: bool,
 }
 
 impl Default for CaptureStreamConfig {
@@ -57,6 +61,7 @@ impl Default for CaptureStreamConfig {
             adaptive_fps: false,
             min_fps: 15,
             pause_on_resolution_change: false,
+            include_cursor: true,
         }
     }
 }
@@ -92,6 +97,8 @@ pub struct CaptureStreamStats {
     pub cursor_shape_cache_hits: AtomicU64,
     /// Frames that emitted a new cursor shape payload.
     pub cursor_shape_cache_misses: AtomicU64,
+    /// Current externally requested target FPS. Zero means uncapped.
+    pub target_fps: AtomicU64,
 }
 
 impl Default for CaptureStreamStats {
@@ -108,6 +115,7 @@ impl Default for CaptureStreamStats {
             cursor_fallback_frames: AtomicU64::new(0),
             cursor_shape_cache_hits: AtomicU64::new(0),
             cursor_shape_cache_misses: AtomicU64::new(0),
+            target_fps: AtomicU64::new(0),
         }
     }
 }
@@ -131,6 +139,7 @@ impl CaptureStreamStats {
             cursor_fallback_frames: self.cursor_fallback_frames.load(Ordering::Relaxed),
             cursor_shape_cache_hits: self.cursor_shape_cache_hits.load(Ordering::Relaxed),
             cursor_shape_cache_misses: self.cursor_shape_cache_misses.load(Ordering::Relaxed),
+            target_fps: self.target_fps.load(Ordering::Relaxed) as u32,
         }
     }
 }
@@ -152,6 +161,7 @@ pub struct CaptureStreamStatsSnapshot {
     pub cursor_fallback_frames: u64,
     pub cursor_shape_cache_hits: u64,
     pub cursor_shape_cache_misses: u64,
+    pub target_fps: u32,
 }
 
 /// Handle to a running capture stream. Dropping the handle stops the
@@ -163,6 +173,9 @@ pub struct CaptureStream {
     stats: Arc<CaptureStreamStats>,
     join_handle: Option<std::thread::JoinHandle<()>>,
     buffer_depth: usize,
+    target_fps: Arc<AtomicU32>,
+    maximum_fps: u32,
+    minimum_fps: u32,
 }
 
 impl CaptureStream {
@@ -218,11 +231,22 @@ impl CaptureStream {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let pause_flag = Arc::new(AtomicBool::new(false));
         let stats = Arc::new(CaptureStreamStats::default());
+        let maximum_fps = config.target_fps;
+        let minimum_fps = if config.adaptive_fps {
+            config.min_fps
+        } else {
+            0
+        };
+        let target_fps = Arc::new(AtomicU32::new(config.target_fps));
+        stats
+            .target_fps
+            .store(u64::from(config.target_fps), Ordering::Release);
 
         let worker_queue = Arc::clone(&queue);
         let stop = stop_flag.clone();
         let pause = pause_flag.clone();
         let stats_clone = stats.clone();
+        let requested_target = Arc::clone(&target_fps);
 
         let join_handle = std::thread::Builder::new()
             .name("snow-capture-stream".to_string())
@@ -236,6 +260,7 @@ impl CaptureStream {
                     &stop,
                     &pause,
                     &stats_clone,
+                    &requested_target,
                 );
                 worker_queue.close();
             })
@@ -252,6 +277,9 @@ impl CaptureStream {
             stats,
             join_handle: Some(join_handle),
             buffer_depth,
+            target_fps,
+            maximum_fps,
+            minimum_fps,
         })
     }
 
@@ -277,6 +305,24 @@ impl CaptureStream {
     /// exit on its next loop iteration.
     pub fn stop(&self) {
         self.stop_flag.store(true, Ordering::Release);
+    }
+
+    /// Update the pacing target without restarting the capture session.
+    /// The requested rate is clamped to the stream's configured ceiling and,
+    /// when adaptive pacing is enabled, its configured floor. A value of zero
+    /// requests uncapped capture when the stream was created uncapped.
+    pub fn set_target_fps(&self, target_fps: u32) {
+        let clamped = clamp_target_fps(target_fps, self.maximum_fps, self.minimum_fps);
+        self.target_fps.store(clamped, Ordering::Release);
+        self.stats
+            .target_fps
+            .store(u64::from(clamped), Ordering::Release);
+    }
+
+    /// Return the current externally requested pacing target. Zero means
+    /// uncapped capture.
+    pub fn target_fps(&self) -> u32 {
+        self.target_fps.load(Ordering::Acquire)
     }
 
     /// Pause the capture stream. The capture thread idles without
@@ -391,13 +437,8 @@ fn stream_loop(
     stop: &AtomicBool,
     pause: &AtomicBool,
     stats: &CaptureStreamStats,
+    requested_target: &AtomicU32,
 ) {
-    let base_interval = if config.target_fps > 0 {
-        Some(Duration::from_secs_f64(1.0 / config.target_fps as f64))
-    } else {
-        None
-    };
-
     let min_interval = if config.adaptive_fps && config.min_fps > 0 {
         Some(Duration::from_secs_f64(1.0 / config.min_fps as f64))
     } else {
@@ -409,7 +450,7 @@ fn stream_loop(
     let mut last_width: u32 = 0;
     let mut last_height: u32 = 0;
 
-    let mut current_interval = base_interval;
+    let mut pressure_interval = target_interval(config.target_fps);
     const ADAPTIVE_ALPHA: f64 = 0.15;
     const DROP_RATIO_THRESHOLD: f64 = 0.10;
     const ADAPTIVE_WINDOW: u32 = 30;
@@ -459,9 +500,11 @@ fn stream_loop(
 
         drain_recycled_frames(recycle_rx, &mut reuse_frame);
 
-        let capture_result = match reuse_frame.take() {
-            Some(f) => capture.capture_with_cursor(Some(f)),
-            None => capture.capture_with_cursor(None),
+        let reuse = reuse_frame.take();
+        let capture_result = if config.include_cursor {
+            capture.capture_with_cursor(reuse)
+        } else {
+            capture.capture_frame(reuse).map(|frame| (frame, None))
         };
 
         let capture_elapsed = frame_start.elapsed();
@@ -551,17 +594,19 @@ fn stream_loop(
                 window_total += 1;
                 if config.adaptive_fps && window_total >= ADAPTIVE_WINDOW {
                     let drop_ratio = window_drops as f64 / window_total as f64;
-                    if let (Some(cur), Some(base), Some(max)) =
-                        (current_interval, base_interval, min_interval)
-                    {
-                        let cur_ns = cur.as_nanos() as f64;
+                    if let (Some(cur), Some(max)) = (pressure_interval, min_interval) {
+                        let requested = target_interval(requested_target.load(Ordering::Acquire));
+                        let effective = requested.map_or(cur, |requested| cur.max(requested));
+                        let base = requested.unwrap_or(cur);
+                        let effective_ns = effective.as_nanos() as f64;
                         let target_ns = if drop_ratio > DROP_RATIO_THRESHOLD {
-                            (cur_ns * 1.5).min(max.as_nanos() as f64)
+                            (effective_ns * 1.5).min(max.as_nanos() as f64)
                         } else {
-                            (cur_ns * 0.8).max(base.as_nanos() as f64)
+                            (effective_ns * 0.8).max(base.as_nanos() as f64)
                         };
-                        let smoothed = ADAPTIVE_ALPHA * target_ns + (1.0 - ADAPTIVE_ALPHA) * cur_ns;
-                        current_interval = Some(Duration::from_nanos(smoothed as u64));
+                        let smoothed =
+                            ADAPTIVE_ALPHA * target_ns + (1.0 - ADAPTIVE_ALPHA) * effective_ns;
+                        pressure_interval = Some(Duration::from_nanos(smoothed as u64));
                     }
                     window_drops = 0;
                     window_total = 0;
@@ -592,7 +637,14 @@ fn stream_loop(
             fps_epoch = Instant::now();
         }
 
-        if let Some(interval) = current_interval {
+        let requested = target_interval(requested_target.load(Ordering::Acquire));
+        let interval = match (requested, pressure_interval) {
+            (Some(requested), Some(pressure)) => Some(requested.max(pressure)),
+            (Some(requested), None) => Some(requested),
+            (None, Some(pressure)) => Some(pressure),
+            (None, None) => None,
+        };
+        if let Some(interval) = interval {
             let elapsed = frame_start.elapsed();
             if elapsed < interval {
                 spin_sleep(interval - elapsed);
@@ -603,6 +655,22 @@ fn stream_loop(
     // Send StreamEnded sentinel so the consumer knows no more events
     // will arrive and can flush its encoder.
     store_queue_fill(stats, queue.push(CaptureEvent::StreamEnded).data_len);
+}
+
+fn target_interval(target_fps: u32) -> Option<Duration> {
+    (target_fps > 0).then(|| Duration::from_secs_f64(1.0 / target_fps as f64))
+}
+
+fn clamp_target_fps(target_fps: u32, maximum_fps: u32, minimum_fps: u32) -> u32 {
+    if target_fps == 0 {
+        return if maximum_fps == 0 { 0 } else { maximum_fps };
+    }
+    let upper = if maximum_fps == 0 {
+        u32::MAX
+    } else {
+        maximum_fps
+    };
+    target_fps.clamp(minimum_fps.min(upper), upper)
 }
 
 fn drain_recycled_frames(recycle_rx: &mpsc::Receiver<Frame>, reuse_frame: &mut Option<Frame>) {
@@ -637,5 +705,90 @@ fn spin_sleep(duration: Duration) {
 
     while Instant::now() < target {
         std::hint::spin_loop();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        CaptureStream, CaptureStreamConfig, CaptureStreamStats, clamp_target_fps, target_interval,
+    };
+    use snow_core::stream_queue::StreamQueue;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+    use std::time::Duration;
+
+    #[test]
+    fn target_fps_is_clamped_to_configured_ceiling_and_floor() {
+        assert_eq!(clamp_target_fps(1, 30, 10), 10);
+        assert_eq!(clamp_target_fps(24, 30, 10), 24);
+        assert_eq!(clamp_target_fps(120, 30, 10), 30);
+    }
+
+    #[test]
+    fn uncapped_target_remains_uncapped_only_for_uncapped_streams() {
+        assert_eq!(clamp_target_fps(0, 0, 15), 0);
+        assert_eq!(clamp_target_fps(0, 30, 15), 30);
+    }
+
+    #[test]
+    fn invalid_floor_does_not_panic_when_ceiling_is_lower() {
+        assert_eq!(clamp_target_fps(1, 30, 60), 30);
+        assert_eq!(clamp_target_fps(u32::MAX, 30, 60), 30);
+    }
+
+    #[test]
+    fn target_interval_handles_capped_and_uncapped_rates() {
+        assert_eq!(target_interval(0), None);
+        let interval = target_interval(30).expect("30 fps has an interval");
+        assert!(interval >= Duration::from_millis(33));
+        assert!(interval <= Duration::from_millis(34));
+    }
+
+    #[test]
+    fn default_stream_config_keeps_cursor_enabled_for_recording() {
+        assert!(CaptureStreamConfig::default().include_cursor);
+    }
+
+    #[test]
+    fn stats_expose_runtime_target_fps() {
+        let stats = CaptureStreamStats::default();
+        stats.target_fps.store(24, Ordering::Release);
+        assert_eq!(stats.snapshot().target_fps, 24);
+    }
+
+    fn test_stream(maximum_fps: u32, minimum_fps: u32) -> CaptureStream {
+        CaptureStream {
+            queue: Arc::new(StreamQueue::new(1)),
+            stop_flag: Arc::new(AtomicBool::new(false)),
+            pause_flag: Arc::new(AtomicBool::new(false)),
+            stats: Arc::new(CaptureStreamStats::default()),
+            join_handle: None,
+            buffer_depth: 1,
+            target_fps: Arc::new(AtomicU32::new(maximum_fps)),
+            maximum_fps,
+            minimum_fps,
+        }
+    }
+
+    #[test]
+    fn runtime_target_changes_do_not_require_stream_restart() {
+        let stream = test_stream(30, 1);
+        stream.set_target_fps(12);
+        assert_eq!(stream.target_fps(), 12);
+        assert_eq!(stream.stats().snapshot().target_fps, 12);
+        stream.set_target_fps(120);
+        assert_eq!(stream.target_fps(), 30);
+        stream.set_target_fps(0);
+        assert_eq!(stream.target_fps(), 30);
+    }
+
+    #[test]
+    fn runtime_target_respects_adaptive_floor_for_uncapped_streams() {
+        let stream = test_stream(0, 15);
+        stream.set_target_fps(1);
+        assert_eq!(stream.target_fps(), 15);
+        stream.set_target_fps(0);
+        assert_eq!(stream.target_fps(), 0);
     }
 }

@@ -204,6 +204,7 @@ impl RecordingSession {
                 adaptive_fps: true,
                 min_fps: 10,
                 pause_on_resolution_change: false,
+                include_cursor: true,
             },
         ) {
             Ok(stream) => stream,

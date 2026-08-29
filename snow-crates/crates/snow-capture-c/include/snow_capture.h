@@ -15,6 +15,8 @@ typedef struct SnowCaptureFrameLeaseImpl SnowCaptureFrameLease;
 typedef struct SnowCaptureCancellationTokenImpl SnowCaptureCancellationToken;
 typedef struct SnowCaptureScreenshotResultImpl SnowCaptureScreenshotResult;
 typedef struct SnowCaptureRecordingSessionImpl SnowCaptureRecordingSession;
+typedef struct SnowCaptureStreamImpl SnowCaptureStream;
+typedef struct SnowCaptureStreamFrameImpl SnowCaptureStreamFrame;
 
 typedef enum SnowCaptureBackendKind {
     SNOW_CAPTURE_BACKEND_AUTO = 0,
@@ -89,6 +91,78 @@ typedef struct SnowCaptureRegionFrameInfo {
     const uint8_t* rgba_bytes;
     size_t rgba_len;
 } SnowCaptureRegionFrameInfo;
+
+#define SNOW_CAPTURE_STREAM_CONFIG_VERSION 1u
+#define SNOW_CAPTURE_STREAM_FRAME_INFO_VERSION 1u
+
+typedef enum SnowCaptureStreamEventKind {
+    SNOW_CAPTURE_STREAM_EVENT_TIMEOUT = 0,
+    SNOW_CAPTURE_STREAM_EVENT_FRAME = 1,
+    SNOW_CAPTURE_STREAM_EVENT_FRAMES_DROPPED = 2,
+    SNOW_CAPTURE_STREAM_EVENT_RESOLUTION_CHANGED = 3,
+    SNOW_CAPTURE_STREAM_EVENT_PAUSED = 4,
+    SNOW_CAPTURE_STREAM_EVENT_RESUMED = 5,
+    SNOW_CAPTURE_STREAM_EVENT_ENDED = 6,
+    SNOW_CAPTURE_STREAM_EVENT_ERROR = 7,
+} SnowCaptureStreamEventKind;
+
+typedef struct SnowCaptureStreamConfigV1 {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t x;
+    int32_t y;
+    uint32_t width;
+    uint32_t height;
+    uint32_t target_fps;
+    uint32_t min_fps;
+    uint32_t buffer_depth;
+    uint32_t max_consecutive_errors;
+    size_t capture_retry_count;
+    uint8_t wgc_update_mode;
+    uint8_t capture_backend;
+    uint8_t pixel_format;
+    uint8_t adaptive_fps;
+    /* Set to zero for scrolling captures to avoid cursor compositing work. */
+    uint8_t include_cursor;
+    uint8_t reserved[27];
+} SnowCaptureStreamConfigV1;
+
+typedef struct SnowCaptureStreamEventV1 {
+    SnowCaptureStreamEventKind kind;
+    SnowCaptureStreamFrame* frame;
+    uint64_t dropped_count;
+    uint32_t old_width;
+    uint32_t old_height;
+    uint32_t new_width;
+    uint32_t new_height;
+    uint8_t reserved[32];
+} SnowCaptureStreamEventV1;
+
+typedef struct SnowCaptureStreamFrameInfoV1 {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t x;
+    int32_t y;
+    uint32_t width;
+    uint32_t height;
+    uint32_t stride_bytes;
+    uint8_t is_duplicate;
+    uint8_t pixel_format;
+    uint8_t reserved0[2];
+    uint64_t sequence;
+    const uint8_t* rgba_bytes;
+    size_t rgba_len;
+} SnowCaptureStreamFrameInfoV1;
+
+typedef struct SnowCaptureStreamStatsV1 {
+    uint64_t frames_captured;
+    uint64_t frames_dropped;
+    uint64_t errors_recovered;
+    double current_fps;
+    uint32_t target_fps;
+    uint32_t buffer_fill;
+    uint64_t capture_latency_ns;
+} SnowCaptureStreamStatsV1;
 
 /* A native top-level window capture backed by Windows Graphics Capture when
  * the platform supports it. The returned pixel pointer remains valid until
@@ -250,6 +324,29 @@ uint8_t snow_capture_region_session_prepare(SnowCaptureRegionSession* session);
 uint8_t snow_capture_region_session_capture(
     SnowCaptureRegionSession* session,
     SnowCaptureRegionFrameInfo* out_info);
+
+/* Starts a continuous region stream. Frames are delivered as explicit leases;
+ * a frame event must be released with snow_capture_stream_frame_release(). */
+SnowCaptureStream* snow_capture_stream_create_region_v1(
+    const SnowCaptureStreamConfigV1* config);
+void snow_capture_stream_destroy(SnowCaptureStream* stream);
+uint8_t snow_capture_stream_stop(SnowCaptureStream* stream);
+uint8_t snow_capture_stream_set_target_fps(
+    SnowCaptureStream* stream,
+    uint32_t target_fps);
+/* A timeout is a successful receive with kind TIMEOUT. The function only
+ * returns zero for invalid arguments or an internal API error. */
+uint8_t snow_capture_stream_receive_v1(
+    SnowCaptureStream* stream,
+    uint32_t timeout_ms,
+    SnowCaptureStreamEventV1* out_event);
+uint8_t snow_capture_stream_frame_info_v1(
+    const SnowCaptureStreamFrame* frame,
+    SnowCaptureStreamFrameInfoV1* out_info);
+void snow_capture_stream_frame_release(SnowCaptureStreamFrame* frame);
+uint8_t snow_capture_stream_stats_v1(
+    const SnowCaptureStream* stream,
+    SnowCaptureStreamStatsV1* out_stats);
 
 SnowCaptureWindowSession* snow_capture_window_session_create(
     const SnowCaptureWindowSessionConfig* config);

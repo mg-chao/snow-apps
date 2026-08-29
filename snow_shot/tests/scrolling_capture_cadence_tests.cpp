@@ -17,8 +17,8 @@ void require(bool condition, const char* message) {
 void startsAtTheWarmupRate() {
     Cadence cadence;
     cadence.reset();
-    require(cadence.fps() > 7.9 && cadence.fps() < 8.1,
-            "cadence must start at the 8 fps warm-up rate");
+    require(cadence.fps() > 29.9 && cadence.fps() < 30.1,
+            "cadence must start at the 30 fps warm-up rate");
 }
 
 void ratesNeverExceedTheConfiguredBounds() {
@@ -26,8 +26,8 @@ void ratesNeverExceedTheConfiguredBounds() {
     cadence.reset();
     cadence.recordCapture(5ms);
     cadence.recordStitch(5ms);
-    require(cadence.fps() <= 24.0, "cadence must never exceed 24 fps");
-    require(cadence.fps() >= 23.9, "fast healthy work should reach the 24 fps cap");
+    require(cadence.fps() <= 30.0, "cadence must never exceed 30 fps");
+    require(cadence.fps() >= 29.9, "fast healthy work should reach the 30 fps cap");
 
     cadence.recordCapture(2s);
     require(cadence.fps() >= 1.0, "cadence must never fall below 1 fps");
@@ -80,11 +80,37 @@ void fasterSamplesRecoverCapacityGradually() {
     cadence.recordCapture(200ms);
     require(cadence.fps() > 3.9 && cadence.fps() < 4.1, "slow work must lower rate");
 
-    for (int sample = 0; sample < 20; ++sample) {
+    for (int sample = 0; sample < 120; ++sample) {
         cadence.recordCapture(5ms);
     }
-    require(cadence.fps() >= 23.9,
+    require(cadence.fps() >= 29.0,
             "sustained faster samples must recover the available machine capacity");
+}
+
+void scrollingCadenceHasAThirtyFpsHardCap() {
+    Cadence::Config config;
+    config.maximumFps = 120;
+    config.initialFps = 120;
+    Cadence cadence(config);
+    require(cadence.maximumFps() == 30,
+            "scrolling capture must enforce a 30 fps hard ceiling");
+    require(cadence.fps() <= 30.0,
+            "scrolling capture must never start above the 30 fps ceiling");
+}
+
+void streamPressureReducesRateImmediately() {
+    Cadence cadence;
+    cadence.recordStitch(5ms);
+    require(cadence.fps() >= 29.9, "healthy stitching should begin at the configured cap");
+    cadence.recordStreamPressure(2, 0);
+    require(cadence.fps() < 23.0, "queue pressure must reduce the target immediately");
+}
+
+void droppedFramesReduceRateImmediately() {
+    Cadence cadence;
+    cadence.recordStitch(5ms);
+    cadence.recordStreamPressure(0, 3);
+    require(cadence.fps() < 23.0, "dropped frames must reduce the target immediately");
 }
 
 void resetDiscardsPreviousSessionState() {
@@ -93,7 +119,7 @@ void resetDiscardsPreviousSessionState() {
     cadence.recordCapture(1s);
     cadence.recordStitch(1s);
     cadence.reset();
-    require(cadence.fps() > 7.9 && cadence.fps() < 8.1,
+    require(cadence.fps() > 29.9 && cadence.fps() < 30.1,
             "a new session must discard prior performance measurements");
 }
 } // namespace
@@ -102,9 +128,12 @@ int main() {
     startsAtTheWarmupRate();
     ratesNeverExceedTheConfiguredBounds();
     customMaximumFpsIsHonored();
+    scrollingCadenceHasAThirtyFpsHardCap();
     invalidConfigurationFallsBackToSafeBounds();
     slowerPipelineStageSetsTheSustainableRate();
     fasterSamplesRecoverCapacityGradually();
+    streamPressureReducesRateImmediately();
+    droppedFramesReduceRateImmediately();
     resetDiscardsPreviousSessionState();
     return 0;
 }

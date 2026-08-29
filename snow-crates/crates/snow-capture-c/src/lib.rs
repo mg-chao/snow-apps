@@ -10,12 +10,15 @@ use std::sync::{
     mpsc,
 };
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
-use snow_capture::frame::{CapturePixelFormat, Frame};
+use snow_capture::frame::{CaptureEvent, CapturePixelFormat, CapturedFrame, Frame};
 use snow_capture::{
-    CaptureOptions, CaptureRegion, CaptureSession, CaptureSystem, CaptureTarget, CaptureWorkload,
-    MonitorId, MonitorLayout, WgcUpdateMode, WindowId, backend::CaptureBackendKind,
+    CaptureOptions, CaptureRegion, CaptureSession, CaptureStream, CaptureStreamConfig,
+    CaptureSystem, CaptureTarget, CaptureWorkload, MonitorId, MonitorLayout, WgcUpdateMode,
+    WindowId, backend::CaptureBackendKind,
 };
+use snow_core::error::RecvTimeoutError;
 use snow_screen_recorder::{
     EditingSession, ExportFormat, ExportRequest, RecordingAudioConfig, RecordingAudioTrackConfig,
     RecordingConfig, RecordingRegion, RecordingSession, RecordingState, RecordingTarget,
@@ -66,6 +69,18 @@ pub struct SnowCaptureFrameLeaseImpl {
 pub struct SnowCaptureRecordingSessionImpl {
     recording: Option<RecordingSession>,
     state: RecordingState,
+}
+
+pub struct SnowCaptureStreamImpl {
+    stream: CaptureStream,
+    origin_x: i32,
+    origin_y: i32,
+}
+
+pub struct SnowCaptureStreamFrameImpl {
+    frame: CapturedFrame,
+    origin_x: i32,
+    origin_y: i32,
 }
 
 #[repr(C)]
@@ -186,6 +201,81 @@ pub struct SnowCaptureRegionFrameInfo {
 }
 
 #[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SnowCaptureStreamEventKind {
+    Timeout = 0,
+    Frame = 1,
+    FramesDropped = 2,
+    ResolutionChanged = 3,
+    Paused = 4,
+    Resumed = 5,
+    Ended = 6,
+    Error = 7,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SnowCaptureStreamConfigV1 {
+    pub version: u32,
+    pub struct_size: u32,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub target_fps: u32,
+    pub min_fps: u32,
+    pub buffer_depth: u32,
+    pub max_consecutive_errors: u32,
+    pub capture_retry_count: usize,
+    pub wgc_update_mode: u8,
+    pub capture_backend: u8,
+    pub pixel_format: u8,
+    pub adaptive_fps: u8,
+    pub include_cursor: u8,
+    pub reserved: [u8; 27],
+}
+
+#[repr(C)]
+pub struct SnowCaptureStreamEventV1 {
+    pub kind: SnowCaptureStreamEventKind,
+    pub frame: *mut SnowCaptureStreamFrameImpl,
+    pub dropped_count: u64,
+    pub old_width: u32,
+    pub old_height: u32,
+    pub new_width: u32,
+    pub new_height: u32,
+    pub reserved: [u8; 32],
+}
+
+#[repr(C)]
+pub struct SnowCaptureStreamFrameInfoV1 {
+    pub version: u32,
+    pub struct_size: u32,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub stride_bytes: u32,
+    pub is_duplicate: u8,
+    pub pixel_format: u8,
+    pub reserved0: [u8; 2],
+    pub sequence: u64,
+    pub rgba_bytes: *const u8,
+    pub rgba_len: usize,
+}
+
+#[repr(C)]
+pub struct SnowCaptureStreamStatsV1 {
+    pub frames_captured: u64,
+    pub frames_dropped: u64,
+    pub errors_recovered: u64,
+    pub current_fps: f64,
+    pub target_fps: u32,
+    pub buffer_fill: u32,
+    pub capture_latency_ns: u64,
+}
+
+#[repr(C)]
 pub struct SnowCaptureRecordingConfig {
     x: i32,
     y: i32,
@@ -252,6 +342,45 @@ const SCREENSHOT_REQUEST_V1_SIZE: u32 =
 const SCREENSHOT_REQUEST_REFRESH_LAYOUT: u32 = 1 << 0;
 const WINDOW_FRAME_INFO_VERSION: u32 = 1;
 const WINDOW_FRAME_INFO_V1_SIZE: u32 = std::mem::size_of::<SnowCaptureWindowFrameInfoV1>() as u32;
+const STREAM_CONFIG_VERSION: u32 = 1;
+const STREAM_CONFIG_V1_SIZE: u32 = std::mem::size_of::<SnowCaptureStreamConfigV1>() as u32;
+const STREAM_FRAME_INFO_VERSION: u32 = 1;
+const STREAM_FRAME_INFO_V1_SIZE: u32 = std::mem::size_of::<SnowCaptureStreamFrameInfoV1>() as u32;
+
+unsafe fn read_stream_config(
+    config: *const SnowCaptureStreamConfigV1,
+) -> Result<SnowCaptureStreamConfigV1, String> {
+    if config.is_null() {
+        return Err("stream config is null".to_owned());
+    }
+    let header = unsafe { &*config.cast::<SnowCaptureScreenshotRequestHeader>() };
+    if header.version != STREAM_CONFIG_VERSION {
+        return Err(format!(
+            "unsupported stream config version: {}",
+            header.version
+        ));
+    }
+    if header.struct_size < STREAM_CONFIG_V1_SIZE {
+        return Err(format!(
+            "stream config is too small: {} < {}",
+            header.struct_size, STREAM_CONFIG_V1_SIZE
+        ));
+    }
+    let config = unsafe { *config };
+    if config.width == 0 || config.height == 0 {
+        return Err("stream region must have non-zero width and height".to_owned());
+    }
+    if config.buffer_depth == 0 {
+        return Err("stream buffer depth must be greater than zero".to_owned());
+    }
+    if config.max_consecutive_errors == 0 {
+        return Err("stream max_consecutive_errors must be greater than zero".to_owned());
+    }
+    parse_wgc_update_mode(config.wgc_update_mode)?;
+    parse_capture_backend(config.capture_backend)?;
+    parse_pixel_format(config.pixel_format)?;
+    Ok(config)
+}
 
 unsafe fn read_screenshot_request(
     request: *const SnowCaptureScreenshotRequestV1,
@@ -1376,6 +1505,333 @@ pub unsafe extern "C" fn snow_capture_region_session_capture(
             reserved0: [0; 2],
             rgba_bytes: rgba.as_ptr(),
             rgba_len: rgba.len(),
+        };
+    }
+    clear_last_error();
+    1
+}
+
+fn empty_stream_event() -> SnowCaptureStreamEventV1 {
+    SnowCaptureStreamEventV1 {
+        kind: SnowCaptureStreamEventKind::Timeout,
+        frame: ptr::null_mut(),
+        dropped_count: 0,
+        old_width: 0,
+        old_height: 0,
+        new_width: 0,
+        new_height: 0,
+        reserved: [0; 32],
+    }
+}
+
+fn write_stream_frame_info(
+    frame: &SnowCaptureStreamFrameImpl,
+    out_info: *mut SnowCaptureStreamFrameInfoV1,
+) -> Result<(), String> {
+    let bytes = frame.frame.as_bytes();
+    let width = frame.frame.width();
+    let height = frame.frame.height();
+    let stride_bytes = width
+        .checked_mul(4)
+        .ok_or_else(|| "stream frame stride overflow".to_owned())?;
+    let required_len = usize::try_from(stride_bytes)
+        .ok()
+        .and_then(|stride| stride.checked_mul(height as usize))
+        .ok_or_else(|| "stream frame length overflow".to_owned())?;
+    if bytes.len() < required_len {
+        return Err("stream frame buffer is smaller than its dimensions".to_owned());
+    }
+    unsafe {
+        *out_info = SnowCaptureStreamFrameInfoV1 {
+            version: STREAM_FRAME_INFO_VERSION,
+            struct_size: STREAM_FRAME_INFO_V1_SIZE,
+            x: frame.origin_x,
+            y: frame.origin_y,
+            width,
+            height,
+            stride_bytes,
+            is_duplicate: u8::from(frame.frame.metadata().is_duplicate()),
+            pixel_format: pixel_format_value(frame.frame.pixel_format()),
+            reserved0: [0; 2],
+            sequence: frame.frame.metadata().sequence(),
+            rgba_bytes: bytes.as_ptr(),
+            rgba_len: bytes.len(),
+        };
+    }
+    Ok(())
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_stream_create_region_v1(
+    config: *const SnowCaptureStreamConfigV1,
+) -> *mut SnowCaptureStreamImpl {
+    let config = match unsafe { read_stream_config(config) } {
+        Ok(config) => config,
+        Err(error) => {
+            set_last_error(error);
+            return ptr::null_mut();
+        }
+    };
+    let region = match CaptureRegion::new(config.x, config.y, config.width, config.height) {
+        Ok(region) => region,
+        Err(error) => {
+            set_last_error(error);
+            return ptr::null_mut();
+        }
+    };
+    let output_pixel_format = match parse_pixel_format(config.pixel_format) {
+        Ok(format) => format,
+        Err(error) => {
+            set_last_error(error);
+            return ptr::null_mut();
+        }
+    };
+    let wgc_update_mode = match parse_wgc_update_mode(config.wgc_update_mode) {
+        Ok(mode) => mode,
+        Err(error) => {
+            set_last_error(error);
+            return ptr::null_mut();
+        }
+    };
+    let capture_backend = match parse_capture_backend(config.capture_backend) {
+        Ok(backend) => backend,
+        Err(error) => {
+            set_last_error(error);
+            return ptr::null_mut();
+        }
+    };
+    let system = match CaptureSystem::builder()
+        .with_backend_kind(capture_backend)
+        .build()
+    {
+        Ok(system) => system,
+        Err(error) => {
+            set_last_error(error);
+            return ptr::null_mut();
+        }
+    };
+    let options = CaptureOptions {
+        capture_retry_count: config.capture_retry_count.max(1),
+        workload: CaptureWorkload::Continuous,
+        gpu_hdr_conversion: true,
+        hdr_tonemap_lut: true,
+        output_pixel_format,
+        wgc_update_mode,
+        ..Default::default()
+    };
+    let session = match system.open_session(CaptureTarget::Region(region), options) {
+        Ok(session) => session,
+        Err(error) => {
+            set_last_error(error);
+            return ptr::null_mut();
+        }
+    };
+    let stream_config = CaptureStreamConfig {
+        target_fps: config.target_fps,
+        buffer_depth: config.buffer_depth as usize,
+        max_consecutive_errors: config.max_consecutive_errors as usize,
+        adaptive_fps: config.adaptive_fps != 0,
+        min_fps: config.min_fps,
+        pause_on_resolution_change: false,
+        include_cursor: config.include_cursor != 0,
+    };
+    let stream = match CaptureStream::spawn(session, stream_config) {
+        Ok(stream) => stream,
+        Err(error) => {
+            set_last_error(error);
+            return ptr::null_mut();
+        }
+    };
+    clear_last_error();
+    Box::into_raw(Box::new(SnowCaptureStreamImpl {
+        stream,
+        origin_x: config.x,
+        origin_y: config.y,
+    }))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_stream_destroy(stream: *mut SnowCaptureStreamImpl) {
+    if !stream.is_null() {
+        drop(unsafe { Box::from_raw(stream) });
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_stream_stop(stream: *mut SnowCaptureStreamImpl) -> u8 {
+    if stream.is_null() {
+        set_last_error("stream is null");
+        return 0;
+    }
+    unsafe { &*stream }.stream.stop();
+    clear_last_error();
+    1
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_stream_set_target_fps(
+    stream: *mut SnowCaptureStreamImpl,
+    target_fps: u32,
+) -> u8 {
+    if stream.is_null() {
+        set_last_error("stream is null");
+        return 0;
+    }
+    unsafe { &*stream }.stream.set_target_fps(target_fps);
+    clear_last_error();
+    1
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_stream_receive_v1(
+    stream: *mut SnowCaptureStreamImpl,
+    timeout_ms: u32,
+    out_event: *mut SnowCaptureStreamEventV1,
+) -> u8 {
+    if out_event.is_null() {
+        set_last_error("stream event out_event is null");
+        return 0;
+    }
+    if stream.is_null() {
+        set_last_error("stream is null");
+        return 0;
+    }
+    unsafe { *out_event = empty_stream_event() };
+    let stream = unsafe { &*stream };
+    match stream
+        .stream
+        .recv_timeout(Duration::from_millis(u64::from(timeout_ms)))
+    {
+        Ok(CaptureEvent::Frame(frame)) => {
+            let frame = Box::new(SnowCaptureStreamFrameImpl {
+                frame,
+                origin_x: stream.origin_x,
+                origin_y: stream.origin_y,
+            });
+            unsafe {
+                (*out_event).kind = SnowCaptureStreamEventKind::Frame;
+                (*out_event).frame = Box::into_raw(frame);
+            }
+            clear_last_error();
+            1
+        }
+        Ok(CaptureEvent::FramesDropped { count }) => unsafe {
+            (*out_event).kind = SnowCaptureStreamEventKind::FramesDropped;
+            (*out_event).dropped_count = u64::from(count);
+            clear_last_error();
+            1
+        },
+        Ok(CaptureEvent::ResolutionChanged {
+            old_width,
+            old_height,
+            new_width,
+            new_height,
+        }) => unsafe {
+            (*out_event).kind = SnowCaptureStreamEventKind::ResolutionChanged;
+            (*out_event).old_width = old_width;
+            (*out_event).old_height = old_height;
+            (*out_event).new_width = new_width;
+            (*out_event).new_height = new_height;
+            clear_last_error();
+            1
+        },
+        Ok(CaptureEvent::Paused { .. }) => unsafe {
+            (*out_event).kind = SnowCaptureStreamEventKind::Paused;
+            clear_last_error();
+            1
+        },
+        Ok(CaptureEvent::Resumed { .. }) => unsafe {
+            (*out_event).kind = SnowCaptureStreamEventKind::Resumed;
+            clear_last_error();
+            1
+        },
+        Ok(CaptureEvent::StreamEnded) => unsafe {
+            (*out_event).kind = SnowCaptureStreamEventKind::Ended;
+            clear_last_error();
+            1
+        },
+        Ok(CaptureEvent::Error(error)) => unsafe {
+            set_last_error(error.to_string());
+            (*out_event).kind = SnowCaptureStreamEventKind::Error;
+            1
+        },
+        Err(RecvTimeoutError::Timeout) => {
+            clear_last_error();
+            1
+        }
+        Err(RecvTimeoutError::Disconnected) => unsafe {
+            (*out_event).kind = SnowCaptureStreamEventKind::Ended;
+            clear_last_error();
+            1
+        },
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_stream_frame_info_v1(
+    frame: *const SnowCaptureStreamFrameImpl,
+    out_info: *mut SnowCaptureStreamFrameInfoV1,
+) -> u8 {
+    if out_info.is_null() {
+        set_last_error("stream frame out_info is null");
+        return 0;
+    }
+    if frame.is_null() {
+        set_last_error("stream frame is null");
+        return 0;
+    }
+    match write_stream_frame_info(unsafe { &*frame }, out_info) {
+        Ok(()) => {
+            clear_last_error();
+            1
+        }
+        Err(error) => {
+            set_last_error(error);
+            0
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_stream_frame_release(frame: *mut SnowCaptureStreamFrameImpl) {
+    if !frame.is_null() {
+        drop(unsafe { Box::from_raw(frame) });
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_stream_stats_v1(
+    stream: *const SnowCaptureStreamImpl,
+    out_stats: *mut SnowCaptureStreamStatsV1,
+) -> u8 {
+    if out_stats.is_null() {
+        set_last_error("stream stats out_stats is null");
+        return 0;
+    }
+    if stream.is_null() {
+        set_last_error("stream is null");
+        return 0;
+    }
+    let snapshot = unsafe { &*stream }.stream.stats().snapshot();
+    let buffer_fill = match u32::try_from(snapshot.buffer_fill) {
+        Ok(value) => value,
+        Err(_) => {
+            set_last_error("stream buffer fill overflow");
+            return 0;
+        }
+    };
+    unsafe {
+        *out_stats = SnowCaptureStreamStatsV1 {
+            frames_captured: snapshot.frames_captured,
+            frames_dropped: snapshot.frames_dropped,
+            errors_recovered: snapshot.errors_recovered,
+            current_fps: snapshot.current_fps,
+            target_fps: snapshot.target_fps,
+            buffer_fill,
+            capture_latency_ns: snapshot
+                .capture_latency_avg
+                .as_nanos()
+                .min(u64::MAX as u128) as u64,
         };
     }
     clear_last_error();
@@ -2596,6 +3052,105 @@ mod tests {
         assert_eq!(parse_pixel_format(1), Ok(CapturePixelFormat::Bgra8));
         assert!(parse_pixel_format(2).is_err());
         assert!(parse_pixel_format(u8::MAX).is_err());
+    }
+
+    #[test]
+    fn stream_abi_layout_is_stable() {
+        assert_eq!(
+            std::mem::size_of::<SnowCaptureStreamConfigV1>(),
+            std::mem::size_of::<usize>() + 72
+        );
+        assert_eq!(std::mem::size_of::<SnowCaptureStreamEventV1>(), 40 + 32);
+        assert_eq!(
+            std::mem::size_of::<SnowCaptureStreamFrameInfoV1>(),
+            40 + std::mem::size_of::<usize>() * 2
+        );
+        assert_eq!(
+            std::mem::offset_of!(SnowCaptureStreamFrameInfoV1, sequence),
+            32
+        );
+        assert_eq!(
+            std::mem::size_of::<SnowCaptureStreamStatsV1>(),
+            40 + std::mem::size_of::<usize>()
+        );
+    }
+
+    #[test]
+    fn stream_config_validation_checks_version_size_and_dimensions() {
+        let valid = SnowCaptureStreamConfigV1 {
+            version: STREAM_CONFIG_VERSION,
+            struct_size: STREAM_CONFIG_V1_SIZE,
+            x: 0,
+            y: 0,
+            width: 16,
+            height: 12,
+            target_fps: 30,
+            min_fps: 1,
+            buffer_depth: 3,
+            max_consecutive_errors: 30,
+            capture_retry_count: 1,
+            wgc_update_mode: 1,
+            capture_backend: 2,
+            pixel_format: 0,
+            adaptive_fps: 1,
+            include_cursor: 0,
+            reserved: [0; 27],
+        };
+        assert!(unsafe { read_stream_config(&valid) }.is_ok());
+
+        let mut wrong_version = valid;
+        wrong_version.version += 1;
+        assert!(unsafe { read_stream_config(&wrong_version) }.is_err());
+
+        let mut too_small = valid;
+        too_small.struct_size = STREAM_CONFIG_V1_SIZE - 1;
+        assert!(unsafe { read_stream_config(&too_small) }.is_err());
+
+        let mut empty = valid;
+        empty.width = 0;
+        assert!(unsafe { read_stream_config(&empty) }.is_err());
+    }
+
+    #[test]
+    fn stream_abi_null_handles_fail_without_touching_output() {
+        let mut event = empty_stream_event();
+        assert_eq!(
+            unsafe { snow_capture_stream_receive_v1(ptr::null_mut(), 0, &mut event) },
+            0
+        );
+        assert_eq!(
+            unsafe { snow_capture_stream_set_target_fps(ptr::null_mut(), 30) },
+            0
+        );
+        assert_eq!(unsafe { snow_capture_stream_stop(ptr::null_mut()) }, 0);
+        let mut info = SnowCaptureStreamFrameInfoV1 {
+            version: 99,
+            struct_size: 99,
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+            stride_bytes: 0,
+            is_duplicate: 0,
+            pixel_format: 0,
+            reserved0: [0; 2],
+            sequence: 0,
+            rgba_bytes: ptr::null(),
+            rgba_len: 0,
+        };
+        assert_eq!(
+            unsafe { snow_capture_stream_frame_info_v1(ptr::null(), &mut info) },
+            0
+        );
+        assert_eq!(info.version, 99);
+        assert_eq!(
+            unsafe { snow_capture_stream_stats_v1(ptr::null(), ptr::null_mut()) },
+            0
+        );
+        unsafe {
+            snow_capture_stream_frame_release(ptr::null_mut());
+            snow_capture_stream_destroy(ptr::null_mut());
+        }
     }
 
     #[test]
