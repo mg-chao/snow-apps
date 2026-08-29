@@ -82,15 +82,6 @@ void ScreenshotCaptureCoordinator::cancelActiveCapture() {
     }
 }
 
-void ScreenshotCaptureCoordinator::releaseIdleResourcesAsync(quint64 requestId) {
-    if (!hasWorker()) {
-        return;
-    }
-
-    static_cast<void>(postWorkerTask(
-        [requestId](ScreenshotCaptureWorker& worker) { worker.releaseIdleResources(requestId); }));
-}
-
 void ScreenshotCaptureCoordinator::shutdown() {
     cancelActiveCapture();
     if (m_thread == nullptr) {

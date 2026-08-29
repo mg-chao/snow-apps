@@ -131,15 +131,6 @@ void ScreenshotCaptureWorker::refreshLayout(
     }
 }
 
-void ScreenshotCaptureWorker::releaseIdleResources(quint64 requestId) {
-    Q_UNUSED(requestId);
-    if (m_session != nullptr &&
-        snow_capture_desktop_session_release_idle_resources(m_session) == 0) {
-        qWarning("Failed to release desktop capture idle resources: %s",
-                 snow_capture_last_error_message());
-    }
-}
-
 void ScreenshotCaptureWorker::capture(
     const ScreenshotCaptureRequest& request,
     const QPointer<ScreenshotCaptureCoordinator>& coordinator,

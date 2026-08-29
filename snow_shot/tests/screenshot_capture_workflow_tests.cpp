@@ -33,7 +33,6 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     void ensureCaptureWorker() override {}
     void prepareAsync(quint64) override {
         ++prepareAsyncCalls;
-        prepareAsyncOrder = ++lifecycleOperationOrder;
     }
     void refreshLayoutAsync(quint64 requestId) override {
         ++refreshLayoutCalls;
@@ -52,10 +51,6 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     }
     void cancelActiveCapture() override {
         ++cancelActiveCaptureCalls;
-    }
-    void releaseIdleResourcesAsync(quint64) override {
-        ++releaseIdleResourcesCalls;
-        releaseIdleResourcesOrder = ++lifecycleOperationOrder;
     }
     void shutdownCaptureWorker() override {}
 
@@ -85,7 +80,9 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
         return false;
     }
 
-    void prewarmDisplayPool(ScreenshotDisplaySession&, int) override {}
+    void prewarmDisplayPool(ScreenshotDisplaySession&, int) override {
+        ++prewarmDisplayPoolCalls;
+    }
     void ensureToolbar() override {}
     void prewarmToolbar() override {
         ++prewarmToolbarCalls;
@@ -127,14 +124,10 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
 
     ScreenshotCaptureWorkerEventSink* eventSink = nullptr;
     int prepareAsyncCalls = 0;
-    int prepareAsyncOrder = 0;
     int captureAllAsyncCalls = 0;
     int cancelActiveCaptureCalls = 0;
-    int releaseIdleResourcesCalls = 0;
     int refreshLayoutCalls = 0;
     quint64 lastRefreshRequestId = 0;
-    int releaseIdleResourcesOrder = 0;
-    int lifecycleOperationOrder = 0;
     int startWorkflowRefreshCalls = 0;
     int releaseSelectorCacheCalls = 0;
     mutable int clearOverlayCanvasCalls = 0;
@@ -144,6 +137,7 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     int preparePreCaptureOverlayCalls = 0;
     int hideOverlayCalls = 0;
     int clearDocumentCalls = 0;
+    int prewarmDisplayPoolCalls = 0;
     int prewarmToolbarCalls = 0;
     int prewarmOverlayTransientUiCalls = 0;
     bool selectorIsReady = false;
@@ -195,7 +189,8 @@ void idlePrewarmDoesNotInitializeSelector() {
 
     workflow.prewarmResources();
     workflow.prewarmResources();
-    require(runtime.prewarmToolbarCalls == 1,
+    require(runtime.prepareAsyncCalls == 1 && runtime.prewarmDisplayPoolCalls == 1 &&
+                runtime.prewarmToolbarCalls == 1,
             "idle toolbar prewarm must be idempotent once resources are prepared");
     require(runtime.prewarmOverlayTransientUiCalls == 1,
             "idle prewarm must construct the transient overlay UI exactly once");
@@ -213,7 +208,7 @@ void idlePrewarmDoesNotInitializeSelector() {
             "capture start must initialize the selector cache");
 }
 
-void cancelClearsTheReusableCanvasDocument() {
+void endingScreenshotSkipsCaptureReleaseAndPrewarm() {
     ScreenshotCaptureState state;
     state.sessionState = ScreenshotSessionState::Editing;
     state.captureInProgress = true;
@@ -250,10 +245,10 @@ void cancelClearsTheReusableCanvasDocument() {
             "canceling a capture must immediately release the selector cache");
     require(runtime.cancelActiveCaptureCalls == 1,
             "canceling a capture must signal the native cancellation token");
-    require(runtime.releaseIdleResourcesCalls == 1,
-            "idle cleanup must release native capture resources before lightweight prewarm");
-    require(runtime.releaseIdleResourcesOrder < runtime.prepareAsyncOrder,
-            "idle cleanup must queue native release before lightweight prewarm");
+    require(runtime.prepareAsyncCalls == 0 && runtime.prewarmDisplayPoolCalls == 0 &&
+                runtime.prewarmToolbarCalls == 0 &&
+                runtime.prewarmOverlayTransientUiCalls == 0,
+            "ending a screenshot must not prepare or prewarm capture resources");
     require(captureTerminatedCalls == 1,
             "canceling a capture must stop active capture-scoped features before cleanup");
     require(state.sessionState == ScreenshotSessionState::IdlePrepared,
@@ -309,9 +304,10 @@ void synchronousCaptureFailureDoesNotRestartSelectorRefresh() {
             "synchronous capture failure must return the workflow to idle");
     require(runtime.startWorkflowRefreshCalls == 0 && !runtime.selectorRefreshActive,
             "synchronous capture failure must not restart selector refresh after cleanup");
-    require(runtime.releaseIdleResourcesCalls == 1 && runtime.prepareAsyncCalls == 1 &&
-                runtime.releaseIdleResourcesOrder < runtime.prepareAsyncOrder,
-            "synchronous failure cleanup must release native resources before prewarm");
+    require(runtime.prepareAsyncCalls == 0 && runtime.prewarmDisplayPoolCalls == 0 &&
+                runtime.prewarmToolbarCalls == 0 &&
+                runtime.prewarmOverlayTransientUiCalls == 0,
+            "synchronous failure cleanup must not release or prewarm capture resources");
 }
 
 void restartingCaptureReleasesPreviousSelectorCache() {
@@ -459,8 +455,7 @@ void displayChangesRefreshWithoutCancelingIdleOrActiveCapture() {
 
     idleWorkflow.handleDisplayConfigurationChanged();
     require(idleState.layoutDirty && idleRuntime.refreshLayoutCalls == 1 &&
-                idleRuntime.cancelActiveCaptureCalls == 0 &&
-                idleRuntime.releaseIdleResourcesCalls == 0,
+                idleRuntime.cancelActiveCaptureCalls == 0,
             "idle display changes must schedule a refined refresh without cancellation or release");
 
     ScreenshotCaptureState activeState;
@@ -696,7 +691,7 @@ void captureSessionsApplyTheCurrentSmartSelectionSetting() {
 
 int main() {
     idlePrewarmDoesNotInitializeSelector();
-    cancelClearsTheReusableCanvasDocument();
+    endingScreenshotSkipsCaptureReleaseAndPrewarm();
     captureOverlapsSelectorInitialization();
     synchronousCaptureFailureDoesNotRestartSelectorRefresh();
     restartingCaptureReleasesPreviousSelectorCache();

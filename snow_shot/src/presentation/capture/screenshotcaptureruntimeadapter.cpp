@@ -87,17 +87,6 @@ void ScreenshotCaptureRuntimeAdapter::cancelActiveCapture() {
     }
 }
 
-void ScreenshotCaptureRuntimeAdapter::releaseIdleResourcesAsync(quint64 requestId) {
-    if (m_captureCoordinator == nullptr) {
-        return;
-    }
-
-    m_captureCoordinator->releaseIdleResourcesAsync(requestId);
-    // Capture surfaces are the largest transient users of the process. Once their idle release is
-    // queued, keep only a small icon working set while the app is between captures.
-    adqt::icons::trimIconCache(512 * 1024);
-}
-
 void ScreenshotCaptureRuntimeAdapter::shutdownCaptureWorker() {
     if (m_captureCoordinator == nullptr) {
         return;

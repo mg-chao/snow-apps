@@ -58,13 +58,13 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     void destroyDisplayPool();
     void destroyUiSelectorService();
     void shutdownCaptureWorker();
-    void releaseIdleResources(quint64 sessionId);
     void handleDisplayConfigurationChanged();
 
   private:
     void clearCapturePresentationReadiness();
     void resetCaptureModels();
     void clearDisplays();
+    void finishCaptureSession();
     void cleanupActiveSessionForRestart();
     void beginCapturePreparation(quint64 sessionId);
     [[nodiscard]] bool beginCapturePresentation(quint64 sessionId);

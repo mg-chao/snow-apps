@@ -23,7 +23,6 @@ class ScreenshotCaptureCoordinator final : public QObject {
     void refreshLayoutAsync(quint64 requestId);
     void captureAsync(const ScreenshotCaptureRequest& request);
     void cancelActiveCapture();
-    void releaseIdleResourcesAsync(quint64 requestId);
     void shutdown();
 
   signals:

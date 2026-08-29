@@ -31,7 +31,6 @@ class ScreenshotCaptureRuntimePort {
     virtual void refreshLayoutAsync(quint64 requestId) = 0;
     virtual void captureAsync(const ScreenshotCaptureRequest& request) = 0;
     virtual void cancelActiveCapture() = 0;
-    virtual void releaseIdleResourcesAsync(quint64 requestId) = 0;
     virtual void shutdownCaptureWorker() = 0;
 
     [[nodiscard]] virtual bool selectorReady() const = 0;

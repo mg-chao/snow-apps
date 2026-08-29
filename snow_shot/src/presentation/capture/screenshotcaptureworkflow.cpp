@@ -125,7 +125,7 @@ void ScreenshotCaptureWorkflow::cancelCapture() {
     m_refreshAfterCapture = false;
     resetCaptureModels();
     resetCanvasRuntimeState();
-    releaseIdleResources(m_state.sessionId);
+    finishCaptureSession();
     if (refreshAfterCancel) {
         scheduleLayoutRefresh(m_layoutChangeSerial);
     }
@@ -153,6 +153,17 @@ void ScreenshotCaptureWorkflow::clearDisplays() {
     clearCapturePresentationReadiness();
     m_context.runtime.clearDisplays(m_context.displaySession);
     m_context.geometry.clear();
+}
+
+void ScreenshotCaptureWorkflow::finishCaptureSession() {
+    m_context.runtime.releaseSelectorCache();
+    m_context.runtime.hideOverlayWindows(m_context.displaySession);
+    if (m_context.presentation.hideToolbar) {
+        m_context.presentation.hideToolbar();
+    }
+    clearDisplays();
+    m_context.runtime.resetForNewCapture(m_context.displaySession);
+    m_state.sessionState = ScreenshotSessionState::IdlePrepared;
 }
 
 void ScreenshotCaptureWorkflow::destroyDisplayPool() {
@@ -190,20 +201,6 @@ void ScreenshotCaptureWorkflow::shutdownCaptureWorker() {
     m_context.runtime.shutdownCaptureWorker();
     m_layoutRefreshInFlight = false;
     m_refreshAfterCapture = false;
-}
-
-void ScreenshotCaptureWorkflow::releaseIdleResources(quint64 sessionId) {
-    if (sessionId != m_state.sessionId || m_state.captureInProgress ||
-        !m_context.interaction.inactive()) {
-        return;
-    }
-
-    m_state.sessionState = ScreenshotSessionState::Releasing;
-    m_context.runtime.releaseSelectorCache();
-    m_context.runtime.hideOverlayWindows(m_context.displaySession);
-    clearDisplays();
-    m_context.runtime.releaseIdleResourcesAsync(sessionId);
-    initializeIdleResources(sessionId);
 }
 
 void ScreenshotCaptureWorkflow::handleDisplayConfigurationChanged() {
