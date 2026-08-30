@@ -26,6 +26,7 @@
 #include <QPainter>
 #include <QScrollBar>
 #include <QScreen>
+#include <QStyleOptionGraphicsItem>
 #include <QTextBlock>
 #include <QTextBrowser>
 #include <QTextDocument>
@@ -614,6 +615,20 @@ QGraphicsTextItem* formattedTextItem(QGraphicsView* layer) {
     return nullptr;
 }
 
+QImage renderFormattedTextItem(QGraphicsTextItem* item, bool focused) {
+    const QRectF bounds = item->boundingRect();
+    QImage image(bounds.size().toSize(), QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    QPainter painter(&image);
+    painter.translate(-bounds.topLeft());
+    QStyleOptionGraphicsItem option;
+    option.exposedRect = bounds;
+    option.state = focused ? QStyle::State_Enabled | QStyle::State_HasFocus
+                           : QStyle::State_Enabled;
+    item->paint(&painter, &option, nullptr);
+    return image;
+}
+
 QRect nonWhitePixelBounds(const QImage& image) {
     QRect bounds;
     for (int y = 0; y < image.height(); ++y) {
@@ -740,6 +755,9 @@ void formattedClipboardTextUsesASelectableQtDocument() {
             "formatted clipboard text should retain its Qt document and allow direct selection");
     require(textItem->toPlainText().contains(QStringLiteral("Formatted clipboard text")),
             "the selectable clipboard surface should preserve document text");
+    require(renderFormattedTextItem(textItem, true) ==
+                renderFormattedTextItem(textItem, false),
+            "formatted clipboard text should not paint Qt's dashed focus outline");
     require(std::abs(textLayer->transform().m11() - 0.5) < 0.001 &&
                 std::abs(textLayer->transform().m22() - 0.5) < 0.001 &&
                 qFuzzyCompare(textItem->scale(), 2.0),

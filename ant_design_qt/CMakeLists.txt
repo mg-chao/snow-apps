@@ -178,6 +178,23 @@ if(ADQT_BUILD_TESTS)
     add_test(NAME adqt-scroll-area-tests COMMAND adqt-scroll-area-tests)
     set_tests_properties(adqt-scroll-area-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+    add_executable(adqt-qt-tool-popup-tests
+        packages/ant_design_qt/tests/qt_tool_popup_tests.cpp)
+    set_target_properties(adqt-qt-tool-popup-tests PROPERTIES AUTOMOC ON)
+    target_link_libraries(adqt-qt-tool-popup-tests PRIVATE adqt::widgets Qt6::Test)
+    add_test(NAME adqt-qt-tool-popup-tests COMMAND adqt-qt-tool-popup-tests)
+    if(WIN32)
+        set_tests_properties(adqt-qt-tool-popup-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    else()
+        set_tests_properties(adqt-qt-tool-popup-tests PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endif()
+
     add_executable(adqt-date-picker-performance-tests
         packages/ant_design_qt/tests/tst_date_picker_performance.cpp)
     set_target_properties(adqt-date-picker-performance-tests PROPERTIES AUTOMOC ON)

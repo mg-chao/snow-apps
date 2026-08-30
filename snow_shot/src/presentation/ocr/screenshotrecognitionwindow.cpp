@@ -29,6 +29,7 @@
 #include <QSignalBlocker>
 #include <QSizePolicy>
 #include <QStackedLayout>
+#include <QStyleOptionGraphicsItem>
 #include <QTextBrowser>
 #include <QTextCharFormat>
 #include <QTextCursor>
@@ -108,11 +109,25 @@ bool focusInside(const QWidget* container, const QWidget* focus) {
 }
 }  // namespace
 
+class ScreenshotFormattedTextItem final : public QGraphicsTextItem {
+  public:
+    using QGraphicsTextItem::QGraphicsTextItem;
+
+    void paint(QPainter* painter, const QStyleOptionGraphicsItem* option,
+               QWidget* widget = nullptr) override {
+        QStyleOptionGraphicsItem textOption(*option);
+        // Qt's graphics-text focus indicator is a dashed item outline. The pinned surface
+        // still needs focus for keyboard selection, but that outline is not part of the HTML.
+        textOption.state &= ~QStyle::State_HasFocus;
+        QGraphicsTextItem::paint(painter, &textOption, widget);
+    }
+};
+
 class ScreenshotFormattedTextLayer final : public QGraphicsView {
   public:
     explicit ScreenshotFormattedTextLayer(QWidget* parent = nullptr)
         : QGraphicsView(parent), m_scene(new QGraphicsScene(this)),
-          m_textItem(new QGraphicsTextItem) {
+          m_textItem(new ScreenshotFormattedTextItem) {
         setObjectName(QStringLiteral("screenshotClipboardText"));
         setScene(m_scene);
         m_scene->addItem(m_textItem);

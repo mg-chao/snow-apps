@@ -895,6 +895,7 @@ bool BuiltInSettingsRuntimeBindings::resetSection(SettingsSectionReset reset) {
         QMap<QString, QStringList> defaults;
         for (const QString& actionId : {QStringLiteral("copy_to_clipboard"),
                                         QStringLiteral("copy_original_content"),
+                                        QStringLiteral("save_as_file"),
                                         QStringLiteral("show_text_recognition_results"),
                                         QStringLiteral("drawing_mode"),
                                         QStringLiteral("thumbnail_mode"),

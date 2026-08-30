@@ -312,7 +312,7 @@ void builtInCatalogIsCompleteAndValid() {
                 drawingShortcuts != nullptr && drawingShortcuts->items.size() == 10 &&
                 drawingShortcuts->itemLayout ==
                     settings::SettingsSectionItemLayout::TwoColumnGrid &&
-                pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 10 &&
+                pinToScreenShortcuts != nullptr && pinToScreenShortcuts->items.size() == 11 &&
                 pinToScreenShortcuts->itemLayout ==
                     settings::SettingsSectionItemLayout::TwoColumnGrid &&
                 pinToScreenShortcuts->title.translated() == QStringLiteral("Pin to Screen") &&
@@ -321,6 +321,8 @@ void builtInCatalogIsCompleteAndValid() {
                 pinToScreenShortcuts->items.constFirst().id ==
                     QStringLiteral("pin-to-screen-shortcut.copy_to_clipboard") &&
                 pinToScreenShortcuts->items.at(2).configurationKey ==
+                    QStringLiteral("pin_to_screen_shortcuts/save_as_file") &&
+                pinToScreenShortcuts->items.at(3).configurationKey ==
                     QStringLiteral(
                         "pin_to_screen_shortcuts/show_text_recognition_results") &&
                 std::get<settings::SettingsLocalShortcutDefinition>(

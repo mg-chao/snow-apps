@@ -442,7 +442,8 @@ bool AdTooltipPrivate::eventFilter(QObject* watched, QEvent* event) {
       refreshVisiblePopup();
     }
   } else if (watched == popupView.surface) {
-    if (event->type() == QEvent::Show || event->type() == QEvent::WinIdChange) {
+    if (event->type() == QEvent::Show ||
+        (event->type() == QEvent::WinIdChange && logicalVisible())) {
       syncTransientOwner();
     }
     if (event->type() == QEvent::Show || event->type() == QEvent::Hide) {

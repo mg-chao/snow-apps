@@ -1090,6 +1090,10 @@ QVector<SettingsItemDefinition> pinToScreenShortcutItems() {
             QT_TRANSLATE_NOOP("SettingsCatalog", "Copy Original Content"),
             []() { return outlined_icons::FileImage(); }),
         localShortcutItem(
+            SettingsLocalShortcutScope::PinToScreen, QStringLiteral("save_as_file"),
+            QT_TRANSLATE_NOOP("SettingsCatalog", "Save as File"),
+            []() { return custom_outlined_icons::Save(); }),
+        localShortcutItem(
             SettingsLocalShortcutScope::PinToScreen,
             QStringLiteral("show_text_recognition_results"),
             QT_TRANSLATE_NOOP("SettingsCatalog", "Show Text Recognition Results"),
