@@ -5,7 +5,6 @@
 #include "snow_canvas_pen_mask_atlas.h"
 #include "snow_canvas_render_geometry.h"
 #include "snow_canvas_renderer.h"
-#include "snow_canvas_tile_cache.h"
 #include "snow_draw_engine_qt/snow_canvas_custom_renderer.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
@@ -930,7 +929,6 @@ void penFilterGeometryCacheRebuildsOnlyTheFinalChunk() {
 }
 
 void retainedPenFilterMaskSkipsRasterAndScanOnReuse() {
-    snow_canvas_tile_cache::clear();
     QImage background(QSize(160, 120), QImage::Format_ARGB32_Premultiplied);
     background.fill(QColor(30, 90, 150));
     QImage output(background.size(), QImage::Format_ARGB32_Premultiplied);
@@ -980,7 +978,6 @@ void retainedPenFilterMaskSkipsRasterAndScanOnReuse() {
             "an unchanged Pen Filter mask must bypass tile rasterization and sparse scanning");
     require(penMaskAtlas.retainedBytes() <= penMaskAtlas.byteBudget(),
             "the retained Pen Filter atlas must remain within its 16 MiB budget");
-    snow_canvas_tile_cache::clear();
 }
 
 void penMaskRasterizersAndTailInvalidationStayDeterministic() {
@@ -1843,127 +1840,6 @@ void distantSameEffectFiltersUseIndependentSpatialGroups() {
             "distant same-effect filters must dispatch from two local spatial unions");
 }
 
-void tileCacheTracksPartialValidityAndGlobalBudget() {
-    snow_canvas_tile_cache::clear();
-    int namespaceToken = 0;
-    int renderCalls = 0;
-    QImage output(512, 512, QImage::Format_ARGB32_Premultiplied);
-    output.fill(Qt::transparent);
-    const auto paint = [&](const QRegion& exposed) {
-        QPainter painter(&output);
-        const auto diagnostics = snow_canvas_tile_cache::render(
-            painter, snow_canvas_tile_cache::RenderRequest{
-                         &namespaceToken,
-                         output.size(),
-                         1.0,
-                         7,
-                         3,
-                         {},
-                         exposed,
-                         [&](QPainter& tilePainter, const QRegion& missing) {
-                             ++renderCalls;
-                             tilePainter.fillRect(missing.boundingRect(), QColor(20, 80, 140));
-                         },
-                     });
-        painter.end();
-        return diagnostics;
-    };
-    const auto cold = paint(QRegion(output.rect()));
-    require(cold.misses == 4 && cold.hits == 0,
-            "a cold 512 square canvas must build four physical tiles");
-    const auto warm = paint(QRegion(output.rect()));
-    require(warm.hits == 4 && warm.misses == 0,
-            "a warm canvas must blit all valid tiles without rerendering");
-    const auto sparse = paint(QRegion(QRect(8, 8, 16, 16)));
-    require(sparse.candidateTileCount == 1 && sparse.visitedTileCount == 1 && sparse.hits == 1 &&
-                sparse.misses == 0,
-            "a sparse one-tile exposure must enumerate and visit only its tile");
-    snow_canvas_tile_cache::invalidate(&namespaceToken, QRegion(QRect(4, 4, 8, 8)), 1.0);
-    const auto partial = paint(QRegion(output.rect()));
-    require(partial.misses == 1 && partial.hits == 3,
-            "a small invalidation must rebuild only the intersecting tile subregion");
-
-    QImage reference(QSize(1024, 1024), QImage::Format_ARGB32_Premultiplied);
-    reference.fill(Qt::transparent);
-    int referenceNamespaceToken = 0;
-    {
-        QPainter painter(&reference);
-        snow_canvas_tile_cache::render(
-            painter, snow_canvas_tile_cache::RenderRequest{
-                         &referenceNamespaceToken,
-                         reference.size(),
-                         1.0,
-                         19,
-                         1,
-                         {},
-                         QRegion(reference.rect()),
-                         [](QPainter& tilePainter, const QRegion& missing) {
-                             tilePainter.fillRect(missing.boundingRect(), QColor(20, 80, 140));
-                         },
-                     });
-        painter.end();
-    }
-
-    QImage largeOutput(reference.size(), QImage::Format_ARGB32_Premultiplied);
-    largeOutput.fill(Qt::transparent);
-    int largeNamespaceToken = 0;
-    const auto paintLarge = [&](const QRegion& exposed) {
-        QPainter painter(&largeOutput);
-        const auto diagnostics = snow_canvas_tile_cache::render(
-            painter, snow_canvas_tile_cache::RenderRequest{
-                         &largeNamespaceToken,
-                         largeOutput.size(),
-                         1.0,
-                         23,
-                         1,
-                         {},
-                         exposed,
-                         [](QPainter& tilePainter, const QRegion& missing) {
-                             tilePainter.fillRect(missing.boundingRect(), QColor(20, 80, 140));
-                         },
-                     });
-        painter.end();
-        return diagnostics;
-    };
-
-    snow_canvas_tile_cache::clear();
-    const QRegion perimeter = QRegion(QRect(0, 0, 1024, 16)) + QRegion(QRect(0, 1008, 1024, 16)) +
-                              QRegion(QRect(0, 16, 16, 992)) + QRegion(QRect(1008, 16, 16, 992));
-    const auto perimeterDiagnostics = paintLarge(perimeter);
-    require(perimeterDiagnostics.candidateTileCount == 12 &&
-                perimeterDiagnostics.visitedTileCount == 12,
-            "a large perimeter must visit only intersecting edge tiles");
-    require(largeOutput.pixelColor(512, 512).alpha() == 0,
-            "a perimeter exposure must not paint an untouched interior tile");
-    const auto fullLarge = paintLarge(QRegion(largeOutput.rect()));
-    require(fullLarge.candidateTileCount == 16 && fullLarge.visitedTileCount == 16,
-            "a full large exposure must enumerate the complete tile grid");
-    require(largeOutput == reference,
-            "sparse perimeter tile acquisition must preserve the full rendered output");
-
-    std::array<unsigned char, 300> cacheNamespaces{};
-    for (std::size_t index = 1; index < cacheNamespaces.size(); ++index) {
-        QImage tile(256, 256, QImage::Format_ARGB32_Premultiplied);
-        QPainter painter(&tile);
-        snow_canvas_tile_cache::render(
-            painter, snow_canvas_tile_cache::RenderRequest{
-                         &cacheNamespaces[index],
-                         tile.size(),
-                         1.0,
-                         index,
-                         1,
-                         {},
-                         QRegion(tile.rect()),
-                         [](QPainter& tilePainter, const QRegion& missing) {
-                             tilePainter.fillRect(missing.boundingRect(), Qt::black);
-                         },
-                     });
-    }
-    require(snow_canvas_tile_cache::retainedBytes() <= snow_canvas_tile_cache::kGlobalByteLimit,
-            "the process-wide retained cache must remain within the exact 128 MiB cap");
-    snow_canvas_tile_cache::clear();
-}
-
 void filterSourceCacheKeepsOverlappingZBoundariesSeparate() {
     snow_canvas_filter_tile_cache::clear();
     int namespaceToken = 0;
@@ -2160,7 +2036,6 @@ int main(int argc, char** argv) {
     mosaicReplayRendersEveryFreeDrawChunk();
     adjacentLayerBatchesEffectsAndKeepsSparseComponents();
     distantSameEffectFiltersUseIndependentSpatialGroups();
-    tileCacheTracksPartialValidityAndGlobalBudget();
     filterSourceCacheKeepsOverlappingZBoundariesSeparate();
     penFilterHoverDrawsAPathContour();
     return 0;

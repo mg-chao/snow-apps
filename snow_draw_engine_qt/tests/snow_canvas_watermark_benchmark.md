@@ -2,7 +2,7 @@
 
 `snow-canvas-watermark-benchmark` measures watermark rendering in isolation and through
 the engine workflows used by Snow Shot. It is intended for same-machine performance tuning,
-not for comparing different computers. The executable writes benchmark CSV format version 3.
+not for comparing different computers. The executable writes benchmark CSV format version 4.
 
 ## Build
 
@@ -72,11 +72,11 @@ Each scenario validates its functional contract before producing a result. Unexp
 cache rebuilds, renderer path selection, preview coalescing, or export failures cause a nonzero exit
 code. Timing values do not cause failures.
 
-## CSV format v3
+## CSV format v4
 
-CSV format version 3 uses stable scenario names. It records logical and physical dimensions, DPR,
+CSV format version 4 uses stable scenario names. It records logical and physical dimensions, DPR,
 render-area dimensions, watermark parameters, batch size, full timing distributions, throughput,
-an output checksum, rendered logical/device bounds, scene-tile statistics, and the following
+an output checksum, rendered logical/device bounds, and the following
 per-sample renderer diagnostics:
 
 - Render calls and early exits.
@@ -87,10 +87,9 @@ per-sample renderer diagnostics:
 
 Environment columns record the resolved font, Qt version, Windows version, CPU architecture,
 compiler, and build type. Generated CSV files are build artifacts and should not be committed by
-default. `scripts/compare_watermark_benchmarks.py` accepts a format-v2 or format-v3 baseline and
-requires a format-v3 candidate. It validates exactly one decoration render and at most one dense fill per
-sample, checks matched visible/hidden exports and zero scene-tile misses for warm
-watermark-only widget paints, and reports p50 deltas plus visible-minus-hidden export overhead.
+default. `scripts/compare_watermark_benchmarks.py` accepts a format-v2, format-v3, or format-v4 baseline and
+requires a format-v4 candidate. It validates exactly one decoration render and at most one dense fill per
+sample, checks matched visible/hidden exports, and reports p50 deltas plus visible-minus-hidden export overhead.
 The optional timing gate uses the recorded-machine policy: warm renderer p50 at 40% of baseline,
 full 1080p preview p50 at 50%, 1080p export watermark overhead at 35%, 4K export watermark
 overhead at 40%, and maximum-text segmented p50 below 5 ms.

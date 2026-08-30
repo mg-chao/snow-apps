@@ -4,7 +4,6 @@
 #include "snow_canvas_render_geometry.h"
 
 #include <algorithm>
-#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <iterator>
@@ -15,11 +14,6 @@ namespace {
 constexpr SnowColorRgba8 kDefaultClearColor{255, 255, 255, 255};
 constexpr int kSceneSpatialCellSize = 128;
 constexpr std::int64_t kMaxCellsPerItem = 4096;
-
-std::uint64_t nextSpotlightGeometryGeneration() {
-    static std::atomic<std::uint64_t> generation{0};
-    return generation.fetch_add(1, std::memory_order_relaxed) + 1;
-}
 
 static_assert(sizeof(SnowPatchCursor) == 24);
 static_assert(offsetof(SnowPatchCursor, decoration_revision) == 8);
@@ -192,7 +186,6 @@ void SnowCanvasDisplayCache::reset(const SnowColorRgba8& clearColor) {
     m_sceneStorage.clear();
     m_overlayStorage.clear();
     m_spotlightStorage.clear();
-    m_spotlightGeometryGeneration = nextSpotlightGeometryGeneration();
     m_lastPenFilterGeometryOpCount = 0;
     m_lastPenFilterGeometryPointCount = 0;
     m_appliedPenFilterGeometryDeltas.clear();
@@ -322,13 +315,9 @@ bool SnowCanvasDisplayCache::sync(SnowRuntime runtime, SnowViewport viewport) {
     const PatchApplyResult overlayApply =
         applyPatchOps(m_overlayStorage, patchInfo.overlay_reset != 0, payload.overlayOps,
                       payload.overlayOpCount, payload.overlayItems, payload.overlayItemCount);
-    const PatchApplyResult spotlightApply = applyPatchOps(
+    applyPatchOps(
         m_spotlightStorage, patchInfo.decoration_reset != 0, payload.spotlightOps,
         payload.spotlightOpCount, payload.spotlightCutouts, payload.spotlightCutoutCount);
-    if (patchInfo.decoration_reset != 0 || payload.spotlightOpCount != 0 ||
-        spotlightApply.structural || !spotlightApply.changedIndices.empty()) {
-        m_spotlightGeometryGeneration = nextSpotlightGeometryGeneration();
-    }
     assignStorage(m_sceneDirtyStorage, payload.sceneDirtyRects, payload.sceneDirtyRectCount);
     assignStorage(m_decorationDirtyStorage, payload.decorationDirtyRects,
                   payload.decorationDirtyRectCount);
@@ -411,10 +400,6 @@ std::uint32_t SnowCanvasDisplayCache::overlayItemCount() const {
 
 std::uint32_t SnowCanvasDisplayCache::spotlightCutoutCount() const {
     return m_spotlightCutoutCount;
-}
-
-std::uint64_t SnowCanvasDisplayCache::spotlightGeometryGeneration() const {
-    return m_spotlightGeometryGeneration;
 }
 
 std::uint32_t SnowCanvasDisplayCache::lastPenFilterGeometryOpCount() const {

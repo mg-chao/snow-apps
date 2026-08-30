@@ -1,7 +1,6 @@
 #include "snow_canvas_display_item.h"
 #include "snow_canvas_filter_render.h"
 #include "snow_canvas_renderer.h"
-#include "snow_canvas_tile_cache.h"
 
 #include <QApplication>
 #include <QElapsedTimer>
@@ -738,122 +737,6 @@ Runner makePenAppendRunner(std::uint32_t type) {
     };
 }
 
-Runner makeTileCacheRunner(std::string scenario, bool cold, bool overlayOnly,
-                           qreal devicePixelRatio) {
-    return [=](const Options& options, std::string& error) -> std::optional<Result> {
-        constexpr int logicalWidth = 960;
-        constexpr int logicalHeight = 540;
-        const QSize physicalSize(qCeil(logicalWidth * devicePixelRatio),
-                                 qCeil(logicalHeight * devicePixelRatio));
-        QImage output(physicalSize, QImage::Format_ARGB32_Premultiplied);
-        output.setDevicePixelRatio(devicePixelRatio);
-        output.fill(Qt::transparent);
-        QImage background =
-            makePatternedImage(physicalSize.width(), physicalSize.height(), devicePixelRatio);
-        SnowSceneDisplayItem filter{};
-        filter.kind = SNOW_SCENE_DISPLAY_ITEM_FILTER;
-        filter.width = logicalWidth;
-        filter.height = logicalHeight;
-        filter.filter = snow_filter_render_spec_resolve(1, 0.8);
-        filter.opacity = 1.0;
-        const SnowCanvasSceneItem item(filter);
-        SceneDisplayInfo info{};
-        info.surface_width = logicalWidth;
-        info.surface_height = logicalHeight;
-        info.camera_zoom = 1.0;
-        int namespaceToken = 0;
-        snow_canvas_filter_render::RenderWorkspace workspace;
-        std::size_t callbackCount = 0;
-        snow_canvas_tile_cache::clear();
-
-        const auto render = [&] {
-            if (cold) {
-                snow_canvas_tile_cache::invalidateNamespace(&namespaceToken);
-            }
-            snow_canvas_renderer::resetFilterRenderDiagnosticsForCurrentThread();
-            snow_canvas_renderer::FilterRenderDiagnostics aggregateDiagnostics;
-            QPainter painter(&output);
-            const auto tileDiagnostics = snow_canvas_tile_cache::render(
-                painter,
-                snow_canvas_tile_cache::RenderRequest{
-                    &namespaceToken,
-                    QSize(logicalWidth, logicalHeight),
-                    devicePixelRatio,
-                    1,
-                    1,
-                    {},
-                    QRegion(QRect(0, 0, logicalWidth, logicalHeight)),
-                    [&](QPainter& tilePainter, const QRegion& missing) {
-                        ++callbackCount;
-                        snow_canvas_renderer::renderSceneItems(
-                            snow_canvas_renderer::SceneRenderRequest{
-                                &tilePainter,
-                                &info,
-                                &item,
-                                1,
-                                missing,
-                                nullptr,
-                                0,
-                                &background,
-                                nullptr,
-                                nullptr,
-                                nullptr,
-                                &workspace,
-                            });
-                        snow_canvas_renderer::accumulateFilterRenderDiagnostics(
-                            aggregateDiagnostics,
-                            snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread());
-                    },
-                });
-            painter.end();
-            snow_canvas_renderer::setFilterRenderDiagnosticsForCurrentThread(aggregateDiagnostics);
-            snow_canvas_renderer::recordTileCacheDiagnosticsForCurrentThread(
-                tileDiagnostics.hits, tileDiagnostics.misses, tileDiagnostics.evictions);
-        };
-
-        if (!cold || overlayOnly) {
-            render();
-        }
-        for (int iteration = 0; iteration < options.warmupIterations; ++iteration) {
-            render();
-        }
-        callbackCount = 0;
-        std::vector<double> samples;
-        samples.reserve(options.measuredIterations);
-        for (int iteration = 0; iteration < options.measuredIterations; ++iteration) {
-            QElapsedTimer timer;
-            timer.start();
-            render();
-            samples.push_back(timer.nsecsElapsed() / 1'000'000.0);
-        }
-        Result result;
-        result.suite = "renderer";
-        result.scenario = scenario;
-        result.effect = "gaussian";
-        result.workload =
-            overlayOnly ? "overlay_only_warm_tiles" : (cold ? "cold_tiles" : "warm_tiles");
-        result.width = logicalWidth;
-        result.height = logicalHeight;
-        result.devicePixelRatio = devicePixelRatio;
-        result.strength = 0.8;
-        result.filterCount = 1;
-        result.exposedWidth = logicalWidth;
-        result.exposedHeight = logicalHeight;
-        result.checksum = imageChecksum(output);
-        result.diagnostics = snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread();
-        if ((cold && callbackCount == 0) || (!cold && callbackCount != 0) ||
-            (overlayOnly && result.diagnostics.effectDispatchCount != 0) || result.checksum == 0) {
-            error = "tile-cache scenario did not reach its expected cold/warm path: " + scenario;
-            snow_canvas_tile_cache::clear();
-            return std::nullopt;
-        }
-        snow_canvas_tile_cache::clear();
-        return finishResult(std::move(result), samples,
-                            static_cast<std::uint64_t>(physicalSize.width()) *
-                                physicalSize.height());
-    };
-}
-
 QRect centeredRect(int surfaceWidth, int surfaceHeight, int width, int height) {
     return QRect((surfaceWidth - width) / 2, (surfaceHeight - height) / 2, width, height);
 }
@@ -1058,24 +941,6 @@ std::vector<Scenario> makeScenarios() {
     fractionalDpi.devicePixelRatio = 1.25;
     addRenderer(fractionalDpi, "local 256x256 Gaussian filter at DPR 1.25");
 
-    scenarios.push_back(Scenario{
-        "renderer_tile_cache_cold_gaussian_dpr1",
-        Suite::Renderer,
-        "cold retained tile cache with Gaussian content",
-        makeTileCacheRunner("renderer_tile_cache_cold_gaussian_dpr1", true, false, 1.0),
-    });
-    scenarios.push_back(Scenario{
-        "renderer_tile_cache_warm_gaussian_dpr1",
-        Suite::Renderer,
-        "warm retained tile cache with Gaussian content",
-        makeTileCacheRunner("renderer_tile_cache_warm_gaussian_dpr1", false, false, 1.0),
-    });
-    scenarios.push_back(Scenario{
-        "renderer_overlay_only_warm_dpr1",
-        Suite::Renderer,
-        "overlay-only repaint over warm cached Gaussian content",
-        makeTileCacheRunner("renderer_overlay_only_warm_dpr1", false, true, 1.0),
-    });
     return scenarios;
 }
 
@@ -1126,8 +991,8 @@ void printResults(const std::vector<Result>& results) {
                       << " pen_reused_after_patch=" << result.diagnostics.penAtlasReusedAfterPatch
                       << " pen_simd_rasters=" << result.diagnostics.penSimdRasterExecutions
                       << " pen_atlas_bytes=" << result.diagnostics.retainedPenAtlasBytes
-                      << " tile_hits=" << result.diagnostics.tileHits
-                      << " tile_misses=" << result.diagnostics.tileMisses
+                      << " source_tile_hits=" << result.diagnostics.sourceTileHits
+                      << " source_tile_misses=" << result.diagnostics.sourceTileMisses
                       << " parallel_jobs=" << result.diagnostics.parallelJobs
                       << " retained_bytes=" << result.diagnostics.retainedWorkspaceBytes
                       << " gaussian_passes=" << result.diagnostics.gaussianPasses
@@ -1176,7 +1041,8 @@ bool writeCsv(const std::string& path, const std::vector<Result>& results, std::
               "pen_culled_chunks,pen_rasterized_tiles,pen_rasterized_pixels,pen_atlas_hits,"
               "pen_atlas_misses,pen_atlas_evictions,pen_reused_after_patch,pen_simd_rasters,"
               "retained_pen_atlas_bytes,allocated_bytes,copied_bytes,"
-              "scratch_reuse,tile_hits,tile_misses,tile_evictions,parallel_jobs,retained_bytes,"
+              "scratch_reuse,source_tile_hits,source_tile_misses,source_tile_evictions,"
+              "parallel_jobs,retained_bytes,"
               "gaussian_passes,gaussian_downsample_avx2,gaussian_reconstruction_avx2,"
               "opaque_rect_dispatches,constant_rect_dispatches,"
               "scene_replay_ns,path_construction_ns,mask_construction_ns,mask_scan_ns,"
@@ -1184,7 +1050,7 @@ bool writeCsv(const std::string& path, const std::vector<Result>& results, std::
               "reconstruction_ns,presentation_ns,simd_backend\n";
     stream << std::fixed << std::setprecision(6);
     for (const Result& result : results) {
-        stream << "6," << csvEscape(result.suite) << ',' << csvEscape(result.scenario) << ','
+        stream << "7," << csvEscape(result.suite) << ',' << csvEscape(result.scenario) << ','
                << csvEscape(result.effect) << ',' << csvEscape(result.workload) << ','
                << result.width << ',' << result.height << ',' << result.devicePixelRatio << ','
                << result.strength << ',' << result.filterCount << ',' << result.exposedWidth << ','
@@ -1220,8 +1086,10 @@ bool writeCsv(const std::string& path, const std::vector<Result>& results, std::
                << result.diagnostics.penSimdRasterExecutions << ','
                << result.diagnostics.retainedPenAtlasBytes << ','
                << result.diagnostics.allocatedBytes << ',' << result.diagnostics.copiedBytes << ','
-               << result.diagnostics.scratchReuseCount << ',' << result.diagnostics.tileHits << ','
-               << result.diagnostics.tileMisses << ',' << result.diagnostics.tileEvictions << ','
+               << result.diagnostics.scratchReuseCount << ','
+               << result.diagnostics.sourceTileHits << ','
+               << result.diagnostics.sourceTileMisses << ','
+               << result.diagnostics.sourceTileEvictions << ','
                << result.diagnostics.parallelJobs << ','
                << result.diagnostics.retainedWorkspaceBytes << ','
                << result.diagnostics.gaussianPasses << ','

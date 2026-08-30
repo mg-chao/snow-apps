@@ -5,7 +5,6 @@ namespace snow_canvas_widget_paint_frame {
 snow_canvas_compositor::Frame build(const Request& request) {
     snow_canvas_compositor::Frame frame;
     frame.widget = request.widget;
-    frame.cacheOwner = request.widget;
     frame.showDirtyRects = request.showDirtyRects;
     frame.workspace = request.workspace;
 
@@ -17,7 +16,6 @@ snow_canvas_compositor::Frame build(const Request& request) {
         frame.spotlightInfo = &cache.spotlightInfo();
         frame.spotlightCutouts = cache.spotlightCutouts();
         frame.spotlightCutoutCount = cache.spotlightCutoutCount();
-        frame.spotlightGeometryGeneration = cache.spotlightGeometryGeneration();
         frame.overlayInfo = &cache.overlayInfo();
         frame.sceneItems = cache.sceneItems();
         frame.sceneItemCount = cache.sceneItemCount();

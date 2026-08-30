@@ -55,11 +55,6 @@ struct FilterRenderDiagnostics {
     std::size_t allocatedBytes = 0;
     std::size_t copiedBytes = 0;
     std::size_t scratchReuseCount = 0;
-    std::size_t tileHits = 0;
-    std::size_t tileMisses = 0;
-    std::size_t tileEvictions = 0;
-    std::size_t tileCandidates = 0;
-    std::size_t tileVisits = 0;
     std::size_t sourceTileHits = 0;
     std::size_t sourceTileMisses = 0;
     std::size_t sourceTileEvictions = 0;
@@ -69,10 +64,6 @@ struct FilterRenderDiagnostics {
     std::size_t sourceMergedNodes = 0;
     std::size_t sourceOverlappingNodes = 0;
     std::size_t retainedSourceBytes = 0;
-    std::size_t maskCacheHits = 0;
-    std::size_t maskCacheMisses = 0;
-    std::size_t maskCacheEvictions = 0;
-    std::size_t retainedMaskBytes = 0;
     std::size_t parallelJobs = 0;
     std::size_t retainedWorkspaceBytes = 0;
     std::size_t gaussianPasses = 0;
@@ -89,7 +80,7 @@ struct FilterRenderDiagnostics {
     std::uint64_t reconstructionNanoseconds = 0;
     std::uint64_t presentationNanoseconds = 0;
     const char* simdBackend = "scalar";
-    // Retained aliases for existing diagnostics consumers.
+    // Compatibility aliases for existing diagnostics consumers.
     std::size_t workingSurfacePixelCount = 0;
     std::size_t peakEffectPixelCount = 0;
     std::size_t recorderCount = 0;
@@ -132,9 +123,6 @@ void resetFilterRenderDiagnosticsForCurrentThread();
 void accumulateFilterRenderDiagnostics(FilterRenderDiagnostics& target,
                                        const FilterRenderDiagnostics& source);
 void setFilterRenderDiagnosticsForCurrentThread(const FilterRenderDiagnostics& diagnostics);
-void recordTileCacheDiagnosticsForCurrentThread(std::size_t hits, std::size_t misses,
-                                                std::size_t evictions, std::size_t candidates = 0,
-                                                std::size_t visits = 0);
 std::size_t watermarkLayoutCacheBuildCountForCurrentThread();
 std::size_t watermarkDirectFallbackCountForCurrentThread();
 WatermarkRenderDiagnostics watermarkRenderDiagnosticsForCurrentThread();

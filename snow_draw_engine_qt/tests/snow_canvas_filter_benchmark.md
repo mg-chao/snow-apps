@@ -3,7 +3,7 @@
 `snow-canvas-filter-benchmark` measures both the CPU image-filter kernels and the complete
 Qt scene-rendering path. The kernel suite separates effect and opacity-blending costs. The
 renderer suite includes sparse planning, spatial culling, working-surface allocation, effect
-batching, mask composition, filtering, retained tile-cache behavior, and final composition.
+batching, mask composition, filtering, retained filter-source tile behavior, and final composition.
 
 `snow-canvas-pen-filter-pipeline-benchmark` measures the interactive path from batched pointer
 input through Rust composition, the incremental C ABI, the C++ display cache, mask generation,
@@ -41,14 +41,15 @@ The default run uses 10 warmups and 100 measured iterations. Use `--warmup` and
 `--iterations` to override those counts. Results include distribution
 statistics and throughput; renderer rows also report exposed/working pixels, sparse components,
 candidates and replayed items, original filters and effect dispatches, batching, memory traffic,
-tile hits/misses/evictions, retained workspace bytes, Gaussian pass count, separate scene replay,
+filter-source tile hits/misses/evictions, retained workspace bytes, Gaussian pass count, separate scene replay,
 mask construction, downsample, reduced blur, reconstruction, and presentation timings, parallel
 jobs, separate Gaussian downsample/reconstruction AVX2 execution counts, and the SIMD backend
-that actually executed. CSV format version 6 adds queried/culled pen chunks, rasterized pen
-tiles/pixels, pen-atlas hits/misses/evictions, tiles reused after geometry patches, SIMD pen
-raster executions, and retained pen-atlas bytes. Pen rows no longer use the whole-mask path-build
-or scan counters. The scenario matrix
-includes DPR 1/1.25/2, cold/warm cache, overlay-only reuse, sparse distant dirty regions, 10K
+that actually executed. CSV format version 7 names filter-source cache statistics explicitly and
+removes the obsolete general scene diagnostics. It retains the version 6 queried/culled
+pen chunks, rasterized pen tiles/pixels, pen-atlas hits/misses/evictions, tiles reused after geometry
+patches, SIMD pen raster executions, and retained pen-atlas bytes. Pen rows no longer use the
+whole-mask path-build or scan counters. The scenario matrix
+includes DPR 1/1.25/2, cold/warm filter-source cache, overlay-only reuse, sparse distant dirty regions, 10K
 mostly offscreen items, very-low/low/high Gaussian strengths, mixed filter layers, mixed strengths,
 and forced execution backends.
 CSV files use stable scenario names and

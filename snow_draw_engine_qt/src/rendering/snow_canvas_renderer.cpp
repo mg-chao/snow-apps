@@ -8,7 +8,6 @@
 #include "snow_canvas_text.h"
 #include "snow_canvas_text_layout.h"
 #include "snow_canvas_text_render.h"
-#include "snow_canvas_tile_cache.h"
 #include "snow_canvas_filter_tile_cache.h"
 #include "snow_draw_engine_qt/snow_canvas_custom_renderer.h"
 
@@ -1347,18 +1346,6 @@ struct SparseMaskScan {
     std::size_t coveredPixels = 0;
 };
 
-void hashMaskKey(std::uint64_t& hash, std::uint64_t value) {
-    hash ^= value;
-    hash *= 0x100000001b3ULL;
-}
-
-void hashMaskDouble(std::uint64_t& hash, double value) {
-    std::uint64_t bits = 0;
-    static_assert(sizeof(bits) == sizeof(value));
-    std::memcpy(&bits, &value, sizeof(bits));
-    hashMaskKey(hash, bits);
-}
-
 SparseMaskScan scanSparseMask(const QImage& mask, const QPoint& origin) {
     SparseMaskScan result;
     const auto blockIndex = [](int coordinate) {
@@ -1808,11 +1795,6 @@ void renderSceneItemsTiled(const SceneRenderRequest& request) {
     g_filterDiagnostics.sourceTileVisits += retainedDiagnostics.hits + retainedDiagnostics.misses;
     g_filterDiagnostics.sourceDependencyInvalidations += retainedDiagnostics.dependencyInvalidations;
     g_filterDiagnostics.retainedSourceBytes = retainedDiagnostics.retainedBytes;
-    g_filterDiagnostics.tileHits = g_filterDiagnostics.sourceTileHits;
-    g_filterDiagnostics.tileMisses = g_filterDiagnostics.sourceTileMisses;
-    g_filterDiagnostics.tileEvictions = g_filterDiagnostics.sourceTileEvictions;
-    g_filterDiagnostics.tileCandidates = g_filterDiagnostics.sourceTileCandidates;
-    g_filterDiagnostics.tileVisits = g_filterDiagnostics.sourceTileVisits;
     if (request.diagnostics != nullptr) {
         *request.diagnostics = g_filterDiagnostics;
     }
@@ -1831,9 +1813,9 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
     SnowCanvasCustomRenderer* backgroundRenderer = request.backgroundRenderer;
     const SnowCanvasRenderContext* backgroundContext = request.backgroundContext;
     const SnowCanvasDisplayCache* displayCache = request.displayCache;
-    const void* maskCacheNamespace = request.cacheNamespace != nullptr
-                                         ? request.cacheNamespace
-                                         : static_cast<const void*>(displayCache);
+    const void* penMaskNamespace = request.cacheNamespace != nullptr
+                                       ? request.cacheNamespace
+                                       : static_cast<const void*>(displayCache);
     snow_canvas_filter_render::RenderWorkspace* renderWorkspace = request.workspace;
     const snow_canvas_filter_render::ExecutionOptions& execution = request.execution;
     g_filterDiagnostics = {};
@@ -1878,7 +1860,7 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                         return index < sceneItemCount && sceneItems[index].is_free_draw != 0;
                     });
     if (hasPenFilterItems) {
-        penMaskAtlas.beginFrame(maskCacheNamespace, displayInfo, devicePixelRatio, displayCache);
+        penMaskAtlas.beginFrame(penMaskNamespace, displayInfo, devicePixelRatio, displayCache);
     }
     struct CachedFilterFrameInfo {
         bool effective = false;
@@ -2535,88 +2517,55 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                                 g_filterDiagnostics.maskPixelCount += boundingPixels;
                             }
                         } else {
-                            std::uint64_t maskKey = 0xcbf29ce484222325ULL;
-                            for (int value : {maskPixels.x(), maskPixels.y(), maskPixels.width(),
-                                              maskPixels.height()}) {
-                                hashMaskKey(maskKey, static_cast<std::uint32_t>(value));
-                            }
-                            hashMaskDouble(maskKey, devicePixelRatio);
-                            hashMaskDouble(maskKey, displayInfo.camera_center_x);
-                            hashMaskDouble(maskKey, displayInfo.camera_center_y);
-                            hashMaskDouble(maskKey, displayInfo.camera_zoom);
-                            for (std::uint32_t filterIndex : group.indices) {
-                                const SnowCanvasSceneItem& filter = sceneItems[filterIndex];
-                                hashMaskKey(maskKey, filter.element_id.index);
-                                hashMaskKey(maskKey, filter.element_id.generation);
-                                hashMaskKey(maskKey, filter.penFilterGeometryRevision());
-                                hashMaskDouble(maskKey, filter.center_x);
-                                hashMaskDouble(maskKey, filter.center_y);
-                                hashMaskDouble(maskKey, filter.width);
-                                hashMaskDouble(maskKey, filter.height);
-                                hashMaskDouble(maskKey, filter.rotation);
-                                hashMaskDouble(maskKey, filter.stroke_width);
-                                hashMaskDouble(maskKey, filter.opacity);
-                            }
-                            std::shared_ptr<const snow_canvas_tile_cache::MaskTile> retainedMask =
-                                hasPenFilter
-                                    ? nullptr
-                                    : snow_canvas_tile_cache::findMask(maskCacheNamespace, maskKey);
                             QImage* generatedMask = nullptr;
                             SparseMaskScan generatedScan;
-                            if (retainedMask) {
-                                ++g_filterDiagnostics.maskCacheHits;
-                            } else {
-                                if (!hasPenFilter) {
-                                    ++g_filterDiagnostics.maskCacheMisses;
-                                }
-                                const auto maskStart = std::chrono::steady_clock::now();
-                                QImage& mask =
-                                    workspace.alphaScratch(maskPixels.size(), devicePixelRatio);
-                                if (mask.isNull()) {
+                            const auto maskStart = std::chrono::steady_clock::now();
+                            QImage& mask =
+                                workspace.alphaScratch(maskPixels.size(), devicePixelRatio);
+                            if (mask.isNull()) {
+                                continue;
+                            }
+                            generatedMask = &mask;
+                            mask.fill(0);
+                            QPainter maskPainter(&mask);
+                            maskPainter.setRenderHint(QPainter::Antialiasing, true);
+                            const QPointF maskLogicalOrigin =
+                                surfaceGeometry.logicalOrigin +
+                                QPointF(maskPixels.left() / devicePixelRatio,
+                                        maskPixels.top() / devicePixelRatio);
+                            maskPainter.translate(-maskLogicalOrigin);
+                            maskPainter.setClipRect(maskBounds);
+                            for (std::uint32_t filterIndex : group.indices) {
+                                const SnowCanvasSceneItem& filter = sceneItems[filterIndex];
+                                if (filter.is_free_draw != 0) {
                                     continue;
                                 }
-                                generatedMask = &mask;
-                                mask.fill(0);
-                                QPainter maskPainter(&mask);
-                                maskPainter.setRenderHint(QPainter::Antialiasing, true);
-                                const QPointF maskLogicalOrigin =
-                                    surfaceGeometry.logicalOrigin +
-                                    QPointF(maskPixels.left() / devicePixelRatio,
-                                            maskPixels.top() / devicePixelRatio);
-                                maskPainter.translate(-maskLogicalOrigin);
-                                maskPainter.setClipRect(maskBounds);
-                                for (std::uint32_t filterIndex : group.indices) {
-                                    const SnowCanvasSceneItem& filter = sceneItems[filterIndex];
-                                    if (filter.is_free_draw != 0) {
-                                        continue;
-                                    }
-                                    maskPainter.setOpacity(colorFilterCoverage(filter));
-                                    const QPainterPath& maskPath = filterPath(filterIndex);
-                                    maskPainter.fillPath(maskPath, Qt::white);
-                                }
-                                maskPainter.end();
-                                if (hasPenFilter) {
-                                    try {
-                                        generatedScan = compositePenTilesIntoMask(
-                                            mask, maskPixels, surfaceGeometry.pixelBounds,
-                                            group.indices, sceneItems, displayInfo,
-                                            devicePixelRatio, penMaskAtlas, execution,
-                                            onlyPenFilters);
-                                    } catch (const std::bad_alloc&) {
-                                        continue;
-                                    }
-                                }
-                                g_filterDiagnostics.maskConstructionNanoseconds +=
-                                    static_cast<std::uint64_t>(
-                                        std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                            std::chrono::steady_clock::now() - maskStart)
-                                            .count());
+                                maskPainter.setOpacity(colorFilterCoverage(filter));
+                                const QPainterPath& maskPath = filterPath(filterIndex);
+                                maskPainter.fillPath(maskPath, Qt::white);
                             }
+                            maskPainter.end();
+                            if (hasPenFilter) {
+                                try {
+                                    generatedScan = compositePenTilesIntoMask(
+                                        mask, maskPixels, surfaceGeometry.pixelBounds,
+                                        group.indices, sceneItems, displayInfo,
+                                        devicePixelRatio, penMaskAtlas, execution,
+                                        onlyPenFilters);
+                                } catch (const std::bad_alloc&) {
+                                    continue;
+                                }
+                            }
+                            g_filterDiagnostics.maskConstructionNanoseconds +=
+                                static_cast<std::uint64_t>(
+                                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                        std::chrono::steady_clock::now() - maskStart)
+                                        .count());
                             const std::size_t effectPixels =
                                 static_cast<std::size_t>(maskPixels.width()) *
                                 static_cast<std::size_t>(maskPixels.height());
                             bool scanSucceeded = true;
-                            if (!retainedMask && !onlyPenFilters) {
+                            if (!onlyPenFilters) {
                                 const auto scanStart = std::chrono::steady_clock::now();
                                 try {
                                     generatedScan =
@@ -2629,29 +2578,11 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                                         std::chrono::duration_cast<std::chrono::nanoseconds>(
                                             std::chrono::steady_clock::now() - scanStart)
                                             .count());
-                                if (scanSucceeded && maskCacheNamespace != nullptr &&
-                                    !hasPenFilter) {
-                                    snow_canvas_tile_cache::storeMask(
-                                        maskCacheNamespace, maskKey,
-                                        snow_canvas_tile_cache::MaskTile{
-                                            generatedMask->copy(),
-                                            maskPixels.topLeft(),
-                                            generatedScan.spans,
-                                            generatedScan.occupiedBlocks,
-                                            generatedScan.coveredPixels,
-                                        });
-                                }
                             }
-                            const QImage& mask =
-                                retainedMask ? retainedMask->image : *generatedMask;
-                            const auto& spans =
-                                retainedMask ? retainedMask->spans : generatedScan.spans;
-                            const auto& occupiedBlocks = retainedMask
-                                                             ? retainedMask->occupiedBlocks
-                                                             : generatedScan.occupiedBlocks;
-                            const std::size_t coveredPixels = retainedMask
-                                                                  ? retainedMask->coveredPixels
-                                                                  : generatedScan.coveredPixels;
+                            const QImage& maskImage = *generatedMask;
+                            const auto& spans = generatedScan.spans;
+                            const auto& occupiedBlocks = generatedScan.occupiedBlocks;
+                            const std::size_t coveredPixels = generatedScan.coveredPixels;
                             g_filterDiagnostics.maskBoundingPixelCount += effectPixels;
                             g_filterDiagnostics.maskCoveredPixelCount += coveredPixels;
                             const bool useSparse = scanSucceeded && !execution.forceDenseMask &&
@@ -2659,13 +2590,13 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                                                    coveredPixels * 2 <= effectPixels;
                             if (useSparse) {
                                 applied = snow_canvas_filter_render::applyMaskedSparse(
-                                    source, scene, mask, maskPixels.topLeft(), maskPixels, spans,
+                                    source, scene, maskImage, maskPixels.topLeft(), maskPixels, spans,
                                     occupiedBlocks, directParameters, &workspace, execution);
                                 if (applied) {
                                     ++g_filterDiagnostics.sparseDispatchCount;
                                 } else {
                                     applied = snow_canvas_filter_render::applyMasked(
-                                        source, scene, mask, maskPixels.topLeft(), maskPixels,
+                                        source, scene, maskImage, maskPixels.topLeft(), maskPixels,
                                         directParameters, &workspace, execution);
                                     if (applied) {
                                         ++g_filterDiagnostics.denseDispatchCount;
@@ -2673,7 +2604,7 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                                 }
                             } else {
                                 applied = snow_canvas_filter_render::applyMasked(
-                                    source, scene, mask, maskPixels.topLeft(), maskPixels,
+                                    source, scene, maskImage, maskPixels.topLeft(), maskPixels,
                                     directParameters, &workspace, execution);
                                 if (applied) {
                                     ++g_filterDiagnostics.denseDispatchCount;
@@ -2715,8 +2646,6 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
         g_filterDiagnostics.scratchReuseCount = kernelDiagnostics.scratchReuseCount;
         g_filterDiagnostics.parallelJobs = kernelDiagnostics.parallelJobs;
         g_filterDiagnostics.retainedWorkspaceBytes = kernelDiagnostics.retainedBytes;
-        g_filterDiagnostics.maskCacheEvictions += snow_canvas_tile_cache::consumeMaskEvictions();
-        g_filterDiagnostics.retainedMaskBytes = snow_canvas_tile_cache::maskRetainedBytes();
         g_filterDiagnostics.gaussianPasses = kernelDiagnostics.gaussianPasses;
         g_filterDiagnostics.gaussianDownsampleAvx2Executions =
             kernelDiagnostics.gaussianDownsampleAvx2Executions;
@@ -2818,11 +2747,6 @@ void accumulateFilterRenderDiagnostics(FilterRenderDiagnostics& target,
     target.allocatedBytes += source.allocatedBytes;
     target.copiedBytes += source.copiedBytes;
     target.scratchReuseCount += source.scratchReuseCount;
-    target.tileHits += source.tileHits;
-    target.tileMisses += source.tileMisses;
-    target.tileEvictions += source.tileEvictions;
-    target.tileCandidates += source.tileCandidates;
-    target.tileVisits += source.tileVisits;
     target.sourceTileHits += source.sourceTileHits;
     target.sourceTileMisses += source.sourceTileMisses;
     target.sourceTileEvictions += source.sourceTileEvictions;
@@ -2832,10 +2756,6 @@ void accumulateFilterRenderDiagnostics(FilterRenderDiagnostics& target,
     target.sourceMergedNodes += source.sourceMergedNodes;
     target.sourceOverlappingNodes += source.sourceOverlappingNodes;
     target.retainedSourceBytes = std::max(target.retainedSourceBytes, source.retainedSourceBytes);
-    target.maskCacheHits += source.maskCacheHits;
-    target.maskCacheMisses += source.maskCacheMisses;
-    target.maskCacheEvictions += source.maskCacheEvictions;
-    target.retainedMaskBytes = std::max(target.retainedMaskBytes, source.retainedMaskBytes);
     target.parallelJobs += source.parallelJobs;
     target.retainedWorkspaceBytes =
         std::max(target.retainedWorkspaceBytes, source.retainedWorkspaceBytes);
@@ -2869,16 +2789,6 @@ void accumulateFilterRenderDiagnostics(FilterRenderDiagnostics& target,
 
 void setFilterRenderDiagnosticsForCurrentThread(const FilterRenderDiagnostics& diagnostics) {
     g_filterDiagnostics = diagnostics;
-}
-
-void recordTileCacheDiagnosticsForCurrentThread(std::size_t hits, std::size_t misses,
-                                                std::size_t evictions, std::size_t candidates,
-                                                std::size_t visits) {
-    g_filterDiagnostics.tileHits += hits;
-    g_filterDiagnostics.tileMisses += misses;
-    g_filterDiagnostics.tileEvictions += evictions;
-    g_filterDiagnostics.tileCandidates += candidates;
-    g_filterDiagnostics.tileVisits += visits;
 }
 
 void drawOverlayItem(QPainter& painter, const OverlayDisplayInfo& displayInfo,

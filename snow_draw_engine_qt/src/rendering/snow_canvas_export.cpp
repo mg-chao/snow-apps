@@ -144,13 +144,12 @@ void renderRuntimeScene(QPainter& painter, const ExportProjection& projection,
     });
     snow_canvas_spotlight_renderer::render(
         painter, sceneInfo, displayCache.spotlightInfo(), displayCache.spotlightCutouts(),
-        displayCache.spotlightCutoutCount(), displayCache.spotlightGeometryGeneration(),
-        &displayCache, QRectF(0.0, 0.0, sceneInfo.surface_width, sceneInfo.surface_height),
+        displayCache.spotlightCutoutCount(),
+        QRectF(0.0, 0.0, sceneInfo.surface_width, sceneInfo.surface_height),
         painter.hasClipping()
             ? painter.clipRegion()
             : QRegion(QRect(0, 0, static_cast<int>(positiveCeil(sceneInfo.surface_width)),
-                            static_cast<int>(positiveCeil(sceneInfo.surface_height)))),
-        snow_canvas_spotlight_renderer::RenderPolicy::Direct);
+                            static_cast<int>(positiveCeil(sceneInfo.surface_height)))));
     snow_canvas_renderer::WatermarkPatternRenderer::render(
         painter,
         snow_canvas_renderer::WatermarkRenderRequest{

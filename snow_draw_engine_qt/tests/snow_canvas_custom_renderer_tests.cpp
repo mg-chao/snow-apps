@@ -435,7 +435,7 @@ void coalescedSceneRevisionsInvalidateEveryDirtyRegion() {
     SnowCanvasWidget canvas;
     canvas.resize(240, 120);
     require(canvas.setCanvasTool(SnowCanvasTool::Shape),
-            "shape tool should activate for tile invalidation regression setup");
+            "shape tool should activate for scene invalidation regression setup");
     sendMouseEvent(canvas, QEvent::MouseButtonPress, QPointF(20.0, 30.0), Qt::LeftButton,
                    Qt::LeftButton);
     sendMouseEvent(canvas, QEvent::MouseMove, QPointF(60.0, 70.0), Qt::NoButton, Qt::LeftButton);
@@ -454,7 +454,7 @@ void coalescedSceneRevisionsInvalidateEveryDirtyRegion() {
     const QImage uncached = renderCanvas(canvas);
     require(
         cached == uncached,
-        "coalesced scene revisions must not leave earlier dirty regions valid in the tile cache");
+        "coalesced scene revisions must not leave earlier dirty regions valid");
 }
 
 void rectangleStrokeStylesRenderDistinctPatterns() {

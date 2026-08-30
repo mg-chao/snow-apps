@@ -86,7 +86,6 @@ class SnowCanvasDisplayCache {
     std::uint32_t sceneItemCount() const;
     std::uint32_t overlayItemCount() const;
     std::uint32_t spotlightCutoutCount() const;
-    std::uint64_t spotlightGeometryGeneration() const;
     std::uint32_t lastPenFilterGeometryOpCount() const;
     std::uint32_t lastPenFilterGeometryPointCount() const;
     const std::vector<AppliedPenFilterGeometryDelta>& appliedPenFilterGeometryDeltas() const;
@@ -131,7 +130,6 @@ class SnowCanvasDisplayCache {
     std::uint32_t m_sceneItemCount = 0;
     std::uint32_t m_overlayItemCount = 0;
     std::uint32_t m_spotlightCutoutCount = 0;
-    std::uint64_t m_spotlightGeometryGeneration = 0;
     std::uint32_t m_lastPenFilterGeometryOpCount = 0;
     std::uint32_t m_lastPenFilterGeometryPointCount = 0;
     std::vector<AppliedPenFilterGeometryDelta> m_appliedPenFilterGeometryDeltas;

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare a captured watermark baseline with a format-v3 candidate."""
+"""Compare a captured watermark baseline with a format-v4 candidate."""
 
 from __future__ import annotations
 
@@ -18,10 +18,9 @@ COMMON_FIELDS = {
     "samples",
     "p50_ms",
     "render_calls_per_sample",
-    "scene_tile_misses_per_sample",
 }
 
-V3_FIELDS = {
+V4_FIELDS = {
     "selected_strategy",
     "cache_bytes",
     "fragment_coverage",
@@ -39,12 +38,12 @@ V3_FIELDS = {
 def read_results(
     path: Path,
     expected_versions: set[str],
-    require_v3_fields: bool = False,
+    require_v4_fields: bool = False,
 ) -> dict[tuple[str, str, str], dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as stream:
         reader = csv.DictReader(stream)
         fields = set(reader.fieldnames or ())
-        required = COMMON_FIELDS | (V3_FIELDS if require_v3_fields else set())
+        required = COMMON_FIELDS | (V4_FIELDS if require_v4_fields else set())
         missing = required - fields
         if missing:
             raise ValueError(f"{path}: missing columns: {', '.join(sorted(missing))}")
@@ -85,7 +84,6 @@ def validate_structure(results: dict[tuple[str, str, str], dict[str, str]]) -> l
         dense_fills = number(row, "dense_fills_per_sample")
         sparse_batches = number(row, "sparse_batches_per_sample")
         fallback_draws = number(row, "fallback_glyph_draws_per_sample")
-        tile_misses = number(row, "scene_tile_misses_per_sample")
         scenario_is_multi_canvas = row["scenario"].startswith("workflow_multi_canvas")
         expected_render_calls = 2.0 if scenario_is_multi_canvas else 1.0
         is_render_sample = row["suite"] == "renderer" or row["operation"] in {
@@ -115,17 +113,6 @@ def validate_structure(results: dict[tuple[str, str, str], dict[str, str]]) -> l
             errors.append(
                 f"{label}: hidden frame selected {row['selected_strategy']!r}"
             )
-
-        scenario = row["scenario"]
-        if (
-            scenario.startswith("workflow_preview_paint")
-            or scenario.startswith("workflow_steady_widget_paint")
-            or scenario.startswith("workflow_render_area_movement")
-        ):
-            if tile_misses != 0.0:
-                errors.append(
-                    f"{label}: watermark-only paint reported scene tile misses {tile_misses:g}"
-                )
 
     export_rows = {
         row["scenario"]: row
@@ -273,9 +260,9 @@ def print_comparison(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "baseline", type=Path, help="captured format-v2 or format-v3 baseline CSV"
+        "baseline", type=Path, help="captured format-v2, format-v3, or format-v4 baseline CSV"
     )
-    parser.add_argument("candidate", type=Path, help="format-v3 candidate CSV")
+    parser.add_argument("candidate", type=Path, help="format-v4 candidate CSV")
     parser.add_argument(
         "--allow-structural-errors",
         action="store_true",
@@ -289,8 +276,8 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        baseline = read_results(args.baseline, {"2", "3"})
-        candidate = read_results(args.candidate, {"3"}, require_v3_fields=True)
+        baseline = read_results(args.baseline, {"2", "3", "4"})
+        candidate = read_results(args.candidate, {"4"}, require_v4_fields=True)
     except (OSError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
