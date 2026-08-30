@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::*;
 
 impl Engine {
@@ -68,7 +70,7 @@ impl Engine {
         &self,
         id: ViewportId,
         cursor: Option<PatchCursor>,
-    ) -> Result<ViewportPatch, ErrorCode> {
+    ) -> Result<Arc<ViewportPatch>, ErrorCode> {
         Ok(self.viewport_slot(id)?.composer.acquire_patch(cursor))
     }
 

@@ -158,7 +158,17 @@ pub(crate) fn snow_spotlight_cutout_from_rust(
     }
 }
 
-pub(crate) fn snow_scene_display_item_from_rust(value: SceneDisplayItem) -> SnowScenePatchItem {
+/// Converts a scene item into its C representation without cloning the Rust item.
+///
+/// `omit_arrow_points` must be set for pen filters (their points travel through
+/// `pen_filter_geometry_ops` instead) and `omit_path_commands` for arrows whose
+/// commands travel through `path_geometry_ops`; skipping the conversion here
+/// avoids allocating buffers that the patch payload would discard.
+pub(crate) fn snow_scene_display_item_from_rust(
+    value: &SceneDisplayItem,
+    omit_arrow_points: bool,
+    omit_path_commands: bool,
+) -> SnowScenePatchItem {
     let mut converted = SnowScenePatchItem::default();
     let out = &mut converted.view;
     match value {
@@ -222,8 +232,11 @@ pub(crate) fn snow_scene_display_item_from_rust(value: SceneDisplayItem) -> Snow
             out.filter.mosaic_block_size = item.filter.mosaic_block_size;
             out.filter.blur_sigma = item.filter.blur_sigma;
             out.filter.sampling_radius = item.filter.sampling_radius;
-            converted.arrow_points = snow_arrow_points_from_rust(&item.points).into_boxed_slice();
-            out.arrow_point_count = converted.arrow_points.len() as u32;
+            if !omit_arrow_points {
+                converted.arrow_points =
+                    snow_arrow_points_from_rust(&item.points).into_boxed_slice();
+                out.arrow_point_count = converted.arrow_points.len() as u32;
+            }
         }
         SceneDisplayItem::Arrow(item) => {
             out.kind = SnowSceneDisplayItemKind::Arrow;
@@ -246,11 +259,16 @@ pub(crate) fn snow_scene_display_item_from_rust(value: SceneDisplayItem) -> Snow
                 snow_draw_engine::DisplayBlendMode::Multiply => SnowBlendMode::Multiply,
             };
 
-            converted.arrow_points = snow_arrow_points_from_rust(&item.points).into_boxed_slice();
-            out.arrow_point_count = converted.arrow_points.len() as u32;
-            converted.arrow_path_commands =
-                snow_arrow_path_commands_from_rust(&item.path_commands).into_boxed_slice();
-            out.arrow_path_command_count = converted.arrow_path_commands.len() as u32;
+            if !omit_arrow_points {
+                converted.arrow_points =
+                    snow_arrow_points_from_rust(&item.points).into_boxed_slice();
+                out.arrow_point_count = converted.arrow_points.len() as u32;
+            }
+            if !omit_path_commands {
+                converted.arrow_path_commands =
+                    snow_arrow_path_commands_from_rust(&item.path_commands).into_boxed_slice();
+                out.arrow_path_command_count = converted.arrow_path_commands.len() as u32;
+            }
             converted.arrowhead_primitives =
                 snow_arrowhead_primitives_from_rust(&item.arrowhead_primitives).into_boxed_slice();
             out.arrowhead_primitive_count = converted.arrowhead_primitives.len() as u32;
@@ -342,26 +360,16 @@ pub(crate) fn snow_scene_display_item_from_rust(value: SceneDisplayItem) -> Snow
 }
 
 pub(crate) fn snow_scene_patch_item_from_rust(
-    value: SceneDisplayItem,
+    value: &SceneDisplayItem,
     omit_path_commands: bool,
 ) -> SnowScenePatchItem {
-    let is_pen_filter = matches!(&value, SceneDisplayItem::Filter(filter) if filter.is_pen_filter);
-    let mut converted = snow_scene_display_item_from_rust(value);
-    if is_pen_filter {
-        converted.arrow_points = Box::default();
-        converted.view.arrow_point_count = 0;
-        converted.refresh_pointers();
-    }
-    if omit_path_commands {
-        converted.arrow_path_commands = Box::default();
-        converted.view.arrow_path_command_count = 0;
-        converted.refresh_pointers();
-    }
-    converted
+    let omit_arrow_points =
+        matches!(value, SceneDisplayItem::Filter(filter) if filter.is_pen_filter);
+    snow_scene_display_item_from_rust(value, omit_arrow_points, omit_path_commands)
 }
 
 pub(crate) fn snow_overlay_display_item_from_rust(
-    value: OverlayDisplayItem,
+    value: &OverlayDisplayItem,
 ) -> SnowOverlayPatchItem {
     let mut converted = SnowOverlayPatchItem::default();
     let out = &mut converted.view;
@@ -589,7 +597,7 @@ mod tests {
 
     #[test]
     fn ui_rectangle_display_item_exports_fill_style() {
-        let item = snow_overlay_display_item_from_rust(OverlayDisplayItem::Rectangle(
+        let item = snow_overlay_display_item_from_rust(&OverlayDisplayItem::Rectangle(
             UiRectangleDisplayItem {
                 kind: UiRectKind::SelectionCandidateFrame,
                 width: 80.0,
@@ -604,7 +612,7 @@ mod tests {
 
     #[test]
     fn text_hover_underline_exports_its_dedicated_rectangle_kind() {
-        let item = snow_overlay_display_item_from_rust(OverlayDisplayItem::Rectangle(
+        let item = snow_overlay_display_item_from_rust(&OverlayDisplayItem::Rectangle(
             UiRectangleDisplayItem {
                 kind: UiRectKind::TextHoverUnderline,
                 ..UiRectangleDisplayItem::default()
@@ -617,7 +625,7 @@ mod tests {
 
     #[test]
     fn pen_filter_contour_exports_its_path_and_stroke_width() {
-        let item = snow_overlay_display_item_from_rust(OverlayDisplayItem::PenFilterContour(
+        let item = snow_overlay_display_item_from_rust(&OverlayDisplayItem::PenFilterContour(
             UiFocusConnectionDisplayItem {
                 points: vec![[10.0, 20.0], [50.0, 60.0]],
                 path_commands: vec![
@@ -642,10 +650,14 @@ mod tests {
     #[test]
     fn text_display_view_preserves_full_utf8_content() {
         let text = "text".repeat(SNOW_TEXT_UTF8_CAPACITY);
-        let item = snow_scene_display_item_from_rust(SceneDisplayItem::Text(TextDisplayItem {
-            text: text.clone(),
-            ..TextDisplayItem::default()
-        }));
+        let item = snow_scene_display_item_from_rust(
+            &SceneDisplayItem::Text(TextDisplayItem {
+                text: text.clone(),
+                ..TextDisplayItem::default()
+            }),
+            false,
+            false,
+        );
         assert_eq!(item.view.text_utf8_len as usize, text.len());
         let bytes =
             unsafe { std::slice::from_raw_parts(item.view.text_utf8.cast::<u8>(), text.len()) };
@@ -654,34 +666,41 @@ mod tests {
 
     #[test]
     fn rectangle_display_item_exports_stroke_style() {
-        let item =
-            snow_scene_display_item_from_rust(SceneDisplayItem::Rectangle(RectangleDisplayItem {
+        let item = snow_scene_display_item_from_rust(
+            &SceneDisplayItem::Rectangle(RectangleDisplayItem {
                 stroke_style: DisplayStrokeStyle::Dashed,
                 ..RectangleDisplayItem::default()
-            }));
+            }),
+            false,
+            false,
+        );
 
         assert_eq!(item.view.stroke_style, SnowStrokeStyle::Dashed);
     }
 
     #[test]
     fn filter_display_item_exports_effect_strength_opacity_and_geometry() {
-        let item = snow_scene_display_item_from_rust(SceneDisplayItem::Filter(FilterDisplayItem {
-            id: DisplayItemId {
-                index: 17,
-                generation: 4,
-            },
-            center_x: 21.0,
-            center_y: 34.0,
-            width: 55.0,
-            height: 89.0,
-            rotation: 0.75,
-            filter: snow_draw_engine::FilterRenderSpec::resolve(
-                DisplayFilterType::GaussianBlur,
-                0.625,
-            ),
-            opacity: 0.4,
-            ..FilterDisplayItem::default()
-        }));
+        let item = snow_scene_display_item_from_rust(
+            &SceneDisplayItem::Filter(FilterDisplayItem {
+                id: DisplayItemId {
+                    index: 17,
+                    generation: 4,
+                },
+                center_x: 21.0,
+                center_y: 34.0,
+                width: 55.0,
+                height: 89.0,
+                rotation: 0.75,
+                filter: snow_draw_engine::FilterRenderSpec::resolve(
+                    DisplayFilterType::GaussianBlur,
+                    0.625,
+                ),
+                opacity: 0.4,
+                ..FilterDisplayItem::default()
+            }),
+            false,
+            false,
+        );
 
         assert_eq!(item.view.kind, SnowSceneDisplayItemKind::Filter);
         assert_eq!(item.view.element_id.index, 17);
@@ -700,13 +719,20 @@ mod tests {
     #[test]
     fn pen_filter_display_item_reuses_the_filter_point_slice_and_width_fields() {
         let points = vec![[1.0, 2.0], [3.0, 5.0], [8.0, 13.0]];
-        let item = snow_scene_display_item_from_rust(SceneDisplayItem::Filter(FilterDisplayItem {
-            points: points.clone().into(),
-            stroke_width: 12.0,
-            is_pen_filter: true,
-            filter: snow_draw_engine::FilterRenderSpec::resolve(DisplayFilterType::Inversion, 1.0),
-            ..FilterDisplayItem::default()
-        }));
+        let item = snow_scene_display_item_from_rust(
+            &SceneDisplayItem::Filter(FilterDisplayItem {
+                points: points.clone().into(),
+                stroke_width: 12.0,
+                is_pen_filter: true,
+                filter: snow_draw_engine::FilterRenderSpec::resolve(
+                    DisplayFilterType::Inversion,
+                    1.0,
+                ),
+                ..FilterDisplayItem::default()
+            }),
+            false,
+            false,
+        );
 
         assert_eq!(item.view.kind, SnowSceneDisplayItemKind::Filter);
         assert_eq!(item.view.is_free_draw, 1);
@@ -735,20 +761,24 @@ mod tests {
             fill_mode: ArrowheadDisplayFillMode::Stroke,
             dash_mode: ArrowheadDisplayDashMode::Inherit,
         };
-        let item = snow_scene_display_item_from_rust(SceneDisplayItem::Arrow(ArrowDisplayItem {
-            points: vec![[6.0, 7.0]; 65],
-            path_commands: vec![ArrowPathCommand::MoveTo { point: [8.0, 9.0] }; 129],
-            arrowhead_primitives: vec![primitive; 17],
-            fill: snow_draw_engine::ColorRgba8 {
-                r: 10,
-                g: 20,
-                b: 30,
-                a: 40,
-            },
-            fill_style: snow_draw_engine::DisplayFillStyle::CrossLine,
-            is_free_draw: true,
-            ..ArrowDisplayItem::default()
-        }));
+        let item = snow_scene_display_item_from_rust(
+            &SceneDisplayItem::Arrow(ArrowDisplayItem {
+                points: vec![[6.0, 7.0]; 65],
+                path_commands: vec![ArrowPathCommand::MoveTo { point: [8.0, 9.0] }; 129],
+                arrowhead_primitives: vec![primitive; 17],
+                fill: snow_draw_engine::ColorRgba8 {
+                    r: 10,
+                    g: 20,
+                    b: 30,
+                    a: 40,
+                },
+                fill_style: snow_draw_engine::DisplayFillStyle::CrossLine,
+                is_free_draw: true,
+                ..ArrowDisplayItem::default()
+            }),
+            false,
+            false,
+        );
 
         assert_eq!(item.view.arrow_point_count, 65);
         assert_eq!(item.view.arrow_path_command_count, 129);
@@ -778,8 +808,8 @@ mod tests {
 
     #[test]
     fn serial_number_display_item_exports_explicit_bound_text_id() {
-        let item = snow_scene_display_item_from_rust(SceneDisplayItem::SerialNumber(
-            SerialNumberDisplayItem {
+        let item = snow_scene_display_item_from_rust(
+            &SceneDisplayItem::SerialNumber(SerialNumberDisplayItem {
                 id: DisplayItemId {
                     index: 3,
                     generation: 11,
@@ -789,8 +819,10 @@ mod tests {
                     generation: 7,
                 }),
                 ..SerialNumberDisplayItem::default()
-            },
-        ));
+            }),
+            false,
+            false,
+        );
         assert_eq!(item.view.has_bound_text_element, 1);
         assert_eq!(item.view.bound_text_element_index, 42);
         assert_eq!(item.view.bound_text_element_generation, 7);
@@ -798,12 +830,14 @@ mod tests {
 
     #[test]
     fn serial_number_display_item_clears_absent_bound_text_id() {
-        let item = snow_scene_display_item_from_rust(SceneDisplayItem::SerialNumber(
-            SerialNumberDisplayItem {
+        let item = snow_scene_display_item_from_rust(
+            &SceneDisplayItem::SerialNumber(SerialNumberDisplayItem {
                 bound_text_id: None,
                 ..SerialNumberDisplayItem::default()
-            },
-        ));
+            }),
+            false,
+            false,
+        );
         assert_eq!(item.view.has_bound_text_element, 0);
     }
 }

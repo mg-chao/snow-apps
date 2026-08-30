@@ -60,7 +60,7 @@ pub struct ViewportComposer {
     overlay_revision: OverlayRevision,
     pen_geometry_revisions: HashMap<DisplayItemId, u64>,
     next_pen_geometry_revision: u64,
-    last_patch: ViewportPatch,
+    last_patch: Arc<ViewportPatch>,
     initialized: bool,
 }
 
@@ -77,7 +77,7 @@ impl Default for ViewportComposer {
             overlay_revision: OverlayRevision(0),
             pen_geometry_revisions: HashMap::new(),
             next_pen_geometry_revision: 0,
-            last_patch: ViewportPatch::default(),
+            last_patch: Arc::new(ViewportPatch::default()),
             initialized: false,
         }
     }
@@ -206,33 +206,38 @@ impl ViewportComposer {
         self.scene_revision = SceneRevision(scene_revision);
         self.decoration_revision = DecorationRevision(decoration_revision);
         self.overlay_revision = OverlayRevision(overlay_revision);
-        self.last_patch = ViewportPatch {
+        self.last_patch = Arc::new(ViewportPatch {
             frame_view,
             decoration: decoration_patch,
             scene: scene_patch,
             pen_filter_geometry_ops,
             path_geometry_ops,
             overlay: overlay_patch,
-        };
+        });
         self.initialized = true;
     }
 
-    pub fn acquire_patch(&self, cursor: Option<PatchCursor>) -> ViewportPatch {
+    /// Returns the patch to apply for the given cursor.
+    ///
+    /// The common incremental branch (the client applied the previous patch)
+    /// hands out the cached patch behind an [`Arc`], so repeated acquisition
+    /// never deep-copies item payloads.
+    pub fn acquire_patch(&self, cursor: Option<PatchCursor>) -> Arc<ViewportPatch> {
         if !self.initialized {
-            return ViewportPatch::default();
+            return Arc::new(ViewportPatch::default());
         }
 
         let current_cursor = self.current_cursor();
         if let Some(cursor) = cursor {
             if cursor == current_cursor {
-                return ViewportPatch {
+                return Arc::new(ViewportPatch {
                     frame_view: self.frame_view,
                     decoration: noop_decoration(self.decoration_revision.0, self.decoration_view),
                     scene: noop_layer(self.scene_revision.0),
                     pen_filter_geometry_ops: Vec::new(),
                     path_geometry_ops: Vec::new(),
                     overlay: noop_layer(self.overlay_revision.0),
-                };
+                });
             }
 
             let incremental_base = PatchCursor {
@@ -241,11 +246,11 @@ impl ViewportComposer {
                 overlay_revision: OverlayRevision(self.last_patch.overlay.base_revision),
             };
             if cursor == incremental_base {
-                return self.last_patch.clone();
+                return Arc::clone(&self.last_patch);
             }
         }
 
-        self.full_reset_patch(cursor)
+        Arc::new(self.full_reset_patch(cursor))
     }
 
     fn full_reset_patch(&self, cursor: Option<PatchCursor>) -> ViewportPatch {
@@ -1508,7 +1513,7 @@ mod tests {
         assert!(dirty.max_x >= 528.0);
     }
 
-    fn patch_for_creation_preview(preview: ElementCreationPreview) -> ViewportPatch {
+    fn patch_for_creation_preview(preview: ElementCreationPreview) -> Arc<ViewportPatch> {
         let model = DocumentModel::new();
         let cache = DocumentSceneCache::new();
         let frame_view = frame_view();
