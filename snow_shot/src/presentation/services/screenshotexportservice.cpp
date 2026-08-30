@@ -18,7 +18,6 @@
 #include <QThread>
 
 #include <algorithm>
-#include <cmath>
 #include <optional>
 #include <utility>
 
@@ -42,73 +41,6 @@ QList<CanvasExportSource> exportSourcesForSelection(const ScreenshotDisplaySessi
         });
     });
     return sources;
-}
-
-QRectF pinnedSurfaceCanvasRect(const QRect& selection, int shadowPadding) {
-    QRectF canvasRect(selection);
-    if (shadowPadding <= 0) {
-        return canvasRect;
-    }
-    return canvasRect.adjusted(
-        -static_cast<qreal>(shadowPadding), -static_cast<qreal>(shadowPadding),
-        static_cast<qreal>(shadowPadding), static_cast<qreal>(shadowPadding));
-}
-
-const CapturedDisplayModel* displayForPinAnchor(const ScreenshotDisplaySession& displaySession,
-                                                const ScreenshotGeometryMapper& geometry,
-                                                const QRect& selection) {
-    const auto topLeft =
-        QPointF(static_cast<qreal>(selection.left()), static_cast<qreal>(selection.top()));
-    const CapturedDisplayModel* display = geometry.displayForCanvasPoint(displaySession, topLeft);
-    if (display == nullptr) {
-        display = geometry.displayForCanvasRect(displaySession, QRectF(selection));
-    }
-    return display;
-}
-
-std::optional<ScreenshotImageLayer> croppedLayerForSelection(const CanvasExportSource& source,
-                                                              const QRectF& selection) {
-    const QRectF imageCanvasRect = source.canvasRect.normalized();
-    if (source.image.isNull() || !imageCanvasRect.isValid() || imageCanvasRect.isEmpty()) {
-        return std::nullopt;
-    }
-
-    const QRectF destinationCanvasRect = imageCanvasRect.intersected(selection);
-    if (!destinationCanvasRect.isValid() || destinationCanvasRect.isEmpty()) {
-        return std::nullopt;
-    }
-
-    const qreal scaleX = source.image.width() / imageCanvasRect.width();
-    const qreal scaleY = source.image.height() / imageCanvasRect.height();
-    if (!std::isfinite(scaleX) || !std::isfinite(scaleY) || scaleX <= 0.0 || scaleY <= 0.0) {
-        return std::nullopt;
-    }
-
-    // Crop the retained display image to the selected part before handing it to the pinned
-    // window. Keep the canvas rect for the cropped pixel bounds so sub-pixel display mappings
-    // still sample the same source pixels as the uncropped layer would have.
-    const QRectF sourcePixels(
-        (destinationCanvasRect.left() - imageCanvasRect.left()) * scaleX,
-        (destinationCanvasRect.top() - imageCanvasRect.top()) * scaleY,
-        destinationCanvasRect.width() * scaleX, destinationCanvasRect.height() * scaleY);
-    const QRect pixelBounds = sourcePixels.toAlignedRect().intersected(source.image.rect());
-    if (pixelBounds.isEmpty()) {
-        return std::nullopt;
-    }
-
-    QImage cropped = source.image.copy(pixelBounds);
-    if (cropped.isNull()) {
-        return std::nullopt;
-    }
-    cropped.setDevicePixelRatio(1.0);
-
-    const QRectF croppedCanvasRect(
-        imageCanvasRect.left() + pixelBounds.left() / scaleX,
-        imageCanvasRect.top() + pixelBounds.top() / scaleY,
-        pixelBounds.width() / scaleX, pixelBounds.height() / scaleY);
-    ScreenshotImageLayer layer{std::move(cropped), croppedCanvasRect, destinationCanvasRect};
-    return layer.isValid() ? std::optional<ScreenshotImageLayer>(std::move(layer))
-                           : std::nullopt;
 }
 
 QImage composeSelectionResultFromRuntime(SnowCanvasRuntime& runtime, const QRect& selection,
@@ -141,14 +73,8 @@ ScreenshotClipboardFormatMode clipboardFormatForStyle(const ScreenshotResultStyl
 
 ScreenshotPinnedSelectionRequest preparePinnedSelectionRequest(
     const ScreenshotDisplaySession& displaySession, const ScreenshotGeometryMapper& geometry,
-    const QRect& selection, const ScreenshotResultStyle& style,
-    const QList<CanvasExportSource>& sources) {
+    const QRect& selection, const ScreenshotResultStyle& style) {
     ScreenshotPinnedSelectionRequest request;
-    const CapturedDisplayModel* display = displayForPinAnchor(displaySession, geometry, selection);
-    if (display == nullptr) {
-        return request;
-    }
-
     request.resultStyle = ScreenshotResultCompositor::normalizedStyle(style);
     const ScreenshotResultLayout layout = ScreenshotResultCompositor::layoutForContent(
         selection.size(), request.resultStyle);
@@ -162,21 +88,8 @@ ScreenshotPinnedSelectionRequest preparePinnedSelectionRequest(
     if (!placement.valid) {
         return request;
     }
-    QList<ScreenshotImageLayer> layers;
-    layers.reserve(sources.size());
-    const QRectF contentCanvasRect(selection);
-    for (const CanvasExportSource& source : sources) {
-        std::optional<ScreenshotImageLayer> layer =
-            croppedLayerForSelection(source, contentCanvasRect);
-        if (layer.has_value()) {
-            layers.push_back(std::move(*layer));
-        }
-    }
-    request.imageSource = ScreenshotImageSource::fromLayers(std::move(layers));
+    request.selection = selection;
     request.geometry = placement.geometry;
-    request.contentCanvasRect = contentCanvasRect;
-    request.surfaceCanvasRect = pinnedSurfaceCanvasRect(selection, shadowPadding);
-    request.geometry.canvasSourceRect = request.surfaceCanvasRect;
     request.fullResolutionScaleBasis = layout.outputRect.size();
     request.screen = placement.screen;
     return request;
@@ -430,36 +343,67 @@ ScreenshotExportService::preparePinnedSelection(const QRect& selection,
         return std::nullopt;
     }
     SNOW_SHOT_PIN_PERF_SCOPE("export.prepare_pin_plan");
-    const QList<CanvasExportSource> sources =
-        exportSourcesForSelection(m_context.displaySession, selection);
     ScreenshotPinnedSelectionRequest request = preparePinnedSelectionRequest(
-        m_context.displaySession, m_context.geometry, selection, style, sources);
-    if (!request.isValid()) {
+        m_context.displaySession, m_context.geometry, selection, style);
+    if (!request.isPrepared()) {
         return std::nullopt;
     }
-    SNOW_SHOT_PIN_PERF_COUNTER("source.mode.layered", 1);
-    SNOW_SHOT_PIN_PERF_COUNTER("source.layer_count", request.imageSource.layers.size());
-    SNOW_SHOT_PIN_PERF_COUNTER("source.retained_bytes",
-                               request.imageSource.retainedBytes());
     return request;
 }
 
 bool ScreenshotExportService::schedulePinnedSelection(
     ScreenshotPinnedSelectionRequest request, QObject* receiver,
     PinRequestCallback callback) {
-    if (!request.isValid() || receiver == nullptr || !callback ||
-        m_completionContext == nullptr) {
+    if (!request.isPrepared() || receiver == nullptr || !callback || m_worker == nullptr ||
+        m_thread == nullptr || !m_thread->isRunning() || m_completionContext == nullptr) {
         return false;
     }
+
+    QByteArray documentSession;
+    QImage directSourceImage = std::exchange(m_nextSelectionSourceImage, QImage());
+    if (directSourceImage.isNull()) {
+        SNOW_SHOT_PIN_PERF_SCOPE("export.serialize_pin_document");
+        documentSession = m_context.runtime.serializeDocumentSession();
+    }
+    QList<CanvasExportSource> sources;
+    if (directSourceImage.isNull()) {
+        sources = exportSourcesForSelection(m_context.displaySession, request.selection);
+    }
+    if (directSourceImage.isNull() && (documentSession.isEmpty() || sources.isEmpty())) {
+        return false;
+    }
+
+    auto* worker = static_cast<ScreenshotExportWorker*>(m_worker);
     const QPointer<QObject> guardedReceiver(receiver);
     const QPointer<QObject> guardedCompletionContext(m_completionContext);
     return QMetaObject::invokeMethod(
-        m_completionContext,
-        [guardedReceiver, guardedCompletionContext, request = std::move(request),
-         callback = std::move(callback)]() mutable {
-            SNOW_SHOT_PIN_PERF_SCOPE("export.pin_callback");
-            if (!guardedReceiver.isNull() && !guardedCompletionContext.isNull()) {
-                callback(std::move(request));
+        worker,
+        [worker, guardedReceiver, guardedCompletionContext, documentSession,
+         sources = std::move(sources), directSourceImage = std::move(directSourceImage),
+         request = std::move(request), callback = std::move(callback)]() mutable {
+            request.image = worker->renderSelection(documentSession, request.selection,
+                                                    request.resultStyle, sources,
+                                                    directSourceImage);
+            if (guardedReceiver.isNull() || guardedCompletionContext.isNull()) {
+                return;
+            }
+            const bool callbackScheduled = QMetaObject::invokeMethod(
+                guardedCompletionContext,
+                [guardedReceiver, guardedCompletionContext, request = std::move(request),
+                 callback = std::move(callback)]() mutable {
+                    SNOW_SHOT_PIN_PERF_SCOPE("export.pin_callback");
+                    if (!guardedReceiver.isNull() && !guardedCompletionContext.isNull()) {
+                        if (request.isValid()) {
+                            SNOW_SHOT_PIN_PERF_COUNTER("source.mode.materialized", 1);
+                            SNOW_SHOT_PIN_PERF_COUNTER("source.retained_bytes",
+                                                       request.image.sizeInBytes());
+                        }
+                        callback(std::move(request));
+                    }
+                },
+                Qt::QueuedConnection);
+            if (!callbackScheduled) {
+                SNOW_SHOT_PIN_PERF_COUNTER("export.failure.schedule_callback", 1);
             }
         },
         Qt::QueuedConnection);

@@ -86,15 +86,19 @@ bool ScreenshotSelectionExportWorkflow::pinSelectionToScreen(ResultValidator val
     if (!request.has_value()) {
         return false;
     }
+    if (m_context.cachedRecognitionResults) {
+        request->recognitionResults = m_context.cachedRecognitionResults();
+    }
     const ScreenshotSelectionParams savedSelectionParams = currentSelectionParams();
 
     return m_context.imageComposer.schedulePinnedSelection(
         std::move(*request), &m_context.callbackContext,
         [this, validator = std::move(validator),
-         completion = std::move(completion), savedSelectionParams](ScreenshotPinnedSelectionRequest pinRequest) mutable {
+         completion = std::move(completion),
+         savedSelectionParams](ScreenshotPinnedSelectionRequest pinRequest) mutable {
             if (validator && !validator()) {
                 if (completion) {
-                    completion(false);
+                    completion(false, {});
                 }
                 return;
             }
@@ -105,7 +109,7 @@ bool ScreenshotSelectionExportWorkflow::pinSelectionToScreen(ResultValidator val
                 persistSelectionParams(savedSelectionParams);
             }
             if (completion) {
-                completion(success);
+                completion(success, success ? std::move(pinRequest.image) : QImage{});
             }
         });
 }

@@ -32,6 +32,7 @@ class QWidget;
 class QUrl;
 struct ScreenshotCaptureState;
 struct ScreenshotTableCommandState;
+struct ScreenshotRecognitionResults;
 
 struct ScreenshotOcrControllerContext {
     ScreenshotCaptureState& captureState;
@@ -99,6 +100,7 @@ class ScreenshotOcrController final : public QObject {
     [[nodiscard]] bool editing() const;
     [[nodiscard]] bool translating() const;
     [[nodiscard]] bool hasTextResult() const;
+    [[nodiscard]] ScreenshotRecognitionResults cachedRecognitionResults() const;
     [[nodiscard]] QString textDraft() const;
     [[nodiscard]] QString originalText() const;
     void setTextDraft(const QString& text);

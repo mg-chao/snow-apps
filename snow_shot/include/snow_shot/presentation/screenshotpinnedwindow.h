@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/screenshotclipboardservice.h"
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
 #include "snow_shot/presentation/screenshotimagesource.h"
+#include "snow_shot/presentation/screenshotrecognitionresults.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 
 #include <QByteArray>
@@ -71,7 +72,6 @@ class ScreenshotPinnedWindow final : public QWidget {
 
   public:
     enum class RuntimeMode {
-        CloneDocument,
         NoDocument,
     };
 
@@ -97,14 +97,13 @@ class ScreenshotPinnedWindow final : public QWidget {
         ScreenshotOcrRecognitionPort* recognition = nullptr;
         ScreenshotQrRecognitionPort* qrRecognition = nullptr;
         SnowShotApiClient* tableRecognition = nullptr;
+        ScreenshotRecognitionResults recognitionResults;
     };
 
-    explicit ScreenshotPinnedWindow(SnowCanvasRuntime& sourceRuntime, QWidget* parent = nullptr);
     explicit ScreenshotPinnedWindow(RuntimeMode mode, QWidget* parent = nullptr);
     ~ScreenshotPinnedWindow() override;
 
     bool present(const Config& config);
-    bool prepareDocument(SnowCanvasRuntime& sourceRuntime);
     bool prewarm(QScreen* screen = nullptr);
     QRect currentNativeGeometry() const;
     static void setRuntimeBorderColor(const QColor& color);
@@ -117,8 +116,6 @@ class ScreenshotPinnedWindow final : public QWidget {
 
   private:
     friend class ScreenshotPinnedEditController;
-
-    ScreenshotPinnedWindow(SnowCanvasRuntime* sourceRuntime, RuntimeMode mode, QWidget* parent);
 
     enum class GeometryMutation {
         Scale,
@@ -275,6 +272,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     QPointer<ScreenshotOcrRecognitionPort> m_recognition;
     QPointer<ScreenshotQrRecognitionPort> m_qrRecognition;
     QPointer<SnowShotApiClient> m_tableRecognition;
+    ScreenshotRecognitionResults m_recognitionResults;
     ScreenshotRecognitionWindow* m_recognitionContent = nullptr;
     QSize m_initialPhysicalSize;
     QSize m_originalPixelSize;

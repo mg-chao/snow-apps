@@ -2,8 +2,8 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONEXPORTWORKFLOWPORTS_H
 
 #include "snow_shot/presentation/screenshotgeometry.h"
-#include "snow_shot/presentation/screenshotimagesource.h"
 #include "snow_shot/presentation/screenshotclipboardservice.h"
+#include "snow_shot/presentation/screenshotrecognitionresults.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 #include "snow_shot/presentation/screenshotselectionparams.h"
 
@@ -19,21 +19,26 @@ class QObject;
 class QScreen;
 
 struct ScreenshotPinnedSelectionRequest {
-    ScreenshotImageSource imageSource;
-    ScreenshotPinnedImageGeometry geometry;
-    QRectF contentCanvasRect;
-    QRectF surfaceCanvasRect;
+    QImage image;
+    QRect selection;
     ScreenshotResultStyle resultStyle;
+    ScreenshotPinnedImageGeometry geometry;
     QSize fullResolutionScaleBasis;
     QPointer<QScreen> screen;
+    ScreenshotRecognitionResults recognitionResults;
 
-    [[nodiscard]] bool isValid() const {
-        return imageSource.isValid() && geometry.nativeGeometry.isValid() &&
-               !geometry.nativeGeometry.isEmpty() && contentCanvasRect.isValid() &&
-               !contentCanvasRect.isEmpty() && surfaceCanvasRect.isValid() &&
-               !surfaceCanvasRect.isEmpty() && surfaceCanvasRect.contains(contentCanvasRect) &&
+    [[nodiscard]] bool isPrepared() const {
+        return !selection.isEmpty() && geometry.nativeGeometry.isValid() &&
+               !geometry.nativeGeometry.isEmpty() && geometry.canvasSourceRect.isValid() &&
+               !geometry.canvasSourceRect.isEmpty() && geometry.initialPhysicalSize.isValid() &&
+               !geometry.initialPhysicalSize.isEmpty() &&
                fullResolutionScaleBasis.isValid() && !fullResolutionScaleBasis.isEmpty() &&
                screen != nullptr;
+    }
+
+    [[nodiscard]] bool isValid() const {
+        return isPrepared() && !image.isNull() && !image.size().isEmpty() &&
+               image.size() == fullResolutionScaleBasis;
     }
 };
 

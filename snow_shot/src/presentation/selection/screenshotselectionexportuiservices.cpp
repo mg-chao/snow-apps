@@ -2,6 +2,7 @@
 
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
+#include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/network/snowshotapiclient.h"
@@ -18,6 +19,40 @@
 #include <algorithm>
 
 namespace {
+ScreenshotRecognitionResults recognitionResultsForPinnedImage(
+    const ScreenshotRecognitionResults& sourceResults, const QRect& sourceSelection,
+    const ScreenshotResultStyle& resultStyle, const QSize& imageSize) {
+    ScreenshotRecognitionResults results = sourceResults;
+    if (!results.text.has_value() || !results.text->error.isEmpty() ||
+        results.text->presentation == nullptr || sourceSelection.isEmpty() ||
+        imageSize.isEmpty()) {
+        return results;
+    }
+
+    const ScreenshotResultLayout layout =
+        ScreenshotResultCompositor::layoutForContent(sourceSelection.size(), resultStyle);
+    if (!layout.isValid() || layout.outputRect.size() != imageSize) {
+        return results;
+    }
+
+    // Cached OCR quads are in the original screenshot canvas. The pinned image is a
+    // separately rendered result whose origin is local to the new canvas and may include
+    // effect padding for the result shadow.
+    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+    presentation->lines = results.text->presentation->lines;
+    const QPointF sourceOrigin = sourceSelection.topLeft();
+    const QPointF destinationOrigin(layout.contentRect.topLeft());
+    presentation->selection = layout.contentRect;
+    for (ScreenshotOcrLine& line : presentation->lines) {
+        for (QPointF& point : line.quad) {
+            point = point - sourceOrigin + destinationOrigin;
+        }
+    }
+    presentation->prepareForRendering();
+    results.text->presentation = std::move(presentation);
+    return results;
+}
+
 void applyPinRuntimeSettings(ScreenshotPinnedWindow::Config* config) {
     if (config == nullptr) {
         return;
@@ -47,20 +82,13 @@ class ScreenshotPinnedWindowPool final : public QObject {
         }
     }
 
-    ScreenshotPinnedWindow* acquire(ScreenshotPinnedWindow::RuntimeMode mode,
-                                    SnowCanvasRuntime* sourceRuntime) {
+    ScreenshotPinnedWindow* acquire(ScreenshotPinnedWindow::RuntimeMode mode) {
         ScreenshotPinnedWindow* window = m_spare;
         bool usedSpare = window != nullptr;
         if (usedSpare) {
             m_spare = nullptr;
         }
 
-        if (window != nullptr && sourceRuntime != nullptr &&
-            !window->prepareDocument(*sourceRuntime)) {
-            window->deleteLater();
-            window = nullptr;
-            usedSpare = false;
-        }
         if (window == nullptr) {
             const QElapsedTimer timer = [&]() {
                 QElapsedTimer value;
@@ -68,10 +96,6 @@ class ScreenshotPinnedWindowPool final : public QObject {
                 return value;
             }();
             window = new ScreenshotPinnedWindow(mode);
-            if (sourceRuntime != nullptr && !window->prepareDocument(*sourceRuntime)) {
-                window->deleteLater();
-                window = nullptr;
-            }
             if (window != nullptr) {
                 SNOW_SHOT_PIN_PERF_COUNTER("shell.construction_ns", timer.nsecsElapsed());
             }
@@ -137,10 +161,10 @@ bool presentPinnedWindowAndSynchronize(ScreenshotPinnedWindow* window,
 } // namespace
 
 ScreenshotSelectionExportUiServices::ScreenshotSelectionExportUiServices(
-    SnowCanvasRuntime& runtime, ScreenshotOcrRecognitionPort* recognition,
+    ScreenshotOcrRecognitionPort* recognition,
     ScreenshotQrRecognitionPort* qrRecognition, SnowShotApiClient* tableRecognition,
     std::function<void()> showMainWindowRequested)
-    : m_runtime(runtime), m_recognition(recognition), m_qrRecognition(qrRecognition),
+    : m_recognition(recognition), m_qrRecognition(qrRecognition),
       m_tableRecognition(tableRecognition),
       m_showMainWindowRequested(std::move(showMainWindowRequested)),
       m_windowPool(std::make_unique<ScreenshotPinnedWindowPool>()) {}
@@ -210,23 +234,27 @@ bool ScreenshotSelectionExportUiServices::presentPinnedSelection(
 
     auto* pinnedWindow =
         m_windowPool != nullptr
-            ? m_windowPool->acquire(ScreenshotPinnedWindow::RuntimeMode::CloneDocument, &m_runtime)
+            ? m_windowPool->acquire(ScreenshotPinnedWindow::RuntimeMode::NoDocument)
             : nullptr;
     if (pinnedWindow == nullptr) {
-        pinnedWindow = new ScreenshotPinnedWindow(m_runtime);
+        pinnedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
     }
     ScreenshotPinnedWindow::Config config;
     config.nativeGeometry = request.geometry.nativeGeometry;
-    config.canvasSourceRect = request.contentCanvasRect;
-    config.contentCanvasRect = request.contentCanvasRect;
-    config.surfaceCanvasRect = request.surfaceCanvasRect;
-    config.resultStyle = request.resultStyle;
+    config.canvasSourceRect = QRectF(QPointF(0.0, 0.0), QSizeF(request.image.size()));
+    config.contentCanvasRect = config.canvasSourceRect;
+    config.surfaceCanvasRect = config.canvasSourceRect;
+    // The request image is already composited using resultStyle. Keep the pinned renderer neutral
+    // so rounded corners and shadows are not applied a second time.
+    config.resultStyle = ScreenshotResultStyle{};
     config.fullResolutionScaleBasis = request.fullResolutionScaleBasis;
-    config.imageSource = request.imageSource;
+    config.imageSource = ScreenshotImageSource::fromImage(request.image, config.canvasSourceRect);
     config.screen = request.screen;
     config.recognition = m_recognition;
     config.qrRecognition = m_qrRecognition;
     config.tableRecognition = m_tableRecognition;
+    config.recognitionResults = recognitionResultsForPinnedImage(
+        request.recognitionResults, request.selection, request.resultStyle, request.image.size());
     config.formattedTextDocument.reset();
     config.formattedPlainText.clear();
     applyPinRuntimeSettings(&config);
@@ -248,7 +276,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
 
     auto* pinnedWindow =
         m_windowPool != nullptr
-            ? m_windowPool->acquire(ScreenshotPinnedWindow::RuntimeMode::NoDocument, nullptr)
+            ? m_windowPool->acquire(ScreenshotPinnedWindow::RuntimeMode::NoDocument)
             : nullptr;
     if (pinnedWindow == nullptr) {
         pinnedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);

@@ -111,12 +111,11 @@ ScreenshotRecognitionSessionController::~ScreenshotRecognitionSessionController(
 
 void ScreenshotRecognitionSessionController::setTarget(ScreenshotRecognitionTarget target) {
     if (target.key == m_target.key && target.canvasRect == m_target.canvasRect &&
-        target.image.cacheKey() == m_target.image.cacheKey() &&
         target.formattedTextDocument == m_target.formattedTextDocument &&
         target.formattedPlainText == m_target.formattedPlainText) {
         return;
     }
-    invalidate();
+    resetTargetState();
     m_target = std::move(target);
     if (m_target.hasFormattedText()) {
         TextCacheEntry entry;
@@ -130,6 +129,96 @@ void ScreenshotRecognitionSessionController::setTarget(ScreenshotRecognitionTarg
                 [this, key = m_target.key]() { handleTextDocumentChanged(key); });
         m_textCache.insert(m_target.key, std::move(entry));
     }
+}
+
+void ScreenshotRecognitionSessionController::seedRecognitionResults(
+    ScreenshotRecognitionResults results) {
+    if (!hasTarget() || !results.isValidFor(m_target.key)) {
+        return;
+    }
+
+    bool textInserted = false;
+    if (!m_target.hasFormattedText() && results.text.has_value() &&
+        results.text->error.isEmpty() && results.text->presentation != nullptr &&
+        !m_textCache.contains(m_target.key)) {
+        const QString original = snow_shot::presentation::originalOcrText(
+            *results.text->presentation);
+        auto editingSession = std::make_shared<ScreenshotOcrTextEditingSession>(original);
+        connect(editingSession->document(), &QTextDocument::contentsChanged, this,
+                [this, key = m_target.key]() { handleTextDocumentChanged(key); });
+        TextCacheEntry entry;
+        entry.recognitionResult = *results.text;
+        entry.presentation = results.text->presentation;
+        entry.editingSession = std::move(editingSession);
+        m_textCache.insert(m_target.key, std::move(entry));
+        textInserted = true;
+    }
+
+    if (results.table.has_value() && results.table->succeeded() &&
+        !m_tableCache.contains(m_target.key)) {
+        ScreenshotTableDocument document = ScreenshotTableDocument::fromHtml(results.table->html);
+        if (!document.empty()) {
+            m_tableResults.insert(m_target.key, *results.table);
+            m_tableCache.insert(
+                m_target.key,
+                std::make_shared<ScreenshotTableEditingSession>(std::move(document)));
+        }
+    }
+
+    if (results.qr.has_value() && results.qr->error.isEmpty() &&
+        !results.qr->contents.isEmpty() && !m_qrCache.contains(m_target.key)) {
+        m_qrResults.insert(m_target.key, *results.qr);
+        m_qrCache.insert(m_target.key, results.qr->contents);
+    }
+
+    if (textInserted && m_active && m_mode == Mode::Text) {
+        m_textCacheKey = m_target.key;
+        m_presentation = m_textCache.value(m_target.key).presentation;
+        applyPresentation(m_presentation);
+        emit textResultChanged(true);
+    }
+    if (m_active && m_mode == Mode::Table) {
+        const auto table = m_tableCache.constFind(m_target.key);
+        if (table != m_tableCache.cend()) {
+            m_tableCacheKey = m_target.key;
+            applyTableSession(table.value());
+        }
+    }
+    if (m_active && m_mode == Mode::Qr) {
+        const auto qr = m_qrCache.constFind(m_target.key);
+        if (qr != m_qrCache.cend()) {
+            m_qrCacheKey = m_target.key;
+            applyQrContents(qr.value());
+        }
+    }
+    updateBusyState();
+    updateTextState();
+}
+
+ScreenshotRecognitionResults
+ScreenshotRecognitionSessionController::cachedRecognitionResults() const {
+    ScreenshotRecognitionResults results;
+    if (!hasTarget()) {
+        return results;
+    }
+    results.key = m_target.key;
+    if (const auto text = m_textCache.constFind(m_target.key); text != m_textCache.cend() &&
+        text->recognitionResult.error.isEmpty() &&
+        text->recognitionResult.presentation != nullptr) {
+        results.text = text->recognitionResult;
+    }
+    if (const auto table = m_tableResults.constFind(m_target.key);
+        table != m_tableResults.cend() && table->succeeded()) {
+        results.table = table.value();
+    }
+    if (const auto qr = m_qrResults.constFind(m_target.key); qr != m_qrResults.cend() &&
+        qr->error.isEmpty() && !qr->contents.isEmpty()) {
+        results.qr = qr.value();
+    }
+    if (results.isEmpty()) {
+        results.key.clear();
+    }
+    return results;
 }
 
 bool ScreenshotRecognitionSessionController::hasTarget() const {
@@ -199,7 +288,19 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
             startTextRecognition(ScreenshotOcrRequestPriority::Interactive);
         }
     } else if (mode == Mode::Table) {
-        const auto cached = m_tableCache.constFind(m_target.key);
+        auto cached = m_tableCache.constFind(m_target.key);
+        if (cached == m_tableCache.cend()) {
+            const auto result = m_tableResults.constFind(m_target.key);
+            if (result != m_tableResults.cend()) {
+                ScreenshotTableDocument document =
+                    ScreenshotTableDocument::fromHtml(result->html);
+                if (!document.empty()) {
+                    cached = m_tableCache.insert(
+                        m_target.key,
+                        std::make_shared<ScreenshotTableEditingSession>(std::move(document)));
+                }
+            }
+        }
         if (cached != m_tableCache.cend()) {
             m_tableCacheKey = m_target.key;
             applyTableSession(cached.value());
@@ -249,18 +350,12 @@ void ScreenshotRecognitionSessionController::deactivate() {
 }
 
 void ScreenshotRecognitionSessionController::invalidate() {
-    deactivate();
-    cancelOutstandingRequests();
-    if (m_translationSettingsModal != nullptr) {
-        m_translationSettingsModal->reject();
-    }
-    ++m_textGeneration;
-    ++m_tableGeneration;
-    ++m_qrGeneration;
-    ++m_translationGeneration;
+    resetTargetState();
     m_textCache.clear();
     m_tableCache.clear();
     m_qrCache.clear();
+    m_tableResults.clear();
+    m_qrResults.clear();
     m_textCacheKey.clear();
     m_tableCacheKey.clear();
     m_qrCacheKey.clear();
@@ -268,6 +363,40 @@ void ScreenshotRecognitionSessionController::invalidate() {
     m_translationKey.clear();
     m_target = {};
     emit textResultChanged(false);
+}
+
+void ScreenshotRecognitionSessionController::resetTargetState() {
+    deactivate();
+    if (m_translationSettingsModal != nullptr) {
+        m_translationSettingsModal->reject();
+    }
+
+    // Raw recognition payloads survive a target change, but editing state belongs to
+    // the target that is currently visible and must not leak into another target.
+    for (auto it = m_textCache.begin(); it != m_textCache.end(); ++it) {
+        if (it->editingSession != nullptr) {
+            it->editingSession->establishHistory(it->editingSession->originalText());
+        }
+        it->translationSession.reset();
+        it->translationSettings = {};
+        it->translationText.clear();
+        it->successfulTranslation.clear();
+        it->translationStatus = TextCacheEntry::TranslationStatus::Absent;
+        it->hasSuccessfulTranslation = false;
+        it->editing = false;
+    }
+    m_tableCache.clear();
+    cancelOutstandingRequests();
+    ++m_textGeneration;
+    ++m_tableGeneration;
+    ++m_qrGeneration;
+    ++m_translationGeneration;
+    m_textCacheKey.clear();
+    m_tableCacheKey.clear();
+    m_qrCacheKey.clear();
+    m_editingKey.clear();
+    m_translationKey.clear();
+    m_target = {};
 }
 
 bool ScreenshotRecognitionSessionController::active() const {
@@ -874,7 +1003,8 @@ bool ScreenshotRecognitionSessionController::translating() const {
 }
 
 bool ScreenshotRecognitionSessionController::hasTextResult() const {
-    return !m_textCacheKey.isEmpty() && m_textCache.contains(m_textCacheKey);
+    const QString key = m_textCacheKey.isEmpty() ? m_target.key : m_textCacheKey;
+    return !key.isEmpty() && m_textCache.contains(key);
 }
 
 QString ScreenshotRecognitionSessionController::textDraft() const {
@@ -1066,6 +1196,7 @@ void ScreenshotRecognitionSessionController::handleTextOutput(
     connect(editingSession->document(), &QTextDocument::contentsChanged, this,
             [this, key]() { handleTextDocumentChanged(key); });
     TextCacheEntry entry;
+    entry.recognitionResult = output;
     entry.presentation = output.presentation;
     entry.editingSession = std::move(editingSession);
     m_textCache.insert(key, std::move(entry));
@@ -1104,6 +1235,7 @@ void ScreenshotRecognitionSessionController::handleTableOutput(
         return;
     }
     auto session = std::make_shared<ScreenshotTableEditingSession>(std::move(document));
+    m_tableResults.insert(key, result);
     m_tableCache.insert(key, session);
     if (m_active && m_mode == Mode::Table) {
         m_tableCacheKey = key;
@@ -1135,6 +1267,7 @@ void ScreenshotRecognitionSessionController::handleQrOutput(
         return;
     }
     m_qrCache.insert(key, result.contents);
+    m_qrResults.insert(key, result);
     if (m_active && m_mode == Mode::Qr) {
         m_qrCacheKey = key;
         applyQrContents(result.contents);

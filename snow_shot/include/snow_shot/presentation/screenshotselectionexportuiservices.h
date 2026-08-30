@@ -9,7 +9,6 @@
 #include <memory>
 #include <vector>
 
-class SnowCanvasRuntime;
 class QScreen;
 class ScreenshotOcrRecognitionPort;
 class ScreenshotQrRecognitionPort;
@@ -20,7 +19,7 @@ class QTextDocument;
 class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExportDestinationPort {
   public:
     explicit ScreenshotSelectionExportUiServices(
-        SnowCanvasRuntime& runtime, ScreenshotOcrRecognitionPort* recognition = nullptr,
+        ScreenshotOcrRecognitionPort* recognition = nullptr,
         ScreenshotQrRecognitionPort* qrRecognition = nullptr,
         SnowShotApiClient* tableRecognition = nullptr,
         std::function<void()> showMainWindowRequested = {});
@@ -44,7 +43,6 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     presentPinnedSelection(const ScreenshotPinnedSelectionRequest& request) override;
 
   private:
-    SnowCanvasRuntime& m_runtime;
     ScreenshotOcrRecognitionPort* m_recognition = nullptr;
     ScreenshotQrRecognitionPort* m_qrRecognition = nullptr;
     SnowShotApiClient* m_tableRecognition = nullptr;

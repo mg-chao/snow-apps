@@ -761,7 +761,7 @@ void ScreenshotController::Impl::createSelectionWorkflows() {
         m_geometry,
     });
     m_selectionExportUiServices = std::make_unique<ScreenshotSelectionExportUiServices>(
-        m_canvasRuntime, m_ocrRecognition.get(), m_qrRecognition.get(), m_tableRecognition.get(),
+        m_ocrRecognition.get(), m_qrRecognition.get(), m_tableRecognition.get(),
         [controller = QPointer<ScreenshotController>(&owner)]() {
             if (controller != nullptr) {
                 emit controller->showMainWindowRequested();
@@ -776,6 +776,10 @@ void ScreenshotController::Impl::createSelectionWorkflows() {
             *m_selectionExportUiServices,
             *m_selectionSettings,
             owner,
+            [this]() {
+                return m_ocrController != nullptr ? m_ocrController->cachedRecognitionResults()
+                                                   : ScreenshotRecognitionResults{};
+            },
         });
     m_selectionResizeWorkflow =
         std::make_unique<ScreenshotSelectionResizeWorkflow>(*m_selectionSettings);
@@ -1845,10 +1849,8 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
         historyEligible && m_historyService != nullptr && resetCanvasEditingState();
     struct PinHistoryState {
         std::optional<ScreenshotHistoryEntry> candidate;
-        QImage resultImage;
         bool pinDone = false;
         bool pinSuccess = false;
-        bool resultDone = false;
         bool committed = false;
     };
     const auto historyState = std::make_shared<PinHistoryState>();
@@ -1856,46 +1858,27 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
     const auto maybeCommitHistory = std::make_shared<std::function<void()>>();
     *maybeCommitHistory = [receiver, historyState]() {
         if (receiver.isNull() || receiver->m_impl == nullptr || historyState->committed ||
-            !historyState->pinDone || !historyState->resultDone) {
+            !historyState->pinDone) {
             return;
         }
-        historyState->committed = true;
         if (historyState->pinSuccess && historyState->candidate.has_value() &&
-            !historyState->resultImage.isNull() && receiver->m_impl->m_historyService != nullptr) {
-            historyState->candidate->resultImage = std::move(historyState->resultImage);
+            receiver->m_impl->m_historyService != nullptr) {
+            if (!historyState->candidate->resultImage.has_value()) {
+                return;
+            }
+            historyState->committed = true;
             historyState->candidate->source =
                 snow_shot::storage::CaptureHistorySource::PinnedToScreen;
             receiver->m_impl->m_historyService->commit(std::move(*historyState->candidate));
         }
     };
-    if (shouldSnapshotHistory && m_exportService != nullptr) {
-        const ScreenshotResultStyle style{m_selection.cornerRadius(), m_selection.shadowWidth(),
-                                          m_selection.shadowColor()};
-        const bool resultScheduled = m_exportService->requestSelectionResult(
-            m_selection.pixelSelection(), style, &owner,
-            [receiver, historyState, maybeCommitHistory](QImage image) mutable {
-                if (receiver.isNull() || receiver->m_impl == nullptr) {
-                    return;
-                }
-                historyState->resultDone = true;
-                if (!image.isNull()) {
-                    historyState->resultImage = std::move(image);
-                }
-                (*maybeCommitHistory)();
-            });
-        if (!resultScheduled) {
-            historyState->resultDone = true;
-        }
-    } else {
-        historyState->resultDone = true;
-    }
     const bool scheduled = m_selectionExportWorkflow->pinSelectionToScreen(
         [receiver, generation = *exportGeneration]() {
             return !receiver.isNull() && receiver->m_impl != nullptr &&
                    receiver->m_impl->imageExportCurrent(generation);
         },
-        [receiver, generation = *exportGeneration, historyState,
-         maybeCommitHistory](bool success) mutable {
+         [receiver, generation = *exportGeneration, historyState,
+          maybeCommitHistory](bool success, QImage image) mutable {
             SNOW_SHOT_PIN_PERF_FINISH(success);
             if (receiver.isNull() || receiver->m_impl == nullptr ||
                 !receiver->m_impl->finishImageExport(generation)) {
@@ -1903,6 +1886,9 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
             }
             historyState->pinDone = true;
             historyState->pinSuccess = success;
+            if (success && historyState->candidate.has_value() && !image.isNull()) {
+                historyState->candidate->resultImage = std::move(image);
+            }
             if (!success) {
                 qWarning("Screenshot pin export failed");
             }

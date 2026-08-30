@@ -428,14 +428,7 @@ adqt::widgets::AdButton* createControlButton(QWidget* parent, const char* toolti
 
 } // namespace
 
-ScreenshotPinnedWindow::ScreenshotPinnedWindow(SnowCanvasRuntime& sourceRuntime, QWidget* parent)
-    : ScreenshotPinnedWindow(&sourceRuntime, RuntimeMode::CloneDocument, parent) {}
-
 ScreenshotPinnedWindow::ScreenshotPinnedWindow(RuntimeMode mode, QWidget* parent)
-    : ScreenshotPinnedWindow(nullptr, mode, parent) {}
-
-ScreenshotPinnedWindow::ScreenshotPinnedWindow(SnowCanvasRuntime* sourceRuntime, RuntimeMode mode,
-                                               QWidget* parent)
     : QWidget(parent),
       m_runtime(SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasStyleDefaults()}),
       m_shortcutManager(std::make_unique<snow_shot::presentation::WindowShortcutManager>()),
@@ -475,10 +468,7 @@ ScreenshotPinnedWindow::ScreenshotPinnedWindow(SnowCanvasRuntime* sourceRuntime,
                 });
     }
 
-    if (mode == RuntimeMode::CloneDocument && sourceRuntime != nullptr &&
-        !m_runtime.cloneDocumentSessionFrom(*sourceRuntime)) {
-        qWarning("Failed to clone screenshot runtime for pinned window");
-    }
+    Q_UNUSED(mode);
 
     createUi();
     m_shortcutManager->addScopeWindow(this);
@@ -677,13 +667,6 @@ void ScreenshotPinnedWindow::reloadPinnedWindowShortcuts() {
                 shortcutDisplayText(shortcuts));
         }
     }
-}
-
-bool ScreenshotPinnedWindow::prepareDocument(SnowCanvasRuntime& sourceRuntime) {
-    if (m_presented || isVisible() || m_closing) {
-        return false;
-    }
-    return m_runtime.cloneDocumentSessionFrom(sourceRuntime);
 }
 
 bool ScreenshotPinnedWindow::prewarm(QScreen* screen) {
@@ -1321,6 +1304,7 @@ bool ScreenshotPinnedWindow::present(const Config& config) {
     m_recognition = config.recognition;
     m_qrRecognition = config.qrRecognition;
     m_tableRecognition = config.tableRecognition;
+    m_recognitionResults = config.recognitionResults;
     m_initialPhysicalSize =
         config.fullResolutionScaleBasis.isValid() && !config.fullResolutionScaleBasis.isEmpty()
             ? config.fullResolutionScaleBasis
@@ -1624,14 +1608,20 @@ bool ScreenshotPinnedWindow::present(const Config& config) {
             });
     if (!m_originalImage.isNull()) {
         m_recognitionSession->setTarget(ScreenshotRecognitionTarget{
-            QStringLiteral("pinned:%1").arg(reinterpret_cast<quintptr>(this)), m_originalImage,
+            !m_recognitionResults.isEmpty()
+                ? m_recognitionResults.key
+                : QStringLiteral("pinned:%1").arg(reinterpret_cast<quintptr>(this)),
+            m_originalImage,
             m_canvasSourceRect, m_formattedTextDocument, m_formattedPlainText});
+        m_recognitionSession->seedRecognitionResults(m_recognitionResults);
+        m_ocrReady = m_recognitionSession->hasTextResult();
     }
     SNOW_SHOT_PIN_PERF_MILESTONE("window.recognition_session_ready");
     SNOW_SHOT_PIN_PERF_MILESTONE("window.pinned_toolbar_deferred");
     refreshContextMenu();
     SNOW_SHOT_PIN_PERF_MILESTONE("window.context_menu_ready");
-    if (m_automaticTextRecognition && m_recognitionSession != nullptr) {
+    if (m_automaticTextRecognition && m_recognitionSession != nullptr &&
+        !m_recognitionSession->hasTextResult()) {
         QTimer::singleShot(0, this, [this]() {
             if (m_recognitionSession != nullptr && m_recognition != nullptr &&
                 m_automaticTextRecognition && m_ocrSupported && !m_closing) {
@@ -2489,8 +2479,13 @@ void ScreenshotPinnedWindow::finishMaterializedImage(ScreenshotExportTaskResult 
         }
         if (m_recognitionSession != nullptr) {
             m_recognitionSession->setTarget(ScreenshotRecognitionTarget{
-                QStringLiteral("pinned:%1").arg(reinterpret_cast<quintptr>(this)), m_originalImage,
+                !m_recognitionResults.isEmpty()
+                    ? m_recognitionResults.key
+                    : QStringLiteral("pinned:%1").arg(reinterpret_cast<quintptr>(this)),
+                m_originalImage,
                 m_canvasSourceRect, m_formattedTextDocument, m_formattedPlainText});
+            m_recognitionSession->seedRecognitionResults(m_recognitionResults);
+            m_ocrReady = m_recognitionSession->hasTextResult();
         }
         SNOW_SHOT_PIN_PERF_COUNTER("materialization.count", 1);
         SNOW_SHOT_PIN_PERF_COUNTER("materialization.bytes", m_originalImage.sizeInBytes());

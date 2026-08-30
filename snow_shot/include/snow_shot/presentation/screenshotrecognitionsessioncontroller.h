@@ -4,6 +4,7 @@
 #include "snow_shot/network/snowshotapiclient.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
+#include "snow_shot/presentation/screenshotrecognitionresults.h"
 
 #include <QObject>
 #include <QHash>
@@ -83,6 +84,8 @@ class ScreenshotRecognitionSessionController final : public QObject {
     ~ScreenshotRecognitionSessionController() override;
 
     void setTarget(ScreenshotRecognitionTarget target);
+    void seedRecognitionResults(ScreenshotRecognitionResults results);
+    [[nodiscard]] ScreenshotRecognitionResults cachedRecognitionResults() const;
     [[nodiscard]] bool hasTarget() const;
     void prefetchText();
     void activate(Mode mode);
@@ -131,6 +134,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
   private:
     struct TextCacheEntry {
         enum class TranslationStatus { Absent, Streaming, Completed, Failed };
+        ScreenshotOcrRecognitionResult recognitionResult;
         std::shared_ptr<ScreenshotOcrPresentation> presentation;
         std::shared_ptr<QTextDocument> formattedDocument;
         bool formatted = false;
@@ -171,10 +175,12 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void updateTextState() const;
     void updateTableState(const ScreenshotTableCommandState& state) const;
     void clearTextEditingState();
+    void ensureTextEditingSession(const QString& key, TextCacheEntry& entry);
     void showRecognitionMessage() const;
     void hideRecognitionMessage() const;
     void showStatus(const QString& message, bool error) const;
     void cancelOutstandingRequests();
+    void resetTargetState();
     void handleRecognitionProviderDestroyed(Mode mode);
     [[nodiscard]] ScreenshotRecognitionWindow* content() const;
 
@@ -187,6 +193,8 @@ class ScreenshotRecognitionSessionController final : public QObject {
     QHash<QString, TextCacheEntry> m_textCache;
     QHash<QString, std::shared_ptr<ScreenshotTableEditingSession>> m_tableCache;
     QHash<QString, QStringList> m_qrCache;
+    QHash<QString, SnowShotTableResult> m_tableResults;
+    QHash<QString, ScreenshotQrRecognitionResult> m_qrResults;
     std::shared_ptr<ScreenshotOcrPresentation> m_presentation;
     std::shared_ptr<ScreenshotTableEditingSession> m_tableSession;
     QString m_textCacheKey;

@@ -410,6 +410,10 @@ bool ScreenshotOcrController::hasTextResult() const {
     return m_session->hasTextResult();
 }
 
+ScreenshotRecognitionResults ScreenshotOcrController::cachedRecognitionResults() const {
+    return m_session->cachedRecognitionResults();
+}
+
 QString ScreenshotOcrController::textDraft() const {
     return m_session->textDraft();
 }

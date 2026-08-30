@@ -222,7 +222,7 @@ void sendRealRightClick(const QPoint& nativePosition) {
             "failed to release the real right mouse button");
 }
 
-void reproducePinnedWindowDownwardShift(SnowCanvasRuntime& sourceRuntime) {
+void reproducePinnedWindowDownwardShift(SnowCanvasRuntime&) {
     const CursorPositionRestorer restoreCursor;
     const QRect requestedNativeGeometry = nativeGeometryForSelection(kSelectionCanvasGeometry);
     QScreen* screen = ScreenshotGeometryMapper::screenForPhysicalRect(requestedNativeGeometry);
@@ -231,7 +231,7 @@ void reproducePinnedWindowDownwardShift(SnowCanvasRuntime& sourceRuntime) {
     QImage background(kSelectionCanvasGeometry.size(), QImage::Format_ARGB32_Premultiplied);
     background.fill(QColor(42, 84, 126));
 
-    auto* pinnedWindow = new ScreenshotPinnedWindow(sourceRuntime);
+    auto* pinnedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
     QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
     InitialGeometryObserver initialGeometryObserver(*pinnedWindow, requestedNativeGeometry);
     ScreenshotPinnedWindow::Config config;

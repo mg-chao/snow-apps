@@ -4,10 +4,12 @@
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
+#include "snow_draw_engine_qt/snow_canvas_widget.h"
 
 #include <QApplication>
 #include <QEventLoop>
 #include <QImage>
+#include <QMouseEvent>
 #include <QObject>
 #include <QTimer>
 
@@ -67,6 +69,7 @@ class ExportFixture final {
         display.imageSourceCanvasRect = display.canvasRect;
         display.logicalRect = display.physicalRect;
         display.image = patternedImage(display.physicalRect.size(), 3);
+        display.screen = QGuiApplication::primaryScreen();
         display.active = true;
         m_displays.appendDisplay(std::move(display));
         m_geometry.rebuild(m_displays);
@@ -88,6 +91,10 @@ class ExportFixture final {
 
     [[nodiscard]] QImage displaySnapshot() const {
         return m_displays.displayAt(0).image;
+    }
+
+    SnowCanvasRuntime& runtime() {
+        return m_runtime;
     }
 
   private:
@@ -202,26 +209,75 @@ void styledClipboardResultRetainsDibV5() {
             "styled clipboard export did not retain rounded-corner transparency");
 }
 
-void pinnedSelectionCropsDisplaySource() {
+void pinnedSelectionMaterializesCompositedImage() {
     ExportFixture fixture;
     require(fixture.isValid(), "export fixture could not initialize the canvas runtime");
 
     const QRect selection(12, 8, 37, 29);
-    const QImage display = fixture.displaySnapshot();
-    const std::optional<ScreenshotPinnedSelectionRequest> request =
-        fixture.service().preparePinnedSelection(selection, ScreenshotResultStyle{});
-    require(request.has_value() && request->imageSource.isLayered() &&
-                request->imageSource.layers.size() == 1,
-            "pinned selection did not produce a display image layer");
+    const ScreenshotResultStyle style{5, 4, QColor(0, 0, 0, 160)};
+    SnowCanvasWidget canvas(fixture.runtime());
+    canvas.resize(fixture.displaySnapshot().size());
+    canvas.show();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    require(canvas.setViewportCamera(40.0, 30.0, 1.0),
+            "pinned export canvas camera setup failed");
+    require(canvas.setCanvasTool(SnowCanvasTool::Shape),
+            "pinned export canvas should activate the shape tool");
+    SnowCanvasShapeStyle shapeStyle;
+    shapeStyle.stroke = QColor(240, 24, 24);
+    shapeStyle.strokeWidth = 4.0;
+    require(canvas.setCanvasShapeStylePatch(
+                shapeStyle, SnowCanvasShapeStylePropertyStrokeColor |
+                               SnowCanvasShapeStylePropertyStrokeWidth,
+                SnowCanvasShapeKind::Rectangle),
+            "pinned export canvas should configure a detectable rectangle stroke");
+    QMouseEvent press(QEvent::MouseButtonPress, QPointF(15.0, 10.0),
+                      canvas.mapToGlobal(QPoint(15, 10)), Qt::LeftButton, Qt::LeftButton,
+                      Qt::NoModifier);
+    QMouseEvent move(QEvent::MouseMove, QPointF(68.0, 48.0), canvas.mapToGlobal(QPoint(68, 48)),
+                     Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QMouseEvent release(QEvent::MouseButtonRelease, QPointF(68.0, 48.0),
+                        canvas.mapToGlobal(QPoint(68, 48)), Qt::LeftButton, Qt::NoButton,
+                        Qt::NoModifier);
+    QCoreApplication::sendEvent(&canvas, &press);
+    QCoreApplication::sendEvent(&canvas, &move);
+    QCoreApplication::sendEvent(&canvas, &release);
+    require(canvas.canvasHistoryState().canUndo,
+            "pinned export canvas should commit a drawing before pinning");
 
-    const ScreenshotImageLayer& layer = request->imageSource.layers.constFirst();
-    require(layer.image.size() == selection.size() &&
-                layer.imageCanvasRect == QRectF(selection) &&
-                layer.destinationCanvasRect == QRectF(selection),
-            "pinned selection retained the full display image instead of cropping it");
+    const std::optional<ScreenshotPinnedSelectionRequest> prepared =
+        fixture.service().preparePinnedSelection(selection, style);
+    require(prepared.has_value() && prepared->isPrepared() && !prepared->isValid(),
+            "pinned selection should be prepared before its image is materialized");
 
-    require(hasSamePixels(layer.image, display.copy(selection)),
-            "cropped pinned layer changed the selected display pixels");
+    std::optional<ScreenshotPinnedSelectionRequest> materialized;
+    const QImage pinnedImage = waitForResult(
+        [&](QObject* receiver, auto callback) {
+            return fixture.service().schedulePinnedSelection(
+                *prepared, receiver,
+                [&materialized, callback = std::move(callback)](
+                    ScreenshotPinnedSelectionRequest request) mutable {
+                    materialized = request;
+                    callback(std::move(request));
+                });
+        },
+        [](ScreenshotPinnedSelectionRequest request) { return std::move(request.image); });
+    require(materialized.has_value() && materialized->isValid(),
+            "pinned selection callback did not receive a valid materialized request");
+    require(materialized->image.size() == materialized->fullResolutionScaleBasis,
+            "materialized pinned image size did not match its scale basis");
+
+    const QImage expected = waitForResult(
+        [&](QObject* receiver, auto callback) {
+            return fixture.service().requestSelectionResult(selection, style, receiver,
+                                                             std::move(callback));
+        },
+        [](QImage image) { return image; });
+    require(hasSamePixels(pinnedImage, expected),
+            "pinned selection image differed from the clipboard/result render");
+    require(materialized->resultStyle.cornerRadius == style.cornerRadius &&
+                materialized->resultStyle.shadowWidth == style.shadowWidth,
+            "pinned selection request lost its result style metadata");
 }
 } // namespace
 
@@ -229,7 +285,7 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     directSourceKeepsFullWgcFrameForResultAndClipboard();
     styledClipboardResultRetainsDibV5();
-    pinnedSelectionCropsDisplaySource();
+    pinnedSelectionMaterializesCompositedImage();
     std::cout << "All screenshot export service tests passed\n";
     return EXIT_SUCCESS;
 }

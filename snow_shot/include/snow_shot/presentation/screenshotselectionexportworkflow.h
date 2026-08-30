@@ -22,13 +22,14 @@ struct ScreenshotSelectionExportWorkflowContext {
     ScreenshotSelectionExportDestinationPort& destination;
     ScreenshotSelectionParamsStorePort& selectionSettings;
     QObject& callbackContext;
+    std::function<ScreenshotRecognitionResults()> cachedRecognitionResults;
 };
 
 class ScreenshotSelectionExportWorkflow final {
   public:
     explicit ScreenshotSelectionExportWorkflow(ScreenshotSelectionExportWorkflowContext context);
 
-    using Completion = std::function<void(bool)>;
+    using Completion = std::function<void(bool, QImage)>;
     using CopyCompletion = std::function<void(bool, QImage)>;
     using ResultValidator = std::function<bool()>;
 
