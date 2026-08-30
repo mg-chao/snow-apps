@@ -1,5 +1,4 @@
 #include "snow_canvas_spotlight_renderer.h"
-#include "snow_canvas_tile_cache.h"
 
 #include <QApplication>
 #include <QElapsedTimer>
@@ -33,14 +32,11 @@ constexpr int kDefaultIterations = 100;
 
 enum class Mutation {
     None,
-    Cold,
     Opacity,
     Color,
     Camera,
     RenderArea,
     Geometry,
-    MultiCanvas,
-    ForcedEviction,
     LegacyReference,
 };
 
@@ -63,9 +59,7 @@ struct Scenario {
     bool fragmentedExposure = false;
     bool boundedArea = false;
     bool zeroVisibleCutouts = false;
-    bool tileBoundaryGeometry = false;
     bool fractionalCoordinates = false;
-    bool smallDirtyRegion = false;
     bool compactExposure = false;
 };
 
@@ -175,20 +169,16 @@ std::vector<Scenario> scenarios() {
     for (const auto [width, height] : {std::pair{1920, 1080}, std::pair{3840, 2160}}) {
         for (double dpr : {1.0, 1.25, 2.0}) {
             for (int count : {1, 16, 128}) {
-                for (const auto [label, mutation] :
-                     {std::pair{"warm", Mutation::None}, std::pair{"cold", Mutation::Cold}}) {
-                    Scenario scenario;
-                    scenario.name = std::string("renderer_") + label + "_" + std::to_string(width) +
-                                    "x" + std::to_string(height) + "_dpr" + dprLabel(dpr) +
-                                    "_cutouts" + std::to_string(count);
-                    scenario.width = width;
-                    scenario.height = height;
-                    scenario.dpr = dpr;
-                    scenario.cutoutCount = count;
-                    scenario.mutation = mutation;
-                    scenario.compactExposure = width == 3840 && dpr == 2.0;
-                    out.push_back(scenario);
-                }
+                Scenario scenario;
+                scenario.name = std::string("renderer_") + std::to_string(width) + "x" +
+                                std::to_string(height) + "_dpr" + dprLabel(dpr) + "_cutouts" +
+                                std::to_string(count);
+                scenario.width = width;
+                scenario.height = height;
+                scenario.dpr = dpr;
+                scenario.cutoutCount = count;
+                scenario.compactExposure = width == 3840 && dpr == 2.0;
+                out.push_back(scenario);
             }
         }
     }
@@ -218,18 +208,14 @@ std::vector<Scenario> scenarios() {
                            Mutation::Color, true, false});
     out.push_back(Scenario{"renderer_zero_visible_cutouts_1920x1080", 1920, 1080, 1.0, 128,
                            Mutation::None, false, false, true});
-    out.push_back(Scenario{"renderer_tile_boundary_fractional_dpr125_1920x1080", 1920, 1080, 1.25,
-                           16, Mutation::None, false, false, false, true, true});
-    out.push_back(Scenario{"renderer_small_geometry_dirty_1920x1080", 1920, 1080, 1.0, 128,
-                           Mutation::Geometry, false, false, false, false, false, true});
+    out.push_back(Scenario{"renderer_fractional_geometry_dpr125_1920x1080", 1920, 1080, 1.25,
+                           16, Mutation::None, false, false, false, true});
+    out.push_back(Scenario{"renderer_geometry_change_1920x1080", 1920, 1080, 1.0, 128,
+                           Mutation::Geometry, false, false});
     out.push_back(Scenario{"renderer_camera_change_3840x2160", 3840, 2160, 1.0, 128,
                            Mutation::Camera, false, false});
     out.push_back(Scenario{"renderer_render_area_change_3840x2160", 3840, 2160, 1.0, 128,
                            Mutation::RenderArea, false, false});
-    out.push_back(Scenario{"renderer_multi_canvas_1920x1080", 1920, 1080, 1.0, 128,
-                           Mutation::MultiCanvas, false, false});
-    out.push_back(Scenario{"renderer_forced_eviction_1920x1080_dpr1", 1920, 1080, 1.0, 128,
-                           Mutation::ForcedEviction, false, false});
     return out;
 }
 
@@ -249,14 +235,6 @@ std::vector<SnowSpotlightCutout> makeCutouts(const Scenario& scenario) {
         if (scenario.zeroVisibleCutouts) {
             centerX = -width - 10.0 - index;
             centerY = -height - 10.0 - index;
-        }
-        if (scenario.tileBoundaryGeometry) {
-            const double boundaryX = 256.0 / scenario.dpr;
-            const double boundaryY = 256.0 / scenario.dpr;
-            centerX = boundaryX + (index % 4 - 1.5) * 0.35;
-            centerY = boundaryY + ((index / 4) % 4 - 1.5) * 0.35;
-            width = 46.0 + (index % 3) * 5.0;
-            height = 38.0 + (index % 4) * 4.0;
         }
         if (scenario.fractionalCoordinates) {
             centerX += 0.37 + (index % 5) * 0.07;
@@ -295,29 +273,12 @@ Statistics statistics(const std::vector<double>& samples) {
 
 void accumulate(snow_canvas_spotlight_renderer::RenderDiagnostics* target,
                 const snow_canvas_spotlight_renderer::RenderDiagnostics& source) {
-    target->maskPathBuilds += source.maskPathBuilds;
-    target->maskPathReuses += source.maskPathReuses;
     target->processedCutoutCount += source.processedCutoutCount;
     target->locallyCulledCutoutCount += source.locallyCulledCutoutCount;
     target->earlyExitCount += source.earlyExitCount;
     target->zeroCutoutFastPathCount += source.zeroCutoutFastPathCount;
-    target->coverageRasterizations += source.coverageRasterizations;
-    target->coverageStrips += source.coverageStrips;
-    target->coverageTileHits += source.coverageTileHits;
-    target->coverageTileMisses += source.coverageTileMisses;
-    target->coverageTileEvictions += source.coverageTileEvictions;
-    target->rasterizedPhysicalPixels += source.rasterizedPhysicalPixels;
-    target->directRenderFallbacks += source.directRenderFallbacks;
-    target->allocationFailures += source.allocationFailures;
     target->renderedPixelCount += source.renderedPixelCount;
     target->renderedRegionCount += source.renderedRegionCount;
-    target->retainedCoverageBytes =
-        std::max(target->retainedCoverageBytes, source.retainedCoverageBytes);
-    target->retainedAggregateBytes =
-        std::max(target->retainedAggregateBytes, source.retainedAggregateBytes);
-    target->retainedPathElementCount =
-        std::max(target->retainedPathElementCount, source.retainedPathElementCount);
-    target->retainedPathBytes = std::max(target->retainedPathBytes, source.retainedPathBytes);
 }
 
 void renderLegacyReference(QPainter& painter, const SceneDisplayInfo& sceneInfo,
@@ -353,9 +314,7 @@ void renderLegacyReference(QPainter& painter, const SceneDisplayInfo& sceneInfo,
 }
 
 std::optional<Result> run(const Scenario& scenario, const Options& options, std::string* error) {
-    const std::size_t targetCount = scenario.mutation == Mutation::ForcedEviction ? 8u
-                                    : scenario.mutation == Mutation::MultiCanvas  ? 2u
-                                                                                  : 1u;
+    constexpr std::size_t targetCount = 1;
     std::vector<QImage> targets;
     targets.reserve(targetCount);
     for (std::size_t index = 0; index < targetCount; ++index) {
@@ -368,7 +327,6 @@ std::optional<Result> run(const Scenario& scenario, const Options& options, std:
         }
         targets.push_back(std::move(image));
     }
-    std::vector<int> ownerTokens(targetCount);
     std::vector<SnowSpotlightCutout> cutouts = makeCutouts(scenario);
     SceneDisplayInfo sceneInfo;
     sceneInfo.surface_width = scenario.width;
@@ -379,8 +337,6 @@ std::optional<Result> run(const Scenario& scenario, const Options& options, std:
     SpotlightDisplayInfo spotlightInfo;
     spotlightInfo.active = true;
     const QRectF fullArea(0.0, 0.0, scenario.width, scenario.height);
-    std::uint64_t generation = 1;
-    snow_canvas_spotlight_renderer::resetRenderCacheForCurrentThread();
 
     const auto makeExposure = [&](const QRectF& area) {
         if (scenario.compactExposure) {
@@ -405,25 +361,9 @@ std::optional<Result> run(const Scenario& scenario, const Options& options, std:
 
     const auto sample = [&](int sequence, bool measured, double* elapsed,
                             snow_canvas_spotlight_renderer::RenderDiagnostics* diagnostics) {
-        if (scenario.mutation == Mutation::Cold || scenario.mutation == Mutation::ForcedEviction) {
-            ++generation;
-            snow_canvas_spotlight_renderer::resetRenderCacheForCurrentThread();
-        }
-
-        QRegion dirtyRegion;
         if (scenario.mutation == Mutation::Geometry && !cutouts.empty()) {
-            const SnowSpotlightCutout previous = cutouts.front();
             cutouts.front().center_x += (sequence & 1) != 0 ? 1.5 : -1.5;
             cutouts.front().center_y += (sequence % 3) == 0 ? 0.75 : -0.5;
-            const QRectF previousBounds(previous.center_x - previous.width / 2.0,
-                                        previous.center_y - previous.height / 2.0, previous.width,
-                                        previous.height);
-            const SnowSpotlightCutout& next = cutouts.front();
-            const QRectF nextBounds(next.center_x - next.width / 2.0,
-                                    next.center_y - next.height / 2.0, next.width, next.height);
-            dirtyRegion = QRegion(
-                previousBounds.united(nextBounds).adjusted(-2.0, -2.0, 2.0, 2.0).toAlignedRect());
-            ++generation;
         }
 
         spotlightInfo.opacity =
@@ -461,9 +401,7 @@ std::optional<Result> run(const Scenario& scenario, const Options& options, std:
             } else {
                 snow_canvas_spotlight_renderer::render(
                     painter, sceneInfo, spotlightInfo, cutouts.data(),
-                    static_cast<std::uint32_t>(cutouts.size()), generation,
-                    &ownerTokens[targetIndex], renderArea, exposure,
-                    snow_canvas_spotlight_renderer::RenderPolicy::Retained, dirtyRegion);
+                    static_cast<std::uint32_t>(cutouts.size()), renderArea, exposure);
             }
             painter.end();
         }
@@ -471,7 +409,6 @@ std::optional<Result> run(const Scenario& scenario, const Options& options, std:
         if (measured) {
             *elapsed = nanoseconds / 1'000'000.0;
             if (scenario.mutation == Mutation::LegacyReference) {
-                diagnostics->maskPathBuilds = targets.size();
                 diagnostics->processedCutoutCount = cutouts.size() * targets.size();
             } else {
                 *diagnostics = snow_canvas_spotlight_renderer::diagnosticsForCurrentThread();
@@ -483,10 +420,6 @@ std::optional<Result> run(const Scenario& scenario, const Options& options, std:
         double ignored = 0.0;
         snow_canvas_spotlight_renderer::RenderDiagnostics ignoredDiagnostics;
         sample(index, false, &ignored, &ignoredDiagnostics);
-    }
-    if (scenario.mutation == Mutation::Color || scenario.mutation == Mutation::Camera ||
-        scenario.mutation == Mutation::RenderArea) {
-        snow_canvas_spotlight_renderer::resetRenderCacheForCurrentThread();
     }
     std::vector<double> samples;
     samples.reserve(options.iterations);
@@ -504,50 +437,18 @@ std::optional<Result> run(const Scenario& scenario, const Options& options, std:
         targets.front().pixelColor(targets.front().width() / 2, targets.front().height() / 2);
     result.checksum = static_cast<std::uint64_t>(pixel.rgba());
 
-    if (result.diagnostics.retainedAggregateBytes > snow_canvas_tile_cache::kGlobalByteLimit) {
-        *error = scenario.name + ": retained scene/spotlight bytes exceed 128 MiB";
-        return std::nullopt;
-    }
-    if (scenario.mutation == Mutation::LegacyReference) {
-        if (result.diagnostics.maskPathBuilds != static_cast<std::size_t>(options.iterations)) {
-            *error = scenario.name + ": legacy reference did not build one path per sample";
-            return std::nullopt;
-        }
-    } else if (scenario.mutation == Mutation::Opacity &&
-               result.diagnostics.coverageRasterizations != 0) {
-        *error = scenario.name + ": opacity preview rebuilt retained coverage";
-        return std::nullopt;
-    } else if (scenario.zeroVisibleCutouts && (result.diagnostics.coverageRasterizations != 0 ||
-                                               result.diagnostics.zeroCutoutFastPathCount !=
-                                                   static_cast<std::size_t>(options.iterations))) {
-        *error = scenario.name + ": zero-visible-cutout fast path was not used";
-        return std::nullopt;
-    } else if ((scenario.mutation == Mutation::Cold || scenario.mutation == Mutation::Color ||
-                scenario.mutation == Mutation::Camera ||
-                scenario.mutation == Mutation::RenderArea ||
-                scenario.mutation == Mutation::Geometry ||
-                scenario.mutation == Mutation::ForcedEviction) &&
-               result.diagnostics.coverageRasterizations == 0) {
-        *error = scenario.name + ": invalidating samples did not rasterize coverage";
-        return std::nullopt;
-    }
     return result;
 }
 
 void print(const std::vector<Result>& results, int samples) {
     std::cout << std::left << std::setw(55) << "scenario" << std::right << std::setw(10) << "p50 ms"
-              << std::setw(10) << "p95 ms" << std::setw(10) << "p99 ms" << std::setw(10) << "raster"
-              << std::setw(10) << "hits" << std::setw(10) << "misses" << std::setw(10) << "strips"
-              << std::setw(12) << "retained MiB" << '\n';
+              << std::setw(10) << "p95 ms" << std::setw(10) << "p99 ms" << std::setw(12)
+              << "cutouts" << '\n';
     for (const Result& result : results) {
         std::cout << std::left << std::setw(55) << result.scenario.name << std::right << std::fixed
                   << std::setprecision(3) << std::setw(10) << result.timing.p50 << std::setw(10)
-                  << result.timing.p95 << std::setw(10) << result.timing.p99 << std::setw(10)
-                  << result.diagnostics.coverageRasterizations / samples << std::setw(10)
-                  << result.diagnostics.coverageTileHits / samples << std::setw(10)
-                  << result.diagnostics.coverageTileMisses / samples << std::setw(10)
-                  << result.diagnostics.coverageStrips / samples << std::setw(12)
-                  << result.diagnostics.retainedAggregateBytes / (1024.0 * 1024.0) << '\n';
+                  << result.timing.p95 << std::setw(10) << result.timing.p99 << std::setw(12)
+                  << result.diagnostics.processedCutoutCount / samples << '\n';
     }
 }
 
@@ -557,12 +458,9 @@ bool writeCsv(const std::string& path, const std::vector<Result>& results, int s
         return false;
     }
     stream << "format_version,suite,scenario,operation,logical_width,logical_height,dpr,cutouts,"
-              "samples,mean_ms,p50_ms,p95_ms,p99_ms,min_ms,max_ms,path_builds,path_reuses,"
-              "coverage_rasterizations,coverage_strips,coverage_tile_hits,coverage_tile_misses,"
-              "coverage_tile_evictions,rasterized_physical_pixels,retained_coverage_bytes,"
-              "processed_cutouts,locally_culled_cutouts,early_exits,zero_cutout_fast_paths,"
-              "direct_render_fallbacks,allocation_failures,rendered_pixels,rendered_regions,"
-              "retained_path_elements,retained_path_bytes,retained_aggregate_bytes,checksum,"
+              "samples,mean_ms,p50_ms,p95_ms,p99_ms,min_ms,max_ms,processed_cutouts,"
+              "locally_culled_cutouts,early_exits,zero_cutout_fast_paths,rendered_pixels,"
+              "rendered_regions,checksum,"
               "qt_version,platform,architecture\n";
     for (const Result& result : results) {
         const auto& d = result.diagnostics;
@@ -570,16 +468,11 @@ bool writeCsv(const std::string& path, const std::vector<Result>& results, int s
                << result.scenario.height << ',' << result.scenario.dpr << ','
                << result.scenario.cutoutCount << ',' << samples << ',' << result.timing.mean << ','
                << result.timing.p50 << ',' << result.timing.p95 << ',' << result.timing.p99 << ','
-               << result.timing.minimum << ',' << result.timing.maximum << ',' << d.maskPathBuilds
-               << ',' << d.maskPathReuses << ',' << d.coverageRasterizations << ','
-               << d.coverageStrips << ',' << d.coverageTileHits << ',' << d.coverageTileMisses
-               << ',' << d.coverageTileEvictions << ',' << d.rasterizedPhysicalPixels << ','
-               << d.retainedCoverageBytes << ',' << d.processedCutoutCount << ','
+               << result.timing.minimum << ',' << result.timing.maximum << ','
+               << d.processedCutoutCount << ','
                << d.locallyCulledCutoutCount << ',' << d.earlyExitCount << ','
-               << d.zeroCutoutFastPathCount << ',' << d.directRenderFallbacks << ','
-               << d.allocationFailures << ',' << d.renderedPixelCount << ','
-               << d.renderedRegionCount << ',' << d.retainedPathElementCount << ','
-               << d.retainedPathBytes << ',' << d.retainedAggregateBytes << ',' << result.checksum
+               << d.zeroCutoutFastPathCount << ',' << d.renderedPixelCount << ','
+               << d.renderedRegionCount << ',' << result.checksum
                << ',' << qVersion() << ',' << QSysInfo::prettyProductName().toStdString() << ','
                << QSysInfo::currentCpuArchitecture().toStdString() << '\n';
     }

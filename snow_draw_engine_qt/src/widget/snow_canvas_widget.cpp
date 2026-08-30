@@ -15,7 +15,6 @@
 #include "snow_canvas_state.h"
 #include "snow_canvas_text_editor_input.h"
 #include "snow_canvas_text_measurement.h"
-#include "snow_canvas_tile_cache.h"
 #include "snow_canvas_filter_tile_cache.h"
 #include "snow_canvas_type_conversions.h"
 #include "snow_canvas_widget_display_state.h"
@@ -1220,7 +1219,6 @@ void SnowCanvasWidget::Impl::setCanvasContentVisible(bool visible) {
         return;
     }
     canvasContentIsVisible = visible;
-    snow_canvas_tile_cache::invalidateNamespace(&widget);
     snow_canvas_filter_tile_cache::invalidateNamespace(&widget);
     refreshSerialNumberToolbar();
     widget.update();
@@ -1465,7 +1463,6 @@ void SnowCanvasWidget::Impl::setCustomRenderer(SnowCanvasCustomRenderer* rendere
         return;
     }
     installedCustomRenderer = renderer;
-    snow_canvas_tile_cache::invalidateNamespace(&widget);
     snow_canvas_filter_tile_cache::invalidateNamespace(&widget);
     widget.update();
 }
@@ -1557,7 +1554,6 @@ void SnowCanvasWidget::Impl::clearRetainedDisplayState() {
     if (pendingLiveStrokePreservesEverySample && hasViewport()) {
         flushLiveStrokeMoves();
     }
-    snow_canvas_tile_cache::invalidateNamespace(&widget);
     snow_canvas_filter_tile_cache::invalidateNamespace(&widget);
     clearTextStylePopupInteraction();
     pendingLiveStrokeMoves.clear();
@@ -1890,8 +1886,6 @@ void SnowCanvasWidget::Impl::syncAfterEngineMutation() {
 void SnowCanvasWidget::Impl::syncAfterEngineMutation(bool emitSignals) {
     const std::uint64_t previousSceneRevision =
         displayState.displayCache().patchCursor().scene_revision;
-    const std::uint64_t previousSpotlightGeneration =
-        displayState.displayCache().spotlightGeometryGeneration();
     const snow_canvas_widget_sync::Result result =
         snow_canvas_widget_sync::syncAfterEngineMutation(snow_canvas_widget_sync::Request{
             &displayState,
@@ -1915,17 +1909,6 @@ void SnowCanvasWidget::Impl::syncAfterEngineMutation(bool emitSignals) {
             snow_canvas_display::dirtyRectsToRegion(cache.sceneDirtyRects(),
                                                     cache.sceneDirtyRectCount(), widget.rect()),
             widget.devicePixelRatioF());
-    }
-    if (cache.spotlightGeometryGeneration() != previousSpotlightGeneration) {
-        // The patch carries the union of decoration changes accumulated since
-        // the last sync. Keep unaffected coverage tiles valid across coalesced
-        // engine mutations while changing the tile revision atomically.
-        snow_canvas_tile_cache::invalidateForRevision(
-            &widget,
-            snow_canvas_display::dirtyRectsToRegion(
-                cache.decorationDirtyRects(), cache.decorationDirtyRectCount(), widget.rect()),
-            widget.devicePixelRatioF(), cache.spotlightGeometryGeneration(),
-            snow_canvas_tile_cache::Layer::SpotlightCoverage);
     }
     if (result.shouldEmitStateSignals) {
         emitChangedStateSignals(result.stateChanges);
@@ -2675,7 +2658,6 @@ void SnowCanvasWidget::focusOutEvent(QFocusEvent* event) {
 }
 
 void SnowCanvasWidget::Impl::handleResize(const QSize& size) {
-    snow_canvas_tile_cache::invalidateNamespace(&widget);
     snow_canvas_filter_tile_cache::invalidateNamespace(&widget);
     setSurfaceSizeAndSync(size, true);
 }

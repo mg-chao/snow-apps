@@ -709,19 +709,28 @@ pub fn validate_filter(filter: &FilterData) -> Result<(), ErrorCode> {
 }
 
 pub fn pen_filter_bounds(filter: &PenFilterData) -> DrawRect {
-    let center = filter.center();
-    let (extent_x, extent_y) = rotated_rect_extents(
-        filter.width,
-        filter.height,
-        filter.rotation,
-        filter.stroke_width,
-    );
-    DrawRect::new(
-        center.x - extent_x,
-        center.y - extent_y,
-        center.x + extent_x,
-        center.y + extent_y,
-    )
+    rect_bounds(&pen_filter_rect_proxy(filter))
+}
+
+/// Returns the rectangle used to represent a pen filter in selection and
+/// interaction geometry. Unlike the persisted filter rectangle, this proxy is
+/// the boundary of the painted outer contour, including the stroke width.
+pub fn pen_filter_rect_proxy(filter: &PenFilterData) -> RectangleData {
+    RectangleData {
+        rectangle_kind: crate::RectangleElementKind::Rectangle,
+        highlight_shape: crate::HighlightShape::Rectangle,
+        center: filter.center(),
+        width: filter.width + filter.stroke_width.max(0.0),
+        height: filter.height + filter.stroke_width.max(0.0),
+        rotation: filter.rotation,
+        fill: ColorRgba8::default(),
+        fill_style: FillStyle::Solid,
+        stroke: ColorRgba8::default(),
+        stroke_width: 0.0,
+        stroke_style: StrokeStyle::Solid,
+        corner_radii: CornerRadii::default(),
+        opacity: filter.opacity,
+    }
 }
 
 pub fn pen_filter_hit_test(filter: &PenFilterData, point: Point<f64>, hit_tolerance: f64) -> bool {
@@ -1002,6 +1011,27 @@ mod tests {
                 b: 0x2c,
                 a: 0xff,
             }
+        );
+    }
+
+    #[test]
+    fn pen_filter_rect_proxy_includes_stroke_in_outer_contour_dimensions() {
+        let filter = PenFilterData {
+            x: 10.0,
+            y: 20.0,
+            width: 100.0,
+            height: 40.0,
+            stroke_width: 12.0,
+            ..PenFilterData::default()
+        };
+
+        let proxy = pen_filter_rect_proxy(&filter);
+        assert_eq!(proxy.center, Point::new(60.0, 40.0));
+        assert_eq!(proxy.width, 112.0);
+        assert_eq!(proxy.height, 52.0);
+        assert_eq!(
+            pen_filter_bounds(&filter),
+            DrawRect::new(4.0, 14.0, 116.0, 66.0)
         );
     }
 

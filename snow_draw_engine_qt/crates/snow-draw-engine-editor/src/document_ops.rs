@@ -52,10 +52,12 @@ pub(crate) fn append_selection_element_update(
     }
     if let Ok(filter) = document.pen_filter(preview.id) {
         let mut updated = filter.clone();
-        updated.x = preview.rect.center.x - preview.rect.width / 2.0;
-        updated.y = preview.rect.center.y - preview.rect.height / 2.0;
-        updated.width = preview.rect.width;
-        updated.height = preview.rect.height;
+        // Selection proxies represent the painted outer contour. Convert back
+        // to the raw centerline rectangle before persisting the filter.
+        updated.width = (preview.rect.width - filter.stroke_width.max(0.0)).max(0.0);
+        updated.height = (preview.rect.height - filter.stroke_width.max(0.0)).max(0.0);
+        updated.x = preview.rect.center.x - updated.width / 2.0;
+        updated.y = preview.rect.center.y - updated.height / 2.0;
         updated.rotation = preview.rect.rotation;
         updated.opacity = preview.rect.opacity;
         let geometry_changed = updated.x != filter.x
@@ -287,6 +289,13 @@ impl Editor {
         document: &DocumentModel,
         draft: TextDraftCommit,
     ) -> Result<Option<EditorCommand>, ErrorCode> {
+        // Selection transforms are staged in the active draft while text editing is focused.
+        // Preserve its rotation when the text payload is committed; the commit payload does not
+        // carry selection transforms.
+        let active_text_rotation = draft
+            .existing_id()
+            .and_then(|id| self.active_text_draft_rect_for_id(id))
+            .map(|rect| rect.rotation);
         self.clear_active_text_draft_presentation();
         let text_is_empty = draft.text_is_empty();
         let existing_id = draft.existing_id();
@@ -308,7 +317,10 @@ impl Editor {
                 append_delete_dependencies(&mut transaction, document, &[id]);
             } else {
                 let current = document.text(id)?.clone();
-                let updated = text_with_committed_draft(&current, &draft)?;
+                let mut updated = text_with_committed_draft(&current, &draft)?;
+                if let Some(rotation) = active_text_rotation {
+                    updated.rotation = rotation;
+                }
                 validate_text(&updated)?;
                 if current != updated {
                     transaction.update_text(id, updated);
@@ -729,8 +741,8 @@ mod tests {
     use crate::{ActiveTextDraftPresentation, ActiveTextDraftTarget, TextCommitTarget, TextStyle};
     use snow_draw_engine_core::{ColorRgba8, EngineConfig, PathSegmentMode};
     use snow_draw_engine_document::{
-        ArrowData, ElementData, ElementMeta, FreeDrawData, Operation, RectangleData,
-        SerialNumberData, TextData,
+        ArrowData, CanvasFilterType, ElementData, ElementMeta, FreeDrawData, Operation,
+        PenFilterData, RectangleData, SerialNumberData, TextData,
     };
 
     fn apply_editor_command(document: &mut DocumentModel, command: EditorCommand) {
@@ -762,6 +774,58 @@ mod tests {
         transaction.insert_free_draw(id, ElementMeta::default(), free_draw);
         document.apply_transaction(transaction).unwrap();
         id
+    }
+
+    fn insert_pen_filter(document: &mut DocumentModel, filter: PenFilterData) -> ElementId {
+        let id = document.peek_next_element_id();
+        let mut transaction = Transaction::new("insert pen filter");
+        transaction.insert_pen_filter(id, ElementMeta::default(), filter);
+        document.apply_transaction(transaction).unwrap();
+        id
+    }
+
+    #[test]
+    fn pen_filter_selection_uses_outer_contour_and_commits_raw_geometry() {
+        let mut document = DocumentModel::new();
+        let filter = PenFilterData::from_global_points(
+            &[Point::new(10.0, 20.0), Point::new(110.0, 60.0)],
+            CanvasFilterType::Mosaic,
+            0.5,
+            20.0,
+            1.0,
+        )
+        .unwrap();
+        let id = insert_pen_filter(&mut document, filter.clone());
+        let proxy = document.element_rect_proxy(id).unwrap();
+
+        assert_eq!(proxy.center, filter.center());
+        assert_eq!(proxy.width, filter.width + filter.stroke_width);
+        assert_eq!(proxy.height, filter.height + filter.stroke_width);
+
+        let mut editor = Editor::new(EngineConfig::default()).unwrap();
+        editor.select_element(&document, id).unwrap();
+        let presentation = editor.presentation_state(&document);
+        let selection_bounds = presentation.selection_bounds.unwrap();
+        assert_eq!(selection_bounds.width, proxy.width);
+        assert_eq!(selection_bounds.height, proxy.height);
+
+        let preview = SelectionRectState {
+            id,
+            rect: RectangleData {
+                center: Point::new(200.0, 300.0),
+                ..proxy
+            },
+        };
+        let mut transaction = Transaction::new("move pen filter");
+        append_selection_element_update(&mut transaction, &document, preview, None, false, None)
+            .unwrap();
+        document.apply_transaction(transaction).unwrap();
+
+        let updated = document.pen_filter(id).unwrap();
+        assert_eq!(updated.x, 150.0);
+        assert_eq!(updated.y, 280.0);
+        assert_eq!(updated.width, filter.width);
+        assert_eq!(updated.height, filter.height);
     }
 
     #[test]
@@ -1120,6 +1184,19 @@ mod tests {
         );
         let mut editor = Editor::new(EngineConfig::default()).unwrap();
         editor.select_element(&document, id).unwrap();
+        // A selection transform leaves this angle staged in the active draft.
+        let mut active_draft_text = document.text(id).unwrap().clone();
+        active_draft_text.rotation = 0.75;
+        editor
+            .set_active_text_draft_presentation(
+                &document,
+                ActiveTextDraftPresentation {
+                    target: ActiveTextDraftTarget::Existing(id),
+                    revision: 1,
+                    text: active_draft_text,
+                },
+            )
+            .unwrap();
 
         let style = text_style(
             42.0,
@@ -1167,6 +1244,7 @@ mod tests {
         };
         assert_eq!(updated.text, "new");
         assert_eq!(updated.center, Point::new(10.0, 20.0));
+        assert_eq!(updated.rotation, 0.75);
         assert_eq!(updated.width, 120.0);
         assert_eq!(updated.height, 48.0);
         assert_eq!(updated.font_size, style.font_size);

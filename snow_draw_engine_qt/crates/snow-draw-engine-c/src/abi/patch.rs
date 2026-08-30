@@ -37,8 +37,8 @@ impl SnowPatchPayload {
             .iter()
             .map(|op| {
                 let insert_offset = scene_item_backing.len() as u32;
-                scene_item_backing.extend(op.insert_items.iter().cloned().map(|item| {
-                    let omit_path_commands = match &item {
+                scene_item_backing.extend(op.insert_items.iter().map(|item| {
+                    let omit_path_commands = match item {
                         snow_draw_engine::SceneDisplayItem::Arrow(path) => patch
                             .path_geometry_ops
                             .iter()
@@ -169,7 +169,6 @@ impl SnowPatchPayload {
                 overlay_item_backing.extend(
                     op.insert_items
                         .iter()
-                        .cloned()
                         .map(snow_overlay_display_item_from_rust),
                 );
                 SnowPatchOp {

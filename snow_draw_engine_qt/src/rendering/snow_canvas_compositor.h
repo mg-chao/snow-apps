@@ -23,7 +23,6 @@ struct Frame {
     const SpotlightDisplayInfo* spotlightInfo = nullptr;
     const SnowSpotlightCutout* spotlightCutouts = nullptr;
     std::uint32_t spotlightCutoutCount = 0;
-    std::uint64_t spotlightGeometryGeneration = 0;
     const OverlayDisplayInfo* overlayInfo = nullptr;
     const SnowCanvasSceneItem* sceneItems = nullptr;
     std::uint32_t sceneItemCount = 0;
@@ -41,7 +40,6 @@ struct Frame {
     snow_canvas_filter_render::RenderWorkspace* workspace = nullptr;
     snow_canvas_pen_mask::PenMaskAtlas* penMaskAtlas = nullptr;
     const QWidget* widget = nullptr;
-    const void* cacheOwner = nullptr;
     QRectF watermarkRenderArea;
     bool hasWatermarkRenderArea = false;
     QRectF spotlightRenderArea;

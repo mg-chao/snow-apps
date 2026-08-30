@@ -680,6 +680,17 @@ impl Editor {
                 if let Ok(serial) = document.serial_number(element.id) {
                     return Some(serial_number_minimum_selection_scale(serial));
                 }
+                if let Ok(pen_filter) = document.pen_filter(element.id) {
+                    // Pen-filter selection rectangles include the stroke. Keep
+                    // both outer-contour dimensions at least the stroke width
+                    // so committing a resize cannot collapse the raw rectangle
+                    // and make the frame jump when it is synchronized.
+                    let stroke_width = pen_filter.stroke_width.max(0.0);
+                    return Some(
+                        (stroke_width / element.rect.width.max(MIN_RECT_SIZE))
+                            .max(stroke_width / element.rect.height.max(MIN_RECT_SIZE)),
+                    );
+                }
                 if !scales_text {
                     return None;
                 }
@@ -1438,6 +1449,7 @@ mod tests {
         let original_rect = text_rect(&text);
         let preview_rect = RectangleData {
             center: Point::new(80.0, 24.0),
+            rotation: 0.5,
             ..original_rect
         };
         let mut editor = Editor::new(EngineConfig::default()).unwrap();
@@ -1487,6 +1499,7 @@ mod tests {
             .active_text_draft_presentation()
             .expect("active draft should remain active after selection edit");
         assert_eq!(draft.rect(), preview_rect);
+        assert_close(draft.text.rotation, preview_rect.rotation);
         assert_eq!(document.text(text_id).unwrap().center, original_rect.center);
         assert!(editor.pending_command.is_none());
     }

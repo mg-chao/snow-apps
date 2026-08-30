@@ -70,8 +70,6 @@ set(SNOW_CANVAS_QT_SOURCES
     src/rendering/snow_canvas_spotlight_renderer.h
     src/rendering/snow_canvas_watermark_renderer.cpp
     src/rendering/snow_canvas_watermark_renderer.h
-    src/rendering/snow_canvas_tile_cache.cpp
-    src/rendering/snow_canvas_tile_cache.h
     src/text/snow_canvas_text.cpp
     src/text/snow_canvas_text.h
     src/text/snow_canvas_text_draft.cpp

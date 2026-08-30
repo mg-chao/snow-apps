@@ -438,14 +438,14 @@ void ordinaryExposedImageRenderingRemainsPixelEquivalent() {
             "ordinary exposed image rendering should remain pixel equivalent to one drawImage");
 }
 
-void tileCachePaintersRenderPastTheRasterCoordinateLimit() {
+void chunkedImagePaintersRenderPastTheRasterCoordinateLimit() {
     constexpr int kLargeDimension = 70000;
     const QImage source = verticalRasterPattern(QSize(4, kLargeDimension));
     SnowCanvasWidget canvas;
     canvas.resize(source.size());
     canvas.setClearBackgroundEnabled(false);
     require(canvas.setViewportCamera(source.width() / 2.0, source.height() / 2.0, 1.0),
-            "the tall tile-cache camera should update");
+            "the tall image camera should update");
 
     ScreenshotCanvasRenderer renderer(canvas);
     renderer.setImage(source, QRectF(QPointF(), QSizeF(source.size())));
@@ -455,7 +455,7 @@ void tileCachePaintersRenderPastTheRasterCoordinateLimit() {
     const QImage expected =
         renderWithSafeReferenceTiles(source, source.size(), false, devicePixelRatio);
     require(output.size() == expected.size(),
-            "the tall tile-cache render should keep its physical dimensions");
+            "the tall image render should keep its physical dimensions");
     for (int y = 0; y < output.height(); ++y) {
         for (int x = 0; x < output.width(); ++x) {
             const QColor actualColor = output.pixelColor(x, y);
@@ -1074,7 +1074,7 @@ void overlayWatermarkRendersOnlyInsideScreenshotSelection() {
     }
 }
 
-void reusedRendererReplacesCachedScreenshotImage() {
+void reusedRendererReplacesScreenshotImage() {
     SnowCanvasWidget canvas;
     canvas.resize(80, 80);
     canvas.setClearBackgroundEnabled(false);
@@ -1088,13 +1088,13 @@ void reusedRendererReplacesCachedScreenshotImage() {
     firstScreenshot.fill(QColor(210, 30, 20));
     renderer.setImage(std::move(firstScreenshot), canvasRect);
     require(renderCanvas(canvas).pixelColor(40, 40) == QColor(210, 30, 20),
-            "the first screenshot should populate the canvas tile cache");
+            "the first screenshot should be rendered");
 
     QImage secondScreenshot(80, 80, QImage::Format_RGBA8888);
     secondScreenshot.fill(QColor(20, 170, 70));
     renderer.setImage(std::move(secondScreenshot), canvasRect);
     require(renderCanvas(canvas).pixelColor(40, 40) == QColor(20, 170, 70),
-            "reusing an overlay must replace cached tiles from the prior screenshot");
+            "reusing an overlay must replace the prior screenshot");
     canvas.setCustomRenderer(nullptr);
 }
 
@@ -3044,7 +3044,7 @@ int main(int argc, char** argv) {
         indexedLargeImageWindowsPreserveTheirColorTable();
         disjointLargeImageExposureDoesNotPaintItsBoundingInterval();
         ordinaryExposedImageRenderingRemainsPixelEquivalent();
-        tileCachePaintersRenderPastTheRasterCoordinateLimit();
+        chunkedImagePaintersRenderPastTheRasterCoordinateLimit();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--guide-line-initialization"))) {
@@ -3095,10 +3095,10 @@ int main(int argc, char** argv) {
     indexedLargeImageWindowsPreserveTheirColorTable();
     disjointLargeImageExposureDoesNotPaintItsBoundingInterval();
     ordinaryExposedImageRenderingRemainsPixelEquivalent();
-    tileCachePaintersRenderPastTheRasterCoordinateLimit();
+    chunkedImagePaintersRenderPastTheRasterCoordinateLimit();
     partialRoundedMaskMatchesFullViewportMaskAtFractionalDpr();
     overlayWatermarkRendersOnlyInsideScreenshotSelection();
-    reusedRendererReplacesCachedScreenshotImage();
+    reusedRendererReplacesScreenshotImage();
     bgraScreenshotImagesRenderWithCorrectColors();
     hoveredSelectionToolbarHidesBorderAndRendersShadowPreview();
     roundedSelectionPreviewKeepsTheSameContentBoundsWithAndWithoutShadow();

@@ -1,7 +1,6 @@
 #include "snow_shot/presentation/screenshotcanvasrenderer.h"
 #include "snow_shot/presentation/screenshotselectionshadowrenderer.h"
 
-#include "snow_canvas_renderer.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 
 #include <QApplication>
@@ -106,8 +105,6 @@ struct FrameSample {
     double requestedPaintRegionRatio = 0.0;
     double paintedPaintRegionRatio = 0.0;
     double selectionDamageRegionRatio = 0.0;
-    std::size_t tileCandidates = 0;
-    std::size_t tileVisits = 0;
     std::size_t shadowCacheHits = 0;
     std::size_t shadowCacheBuilds = 0;
     std::size_t shadowRetainedBytes = 0;
@@ -163,7 +160,6 @@ double paintRegionRatio(const QRegion& region, const QSize& size) {
 
 FrameSample measureFrame(BenchmarkFixture& fixture, const std::function<void()>& mutation) {
     ScreenshotSelectionShadowRenderer::resetDiagnosticsForCurrentThread();
-    snow_canvas_renderer::resetFilterRenderDiagnosticsForCurrentThread();
     resetSelectionRenderDiagnosticsForCurrentThread();
     fixture.paintProbe.begin();
     QElapsedTimer timer;
@@ -173,8 +169,6 @@ FrameSample measureFrame(BenchmarkFixture& fixture, const std::function<void()>&
     const qint64 elapsedNanoseconds = timer.nsecsElapsed();
     const QRegion requested = fixture.paintProbe.region();
     const QRegion painted = requested.intersected(fixture.canvas->rect());
-    const auto rendererDiagnostics =
-        snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread();
     const auto shadowDiagnostics = ScreenshotSelectionShadowRenderer::diagnosticsForCurrentThread();
     const auto selectionDiagnostics = selectionRenderDiagnosticsForCurrentThread();
     return FrameSample{
@@ -184,8 +178,6 @@ FrameSample measureFrame(BenchmarkFixture& fixture, const std::function<void()>&
         static_cast<double>(selectionDiagnostics.requestedDamagePixels) /
             static_cast<double>(fixture.canvas->width()) /
             static_cast<double>(fixture.canvas->height()),
-        rendererDiagnostics.tileCandidates,
-        rendererDiagnostics.tileVisits,
         shadowDiagnostics.cacheHits,
         shadowDiagnostics.cacheBuilds,
         shadowDiagnostics.retainedBytes,
@@ -238,8 +230,6 @@ QJsonObject summarize(const ScenarioResult& result, const DwmSnapshot& beforeDwm
     requestedRegionRatios.reserve(result.samples.size());
     paintedRegionRatios.reserve(result.samples.size());
     selectionDamageRatios.reserve(result.samples.size());
-    std::size_t tileCandidates = 0;
-    std::size_t tileVisits = 0;
     std::size_t shadowHits = 0;
     std::size_t shadowBuilds = 0;
     std::size_t shadowRetainedBytes = 0;
@@ -250,8 +240,6 @@ QJsonObject summarize(const ScenarioResult& result, const DwmSnapshot& beforeDwm
         requestedRegionRatios.push_back(sample.requestedPaintRegionRatio);
         paintedRegionRatios.push_back(sample.paintedPaintRegionRatio);
         selectionDamageRatios.push_back(sample.selectionDamageRegionRatio);
-        tileCandidates += sample.tileCandidates;
-        tileVisits += sample.tileVisits;
         shadowHits += sample.shadowCacheHits;
         shadowBuilds += sample.shadowCacheBuilds;
         shadowRetainedBytes = std::max(shadowRetainedBytes, sample.shadowRetainedBytes);
@@ -271,12 +259,6 @@ QJsonObject summarize(const ScenarioResult& result, const DwmSnapshot& beforeDwm
     object.insert(QStringLiteral("meanPaintedPaintRegionRatio"), mean(paintedRegionRatios));
     object.insert(QStringLiteral("meanSelectionDamageRegionRatio"), mean(selectionDamageRatios));
     object.insert(QStringLiteral("meanPaintRegionRatio"), mean(paintedRegionRatios));
-    object.insert(
-        QStringLiteral("tileCandidatesPerFrame"),
-        result.samples.empty() ? 0.0 : static_cast<double>(tileCandidates) / result.samples.size());
-    object.insert(QStringLiteral("tileVisitsPerFrame"),
-                  result.samples.empty() ? 0.0
-                                         : static_cast<double>(tileVisits) / result.samples.size());
     object.insert(QStringLiteral("shadowCacheHits"), static_cast<qint64>(shadowHits));
     object.insert(QStringLiteral("shadowCacheBuilds"), static_cast<qint64>(shadowBuilds));
     object.insert(QStringLiteral("shadowRetainedBytes"), static_cast<qint64>(shadowRetainedBytes));
@@ -335,7 +317,7 @@ QJsonObject writeReports(const QList<QJsonObject>& objects, const QString& jsonl
         scenarios.append(object);
     }
     QJsonObject summary;
-    summary.insert(QStringLiteral("schemaVersion"), 1);
+    summary.insert(QStringLiteral("schemaVersion"), 2);
     summary.insert(QStringLiteral("surfaceWidth"), surfaceSize.width());
     summary.insert(QStringLiteral("surfaceHeight"), surfaceSize.height());
     summary.insert(QStringLiteral("devicePixelRatio"), devicePixelRatio);

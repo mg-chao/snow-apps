@@ -99,9 +99,6 @@ struct Result {
     double megapixelsPerSecond = 0.0;
     std::uint64_t checksum = 0;
     std::string resolvedFont;
-    std::size_t sceneTileHits = 0;
-    std::size_t sceneTileMisses = 0;
-    std::size_t sceneTileEvictions = 0;
     snow_canvas_renderer::WatermarkRenderDiagnostics diagnostics;
 };
 
@@ -732,9 +729,6 @@ std::optional<Result> runPreviewPaintWorkflow(const Options& options, int width,
     std::vector<double> samples;
     samples.reserve(options.measuredIterations);
     snow_canvas_renderer::WatermarkRenderDiagnostics aggregateDiagnostics;
-    std::size_t aggregateSceneTileHits = 0;
-    std::size_t aggregateSceneTileMisses = 0;
-    std::size_t aggregateSceneTileEvictions = 0;
     for (int iteration = 0; iteration < options.measuredIterations; ++iteration) {
         double milliseconds = 0.0;
         snow_canvas_renderer::WatermarkRenderDiagnostics diagnostics;
@@ -744,11 +738,6 @@ std::optional<Result> runPreviewPaintWorkflow(const Options& options, int width,
         }
         samples.push_back(milliseconds);
         accumulateDiagnostics(aggregateDiagnostics, diagnostics);
-        const snow_canvas_renderer::FilterRenderDiagnostics tileDiagnostics =
-            snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread();
-        aggregateSceneTileHits += tileDiagnostics.tileHits;
-        aggregateSceneTileMisses += tileDiagnostics.tileMisses;
-        aggregateSceneTileEvictions += tileDiagnostics.tileEvictions;
     }
     if (!hasVisiblePixel(image) || aggregateDiagnostics.renderCallCount == 0) {
         error = scenario + ": widget paint did not render a visible watermark";
@@ -772,14 +761,7 @@ std::optional<Result> runPreviewPaintWorkflow(const Options& options, int width,
     result.framesPerSecond = operationsPerSecond(result.statistics.p50Ms);
     result.megapixelsPerSecond = width * height / 1'000'000.0 * result.framesPerSecond;
     result.checksum = imageChecksum(image);
-    result.sceneTileHits = aggregateSceneTileHits;
-    result.sceneTileMisses = aggregateSceneTileMisses;
-    result.sceneTileEvictions = aggregateSceneTileEvictions;
     result.diagnostics = aggregateDiagnostics;
-    if (result.sceneTileMisses != 0) {
-        error = scenario + ": warm watermark-only samples missed scene tiles";
-        return std::nullopt;
-    }
     return result;
 }
 
@@ -788,8 +770,7 @@ using WidgetWorkflowMutation = std::function<bool(int, SnowCanvasWidget&)>;
 std::optional<Result> runWidgetPaintWorkflow(const Options& options, int width, int height,
                                              const std::string& scenario,
                                              const std::string& operation,
-                                             WidgetWorkflowMutation mutation,
-                                             bool requireZeroSceneTileMisses, std::string& error) {
+                                             WidgetWorkflowMutation mutation, std::string& error) {
     SnowCanvasRuntime runtime;
     SnowCanvasWidget canvas(runtime);
     canvas.resize(width, height);
@@ -802,8 +783,7 @@ std::optional<Result> runWidgetPaintWorkflow(const Options& options, int width, 
     snow_canvas_renderer::resetWatermarkRenderCacheForCurrentThread();
 
     const auto sample = [&](int sequence, bool measured, double* milliseconds,
-                            snow_canvas_renderer::WatermarkRenderDiagnostics* diagnostics,
-                            snow_canvas_renderer::FilterRenderDiagnostics* tileDiagnostics) {
+                            snow_canvas_renderer::WatermarkRenderDiagnostics* diagnostics) {
         image.fill(Qt::transparent);
         snow_canvas_renderer::resetWatermarkRenderDiagnosticsForCurrentThread();
         QElapsedTimer timer;
@@ -814,7 +794,6 @@ std::optional<Result> runWidgetPaintWorkflow(const Options& options, int width, 
         if (measured) {
             *milliseconds = elapsed / 1'000'000.0;
             *diagnostics = snow_canvas_renderer::watermarkRenderDiagnosticsForCurrentThread();
-            *tileDiagnostics = snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread();
         }
         return mutationApplied;
     };
@@ -822,9 +801,7 @@ std::optional<Result> runWidgetPaintWorkflow(const Options& options, int width, 
     for (int iteration = 0; iteration < options.warmupIterations; ++iteration) {
         double ignoredMilliseconds = 0.0;
         snow_canvas_renderer::WatermarkRenderDiagnostics ignoredDiagnostics;
-        snow_canvas_renderer::FilterRenderDiagnostics ignoredTileDiagnostics;
-        if (!sample(iteration, false, &ignoredMilliseconds, &ignoredDiagnostics,
-                    &ignoredTileDiagnostics)) {
+        if (!sample(iteration, false, &ignoredMilliseconds, &ignoredDiagnostics)) {
             error = scenario + ": warmup widget mutation failed";
             return std::nullopt;
         }
@@ -833,23 +810,15 @@ std::optional<Result> runWidgetPaintWorkflow(const Options& options, int width, 
     std::vector<double> samples;
     samples.reserve(options.measuredIterations);
     snow_canvas_renderer::WatermarkRenderDiagnostics aggregateDiagnostics;
-    std::size_t aggregateSceneTileHits = 0;
-    std::size_t aggregateSceneTileMisses = 0;
-    std::size_t aggregateSceneTileEvictions = 0;
     for (int iteration = 0; iteration < options.measuredIterations; ++iteration) {
         double milliseconds = 0.0;
         snow_canvas_renderer::WatermarkRenderDiagnostics diagnostics;
-        snow_canvas_renderer::FilterRenderDiagnostics tileDiagnostics;
-        if (!sample(options.warmupIterations + iteration, true, &milliseconds, &diagnostics,
-                    &tileDiagnostics)) {
+        if (!sample(options.warmupIterations + iteration, true, &milliseconds, &diagnostics)) {
             error = scenario + ": measured widget mutation failed";
             return std::nullopt;
         }
         samples.push_back(milliseconds);
         accumulateDiagnostics(aggregateDiagnostics, diagnostics);
-        aggregateSceneTileHits += tileDiagnostics.tileHits;
-        aggregateSceneTileMisses += tileDiagnostics.tileMisses;
-        aggregateSceneTileEvictions += tileDiagnostics.tileEvictions;
     }
     if (!hasVisiblePixel(image) || aggregateDiagnostics.renderCallCount !=
                                        static_cast<std::size_t>(options.measuredIterations)) {
@@ -871,14 +840,7 @@ std::optional<Result> runWidgetPaintWorkflow(const Options& options, int width, 
     result.framesPerSecond = operationsPerSecond(result.statistics.p50Ms);
     result.megapixelsPerSecond = width * height / 1'000'000.0 * result.framesPerSecond;
     result.checksum = imageChecksum(image);
-    result.sceneTileHits = aggregateSceneTileHits;
-    result.sceneTileMisses = aggregateSceneTileMisses;
-    result.sceneTileEvictions = aggregateSceneTileEvictions;
     result.diagnostics = aggregateDiagnostics;
-    if (requireZeroSceneTileMisses && result.sceneTileMisses != 0) {
-        error = scenario + ": watermark-only widget samples missed scene tiles";
-        return std::nullopt;
-    }
     return result;
 }
 
@@ -1219,13 +1181,13 @@ std::vector<Scenario> makeScenarios() {
         [](const Options& options, std::string& error) {
             return runWidgetPaintWorkflow(
                 options, 1920, 1080, "workflow_steady_widget_paint_1920x1080", "widget_paint",
-                [](int, SnowCanvasWidget&) { return true; }, true, error);
+                [](int, SnowCanvasWidget&) { return true; }, error);
         },
     });
     scenarios.push_back(Scenario{
         "workflow_render_area_movement_1920x1080",
         Suite::Workflow,
-        "Alternating watermark render areas without scene-tile invalidation",
+        "Alternating watermark render areas with stable scene content",
         [](const Options& options, std::string& error) {
             return runWidgetPaintWorkflow(
                 options, 1920, 1080, "workflow_render_area_movement_1920x1080", "render_area_move",
@@ -1235,7 +1197,7 @@ std::vector<Scenario> makeScenarios() {
                     canvas.setWatermarkRenderArea(area);
                     return true;
                 },
-                true, error);
+                error);
         },
     });
     scenarios.push_back(Scenario{
@@ -1250,7 +1212,7 @@ std::vector<Scenario> makeScenarios() {
                                                     (sequence & 1) != 0 ? -90.0 : 90.0,
                                                     (sequence & 1) != 0 ? 1.25 : 0.85);
                 },
-                false, error);
+                error);
         },
     });
     scenarios.push_back(Scenario{
@@ -1308,7 +1270,7 @@ void printResults(const std::vector<Result>& results) {
                   << " fragments=" << result.diagnostics.submittedFragmentCount
                   << " dense_fills=" << result.diagnostics.denseFillCount
                   << " fallback_draws=" << result.diagnostics.fallbackGlyphDrawCount
-                  << " tile_misses=" << result.sceneTileMisses << '\n';
+                  << '\n';
     }
 }
 
@@ -1367,8 +1329,7 @@ bool writeCsv(const std::string& path, const std::vector<Result>& results, std::
               "placement_ms_per_sample,composition_ms_per_sample,"
               "rendered_logical_left,rendered_logical_top,rendered_logical_right,"
               "rendered_logical_bottom,rendered_device_left,rendered_device_top,"
-              "rendered_device_right,rendered_device_bottom,scene_tile_hits_per_sample,"
-              "scene_tile_misses_per_sample,scene_tile_evictions_per_sample,"
+              "rendered_device_right,rendered_device_bottom,"
               "resolved_font,qt_version,platform,cpu_architecture,compiler,build_type\n";
     stream << std::fixed << std::setprecision(6);
     const std::string qtVersion = qVersion();
@@ -1377,7 +1338,7 @@ bool writeCsv(const std::string& path, const std::vector<Result>& results, std::
     const std::string compiler = compilerName();
     for (const Result& result : results) {
         const auto& diagnostics = result.diagnostics;
-        stream << "3," << csvEscape(result.suite) << ',' << csvEscape(result.scenario) << ','
+        stream << "4," << csvEscape(result.suite) << ',' << csvEscape(result.scenario) << ','
                << csvEscape(result.operation) << ',' << csvEscape(result.cacheMode) << ','
                << result.logicalWidth << ',' << result.logicalHeight << ',' << result.physicalWidth
                << ',' << result.physicalHeight << ',' << result.devicePixelRatio << ','
@@ -1419,9 +1380,6 @@ bool writeCsv(const std::string& path, const std::vector<Result>& results, std::
                << diagnostics.renderedDeviceBounds.top() << ','
                << diagnostics.renderedDeviceBounds.right() << ','
                << diagnostics.renderedDeviceBounds.bottom() << ','
-               << perSample(result.sceneTileHits, result.samples) << ','
-               << perSample(result.sceneTileMisses, result.samples) << ','
-               << perSample(result.sceneTileEvictions, result.samples) << ','
                << csvEscape(result.resolvedFont) << ',' << csvEscape(qtVersion) << ','
                << csvEscape(platform) << ',' << csvEscape(architecture) << ','
                << csvEscape(compiler) << ',' << buildType() << '\n';
