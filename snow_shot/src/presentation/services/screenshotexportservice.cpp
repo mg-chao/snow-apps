@@ -18,6 +18,8 @@
 #include <QThread>
 
 #include <algorithm>
+#include <cmath>
+#include <optional>
 #include <utility>
 
 namespace {
@@ -62,6 +64,51 @@ const CapturedDisplayModel* displayForPinAnchor(const ScreenshotDisplaySession& 
         display = geometry.displayForCanvasRect(displaySession, QRectF(selection));
     }
     return display;
+}
+
+std::optional<ScreenshotImageLayer> croppedLayerForSelection(const CanvasExportSource& source,
+                                                              const QRectF& selection) {
+    const QRectF imageCanvasRect = source.canvasRect.normalized();
+    if (source.image.isNull() || !imageCanvasRect.isValid() || imageCanvasRect.isEmpty()) {
+        return std::nullopt;
+    }
+
+    const QRectF destinationCanvasRect = imageCanvasRect.intersected(selection);
+    if (!destinationCanvasRect.isValid() || destinationCanvasRect.isEmpty()) {
+        return std::nullopt;
+    }
+
+    const qreal scaleX = source.image.width() / imageCanvasRect.width();
+    const qreal scaleY = source.image.height() / imageCanvasRect.height();
+    if (!std::isfinite(scaleX) || !std::isfinite(scaleY) || scaleX <= 0.0 || scaleY <= 0.0) {
+        return std::nullopt;
+    }
+
+    // Crop the retained display image to the selected part before handing it to the pinned
+    // window. Keep the canvas rect for the cropped pixel bounds so sub-pixel display mappings
+    // still sample the same source pixels as the uncropped layer would have.
+    const QRectF sourcePixels(
+        (destinationCanvasRect.left() - imageCanvasRect.left()) * scaleX,
+        (destinationCanvasRect.top() - imageCanvasRect.top()) * scaleY,
+        destinationCanvasRect.width() * scaleX, destinationCanvasRect.height() * scaleY);
+    const QRect pixelBounds = sourcePixels.toAlignedRect().intersected(source.image.rect());
+    if (pixelBounds.isEmpty()) {
+        return std::nullopt;
+    }
+
+    QImage cropped = source.image.copy(pixelBounds);
+    if (cropped.isNull()) {
+        return std::nullopt;
+    }
+    cropped.setDevicePixelRatio(1.0);
+
+    const QRectF croppedCanvasRect(
+        imageCanvasRect.left() + pixelBounds.left() / scaleX,
+        imageCanvasRect.top() + pixelBounds.top() / scaleY,
+        pixelBounds.width() / scaleX, pixelBounds.height() / scaleY);
+    ScreenshotImageLayer layer{std::move(cropped), croppedCanvasRect, destinationCanvasRect};
+    return layer.isValid() ? std::optional<ScreenshotImageLayer>(std::move(layer))
+                           : std::nullopt;
 }
 
 QImage composeSelectionResultFromRuntime(SnowCanvasRuntime& runtime, const QRect& selection,
@@ -119,10 +166,10 @@ ScreenshotPinnedSelectionRequest preparePinnedSelectionRequest(
     layers.reserve(sources.size());
     const QRectF contentCanvasRect(selection);
     for (const CanvasExportSource& source : sources) {
-        const QRectF destination = source.canvasRect.intersected(contentCanvasRect);
-        ScreenshotImageLayer layer{source.image, source.canvasRect, destination};
-        if (layer.isValid()) {
-            layers.push_back(std::move(layer));
+        std::optional<ScreenshotImageLayer> layer =
+            croppedLayerForSelection(source, contentCanvasRect);
+        if (layer.has_value()) {
+            layers.push_back(std::move(*layer));
         }
     }
     request.imageSource = ScreenshotImageSource::fromLayers(std::move(layers));

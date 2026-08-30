@@ -69,6 +69,7 @@ class ExportFixture final {
         display.image = patternedImage(display.physicalRect.size(), 3);
         display.active = true;
         m_displays.appendDisplay(std::move(display));
+        m_geometry.rebuild(m_displays);
 
         m_service = std::make_unique<ScreenshotExportService>(ScreenshotExportServiceContext{
             m_displays,
@@ -200,12 +201,35 @@ void styledClipboardResultRetainsDibV5() {
     require(resultImage.pixelColor(0, 0).alpha() == 0,
             "styled clipboard export did not retain rounded-corner transparency");
 }
+
+void pinnedSelectionCropsDisplaySource() {
+    ExportFixture fixture;
+    require(fixture.isValid(), "export fixture could not initialize the canvas runtime");
+
+    const QRect selection(12, 8, 37, 29);
+    const QImage display = fixture.displaySnapshot();
+    const std::optional<ScreenshotPinnedSelectionRequest> request =
+        fixture.service().preparePinnedSelection(selection, ScreenshotResultStyle{});
+    require(request.has_value() && request->imageSource.isLayered() &&
+                request->imageSource.layers.size() == 1,
+            "pinned selection did not produce a display image layer");
+
+    const ScreenshotImageLayer& layer = request->imageSource.layers.constFirst();
+    require(layer.image.size() == selection.size() &&
+                layer.imageCanvasRect == QRectF(selection) &&
+                layer.destinationCanvasRect == QRectF(selection),
+            "pinned selection retained the full display image instead of cropping it");
+
+    require(hasSamePixels(layer.image, display.copy(selection)),
+            "cropped pinned layer changed the selected display pixels");
+}
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
     directSourceKeepsFullWgcFrameForResultAndClipboard();
     styledClipboardResultRetainsDibV5();
+    pinnedSelectionCropsDisplaySource();
     std::cout << "All screenshot export service tests passed\n";
     return EXIT_SUCCESS;
 }

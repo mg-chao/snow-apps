@@ -12,9 +12,7 @@
 
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <cmath>
-#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -209,7 +207,6 @@ class ScreenshotOcrRecognitionService::Impl final {
     Impl(ScreenshotOcrRecognitionService* owner, const Options& options,
          ScreenshotOcrBackendPreference preference)
         : m_owner(owner),
-          m_workerIdleTimeout((std::max)(1, options.engineIdleTimeoutMs)),
           m_workerLimit(std::clamp(options.workerCount, 1, 2)),
           m_backendPreference(preference) {
         m_workers.reserve(static_cast<std::size_t>(m_workerLimit));
@@ -254,7 +251,6 @@ class ScreenshotOcrRecognitionService::Impl final {
             QObject::disconnect(job->receiverDestroyed);
             return 0;
         }
-        m_workAvailable.notify_one();
         return token;
     }
 
@@ -290,7 +286,6 @@ class ScreenshotOcrRecognitionService::Impl final {
         eraseQueuedJob(job);
         job->request.priority = priority;
         queueFor(priority).push_back(job);
-        m_workAvailable.notify_one();
         return true;
     }
 
@@ -303,7 +298,6 @@ class ScreenshotOcrRecognitionService::Impl final {
             m_backendPreference = preference;
             ++m_backendGeneration;
         }
-        m_workAvailable.notify_all();
     }
 
     [[nodiscard]] int liveWorkerCount() const {
@@ -314,8 +308,6 @@ class ScreenshotOcrRecognitionService::Impl final {
   private:
     using RequestToken = ScreenshotOcrRecognitionPort::RequestToken;
     using Completion = ScreenshotOcrRecognitionPort::Completion;
-    using Clock = std::chrono::steady_clock;
-
     struct Job {
         RequestToken token = 0;
         ScreenshotOcrRequest request;
@@ -411,7 +403,6 @@ class ScreenshotOcrRecognitionService::Impl final {
     void workerLoop(WorkerSlot* worker) {
         OcrEngineHandle engine;
         quint64 engineGeneration = 0;
-        Clock::time_point idleDeadline = Clock::now() + m_workerIdleTimeout;
 
         while (true) {
             std::shared_ptr<Job> job;
@@ -419,29 +410,23 @@ class ScreenshotOcrRecognitionService::Impl final {
             quint64 generation = 0;
             bool retireEngine = false;
             {
-                std::unique_lock lock(m_mutex);
-                const auto ready = [this, engineGeneration]() {
-                    return m_stopping || !m_interactiveQueue.empty() || !m_prefetchQueue.empty() ||
-                           m_backendGeneration != engineGeneration;
-                };
-                if (!m_workAvailable.wait_until(lock, idleDeadline, ready)) {
-                    engine.reset();
-                    finishWorkerLocked(worker);
-                    return;
-                }
+                std::lock_guard lock(m_mutex);
                 if (m_stopping) {
                     finishWorkerLocked(worker);
-                    break;
+                    return;
                 }
                 if (m_backendGeneration != engineGeneration) {
                     engineGeneration = m_backendGeneration;
                     retireEngine = true;
                 }
                 job = takeNextJob();
-                if (job != nullptr) {
-                    preference = m_backendPreference;
-                    generation = m_backendGeneration;
+                if (job == nullptr) {
+                    engine.reset();
+                    finishWorkerLocked(worker);
+                    return;
                 }
+                preference = m_backendPreference;
+                generation = m_backendGeneration;
             }
 
             if (retireEngine) {
@@ -465,7 +450,6 @@ class ScreenshotOcrRecognitionService::Impl final {
                 std::lock_guard lock(m_mutex);
                 --m_activeWorkerCount;
             }
-            idleDeadline = Clock::now() + m_workerIdleTimeout;
 
             QPointer<ScreenshotOcrRecognitionService> service(m_owner);
             QMetaObject::invokeMethod(
@@ -512,7 +496,6 @@ class ScreenshotOcrRecognitionService::Impl final {
             m_prefetchQueue.clear();
             m_requests.clear();
         }
-        m_workAvailable.notify_all();
         for (const std::unique_ptr<WorkerSlot>& worker : m_workers) {
             if (worker->thread.joinable()) {
                 worker->thread.join();
@@ -522,10 +505,8 @@ class ScreenshotOcrRecognitionService::Impl final {
     }
 
     ScreenshotOcrRecognitionService* m_owner = nullptr;
-    const std::chrono::milliseconds m_workerIdleTimeout;
     const int m_workerLimit;
     mutable std::mutex m_mutex;
-    std::condition_variable m_workAvailable;
     Queue m_interactiveQueue;
     Queue m_prefetchQueue;
     QHash<RequestToken, std::shared_ptr<Job>> m_requests;
