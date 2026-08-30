@@ -48,6 +48,10 @@
 #include <QThreadPool>
 
 #include <algorithm>
+#include <atomic>
+#include <functional>
+#include <memory>
+#include <utility>
 
 namespace {
 namespace outlined_icons = adqt::icons::antd::outlined;
@@ -60,6 +64,82 @@ constexpr int kPreviewWidth = 260;
 constexpr int kPreviewHeight = 156;
 // Reserve the empty-state stack before its first layout measurement is available.
 constexpr int kEmptyStateBaselineHeight = 260;
+
+class ScreenshotHistoryTaskExecutor final {
+  public:
+    ScreenshotHistoryTaskExecutor() {
+        m_pool.setObjectName(QStringLiteral("snow-shot-history"));
+        m_pool.setMaxThreadCount(2);
+        m_pool.setExpiryTimeout(0);
+    }
+
+    template <typename Function>
+    void submit(Function&& function, bool persistence = false) {
+        m_pendingJobs.fetch_add(1, std::memory_order_relaxed);
+        if (persistence) {
+            m_pendingPersistenceJobs.fetch_add(1, std::memory_order_relaxed);
+            m_submittedPersistenceJobs.fetch_add(1, std::memory_order_relaxed);
+        }
+        m_pool.start([this, function = std::forward<Function>(function), persistence]() mutable {
+            struct Completion final {
+                ScreenshotHistoryTaskExecutor* executor;
+                bool persistence;
+                ~Completion() {
+                    executor->complete(persistence);
+                }
+            } completion{this, persistence};
+            if (persistence) {
+                m_activePersistenceJobs.fetch_add(1, std::memory_order_relaxed);
+            }
+            function();
+        });
+    }
+
+    [[nodiscard]] int pendingJobs() const {
+        return m_pendingJobs.load(std::memory_order_acquire);
+    }
+    [[nodiscard]] int pendingPersistenceJobs() const {
+        return m_pendingPersistenceJobs.load(std::memory_order_relaxed);
+    }
+    [[nodiscard]] int queuedPersistenceJobs() const {
+        return std::max(0, pendingPersistenceJobs() -
+                               m_activePersistenceJobs.load(std::memory_order_relaxed));
+    }
+    [[nodiscard]] quint64 submittedPersistenceJobs() const {
+        return m_submittedPersistenceJobs.load(std::memory_order_relaxed);
+    }
+    [[nodiscard]] quint64 completedPersistenceJobs() const {
+        return m_completedPersistenceJobs.load(std::memory_order_relaxed);
+    }
+    [[nodiscard]] int workerCount() const { return m_pool.maxThreadCount(); }
+    [[nodiscard]] int expiryTimeout() const { return m_pool.expiryTimeout(); }
+
+  private:
+    void complete(bool persistence) {
+        if (persistence) {
+            m_activePersistenceJobs.fetch_sub(1, std::memory_order_relaxed);
+            m_pendingPersistenceJobs.fetch_sub(1, std::memory_order_relaxed);
+            m_completedPersistenceJobs.fetch_add(1, std::memory_order_relaxed);
+        }
+        // Publish aggregate completion last so a zero pending-job count also
+        // implies that the persistence-specific counters are settled.
+        m_pendingJobs.fetch_sub(1, std::memory_order_release);
+    }
+
+    std::atomic_int m_pendingJobs{0};
+    std::atomic_int m_pendingPersistenceJobs{0};
+    std::atomic_int m_activePersistenceJobs{0};
+    std::atomic<quint64> m_submittedPersistenceJobs{0};
+    std::atomic<quint64> m_completedPersistenceJobs{0};
+    // Declare the pool last so it is destroyed first and waits while the
+    // diagnostic counters are still alive during process shutdown.
+    QThreadPool m_pool;
+};
+
+ScreenshotHistoryTaskExecutor& historyTaskExecutor() {
+    static ScreenshotHistoryTaskExecutor executor;
+    return executor;
+}
 
 QColor colorOnBackground(const QColor& foreground, const QColor& background) {
     if (!foreground.isValid()) {
@@ -125,6 +205,20 @@ class ApplicationStorageHistoryDataSource final : public ScreenshotHistoryPageDa
                 &ScreenshotHistoryPageDataSource::historyChanged);
         connect(&applicationStorage, &storage::ApplicationStorage::captureHistoryClearFinished,
                 this, &ScreenshotHistoryPageDataSource::clearFinished);
+        m_cancellationToken = std::make_shared<std::atomic_bool>(false);
+    }
+
+    ~ApplicationStorageHistoryDataSource() override {
+        if (m_cancellationToken != nullptr) {
+            m_cancellationToken->store(true, std::memory_order_release);
+        }
+    }
+
+    void cancelPending() override {
+        if (m_cancellationToken != nullptr) {
+            m_cancellationToken->store(true, std::memory_order_release);
+        }
+        m_cancellationToken = std::make_shared<std::atomic_bool>(false);
     }
 
     QVector<storage::CaptureHistoryRecord> records() const override {
@@ -146,35 +240,45 @@ class ApplicationStorageHistoryDataSource final : public ScreenshotHistoryPageDa
     void requestDisplayAssets(const QVector<storage::CaptureHistoryRecord>& records,
                               quint64 generation) override {
         const QPointer<ApplicationStorageHistoryDataSource> guarded(this);
-        QThreadPool::globalInstance()->start(
-            [guarded, records, generation]() {
-                if (guarded == nullptr) {
+        const auto cancellationToken = m_cancellationToken;
+        historyTaskExecutor().submit([guarded, records, generation, cancellationToken]() {
+            if (guarded == nullptr || cancellationToken->load(std::memory_order_acquire)) {
+                return;
+            }
+            QVector<ScreenshotHistoryAssetResolution> resolutions;
+            resolutions.reserve(records.size());
+            for (const storage::CaptureHistoryRecord& record : records) {
+                if (guarded == nullptr || cancellationToken->load(std::memory_order_acquire)) {
                     return;
                 }
-                QVector<ScreenshotHistoryAssetResolution> resolutions;
-                resolutions.reserve(records.size());
-                for (const storage::CaptureHistoryRecord& record : records) {
-                    if (guarded == nullptr) {
-                        return;
+                auto& applicationStorage = storage::ApplicationStorage::instance();
+                resolutions.push_back(
+                    {record.id,
+                     applicationStorage.isInitialized()
+                         ? applicationStorage.captureHistory().displayAssets(record)
+                         : std::nullopt});
+            }
+            if (guarded == nullptr || cancellationToken->load(std::memory_order_acquire)) {
+                return;
+            }
+            QMetaObject::invokeMethod(
+                guarded,
+                [guarded, generation, resolutions = std::move(resolutions), cancellationToken]() {
+                    if (guarded != nullptr &&
+                        !cancellationToken->load(std::memory_order_acquire)) {
+                        emit guarded->displayAssetsReady(generation, resolutions);
                     }
-                    resolutions.push_back({record.id, guarded->displayAssets(record)});
-                }
-                QMetaObject::invokeMethod(
-                    guarded,
-                    [guarded, generation, resolutions = std::move(resolutions)]() {
-                        if (guarded != nullptr) {
-                            emit guarded->displayAssetsReady(generation, resolutions);
-                        }
-                    },
-                    Qt::QueuedConnection);
-            });
+                },
+                Qt::QueuedConnection);
+        });
     }
 
     void requestResultImage(const storage::CaptureHistoryRecord& record,
                             quint64 generation) override {
         const QPointer<ApplicationStorageHistoryDataSource> guarded(this);
-        QThreadPool::globalInstance()->start([guarded, record, generation]() {
-            if (guarded == nullptr) {
+        const auto cancellationToken = m_cancellationToken;
+        historyTaskExecutor().submit([guarded, record, generation, cancellationToken]() {
+            if (guarded == nullptr || cancellationToken->load(std::memory_order_acquire)) {
                 return;
             }
             std::optional<QImage> image;
@@ -182,10 +286,15 @@ class ApplicationStorageHistoryDataSource final : public ScreenshotHistoryPageDa
             if (applicationStorage.isInitialized()) {
                 image = applicationStorage.captureHistory().loadResultImage(record);
             }
+            if (guarded == nullptr || cancellationToken->load(std::memory_order_acquire)) {
+                return;
+            }
             QMetaObject::invokeMethod(
                 guarded,
-                [guarded, generation, recordId = record.id, image = std::move(image)]() mutable {
-                    if (guarded != nullptr) {
+                [guarded, generation, recordId = record.id, image = std::move(image),
+                 cancellationToken]() mutable {
+                    if (guarded != nullptr &&
+                        !cancellationToken->load(std::memory_order_acquire)) {
                         emit guarded->resultImageReady(
                             generation, ScreenshotHistoryResultResolution{recordId, std::move(image)});
                     }
@@ -204,13 +313,16 @@ class ApplicationStorageHistoryDataSource final : public ScreenshotHistoryPageDa
     bool requestClear() override {
         return storage::ApplicationStorage::instance().requestCaptureHistoryClear();
     }
+
+  private:
+    std::shared_ptr<std::atomic_bool> m_cancellationToken;
 };
 
 class HistoryThumbnailReply final : public adqt::widgets::AdImageReply {
   public:
     explicit HistoryThumbnailReply(QObject* parent = nullptr) : AdImageReply(parent) {}
 
-    void attach(adqt::widgets::AdImageReply* source, std::function<void(const QImage&)> onSuccess) {
+    void attach(adqt::widgets::AdImageReply* source, std::function<void(QImage)> onSuccess) {
         sourceReply_ = source;
         onSuccess_ = std::move(onSuccess);
         if (sourceReply_ == nullptr) {
@@ -224,11 +336,12 @@ class HistoryThumbnailReply final : public adqt::widgets::AdImageReply {
                 return;
             }
             if (source->isSuccessful()) {
-                const QImage image = source->image();
+                QImage image = source->image();
+                const QImage replyImage = image;
                 if (onSuccess_) {
-                    onSuccess_(image);
+                    onSuccess_(std::move(image));
                 }
-                succeed(image, source->naturalSize());
+                succeed(replyImage, source->naturalSize());
             } else {
                 fail(source->errorString());
             }
@@ -249,7 +362,7 @@ class HistoryThumbnailReply final : public adqt::widgets::AdImageReply {
 
   private:
     QPointer<adqt::widgets::AdImageReply> sourceReply_;
-    std::function<void(const QImage&)> onSuccess_;
+    std::function<void(QImage)> onSuccess_;
 };
 
 class HistoryThumbnailLoader final : public adqt::widgets::AdImageLoader {
@@ -287,9 +400,9 @@ class HistoryThumbnailLoader final : public adqt::widgets::AdImageLoader {
 
         auto* sourceReply =
             adqt::widgets::defaultAdImageLoader()->load(source, options, reply);
-        reply->attach(sourceReply, [this, cachePath](const QImage& image) {
+        reply->attach(sourceReply, [this, cachePath](QImage image) {
             if (!image.isNull()) {
-                persist(cachePath, image);
+                persist(cachePath, std::move(image));
             }
         });
         return reply;
@@ -322,14 +435,17 @@ class HistoryThumbnailLoader final : public adqt::widgets::AdImageLoader {
                                                 QStringLiteral(".png"));
     }
 
-    void persist(const QString& path, const QImage& image) const {
+    void persist(const QString& path, QImage image) const {
         const QString directory = QFileInfo(path).absolutePath();
-        QThreadPool::globalInstance()->start([directory, path, image]() {
+        // Accepted cache writes remain queued until completion; image buffers can
+        // therefore retain memory proportional to the pending persistence queue.
+        historyTaskExecutor().submit([directory, path, image = std::move(image)]() mutable {
             if (!QDir().mkpath(directory)) {
                 return;
             }
             QSaveFile file(path);
             const QByteArray png = snow_shot::image_codec::encodePng(image);
+            image = QImage();
             if (!file.open(QIODevice::WriteOnly) || png.isEmpty() || file.write(png) != png.size() ||
                 !file.commit()) {
                 return;
@@ -351,7 +467,7 @@ class HistoryThumbnailLoader final : public adqt::widgets::AdImageLoader {
                     totalBytes -= entry.size();
                 }
             }
-        });
+        }, true);
     }
 
     QString m_cacheDirectory;
@@ -364,6 +480,38 @@ HistoryThumbnailLoader* historyThumbnailLoader() {
     }
     return loader;
 }
+
+} // namespace
+
+int screenshotHistoryPendingJobCount() {
+    return historyTaskExecutor().pendingJobs();
+}
+
+int screenshotHistoryPendingPersistenceJobCount() {
+    return historyTaskExecutor().pendingPersistenceJobs();
+}
+
+int screenshotHistoryQueuedPersistenceJobCount() {
+    return historyTaskExecutor().queuedPersistenceJobs();
+}
+
+quint64 screenshotHistorySubmittedPersistenceJobCount() {
+    return historyTaskExecutor().submittedPersistenceJobs();
+}
+
+quint64 screenshotHistoryCompletedPersistenceJobCount() {
+    return historyTaskExecutor().completedPersistenceJobs();
+}
+
+int screenshotHistoryWorkerCount() {
+    return historyTaskExecutor().workerCount();
+}
+
+int screenshotHistoryWorkerExpiryTimeout() {
+    return historyTaskExecutor().expiryTimeout();
+}
+
+namespace {
 
 class HistoryEntryWidget final : public QFrame {
     Q_DECLARE_TR_FUNCTIONS(HistoryEntryWidget)
@@ -838,6 +986,12 @@ ScreenshotHistoryPageWidget::ScreenshotHistoryPageWidget(
     applyTheme(m_colorScheme);
 }
 
+ScreenshotHistoryPageWidget::~ScreenshotHistoryPageWidget() {
+    if (m_dataSource != nullptr) {
+        m_dataSource->cancelPending();
+    }
+}
+
 int ScreenshotHistoryPageWidget::totalCount() const {
     return m_records.size();
 }
@@ -851,6 +1005,9 @@ int ScreenshotHistoryPageWidget::currentPage() const {
 }
 
 void ScreenshotHistoryPageWidget::refresh() {
+    if (m_dataSource != nullptr) {
+        m_dataSource->cancelPending();
+    }
     m_refreshQueued = false;
     m_dirty = false;
     ++m_assetGeneration;
@@ -863,6 +1020,16 @@ void ScreenshotHistoryPageWidget::refresh() {
 }
 
 void ScreenshotHistoryPageWidget::setActive(bool active) {
+    if (!active) {
+        if (m_dataSource != nullptr) {
+            m_dataSource->cancelPending();
+        }
+        m_active = false;
+        // Any page-facing work canceled while hidden must be resubmitted when
+        // the route becomes active again.
+        m_dirty = true;
+        return;
+    }
     if (m_active == active) {
         if (m_active && m_dirty) {
             refresh();

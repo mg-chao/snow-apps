@@ -739,6 +739,16 @@ class FakeHistoryDataSource final : public ScreenshotHistoryPageDataSource {
   public:
     using ScreenshotHistoryPageDataSource::ScreenshotHistoryPageDataSource;
 
+    struct PendingDisplayRequest final {
+        QVector<snow_shot::storage::CaptureHistoryRecord> records;
+        quint64 generation = 0;
+    };
+
+    struct PendingResultRequest final {
+        snow_shot::storage::CaptureHistoryRecord record;
+        quint64 generation = 0;
+    };
+
     QVector<snow_shot::storage::CaptureHistoryRecord> records() const override {
         ++recordsCalls;
         return currentRecords;
@@ -750,9 +760,21 @@ class FakeHistoryDataSource final : public ScreenshotHistoryPageDataSource {
         return assets.value(record.id);
     }
 
+    bool supportsAsyncDisplayAssets() const override { return asyncDisplayAssets; }
+
+    void requestDisplayAssets(
+        const QVector<snow_shot::storage::CaptureHistoryRecord>& records,
+        quint64 generation) override {
+        pendingDisplayRequests.push_back({records, generation});
+    }
+
     void requestResultImage(const snow_shot::storage::CaptureHistoryRecord& record,
                             quint64 generation) override {
         ++resultRequests;
+        if (deferResultCallbacks) {
+            pendingResultRequests.push_back({record, generation});
+            return;
+        }
         const std::optional<QImage> image =
             resultImages.contains(record.id)
                 ? std::optional<QImage>{resultImages.value(record.id)}
@@ -764,6 +786,34 @@ class FakeHistoryDataSource final : public ScreenshotHistoryPageDataSource {
                     generation, ScreenshotHistoryResultResolution{recordId, image});
             },
             Qt::QueuedConnection);
+    }
+
+    void cancelPending() override { ++cancelCalls; }
+
+    void deliverDisplayAssets(int requestIndex = 0) {
+        if (requestIndex < 0 || requestIndex >= pendingDisplayRequests.size()) {
+            return;
+        }
+        const PendingDisplayRequest request = pendingDisplayRequests.at(requestIndex);
+        QVector<ScreenshotHistoryAssetResolution> resolutions;
+        resolutions.reserve(request.records.size());
+        for (const auto& record : request.records) {
+            resolutions.push_back({record.id, assets.value(record.id)});
+        }
+        emit displayAssetsReady(request.generation, resolutions);
+    }
+
+    void deliverResultImage(int requestIndex = 0) {
+        if (requestIndex < 0 || requestIndex >= pendingResultRequests.size()) {
+            return;
+        }
+        const PendingResultRequest request = pendingResultRequests.at(requestIndex);
+        const std::optional<QImage> image =
+            resultImages.contains(request.record.id)
+                ? std::optional<QImage>{resultImages.value(request.record.id)}
+                : std::nullopt;
+        emit resultImageReady(
+            request.generation, ScreenshotHistoryResultResolution{request.record.id, image});
     }
 
     void remove(const QString& id) override {
@@ -782,11 +832,16 @@ class FakeHistoryDataSource final : public ScreenshotHistoryPageDataSource {
     mutable int recordsCalls = 0;
     mutable int assetCalls = 0;
     int resultRequests = 0;
+    int cancelCalls = 0;
     int clearCalls = 0;
+    bool asyncDisplayAssets = false;
+    bool deferResultCallbacks = false;
     QVector<QString> removedIds;
     QVector<snow_shot::storage::CaptureHistoryRecord> currentRecords;
     QHash<QString, snow_shot::storage::CaptureHistoryAssetSet> assets;
     QHash<QString, QImage> resultImages;
+    QVector<PendingDisplayRequest> pendingDisplayRequests;
+    QVector<PendingResultRequest> pendingResultRequests;
 };
 
 void screenshotHistoryLifecycleAndIdentityDiff() {
@@ -882,6 +937,7 @@ void screenshotHistoryLifecycleAndIdentityDiff() {
 
     page.hide();
     flushEvents();
+    require(source.cancelCalls > 0, "hiding history must cancel pending page work");
     source.notifyChanged();
     flushEvents();
     require(source.recordsCalls == 2, "hidden history changes performed a metadata reconciliation");
@@ -911,6 +967,74 @@ void screenshotHistoryLifecycleAndIdentityDiff() {
                                : nullptr;
     require(resultLessCopy != nullptr && resultLessCopy->isHidden(),
             "history Copy must stay hidden when a record has no stored result image");
+}
+
+void screenshotHistoryLateCallbacksAreIgnoredAfterReplacement() {
+    using namespace snow_shot::storage;
+    CaptureHistoryRecord record;
+    record.id = QStringLiteral("history-cancel-row");
+    record.createdUtc = QDateTime::currentDateTimeUtc();
+    record.canvasBounds = QRect(0, 0, 100, 80);
+    record.selection.rectangle = QRect(5, 6, 70, 50);
+    record.displays.push_back(
+        {QStringLiteral("display-1"), QStringLiteral("Primary"), QSize(100, 80), 128});
+    record.result = CaptureHistoryResultRecord{QSize(70, 50), 96};
+
+    CaptureHistoryAssetSet assetSet;
+    assetSet.recordId = record.id;
+    assetSet.displays.push_back({record.id, QStringLiteral("display-1"), QStringLiteral("Primary"),
+                                 QSize(100, 80),
+                                 QUrl::fromLocalFile(QStringLiteral("C:/late-history.png"))});
+
+    FakeHistoryDataSource source;
+    source.asyncDisplayAssets = true;
+    source.deferResultCallbacks = true;
+    source.currentRecords = {record};
+    source.assets.insert(record.id, assetSet);
+    source.resultImages.insert(record.id, QImage(QSize(70, 50), QImage::Format_RGBA8888));
+
+    auto* oldPage = new ScreenshotHistoryPageWidget(&source, nullptr);
+    oldPage->resize(760, 520);
+    oldPage->show();
+    flushEvents();
+    require(source.pendingDisplayRequests.size() == 1,
+            "history cancellation test did not queue an asset request");
+    auto* oldRow = oldPage->findChild<QWidget*>(
+        QStringLiteral("screenshotHistoryEntry-history-cancel-row"));
+    auto* oldCopy = oldRow != nullptr
+                        ? oldRow->findChild<adqt::widgets::AdButton*>(
+                              QStringLiteral("screenshotHistoryEntryCopy"))
+                        : nullptr;
+    require(oldCopy != nullptr, "history cancellation test could not find the copy action");
+    oldCopy->click();
+    require(source.pendingResultRequests.size() == 1,
+            "history cancellation test did not queue a result request");
+
+    QPointer<ScreenshotHistoryPageWidget> oldPageGuard(oldPage);
+    oldPage->hide();
+    oldPage->deleteLater();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    require(oldPageGuard == nullptr,
+            "history cancellation test did not destroy the previous page");
+    require(source.cancelCalls > 0,
+            "history cancellation test did not cancel the previous page work");
+
+    FakeHistoryDataSource replacementSource;
+    ScreenshotHistoryPageWidget replacement(&replacementSource, nullptr);
+    replacement.resize(760, 520);
+    replacement.show();
+    flushEvents();
+    require(replacement.totalCount() == 0 &&
+                replacement.findChildren<adqt::widgets::AdImage*>().isEmpty(),
+            "replacement history page did not start empty");
+
+    // These callbacks belong to the deleted page and must not reach the replacement.
+    source.deliverDisplayAssets();
+    source.deliverResultImage();
+    flushEvents();
+    require(replacement.totalCount() == 0 &&
+                replacement.findChildren<adqt::widgets::AdImage*>().isEmpty(),
+            "late canceled history callbacks modified the replacement page");
 }
 
 void screenshotHistoryEmptyToPopulatedGeometryIsStable() {
@@ -2191,6 +2315,21 @@ void contentCardStrictlyLazyLoadsAndDestroysRoutes() {
     auto* historyWidget =
         dynamic_cast<ScreenshotHistoryPageWidget*>(stack->currentWidget());
     QPointer<ScreenshotHistoryPageWidget> historyGuard(historyWidget);
+    if (historyWidget != nullptr) {
+        // Keep the child-destruction assertion meaningful even when the
+        // repository fixture has no records and the page creates no previews.
+        new adqt::widgets::AdImage(historyWidget);
+    }
+    const auto historyImages = historyWidget != nullptr
+                                  ? historyWidget->findChildren<adqt::widgets::AdImage*>()
+                                  : QList<adqt::widgets::AdImage*>{};
+    const QList<QPointer<adqt::widgets::AdImage>> historyImageGuards = [&historyImages]() {
+        QList<QPointer<adqt::widgets::AdImage>> guards;
+        for (auto* image : historyImages) {
+            guards.push_back(image);
+        }
+        return guards;
+    }();
     require(secondPageGuard == nullptr && stack->count() == 1 && historyWidget != nullptr,
             "activating history must destroy the generated page and create history on demand");
     require(routeChanges == 2 && sectionListChanges == 2 &&
@@ -2203,6 +2342,10 @@ void contentCardStrictlyLazyLoadsAndDestroysRoutes() {
     require(historyGuard == nullptr && recreatedSecondPage != nullptr &&
                 stack->count() == 1,
             "leaving history must destroy it and recreate generated pages on return");
+    for (const auto& imageGuard : historyImageGuards) {
+        require(imageGuard == nullptr,
+                "leaving history must destroy every history AdImage child");
+    }
 
     content.setCurrentRoute(historyPageDefinition->route);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
@@ -2697,6 +2840,7 @@ int main(int argc, char** argv) {
     }
     if (screenshotHistoryOnly) {
         screenshotHistoryLifecycleAndIdentityDiff();
+        screenshotHistoryLateCallbacksAreIgnoredAfterReplacement();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -2735,6 +2879,7 @@ int main(int argc, char** argv) {
     screenshotHistoryPageUsesRepositoryAndAntDesignComponents();
     screenshotHistorySurvivesSidebarWidthTransitions();
     screenshotHistoryLifecycleAndIdentityDiff();
+    screenshotHistoryLateCallbacksAreIgnoredAfterReplacement();
     screenshotHistoryEmptyToPopulatedGeometryIsStable();
     catalogExpansionUpdatesAllConsumers();
     generatedSettingsPagesHaveNoSyntheticBottomSpace();

@@ -598,6 +598,16 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/platform/windows/autostartregistration.cpp
     src/platform/windows/focusedfullscreenwindow.cpp
 )
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/components/screenshothistorypagewidget.cpp"
+     _snow_shot_history_source)
+string(FIND "${_snow_shot_history_source}" "QThreadPool::globalInstance()"
+       _snow_shot_history_global_pool_call)
+if(NOT _snow_shot_history_global_pool_call EQUAL -1)
+    message(FATAL_ERROR
+        "Screenshot History must use its dedicated executor, not QThreadPool::globalInstance().")
+endif()
+unset(_snow_shot_history_source)
+unset(_snow_shot_history_global_pool_call)
 add_library(snow_shot_settings STATIC ${SNOW_SHOT_SETTINGS_SOURCES})
 snow_enable_unity_build(snow_shot_settings)
 target_include_directories(snow_shot_settings PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
