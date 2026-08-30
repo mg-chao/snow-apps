@@ -3,8 +3,8 @@ use snow_draw_engine_core::{
     rectangle_intersects_viewport,
 };
 use snow_draw_engine_document::{
-    ArrowData, ElementId, MIN_TEXT_FONT_SIZE, PenFilterData, RectangleData, SerialNumberData,
-    arrow_hit_test, arrow_segment_midpoints,
+    ArrowData, ElementId, MIN_TEXT_FONT_SIZE, RectangleData, SerialNumberData, arrow_hit_test,
+    arrow_segment_midpoints,
 };
 use snow_draw_engine_model::DocumentModel;
 
@@ -97,8 +97,6 @@ impl Editor {
             }
         }
         let selection_elements = self.presentation_selection_elements(document);
-        let selection_pen_filters =
-            self.selected_pen_filter_snapshots(document, &selection_elements);
         let selection_arrows = self.presentation_selection_arrows(document);
         let selection_bounds =
             self.presentation_selection_bounds(&selection_elements, &selection_arrows);
@@ -162,7 +160,6 @@ impl Editor {
             hovered_arrow: self.hovered_arrow(document),
             selection_bounds,
             selection_elements,
-            selection_pen_filters,
             selection_arrows,
             selected_single_rect,
             selected_single_text_rect,
@@ -308,26 +305,6 @@ impl Editor {
         let mut elements = Self::selection_elements_from_ids(document, &self.state.selection.ids);
         self.apply_active_text_draft_rect_to_elements(&mut elements);
         elements
-    }
-
-    pub(crate) fn selected_pen_filter_snapshots(
-        &self,
-        document: &DocumentModel,
-        selection_elements: &[SelectionRectState],
-    ) -> Vec<PenFilterData> {
-        selection_elements
-            .iter()
-            .filter_map(|element| {
-                let mut filter = document.pen_filter(element.id).ok()?.clone();
-                filter.x = element.rect.center.x - element.rect.width / 2.0;
-                filter.y = element.rect.center.y - element.rect.height / 2.0;
-                filter.width = element.rect.width;
-                filter.height = element.rect.height;
-                filter.rotation = element.rect.rotation;
-                filter.opacity = element.rect.opacity;
-                Some(filter)
-            })
-            .collect()
     }
 
     pub(crate) fn rectangle_snapshot(
@@ -842,14 +819,6 @@ mod tests {
         id
     }
 
-    fn insert_pen_filter(document: &mut DocumentModel, filter: PenFilterData) -> ElementId {
-        let id = document.peek_next_element_id();
-        let mut transaction = Transaction::new("insert pen filter");
-        transaction.insert_pen_filter(id, ElementMeta::default(), filter);
-        document.apply_transaction(transaction).unwrap();
-        id
-    }
-
     fn editor_with_surface() -> Editor {
         let mut editor = Editor::new(EngineConfig::default()).unwrap();
         editor.set_surface_size(800, 600).unwrap();
@@ -1054,51 +1023,6 @@ mod tests {
                 rotation: committed_rect.rotation,
             })
         );
-    }
-
-    #[test]
-    fn selected_pen_filter_contour_follows_selection_preview_geometry() {
-        let mut document = DocumentModel::new();
-        let filter = PenFilterData::from_global_points(
-            &[
-                Point::new(10.0, 20.0),
-                Point::new(60.0, 45.0),
-                Point::new(110.0, 30.0),
-            ],
-            snow_draw_engine_document::CanvasFilterType::Mosaic,
-            0.5,
-            30.0,
-            0.75,
-        )
-        .unwrap();
-        let filter_id = insert_pen_filter(&mut document, filter.clone());
-        let mut editor = editor_with_surface();
-        editor.select_element(&document, filter_id).unwrap();
-
-        let state = editor.presentation_state(&document);
-        assert_eq!(state.selection_pen_filters, vec![filter.clone()]);
-
-        let preview = SelectionRectState {
-            id: filter_id,
-            rect: RectangleData {
-                center: Point::new(240.0, 160.0),
-                width: 200.0,
-                height: 80.0,
-                rotation: 0.4,
-                opacity: 0.35,
-                ..document.element_rect_proxy(filter_id).unwrap()
-            },
-        };
-        let snapshots = editor.selected_pen_filter_snapshots(&document, &[preview]);
-
-        assert_eq!(snapshots.len(), 1);
-        assert_eq!(snapshots[0].x, 140.0);
-        assert_eq!(snapshots[0].y, 120.0);
-        assert_eq!(snapshots[0].width, 200.0);
-        assert_eq!(snapshots[0].height, 80.0);
-        assert_eq!(snapshots[0].rotation, 0.4);
-        assert_eq!(snapshots[0].opacity, 0.35);
-        assert_eq!(snapshots[0].points, filter.points);
     }
 
     #[test]

@@ -130,15 +130,6 @@ pub(crate) fn compose_overlay_items(
         )));
     }
 
-    for pen_filter in &presentation.selection_pen_filters {
-        if pen_filter.global_points().len() < 2 {
-            continue;
-        }
-        items.push(OverlayDisplayItem::PenFilterContour(hover_pen_filter_item(
-            pen_filter,
-        )));
-    }
-
     let selected_item_count =
         presentation.selection_elements.len() + presentation.selection_arrows.len();
     if selection_box_visible_for_members(
@@ -640,19 +631,7 @@ mod tests {
     }
 
     #[test]
-    fn selected_pen_filter_keeps_its_selection_box_and_adds_the_hover_contour() {
-        let pen_filter = snow_draw_engine_document::PenFilterData {
-            x: 10.0,
-            y: 20.0,
-            width: 100.0,
-            height: 50.0,
-            rotation: 0.0,
-            points: vec![[0.0, 0.0], [0.4, 0.8], [1.0, 0.25]],
-            filter_type: snow_draw_engine_document::CanvasFilterType::Mosaic,
-            strength: 0.5,
-            stroke_width: 30.0,
-            opacity: 1.0,
-        };
+    fn selected_pen_filter_keeps_its_selection_box_without_a_hover_contour() {
         let mut selection_rect = rect(100.0, 50.0);
         selection_rect.center = Point::new(60.0, 45.0);
         let presentation = EditorPresentationState {
@@ -666,20 +645,15 @@ mod tests {
                 id: element_id(1),
                 rect: selection_rect,
             }],
-            selection_pen_filters: vec![pen_filter],
             ..EditorPresentationState::default()
         };
 
         let items = compose_overlay_items(SnapConfig::default(), &presentation, frame_view());
 
-        let contour = items.iter().find_map(|item| match item {
-            OverlayDisplayItem::PenFilterContour(contour) => Some(contour),
-            _ => None,
-        });
-        assert!(contour.is_some());
-        assert_eq!(
-            contour.unwrap().points,
-            vec![[10.0, 20.0], [50.0, 60.0], [110.0, 32.5]]
+        assert!(
+            !items
+                .iter()
+                .any(|item| matches!(item, OverlayDisplayItem::PenFilterContour(_)))
         );
         assert!(items.iter().any(|item| matches!(
             item,

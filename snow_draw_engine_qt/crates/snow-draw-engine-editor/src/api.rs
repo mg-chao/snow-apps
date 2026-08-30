@@ -345,7 +345,6 @@ pub struct EditorPresentationState {
     pub hovered_arrow: Option<ArrowData>,
     pub selection_bounds: Option<SelectionBounds>,
     pub selection_elements: Vec<SelectionRectState>,
-    pub selection_pen_filters: Vec<PenFilterData>,
     pub selection_arrows: Vec<SelectionArrowState>,
     pub selected_single_rect: Option<RectangleData>,
     pub selected_single_text_rect: Option<RectangleData>,

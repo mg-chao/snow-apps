@@ -2050,8 +2050,87 @@ void penFilterHoverDrawsAPathContour() {
 
 } // namespace
 
+namespace {
+void tiledRenderMatchesFullRenderDiagnostic() {
+    const QSize surfaceSize(1024, 1024);
+    QImage background(surfaceSize, QImage::Format_ARGB32_Premultiplied);
+    for (int y = 0; y < background.height(); ++y) {
+        auto* line = reinterpret_cast<QRgb*>(background.scanLine(y));
+        for (int x = 0; x < background.width(); ++x) {
+            line[x] = qRgba((x * 7) % 256, (y * 13) % 256, ((x + y) * 3) % 256, 255);
+        }
+    }
+
+    const auto runCase = [&](int filterType, double strength, const char* label) {
+        SnowSceneDisplayItem filter{};
+        filter.kind = SNOW_SCENE_DISPLAY_ITEM_FILTER;
+        filter.center_x = 512.0;
+        filter.center_y = 512.0;
+        filter.width = 900.0;
+        filter.height = 900.0;
+        filter.filter = snow_filter_render_spec_resolve(filterType, strength);
+        filter.opacity = 1.0;
+        const SnowCanvasSceneItem items[] = {SnowCanvasSceneItem(filter)};
+        SceneDisplayInfo displayInfo{};
+        displayInfo.surface_width = surfaceSize.width();
+        displayInfo.surface_height = surfaceSize.height();
+        displayInfo.camera_zoom = 1.0;
+
+        QImage full(surfaceSize, QImage::Format_ARGB32_Premultiplied);
+        full.fill(Qt::transparent);
+        QPainter fullPainter(&full);
+        const QRegion all(QRect(QPoint(0, 0), surfaceSize));
+        snow_canvas_renderer::renderSceneItems(snow_canvas_renderer::SceneRenderRequest{
+            &fullPainter, &displayInfo, items, 1, all, nullptr, 0, &background});
+        fullPainter.end();
+
+        int renderToken = 0;
+        snow_canvas_filter_tile_cache::clear();
+        QImage tiled(surfaceSize, QImage::Format_ARGB32_Premultiplied);
+        tiled.fill(Qt::transparent);
+        QPainter tiledPainter(&tiled);
+        snow_canvas_renderer::renderSceneItemsTiled(snow_canvas_renderer::SceneRenderRequest{
+            &tiledPainter, &displayInfo, items, 1, all, nullptr, 0, &background,
+            nullptr, nullptr, nullptr, nullptr, {}, nullptr, &renderToken, nullptr,
+            false, 0, QPoint(), true});
+        tiledPainter.end();
+
+        std::size_t mismatched = 0;
+        int maxDelta = 0;
+        std::vector<int> columnsWithDiff(surfaceSize.width(), 0);
+        for (int y = 0; y < surfaceSize.height(); ++y) {
+            const auto* fullLine = reinterpret_cast<const QRgb*>(full.constScanLine(y));
+            const auto* tiledLine = reinterpret_cast<const QRgb*>(tiled.constScanLine(y));
+            for (int x = 0; x < surfaceSize.width(); ++x) {
+                const int delta = std::max({std::abs(qRed(fullLine[x]) - qRed(tiledLine[x])),
+                                            std::abs(qGreen(fullLine[x]) - qGreen(tiledLine[x])),
+                                            std::abs(qBlue(fullLine[x]) - qBlue(tiledLine[x]))});
+                if (delta > 2) {
+                    ++mismatched;
+                    ++columnsWithDiff[x];
+                }
+                maxDelta = std::max(maxDelta, delta);
+            }
+        }
+        std::cerr << "[diag] " << label << ": mismatched=" << mismatched
+                  << " maxDelta=" << maxDelta << " columns:";
+        for (int x : {255, 256, 257, 511, 512, 513, 767, 768, 769}) {
+            std::cerr << " x" << x << "=" << columnsWithDiff[x];
+        }
+        std::cerr << '\n';
+    };
+
+    runCase(0, 0.7, "mosaic strength 0.7");
+    runCase(0, 0.2, "mosaic strength 0.2");
+    runCase(1, 0.7, "blur strength 0.7");
+    runCase(1, 0.2, "blur strength 0.2");
+    runCase(2, 0.5, "grayscale");
+}
+} // namespace
+
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    tiledRenderMatchesFullRenderDiagnostic();
     inversionPreservesPremultipliedAlpha();
     grayscalePreservesPremultipliedAlpha();
     colorEffectStrengthHasExactEndpointsAndInterpolation();
