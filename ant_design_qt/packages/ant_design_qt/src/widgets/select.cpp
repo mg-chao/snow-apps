@@ -1039,7 +1039,7 @@ class AdSelect::OptionListModel final : public QAbstractListModel {
   QVector<ModelRow> rows_;
 };
 
-class AdSelect::PopupFrame final : public QFrame {
+class AdSelect::PopupFrame final : public QFrame, public detail::TopLevelToolResourceReleaser {
  public:
   explicit PopupFrame(QWidget* parent = nullptr) : QFrame(parent) {
     setFrameShape(QFrame::NoFrame);
@@ -1047,6 +1047,8 @@ class AdSelect::PopupFrame final : public QFrame {
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAutoFillBackground(false);
   }
+
+  void releaseTopLevelToolResources() override { destroy(); }
 
   void setVisualStyle(const QColor& background, const QColor& borderColor, int borderRadius) {
     const int normalizedRadius = std::max(0, borderRadius);
@@ -5584,6 +5586,9 @@ void AdSelect::setOpenInternal(bool value, bool emitSignal) {
     detail::setPopupInteractionHostOpen(this, false);
     if (popup_) {
       popup_->hide();
+    }
+    if (popupLayerMode_ == PopupLayerMode::QtTool) {
+      detail::releaseTopLevelToolResourcesOnHide(popup_);
     }
     if (autoClearSearchValue_ && isSearchEnabledForCurrentMode()) {
       setSearchText(QString());

@@ -1,5 +1,7 @@
 #include "top_level_popup_window.h"
 
+#include <QMetaObject>
+#include <QPointer>
 #include <QWidget>
 #include <QWindow>
 
@@ -27,6 +29,28 @@ void syncTopLevelToolTransientParent(QWidget* toolWindow, QWidget* ownerWindow) 
   if (ownerHandle && toolHandle && toolHandle->transientParent() != ownerHandle) {
     toolHandle->setTransientParent(ownerHandle);
   }
+}
+
+void releaseTopLevelToolResourcesOnHide(QWidget* toolWindow) {
+  if (!toolWindow || !toolWindow->isWindow() || !toolWindow->windowHandle()) {
+    return;
+  }
+
+  const QPointer<QWidget> guardedToolWindow(toolWindow);
+  QMetaObject::invokeMethod(
+      toolWindow,
+      [guardedToolWindow]() {
+        if (!guardedToolWindow || guardedToolWindow->isVisible() ||
+            !guardedToolWindow->isWindow() || !guardedToolWindow->windowHandle()) {
+          return;
+        }
+        auto* resourceReleaser =
+            dynamic_cast<TopLevelToolResourceReleaser*>(guardedToolWindow.data());
+        if (resourceReleaser) {
+          resourceReleaser->releaseTopLevelToolResources();
+        }
+      },
+      Qt::QueuedConnection);
 }
 
 }  // namespace adqt::widgets::detail

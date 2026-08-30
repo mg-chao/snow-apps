@@ -1267,6 +1267,42 @@ void recognitionToolsKeepDrawingToolsAvailable() {
             "clicking a drawing tool should switch directly from recognition to that tool");
 }
 
+void clickingActiveToolbarToolReturnsToSelect() {
+    ScreenshotToolPalette::Options options;
+    options.showSelectTool = true;
+    options.showShapeTool = true;
+    options.showOcrTool = true;
+    options.enableStyleToolbar = false;
+
+    ScreenshotToolPalette palette(options);
+    auto* shapeButton =
+        qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Shape"));
+    auto* ocrButton =
+        qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Text recognition"));
+    require(shapeButton != nullptr && ocrButton != nullptr,
+            "toolbar tools should be available for toggle testing");
+
+    int selectRequests = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::selectRequested,
+                     [&selectRequests]() { ++selectRequests; });
+
+    shapeButton->click();
+    require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape,
+            "the first drawing-tool click should activate that tool");
+    shapeButton->click();
+    require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select &&
+                selectRequests == 1,
+            "clicking an active drawing tool should return to Select");
+
+    ocrButton->click();
+    require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Ocr,
+            "the first recognition-tool click should activate that tool");
+    ocrButton->click();
+    require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select &&
+                selectRequests == 2,
+            "clicking an active recognition tool should return to Select");
+}
+
 void tableToolExposesStructureActionsAndOwnHistoryState() {
     ScreenshotToolPalette::Options options;
     options.showSelectTool = true;
@@ -5382,6 +5418,7 @@ int main(int argc, char** argv) {
     configurableToolbarLayoutSupportsArbitraryPopoverGroups();
     ocrControlReflectsLoadingState();
     ocrToolReplacesSelectionActionToolbarContents();
+    clickingActiveToolbarToolReturnsToSelect();
     tableToolExposesStructureActionsAndOwnHistoryState();
     tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode();
     arrowAndLineRemainDirectWhenConfiguredIndividually();

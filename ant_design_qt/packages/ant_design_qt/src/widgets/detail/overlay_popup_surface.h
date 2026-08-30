@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../popup_placement.h"
+#include "top_level_popup_window.h"
 
 #include <QColor>
 #include <QMargins>
@@ -27,9 +28,11 @@ struct OverlayPopupSurfaceStyle {
   OverlayPopupSurfaceMetrics metrics;
 };
 
-class OverlayPopupSurface final : public QWidget {
+class OverlayPopupSurface final : public QWidget, public TopLevelToolResourceReleaser {
  public:
   explicit OverlayPopupSurface(QWidget* parent = nullptr);
+
+  void releaseTopLevelToolResources() override { destroy(); }
 
   QWidget* bodyWidget() const { return bodyWidget_; }
 

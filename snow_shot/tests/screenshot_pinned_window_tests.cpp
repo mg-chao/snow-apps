@@ -1170,6 +1170,7 @@ void pinnedContextMenuAndModes(SnowCanvasRuntime&) {
     }
     require(actions.at(0)->text().endsWith(QStringLiteral("\tCtrl+C")) &&
                 actions.at(1)->text().endsWith(QStringLiteral("\tCtrl+Shift+C")) &&
+                actions.at(2)->text().endsWith(QStringLiteral("\tCtrl+S")) &&
                 actions.at(3)->text().endsWith(QStringLiteral("\tCtrl+D")) &&
                 actions.at(5)->text().endsWith(QStringLiteral("\tCtrl+E")) &&
                 actions.at(10)->text().endsWith(QStringLiteral("\tR")) &&
@@ -1226,8 +1227,18 @@ void pinnedContextMenuAndModes(SnowCanvasRuntime&) {
         "OCR mode should use embedded recognition content and hide engine-owned drawing content");
     auto recognizedPresentation = std::make_shared<ScreenshotOcrPresentation>();
     recognizedPresentation->selection = config.canvasSourceRect.toAlignedRect();
+    ScreenshotOcrLine recognizedLine;
+    recognizedLine.text = QStringLiteral("Pinned OCR text");
+    recognizedLine.quad = QPolygonF({QPointF(40.0, 70.0), QPointF(280.0, 70.0),
+                                     QPointF(280.0, 110.0), QPointF(40.0, 110.0)});
+    recognizedPresentation->lines.push_back(std::move(recognizedLine));
     recognition.complete({std::move(recognizedPresentation), {}});
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QApplication::clipboard()->clear();
+    sendShortcut(*canvas, Qt::Key_A, Qt::ControlModifier);
+    sendShortcut(*canvas, Qt::Key_C, Qt::ControlModifier);
+    require(QApplication::clipboard()->text() == QStringLiteral("Pinned OCR text"),
+            "Copy to Clipboard should copy selected OCR text while recognition is active");
     sendShortcut(*canvas, Qt::Key_E, Qt::ControlModifier);
     require(!actions.at(3)->isChecked() && canvas->canvasContentVisible() &&
                 canvas->interactionEnabled(),

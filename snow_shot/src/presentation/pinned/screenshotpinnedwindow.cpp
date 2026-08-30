@@ -515,6 +515,17 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
     m_pinnedShortcutBindings.insert(QStringLiteral("copy_original_content"),
                                     m_shortcutManager->addBinding(this, std::move(copyOriginal)));
 
+    ShortcutManager::Binding save;
+    save.id = QStringLiteral("pinned.save_as_file");
+    save.priority = ShortcutManager::StandardPriority::WindowCommand;
+    save.canActivate = localCommandsAllowed;
+    save.activate = [this](const auto&) {
+        saveAsFile();
+        return true;
+    };
+    m_pinnedShortcutBindings.insert(QStringLiteral("save_as_file"),
+                                    m_shortcutManager->addBinding(this, std::move(save)));
+
     ShortcutManager::Binding recognition;
     recognition.id = QStringLiteral("pinned.show_recognition");
     recognition.priority = ShortcutManager::StandardPriority::WindowCommand;
@@ -626,10 +637,7 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
                localCommandsAllowed(context);
     };
     copy.activate = [this](const auto&) {
-        const QString text = m_displayOcrPresentation->selectedText();
-        if (!text.isEmpty()) {
-            QApplication::clipboard()->setText(text);
-        }
+        copyEditToolbarContent();
         return true;
     };
     static_cast<void>(m_shortcutManager->addBinding(this, std::move(copy)));
@@ -644,6 +652,7 @@ void ScreenshotPinnedWindow::reloadPinnedWindowShortcuts() {
     } actions[] = {
         {"copy_to_clipboard", "screenshotPinnedCopyAction"},
         {"copy_original_content", "screenshotPinnedCopyOriginalAction"},
+        {"save_as_file", "screenshotPinnedSaveAsFileAction"},
         {"show_text_recognition_results", "screenshotPinnedOcrAction"},
         {"drawing_mode", "screenshotPinnedDrawingAction"},
         {"thumbnail_mode", "screenshotPinnedThumbnailAction"},
@@ -2898,6 +2907,10 @@ void ScreenshotPinnedWindow::copyEditToolbarContent() {
 }
 
 void ScreenshotPinnedWindow::copyCurrentViewport() {
+    if (m_ocrMode && m_recognitionSession != nullptr && m_recognitionSession->active()) {
+        copyEditToolbarContent();
+        return;
+    }
     if (m_copyService == nullptr) {
         return;
     }

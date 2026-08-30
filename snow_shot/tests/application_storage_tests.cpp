@@ -312,6 +312,7 @@ void newSettingsSchemaDefaultsAndValidationAreComplete() {
         {QStringLiteral("copy_to_clipboard"), QJsonArray{QStringLiteral("Ctrl+C")}},
         {QStringLiteral("copy_original_content"),
          QJsonArray{QStringLiteral("Ctrl+Shift+C")}},
+        {QStringLiteral("save_as_file"), QJsonArray{QStringLiteral("Ctrl+S")}},
         {QStringLiteral("show_text_recognition_results"),
          QJsonArray{QStringLiteral("Ctrl+D")}},
         {QStringLiteral("drawing_mode"), QJsonArray{QStringLiteral("Ctrl+E")}},
@@ -584,11 +585,13 @@ void screenshotTranslationSettingsRoundTripSupportedValues() {
 void verifyPinToScreenShortcutSettings() {
     const storage::PinToScreenShortcutSettings shortcuts;
     const QMap<QString, QStringList> defaults = shortcuts.allShortcuts();
-    require(defaults.size() == 10 &&
+    require(defaults.size() == 11 &&
                 defaults.value(QStringLiteral("copy_to_clipboard")) ==
                     QStringList{QStringLiteral("Ctrl+C")} &&
                 defaults.value(QStringLiteral("copy_original_content")) ==
                     QStringList{QStringLiteral("Ctrl+Shift+C")} &&
+                defaults.value(QStringLiteral("save_as_file")) ==
+                    QStringList{QStringLiteral("Ctrl+S")} &&
                 defaults.value(QStringLiteral("show_text_recognition_results")) ==
                     QStringList{QStringLiteral("Ctrl+D")} &&
                 defaults.value(QStringLiteral("drawing_mode")) ==
@@ -604,7 +607,7 @@ void verifyPinToScreenShortcutSettings() {
                 shortcuts.shortcuts(QStringLiteral("unsupported")).isEmpty() &&
                 !shortcuts.setShortcuts(QStringLiteral("unsupported"),
                                         {QStringLiteral("Q")}),
-            "pinned-window shortcut adapter must expose ten stable actions and defaults");
+            "pinned-window shortcut adapter must expose eleven stable actions and defaults");
     require(shortcuts.setShortcuts(QStringLiteral("drawing_mode"),
                                    {QStringLiteral("Alt+E")}) &&
                 shortcuts.shortcuts(QStringLiteral("drawing_mode")) ==

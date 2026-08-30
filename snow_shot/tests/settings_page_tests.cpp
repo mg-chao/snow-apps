@@ -151,6 +151,7 @@ const QHash<QString, QStringList>& pinToScreenShortcutDefaults() {
     static const QHash<QString, QStringList> defaults{
         {QStringLiteral("copy_to_clipboard"), {QStringLiteral("Ctrl+C")}},
         {QStringLiteral("copy_original_content"), {QStringLiteral("Ctrl+Shift+C")}},
+        {QStringLiteral("save_as_file"), {QStringLiteral("Ctrl+S")}},
         {QStringLiteral("show_text_recognition_results"), {QStringLiteral("Ctrl+D")}},
         {QStringLiteral("drawing_mode"), {QStringLiteral("Ctrl+E")}},
         {QStringLiteral("thumbnail_mode"), {QStringLiteral("R")}},
@@ -1539,8 +1540,8 @@ void generatedPagesRenderEveryItemTypeAndResynchronize() {
                                      : QList<ShortcutKeyRow*>{};
     const auto localShortcutRows = hotkeyPage.findChildren<ShortcutKeyRow*>();
     require(screenshotShortcutRows.size() == 18 && drawingShortcutRows.size() == 10 &&
-                pinToScreenShortcutRows.size() == 10 && otherShortcutRows.size() == 6 &&
-                localShortcutRows.size() == 44 &&
+                pinToScreenShortcutRows.size() == 11 && otherShortcutRows.size() == 6 &&
+                localShortcutRows.size() == 45 &&
                 std::all_of(localShortcutRows.cbegin(), localShortcutRows.cend(),
                             [](const ShortcutKeyRow* row) {
                                 const auto* status =
@@ -1596,9 +1597,9 @@ void generatedPagesRenderEveryItemTypeAndResynchronize() {
                 screenshotShortcutGrid->rowCount() == 9 && drawingShortcutGrid != nullptr &&
                 drawingShortcutGrid->count() == 10 &&
                 drawingShortcutGrid->columnCount() == 2 && drawingShortcutGrid->rowCount() == 5 &&
-                pinToScreenShortcutGrid != nullptr && pinToScreenShortcutGrid->count() == 10 &&
+                pinToScreenShortcutGrid != nullptr && pinToScreenShortcutGrid->count() == 11 &&
                 pinToScreenShortcutGrid->columnCount() == 2 &&
-                pinToScreenShortcutGrid->rowCount() == 5 && otherShortcutGrid != nullptr &&
+                pinToScreenShortcutGrid->rowCount() == 6 && otherShortcutGrid != nullptr &&
                 otherShortcutGrid->count() == 6 && otherShortcutGrid->columnCount() == 2 &&
                 otherShortcutGrid->rowCount() == 3 &&
                 drawingShortcutGrid->horizontalSpacing() == settingMetrics.marginLG &&
@@ -2373,10 +2374,10 @@ void pinToScreenShortcutSettingsRenderAndReset() {
                              ? qobject_cast<QGridLayout*>(
                                    shortcutList->layout()->itemAt(0)->layout())
                              : nullptr;
-    require(shortcutRows.size() == 10 && shortcutGrid != nullptr &&
-                shortcutGrid->count() == 10 && shortcutGrid->columnCount() == 2 &&
-                shortcutGrid->rowCount() == 5,
-            "Pin to Screen shortcut settings must render ten actions in a two-column grid");
+    require(shortcutRows.size() == 11 && shortcutGrid != nullptr &&
+                shortcutGrid->count() == 11 && shortcutGrid->columnCount() == 2 &&
+                shortcutGrid->rowCount() == 6,
+            "Pin to Screen shortcut settings must render eleven actions in a two-column grid");
 
     for (auto it = pinToScreenShortcutDefaults().cbegin();
          it != pinToScreenShortcutDefaults().cend(); ++it) {

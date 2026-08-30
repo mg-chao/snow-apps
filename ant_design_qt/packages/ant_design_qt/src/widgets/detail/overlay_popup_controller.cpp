@@ -1342,6 +1342,8 @@ void OverlayPopupController::setPopupVisibleInternal(bool visible, bool emitSign
     applyPopupVisibility(delegate_->popupSurfaceWidget(), false, false);
     if (delegate_->popupReleaseOnHide()) {
       delegate_->popupReleaseSurface();
+    } else if (popupUsesTopLevelToolLayer()) {
+      releaseTopLevelToolResourcesOnHide(delegate_->popupSurfaceWidget());
     }
   }
 

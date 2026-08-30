@@ -1158,13 +1158,11 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     updateSerialNumberControls();
 }
 
-void ScreenshotToolPalette::activateTableQrTool(Tool tool) {
+void ScreenshotToolPalette::activateTableQrTool(Tool tool, bool toggleVisibleButton) {
     if (tool == Tool::Table && m_tableEnabled) {
-        setActiveTool(tool);
-        emit tableRequested();
+        activateToolFromToolbar(tool, toggleVisibleButton);
     } else if (tool == Tool::Qr && m_qrEnabled) {
-        setActiveTool(tool);
-        emit qrRequested();
+        activateToolFromToolbar(tool, toggleVisibleButton);
     }
 }
 
@@ -2687,6 +2685,9 @@ void ScreenshotToolPalette::clearDrawingToolGroups() {
 void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
     setActiveTool(tool);
     switch (tool) {
+    case Tool::Move:
+        emit moveRequested();
+        break;
     case Tool::Select:
         emit selectRequested();
         break;
@@ -2729,9 +2730,62 @@ void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
     case Tool::SerialNumber:
         emit serialNumberRequested();
         break;
+    case Tool::Ocr:
+        emit ocrRequested();
+        break;
+    case Tool::TextTranslation:
+        emit textTranslationRequested();
+        break;
+    case Tool::Table:
+        emit tableRequested();
+        break;
+    case Tool::Qr:
+        emit qrRequested();
+        break;
+    case Tool::ScrollingScreenshot:
+        emit scrollingScreenshotRequested();
+        break;
     default:
         break;
     }
+}
+
+void ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibleButton) {
+    // Toolbar clicks are toggle-like: clicking the active drawing/action tool
+    // returns to selection mode. Programmatic setActiveTool() calls remain
+    // explicit so state synchronization does not unexpectedly toggle.
+    adqt::widgets::AdButton* requestedButton = nullptr;
+    switch (tool) {
+    case Tool::Move:
+        requestedButton = m_moveButton;
+        break;
+    case Tool::Select:
+        requestedButton = m_selectButton;
+        break;
+    case Tool::Ocr:
+        requestedButton = m_ocrButton;
+        break;
+    case Tool::TextTranslation:
+        requestedButton = m_textTranslationButton;
+        break;
+    case Tool::Table:
+    case Tool::Qr:
+        requestedButton = m_tableButton;
+        break;
+    case Tool::ScrollingScreenshot:
+        requestedButton = m_scrollingScreenshotButton;
+        break;
+    default:
+        requestedButton = drawingToolEntryButton(tool);
+        break;
+    }
+    const bool alreadyActive = !toggleVisibleButton
+                                   ? m_activeTool.has_value() && *m_activeTool == tool
+                               : requestedButton != nullptr
+                                   ? m_activeToolButton == requestedButton
+                                   : m_activeTool.has_value() && *m_activeTool == tool;
+    const Tool requestedTool = alreadyActive && tool != Tool::Select ? Tool::Select : tool;
+    activateDrawingTool(requestedTool);
 }
 
 void ScreenshotToolPalette::selectDrawingToolGroupEntry(Tool tool) {
@@ -2897,7 +2951,9 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
             const ScreenshotToolPaletteOptionPopoverEditor popoverEditor =
                 createScreenshotToolPaletteOptionPopoverEditor(
                     group.trigger, this, popoverConfig,
-                    [this](int value) { activateDrawingTool(static_cast<Tool>(value)); },
+                    [this](int value) {
+                        activateToolFromToolbar(static_cast<Tool>(value), false);
+                    },
                     actionButtonMetrics(1.0));
             group.popover = popoverEditor.popover;
             group.optionButtons = popoverEditor.buttons;
@@ -2923,7 +2979,7 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
                         for (const DrawingToolGroup& candidate :
                              std::as_const(m_drawingToolGroups)) {
                             if (candidate.trigger == trigger) {
-                                activateDrawingTool(candidate.entryTool);
+                                activateToolFromToolbar(candidate.entryTool);
                                 return;
                             }
                         }
@@ -3017,8 +3073,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
         m_moveButton = addToolButton("Edit selection", custom_outlined_icons::ToolMove());
         addButton(m_moveButton);
         connect(m_moveButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-            setActiveTool(Tool::Move);
-            emit moveRequested();
+            activateToolFromToolbar(Tool::Move);
         });
     }
 
@@ -3026,8 +3081,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
         m_selectButton = addToolButton("Select elements", custom_outlined_icons::ToolSelect());
         addButton(m_selectButton);
         connect(m_selectButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-            setActiveTool(Tool::Select);
-            emit selectRequested();
+            activateToolFromToolbar(Tool::Select);
         });
     }
 
@@ -3039,8 +3093,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
         m_shapeButton = addToolButton("Shape", custom_outlined_icons::ToolRectangle());
         addButton(m_shapeButton);
         connect(m_shapeButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-            setActiveTool(Tool::Shape);
-            emit shapeRequested();
+            activateToolFromToolbar(Tool::Shape);
         });
     }
 
@@ -3049,8 +3102,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
         m_arrowButton->setObjectName(QStringLiteral("screenshotArrowButton"));
         addButton(m_arrowButton);
         connect(m_arrowButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-            setActiveTool(Tool::Arrow);
-            emit arrowRequested();
+            activateToolFromToolbar(Tool::Arrow);
         });
     }
     if (options.showLineTool) {
@@ -3058,8 +3110,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
         m_lineButton->setObjectName(QStringLiteral("screenshotLineButton"));
         addButton(m_lineButton);
         connect(m_lineButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-            setActiveTool(Tool::Line);
-            emit lineRequested();
+            activateToolFromToolbar(Tool::Line);
         });
     }
 
@@ -3067,8 +3118,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
         m_freeDrawButton = addToolButton("Pen", custom_outlined_icons::ToolFreeDraw());
         addButton(m_freeDrawButton);
         connect(m_freeDrawButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-            setActiveTool(Tool::FreeDraw);
-            emit freeDrawRequested();
+            activateToolFromToolbar(Tool::FreeDraw);
         });
     }
 
@@ -3079,8 +3129,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
         m_highlighterButton->setObjectName(QStringLiteral("screenshotHighlighterButton"));
         addButton(m_highlighterButton);
         connect(m_highlighterButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-            setActiveTool(Tool::PenHighlight);
-            emit penHighlightRequested();
+            activateToolFromToolbar(Tool::PenHighlight);
         });
     }
     if (options.showSpotlightTool) {
@@ -3088,8 +3137,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
         m_spotlightButton->setObjectName(QStringLiteral("screenshotSpotlightButton"));
         addButton(m_spotlightButton);
         connect(m_spotlightButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-            setActiveTool(Tool::Spotlight);
-            emit spotlightRequested();
+            activateToolFromToolbar(Tool::Spotlight);
         });
     }
 
@@ -3097,8 +3145,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
         m_textButton = addToolButton("Text", custom_outlined_icons::ToolText());
         addButton(m_textButton);
         connect(m_textButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-            setActiveTool(Tool::Text);
-            emit textRequested();
+            activateToolFromToolbar(Tool::Text);
         });
     }
 
@@ -3107,8 +3154,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
             addToolButton("Serial number", custom_outlined_icons::ToolSerialNumber());
         addButton(m_serialNumberButton);
         connect(m_serialNumberButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-            setActiveTool(Tool::SerialNumber);
-            emit serialNumberRequested();
+            activateToolFromToolbar(Tool::SerialNumber);
         });
     }
 
@@ -3116,8 +3162,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
         m_filterButton = addToolButton("Filter", custom_outlined_icons::ToolFilter());
         addButton(m_filterButton);
         connect(m_filterButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-            setActiveTool(Tool::PenFilter);
-            emit penFilterRequested();
+            activateToolFromToolbar(Tool::PenFilter);
         });
     }
 
@@ -3125,8 +3170,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
         m_eraserButton = addToolButton("Eraser", custom_outlined_icons::ToolEraser());
         addButton(m_eraserButton);
         connect(m_eraserButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-            setActiveTool(Tool::Eraser);
-            emit eraserRequested();
+            activateToolFromToolbar(Tool::Eraser);
         });
     }
 
@@ -3135,8 +3179,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
         m_watermarkButton->setObjectName(QStringLiteral("screenshotWatermarkButton"));
         addButton(m_watermarkButton);
         connect(m_watermarkButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-            setActiveTool(Tool::Watermark);
-            emit watermarkRequested();
+            activateToolFromToolbar(Tool::Watermark);
         });
     }
 
@@ -3248,7 +3291,7 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
         const ScreenshotToolPaletteOptionPopoverEditor popoverEditor =
             createScreenshotToolPaletteOptionPopoverEditor(
                 m_tableButton, this, popoverConfig,
-                [this](int value) { activateTableQrTool(static_cast<Tool>(value)); },
+                [this](int value) { activateTableQrTool(static_cast<Tool>(value), false); },
                 actionButtonMetrics(1.0));
         m_tableQrPopover = popoverEditor.popover;
         m_tableQrOptionButtons = popoverEditor.buttons;
@@ -3325,8 +3368,7 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
             adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
         addButton(m_ocrButton);
         connect(m_ocrButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-            setActiveTool(Tool::Ocr);
-            emit ocrRequested();
+            activateToolFromToolbar(Tool::Ocr);
         });
     }
 
@@ -3340,8 +3382,7 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
             adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
         addButton(m_textTranslationButton);
         connect(m_textTranslationButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-            setActiveTool(Tool::TextTranslation);
-            emit textTranslationRequested();
+            activateToolFromToolbar(Tool::TextTranslation);
         });
     }
 
@@ -3355,8 +3396,7 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
             QStringLiteral("screenshotScrollingScreenshotButton"));
         addButton(m_scrollingScreenshotButton);
         connect(m_scrollingScreenshotButton, &adqt::widgets::AdButton::clicked, this, [this]() {
-            setActiveTool(Tool::ScrollingScreenshot);
-            emit scrollingScreenshotRequested();
+            activateToolFromToolbar(Tool::ScrollingScreenshot);
         });
     }
 
