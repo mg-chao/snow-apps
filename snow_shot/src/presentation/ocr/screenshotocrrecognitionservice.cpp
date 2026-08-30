@@ -37,19 +37,8 @@ struct OcrResultDeleter {
     }
 };
 
-struct OcrOwnedImageDeleter {
-    void operator()(SnowOcrOwnedImage* image) const {
-        snow_ocr_owned_image_destroy(image);
-    }
-};
-
 using OcrEngineHandle = std::unique_ptr<SnowOcrEngine, OcrEngineDeleter>;
 using OcrResultHandle = std::unique_ptr<SnowOcrResult, OcrResultDeleter>;
-using OcrOwnedImageHandle = std::unique_ptr<SnowOcrOwnedImage, OcrOwnedImageDeleter>;
-
-void releaseOwnedImage(void* context) {
-    snow_ocr_owned_image_destroy(static_cast<SnowOcrOwnedImage*>(context));
-}
 
 QString lastOcrError() {
     const char* message = snow_ocr_last_error_message();
@@ -87,18 +76,6 @@ ScreenshotOcrTextDirection textDirectionForQuad(const QPolygonF& quad) {
         std::max(edgeLength(quad.at(0), quad.at(3)), edgeLength(quad.at(1), quad.at(2)));
     return height >= width * kVerticalAspectRatio ? ScreenshotOcrTextDirection::Vertical
                                                   : ScreenshotOcrTextDirection::Horizontal;
-}
-
-bool validOwnedImageInfo(const SnowOcrImageInfoV1& info) {
-    if (info.rgba_bytes == nullptr || info.width == 0 || info.height == 0 ||
-        info.width > static_cast<std::uint32_t>((std::numeric_limits<int>::max)()) ||
-        info.height > static_cast<std::uint32_t>((std::numeric_limits<int>::max)()) ||
-        info.stride_bytes > static_cast<std::uint32_t>((std::numeric_limits<int>::max)())) {
-        return false;
-    }
-    const std::uint64_t rowBytes = static_cast<std::uint64_t>(info.width) * 4;
-    const std::uint64_t required = static_cast<std::uint64_t>(info.stride_bytes) * info.height;
-    return info.stride_bytes >= rowBytes && required <= info.rgba_len;
 }
 
 OcrEngineHandle createEngine(ScreenshotOcrBackendPreference preference) {
@@ -168,35 +145,10 @@ ScreenshotOcrRecognitionResult runRecognition(OcrEngineHandle& engine, QImage so
         line.text = QString::fromUtf8(reinterpret_cast<const char*>(lineInfo.text_utf8),
                                       static_cast<qsizetype>(lineInfo.text_len));
         line.confidence = static_cast<qreal>(lineInfo.confidence);
-        line.foreground = QColor(lineInfo.foreground.red, lineInfo.foreground.green,
-                                 lineInfo.foreground.blue, lineInfo.foreground.alpha);
         line.quad = quadFromFfi(lineInfo.quad, canvasRect, source.size());
         line.direction = textDirectionForQuad(line.quad);
         output.presentation->lines.push_back(std::move(line));
     }
-
-    OcrOwnedImageHandle image(snow_ocr_result_take_image(result.get()));
-    if (image == nullptr) {
-        return {nullptr, lastOcrError()};
-    }
-    SnowOcrImageInfoV1 imageInfo{};
-    imageInfo.struct_size = static_cast<std::uint32_t>(sizeof(SnowOcrImageInfoV1));
-    if (snow_ocr_owned_image_info(image.get(), &imageInfo) == 0 ||
-        !validOwnedImageInfo(imageInfo)) {
-        return {nullptr, lastOcrError()};
-    }
-
-    SnowOcrOwnedImage* imageContext = image.release();
-    QImage filledImage(imageInfo.rgba_bytes, static_cast<int>(imageInfo.width),
-                       static_cast<int>(imageInfo.height),
-                       static_cast<qsizetype>(imageInfo.stride_bytes), QImage::Format_RGBA8888,
-                       &releaseOwnedImage, imageContext);
-    if (filledImage.isNull()) {
-        snow_ocr_owned_image_destroy(imageContext);
-        return {nullptr, QCoreApplication::translate("ScreenshotOcrController",
-                                                     "Text recognition failed")};
-    }
-    output.presentation->filledImage = std::move(filledImage);
     output.presentation->prepareForRendering();
     return output;
 }

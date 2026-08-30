@@ -121,11 +121,8 @@ void embeddedRecognitionWindowPreservesParentSurfaceWithVisibleTextLayer() {
             "an embedded recognition window should accept its parent geometry");
     auto presentation = std::make_shared<ScreenshotOcrPresentation>();
     presentation->selection = host.rect();
-    presentation->filledImage = QImage(host.size(), QImage::Format_RGBA8888);
-    presentation->filledImage.fill(QColor(220, 240, 255, 80));
     ScreenshotOcrLine line;
     line.text = QStringLiteral("Embedded OCR");
-    line.foreground = Qt::black;
     line.quad = QPolygonF({QPointF(45.0, 35.0), QPointF(115.0, 35.0),
                            QPointF(115.0, 55.0), QPointF(45.0, 55.0)});
     presentation->lines.push_back(line);
@@ -267,12 +264,8 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
 
     auto presentation = std::make_shared<ScreenshotOcrPresentation>();
     presentation->selection = canvasSelection.toAlignedRect();
-    presentation->filledImage =
-        QImage(presentation->selection.size(), QImage::Format_RGBA8888);
-    presentation->filledImage.fill(Qt::white);
     ScreenshotOcrLine recognizedLine;
     recognizedLine.text = QStringLiteral("Selectable text");
-    recognizedLine.foreground = Qt::black;
     const QPointF selectionCenter = canvasSelection.center();
     recognizedLine.quad = QPolygonF({
         selectionCenter + QPointF(-90.0, -18.0),
@@ -660,12 +653,8 @@ void shortRecognitionWindowPreservesExactSelectionGeometryAcrossModes() {
 
     auto presentation = std::make_shared<ScreenshotOcrPresentation>();
     presentation->selection = canvasSelection.toAlignedRect();
-    presentation->filledImage =
-        QImage(presentation->selection.size(), QImage::Format_RGBA8888);
-    presentation->filledImage.fill(Qt::white);
     ScreenshotOcrLine line;
     line.text = QStringLiteral("Short OCR");
-    line.foreground = Qt::black;
     line.quad = QPolygonF({
         QPointF(70.0, 4.0),
         QPointF(190.0, 4.0),

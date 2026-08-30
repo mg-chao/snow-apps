@@ -783,6 +783,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/ocr/screenshotocrrecognitionservice.cpp
     src/presentation/ocr/screenshotqrrecognitionservice.cpp
     src/presentation/ocr/screenshotocrpresentation.cpp
+    src/presentation/ocr/screenshotocrvisuals.cpp
     src/presentation/ocr/screenshotocrtexteditingsession.cpp
     src/presentation/pinned/screenshotpinnednativegeometrycontroller.cpp
     src/presentation/pinned/screenshotpinnednativegeometrycontroller.h
@@ -1732,6 +1733,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/overlay/screenshotoverlaywindow.cpp
         src/presentation/services/screenshotmessageservice.cpp
         src/presentation/ocr/screenshotocrpresentation.cpp
+        src/presentation/ocr/screenshotocrvisuals.cpp
         src/presentation/ocr/screenshottabledocument.cpp
     )
     target_include_directories(snow-shot-screenshot-canvas-renderer-tests PRIVATE
@@ -1878,6 +1880,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/components/icons/snowshoticons.cpp
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/ocr/screenshotocrpresentation.cpp
+        src/presentation/ocr/screenshotocrvisuals.cpp
         src/presentation/ocr/screenshotocrtexteditingsession.cpp
         src/presentation/ocr/screenshotocrtexttransform.cpp
         src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp
@@ -2688,6 +2691,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenshotrecognitionwindow.h
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/ocr/screenshotocrpresentation.cpp
+        src/presentation/ocr/screenshotocrvisuals.cpp
         src/presentation/ocr/screenshottabledocument.cpp
         src/presentation/ocr/screenshottableeditor.cpp
         src/presentation/ocr/screenshotrecognitionwindow.cpp

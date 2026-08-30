@@ -1,9 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTOCRPRESENTATION_H
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTOCRPRESENTATION_H
 
-#include <QColor>
 #include <QHash>
-#include <QImage>
 #include <QPolygonF>
 #include <QRect>
 #include <QString>
@@ -18,7 +16,6 @@ enum class ScreenshotOcrTextDirection {
 struct ScreenshotOcrLine {
     QString text;
     qreal confidence = 0.0;
-    QColor foreground;
     QPolygonF quad;
     ScreenshotOcrTextDirection direction = ScreenshotOcrTextDirection::Horizontal;
 };
@@ -43,7 +40,6 @@ struct ScreenshotOcrTextRange {
 
 class ScreenshotOcrPresentation final {
   public:
-    QImage filledImage;
     QRect selection;
     QVector<ScreenshotOcrLine> lines;
 

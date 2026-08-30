@@ -4,10 +4,12 @@
 #include "snow_shot/presentation/screenshotselectiongeometry.h"
 
 #include <QPointF>
+#include <QColor>
 #include <QRect>
 #include <QRectF>
 #include <QStringList>
 #include <QTransform>
+#include <QVector>
 #include <QWidget>
 
 #include <functional>
@@ -87,7 +89,8 @@ class ScreenshotRecognitionWindow final : public QWidget {
                                                const QRectF& canvasSelection);
     [[nodiscard]] PresentationMode presentationMode() const;
 
-    void setOcrPresentation(std::shared_ptr<ScreenshotOcrPresentation> presentation);
+    void setOcrPresentation(std::shared_ptr<ScreenshotOcrPresentation> presentation,
+                            QVector<QColor> foregrounds = {});
     void clearOcrPresentation();
     void showFormattedText(std::shared_ptr<QTextDocument> document);
     void clearFormattedText();

@@ -161,13 +161,8 @@ void concurrentRequestsCompleteExactlyOnce() {
     require(counts.engines == 0,
             "draining a concurrent burst should destroy every OCR engine");
     require(counts.results == 0, "FFI results should be released before Qt delivery");
-    require(counts.owned_images == kRequestCount,
-            "each live presentation should own exactly one transferred image");
-
     outputs.clear();
     counts = resourceCounts();
-    require(counts.owned_images == 0,
-            "releasing presentations should release every transferred image");
 }
 
 void interactiveRequestsPrecedeQueuedPrefetch() {
@@ -244,14 +239,9 @@ void workerRecyclesImmediatelyAndCanBeRecreated() {
             "an OCR worker should destroy its engine as soon as its queue is empty");
     require(waitUntil([&]() { return service.liveWorkerCount() == 0; }, 1'000),
             "an OCR worker thread should exit as soon as its queue is empty");
-    require(resourceCounts().owned_images == 1,
-            "the delivered OCR presentation should own its transferred image");
-
     output.presentation.reset();
-    require(resourceCounts().owned_images == 0,
-            "releasing the presentation should release its transferred image");
     const SnowOcrResourceCountsV1 counts = resourceCounts();
-    require(counts.results == 0 && counts.owned_images == 0,
+    require(counts.results == 0,
             "immediate recycling should leave no live OCR result resources");
 
     bool recreated = false;
@@ -344,7 +334,7 @@ void serviceDestructionJoinsWorkersAndSuppressesLateDelivery() {
     require(completions == completionsBeforeDestruction,
             "destroyed OCR services must not deliver queued completions");
     const SnowOcrResourceCountsV1 counts = resourceCounts();
-    require(counts.engines == 0 && counts.results == 0 && counts.owned_images == 0,
+    require(counts.engines == 0 && counts.results == 0,
             "service destruction should synchronously join workers and release FFI resources");
 }
 } // namespace

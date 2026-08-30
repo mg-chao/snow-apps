@@ -324,13 +324,13 @@ ScreenshotRecognitionWindow::PresentationMode ScreenshotRecognitionWindow::prese
 }
 
 void ScreenshotRecognitionWindow::setOcrPresentation(
-    std::shared_ptr<ScreenshotOcrPresentation> presentation) {
+    std::shared_ptr<ScreenshotOcrPresentation> presentation, QVector<QColor> foregrounds) {
     hideTextEditor();
     clearFormattedText();
     clearTableSession();
     clearQrContents();
     m_ocrPresentation = std::move(presentation);
-    m_textLayer->setPresentation(m_ocrPresentation);
+    m_textLayer->setPresentation(m_ocrPresentation, std::move(foregrounds));
     m_stack->setCurrentWidget(m_textLayer);
     synchronizeTextLayer();
     setFocus(Qt::OtherFocusReason);

@@ -53,6 +53,7 @@ set(SNOW_CANVAS_QT_SOURCES
     src/rendering/snow_canvas_filter_render.cpp
     src/rendering/snow_canvas_filter_tile_cache.cpp
     src/rendering/snow_canvas_filter_render.h
+    src/rendering/snow_canvas_region_filter.cpp
     src/rendering/snow_canvas_pen_mask_atlas.cpp
     src/rendering/snow_canvas_pen_mask_atlas.h
     src/rendering/snow_canvas_pen_mask_avx2.cpp
@@ -118,6 +119,7 @@ set(SNOW_CANVAS_QT_SOURCES
     src/widget/snow_canvas_widget_text_interaction.h
     include/snow_draw_engine_qt/snow_canvas_export_types.h
     include/snow_draw_engine_qt/snow_canvas_custom_renderer.h
+    include/snow_draw_engine_qt/snow_canvas_region_filter.h
     include/snow_draw_engine_qt/snow_canvas_runtime.h
     include/snow_draw_engine_qt/snow_canvas_types.h
     include/snow_draw_engine_qt/snow_canvas_widget.h

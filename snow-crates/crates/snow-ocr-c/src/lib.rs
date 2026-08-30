@@ -1,5 +1,3 @@
-mod fill;
-
 use rapid_ocr_rs::{
     DictionarySource, EngineConfig, LangDet, LangRec, ModelSource, ModelType, OcrCallOptions,
     OcrInput, OcrResult, OcrVersion, PipelineSources, ProviderPreference, Quad, RapidOcr,
@@ -24,7 +22,6 @@ static ONNX_RUNTIME_INITIALIZATION: OnceLock<Result<(), String>> = OnceLock::new
 static DIRECTML_AVAILABILITY: OnceLock<bool> = OnceLock::new();
 static LIVE_ENGINES: AtomicUsize = AtomicUsize::new(0);
 static LIVE_RESULTS: AtomicUsize = AtomicUsize::new(0);
-static LIVE_OWNED_IMAGES: AtomicUsize = AtomicUsize::new(0);
 
 thread_local! {
     static LAST_ERROR: RefCell<CString> = RefCell::new(CString::new("").expect("empty C string"));
@@ -62,17 +59,6 @@ pub struct SnowOcrResourceCountsV1 {
     pub struct_size: u32,
     pub engines: usize,
     pub results: usize,
-    pub owned_images: usize,
-}
-
-#[repr(C)]
-pub struct SnowOcrImageInfoV1 {
-    pub struct_size: u32,
-    pub width: u32,
-    pub height: u32,
-    pub stride_bytes: u32,
-    pub rgba_bytes: *const u8,
-    pub rgba_len: usize,
 }
 
 #[repr(C)]
@@ -82,22 +68,12 @@ pub struct SnowOcrQuad {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Default)]
-pub struct SnowOcrColor {
-    pub red: u8,
-    pub green: u8,
-    pub blue: u8,
-    pub alpha: u8,
-}
-
-#[repr(C)]
 pub struct SnowOcrLineInfoV1 {
     pub struct_size: u32,
     pub text_utf8: *const u8,
     pub text_len: usize,
     pub confidence: f32,
     pub quad: SnowOcrQuad,
-    pub foreground: SnowOcrColor,
 }
 
 pub struct SnowOcrEngine {
@@ -106,23 +82,13 @@ pub struct SnowOcrEngine {
 }
 
 pub struct SnowOcrResult {
-    width: u32,
-    height: u32,
-    rgba: Vec<u8>,
     lines: Vec<OwnedLine>,
-}
-
-pub struct SnowOcrOwnedImage {
-    width: u32,
-    height: u32,
-    rgba: Vec<u8>,
 }
 
 struct OwnedLine {
     text: Vec<u8>,
     confidence: f32,
     quad: Quad,
-    foreground: [u8; 4],
 }
 
 fn set_last_error(error: impl ToString) {
@@ -369,7 +335,6 @@ pub unsafe extern "C" fn snow_ocr_resource_counts_v1(
         struct_size: size_of::<SnowOcrResourceCountsV1>() as u32,
         engines: LIVE_ENGINES.load(Ordering::Relaxed),
         results: LIVE_RESULTS.load(Ordering::Relaxed),
-        owned_images: LIVE_OWNED_IMAGES.load(Ordering::Relaxed),
     };
     clear_last_error();
     1
@@ -442,11 +407,9 @@ fn recognize(
     }
 
     let source = unsafe { slice::from_raw_parts(request.rgba_bytes, required) };
-    let mut rgba = Vec::with_capacity(row_bytes * height);
     let mut bgr = Vec::with_capacity(width * height * 3);
     for row in source.chunks(stride).take(height) {
         let pixels = &row[..row_bytes];
-        rgba.extend_from_slice(pixels);
         for pixel in pixels.chunks_exact(4) {
             bgr.extend_from_slice(&[pixel[2], pixel[1], pixel[0]]);
         }
@@ -469,7 +432,7 @@ fn recognize(
         .and_then(OcrResult::try_from)
         .map_err(|error| error.to_string())?;
 
-    let mut lines = match result {
+    let lines = match result {
         OcrResult::Empty => Vec::new(),
         OcrResult::Full(full) => full
             .boxes
@@ -479,24 +442,12 @@ fn recognize(
                 text: line.text.into_bytes(),
                 confidence: line.score,
                 quad,
-                foreground: [0, 0, 0, 255],
             })
             .collect(),
         _ => return Err("OCR pipeline returned an incomplete result".to_string()),
     };
 
-    let line_quads = lines.iter().map(|line| line.quad).collect::<Vec<_>>();
-    let foregrounds = fill::white_blur_fill(&mut rgba, width, height, &line_quads);
-    for (line, foreground) in lines.iter_mut().zip(foregrounds) {
-        line.foreground = foreground;
-    }
-
-    Ok(SnowOcrResult {
-        width: request.width,
-        height: request.height,
-        rgba,
-        lines,
-    })
+    Ok(SnowOcrResult { lines })
 }
 
 fn ffi_quad(quad: Quad) -> SnowOcrQuad {
@@ -516,98 +467,6 @@ pub unsafe extern "C" fn snow_ocr_result_destroy(result: *mut SnowOcrResult) {
         drop(unsafe { Box::from_raw(result) });
         LIVE_RESULTS.fetch_sub(1, Ordering::Relaxed);
     }
-}
-
-#[unsafe(no_mangle)]
-/// # Safety
-/// `result` must be a live result. The image may be taken at most once.
-pub unsafe extern "C" fn snow_ocr_result_take_image(
-    result: *mut SnowOcrResult,
-) -> *mut SnowOcrOwnedImage {
-    let Some(result) = (unsafe { result.as_mut() }) else {
-        set_last_error("OCR result is null");
-        return ptr::null_mut();
-    };
-    if result.rgba.is_empty() {
-        set_last_error("OCR result image has already been taken");
-        return ptr::null_mut();
-    }
-    let image = SnowOcrOwnedImage {
-        width: result.width,
-        height: result.height,
-        rgba: std::mem::take(&mut result.rgba),
-    };
-    clear_last_error();
-    LIVE_OWNED_IMAGES.fetch_add(1, Ordering::Relaxed);
-    Box::into_raw(Box::new(image))
-}
-
-#[unsafe(no_mangle)]
-/// # Safety
-/// `image` must be null or a live handle returned by `snow_ocr_result_take_image`.
-pub unsafe extern "C" fn snow_ocr_owned_image_destroy(image: *mut SnowOcrOwnedImage) {
-    if !image.is_null() {
-        drop(unsafe { Box::from_raw(image) });
-        LIVE_OWNED_IMAGES.fetch_sub(1, Ordering::Relaxed);
-    }
-}
-
-#[unsafe(no_mangle)]
-/// # Safety
-/// `image` must be live and `out_image` must be writable.
-pub unsafe extern "C" fn snow_ocr_owned_image_info(
-    image: *const SnowOcrOwnedImage,
-    out_image: *mut SnowOcrImageInfoV1,
-) -> u8 {
-    let (Some(image), Some(out_image)) = (unsafe { image.as_ref() }, unsafe { out_image.as_mut() })
-    else {
-        set_last_error("OCR owned image or output is null");
-        return 0;
-    };
-    if out_image.struct_size as usize != size_of::<SnowOcrImageInfoV1>() {
-        set_last_error("OCR image output has an incompatible struct size");
-        return 0;
-    }
-    *out_image = SnowOcrImageInfoV1 {
-        struct_size: size_of::<SnowOcrImageInfoV1>() as u32,
-        width: image.width,
-        height: image.height,
-        stride_bytes: image.width.saturating_mul(4),
-        rgba_bytes: image.rgba.as_ptr(),
-        rgba_len: image.rgba.len(),
-    };
-    clear_last_error();
-    1
-}
-
-#[unsafe(no_mangle)]
-/// # Safety
-/// The result must be live and `out_image` must be writable.
-pub unsafe extern "C" fn snow_ocr_result_image(
-    result: *const SnowOcrResult,
-    out_image: *mut SnowOcrImageInfoV1,
-) -> u8 {
-    let (Some(result), Some(out_image)) = (
-        (unsafe { result.as_ref() }),
-        (unsafe { out_image.as_mut() }),
-    ) else {
-        set_last_error("OCR result or image output is null");
-        return 0;
-    };
-    if out_image.struct_size as usize != size_of::<SnowOcrImageInfoV1>() {
-        set_last_error("OCR image output has an incompatible struct size");
-        return 0;
-    }
-    *out_image = SnowOcrImageInfoV1 {
-        struct_size: size_of::<SnowOcrImageInfoV1>() as u32,
-        width: result.width,
-        height: result.height,
-        stride_bytes: result.width * 4,
-        rgba_bytes: result.rgba.as_ptr(),
-        rgba_len: result.rgba.len(),
-    };
-    clear_last_error();
-    1
 }
 
 #[unsafe(no_mangle)]
@@ -645,12 +504,6 @@ pub unsafe extern "C" fn snow_ocr_result_line(
         text_len: line.text.len(),
         confidence: line.confidence,
         quad: ffi_quad(line.quad),
-        foreground: SnowOcrColor {
-            red: line.foreground[0],
-            green: line.foreground[1],
-            blue: line.foreground[2],
-            alpha: line.foreground[3],
-        },
     };
     clear_last_error();
     1
@@ -688,14 +541,10 @@ mod tests {
     #[test]
     fn ffi_result_exposes_complete_lines() {
         let result = SnowOcrResult {
-            width: 1,
-            height: 1,
-            rgba: vec![0, 0, 0, 255],
             lines: vec![OwnedLine {
                 text: b"one complete line".to_vec(),
                 confidence: 0.9,
                 quad: [[1.0, 2.0], [9.0, 2.0], [9.0, 6.0], [1.0, 6.0]],
-                foreground: [12, 34, 56, 255],
             }],
         };
         let mut line = SnowOcrLineInfoV1 {
@@ -704,7 +553,6 @@ mod tests {
             text_len: 0,
             confidence: 0.0,
             quad: SnowOcrQuad::default(),
-            foreground: SnowOcrColor::default(),
         };
 
         assert_eq!(unsafe { snow_ocr_result_line_count(&result) }, 1);
@@ -754,41 +602,6 @@ mod tests {
     }
 
     #[test]
-    fn ffi_owned_image_transfer_has_deterministic_ownership() {
-        let baseline = LIVE_OWNED_IMAGES.load(Ordering::Relaxed);
-        let mut result = SnowOcrResult {
-            width: 2,
-            height: 1,
-            rgba: vec![1, 2, 3, 4, 5, 6, 7, 8],
-            lines: Vec::new(),
-        };
-
-        let image = unsafe { snow_ocr_result_take_image(&mut result) };
-        assert!(!image.is_null());
-        assert!(result.rgba.is_empty());
-        assert_eq!(LIVE_OWNED_IMAGES.load(Ordering::Relaxed), baseline + 1);
-
-        let mut info = SnowOcrImageInfoV1 {
-            struct_size: size_of::<SnowOcrImageInfoV1>() as u32,
-            width: 0,
-            height: 0,
-            stride_bytes: 0,
-            rgba_bytes: ptr::null(),
-            rgba_len: 0,
-        };
-        assert_eq!(unsafe { snow_ocr_owned_image_info(image, &mut info) }, 1);
-        assert_eq!((info.width, info.height, info.stride_bytes), (2, 1, 8));
-        assert_eq!(
-            unsafe { slice::from_raw_parts(info.rgba_bytes, info.rgba_len) },
-            &[1, 2, 3, 4, 5, 6, 7, 8]
-        );
-        assert!(unsafe { snow_ocr_result_take_image(&mut result) }.is_null());
-
-        unsafe { snow_ocr_owned_image_destroy(image) };
-        assert_eq!(LIVE_OWNED_IMAGES.load(Ordering::Relaxed), baseline);
-    }
-
-    #[test]
     fn embedded_pipeline_recognizes_an_rgba_image() {
         let (pipeline, backend) = create_engine_with_settings(EngineSettings::legacy(false))
             .expect("embedded OCR pipeline should initialize");
@@ -803,7 +616,6 @@ mod tests {
             rgba_len: rgba.len(),
         };
         let result = recognize(&mut engine, &request).expect("embedded OCR pipeline should run");
-        assert_eq!((result.width, result.height), (64, 64));
-        assert_eq!(result.rgba.len(), rgba.len());
+        assert!(result.lines.is_empty());
     }
 }

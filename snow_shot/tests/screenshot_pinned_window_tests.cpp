@@ -1133,9 +1133,6 @@ void pinnedContextMenuAndModes(SnowCanvasRuntime& sourceRuntime) {
         "OCR mode should use embedded recognition content and hide engine-owned drawing content");
     auto recognizedPresentation = std::make_shared<ScreenshotOcrPresentation>();
     recognizedPresentation->selection = config.canvasSourceRect.toAlignedRect();
-    recognizedPresentation->filledImage =
-        QImage(background.size(), QImage::Format_ARGB32_Premultiplied);
-    recognizedPresentation->filledImage.fill(Qt::transparent);
     recognition.complete({std::move(recognizedPresentation), {}});
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     sendShortcut(*canvas, Qt::Key_E, Qt::ControlModifier);
@@ -1533,11 +1530,8 @@ void pinnedCloseAfterRecognizedText(SnowCanvasRuntime& sourceRuntime) {
 
     auto presentation = std::make_shared<ScreenshotOcrPresentation>();
     presentation->selection = QRect(0, 0, background.width(), background.height());
-    presentation->filledImage = QImage(background.size(), QImage::Format_RGBA8888);
-    presentation->filledImage.fill(QColor(220, 240, 255, 80));
     ScreenshotOcrLine line;
     line.text = QStringLiteral("Recognized text");
-    line.foreground = Qt::black;
     line.quad = QPolygonF(
         {QPointF(20.0, 30.0), QPointF(140.0, 30.0), QPointF(140.0, 50.0), QPointF(20.0, 50.0)});
     presentation->lines.push_back(line);
@@ -2693,9 +2687,6 @@ void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime& sourceRun
 
     auto translatedPresentation = std::make_shared<ScreenshotOcrPresentation>();
     translatedPresentation->selection = config.canvasSourceRect.toAlignedRect();
-    translatedPresentation->filledImage =
-        QImage(background.size(), QImage::Format_ARGB32_Premultiplied);
-    translatedPresentation->filledImage.fill(Qt::transparent);
     ScreenshotOcrLine translatedLine;
     translatedLine.text = QStringLiteral("Text to translate");
     translatedLine.quad = QPolygonF(config.canvasSourceRect);

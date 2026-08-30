@@ -10,7 +10,6 @@ extern "C" {
 
 typedef struct SnowOcrEngine SnowOcrEngine;
 typedef struct SnowOcrResult SnowOcrResult;
-typedef struct SnowOcrOwnedImage SnowOcrOwnedImage;
 
 typedef struct SnowOcrEngineConfigV2 {
     uint32_t struct_size;
@@ -31,7 +30,6 @@ typedef struct SnowOcrResourceCountsV1 {
     uint32_t struct_size;
     size_t engines;
     size_t results;
-    size_t owned_images;
 } SnowOcrResourceCountsV1;
 
 typedef struct SnowOcrRequestV1 {
@@ -43,25 +41,9 @@ typedef struct SnowOcrRequestV1 {
     size_t rgba_len;
 } SnowOcrRequestV1;
 
-typedef struct SnowOcrImageInfoV1 {
-    uint32_t struct_size;
-    uint32_t width;
-    uint32_t height;
-    uint32_t stride_bytes;
-    const uint8_t* rgba_bytes;
-    size_t rgba_len;
-} SnowOcrImageInfoV1;
-
 typedef struct SnowOcrQuad {
     float points[8];
 } SnowOcrQuad;
-
-typedef struct SnowOcrColor {
-    uint8_t red;
-    uint8_t green;
-    uint8_t blue;
-    uint8_t alpha;
-} SnowOcrColor;
 
 typedef struct SnowOcrLineInfoV1 {
     uint32_t struct_size;
@@ -69,7 +51,6 @@ typedef struct SnowOcrLineInfoV1 {
     size_t text_len;
     float confidence;
     SnowOcrQuad quad;
-    SnowOcrColor foreground;
 } SnowOcrLineInfoV1;
 
 SnowOcrEngine* snow_ocr_engine_create(void);
@@ -87,16 +68,6 @@ SnowOcrResult* snow_ocr_engine_recognize_rgba(
     const SnowOcrRequestV1* request
 );
 void snow_ocr_result_destroy(SnowOcrResult* result);
-SnowOcrOwnedImage* snow_ocr_result_take_image(SnowOcrResult* result);
-void snow_ocr_owned_image_destroy(SnowOcrOwnedImage* image);
-uint8_t snow_ocr_owned_image_info(
-    const SnowOcrOwnedImage* image,
-    SnowOcrImageInfoV1* out_image
-);
-uint8_t snow_ocr_result_image(
-    const SnowOcrResult* result,
-    SnowOcrImageInfoV1* out_image
-);
 size_t snow_ocr_result_line_count(const SnowOcrResult* result);
 uint8_t snow_ocr_result_line(
     const SnowOcrResult* result,

@@ -7,6 +7,7 @@
 #include "snow_canvas_renderer.h"
 #include "snow_canvas_tile_cache.h"
 #include "snow_draw_engine_qt/snow_canvas_custom_renderer.h"
+#include "snow_draw_engine_qt/snow_canvas_region_filter.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 
@@ -32,6 +33,45 @@ void require(bool condition, const char* message) {
         std::cerr << message << '\n';
         std::exit(1);
     }
+}
+
+void publicRegionFilterApiRestrictsEffectsToTheRequestedRegion() {
+    QImage source(QSize(24, 16), QImage::Format_ARGB32_Premultiplied);
+    for (int y = 0; y < source.height(); ++y) {
+        for (int x = 0; x < source.width(); ++x) {
+            source.setPixelColor(x, y, QColor((x * 17 + y * 3) % 256,
+                                              (x * 5 + y * 19) % 256,
+                                              (x * 11 + y * 7) % 256, 255));
+        }
+    }
+
+    const QRegion region(QRect(7, 4, 8, 6));
+    QImage destination = source;
+    SnowCanvasRegionFilterParameters parameters;
+    parameters.type = SnowCanvasFilterType::GaussianBlur;
+    parameters.logicalSigma = 3.0;
+    require(applySnowCanvasRegionFilter(source, destination, region, parameters),
+            "the public region-filter API should accept premultiplied images");
+    require(destination.pixelColor(10, 6) != source.pixelColor(10, 6),
+            "the public region-filter API should modify pixels inside the region");
+    for (int y = 0; y < destination.height(); ++y) {
+        for (int x = 0; x < destination.width(); ++x) {
+            if (region.contains(QPoint(x, y))) {
+                continue;
+            }
+            require(destination.pixel(x, y) == source.pixel(x, y),
+                    "the public region-filter API must preserve pixels outside the region");
+        }
+    }
+
+    QImage invalidFormat(source.size(), QImage::Format_RGBA8888);
+    invalidFormat.fill(Qt::black);
+    require(!applySnowCanvasRegionFilter(invalidFormat, destination, region, parameters),
+            "the public region-filter API should reject unsupported source formats");
+    QImage invalidSize(source.size() - QSize(1, 0), QImage::Format_ARGB32_Premultiplied);
+    invalidSize.fill(Qt::black);
+    require(!applySnowCanvasRegionFilter(source, invalidSize, region, parameters),
+            "the public region-filter API should reject mismatched image sizes");
 }
 
 void inversionPreservesPremultipliedAlpha() {
@@ -2130,6 +2170,7 @@ void tiledRenderMatchesFullRenderDiagnostic() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    publicRegionFilterApiRestrictsEffectsToTheRequestedRegion();
     tiledRenderMatchesFullRenderDiagnostic();
     inversionPreservesPremultipliedAlpha();
     grayscalePreservesPremultipliedAlpha();

@@ -97,9 +97,11 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                 return ensureRecognitionWindow() ? m_recognitionWindow.data() : nullptr;
             },
             [this]() { destroyRecognitionWindow(); },
-            [this](std::shared_ptr<ScreenshotOcrPresentation> presentation) {
+            [this](std::shared_ptr<ScreenshotOcrPresentation> presentation,
+                   QVector<QColor> foregrounds) {
                 if (m_recognitionWindow != nullptr) {
-                    m_recognitionWindow->setOcrPresentation(presentation);
+                    m_recognitionWindow->setOcrPresentation(std::move(presentation),
+                                                            std::move(foregrounds));
                 }
             },
             [this](std::shared_ptr<ScreenshotOcrPresentation> presentation) {

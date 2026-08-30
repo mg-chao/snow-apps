@@ -1815,15 +1815,8 @@ void ocrPresentationRendersWhileCanvasContentIsHidden() {
 
     auto presentation = std::make_shared<ScreenshotOcrPresentation>();
     presentation->selection = QRect(-20, -10, 40, 20);
-    presentation->filledImage = QImage(40, 20, QImage::Format_RGBA8888);
-    presentation->filledImage.fill(QColor(0, 80, 240));
-    {
-        QPainter fillPainter(&presentation->filledImage);
-        fillPainter.fillRect(QRect(4, 2, 32, 16), Qt::white);
-    }
     ScreenshotOcrLine line;
     line.text = QStringLiteral("Wj");
-    line.foreground = Qt::black;
     line.quad = QPolygonF({
         QPointF(-16.0, -8.0),
         QPointF(16.0, -8.0),
@@ -1854,20 +1847,22 @@ void ocrPresentationRendersWhileCanvasContentIsHidden() {
             "OCR fill must not alter selection pixels outside recognized lines");
     require(output.pixelColor(10, 10) == QColor(0, 80, 240),
             "OCR fill should preserve screenshot pixels outside the selected region");
-    bool foundRegionFill = false;
-    for (int y = 32; y < 49 && !foundRegionFill; ++y) {
+    bool foundRegionFilter = false;
+    for (int y = 32; y < 49 && !foundRegionFilter; ++y) {
         for (int x = 31; x < 58; ++x) {
-            if (output.pixelColor(x, y) == Qt::white) {
-                foundRegionFill = true;
+            const QColor color = output.pixelColor(x, y);
+            if (color.red() > 20 && color.green() > 100 && color.blue() > 200) {
+                foundRegionFilter = true;
                 break;
             }
         }
     }
-    require(foundRegionFill, "OCR background fill should render inside recognized line quads");
-    const QRect paintedTextBounds = paintedInkBounds(output, QRect(24, 32, 32, 16));
+    require(foundRegionFilter,
+            "OCR regions should be blurred and blended toward white inside recognized quads");
+    const QRect paintedTextBounds = paintedInkBounds(output, QRect(24, 32, 32, 16), 80);
     require(!paintedTextBounds.isEmpty(),
             "OCR graphics items should render text over the region fill");
-    require(paintedTextBounds.width() >= 30 && paintedTextBounds.height() >= 14,
+    require(paintedTextBounds.width() >= 30 && paintedTextBounds.height() >= 10,
             "OCR character spacing should expand short text across the recognized line");
     require(std::abs(paintedTextBounds.center().x() - 39.5) <= 1.0,
             "character-spaced OCR text should remain horizontally centered");
@@ -1939,8 +1934,10 @@ void ocrPresentationRendersWhileCanvasContentIsHidden() {
     const QImage backgroundOnlyOutput = renderCanvas(canvas);
     require(ocrTextItemCount(canvas) == 0 && textLayer->isHidden(),
             "background-only OCR should not create or show text widgets");
-    require(backgroundOnlyOutput.pixelColor(40, 40) == QColor(Qt::white),
-            "background-only OCR should still paint the engine-provided fill image");
+    const QColor backgroundOnlyPixel = backgroundOnlyOutput.pixelColor(40, 40);
+    require(backgroundOnlyPixel.red() > 20 && backgroundOnlyPixel.green() > 100 &&
+                backgroundOnlyPixel.blue() > 200,
+            "background-only OCR should still apply the region filter without text widgets");
     renderer.clearOcrPresentation();
     canvas.setCanvasContentVisible(true);
     require(renderCanvas(canvas).pixelColor(40, 40) == QColor(0, 80, 240),
@@ -1967,11 +1964,8 @@ void ocrPresentationRendersTextInPinnedResultMode() {
 
     auto presentation = std::make_shared<ScreenshotOcrPresentation>();
     presentation->selection = contentRect.toAlignedRect();
-    presentation->filledImage = QImage(100, 60, QImage::Format_RGBA8888);
-    presentation->filledImage.fill(Qt::white);
     ScreenshotOcrLine line;
     line.text = QStringLiteral("Pinned OCR");
-    line.foreground = Qt::black;
     line.quad = QPolygonF({
         QPointF(-40.0, -10.0),
         QPointF(40.0, -10.0),
@@ -1983,7 +1977,7 @@ void ocrPresentationRendersTextInPinnedResultMode() {
     canvas.setCanvasContentVisible(false);
 
     const QImage output = renderCanvas(canvas);
-    const QRect paintedTextBounds = paintedInkBounds(output, QRect(10, 20, 80, 20));
+    const QRect paintedTextBounds = paintedInkBounds(output, QRect(10, 20, 80, 20), 80);
     require(!paintedTextBounds.isEmpty(),
             "pinned-result OCR should paint recognized text over its filled background");
     auto* textLayer = canvas.findChild<QGraphicsView*>(QStringLiteral("snowShotOcrTextLayer"));
@@ -2012,11 +2006,8 @@ void ocrTextAspectFitUsesWidthConstraintWithoutVerticalStretch() {
 
     auto presentation = std::make_shared<ScreenshotOcrPresentation>();
     presentation->selection = QRect(-40, -20, 80, 40);
-    presentation->filledImage = QImage(80, 40, QImage::Format_RGBA8888);
-    presentation->filledImage.fill(Qt::white);
     ScreenshotOcrLine line;
     line.text = QStringLiteral("MMMMMM");
-    line.foreground = Qt::black;
     line.quad = QPolygonF({
         QPointF(-35.0, -10.0),
         QPointF(35.0, -10.0),
@@ -2027,7 +2018,7 @@ void ocrTextAspectFitUsesWidthConstraintWithoutVerticalStretch() {
     renderer.setOcrPresentation(presentation);
 
     const QImage output = renderCanvas(canvas);
-    const QRect inkBounds = paintedInkBounds(output, QRect(15, 20, 70, 20));
+    const QRect inkBounds = paintedInkBounds(output, QRect(15, 20, 70, 20), 80);
     require(inkBounds.width() >= 67 && inkBounds.height() <= 15,
             "wide OCR text should use the width-limited uniform fit without vertical stretching");
     require(std::abs(inkBounds.center().y() - 29.5) <= 1.0,
@@ -2052,11 +2043,8 @@ void verticalOcrTextKeepsCjkGraphemesUprightAndSelectable() {
 
     auto presentation = std::make_shared<ScreenshotOcrPresentation>();
     presentation->selection = QRect(-20, -40, 40, 80);
-    presentation->filledImage = QImage(40, 80, QImage::Format_RGBA8888);
-    presentation->filledImage.fill(Qt::white);
     ScreenshotOcrLine line;
     line.text = QString::fromUcs4(U"\u4e00\u4e00");
-    line.foreground = Qt::black;
     line.direction = ScreenshotOcrTextDirection::Vertical;
     line.quad = QPolygonF({
         QPointF(-12.0, -30.0),
@@ -2068,8 +2056,8 @@ void verticalOcrTextKeepsCjkGraphemesUprightAndSelectable() {
     renderer.setOcrPresentation(presentation);
 
     const QImage output = renderCanvas(canvas);
-    const QRect upperInk = paintedInkBounds(output, QRect(28, 20, 24, 30));
-    const QRect lowerInk = paintedInkBounds(output, QRect(28, 50, 24, 30));
+    const QRect upperInk = paintedInkBounds(output, QRect(28, 20, 24, 30), 80);
+    const QRect lowerInk = paintedInkBounds(output, QRect(28, 50, 24, 30), 80);
     require(!upperInk.isEmpty() && !lowerInk.isEmpty(),
             "vertical OCR should paint every CJK grapheme in its own cell");
     require(upperInk.width() > upperInk.height() * 2 && lowerInk.width() > lowerInk.height() * 2,
