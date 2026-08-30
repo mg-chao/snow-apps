@@ -7,7 +7,6 @@
 
 #include "antd_icons.h"
 #include "widgets/control_scale.h"
-#include "widgets/divider.h"
 
 #include <QBoxLayout>
 #include <QEvent>
@@ -61,6 +60,18 @@ QColor toolbarDragHandleColor() {
     const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
     return scheme.map.colorTextQuaternary.isValid() ? scheme.map.colorTextQuaternary
                                                     : QColor(0xbf, 0xbf, 0xbf);
+}
+
+QString cssColor(const QColor& color) {
+    if (color.alpha() == 255) {
+        return color.name(QColor::HexRgb);
+    }
+
+    return QStringLiteral("rgba(%1, %2, %3, %4)")
+        .arg(color.red())
+        .arg(color.green())
+        .arg(color.blue())
+        .arg(color.alpha());
 }
 
 int scaledMetric(int value, qreal scale) {
@@ -180,8 +191,8 @@ void ScreenshotToolbarMainPanel::addSeparator() {
     }
 
     addSpacing(kSeparatorSideSpacing);
-    auto* separator = new adqt::widgets::AdDivider(this);
-    separator->setOrientation(adqt::widgets::AdDivider::Orientation::Vertical);
+    auto* separator = new QFrame(this);
+    separator->setFrameShape(QFrame::NoFrame);
     separator->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     updateSeparatorStyle(separator);
     m_layout->addWidget(separator);
@@ -394,16 +405,9 @@ void ScreenshotToolbarMainPanel::updateSeparatorStyle(QFrame* separator) {
         return;
     }
 
-    auto* divider = qobject_cast<adqt::widgets::AdDivider*>(separator);
-    if (divider == nullptr) {
-        return;
-    }
-
-    adqt::widgets::AdDivider::SemanticStyles styles;
-    styles.root.backgroundColor = toolbarSurfaceColor();
-    styles.rail.borderColor = toolbarSeparatorColor();
-    styles.rail.borderWidth = static_cast<qreal>(kSeparatorWidth);
-    divider->setSemanticStyles(styles);
+    separator->setAttribute(Qt::WA_StyledBackground, true);
+    separator->setStyleSheet(QStringLiteral("QFrame { background: %1; border: 0px; }")
+                                 .arg(cssColor(toolbarSeparatorColor())));
 }
 
 void ScreenshotToolbarMainPanel::updateDragHandle(QWidget* handle) {

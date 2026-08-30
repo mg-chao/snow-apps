@@ -15,7 +15,6 @@
 #include "antd_icons.h"
 #include "widgets/button.h"
 #include "widgets/control_scale.h"
-#include "widgets/divider.h"
 #include "widgets/radio.h"
 #include "widgets/radio_button_group.h"
 #include "widgets/select.h"
@@ -152,18 +151,22 @@ QColor toolbarSeparatorColor(const snow_shot::presentation::styles::ThemeColorSc
     return scheme.map.colorBorder.isValid() ? scheme.map.colorBorder : QColor(0xd9, 0xd9, 0xd9);
 }
 
-void updateStyleToolbarSeparatorStyle(QFrame* separator) {
-    auto* divider = qobject_cast<adqt::widgets::AdDivider*>(separator);
-    if (divider == nullptr) {
-        return;
+QString cssColor(const QColor& color) {
+    if (color.alpha() == 255) {
+        return color.name(QColor::HexRgb);
     }
 
-    const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
-    adqt::widgets::AdDivider::SemanticStyles styles;
-    styles.root.backgroundColor = toolbarSurfaceColor(scheme);
-    styles.rail.borderColor = toolbarSeparatorColor(scheme);
-    styles.rail.borderWidth = static_cast<qreal>(TOOLBAR_SEPARATOR_WIDTH);
-    divider->setSemanticStyles(styles);
+    return QStringLiteral("rgba(%1, %2, %3, %4)")
+        .arg(color.red())
+        .arg(color.green())
+        .arg(color.blue())
+        .arg(color.alpha());
+}
+
+QString styleToolbarSeparatorStyleSheet() {
+    return QStringLiteral("QFrame { background: %1; border: 0px; }")
+        .arg(cssColor(
+            toolbarSeparatorColor(snow_shot::presentation::styles::generateThemeColorScheme())));
 }
 
 void applyMainToolbarToolActiveStyle(adqt::widgets::AdButton* button, bool active) {
@@ -621,9 +624,10 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
     const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
     connect(&themeManager, &snow_shot::presentation::styles::ThemeManager::themeChanged, this,
             [this](const snow_shot::presentation::styles::ThemeColorScheme&) {
+                const QString separatorStyle = styleToolbarSeparatorStyleSheet();
                 for (QFrame* separator : std::as_const(m_styleSeparatorFrames)) {
                     if (separator != nullptr) {
-                        updateStyleToolbarSeparatorStyle(separator);
+                        separator->setStyleSheet(separatorStyle);
                     }
                 }
                 refreshThemeDependentIcons();
@@ -2053,12 +2057,12 @@ void ScreenshotToolPalette::setStyleToolbarSpacingVisible(QSpacerItem* spacer, b
 }
 
 QFrame* ScreenshotToolPalette::createStyleToolbarSeparator(QWidget* parent) {
-    auto* separator = new adqt::widgets::AdDivider(parent);
-    separator->setOrientation(adqt::widgets::AdDivider::Orientation::Vertical);
+    auto* separator = new QFrame(parent);
+    separator->setFrameShape(QFrame::NoFrame);
     separator->setFixedSize(scaledMetric(TOOLBAR_SEPARATOR_WIDTH),
                             scaledMetric(TOOLBAR_SEPARATOR_HEIGHT));
     separator->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    updateStyleToolbarSeparatorStyle(separator);
+    separator->setStyleSheet(styleToolbarSeparatorStyleSheet());
     m_styleSeparatorFrames.push_back(separator);
     return separator;
 }
