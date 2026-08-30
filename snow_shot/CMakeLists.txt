@@ -1756,6 +1756,21 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+    if(WIN32)
+        add_test(
+            NAME snow-shot-overlay-native-surface-retirement-test
+            COMMAND snow-shot-screenshot-canvas-renderer-tests
+                --overlay-native-surface-retirement
+        )
+        set_tests_properties(snow-shot-overlay-native-surface-retirement-test PROPERTIES
+            LABELS "e2e;interactive;windows"
+            RUN_SERIAL TRUE
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    endif()
 
     add_executable(snow-shot-overlay-frame-presenter-tests
         tests/screenshot_overlay_frame_presenter_tests.cpp

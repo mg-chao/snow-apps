@@ -153,21 +153,24 @@ void ScreenshotOverlayCoordinator::hideOverlayWindowsImmediately(
     // Reset the pooled toolbars before hiding them. Translucent Windows
     // surfaces retain their last composed frame while hidden, so resetting
     // after hide lets the old style/selection row flash on the next show.
-    // Keep the canvas untouched here: pin/copy exports may still consume it
-    // asynchronously after this immediate hide.
+    // Retire only the native overlay surfaces here: pin/copy exports may still
+    // consume the renderer and canvas state asynchronously after this hide.
     m_uiHost.resetToolbarForNewCapture();
     m_uiHost.hideToolbar();
     m_uiHost.hideShortcutHints();
     SNOW_SHOT_PIN_PERF_MILESTONE("overlay.toolbar_hidden");
-    displaySession.forEachOverlay(
-        [](qsizetype, ScreenshotOverlayWindow* overlay) {
-            if (overlay == nullptr) {
-                return;
-            }
-            overlay->setCanvasClearBackgroundEnabled(false);
-            overlay->clearInputPassThroughRect();
-            overlay->hide();
-        });
+    displaySession.forEachOverlay([](qsizetype, ScreenshotOverlayWindow* overlay) {
+        if (overlay == nullptr) {
+            return;
+        }
+        overlay->setCanvasClearBackgroundEnabled(false);
+        overlay->clearInputPassThroughRect();
+        // The export has already snapshotted the display/model inputs by
+        // the time this presentation is detached. Retire only the native
+        // surface; the renderer and scrolling thumbnail remain available
+        // until the asynchronous export consumes them.
+        overlay->releaseNativeSurface();
+    });
     m_overlayMaintenancePending = true;
     SNOW_SHOT_PIN_PERF_MILESTONE("overlay.overlays_hidden");
 }
@@ -175,9 +178,8 @@ void ScreenshotOverlayCoordinator::hideOverlayWindowsImmediately(
 void ScreenshotOverlayCoordinator::hideOverlayWindows(
     const ScreenshotDisplaySession& displaySession) {
     // The full hide is used once an active export has settled. Clear each
-    // visible overlay surface while it is still composited, then hide it. A
-    // hidden layered window cannot reliably receive the repaint that clears
-    // its previous frame.
+    // overlay's render state, then synchronously retire its native surface and
+    // desktop-sized backing store. The pooled QWidget graph remains reusable.
     if (m_overlayMaintenancePending) {
         flushDeferredOverlayMaintenance(displaySession);
         return;
@@ -193,7 +195,7 @@ void ScreenshotOverlayCoordinator::hideOverlayWindows(
         overlay->setCanvasClearBackgroundEnabled(false);
         overlay->clearInputPassThroughRect();
         m_canvasPresenter.clearOverlayCanvas(overlay);
-        overlay->hide();
+        overlay->releaseNativeSurface();
     });
     m_overlayMaintenancePending = false;
 }
@@ -205,6 +207,7 @@ void ScreenshotOverlayCoordinator::flushDeferredOverlayMaintenance(
     }
     displaySession.forEachOverlay([this](qsizetype, ScreenshotOverlayWindow* overlay) {
         m_canvasPresenter.clearOverlayCanvas(overlay);
+        overlay->releaseNativeSurface();
     });
     m_uiHost.resetToolbarForNewCapture();
     m_overlayMaintenancePending = false;

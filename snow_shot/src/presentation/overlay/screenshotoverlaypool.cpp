@@ -76,8 +76,9 @@ ScreenshotOverlayPool::ensureOverlay(ScreenshotOverlayWindow* overlay) const {
         auto* canvas = new ScreenshotOverlayCanvasWidget(m_canvasRuntime);
         overlay = new ScreenshotOverlayWindow(m_eventSink, canvas);
         m_shortcutManager.addScopeWindow(overlay);
-        static_cast<void>(overlay->winId());
     }
+
+    overlay->restoreNativeSurface();
 
     if (created) {
         clearOverlayCanvas(overlay);
@@ -104,6 +105,8 @@ void ScreenshotOverlayPool::deleteOverlay(ScreenshotOverlayWindow* overlay) cons
     }
 
     detachOverlayUi(overlay);
-    overlay->hide();
+    clearOverlayCanvas(overlay);
+    m_shortcutManager.removeScopeWindow(overlay);
+    overlay->releaseNativeSurface();
     overlay->deleteLater();
 }

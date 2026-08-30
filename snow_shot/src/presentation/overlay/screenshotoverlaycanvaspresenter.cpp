@@ -30,7 +30,6 @@ void ScreenshotOverlayCanvasPresenter::clearOverlayCanvas(ScreenshotOverlayWindo
     overlay->resetScreenshotRendering();
     overlay->canvas()->cancelActiveTextEditing();
     overlay->canvas()->clearCursorForLayer(SnowCanvasCursorLayer::Host);
-    overlay->clearPresentationFrame();
 }
 
 namespace {
@@ -80,10 +79,6 @@ void applyDisplayModelsToDisplaySession(
         }
         canvas->setViewportCamera(viewport.canvasCenter.x(), viewport.canvasCenter.y(),
                                   viewport.canvasToLogicalScale);
-        if (applyCapturedImage) {
-            overlay->restorePresentationCanvas();
-        }
-
         if (display.screen != nullptr && overlay->screen() != display.screen) {
             overlay->setScreen(display.screen);
         }

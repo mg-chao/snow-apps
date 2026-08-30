@@ -70,9 +70,12 @@ class ScreenshotOverlayWindow final : public QWidget {
     [[nodiscard]] quint64 windowMaskApplicationCountForTesting() const;
     [[nodiscard]] ScreenshotCanvasRenderer* screenshotRendererForTesting() const;
 #endif
-    void clearPresentationFrame();
-    void restorePresentationCanvas();
     void showPreparedFrame();
+    // Release the native window and backing store while retaining the QObject,
+    // canvas, renderer, and signal wiring for the next capture.
+    void releaseNativeSurface();
+    // Recreate the native window and backing store after releaseNativeSurface().
+    void restoreNativeSurface();
 
   protected:
     bool event(QEvent* event) override;
@@ -103,7 +106,6 @@ class ScreenshotOverlayWindow final : public QWidget {
     ScreenshotScrollingRecognitionMode m_scrollingThumbnailMode =
         ScreenshotScrollingRecognitionMode::Vertical;
     bool m_scrollingThumbnailSessionActive = false;
-    bool m_canvasHiddenForPresentationClear = false;
     bool m_scrollingCaptureMode = false;
     bool m_canvasContentWasVisible = true;
     bool m_canvasClearBackgroundWasEnabled = true;

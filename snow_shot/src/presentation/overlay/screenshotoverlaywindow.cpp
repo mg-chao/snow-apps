@@ -364,36 +364,39 @@ ScreenshotCanvasRenderer* ScreenshotOverlayWindow::screenshotRendererForTesting(
 }
 #endif
 
-void ScreenshotOverlayWindow::clearPresentationFrame() {
-    if (m_canvas != nullptr && !m_canvas->isHidden()) {
-        m_canvas->hide();
-        m_canvasHiddenForPresentationClear = true;
-    }
-
-    if (!isVisible()) {
-        return;
-    }
-
-    if (updatesEnabled()) {
-        repaint();
-    } else {
-        update();
-    }
-}
-
-void ScreenshotOverlayWindow::restorePresentationCanvas() {
-    if (m_canvas == nullptr || !m_canvasHiddenForPresentationClear) {
-        return;
-    }
-
-    m_canvasHiddenForPresentationClear = false;
-    m_canvas->show();
-}
-
 void ScreenshotOverlayWindow::showPreparedFrame() {
     if (m_framePresenter != nullptr) {
         m_framePresenter->presentPreparedFrame();
     }
+}
+
+void ScreenshotOverlayWindow::releaseNativeSurface() {
+    hide();
+    setUpdatesEnabled(false);
+    clearMask();
+    m_inputPassThroughRect = {};
+    m_appliedWindowMask = QRegion();
+    m_windowMaskInitialized = false;
+    if (m_canvas != nullptr) {
+        m_canvas->setInteractionEnabled(false);
+        m_canvas->setUpdatesEnabled(false);
+    }
+
+    // QWidget::destroy() keeps this QObject and its renderer/model alive while
+    // releasing the native window, child native windows, and backing store.
+    // Calling the Qt API also keeps QWidget's internal platform state coherent.
+    destroy(true, true);
+}
+
+void ScreenshotOverlayWindow::restoreNativeSurface() {
+    setUpdatesEnabled(true);
+    if (m_canvas != nullptr) {
+        m_canvas->setUpdatesEnabled(true);
+    }
+
+    initializeScreenshotSurface();
+    static_cast<void>(winId());
+    hide();
 }
 
 void ScreenshotOverlayWindow::initializeScreenshotSurface() {

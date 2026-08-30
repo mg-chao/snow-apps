@@ -30,6 +30,7 @@
 #include <QObject>
 #include <QPainter>
 #include <QPaintEvent>
+#include <QPointer>
 #include <QRegion>
 #include <QScreen>
 #include <QScrollBar>
@@ -2128,41 +2129,6 @@ void scrollingModeClearsPassThroughMaskBeforeRestoringRenderer() {
     canvas->removeEventFilter(&paintObserver);
 }
 
-void hiddenPresentationFrameUsesPreparedReveal() {
-    NoopOverlayEventSink eventSink;
-    auto* canvas = new SnowCanvasWidget;
-    ScreenshotOverlayWindow overlay(eventSink, canvas);
-    overlay.resize(80, 80);
-    overlay.show();
-    QApplication::processEvents();
-    overlay.hide();
-    QApplication::processEvents();
-
-    CanvasPaintObserver paintObserver(overlay);
-    overlay.installEventFilter(&paintObserver);
-    paintObserver.begin();
-    const qreal initialOpacity = overlay.windowOpacity();
-
-    overlay.clearPresentationFrame();
-
-    require(!paintObserver.sawPaint(),
-            "clearing a hidden overlay must defer painting until the next show");
-    overlay.showPreparedFrame();
-    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
-        require(paintObserver.sawPaint(),
-                "showing a cleared overlay must synchronously refresh its native surface");
-    }
-    require(qFuzzyCompare(overlay.windowOpacity() + 1.0, initialOpacity + 1.0),
-            "clearing a hidden overlay must restore its window opacity");
-    require(canvas->isHidden(),
-            "the presentation canvas must stay hidden until a new frame is applied");
-
-    overlay.hide();
-    overlay.restorePresentationCanvas();
-    require(!canvas->isHidden(), "restoring presentation must re-enable the canvas");
-    overlay.removeEventFilter(&paintObserver);
-}
-
 void scrollingThumbnailIsAnEmbeddedScreenshotWidget() {
     NoopOverlayEventSink eventSink;
     auto* canvas = new SnowCanvasWidget;
@@ -2910,6 +2876,82 @@ void overlayCanvasesAreDisabledUntilCanvasInteractionIsEnabled() {
             "activating a non-drawing tool must disable every reusable overlay canvas");
 }
 
+void overlayNativeSurfaceIsReleasedBeforeDeferredObjectDeletion() {
+    NoopOverlayEventSink eventSink;
+    auto* overlay = new ScreenshotOverlayWindow(eventSink, new SnowCanvasWidget);
+    overlay->resize(640, 360);
+    overlay->show();
+    QApplication::processEvents();
+    static_cast<void>(overlay->winId());
+
+    require(overlay->internalWinId() != 0 && overlay->testAttribute(Qt::WA_WState_Created),
+            "the teardown test must begin with a live native overlay surface");
+
+    QPointer<ScreenshotOverlayWindow> guard(overlay);
+    overlay->releaseNativeSurface();
+    require(guard != nullptr,
+            "native surface release must keep the event receiver alive until deferred deletion");
+    require(overlay->internalWinId() == 0 && !overlay->testAttribute(Qt::WA_WState_Created),
+            "native surface release must synchronously destroy the platform window");
+
+    overlay->deleteLater();
+    QCoreApplication::sendPostedEvents(overlay, QEvent::DeferredDelete);
+    require(guard == nullptr, "the retired overlay must still support normal deferred deletion");
+}
+
+void overlayNativeSurfaceRetirementPreservesReusableRenderState() {
+    NoopOverlayEventSink eventSink;
+    auto* canvas = new SnowCanvasWidget;
+    ScreenshotOverlayWindow overlay(eventSink, canvas);
+    overlay.resize(96, 72);
+
+    QImage capturedImage(96, 72, QImage::Format_ARGB32_Premultiplied);
+    capturedImage.fill(QColor(37, 113, 211));
+    overlay.setScreenshotImage(capturedImage, QRectF(0.0, 0.0, 96.0, 72.0));
+    overlay.setScreenshotMaskVisible(true);
+    overlay.setScreenshotSelection(QRectF(8.0, 6.0, 64.0, 48.0), true, 0);
+    overlay.setInputPassThroughRect(QRect(16, 12, 48, 36));
+
+    ScreenshotCanvasRenderer* renderer = overlay.screenshotRendererForTesting();
+    require(renderer != nullptr, "the retirement test requires an overlay renderer");
+    const std::uint64_t contentRevision = renderer->contentRevision();
+    require(renderer->hasSelection() && renderer->maskVisible(),
+            "the retirement test must begin with reusable render state");
+
+    overlay.show();
+    QApplication::processEvents();
+    require(overlay.internalWinId() != 0 && overlay.testAttribute(Qt::WA_WState_Created),
+            "the retirement test must begin with a live native surface");
+    require(!canvas->isHidden(),
+            "the retirement test must begin with the canvas in its normal visible state");
+
+    overlay.releaseNativeSurface();
+
+    require(overlay.internalWinId() == 0 && !overlay.testAttribute(Qt::WA_WState_Created),
+            "retiring an export presentation must synchronously drop its native surface");
+    require(!overlay.updatesEnabled() && !canvas->updatesEnabled(),
+            "a retired overlay must not schedule paints without a native surface");
+    require(renderer->contentRevision() == contentRevision && renderer->hasSelection() &&
+                renderer->maskVisible(),
+            "native-surface retirement must preserve renderer state needed by export");
+    require(canvas->customRenderer() == renderer,
+            "native-surface retirement must preserve the reusable canvas-renderer binding");
+
+    overlay.restoreNativeSurface();
+
+    require(overlay.internalWinId() != 0 && overlay.testAttribute(Qt::WA_WState_Created),
+            "the next capture must be able to recreate the retired native surface");
+    require(!overlay.isVisible() && overlay.updatesEnabled() && canvas->updatesEnabled(),
+            "a restored overlay must match its hidden, update-ready pre-capture state");
+    require(!canvas->isHidden(),
+            "native-surface restoration must preserve the canvas visibility state");
+    require(overlay.mask().isEmpty(),
+            "native-surface restoration must not reapply the previous capture's input mask");
+    require(renderer->contentRevision() == contentRevision && renderer->hasSelection() &&
+                renderer->maskVisible(),
+            "native-surface restoration must not mutate the retained export state");
+}
+
 void canvasCursorLayersKeepToolCursorAfterScreenshotSelection() {
     SnowCanvasWidget toolCanvas;
     require(toolCanvas.setCanvasTool(SnowCanvasTool::Shape),
@@ -2998,6 +3040,15 @@ void resettingDisplaySessionEditingStateResetsEveryCanvas() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--overlay-native-surface-release"))) {
+        overlayNativeSurfaceIsReleasedBeforeDeferredObjectDeletion();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--overlay-native-surface-retirement"))) {
+        overlayNativeSurfaceIsReleasedBeforeDeferredObjectDeletion();
+        overlayNativeSurfaceRetirementPreservesReusableRenderState();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--large-image-slice-rendering"))) {
         largeRasterSourceExtentsRenderWithoutFixedPointWrap();
         smoothLargeImageChunkBoundariesRemainPixelEquivalent();
@@ -3082,7 +3133,6 @@ int main(int argc, char** argv) {
     ocrTextAspectFitUsesWidthConstraintWithoutVerticalStretch();
     verticalOcrTextKeepsCjkGraphemesUprightAndSelectable();
     scrollingModeClearsPassThroughMaskBeforeRestoringRenderer();
-    hiddenPresentationFrameUsesPreparedReveal();
     scrollingThumbnailIsAnEmbeddedScreenshotWidget();
     scrollingThumbnailStaysWithinHostDisplayWhenNeitherSideFits();
     scrollingThumbnailAlignsWithTopEdgeSelection();
@@ -3102,6 +3152,8 @@ int main(int argc, char** argv) {
     canvasWheelZoomCanBeDisabled();
     disabledCanvasBlocksWidgetLevelToolInput();
     overlayCanvasesAreDisabledUntilCanvasInteractionIsEnabled();
+    overlayNativeSurfaceIsReleasedBeforeDeferredObjectDeletion();
+    overlayNativeSurfaceRetirementPreservesReusableRenderState();
     canvasCursorLayersKeepToolCursorAfterScreenshotSelection();
     overlayPresenterRespectsSelectionHandleVisibility();
     resettingDisplaySessionEditingStateResetsEveryCanvas();

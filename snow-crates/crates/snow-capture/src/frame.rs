@@ -327,6 +327,13 @@ fn alloc_frame_buffer_storage(len: usize) -> FrameBufferStorage {
         return FrameBufferStorage::LargePage(lp);
     }
 
+    // Heap fallback. Verified empirically (Windows 11, classic NT heap):
+    // dropping freed monitor-sized buffers from this path does NOT leave
+    // private working set memory occupied. The NT heap serves multi-MB
+    // allocations from dedicated VirtualAlloc-backed segments and releases
+    // them fully on free, so commit charge and working set both return to
+    // baseline immediately. The 12.5% capacity headroom therefore costs
+    // nothing after the buffers are dropped.
     let headroom = len / 8;
     let mut v = Vec::with_capacity(len + headroom);
     v.resize(len, 0);
