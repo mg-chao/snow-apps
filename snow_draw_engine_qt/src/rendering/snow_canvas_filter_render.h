@@ -114,6 +114,8 @@ class RenderWorkspace {
     QImage& preLayerScratch(const QSize& size, qreal devicePixelRatio = 1.0);
     QImage& alphaScratch(const QSize& size, qreal devicePixelRatio = 1.0);
     std::vector<QRgb>& mosaicSampleScratch(std::size_t count);
+    // Releases all canvas-owned scratch images and sample storage.
+    void clear();
     void finishFrame(bool releaseAll = false);
     const KernelDiagnostics& diagnostics() const;
     void resetDiagnostics();

@@ -225,6 +225,7 @@ bool RuntimeSession::clearDocumentPreservingViewports() {
         return false;
     }
 
+    m_clients.clearRenderState();
     syncChangedViewports(changedViewports.get());
     return true;
 }

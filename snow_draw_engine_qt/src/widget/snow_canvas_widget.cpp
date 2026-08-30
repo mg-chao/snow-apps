@@ -335,6 +335,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     void detachRuntime();
     void attachRuntime(SnowRuntime runtime) override;
     void detachRuntimeOwner(SnowCanvasRuntime* owner) override;
+    void clearRenderState() override;
     void clearRetainedDisplayState();
     bool hasViewport() const;
     void syncAfterEngineMutation() override;
@@ -1554,7 +1555,6 @@ void SnowCanvasWidget::Impl::clearRetainedDisplayState() {
     if (pendingLiveStrokePreservesEverySample && hasViewport()) {
         flushLiveStrokeMoves();
     }
-    snow_canvas_filter_tile_cache::invalidateNamespace(&widget);
     clearTextStylePopupInteraction();
     pendingLiveStrokeMoves.clear();
     pendingLiveStrokePreservesEverySample = false;
@@ -1579,6 +1579,13 @@ void SnowCanvasWidget::Impl::clearRetainedDisplayState() {
     }
     inputHandler.clearTransientState();
     refreshSerialNumberToolbar();
+    clearRenderState();
+}
+
+void SnowCanvasWidget::Impl::clearRenderState() {
+    snow_canvas_filter_tile_cache::invalidateNamespace(&widget);
+    filterWorkspace.clear();
+    penMaskAtlas.clear();
 }
 
 bool SnowCanvasWidget::Impl::hasViewport() const {
@@ -1698,6 +1705,7 @@ bool SnowCanvasWidget::Impl::resetEditingState() {
         return false;
     }
 
+    clearRenderState();
     requestedCanvasTool = SnowCanvasTool::Select;
     inputHandler.clearTransientState();
     applyCanvasToolCursor(SnowCanvasTool::Select);
@@ -1710,6 +1718,10 @@ bool SnowCanvasWidget::Impl::resetEditingState() {
 
 bool SnowCanvasWidget::resetEditingState() {
     return m_impl->resetEditingState();
+}
+
+void SnowCanvasWidget::clearRenderState() {
+    m_impl->clearRenderState();
 }
 
 bool SnowCanvasWidget::Impl::cancelActiveTextEditing() {

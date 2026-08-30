@@ -1097,6 +1097,9 @@ void penMaskRasterizersAndTailInvalidationStayDeterministic() {
 
     require(atlas.tile(item, 0, 1, info, 1.0) != nullptr,
             "the atlas must repopulate after element deletion");
+    atlas.clear();
+    require(atlas.entryCount() == 0 && atlas.retainedBytes() == 0,
+            "clearing a Pen Filter atlas must release all retained tiles");
     info.camera_center_x = 0.375;
     info.camera_center_y = -0.625;
     info.camera_zoom = 1.4;
@@ -1669,6 +1672,24 @@ void croppedCoverageWorkspaceAndFailurePathsStayValid() {
             "allocation failure must preserve the unfiltered destination scene");
 }
 
+void renderWorkspaceClearReleasesCanvasScratch() {
+    snow_canvas_filter_render::RenderWorkspace workspace;
+    (void)workspace.argbScratchA(QSize(320, 240));
+    (void)workspace.mosaicSampleScratch(4096);
+    workspace.finishFrame();
+    require(workspace.retainedBytes() > 0,
+            "a populated render workspace must retain scratch memory before clearing");
+
+    workspace.clear();
+    require(workspace.retainedBytes() == 0,
+            "clearing a render workspace must release all retained scratch memory");
+
+    workspace.resetDiagnostics();
+    (void)workspace.argbScratchA(QSize(320, 240));
+    require(workspace.diagnostics().allocatedBytes > 0,
+            "rendering after a workspace clear must allocate cold scratch storage");
+}
+
 void stableRendererFramesReuseOpaqueGaussianWorkspace() {
     const QSize size(320, 200);
     QImage background = QImage(size, QImage::Format_ARGB32_Premultiplied);
@@ -2098,6 +2119,7 @@ int main(int argc, char** argv) {
     scalarAvx2AndThreadingProduceIdenticalPixels();
     maskedKernelsMatchAcrossBackendsAndRespectBlurMemoryBound();
     croppedCoverageWorkspaceAndFailurePathsStayValid();
+    renderWorkspaceClearReleasesCanvasScratch();
     stableRendererFramesReuseOpaqueGaussianWorkspace();
     mosaicReplayRendersEveryFreeDrawChunk();
     adjacentLayerBatchesEffectsAndKeepsSparseComponents();

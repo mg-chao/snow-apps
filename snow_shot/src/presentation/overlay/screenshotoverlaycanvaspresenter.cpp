@@ -29,6 +29,7 @@ void ScreenshotOverlayCanvasPresenter::clearOverlayCanvas(ScreenshotOverlayWindo
 
     overlay->resetScreenshotRendering();
     overlay->canvas()->cancelActiveTextEditing();
+    overlay->canvas()->clearRenderState();
     overlay->canvas()->clearCursorForLayer(SnowCanvasCursorLayer::Host);
 }
 

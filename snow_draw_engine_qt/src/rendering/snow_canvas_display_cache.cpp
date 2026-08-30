@@ -50,7 +50,7 @@ PatchApplyResult applyPatchOps(std::vector<Owned>& storage, bool reset, const Sn
                                std::uint32_t insertItemCount) {
     PatchApplyResult result;
     if (reset) {
-        storage.clear();
+        std::vector<Owned>().swap(storage);
         result.structural = true;
     }
     if (ops == nullptr || opCount == 0) {
@@ -183,20 +183,21 @@ SnowCanvasDisplayCache::SnowCanvasDisplayCache() {
 
 void SnowCanvasDisplayCache::reset(const SnowColorRgba8& clearColor) {
     m_patchCursor = SnowPatchCursor{};
-    m_sceneStorage.clear();
-    m_overlayStorage.clear();
-    m_spotlightStorage.clear();
+    std::vector<SnowCanvasSceneItem>().swap(m_sceneStorage);
+    std::vector<SnowCanvasOverlayItem>().swap(m_overlayStorage);
+    std::vector<SnowSpotlightCutout>().swap(m_spotlightStorage);
     m_lastPenFilterGeometryOpCount = 0;
     m_lastPenFilterGeometryPointCount = 0;
-    m_appliedPenFilterGeometryDeltas.clear();
-    m_sceneDirtyStorage.clear();
-    m_decorationDirtyStorage.clear();
-    m_overlayDirtyStorage.clear();
-    m_sceneSpatialCells.clear();
-    m_sceneItemSpatialCells.clear();
-    m_sceneGlobalItems.clear();
-    m_filterIndices.clear();
-    m_sceneQueryMarks.clear();
+    std::vector<AppliedPenFilterGeometryDelta>().swap(m_appliedPenFilterGeometryDeltas);
+    std::vector<SnowDirtyRect>().swap(m_sceneDirtyStorage);
+    std::vector<SnowDirtyRect>().swap(m_decorationDirtyStorage);
+    std::vector<SnowDirtyRect>().swap(m_overlayDirtyStorage);
+    decltype(m_sceneSpatialCells)().swap(m_sceneSpatialCells);
+    std::vector<std::vector<std::int64_t>>().swap(m_sceneItemSpatialCells);
+    std::vector<std::uint32_t>().swap(m_sceneGlobalItems);
+    std::vector<std::uint32_t>().swap(m_filterIndices);
+    std::vector<std::uint32_t>().swap(m_sceneQueryMarks);
+    m_sceneQueryStamp = 0;
     refreshViews();
     m_sceneDisplayInfo = SceneDisplayInfo{};
     m_sceneDisplayInfo.clear_color = clearColor;
@@ -228,7 +229,11 @@ bool SnowCanvasDisplayCache::sync(SnowRuntime runtime, SnowViewport viewport) {
     }
     m_lastPenFilterGeometryOpCount = payload.penFilterGeometryOpCount;
     m_lastPenFilterGeometryPointCount = payload.penFilterGeometryPointCount;
-    m_appliedPenFilterGeometryDeltas.clear();
+    if (patchInfo.scene_reset != 0) {
+        std::vector<AppliedPenFilterGeometryDelta>().swap(m_appliedPenFilterGeometryDeltas);
+    } else {
+        m_appliedPenFilterGeometryDeltas.clear();
+    }
     m_appliedPenFilterGeometryDeltas.reserve(payload.penFilterGeometryOpCount);
 
     const bool viewChanged = m_sceneDisplayInfo.surface_width != patchInfo.surface_width ||
@@ -318,6 +323,21 @@ bool SnowCanvasDisplayCache::sync(SnowRuntime runtime, SnowViewport viewport) {
     applyPatchOps(
         m_spotlightStorage, patchInfo.decoration_reset != 0, payload.spotlightOps,
         payload.spotlightOpCount, payload.spotlightCutouts, payload.spotlightCutoutCount);
+    if (patchInfo.scene_reset != 0) {
+        decltype(m_sceneSpatialCells)().swap(m_sceneSpatialCells);
+        std::vector<std::vector<std::int64_t>>().swap(m_sceneItemSpatialCells);
+        std::vector<std::uint32_t>().swap(m_sceneGlobalItems);
+        std::vector<std::uint32_t>().swap(m_filterIndices);
+        std::vector<std::uint32_t>().swap(m_sceneQueryMarks);
+        m_sceneQueryStamp = 0;
+        std::vector<SnowDirtyRect>().swap(m_sceneDirtyStorage);
+    }
+    if (patchInfo.overlay_reset != 0) {
+        std::vector<SnowDirtyRect>().swap(m_overlayDirtyStorage);
+    }
+    if (patchInfo.decoration_reset != 0) {
+        std::vector<SnowDirtyRect>().swap(m_decorationDirtyStorage);
+    }
     assignStorage(m_sceneDirtyStorage, payload.sceneDirtyRects, payload.sceneDirtyRectCount);
     assignStorage(m_decorationDirtyStorage, payload.decorationDirtyRects,
                   payload.decorationDirtyRectCount);

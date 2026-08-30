@@ -17,6 +17,7 @@ class Client {
     virtual void detachRuntimeForReplacement() = 0;
     virtual void attachRuntime(SnowRuntime runtime) = 0;
     virtual void detachRuntimeOwner(SnowCanvasRuntime* runtimeOwner) = 0;
+    virtual void clearRenderState() = 0;
     virtual void syncAfterEngineMutation() = 0;
     virtual void refreshStateFromEngine(bool emitSignals) = 0;
 };

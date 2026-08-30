@@ -1153,6 +1153,18 @@ std::vector<QRgb>& RenderWorkspace::mosaicSampleScratch(std::size_t count) {
     return m_mosaicSamples;
 }
 
+void RenderWorkspace::clear() {
+    releaseLease(m_argbAEntry, m_argbA);
+    releaseLease(m_argbBEntry, m_argbB);
+    releaseLease(m_sceneEntry, m_scene);
+    releaseLease(m_preLayerEntry, m_preLayer);
+    releaseLease(m_alphaEntry, m_alpha);
+    m_pool.clear();
+    std::vector<QRgb>().swap(m_mosaicSamples);
+    m_poolClock = 0;
+    m_diagnostics = {};
+}
+
 void RenderWorkspace::finishFrame(bool releaseAll) {
     constexpr qsizetype kMaximumRetainedScratchBytes = 16 * 1024 * 1024;
     releaseLease(m_argbAEntry, m_argbA);

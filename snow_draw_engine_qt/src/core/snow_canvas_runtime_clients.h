@@ -23,6 +23,7 @@ class ClientRegistry final {
     void attachAfterRuntimeReplacement(const DetachedClients& clients, SnowRuntime runtime);
     void detachAndReleaseClients(SnowCanvasRuntime& owner);
     void abandonClientsWithoutDetach();
+    void clearRenderState();
     void syncChangedViewports(const std::vector<std::uint64_t>& changedViewportIds);
 
   private:

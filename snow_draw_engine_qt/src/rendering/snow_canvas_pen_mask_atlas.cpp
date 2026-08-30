@@ -369,6 +369,11 @@ void PenMaskAtlas::clear() {
     m_entries.clear();
     m_lru.clear();
     m_retainedBytes = 0;
+    m_viewSignature = 0;
+    m_appliedSceneRevision = 0;
+    m_hasViewSignature = false;
+    m_displayInfo = {};
+    m_devicePixelRatio = 1.0;
 }
 
 std::size_t PenMaskAtlas::retainedBytes() const {

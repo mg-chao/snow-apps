@@ -81,6 +81,9 @@ class SnowCanvasWidget : public QWidget {
     bool resetEditingState();
     // Discards an uncommitted inline text draft without adding it to history.
     bool cancelActiveTextEditing();
+    // Releases renderer cache and scratch memory without changing document, view, styles, or
+    // selection.
+    void clearRenderState();
     [[nodiscard]] bool hasActiveTextEditing() const;
     // Keeps an active inline text draft alive while a text-style popup owns focus.
     void beginTextStylePopupInteraction();
