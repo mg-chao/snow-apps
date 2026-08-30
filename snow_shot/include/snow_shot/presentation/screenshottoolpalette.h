@@ -303,12 +303,13 @@ class ScreenshotToolPalette final : public QWidget {
     adqt::widgets::AdButton* drawingToolButton(const QString& itemId) const;
     adqt::widgets::AdButton* drawingToolEntryButton(Tool tool) const;
     void clearDrawingToolGroups();
+    void activateToolFromToolbar(Tool tool, bool toggleVisibleButton = true);
     void activateDrawingTool(Tool tool);
     [[nodiscard]] Tool drawingShortcutEntryTool(const QString& itemId, Tool fallback) const;
     void selectDrawingToolGroupEntry(Tool tool);
     void refreshDrawingToolGroup(int groupIndex);
     void addRecordingControls(QBoxLayout* layout);
-    void activateTableQrTool(Tool tool);
+    void activateTableQrTool(Tool tool, bool toggleVisibleButton = true);
     void setTableQrEntryTool(Tool tool);
     void refreshTableQrTrigger();
     void selectDynamicEntryTool(Tool tool);
