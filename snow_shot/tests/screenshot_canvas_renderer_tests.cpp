@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/screenshotguidelinerendering.h"
 #include "snow_shot/presentation/screenshotmessageservice.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
+#include "snow_shot/presentation/screenshotocrvisuals.h"
 #include "snow_shot/presentation/screenshotselectionmodel.h"
 #include "snow_shot/presentation/screenshotselectionshadowrenderer.h"
 #include "snow_shot/presentation/screenshotoverlaycanvaspresenter.h"
@@ -1858,7 +1859,8 @@ void ocrPresentationRendersWhileCanvasContentIsHidden() {
         }
     }
     require(foundRegionFilter,
-            "OCR regions should be blurred and blended toward white inside recognized quads");
+            "OCR regions should be blurred and blended toward the theme background inside "
+            "recognized quads");
     const QRect paintedTextBounds = paintedInkBounds(output, QRect(24, 32, 32, 16), 80);
     require(!paintedTextBounds.isEmpty(),
             "OCR graphics items should render text over the region fill");
@@ -1943,6 +1945,30 @@ void ocrPresentationRendersWhileCanvasContentIsHidden() {
     require(renderCanvas(canvas).pixelColor(40, 40) == QColor(0, 80, 240),
             "clearing OCR should restore the immutable screenshot presentation");
     canvas.setCustomRenderer(nullptr);
+}
+
+void ocrFilteredImageBlendsTowardTheSuppliedThemeBackground() {
+    QImage source(20, 20, QImage::Format_RGBA8888);
+    const QColor screenshotColor(0, 80, 240);
+    const QColor themeBackground(20, 30, 40);
+    source.fill(screenshotColor);
+
+    ScreenshotOcrPresentation presentation;
+    presentation.selection = QRect(0, 0, 20, 20);
+    ScreenshotOcrLine line;
+    line.text = QStringLiteral("OCR");
+    line.quad = QPolygonF({QPointF(5.0, 5.0), QPointF(15.0, 5.0), QPointF(15.0, 15.0),
+                           QPointF(5.0, 15.0)});
+    presentation.lines.push_back(line);
+
+    const QImage filtered = renderScreenshotOcrFilteredImage(
+        source, QRectF(0.0, 0.0, 20.0, 20.0), presentation, themeBackground);
+    require(!filtered.isNull(), "OCR filtering should produce an image for a valid source");
+    const QColor center = filtered.pixelColor(10, 10);
+    require(center.red() < 30 && center.green() < 60 && center.blue() < 160,
+            "OCR filtering should blend toward the supplied theme background color");
+    require(center != QColor(127, 167, 247),
+            "OCR filtering should not use the former white blend destination");
 }
 
 void ocrPresentationRendersTextInPinnedResultMode() {
@@ -3051,6 +3077,10 @@ int main(int argc, char** argv) {
         guideLinesInitializeFromGlobalCursorPosition();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--ocr-theme-background"))) {
+        ocrFilteredImageBlendsTowardTheSuppliedThemeBackground();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--cursor-layer-priority"))) {
         canvasCursorLayersKeepToolCursorAfterScreenshotSelection();
         return 0;
@@ -3117,6 +3147,7 @@ int main(int argc, char** argv) {
     unchangedOverlaySelectionDoesNotScheduleRepaint();
     selectionTransitionDirtyRegionCoversEveryChangedPixel();
     ocrPresentationRendersWhileCanvasContentIsHidden();
+    ocrFilteredImageBlendsTowardTheSuppliedThemeBackground();
     ocrPresentationRendersTextInPinnedResultMode();
     ocrTextAspectFitUsesWidthConstraintWithoutVerticalStretch();
     verticalOcrTextKeepsCjkGraphemesUprightAndSelectable();

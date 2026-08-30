@@ -7,6 +7,7 @@
 #include "snow_shot/presentation/screenshotselectionshadowrenderer.h"
 
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
+#include "theme/theme_manager.h"
 
 #include <QApplication>
 #include <QBrush>
@@ -44,7 +45,7 @@
 
 class ScreenshotOcrGraphicsTextItem final : public QGraphicsItem {
   public:
-    void configure(const QString& text, const QFont& font, const QColor& foreground,
+    void configure(const QString& text, const QFont& font, const QColor& textColor,
                    const ScreenshotOcrTextRange& selection, ScreenshotOcrTextDirection direction,
                    qreal targetAspectRatio);
     void setSelection(const ScreenshotOcrTextRange& selection);
@@ -65,7 +66,7 @@ class ScreenshotOcrGraphicsTextItem final : public QGraphicsItem {
 
     QString m_text;
     QFont m_font;
-    QColor m_foreground;
+    QColor m_textColor;
     ScreenshotOcrTextRange m_selection;
     ScreenshotOcrTextDirection m_direction = ScreenshotOcrTextDirection::Horizontal;
     std::unique_ptr<QTextLayout> m_layout;
@@ -1048,7 +1049,7 @@ QImage materializeScreenshotImageSource(const ScreenshotImageSource& source,
 }
 
 void ScreenshotOcrGraphicsTextItem::configure(const QString& text, const QFont& font,
-                                               const QColor& foreground,
+                                               const QColor& textColor,
                                                const ScreenshotOcrTextRange& selection,
                                                ScreenshotOcrTextDirection direction,
                                                qreal targetAspectRatio) {
@@ -1062,10 +1063,10 @@ void ScreenshotOcrGraphicsTextItem::configure(const QString& text, const QFont& 
         qFuzzyCompare(1.0 + m_targetAspectRatio, 1.0 + targetAspectRatio);
     if (hasLayout && m_text == text && m_font == font && m_direction == direction &&
         aspectRatioMatches) {
-        const bool foregroundChanged = m_foreground != foreground;
-        m_foreground = foreground;
+        const bool textColorChanged = m_textColor != textColor;
+        m_textColor = textColor;
         m_selection = selection;
-        if (foregroundChanged || selectionChanged) {
+        if (textColorChanged || selectionChanged) {
             update();
         }
         return;
@@ -1074,7 +1075,7 @@ void ScreenshotOcrGraphicsTextItem::configure(const QString& text, const QFont& 
     prepareGeometryChange();
     m_text = text;
     m_font = font;
-    m_foreground = foreground;
+    m_textColor = textColor;
     m_selection = selection;
     m_direction = direction;
     m_targetAspectRatio = targetAspectRatio;
@@ -1187,7 +1188,7 @@ void ScreenshotOcrGraphicsTextItem::paint(QPainter* painter, const QStyleOptionG
     painter->save();
     painter->setClipRect(m_bounds);
     painter->setRenderHint(QPainter::TextAntialiasing, true);
-    painter->setPen(m_foreground);
+    painter->setPen(m_textColor);
 
     if (m_direction == ScreenshotOcrTextDirection::Vertical) {
         const int selectionStart = qBound(0, m_selection.start, static_cast<int>(m_text.size()));
@@ -1215,7 +1216,7 @@ void ScreenshotOcrGraphicsTextItem::paint(QPainter* painter, const QStyleOptionG
             QTextLayout::FormatRange textFormat;
             textFormat.start = 0;
             textFormat.length = static_cast<int>(glyph.layout->text().size());
-            textFormat.format.setForeground(QBrush(selected ? selectionForeground : m_foreground));
+            textFormat.format.setForeground(QBrush(selected ? selectionForeground : m_textColor));
             formats.push_back(textFormat);
 
             painter->save();
@@ -1240,7 +1241,7 @@ void ScreenshotOcrGraphicsTextItem::paint(QPainter* painter, const QStyleOptionG
     QTextLayout::FormatRange textFormat;
     textFormat.start = 0;
     textFormat.length = static_cast<int>(m_text.size());
-    textFormat.format.setForeground(QBrush(m_foreground));
+    textFormat.format.setForeground(QBrush(m_textColor));
     formats.push_back(textFormat);
     if (!m_selection.empty()) {
         QTextLayout::FormatRange range;
@@ -1280,11 +1281,13 @@ ScreenshotOcrTextLayer::ScreenshotOcrTextLayer(QWidget* parent)
 }
 
 void ScreenshotOcrTextLayer::setPresentation(
-    std::shared_ptr<ScreenshotOcrPresentation> presentation, QVector<QColor> foregrounds) {
+    std::shared_ptr<ScreenshotOcrPresentation> presentation) {
     m_textItems.clear();
     m_scene->clear();
     m_presentation = std::move(presentation);
-    m_foregrounds = std::move(foregrounds);
+    const adqt::theme::ThemeMapToken theme =
+        adqt::theme::ThemeManager::instance().resolveTheme(this);
+    m_textColor = theme.colorText;
     if (m_presentation != nullptr) {
         m_presentation->prepareForRendering();
     }
@@ -1301,7 +1304,7 @@ void ScreenshotOcrTextLayer::clearPresentation() {
     m_textItems.clear();
     m_scene->clear();
     m_presentation.reset();
-    m_foregrounds.clear();
+    m_textColor = {};
     m_viewportRect = {};
     m_selectionAnchor = {};
     m_selectionFocus = {};
@@ -1449,10 +1452,7 @@ void ScreenshotOcrTextLayer::synchronizeTextItem(TextItem& item,
                                 edgeLength(textFitQuad.at(1), textFitQuad.at(2))) /
                                2.0;
     const qreal targetAspectRatio = targetHeight > 0.0 ? targetWidth / targetHeight : 0.0;
-    const QColor foreground = item.lineIndex >= 0 && item.lineIndex < m_foregrounds.size()
-                                  ? m_foregrounds.at(item.lineIndex)
-                                  : QColor(Qt::black);
-    item.graphicsText->configure(text, font, foreground,
+    item.graphicsText->configure(text, font, m_textColor,
                                   m_presentation->textSelectionForLine(item.lineIndex),
                                   line.direction, targetAspectRatio);
 
@@ -1498,17 +1498,6 @@ void ScreenshotCanvasRenderer::setImageSource(ScreenshotImageSource source) {
         source.materializedImage.setDevicePixelRatio(1.0);
     }
     m_imageSource = std::move(source);
-    if (m_ocrPresentation != nullptr) {
-        const QRectF selection = QRectF(m_ocrPresentation->selection).normalized();
-        const QSize pixelSize(std::max(1, qRound(selection.width())),
-                              std::max(1, qRound(selection.height())));
-        const QImage image = materializeScreenshotImageSource(m_imageSource, selection, pixelSize);
-        m_ocrForegrounds = resolveScreenshotOcrForegrounds(image, selection, *m_ocrPresentation);
-        if (m_ocrTextLayer != nullptr &&
-            m_ocrPresentationMode == OcrPresentationMode::BackgroundAndText) {
-            m_ocrTextLayer->setPresentation(m_ocrPresentation, m_ocrForegrounds);
-        }
-    }
     invalidateCachedContent();
     m_canvas.update();
 }
@@ -1695,17 +1684,16 @@ void ScreenshotCanvasRenderer::setOcrPresentation(
     std::shared_ptr<ScreenshotOcrPresentation> presentation, OcrPresentationMode mode) {
     m_ocrPresentation = std::move(presentation);
     m_ocrPresentationMode = mode;
-    m_ocrForegrounds.clear();
-    if (m_ocrPresentation != nullptr && m_imageSource.isValid()) {
-        const QRectF selection = QRectF(m_ocrPresentation->selection).normalized();
-        const QSize pixelSize(std::max(1, qRound(selection.width())),
-                              std::max(1, qRound(selection.height())));
-        const QImage source = materializeScreenshotImageSource(m_imageSource, selection, pixelSize);
-        m_ocrForegrounds = resolveScreenshotOcrForegrounds(source, selection, *m_ocrPresentation);
+    m_ocrBackgroundColor = {};
+    if (m_ocrPresentation != nullptr) {
+        const adqt::theme::ThemeMapToken theme =
+            adqt::theme::ThemeManager::instance().resolveTheme(&m_canvas);
+        m_ocrBackgroundColor = theme.colorBgContainer.isValid() ? theme.colorBgContainer
+                                                                  : QColor(Qt::white);
     }
     invalidateCachedContent();
     if (m_ocrPresentationMode == OcrPresentationMode::BackgroundAndText) {
-        ensureOcrTextLayer()->setPresentation(m_ocrPresentation, m_ocrForegrounds);
+        ensureOcrTextLayer()->setPresentation(m_ocrPresentation);
     } else if (m_ocrTextLayer != nullptr) {
         m_ocrTextLayer->clearPresentation();
     }
@@ -1734,7 +1722,7 @@ void ScreenshotCanvasRenderer::clearOcrPresentation() {
         return;
     }
     m_ocrPresentation.reset();
-    m_ocrForegrounds.clear();
+    m_ocrBackgroundColor = {};
     m_ocrPresentationMode = OcrPresentationMode::BackgroundAndText;
     invalidateCachedContent();
     if (m_ocrTextLayer != nullptr) {
@@ -1766,7 +1754,7 @@ void ScreenshotCanvasRenderer::reset() {
     m_monitorCenterGuideLineColor = QColor(0, 0, 0, 0);
     m_guideLinesVisible = false;
     m_ocrPresentation.reset();
-    m_ocrForegrounds.clear();
+    m_ocrBackgroundColor = {};
     m_ocrPresentationMode = OcrPresentationMode::BackgroundAndText;
     if (m_ocrTextLayer != nullptr) {
         m_ocrTextLayer->clearPresentation();
@@ -1913,7 +1901,8 @@ void ScreenshotCanvasRenderer::renderBeforeCanvas(QPainter& painter,
         if (!canvasRect.isEmpty() && targetRect.isValid() && !targetRect.isEmpty() &&
             context.exposedRegion.intersects(targetRect.toAlignedRect())) {
             const QImage filtered = renderScreenshotOcrFilteredSource(
-                m_imageSource, canvasRect, pixelSize, *m_ocrPresentation);
+                m_imageSource, canvasRect, pixelSize, *m_ocrPresentation,
+                m_ocrBackgroundColor);
             if (!filtered.isNull()) {
                 painter.save();
                 painter.setClipRegion(context.exposedRegion, Qt::IntersectClip);

@@ -155,7 +155,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     QColor m_monitorCenterGuideLineColor = QColor(0, 0, 0, 0);
     bool m_guideLinesVisible = false;
     std::shared_ptr<ScreenshotOcrPresentation> m_ocrPresentation;
-    QVector<QColor> m_ocrForegrounds;
+    QColor m_ocrBackgroundColor;
     OcrPresentationMode m_ocrPresentationMode = OcrPresentationMode::BackgroundAndText;
     // The canvas owns this widget through QObject parenting.
     QPointer<ScreenshotOcrTextLayer> m_ocrTextLayer;

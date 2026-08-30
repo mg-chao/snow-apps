@@ -6,7 +6,6 @@
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 
 #include <QObject>
-#include <QColor>
 #include <QHash>
 #include <QImage>
 #include <QPointer>
@@ -52,8 +51,7 @@ struct ScreenshotRecognitionTarget {
 struct ScreenshotRecognitionSessionActions {
     std::function<ScreenshotRecognitionWindow*()> ensureContent;
     std::function<void()> destroyContent;
-    std::function<void(std::shared_ptr<ScreenshotOcrPresentation>, QVector<QColor>)>
-        applyOcrPresentation;
+    std::function<void(std::shared_ptr<ScreenshotOcrPresentation>)> applyOcrPresentation;
     std::function<void(std::shared_ptr<ScreenshotOcrPresentation>)> applyOcrBackground;
     std::function<void(std::shared_ptr<QTextDocument>)> applyFormattedText;
     std::function<void()> clearOcrBackground;
@@ -134,7 +132,6 @@ class ScreenshotRecognitionSessionController final : public QObject {
     struct TextCacheEntry {
         enum class TranslationStatus { Absent, Streaming, Completed, Failed };
         std::shared_ptr<ScreenshotOcrPresentation> presentation;
-        QVector<QColor> foregrounds;
         std::shared_ptr<QTextDocument> formattedDocument;
         bool formatted = false;
         std::shared_ptr<ScreenshotOcrTextEditingSession> editingSession;
@@ -157,8 +154,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
                         ScreenshotQrRecognitionResult result);
     void ensureContent();
     void clearContent();
-    void applyPresentation(const std::shared_ptr<ScreenshotOcrPresentation>& presentation,
-                           const QVector<QColor>& foregrounds);
+    void applyPresentation(const std::shared_ptr<ScreenshotOcrPresentation>& presentation);
     void applyFormattedText(const std::shared_ptr<QTextDocument>& document);
     void applyTableSession(const std::shared_ptr<ScreenshotTableEditingSession>& session);
     void applyQrContents(const QStringList& contents);

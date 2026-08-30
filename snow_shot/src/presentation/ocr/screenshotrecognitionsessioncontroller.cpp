@@ -1,7 +1,5 @@
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 
-#include "snow_shot/presentation/screenshotocrvisuals.h"
-
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotocrtexteditingsession.h"
 #include "snow_shot/presentation/screenshotocrtexttransform.h"
@@ -185,7 +183,7 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
                 applyFormattedText(cached->formattedDocument);
             } else {
                 m_presentation = cached->presentation;
-                applyPresentation(m_presentation, cached->foregrounds);
+                applyPresentation(m_presentation);
             }
             emit textResultChanged(true);
             if (cached->editing) {
@@ -433,7 +431,7 @@ void ScreenshotRecognitionSessionController::endTextEditing() {
     if (entry.formatted) {
         applyFormattedText(entry.formattedDocument);
     } else {
-        applyPresentation(m_presentation, m_textCache.value(m_textCacheKey).foregrounds);
+        applyPresentation(m_presentation);
     }
     emit textEditingChanged(false);
     updateTextState();
@@ -1064,20 +1062,17 @@ void ScreenshotRecognitionSessionController::handleTextOutput(
         return;
     }
     const QString original = snow_shot::presentation::originalOcrText(*output.presentation);
-    const QVector<QColor> foregrounds = resolveScreenshotOcrForegrounds(
-        m_target.image, m_target.canvasRect, *output.presentation);
     auto editingSession = std::make_shared<ScreenshotOcrTextEditingSession>(original);
     connect(editingSession->document(), &QTextDocument::contentsChanged, this,
             [this, key]() { handleTextDocumentChanged(key); });
     TextCacheEntry entry;
     entry.presentation = output.presentation;
-    entry.foregrounds = foregrounds;
     entry.editingSession = std::move(editingSession);
     m_textCache.insert(key, std::move(entry));
     if (m_active && m_mode == Mode::Text) {
         m_textCacheKey = key;
         m_presentation = m_textCache.value(key).presentation;
-        applyPresentation(m_presentation, foregrounds);
+        applyPresentation(m_presentation);
         emit textResultChanged(true);
     }
     hideRecognitionMessage();
@@ -1164,14 +1159,13 @@ void ScreenshotRecognitionSessionController::clearContent() {
 }
 
 void ScreenshotRecognitionSessionController::applyPresentation(
-    const std::shared_ptr<ScreenshotOcrPresentation>& presentation,
-    const QVector<QColor>& foregrounds) {
+    const std::shared_ptr<ScreenshotOcrPresentation>& presentation) {
     m_presentation = presentation;
     ensureContent();
     if (m_actions.applyOcrPresentation) {
-        m_actions.applyOcrPresentation(presentation, foregrounds);
+        m_actions.applyOcrPresentation(presentation);
     } else if (content() != nullptr) {
-        content()->setOcrPresentation(presentation, foregrounds);
+        content()->setOcrPresentation(presentation);
     }
     if (m_actions.applyOcrBackground) {
         m_actions.applyOcrBackground(presentation);

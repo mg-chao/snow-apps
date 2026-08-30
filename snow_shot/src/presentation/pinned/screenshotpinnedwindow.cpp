@@ -11,7 +11,6 @@
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotimagefileservice.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
-#include "snow_shot/presentation/screenshotocrvisuals.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotmessageservice.h"
 #include "snow_shot/presentation/screenshotpinnedcopyservice.h"
@@ -1466,11 +1465,9 @@ bool ScreenshotPinnedWindow::present(const Config& config) {
                     m_recognitionContent = nullptr;
                 }
             },
-            [this](std::shared_ptr<ScreenshotOcrPresentation> presentation,
-                   QVector<QColor> foregrounds) {
+            [this](std::shared_ptr<ScreenshotOcrPresentation> presentation) {
                 m_ocrReady = presentation != nullptr;
                 m_originalOcrPresentation = std::move(presentation);
-                Q_UNUSED(foregrounds);
                 updateOcrPresentation();
             },
             [this](std::shared_ptr<ScreenshotOcrPresentation> presentation) {
@@ -2835,8 +2832,6 @@ void ScreenshotPinnedWindow::updateOcrPresentation() {
         presentation->lines.push_back(std::move(line));
     }
     presentation->prepareForRendering();
-    const QVector<QColor> foregrounds = resolveScreenshotOcrForegrounds(
-        m_transformedImage, m_backgroundCanvasRect, *presentation);
     m_displayOcrPresentation = std::move(presentation);
     if (m_ocrMode) {
         // The embedded recognition window owns the translucent OCR text layer
@@ -2848,7 +2843,7 @@ void ScreenshotPinnedWindow::updateOcrPresentation() {
             m_displayOcrPresentation,
             ScreenshotCanvasRenderer::OcrPresentationMode::BackgroundOnly);
         if (m_recognitionContent != nullptr) {
-            m_recognitionContent->setOcrPresentation(m_displayOcrPresentation, foregrounds);
+            m_recognitionContent->setOcrPresentation(m_displayOcrPresentation);
             m_recognitionContent->raise();
             if (m_borderFrame != nullptr) {
                 m_borderFrame->raise();

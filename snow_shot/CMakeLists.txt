@@ -680,6 +680,7 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshotmessageservice.h
     include/snow_shot/presentation/screenshotocrpresentation.h
     include/snow_shot/presentation/screenshotocrtexteditingsession.h
+    include/snow_shot/presentation/screenshotocrvisuals.h
     include/snow_shot/presentation/screenshotocrtextlayer.h
     include/snow_shot/presentation/screenshotrecognitionwindow.h
     include/snow_shot/presentation/screenshotrecognitionsessioncontroller.h

@@ -7,7 +7,6 @@
 #include <QGraphicsView>
 #include <QRect>
 #include <QTransform>
-#include <QVector>
 
 #include <limits>
 #include <memory>
@@ -20,8 +19,7 @@ class ScreenshotOcrTextLayer final : public QGraphicsView {
   public:
     explicit ScreenshotOcrTextLayer(QWidget* parent = nullptr);
 
-    void setPresentation(std::shared_ptr<ScreenshotOcrPresentation> presentation,
-                         QVector<QColor> foregrounds = {});
+    void setPresentation(std::shared_ptr<ScreenshotOcrPresentation> presentation);
     void clearPresentation();
     void synchronize(const QTransform& canvasToViewTransform, const QRect& viewportRect);
     void updateSelection();
@@ -45,7 +43,7 @@ class ScreenshotOcrTextLayer final : public QGraphicsView {
 
     QGraphicsScene* m_scene = nullptr;
     std::shared_ptr<ScreenshotOcrPresentation> m_presentation;
-    QVector<QColor> m_foregrounds;
+    QColor m_textColor;
     std::vector<TextItem> m_textItems;
     QTransform m_canvasToViewTransform;
     QRect m_viewportRect;
