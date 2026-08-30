@@ -1927,7 +1927,22 @@ void penFilterHoverDrawsAPathContour() {
 } // namespace
 
 namespace {
-void tiledRenderMatchesFullRenderDiagnostic() {
+class ExposedPatternBackdropRenderer final : public SnowCanvasCustomRenderer {
+  public:
+    explicit ExposedPatternBackdropRenderer(const QImage& image) : m_image(image) {}
+
+    void renderBeforeCanvas(QPainter& painter, const SnowCanvasRenderContext& context) override {
+        painter.save();
+        painter.setClipRegion(context.exposedRegion, Qt::IntersectClip);
+        painter.drawImage(QRectF(context.viewportRect), m_image);
+        painter.restore();
+    }
+
+  private:
+    const QImage& m_image;
+};
+
+void tiledRenderMatchesFullRender() {
     const QSize surfaceSize(1024, 1024);
     QImage background(surfaceSize, QImage::Format_ARGB32_Premultiplied);
     for (int y = 0; y < background.height(); ++y) {
@@ -1956,8 +1971,15 @@ void tiledRenderMatchesFullRenderDiagnostic() {
         full.fill(Qt::transparent);
         QPainter fullPainter(&full);
         const QRegion all(QRect(QPoint(0, 0), surfaceSize));
+        ExposedPatternBackdropRenderer backdrop(background);
+        const SnowCanvasRenderContext context{
+            QRect(QPoint(), surfaceSize),
+            all,
+            QTransform(),
+            1.0,
+        };
         snow_canvas_renderer::renderSceneItems(snow_canvas_renderer::SceneRenderRequest{
-            &fullPainter, &displayInfo, items, 1, all, nullptr, 0, &background});
+            &fullPainter, &displayInfo, items, 1, all, nullptr, 0, nullptr, &backdrop, &context});
         fullPainter.end();
 
         int renderToken = 0;
@@ -1966,9 +1988,8 @@ void tiledRenderMatchesFullRenderDiagnostic() {
         tiled.fill(Qt::transparent);
         QPainter tiledPainter(&tiled);
         snow_canvas_renderer::renderSceneItemsTiled(snow_canvas_renderer::SceneRenderRequest{
-            &tiledPainter, &displayInfo, items, 1, all, nullptr, 0, &background,
-            nullptr, nullptr, nullptr, nullptr, {}, nullptr, &renderToken, nullptr,
-            false, 0, QPoint(), true});
+            &tiledPainter, &displayInfo, items, 1, all, nullptr, 0, nullptr, &backdrop, &context,
+            nullptr, nullptr, {}, nullptr, &renderToken, nullptr, false, 0, QPoint(), true});
         tiledPainter.end();
 
         std::size_t mismatched = 0;
@@ -1988,12 +2009,16 @@ void tiledRenderMatchesFullRenderDiagnostic() {
                 maxDelta = std::max(maxDelta, delta);
             }
         }
-        std::cerr << "[diag] " << label << ": mismatched=" << mismatched
-                  << " maxDelta=" << maxDelta << " columns:";
-        for (int x : {255, 256, 257, 511, 512, 513, 767, 768, 769}) {
-            std::cerr << " x" << x << "=" << columnsWithDiff[x];
+        if (mismatched != 0) {
+            std::cerr << label << ": tiled output differs from full output at " << mismatched
+                      << " pixels (maximum channel delta " << maxDelta << "); boundary columns:";
+            for (int x : {255, 256, 257, 511, 512, 513, 767, 768, 769}) {
+                std::cerr << " x" << x << "=" << columnsWithDiff[x];
+            }
+            std::cerr << '\n';
         }
-        std::cerr << '\n';
+        require(mismatched == 0,
+                "tiled spatial filters must sample the same backdrop pixels as a full render");
     };
 
     runCase(0, 0.7, "mosaic strength 0.7");
@@ -2006,7 +2031,7 @@ void tiledRenderMatchesFullRenderDiagnostic() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
-    tiledRenderMatchesFullRenderDiagnostic();
+    tiledRenderMatchesFullRender();
     inversionPreservesPremultipliedAlpha();
     grayscalePreservesPremultipliedAlpha();
     colorEffectStrengthHasExactEndpointsAndInterpolation();

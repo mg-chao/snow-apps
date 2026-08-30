@@ -340,10 +340,13 @@ pub(crate) fn scene_item_from_selection_preview(
         }
         ElementData::PenFilter(filter) => {
             let mut preview = filter.clone();
-            preview.x = rect.center.x - rect.width / 2.0;
-            preview.y = rect.center.y - rect.height / 2.0;
-            preview.width = rect.width;
-            preview.height = rect.height;
+            // Selection rectangles describe the painted outer contour, while
+            // PenFilterData stores the unpainted centerline rectangle.
+            let stroke_outset = filter.stroke_width.max(0.0);
+            preview.width = (rect.width - stroke_outset).max(0.0);
+            preview.height = (rect.height - stroke_outset).max(0.0);
+            preview.x = rect.center.x - preview.width / 2.0;
+            preview.y = rect.center.y - preview.height / 2.0;
             preview.rotation = rect.rotation;
             preview.opacity = rect.opacity;
             let bounds = pen_filter_bounds(&preview);
@@ -647,6 +650,36 @@ fn display_item_id(id: ElementId) -> DisplayItemId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use snow_draw_engine_document::{ElementMeta, Transaction, pen_filter_rect_proxy};
+    use snow_draw_engine_model::DocumentModel;
+
+    #[test]
+    fn pen_filter_selection_preview_consumes_outer_proxy_once() {
+        let filter = PenFilterData {
+            x: 10.0,
+            y: 20.0,
+            width: 100.0,
+            height: 40.0,
+            points: vec![[0.0, 0.0], [1.0, 1.0]],
+            stroke_width: 20.0,
+            ..PenFilterData::default()
+        };
+        let mut model = DocumentModel::new();
+        let id = model.peek_next_element_id();
+        let mut transaction = Transaction::new("insert pen filter");
+        transaction.insert_pen_filter(id, ElementMeta::default(), filter.clone());
+        model.apply_transaction(transaction).unwrap();
+
+        let proxy = pen_filter_rect_proxy(&filter);
+        let Some((SceneDisplayItem::Filter(item), bounds)) =
+            scene_item_from_selection_preview(&model, id, proxy, None)
+        else {
+            panic!("expected a pen filter selection preview");
+        };
+
+        assert_eq!((item.width, item.height), (filter.width, filter.height));
+        assert_eq!(bounds, pen_filter_bounds(&filter));
+    }
 
     #[test]
     fn rectangle_display_item_preserves_fill_style() {

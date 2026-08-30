@@ -2205,7 +2205,12 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
             }
             if (!reusedPreLayer && backgroundRenderer != nullptr && backgroundContext != nullptr) {
                 scenePainter.save();
-                backgroundRenderer->renderBeforeCanvas(scenePainter, *backgroundContext);
+                SnowCanvasRenderContext samplingContext = *backgroundContext;
+                // Spatial filters need the backdrop outside the output tile. The planner has
+                // already bounded that sampling halo in surfaceBounds, so expose the same area
+                // to custom renderers that honor partial-paint requests.
+                samplingContext.exposedRegion = QRegion(surfaceBounds);
+                backgroundRenderer->renderBeforeCanvas(scenePainter, samplingContext);
                 scenePainter.restore();
             }
             g_filterDiagnostics.sceneReplayNanoseconds += static_cast<std::uint64_t>(

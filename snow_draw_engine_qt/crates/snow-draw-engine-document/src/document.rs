@@ -7,10 +7,10 @@ use crate::{
     Operation, Transaction, arrow_bounds, arrow_hit_test, arrow_is_degenerate,
     document_geometry::{
         element_visible_bounds, filter_bounds, filter_rect_proxy, normalize_font_family,
-        pen_filter_bounds, rect_bounds, rectangle_hit_test, resolve_serial_number_diameter,
-        serial_number_bounds, serial_number_hit_test, serial_number_rect_proxy, text_bounds,
-        text_hit_test, validate_element_data, validate_filter, validate_serial_number,
-        validate_text,
+        pen_filter_bounds, pen_filter_rect_proxy, rect_bounds, rectangle_hit_test,
+        resolve_serial_number_diameter, serial_number_bounds, serial_number_hit_test,
+        serial_number_rect_proxy, text_bounds, text_hit_test, validate_element_data,
+        validate_filter, validate_serial_number, validate_text,
     },
     element_schema::{
         FILTER_TYPE_ID, PEN_FILTER_TYPE_ID, RECTANGLE_HIGHLIGHT_TYPE_ID, RECTANGLE_TYPE_ID,
@@ -1554,21 +1554,7 @@ impl Document {
             return Some(filter_rect_proxy(filter));
         }
         if let Ok(filter) = self.pen_filter(id) {
-            return Some(RectangleData {
-                rectangle_kind: RectangleElementKind::Rectangle,
-                highlight_shape: HighlightShape::Rectangle,
-                center: filter.center(),
-                width: filter.width,
-                height: filter.height,
-                rotation: filter.rotation,
-                fill: ColorRgba8::default(),
-                fill_style: FillStyle::Solid,
-                stroke: ColorRgba8::default(),
-                stroke_width: 0.0,
-                stroke_style: StrokeStyle::Solid,
-                corner_radii: CornerRadii::default(),
-                opacity: filter.opacity,
-            });
+            return Some(pen_filter_rect_proxy(filter));
         }
         if let Ok(free_draw) = self.free_draw(id) {
             return Some(RectangleData {
