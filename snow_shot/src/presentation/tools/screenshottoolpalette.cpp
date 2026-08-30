@@ -2370,8 +2370,11 @@ void ScreenshotToolPalette::applyCumulativeStyleLayoutMetrics(QWidget* scope) {
             if (segment.widget != nullptr) {
                 const int standaloneWidth =
                     qMax(1, qRound(segment.referenceWidth * m_physicalScale));
-                segment.widget->setFixedWidth(activeSegments.at(index) ? activeWidth
-                                                                        : standaloneWidth);
+                const bool isSeparator =
+                    m_styleSeparatorFrames.contains(qobject_cast<QFrame*>(segment.widget));
+                segment.widget->setFixedWidth(
+                    activeSegments.at(index) ? (isSeparator ? qMax(1, activeWidth) : activeWidth)
+                                             : standaloneWidth);
             } else if (segment.spacer != nullptr) {
                 segment.spacer->changeSize(activeWidth, 0, QSizePolicy::Fixed,
                                            QSizePolicy::Minimum);

@@ -405,10 +405,6 @@ void ScreenshotOverlayCoordinator::previewSpotlightConfig(ScreenshotDisplaySessi
     m_canvasPresenter.previewSpotlightConfig(displaySession, config);
 }
 
-void ScreenshotOverlayCoordinator::prewarmToolbar() {
-    m_uiHost.prewarmToolbar();
-}
-
 void ScreenshotOverlayCoordinator::prewarmOverlayTransientUi(
     const ScreenshotDisplaySession& displaySession) {
     m_uiHost.prewarmOverlayTransientUi();

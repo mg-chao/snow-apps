@@ -30,7 +30,6 @@ class ScreenshotOverlayUiHost final {
                                 ScreenshotSelectionToolbarCommandSink& selectionToolbarCommands);
 
     ScreenshotToolbarWindow* ensureToolbar();
-    void prewarmToolbar();
     ScreenshotToolbarWindow* toolbar() const;
     void attachToolbarToOverlay(ScreenshotOverlayWindow* overlay);
     void undoCanvasEdit();

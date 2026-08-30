@@ -48,7 +48,6 @@ class ScreenshotCaptureRuntimeAdapter final : public ScreenshotCaptureRuntimePor
 
     void prewarmDisplayPool(ScreenshotDisplaySession& displaySession, int displayCount) override;
     void ensureToolbar() override;
-    void prewarmToolbar() override;
     void prewarmOverlayTransientUi(ScreenshotDisplaySession& displaySession) override;
     void clearOverlayCanvases(const ScreenshotDisplaySession& displaySession) const override;
     void clearDisplays(ScreenshotDisplaySession& displaySession) override;

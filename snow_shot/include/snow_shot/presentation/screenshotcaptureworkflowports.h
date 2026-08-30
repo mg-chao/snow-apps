@@ -45,7 +45,6 @@ class ScreenshotCaptureRuntimePort {
 
     virtual void prewarmDisplayPool(ScreenshotDisplaySession& displaySession, int displayCount) = 0;
     virtual void ensureToolbar() = 0;
-    virtual void prewarmToolbar() = 0;
     virtual void prewarmOverlayTransientUi(ScreenshotDisplaySession& displaySession) = 0;
     virtual void clearOverlayCanvases(const ScreenshotDisplaySession& displaySession) const = 0;
     virtual void clearDisplays(ScreenshotDisplaySession& displaySession) = 0;

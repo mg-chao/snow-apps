@@ -359,8 +359,12 @@ void ScreenshotToolbarMainPanel::applyMetrics() {
         if (layoutItem == nullptr) {
             continue;
         }
-        const int width = scaledWidthAt(index + 1);
-        if (QWidget* widget = layoutItem->widget()) {
+        QWidget* widget = layoutItem->widget();
+        const int roundedWidth = scaledWidthAt(index + 1);
+        const int width = m_separatorFrames.contains(qobject_cast<QFrame*>(widget))
+                              ? qMax(1, roundedWidth)
+                              : roundedWidth;
+        if (widget != nullptr) {
             if (widget->sizePolicy().horizontalPolicy() == QSizePolicy::Fixed) {
                 widget->setFixedWidth(width);
             }

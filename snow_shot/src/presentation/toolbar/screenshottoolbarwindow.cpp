@@ -6,18 +6,11 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/storage/settingsadapters.h"
-#include "theme/theme_manager.h"
 
 #include <QCursor>
-#include <QGuiApplication>
 #include <QJsonValue>
-#include <QLayout>
-#include <QPixmap>
 #include <QScreen>
 #include <QSignalBlocker>
-#include <QtMath>
-
-#include <algorithm>
 
 namespace {
 ScreenshotToolPalette::Options screenshotToolbarOptions() {
@@ -72,72 +65,14 @@ ScreenshotToolbarWindow::ScreenshotToolbarWindow(ScreenshotToolbarCommandSink& c
 }
 
 void ScreenshotToolbarWindow::setToolbarSize(const QString& size) {
-    m_prewarmKey.clear();
     setPaletteScaleMultiplier(size == QStringLiteral("small") ? 0.8 : 1.0);
 }
 
 void ScreenshotToolbarWindow::setToolbarLayout(
     const snow_shot::storage::ScreenshotToolbarLayout& layout) {
-    m_prewarmKey.clear();
     if (ScreenshotToolPalette* toolPalette = palette()) {
         toolPalette->setToolbarLayout(layout);
     }
-}
-
-void ScreenshotToolbarWindow::prewarmForScreen(QScreen* screen) {
-    if (isVisible()) {
-        return;
-    }
-    if (screen == nullptr && QGuiApplication::instance() != nullptr) {
-        screen = QGuiApplication::primaryScreen();
-    }
-    if (screen == nullptr) {
-        return;
-    }
-
-    const QRect available = screen->availableGeometry();
-    const QString key = QStringLiteral("%1|%2,%3,%4,%5|%6,%7,%8,%9|%10|%11|%12")
-                            .arg(screen->name())
-                            .arg(screen->geometry().x())
-                            .arg(screen->geometry().y())
-                            .arg(screen->geometry().width())
-                            .arg(screen->geometry().height())
-                            .arg(available.x())
-                            .arg(available.y())
-                            .arg(available.width())
-                            .arg(available.height())
-                            .arg(screen->devicePixelRatio(), 0, 'f', 4)
-                            .arg(screen->logicalDotsPerInch(), 0, 'f', 2)
-                            .arg(adqt::theme::ThemeManager::instance().themeRevision());
-    if (m_prewarmKey == key) {
-        return;
-    }
-
-    resetForNewCapture();
-    setPlacementContext(screen, available);
-    ensurePolished();
-    if (ScreenshotToolPaletteHost* host = paletteHost()) {
-        host->ensurePolished();
-        host->prepareForDisplay();
-        if (host->layout() != nullptr) {
-            host->layout()->activate();
-        }
-    }
-    if (ScreenshotToolPalette* toolPalette = palette()) {
-        toolPalette->ensurePolished();
-        if (toolPalette->layout() != nullptr) {
-            toolPalette->layout()->activate();
-        }
-    }
-    prepareForDisplay();
-
-    const qreal dpr = std::max<qreal>(1.0, screen->devicePixelRatio());
-    QPixmap warmSurface(std::max(1, qCeil(width() * dpr)), std::max(1, qCeil(height() * dpr)));
-    warmSurface.setDevicePixelRatio(dpr);
-    warmSurface.fill(Qt::transparent);
-    render(&warmSurface);
-    hide();
-    m_prewarmKey = key;
 }
 
 void ScreenshotToolbarWindow::enterEvent(QEnterEvent* event) {

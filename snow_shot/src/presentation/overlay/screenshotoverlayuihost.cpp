@@ -357,12 +357,6 @@ ScreenshotToolbarWindow* ScreenshotOverlayUiHost::toolbar() const {
     return m_toolbar.data();
 }
 
-void ScreenshotOverlayUiHost::prewarmToolbar() {
-    if (ScreenshotToolbarWindow* toolbarWindow = ensureToolbar()) {
-        toolbarWindow->prewarmForScreen(QGuiApplication::primaryScreen());
-    }
-}
-
 void ScreenshotOverlayUiHost::prewarmOverlayTransientUi() {
     if (m_transientUiPrewarmed) {
         return;

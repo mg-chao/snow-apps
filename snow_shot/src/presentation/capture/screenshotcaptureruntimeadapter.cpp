@@ -142,10 +142,6 @@ void ScreenshotCaptureRuntimeAdapter::ensureToolbar() {
     static_cast<void>(m_context.overlayCoordinator.ensureToolbar());
 }
 
-void ScreenshotCaptureRuntimeAdapter::prewarmToolbar() {
-    m_context.overlayCoordinator.prewarmToolbar();
-}
-
 void ScreenshotCaptureRuntimeAdapter::prewarmOverlayTransientUi(
     ScreenshotDisplaySession& displaySession) {
     m_context.overlayCoordinator.prewarmOverlayTransientUi(displaySession);

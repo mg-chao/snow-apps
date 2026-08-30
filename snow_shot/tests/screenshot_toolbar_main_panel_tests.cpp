@@ -239,6 +239,20 @@ void toolbarSurfacesFollowThemeBackground() {
             "toolbar main panel should use the light theme after a theme switch");
 }
 
+void toolbarSeparatorsKeepMinimumWidthAtCompactScale() {
+    QWidget host;
+    ScreenshotToolbarMainPanel panel(ScreenshotToolbarMainPanel::Options{}, &host);
+    panel.addSeparator();
+    panel.setPhysicalScale(0.25);
+    panel.resize(panel.sizeHint());
+    panel.show();
+    flushEvents();
+
+    QFrame* separator = panel.findChild<QFrame*>();
+    require(separator != nullptr && separator->width() >= 1,
+            "toolbar separator should retain at least one pixel at compact scale");
+}
+
 void cachedToolbarIconsFollowThemeColors() {
     auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
     themeManager.setThemeAppearance(snow_shot::presentation::styles::ThemeAppearance::Light);
@@ -742,6 +756,7 @@ int main(int argc, char** argv) {
     QApplication application(argc, argv);
     historyButtonsFollowCanvasAvailability();
     toolbarSurfacesFollowThemeBackground();
+    toolbarSeparatorsKeepMinimumWidthAtCompactScale();
     secondaryToolbarUsesEqualHorizontalMargins();
     cachedToolbarIconsFollowThemeColors();
     recordingToolbarUsesTheScreenshotMainPanelContract();
