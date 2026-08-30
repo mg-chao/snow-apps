@@ -7,6 +7,7 @@
 
 #include <QColor>
 #include <QImage>
+#include <QPoint>
 #include <QRegion>
 
 #include <cstdint>
@@ -59,6 +60,15 @@ struct FilterRenderDiagnostics {
     std::size_t tileEvictions = 0;
     std::size_t tileCandidates = 0;
     std::size_t tileVisits = 0;
+    std::size_t sourceTileHits = 0;
+    std::size_t sourceTileMisses = 0;
+    std::size_t sourceTileEvictions = 0;
+    std::size_t sourceTileCandidates = 0;
+    std::size_t sourceTileVisits = 0;
+    std::size_t sourceDependencyInvalidations = 0;
+    std::size_t sourceMergedNodes = 0;
+    std::size_t sourceOverlappingNodes = 0;
+    std::size_t retainedSourceBytes = 0;
     std::size_t maskCacheHits = 0;
     std::size_t maskCacheMisses = 0;
     std::size_t maskCacheEvictions = 0;
@@ -107,6 +117,12 @@ struct SceneRenderRequest {
     FilterRenderDiagnostics* diagnostics = nullptr;
     const void* cacheNamespace = nullptr;
     snow_canvas_pen_mask::PenMaskAtlas* penMaskAtlas = nullptr;
+    // The widget uses the tiled entry point to enable filter-source snapshots.
+    // Direct renderer callers keep the uncached path by leaving this disabled.
+    bool enableFilterTileCache = false;
+    std::uint64_t filterTileContentKey = 0;
+    QPoint filterTileCoordinate;
+    bool clearBackgroundEnabled = true;
 };
 
 QColor toQColor(const SnowColorRgba8& color);
@@ -125,6 +141,7 @@ WatermarkRenderDiagnostics watermarkRenderDiagnosticsForCurrentThread();
 void resetWatermarkRenderDiagnosticsForCurrentThread();
 void resetWatermarkRenderCacheForCurrentThread();
 void renderSceneItems(const SceneRenderRequest& request);
+void renderSceneItemsTiled(const SceneRenderRequest& request);
 
 void renderOverlayItems(QPainter& painter, const OverlayDisplayInfo& displayInfo,
                         const SnowCanvasOverlayItem* overlayItems, std::uint32_t overlayItemCount,

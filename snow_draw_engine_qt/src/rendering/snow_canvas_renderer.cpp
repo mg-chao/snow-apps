@@ -9,6 +9,7 @@
 #include "snow_canvas_text_layout.h"
 #include "snow_canvas_text_render.h"
 #include "snow_canvas_tile_cache.h"
+#include "snow_canvas_filter_tile_cache.h"
 #include "snow_draw_engine_qt/snow_canvas_custom_renderer.h"
 
 #include <QBrush>
@@ -44,6 +45,53 @@ namespace {
 constexpr double kRadiansToDegrees = 180.0 / 3.14159265358979323846;
 thread_local FilterRenderDiagnostics g_filterDiagnostics;
 
+std::uint64_t filterTileHashAppend(std::uint64_t hash, std::uint64_t value) {
+    hash ^= value + 0x9e3779b97f4a7c15ULL + (hash << 6) + (hash >> 2);
+    return hash;
+}
+
+std::uint64_t filterTileHashDouble(std::uint64_t hash, double value) {
+    std::uint64_t bits = 0;
+    static_assert(sizeof(bits) == sizeof(value));
+    std::memcpy(&bits, &value, sizeof(bits));
+    return filterTileHashAppend(hash, bits);
+}
+
+std::uint64_t filterDependencyFingerprint(const SnowCanvasSceneItem* items,
+                                          std::uint32_t end) {
+    std::uint64_t hash = 1469598103934665603ULL;
+    if (items == nullptr) {
+        return hash;
+    }
+    for (std::uint32_t index = 0; index < end; ++index) {
+        const SnowCanvasSceneItem& item = items[index];
+        hash = filterTileHashAppend(hash, static_cast<std::uint64_t>(item.kind));
+        hash = filterTileHashAppend(hash, item.element_id.index);
+        hash = filterTileHashAppend(hash, item.element_id.generation);
+        hash = filterTileHashDouble(hash, item.center_x);
+        hash = filterTileHashDouble(hash, item.center_y);
+        hash = filterTileHashDouble(hash, item.width);
+        hash = filterTileHashDouble(hash, item.height);
+        hash = filterTileHashDouble(hash, item.rotation);
+        hash = filterTileHashDouble(hash, item.opacity);
+        hash = filterTileHashAppend(hash, item.penFilterGeometryRevision());
+        hash = filterTileHashAppend(hash, item.pathGeometryRevision());
+        hash = filterTileHashAppend(hash, item.filter.filter_type);
+        hash = filterTileHashDouble(hash, item.filter.strength);
+        hash = filterTileHashDouble(hash, item.filter.mosaic_block_size);
+        hash = filterTileHashDouble(hash, item.filter.blur_sigma);
+        hash = filterTileHashDouble(hash, item.filter.sampling_radius);
+    }
+    return hash;
+}
+
+std::uint64_t filterTileDprBits(qreal dpr) {
+    const double value = static_cast<double>(dpr);
+    std::uint64_t bits = 0;
+    std::memcpy(&bits, &value, sizeof(bits));
+    return bits;
+}
+
 struct ArrowRenderProjection {
     snow_canvas_render_geometry::ViewProjection view;
     QColor background;
@@ -62,6 +110,37 @@ using snow_canvas_render_geometry::rotatePoint;
 using snow_canvas_render_geometry::roundedRectPath;
 using snow_canvas_render_geometry::sceneItemBounds;
 using snow_canvas_render_geometry::toViewCornerRadii;
+
+std::uint64_t filterDependencyFingerprintForRegion(const SnowCanvasSceneItem* items,
+                                                   std::uint32_t end,
+                                                   const SceneDisplayInfo& displayInfo,
+                                                   const QRectF& bounds) {
+    std::uint64_t hash = 1469598103934665603ULL;
+    for (std::uint32_t index = 0; items != nullptr && index < end; ++index) {
+        const SnowCanvasSceneItem& item = items[index];
+        if (!sceneItemBounds(displayInfo, item).intersects(bounds)) {
+            continue;
+        }
+        hash = filterTileHashAppend(hash, index);
+        hash = filterTileHashAppend(hash, static_cast<std::uint64_t>(item.kind));
+        hash = filterTileHashAppend(hash, item.element_id.index);
+        hash = filterTileHashAppend(hash, item.element_id.generation);
+        hash = filterTileHashDouble(hash, item.center_x);
+        hash = filterTileHashDouble(hash, item.center_y);
+        hash = filterTileHashDouble(hash, item.width);
+        hash = filterTileHashDouble(hash, item.height);
+        hash = filterTileHashDouble(hash, item.rotation);
+        hash = filterTileHashDouble(hash, item.opacity);
+        hash = filterTileHashAppend(hash, item.penFilterGeometryRevision());
+        hash = filterTileHashAppend(hash, item.pathGeometryRevision());
+        hash = filterTileHashAppend(hash, item.filter.filter_type);
+        hash = filterTileHashDouble(hash, item.filter.strength);
+        hash = filterTileHashDouble(hash, item.filter.mosaic_block_size);
+        hash = filterTileHashDouble(hash, item.filter.blur_sigma);
+        hash = filterTileHashDouble(hash, item.filter.sampling_radius);
+    }
+    return hash;
+}
 
 void applyMultiSelectionDashStyle(QPen& pen) {
     pen.setStyle(Qt::CustomDashLine);
@@ -1617,6 +1696,128 @@ void renderSceneItems(const SceneRenderRequest& request) {
     }
 }
 
+void renderSceneItemsTiled(const SceneRenderRequest& request) {
+    if (request.painter == nullptr || request.displayInfo == nullptr ||
+        request.sceneItems == nullptr || request.sceneItemCount == 0 ||
+        request.exposedRegion.isEmpty() || request.cacheNamespace == nullptr) {
+        renderSceneItems(request);
+        return;
+    }
+
+    const qreal dpr = request.painter->device() != nullptr
+                          ? qMax<qreal>(1.0, request.painter->device()->devicePixelRatioF())
+                          : 1.0;
+    const QSize logicalSize(qMax(1, qRound(request.displayInfo->surface_width)),
+                            qMax(1, qRound(request.displayInfo->surface_height)));
+    const QSize physicalSize(qCeil(logicalSize.width() * dpr), qCeil(logicalSize.height() * dpr));
+    if (physicalSize.isEmpty()) {
+        return;
+    }
+
+    std::vector<std::uint32_t> filters;
+    for (std::uint32_t index = 0; index < request.sceneItemCount; ++index) {
+        if (request.sceneItems[index].kind == SNOW_SCENE_DISPLAY_ITEM_FILTER &&
+            request.sceneItems[index].opacity > 0.0) {
+            filters.push_back(index);
+        }
+    }
+    if (filters.empty()) {
+        renderSceneItems(request);
+        return;
+    }
+
+    FilterRenderDiagnostics aggregateDiagnostics;
+    const QRect exposedBounds = request.exposedRegion.boundingRect();
+    const int firstTileX = std::max(0, qFloor(exposedBounds.left() * dpr) /
+                                         snow_canvas_filter_tile_cache::kTilePhysicalSize);
+    const int firstTileY = std::max(0, qFloor(exposedBounds.top() * dpr) /
+                                         snow_canvas_filter_tile_cache::kTilePhysicalSize);
+    const int lastTileX = std::max(firstTileX, qFloor(exposedBounds.right() * dpr) /
+                                                     snow_canvas_filter_tile_cache::kTilePhysicalSize);
+    const int lastTileY = std::max(firstTileY, qFloor(exposedBounds.bottom() * dpr) /
+                                                     snow_canvas_filter_tile_cache::kTilePhysicalSize);
+    const std::uint64_t fullFingerprint =
+        filterDependencyFingerprint(request.sceneItems, request.sceneItemCount);
+
+    for (int tileY = firstTileY; tileY <= lastTileY; ++tileY) {
+        for (int tileX = firstTileX; tileX <= lastTileX; ++tileX) {
+            const QRect physicalRect(
+                tileX * snow_canvas_filter_tile_cache::kTilePhysicalSize,
+                tileY * snow_canvas_filter_tile_cache::kTilePhysicalSize,
+                std::min(snow_canvas_filter_tile_cache::kTilePhysicalSize,
+                         physicalSize.width() - tileX * snow_canvas_filter_tile_cache::kTilePhysicalSize),
+                std::min(snow_canvas_filter_tile_cache::kTilePhysicalSize,
+                         physicalSize.height() - tileY * snow_canvas_filter_tile_cache::kTilePhysicalSize));
+            if (physicalRect.isEmpty()) {
+                continue;
+            }
+            const QRect logicalRect(
+                qFloor(physicalRect.left() / dpr), qFloor(physicalRect.top() / dpr),
+                qCeil(physicalRect.width() / dpr), qCeil(physicalRect.height() / dpr));
+            QImage tileImage;
+            try {
+                tileImage = QImage(physicalRect.size(), QImage::Format_ARGB32_Premultiplied);
+            } catch (const std::bad_alloc&) {
+                continue;
+            }
+            if (tileImage.isNull()) {
+                continue;
+            }
+            tileImage.setDevicePixelRatio(dpr);
+            tileImage.fill(request.clearBackgroundEnabled
+                               ? toQColor(request.displayInfo->clear_color)
+                               : Qt::transparent);
+            QPainter tilePainter(&tileImage);
+            tilePainter.setRenderHints(request.painter->renderHints());
+            tilePainter.translate(-physicalRect.left() / dpr, -physicalRect.top() / dpr);
+            tilePainter.setClipRegion(QRegion(logicalRect));
+            SceneRenderRequest tiled = request;
+            tiled.painter = &tilePainter;
+            tiled.exposedRegion = QRegion(logicalRect);
+            SnowCanvasRenderContext tileContext;
+            if (request.backgroundContext != nullptr) {
+                tileContext = *request.backgroundContext;
+                tileContext.exposedRegion = QRegion(logicalRect);
+                tileContext.devicePixelRatio = dpr;
+                tiled.backgroundContext = &tileContext;
+            }
+            tiled.enableFilterTileCache = true;
+            tiled.filterTileCoordinate = QPoint(tileX, tileY);
+            tiled.filterTileContentKey = request.filterTileContentKey != 0
+                                             ? request.filterTileContentKey
+                                             : fullFingerprint;
+            renderSceneItemsImpl(tiled);
+            accumulateFilterRenderDiagnostics(aggregateDiagnostics,
+                                              filterRenderDiagnosticsForCurrentThread());
+            tilePainter.end();
+            request.painter->save();
+            request.painter->setClipRegion(request.exposedRegion, Qt::IntersectClip);
+            request.painter->drawImage(QPointF(physicalRect.left() / dpr,
+                                               physicalRect.top() / dpr),
+                                       tileImage);
+            request.painter->restore();
+        }
+    }
+
+    const auto retainedDiagnostics = snow_canvas_filter_tile_cache::takeDiagnostics();
+    g_filterDiagnostics = aggregateDiagnostics;
+    g_filterDiagnostics.sourceTileHits += retainedDiagnostics.hits;
+    g_filterDiagnostics.sourceTileMisses += retainedDiagnostics.misses;
+    g_filterDiagnostics.sourceTileEvictions += retainedDiagnostics.evictions;
+    g_filterDiagnostics.sourceTileCandidates += retainedDiagnostics.hits + retainedDiagnostics.misses;
+    g_filterDiagnostics.sourceTileVisits += retainedDiagnostics.hits + retainedDiagnostics.misses;
+    g_filterDiagnostics.sourceDependencyInvalidations += retainedDiagnostics.dependencyInvalidations;
+    g_filterDiagnostics.retainedSourceBytes = retainedDiagnostics.retainedBytes;
+    g_filterDiagnostics.tileHits = g_filterDiagnostics.sourceTileHits;
+    g_filterDiagnostics.tileMisses = g_filterDiagnostics.sourceTileMisses;
+    g_filterDiagnostics.tileEvictions = g_filterDiagnostics.sourceTileEvictions;
+    g_filterDiagnostics.tileCandidates = g_filterDiagnostics.sourceTileCandidates;
+    g_filterDiagnostics.tileVisits = g_filterDiagnostics.sourceTileVisits;
+    if (request.diagnostics != nullptr) {
+        *request.diagnostics = g_filterDiagnostics;
+    }
+}
+
 namespace {
 void renderSceneItemsImpl(const SceneRenderRequest& request) {
     QPainter& painter = *request.painter;
@@ -1906,7 +2107,8 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                 }
             }
             if (!copiedBackgroundRows) {
-                scene.fill(Qt::transparent);
+                scene.fill(request.enableFilterTileCache ? toQColor(displayInfo.clear_color)
+                                                          : Qt::transparent);
             }
             const std::size_t workingPixels =
                 static_cast<std::size_t>(scene.width()) * static_cast<std::size_t>(scene.height());
@@ -1961,11 +2163,65 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
             scenePainter.setFont(painter.font());
             scenePainter.setRenderHints(painter.renderHints());
             scenePainter.translate(-surfaceGeometry.logicalOrigin);
+            std::size_t replayStartPosition = 0;
+            bool reusedPreLayer = false;
+            bool preloadedLookupAttempted = false;
+            std::uint32_t preloadedLayerStart = std::numeric_limits<std::uint32_t>::max();
+            std::shared_ptr<const snow_canvas_filter_tile_cache::Entry> preloadedSource;
+            if (request.enableFilterTileCache && request.cacheNamespace != nullptr) {
+                for (std::size_t candidatePosition = 0; candidatePosition < expandedStream.size();
+                     ++candidatePosition) {
+                    const std::uint32_t candidateIndex = expandedStream[candidatePosition];
+                    if (candidateIndex >= sceneItemCount ||
+                        sceneItems[candidateIndex].kind != SNOW_SCENE_DISPLAY_ITEM_FILTER) {
+                        continue;
+                    }
+                    std::uint32_t candidateLayerStart = candidateIndex;
+                    while (candidateLayerStart > 0 &&
+                           sceneItems[candidateLayerStart - 1].kind ==
+                               SNOW_SCENE_DISPLAY_ITEM_FILTER) {
+                        --candidateLayerStart;
+                    }
+                    const QRect sourcePhysicalBounds = surfaceGeometry.pixelBounds;
+                    const snow_canvas_filter_tile_cache::Key sourceKey{
+                        request.cacheNamespace,
+                        request.filterTileCoordinate,
+                        sourcePhysicalBounds,
+                        QSize(qMax(1, qRound(displayInfo.surface_width)),
+                             qMax(1, qRound(displayInfo.surface_height))),
+                        filterTileDprBits(devicePixelRatio),
+                        request.filterTileContentKey,
+                        filterDependencyFingerprintForRegion(sceneItems, candidateLayerStart,
+                                                             displayInfo, surfaceBounds),
+                        0,
+                    };
+                    preloadedLayerStart = candidateLayerStart;
+                    preloadedLookupAttempted = true;
+                    const auto retainedSource = snow_canvas_filter_tile_cache::find(sourceKey,
+                                                                                     nullptr);
+                    preloadedSource = retainedSource;
+                    if (retainedSource && retainedSource->image.size() == scene.size() &&
+                        retainedSource->image.format() == scene.format()) {
+                        for (int row = 0; row < scene.height(); ++row) {
+                            std::memcpy(scene.scanLine(row), retainedSource->image.constScanLine(row),
+                                        static_cast<std::size_t>(scene.bytesPerLine()));
+                        }
+                        scenePainter.begin(&scene);
+                        scenePainter.setFont(painter.font());
+                        scenePainter.setRenderHints(painter.renderHints());
+                        scenePainter.translate(-surfaceGeometry.logicalOrigin);
+                        replayStartPosition = candidatePosition;
+                        reusedPreLayer = true;
+                    }
+                    break;
+                }
+            }
             const auto backgroundReplayStart = std::chrono::steady_clock::now();
-            if (!copiedBackgroundRows && backgroundImage != nullptr && !backgroundImage->isNull()) {
+            if (!reusedPreLayer && !copiedBackgroundRows && backgroundImage != nullptr &&
+                !backgroundImage->isNull()) {
                 scenePainter.drawImage(viewportRect, *backgroundImage);
             }
-            if (backgroundRenderer != nullptr && backgroundContext != nullptr) {
+            if (!reusedPreLayer && backgroundRenderer != nullptr && backgroundContext != nullptr) {
                 scenePainter.save();
                 backgroundRenderer->renderBeforeCanvas(scenePainter, *backgroundContext);
                 scenePainter.restore();
@@ -1974,8 +2230,8 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                 std::chrono::duration_cast<std::chrono::nanoseconds>(
                     std::chrono::steady_clock::now() - backgroundReplayStart)
                     .count());
-            bool renderedContent = hasBackgroundContent;
-            for (std::size_t position = 0; position < expandedStream.size();) {
+            bool renderedContent = reusedPreLayer || hasBackgroundContent;
+            for (std::size_t position = replayStartPosition; position < expandedStream.size();) {
                 const std::uint32_t index = expandedStream[position];
                 if (index >= sceneItemCount) {
                     ++position;
@@ -2116,6 +2372,43 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                     continue;
                 }
                 scenePainter.end();
+
+                // Retain the complete pre-filter surface at this z-order boundary.  The
+                // dependency fingerprint includes every lower-z item, so a shape inserted
+                // between two filters naturally produces a second cache entry for the same tile.
+                if (request.enableFilterTileCache && request.cacheNamespace != nullptr) {
+                    if (layerEnd > layerStart + 1) {
+                        g_filterDiagnostics.sourceMergedNodes +=
+                            static_cast<std::size_t>(layerEnd - layerStart - 1);
+                    }
+                    const QRect physicalBounds =
+                        physicalSurfaceGeometry(surfaceBounds, devicePixelRatio).pixelBounds;
+                    snow_canvas_filter_tile_cache::Key sourceKey{
+                        request.cacheNamespace,
+                        request.filterTileCoordinate,
+                        physicalBounds,
+                        QSize(qMax(1, qRound(displayInfo.surface_width)),
+                             qMax(1, qRound(displayInfo.surface_height))),
+                        filterTileDprBits(devicePixelRatio),
+                        request.filterTileContentKey,
+                        filterDependencyFingerprintForRegion(sceneItems, layerStart, displayInfo,
+                                                             surfaceBounds),
+                        0,
+                    };
+                    std::shared_ptr<const snow_canvas_filter_tile_cache::Entry> retainedSource =
+                        preloadedLookupAttempted && preloadedLayerStart == layerStart
+                            ? preloadedSource
+                            : snow_canvas_filter_tile_cache::find(sourceKey);
+                    if (retainedSource && retainedSource->image.size() == scene.size() &&
+                        retainedSource->image.format() == scene.format()) {
+                        for (int row = 0; row < scene.height(); ++row) {
+                            std::memcpy(scene.scanLine(row), retainedSource->image.constScanLine(row),
+                                        static_cast<std::size_t>(scene.bytesPerLine()));
+                        }
+                    } else {
+                        snow_canvas_filter_tile_cache::store(sourceKey, scene, physicalBounds);
+                    }
+                }
                 ++g_filterDiagnostics.filterLayerCount;
                 QImage* preLayerSource = nullptr;
                 if (groups.size() > 1) {
@@ -2530,6 +2823,15 @@ void accumulateFilterRenderDiagnostics(FilterRenderDiagnostics& target,
     target.tileEvictions += source.tileEvictions;
     target.tileCandidates += source.tileCandidates;
     target.tileVisits += source.tileVisits;
+    target.sourceTileHits += source.sourceTileHits;
+    target.sourceTileMisses += source.sourceTileMisses;
+    target.sourceTileEvictions += source.sourceTileEvictions;
+    target.sourceTileCandidates += source.sourceTileCandidates;
+    target.sourceTileVisits += source.sourceTileVisits;
+    target.sourceDependencyInvalidations += source.sourceDependencyInvalidations;
+    target.sourceMergedNodes += source.sourceMergedNodes;
+    target.sourceOverlappingNodes += source.sourceOverlappingNodes;
+    target.retainedSourceBytes = std::max(target.retainedSourceBytes, source.retainedSourceBytes);
     target.maskCacheHits += source.maskCacheHits;
     target.maskCacheMisses += source.maskCacheMisses;
     target.maskCacheEvictions += source.maskCacheEvictions;

@@ -16,6 +16,7 @@
 #include "snow_canvas_text_editor_input.h"
 #include "snow_canvas_text_measurement.h"
 #include "snow_canvas_tile_cache.h"
+#include "snow_canvas_filter_tile_cache.h"
 #include "snow_canvas_type_conversions.h"
 #include "snow_canvas_widget_display_state.h"
 #include "snow_canvas_widget_input_handler.h"
@@ -1220,6 +1221,7 @@ void SnowCanvasWidget::Impl::setCanvasContentVisible(bool visible) {
     }
     canvasContentIsVisible = visible;
     snow_canvas_tile_cache::invalidateNamespace(&widget);
+    snow_canvas_filter_tile_cache::invalidateNamespace(&widget);
     refreshSerialNumberToolbar();
     widget.update();
 }
@@ -1464,6 +1466,7 @@ void SnowCanvasWidget::Impl::setCustomRenderer(SnowCanvasCustomRenderer* rendere
     }
     installedCustomRenderer = renderer;
     snow_canvas_tile_cache::invalidateNamespace(&widget);
+    snow_canvas_filter_tile_cache::invalidateNamespace(&widget);
     widget.update();
 }
 
@@ -1515,8 +1518,8 @@ void SnowCanvasWidget::Impl::updateCanvasRect(const QRectF& canvasRect, int padd
     const QRect clippedViewRect =
         filterAffectedViewRect(viewRect, displayState.displayCache(), widget.rect());
     if (!clippedViewRect.isEmpty()) {
-        snow_canvas_tile_cache::invalidate(&widget, QRegion(clippedViewRect),
-                                           widget.devicePixelRatioF());
+        snow_canvas_filter_tile_cache::invalidateRegion(&widget, clippedViewRect,
+                                                         widget.devicePixelRatioF());
         widget.update(clippedViewRect);
     }
 }
@@ -1555,6 +1558,7 @@ void SnowCanvasWidget::Impl::clearRetainedDisplayState() {
         flushLiveStrokeMoves();
     }
     snow_canvas_tile_cache::invalidateNamespace(&widget);
+    snow_canvas_filter_tile_cache::invalidateNamespace(&widget);
     clearTextStylePopupInteraction();
     pendingLiveStrokeMoves.clear();
     pendingLiveStrokePreservesEverySample = false;
@@ -1906,11 +1910,11 @@ void SnowCanvasWidget::Impl::syncAfterEngineMutation(bool emitSignals) {
     if (cache.patchCursor().scene_revision != previousSceneRevision) {
         // Paint events can coalesce patches, so consume each patch's dirty region
         // before the next display-cache sync replaces it.
-        snow_canvas_tile_cache::invalidateForRevision(
+        snow_canvas_filter_tile_cache::invalidateRegion(
             &widget,
             snow_canvas_display::dirtyRectsToRegion(cache.sceneDirtyRects(),
                                                     cache.sceneDirtyRectCount(), widget.rect()),
-            widget.devicePixelRatioF(), cache.patchCursor().scene_revision);
+            widget.devicePixelRatioF());
     }
     if (cache.spotlightGeometryGeneration() != previousSpotlightGeneration) {
         // The patch carries the union of decoration changes accumulated since
@@ -2047,42 +2051,35 @@ bool SnowCanvasWidget::Impl::paint(QPainter& painter, const QRegion& exposedRegi
                                  painterDevicePixelRatio(painter, widget), widget.size());
 
         snow_canvas_renderer::resetFilterRenderDiagnosticsForCurrentThread();
-        snow_canvas_renderer::FilterRenderDiagnostics aggregateDiagnostics;
-        const auto tileDiagnostics = snow_canvas_tile_cache::render(
-            painter, snow_canvas_tile_cache::RenderRequest{
-                         &widget,
-                         widget.size(),
-                         painterDevicePixelRatio(painter, widget),
-                         static_cast<std::uint64_t>(contentKey),
-                         cache.patchCursor().scene_revision,
-                         // Scene dirty rectangles are consumed when syncAfterEngineMutation
-                         // advances the scene revision. Passing the retained patch metadata
-                         // here would invalidate the same tiles again on every decoration-only
-                         // repaint.
-                         QRegion(),
-                         exposedRegion,
-                         [&](QPainter& tilePainter, const QRegion& missingRegion) {
-                             snow_canvas_compositor::Frame tileFrame = frame;
-                             const SnowCanvasRenderContext tileContext =
-                                 renderContext(tilePainter, missingRegion);
-                             snow_canvas_compositor::clearSurface(tilePainter, tileFrame);
-                             if (installedCustomRenderer != nullptr &&
-                                 hasFilter(tileFrame.sceneItems, tileFrame.sceneItemCount)) {
-                                 tileFrame.backgroundRenderer = installedCustomRenderer;
-                                 tileFrame.backgroundContext = &tileContext;
-                             } else {
-                                 renderBeforeCanvas(tilePainter, tileContext);
-                             }
-                             snow_canvas_compositor::renderSceneContent(tilePainter, tileFrame);
-                             snow_canvas_renderer::accumulateFilterRenderDiagnostics(
-                                 aggregateDiagnostics,
-                                 snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread());
-                         },
-                     });
-        snow_canvas_renderer::setFilterRenderDiagnosticsForCurrentThread(aggregateDiagnostics);
-        snow_canvas_renderer::recordTileCacheDiagnosticsForCurrentThread(
-            tileDiagnostics.hits, tileDiagnostics.misses, tileDiagnostics.evictions,
-            tileDiagnostics.candidateTileCount, tileDiagnostics.visitedTileCount);
+        const SnowCanvasRenderContext tileContext = renderContext(painter, exposedRegion);
+        const bool filterVisible = hasFilter(frame.sceneItems, frame.sceneItemCount);
+        if (!filterVisible) {
+            snow_canvas_compositor::clearSurface(painter, frame);
+            renderBeforeCanvas(painter, tileContext);
+        }
+        snow_canvas_renderer::SceneRenderRequest sceneRequest{
+            &painter,
+            &cache.sceneInfo(),
+            frame.sceneItems,
+            frame.sceneItemCount,
+            exposedRegion,
+            nullptr,
+            0,
+            frame.backgroundImage,
+            filterVisible ? installedCustomRenderer : nullptr,
+            filterVisible ? &tileContext : nullptr,
+            frame.displayCache,
+            frame.workspace,
+            {},
+            nullptr,
+            &widget,
+            frame.penMaskAtlas,
+            true,
+            static_cast<std::uint64_t>(contentKey),
+            QPoint(),
+            canvasClearBackgroundEnabled,
+        };
+        snow_canvas_renderer::renderSceneItemsTiled(sceneRequest);
         painter.save();
         snow_canvas_compositor::renderDocumentDecorations(painter, frame);
         snow_canvas_compositor::renderEditorOverlays(painter, frame);
@@ -2679,6 +2676,7 @@ void SnowCanvasWidget::focusOutEvent(QFocusEvent* event) {
 
 void SnowCanvasWidget::Impl::handleResize(const QSize& size) {
     snow_canvas_tile_cache::invalidateNamespace(&widget);
+    snow_canvas_filter_tile_cache::invalidateNamespace(&widget);
     setSurfaceSizeAndSync(size, true);
 }
 

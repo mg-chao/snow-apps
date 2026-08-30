@@ -1,6 +1,7 @@
 #include "snow_canvas_display_item.h"
 #include "snow_canvas_export.h"
 #include "snow_canvas_filter_render.h"
+#include "snow_canvas_filter_tile_cache.h"
 #include "snow_canvas_pen_mask_atlas.h"
 #include "snow_canvas_render_geometry.h"
 #include "snow_canvas_renderer.h"
@@ -1963,6 +1964,39 @@ void tileCacheTracksPartialValidityAndGlobalBudget() {
     snow_canvas_tile_cache::clear();
 }
 
+void filterSourceCacheKeepsOverlappingZBoundariesSeparate() {
+    snow_canvas_filter_tile_cache::clear();
+    int namespaceToken = 0;
+    const QImage first(QSize(64, 64), QImage::Format_ARGB32_Premultiplied);
+    const QImage second(QSize(64, 64), QImage::Format_ARGB32_Premultiplied);
+    const QRect physicalRect(0, 0, 64, 64);
+    const auto key = [&](std::uint64_t dependency, std::uint64_t node) {
+        return snow_canvas_filter_tile_cache::Key{
+            &namespaceToken,
+            QPoint(0, 0),
+            physicalRect,
+            QSize(64, 64),
+            0x3ff0000000000000ULL,
+            17,
+            dependency,
+            node,
+        };
+    };
+    require(snow_canvas_filter_tile_cache::store(key(11, 1), first, physicalRect),
+            "the first filter boundary must be retained");
+    require(snow_canvas_filter_tile_cache::store(key(29, 2), second, physicalRect),
+            "the second overlapping filter boundary must be retained independently");
+    require(snow_canvas_filter_tile_cache::find(key(11, 1)) != nullptr &&
+                snow_canvas_filter_tile_cache::find(key(29, 2)) != nullptr,
+            "overlapping filter boundaries must coexist for one tile coordinate");
+    snow_canvas_filter_tile_cache::invalidateRegion(&namespaceToken, QRect(0, 0, 8, 8), 1.0,
+                                                    11);
+    require(snow_canvas_filter_tile_cache::find(key(11, 1)) == nullptr &&
+                snow_canvas_filter_tile_cache::find(key(29, 2)) != nullptr,
+            "dependency invalidation must remove only the affected boundary");
+    snow_canvas_filter_tile_cache::clear();
+}
+
 void penFilterHoverDrawsAPathContour() {
     QImage image(QSize(120, 120), QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::transparent);
@@ -2048,6 +2082,7 @@ int main(int argc, char** argv) {
     adjacentLayerBatchesEffectsAndKeepsSparseComponents();
     distantSameEffectFiltersUseIndependentSpatialGroups();
     tileCacheTracksPartialValidityAndGlobalBudget();
+    filterSourceCacheKeepsOverlappingZBoundariesSeparate();
     penFilterHoverDrawsAPathContour();
     return 0;
 }

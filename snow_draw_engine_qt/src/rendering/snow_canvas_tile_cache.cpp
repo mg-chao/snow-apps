@@ -1,4 +1,5 @@
 #include "snow_canvas_tile_cache.h"
+#include "snow_canvas_filter_tile_cache.h"
 
 #include <QImage>
 
@@ -1063,6 +1064,7 @@ void invalidateNamespace(const void* canvasNamespace) {
     Cache& state = cache();
     std::lock_guard<std::mutex> lock(state.mutex);
     eraseNamespaceLocked(state, canvasNamespace);
+    snow_canvas_filter_tile_cache::invalidateNamespace(canvasNamespace);
 }
 
 void clear() {
@@ -1078,6 +1080,7 @@ void clear() {
     state.maskBytes = 0;
     state.pendingEvictions = {};
     state.pendingMaskEvictions = 0;
+    snow_canvas_filter_tile_cache::clear();
 }
 
 std::size_t retainedBytes() {
