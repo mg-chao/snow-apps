@@ -24,6 +24,13 @@
 
 namespace adqt::widgets {
 
+class AdFloatingSurfaceTestAccess {
+  public:
+    static bool hasShadowCache(const AdFloatingSurface& surface) {
+        return surface.shadowCache_ != nullptr;
+    }
+};
+
 class AdDpiStableWindowControllerTestAccess {
   public:
     static void queueScaleCommit(AdDpiStableWindowController& controller, qreal dpr,
@@ -586,6 +593,39 @@ void floatingSurfaceRendersTransparentShadowMargins() {
             "floating surface interactive region includes shadow-only pixels");
 }
 
+void floatingSurfaceShadowCacheFollowsVisibilityAndStaysComponentLocal() {
+    adqt::widgets::AdFloatingSurface first;
+    adqt::widgets::AdFloatingSurface second;
+    first.resize(160, 80);
+    second.resize(160, 80);
+    require(!adqt::widgets::AdFloatingSurfaceTestAccess::hasShadowCache(first),
+            "hidden floating surface should not allocate a shadow cache");
+    first.show();
+    second.show();
+    QApplication::processEvents();
+
+    renderWidget(&first);
+    renderWidget(&second);
+    require(adqt::widgets::AdFloatingSurfaceTestAccess::hasShadowCache(first),
+            "visible floating surface should own a shadow cache");
+    require(adqt::widgets::AdFloatingSurfaceTestAccess::hasShadowCache(second),
+            "second visible floating surface should own a shadow cache");
+
+    first.hide();
+    QApplication::processEvents();
+    renderWidget(&first);
+    require(!adqt::widgets::AdFloatingSurfaceTestAccess::hasShadowCache(first),
+            "hidden floating surface should release its shadow cache");
+    require(adqt::widgets::AdFloatingSurfaceTestAccess::hasShadowCache(second),
+            "hiding one floating surface should preserve the other cache");
+
+    first.show();
+    QApplication::processEvents();
+    renderWidget(&first);
+    require(adqt::widgets::AdFloatingSurfaceTestAccess::hasShadowCache(first),
+            "reopened floating surface should rebuild its shadow cache");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -607,6 +647,7 @@ int main(int argc, char** argv) {
         iconCacheSeparatesVisualKeys();
         concurrentIconMissesRasterizeOnce();
         floatingSurfaceRendersTransparentShadowMargins();
+        floatingSurfaceShadowCacheFollowsVisibilityAndStaysComponentLocal();
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

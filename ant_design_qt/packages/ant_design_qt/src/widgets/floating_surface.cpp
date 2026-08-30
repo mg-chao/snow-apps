@@ -22,16 +22,6 @@ struct ShadowTile {
   qreal slice = 0.0;
 };
 
-QCache<QString, ShadowTile>& shadowCache() {
-  static QCache<QString, ShadowTile> cache(16 * 1024);
-  return cache;
-}
-
-QMutex& shadowCacheMutex() {
-  static QMutex mutex;
-  return mutex;
-}
-
 QString shadowKey(qreal radius, qreal blur, const QPointF& offset, const QColor& color, qreal dpr) {
   return QStringLiteral("%1:%2:%3:%4:%5:%6")
       .arg(qRound(radius * dpr))
@@ -81,18 +71,33 @@ ShadowTile createShadowTile(qreal radius, qreal blur, const QPointF& offset, con
   return ShadowTile{pixmap, static_cast<qreal>(physicalSlice) / dpr};
 }
 
-ShadowTile cachedShadowTile(qreal radius, qreal blur, const QPointF& offset, const QColor& color,
-                            qreal dpr) {
+ShadowTile uncachedShadowTile(qreal radius, qreal blur, const QPointF& offset,
+                              const QColor& color, qreal dpr) {
+  return createShadowTile(radius, blur, offset, color, dpr);
+}
+
+}  // namespace
+
+struct AdFloatingSurface::ShadowCache {
+  QCache<QString, ShadowTile> tiles{16 * 1024};
+  QMutex mutex;
+};
+
+namespace {
+
+template <typename Cache>
+ShadowTile cachedShadowTile(Cache& cache, qreal radius, qreal blur, const QPointF& offset,
+                            const QColor& color, qreal dpr) {
   const QString key = shadowKey(radius, blur, offset, color, dpr);
   {
-    QMutexLocker lock(&shadowCacheMutex());
-    if (ShadowTile* cached = shadowCache().object(key)) return *cached;
+    QMutexLocker lock(&cache.mutex);
+    if (ShadowTile* cached = cache.tiles.object(key)) return *cached;
   }
   ShadowTile rendered = createShadowTile(radius, blur, offset, color, dpr);
-  QMutexLocker lock(&shadowCacheMutex());
-  if (ShadowTile* cached = shadowCache().object(key)) return *cached;
+  QMutexLocker lock(&cache.mutex);
+  if (ShadowTile* cached = cache.tiles.object(key)) return *cached;
   const int cost = std::max(1, rendered.pixmap.width() * rendered.pixmap.height() * 4 / 1024);
-  shadowCache().insert(key, new ShadowTile(rendered), cost);
+  cache.tiles.insert(key, new ShadowTile(rendered), cost);
   return rendered;
 }
 
@@ -142,6 +147,7 @@ void drawNineSlice(QPainter& painter, const QRectF& target, const QMargins& targ
 
 }  // namespace
 
+
 AdFloatingSurface::AdFloatingSurface(QWidget* parent) : QWidget(parent) {
   setAttribute(Qt::WA_TranslucentBackground, true);
   setAutoFillBackground(false);
@@ -150,6 +156,8 @@ AdFloatingSurface::AdFloatingSurface(QWidget* parent) : QWidget(parent) {
   body_->setAutoFillBackground(false);
   updateBodyGeometry();
 }
+
+AdFloatingSurface::~AdFloatingSurface() = default;
 
 QWidget* AdFloatingSurface::contentBody() const { return body_; }
 void AdFloatingSurface::setContentMargins(const QMargins& margins) {
@@ -235,8 +243,8 @@ void AdFloatingSurface::paintCachedShadow(QPainter& painter, const QRectF& bodyR
   const QRectF shadowRect =
       bodyRect.adjusted(-margins.left(), -margins.top(), margins.right(), margins.bottom());
   drawNineSlice(painter, shadowRect, margins,
-                cachedShadowTile(std::max<qreal>(0.0, cornerRadius), normalizedBlur, offset, color,
-                                 std::max<qreal>(1.0, devicePixelRatio)));
+                uncachedShadowTile(std::max<qreal>(0.0, cornerRadius), normalizedBlur, offset,
+                                   color, std::max<qreal>(1.0, devicePixelRatio)));
 }
 
 void AdFloatingSurface::paintEvent(QPaintEvent* event) {
@@ -247,8 +255,20 @@ void AdFloatingSurface::paintEvent(QPaintEvent* event) {
   painter.fillRect(rect(), Qt::transparent);
   painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
   if (shadowColor_.alpha() > 0 && shadowBlurRadius_ >= 0.0) {
-    paintCachedShadow(painter, QRectF(bodyRect()), cornerRadius_, shadowBlurRadius_, shadowOffset_,
-                      shadowColor_, devicePixelRatioF());
+    const QRectF currentBodyRect = QRectF(bodyRect());
+    const qreal normalizedBlur = std::max<qreal>(0.0, shadowBlurRadius_);
+    const QMargins margins = shadowMarginsFor(normalizedBlur, shadowOffset_);
+    const QRectF shadowRect = currentBodyRect.adjusted(-margins.left(), -margins.top(),
+                                                       margins.right(), margins.bottom());
+    if (shadowCache_) {
+      drawNineSlice(
+          painter, shadowRect, margins,
+          cachedShadowTile(*shadowCache_, std::max<qreal>(0.0, cornerRadius_), normalizedBlur,
+                           shadowOffset_, shadowColor_, std::max<qreal>(1.0, devicePixelRatioF())));
+    } else {
+      paintCachedShadow(painter, currentBodyRect, cornerRadius_, shadowBlurRadius_, shadowOffset_,
+                        shadowColor_, devicePixelRatioF());
+    }
   }
   const QRectF surfaceRect = QRectF(bodyRect())
                                  .adjusted(borderWidth_ / 2.0, borderWidth_ / 2.0,
@@ -264,6 +284,16 @@ void AdFloatingSurface::paintEvent(QPaintEvent* event) {
 void AdFloatingSurface::resizeEvent(QResizeEvent* event) {
   QWidget::resizeEvent(event);
   updateBodyGeometry();
+}
+
+void AdFloatingSurface::showEvent(QShowEvent* event) {
+  QWidget::showEvent(event);
+  shadowCache_ = std::make_unique<ShadowCache>();
+}
+
+void AdFloatingSurface::hideEvent(QHideEvent* event) {
+  QWidget::hideEvent(event);
+  shadowCache_.reset();
 }
 
 void AdFloatingSurface::updateBodyGeometry() {

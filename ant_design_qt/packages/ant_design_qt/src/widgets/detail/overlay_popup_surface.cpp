@@ -92,7 +92,8 @@ QSize OverlayPopupSurface::sizeHint() const { return addAntPopupShadowMargins(vi
 
 bool OverlayPopupSurface::containsInteractiveLocalPos(const QPointF& pos) const {
   ensurePathCache();
-  return !interactivePathCache_.isEmpty() && interactivePathCache_.contains(pos);
+  return pathCache_ && pathCache_->valid && !pathCache_->interactive.isEmpty() &&
+         pathCache_->interactive.contains(pos);
 }
 
 bool OverlayPopupSurface::containsInteractiveGlobalPos(const QPoint& pos) const {
@@ -141,26 +142,60 @@ void OverlayPopupSurface::paintEvent(QPaintEvent* event) {
   Q_UNUSED(event)
 
   ensurePathCache();
+  ensureShadowCache();
   QPainter painter(this);
   paintSurface(painter);
 }
 
+void OverlayPopupSurface::showEvent(QShowEvent* event) {
+  QWidget::showEvent(event);
+  pathCache_ = std::make_unique<PathCache>();
+  shadowCache_ = std::make_unique<ShadowCache>();
+  ensurePathCache();
+  ensureShadowCache();
+}
+
+void OverlayPopupSurface::hideEvent(QHideEvent* event) {
+  QWidget::hideEvent(event);
+  shadowCache_.reset();
+  pathCache_.reset();
+}
+
 void OverlayPopupSurface::invalidatePathCache() const {
-  pathCacheValid_ = false;
-  pathCacheSize_ = QSize();
-  bubblePathCache_ = QPainterPath();
-  arrowPathCache_ = QPainterPath();
-  interactivePathCache_ = QPainterPath();
-  shadowPathCache_.clear();
+  if (pathCache_) {
+    pathCache_->valid = false;
+    pathCache_->size = QSize();
+    pathCache_->bubble = QPainterPath();
+    pathCache_->arrow = QPainterPath();
+    pathCache_->interactive = QPainterPath();
+  }
+  invalidateShadowCache();
+}
+
+void OverlayPopupSurface::invalidateShadowCache() const {
+  if (!shadowCache_) {
+    return;
+  }
+  shadowCache_->valid = false;
+  shadowCache_->paths.clear();
 }
 
 void OverlayPopupSurface::ensurePathCache() const {
-  const QSize logicalSize = size();
-  if (pathCacheValid_ && pathCacheSize_ == logicalSize) {
+  if (!isVisible() || !pathCache_) {
     return;
   }
 
-  invalidatePathCache();
+  const QSize logicalSize = size();
+  if (pathCache_->valid && pathCache_->size == logicalSize) {
+    return;
+  }
+
+  pathCache_->valid = false;
+  pathCache_->size = QSize();
+  pathCache_->bubble = QPainterPath();
+  pathCache_->arrow = QPainterPath();
+  pathCache_->interactive = QPainterPath();
+  invalidateShadowCache();
   if (logicalSize.width() <= 0 || logicalSize.height() <= 0) {
     return;
   }
@@ -170,35 +205,50 @@ void OverlayPopupSurface::ensurePathCache() const {
     return;
   }
 
-  bubblePathCache_.addRoundedRect(bubbleRect, style_.metrics.borderRadius,
-                                  style_.metrics.borderRadius);
+  pathCache_->bubble.addRoundedRect(bubbleRect, style_.metrics.borderRadius,
+                                     style_.metrics.borderRadius);
   const QPolygonF arrow = arrowPolygon(bubbleRect);
   if (!arrow.isEmpty()) {
-    arrowPathCache_.addPolygon(arrow);
+    pathCache_->arrow.addPolygon(arrow);
   }
 
-  QPainterPath shadowBasePath = bubblePathCache_;
-  if (!arrowPathCache_.isEmpty()) {
-    shadowBasePath = shadowBasePath.united(arrowPathCache_);
+  QPainterPath interactivePath = pathCache_->bubble;
+  if (!pathCache_->arrow.isEmpty()) {
+    interactivePath = interactivePath.united(pathCache_->arrow);
   }
-  interactivePathCache_ = shadowBasePath;
+  pathCache_->interactive = interactivePath;
+
+  pathCache_->size = logicalSize;
+  pathCache_->valid = true;
+}
+
+void OverlayPopupSurface::ensureShadowCache() const {
+  if (!isVisible() || !shadowCache_) {
+    return;
+  }
+  ensurePathCache();
+  if (!pathCache_ || !pathCache_->valid || pathCache_->interactive.isEmpty()) {
+    return;
+  }
+  if (shadowCache_->valid) {
+    return;
+  }
 
   constexpr qreal kShadowBlur = 16.0;
   constexpr int kShadowSteps = 8;
-  shadowPathCache_.reserve(kShadowSteps);
+  shadowCache_->paths.clear();
+  shadowCache_->paths.reserve(kShadowSteps);
   for (int step = kShadowSteps; step >= 1; --step) {
     const qreal radius = kShadowBlur * static_cast<qreal>(step) / static_cast<qreal>(kShadowSteps);
-    shadowPathCache_.append(expandedPopupShadowPath(shadowBasePath, radius));
+    shadowCache_->paths.append(expandedPopupShadowPath(pathCache_->interactive, radius));
   }
-
-  pathCacheSize_ = logicalSize;
-  pathCacheValid_ = true;
+  shadowCache_->valid = true;
 }
 
 void OverlayPopupSurface::paintSurface(QPainter& painter) const {
   painter.setRenderHint(QPainter::Antialiasing, true);
 
-  if (!pathCacheValid_ || bubblePathCache_.isEmpty()) {
+  if (!pathCache_ || !pathCache_->valid || pathCache_->bubble.isEmpty()) {
     return;
   }
 
@@ -208,10 +258,12 @@ void OverlayPopupSurface::paintSurface(QPainter& painter) const {
   painter.save();
   painter.translate(QPointF(0.0, 6.0));
   painter.setPen(Qt::NoPen);
-  for (const QPainterPath& shadowPath : shadowPathCache_) {
-    QColor stepColor = shadowColor;
-    stepColor.setAlphaF(std::clamp(stepAlpha, 0.0F, 1.0F));
-    painter.fillPath(shadowPath, stepColor);
+  if (shadowCache_ && shadowCache_->valid) {
+    for (const QPainterPath& shadowPath : shadowCache_->paths) {
+      QColor stepColor = shadowColor;
+      stepColor.setAlphaF(std::clamp(stepAlpha, 0.0F, 1.0F));
+      painter.fillPath(shadowPath, stepColor);
+    }
   }
   painter.restore();
 
@@ -220,19 +272,19 @@ void OverlayPopupSurface::paintSurface(QPainter& painter) const {
   const QColor resolvedArrowBorder =
       style_.arrowBorderColor.isValid() ? style_.arrowBorderColor : style_.borderColor;
   const bool unifiedArrowFill =
-      arrowPathCache_.isEmpty() || resolvedArrowBackground == style_.background;
+      pathCache_->arrow.isEmpty() || resolvedArrowBackground == style_.background;
   const bool unifiedArrowBorder =
-      arrowPathCache_.isEmpty() || resolvedArrowBorder == style_.borderColor;
+      pathCache_->arrow.isEmpty() || resolvedArrowBorder == style_.borderColor;
 
   if (unifiedArrowFill) {
-    QPainterPath fillPath = bubblePathCache_;
-    if (!arrowPathCache_.isEmpty()) {
-      fillPath = fillPath.united(arrowPathCache_);
+    QPainterPath fillPath = pathCache_->bubble;
+    if (!pathCache_->arrow.isEmpty()) {
+      fillPath = fillPath.united(pathCache_->arrow);
     }
     painter.fillPath(fillPath, style_.background);
   } else {
-    painter.fillPath(bubblePathCache_, style_.background);
-    painter.fillPath(arrowPathCache_, resolvedArrowBackground);
+    painter.fillPath(pathCache_->bubble, style_.background);
+    painter.fillPath(pathCache_->arrow, resolvedArrowBackground);
   }
 
   if (style_.metrics.borderWidth <= 0) {
@@ -243,9 +295,9 @@ void OverlayPopupSurface::paintSurface(QPainter& painter) const {
     if (style_.borderColor.alpha() <= 0) {
       return;
     }
-    QPainterPath strokePath = bubblePathCache_;
-    if (!arrowPathCache_.isEmpty()) {
-      strokePath = strokePath.united(arrowPathCache_);
+    QPainterPath strokePath = pathCache_->bubble;
+    if (!pathCache_->arrow.isEmpty()) {
+      strokePath = strokePath.united(pathCache_->arrow);
     }
     QPen pen(style_.borderColor, style_.metrics.borderWidth);
     pen.setJoinStyle(Qt::RoundJoin);
@@ -260,13 +312,13 @@ void OverlayPopupSurface::paintSurface(QPainter& painter) const {
     QPen pen(style_.borderColor, style_.metrics.borderWidth);
     pen.setJoinStyle(Qt::RoundJoin);
     painter.setPen(pen);
-    painter.drawPath(bubblePathCache_);
+    painter.drawPath(pathCache_->bubble);
   }
-  if (!arrowPathCache_.isEmpty() && resolvedArrowBorder.alpha() > 0) {
+  if (!pathCache_->arrow.isEmpty() && resolvedArrowBorder.alpha() > 0) {
     QPen pen(resolvedArrowBorder, style_.metrics.borderWidth);
     pen.setJoinStyle(Qt::RoundJoin);
     painter.setPen(pen);
-    painter.drawPath(arrowPathCache_);
+    painter.drawPath(pathCache_->arrow);
   }
 }
 

@@ -5,12 +5,19 @@
 #include <QRegion>
 #include <QWidget>
 
+#include <memory>
+
 class QPainter;
+class QHideEvent;
+class QShowEvent;
 
 namespace adqt::widgets {
 
+class AdFloatingSurfaceTestAccess;
+
 class AdFloatingSurface : public QWidget {
   Q_OBJECT
+  friend class AdFloatingSurfaceTestAccess;
 
   Q_PROPERTY(qreal cornerRadius READ cornerRadius WRITE setCornerRadius)
   Q_PROPERTY(qreal borderWidth READ borderWidth WRITE setBorderWidth)
@@ -19,6 +26,7 @@ class AdFloatingSurface : public QWidget {
 
  public:
   explicit AdFloatingSurface(QWidget* parent = nullptr);
+  ~AdFloatingSurface() override;
 
   QWidget* contentBody() const;
   void setContentMargins(const QMargins& margins);
@@ -51,8 +59,12 @@ class AdFloatingSurface : public QWidget {
  protected:
   void paintEvent(QPaintEvent* event) override;
   void resizeEvent(QResizeEvent* event) override;
+  void showEvent(QShowEvent* event) override;
+  void hideEvent(QHideEvent* event) override;
 
  private:
+  struct ShadowCache;
+
   void updateBodyGeometry();
   void invalidateSurfaceGeometry();
 
@@ -65,6 +77,7 @@ class AdFloatingSurface : public QWidget {
   qreal shadowBlurRadius_ = 18.0;
   QPointF shadowOffset_ = QPointF(0.0, 3.0);
   QColor shadowColor_ = QColor(0, 0, 0, 90);
+  std::unique_ptr<ShadowCache> shadowCache_;
 };
 
 }  // namespace adqt::widgets

@@ -7,6 +7,7 @@
 #include <QWidget>
 
 #include "widgets/date_picker.h"
+#include "widgets/detail/overlay_popup_surface.h"
 #include "widgets/popover.h"
 #include "widgets/select.h"
 #include "widgets/tooltip.h"
@@ -16,6 +17,29 @@ using adqt::widgets::AdDateRangePicker;
 using adqt::widgets::AdPopover;
 using adqt::widgets::AdSelect;
 using adqt::widgets::AdTooltip;
+
+namespace adqt::widgets::detail {
+
+class OverlayPopupSurfaceTestAccess final {
+ public:
+  static bool hasPathCache(const OverlayPopupSurface& surface) {
+    return surface.pathCache_ != nullptr;
+  }
+
+  static bool hasShadowCache(const OverlayPopupSurface& surface) {
+    return surface.shadowCache_ != nullptr;
+  }
+
+  static bool pathCacheValid(const OverlayPopupSurface& surface) {
+    return surface.pathCache_ && surface.pathCache_->valid;
+  }
+
+  static bool shadowCacheValid(const OverlayPopupSurface& surface) {
+    return surface.shadowCache_ && surface.shadowCache_->valid;
+  }
+};
+
+}  // namespace adqt::widgets::detail
 
 namespace {
 
@@ -62,6 +86,7 @@ class QtToolPopupTest final : public QObject {
   void datePickerReleasesAndRecreatesNativeResources();
   void dateRangePickerReleasesAndRecreatesNativeResources();
   void recreateLifetimeStillDestroysPopupSurface();
+  void retainedPopupCachesFollowVisibilityAndStayComponentLocal();
 };
 
 void QtToolPopupTest::popoverReleasesAndRecreatesNativeResources() {
@@ -258,6 +283,47 @@ void QtToolPopupTest::recreateLifetimeStillDestroysPopupSurface() {
   QTRY_VERIFY(popover.isVisible());
   QWidget* secondSurface = findSurface(QStringLiteral("adpopover-surface"));
   QVERIFY(secondSurface);
+}
+
+void QtToolPopupTest::retainedPopupCachesFollowVisibilityAndStayComponentLocal() {
+  QWidget host;
+  host.resize(640, 360);
+  adqt::widgets::detail::OverlayPopupSurface first(&host);
+  adqt::widgets::detail::OverlayPopupSurface second(&host);
+  first.resize(180, 96);
+  second.resize(180, 96);
+  first.move(24, 80);
+  second.move(240, 80);
+
+  QVERIFY(!adqt::widgets::detail::OverlayPopupSurfaceTestAccess::hasPathCache(first));
+  QVERIFY(!adqt::widgets::detail::OverlayPopupSurfaceTestAccess::hasShadowCache(first));
+
+  host.show();
+  QVERIFY(QTest::qWaitForWindowExposed(&host));
+  first.show();
+  second.show();
+  QTRY_VERIFY(first.isVisible() && second.isVisible());
+  QTRY_VERIFY(adqt::widgets::detail::OverlayPopupSurfaceTestAccess::pathCacheValid(first));
+  QTRY_VERIFY(
+      adqt::widgets::detail::OverlayPopupSurfaceTestAccess::shadowCacheValid(first));
+  QTRY_VERIFY(
+      adqt::widgets::detail::OverlayPopupSurfaceTestAccess::pathCacheValid(second));
+  QTRY_VERIFY(
+      adqt::widgets::detail::OverlayPopupSurfaceTestAccess::shadowCacheValid(second));
+
+  first.hide();
+  QTRY_VERIFY(!first.isVisible());
+  QVERIFY(!first.containsInteractiveLocalPos(QPointF(40.0, 40.0)));
+  QVERIFY(!adqt::widgets::detail::OverlayPopupSurfaceTestAccess::hasPathCache(first));
+  QVERIFY(!adqt::widgets::detail::OverlayPopupSurfaceTestAccess::hasShadowCache(first));
+  QVERIFY(adqt::widgets::detail::OverlayPopupSurfaceTestAccess::pathCacheValid(second));
+  QVERIFY(adqt::widgets::detail::OverlayPopupSurfaceTestAccess::shadowCacheValid(second));
+
+  first.show();
+  QTRY_VERIFY(first.isVisible());
+  QTRY_VERIFY(adqt::widgets::detail::OverlayPopupSurfaceTestAccess::pathCacheValid(first));
+  QTRY_VERIFY(
+      adqt::widgets::detail::OverlayPopupSurfaceTestAccess::shadowCacheValid(first));
 }
 
 QTEST_MAIN(QtToolPopupTest)
