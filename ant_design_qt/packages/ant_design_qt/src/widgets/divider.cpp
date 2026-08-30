@@ -564,7 +564,9 @@ void AdDivider::paintEvent(QPaintEvent* event) {
   const auto setRailPen = [&]() {
     QPen pen = detail::makeButtonBorderPen(appearance.lineColor, railWidth, penStyleFor(variant_));
     pen.setCapStyle(variant_ == Variant::Dotted ? Qt::RoundCap : Qt::FlatCap);
-    painter.setRenderHint(QPainter::Antialiasing, true);
+    // Solid rails are device-aligned before drawing; antialiasing would reintroduce fractional
+    // edge coverage when adjacent toolbar slots round to different logical widths.
+    painter.setRenderHint(QPainter::Antialiasing, variant_ != Variant::Solid);
     painter.setPen(pen);
   };
   const auto alignedStrokeCenter = [&](qreal coordinate, bool vertical) {
