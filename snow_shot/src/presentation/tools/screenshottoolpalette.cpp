@@ -3022,9 +3022,12 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
         addFixedWidget(widget);
     }
 
-    QVector<QWidget*> resultActions{m_cancelButton, m_copyButton,
-                                    m_options.saveButtonWithResultActions ? m_saveButton : nullptr,
-                                    m_confirmButton};
+    QVector<QWidget*> resultActions{
+        m_cancelButton,
+        m_options.saveButtonWithResultActions ? m_saveButton : nullptr,
+        m_copyButton,
+        m_confirmButton,
+    };
     resultActions.erase(std::remove(resultActions.begin(), resultActions.end(), nullptr),
                         resultActions.end());
     if (!resultActions.isEmpty() && hasContent) {
@@ -3489,6 +3492,16 @@ void ScreenshotToolPalette::addMainActionButtons(const Options& options, QBoxLay
         });
     }
 
+    if (options.showSaveButton && options.saveButtonWithResultActions) {
+        m_saveButton = addActionButton("Save as file", custom_outlined_icons::Save());
+        applyScreenshotShortcutTooltip(m_saveButton, QStringLiteral("Save as file"),
+                                       QStringLiteral("save_as_file"));
+        m_saveButton->setObjectName(QStringLiteral("screenshotSaveAsFileButton"));
+        addButton(m_saveButton);
+        connect(m_saveButton, &adqt::widgets::AdButton::clicked, this,
+                &ScreenshotToolPalette::saveRequested);
+    }
+
     if ((options.actions & CopyAction) != 0) {
         m_copyButton = addActionButton(
             "Copy to clipboard",
@@ -3499,16 +3512,6 @@ void ScreenshotToolPalette::addMainActionButtons(const Options& options, QBoxLay
         addButton(m_copyButton);
         connect(m_copyButton, &adqt::widgets::AdButton::clicked, this,
                 &ScreenshotToolPalette::copyRequested);
-    }
-
-    if (options.showSaveButton && options.saveButtonWithResultActions) {
-        m_saveButton = addActionButton("Save as file", custom_outlined_icons::Save());
-        applyScreenshotShortcutTooltip(m_saveButton, QStringLiteral("Save as file"),
-                                       QStringLiteral("save_as_file"));
-        m_saveButton->setObjectName(QStringLiteral("screenshotSaveAsFileButton"));
-        addButton(m_saveButton);
-        connect(m_saveButton, &adqt::widgets::AdButton::clicked, this,
-                &ScreenshotToolPalette::saveRequested);
     }
 
     if (options.separatorBeforeConfirm && (options.actions & ConfirmAction) != 0 && hasButton) {

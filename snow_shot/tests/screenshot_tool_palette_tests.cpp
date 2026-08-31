@@ -896,9 +896,9 @@ void confirmActionRemainsSeparatedAndCallableForPinnedEditing() {
             "pinned editing should expose Save, Copy, and Confirm actions");
 
     const QList<adqt::widgets::AdButton*> buttons = mainToolbarButtons(palette);
-    require(buttons.size() >= 3 && buttons.at(buttons.size() - 3) == copy &&
-                buttons.at(buttons.size() - 2) == save && buttons.constLast() == confirm,
-            "pinned result actions should end with Copy, Save, and Confirm in that order");
+    require(buttons.size() >= 3 && buttons.at(buttons.size() - 3) == save &&
+                buttons.at(buttons.size() - 2) == copy && buttons.constLast() == confirm,
+            "pinned result actions should end with Save, Copy, and Confirm in that order");
     QLayout* layout = palette.mainPanel()->layout();
     const auto hasSeparatorBetween = [layout](QWidget* first, QWidget* second) {
         const int firstIndex = layout->indexOf(first);
@@ -910,8 +910,8 @@ void confirmActionRemainsSeparatedAndCallableForPinnedEditing() {
         }
         return false;
     };
-    require(!hasSeparatorBetween(copy, save) && hasSeparatorBetween(save, confirm),
-            "pinned Copy and Save should share a section before the Confirm divider");
+    require(!hasSeparatorBetween(save, copy) && hasSeparatorBetween(copy, confirm),
+            "pinned Save and Copy should share a section before the Confirm divider");
 
     require(confirm->buttonStyle() == copy->buttonStyle() &&
                 confirm->accentRole() == copy->accentRole() &&
