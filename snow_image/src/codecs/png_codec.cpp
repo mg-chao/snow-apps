@@ -641,7 +641,7 @@ Result<DocumentInfo> PngCodec::inspect(const Input& input, const DecodeOptions& 
 Result<Document> PngCodec::decode(const Input& input, const DecodeOptions& options,
                                   std::stop_token stop) const {
     DecodeOptions normalized = options;
-    // The legacy owning API retains its RGBA8 contract. RasterWriter callers use
+    // The owning decode API returns RGBA8 documents. RasterWriter callers use
     // decode_into() to retain the source's 16-bit samples.
     normalized.output_format = kRgba8;
     normalized.orientation = OrientationPolicy::preserve;

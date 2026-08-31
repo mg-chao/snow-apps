@@ -1456,7 +1456,7 @@ void testTileStore() {
 
 void testWorkerProtocolAndPackages(const QString& directory) {
     namespace protocol = snow::image_viewer::worker_protocol;
-    require(protocol::kVersion == 8, "worker protocol uses checksummed binary-message version 8");
+    require(protocol::kVersion == 1, "worker protocol uses checksummed binary framing");
     constexpr std::array protocolMessages{
         protocol::MessageType::ready,         protocol::MessageType::encode_job,
         protocol::MessageType::preview_job,   protocol::MessageType::artifact_ready,
@@ -1473,7 +1473,7 @@ void testWorkerProtocolAndPackages(const QString& directory) {
                     decoded.type == message && decodeError.isEmpty() &&
                     decoded.payload.value(QStringLiteral("requestId")).toString() ==
                         QStringLiteral("17"),
-                "every protocol-v8 binary message round-trips through framing");
+                "every worker protocol binary message round-trips through framing");
     }
     const QByteArray encoded = protocol::encodeFrame(
         protocol::MessageType::ready,
@@ -1511,7 +1511,7 @@ void testWorkerProtocolAndPackages(const QString& directory) {
     require(protocol::settingsFromJson(protocol::settingsToJson(jpegSettings), &decodedSettings,
                                        &error) &&
                 decodedSettings.encode.chroma_subsampling == snow::image::ChromaSubsampling::yuv422,
-            "protocol v8 round-trips requested JPEG sampling");
+            "worker protocol round-trips requested JPEG sampling");
     snow::image_viewer::EditExportSettings webpSettings = jpegSettings;
     webpSettings.format = snow::image::Format::webp;
     webpSettings.encode = {};
@@ -1523,7 +1523,7 @@ void testWorkerProtocolAndPackages(const QString& directory) {
                                        &error) &&
                 decodedSettings.encode.lossless && decodedSettings.encode.lossless_effort == 9 &&
                 decodedSettings.encode.preserve_metadata,
-            "protocol v8 round-trips WebP lossless effort and metadata policy");
+            "worker protocol round-trips WebP lossless effort and metadata policy");
 
     snow::image::EncodedArtifactReceipt jpegReceipt;
     jpegReceipt.format = snow::image::Format::jpeg;
@@ -1537,12 +1537,12 @@ void testWorkerProtocolAndPackages(const QString& directory) {
     require(
         protocol::receiptFromJson(protocol::receiptToJson(jpegReceipt), &decodedReceipt, &error) &&
             decodedReceipt == jpegReceipt,
-        "protocol v8 round-trips resolved JPEG receipt sampling");
+        "worker protocol round-trips resolved JPEG receipt sampling");
     QJsonObject malformedReceipt = protocol::receiptToJson(jpegReceipt);
     malformedReceipt.insert(QStringLiteral("resolvedJpegChromaSubsampling"),
                             static_cast<int>(snow::image::ChromaSubsampling::yuv440));
     require(!protocol::receiptFromJson(malformedReceipt, &decodedReceipt, &error),
-            "protocol v7 rejects malformed JPEG receipt sampling");
+            "worker protocol rejects malformed JPEG receipt sampling");
 
     snow::image::Document document;
     document.canvas_width = 4;
@@ -1665,7 +1665,7 @@ void testWorkerProtocolAndPackages(const QString& directory) {
 
     const QString malformedPath = directory + QStringLiteral("/malformed.raster");
     QFile malformedFile(malformedPath);
-    require(malformedFile.open(QIODevice::WriteOnly) && malformedFile.write("SNOWRPK1", 8) == 8,
+    require(malformedFile.open(QIODevice::WriteOnly) && malformedFile.write("NOTMAGIC", 8) == 8,
             "write malformed package fixture");
     malformedFile.close();
     error.clear();
@@ -1855,8 +1855,8 @@ void testSplitArtifactAndPreviewReadiness(const QString& directory) {
             recoveryRequest = controller.requestEdit(settings);
         });
     QObject::connect(
-        &controller, &snow::image_viewer::EditPipelineController::exactPreviewReady, &loop,
-        [&](const snow::image_viewer::ExactPreviewResult& result) {
+        &controller, &snow::image_viewer::EditPipelineController::exactReady, &loop,
+        [&](const snow::image_viewer::ExactEditResult& result) {
             if (result.requestId != recoveryRequest && result.requestId != secondRecoveryRequest)
                 return;
             const bool exact =
@@ -1936,8 +1936,8 @@ void testCancelAfterArtifactPublication(const QString& directory) {
                                          QFileInfo::exists(artifactPath) && !controller.isBusy();
                          }
                      });
-    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::exactPreviewReady,
-                     &loop, [&](const snow::image_viewer::ExactPreviewResult& result) {
+    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::exactReady,
+                     &loop, [&](const snow::image_viewer::ExactEditResult& result) {
                          if (result.requestId != recoveryRequest)
                              return;
                          recovered = recovered && result.displayPreview.has_value() &&
@@ -2163,14 +2163,10 @@ void testJxlWorkerRetirement(const QString& directory) {
     QString failure;
     QObject::connect(&controller, &snow::image_viewer::EditPipelineController::sourceReady, &loop,
                      [&]() { firstId = controller.requestEdit(first); });
-    QObject::connect(&controller, &snow::image_viewer::EditPipelineController::exactPreviewReady,
-                     &loop, [&](const snow::image_viewer::ExactPreviewResult& result) {
-                         if (result.requestId == firstId)
-                             controller.clearAllCachesForBenchmark();
-                     });
     QObject::connect(&controller, &snow::image_viewer::EditPipelineController::exactReady, &loop,
                      [&](const snow::image_viewer::ExactEditResult& result) {
                          if (result.requestId == firstId) {
+                             controller.clearAllCachesForBenchmark();
                              secondId = controller.requestEdit(second);
                          } else if (result.requestId == secondId) {
                              secondReady = result.artifact && result.artifact->byteSize() > 0;

@@ -8,17 +8,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$schemas = @("snow-image-viewer.edit-mode-performance.v7",
-             "snow-image-viewer.edit-mode-performance.v8",
-             "snow-image-viewer.edit-mode-performance.v9",
-             "snow-image-viewer.edit-mode-performance.v10",
-             "snow-image-viewer.edit-mode-performance.v11")
+$schema = "snow-image-viewer.edit-mode-performance.v1"
 
 function Read-Report([string]$Path) {
     $resolved = Resolve-Path -LiteralPath $Path
     $report = Get-Content -LiteralPath $resolved -Raw | ConvertFrom-Json
-    if ($schemas -notcontains $report.schema) {
-        throw "'$resolved' is not a supported v7/v8/v9/v10/v11 edit performance report."
+    if ($report.schema -ne $schema) {
+        throw "'$resolved' is not a supported edit performance report."
     }
     if ($null -eq $report.scenarios) {
         throw "'$resolved' has no scenario set."
@@ -38,31 +34,17 @@ function Delta-Percent([double]$Before, [double]$After) {
     return (($After - $Before) / $Before) * 100.0
 }
 
-function Material-Memory-Regression([double]$Before, [double]$After) {
-    $tolerance = [math]::Max(8MB, $Before * 0.02)
-    return $After -gt $Before + $tolerance
-}
-
 function Scenario-Names($Report) {
     return @($Report.scenarios.PSObject.Properties.Name | Sort-Object)
 }
 
-function Find-Timing($Scenario, [string[]]$Names) {
+function Find-Timing($Scenario, [string]$Name) {
     if ($null -eq $Scenario -or $null -eq $Scenario.timings) { return $null }
-    foreach ($name in $Names) {
-        $property = $Scenario.timings.PSObject.Properties[$name]
-        if ($null -ne $property) { return $property.Value }
-    }
-    return $null
+    return $Scenario.timings.PSObject.Properties[$Name].Value
 }
 
 $baselineReport = Read-Report $Baseline
 $candidateReport = Read-Report $Candidate
-# v9 through v11 report shared-raster, readback, and RSS deltas for comparison. Keep the
-# historical v8 memory gate for like-for-like legacy comparisons, but do not
-# fail the refactor's newer reports on a fixed RSS percentage.
-$memoryGateComparable = $baselineReport.schema -eq "snow-image-viewer.edit-mode-performance.v8" -and
-                        $candidateReport.schema -eq "snow-image-viewer.edit-mode-performance.v8"
 $baselineScenarios = Scenario-Names $baselineReport
 $candidateScenarios = Scenario-Names $candidateReport
 if (($baselineScenarios -join "`n") -ne ($candidateScenarios -join "`n")) {
@@ -93,25 +75,22 @@ foreach ($scenarioName in $baselineScenarios) {
     $afterScenario = $candidateReport.scenarios.$scenarioName
     $beforeMemory = Combined-Memory $beforeScenario
     $afterMemory = Combined-Memory $afterScenario
-    if ($memoryGateComparable -and (Material-Memory-Regression $beforeMemory $afterMemory)) {
-        $gateFailures += "${scenarioName}: combined scenario RSS regressed by $([math]::Round((Delta-Percent $beforeMemory $afterMemory), 1))%."
-    }
     if ([double]$beforeScenario.artifact_bytes -gt 0) {
         $sizeDelta = Delta-Percent ([double]$beforeScenario.artifact_bytes) ([double]$afterScenario.artifact_bytes)
         if ($sizeDelta -gt 25.0) {
             $gateFailures += "${scenarioName}: artifact size grew by $([math]::Round($sizeDelta, 1))% (limit 25%)."
         }
     }
-    $requestBefore = Find-Timing $beforeScenario @("edit.request_to_artifact_ready", "request_to_artifact_ready")
-    $requestAfter = Find-Timing $afterScenario @("edit.request_to_artifact_ready", "request_to_artifact_ready")
-    $encodeBefore = Find-Timing $beforeScenario @("edit.exact.encode", "exact.encode")
-    $encodeAfter = Find-Timing $afterScenario @("edit.exact.encode", "exact.encode")
+    $requestBefore = Find-Timing $beforeScenario "edit.request_to_artifact_ready"
+    $requestAfter = Find-Timing $afterScenario "edit.request_to_artifact_ready"
+    $encodeBefore = Find-Timing $beforeScenario "exact.encode"
+    $encodeAfter = Find-Timing $afterScenario "exact.encode"
     if ($claimsSet.Contains("opaque-jpeg-fast-path") -and
         $scenarioName -eq "identity.jpeg.cold-full-pipeline" -and
         $beforeScenario.alpha_content -eq "opaque" -and
         $afterScenario.alpha_content -eq "opaque") {
-        $prepareBefore = Find-Timing $beforeScenario @("edit.exact.prepare_export", "exact.prepare_export")
-        $prepareAfter = Find-Timing $afterScenario @("edit.exact.prepare_export", "exact.prepare_export")
+        $prepareBefore = Find-Timing $beforeScenario "exact.prepare_export"
+        $prepareAfter = Find-Timing $afterScenario "exact.prepare_export"
         if ($null -eq $prepareBefore -or $null -eq $prepareAfter) {
             $gateFailures += "${scenarioName}: opaque JPEG preparation timing is missing."
         } elseif ([double]$prepareAfter.median_nanoseconds -gt [double]$prepareBefore.median_nanoseconds * 0.10) {
@@ -125,8 +104,8 @@ foreach ($scenarioName in $baselineScenarios) {
     }
     if ($claimsSet.Contains("cpu-lanczos-4x") -and
         $scenarioName -match '^(50-percent|12\.5-percent)\..*\.cpu-fallback$') {
-        $resizeBefore = Find-Timing $beforeScenario @("edit.exact.direct_mapped_transform", "exact.direct_mapped_transform")
-        $resizeAfter = Find-Timing $afterScenario @("edit.exact.direct_mapped_transform", "exact.direct_mapped_transform")
+        $resizeBefore = Find-Timing $beforeScenario "exact.direct_mapped_transform"
+        $resizeAfter = Find-Timing $afterScenario "exact.direct_mapped_transform"
         if ($null -eq $resizeBefore -or $null -eq $resizeAfter) {
             $gateFailures += "${scenarioName}: CPU resize timing is missing."
         } elseif ([double]$resizeAfter.median_nanoseconds -gt [double]$resizeBefore.median_nanoseconds * 0.25) {
@@ -190,7 +169,7 @@ foreach ($scenarioName in $baselineScenarios) {
             SizeDeltaPercent = [math]::Round((Delta-Percent $beforeScenario.artifact_bytes $afterScenario.artifact_bytes), 1)
         }
         if ($scenarioName -like "*.exact-artifact-hit" -and
-            $stage -in @("edit.request_to_artifact_ready", "request_to_artifact_ready") -and
+            $stage -eq "edit.request_to_artifact_ready" -and
             [double]$after.median_nanoseconds -ge 2000000.0) {
             $gateFailures += "${scenarioName}: artifact cache-hit median is $([math]::Round([double]$after.median_nanoseconds / 1e6, 3)) ms (limit <2 ms)."
         }
@@ -203,8 +182,8 @@ if ($pngBackendChanged) {
     }
     $pngBefore = $baselineReport.scenarios.'identity.png.cold-full-pipeline'
     $pngAfter = $candidateReport.scenarios.'identity.png.cold-full-pipeline'
-    $pngRequestBefore = Find-Timing $pngBefore @("edit.request_to_artifact_ready", "request_to_artifact_ready")
-    $pngRequestAfter = Find-Timing $pngAfter @("edit.request_to_artifact_ready", "request_to_artifact_ready")
+    $pngRequestBefore = Find-Timing $pngBefore "edit.request_to_artifact_ready"
+    $pngRequestAfter = Find-Timing $pngAfter "edit.request_to_artifact_ready"
     if ($null -eq $pngRequestBefore -or $null -eq $pngRequestAfter -or
         [double]$pngRequestAfter.median_nanoseconds -gt [double]$pngRequestBefore.median_nanoseconds * 0.80) {
         $gateFailures += "identity.png.cold-full-pipeline: full-size PNG artifact readiness improved by less than 20%."
@@ -220,8 +199,8 @@ foreach ($codec in $changedEffortCodecs) {
 if ($claimsSet.Contains("source-raster-identity")) {
     $sourceBefore = $baselineReport.scenarios.'identity.png.cold-full-pipeline'
     $sourceAfter = $candidateReport.scenarios.'identity.png.cold-full-pipeline'
-    $sourceBeforeTiming = Find-Timing $sourceBefore @("edit.request_to_artifact_ready", "request_to_artifact_ready")
-    $sourceAfterTiming = Find-Timing $sourceAfter @("edit.request_to_artifact_ready", "request_to_artifact_ready")
+    $sourceBeforeTiming = Find-Timing $sourceBefore "edit.request_to_artifact_ready"
+    $sourceAfterTiming = Find-Timing $sourceAfter "edit.request_to_artifact_ready"
     if ($null -eq $sourceBefore -or $null -eq $sourceAfter) {
         $gateFailures += "source-raster-identity: identity PNG cold-pipeline scenarios are missing."
     } else {
@@ -241,7 +220,7 @@ if ($claimsSet.Contains("source-raster-identity")) {
             $null -ne $sourceAfter.timings.'exact.raw_buffer_prepare') {
             $gateFailures += "source-raster-identity: removed GPU readback stages are still present."
         }
-        $alphaTiming = Find-Timing $sourceAfter @("edit.exact.classify_alpha", "exact.classify_alpha")
+        $alphaTiming = Find-Timing $sourceAfter "exact.classify_alpha"
         if ($null -eq $alphaTiming -or [double]$alphaTiming.median_nanoseconds -ne 0) {
             $gateFailures += "source-raster-identity: verified alpha metadata was not reused."
         }

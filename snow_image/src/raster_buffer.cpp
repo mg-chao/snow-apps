@@ -17,7 +17,7 @@ namespace {
 
 constexpr std::array<std::byte, 8> kMagic{std::byte{'S'}, std::byte{'N'}, std::byte{'O'},
                                           std::byte{'W'}, std::byte{'R'}, std::byte{'B'},
-                                          std::byte{'3'}, std::byte{0}};
+                                          std::byte{0}, std::byte{0}};
 constexpr std::uint32_t kVersion = 1;
 constexpr std::uint32_t kWriting = 0;
 constexpr std::uint32_t kSealed = 1;

@@ -34,8 +34,8 @@ namespace {
 
 constexpr std::array<std::byte, 8> kMagic{std::byte{'S'}, std::byte{'N'}, std::byte{'O'},
                                           std::byte{'W'}, std::byte{'R'}, std::byte{'S'},
-                                          std::byte{'2'}, std::byte{0}};
-constexpr std::uint32_t kVersion = 2;
+                                          std::byte{0}, std::byte{0}};
+constexpr std::uint32_t kVersion = 1;
 constexpr std::uint32_t kIncomplete = 0;
 constexpr std::uint32_t kComplete = 1;
 constexpr std::uint64_t kHeaderBytes = 64;

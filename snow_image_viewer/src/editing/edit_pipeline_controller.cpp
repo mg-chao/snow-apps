@@ -2033,11 +2033,8 @@ void EditPipelineController::finishWorker(const PendingExact& request, PreviewRe
             cacheResult(request.key, exact);
             exactResult_ = exact;
             setState(EditPipelineState::ExactReady);
-            ExactPreviewResult preview{exact.requestId,      exact.settings,      exact.warning,
-                                       exact.displayPreview, exact.previewSource, exact.provenance};
-            emit exactPreviewReady(preview);
-            // A preview-ready callback may synchronously clear exactResult_. Keep the
-            // compatibility notification independent of mutable controller cache state.
+            // The result is passed by value; a handler may synchronously clear
+            // exactResult_ without affecting other receivers.
             emit exactReady(exact);
         }
     }
@@ -2090,10 +2087,6 @@ bool EditPipelineController::publishCacheHit(EditRequestId requestId,
                                   exact.artifact, exact.provenance, exact.alphaContent};
         emit artifactReady(encoded);
         if (exact.exactPreviewAvailable) {
-            ExactPreviewResult preview{requestId,           settings,
-                                       exact.warning,       exact.displayPreview,
-                                       exact.previewSource, exact.provenance};
-            emit exactPreviewReady(preview);
             emit exactReady(exact);
         } else {
             PendingExact previewRequest{requestId, settings, std::make_shared<std::stop_source>(),
@@ -2157,10 +2150,6 @@ bool EditPipelineController::publishCacheHit(EditRequestId requestId,
                 emit performanceStageCompleted(requestId,
                                                QStringLiteral("exact.raster_preview_recovery"),
                                                recoveryTimer.nsecsElapsed());
-                ExactPreviewResult preview{requestId,           settings,
-                                           exact.warning,       exact.displayPreview,
-                                           exact.previewSource, exact.provenance};
-                emit exactPreviewReady(preview);
                 emit exactReady(exact);
             } else {
                 dispatchPreviewWorker(std::move(previewRequest), exact.artifact, exact.provenance,

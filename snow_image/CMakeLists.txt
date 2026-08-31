@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(snow_image VERSION 3.0.0 LANGUAGES CXX)
+project(snow_image VERSION 1.0.0 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)

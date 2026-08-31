@@ -10,7 +10,7 @@
 
 namespace snow::image_viewer::worker_protocol {
 
-inline constexpr std::uint32_t kVersion = 8;
+inline constexpr std::uint32_t kVersion = 1;
 inline constexpr qsizetype kMaximumPayloadBytes = 16 * 1024 * 1024;
 
 enum class MessageType : std::uint16_t {
