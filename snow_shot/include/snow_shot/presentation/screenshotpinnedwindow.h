@@ -67,6 +67,12 @@ class ScreenshotPinnedCopyService;
 class ScreenshotPinnedNativeGeometryController;
 class QTextDocument;
 
+struct ScreenshotPinnedRecognitionProviders {
+    ScreenshotOcrRecognitionPort* recognition = nullptr;
+    ScreenshotQrRecognitionPort* qrRecognition = nullptr;
+    SnowShotApiClient* tableRecognition = nullptr;
+};
+
 class ScreenshotPinnedWindow final : public QWidget {
     Q_OBJECT
 
@@ -98,6 +104,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         ScreenshotOcrRecognitionPort* recognition = nullptr;
         ScreenshotQrRecognitionPort* qrRecognition = nullptr;
         SnowShotApiClient* tableRecognition = nullptr;
+        std::function<ScreenshotPinnedRecognitionProviders()> recognitionProvider;
         ScreenshotRecognitionResults recognitionResults;
     };
 
@@ -164,6 +171,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void updateOcrPresentation();
     void updateRecognitionContentGeometry();
     void activateRecognitionMode(int mode);
+    void ensureRecognitionProviders();
     void deactivateRecognition();
     void updateRecognitionToolbarState();
     void activateTextTranslation();
@@ -278,6 +286,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     QPointer<ScreenshotOcrRecognitionPort> m_recognition;
     QPointer<ScreenshotQrRecognitionPort> m_qrRecognition;
     QPointer<SnowShotApiClient> m_tableRecognition;
+    std::function<ScreenshotPinnedRecognitionProviders()> m_recognitionProvider;
     ScreenshotRecognitionResults m_recognitionResults;
     ScreenshotRecognitionWindow* m_recognitionContent = nullptr;
     QSize m_initialPhysicalSize;

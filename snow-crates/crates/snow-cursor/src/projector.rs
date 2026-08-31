@@ -9,6 +9,7 @@ use crate::model::{
 #[derive(Default)]
 pub struct CursorProjector {
     emitted_shape_ids: HashSet<crate::CursorShapeId>,
+    last_shape_id: Option<crate::CursorShapeId>,
 }
 
 impl CursorProjector {
@@ -26,13 +27,21 @@ impl CursorProjector {
         let visible = snapshot.visible && target.contains_relative(x, y);
         let shape = match snapshot.shape {
             CursorShapeCapture::Captured(shape) => {
+                self.last_shape_id = Some(shape.shape_id);
                 if self.emitted_shape_ids.insert(shape.shape_id) {
                     CursorShapeState::Embedded(shape)
                 } else {
                     CursorShapeState::Cached(shape.shape_id)
                 }
             }
-            CursorShapeCapture::Unavailable => CursorShapeState::Unavailable,
+            // Sampling a cursor shape is not synchronized with application
+            // cursor changes. If Win32 temporarily cannot expose the current
+            // shape, keep using the last authentic one just as the Desktop
+            // Duplication API requires when it reports no new shape.
+            CursorShapeCapture::Unavailable => self
+                .last_shape_id
+                .map(CursorShapeState::Cached)
+                .unwrap_or(CursorShapeState::Unavailable),
         };
 
         AttachedCursorSample {
@@ -119,6 +128,42 @@ mod tests {
 
         assert!(matches!(sample.shape, CursorShapeState::Unavailable));
         assert_eq!(sample.shape_id(), None);
+    }
+
+    #[test]
+    fn unavailable_shape_reuses_last_captured_shape() {
+        let mut projector = CursorProjector::new();
+        let target = CursorTargetInfo {
+            origin_x: 0,
+            origin_y: 0,
+            width: 100,
+            height: 100,
+        };
+        let shape = sample_shape(9);
+
+        projector.project(
+            &target,
+            CursorSnapshot {
+                absolute_x: 10,
+                absolute_y: 20,
+                visible: true,
+                shape: CursorShapeCapture::Captured(shape.clone()),
+            },
+        );
+        let sample = projector.project(
+            &target,
+            CursorSnapshot {
+                absolute_x: 11,
+                absolute_y: 21,
+                visible: true,
+                shape: CursorShapeCapture::Unavailable,
+            },
+        );
+
+        assert!(matches!(
+            sample.shape,
+            CursorShapeState::Cached(id) if id == shape.shape_id
+        ));
     }
 
     #[test]

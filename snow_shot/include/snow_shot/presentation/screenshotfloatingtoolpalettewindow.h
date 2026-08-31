@@ -117,6 +117,8 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     void finishPaletteDrag(bool emitFinished);
     bool handleToolbarWheel(QWheelEvent* event);
     void applyWindowAttributes();
+    void registerMaterializedScope(QWidget* scope);
+    void prewarmScopeIcons(QWidget* scope);
     QSize fixedWindowSizeHint() const;
     QPoint contentOffset() const;
     QPointF dragPositionForEvent(const QPoint& globalPosition) const;

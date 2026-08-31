@@ -2101,6 +2101,8 @@ void pinnedThumbnailUsesOpaqueThemeBackground(SnowCanvasRuntime&) {
     config.screen = screen;
     require(pinnedWindow->present(config), "transparent pinned window presentation failed");
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    require(renderWidget(*pinnedWindow).pixelColor(pinnedWindow->rect().center()).alpha() == 0,
+            "transparent pinned content should preserve alpha outside thumbnail mode");
 
     auto* thumbnailAction =
         pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
@@ -2118,6 +2120,12 @@ void pinnedThumbnailUsesOpaqueThemeBackground(SnowCanvasRuntime&) {
     const QImage thumbnail = renderWidget(*pinnedWindow);
     requireColorNear(thumbnail.pixelColor(thumbnail.rect().center()), expectedBackground, 0,
                      "transparent thumbnail regions should use the opaque theme background");
+
+    thumbnailAction->setChecked(false);
+    waitForUi(200);
+    require(!thumbnailAction->isChecked(), "pinned window should leave thumbnail mode");
+    require(renderWidget(*pinnedWindow).pixelColor(pinnedWindow->rect().center()).alpha() == 0,
+            "leaving thumbnail mode should restore transparent pinned content");
 
     pinnedWindow->close();
     require(processUntilDeleted(guardedWindow, 2000),

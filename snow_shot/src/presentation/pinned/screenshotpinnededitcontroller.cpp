@@ -92,7 +92,6 @@ ScreenshotPinnedEditController::ScreenshotPinnedEditController(
     : QObject(parent), m_pinnedWindow(pinnedWindow), m_canvas(canvas),
       m_shortcutManager(shortcutManager) {
     m_canvas.installEventFilter(this);
-    m_canvasColorSamplerWindow = std::make_unique<ScreenshotCanvasColorSamplerWindow>();
     m_toolbarWindow = new ScreenshotFloatingToolPaletteWindow(pinnedEditToolbarOptions());
     m_toolbarWindow->setAttribute(Qt::WA_DeleteOnClose, false);
     m_toolbarWindow->setTransientOwnerWindow(&m_pinnedWindow);
@@ -720,6 +719,9 @@ void ScreenshotPinnedEditController::beginCanvasColorSampling(
     }
 
     cancelCanvasColorSampling();
+    if (m_canvasColorSamplerWindow == nullptr) {
+        m_canvasColorSamplerWindow = std::make_unique<ScreenshotCanvasColorSamplerWindow>();
+    }
     m_canvasColorSamplingTarget = picker;
     m_canvasColorSamplingDestroyedConnection =
         connect(picker, &QObject::destroyed, this, [this]() { cancelCanvasColorSampling(); });

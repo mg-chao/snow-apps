@@ -50,6 +50,12 @@ ScreenshotToolPaletteHost::ScreenshotToolPaletteHost(const ScreenshotToolPalette
 
     connect(m_palette, &ScreenshotToolPalette::visibleContentChanged, this,
             &ScreenshotToolPaletteHost::handlePaletteVisibleContentChanged);
+    connect(m_palette, &ScreenshotToolPalette::materializedScope, this,
+            [this](QWidget* scope) {
+                if (m_palette != nullptr) {
+                    m_palette->installWheelFilters(this, scope);
+                }
+            });
 
     applyHostSize();
 }

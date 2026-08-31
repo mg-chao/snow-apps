@@ -946,14 +946,23 @@ void styleToolChangesKeepThePresetWindowSize() {
     options.actions = ScreenshotToolPalette::PinAction | ScreenshotToolPalette::CancelAction |
                       ScreenshotToolPalette::CopyAction;
     ScreenshotFloatingToolPaletteWindow window(options);
-    window.prepareForDisplay();
-    const QSize presetWindowSize = window.size();
-
     constexpr ScreenshotToolPalette::Tool tools[] = {
         ScreenshotToolPalette::Tool::Select,       ScreenshotToolPalette::Tool::Shape,
         ScreenshotToolPalette::Tool::Arrow,        ScreenshotToolPalette::Tool::Text,
         ScreenshotToolPalette::Tool::SerialNumber,
     };
+    require(window.palette()->ensureActionFamily(
+                ScreenshotToolPalette::ActionFamily::Selection),
+            "preset test should materialize the inspected selection actions");
+    for (const ScreenshotToolPalette::Tool tool : tools) {
+        if (tool != ScreenshotToolPalette::Tool::Select) {
+            require(window.palette()->ensureStyleFamily(tool),
+                    "preset test should materialize every inspected style family");
+        }
+    }
+    window.prepareForDisplay();
+    const QSize presetWindowSize = window.size();
+
     for (const ScreenshotToolPalette::Tool tool : tools) {
         window.palette()->setActiveTool(tool);
         settleQueuedRefreshes();
@@ -965,6 +974,22 @@ void styleToolChangesKeepThePresetWindowSize() {
 void placementRectsTrackTheDisplayedStyleToolbar() {
     NoOpToolbarCommands commands;
     ScreenshotToolbarWindow window(commands);
+    constexpr ScreenshotToolPalette::Tool referenceFamilies[] = {
+        ScreenshotToolPalette::Tool::Shape,
+        ScreenshotToolPalette::Tool::Arrow,
+        ScreenshotToolPalette::Tool::RectangleHighlight,
+        ScreenshotToolPalette::Tool::PenHighlight,
+        ScreenshotToolPalette::Tool::Spotlight,
+        ScreenshotToolPalette::Tool::Text,
+        ScreenshotToolPalette::Tool::SerialNumber,
+        ScreenshotToolPalette::Tool::RectangleFilter,
+        ScreenshotToolPalette::Tool::PenFilter,
+        ScreenshotToolPalette::Tool::Watermark,
+    };
+    for (const ScreenshotToolPalette::Tool tool : referenceFamilies) {
+        require(window.palette()->ensureStyleFamily(tool),
+                "placement test should materialize its reference style families");
+    }
     window.prepareForDisplay();
     const QSize presetWindowSize = window.windowSizeHint();
     ScreenshotToolPalette* palette = window.palette();
@@ -986,10 +1011,16 @@ void placementRectsTrackTheDisplayedStyleToolbar() {
     const QRect textPlacementRect = window.bottomPlacementContentRect();
     require(textPlacementRect == expectedVisibleRect(),
             "bottom placement should use the displayed text style toolbar size");
-    require(shapePlacementRect != window.fullContentRect() ||
-                textPlacementRect != window.fullContentRect(),
-            "placement should not always use the maximum reserved toolbar extent");
 
+    window.setActiveTool(ScreenshotToolPalette::Tool::Move);
+    settleQueuedRefreshes();
+    const QRect movePlacementRect = window.bottomPlacementContentRect();
+    require(movePlacementRect == palette->mainToolbarContentRect() &&
+                movePlacementRect != window.fullContentRect(),
+            "an editorless tool should exclude the maximum secondary reserve from placement");
+
+    window.setActiveTool(ScreenshotToolPalette::Tool::Text);
+    settleQueuedRefreshes();
     window.setStyleToolbarAboveMain(true);
     settleQueuedRefreshes();
     require(window.topPlacementContentRect() == expectedVisibleRect(),

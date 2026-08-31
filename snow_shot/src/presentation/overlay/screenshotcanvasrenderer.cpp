@@ -1521,8 +1521,19 @@ void ScreenshotCanvasRenderer::setPinnedResultSurface(
     setRenderMode(RenderMode::PinnedResult);
 }
 
+void ScreenshotCanvasRenderer::setPinnedBackgroundColor(const QColor& color) {
+    const QColor normalized = color.isValid() ? color : QColor();
+    if (m_pinnedBackgroundColor == normalized) {
+        return;
+    }
+    m_pinnedBackgroundColor = normalized;
+    invalidateCachedContent();
+    m_canvas.update();
+}
+
 void ScreenshotCanvasRenderer::clearImage() {
-    if (!m_imageSource.isValid() && m_imageViewportPhysicalSize.isEmpty()) {
+    if (!m_imageSource.isValid() && m_imageViewportPhysicalSize.isEmpty() &&
+        !m_pinnedBackgroundColor.isValid()) {
         return;
     }
     m_imageSource = {};
@@ -1530,6 +1541,7 @@ void ScreenshotCanvasRenderer::clearImage() {
     m_pinnedContentCanvasRect = {};
     m_pinnedSurfaceCanvasRect = {};
     m_pinnedResultStyle = {};
+    m_pinnedBackgroundColor = {};
     invalidateCachedContent();
     m_canvas.update();
 }
@@ -1746,6 +1758,7 @@ void ScreenshotCanvasRenderer::reset() {
     m_pinnedContentCanvasRect = {};
     m_pinnedSurfaceCanvasRect = {};
     m_pinnedResultStyle = {};
+    m_pinnedBackgroundColor = {};
     m_selectionState = ScreenshotSelectionVisualState{};
     m_renderMode = RenderMode::Standard;
     m_maskVisible = false;
@@ -1838,7 +1851,11 @@ void ScreenshotCanvasRenderer::renderBeforeCanvas(QPainter& painter,
     if (m_renderMode == RenderMode::ScrollingCapture ||
         m_renderMode == RenderMode::PinnedResult) {
         painter.setCompositionMode(QPainter::CompositionMode_Source);
-        painter.fillRect(context.viewportRect, Qt::transparent);
+        painter.fillRect(context.viewportRect,
+                         m_renderMode == RenderMode::PinnedResult &&
+                                 m_pinnedBackgroundColor.isValid()
+                             ? m_pinnedBackgroundColor
+                             : QColor(Qt::transparent));
         painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
         if (m_renderMode == RenderMode::ScrollingCapture) {
             return;

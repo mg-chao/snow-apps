@@ -102,7 +102,10 @@ bool imageContainsColor(const QImage& image, const QColor& expected) {
 
 adqt::widgets::AdButton* buttonWithTooltip(ScreenshotToolPalette& palette, const QString& tooltip) {
     for (adqt::widgets::AdButton* button : palette.findChildren<adqt::widgets::AdButton*>()) {
-        if (button != nullptr && button->toolTip() == tooltip) {
+        if (button != nullptr &&
+            (button->toolTip() == tooltip ||
+             (button->toolTip().startsWith(tooltip + QStringLiteral(" (")) &&
+              button->toolTip().endsWith(')')))) {
             return button;
         }
     }
@@ -263,6 +266,9 @@ void cachedToolbarIconsFollowThemeColors() {
     options.showWatermarkTool = true;
     options.actions = ScreenshotToolPalette::CopyAction;
     ScreenshotToolPalette toolbar(options);
+    require(toolbar.ensureActionFamily(ScreenshotToolPalette::ActionFamily::Selection) &&
+                toolbar.ensureStyleFamily(ScreenshotToolPalette::Tool::Watermark),
+            "theme icon test should materialize the inspected toolbar families");
     prepare(toolbar);
 
     auto* selectionOpacity =
@@ -525,6 +531,20 @@ void styleToolbarPresetFitsEveryToolWithoutResizing() {
     ScreenshotToolPalette::Options options;
     options.showTextTool = true;
     ScreenshotToolPalette toolbar(options);
+    constexpr ScreenshotToolPalette::Tool tools[] = {
+        ScreenshotToolPalette::Tool::Select,
+        ScreenshotToolPalette::Tool::Shape,
+        ScreenshotToolPalette::Tool::Arrow,
+        ScreenshotToolPalette::Tool::Text,
+    };
+    require(toolbar.ensureActionFamily(ScreenshotToolPalette::ActionFamily::Selection),
+            "preset test should materialize the inspected selection actions");
+    for (const ScreenshotToolPalette::Tool tool : tools) {
+        if (tool != ScreenshotToolPalette::Tool::Select) {
+            require(toolbar.ensureStyleFamily(tool),
+                    "preset test should materialize every inspected style family");
+        }
+    }
     toolbar.setStyleToolbarAboveMain(true);
     prepare(toolbar);
 
@@ -534,12 +554,6 @@ void styleToolbarPresetFitsEveryToolWithoutResizing() {
     int visibleContentChangeCount = 0;
     QObject::connect(&toolbar, &ScreenshotToolPalette::visibleContentChanged,
                      [&visibleContentChangeCount]() { ++visibleContentChangeCount; });
-    constexpr ScreenshotToolPalette::Tool tools[] = {
-        ScreenshotToolPalette::Tool::Select,
-        ScreenshotToolPalette::Tool::Shape,
-        ScreenshotToolPalette::Tool::Arrow,
-        ScreenshotToolPalette::Tool::Text,
-    };
     for (const ScreenshotToolPalette::Tool tool : tools) {
         const int previousChangeCount = visibleContentChangeCount;
         toolbar.setActiveTool(tool);
@@ -568,6 +582,8 @@ void styleToolbarPresetFitsEveryToolWithoutResizing() {
 
 void styleToolbarButtonGroupLayoutRequestQuiesces() {
     ScreenshotToolPalette toolbar(ScreenshotToolPalette::Options{});
+    require(toolbar.ensureStyleFamily(ScreenshotToolPalette::Tool::Shape),
+            "layout test should materialize the inspected shape family");
     prepare(toolbar);
 
     QWidget* shapeGroup = toolbar.findChild<QWidget*>(QStringLiteral("screenshotShapeButtonGroup"));
@@ -598,6 +614,8 @@ void styleRadioIconsMatchTheirCurrentDevicePixelRatio() {
     flushEvents();
 
     ScreenshotToolPalette toolbar(ScreenshotToolPalette::Options{});
+    require(toolbar.ensureStyleFamily(ScreenshotToolPalette::Tool::Shape),
+            "DPI test should materialize the inspected shape family");
     prepare(toolbar);
 
     QWidget* shapeGroup = toolbar.findChild<QWidget*>(QStringLiteral("screenshotShapeButtonGroup"));

@@ -84,6 +84,9 @@ class ScreenshotRecognitionSessionController final : public QObject {
     ~ScreenshotRecognitionSessionController() override;
 
     void setTarget(ScreenshotRecognitionTarget target);
+    void setProviders(ScreenshotOcrRecognitionPort* recognition,
+                      ScreenshotQrRecognitionPort* qrRecognition,
+                      SnowShotApiClient* tableRecognition);
     void seedRecognitionResults(ScreenshotRecognitionResults results);
     [[nodiscard]] ScreenshotRecognitionResults cachedRecognitionResults() const;
     [[nodiscard]] bool hasTarget() const;

@@ -122,6 +122,17 @@ struct ScreenshotToolPaletteOptionPopoverEditorConfig {
     int optionSpacing = 0;
 };
 
+[[nodiscard]] adqt::widgets::AdPopover*
+createScreenshotToolPaletteOptionPopoverShell(adqt::widgets::AdButton* trigger,
+                                              const QString& accessibleName);
+
+[[nodiscard]] ScreenshotToolPaletteOptionPopoverEditor
+materializeScreenshotToolPaletteOptionPopoverEditor(
+    adqt::widgets::AdPopover* popover, QObject* receiver,
+    const ScreenshotToolPaletteOptionPopoverEditorConfig& config,
+    const std::function<void(int)>& activateValue,
+    const ScreenshotToolPaletteButtonMetrics& metrics);
+
 [[nodiscard]] ScreenshotToolPaletteOptionPopoverEditor
 createScreenshotToolPaletteOptionPopoverEditor(
     adqt::widgets::AdButton* trigger, QObject* receiver,

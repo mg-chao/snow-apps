@@ -15,6 +15,7 @@ class ScreenshotQrRecognitionPort;
 class SnowShotApiClient;
 class ScreenshotPinnedWindowPool;
 class QTextDocument;
+struct ScreenshotPinnedRecognitionProviders;
 
 class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExportDestinationPort {
   public:
@@ -22,7 +23,8 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         ScreenshotOcrRecognitionPort* recognition = nullptr,
         ScreenshotQrRecognitionPort* qrRecognition = nullptr,
         SnowShotApiClient* tableRecognition = nullptr,
-        std::function<void()> showMainWindowRequested = {});
+        std::function<void()> showMainWindowRequested = {},
+        std::function<ScreenshotPinnedRecognitionProviders()> recognitionProvider = {});
     ~ScreenshotSelectionExportUiServices() override;
 
     [[nodiscard]] bool publishClipboard(QObject* receiver, ScreenshotClipboardPayload payload,
@@ -55,6 +57,7 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     ScreenshotQrRecognitionPort* m_qrRecognition = nullptr;
     SnowShotApiClient* m_tableRecognition = nullptr;
     std::function<void()> m_showMainWindowRequested;
+    std::function<ScreenshotPinnedRecognitionProviders()> m_recognitionProvider;
     std::unique_ptr<ScreenshotPinnedWindowPool> m_windowPool;
     std::vector<ScreenshotClipboardCommitHandle> m_clipboardCommits;
     std::vector<std::shared_ptr<std::atomic_bool>> m_clipboardCompletionEnabled;

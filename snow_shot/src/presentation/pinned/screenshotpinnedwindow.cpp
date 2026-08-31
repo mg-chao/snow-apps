@@ -426,6 +426,16 @@ adqt::widgets::AdButton* createControlButton(QWidget* parent, const char* toolti
     return button;
 }
 
+QColor opaquePinnedBackground(const QWidget* widget) {
+    QColor background =
+        adqt::theme::ThemeManager::instance().resolveTheme(widget).colorBgContainer;
+    if (!background.isValid() && widget != nullptr) {
+        background = widget->palette().color(QPalette::Window);
+    }
+    background.setAlpha(255);
+    return background;
+}
+
 } // namespace
 
 ScreenshotPinnedWindow::ScreenshotPinnedWindow(RuntimeMode mode, QWidget* parent)
@@ -447,7 +457,12 @@ ScreenshotPinnedWindow::ScreenshotPinnedWindow(RuntimeMode mode, QWidget* parent
     setMouseTracking(true);
 
     auto& themeManager = adqt::theme::ThemeManager::instance();
-    connect(&themeManager, &adqt::theme::ThemeManager::themeChanged, this, [this]() { update(); });
+    connect(&themeManager, &adqt::theme::ThemeManager::themeChanged, this, [this]() {
+        if (m_thumbnailMode && m_screenshotRenderer != nullptr) {
+            m_screenshotRenderer->setPinnedBackgroundColor(opaquePinnedBackground(this));
+        }
+        update();
+    });
 
     auto& applicationStorage = snow_shot::storage::ApplicationStorage::instance();
     if (applicationStorage.isInitialized()) {
@@ -1320,6 +1335,7 @@ bool ScreenshotPinnedWindow::present(const Config& config, std::function<void(bo
     m_recognition = config.recognition;
     m_qrRecognition = config.qrRecognition;
     m_tableRecognition = config.tableRecognition;
+    m_recognitionProvider = config.recognitionProvider;
     m_recognitionResults = config.recognitionResults;
     m_initialPhysicalSize =
         config.fullResolutionScaleBasis.isValid() && !config.fullResolutionScaleBasis.isEmpty()
@@ -1650,6 +1666,7 @@ bool ScreenshotPinnedWindow::present(const Config& config, std::function<void(bo
     if (m_automaticTextRecognition && m_recognitionSession != nullptr &&
         !m_recognitionSession->hasTextResult()) {
         QTimer::singleShot(0, this, [this]() {
+            ensureRecognitionProviders();
             if (m_recognitionSession != nullptr && m_recognition != nullptr &&
                 m_automaticTextRecognition && m_ocrSupported && !m_closing) {
                 requestMaterializedImage([this](bool succeeded) {
@@ -1987,14 +2004,8 @@ void ScreenshotPinnedWindow::wheelEvent(QWheelEvent* event) {
 }
 
 void ScreenshotPinnedWindow::paintEvent(QPaintEvent* event) {
-    QColor background = adqt::theme::ThemeManager::instance().resolveTheme(this).colorBgContainer;
-    if (!background.isValid()) {
-        background = palette().color(QPalette::Window);
-    }
-    background.setAlpha(255);
-
     QPainter painter(this);
-    painter.fillRect(event != nullptr ? event->rect() : rect(), background);
+    painter.fillRect(event != nullptr ? event->rect() : rect(), opaquePinnedBackground(this));
 }
 
 void ScreenshotPinnedWindow::createUi() {
@@ -2762,6 +2773,7 @@ void ScreenshotPinnedWindow::activateRecognitionMode(int mode) {
     if (m_closing || m_recognitionSession == nullptr) {
         return;
     }
+    ensureRecognitionProviders();
     const auto selectedMode = static_cast<ScreenshotRecognitionSessionController::Mode>(mode);
     const bool canUseFormattedText =
         selectedMode == ScreenshotRecognitionSessionController::Mode::Text &&
@@ -2789,6 +2801,28 @@ void ScreenshotPinnedWindow::activateRecognitionMode(int mode) {
     }
     m_recognitionSession->activate(selectedMode);
     refreshContextMenu();
+}
+
+void ScreenshotPinnedWindow::ensureRecognitionProviders() {
+    if (!m_recognitionProvider ||
+        (m_recognition != nullptr && m_qrRecognition != nullptr &&
+         m_tableRecognition != nullptr)) {
+        return;
+    }
+    const ScreenshotPinnedRecognitionProviders providers = m_recognitionProvider();
+    if (m_recognition == nullptr) {
+        m_recognition = providers.recognition;
+    }
+    if (m_qrRecognition == nullptr) {
+        m_qrRecognition = providers.qrRecognition;
+    }
+    if (m_tableRecognition == nullptr) {
+        m_tableRecognition = providers.tableRecognition;
+    }
+    if (m_recognitionSession != nullptr) {
+        m_recognitionSession->setProviders(m_recognition, m_qrRecognition, m_tableRecognition);
+    }
+    updateRecognitionToolbarState();
 }
 
 void ScreenshotPinnedWindow::deactivateRecognition() {
@@ -3627,6 +3661,9 @@ void ScreenshotPinnedWindow::setThumbnailMode(bool enabled, bool animate) {
         }
         m_thumbnailMode = true;
         m_thumbnailAnimationTarget = true;
+        if (m_screenshotRenderer != nullptr) {
+            m_screenshotRenderer->setPinnedBackgroundColor(opaquePinnedBackground(this));
+        }
         updateControlsGeometry();
         if (animate) {
             animateGeometryTo(nativeTarget);
@@ -3636,6 +3673,9 @@ void ScreenshotPinnedWindow::setThumbnailMode(bool enabled, bool animate) {
     } else {
         m_thumbnailMode = false;
         m_thumbnailAnimationTarget = false;
+        if (m_screenshotRenderer != nullptr) {
+            m_screenshotRenderer->setPinnedBackgroundColor({});
+        }
         updateControlsGeometry();
         if (animate) {
             animateGeometryTo(m_preThumbnailNativeGeometry);
@@ -3658,6 +3698,9 @@ void ScreenshotPinnedWindow::restoreFromThumbnailImmediately() {
     m_geometryAnimating = false;
     m_thumbnailMode = false;
     m_thumbnailAnimationTarget = false;
+    if (m_screenshotRenderer != nullptr) {
+        m_screenshotRenderer->setPinnedBackgroundColor({});
+    }
     updateControlsGeometry();
     static_cast<void>(
         applyWindowGeometry(m_preThumbnailNativeGeometry, GeometryMutation::Thumbnail));

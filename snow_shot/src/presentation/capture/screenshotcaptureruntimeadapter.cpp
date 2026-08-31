@@ -138,15 +138,6 @@ void ScreenshotCaptureRuntimeAdapter::prewarmDisplayPool(ScreenshotDisplaySessio
     m_context.overlayCoordinator.prewarmDisplayPool(displaySession, displayCount);
 }
 
-void ScreenshotCaptureRuntimeAdapter::ensureToolbar() {
-    static_cast<void>(m_context.overlayCoordinator.ensureToolbar());
-}
-
-void ScreenshotCaptureRuntimeAdapter::prewarmOverlayTransientUi(
-    ScreenshotDisplaySession& displaySession) {
-    m_context.overlayCoordinator.prewarmOverlayTransientUi(displaySession);
-}
-
 void ScreenshotCaptureRuntimeAdapter::clearOverlayCanvases(
     const ScreenshotDisplaySession& displaySession) const {
     m_context.overlayCoordinator.clearOverlayCanvases(displaySession);

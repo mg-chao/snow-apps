@@ -2283,6 +2283,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             include/snow_shot/presentation/styles/thememanager.h
             src/presentation/components/icons/snowshoticons.cpp
             src/presentation/core/screenshotgeometry.cpp
+            src/presentation/core/screenshotcanvastoolstyles.cpp
             src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
             src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
             src/presentation/tools/screenshottoolbarmainpanel.cpp
@@ -2335,6 +2336,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             include/snow_shot/presentation/styles/thememanager.h
             src/presentation/components/icons/snowshoticons.cpp
             src/presentation/core/screenshotgeometry.cpp
+            src/presentation/core/screenshotcanvastoolstyles.cpp
             src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
             src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
             src/presentation/tools/screenshottoolbarmainpanel.cpp
@@ -2382,6 +2384,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/styles/thememanager.h
         src/presentation/components/icons/snowshoticons.cpp
         src/presentation/core/screenshotgeometry.cpp
+        src/presentation/core/screenshotcanvastoolstyles.cpp
         src/presentation/styles/thememanager.cpp
         src/presentation/styles/themecolorscheme.cpp
         src/presentation/tools/screenshotfloatingtoolpalettenative.cpp

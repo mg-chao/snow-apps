@@ -18,6 +18,7 @@
 #include <QWidget>
 
 #include <memory>
+#include <initializer_list>
 #include <optional>
 
 class QFrame;
@@ -75,6 +76,19 @@ class ScreenshotToolPalette final : public QWidget {
         Idle,
         Recording,
         Paused,
+    };
+
+    enum class ActionFamily {
+        Selection,
+        TextRecognition,
+        TableRecognition,
+        ScrollingRecognition,
+    };
+
+    enum class MaterializationState {
+        Uninitialized,
+        Constructing,
+        Ready,
     };
 
     enum Action {
@@ -177,7 +191,7 @@ class ScreenshotToolPalette final : public QWidget {
     void setWatermarkConfig(const SnowCanvasWatermarkConfig& config);
     void setSpotlightConfig(const SnowCanvasSpotlightConfig& config);
     void setSelectionOpacity(qreal opacity, bool mixed = false);
-    void installWheelFilters(QObject* receiver);
+    void installWheelFilters(QObject* receiver, QWidget* scope = nullptr);
     bool handleToolbarWheel(QWheelEvent* event);
     void setRecordingState(RecordingState state);
     RecordingState recordingState() const;
@@ -200,6 +214,8 @@ class ScreenshotToolPalette final : public QWidget {
                                  bool canReset = false);
     void setTextTransformSelections(const QString& formatting, const QString& punctuation);
     void clearTextTransformSelections();
+    [[nodiscard]] bool ensureActionFamily(ActionFamily family);
+    [[nodiscard]] bool ensureStyleFamily(Tool tool);
 
 #if defined(SNOW_SHOT_TEST_HOOKS)
     [[nodiscard]] std::optional<Tool> activeToolForTests() const;
@@ -207,6 +223,8 @@ class ScreenshotToolPalette final : public QWidget {
     [[nodiscard]] quint64 propertyGroupRefreshCountForTests() const;
     [[nodiscard]] quint64 layoutCommitCountForTests() const;
     [[nodiscard]] SnowCanvasStyleDefaults styleStateForTests() const;
+    [[nodiscard]] MaterializationState actionFamilyStateForTests(ActionFamily family) const;
+    [[nodiscard]] MaterializationState styleFamilyStateForTests(Tool tool) const;
 #endif
 
   signals:
@@ -282,6 +300,7 @@ class ScreenshotToolPalette final : public QWidget {
     void recordingCloseRequested();
     void recordingCopyAnimatedImageRequested();
     void recordingCopyVideoRequested();
+    void materializedScope(QWidget* scope);
 
   private:
     void changeEvent(QEvent* event) override;
@@ -296,7 +315,14 @@ class ScreenshotToolPalette final : public QWidget {
                                              const adqt::icons::IconRef& iconRef,
                                              bool danger = false, bool primary = false);
     void createMainToolbar(const Options& options);
-    void createRectangleStyleToolbar();
+    void createSecondaryToolbarShell();
+    void createSelectionActionFamily();
+    void createTextRecognitionActionFamily();
+    void createTableRecognitionActionFamily();
+    void createScrollingRecognitionActionFamily();
+    void createStyleFamily(Tool tool);
+    void registerStyleFamily(QWidget* controls, std::initializer_list<Tool> tools);
+    void replayMaterializedState(Tool tool);
     bool addMainToolButtons(const Options& options, QBoxLayout* layout);
     bool addMainHistoryButtons(const Options& options, QBoxLayout* layout);
     bool addMainSecondaryButtons(const Options& options, QBoxLayout* layout);
@@ -438,8 +464,13 @@ class ScreenshotToolPalette final : public QWidget {
         adqt::widgets::AdPopover* popover = nullptr;
         QVector<adqt::widgets::AdButton*> optionButtons;
         QVector<int> optionValues;
+        QStringList popoverItemIds;
         bool ownsTrigger = false;
+        bool popoverConstructing = false;
     };
+
+    void ensureDrawingToolGroupPopover(adqt::widgets::AdButton* trigger);
+    void ensureTableQrPopover();
 
     ScreenshotToolbarMainPanel* m_mainPanel = nullptr;
     QWidget* m_selectActionPanel = nullptr;
@@ -549,6 +580,7 @@ class ScreenshotToolPalette final : public QWidget {
     bool m_styleToolbarTargetVisible = false;
     bool m_actionToolbarTargetVisible = false;
     bool m_hasSelectedElements = false;
+    bool m_selectionOpacityAvailable = false;
     bool m_selectionActionAvailabilityInitialized = false;
     bool m_scrollingScreenshotMode = false;
     ScreenshotScrollingRecognitionMode m_scrollingRecognitionMode =
@@ -573,6 +605,15 @@ class ScreenshotToolPalette final : public QWidget {
     bool m_textCanUndo = false;
     bool m_textCanRedo = false;
     bool m_textCanReset = false;
+    bool m_tableCanMerge = false;
+    bool m_tableCanSplit = false;
+    bool m_tableCanReset = false;
+    QString m_textFormattingSelection;
+    QString m_textPunctuationSelection;
+    qint64 m_recordingDurationMilliseconds = 0;
+    bool m_replayingMaterializedState = false;
+    QHash<int, MaterializationState> m_actionFamilyStates;
+    QHash<int, MaterializationState> m_styleFamilyStates;
     SnowCanvasHistoryState m_canvasHistoryState;
     const SnowCanvasStyleDefaults m_styleDefaults;
     const Options m_options;

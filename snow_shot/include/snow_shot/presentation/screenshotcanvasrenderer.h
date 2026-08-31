@@ -95,6 +95,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     void setPinnedResultSurface(const QRectF& contentCanvasRect,
                                 const QRectF& surfaceCanvasRect,
                                 const ScreenshotResultStyle& style);
+    void setPinnedBackgroundColor(const QColor& color);
     void clearImage();
     void setMaskVisible(bool visible);
     void setMaskColor(const QColor& color);
@@ -146,6 +147,7 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     QRectF m_pinnedContentCanvasRect;
     QRectF m_pinnedSurfaceCanvasRect;
     ScreenshotResultStyle m_pinnedResultStyle;
+    QColor m_pinnedBackgroundColor;
     ScreenshotSelectionVisualState m_selectionState;
     RenderMode m_renderMode = RenderMode::Standard;
     bool m_maskVisible = false;

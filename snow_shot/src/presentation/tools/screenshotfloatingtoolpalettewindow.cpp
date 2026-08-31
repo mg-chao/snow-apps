@@ -68,52 +68,9 @@ ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
     contentLayout->addWidget(m_paletteHost);
     layout->addWidget(contentPanel);
 
-    QLineEdit* watermarkTextEditor =
-        m_paletteHost->findChild<QLineEdit*>(QStringLiteral("screenshotWatermarkTextEdit"));
-    m_watermarkTextEditor = watermarkTextEditor;
-    if (watermarkTextEditor != nullptr) {
-        watermarkTextEditor->installEventFilter(this);
-        connect(watermarkTextEditor, &QLineEdit::editingFinished, this, [this]() {
-            const QPointer<QWidget> editor = m_watermarkTextEditor;
-            QTimer::singleShot(0, this, [this, editor]() { endKeyboardFocusInteraction(editor); });
-        });
-    }
-
-    const QList<adqt::widgets::AdSelect*> selects =
-        m_paletteHost->findChildren<adqt::widgets::AdSelect*>();
-    for (adqt::widgets::AdSelect* select : selects) {
-        if (select == nullptr || !select->searchEnabled() || select->lineEdit() == nullptr) {
-            continue;
-        }
-        connect(select, &adqt::widgets::AdSelect::popupOpening, this,
-                [this, select]() { beginKeyboardFocusInteraction(select->lineEdit()); });
-        connect(select, &adqt::widgets::AdSelect::popupVisibleChanged, this,
-                [this, select](bool visible) {
-                    if (!visible) {
-                        endKeyboardFocusInteraction(select->lineEdit());
-                    }
-                });
-    }
-
     refreshGeometryForVisibleContent(false);
-
-    QList<adqt::icons::IconPixmapRequest> iconWarmupRequests;
     const QList<adqt::widgets::AdButton*> buttons =
         m_paletteHost->findChildren<adqt::widgets::AdButton*>();
-    const QList<QScreen*> screens = QGuiApplication::screens();
-    for (const adqt::widgets::AdButton* button : buttons) {
-        if (button == nullptr || !button->iconRef().isValid()) {
-            continue;
-        }
-        for (const QScreen* screen : screens) {
-            adqt::icons::IconPixmapRequest request;
-            request.ref = button->iconRef();
-            request.render.logicalSize = button->iconSize();
-            request.render.devicePixelRatio = screen != nullptr ? screen->devicePixelRatio() : 1.0;
-            iconWarmupRequests.append(request);
-        }
-    }
-    adqt::icons::prewarm(iconWarmupRequests);
 
     m_scaleScope = new adqt::widgets::AdControlScaleScope(m_paletteHost, this);
     m_dpiController = new adqt::widgets::AdDpiStableWindowController(this, this);
@@ -129,6 +86,9 @@ ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
                     }
                 });
     }
+    registerMaterializedScope(m_paletteHost);
+    connect(m_paletteHost->palette(), &ScreenshotToolPalette::materializedScope, this,
+            &ScreenshotFloatingToolPaletteWindow::registerMaterializedScope);
     connect(
         m_dpiController, &adqt::widgets::AdDpiStableWindowController::scaleCommitCompleted, this,
         [this](const adqt::widgets::AdControlScaleContext& context,
@@ -285,6 +245,9 @@ void ScreenshotFloatingToolPaletteWindow::setStyleToolbarAboveMain(bool above) {
 }
 
 void ScreenshotFloatingToolPaletteWindow::prepareForDisplay() {
+    if (m_paletteHost != nullptr) {
+        m_paletteHost->prepareForDisplay();
+    }
     const qreal currentDpr = currentWindowDevicePixelRatio();
     if (m_lastAppliedWindowDevicePixelRatio <= 0.0 ||
         !qFuzzyCompare(m_lastAppliedWindowDevicePixelRatio + 1.0, currentDpr + 1.0) ||
@@ -1063,6 +1026,78 @@ void ScreenshotFloatingToolPaletteWindow::applyWindowAttributes() {
     setAttribute(Qt::WA_AlwaysShowToolTips, true);
     setAutoFillBackground(false);
     setFocusPolicy(Qt::NoFocus);
+}
+
+void ScreenshotFloatingToolPaletteWindow::prewarmScopeIcons(QWidget* scope) {
+    if (scope == nullptr) {
+        return;
+    }
+    QList<adqt::icons::IconPixmapRequest> requests;
+    const qreal dpr = m_placementScreen != nullptr
+                          ? m_placementScreen->devicePixelRatio()
+                          : (screen() != nullptr ? screen()->devicePixelRatio() : 1.0);
+    const QList<adqt::widgets::AdButton*> buttons =
+        scope->findChildren<adqt::widgets::AdButton*>();
+    for (const auto* button : buttons) {
+        if (button == nullptr || !button->iconRef().isValid()) {
+            continue;
+        }
+        adqt::icons::IconPixmapRequest request;
+        request.ref = button->iconRef();
+        request.render.logicalSize = button->iconSize();
+        request.render.devicePixelRatio = dpr;
+        requests.append(request);
+    }
+    adqt::icons::prewarm(requests);
+}
+
+void ScreenshotFloatingToolPaletteWindow::registerMaterializedScope(QWidget* scope) {
+    if (scope == nullptr) {
+        return;
+    }
+    if (auto* editor = scope->findChild<QLineEdit*>(
+            QStringLiteral("screenshotWatermarkTextEdit"))) {
+        if (m_watermarkTextEditor != editor) {
+            m_watermarkTextEditor = editor;
+            editor->installEventFilter(this);
+            connect(editor, &QLineEdit::editingFinished, this, [this, editor]() {
+                QTimer::singleShot(0, this,
+                                   [this, editor]() { endKeyboardFocusInteraction(editor); });
+            });
+        }
+    }
+    for (adqt::widgets::AdSelect* select : scope->findChildren<adqt::widgets::AdSelect*>()) {
+        if (select == nullptr || !select->searchEnabled() || select->lineEdit() == nullptr ||
+            select->property("snowShotFloatingFocusRegistered").toBool()) {
+            continue;
+        }
+        select->setProperty("snowShotFloatingFocusRegistered", true);
+        connect(select, &adqt::widgets::AdSelect::popupOpening, this,
+                [this, select]() { beginKeyboardFocusInteraction(select->lineEdit()); });
+        connect(select, &adqt::widgets::AdSelect::popupVisibleChanged, this,
+                [this, select](bool visible) {
+                    if (!visible) {
+                        endKeyboardFocusInteraction(select->lineEdit());
+                    }
+                });
+    }
+    for (adqt::widgets::AdButton* button : scope->findChildren<adqt::widgets::AdButton*>()) {
+        if (button == nullptr ||
+            button->property("snowShotDpiSurfaceRegistered").toBool()) {
+            continue;
+        }
+        button->setProperty("snowShotDpiSurfaceRegistered", true);
+        if (m_dpiController != nullptr && button->busyIndicatorSurface() != nullptr) {
+            m_dpiController->registerAuxiliarySurface(button->busyIndicatorSurface());
+        }
+        connect(button, &adqt::widgets::AdButton::busyIndicatorSurfaceChanged, this,
+                [this](QWidget* surface) {
+                    if (m_dpiController != nullptr) {
+                        m_dpiController->registerAuxiliarySurface(surface);
+                    }
+                });
+    }
+    prewarmScopeIcons(scope);
 }
 
 void ScreenshotFloatingToolPaletteWindow::beginKeyboardFocusInteraction(QWidget* editor) {
