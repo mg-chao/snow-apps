@@ -105,6 +105,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     ~ScreenshotPinnedWindow() override;
 
     bool present(const Config& config, std::function<void(bool, QImage)> completion = {});
+    bool presentPending(const Config& config,
+                        std::function<void(bool, QImage)> completion = {});
+    bool publishMaterializedImage(QImage image);
     bool prewarm(QScreen* screen = nullptr);
     QRect currentNativeGeometry() const;
     static void setRuntimeBorderColor(const QColor& color);
@@ -151,10 +154,13 @@ class ScreenshotPinnedWindow final : public QWidget {
     void updateCanvasViewport();
     void updateControlsGeometry();
     void destroyCanvas();
+    bool presentInternal(const Config& config, std::function<void(bool, QImage)> completion,
+                         bool allowPending);
     using MaterializationCallback = std::function<void(bool)>;
     using PresentationCompletion = std::function<void(bool, QImage)>;
     void requestMaterializedImage(MaterializationCallback callback);
     void finishMaterializedImage(ScreenshotExportTaskResult result);
+    bool installMaterializedImage(QImage image);
     void finishPresentation(bool succeeded, QImage image = {});
     void commitClipboardPayload(ScreenshotClipboardPayload payload);
     void ensureEditController();
@@ -239,6 +245,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     PresentationCompletion m_presentationCompletion;
     ScreenshotImageLoader m_imageLoader;
     bool m_materializationLoading = false;
+    bool m_pendingImage = false;
+    bool m_firstContentFramePublished = false;
     SnowCanvasWidget* m_canvas = nullptr;
     std::unique_ptr<ScreenshotCanvasRenderer> m_screenshotRenderer;
     QFrame* m_borderFrame = nullptr;

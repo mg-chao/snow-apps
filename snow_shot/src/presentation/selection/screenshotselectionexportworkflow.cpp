@@ -95,14 +95,17 @@ bool ScreenshotSelectionExportWorkflow::pinSelectionToScreen(ResultValidator val
         std::move(*request), &m_context.callbackContext,
         [this, validator = std::move(validator),
          completion = std::move(completion),
-         savedSelectionParams](ScreenshotPinnedSelectionRequest pinRequest) mutable {
+         savedSelectionParams](ScreenshotPinnedSelectionRequest pinRequest,
+                               ScreenshotPinnedSelectionResultHandle result) mutable {
             if (validator && !validator()) {
+                result.cancel();
                 if (completion) {
                     completion(false, {});
                 }
                 return;
             }
             if (!pinRequest.isPrepared()) {
+                result.cancel();
                 if (completion) completion(false, {});
                 return;
             }
@@ -119,7 +122,7 @@ bool ScreenshotSelectionExportWorkflow::pinSelectionToScreen(ResultValidator val
                 if (completion) completion(success, success ? std::move(image) : QImage{});
             };
             if (!m_context.destination.presentPinnedSelection(
-                    pinRequest, [finish](bool success, QImage image) mutable {
+                    pinRequest, std::move(result), [finish](bool success, QImage image) mutable {
                         (*finish)(success, std::move(image));
                     })) {
                 (*finish)(false, {});

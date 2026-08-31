@@ -37,6 +37,7 @@
 #include <iterator>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -647,11 +648,32 @@ struct ScenarioSeries final {
     QVector<double> workingSet;
     QVector<double> peakWorkingSet;
     QVector<double> materializationMegabytes;
+    QVector<double> firstContentFrameResidual;
     int shellHits = 0;
     int samples = 0;
 };
 
 void accumulateRecord(ScenarioSeries& series, const QJsonObject& record) {
+    const QJsonObject milestones = record.value(QStringLiteral("milestones_ns")).toObject();
+    const auto milestoneValue = [&milestones](const QString& key) {
+        const QJsonValue value = milestones.value(key);
+        return value.isDouble() ? std::optional<double>(value.toDouble()) : std::nullopt;
+    };
+    const std::optional<double> firstContentFrame =
+        milestoneValue(QStringLiteral("window.first_content_frame"));
+    if (!firstContentFrame.has_value()) {
+        throw std::runtime_error("pin sample did not publish a first content frame");
+    }
+    const QStringList completionMilestones{
+        QStringLiteral("workflow.destination_complete"),
+        QStringLiteral("controller.presentation_complete"),
+        QStringLiteral("clipboard.presentation_complete")};
+    for (const QString& completionKey : completionMilestones) {
+        const std::optional<double> completion = milestoneValue(completionKey);
+        if (completion.has_value() && *firstContentFrame > *completion) {
+            throw std::runtime_error("first content frame occurred after destination completion");
+        }
+    }
     ++series.samples;
     series.endToEnd.push_back(record.value(QStringLiteral("end_to_end_ns")).toDouble() / 1e6);
     series.workingSet.push_back(record.value(QStringLiteral("working_set_bytes")).toDouble() /
@@ -661,10 +683,29 @@ void accumulateRecord(ScenarioSeries& series, const QJsonObject& record) {
     for (const auto& stage : milestoneStages(record.value(QStringLiteral("milestones_ns")).toObject())) {
         series.stages[stage.first].push_back(stage.second);
     }
-    const QJsonObject milestones = record.value(QStringLiteral("milestones_ns")).toObject();
     for (auto iterator = milestones.begin(); iterator != milestones.end(); ++iterator) {
         series.milestones[iterator.key()].push_back(iterator.value().toDouble() / 1e6);
     }
+    const std::optional<double> renderFinished =
+        milestoneValue(QStringLiteral("export.render_finished"));
+    if (renderFinished.has_value()) {
+        series.firstContentFrameResidual.push_back(
+            (*firstContentFrame - *renderFinished) / 1e6);
+    }
+    const auto appendMilestoneDelta = [&series, &milestoneValue](const QString& from,
+                                                                  const QString& to) {
+        const std::optional<double> start = milestoneValue(from);
+        const std::optional<double> end = milestoneValue(to);
+        if (start.has_value() && end.has_value()) {
+            series.stages[from + QStringLiteral("→") + to].push_back((*end - *start) / 1e6);
+        }
+    };
+    appendMilestoneDelta(QStringLiteral("export.render_finished"),
+                         QStringLiteral("export.result_published"));
+    appendMilestoneDelta(QStringLiteral("export.result_published"),
+                         QStringLiteral("window.first_content_frame"));
+    appendMilestoneDelta(QStringLiteral("window.shell_visible"),
+                         QStringLiteral("window.first_content_frame"));
     const QJsonObject spans = record.value(QStringLiteral("spans_ns")).toObject();
     for (auto iterator = spans.begin(); iterator != spans.end(); ++iterator) {
         series.spans[iterator.key()].push_back(iterator.value().toDouble() / 1e6);
@@ -712,10 +753,15 @@ QJsonObject coreReport(const ScenarioSeries& series) {
         core.insert(name, entry);
     };
     add(QStringLiteral("end_to_end"), series.endToEnd);
+    add(QStringLiteral("residual_first_content_frame_after_export"),
+        series.firstContentFrameResidual);
     const QStringList milestoneKeys{
         QStringLiteral("controller.enter"), QStringLiteral("window.hwnd_created"),
         QStringLiteral("window.before_show"), QStringLiteral("window.show_returned"),
+        QStringLiteral("window.shell_visible"), QStringLiteral("window.first_content_frame"),
         QStringLiteral("window.canvas_repainted"), QStringLiteral("export.render_started"),
+        QStringLiteral("export.dispatch_started"), QStringLiteral("export.render_finished"),
+        QStringLiteral("export.result_published"),
         QStringLiteral("controller.snapshot_ready"),
         QStringLiteral("controller.materialize_started"),
         QStringLiteral("clipboard.decode_started"), QStringLiteral("clipboard.decode_finished"),
@@ -742,6 +788,9 @@ QJsonObject coreReport(const ScenarioSeries& series) {
     }
     const QStringList stageKeys{
         QStringLiteral("window.present_returned→export.render_started"),
+        QStringLiteral("export.render_finished→export.result_published"),
+        QStringLiteral("export.result_published→window.first_content_frame"),
+        QStringLiteral("window.shell_visible→window.first_content_frame"),
         QStringLiteral("clipboard.decode_scheduled→clipboard.decode_started"),
         QStringLiteral("controller.materialize_submitted→controller.materialize_started"),
         QStringLiteral("controller.snapshot_requested→controller.snapshot_ready")};
@@ -749,6 +798,20 @@ QJsonObject coreReport(const ScenarioSeries& series) {
         add(QStringLiteral("stage_") + key, series.stages.value(key));
     }
     return core;
+}
+
+QJsonObject firstContentFrameAcceptance(const ScenarioSeries& series) {
+    constexpr double targetP95Milliseconds = 8.0;
+    const QJsonObject measured = statistics(series.firstContentFrameResidual);
+    const double p95 = measured.value(QStringLiteral("p95_ms")).toDouble();
+    return {{QStringLiteral("metric"),
+             QStringLiteral("first_content_frame_minus_export_render_finished")},
+            {QStringLiteral("target_p95_ms"), targetP95Milliseconds},
+            {QStringLiteral("p95_ms"), p95},
+            {QStringLiteral("passed"), series.firstContentFrameResidual.isEmpty() ||
+                                           p95 <= targetP95Milliseconds},
+            {QStringLiteral("applicable"), !series.firstContentFrameResidual.isEmpty()},
+            {QStringLiteral("samples"), series.firstContentFrameResidual.size()}};
 }
 
 QJsonObject scenarioReport(const QString& id, const ScenarioSeries& series) {
@@ -769,6 +832,8 @@ QJsonObject scenarioReport(const QString& id, const ScenarioSeries& series) {
             {QStringLiteral("milestones_ms"), statisticsMap(series.milestones)},
             {QStringLiteral("stages_ms"), statisticsMap(series.stages)},
             {QStringLiteral("spans_ms"), statisticsMap(series.spans)},
+            {QStringLiteral("first_content_frame_acceptance"),
+             firstContentFrameAcceptance(series)},
             {QStringLiteral("materialization_mb"), statistics(series.materializationMegabytes)},
             {QStringLiteral("shell_pool_hit_rate"),
              series.samples == 0 ? 0.0 : static_cast<double>(series.shellHits) / series.samples},
@@ -784,7 +849,7 @@ struct BenchmarkConfiguration {
     QString output;
     QStringList scenarios;
     int warmups = 3;
-    int samples = 20;
+    int samples = 40;
     int timeout = 30000;
     int screenIndex = 0;
     int scrollSteps = 8;
@@ -969,7 +1034,11 @@ bool runSelfTest() {
         {QStringLiteral("end_to_end_ns"), 2000000},
         {QStringLiteral("working_set_bytes"), 2 * 1024 * 1024},
         {QStringLiteral("peak_working_set_bytes"), 3 * 1024 * 1024},
-        {QStringLiteral("milestones_ns"), QJsonObject{{QStringLiteral("controller.enter"), 100000}}},
+        {QStringLiteral("milestones_ns"),
+         QJsonObject{{QStringLiteral("controller.enter"), 100000},
+                     {QStringLiteral("window.shell_visible"), 800000},
+                     {QStringLiteral("export.render_finished"), 1200000},
+                     {QStringLiteral("window.first_content_frame"), 1500000}}},
         {QStringLiteral("spans_ns"), QJsonObject{{QStringLiteral("window.present"), 500000}}},
         {QStringLiteral("counters"),
          QJsonObject{{QStringLiteral("shell.hit"), 1},
@@ -995,6 +1064,11 @@ bool runSelfTest() {
         !core.contains(QStringLiteral("time_to_controller.enter")) ||
         !core.contains(QStringLiteral("duration_window.present")) ||
         !core.contains(QStringLiteral("duration_clipboard.reader_snapshot"))) {
+        return false;
+    }
+    const QJsonObject acceptance = report.value(QStringLiteral("first_content_frame_acceptance")).toObject();
+    if (!acceptance.value(QStringLiteral("passed")).toBool() ||
+        !qFuzzyCompare(acceptance.value(QStringLiteral("p95_ms")).toDouble() + 1.0, 1.3)) {
         return false;
     }
     return true;
@@ -1205,7 +1279,7 @@ int main(int argc, char** argv) {
     parser.addOption({QStringLiteral("output"), QStringLiteral("output directory"), QStringLiteral("directory"), QStringLiteral("pin-to-screen-performance")});
     parser.addOption({QStringLiteral("screen-index"), QStringLiteral("monitor index"), QStringLiteral("index"), QStringLiteral("0")});
     parser.addOption({QStringLiteral("warmups"), QStringLiteral("warmup samples"), QStringLiteral("count"), QStringLiteral("3")});
-    parser.addOption({QStringLiteral("samples"), QStringLiteral("measured samples"), QStringLiteral("count"), QStringLiteral("20")});
+    parser.addOption({QStringLiteral("samples"), QStringLiteral("measured samples"), QStringLiteral("count"), QStringLiteral("40")});
     parser.addOption({QStringLiteral("timeout-ms"), QStringLiteral("sample timeout"), QStringLiteral("milliseconds"), QStringLiteral("30000")});
     parser.addOption({QStringLiteral("scenarios"), QStringLiteral("comma-separated scenarios (normal-selection-small, normal-selection-medium, normal-selection-large, scrolling-selection, clipboard-image-detached, clipboard-image-file, clipboard-html, or all)"), QStringLiteral("list"), QStringLiteral("all")});
     parser.addOption({QStringLiteral("scroll-steps"), QStringLiteral("scroll steps before pinning a scrolling screenshot"), QStringLiteral("count"), QStringLiteral("8")});

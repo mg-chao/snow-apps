@@ -149,7 +149,8 @@ namespace {
 bool presentPinnedWindowAndSynchronize(ScreenshotPinnedWindow* window,
                                        const ScreenshotPinnedWindow::Config& config,
                                        const std::function<void()>& showMainWindowRequested,
-                                       std::function<void(bool, QImage)> completion = {}) {
+                                       std::function<void(bool, QImage)> completion = {},
+                                       bool pending = false) {
     if (window == nullptr) {
         return false;
     }
@@ -159,7 +160,9 @@ bool presentPinnedWindowAndSynchronize(ScreenshotPinnedWindow* window,
                          showMainWindowRequested);
     }
     SNOW_SHOT_PIN_PERF_MILESTONE("ui.pinned_window_constructed");
-    if (!window->present(config, std::move(completion))) {
+    const bool presented = pending ? window->presentPending(config, std::move(completion))
+                                   : window->present(config, std::move(completion));
+    if (!presented) {
         window->deleteLater();
         return false;
     }
@@ -243,9 +246,10 @@ void ScreenshotSelectionExportUiServices::prewarmPinnedWindow(QScreen* screen) {
 }
 
 bool ScreenshotSelectionExportUiServices::presentPinnedSelection(
-    const ScreenshotPinnedSelectionRequest& request, PinnedCompletion completion) {
+    const ScreenshotPinnedSelectionRequest& request, ScreenshotPinnedSelectionResultHandle result,
+    PinnedCompletion completion) {
     SNOW_SHOT_PIN_PERF_SCOPE("ui.present_pinned_selection");
-    if (!request.isPrepared()) {
+    if (!request.isPrepared() || !result.isValid()) {
         return false;
     }
 
@@ -265,9 +269,8 @@ bool ScreenshotSelectionExportUiServices::presentPinnedSelection(
     // renderer neutral so the result style is not applied twice after loading.
     config.resultStyle = ScreenshotResultStyle{};
     config.fullResolutionScaleBasis = request.fullResolutionScaleBasis;
-    config.imageSource = request.imageSource;
-    config.imageLoader = request.imageLoader;
     config.screen = request.screen;
+    config.enableEditing = true;
     config.recognition = m_recognition;
     config.qrRecognition = m_qrRecognition;
     config.tableRecognition = m_tableRecognition;
@@ -277,8 +280,26 @@ bool ScreenshotSelectionExportUiServices::presentPinnedSelection(
     config.formattedTextDocument.reset();
     config.formattedPlainText.clear();
     applyPinRuntimeSettings(&config);
-    return presentPinnedWindowAndSynchronize(pinnedWindow, config, m_showMainWindowRequested,
-                                             std::move(completion));
+    const bool presented = presentPinnedWindowAndSynchronize(
+        pinnedWindow, config, m_showMainWindowRequested, std::move(completion), true);
+    if (!presented) {
+        result.cancel();
+        return false;
+    }
+    const bool subscribed = result.subscribe(
+        pinnedWindow, [pinnedWindow](bool success, QImage image) mutable {
+            if (success) {
+                static_cast<void>(pinnedWindow->publishMaterializedImage(std::move(image)));
+            } else {
+                static_cast<void>(pinnedWindow->publishMaterializedImage({}));
+            }
+        });
+    if (!subscribed) {
+        result.cancel();
+        pinnedWindow->close();
+        return false;
+    }
+    return true;
 }
 
 bool ScreenshotSelectionExportUiServices::presentPinnedImage(

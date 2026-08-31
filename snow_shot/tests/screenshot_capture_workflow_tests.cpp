@@ -96,7 +96,9 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
         ++clearDisplayCalls;
     }
     void destroyDisplayPool(ScreenshotDisplaySession&) override {}
-    void resetForNewCapture(ScreenshotDisplaySession&) override {}
+    void resetForNewCapture(ScreenshotDisplaySession&) override {
+        ++resetForNewCaptureCalls;
+    }
     void prepareDisplayModels(ScreenshotDisplaySession&) override {}
     void applyDisplayModels(ScreenshotDisplaySession&) override {
         ++applyDisplayModelsCalls;
@@ -107,6 +109,9 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     }
     void showOverlayWindows(const ScreenshotDisplaySession&, ScreenshotOverlayShowMode) override {
         ++showOverlayCalls;
+    }
+    void hideOverlayWindowsImmediately(const ScreenshotDisplaySession&) override {
+        ++hideOverlayImmediatelyCalls;
     }
     void hideOverlayWindows(const ScreenshotDisplaySession&) override {
         ++hideOverlayCalls;
@@ -135,6 +140,8 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     int applyDisplayModelsCalls = 0;
     int preparePreCaptureOverlayCalls = 0;
     int hideOverlayCalls = 0;
+    int hideOverlayImmediatelyCalls = 0;
+    int resetForNewCaptureCalls = 0;
     int clearDocumentCalls = 0;
     int prewarmDisplayPoolCalls = 0;
     int ensureToolbarCalls = 0;
@@ -253,6 +260,50 @@ void endingScreenshotSkipsCaptureReleaseAndPrewarm() {
             "canceling a capture must stop active capture-scoped features before cleanup");
     require(state.sessionState == ScreenshotSessionState::IdlePrepared,
             "canceling a capture must return the workflow to its prepared idle state");
+}
+
+void exportCancellationDefersExpensiveCleanup() {
+    ScreenshotCaptureState state;
+    state.sessionState = ScreenshotSessionState::Editing;
+    state.captureInProgress = true;
+    ScreenshotDisplaySession displaySession;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotInteractionState interaction;
+    interaction.beginCapture();
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligentSelection;
+    CaptureRuntime runtime;
+    int captureTerminatedCalls = 0;
+
+    ScreenshotCaptureWorkflow workflow({
+        state,
+        runtime,
+        geometry,
+        displaySession,
+        interaction,
+        selection,
+        intelligentSelection,
+        {},
+        [&captureTerminatedCalls]() { ++captureTerminatedCalls; },
+    });
+
+    workflow.cancelCaptureForExport();
+    require(runtime.cancelActiveCaptureCalls == 1 && captureTerminatedCalls == 1,
+            "export cancellation must stop the active capture before presenting the pin");
+    require(runtime.hideOverlayImmediatelyCalls == 1 && runtime.hideOverlayCalls == 0,
+            "export cancellation must use the immediate overlay hide path");
+    require(runtime.resetForNewCaptureCalls == 0,
+            "export cancellation must defer the expensive capture reset");
+    require(state.sessionState == ScreenshotSessionState::IdlePrepared &&
+                !state.captureInProgress,
+            "export cancellation must leave the workflow ready for presentation");
+
+    workflow.completeDeferredExportCleanup();
+    require(runtime.resetForNewCaptureCalls == 1,
+            "deferred export cleanup must perform the capture reset later");
+    workflow.completeDeferredExportCleanup();
+    require(runtime.resetForNewCaptureCalls == 1,
+            "deferred export cleanup must be idempotent");
 }
 
 void captureOverlapsSelectorInitialization() {
@@ -692,6 +743,7 @@ void captureSessionsApplyTheCurrentSmartSelectionSetting() {
 int main() {
     idlePrewarmDoesNotInitializeSelector();
     endingScreenshotSkipsCaptureReleaseAndPrewarm();
+    exportCancellationDefersExpensiveCleanup();
     captureOverlapsSelectorInitialization();
     synchronousCaptureFailureDoesNotRestartSelectorRefresh();
     restartingCaptureReleasesPreviousSelectorCache();

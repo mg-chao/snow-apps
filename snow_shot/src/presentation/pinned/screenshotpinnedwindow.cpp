@@ -1234,7 +1234,18 @@ void ScreenshotPinnedWindow::retranslateUi() {
     }
 }
 
-bool ScreenshotPinnedWindow::present(const Config& config, std::function<void(bool, QImage)> completion) {
+bool ScreenshotPinnedWindow::present(const Config& config,
+                                    std::function<void(bool, QImage)> completion) {
+    return presentInternal(config, std::move(completion), false);
+}
+
+bool ScreenshotPinnedWindow::presentPending(
+    const Config& config, std::function<void(bool, QImage)> completion) {
+    return presentInternal(config, std::move(completion), true);
+}
+
+bool ScreenshotPinnedWindow::presentInternal(
+    const Config& config, std::function<void(bool, QImage)> completion, bool allowPending) {
     SNOW_SHOT_PIN_PERF_SCOPE("window.present");
     SNOW_SHOT_PIN_PERF_MILESTONE("window.present_enter");
     const QRectF contentCanvasRect =
@@ -1254,7 +1265,7 @@ bool ScreenshotPinnedWindow::present(const Config& config, std::function<void(bo
         !contentCanvasRect.isValid() || contentCanvasRect.isEmpty() ||
         !surfaceCanvasRect.isValid() || surfaceCanvasRect.isEmpty() ||
         !surfaceCanvasRect.contains(contentCanvasRect) ||
-        (!imageSource.isValid() && !config.imageLoader) ||
+        (!allowPending && !imageSource.isValid() && !config.imageLoader) ||
         (config.formattedTextDocument != nullptr &&
          (!std::isfinite(config.formattedTextDevicePixelRatio) ||
           config.formattedTextDevicePixelRatio <= 0.0)) ||
@@ -1290,6 +1301,9 @@ bool ScreenshotPinnedWindow::present(const Config& config, std::function<void(bo
     m_imageSource = std::move(imageSource);
     m_presentationCompletion = std::move(completion);
     m_imageLoader = config.imageLoader;
+    m_pendingImage = allowPending && m_imageSource.isValid() == false && !m_imageLoader;
+    m_firstContentFramePublished = false;
+    setAttribute(Qt::WA_TransparentForMouseEvents, m_pendingImage);
     // A materialized source may only be a geometry placeholder when a loader
     // is present. Do not expose it to OCR or editing as the final image.
     m_originalImage = !m_imageLoader && m_imageSource.isMaterialized()
@@ -1340,7 +1354,7 @@ bool ScreenshotPinnedWindow::present(const Config& config, std::function<void(bo
         finishPresentation(false);
         return false;
     }
-    if (config.enableEditing) {
+    if (config.enableEditing && !m_pendingImage) {
         if (m_editButton != nullptr) {
             m_editButton->show();
         }
@@ -1355,6 +1369,9 @@ bool ScreenshotPinnedWindow::present(const Config& config, std::function<void(bo
                                                  m_resultStyle);
     const bool deferContent = static_cast<bool>(m_imageLoader) || !m_imageSource.isMaterialized();
     m_canvas->setCanvasContentVisible(!deferContent);
+    if (m_pendingImage) {
+        m_canvas->setInteractionEnabled(false);
+    }
     // The pinned renderer paints its image in renderBeforeCanvas, even when the
     // canvas scene content is suppressed. Keep the deferred shell transparent
     // by withholding the source until materialization completes.
@@ -1709,6 +1726,7 @@ bool ScreenshotPinnedWindow::present(const Config& config, std::function<void(bo
     SNOW_SHOT_PIN_PERF_MILESTONE("window.before_show");
     show();
     SNOW_SHOT_PIN_PERF_MILESTONE("window.show_returned");
+    SNOW_SHOT_PIN_PERF_MILESTONE("window.shell_visible");
 #if defined(Q_OS_WIN) || defined(_WIN32)
     if (!deferContent) {
         m_canvas->repaint();
@@ -1719,6 +1737,8 @@ bool ScreenshotPinnedWindow::present(const Config& config, std::function<void(bo
             return false;
         }
         SNOW_SHOT_PIN_PERF_MILESTONE("window.native_paint_synchronized");
+        m_firstContentFramePublished = true;
+        SNOW_SHOT_PIN_PERF_MILESTONE("window.first_content_frame");
     }
 #endif
     if (currentNativeGeometry() != config.nativeGeometry) {
@@ -1746,7 +1766,7 @@ bool ScreenshotPinnedWindow::present(const Config& config, std::function<void(bo
     m_synchronizedResizeWindowId = nativeWindowId;
     m_presented = true;
     raise();
-    if (deferContent) {
+    if (deferContent && !m_pendingImage) {
         requestMaterializedImage([this](bool succeeded) {
             if (!succeeded || m_closing) {
                 finishPresentation(false);
@@ -1759,7 +1779,7 @@ bool ScreenshotPinnedWindow::present(const Config& config, std::function<void(bo
             }
             finishPresentation(true, m_originalImage);
         });
-    } else if (m_presentationCompletion) {
+    } else if (!deferContent && m_presentationCompletion) {
         QTimer::singleShot(0, this, [this]() { finishPresentation(true, m_originalImage); });
     }
     return true;
@@ -1900,6 +1920,9 @@ void ScreenshotPinnedWindow::contextMenuEvent(QContextMenuEvent* event) {
 
 void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
     m_closing = true;
+    m_pendingImage = false;
+    m_firstContentFramePublished = false;
+    setAttribute(Qt::WA_TransparentForMouseEvents, false);
     invalidatePendingCopy();
     finishPresentation(false);
     m_materializationJob.cancel();
@@ -2597,34 +2620,35 @@ void ScreenshotPinnedWindow::finishMaterializedImage(ScreenshotExportTaskResult 
         m_materializationCallbacks.clear();
         return;
     }
-    const bool succeeded = result.succeeded() && !result.image.isNull();
+    bool succeeded = result.succeeded() && !result.image.isNull();
     if (succeeded) {
         SNOW_SHOT_PIN_PERF_SCOPE("window.materialize_image");
-        m_imageLoader = {};
-        m_originalImage = std::move(result.image);
-        m_originalImage.setDevicePixelRatio(1.0);
-        m_originalPixelSize = m_originalImage.size();
-        m_ocrSupported = screenshotOcrImageWithinPixelLimit(m_originalPixelSize);
-        m_transformedImage = ScreenshotResultCompositor::normalizeImage(m_originalImage);
-        m_imageSource =
-            ScreenshotImageSource::fromImage(m_transformedImage, m_backgroundCanvasRect);
-        if (m_screenshotRenderer != nullptr) {
-            m_screenshotRenderer->setImageSource(m_imageSource);
+        succeeded = installMaterializedImage(std::move(result.image));
+        if (!succeeded) {
+            SNOW_SHOT_PIN_PERF_COUNTER("materialization.failure", 1);
         }
-        if (m_recognitionSession != nullptr) {
-            m_recognitionSession->setTarget(ScreenshotRecognitionTarget{
-                !m_recognitionResults.isEmpty()
-                    ? m_recognitionResults.key
-                    : QStringLiteral("pinned:%1").arg(reinterpret_cast<quintptr>(this)),
-                m_originalImage,
-                m_canvasSourceRect, m_formattedTextDocument, m_formattedPlainText});
-            m_recognitionSession->seedRecognitionResults(m_recognitionResults);
-            m_ocrReady = m_recognitionSession->hasTextResult();
+        if (succeeded) {
+            SNOW_SHOT_PIN_PERF_COUNTER("materialization.count", 1);
+            SNOW_SHOT_PIN_PERF_COUNTER("materialization.bytes", m_originalImage.sizeInBytes());
         }
-        SNOW_SHOT_PIN_PERF_COUNTER("materialization.count", 1);
-        SNOW_SHOT_PIN_PERF_COUNTER("materialization.bytes", m_originalImage.sizeInBytes());
     } else {
         SNOW_SHOT_PIN_PERF_COUNTER("materialization.failure", 1);
+    }
+
+    if (succeeded && m_canvas != nullptr && !m_firstContentFramePublished) {
+        m_pendingImage = false;
+        m_canvas->setCanvasContentVisible(!m_ocrMode);
+        m_canvas->update();
+#if defined(Q_OS_WIN) || defined(_WIN32)
+        m_canvas->repaint();
+        if (!native::synchronizeClientPaint(winId())) {
+            succeeded = false;
+        }
+#endif
+        if (succeeded) {
+            m_firstContentFramePublished = true;
+            SNOW_SHOT_PIN_PERF_MILESTONE("window.first_content_frame");
+        }
     }
 
     std::vector<MaterializationCallback> callbacks = std::move(m_materializationCallbacks);
@@ -2634,6 +2658,84 @@ void ScreenshotPinnedWindow::finishMaterializedImage(ScreenshotExportTaskResult 
             callback(succeeded);
         }
     }
+    if (!succeeded && m_presented && !m_closing) {
+        close();
+    }
+}
+
+bool ScreenshotPinnedWindow::installMaterializedImage(QImage image) {
+    if (image.isNull() || image.size().isEmpty() || m_closing) {
+        return false;
+    }
+
+    m_imageLoader = {};
+    m_originalImage = std::move(image);
+    if (m_originalImage.devicePixelRatio() != 1.0) {
+        m_originalImage.setDevicePixelRatio(1.0);
+    }
+    m_originalPixelSize = m_originalImage.size();
+    m_ocrSupported = screenshotOcrImageWithinPixelLimit(m_originalPixelSize);
+    m_transformedImage = ScreenshotResultCompositor::normalizeImage(m_originalImage);
+    m_imageSource = ScreenshotImageSource::fromImage(m_transformedImage, m_backgroundCanvasRect);
+    if (m_screenshotRenderer != nullptr) {
+        m_screenshotRenderer->setImageSource(m_imageSource);
+    }
+    if (m_recognitionSession != nullptr) {
+        m_recognitionSession->setTarget(ScreenshotRecognitionTarget{
+            !m_recognitionResults.isEmpty()
+                ? m_recognitionResults.key
+                : QStringLiteral("pinned:%1").arg(reinterpret_cast<quintptr>(this)),
+            m_originalImage,
+            m_canvasSourceRect, m_formattedTextDocument, m_formattedPlainText});
+        m_recognitionSession->seedRecognitionResults(m_recognitionResults);
+        m_ocrReady = m_recognitionSession->hasTextResult();
+    }
+    return true;
+}
+
+bool ScreenshotPinnedWindow::publishMaterializedImage(QImage image) {
+    if (!m_presented || !m_pendingImage || m_closing) {
+        return false;
+    }
+    if (image.isNull()) {
+        m_pendingImage = false;
+        finishPresentation(false);
+        close();
+        return false;
+    }
+    if (!installMaterializedImage(std::move(image))) {
+        m_pendingImage = false;
+        finishPresentation(false);
+        close();
+        return false;
+    }
+
+    m_pendingImage = false;
+    setAttribute(Qt::WA_TransparentForMouseEvents, false);
+    if (m_canvas != nullptr) {
+        m_canvas->setInteractionEnabled(m_editingEnabled);
+    }
+    if (m_editingEnabled && m_editButton != nullptr) {
+        m_editButton->show();
+    }
+    if (m_canvas != nullptr) {
+        m_canvas->setCanvasContentVisible(!m_ocrMode);
+        m_canvas->update();
+    }
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    if (m_canvas != nullptr) {
+        m_canvas->repaint();
+    }
+    if (!native::synchronizeClientPaint(winId())) {
+        finishPresentation(false);
+        close();
+        return false;
+    }
+#endif
+    m_firstContentFramePublished = true;
+    SNOW_SHOT_PIN_PERF_MILESTONE("window.first_content_frame");
+    finishPresentation(true, m_originalImage);
+    return true;
 }
 
 void ScreenshotPinnedWindow::finishPresentation(bool succeeded, QImage image) {

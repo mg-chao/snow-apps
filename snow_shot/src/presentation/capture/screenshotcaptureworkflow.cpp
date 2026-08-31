@@ -67,6 +67,9 @@ void ScreenshotCaptureWorkflow::prewarmResources() {
 
 void ScreenshotCaptureWorkflow::startCapture(
     ScreenshotCapturePresentationMode presentationMode, quintptr focusedWindowHandle) {
+    if (m_deferredExportCleanup) {
+        completeDeferredExportCleanup();
+    }
     bool reusePriorCleanup = false;
     const bool coldStart = m_state.sessionState == ScreenshotSessionState::IdleCold;
     SNOW_SHOT_CAPTURE_PERF_BEGIN(presentationMode ==
@@ -131,6 +134,21 @@ void ScreenshotCaptureWorkflow::cancelCapture() {
     }
 }
 
+void ScreenshotCaptureWorkflow::cancelCaptureForExport() {
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("workflow.export_cancel_requested");
+    m_context.runtime.cancelActiveCapture();
+    if (m_context.captureTerminated) {
+        m_context.captureTerminated();
+    }
+    ++m_state.sessionId;
+    m_state.sessionState = ScreenshotSessionState::Releasing;
+    m_state.captureInProgress = false;
+    m_focusedWindowHandle = 0;
+    m_refreshAfterCapture = false;
+    resetCaptureModels();
+    finishCaptureSession(true);
+}
+
 void ScreenshotCaptureWorkflow::clearCapturePresentationReadiness() {
     m_preparedPresentationSessionId = 0;
     m_capturedPresentationSessionId = 0;
@@ -155,14 +173,38 @@ void ScreenshotCaptureWorkflow::clearDisplays() {
     m_context.geometry.clear();
 }
 
-void ScreenshotCaptureWorkflow::finishCaptureSession() {
+void ScreenshotCaptureWorkflow::finishCaptureSession(bool deferExportCleanup) {
     m_context.runtime.releaseSelectorCache();
-    m_context.runtime.hideOverlayWindows(m_context.displaySession);
+    if (deferExportCleanup) {
+        m_context.runtime.hideOverlayWindowsImmediately(m_context.displaySession);
+    } else {
+        m_context.runtime.hideOverlayWindows(m_context.displaySession);
+    }
     if (m_context.presentation.hideToolbar) {
         m_context.presentation.hideToolbar();
     }
     clearDisplays();
+    if (deferExportCleanup) {
+        m_deferredExportCleanup = true;
+    } else {
+        m_context.runtime.resetForNewCapture(m_context.displaySession);
+        m_deferredExportCleanup = false;
+    }
+    m_state.sessionState = ScreenshotSessionState::IdlePrepared;
+}
+
+void ScreenshotCaptureWorkflow::completeDeferredExportCleanup() {
+    if (!m_deferredExportCleanup) {
+        return;
+    }
     m_context.runtime.resetForNewCapture(m_context.displaySession);
+    if (!m_canvasRuntimeClean) {
+        resetCanvasRuntimeState();
+    }
+    if (m_context.presentation.hideToolbar) {
+        m_context.presentation.hideToolbar();
+    }
+    m_deferredExportCleanup = false;
     m_state.sessionState = ScreenshotSessionState::IdlePrepared;
 }
 
@@ -174,6 +216,9 @@ void ScreenshotCaptureWorkflow::destroyDisplayPool() {
 }
 
 void ScreenshotCaptureWorkflow::cleanupActiveSessionForRestart() {
+    if (m_deferredExportCleanup) {
+        completeDeferredExportCleanup();
+    }
     m_context.runtime.cancelActiveCapture();
     if (m_context.captureTerminated) {
         m_context.captureTerminated();

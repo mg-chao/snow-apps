@@ -4,7 +4,7 @@ param(
     [string]$OutputDirectory = "",
     [int]$ScreenIndex = 0,
     [int]$Warmups = 3,
-    [int]$Samples = 20,
+    [int]$Samples = 40,
     [int]$TimeoutMilliseconds = 30000,
     [string]$Scenarios = "all",
     [int]$ScrollSteps = 8,

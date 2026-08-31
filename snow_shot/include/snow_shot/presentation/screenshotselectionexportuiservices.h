@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONEXPORTUISERVICES_H
 
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
+#include "snow_shot/presentation/screenshotimagesource.h"
 #include "snow_shot/presentation/screenshotselectionexportworkflowports.h"
 
 #include <atomic>
@@ -48,6 +49,7 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
                                           PinnedCompletion completion = {});
     [[nodiscard]] bool
     presentPinnedSelection(const ScreenshotPinnedSelectionRequest& request,
+                           ScreenshotPinnedSelectionResultHandle result,
                            PinnedCompletion completion) override;
 
   private:

@@ -218,6 +218,11 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
         StartVideo,
     };
 
+    enum class ExportDetachMode {
+        Immediate,
+        DeferredPresentation,
+    };
+
     enum class AutomaticSelectionMode {
         None,
         CurrentMonitor,
@@ -270,7 +275,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     [[nodiscard]] bool imageExportNotificationCurrent(quint64 generation) const;
     [[nodiscard]] bool finishImageExport(quint64 generation);
     void hideImageExportPresentation();
-    void detachCaptureForExport();
+    void detachCaptureForExport(ExportDetachMode mode = ExportDetachMode::Immediate);
+    void scheduleDeferredExportCleanup();
     void trackExportJob(const ScreenshotExportJobHandle& handle);
     void trackClipboardCommit(const ScreenshotClipboardCommitHandle& handle);
     void completeScrollingResultExport(quint64 generation);
@@ -1657,8 +1663,10 @@ void ScreenshotController::Impl::hideImageExportPresentation() {
     }
 }
 
-void ScreenshotController::Impl::detachCaptureForExport() {
-    hideImageExportPresentation();
+void ScreenshotController::Impl::detachCaptureForExport(ExportDetachMode mode) {
+    if (mode == ExportDetachMode::Immediate) {
+        hideImageExportPresentation();
+    }
     if (m_scrollingCaptureController != nullptr) {
         m_scrollingCaptureController->detachPendingResultRequest();
     }
@@ -1667,8 +1675,22 @@ void ScreenshotController::Impl::detachCaptureForExport() {
         m_ocrController->invalidateSession();
     }
     if (m_captureWorkflow != nullptr) {
-        m_captureWorkflow->cancelCapture();
+        if (mode == ExportDetachMode::DeferredPresentation) {
+            m_captureWorkflow->cancelCaptureForExport();
+        } else {
+            m_captureWorkflow->cancelCapture();
+        }
     }
+}
+
+void ScreenshotController::Impl::scheduleDeferredExportCleanup() {
+    const QPointer<ScreenshotController> receiver(&owner);
+    QTimer::singleShot(0, &owner, [receiver]() {
+        if (!receiver.isNull() && receiver->m_impl != nullptr &&
+            receiver->m_impl->m_captureWorkflow != nullptr) {
+            receiver->m_impl->m_captureWorkflow->completeDeferredExportCleanup();
+        }
+    });
 }
 
 void ScreenshotController::Impl::trackExportJob(const ScreenshotExportJobHandle& handle) {
@@ -1901,9 +1923,10 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
                                                QCoreApplication::translate(
                                                    "ScreenshotController",
                                                    "The scrolling screenshot could not be pinned"));
-                                       }
-                                       receiver->m_impl->completeScrollingResultExport(generation);
-                                   });
+                                        }
+                                        receiver->m_impl->completeScrollingResultExport(generation);
+                                        receiver->m_impl->scheduleDeferredExportCleanup();
+                                    });
         SNOW_SHOT_PIN_PERF_MILESTONE("controller.presented");
         if (!presented) {
             SNOW_SHOT_PIN_PERF_FINISH(false);
@@ -1914,8 +1937,10 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
                         "ScreenshotController", "The scrolling screenshot could not be pinned"));
             }
             completeScrollingResultExport(*exportGeneration);
+            scheduleDeferredExportCleanup();
         }
-        detachCaptureForExport();
+        hideImageExportPresentation();
+        detachCaptureForExport(ExportDetachMode::DeferredPresentation);
         SNOW_SHOT_PIN_PERF_MILESTONE("controller.presentation_hidden");
         return;
     }
@@ -1984,6 +2009,7 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
             if (receiver->m_impl->m_historyService != nullptr) {
                 receiver->m_impl->m_historyService->resetCaptureNavigation();
             }
+            receiver->m_impl->scheduleDeferredExportCleanup();
         });
     if (!scheduled) {
         historyState->pinDone = true;
@@ -2003,7 +2029,7 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
         m_captureWorkflow->cancelCapture();
         return;
     }
-    detachCaptureForExport();
+    detachCaptureForExport(ExportDetachMode::DeferredPresentation);
 }
 
 void ScreenshotController::Impl::setScrollingScreenshotRecognitionMode(

@@ -151,12 +151,9 @@ void ScreenshotOverlayCoordinator::showOverlayWindows(
 
 void ScreenshotOverlayCoordinator::hideOverlayWindowsImmediately(
     const ScreenshotDisplaySession& displaySession) {
-    // Reset the pooled toolbars before hiding them. Translucent Windows
-    // surfaces retain their last composed frame while hidden, so resetting
-    // after hide lets the old style/selection row flash on the next show.
-    // Retire only the native overlay surfaces here: pin/copy exports may still
-    // consume the renderer and canvas state asynchronously after this hide.
-    m_uiHost.resetToolbarForNewCapture();
+    // This path is on the first-frame critical path of an export. Hide the
+    // interaction surfaces and leave renderer/native-surface retirement to the
+    // deferred maintenance pass.
     m_uiHost.hideToolbar();
     m_uiHost.hideShortcutHints();
     SNOW_SHOT_PIN_PERF_MILESTONE("overlay.toolbar_hidden");
@@ -164,13 +161,11 @@ void ScreenshotOverlayCoordinator::hideOverlayWindowsImmediately(
         if (overlay == nullptr) {
             return;
         }
-        overlay->setCanvasClearBackgroundEnabled(false);
         overlay->clearInputPassThroughRect();
-        // The export has already snapshotted the display/model inputs by
-        // the time this presentation is detached. Retire only the native
-        // surface; the renderer and scrolling thumbnail remain available
-        // until the asynchronous export consumes them.
-        overlay->releaseNativeSurface();
+        if (overlay->canvas() != nullptr) {
+            overlay->canvas()->setInteractionEnabled(false);
+        }
+        overlay->hide();
     });
     m_overlayMaintenancePending = true;
     SNOW_SHOT_PIN_PERF_MILESTONE("overlay.overlays_hidden");

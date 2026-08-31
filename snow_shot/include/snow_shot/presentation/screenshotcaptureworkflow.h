@@ -54,6 +54,8 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
                           ScreenshotCapturePresentationMode::Overlay,
                       quintptr focusedWindowHandle = 0);
     void cancelCapture();
+    void cancelCaptureForExport();
+    void completeDeferredExportCleanup();
     void handleInitialSmartSelectionResolved(quint64 sessionId);
 
     void destroyDisplayPool();
@@ -65,7 +67,7 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     void clearCapturePresentationReadiness();
     void resetCaptureModels();
     void clearDisplays();
-    void finishCaptureSession();
+    void finishCaptureSession(bool deferExportCleanup = false);
     void cleanupActiveSessionForRestart();
     void beginCapturePreparation(quint64 sessionId);
     [[nodiscard]] bool beginCapturePresentation(quint64 sessionId);
@@ -94,6 +96,7 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     quintptr m_focusedWindowHandle = 0;
     bool m_captureModelsClean = false;
     bool m_canvasRuntimeClean = false;
+    bool m_deferredExportCleanup = false;
     bool m_layoutRefreshInFlight = false;
     bool m_refreshAfterCapture = false;
     quint64 m_layoutChangeSerial = 0;

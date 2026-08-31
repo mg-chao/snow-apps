@@ -131,12 +131,10 @@ QImage waitForResult(ScheduleRequest scheduleRequest, ResultImage resultImage) {
     return image;
 }
 
-QImage materializePinnedRequest(ScreenshotPinnedSelectionRequest request) {
-    if (!request.imageLoader) {
-        return request.imageSource.isMaterialized() ? request.imageSource.materializedImage
-                                                   : QImage{};
-    }
-
+QImage waitForPinnedResult(ScreenshotExportService& service,
+                           const ScreenshotPinnedSelectionRequest& request,
+                           std::optional<ScreenshotPinnedSelectionRequest>* deliveredRequest = nullptr,
+                           bool* deliveredSuccess = nullptr) {
     QObject receiver;
     QEventLoop loop;
     QTimer timeout;
@@ -148,10 +146,25 @@ QImage materializePinnedRequest(ScreenshotPinnedSelectionRequest request) {
         timedOut = true;
         loop.quit();
     });
-    request.imageLoader(&receiver, [&image, &loop](QImage loaded) {
-        image = std::move(loaded);
-        loop.quit();
-    });
+    const bool scheduled = service.schedulePinnedSelection(
+        request, &receiver,
+        [&receiver, &image, &loop, deliveredRequest, deliveredSuccess](
+            ScreenshotPinnedSelectionRequest delivered,
+            ScreenshotPinnedSelectionResultHandle result) mutable {
+            if (deliveredRequest != nullptr) {
+                *deliveredRequest = delivered;
+            }
+            const bool subscribed = result.subscribe(
+                &receiver, [&image, &loop, deliveredSuccess](bool success, QImage value) mutable {
+                    if (deliveredSuccess != nullptr) {
+                        *deliveredSuccess = success;
+                    }
+                    image = std::move(value);
+                    loop.quit();
+                });
+            require(subscribed, "pinned result handle could not be subscribed");
+        });
+    require(scheduled, "pinned export was not scheduled");
     timeout.start();
     loop.exec();
     timeout.stop();
@@ -275,27 +288,17 @@ void pinnedSelectionMaterializesCompositedImage() {
 
     const std::optional<ScreenshotPinnedSelectionRequest> prepared =
         fixture.service().preparePinnedSelection(selection, style);
-    require(prepared.has_value() && prepared->isPrepared() && !prepared->isValid(),
-            "pinned selection should be prepared before its image is materialized");
+    require(prepared.has_value() && prepared->isPrepared(),
+            "pinned selection should be prepared before its image is rendered");
 
     std::optional<ScreenshotPinnedSelectionRequest> materialized;
-    const QImage pinnedImage = waitForResult(
-        [&](QObject* receiver, auto callback) {
-            return fixture.service().schedulePinnedSelection(
-                *prepared, receiver,
-                [&materialized, callback = std::move(callback)](
-                    ScreenshotPinnedSelectionRequest request) mutable {
-                    materialized = request;
-                    callback(std::move(request));
-                });
-        },
-        [](ScreenshotPinnedSelectionRequest request) {
-            return materializePinnedRequest(std::move(request));
-        });
+    bool pinnedSuccess = false;
+    const QImage pinnedImage = waitForPinnedResult(fixture.service(), *prepared, &materialized,
+                                                   &pinnedSuccess);
     require(materialized.has_value() && materialized->isPrepared(),
             "pinned selection callback did not receive a valid prepared request");
-    require(materialized->imageSource.isLayered(),
-            "pinned selection callback should retain a lazy layered source");
+    require(pinnedSuccess && !pinnedImage.isNull(),
+            "pinned selection result handle did not publish a rendered image");
 
     const QImage expected = waitForResult(
         [&](QObject* receiver, auto callback) {

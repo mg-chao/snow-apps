@@ -70,12 +70,16 @@ class FakeDestination final : public ScreenshotSelectionExportDestinationPort {
     }
 
     bool presentPinnedSelection(const ScreenshotPinnedSelectionRequest& request,
+                                ScreenshotPinnedSelectionResultHandle result,
                                 PinnedCompletion completion) override {
+        Q_UNUSED(result);
         ++presentCount;
         if (!presentationSucceeds) {
             return false;
         }
-        completion(true, QImage(request.fullResolutionScaleBasis, QImage::Format_ARGB32));
+        QImage image(request.fullResolutionScaleBasis, QImage::Format_ARGB32);
+        image.fill(Qt::white);
+        completion(true, std::move(image));
         return true;
     }
 

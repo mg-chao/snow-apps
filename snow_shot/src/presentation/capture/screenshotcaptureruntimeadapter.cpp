@@ -183,6 +183,11 @@ void ScreenshotCaptureRuntimeAdapter::showOverlayWindows(
     m_context.overlayCoordinator.showOverlayWindows(displaySession, mode);
 }
 
+void ScreenshotCaptureRuntimeAdapter::hideOverlayWindowsImmediately(
+    const ScreenshotDisplaySession& displaySession) {
+    m_context.overlayCoordinator.hideOverlayWindowsImmediately(displaySession);
+}
+
 void ScreenshotCaptureRuntimeAdapter::hideOverlayWindows(
     const ScreenshotDisplaySession& displaySession) {
     m_context.overlayCoordinator.hideOverlayWindows(displaySession);

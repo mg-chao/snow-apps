@@ -1676,6 +1676,78 @@ void pinnedAsyncPresentationDefersContent(SnowCanvasRuntime&) {
             "close-during-load pinned window was not deleted");
 }
 
+void pinnedPendingPresentationPublishesWorkerImage(SnowCanvasRuntime&) {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+
+    QImage materializedImage(QSize(160, 96), QImage::Format_ARGB32_Premultiplied);
+    materializedImage.fill(QColor(84, 168, 112));
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(60, 60), materializedImage.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(materializedImage.size()));
+    config.contentCanvasRect = config.canvasSourceRect;
+    config.surfaceCanvasRect = config.canvasSourceRect;
+    config.fullResolutionScaleBasis = materializedImage.size();
+    config.screen = screen;
+    config.enableEditing = true;
+
+    auto* window = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
+    QPointer<ScreenshotPinnedWindow> guardedWindow(window);
+    int completionCount = 0;
+    bool completionSuccess = false;
+    require(window->presentPending(
+                config, [&completionCount, &completionSuccess](bool success, QImage image) {
+                    ++completionCount;
+                    completionSuccess = success && !image.isNull();
+                }),
+            "pending pinned presentation failed to create its shell");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    auto* canvas = window->findChild<SnowCanvasWidget*>();
+    QPushButton* editButton = buttonNamed(*window, QStringLiteral("Enable drawing mode"));
+    require(window->isVisible() && canvas != nullptr && !canvas->canvasContentVisible() &&
+                window->testAttribute(Qt::WA_TransparentForMouseEvents) &&
+                !canvas->interactionEnabled() && editButton != nullptr && editButton->isHidden() &&
+                completionCount == 0,
+            "pending pinned presentation should expose a transparent noninteractive shell");
+
+    require(window->publishMaterializedImage(materializedImage),
+            "pending pinned presentation rejected the worker image");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    require(canvas->canvasContentVisible(),
+            "publishing a pending image should reveal the pinned canvas content");
+    require(canvas->interactionEnabled(),
+            "publishing a pending image should re-enable canvas interaction");
+    require(!window->testAttribute(Qt::WA_TransparentForMouseEvents),
+            "publishing a pending image should re-enable window mouse events");
+    require(!editButton->isHidden(),
+            "publishing a pending image should reveal the editing control");
+    require(completionCount == 1 && completionSuccess,
+            "publishing a pending image should complete exactly once successfully");
+    require(!window->publishMaterializedImage(materializedImage) && completionCount == 1,
+            "a pending pinned image must not be published twice");
+
+    window->close();
+    require(processUntilDeleted(guardedWindow, 2000),
+            "pending pinned window was not deleted after publishing its image");
+
+    auto* failedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
+    QPointer<ScreenshotPinnedWindow> guardedFailedWindow(failedWindow);
+    int failureCount = 0;
+    bool failureSuccess = true;
+    require(failedWindow->presentPending(
+                config, [&failureCount, &failureSuccess](bool success, QImage) {
+                    ++failureCount;
+                    failureSuccess = success;
+                }),
+            "failed pending presentation could not create its shell");
+    require(!failedWindow->publishMaterializedImage({}),
+            "a null pending image should fail publication");
+    require(failureCount == 1 && !failureSuccess,
+            "a failed pending publication should complete exactly once");
+    require(processUntilDeleted(guardedFailedWindow, 2000),
+            "failed pending pinned window was not closed");
+}
+
 void pinnedRecognitionPromotesAutomaticPrefetch(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -3501,6 +3573,10 @@ int main(int argc, char* argv[]) {
             pinnedAsyncPresentationDefersContent(sourceRuntime);
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--pending-presentation-only"))) {
+            pinnedPendingPresentationPublishesWorkerImage(sourceRuntime);
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--tray-pin-runtime-only"))) {
             pinnedContextMenuAndModes(sourceRuntime);
             pinnedControlsMatchReferenceStyle(sourceRuntime);
@@ -3535,6 +3611,7 @@ int main(int argc, char* argv[]) {
         pinnedCloseCancelsPendingRecognition(sourceRuntime);
         pinnedAutomaticRecognitionCanBeDisabled(sourceRuntime);
         pinnedCloseAfterRecognizedText(sourceRuntime);
+        pinnedPendingPresentationPublishesWorkerImage(sourceRuntime);
         pinnedAsyncPresentationDefersContent(sourceRuntime);
         pinnedRecognitionProviderLossEndsBusyState(sourceRuntime);
         pinnedFormattedClipboardTextSkipsOcrAndSeedsPlainTextEditing(sourceRuntime);
