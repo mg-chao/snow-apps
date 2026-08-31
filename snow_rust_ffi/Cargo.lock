@@ -1493,6 +1493,7 @@ dependencies = [
  "sha2",
  "thiserror",
  "unicode-bidi",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

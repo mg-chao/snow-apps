@@ -5,10 +5,82 @@ use std::{
     time::Duration,
 };
 
+#[cfg(not(target_os = "windows"))]
+use std::sync::{Mutex, OnceLock};
+
+#[cfg(target_os = "windows")]
+use std::{ffi::OsStr, os::windows::ffi::OsStrExt, ptr};
+
 use reqwest::blocking::Client;
 use sha2::{Digest, Sha256};
 
 use crate::error::{RapidOcrError, Result};
+
+#[cfg(not(target_os = "windows"))]
+static DOWNLOAD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+struct DownloadGuard {
+    #[cfg(target_os = "windows")]
+    handle: windows_sys::Win32::Foundation::HANDLE,
+    #[cfg(not(target_os = "windows"))]
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
+fn acquire_download_guard(save_dir: &Path) -> Result<DownloadGuard> {
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::{
+            Foundation::{CloseHandle, WAIT_ABANDONED, WAIT_OBJECT_0},
+            System::Threading::{CreateMutexW, INFINITE, WaitForSingleObject},
+        };
+
+        // A named kernel mutex serializes model downloads across all Snow Shot
+        // processes that share the same application-storage directory.
+        let mut hasher = Sha256::new();
+        hasher.update(save_dir.to_string_lossy().as_bytes());
+        let name = format!("Local\\SnowShotRapidOcrModel-{:x}", hasher.finalize());
+        let wide_name: Vec<u16> = OsStr::new(&name)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let handle = unsafe { CreateMutexW(ptr::null(), 0, wide_name.as_ptr()) };
+        if handle.is_null() {
+            return Err(RapidOcrError::Download(
+                "unable to create OCR model download mutex".to_string(),
+            ));
+        }
+        let wait_result = unsafe { WaitForSingleObject(handle, INFINITE) };
+        if wait_result != WAIT_OBJECT_0 && wait_result != WAIT_ABANDONED {
+            unsafe {
+                CloseHandle(handle);
+            }
+            return Err(RapidOcrError::Download(
+                "waiting for OCR model download mutex failed".to_string(),
+            ));
+        }
+        return Ok(DownloadGuard { handle });
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let guard = DOWNLOAD_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .map_err(|_| RapidOcrError::Download("model download lock was poisoned".to_string()))?;
+        Ok(DownloadGuard { _guard: guard })
+    }
+}
+
+impl Drop for DownloadGuard {
+    fn drop(&mut self) {
+        #[cfg(target_os = "windows")]
+        unsafe {
+            use windows_sys::Win32::{Foundation::CloseHandle, System::Threading::ReleaseMutex};
+            ReleaseMutex(self.handle);
+            CloseHandle(self.handle);
+        }
+    }
+}
 
 pub fn default_model_store_dir() -> PathBuf {
     if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
@@ -41,6 +113,10 @@ pub fn ensure_downloaded(
 ) -> Result<PathBuf> {
     let save_dir = save_dir.as_ref();
     fs::create_dir_all(save_dir)?;
+
+    // Hold the guard across the existence check and atomic replacement so only
+    // one transfer owns the shared .part file at a time.
+    let _lock = acquire_download_guard(save_dir)?;
 
     let file_name = extract_file_name(file_url)?;
     let target_path = save_dir.join(file_name);

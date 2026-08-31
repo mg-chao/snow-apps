@@ -1,13 +1,14 @@
 use rapid_ocr_rs::{
-    DictionarySource, EngineConfig, LangDet, LangRec, ModelSource, ModelType, OcrCallOptions,
-    OcrInput, OcrResult, OcrVersion, PipelineSources, ProviderPreference, Quad, RapidOcr,
-    RapidOcrError, ResolvedExecutionProvider, directml_is_available, initialize_onnx_runtime,
+    EngineConfig, LangDet, LangRec, ModelType, OcrCallOptions, OcrInput, OcrResult, OcrVersion,
+    ProviderPreference, Quad, RapidOcr, RapidOcrError, ResolvedExecutionProvider,
+    directml_is_available, initialize_onnx_runtime,
 };
 use std::{
     cell::RefCell,
-    ffi::{CString, c_char},
+    ffi::{CStr, CString, c_char},
     mem::size_of,
     panic::{AssertUnwindSafe, catch_unwind},
+    path::PathBuf,
     ptr, slice,
     sync::{
         OnceLock,
@@ -15,9 +16,6 @@ use std::{
     },
 };
 
-const DETECTOR_BYTES: &[u8] = include_bytes!("../assets/ppocrv6-small/PP-OCRv6_det_small.onnx");
-const RECOGNIZER_BYTES: &[u8] = include_bytes!("../assets/ppocrv6-small/PP-OCRv6_rec_small.onnx");
-const DICTIONARY_TEXT: &str = include_str!("../assets/ppocrv6-small/ppocrv6_dict.txt");
 static ONNX_RUNTIME_INITIALIZATION: OnceLock<Result<(), String>> = OnceLock::new();
 static DIRECTML_AVAILABILITY: OnceLock<bool> = OnceLock::new();
 static LIVE_ENGINES: AtomicUsize = AtomicUsize::new(0);
@@ -46,6 +44,7 @@ pub struct SnowOcrEngineConfigV2 {
     pub enable_cpu_mem_arena: u8,
     pub use_directml: u8,
     pub reserved: [u8; 2],
+    pub model_store_dir_utf8: *const c_char,
 }
 
 #[repr(C)]
@@ -102,13 +101,14 @@ fn clear_last_error() {
     set_last_error("");
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct EngineSettings {
     intra_threads: Option<usize>,
     inter_threads: Option<usize>,
     rayon_threads: Option<usize>,
     enable_cpu_mem_arena: bool,
     use_directml: bool,
+    model_store_dir: Option<PathBuf>,
 }
 
 impl EngineSettings {
@@ -119,19 +119,33 @@ impl EngineSettings {
             rayon_threads: None,
             enable_cpu_mem_arena: true,
             use_directml,
+            model_store_dir: None,
         }
     }
 }
 
-fn engine_settings_from_config(config: &SnowOcrEngineConfigV2) -> EngineSettings {
+fn engine_settings_from_config(
+    config: &SnowOcrEngineConfigV2,
+) -> std::result::Result<EngineSettings, String> {
     let nonzero = |value: u32| (value > 0).then_some(value as usize);
-    EngineSettings {
+    let model_store_dir = if config.model_store_dir_utf8.is_null() {
+        None
+    } else {
+        // The caller owns the pointer only for the duration of this FFI call;
+        // copy it before any worker-visible state is created.
+        let value = unsafe { CStr::from_ptr(config.model_store_dir_utf8) }
+            .to_str()
+            .map_err(|_| "OCR model store directory is not valid UTF-8".to_string())?;
+        (!value.trim().is_empty()).then(|| PathBuf::from(value))
+    };
+    Ok(EngineSettings {
         intra_threads: nonzero(config.intra_threads),
         inter_threads: nonzero(config.inter_threads),
         rayon_threads: nonzero(config.rayon_threads),
         enable_cpu_mem_arena: config.enable_cpu_mem_arena != 0,
         use_directml: config.use_directml != 0,
-    }
+        model_store_dir,
+    })
 }
 
 fn create_engine_with_settings(
@@ -139,14 +153,14 @@ fn create_engine_with_settings(
 ) -> rapid_ocr_rs::Result<(RapidOcr, ResolvedExecutionProvider)> {
     ensure_onnx_runtime().map_err(rapid_ocr_rs::RapidOcrError::Config)?;
     if settings.use_directml {
-        let (config, sources) = embedded_pipeline(settings);
-        match RapidOcr::new_with_sources(config, sources) {
+        let config = pipeline_config(&settings);
+        match RapidOcr::new(config) {
             Ok(pipeline) => return Ok((pipeline, ResolvedExecutionProvider::DirectMl)),
             Err(directml_error) => {
-                let mut cpu_settings = settings;
+                let mut cpu_settings = settings.clone();
                 cpu_settings.use_directml = false;
-                let (config, sources) = embedded_pipeline(cpu_settings);
-                return RapidOcr::new_with_sources(config, sources)
+                let config = pipeline_config(&cpu_settings);
+                return RapidOcr::new(config)
                     .map(|pipeline| (pipeline, ResolvedExecutionProvider::Cpu))
                     .map_err(|cpu_error| {
                         RapidOcrError::Config(format!(
@@ -157,12 +171,11 @@ fn create_engine_with_settings(
         }
     }
 
-    let (config, sources) = embedded_pipeline(settings);
-    RapidOcr::new_with_sources(config, sources)
-        .map(|pipeline| (pipeline, ResolvedExecutionProvider::Cpu))
+    let config = pipeline_config(&settings);
+    RapidOcr::new(config).map(|pipeline| (pipeline, ResolvedExecutionProvider::Cpu))
 }
 
-fn embedded_pipeline(settings: EngineSettings) -> (EngineConfig, PipelineSources<'static>) {
+fn pipeline_config(settings: &EngineSettings) -> EngineConfig {
     let mut config = EngineConfig::default();
     config.global.use_det = true;
     config.global.use_cls = false;
@@ -170,11 +183,13 @@ fn embedded_pipeline(settings: EngineSettings) -> (EngineConfig, PipelineSources
     config.det.lang = LangDet::Multi;
     config.det.ocr_version = OcrVersion::PPocrV6;
     config.det.model_type = ModelType::Small;
-    config.det.allow_download = false;
+    config.det.allow_download = true;
+    config.det.model_store_dir = settings.model_store_dir.clone();
     config.rec.model.lang = LangRec::Ch;
     config.rec.model.ocr_version = OcrVersion::PPocrV6;
     config.rec.model.model_type = ModelType::Small;
-    config.rec.model.allow_download = false;
+    config.rec.model.allow_download = true;
+    config.rec.model_store_dir = settings.model_store_dir.clone();
     for runtime in [
         &mut config.det.runtime,
         &mut config.cls.runtime,
@@ -207,22 +222,7 @@ fn embedded_pipeline(settings: EngineSettings) -> (EngineConfig, PipelineSources
         config.rec.runtime.provider_preference = ProviderPreference::Cpu;
     }
 
-    let sources = PipelineSources {
-        det: Some(ModelSource::Memory {
-            name: "embedded:PP-OCRv6_det_small.onnx",
-            bytes: DETECTOR_BYTES,
-        }),
-        cls: None,
-        rec: Some(ModelSource::Memory {
-            name: "embedded:PP-OCRv6_rec_small.onnx",
-            bytes: RECOGNIZER_BYTES,
-        }),
-        rec_dictionary: Some(DictionarySource::Memory {
-            name: "embedded:ppocrv6_dict.txt",
-            text: DICTIONARY_TEXT,
-        }),
-    };
-    (config, sources)
+    config
 }
 
 fn ensure_onnx_runtime() -> Result<(), String> {
@@ -276,7 +276,14 @@ pub unsafe extern "C" fn snow_ocr_engine_create_with_config_v2(
         set_last_error("OCR engine config has an incompatible struct size");
         return ptr::null_mut();
     }
-    create_engine_handle(engine_settings_from_config(config))
+    let settings = match engine_settings_from_config(config) {
+        Ok(settings) => settings,
+        Err(error) => {
+            set_last_error(error);
+            return ptr::null_mut();
+        }
+    };
+    create_engine_handle(settings)
 }
 
 #[unsafe(no_mangle)]
@@ -517,26 +524,6 @@ pub extern "C" fn snow_ocr_last_error_message() -> *const c_char {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sha2::{Digest, Sha256};
-
-    #[test]
-    fn embedded_assets_match_pinned_hashes() {
-        assert_eq!(DETECTOR_BYTES.len(), 9_929_594);
-        assert_eq!(RECOGNIZER_BYTES.len(), 21_234_383);
-        assert_eq!(DICTIONARY_TEXT.len(), 74_947);
-        assert_eq!(
-            format!("{:x}", Sha256::digest(DETECTOR_BYTES)),
-            "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f"
-        );
-        assert_eq!(
-            format!("{:x}", Sha256::digest(RECOGNIZER_BYTES)),
-            "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884"
-        );
-        assert_eq!(
-            format!("{:x}", Sha256::digest(DICTIONARY_TEXT.as_bytes())),
-            "b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d"
-        );
-    }
 
     #[test]
     fn ffi_result_exposes_complete_lines() {
@@ -592,7 +579,9 @@ mod tests {
             enable_cpu_mem_arena: 0,
             use_directml: 1,
             reserved: [0; 2],
-        });
+            model_store_dir_utf8: ptr::null(),
+        })
+        .expect("valid engine config should parse");
 
         assert_eq!(settings.intra_threads, None);
         assert_eq!(settings.inter_threads, Some(2));
@@ -602,9 +591,24 @@ mod tests {
     }
 
     #[test]
-    fn embedded_pipeline_recognizes_an_rgba_image() {
+    fn disk_pipeline_config_enables_downloads() {
+        let path = PathBuf::from("test-model-store");
+        let settings = EngineSettings {
+            model_store_dir: Some(path.clone()),
+            ..EngineSettings::legacy(false)
+        };
+        let config = pipeline_config(&settings);
+        assert!(config.det.allow_download);
+        assert_eq!(config.det.model_store_dir, Some(path.clone()));
+        assert!(config.rec.model.allow_download);
+        assert_eq!(config.rec.model_store_dir, Some(path));
+    }
+
+    #[test]
+    #[ignore = "downloads PP-OCRv6 models and runs ONNX inference"]
+    fn disk_pipeline_recognizes_an_rgba_image() {
         let (pipeline, backend) = create_engine_with_settings(EngineSettings::legacy(false))
-            .expect("embedded OCR pipeline should initialize");
+            .expect("disk-backed OCR pipeline should initialize");
         let mut engine = SnowOcrEngine { pipeline, backend };
         let rgba = vec![255_u8; 64 * 64 * 4];
         let request = SnowOcrRequestV1 {
@@ -615,7 +619,7 @@ mod tests {
             rgba_bytes: rgba.as_ptr(),
             rgba_len: rgba.len(),
         };
-        let result = recognize(&mut engine, &request).expect("embedded OCR pipeline should run");
+        let result = recognize(&mut engine, &request).expect("disk-backed OCR pipeline should run");
         assert!(result.lines.is_empty());
     }
 }

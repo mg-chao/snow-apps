@@ -10,6 +10,3 @@ crate-type = ["staticlib", "rlib"]
 [dependencies]
 num_cpus = "1.16"
 rapid-ocr-rs = { path = "../rapid-ocr-rs", default-features = false, features = ["static-onnx-runtime", "directml-provider"] }
-
-[dev-dependencies]
-sha2 = "0.10"

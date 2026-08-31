@@ -1090,7 +1090,8 @@ void ScreenshotRecognitionSessionController::startTextRecognition(
     }
     const quint64 generation = ++m_textGeneration;
     const QString key = m_target.key;
-    if (m_active) {
+    m_textModelDownloadShown = !m_recognition->modelFilesReady();
+    if (m_active || m_textModelDownloadShown) {
         showRecognitionMessage();
     }
     const auto callbackCompleted = std::make_shared<bool>(false);
@@ -1108,9 +1109,10 @@ void ScreenshotRecognitionSessionController::startTextRecognition(
     }
     updateBusyState();
     if (m_textRequestToken == 0 && !*callbackCompleted) {
-        if (m_active) {
+        if (m_active || m_textModelDownloadShown) {
             showStatus(tr("Text recognition request could not be prepared"), true);
         }
+        m_textModelDownloadShown = false;
         hideRecognitionMessage();
     }
 }
@@ -1182,8 +1184,10 @@ void ScreenshotRecognitionSessionController::handleTextOutput(
     if (generation != m_textGeneration || key != m_target.key) {
         return;
     }
+    const bool modelDownloadWasShown = m_textModelDownloadShown;
+    m_textModelDownloadShown = false;
     if (!output.error.isEmpty() || output.presentation == nullptr) {
-        if (m_active && m_mode == Mode::Text) {
+        if ((m_active && m_mode == Mode::Text) || modelDownloadWasShown) {
             showStatus(output.error.isEmpty() ? tr("Text recognition failed") : output.error,
                        true);
         }
@@ -1431,7 +1435,12 @@ void ScreenshotRecognitionSessionController::updateTableState(
 }
 
 void ScreenshotRecognitionSessionController::showRecognitionMessage() const {
-    const QString message = m_mode == Mode::Table ? tr("Recognizing table")
+    const bool downloadingModels =
+        m_mode == Mode::Text &&
+        (m_textModelDownloadShown ||
+         (m_recognition != nullptr && !m_recognition->modelFilesReady()));
+    const QString message = downloadingModels ? tr("Downloading OCR model files")
+                        : m_mode == Mode::Table ? tr("Recognizing table")
                         : m_mode == Mode::Qr ? tr("Recognizing QR code")
                                              : tr("Recognizing text");
     if (m_actions.showLoading) {
@@ -1478,6 +1487,7 @@ void ScreenshotRecognitionSessionController::cancelOutstandingRequests() {
     m_modelsRequestToken = 0;
     m_settingsModelsRequestToken = 0;
     m_translationRequestToken = 0;
+    m_textModelDownloadShown = false;
     hideRecognitionMessage();
 }
 
@@ -1488,6 +1498,7 @@ void ScreenshotRecognitionSessionController::handleRecognitionProviderDestroyed(
     case Mode::Text:
         requestWasPending = m_textRequestToken != 0;
         m_textRequestToken = 0;
+        m_textModelDownloadShown = false;
         ++m_textGeneration;
         break;
     case Mode::Table:
