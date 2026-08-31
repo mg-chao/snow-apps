@@ -13,6 +13,7 @@
 
 #include "adaptivescrollingcapturecadence.h"
 #include "latestbridgemailbox.h"
+#include "../pinned/screenshotpintoperfinstrumentation.h"
 
 #include "snow_capture.h"
 #include "snow_stitch_images.h"
@@ -587,6 +588,9 @@ class ScreenshotScrollingCaptureWorker final : public QObject {
         if (m_stitchSession == nullptr || m_lastOutputSize.isEmpty()) {
             return {};
         }
+        // The stitch-session finalize is the scrolling screenshot's export
+        // work; the pin trace records it while a scrolling pin sample waits.
+        SNOW_SHOT_PIN_PERF_SCOPE("export.scrolling_trimmed_snapshot");
         const int sourceExtent = m_mode == ScreenshotScrollingRecognitionMode::Horizontal
                                      ? m_lastOutputSize.width()
                                      : m_lastOutputSize.height();

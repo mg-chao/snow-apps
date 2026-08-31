@@ -46,11 +46,14 @@ void finish(bool success);
 #define SNOW_SHOT_PIN_PERF_COUNTER(name, value) ::snow_shot::presentation::pin_perf::counter(name, value)
 #define SNOW_SHOT_PIN_PERF_FINISH(success) ::snow_shot::presentation::pin_perf::finish(success)
 #else
-#define SNOW_SHOT_PIN_PERF_SCOPE(name) ((void)0)
-#define SNOW_SHOT_PIN_PERF_BEGIN(scenario, width, height) ((void)0)
-#define SNOW_SHOT_PIN_PERF_MILESTONE(name) ((void)0)
-#define SNOW_SHOT_PIN_PERF_COUNTER(name, value) ((void)0)
-#define SNOW_SHOT_PIN_PERF_FINISH(success) ((void)0)
+// The inert forms still consume their value arguments so call sites can pass
+// local variables without triggering unused-parameter diagnostics when the
+// instrumentation is compiled out.
+#define SNOW_SHOT_PIN_PERF_SCOPE(name) ((void)(name))
+#define SNOW_SHOT_PIN_PERF_BEGIN(scenario, width, height) ((void)(scenario))
+#define SNOW_SHOT_PIN_PERF_MILESTONE(name) ((void)(name))
+#define SNOW_SHOT_PIN_PERF_COUNTER(name, value) ((void)(value))
+#define SNOW_SHOT_PIN_PERF_FINISH(success) ((void)(success))
 #endif
 
 #endif

@@ -101,6 +101,7 @@ QImage composeSelectionResultFromRuntime(SnowCanvasRuntime& runtime, const QRect
     QImage content;
     {
         SNOW_SHOT_CLIPBOARD_PERF_SCOPE("export.render_canvas");
+        SNOW_SHOT_PIN_PERF_SCOPE("export.render_canvas");
         content = runtime.renderToImage(QRectF(selection), selection.size(), sources);
     }
     if (content.isNull()) {
@@ -109,6 +110,7 @@ QImage composeSelectionResultFromRuntime(SnowCanvasRuntime& runtime, const QRect
     }
     SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.rendered_bytes", content.sizeInBytes());
     SNOW_SHOT_CLIPBOARD_PERF_SCOPE("export.compose_result");
+    SNOW_SHOT_PIN_PERF_SCOPE("export.compose_result");
     return ScreenshotResultCompositor::compose(content, style);
 }
 
@@ -168,13 +170,19 @@ class ScreenshotExportWorker final : public QObject {
                            const ScreenshotResultStyle& style,
                            const QList<CanvasExportSource>& sources,
                            const QImage& directSourceImage) {
+        // The pin trace needs the export baseline even though these stages are
+        // shared with the clipboard-copy flows; the sink drops records whenever
+        // no pin sample is active.
+        SNOW_SHOT_PIN_PERF_SCOPE("export.render_selection");
         QImage image;
         if (!directSourceImage.isNull()) {
             SNOW_SHOT_CLIPBOARD_PERF_SCOPE("export.compose_direct_source");
+            SNOW_SHOT_PIN_PERF_SCOPE("export.compose_direct_source");
             image = ScreenshotResultCompositor::compose(directSourceImage, style);
         } else {
             {
                 SNOW_SHOT_CLIPBOARD_PERF_SCOPE("export.ensure_worker_runtime");
+                SNOW_SHOT_PIN_PERF_SCOPE("export.ensure_worker_runtime");
                 if (!ensureRuntime()) {
                     SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.failure.worker_runtime", 1);
                     return {};
@@ -182,6 +190,7 @@ class ScreenshotExportWorker final : public QObject {
             }
             {
                 SNOW_SHOT_CLIPBOARD_PERF_SCOPE("export.restore_document");
+                SNOW_SHOT_PIN_PERF_SCOPE("export.restore_document");
                 if (!m_runtime->restoreDocumentSession(documentSession)) {
                     SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.failure.restore_document", 1);
                     return {};
@@ -195,9 +204,11 @@ class ScreenshotExportWorker final : public QObject {
 #if defined(Q_OS_WIN) || defined(_WIN32)
         if (image.format() != QImage::Format_ARGB32) {
             SNOW_SHOT_CLIPBOARD_PERF_SCOPE("export.convert_argb32");
+            SNOW_SHOT_PIN_PERF_SCOPE("export.convert_argb32");
             image = image.convertToFormat(QImage::Format_ARGB32);
         }
 #endif
+        SNOW_SHOT_PIN_PERF_COUNTER("export.output_bytes", image.sizeInBytes());
         SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.output_width", image.width());
         SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.output_height", image.height());
         SNOW_SHOT_CLIPBOARD_PERF_COUNTER("export.output_bytes", image.sizeInBytes());
@@ -468,8 +479,13 @@ bool ScreenshotExportService::schedulePinnedSelection(
                         if (guardedWorker.isNull()) {
                             return;
                         }
+                        // The milestone timestamps double as the worker queue
+                        // latency: the gap up to render_started is time spent
+                        // waiting after the shell was already on screen.
+                        SNOW_SHOT_PIN_PERF_MILESTONE("export.render_started");
                         QImage image = guardedWorker->renderSelection(
                             documentSession, selection, style, sources, directSourceImage);
+                        SNOW_SHOT_PIN_PERF_MILESTONE("export.render_finished");
                         if (guardedReceiver.isNull()) {
                             return;
                         }
@@ -523,7 +539,12 @@ bool ScreenshotExportService::schedulePinnedSelection(
             const bool scheduled = QMetaObject::invokeMethod(
                 guardedCompletionContext,
                 [runtime, queueWorker = std::move(queueWorker)]() mutable {
-                    queueWorker(runtime->serializeDocumentSession());
+                    QByteArray documentSession;
+                    {
+                        SNOW_SHOT_PIN_PERF_SCOPE("export.serialize_document");
+                        documentSession = runtime->serializeDocumentSession();
+                    }
+                    queueWorker(std::move(documentSession));
                 },
                 Qt::QueuedConnection);
             if (!scheduled) {

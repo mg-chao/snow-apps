@@ -6,6 +6,9 @@ param(
     [int]$Warmups = 3,
     [int]$Samples = 20,
     [int]$TimeoutMilliseconds = 30000,
+    [string]$Scenarios = "all",
+    [int]$ScrollSteps = 8,
+    [int]$ScrollDistance = 96,
     [switch]$SelfTest
 )
 
@@ -41,7 +44,7 @@ try {
     $qtRoot = Split-Path $QtBin -Parent
     $env:PATH = "$QtBin;$env:PATH"; $env:QT_QPA_PLATFORM = "windows"; $env:QT_QPA_PLATFORM_PLUGIN_PATH = Join-Path $qtRoot "plugins\platforms"
     New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
-    $arguments = @("--app", $application, "--output", $OutputDirectory, "--screen-index", $ScreenIndex.ToString(), "--warmups", $Warmups.ToString(), "--samples", $Samples.ToString(), "--timeout-ms", $TimeoutMilliseconds.ToString())
+    $arguments = @("--app", $application, "--output", $OutputDirectory, "--screen-index", $ScreenIndex.ToString(), "--warmups", $Warmups.ToString(), "--samples", $Samples.ToString(), "--timeout-ms", $TimeoutMilliseconds.ToString(), "--scenarios", $Scenarios, "--scroll-steps", $ScrollSteps.ToString(), "--scroll-distance", $ScrollDistance.ToString())
     if ($SelfTest) { $arguments += "--self-test" }
     & $benchmark @arguments; $exitCode = $LASTEXITCODE
 }

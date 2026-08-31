@@ -3129,6 +3129,7 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     )
     target_link_libraries(snow-shot-pin-to-screen-performance-benchmark PRIVATE
         Qt6::Core
+        Qt6::Gui
         dwmapi
         gdi32
         ole32

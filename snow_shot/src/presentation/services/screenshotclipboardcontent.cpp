@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
 
 #include "../../image/snowimageqtcodec.h"
+#include "../pinned/screenshotpintoperfinstrumentation.h"
 
 #include <QAbstractTextDocumentLayout>
 #include <QClipboard>
@@ -423,27 +424,44 @@ ScreenshotClipboardContentReader::decode(ScreenshotClipboardContentSnapshot snap
         return std::nullopt;
     }
 
-    if (auto result = readEncodedImage(snapshot.encodedImages, cancelled); result.has_value()) {
-        return result;
+    {
+        SNOW_SHOT_PIN_PERF_SCOPE("clipboard.decode_encoded_image");
+        if (auto result = readEncodedImage(snapshot.encodedImages, cancelled);
+            result.has_value()) {
+            return result;
+        }
     }
     if (cancellationRequested(cancelled)) {
         return std::nullopt;
     }
-    if (auto result = imageContent(std::move(snapshot.detachedImage)); result.has_value()) {
-        return result;
+    {
+        SNOW_SHOT_PIN_PERF_SCOPE("clipboard.decode_detached_image");
+        if (auto result = imageContent(std::move(snapshot.detachedImage)); result.has_value()) {
+            return result;
+        }
     }
     if (snapshot.localImage.has_value()) {
+        SNOW_SHOT_PIN_PERF_SCOPE("clipboard.decode_file_image");
         if (auto result = readFileImage(*snapshot.localImage, cancelled); result.has_value()) {
             return result;
         }
     }
     if (!snapshot.html.isEmpty()) {
+        SNOW_SHOT_PIN_PERF_SCOPE("clipboard.decode_html_document");
         QString plainText;
-        if (auto document = makeDocument(snapshot.html, true, &plainText); document != nullptr) {
-            if (auto result =
-                    renderTextDocument(std::move(document), std::move(plainText),
-                                       snapshot.devicePixelRatio, snapshot.baseColor, cancelled);
-                result.has_value()) {
+        std::shared_ptr<QTextDocument> document;
+        {
+            SNOW_SHOT_PIN_PERF_SCOPE("clipboard.html_document_layout");
+            document = makeDocument(snapshot.html, true, &plainText);
+        }
+        if (document != nullptr) {
+            std::optional<ScreenshotClipboardContent> result;
+            {
+                SNOW_SHOT_PIN_PERF_SCOPE("clipboard.html_document_render");
+                result = renderTextDocument(document, plainText, snapshot.devicePixelRatio,
+                                            snapshot.baseColor, cancelled);
+            }
+            if (result.has_value()) {
                 result->originalContent.html = std::move(snapshot.html);
                 result->originalContent.text = std::move(snapshot.text);
                 return result;
@@ -451,12 +469,21 @@ ScreenshotClipboardContentReader::decode(ScreenshotClipboardContentSnapshot snap
         }
     }
     if (!snapshot.text.isEmpty()) {
+        SNOW_SHOT_PIN_PERF_SCOPE("clipboard.decode_text_document");
         QString plainText;
-        if (auto document = makeDocument(snapshot.text, false, &plainText); document != nullptr) {
-            if (auto result =
-                    renderTextDocument(std::move(document), std::move(plainText),
-                                       snapshot.devicePixelRatio, snapshot.baseColor, cancelled);
-                result.has_value()) {
+        std::shared_ptr<QTextDocument> document;
+        {
+            SNOW_SHOT_PIN_PERF_SCOPE("clipboard.text_document_layout");
+            document = makeDocument(snapshot.text, false, &plainText);
+        }
+        if (document != nullptr) {
+            std::optional<ScreenshotClipboardContent> result;
+            {
+                SNOW_SHOT_PIN_PERF_SCOPE("clipboard.text_document_render");
+                result = renderTextDocument(document, plainText, snapshot.devicePixelRatio,
+                                            snapshot.baseColor, cancelled);
+            }
+            if (result.has_value()) {
                 result->originalContent.html = std::move(snapshot.html);
                 result->originalContent.text = std::move(snapshot.text);
                 return result;
