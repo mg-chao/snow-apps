@@ -10,7 +10,7 @@
 #include "snow_shot/presentation/globalshortcuttypes.h"
 
 namespace snow_shot::presentation::settings {
-class SettingsCatalog;
+struct TrayCommandManifest;
 }
 
 namespace snow_shot::presentation {
@@ -19,7 +19,8 @@ class SystemTrayController final : public QObject {
 
   public:
     explicit SystemTrayController(QObject* parent = nullptr);
-    SystemTrayController(const settings::SettingsCatalog& catalog, QObject* parent = nullptr);
+    SystemTrayController(const settings::TrayCommandManifest& manifest,
+                         QObject* parent = nullptr);
     ~SystemTrayController() override;
 
     void show();

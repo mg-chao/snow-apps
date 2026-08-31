@@ -1,8 +1,9 @@
 #ifndef SNOW_SHOT_PRESENTATION_SETTINGS_SETTINGSSEARCHINDEX_H
 #define SNOW_SHOT_PRESENTATION_SETTINGS_SETTINGSSEARCHINDEX_H
 
-#include "snow_shot/presentation/settings/settingscatalog.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
 
+#include <QHash>
 #include <QString>
 #include <QStringList>
 #include <QVector>
@@ -34,7 +35,7 @@ struct SettingsSearchRuntimeValues {
 class SettingsSearchIndex final {
   public:
     explicit SettingsSearchIndex(
-        const SettingsCatalog& catalog,
+        const SettingsRegistry& registry,
         SettingsSearchRuntimeValues runtimeValues = {});
 
     void rebuild();
@@ -52,10 +53,12 @@ class SettingsSearchIndex final {
     };
 
   private:
-    const SettingsCatalog& m_catalog;
+    const SettingsRegistry& m_registry;
     SettingsSearchRuntimeValues m_runtimeValues;
     QVector<SettingsSearchEntry> m_entries;
     QVector<NormalizedFields> m_normalizedEntries;
+    QHash<QString, QVector<int>> m_postings;
+    QHash<QString, QVector<int>> m_trigramPostings;
 };
 
 } // namespace snow_shot::presentation::settings

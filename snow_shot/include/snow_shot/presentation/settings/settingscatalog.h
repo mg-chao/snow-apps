@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/globalshortcuttypes.h"
 
 #include <QMetaType>
+#include <QHash>
 #include <QString>
 #include <QStringList>
 #include <QVector>
@@ -282,6 +283,17 @@ struct SettingsTrayMenuGroupDefinition {
     QVector<SettingsTrayMenuOptionDefinition> options;
 };
 
+// A compact projection of the quick actions used by the always-on tray.  It
+// intentionally contains no page/section/item hierarchy, so tray startup does
+// not have to construct the complete settings registry.
+struct TrayCommandManifest {
+    QVector<SettingsTrayMenuGroupDefinition> groups;
+    QHash<int, SettingsShortcutAdjustment> shortcutAdjustments;
+
+    [[nodiscard]] QString shortcutActionTitle(GlobalShortcutAction action,
+                                               int screenshotDelaySeconds = 3) const;
+};
+
 using SettingsItemPayload =
     std::variant<SettingsSelectDefinition, SettingsSwitchDefinition, SettingsIntegerDefinition,
                  SettingsMultiSelectDefinition, SettingsSliderDefinition,
@@ -291,6 +303,9 @@ using SettingsItemPayload =
                  SettingsActionDefinition, SettingsCustomDefinition>;
 
 struct SettingsItemDefinition {
+    // Item IDs are globally stable within a registry. They are used as the
+    // runtime state key, search identity, generated object-name suffix, and
+    // persistence descriptor identity, so two pages must not reuse one.
     QString id;
     TranslatableText title;
     TranslatableText description;
@@ -379,6 +394,7 @@ struct SettingsSectionSummary {
 
 class SettingsCatalog final {
   public:
+    SettingsCatalog() = default;
     SettingsCatalog(QVector<SettingsPageDefinition> pages,
                     QVector<SettingsNavigationNode> navigation,
                     SettingsLocation defaultLocation);
@@ -406,15 +422,22 @@ class SettingsCatalog final {
     QVector<SettingsPageDefinition> m_pages;
     QVector<SettingsNavigationNode> m_navigation;
     SettingsLocation m_defaultLocation;
+    QHash<QString, int> m_pageIndexById;
+    QHash<QString, int> m_pageIndexByRoute;
+    QHash<QString, int> m_sectionIndexByLocation;
+    QHash<QString, int> m_itemIndexByLocation;
+    QHash<int, QString> m_shortcutItemByAction;
 };
 
 [[nodiscard]] SettingsCatalog buildBuiltInSettingsCatalog();
-[[nodiscard]] const SettingsCatalog& builtInSettingsCatalog();
+[[nodiscard]] TrayCommandManifest buildBuiltInTrayCommandManifest();
+[[nodiscard]] const TrayCommandManifest& builtInTrayCommandManifest();
 [[nodiscard]] QString generatedObjectName(const QString& prefix, const QString& stableId);
 
 } // namespace snow_shot::presentation::settings
 
 Q_DECLARE_METATYPE(snow_shot::presentation::settings::SettingsLocation)
 Q_DECLARE_METATYPE(snow_shot::presentation::settings::SettingsCommand)
+Q_DECLARE_METATYPE(snow_shot::presentation::settings::SettingsCommandKind)
 
 #endif // SNOW_SHOT_PRESENTATION_SETTINGS_SETTINGSCATALOG_H

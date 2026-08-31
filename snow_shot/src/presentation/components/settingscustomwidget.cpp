@@ -3,7 +3,8 @@
 #include "snow_shot/presentation/components/drawingtoolbareditorsettingswidget.h"
 #include "snow_shot/presentation/components/storagestatussettingswidget.h"
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
-#include "snow_shot/presentation/settings/settingsruntimebindings.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
+#include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 
 #include "widgets/button.h"
@@ -585,12 +586,12 @@ void clearPosition(ToolbarPositionWidget* position, QWidget* buttonParent) {
 class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
   public:
     TrayMenuOptionsSettingsWidget(
-        const snow_shot::presentation::settings::SettingsCatalog& catalog,
+        const snow_shot::presentation::settings::SettingsRegistry& registry,
         const snow_shot::presentation::settings::SettingsItemDefinition& definition,
-        snow_shot::presentation::settings::SettingsRuntimeBindings& runtimeBindings,
+        snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession,
         QWidget* parent = nullptr)
-        : SettingsCustomWidget(parent), m_catalog(catalog), m_definition(definition),
-          m_runtimeBindings(runtimeBindings) {
+        : SettingsCustomWidget(parent), m_registry(registry), m_definition(definition),
+          m_runtimeSession(runtimeSession) {
         initialize();
     }
 
@@ -618,7 +619,7 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
         }
         m_title->setText(m_definition.title.translated());
         m_description->setText(m_definition.description.translated());
-        const auto groups = m_catalog.trayMenuGroups();
+        const auto groups = m_registry.catalog().trayMenuGroups();
         for (const auto& group : groups) {
             for (const auto& option : group.options) {
                 if (auto* checkbox = m_checkboxes.value(option.id)) {
@@ -643,9 +644,9 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
         const snow_shot::presentation::settings::SettingsTrayMenuOptionDefinition& option) const {
         if (option.kind ==
             snow_shot::presentation::settings::SettingsTrayMenuOptionKind::QuickAction) {
-            const QString title = m_catalog.shortcutActionTitle(
+            const QString title = m_registry.catalog().shortcutActionTitle(
                 option.shortcutAction,
-                m_runtimeBindings.integerValue(
+                m_runtimeSession.integerValue(
                     snow_shot::presentation::settings::SettingsIntegerBinding::ScreenshotDelaySeconds));
             Q_ASSERT(!title.isEmpty());
             return title;
@@ -684,7 +685,7 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
 
         int row = 0;
         bool firstGroup = true;
-        for (const auto& group : m_catalog.trayMenuGroups()) {
+        for (const auto& group : m_registry.catalog().trayMenuGroups()) {
             if (group.options.isEmpty()) {
                 continue;
             }
@@ -714,19 +715,31 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
         }
         rootLayout->addWidget(options);
 
-        connect(&m_runtimeBindings,
-                &snow_shot::presentation::settings::SettingsRuntimeBindings::synchronized, this,
-                [this]() {
-                    retranslateUi();
-                    syncFromRuntime();
+        connect(&m_runtimeSession,
+                &snow_shot::presentation::settings::SettingsRuntimeSession::fieldChanged, this,
+                [this](const QString& fieldId,
+                       const snow_shot::presentation::settings::SettingsFieldState&) {
+                    if (fieldId == m_definition.id) {
+                        syncFromRuntime();
+                    }
                 });
+        connect(
+            &m_runtimeSession,
+            &snow_shot::presentation::settings::SettingsRuntimeSession::auxiliaryIntegerChanged,
+            this,
+            [this](snow_shot::presentation::settings::SettingsIntegerBinding binding, int) {
+                if (binding == snow_shot::presentation::settings::SettingsIntegerBinding::
+                                   ScreenshotDelaySeconds) {
+                    retranslateUi();
+                }
+            });
         retranslateUi();
         applyTheme(snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme());
         syncFromRuntime();
     }
 
     void syncFromRuntime() {
-        const QVariantList values = m_runtimeBindings.multiSelectValue(
+        const QVariantList values = m_runtimeSession.multiSelectValue(
             snow_shot::presentation::settings::SettingsMultiSelectBinding::TrayMenuOptions);
         QSet<QString> selected;
         for (const QVariant& value : values) {
@@ -745,7 +758,7 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
             return;
         }
         QVariantList values;
-        for (const auto& group : m_catalog.trayMenuGroups()) {
+        for (const auto& group : m_registry.catalog().trayMenuGroups()) {
             for (const auto& option : group.options) {
                 const auto* checkbox = m_checkboxes.value(option.id);
                 if (checkbox != nullptr && checkbox->isChecked()) {
@@ -753,16 +766,16 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
                 }
             }
         }
-        if (!m_runtimeBindings.applyMultiSelectValue(
+        if (!m_runtimeSession.applyMultiSelectValue(
                 snow_shot::presentation::settings::SettingsMultiSelectBinding::TrayMenuOptions,
                 values)) {
             syncFromRuntime();
         }
     }
 
-    const snow_shot::presentation::settings::SettingsCatalog& m_catalog;
+    const snow_shot::presentation::settings::SettingsRegistry& m_registry;
     const snow_shot::presentation::settings::SettingsItemDefinition& m_definition;
-    snow_shot::presentation::settings::SettingsRuntimeBindings& m_runtimeBindings;
+    snow_shot::presentation::settings::SettingsRuntimeSession& m_runtimeSession;
     QLabel* m_title = nullptr;
     QLabel* m_description = nullptr;
     QHash<QString, adqt::widgets::AdCheckbox*> m_checkboxes;
@@ -771,8 +784,8 @@ class TrayMenuOptionsSettingsWidget final : public SettingsCustomWidget {
 
 struct DrawingToolbarEditorSettingsWidget::Private {
     Private(DrawingToolbarEditorSettingsWidget& sourceOwner,
-            snow_shot::presentation::settings::SettingsRuntimeBindings& sourceRuntimeBindings)
-        : owner(sourceOwner), runtimeBindings(sourceRuntimeBindings),
+            snow_shot::presentation::settings::SettingsRuntimeSession& sourceRuntimeBindings)
+        : owner(sourceOwner), runtimeSession(sourceRuntimeBindings),
           colorScheme(
               snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme()) {}
 
@@ -829,11 +842,19 @@ struct DrawingToolbarEditorSettingsWidget::Private {
             buttons.insert(itemId, button);
         }
 
-        QObject::connect(&runtimeBindings,
-                         &snow_shot::presentation::settings::SettingsRuntimeBindings::synchronized,
-                         &owner, [this]() { syncFromRuntime(); });
+        QObject::connect(
+            &runtimeSession,
+            &snow_shot::presentation::settings::SettingsRuntimeSession::fieldChanged, &owner,
+            [this](const QString& fieldId,
+                   const snow_shot::presentation::settings::SettingsFieldState&) {
+                const auto* descriptor = runtimeSession.registry().fieldForCustom(
+                    snow_shot::presentation::settings::SettingsCustomRenderer::DrawingToolbarEditor);
+                if (descriptor != nullptr && descriptor->id == fieldId) {
+                    syncFromRuntime();
+                }
+            });
 
-        layout = toolbar_layout::normalizedLayout(runtimeBindings.toolbarLayout());
+        layout = toolbar_layout::normalizedLayout(runtimeSession.toolbarLayout());
         owner.retranslateUi();
         owner.applyTheme(colorScheme);
         rebuild();
@@ -894,7 +915,7 @@ struct DrawingToolbarEditorSettingsWidget::Private {
 
     void syncFromRuntime() {
         const storage::ScreenshotToolbarLayout synchronized =
-            toolbar_layout::normalizedLayout(runtimeBindings.toolbarLayout());
+            toolbar_layout::normalizedLayout(runtimeSession.toolbarLayout());
         if (synchronized != layout) {
             layout = synchronized;
             rebuild();
@@ -943,7 +964,7 @@ struct DrawingToolbarEditorSettingsWidget::Private {
         } else {
             if (candidate.positions.isEmpty()) {
                 candidate.positions.push_back({itemId});
-                persistLayout(previous, candidate);
+                submitLayout(candidate);
                 return;
             }
             int targetPositionIndex = std::clamp(dropLocation.positionIndex, 0,
@@ -968,7 +989,7 @@ struct DrawingToolbarEditorSettingsWidget::Private {
                            static_cast<int>(candidate.positions.at(targetPositionIndex).size()));
             candidate.positions[targetPositionIndex].insert(targetItemIndex, itemId);
         }
-        persistLayout(previous, candidate);
+        submitLayout(candidate);
     }
 
     void applyHiddenDrop(const QString& itemId, int targetIndex) {
@@ -998,24 +1019,18 @@ struct DrawingToolbarEditorSettingsWidget::Private {
         }
         targetIndex = std::clamp(targetIndex, 0, static_cast<int>(candidate.hidden.size()));
         candidate.hidden.insert(targetIndex, itemId);
-        persistLayout(previous, candidate);
+        submitLayout(candidate);
     }
 
-    void persistLayout(const storage::ScreenshotToolbarLayout& previous,
-                       storage::ScreenshotToolbarLayout candidate) {
+    void submitLayout(storage::ScreenshotToolbarLayout candidate) {
         candidate = toolbar_layout::normalizedLayout(candidate);
 
-        if (candidate == previous) {
+        if (candidate == layout) {
             return;
         }
-        if (!runtimeBindings.applyToolbarLayout(candidate)) {
-            layout = previous;
-            rebuild();
-            return;
-        }
-        if (layout != candidate) {
-            layout = candidate;
-            rebuild();
+        const bool accepted = runtimeSession.applyToolbarLayout(candidate);
+        if (!accepted || layout != candidate) {
+            syncFromRuntime();
         }
     }
 
@@ -1074,7 +1089,7 @@ struct DrawingToolbarEditorSettingsWidget::Private {
     }
 
     DrawingToolbarEditorSettingsWidget& owner;
-    snow_shot::presentation::settings::SettingsRuntimeBindings& runtimeBindings;
+    snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession;
     snow_shot::presentation::styles::ThemeColorScheme colorScheme;
     storage::ScreenshotToolbarLayout layout;
     QWidget* previewStage = nullptr;
@@ -1089,8 +1104,8 @@ struct DrawingToolbarEditorSettingsWidget::Private {
 };
 
 DrawingToolbarEditorSettingsWidget::DrawingToolbarEditorSettingsWidget(
-    snow_shot::presentation::settings::SettingsRuntimeBindings& runtimeBindings, QWidget* parent)
-    : SettingsCustomWidget(parent), m_private(std::make_unique<Private>(*this, runtimeBindings)) {
+    snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession, QWidget* parent)
+    : SettingsCustomWidget(parent), m_private(std::make_unique<Private>(*this, runtimeSession)) {
     m_private->initialize();
 }
 
@@ -1114,17 +1129,17 @@ void DrawingToolbarEditorSettingsWidget::changeEvent(QEvent* event) {
 
 SettingsCustomWidget* createSettingsCustomWidget(
     snow_shot::presentation::settings::SettingsCustomRenderer renderer,
-    const snow_shot::presentation::settings::SettingsCatalog& catalog,
+    const snow_shot::presentation::settings::SettingsRegistry& registry,
     const snow_shot::presentation::settings::SettingsItemDefinition& definition,
-    snow_shot::presentation::settings::SettingsRuntimeBindings& runtimeBindings, QWidget* parent) {
+    snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession, QWidget* parent) {
     using snow_shot::presentation::settings::SettingsCustomRenderer;
     switch (renderer) {
     case SettingsCustomRenderer::StorageStatus:
-        return new StorageStatusSettingsWidget(runtimeBindings, parent);
+        return new StorageStatusSettingsWidget(runtimeSession, parent);
     case SettingsCustomRenderer::DrawingToolbarEditor:
-        return new DrawingToolbarEditorSettingsWidget(runtimeBindings, parent);
+        return new DrawingToolbarEditorSettingsWidget(runtimeSession, parent);
     case SettingsCustomRenderer::TrayMenuOptions:
-        return new TrayMenuOptionsSettingsWidget(catalog, definition, runtimeBindings, parent);
+        return new TrayMenuOptionsSettingsWidget(registry, definition, runtimeSession, parent);
     }
     return nullptr;
 }

@@ -1,7 +1,6 @@
 #include "snow_shot/presentation/components/storagestatussettingswidget.h"
 
-#include "snow_shot/presentation/settings/settingscatalog.h"
-#include "snow_shot/presentation/settings/settingsruntimebindings.h"
+#include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 
 #include "widgets/descriptions.h"
@@ -66,9 +65,9 @@ void addStatusItem(adqt::widgets::AdDescriptions* descriptions, const QString& k
 } // namespace
 
 StorageStatusSettingsWidget::StorageStatusSettingsWidget(
-    snow_shot::presentation::settings::SettingsRuntimeBindings& runtimeBindings,
+    snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession,
     QWidget* parent)
-    : SettingsCustomWidget(parent), m_runtimeBindings(runtimeBindings),
+    : SettingsCustomWidget(parent), m_runtimeSession(runtimeSession),
       m_colorScheme(snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme()) {
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -90,12 +89,14 @@ StorageStatusSettingsWidget::StorageStatusSettingsWidget(
     addStatusItem(m_descriptions, QStringLiteral("error"), m_errorValue);
     layout->addWidget(m_descriptions);
 
-    connect(&m_runtimeBindings,
-            &snow_shot::presentation::settings::SettingsRuntimeBindings::synchronized, this,
-            [this]() { syncStatus(m_runtimeBindings.storageStatus()); });
+    connect(&m_runtimeSession,
+            &snow_shot::presentation::settings::SettingsRuntimeSession::storageStateChanged,
+            this, [this](const snow_shot::storage::StorageStatus& status) {
+                syncStatus(status);
+            });
 
     retranslateUi();
-    syncStatus(m_runtimeBindings.storageStatus());
+    syncStatus(m_runtimeSession.storageStatus());
     applyTheme(m_colorScheme);
 }
 
@@ -148,7 +149,7 @@ void StorageStatusSettingsWidget::changeEvent(QEvent* event) {
     QWidget::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
         retranslateUi();
-        syncStatus(m_runtimeBindings.storageStatus());
+        syncStatus(m_runtimeSession.storageStatus());
     }
 }
 

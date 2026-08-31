@@ -1,5 +1,5 @@
 #include "snow_shot/presentation/components/sidebarwidget.h"
-#include "snow_shot/presentation/settings/settingscatalog.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -44,8 +44,40 @@ void flushEvents() {
     QCoreApplication::processEvents();
 }
 
+QModelIndex findByStableId(const QAbstractItemModel* model, const QString& stableId,
+                           const QModelIndex& parent = {}) {
+    if (model == nullptr) {
+        return {};
+    }
+    for (int row = 0; row < model->rowCount(parent); ++row) {
+        const QModelIndex candidate = model->index(row, 0, parent);
+        if (candidate.data(adqt::widgets::AdNavigationMenu::StableIdRole).toString() == stableId) {
+            return candidate;
+        }
+        const QModelIndex descendant = findByStableId(model, stableId, candidate);
+        if (descendant.isValid()) {
+            return descendant;
+        }
+    }
+    return {};
+}
+
+int settingsNavigationPageCount() {
+    const auto& navigation =
+        snow_shot::presentation::settings::builtInSettingsRegistry().navigation();
+    for (const auto& node : navigation) {
+        const auto* group =
+            std::get_if<snow_shot::presentation::settings::SettingsNavigationGroupDefinition>(
+                &node);
+        if (group != nullptr && group->id == QStringLiteral("nav.settings")) {
+            return group->pages.size();
+        }
+    }
+    return 0;
+}
+
 void navigationUsesAntDesignDefaultsAndCollapseTriggerStyle() {
-    SidebarWidget sidebar(snow_shot::presentation::settings::builtInSettingsCatalog());
+    SidebarWidget sidebar(snow_shot::presentation::settings::builtInSettingsRegistry());
     flushEvents();
 
     auto* menu = sidebar.findChild<adqt::widgets::AdNavigationMenu*>();
@@ -54,15 +86,16 @@ void navigationUsesAntDesignDefaultsAndCollapseTriggerStyle() {
             "sidebar should inherit ant_design_qt navigation colors");
     require(menu->submenuTrigger() == adqt::widgets::AdNavigationMenu::TriggerSubMenuAction::Hover,
             "sidebar should retain ant_design_qt hover submenu behavior");
-    const QModelIndex history = menu->model()->index(1, 0);
-    const QModelIndex settings = menu->model()->index(2, 0);
-    const QModelIndex storageAndPrivacy = menu->model()->index(1, 0, settings);
+    const QModelIndex history = findByStableId(menu->model(), QStringLiteral("/history"));
+    const QModelIndex settings = findByStableId(menu->model(), QStringLiteral("nav.settings"));
+    const QModelIndex storageAndPrivacy =
+        findByStableId(menu->model(), QStringLiteral("/settings/storageAndPrivacy"));
     require(history.isValid() &&
                 history.data(Qt::DecorationRole).isValid() &&
                 history.data(adqt::widgets::AdNavigationMenu::StableIdRole).toString() ==
                     QStringLiteral("/history") &&
                 settings.isValid() && settings.data(Qt::DecorationRole).isValid() &&
-                menu->model()->rowCount(settings) == 2 &&
+                menu->model()->rowCount(settings) == settingsNavigationPageCount() &&
                 menu->isExpanded(settings) &&
                 !storageAndPrivacy.data(Qt::DecorationRole).isValid() &&
                 storageAndPrivacy.data(adqt::widgets::AdNavigationMenu::StableIdRole).toString() ==
@@ -110,7 +143,7 @@ void firstTopLevelMenuAndCollapseTriggerUseThemeBackground() {
     auto& themeManager = ThemeManager::instance();
     themeManager.setThemeAppearance(ThemeAppearance::Light);
 
-    SidebarWidget sidebar(snow_shot::presentation::settings::builtInSettingsCatalog());
+    SidebarWidget sidebar(snow_shot::presentation::settings::builtInSettingsRegistry());
     sidebar.resize(256, 480);
     sidebar.show();
     flushEvents();
@@ -169,7 +202,7 @@ void collapseButtonSwitchesNavigationMode() {
     snow_shot::storage::InterfaceSettings settings;
     settings.setSidebarCollapsed(false);
 
-    SidebarWidget sidebar(snow_shot::presentation::settings::builtInSettingsCatalog());
+    SidebarWidget sidebar(snow_shot::presentation::settings::builtInSettingsRegistry());
     flushEvents();
 
     require(!sidebar.isCollapsed(), "sidebar should be expanded by default");
@@ -203,7 +236,7 @@ void collapseButtonSwitchesNavigationMode() {
 
     require(!sidebar.isCollapsed(), "collapse button should expand the sidebar on a second click");
     require(!menu->collapsed(), "navigation menu should expand on a second click");
-    require(menu->isExpanded(menu->model()->index(2, 0)),
+    require(menu->isExpanded(findByStableId(menu->model(), QStringLiteral("nav.settings"))),
             "submenus should remain expanded after a collapsed navigation model rebuild");
     require(sidebar.width() == expandedWidth, "expanded sidebar should restore its width");
 
@@ -219,7 +252,7 @@ void collapsedSubmenuUsesNaturalPopupHeight() {
     layout->setContentsMargins(0, 0, 0, 0);
 
     auto* sidebar = new SidebarWidget(
-        snow_shot::presentation::settings::builtInSettingsCatalog(), &window);
+        snow_shot::presentation::settings::builtInSettingsRegistry(), &window);
     layout->addWidget(sidebar);
     window.resize(640, 480);
     window.show();
@@ -227,7 +260,8 @@ void collapsedSubmenuUsesNaturalPopupHeight() {
 
     auto* menu = sidebar->findChild<adqt::widgets::AdNavigationMenu*>();
     require(menu != nullptr, "sidebar should expose its navigation menu");
-    const QModelIndex settingsIndex = menu->model()->index(2, 0);
+    const QModelIndex settingsIndex =
+        findByStableId(menu->model(), QStringLiteral("nav.settings"));
     require(settingsIndex.isValid(), "settings should be represented by a menu node");
 
     sidebar->setCollapsed(true);
@@ -240,15 +274,17 @@ void collapsedSubmenuUsesNaturalPopupHeight() {
 
     auto* popupView = popup->findChild<QTreeView*>();
     require(popupView != nullptr, "submenu popup should contain the navigation tree view");
+    const int submenuRows = popupView->model()->rowCount(popupView->rootIndex());
     const QModelIndex firstChild = popupView->model()->index(0, 0, popupView->rootIndex());
-    const QModelIndex secondChild = popupView->model()->index(1, 0, popupView->rootIndex());
+    const QModelIndex lastChild =
+        popupView->model()->index(submenuRows - 1, 0, popupView->rootIndex());
     const QRect firstChildRect = popupView->visualRect(firstChild);
-    const QRect secondChildRect = popupView->visualRect(secondChild);
-    require(firstChildRect.isValid() && secondChildRect.isValid() &&
-                firstChildRect.bottom() < secondChildRect.top(),
-            "settings submenu items should have two distinct visible rows");
+    const QRect lastChildRect = popupView->visualRect(lastChild);
+    require(submenuRows == settingsNavigationPageCount() && firstChildRect.isValid() &&
+                lastChildRect.isValid() && firstChildRect.bottom() < lastChildRect.top(),
+            "the popup should render every registry settings page on a distinct row");
 
-    const int bottomInset = popupView->viewport()->height() - secondChildRect.bottom() - 1;
+    const int bottomInset = popupView->viewport()->height() - lastChildRect.bottom() - 1;
     require(bottomInset <= firstChildRect.top() + 2,
             "settings submenu popup should not reserve an empty row below its content");
 

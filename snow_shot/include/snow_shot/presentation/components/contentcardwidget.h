@@ -1,7 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_COMPONENTS_CONTENTCARDWIDGET_H
 #define SNOW_SHOT_PRESENTATION_COMPONENTS_CONTENTCARDWIDGET_H
 
-#include "snow_shot/presentation/settings/settingscatalog.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 
 #include <QFrame>
@@ -16,15 +16,15 @@ class SettingsPageWidget;
 class ScreenshotHistoryPageWidget;
 class QWidget;
 namespace snow_shot::presentation::settings {
-class SettingsRuntimeBindings;
+class SettingsRuntimeSession;
 }
 
 class ContentCardWidget final : public QFrame {
     Q_OBJECT
 
   public:
-    ContentCardWidget(const snow_shot::presentation::settings::SettingsCatalog& catalog,
-                      snow_shot::presentation::settings::SettingsRuntimeBindings& runtimeBindings,
+    ContentCardWidget(const snow_shot::presentation::settings::SettingsRegistry& registry,
+                      snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession,
                       QWidget* parent = nullptr);
     ~ContentCardWidget() override;
 
@@ -57,8 +57,8 @@ class ContentCardWidget final : public QFrame {
     void destroyActivePage();
     void handleCommand(const snow_shot::presentation::settings::SettingsCommand& command);
 
-    const snow_shot::presentation::settings::SettingsCatalog& m_catalog;
-    snow_shot::presentation::settings::SettingsRuntimeBindings& m_runtimeBindings;
+    const snow_shot::presentation::settings::SettingsRegistry& m_registry;
+    snow_shot::presentation::settings::SettingsRuntimeSession& m_runtimeSession;
     QStackedWidget* m_stack = nullptr;
     QPointer<QWidget> m_activePage;
     QString m_activePageId;

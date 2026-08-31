@@ -5,8 +5,8 @@
 #include "snow_shot/presentation/components/maincontentheaderwidget.h"
 #include "snow_shot/presentation/components/sidebarwidget.h"
 #include "snow_shot/presentation/components/titlebarwidget.h"
-#include "snow_shot/presentation/settings/settingscatalog.h"
-#include "snow_shot/presentation/settings/settingsruntimebindings.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
+#include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 
@@ -58,8 +58,9 @@ class TitleBarBottomShadowWidget final : public QWidget {
 } // namespace
 
 MainWindow::MainWindow(
-    snow_shot::presentation::settings::SettingsRuntimeBindings& runtimeBindings, QWidget* parent)
-    : QMainWindow(parent), m_runtimeBindings(runtimeBindings) {
+    const snow_shot::presentation::settings::SettingsRegistry& registry,
+    snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession, QWidget* parent)
+    : QMainWindow(parent), m_settingsRegistry(registry), m_runtimeSession(runtimeSession) {
     setObjectName(QStringLiteral("snowShotMainWindow"));
     setAccessibleName(QStringLiteral("SnowShot"));
     setWindowTitle(QStringLiteral("SnowShot"));
@@ -123,8 +124,6 @@ bool MainWindow::nativeEvent(const QByteArray& eventType, void* message, qintptr
 #endif
 
 void MainWindow::buildUi() {
-    const auto& settingsCatalog =
-        snow_shot::presentation::settings::builtInSettingsCatalog();
     const auto metric =
         snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme().metricAlias;
 
@@ -152,7 +151,7 @@ void MainWindow::buildUi() {
     bodyLayout->setContentsMargins(0, 0, 0, 0);
     bodyLayout->setSpacing(0);
 
-    auto* sidebar = new SidebarWidget(settingsCatalog, body);
+    auto* sidebar = new SidebarWidget(m_settingsRegistry, body);
     bodyLayout->addWidget(sidebar, 0);
     m_sidebar = sidebar;
 
@@ -162,7 +161,7 @@ void MainWindow::buildUi() {
     contentShellLayout->setContentsMargins(0, 0, 0, 0);
     contentShellLayout->setSpacing(0);
 
-    auto* contentHeader = new MainContentHeaderWidget(settingsCatalog, metric, contentShell);
+    auto* contentHeader = new MainContentHeaderWidget(m_settingsRegistry, metric, contentShell);
     contentShellLayout->addWidget(contentHeader, 0);
     m_contentHeader = contentHeader;
 
@@ -172,7 +171,7 @@ void MainWindow::buildUi() {
     contentAreaLayout->setContentsMargins(metric.padding, metric.padding, metric.padding,
                                           metric.padding);
     contentAreaLayout->setSpacing(0);
-    auto* contentCard = new ContentCardWidget(settingsCatalog, m_runtimeBindings, contentArea);
+    auto* contentCard = new ContentCardWidget(m_settingsRegistry, m_runtimeSession, contentArea);
     contentAreaLayout->addWidget(contentCard, 1);
     m_contentCard = contentCard;
     contentShellLayout->addWidget(contentArea, 1);

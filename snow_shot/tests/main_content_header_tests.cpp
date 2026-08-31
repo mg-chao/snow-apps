@@ -1,6 +1,6 @@
 #include "snow_shot/presentation/components/maincontentheaderwidget.h"
 #include "snow_shot/presentation/components/applicationsearchwidget.h"
-#include "snow_shot/presentation/settings/settingscatalog.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -22,8 +22,12 @@
 #include <iostream>
 
 namespace {
+const snow_shot::presentation::settings::SettingsRegistry& registry() {
+    return snow_shot::presentation::settings::builtInSettingsRegistry();
+}
+
 const snow_shot::presentation::settings::SettingsCatalog& catalog() {
-    return snow_shot::presentation::settings::builtInSettingsCatalog();
+    return registry().catalog();
 }
 
 QVector<snow_shot::presentation::settings::SettingsSectionSummary> quickFunctionSections() {
@@ -46,7 +50,7 @@ void flushEvents() {
 void headerPlacesSearchAboveAntDesignTabs() {
     using snow_shot::presentation::styles::ThemeManager;
 
-    MainContentHeaderWidget header(catalog(),
+    MainContentHeaderWidget header(registry(),
                                    ThemeManager::instance().themeColorScheme().metricAlias);
     header.setSections(quickFunctionSections());
     header.resize(680, header.sizeHint().height());
@@ -70,14 +74,16 @@ void headerPlacesSearchAboveAntDesignTabs() {
             "the global search should sit above the page tabs");
     require(search->width() >= 280 && search->width() <= 400,
             "the global search should retain a stable readable width");
-    require(tabs->count() == 2 &&
-                tabs->tabKey(0) == QStringLiteral("screenshot") &&
-                tabs->tabKey(1) == QStringLiteral("other"),
-            "tabs should identify categories on the current quick-functions page");
-    require(tabs->tabText(0) == QStringLiteral("Screenshot") &&
-                tabs->tabText(1) == QStringLiteral("Other"),
-            "tabs should use the page's major section labels");
-    require(select->options().size() == 4,
+    const auto quickSections = quickFunctionSections();
+    require(tabs->count() == quickSections.size(),
+            "tabs should cover every category on the current quick-functions page");
+    for (int index = 0; index < quickSections.size(); ++index) {
+        require(tabs->tabKey(index) == quickSections.at(index).id &&
+                    tabs->tabText(index) == quickSections.at(index).label,
+                "tabs should preserve registry section IDs, order, and labels");
+    }
+    const qsizetype pageCount = registry().pages().size();
+    require(select->options().size() == pageCount,
             "global search should initially show only page entries");
     const auto searchOptions = select->options();
     require(select->itemDelegate() != nullptr && searchOptions.constFirst().group.isEmpty(),
@@ -105,7 +111,7 @@ void headerPlacesSearchAboveAntDesignTabs() {
             "typed searches should still include matching section and item entries");
     select->setSearchText(QString());
     flushEvents();
-    require(select->options().size() == 4,
+    require(select->options().size() == pageCount,
             "clearing the search should restore the page-only defaults");
 
     require(snow_shot::storage::ScreenshotSettings().setDelaySeconds(7),
@@ -135,19 +141,19 @@ void headerPlacesSearchAboveAntDesignTabs() {
     for (QWidget* widget : QApplication::allWidgets()) {
         auto* candidate = qobject_cast<QListView*>(widget);
         if (candidate != nullptr && candidate->isVisible() && candidate->model() != nullptr &&
-            candidate->model()->rowCount() == 4) {
+            candidate->model()->rowCount() == pageCount) {
             resultList = candidate;
             break;
         }
     }
     require(resultList != nullptr && resultList->model() != nullptr,
             "the search popup should expose its result list");
-    require(resultList->model()->rowCount() == 4,
+    require(resultList->model()->rowCount() == pageCount,
             "the default search popup should render one row per page without group headers");
     require(resultList->sizeHintForRow(0) >= 52,
             "search result rows should be tall enough for title and description text");
-    require(resultList->width() == select->width(),
-            "the search result popup should match the global search control width");
+    require(select->popupMatchSelectWidth() && resultList->width() <= select->width(),
+            "the search popup should match the control while its list respects popup padding");
     QWidget* resultPopup = resultList->window();
     if (resultPopup == &header) {
         QWidget* candidate = resultList;
@@ -209,7 +215,7 @@ void headerPlacesSearchAboveAntDesignTabs() {
 void tabsRequestCategoriesWithoutChangingPages() {
     using snow_shot::presentation::styles::ThemeManager;
 
-    MainContentHeaderWidget header(catalog(),
+    MainContentHeaderWidget header(registry(),
                                    ThemeManager::instance().themeColorScheme().metricAlias);
     header.setSections(quickFunctionSections());
     auto* tabs = header.findChild<adqt::widgets::AdTabs*>(QStringLiteral("mainSectionTabs"));
@@ -238,12 +244,18 @@ void tabsRequestCategoriesWithoutChangingPages() {
     require(header.currentSection() == QStringLiteral("screenshot"),
             "unknown categories should resolve to the first current-page category");
 
-    header.setSections(catalog().sectionSummaries(QStringLiteral("interface-settings")));
-    require(tabs->count() == 1 &&
-                tabs->tabKey(0) == QStringLiteral("general") &&
-                tabs->tabText(0) == QStringLiteral("General"),
-            "settings controls should remain within one major Interface Settings section");
-    require(header.currentSection() == QStringLiteral("general") &&
+    const auto interfaceSections =
+        catalog().sectionSummaries(QStringLiteral("interface-settings"));
+    header.setSections(interfaceSections);
+    require(tabs->count() == interfaceSections.size(),
+            "Interface Settings tabs should cover every registry section");
+    for (int index = 0; index < interfaceSections.size(); ++index) {
+        require(tabs->tabKey(index) == interfaceSections.at(index).id &&
+                    tabs->tabText(index) == interfaceSections.at(index).label,
+                "Interface Settings tabs should preserve registry IDs, order, and labels");
+    }
+    require(!interfaceSections.isEmpty() &&
+                header.currentSection() == interfaceSections.constFirst().id &&
                 categoryRequests.isEmpty(),
             "rebuilding categories should select the first anchor without emitting a request");
 
@@ -254,7 +266,7 @@ void tabsRequestCategoriesWithoutChangingPages() {
             "pages without sections should hide the tabs and preserve balanced search spacing");
 
     header.setSections(quickFunctionSections());
-    require(tabs->count() == 2 && !tabs->isHidden() &&
+    require(tabs->count() == quickFunctionSections().size() && !tabs->isHidden() &&
                 header.layout()->contentsMargins().bottom() == 0,
             "section tabs should become visible again with their original header spacing");
 }
@@ -264,7 +276,7 @@ void headerSurfaceFollowsTheme() {
     using snow_shot::presentation::styles::ThemeManager;
 
     auto& themeManager = ThemeManager::instance();
-    MainContentHeaderWidget header(catalog(), themeManager.themeColorScheme().metricAlias);
+    MainContentHeaderWidget header(registry(), themeManager.themeColorScheme().metricAlias);
 
     themeManager.setThemeAppearance(ThemeAppearance::Dark);
     flushEvents();

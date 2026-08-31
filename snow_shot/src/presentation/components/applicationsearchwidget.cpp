@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/components/applicationsearchwidget.h"
 
 #include "snow_shot/presentation/styles/themecolorscheme.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 
@@ -33,6 +34,10 @@ constexpr int kCategoryRole = Qt::UserRole + 102;
 constexpr auto kScreenshotDelayKey = "screenshot/delay_seconds";
 
 snow_shot::presentation::settings::SettingsSearchRuntimeValues searchRuntimeValues() {
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    if (!storage.isInitialized()) {
+        static_cast<void>(storage.initialize());
+    }
     return {snow_shot::storage::ScreenshotSettings().delaySeconds()};
 }
 
@@ -256,9 +261,9 @@ class SearchResultItemDelegate final : public QStyledItemDelegate {
 } // namespace
 
 ApplicationSearchWidget::ApplicationSearchWidget(
-    const snow_shot::presentation::settings::SettingsCatalog& catalog,
+    const snow_shot::presentation::settings::SettingsRegistry& registry,
     const snow_shot::presentation::styles::ThemeAliasMetricToken& metric, QWidget* parent)
-    : QWidget(parent), m_index(catalog, searchRuntimeValues()),
+    : QWidget(parent), m_index(registry, searchRuntimeValues()),
       m_select(new adqt::widgets::AdSelect(this)) {
     auto* rootLayout = new QHBoxLayout(this);
     rootLayout->setContentsMargins(0, 0, 0, 0);
@@ -297,7 +302,11 @@ ApplicationSearchWidget::ApplicationSearchWidget(
 
     connect(m_select, &adqt::widgets::AdSelect::selected, this,
             &ApplicationSearchWidget::handleSelectedValue);
-    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    auto& applicationStorage = snow_shot::storage::ApplicationStorage::instance();
+    if (!applicationStorage.isInitialized()) {
+        static_cast<void>(applicationStorage.initialize());
+    }
+    auto& configuration = applicationStorage.configuration();
     connect(&configuration, &snow_shot::storage::ConfigurationStore::valueChanged, this,
             [this](const QString& key, const QJsonValue& value) {
                 if (key != QLatin1String(kScreenshotDelayKey)) {

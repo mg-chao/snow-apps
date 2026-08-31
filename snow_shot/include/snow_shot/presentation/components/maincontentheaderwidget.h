@@ -1,7 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_COMPONENTS_MAINCONTENTHEADERWIDGET_H
 #define SNOW_SHOT_PRESENTATION_COMPONENTS_MAINCONTENTHEADERWIDGET_H
 
-#include "snow_shot/presentation/settings/settingscatalog.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
 
 #include <QFrame>
 #include <QString>
@@ -16,13 +16,12 @@ namespace snow_shot::presentation::styles {
 struct ThemeAliasMetricToken;
 struct ThemeColorScheme;
 } // namespace snow_shot::presentation::styles
-
 class MainContentHeaderWidget final : public QFrame {
     Q_OBJECT
 
   public:
     MainContentHeaderWidget(
-        const snow_shot::presentation::settings::SettingsCatalog& catalog,
+        const snow_shot::presentation::settings::SettingsRegistry& registry,
         const snow_shot::presentation::styles::ThemeAliasMetricToken& metric,
         QWidget* parent = nullptr);
 

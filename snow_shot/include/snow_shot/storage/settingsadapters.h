@@ -8,6 +8,7 @@
 #include <QString>
 #include <QStringList>
 #include <QVector>
+#include <QMetaType>
 
 #include <future>
 
@@ -307,5 +308,7 @@ class HistorySettings final {
     [[nodiscard]] std::shared_future<StorageResult> setMaxDiskMiB(int mebibytes) const;
 };
 } // namespace snow_shot::storage
+
+Q_DECLARE_METATYPE(snow_shot::storage::ScreenshotToolbarLayout)
 
 #endif // SNOW_SHOT_STORAGE_SETTINGSADAPTERS_H

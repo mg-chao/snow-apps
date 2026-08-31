@@ -5,7 +5,9 @@
 #include "snow_shot/presentation/screenshotcontroller.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/systemtraycontroller.h"
-#include "snow_shot/presentation/settings/settingsruntimebindings.h"
+#include "snow_shot/presentation/settings/settingsbackend.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
+#include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 
@@ -39,8 +41,6 @@ QStringList stringList(const QJsonValue& value) {
 class ApplicationController::Impl {
   public:
     Impl(ApplicationController& owner, QApplication& application) : q(owner), app(application) {
-        runtimeBindings = std::make_unique<presentation::settings::BuiltInSettingsRuntimeBindings>(
-            globalShortcutManager);
         QObject::connect(&systemTray, &presentation::SystemTrayController::screenshotRequested, &q,
                          [this]() {
                              if (ScreenshotController* controller = ensureScreenshotController()) {
@@ -155,7 +155,8 @@ class ApplicationController::Impl {
 
     MainWindow& ensureMainWindow() {
         if (mainWindow == nullptr) {
-            mainWindow = new MainWindow(*runtimeBindings);
+            ensureSettingsRuntime();
+            mainWindow = new MainWindow(*settingsRegistry, *runtimeSession);
             QObject::connect(mainWindow, &QObject::destroyed, &q,
                              [this]() { mainWindow = nullptr; });
             QObject::connect(
@@ -177,6 +178,22 @@ class ApplicationController::Impl {
                 });
         }
         return *mainWindow;
+    }
+
+    void ensureSettingsRuntime() {
+        if (settingsRegistry == nullptr) {
+            settingsRegistry = std::make_unique<
+                presentation::settings::SettingsRegistry>(
+                presentation::settings::buildBuiltInSettingsRegistry());
+        }
+        if (settingsBackend == nullptr) {
+            settingsBackend = std::make_unique<
+                presentation::settings::BuiltInSettingsBackend>(globalShortcutManager);
+        }
+        if (runtimeSession == nullptr) {
+            runtimeSession = std::make_unique<presentation::settings::SettingsRuntimeSession>(
+                *settingsRegistry, *settingsBackend);
+        }
     }
 
     void dispatchQuickAction(presentation::GlobalShortcutAction action) {
@@ -259,7 +276,12 @@ class ApplicationController::Impl {
     // These services outlive the disposable configuration window.
     presentation::SystemTrayController systemTray;
     presentation::GlobalShortcutManager globalShortcutManager;
-    std::unique_ptr<presentation::settings::SettingsRuntimeBindings> runtimeBindings;
+    // Settings are intentionally constructed on first window access.  The
+    // tray and shortcut manager use only their compact bootstrap data.
+    std::unique_ptr<presentation::settings::SettingsRegistry> settingsRegistry;
+    std::unique_ptr<presentation::settings::BuiltInSettingsBackend>
+        settingsBackend;
+    std::unique_ptr<presentation::settings::SettingsRuntimeSession> runtimeSession;
     std::unique_ptr<ScreenshotController> screenshotController;
     QPointer<MainWindow> mainWindow;
     bool started = false;

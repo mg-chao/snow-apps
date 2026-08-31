@@ -2,6 +2,7 @@
 
 #include "snow_shot/presentation/components/applicationsearchwidget.h"
 #include "snow_shot/presentation/styles/thememanager.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
 
 #include "widgets/tabs.h"
 
@@ -18,10 +19,10 @@ constexpr int GLOBAL_SEARCH_MIN_WIDTH = 280;
 } // namespace
 
 MainContentHeaderWidget::MainContentHeaderWidget(
-    const snow_shot::presentation::settings::SettingsCatalog& catalog,
+    const snow_shot::presentation::settings::SettingsRegistry& registry,
     const snow_shot::presentation::styles::ThemeAliasMetricToken& metric, QWidget* parent)
     : QFrame(parent), m_tabs(new adqt::widgets::AdTabs(this)),
-      m_globalSearch(new ApplicationSearchWidget(catalog, metric, this)) {
+      m_globalSearch(new ApplicationSearchWidget(registry, metric, this)) {
     setObjectName(QStringLiteral("mainContentHeader"));
     setFrameShape(QFrame::NoFrame);
     setAutoFillBackground(true);

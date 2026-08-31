@@ -1,7 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_COMPONENTS_APPLICATIONSEARCHWIDGET_H
 #define SNOW_SHOT_PRESENTATION_COMPONENTS_APPLICATIONSEARCHWIDGET_H
 
-#include "snow_shot/presentation/settings/settingscatalog.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/settings/settingssearchindex.h"
 
 #include <QHash>
@@ -16,7 +16,6 @@ namespace snow_shot::presentation::styles {
 struct ThemeAliasMetricToken;
 struct ThemeColorScheme;
 } // namespace snow_shot::presentation::styles
-
 namespace adqt::widgets {
 class AdSelect;
 }
@@ -26,7 +25,7 @@ class ApplicationSearchWidget final : public QWidget {
 
   public:
     ApplicationSearchWidget(
-        const snow_shot::presentation::settings::SettingsCatalog& catalog,
+        const snow_shot::presentation::settings::SettingsRegistry& registry,
         const snow_shot::presentation::styles::ThemeAliasMetricToken& metric,
         QWidget* parent = nullptr);
     ~ApplicationSearchWidget() override;

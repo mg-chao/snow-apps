@@ -530,14 +530,17 @@ endfunction()
 
 set(SNOW_SHOT_SETTINGS_CATALOG_SOURCES
     include/snow_shot/presentation/settings/settingscatalog.h
+    include/snow_shot/presentation/settings/settingsregistry.h
     src/presentation/components/icons/snowshoticons.cpp
     src/presentation/settings/settingscatalog.cpp
+    src/presentation/settings/settingsregistry.cpp
 )
 add_library(snow_shot_settings_catalog STATIC ${SNOW_SHOT_SETTINGS_CATALOG_SOURCES})
 snow_enable_unity_build(snow_shot_settings_catalog)
 target_include_directories(snow_shot_settings_catalog PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(snow_shot_settings_catalog PUBLIC
     ant_design_icons_qt
+    snow_shot_storage
     Qt6::Widgets
 )
 
@@ -575,7 +578,8 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/presentation/components/shortcutkeyrow.h
     include/snow_shot/presentation/components/storagestatussettingswidget.h
     include/snow_shot/presentation/screenshottoolbarlayoutmodel.h
-    include/snow_shot/presentation/settings/settingsruntimebindings.h
+    include/snow_shot/presentation/settings/settingsbackend.h
+    include/snow_shot/presentation/settings/settingsruntimesession.h
     include/snow_shot/presentation/settings/applicationpriority.h
     include/snow_shot/presentation/settings/textrecognitionacceleration.h
     include/snow_shot/presentation/styles/thememanager.h
@@ -588,7 +592,8 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/presentation/components/shortcutkeyrow.cpp
     src/presentation/components/storagestatussettingswidget.cpp
     src/presentation/services/globalshortcutmanager.cpp
-    src/presentation/settings/settingsruntimebindings.cpp
+    src/presentation/settings/settingsbackend.cpp
+    src/presentation/settings/settingsruntimesession.cpp
     src/presentation/settings/applicationpriority.cpp
     src/presentation/settings/textrecognitionacceleration.cpp
     src/presentation/styles/buttonborder.cpp
@@ -1190,6 +1195,28 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_executable(snow-shot-settings-runtime-session-tests
+        tests/settings_runtime_session_tests.cpp
+        include/snow_shot/presentation/settings/settingsruntimesession.h
+        include/snow_shot/presentation/settings/settingsbackend.h
+        src/presentation/settings/settingsruntimesession.cpp
+    )
+    target_include_directories(snow-shot-settings-runtime-session-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+    target_link_libraries(snow-shot-settings-runtime-session-tests PRIVATE
+        snow_shot_settings_catalog
+        snow_shot_storage
+        Qt6::Core
+        Qt6::Gui
+    )
+    add_test(NAME snow-shot-settings-runtime-session-tests
+             COMMAND snow-shot-settings-runtime-session-tests)
+    set_tests_properties(snow-shot-settings-runtime-session-tests PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
     add_executable(snow-shot-settings-page-tests
         tests/settings_page_tests.cpp
         include/snow_shot/presentation/mainwindow.h
@@ -1217,12 +1244,21 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     add_test(NAME snow-shot-settings-page-tests
              COMMAND snow-shot-settings-page-tests)
-    set_tests_properties(snow-shot-settings-page-tests PROPERTIES
-        ENVIRONMENT
-            "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
-        ENVIRONMENT_MODIFICATION
-            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
-    )
+    if(WIN32)
+        set_tests_properties(snow-shot-settings-page-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    else()
+        set_tests_properties(snow-shot-settings-page-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    endif()
 
     add_executable(snow-shot-selector-policy-tests
         tests/screenshot_selector_policy_tests.cpp
@@ -2571,12 +2607,21 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-sidebar-widget-tests
         COMMAND snow-shot-sidebar-widget-tests
     )
-    set_tests_properties(snow-shot-sidebar-widget-tests PROPERTIES
-        ENVIRONMENT
-            "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
-        ENVIRONMENT_MODIFICATION
-            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
-    )
+    if(WIN32)
+        set_tests_properties(snow-shot-sidebar-widget-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    else()
+        set_tests_properties(snow-shot-sidebar-widget-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    endif()
 
     add_executable(snow-shot-main-content-header-tests
         tests/main_content_header_tests.cpp
@@ -2601,12 +2646,21 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-main-content-header-tests
         COMMAND snow-shot-main-content-header-tests
     )
-    set_tests_properties(snow-shot-main-content-header-tests PROPERTIES
-        ENVIRONMENT
-            "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
-        ENVIRONMENT_MODIFICATION
-            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
-    )
+    if(WIN32)
+        set_tests_properties(snow-shot-main-content-header-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    else()
+        set_tests_properties(snow-shot-main-content-header-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    endif()
 
     add_executable(snow-shot-tooltip-tests
         tests/tooltip_tests.cpp

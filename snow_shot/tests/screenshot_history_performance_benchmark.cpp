@@ -1,8 +1,9 @@
 #include "snow_shot/presentation/components/contentcardwidget.h"
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
-#include "snow_shot/presentation/settings/settingscatalog.h"
-#include "snow_shot/presentation/settings/settingsruntimebindings.h"
+#include "snow_shot/presentation/settings/settingsbackend.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
+#include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
@@ -162,12 +163,13 @@ int main(int argc, char** argv) {
     }
 
     snow_shot::presentation::GlobalShortcutManager shortcutManager;
-    snow_shot::presentation::settings::BuiltInSettingsRuntimeBindings runtimeBindings(
-        shortcutManager);
+    const auto& registry =
+        snow_shot::presentation::settings::builtInSettingsRegistry();
+    snow_shot::presentation::settings::BuiltInSettingsBackend backend(shortcutManager);
+    snow_shot::presentation::settings::SettingsRuntimeSession session(registry, backend);
     QElapsedTimer constructionTimer;
     constructionTimer.start();
-    ContentCardWidget content(snow_shot::presentation::settings::builtInSettingsCatalog(),
-                              runtimeBindings);
+    ContentCardWidget content(registry, session);
     const qint64 constructionMs = constructionTimer.elapsed();
     content.resize(900, 556);
     content.show();

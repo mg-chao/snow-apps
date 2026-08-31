@@ -4,7 +4,7 @@
 #include <QFrame>
 #include <QStringList>
 
-#include "snow_shot/presentation/settings/settingscatalog.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
 
 class QItemSelectionModel;
 class QEvent;
@@ -22,9 +22,8 @@ class SidebarWidget : public QFrame {
     Q_OBJECT
 
   public:
-    explicit SidebarWidget(
-        const snow_shot::presentation::settings::SettingsCatalog& catalog,
-        QWidget* parent = nullptr);
+    explicit SidebarWidget(const snow_shot::presentation::settings::SettingsRegistry& registry,
+                           QWidget* parent = nullptr);
     [[nodiscard]] QString currentRoute() const;
     [[nodiscard]] bool isCollapsed() const;
     void setCurrentRoute(const QString& routeKey);
@@ -52,7 +51,7 @@ class SidebarWidget : public QFrame {
     adqt::widgets::AdNavigationMenu* m_menu = nullptr;
     QStandardItemModel* m_menuModel = nullptr;
     QItemSelectionModel* m_menuSelectionModel = nullptr;
-    const snow_shot::presentation::settings::SettingsCatalog& m_catalog;
+    const snow_shot::presentation::settings::SettingsRegistry& m_registry;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_COMPONENTS_SIDEBARWIDGET_H
