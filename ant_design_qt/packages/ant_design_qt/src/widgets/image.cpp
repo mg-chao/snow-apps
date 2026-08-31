@@ -298,8 +298,8 @@ DecodedImage decodeImage(const QUrl& source, const QByteArray& suppliedBytes,
     snow::image::DecodeOptions decodeOptions;
     decodeOptions.orientation = snow::image::OrientationPolicy::apply;
     decodeOptions.output_format = snow::image::kRgba8;
-    // AdImage exposes a single raster, so preserve the legacy first-frame behavior
-    // for animated and multi-image documents without decoding unused frames.
+    // AdImage exposes a single raster, so animated and multi-image documents decode only
+    // their first frame and unused frames are never materialized.
     decodeOptions.frame_index = 0;
 
     QSize naturalSize;
@@ -510,10 +510,6 @@ class DefaultImageLoader final : public AdImageLoader {
       decodePool_->waitForDone();
       decodePool_.reset();
     }
-  }
-
-  AdImageReply* load(const QUrl& source, QObject* parent = nullptr) override {
-    return load(source, AdImageLoadOptions{}, parent);
   }
 
   AdImageReply* load(const QUrl& source, const AdImageLoadOptions& options,
@@ -2195,11 +2191,6 @@ AdImageLoader::~AdImageLoader() = default;
 
 AdImageLoader* defaultAdImageLoader() { return defaultImageLoaderInstance(); }
 
-AdImageReply* AdImageLoader::load(const QUrl& source, const AdImageLoadOptions& options,
-                                  QObject* parent) {
-  Q_UNUSED(options);
-  return load(source, parent);
-}
 
 bool operator==(const AdImageLoadOptions& lhs, const AdImageLoadOptions& rhs) {
   return lhs.targetPixelSize == rhs.targetPixelSize && lhs.aspectRatioMode == rhs.aspectRatioMode &&
@@ -3503,7 +3494,7 @@ void AdImage::reloadPlaceholderImage() {
     return;
   }
 
-  AdImageReply* reply = resolvedImageLoader(imageLoader_)->load(placeholderSource_, this);
+  AdImageReply* reply = resolvedImageLoader(imageLoader_)->load(placeholderSource_, AdImageLoadOptions{}, this);
   placeholderReply_ = reply;
   const QPointer<AdImageReply> guardedReply(reply);
   QObject::connect(reply, &AdImageReply::finished, this, [this, token, guardedReply]() {

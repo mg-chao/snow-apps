@@ -1,6 +1,6 @@
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 
-#include "icon_registry.h"
+#include "icon_renderer.h"
 
 #include <QApplication>
 #include <QColor>

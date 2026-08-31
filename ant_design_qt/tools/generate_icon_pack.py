@@ -82,33 +82,6 @@ def _string_view_expression(value: str, index: int) -> str:
     return "std::string_view(" + " ".join(literals) + ")"
 
 
-def _byte_array_expression(value: str, index: int) -> str:
-    """Compatibility helper retained for generator unit tests and downstream tooling.
-
-    New generated packs use _string_view_expression; this function deliberately keeps the old
-    chunked QByteArray expression available to callers that used the private helper in v2.
-    """
-    chunks: list[str] = []
-    current: list[str] = []
-    current_bytes = 0
-    for character in value:
-        character_bytes = len(character.encode("utf-8"))
-        if current and current_bytes + character_bytes > 12_000:
-            chunks.append("".join(current))
-            current = []
-            current_bytes = 0
-        current.append(character)
-        current_bytes += character_bytes
-    if current:
-        chunks.append("".join(current))
-    literals: list[str] = []
-    for chunk_index, chunk in enumerate(chunks):
-        delimiter = f"ADQT_SVG_{index}" if len(chunks) == 1 else f"ADQT_SVG_{index}_{chunk_index}"
-        literals.append(f'R"{delimiter}({chunk}){delimiter}"')
-    if len(literals) == 1:
-        return f"QByteArray({literals[0]})"
-    return "QByteArray()\n          .append(" + ")\n          .append(".join(literals) + ")"
-
 
 def _replace_attr(tag: str, attribute: str, placeholder: str) -> tuple[str, bool]:
     expression = re.compile(rf"\b{attribute}\s*=\s*(['\"])([^'\"]*)\1", re.IGNORECASE)
@@ -295,7 +268,7 @@ def _render_header(data: dict[str, Any], entries: list[Entry], header_name: str)
         f"#ifndef {guard}", f"#define {guard}", "", '#include "external_icon_pack.h"', "",
         f"namespace {namespace} {{", "",
         f"{export}const adqt::icons::ExternalIconPack& pack();",
-        f"{export}adqt::icons::IconPackRegistrationResult registerWith(adqt::icons::IconRegistry& registry);",
+        f"{export}adqt::icons::IconPackRegistrationResult registerWith(adqt::icons::IconRenderer& renderer);",
         f"{export}adqt::icons::IconPackRegistrationResult ensureRegistered();", "",
     ]
     for variant in variants:
@@ -341,8 +314,8 @@ def _render_source(data: dict[str, Any], entries: list[Entry], header_name: str)
         "const adqt::icons::ExternalIconPack& pack() {",
         "  static const adqt::icons::ExternalIconPack value(kStaticPack);",
         "  return value;", "}", "",
-        "adqt::icons::IconPackRegistrationResult registerWith(adqt::icons::IconRegistry& registry) {",
-        "  return pack().registerWith(registry);", "}", "",
+        "adqt::icons::IconPackRegistrationResult registerWith(adqt::icons::IconRenderer& renderer) {",
+        "  return pack().registerWith(renderer);", "}", "",
         "adqt::icons::IconPackRegistrationResult ensureRegistered() {",
         "  return pack().ensureRegistered();", "}", "",
     ])

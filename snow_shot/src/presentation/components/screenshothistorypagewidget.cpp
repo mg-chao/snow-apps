@@ -11,7 +11,7 @@
 #include "snow_shot/storage/capturehistoryrepository.h"
 
 #include "antd_icons.h"
-#include "icon_registry.h"
+#include "icon_renderer.h"
 #include "icons/widget_icons.h"
 #include "widgets/button.h"
 #include "widgets/carousel.h"
@@ -376,10 +376,6 @@ class HistoryThumbnailLoader final : public adqt::widgets::AdImageLoader {
                          ? QString()
                          : QDir(cacheRoot).filePath(QStringLiteral("snow-shot/history-thumbnails"));
           }()) {}
-
-    adqt::widgets::AdImageReply* load(const QUrl& source, QObject* parent = nullptr) override {
-        return load(source, adqt::widgets::AdImageLoadOptions{}, parent);
-    }
 
     adqt::widgets::AdImageReply* load(const QUrl& source,
                                       const adqt::widgets::AdImageLoadOptions& options,

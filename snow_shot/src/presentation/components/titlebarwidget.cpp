@@ -5,7 +5,7 @@
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 
 #include "antd_icons.h"
-#include "icon_registry.h"
+#include "icon_renderer.h"
 #include "widgets/button.h"
 
 #include <algorithm>

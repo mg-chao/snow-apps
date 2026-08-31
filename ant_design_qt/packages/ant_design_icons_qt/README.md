@@ -1,4 +1,4 @@
-# ant_design_icons_qt 2.0
+# ant_design_icons_qt 1.0
 
 `ant_design_icons_qt` provides immutable, typed Qt icon references and generated icon packs. The
 built-in `antd` pack contains only SVGs from the revision pinned in
@@ -13,7 +13,7 @@ runtime file access. Applications never download icons.
 An icon is identified by `IconKey { pack, variant, name }`. `IconRef` is an immutable value created
 from an immutable generated pack. It contains a descriptor pointer and compact inline color data;
 it never owns a generated key, SVG, or entry-table string. Inspect metadata with
-`describeIcon(ref)` (owning compatibility values) or `describeIconView(ref)` (non-owning hot-path
+`describeIcon(ref)` (owning values) or `describeIconView(ref)` (non-owning hot-path
 view), and derive a differently colored reference with `ref.withColors(colors)`.
 
 Use the rendering facade for every static icon:
@@ -36,7 +36,7 @@ tests and tooling.
 
 ```cpp
 #include "antd_icons.h"
-#include "icon_registry.h"
+#include "icon_renderer.h"
 
 button->setIcon(adqt::icons::makeIcon(
     adqt::icons::antd::outlined::Search()));
@@ -133,11 +133,12 @@ Rasters larger than either limit are returned to the caller but are never insert
 `cacheStatistics().costBytes` reaches zero immediately after eviction even when a caller still holds
 the returned image.
 
-Use `cacheStatistics()` for exact entry/byte/hit/miss/eviction counters. `trimCacheToBytes(target)`
-(`trimToBytes`/`reclaimCache` are equivalent aliases) and `trimIconCache(target)` reclaim whole
-least-recently-used entries and return an `IconCacheReclaimReport` with before/after bytes, entry
-counts, reclaimed bytes, and the new generation. `clearCache()` is the hard reset. Snow Shot trims
-the shared cache to 512 KiB when the application is hidden or capture resources become idle.
+Use `cacheStatistics()` for exact entry/byte/hit/miss/eviction counters. `trimCache(target)` on a
+renderer (or `trimIconCache(target)` for the shared default renderer; a negative target trims back
+to the configured limit) reclaims whole least-recently-used entries and returns an
+`IconCacheReclaimReport` with before/after bytes, entry counts, reclaimed bytes, and the new
+generation. `clearCache()` is the hard reset. Snow Shot trims the shared cache to 512 KiB when the
+application is hidden or capture resources become idle.
 
 The renderer coalesces concurrent requests for the same cache key. `clearCache()`, trim operations,
 cache-limit changes, and palette changes advance the generation; a render that began in an older
@@ -187,12 +188,10 @@ python tools/generate_icon_pack.py path/to/icons.manifest.json \
   --check
 ```
 
-`ExternalIconPackDefinition`, `ExternalIconPack(ExternalIconPackDefinition)`, and
-`IconRenderer::registerPack()` remain available only for explicitly dynamic project/test packs.
-They normalize and validate the full pack before committing. Identical repeated registration is
-idempotent; conflicting keys, SVG content, or hashes return structured diagnostics without partial
-registration. Production generated packs use the static descriptor constructor and do not pay this
-runtime table-copy cost.
+The generator validates every SVG against its declared color model before emitting the immutable
+descriptor table: forbidden active elements, external network references, and non-data image
+references are rejected at generation time. Runtime registration is a single pointer store per
+pack.
 
 ## Asset Ownership
 
@@ -214,23 +213,5 @@ python tools/check_repository_icon_usage.py
 ```
 
 The repository check scans tracked and untracked source files while honoring Git ignores, so stale
-build output is excluded. It rejects removed 1.x APIs, runtime SVG resource/file loading, SVG qrc
+build output is excluded. It rejects retired icon APIs, runtime SVG resource/file loading, SVG qrc
 entries, widget-local `QSvgRenderer` use, and the retired procedural static-glyph paths.
-
-## Migrating from 1.x
-
-Version 2.0 is intentionally source breaking. There are no compatibility adapters.
-
-- Replace `IconTheme` identity with the generated variant namespace or `IconKey::variant`.
-- Replace `IconRenderModel` with `IconColorModel`.
-- Replace mutable `IconRef::id` inspection with `describeIcon(ref).key`.
-- Replace mutable `IconRef::colors` with `ref.withColors(IconColors::...)`.
-- Replace `IconColorOverrides` and `hasPrimary` flags with optional-slot `IconColors` factories.
-- Replace size/DPR render overloads with `IconRenderRequest`.
-- Replace manual `QIcon::addPixmap` state assembly with `IconStatePalette`.
-- Replace `registerIcon`, `makeIconRef`, qrc callbacks, and handwritten entry tables with a generated
-  static `ExternalIconPack`/`IconPack` factory. Keep `registerPack()` only for explicitly dynamic
-  test or plugin definitions.
-- Move local SVG overlays out of the `antd` pack and into the project that owns them.
-- Replace direct `QIcon(":/...svg")`, `QFile` SVG loading, and widget-local `QSvgRenderer` paths with
-  the rendering facade.

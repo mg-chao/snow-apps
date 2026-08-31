@@ -1,6 +1,6 @@
 #include "ui/app_icons.h"
 
-#include "icon_registry.h"
+#include "icon_renderer.h"
 
 #include <QApplication>
 #include <QColor>
@@ -39,8 +39,8 @@ QPixmap render(const adqt::icons::IconRef& ref, const QSize& size, qreal dpr = 1
 
 void viewerPackRendersAndPreservesColorModels() {
     namespace icons = snow::image_viewer::icons;
-    adqt::icons::IconRegistry registry;
-    const auto registered = icons::registerWith(registry);
+    adqt::icons::IconRenderer renderer;
+    const auto registered = icons::registerWith(renderer);
     const adqt::icons::IconPack* staticPack = icons::pack().staticPack();
     require(registered.ok() && staticPack != nullptr && staticPack->entryCount == 2,
             "viewer pack should register its two project-owned assets");
@@ -50,7 +50,7 @@ void viewerPackRendersAndPreservesColorModels() {
         adqt::icons::IconRenderRequest request;
         request.logicalSize = QSize(32, 32);
         request.devicePixelRatio = 1.5;
-        const QPixmap pixmap = registry.renderIconPixmap(ref, request);
+        const QPixmap pixmap = renderer.renderIconPixmap(ref, request);
         require(ref.isValid() && !pixmap.isNull() && pixmap.size() == QSize(48, 48) &&
                     !alphaBounds(pixmap.toImage()).isEmpty(),
                 "every viewer pack entry should render at fractional DPR");

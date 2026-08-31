@@ -1,7 +1,7 @@
 #include "snow_shot/presentation/components/icons/iconrenderutils.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 
-#include "icon_registry.h"
+#include "icon_renderer.h"
 
 #include <QApplication>
 #include <QColor>
@@ -66,8 +66,8 @@ QPixmap render(const adqt::icons::IconRef& ref, const QSize& size, qreal dpr = 1
 
 void everySnowShotEntryRenders() {
     namespace icons = snow_shot::presentation::icons::custom;
-    adqt::icons::IconRegistry registry;
-    const auto registered = icons::registerWith(registry);
+    adqt::icons::IconRenderer renderer;
+    const auto registered = icons::registerWith(renderer);
     require(registered.ok(), "Snow Shot pack registration should succeed");
     const adqt::icons::IconPack* staticPack = icons::pack().staticPack();
     require(staticPack != nullptr && staticPack->entryCount == 76,
@@ -79,7 +79,7 @@ void everySnowShotEntryRenders() {
     for (std::size_t index = 0; index < staticPack->entryCount; ++index) {
         const auto ref = icons::pack().icon(index);
         require(ref.isValid(), "every Snow Shot pack entry should create a reference");
-        const QPixmap pixmap = registry.renderIconPixmap(ref, request);
+        const QPixmap pixmap = renderer.renderIconPixmap(ref, request);
         require(!pixmap.isNull() && pixmap.size() == QSize(40, 40) &&
                     qFuzzyCompare(pixmap.devicePixelRatio(), 1.25),
                 "every Snow Shot pack entry should render at fractional DPR");

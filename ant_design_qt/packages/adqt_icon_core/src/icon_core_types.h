@@ -92,9 +92,6 @@ struct ADQT_ICON_CORE_EXPORT IconPack final {
                const IconColors& colors) const;
 };
 
-using IconPackEntry = IconDescriptor;
-using StaticIconPack = IconPack;
-
 class ADQT_ICON_CORE_EXPORT IconColors final {
  public:
   IconColors() = default;
@@ -148,9 +145,8 @@ ADQT_ICON_CORE_EXPORT IconHashValue qHash(const IconKey& value, IconHashValue se
 class IconRenderer;
 class ExternalIconPack;
 
-// A reference is two pointers/values and never owns a generated key or SVG buffer. The descriptor
-// must either be program-lifetime static data (generated packs) or be owned by an explicitly used
-// legacy renderer registration; dynamic references must not outlive that renderer.
+// A reference is two pointers/values and never owns a generated key or SVG buffer; the descriptor
+// is program-lifetime static data owned by a generated pack.
 class ADQT_ICON_CORE_EXPORT IconRef final {
  public:
   IconRef() = default;
@@ -187,8 +183,8 @@ static_assert(sizeof(IconRef) <= sizeof(const IconDescriptor*) + 4 * sizeof(QRgb
 ADQT_ICON_CORE_EXPORT IconHashValue qHash(const IconRef& value, IconHashValue seed = 0);
 inline bool isValid(const IconRef& ref) { return ref.isValid(); }
 
-// A non-owning inspection view. Use this in hot metadata paths; describeIcon() below remains an
-// owning compatibility facade for callers that need QString/QByteArray values.
+// A non-owning inspection view for hot metadata paths; describeIcon() returns owning values for
+// callers that need QString/QByteArray storage.
 struct IconMetadataView final {
   std::string_view pack;
   std::string_view variant;
@@ -218,19 +214,6 @@ inline bool operator==(const IconMetadata& lhs, const IconMetadata& rhs) {
          lhs.defaultColors == rhs.defaultColors && lhs.sourceHash == rhs.sourceHash;
 }
 inline bool operator!=(const IconMetadata& lhs, const IconMetadata& rhs) { return !(lhs == rhs); }
-
-// Legacy, explicitly dynamic registration input. Generated packs never instantiate this type.
-struct IconDefinition final {
-  IconKey key;
-  IconColorModel colorModel = IconColorModel::Monochrome;
-  IconFit fit = IconFit::Contain;
-  IconColors defaultColors;
-  QByteArray svg;
-  QByteArray sourceHash;
-  bool allowEmbeddedDataImages = false;
-
-  bool isValid() const { return key.isValid() && !svg.isEmpty(); }
-};
 
 enum class IconRegistrationError {
   None,

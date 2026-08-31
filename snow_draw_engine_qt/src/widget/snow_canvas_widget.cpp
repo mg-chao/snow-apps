@@ -1,6 +1,6 @@
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "icons/draw_engine_icons.h"
-#include "icon_registry.h"
+#include "icon_renderer.h"
 
 #include "snow_canvas_commands.h"
 #include "snow_canvas_cursor_controller.h"

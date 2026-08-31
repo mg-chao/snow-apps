@@ -79,9 +79,8 @@ class AdImageLoader : public QObject {
   explicit AdImageLoader(QObject* parent = nullptr);
   ~AdImageLoader() override;
 
-  virtual AdImageReply* load(const QUrl& source, QObject* parent = nullptr) = 0;
   virtual AdImageReply* load(const QUrl& source, const AdImageLoadOptions& options,
-                             QObject* parent = nullptr);
+                             QObject* parent = nullptr) = 0;
 };
 
 AdImageLoader* defaultAdImageLoader();

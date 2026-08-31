@@ -1,6 +1,6 @@
 #include "snow_canvas_input_adapter.h"
 #include "icons/draw_engine_icons.h"
-#include "icon_registry.h"
+#include "icon_renderer.h"
 
 #include <QKeyEvent>
 #include <QMouseEvent>

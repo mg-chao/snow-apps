@@ -665,8 +665,8 @@ const adqt::icons::ExternalIconPack& pack() {
   return value;
 }
 
-adqt::icons::IconPackRegistrationResult registerWith(adqt::icons::IconRegistry& registry) {
-  return pack().registerWith(registry);
+adqt::icons::IconPackRegistrationResult registerWith(adqt::icons::IconRenderer& renderer) {
+  return pack().registerWith(renderer);
 }
 
 adqt::icons::IconPackRegistrationResult ensureRegistered() {

@@ -6,7 +6,7 @@
 #include "snow_canvas_render_geometry.h"
 #include "snow_canvas_renderer.h"
 #include "icons/draw_engine_icons.h"
-#include "icon_registry.h"
+#include "icon_renderer.h"
 
 #include <QApplication>
 #include <QColor>

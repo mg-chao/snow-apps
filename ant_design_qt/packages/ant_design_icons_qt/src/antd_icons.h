@@ -7,7 +7,7 @@
 namespace adqt::icons::antd {
 
 ADQT_ICONS_EXPORT const adqt::icons::ExternalIconPack& pack();
-ADQT_ICONS_EXPORT adqt::icons::IconPackRegistrationResult registerWith(adqt::icons::IconRegistry& registry);
+ADQT_ICONS_EXPORT adqt::icons::IconPackRegistrationResult registerWith(adqt::icons::IconRenderer& renderer);
 ADQT_ICONS_EXPORT adqt::icons::IconPackRegistrationResult ensureRegistered();
 
 namespace filled {

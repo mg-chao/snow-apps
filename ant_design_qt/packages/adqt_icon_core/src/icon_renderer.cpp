@@ -1,11 +1,9 @@
-#include "icon_registry.h"
+#include "icon_renderer.h"
 
-#include <QCryptographicHash>
 #include <QIconEngine>
 #include <QMutex>
 #include <QMutexLocker>
 #include <QPainter>
-#include <QRegularExpression>
 #include <QSet>
 #include <QSvgRenderer>
 #include <QWaitCondition>
@@ -25,19 +23,6 @@ namespace adqt::icons::detail {
 struct IconRefAccess final {
   static const IconDescriptor* descriptor(const IconRef& ref) { return ref.descriptor_; }
   static const IconColors& colors(const IconRef& ref) { return ref.colors_; }
-};
-
-struct DynamicIcon final {
-  QByteArray pack;
-  QByteArray variant;
-  QByteArray name;
-  QByteArray svg;
-  QByteArray sourceHash;
-  QByteArray primaryColor;
-  QByteArray secondaryColor;
-  QByteArray tertiaryColor;
-  IconDescriptor descriptor;
-  IconMetadata metadata;
 };
 
 struct IconCacheKey final {
@@ -88,7 +73,6 @@ struct IconRendererImpl final {
   using CacheIterator = CacheList::iterator;
 
   QMutex mutex;
-  QHash<IconKey, std::shared_ptr<DynamicIcon>> dynamicIcons;
   // Static packs are catalogued process-wide, but registration results remain local to each
   // renderer so an isolated renderer can report its own first-use accurately.
   QSet<const IconPack*> registeredStaticPacks;
@@ -128,7 +112,6 @@ namespace {
 using detail::CacheEntry;
 using detail::IconCacheKey;
 using detail::IconRendererImpl;
-using detail::DynamicIcon;
 
 constexpr auto kPrimaryPlaceholder = "__ADQT_SLOT_PRIMARY__";
 constexpr auto kSecondaryPlaceholder = "__ADQT_SLOT_SECONDARY__";
@@ -184,131 +167,8 @@ void addDiagnostic(IconPackRegistrationResult& result, IconRegistrationError err
   result.diagnostics.append(IconRegistrationDiagnostic{error, key, message});
 }
 
-QString placeholderForSlot(const QString& slotName) {
-  if (slotName.compare(QStringLiteral("secondary"), Qt::CaseInsensitive) == 0)
-    return QString::fromLatin1(kSecondaryPlaceholder);
-  if (slotName.compare(QStringLiteral("tertiary"), Qt::CaseInsensitive) == 0)
-    return QString::fromLatin1(kTertiaryPlaceholder);
-  return QString::fromLatin1(kPrimaryPlaceholder);
-}
-
 QString svgColor(const QColor& value) {
   return (value.isValid() ? value : QColor(Qt::black)).name(QColor::HexRgb);
-}
-
-bool replaceColorAttribute(QString& tag, const QString& name, const QString& placeholder) {
-  const QRegularExpression expression(QStringLiteral(R"(\b%1\s*=\s*(['"])([^'"]*)\1)").arg(name),
-                                      QRegularExpression::CaseInsensitiveOption);
-  const QRegularExpressionMatch match = expression.match(tag);
-  if (!match.hasMatch() || match.captured(2).compare(QStringLiteral("none"), Qt::CaseInsensitive) == 0)
-    return false;
-  tag.replace(match.capturedStart(), match.capturedLength(),
-              QStringLiteral("%1=\"%2\"").arg(name, placeholder));
-  return true;
-}
-
-QByteArray normalizeSvg(const IconDefinition& definition, QString* error) {
-  QString svg = QString::fromUtf8(definition.svg);
-  if (!svg.contains(QRegularExpression(QStringLiteral(R"(<svg\b)"),
-                                       QRegularExpression::CaseInsensitiveOption))) {
-    if (error) *error = QStringLiteral("source does not contain an svg root");
-    return {};
-  }
-  const QRegularExpression forbiddenElement(
-      QStringLiteral(R"(<\s*(?:script|foreignObject|iframe|animate|animateMotion|animateTransform|set)\b)"),
-      QRegularExpression::CaseInsensitiveOption);
-  if (svg.contains(forbiddenElement)) {
-    if (error) *error = QStringLiteral("SVG contains a forbidden active element");
-    return {};
-  }
-  if (svg.contains(QRegularExpression(QStringLiteral(R"((?:href|src)\s*=\s*['"](?:https?:)?//)"),
-                                      QRegularExpression::CaseInsensitiveOption))) {
-    if (error) *error = QStringLiteral("external network references are forbidden");
-    return {};
-  }
-  if (svg.contains(QRegularExpression(QStringLiteral(R"(<image\b)"),
-                                      QRegularExpression::CaseInsensitiveOption))) {
-    if (definition.colorModel != IconColorModel::FullColor ||
-        !definition.allowEmbeddedDataImages) {
-      if (error)
-        *error = QStringLiteral(
-            "image elements require an explicitly permitted full-color entry");
-      return {};
-    }
-    const QRegularExpression imageTag(QStringLiteral(R"(<image\b[^>]*>)"),
-                                      QRegularExpression::CaseInsensitiveOption);
-    const QRegularExpression imageReference(
-        QStringLiteral(R"((?:href|src)\s*=\s*(['"])([^'"]*)\1)"),
-        QRegularExpression::CaseInsensitiveOption);
-    auto tags = imageTag.globalMatch(svg);
-    while (tags.hasNext()) {
-      const QRegularExpressionMatch tag = tags.next();
-      auto references = imageReference.globalMatch(tag.captured());
-      while (references.hasNext()) {
-        const QRegularExpressionMatch reference = references.next();
-        if (!reference.captured(2).startsWith(QStringLiteral("data:"),
-                                               Qt::CaseInsensitive)) {
-          if (error) *error = QStringLiteral("image elements may only reference data URLs");
-          return {};
-        }
-      }
-    }
-  }
-  if (definition.colorModel == IconColorModel::FullColor) {
-    if (svg.contains(QStringLiteral("data-adqt-slot"), Qt::CaseInsensitive) ||
-        svg.contains(QStringLiteral("currentColor"), Qt::CaseInsensitive)) {
-      if (error) *error = QStringLiteral("full-color icons cannot contain theme slots");
-      return {};
-    }
-    return svg.toUtf8();
-  }
-
-  const QRegularExpression slotTag(
-      QStringLiteral(R"(<([A-Za-z_:][A-Za-z0-9:._-]*)([^>]*)\bdata-adqt-slot\s*=\s*(['"])(primary|secondary|tertiary)\3([^>]*)>)"),
-      QRegularExpression::CaseInsensitiveOption);
-  const QRegularExpression slotAttribute(
-      QStringLiteral(R"(\s*data-adqt-slot\s*=\s*(['"])(primary|secondary|tertiary)\1)"),
-      QRegularExpression::CaseInsensitiveOption);
-  const QRegularExpression currentColor(QStringLiteral("currentColor"),
-                                        QRegularExpression::CaseInsensitiveOption);
-  QString normalized;
-  qsizetype cursor = 0;
-  auto matches = slotTag.globalMatch(svg);
-  while (matches.hasNext()) {
-    const auto match = matches.next();
-    normalized += svg.mid(cursor, match.capturedStart() - cursor);
-    QString tag = match.captured();
-    const QString placeholder = placeholderForSlot(match.captured(4));
-    tag.remove(slotAttribute);
-    bool changed = replaceColorAttribute(tag, QStringLiteral("fill"), placeholder);
-    changed = replaceColorAttribute(tag, QStringLiteral("stroke"), placeholder) || changed;
-    if (tag.contains(currentColor)) {
-      tag.replace(currentColor, placeholder);
-      changed = true;
-    }
-    if (!changed) {
-      qsizetype position = tag.lastIndexOf(QLatin1Char('>'));
-      if (position > 0 && tag.at(position - 1) == QLatin1Char('/')) --position;
-      tag.insert(position, QStringLiteral(" fill=\"") + placeholder + QStringLiteral("\""));
-    }
-    normalized += tag;
-    cursor = match.capturedEnd();
-  }
-  normalized += svg.mid(cursor);
-  normalized.replace(currentColor, QString::fromLatin1(kPrimaryPlaceholder));
-  const bool primary = normalized.contains(QString::fromLatin1(kPrimaryPlaceholder));
-  const bool secondary = normalized.contains(QString::fromLatin1(kSecondaryPlaceholder));
-  const bool tertiary = normalized.contains(QString::fromLatin1(kTertiaryPlaceholder));
-  const bool valid = definition.colorModel == IconColorModel::Monochrome
-                         ? primary && !secondary && !tertiary
-                     : definition.colorModel == IconColorModel::TwoTone
-                         ? primary && secondary && !tertiary
-                         : primary && secondary && tertiary;
-  if (!valid) {
-    if (error) *error = QStringLiteral("SVG slots do not match the declared color model");
-    return {};
-  }
-  return normalized.toUtf8();
 }
 
 QColor deriveSecondary(const QColor& primary) {
@@ -444,24 +304,6 @@ IconMetadata metadataFromDescriptor(const IconDescriptor& descriptor) {
 IconMetadataView metadataViewFromDescriptor(const IconDescriptor& descriptor) {
   return {descriptor.pack, descriptor.variant, descriptor.name, descriptor.colorModel,
           descriptor.fit, descriptor.defaultColors, descriptor.sourceHash};
-}
-
-const IconDescriptor* findStaticDescriptor(const IconKey& key) {
-  auto& catalog = detail::staticPackCatalog();
-  QMutexLocker lock(&catalog.mutex);
-  const QByteArray packName = key.pack.toUtf8();
-  const std::string_view packView(packName.constData(), static_cast<std::size_t>(packName.size()));
-  for (const IconPack* pack : catalog.packs) {
-    if (pack->packName == packView) {
-      const QByteArray variant = key.variant.toUtf8();
-      const QByteArray name = key.name.toUtf8();
-      if (const IconDescriptor* descriptor =
-              pack->find(std::string_view(variant.constData(), static_cast<std::size_t>(variant.size())),
-                         std::string_view(name.constData(), static_cast<std::size_t>(name.size()))))
-        return descriptor;
-    }
-  }
-  return nullptr;
 }
 
 void touchCache(IconRendererImpl& impl, IconRendererImpl::CacheIterator iterator) {
@@ -676,7 +518,7 @@ class RendererIconEngine final : public QIconEngine {
   RendererIconEngine(std::shared_ptr<IconRendererImpl> impl, IconRef ref, IconStatePalette palette)
       : impl_(std::move(impl)), ref_(std::move(ref)), palette_(std::move(palette)) {}
   QIconEngine* clone() const override { return new RendererIconEngine(impl_, ref_, palette_); }
-  QString key() const override { return QStringLiteral("adqt.icon.engine.v3"); }
+  QString key() const override { return QStringLiteral("adqt.icon.engine"); }
   QPixmap pixmap(const QSize& size, QIcon::Mode mode, QIcon::State state) override {
     IconRenderRequest request;
     request.logicalSize = size;
@@ -875,114 +717,6 @@ IconPackRegistrationResult IconRenderer::registerStaticPack(const IconPack& pack
   return result;
 }
 
-IconPackRegistrationResult IconRenderer::registerPack(const QString& pack,
-                                                      const QList<IconDefinition>& definitions) {
-  IconPackRegistrationResult result;
-  if (pack.isEmpty() || definitions.isEmpty()) {
-    addDiagnostic(result, IconRegistrationError::InvalidPack, {},
-                  QStringLiteral("pack name and entries are required"));
-    return result;
-  }
-  QHash<IconKey, std::shared_ptr<DynamicIcon>> pending;
-  for (const IconDefinition& definition : definitions) {
-    if (!definition.isValid() || definition.key.pack != pack) {
-      addDiagnostic(result, IconRegistrationError::InvalidEntry, definition.key,
-                    QStringLiteral("invalid entry or pack mismatch"));
-      continue;
-    }
-    if (pending.contains(definition.key)) {
-      addDiagnostic(result, IconRegistrationError::DuplicateKey, definition.key,
-                    QStringLiteral("duplicate key in pack definition"));
-      continue;
-    }
-    if (!colorsAllowed(definition.colorModel, definition.defaultColors)) {
-      addDiagnostic(result, IconRegistrationError::ColorModelMismatch, definition.key,
-                    QStringLiteral("default colors do not match the color model"));
-      continue;
-    }
-    QString error;
-    const QByteArray normalized = normalizeSvg(definition, &error);
-    if (normalized.isEmpty()) {
-      addDiagnostic(result, IconRegistrationError::InvalidSvg, definition.key, error);
-      continue;
-    }
-    const QByteArray hash = QCryptographicHash::hash(normalized, QCryptographicHash::Sha256).toHex();
-    if (!definition.sourceHash.isEmpty() && definition.sourceHash.toLower() != hash) {
-      addDiagnostic(result, IconRegistrationError::HashMismatch, definition.key,
-                    QStringLiteral("declared source hash does not match normalized SVG"));
-      continue;
-    }
-    auto stored = std::make_shared<DynamicIcon>();
-    stored->pack = definition.key.pack.toUtf8();
-    stored->variant = definition.key.variant.toUtf8();
-    stored->name = definition.key.name.toUtf8();
-    stored->svg = normalized;
-    stored->sourceHash = hash;
-    const auto primary = definition.defaultColors.primarySlot();
-    const auto secondary = definition.defaultColors.secondarySlot();
-    const auto tertiary = definition.defaultColors.tertiarySlot();
-    stored->primaryColor =
-        primary ? primary->name(QColor::HexArgb).toUtf8() : QByteArray();
-    stored->secondaryColor =
-        secondary ? secondary->name(QColor::HexArgb).toUtf8() : QByteArray();
-    stored->tertiaryColor =
-        tertiary ? tertiary->name(QColor::HexArgb).toUtf8() : QByteArray();
-    stored->descriptor = {
-        std::string_view(stored->pack.constData(), static_cast<std::size_t>(stored->pack.size())),
-        std::string_view(stored->variant.constData(), static_cast<std::size_t>(stored->variant.size())),
-        std::string_view(stored->name.constData(), static_cast<std::size_t>(stored->name.size())),
-        std::string_view(stored->svg.constData(), static_cast<std::size_t>(stored->svg.size())),
-        std::string_view(stored->sourceHash.constData(),
-                         static_cast<std::size_t>(stored->sourceHash.size())),
-        definition.colorModel,
-        definition.fit,
-        {std::string_view(stored->primaryColor.constData(),
-                          static_cast<std::size_t>(stored->primaryColor.size())),
-         std::string_view(stored->secondaryColor.constData(),
-                          static_cast<std::size_t>(stored->secondaryColor.size())),
-         std::string_view(stored->tertiaryColor.constData(),
-                          static_cast<std::size_t>(stored->tertiaryColor.size()))},
-        definition.allowEmbeddedDataImages};
-    stored->metadata = metadataFromDescriptor(stored->descriptor);
-    pending.insert(definition.key, std::move(stored));
-  }
-  if (!result.ok()) return result;
-
-  QMutexLocker lock(&impl_->mutex);
-  for (auto it = pending.constBegin(); it != pending.constEnd(); ++it) {
-    const auto existing = impl_->dynamicIcons.constFind(it.key());
-    if (existing != impl_->dynamicIcons.constEnd() &&
-        ((*existing)->metadata != (*it)->metadata || (*existing)->svg != (*it)->svg)) {
-      addDiagnostic(result, IconRegistrationError::ConflictingRegistration, it.key(),
-                    QStringLiteral("key is already registered with different content"));
-    }
-    if (existing == impl_->dynamicIcons.constEnd()) {
-      if (findStaticDescriptor(it.key()))
-        addDiagnostic(result, IconRegistrationError::ConflictingRegistration, it.key(),
-                      QStringLiteral("key conflicts with a static icon pack"));
-    }
-  }
-  if (!result.ok()) return result;
-  for (auto it = pending.constBegin(); it != pending.constEnd(); ++it) {
-    if (impl_->dynamicIcons.contains(it.key()))
-      ++result.existingCount;
-    else {
-      impl_->dynamicIcons.insert(it.key(), it.value());
-      ++result.registeredCount;
-    }
-  }
-  return result;
-}
-
-bool IconRenderer::containsIcon(const IconKey& key) const {
-  if (!key.isValid()) return false;
-  {
-    QMutexLocker lock(&impl_->mutex);
-    if (impl_->dynamicIcons.contains(key)) return true;
-  }
-  return findStaticDescriptor(key) != nullptr;
-}
-
 IconMetadataView IconRenderer::describeIconView(const IconRef& ref) const {
   const IconDescriptor* descriptor = detail::IconRefAccess::descriptor(ref);
   return descriptor && descriptor->isValid() ? metadataViewFromDescriptor(*descriptor)
@@ -992,59 +726,6 @@ IconMetadataView IconRenderer::describeIconView(const IconRef& ref) const {
 IconMetadata IconRenderer::describeIcon(const IconRef& ref) const {
   const IconDescriptor* descriptor = detail::IconRefAccess::descriptor(ref);
   return descriptor && descriptor->isValid() ? metadataFromDescriptor(*descriptor) : IconMetadata();
-}
-
-IconMetadata IconRenderer::describeIcon(const IconKey& key) const {
-  QMutexLocker lock(&impl_->mutex);
-  const auto found = impl_->dynamicIcons.constFind(key);
-  if (found != impl_->dynamicIcons.constEnd()) return (*found)->metadata;
-  lock.unlock();
-  if (const IconDescriptor* descriptor = findStaticDescriptor(key)) return metadataFromDescriptor(*descriptor);
-  return {};
-}
-
-QList<IconMetadata> IconRenderer::listIcons(const QString& pack, const QString& variant) const {
-  QList<IconMetadata> result;
-  {
-    QMutexLocker lock(&impl_->mutex);
-    for (auto it = impl_->dynamicIcons.constBegin(); it != impl_->dynamicIcons.constEnd(); ++it) {
-      if ((!pack.isEmpty() && it.key().pack != pack) ||
-          (!variant.isEmpty() && it.key().variant != variant))
-        continue;
-      result.append((*it)->metadata);
-    }
-  }
-  auto& catalog = detail::staticPackCatalog();
-  QMutexLocker catalogLock(&catalog.mutex);
-  for (const IconPack* staticPack : catalog.packs) {
-    if (!pack.isEmpty() && stringFromView(staticPack->packName) != pack) continue;
-    for (std::size_t index = 0; index < staticPack->entryCount; ++index) {
-      const IconDescriptor& descriptor = staticPack->entries[index];
-      if (!variant.isEmpty() && stringFromView(descriptor.variant) != variant) continue;
-      result.append(metadataFromDescriptor(descriptor));
-    }
-  }
-  std::sort(result.begin(), result.end(), [](const IconMetadata& lhs, const IconMetadata& rhs) {
-    if (lhs.key.pack != rhs.key.pack) return lhs.key.pack < rhs.key.pack;
-    if (lhs.key.variant != rhs.key.variant) return lhs.key.variant < rhs.key.variant;
-    return lhs.key.name < rhs.key.name;
-  });
-  return result;
-}
-
-IconRef IconRenderer::reference(const IconKey& key, const IconColors& colors) const {
-  if (!key.isValid()) return {};
-  {
-    QMutexLocker lock(&impl_->mutex);
-    const auto found = impl_->dynamicIcons.constFind(key);
-    if (found != impl_->dynamicIcons.constEnd())
-      return colorsAllowed((*found)->descriptor.colorModel, colors)
-                 ? IconRef(&(*found)->descriptor, colors)
-                 : IconRef();
-  }
-  if (const IconDescriptor* descriptor = findStaticDescriptor(key))
-    return colorsAllowed(descriptor->colorModel, colors) ? IconRef(descriptor, colors) : IconRef();
-  return {};
 }
 
 QIcon IconRenderer::makeIcon(const IconRef& ref, const IconStatePalette& palette) const {
@@ -1123,10 +804,6 @@ void IconRenderer::setCacheLimits(qint64 bytes, int maxEntries, qint64 maxRaster
   impl_->cacheReady.wakeAll();
 }
 
-void IconRenderer::setCacheLimitKB(int kb) {
-  setCacheLimitBytes(qMax<qint64>(0, static_cast<qint64>(kb) * 1024));
-}
-
 IconCacheReclaimReport IconRenderer::trimCache(qint64 targetBytes) {
   QMutexLocker lock(&impl_->mutex);
   IconCacheReclaimReport report;
@@ -1142,14 +819,6 @@ IconCacheReclaimReport IconRenderer::trimCache(qint64 targetBytes) {
   report.generation = impl_->generation;
   impl_->cacheReady.wakeAll();
   return report;
-}
-
-IconCacheReclaimReport IconRenderer::trimToBytes(qint64 targetBytes) { return trimCache(targetBytes); }
-IconCacheReclaimReport IconRenderer::trimCacheToBytes(qint64 targetBytes) {
-  return trimCache(targetBytes);
-}
-IconCacheReclaimReport IconRenderer::reclaimCache(qint64 targetBytes) {
-  return trimCache(targetBytes);
 }
 
 void IconRenderer::clearCache() {
@@ -1191,12 +860,10 @@ IconRenderer& defaultRenderer() {
   static IconRenderer instance;
   return instance;
 }
-IconRenderer& defaultRegistry() { return defaultRenderer(); }
+
 IconMetadataView describeIconView(const IconRef& ref) { return defaultRenderer().describeIconView(ref); }
 IconMetadata describeIcon(const IconRef& ref) { return defaultRenderer().describeIcon(ref); }
-QList<IconMetadata> listIcons(const QString& pack, const QString& variant) {
-  return defaultRenderer().listIcons(pack, variant);
-}
+
 QIcon makeIcon(const IconRef& ref, const IconStatePalette& palette) {
   return defaultRenderer().makeIcon(ref, palette);
 }
@@ -1222,18 +889,9 @@ void setCacheLimitBytes(qint64 bytes) { defaultRenderer().setCacheLimitBytes(byt
 void setCacheLimits(qint64 bytes, int maxEntries, qint64 maxRasterBytes) {
   defaultRenderer().setCacheLimits(bytes, maxEntries, maxRasterBytes);
 }
-void setCacheLimitKB(int kb) { defaultRenderer().setCacheLimitKB(kb); }
+
 IconCacheReclaimReport trimIconCache(qint64 targetBytes) { return defaultRenderer().trimCache(targetBytes); }
-IconCacheReclaimReport trimCache(qint64 targetBytes) { return defaultRenderer().trimCache(targetBytes); }
-IconCacheReclaimReport trimCacheToBytes(qint64 targetBytes) {
-  return defaultRenderer().trimCache(targetBytes);
-}
-IconCacheReclaimReport trimToBytes(qint64 targetBytes) {
-  return defaultRenderer().trimToBytes(targetBytes);
-}
-IconCacheReclaimReport reclaimCache(qint64 targetBytes) {
-  return defaultRenderer().reclaimCache(targetBytes);
-}
+
 void clearCache() { defaultRenderer().clearCache(); }
 void prewarm(const QList<IconPixmapRequest>& requests) { defaultRenderer().prewarm(requests); }
 IconCacheStatistics cacheStatistics() { return defaultRenderer().cacheStatistics(); }
