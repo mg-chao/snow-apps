@@ -11,7 +11,7 @@ namespace adqt::widgets {
 class AdDescriptions;
 }
 namespace snow_shot::presentation::settings {
-class SettingsRuntimeBindings;
+class SettingsRuntimeSession;
 }
 
 class StorageStatusSettingsWidget final : public SettingsCustomWidget {
@@ -19,7 +19,7 @@ class StorageStatusSettingsWidget final : public SettingsCustomWidget {
 
   public:
     explicit StorageStatusSettingsWidget(
-        snow_shot::presentation::settings::SettingsRuntimeBindings& runtimeBindings,
+        snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession,
         QWidget* parent = nullptr);
 
     void applyTheme(
@@ -38,7 +38,7 @@ class StorageStatusSettingsWidget final : public SettingsCustomWidget {
     QLabel* m_locationValue = nullptr;
     QLabel* m_modeValue = nullptr;
     QLabel* m_errorValue = nullptr;
-    snow_shot::presentation::settings::SettingsRuntimeBindings& m_runtimeBindings;
+    snow_shot::presentation::settings::SettingsRuntimeSession& m_runtimeSession;
     snow_shot::presentation::styles::ThemeColorScheme m_colorScheme;
 };
 

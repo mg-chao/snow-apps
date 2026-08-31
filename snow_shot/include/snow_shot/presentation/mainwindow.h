@@ -17,15 +17,17 @@ namespace snow_shot::presentation::styles {
 struct ThemeColorScheme;
 }
 namespace snow_shot::presentation::settings {
-class SettingsRuntimeBindings;
+class SettingsRegistry;
+class SettingsRuntimeSession;
 }
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
   public:
-    explicit MainWindow(snow_shot::presentation::settings::SettingsRuntimeBindings& runtimeBindings,
-                        QWidget* parent = nullptr);
+    MainWindow(const snow_shot::presentation::settings::SettingsRegistry& registry,
+               snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession,
+               QWidget* parent = nullptr);
     ~MainWindow() override = default;
 
     void showAndActivate();
@@ -54,7 +56,8 @@ class MainWindow : public QMainWindow {
     SidebarWidget* m_sidebar = nullptr;
     MainContentHeaderWidget* m_contentHeader = nullptr;
     ContentCardWidget* m_contentCard = nullptr;
-    snow_shot::presentation::settings::SettingsRuntimeBindings& m_runtimeBindings;
+    const snow_shot::presentation::settings::SettingsRegistry& m_settingsRegistry;
+    snow_shot::presentation::settings::SettingsRuntimeSession& m_runtimeSession;
     QWidget* m_titleBarBottomShadow = nullptr;
     bool m_isApplyingTheme = false;
 };

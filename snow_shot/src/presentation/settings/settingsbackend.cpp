@@ -1,4 +1,4 @@
-#include "snow_shot/presentation/settings/settingsruntimebindings.h"
+#include "snow_shot/presentation/settings/settingsbackend.h"
 #include "snow_shot/presentation/settings/applicationpriority.h"
 #include "snow_shot/presentation/settings/textrecognitionacceleration.h"
 #include "snow_shot/platform/windows/autostartregistration.h"
@@ -96,9 +96,9 @@ bool applyAutoStartAtBoot(bool enabled) {
 }
 } // namespace
 
-BuiltInSettingsRuntimeBindings::BuiltInSettingsRuntimeBindings(
+BuiltInSettingsBackend::BuiltInSettingsBackend(
     ::snow_shot::presentation::GlobalShortcutManager& shortcutManager, QObject* parent)
-    : SettingsRuntimeBindings(parent), m_shortcutManager(shortcutManager) {
+    : SettingsBackend(parent), m_shortcutManager(shortcutManager) {
     auto& themeManager = styles::ThemeManager::instance();
     connect(&themeManager, &styles::ThemeManager::themeModeChanged, this,
             [this](styles::ThemeMode) { emit synchronized(); });
@@ -131,7 +131,7 @@ BuiltInSettingsRuntimeBindings::BuiltInSettingsRuntimeBindings(
             this, [this](const QString&, const QJsonValue&) { emit synchronized(); });
 }
 
-QVariant BuiltInSettingsRuntimeBindings::selectValue(SettingsSelectBinding binding) const {
+QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) const {
     switch (binding) {
     case SettingsSelectBinding::Theme:
         return themeModeValue(styles::ThemeManager::instance().themeMode());
@@ -182,7 +182,7 @@ QVariant BuiltInSettingsRuntimeBindings::selectValue(SettingsSelectBinding bindi
 }
 
 QVector<SettingsRuntimeOption>
-BuiltInSettingsRuntimeBindings::dynamicSelectOptions(SettingsSelectBinding binding) const {
+BuiltInSettingsBackend::dynamicSelectOptions(SettingsSelectBinding binding) const {
     QVector<SettingsRuntimeOption> result;
     if (binding != SettingsSelectBinding::Language) {
         return result;
@@ -195,7 +195,7 @@ BuiltInSettingsRuntimeBindings::dynamicSelectOptions(SettingsSelectBinding bindi
     return result;
 }
 
-bool BuiltInSettingsRuntimeBindings::applySelectValue(SettingsSelectBinding binding,
+bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
                                                       const QVariant& value) {
     switch (binding) {
     case SettingsSelectBinding::Theme: {
@@ -265,7 +265,7 @@ bool BuiltInSettingsRuntimeBindings::applySelectValue(SettingsSelectBinding bind
     return false;
 }
 
-bool BuiltInSettingsRuntimeBindings::switchValue(SettingsSwitchBinding binding) const {
+bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
     switch (binding) {
     case SettingsSwitchBinding::HistoryEnabled:
         return storage::ApplicationStorage::instance().captureHistoryPolicy().enabled;
@@ -299,7 +299,7 @@ bool BuiltInSettingsRuntimeBindings::switchValue(SettingsSwitchBinding binding) 
     return false;
 }
 
-bool BuiltInSettingsRuntimeBindings::switchEnabled(SettingsSwitchBinding binding) const {
+bool BuiltInSettingsBackend::switchEnabled(SettingsSwitchBinding binding) const {
     if (binding == SettingsSwitchBinding::AutoStartAtBoot) {
         return snow_shot::platform::windows::AutoStartRegistration::isSupported();
     }
@@ -307,7 +307,7 @@ bool BuiltInSettingsRuntimeBindings::switchEnabled(SettingsSwitchBinding binding
            directMlTextRecognitionSupported();
 }
 
-bool BuiltInSettingsRuntimeBindings::applySwitchValue(SettingsSwitchBinding binding, bool value) {
+bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, bool value) {
     if (binding == SettingsSwitchBinding::SmartSelection) {
         return storage::ApplicationStorage::instance().requestSmartSelection(value);
     }
@@ -375,7 +375,7 @@ bool BuiltInSettingsRuntimeBindings::applySwitchValue(SettingsSwitchBinding bind
     return storage::ApplicationStorage::instance().requestCaptureHistoryPolicy(policy);
 }
 
-int BuiltInSettingsRuntimeBindings::integerValue(SettingsIntegerBinding binding) const {
+int BuiltInSettingsBackend::integerValue(SettingsIntegerBinding binding) const {
     const storage::CaptureHistoryPolicy policy =
         storage::ApplicationStorage::instance().captureHistoryPolicy();
     switch (binding) {
@@ -391,7 +391,7 @@ int BuiltInSettingsRuntimeBindings::integerValue(SettingsIntegerBinding binding)
     return 0;
 }
 
-bool BuiltInSettingsRuntimeBindings::applyIntegerValue(SettingsIntegerBinding binding, int value) {
+bool BuiltInSettingsBackend::applyIntegerValue(SettingsIntegerBinding binding, int value) {
     auto policy = storage::ApplicationStorage::instance().captureHistoryPolicy();
     switch (binding) {
     case SettingsIntegerBinding::HistoryRetentionDays:
@@ -420,7 +420,7 @@ bool BuiltInSettingsRuntimeBindings::applyIntegerValue(SettingsIntegerBinding bi
     return storage::ApplicationStorage::instance().requestCaptureHistoryPolicy(policy);
 }
 
-QVariantList BuiltInSettingsRuntimeBindings::multiSelectValue(
+QVariantList BuiltInSettingsBackend::multiSelectValue(
     SettingsMultiSelectBinding binding) const {
     QVariantList values;
     if (binding == SettingsMultiSelectBinding::DrawingQuickSelectionDisabledTools) {
@@ -435,7 +435,7 @@ QVariantList BuiltInSettingsRuntimeBindings::multiSelectValue(
     return values;
 }
 
-bool BuiltInSettingsRuntimeBindings::applyMultiSelectValue(
+bool BuiltInSettingsBackend::applyMultiSelectValue(
     SettingsMultiSelectBinding binding, const QVariantList& value) {
     QStringList tools;
     tools.reserve(value.size());
@@ -451,7 +451,7 @@ bool BuiltInSettingsRuntimeBindings::applyMultiSelectValue(
     return false;
 }
 
-int BuiltInSettingsRuntimeBindings::sliderValue(SettingsSliderBinding binding) const {
+int BuiltInSettingsBackend::sliderValue(SettingsSliderBinding binding) const {
     switch (binding) {
     case SettingsSliderBinding::ShortcutHintOpacity:
         return storage::ScreenshotUiSettings().shortcutHintOpacity();
@@ -459,7 +459,7 @@ int BuiltInSettingsRuntimeBindings::sliderValue(SettingsSliderBinding binding) c
     return 0;
 }
 
-bool BuiltInSettingsRuntimeBindings::applySliderValue(SettingsSliderBinding binding, int value) {
+bool BuiltInSettingsBackend::applySliderValue(SettingsSliderBinding binding, int value) {
     switch (binding) {
     case SettingsSliderBinding::ShortcutHintOpacity:
         return storage::ScreenshotUiSettings().setShortcutHintOpacity(value);
@@ -467,7 +467,7 @@ bool BuiltInSettingsRuntimeBindings::applySliderValue(SettingsSliderBinding bind
     return false;
 }
 
-QColor BuiltInSettingsRuntimeBindings::colorValue(SettingsColorBinding binding) const {
+QColor BuiltInSettingsBackend::colorValue(SettingsColorBinding binding) const {
     const storage::ScreenshotUiSettings screenshot;
     switch (binding) {
     case SettingsColorBinding::SelectionMaskColor:
@@ -484,7 +484,7 @@ QColor BuiltInSettingsRuntimeBindings::colorValue(SettingsColorBinding binding) 
     return {};
 }
 
-bool BuiltInSettingsRuntimeBindings::applyColorValue(SettingsColorBinding binding,
+bool BuiltInSettingsBackend::applyColorValue(SettingsColorBinding binding,
                                                       const QColor& value) {
     const storage::ScreenshotUiSettings screenshot;
     switch (binding) {
@@ -502,7 +502,7 @@ bool BuiltInSettingsRuntimeBindings::applyColorValue(SettingsColorBinding bindin
     return false;
 }
 
-QVariant BuiltInSettingsRuntimeBindings::radioValue(SettingsRadioBinding binding) const {
+QVariant BuiltInSettingsBackend::radioValue(SettingsRadioBinding binding) const {
     switch (binding) {
     case SettingsRadioBinding::TrayIcon:
         return storage::TraySettings().icon();
@@ -510,7 +510,7 @@ QVariant BuiltInSettingsRuntimeBindings::radioValue(SettingsRadioBinding binding
     return {};
 }
 
-bool BuiltInSettingsRuntimeBindings::applyRadioValue(SettingsRadioBinding binding,
+bool BuiltInSettingsBackend::applyRadioValue(SettingsRadioBinding binding,
                                                       const QVariant& value) {
     switch (binding) {
     case SettingsRadioBinding::TrayIcon:
@@ -519,7 +519,7 @@ bool BuiltInSettingsRuntimeBindings::applyRadioValue(SettingsRadioBinding bindin
     return false;
 }
 
-QString BuiltInSettingsRuntimeBindings::filePathValue(SettingsFilePathBinding binding) const {
+QString BuiltInSettingsBackend::filePathValue(SettingsFilePathBinding binding) const {
     switch (binding) {
     case SettingsFilePathBinding::TrayCustomIcon:
         return storage::TraySettings().customIcon();
@@ -527,7 +527,7 @@ QString BuiltInSettingsRuntimeBindings::filePathValue(SettingsFilePathBinding bi
     return {};
 }
 
-bool BuiltInSettingsRuntimeBindings::applyFilePathValue(SettingsFilePathBinding binding,
+bool BuiltInSettingsBackend::applyFilePathValue(SettingsFilePathBinding binding,
                                                          const QString& value) {
     switch (binding) {
     case SettingsFilePathBinding::TrayCustomIcon:
@@ -536,7 +536,7 @@ bool BuiltInSettingsRuntimeBindings::applyFilePathValue(SettingsFilePathBinding 
     return false;
 }
 
-QString BuiltInSettingsRuntimeBindings::directoryPathValue(
+QString BuiltInSettingsBackend::directoryPathValue(
     SettingsDirectoryPathBinding binding) const {
     switch (binding) {
     case SettingsDirectoryPathBinding::ScreenshotImageDirectory:
@@ -547,7 +547,7 @@ QString BuiltInSettingsRuntimeBindings::directoryPathValue(
     return {};
 }
 
-bool BuiltInSettingsRuntimeBindings::applyDirectoryPathValue(
+bool BuiltInSettingsBackend::applyDirectoryPathValue(
     SettingsDirectoryPathBinding binding, const QString& value) {
     switch (binding) {
     case SettingsDirectoryPathBinding::ScreenshotImageDirectory:
@@ -558,7 +558,7 @@ bool BuiltInSettingsRuntimeBindings::applyDirectoryPathValue(
     return false;
 }
 
-QString BuiltInSettingsRuntimeBindings::textValue(SettingsTextBinding binding) const {
+QString BuiltInSettingsBackend::textValue(SettingsTextBinding binding) const {
     switch (binding) {
     case SettingsTextBinding::ScreenshotManualFilenameFormat:
         return storage::ScreenshotSettings().manualSaveFilenameFormat();
@@ -570,7 +570,7 @@ QString BuiltInSettingsRuntimeBindings::textValue(SettingsTextBinding binding) c
     return {};
 }
 
-bool BuiltInSettingsRuntimeBindings::applyTextValue(SettingsTextBinding binding,
+bool BuiltInSettingsBackend::applyTextValue(SettingsTextBinding binding,
                                                     const QString& value) {
     switch (binding) {
     case SettingsTextBinding::ScreenshotManualFilenameFormat:
@@ -583,32 +583,32 @@ bool BuiltInSettingsRuntimeBindings::applyTextValue(SettingsTextBinding binding,
     return false;
 }
 
-storage::ScreenshotToolbarLayout BuiltInSettingsRuntimeBindings::toolbarLayout() const {
+storage::ScreenshotToolbarLayout BuiltInSettingsBackend::toolbarLayout() const {
     return storage::ScreenshotToolbarSettings().layout();
 }
 
-bool BuiltInSettingsRuntimeBindings::applyToolbarLayout(
+bool BuiltInSettingsBackend::applyToolbarLayout(
     const storage::ScreenshotToolbarLayout& layout) {
     return storage::ScreenshotToolbarSettings().setLayout(layout);
 }
 
 GlobalShortcutRegistrationState
-BuiltInSettingsRuntimeBindings::shortcutState(GlobalShortcutAction action) const {
+BuiltInSettingsBackend::shortcutState(GlobalShortcutAction action) const {
     return m_shortcutManager.state(action);
 }
 
 GlobalShortcutValidationResult
-BuiltInSettingsRuntimeBindings::validateShortcut(const QString& shortcut) const {
+BuiltInSettingsBackend::validateShortcut(const QString& shortcut) const {
     return m_shortcutManager.validateShortcut(shortcut);
 }
 
-bool BuiltInSettingsRuntimeBindings::applyShortcuts(GlobalShortcutAction action,
+bool BuiltInSettingsBackend::applyShortcuts(GlobalShortcutAction action,
                                                    const QStringList& shortcuts) {
     m_shortcutManager.setShortcuts(action, shortcuts);
     return m_shortcutManager.state(action).shortcuts == shortcuts;
 }
 
-QStringList BuiltInSettingsRuntimeBindings::localShortcuts(SettingsLocalShortcutScope scope,
+QStringList BuiltInSettingsBackend::localShortcuts(SettingsLocalShortcutScope scope,
                                                             const QString& shortcutId) const {
     if (scope == SettingsLocalShortcutScope::Screenshot) {
         return storage::ScreenshotShortcutSettings().shortcuts(shortcutId);
@@ -619,7 +619,7 @@ QStringList BuiltInSettingsRuntimeBindings::localShortcuts(SettingsLocalShortcut
     return storage::PinToScreenShortcutSettings().shortcuts(shortcutId);
 }
 
-GlobalShortcutValidationResult BuiltInSettingsRuntimeBindings::validateLocalShortcut(
+GlobalShortcutValidationResult BuiltInSettingsBackend::validateLocalShortcut(
     SettingsLocalShortcutScope scope, const QString& shortcutId, const QString& shortcut) const {
     const QString key = localShortcutKey(scope, shortcutId);
     const storage::ConfigurationNormalization normalized = storage::ConfigurationSchema::normalize(
@@ -652,7 +652,7 @@ GlobalShortcutValidationResult BuiltInSettingsRuntimeBindings::validateLocalShor
     return {canonical, true, GlobalShortcutFailureReason::None};
 }
 
-bool BuiltInSettingsRuntimeBindings::applyLocalShortcuts(
+bool BuiltInSettingsBackend::applyLocalShortcuts(
     SettingsLocalShortcutScope scope, const QString& shortcutId, const QStringList& shortcuts) {
     for (const QString& shortcut : shortcuts) {
         const GlobalShortcutValidationResult validation =
@@ -671,7 +671,7 @@ bool BuiltInSettingsRuntimeBindings::applyLocalShortcuts(
 }
 
 SettingsActionState
-BuiltInSettingsRuntimeBindings::actionState(SettingsActionBinding binding) const {
+BuiltInSettingsBackend::actionState(SettingsActionBinding binding) const {
     const storage::StorageStatus status = storage::ApplicationStorage::instance().status();
     switch (binding) {
     case SettingsActionBinding::ClearCaptureHistory:
@@ -684,7 +684,7 @@ BuiltInSettingsRuntimeBindings::actionState(SettingsActionBinding binding) const
     return {};
 }
 
-bool BuiltInSettingsRuntimeBindings::triggerAction(SettingsActionBinding binding) {
+bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding) {
     switch (binding) {
     case SettingsActionBinding::ClearCaptureHistory:
         return storage::ApplicationStorage::instance().requestCaptureHistoryClear();
@@ -692,11 +692,11 @@ bool BuiltInSettingsRuntimeBindings::triggerAction(SettingsActionBinding binding
     return false;
 }
 
-storage::StorageStatus BuiltInSettingsRuntimeBindings::storageStatus() const {
+storage::StorageStatus BuiltInSettingsBackend::storageStatus() const {
     return storage::ApplicationStorage::instance().status();
 }
 
-bool BuiltInSettingsRuntimeBindings::resetSection(SettingsSectionReset reset) {
+bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
     switch (reset) {
     case SettingsSectionReset::ScreenshotShortcuts: {
         bool accepted = true;

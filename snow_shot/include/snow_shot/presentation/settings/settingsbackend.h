@@ -1,5 +1,5 @@
-#ifndef SNOW_SHOT_PRESENTATION_SETTINGS_SETTINGSRUNTIMEBINDINGS_H
-#define SNOW_SHOT_PRESENTATION_SETTINGS_SETTINGSRUNTIMEBINDINGS_H
+#ifndef SNOW_SHOT_PRESENTATION_SETTINGS_SETTINGSBACKEND_H
+#define SNOW_SHOT_PRESENTATION_SETTINGS_SETTINGSBACKEND_H
 
 #include "snow_shot/presentation/globalshortcuttypes.h"
 #include "snow_shot/presentation/settings/settingscatalog.h"
@@ -17,6 +17,15 @@ namespace settings {
 struct SettingsRuntimeOption {
     QVariant value;
     QString label;
+
+    friend bool operator==(const SettingsRuntimeOption& first,
+                           const SettingsRuntimeOption& second) {
+        return first.value == second.value && first.label == second.label;
+    }
+    friend bool operator!=(const SettingsRuntimeOption& first,
+                           const SettingsRuntimeOption& second) {
+        return !(first == second);
+    }
 };
 
 struct SettingsActionState {
@@ -24,12 +33,12 @@ struct SettingsActionState {
     bool busy = false;
 };
 
-class SettingsRuntimeBindings : public QObject {
+class SettingsBackend : public QObject {
     Q_OBJECT
 
   public:
-    explicit SettingsRuntimeBindings(QObject* parent = nullptr) : QObject(parent) {}
-    ~SettingsRuntimeBindings() override = default;
+    explicit SettingsBackend(QObject* parent = nullptr) : QObject(parent) {}
+    ~SettingsBackend() override = default;
 
     [[nodiscard]] virtual QVariant selectValue(SettingsSelectBinding binding) const = 0;
     [[nodiscard]] QVector<SettingsRuntimeOption>
@@ -100,6 +109,14 @@ class SettingsRuntimeBindings : public QObject {
     [[nodiscard]] virtual bool triggerAction(SettingsActionBinding binding) = 0;
     [[nodiscard]] virtual storage::StorageStatus storageStatus() const = 0;
     [[nodiscard]] virtual bool resetSection(SettingsSectionReset reset) = 0;
+    [[nodiscard]] virtual QString fieldError(const QString& fieldId) const {
+        Q_UNUSED(fieldId);
+        return {};
+    }
+    [[nodiscard]] virtual bool fieldPending(const QString& fieldId) const {
+        Q_UNUSED(fieldId);
+        return false;
+    }
 
   signals:
     void synchronized();
@@ -109,9 +126,9 @@ class SettingsRuntimeBindings : public QObject {
 
 };
 
-class BuiltInSettingsRuntimeBindings final : public SettingsRuntimeBindings {
+class BuiltInSettingsBackend final : public SettingsBackend {
   public:
-    explicit BuiltInSettingsRuntimeBindings(
+    explicit BuiltInSettingsBackend(
         ::snow_shot::presentation::GlobalShortcutManager& shortcutManager,
         QObject* parent = nullptr);
 
@@ -177,4 +194,4 @@ class BuiltInSettingsRuntimeBindings final : public SettingsRuntimeBindings {
 } // namespace settings
 } // namespace snow_shot::presentation
 
-#endif // SNOW_SHOT_PRESENTATION_SETTINGS_SETTINGSRUNTIMEBINDINGS_H
+#endif // SNOW_SHOT_PRESENTATION_SETTINGS_SETTINGSBACKEND_H

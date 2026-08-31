@@ -1624,6 +1624,14 @@ void addUnique(QStringList* errors, QSet<QString>* values, const QString& value,
     }
 }
 
+void validateIndexKeyComponent(QStringList* errors, const QString& value,
+                               const QString& kind) {
+    if (value.contains(QChar(0x1f))) {
+        errors->push_back(QStringLiteral("%1 contains the reserved settings index delimiter: %2")
+                              .arg(kind, value));
+    }
+}
+
 QString shortcutConfigurationKey(GlobalShortcutAction action) {
     switch (action) {
     case GlobalShortcutAction::Screenshot:
@@ -1674,7 +1682,43 @@ SettingsCatalog::SettingsCatalog(QVector<SettingsPageDefinition> pages,
                                  QVector<SettingsNavigationNode> navigation,
                                  SettingsLocation defaultLocation)
     : m_pages(std::move(pages)), m_navigation(std::move(navigation)),
-      m_defaultLocation(std::move(defaultLocation)) {}
+      m_defaultLocation(std::move(defaultLocation)) {
+    // Compile the authoring tree once.  Consumers can now resolve routes and
+    // fields in constant-time without repeatedly walking every page.
+    for (int pageIndex = 0; pageIndex < m_pages.size(); ++pageIndex) {
+        const SettingsPageDefinition& pageDefinition = m_pages.at(pageIndex);
+        if (!m_pageIndexById.contains(pageDefinition.id)) {
+            m_pageIndexById.insert(pageDefinition.id, pageIndex);
+        }
+        if (!m_pageIndexByRoute.contains(pageDefinition.route)) {
+            m_pageIndexByRoute.insert(pageDefinition.route, pageIndex);
+        }
+        for (int sectionIndex = 0; sectionIndex < pageDefinition.sections.size();
+             ++sectionIndex) {
+            const SettingsSectionDefinition& sectionDefinition =
+                pageDefinition.sections.at(sectionIndex);
+            const QString sectionKey =
+                pageDefinition.id + QLatin1Char('\x1f') + sectionDefinition.id;
+            if (!m_sectionIndexByLocation.contains(sectionKey)) {
+                m_sectionIndexByLocation.insert(sectionKey, sectionIndex);
+            }
+            for (int itemIndex = 0; itemIndex < sectionDefinition.items.size(); ++itemIndex) {
+                const SettingsItemDefinition& itemDefinition = sectionDefinition.items.at(itemIndex);
+                const QString itemKey = sectionKey + QLatin1Char('\x1f') + itemDefinition.id;
+                if (!m_itemIndexByLocation.contains(itemKey)) {
+                    m_itemIndexByLocation.insert(itemKey, itemIndex);
+                }
+                if (const auto* shortcut =
+                        std::get_if<SettingsShortcutActionDefinition>(&itemDefinition.payload)) {
+                    const int action = static_cast<int>(shortcut->shortcutAction);
+                    if (!m_shortcutItemByAction.contains(action)) {
+                        m_shortcutItemByAction.insert(action, itemKey);
+                    }
+                }
+            }
+        }
+    }
+}
 
 const QVector<SettingsPageDefinition>& SettingsCatalog::pages() const {
     return m_pages;
@@ -1689,15 +1733,13 @@ const SettingsLocation& SettingsCatalog::defaultLocation() const {
 }
 
 const SettingsPageDefinition* SettingsCatalog::page(const QString& pageId) const {
-    const auto found = std::find_if(m_pages.cbegin(), m_pages.cend(),
-                                    [&pageId](const auto& item) { return item.id == pageId; });
-    return found == m_pages.cend() ? nullptr : &*found;
+    const auto found = m_pageIndexById.constFind(pageId);
+    return found == m_pageIndexById.cend() ? nullptr : &m_pages.at(found.value());
 }
 
 const SettingsPageDefinition* SettingsCatalog::pageForRoute(const QString& route) const {
-    const auto found = std::find_if(m_pages.cbegin(), m_pages.cend(),
-                                    [&route](const auto& item) { return item.route == route; });
-    return found == m_pages.cend() ? nullptr : &*found;
+    const auto found = m_pageIndexByRoute.constFind(route);
+    return found == m_pageIndexByRoute.cend() ? nullptr : &m_pages.at(found.value());
 }
 
 const SettingsSectionDefinition* SettingsCatalog::section(const QString& pageId,
@@ -1706,10 +1748,10 @@ const SettingsSectionDefinition* SettingsCatalog::section(const QString& pageId,
     if (foundPage == nullptr) {
         return nullptr;
     }
-    const auto found =
-        std::find_if(foundPage->sections.cbegin(), foundPage->sections.cend(),
-                     [&sectionId](const auto& item) { return item.id == sectionId; });
-    return found == foundPage->sections.cend() ? nullptr : &*found;
+    const QString key = pageId + QLatin1Char('\x1f') + sectionId;
+    const auto found = m_sectionIndexByLocation.constFind(key);
+    return found == m_sectionIndexByLocation.cend() ? nullptr
+                                                     : &foundPage->sections.at(found.value());
 }
 
 const SettingsItemDefinition* SettingsCatalog::item(const SettingsLocation& location) const {
@@ -1717,10 +1759,11 @@ const SettingsItemDefinition* SettingsCatalog::item(const SettingsLocation& loca
     if (foundSection == nullptr || location.itemId.isEmpty()) {
         return nullptr;
     }
-    const auto found =
-        std::find_if(foundSection->items.cbegin(), foundSection->items.cend(),
-                     [&location](const auto& item) { return item.id == location.itemId; });
-    return found == foundSection->items.cend() ? nullptr : &*found;
+    const QString key = location.pageId + QLatin1Char('\x1f') + location.sectionId +
+                        QLatin1Char('\x1f') + location.itemId;
+    const auto found = m_itemIndexByLocation.constFind(key);
+    return found == m_itemIndexByLocation.cend() ? nullptr
+                                                  : &foundSection->items.at(found.value());
 }
 
 std::optional<SettingsCommand>
@@ -1734,18 +1777,15 @@ SettingsCatalog::commandForShortcut(GlobalShortcutAction action) const {
 
 const SettingsItemDefinition*
 SettingsCatalog::itemForShortcut(GlobalShortcutAction action) const {
-    for (const SettingsPageDefinition& pageDefinition : m_pages) {
-        for (const SettingsSectionDefinition& sectionDefinition : pageDefinition.sections) {
-            for (const SettingsItemDefinition& itemDefinition : sectionDefinition.items) {
-                const auto* shortcut =
-                    std::get_if<SettingsShortcutActionDefinition>(&itemDefinition.payload);
-                if (shortcut != nullptr && shortcut->shortcutAction == action) {
-                    return &itemDefinition;
-                }
-            }
-        }
+    const auto found = m_shortcutItemByAction.constFind(static_cast<int>(action));
+    if (found == m_shortcutItemByAction.cend()) {
+        return nullptr;
     }
-    return nullptr;
+    const QStringList parts = found.value().split(QChar('\x1f'));
+    if (parts.size() != 3) {
+        return nullptr;
+    }
+    return item({parts.at(0), parts.at(1), parts.at(2)});
 }
 
 QString SettingsCatalog::shortcutActionTitle(GlobalShortcutAction action,
@@ -1808,6 +1848,120 @@ QVector<SettingsTrayMenuGroupDefinition> SettingsCatalog::trayMenuGroups() const
     return groups;
 }
 
+QString TrayCommandManifest::shortcutActionTitle(GlobalShortcutAction action,
+                                                  int screenshotDelaySeconds) const {
+    for (const SettingsTrayMenuGroupDefinition& group : groups) {
+        for (const SettingsTrayMenuOptionDefinition& option : group.options) {
+            if (option.kind != SettingsTrayMenuOptionKind::QuickAction ||
+                option.shortcutAction != action) {
+                continue;
+            }
+            QString title = option.label.translated();
+            if (shortcutAdjustments.value(static_cast<int>(action),
+                                          SettingsShortcutAdjustment::None) ==
+                SettingsShortcutAdjustment::ScreenshotDelaySeconds) {
+                title = title.arg(std::clamp(screenshotDelaySeconds, 1, 10));
+            }
+            return title;
+        }
+    }
+    return {};
+}
+
+// This projection is deliberately authored independently of builtInPages().
+// Keeping only tray labels, commands, and icon factories avoids pulling the
+// full settings hierarchy into the always-on application bootstrap.
+TrayCommandManifest buildBuiltInTrayCommandManifest() {
+    TrayCommandManifest manifest;
+    const auto quick = [&manifest](const QString& id, const char* title,
+                                   GlobalShortcutAction action,
+                                   std::function<adqt::icons::IconRef()> iconFactory,
+                                   SettingsShortcutAdjustment adjustment =
+                                       SettingsShortcutAdjustment::None) {
+        SettingsTrayMenuOptionDefinition option{id, {"SettingsCatalog", title},
+                                                 SettingsTrayMenuOptionKind::QuickAction, action,
+                                                 std::move(iconFactory)};
+        manifest.shortcutAdjustments.insert(static_cast<int>(action), adjustment);
+        return option;
+    };
+
+    manifest.groups = {
+        {QStringLiteral("screenshot"),
+         {quick(QStringLiteral("quick.screenshot"), QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot"),
+                GlobalShortcutAction::Screenshot,
+                []() { return custom_twotone_icons::ScreenshotFeature(); }),
+          quick(QStringLiteral("quick.screenshot-delay"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Delay %1s to Execute"),
+                GlobalShortcutAction::ScreenshotDelay,
+                []() { return custom_outlined_icons::ScreenshotDelay(); },
+                SettingsShortcutAdjustment::ScreenshotDelaySeconds),
+          quick(QStringLiteral("quick.screenshot-fixed"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Pin to Screen"),
+                GlobalShortcutAction::ScreenshotFixed,
+                []() { return custom_outlined_icons::PinToScreen(); }),
+          quick(QStringLiteral("quick.screenshot-ocr"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Text Recognition"),
+                GlobalShortcutAction::ScreenshotOcr,
+                []() { return custom_outlined_icons::ToolRecognizeText(); }),
+          quick(QStringLiteral("quick.screenshot-translation"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Text Translation"),
+                GlobalShortcutAction::ScreenshotTranslation,
+                []() { return custom_outlined_icons::OcrTranslate(); }),
+          quick(QStringLiteral("quick.screenshot-copy"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Copy to Clipboard"),
+                GlobalShortcutAction::ScreenshotCopy,
+                []() { return custom_outlined_icons::ScreenshotCopy(); }),
+          quick(QStringLiteral("quick.screenshot-full-screen"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Current Monitor"),
+                GlobalShortcutAction::ScreenshotFullScreen,
+                []() { return custom_outlined_icons::ScreenshotFullScreen(); }),
+          quick(QStringLiteral("quick.screenshot-focused-window"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Focused Window"),
+                GlobalShortcutAction::ScreenshotFocusedWindow,
+                []() { return custom_outlined_icons::ScreenshotFocusedWindow(); })}},
+        {QStringLiteral("screen-recording"),
+         {quick(QStringLiteral("quick.screen-record"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Screen Recording"),
+                GlobalShortcutAction::ScreenRecord,
+                []() { return custom_outlined_icons::RecordScreen(); }),
+          quick(QStringLiteral("quick.screen-record-copy"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Start Screen Recording / Stop and Copy Video"),
+                GlobalShortcutAction::ScreenRecordCopy,
+                []() { return custom_outlined_icons::ScreenshotCopy(); })}},
+        {QStringLiteral("other"),
+         {quick(QStringLiteral("quick.open-capture-history"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot History"),
+                GlobalShortcutAction::OpenCaptureHistory,
+                []() { return outlined_icons::History(); }),
+          quick(QStringLiteral("quick.pin-clipboard-content"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Pin Clipboard Content to Screen"),
+                GlobalShortcutAction::PinClipboardContent,
+                []() { return custom_outlined_icons::PinToScreen(); })}},
+        {QStringLiteral("system"),
+         {{QStringLiteral("tray.disable-shortcut-functions"),
+           {"SettingsCatalog", QT_TRANSLATE_NOOP("SettingsCatalog", "Disable Shortcut Functions")},
+           SettingsTrayMenuOptionKind::DisableShortcutFunctions,
+           GlobalShortcutAction::Screenshot,
+           []() { return custom_outlined_icons::Disabled(); }},
+          {QStringLiteral("tray.show-main-window"),
+           {"SettingsCatalog", QT_TRANSLATE_NOOP("SettingsCatalog", "Show Main Interface")},
+           SettingsTrayMenuOptionKind::ShowMainWindow,
+           GlobalShortcutAction::Screenshot,
+           []() { return custom_outlined_icons::Window(); }},
+          {QStringLiteral("tray.exit"),
+           {"SettingsCatalog", QT_TRANSLATE_NOOP("SettingsCatalog", "Exit")},
+           SettingsTrayMenuOptionKind::Exit,
+           GlobalShortcutAction::Screenshot,
+           []() { return custom_outlined_icons::Exit(); }}}}};
+
+    return manifest;
+}
+
+const TrayCommandManifest& builtInTrayCommandManifest() {
+    static const TrayCommandManifest manifest = buildBuiltInTrayCommandManifest();
+    return manifest;
+}
+
 SettingsLocation SettingsCatalog::resolveLocation(const SettingsLocation& requested) const {
     const SettingsPageDefinition* foundPage = page(requested.pageId);
     if (foundPage == nullptr) {
@@ -1849,7 +2003,7 @@ QStringList SettingsCatalog::validationErrors() const {
     QStringList errors;
     QSet<QString> pageIds;
     QSet<QString> routes;
-    QSet<QString> sectionIds;
+    QSet<QString> sectionLocations;
     QSet<QString> itemIds;
     QSet<QString> navigationIds;
     QSet<QString> searchIds;
@@ -1858,6 +2012,7 @@ QStringList SettingsCatalog::validationErrors() const {
 
     for (const SettingsPageDefinition& pageDefinition : m_pages) {
         addUnique(&errors, &pageIds, pageDefinition.id, QStringLiteral("page id"));
+        validateIndexKeyComponent(&errors, pageDefinition.id, QStringLiteral("page id"));
         addUnique(&errors, &routes, pageDefinition.route, QStringLiteral("route"));
         if (!pageDefinition.route.startsWith(u'/')) {
             errors.push_back(
@@ -1876,7 +2031,11 @@ QStringList SettingsCatalog::validationErrors() const {
             errors.push_back(QStringLiteral("page text is incomplete: %1").arg(pageDefinition.id));
         }
         for (const SettingsSectionDefinition& sectionDefinition : pageDefinition.sections) {
-            addUnique(&errors, &sectionIds, sectionDefinition.id, QStringLiteral("section id"));
+            addUnique(&errors, &sectionLocations,
+                      QStringLiteral("%1/%2").arg(pageDefinition.id, sectionDefinition.id),
+                      QStringLiteral("section location"));
+            validateIndexKeyComponent(&errors, sectionDefinition.id,
+                                      QStringLiteral("section id"));
             addUnique(&errors, &searchIds,
                       QStringLiteral("section:%1/%2").arg(pageDefinition.id, sectionDefinition.id),
                       QStringLiteral("generated search id"));
@@ -1896,6 +2055,7 @@ QStringList SettingsCatalog::validationErrors() const {
             }
             for (const SettingsItemDefinition& itemDefinition : sectionDefinition.items) {
                 addUnique(&errors, &itemIds, itemDefinition.id, QStringLiteral("item id"));
+                validateIndexKeyComponent(&errors, itemDefinition.id, QStringLiteral("item id"));
                 addUnique(&errors, &searchIds, QStringLiteral("item:%1").arg(itemDefinition.id),
                           QStringLiteral("generated search id"));
                 addUnique(&errors, &objectNames,
@@ -2194,6 +2354,8 @@ QStringList SettingsCatalog::validationErrors() const {
                 }
                 if (const auto* local =
                         std::get_if<SettingsLocalShortcutDefinition>(&itemDefinition.payload)) {
+                    validateIndexKeyComponent(&errors, local->shortcutId,
+                                              QStringLiteral("local shortcut id"));
                     const QString expectedKey =
                         (local->scope == SettingsLocalShortcutScope::Screenshot
                              ? QStringLiteral("screenshot_shortcuts/")
@@ -2443,19 +2605,6 @@ SettingsCatalog buildBuiltInSettingsCatalog() {
             builtInNavigation(),
             {QString::fromLatin1(QUICK_PAGE_ID), QStringLiteral("screenshot"),
              QStringLiteral("quick.screenshot")}};
-}
-
-const SettingsCatalog& builtInSettingsCatalog() {
-    static const SettingsCatalog catalog = buildBuiltInSettingsCatalog();
-    static const bool validated = []() {
-        const QStringList errors = catalog.validationErrors();
-        if (!errors.isEmpty()) {
-            qFatal("Invalid built-in settings catalog:\n%s", qPrintable(errors.join(u'\n')));
-        }
-        return true;
-    }();
-    Q_UNUSED(validated)
-    return catalog;
 }
 
 QString generatedObjectName(const QString& prefix, const QString& stableId) {

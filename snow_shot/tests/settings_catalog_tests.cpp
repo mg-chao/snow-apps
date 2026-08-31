@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/settings/settingscatalog.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/settings/settingssearchindex.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/storage/configurationschema.h"
@@ -12,9 +13,11 @@
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
+#include <utility>
 
 namespace settings = snow_shot::presentation::settings;
 namespace storage = snow_shot::storage;
+namespace presentation = snow_shot::presentation;
 
 namespace {
 void require(bool condition, const char* message) {
@@ -58,7 +61,7 @@ class CatalogTranslator final : public QTranslator {
 };
 
 void builtInCatalogIsCompleteAndValid() {
-    const settings::SettingsCatalog& catalog = settings::builtInSettingsCatalog();
+    const settings::SettingsCatalog& catalog = settings::builtInSettingsRegistry().catalog();
     require(catalog.validationErrors().isEmpty(), "built-in settings catalog must validate");
     require(catalog.pages().size() == 7, "catalog must contain seven pages");
 
@@ -91,8 +94,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 27 && itemCount == 107,
-            "catalog must contain the expected twenty-seven sections and one hundred seven items");
+    require(sectionCount == 27 && itemCount == 109,
+            "catalog must contain the expected twenty-seven sections and one hundred nine items");
     const auto* functionPage = catalog.page(QStringLiteral("function-settings"));
     const auto* smartSelection =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
@@ -447,7 +450,7 @@ void quickFunctionShortcutsHaveStableContracts() {
          settings::SettingsCommandKind::ExecuteQuickAction},
     };
 
-    const settings::SettingsCatalog& catalog = settings::builtInSettingsCatalog();
+    const settings::SettingsCatalog& catalog = settings::builtInSettingsRegistry().catalog();
     QSet<Action> actions;
     for (const ShortcutExpectation& expectation : expectations) {
         const settings::SettingsLocation location{QStringLiteral("quick-functions"),
@@ -625,8 +628,60 @@ void quickFunctionShortcutsHaveStableContracts() {
             "clipboard pinning must use the Pin to Screen outlined icon");
 }
 
+void compactTrayManifestMatchesRegistryCatalog() {
+    const settings::TrayCommandManifest compact = settings::builtInTrayCommandManifest();
+    const auto& catalog = settings::builtInSettingsRegistry().catalog();
+    const auto projectedGroups = catalog.trayMenuGroups();
+    require(compact.groups.size() == projectedGroups.size(),
+            "the compact tray manifest must preserve catalog group count");
+    for (int groupIndex = 0; groupIndex < compact.groups.size(); ++groupIndex) {
+        const auto& compactGroup = compact.groups.at(groupIndex);
+        const auto& projectedGroup = projectedGroups.at(groupIndex);
+        require(compactGroup.id == projectedGroup.id &&
+                    compactGroup.options.size() == projectedGroup.options.size(),
+                "the compact tray manifest must preserve group and option ordering");
+        for (int optionIndex = 0; optionIndex < compactGroup.options.size(); ++optionIndex) {
+            const auto& compactOption = compactGroup.options.at(optionIndex);
+            const auto& projectedOption = projectedGroup.options.at(optionIndex);
+            const bool optionMatches =
+                compactOption.id == projectedOption.id &&
+                compactOption.kind == projectedOption.kind &&
+                compactOption.shortcutAction == projectedOption.shortcutAction &&
+                QString::fromLatin1(compactOption.label.context) ==
+                    QString::fromLatin1(projectedOption.label.context) &&
+                QString::fromLatin1(compactOption.label.source) ==
+                    QString::fromLatin1(projectedOption.label.source) &&
+                compactOption.label.translated() == projectedOption.label.translated() &&
+                compactOption.iconFactory && projectedOption.iconFactory &&
+                compactOption.iconFactory() == projectedOption.iconFactory();
+            require(optionMatches,
+                    "the compact tray manifest must preserve option behavior and presentation");
+        }
+    }
+
+    for (const presentation::GlobalShortcutAction action : {
+             presentation::GlobalShortcutAction::Screenshot,
+             presentation::GlobalShortcutAction::ScreenshotDelay,
+             presentation::GlobalShortcutAction::ScreenshotFixed,
+             presentation::GlobalShortcutAction::ScreenshotOcr,
+             presentation::GlobalShortcutAction::ScreenshotTranslation,
+             presentation::GlobalShortcutAction::ScreenshotCopy,
+             presentation::GlobalShortcutAction::ScreenshotFullScreen,
+             presentation::GlobalShortcutAction::ScreenshotFocusedWindow,
+             presentation::GlobalShortcutAction::ScreenRecord,
+             presentation::GlobalShortcutAction::ScreenRecordCopy,
+             presentation::GlobalShortcutAction::OpenCaptureHistory,
+             presentation::GlobalShortcutAction::PinClipboardContent}) {
+        require(compact.shortcutActionTitle(action, 0) ==
+                    catalog.shortcutActionTitle(action, 0) &&
+                    compact.shortcutActionTitle(action, 99) ==
+                        catalog.shortcutActionTitle(action, 99),
+                "compact tray titles must match catalog titles and clamp runtime values");
+    }
+}
+
 void structuredFallbackIsDeterministic() {
-    const settings::SettingsCatalog& catalog = settings::builtInSettingsCatalog();
+    const settings::SettingsCatalog& catalog = settings::builtInSettingsRegistry().catalog();
     require(catalog.resolveLocation({QStringLiteral("interface-settings"), {}, {}}) ==
                 settings::SettingsLocation{
                     QStringLiteral("interface-settings"), QStringLiteral("general"), {}},
@@ -634,7 +689,7 @@ void structuredFallbackIsDeterministic() {
     require(catalog.resolveLocation({QStringLiteral("storage-and-privacy"),
                                      QStringLiteral("missing"), QStringLiteral("missing")}) ==
                 settings::SettingsLocation{
-                    QStringLiteral("storage-and-privacy"), QStringLiteral("history"), {}},
+                    QStringLiteral("storage-and-privacy"), QStringLiteral("screenshots"), {}},
             "invalid section and item locations must fall back within their page");
     require(catalog.resolveLocation({QStringLiteral("storage-and-privacy"),
                                      QStringLiteral("history"), QStringLiteral("missing")}) ==
@@ -650,7 +705,7 @@ void structuredFallbackIsDeterministic() {
 }
 
 void invalidCatalogReportsAllConformanceErrors() {
-    const settings::SettingsCatalog& builtIn = settings::builtInSettingsCatalog();
+    const settings::SettingsCatalog& builtIn = settings::builtInSettingsRegistry().catalog();
     QVector<settings::SettingsPageDefinition> pages = builtIn.pages();
     QVector<settings::SettingsNavigationNode> navigation = builtIn.navigation();
 
@@ -696,9 +751,9 @@ void invalidCatalogReportsAllConformanceErrors() {
 }
 
 void searchIndexIsGeneratedAndRanked() {
-    settings::SettingsSearchIndex index(settings::builtInSettingsCatalog());
-    require(index.entries().size() == 136 && index.search(QString()).size() == 136,
-            "search must generate all one hundred thirty-six catalog nodes in catalog order");
+    settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
+    require(index.entries().size() == 143 && index.search(QString()).size() == 143,
+            "search must generate all one hundred forty-three catalog nodes in catalog order");
 
     int pages = 0;
     int sections = 0;
@@ -725,7 +780,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 7 && sections == 27 && items == 107,
+    require(pages == 7 && sections == 27 && items == 109,
             "search node counts must match catalog page, section, and item counts");
 
     const auto theme = index.search(QStringLiteral("theme"));
@@ -760,7 +815,7 @@ void searchIndexIsGeneratedAndRanked() {
 }
 
 void searchIndexRebuildsLocalizedFields() {
-    settings::SettingsSearchIndex index(settings::builtInSettingsCatalog());
+    settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
     CatalogTranslator translator;
     require(QCoreApplication::installTranslator(&translator), "test translator must install");
     index.rebuild();
@@ -783,7 +838,7 @@ void searchIndexRebuildsLocalizedFields() {
 }
 
 void addingCatalogNodesAutomaticallyExpandsSearch() {
-    const settings::SettingsCatalog& builtIn = settings::builtInSettingsCatalog();
+    const settings::SettingsCatalog& builtIn = settings::builtInSettingsRegistry().catalog();
     QVector<settings::SettingsPageDefinition> pages = builtIn.pages();
     settings::SettingsSelectDefinition select;
     select.options = {
@@ -817,8 +872,10 @@ void addingCatalogNodesAutomaticallyExpandsSearch() {
                                              builtIn.defaultLocation());
     require(expanded.validationErrors().isEmpty(),
             "a normal additional catalog page must validate without consumer changes");
-    settings::SettingsSearchIndex index(expanded);
-    require(index.entries().size() == 139,
+    const auto registry = settings::SettingsRegistry::fromCatalog(
+        expanded, QStringLiteral("search-substring"));
+    settings::SettingsSearchIndex index(registry);
+    require(index.entries().size() == 146,
             "adding one page, section, and item must automatically add three search entries");
     require(index.search(QStringLiteral("extra item")).constFirst().location ==
                 settings::SettingsLocation{QStringLiteral("extra-page"),
@@ -826,16 +883,331 @@ void addingCatalogNodesAutomaticallyExpandsSearch() {
                                            QStringLiteral("extra.item")},
             "new catalog items must be searchable without consumer changes");
 }
+
+void searchIndexPreservesInteriorSubstringMatches() {
+    const settings::SettingsCatalog& builtIn = settings::builtInSettingsRegistry().catalog();
+    QVector<settings::SettingsPageDefinition> pages = builtIn.pages();
+    settings::SettingsTextDefinition textDefinition;
+    textDefinition.binding = settings::SettingsTextBinding::ScreenshotManualFilenameFormat;
+    pages.push_back({
+        QStringLiteral("substring-page"), QStringLiteral("/substring"), text("Substring Page"),
+        text("Substring search fixture"),
+        {{QStringLiteral("substring-section"), text("Substring"), text("Substring"),
+          settings::SettingsSectionReset::None,
+          {{QStringLiteral("substring.item"), text("Restore format"),
+            text("A value containing the search token in the middle"), {},
+            QStringLiteral("screenshot/manual_save_filename_format"), textDefinition}}}}});
+    QVector<settings::SettingsNavigationNode> navigation = builtIn.navigation();
+    navigation.push_back(settings::SettingsNavigationPageDefinition{
+        QStringLiteral("nav.substring-page"), QStringLiteral("substring-page"),
+        []() { return adqt::icons::antd::outlined::Search(); }});
+    const settings::SettingsCatalog expanded(std::move(pages), std::move(navigation),
+                                             builtIn.defaultLocation());
+    require(expanded.validationErrors().isEmpty(),
+            "substring search fixture must satisfy catalog validation");
+    const auto registry = settings::SettingsRegistry::fromCatalog(
+        expanded, QStringLiteral("search-extra"));
+    settings::SettingsSearchIndex index(registry);
+    const auto result = index.search(QStringLiteral("store"));
+    require(!result.isEmpty() && result.constFirst().location.itemId ==
+                QStringLiteral("substring.item"),
+            "indexed search must retain interior substring matches that are not prefixes");
+    const auto punctuationResult = index.search(QStringLiteral("idd"));
+    const bool descriptionMatch = std::any_of(
+        punctuationResult.cbegin(), punctuationResult.cend(), [](const auto& entry) {
+            return entry.location.itemId == QStringLiteral("substring.item");
+        });
+    require(descriptionMatch,
+            "indexed search must retain matches found in descriptions alongside other fields");
+}
+
+void sectionIdsMayRepeatAcrossPages() {
+    const settings::SettingsCatalog& builtIn = settings::builtInSettingsRegistry().catalog();
+    QVector<settings::SettingsPageDefinition> pages = builtIn.pages();
+    pages[2].sections[0].id = pages[0].sections[0].id;
+    const settings::SettingsCatalog expanded(std::move(pages), builtIn.navigation(),
+                                             builtIn.defaultLocation());
+    require(!expanded.validationErrors().join(u'\n').contains(QStringLiteral("duplicate section id")),
+            "section IDs must be scoped to their containing page");
+}
+
+void catalogRejectsReservedIndexDelimiters() {
+    const settings::SettingsCatalog& builtIn = settings::builtInSettingsRegistry().catalog();
+    QVector<settings::SettingsPageDefinition> pages = builtIn.pages();
+    pages[0].id = QStringLiteral("invalid\x1fpage");
+    const settings::SettingsCatalog invalid(std::move(pages), builtIn.navigation(),
+                                            builtIn.defaultLocation());
+    require(invalid.validationErrors().join(u'\n').contains(
+                QStringLiteral("reserved settings index delimiter")),
+            "catalog validation must reject IDs that corrupt indexed hierarchy keys");
+}
+
+bool descriptorBelongsTo(const settings::SettingsRegistry& registry,
+                         const settings::SettingsFieldDescriptor& descriptor) {
+    const auto* item = registry.catalog().item(
+        {descriptor.pageId, descriptor.sectionId, descriptor.id});
+    return item != nullptr && descriptor.definition == item;
+}
+
+void registryCompilesOwnedIndexesAndProviderPlans() {
+    const settings::SettingsRegistry registry = settings::builtInSettingsRegistry();
+    require(registry.isValid(), "the built-in settings registry must validate");
+    require(registry.providerIds() == QStringList{QStringLiteral("built-in")},
+            "the built-in registry must retain its provider ownership");
+    require(registry.providerIdForPage(QStringLiteral("quick-functions")) ==
+                QStringLiteral("built-in"),
+            "page plans must expose their contributing provider");
+    require(registry.providerIdForPage(QStringLiteral("missing-page")).isEmpty(),
+            "unknown page plans must not report a provider");
+    qsizetype catalogFieldCount = 0;
+    for (const settings::SettingsPageDefinition& page : registry.catalog().pages()) {
+        for (const settings::SettingsSectionDefinition& section : page.sections) {
+            catalogFieldCount += section.items.size();
+        }
+    }
+    require(registry.fields().size() == catalogFieldCount,
+            "the registry must compile one descriptor for every catalog item");
+
+    for (const settings::SettingsFieldDescriptor& descriptor : registry.fields()) {
+        require(descriptorBelongsTo(registry, descriptor),
+                "field descriptors must point into their owning catalog");
+        if (!descriptor.configurationKey.isEmpty()) {
+            require(descriptor.defaultValue ==
+                        storage::ConfigurationSchema::defaultValue(descriptor.configurationKey),
+                    "descriptor defaults must come from ConfigurationSchema");
+            require(registry.fieldForConfigurationKey(descriptor.configurationKey) != nullptr,
+                    "every persistence key must be indexed");
+        }
+        const auto* plan = registry.pagePlan(descriptor.pageId);
+        require(plan != nullptr && plan->providerId == descriptor.providerId &&
+                    plan->fieldIndexes.contains(&descriptor - registry.fields().constData()),
+                "page plans must own each descriptor index");
+
+        switch (descriptor.kind) {
+        case settings::SettingsFieldKind::Select:
+            require(registry.fieldForSelect(
+                        std::get<settings::SettingsSelectDefinition>(descriptor.definition->payload)
+                            .binding) == &descriptor,
+                    "select bindings must resolve through the registry index");
+            break;
+        case settings::SettingsFieldKind::Switch:
+            require(registry.fieldForSwitch(
+                        std::get<settings::SettingsSwitchDefinition>(descriptor.definition->payload)
+                            .binding) == &descriptor,
+                    "switch bindings must resolve through the registry index");
+            break;
+        case settings::SettingsFieldKind::Integer:
+            require(registry.fieldForInteger(
+                        std::get<settings::SettingsIntegerDefinition>(descriptor.definition->payload)
+                            .binding) == &descriptor,
+                    "integer bindings must resolve through the registry index");
+            break;
+        case settings::SettingsFieldKind::MultiSelect:
+            require(registry.fieldForMultiSelect(
+                        std::get<settings::SettingsMultiSelectDefinition>(
+                            descriptor.definition->payload)
+                            .binding) == &descriptor,
+                    "multi-select bindings must resolve through the registry index");
+            break;
+        case settings::SettingsFieldKind::Slider:
+            require(registry.fieldForSlider(
+                        std::get<settings::SettingsSliderDefinition>(descriptor.definition->payload)
+                            .binding) == &descriptor,
+                    "slider bindings must resolve through the registry index");
+            break;
+        case settings::SettingsFieldKind::Color:
+            require(registry.fieldForColor(
+                        std::get<settings::SettingsColorDefinition>(descriptor.definition->payload)
+                            .binding) == &descriptor,
+                    "color bindings must resolve through the registry index");
+            break;
+        case settings::SettingsFieldKind::Radio:
+            require(registry.fieldForRadio(
+                        std::get<settings::SettingsRadioDefinition>(descriptor.definition->payload)
+                            .binding) == &descriptor,
+                    "radio bindings must resolve through the registry index");
+            break;
+        case settings::SettingsFieldKind::FilePath:
+            require(registry.fieldForFilePath(
+                        std::get<settings::SettingsFilePathDefinition>(descriptor.definition->payload)
+                            .binding) == &descriptor,
+                    "file path bindings must resolve through the registry index");
+            break;
+        case settings::SettingsFieldKind::DirectoryPath:
+            require(registry.fieldForDirectoryPath(
+                        std::get<settings::SettingsDirectoryPathDefinition>(
+                            descriptor.definition->payload)
+                            .binding) == &descriptor,
+                    "directory path bindings must resolve through the registry index");
+            break;
+        case settings::SettingsFieldKind::Text:
+            require(registry.fieldForText(
+                        std::get<settings::SettingsTextDefinition>(descriptor.definition->payload)
+                            .binding) == &descriptor,
+                    "text bindings must resolve through the registry index");
+            break;
+        case settings::SettingsFieldKind::ShortcutAction: {
+            const auto& payload = std::get<settings::SettingsShortcutActionDefinition>(
+                descriptor.definition->payload);
+            require(registry.fieldForShortcut(payload.shortcutAction) == &descriptor,
+                    "global shortcut bindings must resolve through the registry index");
+            break;
+        }
+        case settings::SettingsFieldKind::LocalShortcut: {
+            const auto& payload = std::get<settings::SettingsLocalShortcutDefinition>(
+                descriptor.definition->payload);
+            require(registry.fieldForLocalShortcut(payload.scope, payload.shortcutId) ==
+                        &descriptor,
+                    "local shortcut bindings must resolve through the registry index");
+            break;
+        }
+        case settings::SettingsFieldKind::Action:
+            require(registry.fieldForAction(
+                        std::get<settings::SettingsActionDefinition>(descriptor.definition->payload)
+                            .binding) == &descriptor,
+                    "action bindings must resolve through the registry index");
+            break;
+        case settings::SettingsFieldKind::Custom:
+            require(registry.fieldForCustom(
+                        std::get<settings::SettingsCustomDefinition>(descriptor.definition->payload)
+                            .renderer) == &descriptor,
+                    "custom renderers must resolve through the registry index");
+            break;
+        }
+    }
+
+    for (const settings::SettingsPersistenceSpec& spec : registry.persistence()) {
+        const auto* descriptor = registry.field(spec.fieldId);
+        require(descriptor != nullptr && descriptor->configurationKey == spec.key &&
+                    descriptor->defaultValue == spec.defaultValue,
+                "persistence specs must retain their descriptor and schema default");
+    }
+    for (const settings::SettingsSectionReset reset : {
+             settings::SettingsSectionReset::ScreenshotShortcuts,
+             settings::SettingsSectionReset::GeneralSettings,
+             settings::SettingsSectionReset::HistoryPolicy,
+             settings::SettingsSectionReset::Tray,
+         }) {
+        for (const int index : registry.fieldsForReset(reset)) {
+            require(index >= 0 && index < registry.fields().size() &&
+                        registry.fields().at(index).reset == reset,
+                    "reset indexes must contain only fields from their reset group");
+        }
+    }
+
+    for (const settings::SettingsPagePlan& plan : registry.pagePlans()) {
+        const auto* page = registry.catalog().page(plan.id);
+        require(page != nullptr && plan.pageIndex >= 0 &&
+                    plan.pageIndex < registry.catalog().pages().size() &&
+                    &registry.catalog().pages().at(plan.pageIndex) == page &&
+                    plan.sectionPlans.size() == page->sections.size(),
+                "page plans must retain one ordered section plan per catalog section");
+        for (int sectionPlanIndex = 0; sectionPlanIndex < plan.sectionPlans.size();
+             ++sectionPlanIndex) {
+            const settings::SettingsSectionPlan& sectionPlan =
+                plan.sectionPlans.at(sectionPlanIndex);
+            require(sectionPlan.sectionIndex >= 0 &&
+                        sectionPlan.sectionIndex < page->sections.size(),
+                    "section plans must contain valid catalog section indexes");
+            const auto& section = page->sections.at(sectionPlan.sectionIndex);
+            require(sectionPlan.sectionIndex == sectionPlanIndex &&
+                        sectionPlan.id == section.id &&
+                        sectionPlan.reset == section.reset &&
+                        sectionPlan.itemLayout == section.itemLayout &&
+                        sectionPlan.fieldIndexes.size() == section.items.size(),
+                    "section plans must preserve catalog order and section metadata");
+            for (int itemIndex = 0; itemIndex < sectionPlan.fieldIndexes.size(); ++itemIndex) {
+                const int fieldIndex = sectionPlan.fieldIndexes.at(itemIndex);
+                require(fieldIndex >= 0 && fieldIndex < registry.fields().size() &&
+                            registry.fields().at(fieldIndex).pageId == plan.id &&
+                            registry.fields().at(fieldIndex).sectionId == section.id &&
+                            registry.fields().at(fieldIndex).definition ==
+                                &section.items.at(itemIndex),
+                        "section plans must point to their owning compiled descriptors");
+            }
+        }
+    }
+}
+
+void registryCopiesAndMovesRebaseDescriptorPointers() {
+    const settings::SettingsRegistry original = settings::builtInSettingsRegistry();
+    settings::SettingsRegistry copied = original;
+    settings::SettingsRegistry moved = std::move(copied);
+    settings::SettingsRegistry assigned;
+    assigned = original;
+    settings::SettingsRegistry moveAssigned;
+    moveAssigned = std::move(assigned);
+
+    const QVector<const settings::SettingsRegistry*> registries{
+        &original, &moved, &moveAssigned};
+    for (const settings::SettingsRegistry* registry : registries) {
+        require(registry->isValid() && registry->fields().size() == original.fields().size(),
+                "copied and moved registries must preserve compiled contents");
+        for (const settings::SettingsFieldDescriptor& descriptor : registry->fields()) {
+            require(descriptorBelongsTo(*registry, descriptor),
+                    "copy and move operations must rebase descriptor pointers");
+        }
+    }
+}
+
+void registryReportsDuplicatesDeterministically() {
+    const settings::SettingsCatalog& builtIn = settings::builtInSettingsRegistry().catalog();
+    QVector<settings::SettingsPageDefinition> pages = builtIn.pages();
+    auto duplicateItem = pages[0].sections[0].items.at(0);
+    duplicateItem.id = QStringLiteral("duplicate-theme");
+    pages[0].sections[0].items.push_back(duplicateItem);
+    const settings::SettingsCatalog duplicateCatalog(std::move(pages), builtIn.navigation(),
+                                                      builtIn.defaultLocation());
+    const settings::SettingsRegistry duplicateRegistry =
+        settings::SettingsRegistry::fromCatalog(duplicateCatalog, QStringLiteral("test"));
+    const QString errors = duplicateRegistry.validationErrors().join(u'\n');
+    require(errors.contains(QStringLiteral("duplicate settings persistence key")) &&
+                errors.contains(QStringLiteral("duplicate shortcut action")) &&
+                duplicateRegistry.fieldForShortcut(
+                    presentation::GlobalShortcutAction::Screenshot)->id ==
+                    QStringLiteral("quick.screenshot"),
+            "duplicate indexes must report diagnostics while preserving first-entry lookup");
+
+    settings::SettingsRegistryBuilder builder;
+    builder.addCatalog(builtIn, QStringLiteral("duplicate-provider"));
+    builder.addCatalog(builtIn, QStringLiteral("duplicate-provider"));
+    const settings::SettingsRegistry duplicateProviders = builder.build();
+    require(builder.validationErrors().join(u'\n').contains(
+                QStringLiteral("duplicate settings provider id")) &&
+                duplicateProviders.validationErrors().join(u'\n').contains(
+                    QStringLiteral("duplicate settings page plan id")),
+            "duplicate providers and their page plans must be diagnosed");
+}
+
+void emptyRegistryBuilderIsExplicitlyInvalid() {
+    const settings::SettingsRegistryBuilder builder;
+    const QString expected =
+        QStringLiteral("settings registry requires at least one provider");
+    require(builder.validationErrors() == QStringList{expected},
+            "an empty registry builder must expose one deterministic validation error");
+    const settings::SettingsRegistry registry = builder.build();
+    require(!registry.isValid() && registry.validationErrors().contains(expected) &&
+                registry.pages().isEmpty() && registry.fields().isEmpty(),
+            "building without providers must produce an invalid, empty registry");
+}
 } // namespace
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     builtInCatalogIsCompleteAndValid();
     quickFunctionShortcutsHaveStableContracts();
+    compactTrayManifestMatchesRegistryCatalog();
     structuredFallbackIsDeterministic();
     invalidCatalogReportsAllConformanceErrors();
     searchIndexIsGeneratedAndRanked();
     searchIndexRebuildsLocalizedFields();
+    searchIndexPreservesInteriorSubstringMatches();
+    catalogRejectsReservedIndexDelimiters();
+    sectionIdsMayRepeatAcrossPages();
     addingCatalogNodesAutomaticallyExpandsSearch();
+    registryCompilesOwnedIndexesAndProviderPlans();
+    registryCopiesAndMovesRebaseDescriptorPointers();
+    registryReportsDuplicatesDeterministically();
+    emptyRegistryBuilderIsExplicitlyInvalid();
     return 0;
 }

@@ -1,7 +1,7 @@
 #ifndef SNOW_SHOT_PRESENTATION_COMPONENTS_SETTINGSPAGEWIDGET_H
 #define SNOW_SHOT_PRESENTATION_COMPONENTS_SETTINGSPAGEWIDGET_H
 
-#include "snow_shot/presentation/settings/settingscatalog.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 
 #include <QWidget>
@@ -11,7 +11,7 @@
 class QEvent;
 
 namespace snow_shot::presentation::settings {
-class SettingsRuntimeBindings;
+class SettingsRuntimeSession;
 }
 
 class SettingsPageWidget final : public QWidget {
@@ -19,9 +19,9 @@ class SettingsPageWidget final : public QWidget {
 
   public:
     SettingsPageWidget(
-        const snow_shot::presentation::settings::SettingsCatalog& catalog,
+        const snow_shot::presentation::settings::SettingsRegistry& registry,
         const QString& pageId,
-        snow_shot::presentation::settings::SettingsRuntimeBindings& runtimeBindings,
+        snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession,
         QWidget* parent = nullptr);
     ~SettingsPageWidget() override;
 

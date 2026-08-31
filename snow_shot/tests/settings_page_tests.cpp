@@ -11,7 +11,9 @@
 #include "snow_shot/presentation/components/sidebarwidget.h"
 #include "snow_shot/presentation/components/storagestatussettingswidget.h"
 #include "snow_shot/presentation/mainwindow.h"
-#include "snow_shot/presentation/settings/settingsruntimebindings.h"
+#include "snow_shot/presentation/settings/settingsbackend.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
+#include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -164,9 +166,9 @@ const QHash<QString, QStringList>& pinToScreenShortcutDefaults() {
     return defaults;
 }
 
-class FakeRuntimeBindings final : public settings::SettingsRuntimeBindings {
+class FakeSettingsBackend final : public settings::SettingsBackend {
   public:
-    FakeRuntimeBindings() {
+    FakeSettingsBackend() {
         m_storageStatus.writeAvailable = true;
         m_storageStatus.effectiveMode = snow_shot::storage::StorageMode::ApplicationData;
         m_storageStatus.effectiveDirectory = QStringLiteral("C:/settings-test-storage");
@@ -1191,9 +1193,11 @@ void screenshotHistoryPageUsesRepositoryAndAntDesignComponents() {
                 countLabel->font().pixelSize() == metric.fontSize,
             "history title typography must use Ant Design heading and body tokens");
 
-    FakeRuntimeBindings shortcutBindings;
-    SettingsPageWidget shortcutPage(settings::builtInSettingsCatalog(),
-                                    QStringLiteral("quick-functions"), shortcutBindings);
+    const auto& registry = settings::builtInSettingsRegistry();
+    FakeSettingsBackend shortcutBackend;
+    settings::SettingsRuntimeSession shortcutSession(registry, shortcutBackend);
+    SettingsPageWidget shortcutPage(registry, QStringLiteral("quick-functions"),
+                                    shortcutSession);
     auto* resetButton =
         shortcutPage.findChild<adqt::widgets::AdButton*>(QStringLiteral("sectionResetButton"));
     require(resetButton != nullptr && deleteAll->size() == resetButton->size() &&
@@ -1254,14 +1258,15 @@ void screenshotHistorySurvivesSidebarWidthTransitions() {
                 .storage.success,
             "history collapse test fixture must publish");
 
-    const auto& builtInCatalog = settings::builtInSettingsCatalog();
-    FakeRuntimeBindings bindings;
+    const auto& registry = settings::builtInSettingsRegistry();
+    FakeSettingsBackend backend;
+    settings::SettingsRuntimeSession session(registry, backend);
     QWidget window;
     auto* rootLayout = new QHBoxLayout(&window);
     rootLayout->setContentsMargins(0, 0, 0, 0);
     rootLayout->setSpacing(0);
 
-    auto* sidebar = new SidebarWidget(builtInCatalog, &window);
+    auto* sidebar = new SidebarWidget(registry, &window);
     rootLayout->addWidget(sidebar, 0);
 
     auto* contentShell = new QWidget(&window);
@@ -1269,10 +1274,10 @@ void screenshotHistorySurvivesSidebarWidthTransitions() {
     contentLayout->setContentsMargins(0, 0, 0, 0);
     contentLayout->setSpacing(0);
     auto* header = new MainContentHeaderWidget(
-        builtInCatalog,
+        registry,
         snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme().metricAlias,
         contentShell);
-    auto* content = new ContentCardWidget(builtInCatalog, bindings, contentShell);
+    auto* content = new ContentCardWidget(registry, session, contentShell);
     contentLayout->addWidget(header, 0);
     contentLayout->addWidget(content, 1);
     rootLayout->addWidget(contentShell, 1);
@@ -1307,11 +1312,12 @@ void screenshotHistorySurvivesSidebarWidthTransitions() {
 }
 
 void allPagesShareBaseContainerSpacingAndScrollbar() {
-    FakeRuntimeBindings bindings;
-    const auto& builtInCatalog = settings::builtInSettingsCatalog();
+    const auto& registry = settings::builtInSettingsRegistry();
+    FakeSettingsBackend backend;
+    settings::SettingsRuntimeSession session(registry, backend);
     const auto metric =
         snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme().metricAlias;
-    SettingsPageWidget settingsPage(builtInCatalog, QStringLiteral("interface-settings"), bindings);
+    SettingsPageWidget settingsPage(registry, QStringLiteral("interface-settings"), session);
     ScreenshotHistoryPageWidget historyPage;
 
     auto* settingsContainer = settingsPage.findChild<PageContainerWidget*>(
@@ -1349,7 +1355,7 @@ void allPagesShareBaseContainerSpacingAndScrollbar() {
 }
 
 settings::SettingsCatalog expandedCatalog() {
-    const auto& builtIn = settings::builtInSettingsCatalog();
+    const auto& builtIn = settings::builtInSettingsRegistry().catalog();
     QVector<settings::SettingsPageDefinition> pages = builtIn.pages();
     settings::SettingsSelectDefinition select;
     select.options = {
@@ -1378,16 +1384,53 @@ settings::SettingsCatalog expandedCatalog() {
     return {std::move(pages), std::move(navigation), builtIn.defaultLocation()};
 }
 
-void generatedPagesRenderEveryItemTypeAndResynchronize() {
-    FakeRuntimeBindings bindings;
-    const auto& catalog = settings::builtInSettingsCatalog();
+void registryPageGenerationUsesCompiledPlan() {
+    const settings::SettingsRegistry registry = settings::buildBuiltInSettingsRegistry();
+    const auto* plan = registry.pagePlan(QStringLiteral("interface-settings"));
+    require(plan != nullptr && plan->providerId == QStringLiteral("built-in"),
+            "registry page-generation coverage requires a built-in compiled plan");
 
-    SettingsPageWidget quick(catalog, QStringLiteral("quick-functions"), bindings);
-    SettingsPageWidget interfacePage(catalog, QStringLiteral("interface-settings"), bindings);
-    SettingsPageWidget storagePage(catalog, QStringLiteral("storage-and-privacy"), bindings);
-    SettingsPageWidget functionPage(catalog, QStringLiteral("function-settings"), bindings);
-    SettingsPageWidget systemPage(catalog, QStringLiteral("system-settings"), bindings);
-    SettingsPageWidget hotkeyPage(catalog, QStringLiteral("hotkey-settings"), bindings);
+    FakeSettingsBackend backend;
+    settings::SettingsRuntimeSession session(registry, backend);
+    SettingsPageWidget page(registry, plan->id, session);
+    require(page.property("settingsProviderId").toString() == plan->providerId &&
+                page.property("settingsPagePlanIndex").toInt() == plan->pageIndex,
+            "registry-backed pages must expose their compiled provider and page-plan identity");
+
+    int expectedFields = 0;
+    for (const settings::SettingsSectionPlan& sectionPlan : plan->sectionPlans) {
+        expectedFields += static_cast<int>(sectionPlan.fieldIndexes.size());
+        for (const int fieldIndex : sectionPlan.fieldIndexes) {
+            require(fieldIndex >= 0 && fieldIndex < registry.fields().size(),
+                    "registry-backed page generation must use valid compiled field indexes");
+            const auto& descriptor = registry.fields().at(fieldIndex);
+            const auto anchors = page.findChildren<QWidget*>(
+                settings::generatedObjectName(QStringLiteral("settings-item"), descriptor.id));
+            require(anchors.size() == 1 &&
+                        anchors.constFirst()->property("settingsFieldIndex").toInt() == fieldIndex &&
+                        anchors.constFirst()->property("settingsFieldKind").toInt() ==
+                            static_cast<int>(descriptor.kind) &&
+                        anchors.constFirst()->property("settingsProviderId").toString() ==
+                            descriptor.providerId,
+                    "generated rows must retain their compiled descriptor identity");
+        }
+    }
+    require(page.findChildren<QWidget*>(QRegularExpression(QStringLiteral("^settings-item-")))
+                    .size() == expectedFields,
+            "registry-backed pages must render exactly the fields in their page plan");
+}
+
+void generatedPagesRenderEveryItemTypeAndResynchronize() {
+    const auto& registry = settings::builtInSettingsRegistry();
+    FakeSettingsBackend bindings;
+    settings::SettingsRuntimeSession session(registry, bindings);
+
+    SettingsPageWidget quick(registry, QStringLiteral("quick-functions"), session);
+    SettingsPageWidget interfacePage(registry, QStringLiteral("interface-settings"), session);
+    SettingsPageWidget storagePage(registry, QStringLiteral("storage-and-privacy"), session);
+    SettingsPageWidget functionPage(registry, QStringLiteral("function-settings"), session);
+    SettingsPageWidget systemPage(registry, QStringLiteral("system-settings"), session);
+    SettingsPageWidget hotkeyPage(registry, QStringLiteral("hotkey-settings"), session);
     interfacePage.resize(720, 360);
     quick.resize(720, 520);
     storagePage.resize(720, 480);
@@ -1695,8 +1738,12 @@ void generatedPagesRenderEveryItemTypeAndResynchronize() {
             "accepted select writes must flow through runtime bindings");
     bindings.acceptWrites = false;
     theme->setCurrentValue(QStringLiteral("dark"));
-    require(theme->currentValue() == QStringLiteral("light"),
-            "rejected select writes must restore the bound value");
+    const settings::SettingsFieldState rejectedTheme =
+        session.state(QStringLiteral("interface.theme"));
+    require(theme->currentValue() == QStringLiteral("dark") && rejectedTheme.dirty &&
+                !rejectedTheme.busy &&
+                rejectedTheme.phase == settings::SettingsWritePhase::Rejected,
+            "rejected select writes must retain the visible draft for retry or discard");
     bindings.acceptWrites = true;
 
     auto* applicationPriority = systemPage.findChild<adqt::widgets::AdSelect*>(
@@ -2020,17 +2067,22 @@ void generatedPagesRenderEveryItemTypeAndResynchronize() {
             }
         }
     }
+    const QString expectedDelayTitle = registry.catalog().shortcutActionTitle(
+        snow_shot::presentation::GlobalShortcutAction::ScreenshotDelay, 3);
+    const QString expectedRecordingTitle = registry.catalog().shortcutActionTitle(
+        snow_shot::presentation::GlobalShortcutAction::ScreenRecordCopy);
     require(screenshot != nullptr && screenshotDelay != nullptr &&
-                screenshotDelayTitle != nullptr &&
-                screenshotDelay->delaySeconds() == 3 && delayTitleIsRendered &&
+                screenshotDelayTitle != nullptr && screenshotDelay->delaySeconds() == 3 &&
+                delayTitleIsRendered &&
                 screenshotDelay->cursor().shape() == Qt::PointingHandCursor &&
-                screenshotDelayTitle->cursor().shape() == Qt::SplitVCursor &&
-                trayScreenshotDelay != nullptr &&
-                trayScreenshotDelay->text() == QStringLiteral("Delay 3s to Execute") &&
-                trayRecordingToggle != nullptr &&
-                trayRecordingToggle->text() ==
-                    QStringLiteral("Start Screen Recording / Stop and Copy Video"),
-            "shortcut and tray surfaces must render the same canonical action titles");
+                screenshotDelayTitle->cursor().shape() == Qt::SplitVCursor,
+            "shortcut rows must render their registry title and configured interaction affordances");
+    require(trayScreenshotDelay != nullptr &&
+                trayScreenshotDelay->text() == expectedDelayTitle,
+            "the tray delay option must use the canonical registry shortcut title");
+    require(trayRecordingToggle != nullptr &&
+                trayRecordingToggle->text() == expectedRecordingTitle,
+            "the tray recording option must use the canonical registry shortcut title");
 
     QWheelEvent increaseDelay(
         QPointF(screenshotDelayTitle->rect().center()),
@@ -2076,9 +2128,10 @@ void generatedPagesRenderEveryItemTypeAndResynchronize() {
 void quickActionCommandsDispatchThroughContentCard() {
     using Action = snow_shot::presentation::GlobalShortcutAction;
 
-    const auto& catalog = settings::builtInSettingsCatalog();
-    FakeRuntimeBindings bindings;
-    ContentCardWidget content(catalog, bindings);
+    const auto& registry = settings::builtInSettingsRegistry();
+    FakeSettingsBackend bindings;
+    settings::SettingsRuntimeSession session(registry, bindings);
+    ContentCardWidget content(registry, session);
     content.setCurrentRoute(QStringLiteral("/"));
 
     QVector<Action> requestedActions;
@@ -2130,8 +2183,10 @@ void quickActionCommandsDispatchThroughContentCard() {
 }
 
 void mainWindowIsDisposableConfigurationSurface() {
-    FakeRuntimeBindings bindings;
-    QPointer<MainWindow> window = new MainWindow(bindings);
+    const auto& registry = settings::builtInSettingsRegistry();
+    FakeSettingsBackend backend;
+    settings::SettingsRuntimeSession session(registry, backend);
+    QPointer<MainWindow> window = new MainWindow(registry, session);
     require(window != nullptr && window->testAttribute(Qt::WA_DeleteOnClose),
             "the main interface must be a disposable configuration window");
 
@@ -2146,10 +2201,11 @@ void mainWindowIsDisposableConfigurationSurface() {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     require(window == nullptr,
             "closing the main interface must destroy only the configuration window");
-    require(bindings.parent() == nullptr && screenshotRequests == 0 && historyEditRequests == 0,
+    require(backend.parent() == nullptr && session.parent() == nullptr &&
+                screenshotRequests == 0 && historyEditRequests == 0,
             "destroying the main interface must not own or invoke background runtime services");
 
-    QPointer<MainWindow> replacement = new MainWindow(bindings);
+    QPointer<MainWindow> replacement = new MainWindow(registry, session);
     require(replacement != nullptr && replacement->testAttribute(Qt::WA_DeleteOnClose),
             "the configuration window must be recreatable after close");
     replacement->close();
@@ -2158,7 +2214,7 @@ void mainWindowIsDisposableConfigurationSurface() {
 }
 
 void actionsMayExecuteWithoutConfirmation() {
-    FakeRuntimeBindings bindings;
+    FakeSettingsBackend bindings;
     settings::SettingsActionDefinition action;
     action.buttonText = text("Run action");
     action.iconFactory = []() { return adqt::icons::antd::outlined::Rest(); };
@@ -2184,7 +2240,10 @@ void actionsMayExecuteWithoutConfirmation() {
     require(catalog.validationErrors().isEmpty(),
             "an action without confirmation metadata must be valid");
 
-    SettingsPageWidget page(catalog, QStringLiteral("actions"), bindings);
+    const auto registry = settings::SettingsRegistry::fromCatalog(
+        catalog, QStringLiteral("actions-test"));
+    settings::SettingsRuntimeSession session(registry, bindings);
+    SettingsPageWidget page(registry, QStringLiteral("actions"), session);
     auto* button =
         page.findChild<adqt::widgets::AdButton*>(QStringLiteral("settings-control-action-direct"));
     require(button != nullptr, "an action without confirmation must render");
@@ -2196,12 +2255,15 @@ void actionsMayExecuteWithoutConfirmation() {
 void catalogExpansionUpdatesAllConsumers() {
     settings::SettingsCatalog catalog = expandedCatalog();
     require(catalog.validationErrors().isEmpty(), "expanded integration catalog must validate");
+    const auto registry = settings::SettingsRegistry::fromCatalog(
+        catalog, QStringLiteral("expanded-test"));
 
-    FakeRuntimeBindings bindings;
-    ContentCardWidget content(catalog, bindings);
-    SidebarWidget sidebar(catalog);
+    FakeSettingsBackend bindings;
+    settings::SettingsRuntimeSession session(registry, bindings);
+    ContentCardWidget content(registry, session);
+    SidebarWidget sidebar(registry);
     MainContentHeaderWidget header(
-        catalog,
+        registry,
         snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme().metricAlias);
     content.resize(720, 420);
     content.show();
@@ -2257,8 +2319,11 @@ void catalogExpansionUpdatesAllConsumers() {
 
 void contentCardStrictlyLazyLoadsAndDestroysRoutes() {
     const settings::SettingsCatalog catalog = expandedCatalog();
-    FakeRuntimeBindings bindings;
-    ContentCardWidget content(catalog, bindings);
+    const auto registry = settings::SettingsRegistry::fromCatalog(
+        catalog, QStringLiteral("lazy-routing-test"));
+    FakeSettingsBackend bindings;
+    settings::SettingsRuntimeSession session(registry, bindings);
+    ContentCardWidget content(registry, session);
     auto* stack = content.findChild<QStackedWidget*>();
     require(stack != nullptr && stack->count() == 1,
             "strict lazy routing must mount exactly one page at construction");
@@ -2357,9 +2422,10 @@ void contentCardStrictlyLazyLoadsAndDestroysRoutes() {
 }
 
 void pinToScreenShortcutSettingsRenderAndReset() {
-    FakeRuntimeBindings bindings;
-    SettingsPageWidget hotkeyPage(settings::builtInSettingsCatalog(),
-                                  QStringLiteral("hotkey-settings"), bindings);
+    const auto& registry = settings::builtInSettingsRegistry();
+    FakeSettingsBackend bindings;
+    settings::SettingsRuntimeSession session(registry, bindings);
+    SettingsPageWidget hotkeyPage(registry, QStringLiteral("hotkey-settings"), session);
     hotkeyPage.resize(720, 480);
     hotkeyPage.show();
     flushEvents();
@@ -2401,9 +2467,10 @@ void pinToScreenShortcutSettingsRenderAndReset() {
 }
 
 void screenshotShortcutSettingsRenderAndReset() {
-    FakeRuntimeBindings bindings;
-    SettingsPageWidget hotkeyPage(settings::builtInSettingsCatalog(),
-                                  QStringLiteral("hotkey-settings"), bindings);
+    const auto& registry = settings::builtInSettingsRegistry();
+    FakeSettingsBackend bindings;
+    settings::SettingsRuntimeSession session(registry, bindings);
+    SettingsPageWidget hotkeyPage(registry, QStringLiteral("hotkey-settings"), session);
     hotkeyPage.resize(720, 640);
     hotkeyPage.show();
     flushEvents();
@@ -2491,8 +2558,10 @@ void screenshotShortcutSettingsRenderAndReset() {
 }
 
 void generatedSettingsPagesHaveNoSyntheticBottomSpace() {
-    const auto& catalog = settings::builtInSettingsCatalog();
-    FakeRuntimeBindings bindings;
+    const auto& registry = settings::builtInSettingsRegistry();
+    const auto& catalog = registry.catalog();
+    FakeSettingsBackend bindings;
+    settings::SettingsRuntimeSession session(registry, bindings);
     const QVector<QSize> pageSizes{{720, 260}, {520, 420}};
 
     for (const settings::SettingsPageDefinition& definition : catalog.pages()) {
@@ -2503,7 +2572,7 @@ void generatedSettingsPagesHaveNoSyntheticBottomSpace() {
         require(!definition.sections.isEmpty(),
                 "every generated settings page must have at least one section");
         for (const QSize& pageSize : pageSizes) {
-            SettingsPageWidget page(catalog, definition.id, bindings);
+            SettingsPageWidget page(registry, definition.id, session);
             page.resize(pageSize);
             page.show();
             flushEvents();
@@ -2553,13 +2622,15 @@ void generatedSettingsPagesHaveNoSyntheticBottomSpace() {
 }
 
 void generatedSettingsRowsUseTheirWidthAwareNaturalHeight() {
-    const auto& catalog = settings::builtInSettingsCatalog();
+    const auto& registry = settings::builtInSettingsRegistry();
+    const auto& catalog = registry.catalog();
     const auto* definition = catalog.page(QStringLiteral("storage-and-privacy"));
     require(definition != nullptr,
             "width-aware row geometry test requires the Storage and Privacy page");
 
-    FakeRuntimeBindings bindings;
-    SettingsPageWidget page(catalog, definition->id, bindings);
+    FakeSettingsBackend bindings;
+    settings::SettingsRuntimeSession session(registry, bindings);
+    SettingsPageWidget page(registry, definition->id, session);
     page.resize(720, 260);
     page.show();
     flushEvents();
@@ -2605,15 +2676,17 @@ void generatedSettingsRowsUseTheirWidthAwareNaturalHeight() {
 }
 
 void sectionTabsAndScrollingStaySynchronized() {
-    const auto& catalog = settings::builtInSettingsCatalog();
+    const auto& registry = settings::builtInSettingsRegistry();
+    const auto& catalog = registry.catalog();
     const auto* pageDefinition = catalog.page(QStringLiteral("storage-and-privacy"));
     require(pageDefinition != nullptr && !pageDefinition->sections.isEmpty(),
             "section navigation integration requires a non-empty storage page");
     const QString firstSectionId = pageDefinition->sections.constFirst().id;
-    FakeRuntimeBindings bindings;
-    ContentCardWidget content(catalog, bindings);
+    FakeSettingsBackend bindings;
+    settings::SettingsRuntimeSession session(registry, bindings);
+    ContentCardWidget content(registry, session);
     MainContentHeaderWidget header(
-        catalog,
+        registry,
         snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme().metricAlias);
 
     QObject::connect(&header, &MainContentHeaderWidget::sectionRequested, &content,
@@ -2687,8 +2760,13 @@ void sectionTabsAndScrollingStaySynchronized() {
             "scrolling to a later section must select its tab automatically");
 }
 
-void drawingToolbarEditorPersistsDropsAndRestoresRejectedChanges() {
-    FakeRuntimeBindings runtime;
+void drawingToolbarEditorPersistsDropsAndRetainsRejectedChanges() {
+    const auto& registry = settings::builtInSettingsRegistry();
+    FakeSettingsBackend backend;
+    settings::SettingsRuntimeSession runtime(registry, backend);
+    const auto* toolbarField =
+        registry.fieldForCustom(settings::SettingsCustomRenderer::DrawingToolbarEditor);
+    require(toolbarField != nullptr, "the registry must expose the drawing toolbar field");
     DrawingToolbarEditorSettingsWidget editor(runtime);
     editor.resize(960, 320);
     editor.show();
@@ -2774,10 +2852,27 @@ void drawingToolbarEditorPersistsDropsAndRestoresRejectedChanges() {
             "dragging a hidden tool back to the preview should restore its toolbar position");
 
     const snow_shot::storage::ScreenshotToolbarLayout accepted = runtime.toolbarLayout();
-    runtime.acceptWrites = false;
-    require(drop(hiddenZone, QStringLiteral("watermark"), hiddenZone->rect().center()) &&
-                runtime.toolbarLayout() == accepted && hiddenWatermark->parentWidget() != hiddenZone,
-            "rejected toolbar persistence should leave the prior layout intact");
+    backend.acceptWrites = false;
+    require(drop(hiddenZone, QStringLiteral("watermark"), hiddenZone->rect().center()),
+            "the hidden well must accept a toolbar drop before persistence is attempted");
+    const snow_shot::storage::ScreenshotToolbarLayout rejectedDraft = runtime.toolbarLayout();
+    const settings::SettingsFieldState rejectedState = runtime.state(toolbarField->id);
+    require(backend.toolbarLayout() == accepted &&
+                rejectedDraft.hidden == QStringList{QStringLiteral("watermark")} &&
+                rejectedState.acceptedValue.value<
+                    snow_shot::storage::ScreenshotToolbarLayout>() == accepted &&
+                rejectedState.draftValue.value<
+                    snow_shot::storage::ScreenshotToolbarLayout>() == rejectedDraft &&
+                rejectedState.dirty && !rejectedState.busy &&
+                rejectedState.phase == settings::SettingsWritePhase::Rejected &&
+                hiddenWatermark->parentWidget() == hiddenZone,
+            "a rejected toolbar write must retain one coherent draft in the session and editor");
+
+    require(runtime.discard(toolbarField->id) && runtime.toolbarLayout() == accepted &&
+                backend.toolbarLayout() == accepted &&
+                hiddenWatermark->parentWidget() != hiddenZone &&
+                runtime.state(toolbarField->id).phase == settings::SettingsWritePhase::Clean,
+            "discarding the rejected toolbar draft must restore the accepted layout everywhere");
 }
 } // namespace
 
@@ -2789,6 +2884,7 @@ int main(int argc, char** argv) {
     bool screenshotShortcutsOnly = false;
     bool mainWindowLifecycleOnly = false;
     bool lazyRoutingOnly = false;
+    bool registryGenerationOnly = false;
     for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex) {
         if (QString::fromLocal8Bit(argv[argumentIndex]) ==
             QStringLiteral("--drawing-toolbar-editor-only")) {
@@ -2811,11 +2907,14 @@ int main(int argc, char** argv) {
         } else if (QString::fromLocal8Bit(argv[argumentIndex]) ==
                    QStringLiteral("--lazy-routing-only")) {
             lazyRoutingOnly = true;
+        } else if (QString::fromLocal8Bit(argv[argumentIndex]) ==
+                   QStringLiteral("--registry-generation-only")) {
+            registryGenerationOnly = true;
         }
     }
 #if defined(Q_OS_WIN)
     if (drawingToolbarEditorOnly || settingsLayoutOnly || pinnedShortcutsOnly ||
-        screenshotShortcutsOnly || lazyRoutingOnly) {
+        screenshotShortcutsOnly || lazyRoutingOnly || registryGenerationOnly) {
         qunsetenv("QT_QPA_PLATFORM");
     } else if (!qEnvironmentVariableIsSet("QT_QPA_PLATFORM")) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
@@ -2835,7 +2934,7 @@ int main(int argc, char** argv) {
     snow_shot::presentation::styles::ThemeManager::instance().initialize(application);
 
     if (drawingToolbarEditorOnly) {
-        drawingToolbarEditorPersistsDropsAndRestoresRejectedChanges();
+        drawingToolbarEditorPersistsDropsAndRetainsRejectedChanges();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -2872,6 +2971,12 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (registryGenerationOnly) {
+        registryPageGenerationUsesCompiledPlan();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    registryPageGenerationUsesCompiledPlan();
     generatedPagesRenderEveryItemTypeAndResynchronize();
     mainWindowIsDisposableConfigurationSurface();
     quickActionCommandsDispatchThroughContentCard();
@@ -2886,7 +2991,7 @@ int main(int argc, char** argv) {
     generatedSettingsPagesHaveNoSyntheticBottomSpace();
     generatedSettingsRowsUseTheirWidthAwareNaturalHeight();
     sectionTabsAndScrollingStaySynchronized();
-    drawingToolbarEditorPersistsDropsAndRestoresRejectedChanges();
+    drawingToolbarEditorPersistsDropsAndRetainsRejectedChanges();
 
     snow_shot::storage::ApplicationStorage::instance().shutdown();
     return 0;

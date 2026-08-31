@@ -13,6 +13,7 @@
 
 #include "antd_icons.h"
 #include "snow_shot/presentation/styles/thememanager.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
 #include "widgets/button.h"
 #include "widgets/navigation_menu.h"
 
@@ -98,7 +99,8 @@ QString SidebarWidget::currentRoute() const {
         return m_currentRoute;
     }
 
-    const auto* page = m_catalog.page(m_catalog.defaultLocation().pageId);
+    const auto& catalog = m_registry.catalog();
+    const auto* page = catalog.page(catalog.defaultLocation().pageId);
     return normalizeRouteKey(page != nullptr ? page->route : QStringLiteral("/"));
 }
 
@@ -131,7 +133,8 @@ QString SidebarWidget::normalizeRouteKey(const QString& routeKey) const {
         return routeKey;
     }
 
-    const auto* defaultPage = m_catalog.page(m_catalog.defaultLocation().pageId);
+    const auto& catalog = m_registry.catalog();
+    const auto* defaultPage = catalog.page(catalog.defaultLocation().pageId);
     QString defaultRoute = defaultPage != nullptr ? defaultPage->route : QStringLiteral("/");
     if (m_leafRoutes.contains(defaultRoute)) {
         return defaultRoute;
@@ -155,7 +158,7 @@ void SidebarWidget::rebuildNavigationModel() {
     m_leafRoutes.clear();
     const auto appendPage = [this](QStandardItem* parent,
                                    const snow_shot::presentation::settings::SettingsNavigationPageDefinition& navigationPage) {
-        const auto* page = m_catalog.page(navigationPage.pageId);
+        const auto* page = m_registry.catalog().page(navigationPage.pageId);
         if (page == nullptr) {
             return;
         }
@@ -171,7 +174,7 @@ void SidebarWidget::rebuildNavigationModel() {
         }
     };
 
-    for (const auto& node : m_catalog.navigation()) {
+    for (const auto& node : m_registry.navigation()) {
         if (const auto* navigationPage =
                 std::get_if<snow_shot::presentation::settings::SettingsNavigationPageDefinition>(
                     &node)) {
@@ -244,8 +247,8 @@ void SidebarWidget::applyTheme(const snow_shot::presentation::styles::ThemeColor
 }
 
 SidebarWidget::SidebarWidget(
-    const snow_shot::presentation::settings::SettingsCatalog& catalog, QWidget* parent)
-    : QFrame(parent), m_catalog(catalog) {
+    const snow_shot::presentation::settings::SettingsRegistry& registry, QWidget* parent)
+    : QFrame(parent), m_registry(registry) {
     setAutoFillBackground(true);
 
     auto* sidebarLayout = new QVBoxLayout(this);
@@ -310,7 +313,8 @@ SidebarWidget::SidebarWidget(
         emit routeSelected(routeKey);
     });
 
-    const auto* defaultPage = m_catalog.page(m_catalog.defaultLocation().pageId);
+    const auto& catalog = m_registry.catalog();
+    const auto* defaultPage = catalog.page(catalog.defaultLocation().pageId);
     setCurrentRoute(defaultPage != nullptr ? defaultPage->route : QStringLiteral("/"));
     setCollapsed(snow_shot::storage::InterfaceSettings().sidebarCollapsed());
 }

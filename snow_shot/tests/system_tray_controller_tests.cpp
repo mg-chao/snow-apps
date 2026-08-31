@@ -1,6 +1,6 @@
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
-#include "snow_shot/presentation/settings/settingscatalog.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/systemtraycontroller.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -360,12 +360,12 @@ int main(int argc, char* argv[]) {
                        "Screenshot should translate to Simplified Chinese");
     requireActionText(
         delayedScreenshotMenuAction,
-        snow_shot::presentation::settings::builtInSettingsCatalog().shortcutActionTitle(
+        snow_shot::presentation::settings::builtInSettingsRegistry().catalog().shortcutActionTitle(
             snow_shot::presentation::GlobalShortcutAction::ScreenshotDelay, 3),
         "Simplified Chinese tray text should equal the canonical shortcut title");
     requireActionText(
         recordingToggleMenuAction,
-        snow_shot::presentation::settings::builtInSettingsCatalog().shortcutActionTitle(
+        snow_shot::presentation::settings::builtInSettingsRegistry().catalog().shortcutActionTitle(
             snow_shot::presentation::GlobalShortcutAction::ScreenRecordCopy),
         "Simplified Chinese recording text should equal the canonical shortcut title");
     requireActionText(showMainWindowMenuAction, QStringLiteral("\u663e\u793a\u4e3b\u754c\u9762"),
@@ -382,12 +382,12 @@ int main(int argc, char* argv[]) {
                        "Screenshot should translate to Traditional Chinese");
     requireActionText(
         delayedScreenshotMenuAction,
-        snow_shot::presentation::settings::builtInSettingsCatalog().shortcutActionTitle(
+        snow_shot::presentation::settings::builtInSettingsRegistry().catalog().shortcutActionTitle(
             snow_shot::presentation::GlobalShortcutAction::ScreenshotDelay, 3),
         "Traditional Chinese tray text should equal the canonical shortcut title");
     requireActionText(
         recordingToggleMenuAction,
-        snow_shot::presentation::settings::builtInSettingsCatalog().shortcutActionTitle(
+        snow_shot::presentation::settings::builtInSettingsRegistry().catalog().shortcutActionTitle(
             snow_shot::presentation::GlobalShortcutAction::ScreenRecordCopy),
         "Traditional Chinese recording text should equal the canonical shortcut title");
     requireActionText(showMainWindowMenuAction, QStringLiteral("\u986f\u793a\u4e3b\u4ecb\u9762"),

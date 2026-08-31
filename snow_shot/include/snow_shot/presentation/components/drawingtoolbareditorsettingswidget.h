@@ -8,13 +8,13 @@
 class QEvent;
 
 namespace snow_shot::presentation::settings {
-class SettingsRuntimeBindings;
+class SettingsRuntimeSession;
 }
 
 class DrawingToolbarEditorSettingsWidget final : public SettingsCustomWidget {
   public:
     explicit DrawingToolbarEditorSettingsWidget(
-        snow_shot::presentation::settings::SettingsRuntimeBindings& runtimeBindings,
+        snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession,
         QWidget* parent = nullptr);
     ~DrawingToolbarEditorSettingsWidget() override;
 

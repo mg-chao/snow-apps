@@ -208,10 +208,10 @@ QString nativeShortcutText(const QStringList& shortcuts) {
 
 class SystemTrayController::Impl {
   public:
-    Impl(SystemTrayController& owner, const settings::SettingsCatalog& sourceCatalog)
+    Impl(SystemTrayController& owner, const settings::TrayCommandManifest& sourceManifest)
         : q(owner), menu(std::make_unique<adqt::widgets::AdContextMenu>()),
-          trayIcon(new QSystemTrayIcon(&owner)), catalog(sourceCatalog),
-          groups(catalog.trayMenuGroups()) {
+          trayIcon(new QSystemTrayIcon(&owner)), manifest(sourceManifest),
+          groups(manifest.groups) {
         q.setObjectName(QStringLiteral("systemTrayController"));
         menu->setObjectName(QStringLiteral("systemTrayMenu"));
         menu->setMinimumWidth(300);
@@ -295,8 +295,8 @@ class SystemTrayController::Impl {
             for (const settings::SettingsTrayMenuOptionDefinition& option : group.options) {
                 if (QAction* action = actions.value(option.id)) {
                     const QString label = option.kind == settings::SettingsTrayMenuOptionKind::QuickAction
-                                              ? catalog.shortcutActionTitle(option.shortcutAction,
-                                                                            screenshotDelaySeconds)
+                                              ? manifest.shortcutActionTitle(option.shortcutAction,
+                                                                             screenshotDelaySeconds)
                                               : option.label.translated();
                     Q_ASSERT(!label.isEmpty());
                     const QString shortcut =
@@ -376,7 +376,7 @@ class SystemTrayController::Impl {
     SystemTrayController& q;
     std::unique_ptr<adqt::widgets::AdContextMenu> menu;
     QSystemTrayIcon* trayIcon = nullptr;
-    settings::SettingsCatalog catalog;
+    settings::TrayCommandManifest manifest;
     QVector<settings::SettingsTrayMenuGroupDefinition> groups;
     QHash<QString, QAction*> actions;
     QHash<GlobalShortcutAction, QString> shortcutText;
@@ -392,11 +392,11 @@ class SystemTrayController::Impl {
 };
 
 SystemTrayController::SystemTrayController(QObject* parent)
-    : SystemTrayController(settings::builtInSettingsCatalog(), parent) {}
+    : SystemTrayController(settings::builtInTrayCommandManifest(), parent) {}
 
-SystemTrayController::SystemTrayController(const settings::SettingsCatalog& catalog,
+SystemTrayController::SystemTrayController(const settings::TrayCommandManifest& manifest,
                                            QObject* parent)
-    : QObject(parent), m_impl(std::make_unique<Impl>(*this, catalog)) {}
+    : QObject(parent), m_impl(std::make_unique<Impl>(*this, manifest)) {}
 
 SystemTrayController::~SystemTrayController() = default;
 

@@ -2,7 +2,8 @@
 
 #include "snow_shot/presentation/components/settingspagewidget.h"
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
-#include "snow_shot/presentation/settings/settingsruntimebindings.h"
+#include "snow_shot/presentation/settings/settingsregistry.h"
+#include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/styles/mainwindowcomponenttoken.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 
@@ -12,9 +13,9 @@
 #include <QVBoxLayout>
 
 ContentCardWidget::ContentCardWidget(
-    const snow_shot::presentation::settings::SettingsCatalog& catalog,
-    snow_shot::presentation::settings::SettingsRuntimeBindings& runtimeBindings, QWidget* parent)
-    : QFrame(parent), m_catalog(catalog), m_runtimeBindings(runtimeBindings),
+    const snow_shot::presentation::settings::SettingsRegistry& registry,
+    snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession, QWidget* parent)
+    : QFrame(parent), m_registry(registry), m_runtimeSession(runtimeSession),
       m_colorScheme(snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme()) {
     setFrameShape(QFrame::NoFrame);
     setLineWidth(0);
@@ -30,7 +31,7 @@ ContentCardWidget::ContentCardWidget(
     m_stack->setAutoFillBackground(false);
 
     cardLayout->addWidget(m_stack, 1);
-    navigateTo(m_catalog.defaultLocation());
+    navigateTo(m_registry.defaultLocation());
 
     const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
     connect(&themeManager, &snow_shot::presentation::styles::ThemeManager::themeChanged, this,
@@ -41,11 +42,12 @@ ContentCardWidget::ContentCardWidget(
 ContentCardWidget::~ContentCardWidget() = default;
 
 QString ContentCardWidget::currentRoute() const {
-    const auto* page = m_catalog.page(m_currentLocation.pageId);
+    const auto& catalog = m_registry.catalog();
+    const auto* page = catalog.page(m_currentLocation.pageId);
     if (page != nullptr) {
         return page->route;
     }
-    const auto* defaultPage = m_catalog.page(m_catalog.defaultLocation().pageId);
+    const auto* defaultPage = catalog.page(m_registry.defaultLocation().pageId);
     return defaultPage != nullptr ? defaultPage->route : QStringLiteral("/");
 }
 
@@ -55,11 +57,11 @@ snow_shot::presentation::settings::SettingsLocation ContentCardWidget::currentLo
 
 QVector<snow_shot::presentation::settings::SettingsSectionSummary>
 ContentCardWidget::currentSections() const {
-    return m_catalog.sectionSummaries(m_currentLocation.pageId);
+    return m_registry.catalog().sectionSummaries(m_currentLocation.pageId);
 }
 
 void ContentCardWidget::setCurrentRoute(const QString& route) {
-    const auto* page = m_catalog.pageForRoute(route);
+    const auto* page = m_registry.catalog().pageForRoute(route);
     navigateTo(page != nullptr
                    ? snow_shot::presentation::settings::SettingsLocation{page->id, {}, {}}
                    : snow_shot::presentation::settings::SettingsLocation{});
@@ -71,8 +73,8 @@ void ContentCardWidget::activateSection(const QString& sectionId) {
 
 void ContentCardWidget::navigateTo(
     const snow_shot::presentation::settings::SettingsLocation& requested) {
-    const auto resolved = m_catalog.resolveLocation(requested);
-    const auto* pageDefinition = m_catalog.page(resolved.pageId);
+    const auto resolved = m_registry.catalog().resolveLocation(requested);
+    const auto* pageDefinition = m_registry.catalog().page(resolved.pageId);
     if (pageDefinition == nullptr || m_stack == nullptr) {
         return;
     }
@@ -122,7 +124,7 @@ QWidget* ContentCardWidget::createPage(
         page = historyPage;
     } else {
         auto* settingsPage =
-            new SettingsPageWidget(m_catalog, definition.id, m_runtimeBindings, m_stack);
+            new SettingsPageWidget(m_registry, definition.id, m_runtimeSession, m_stack);
         QPointer<SettingsPageWidget> pageGuard(settingsPage);
         connect(settingsPage, &SettingsPageWidget::commandRequested, this,
                 &ContentCardWidget::handleCommand);
@@ -158,15 +160,21 @@ void ContentCardWidget::destroyActivePage() {
     if (m_stack != nullptr && m_stack->indexOf(page) >= 0) {
         m_stack->removeWidget(page);
     }
-    // Detach the page from services immediately. This prevents a widget that is
-    // waiting for deferred deletion from processing theme, language, or runtime
-    // updates after it has left the active route.
-    page->disconnect();
-    QObject::disconnect(&m_runtimeBindings, nullptr, page, nullptr);
+    // Detach the page from services immediately. Avoid QObject::disconnect()
+    // without an explicit receiver: Qt treats that wildcard form specially
+    // for destroyed(), and emits a warning while the page leaves the object
+    // tree. The page and all generated descendants use these known receivers.
+    QObject::disconnect(page, nullptr, this, nullptr);
+    QObject::disconnect(&m_runtimeSession, nullptr, page, nullptr);
     QObject::disconnect(&snow_shot::presentation::styles::ThemeManager::instance(), nullptr, page,
                         nullptr);
-    for (QObject* source : page->findChildren<QObject*>()) {
-        QObject::disconnect(source, nullptr, page, nullptr);
+    const QList<QObject*> descendants = page->findChildren<QObject*>();
+    for (QObject* object : descendants) {
+        QObject::disconnect(object, nullptr, this, nullptr);
+        QObject::disconnect(object, nullptr, page, nullptr);
+        QObject::disconnect(&m_runtimeSession, nullptr, object, nullptr);
+        QObject::disconnect(&snow_shot::presentation::styles::ThemeManager::instance(), nullptr,
+                            object, nullptr);
     }
     m_activePage.clear();
     m_activePageId.clear();

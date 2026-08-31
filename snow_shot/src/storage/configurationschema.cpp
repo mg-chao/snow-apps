@@ -9,6 +9,7 @@
 #include <QLocale>
 #include <QRegularExpression>
 #include <QSet>
+#include <QHash>
 #include <QDir>
 #include <QStandardPaths>
 
@@ -522,6 +523,18 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
                                CaptureHistoryPolicy::MaximumDiskMiB, 1}},
 };
 
+const QHash<QString, int>& entryIndex() {
+    static const QHash<QString, int> index = [] {
+        QHash<QString, int> result;
+        result.reserve(kEntries.size());
+        for (int i = 0; i < kEntries.size(); ++i) {
+            result.insert(kEntries.at(i).key, i);
+        }
+        return result;
+    }();
+    return index;
+}
+
 bool isInteger(const QJsonValue& value, int* result = nullptr) {
     if (!value.isDouble() || !std::isfinite(value.toDouble()) ||
         std::floor(value.toDouble()) != value.toDouble()) {
@@ -927,9 +940,8 @@ const QVector<ConfigurationSchemaEntry>& ConfigurationSchema::entries() {
 }
 
 const ConfigurationSchemaEntry* ConfigurationSchema::entry(const QString& key) {
-    const auto found = std::find_if(kEntries.cbegin(), kEntries.cend(),
-                                    [&key](const auto& item) { return item.key == key; });
-    return found == kEntries.cend() ? nullptr : &*found;
+    const auto found = entryIndex().constFind(key);
+    return found == entryIndex().cend() ? nullptr : &kEntries.at(found.value());
 }
 
 bool ConfigurationSchema::contains(const QString& key) {

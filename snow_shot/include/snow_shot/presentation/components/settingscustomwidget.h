@@ -7,7 +7,8 @@
 #include <QWidget>
 
 namespace snow_shot::presentation::settings {
-class SettingsRuntimeBindings;
+class SettingsRegistry;
+class SettingsRuntimeSession;
 }
 
 class SettingsCustomWidget : public QWidget {
@@ -22,9 +23,9 @@ class SettingsCustomWidget : public QWidget {
 
 [[nodiscard]] SettingsCustomWidget* createSettingsCustomWidget(
     snow_shot::presentation::settings::SettingsCustomRenderer renderer,
-    const snow_shot::presentation::settings::SettingsCatalog& catalog,
+    const snow_shot::presentation::settings::SettingsRegistry& registry,
     const snow_shot::presentation::settings::SettingsItemDefinition& definition,
-    snow_shot::presentation::settings::SettingsRuntimeBindings& runtimeBindings,
+    snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession,
     QWidget* parent = nullptr);
 
 #endif // SNOW_SHOT_PRESENTATION_COMPONENTS_SETTINGSCUSTOMWIDGET_H
