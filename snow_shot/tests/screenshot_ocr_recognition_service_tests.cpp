@@ -12,6 +12,7 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
@@ -172,6 +173,16 @@ void renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine() {
     require(output.error.isEmpty() && output.presentation == nullptr &&
                 !output.filteredImage.isNull(),
             "render-only OCR work should return only its transient filtered image");
+    require(output.filteredImageCanvasRect.isValid() &&
+                !output.filteredImageCanvasRect.isEmpty() &&
+                canvasRect.contains(output.filteredImageCanvasRect),
+            "render-only OCR work should report the canvas rect covered by its filtered crop");
+    const qreal renderScale = image.width() / canvasRect.width();
+    require(std::abs(output.filteredImage.width() -
+                     output.filteredImageCanvasRect.width() * renderScale) <= 1.0 &&
+                std::abs(output.filteredImage.height() -
+                         output.filteredImageCanvasRect.height() * renderScale) <= 1.0,
+            "the filtered image should be sized to match its canvas rect at source resolution");
     require(resourceCounts().engines == 0,
             "render-only OCR work must not initialize a recognition engine");
     require(waitUntil([&]() { return service.liveWorkerCount() == 0; }, 1'000),

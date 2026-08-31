@@ -125,7 +125,7 @@ class ScreenshotOcrController final : public QObject {
     void updateOverlays() const;
     void applyOcrBackgroundToOverlays(
         const std::shared_ptr<ScreenshotOcrPresentation>& presentation,
-        QImage filteredImage = {}) const;
+        QImage filteredImage = {}, QRectF filteredImageCanvasRect = {}) const;
     void clearOcrBackgroundFromOverlays() const;
     void deactivateImpl(bool preserveRecognitionWindow);
     void restorePreviousToolAfterFailure();

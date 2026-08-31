@@ -174,12 +174,12 @@ class FakeOcrRecognition final : public ScreenshotOcrRecognitionPort {
         }
     }
 
-    void completeRender(QImage filteredImage) {
+    void completeRender(QImage filteredImage, QRectF filteredImageCanvasRect = {}) {
         Pending request = std::move(renderPending);
         renderPending = {};
         if (request.receiver != nullptr && request.completion) {
             request.completion(ScreenshotOcrRecognitionResult{
-                nullptr, {}, std::move(filteredImage)});
+                nullptr, {}, std::move(filteredImage), filteredImageCanvasRect});
         }
     }
 
@@ -322,13 +322,15 @@ void textRenderLifecycleUsesTransientWorkerResults() {
     FakeOcrRecognition recognition;
     recognition.supportsRender = true;
     QVector<QImage> appliedImages;
+    QVector<QRectF> appliedCanvasRects;
     ScreenshotRecognitionSessionActions actions;
     actions.applyOcrPresentation = [](std::shared_ptr<ScreenshotOcrPresentation>) {};
     actions.applyOcrBackground = [](std::shared_ptr<ScreenshotOcrPresentation>) {};
     actions.clearOcrBackground = []() {};
     actions.applyOcrBackgroundImage =
-        [&](std::shared_ptr<ScreenshotOcrPresentation>, QImage image) {
+        [&](std::shared_ptr<ScreenshotOcrPresentation>, QImage image, QRectF canvasRect) {
             appliedImages.push_back(std::move(image));
+            appliedCanvasRects.push_back(canvasRect);
         };
     actions.ocrBackgroundColor = []() { return QColor(20, 30, 40); };
     ScreenshotRecognitionSessionController session(&recognition, nullptr, nullptr,
@@ -363,9 +365,11 @@ void textRenderLifecycleUsesTransientWorkerResults() {
     presentation->lines.push_back(line);
     QImage filtered(image.size(), QImage::Format_ARGB32_Premultiplied);
     filtered.fill(QColor(60, 70, 80));
-    recognition.complete({presentation, {}, filtered});
+    const QRectF filteredCanvasRect(QPointF(4.0, 4.0), QSizeF(60.0, 24.0));
+    recognition.complete({presentation, {}, filtered, filteredCanvasRect});
     require(appliedImages.size() == 1 && !appliedImages.constFirst().isNull() &&
-                recognition.renderPending.token == 0,
+                recognition.renderPending.token == 0 &&
+                appliedCanvasRects == QVector<QRectF>{filteredCanvasRect},
             "interactive uncached recognition should consume its worker-rendered image directly");
     const ScreenshotRecognitionResults cached = session.cachedRecognitionResults();
     require(cached.text.has_value() && cached.text->filteredImage.isNull(),
@@ -373,12 +377,14 @@ void textRenderLifecycleUsesTransientWorkerResults() {
 
     session.deactivate();
     appliedImages.clear();
+    appliedCanvasRects.clear();
     session.activate(ScreenshotRecognitionSessionController::Mode::Text);
     require(recognition.renderPending.token != 0 &&
                 recognition.renderPending.request.presentation == presentation,
             "activating cached OCR should submit render-only work to the OCR worker");
-    recognition.completeRender(filtered);
-    require(appliedImages.size() == 1 && !appliedImages.constFirst().isNull(),
+    recognition.completeRender(filtered, filteredCanvasRect);
+    require(appliedImages.size() == 1 && !appliedImages.constFirst().isNull() &&
+                appliedCanvasRects == QVector<QRectF>{filteredCanvasRect},
             "the cached render-only result should be retained only by the visible presentation");
     session.deactivate();
 }

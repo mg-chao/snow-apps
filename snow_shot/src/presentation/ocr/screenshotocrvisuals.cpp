@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace {
 constexpr qreal kOcrRegionExpansionFraction = 0.08;
@@ -130,35 +131,128 @@ QRegion screenshotOcrFilterRegion(const ScreenshotOcrPresentation& presentation,
     return region.intersected(QRect(QPoint(), pixelSize));
 }
 
+QRectF screenshotOcrFilteredImageCanvasRect(const QRectF& canvasRect, const QSize& pixelSize,
+                                            const QRect& filteredPixels) {
+    const QRectF normalized = canvasRect.normalized();
+    if (!normalized.isValid() || normalized.isEmpty() || !pixelSize.isValid() ||
+        pixelSize.width() < 1 || pixelSize.height() < 1 || filteredPixels.isEmpty()) {
+        return {};
+    }
+    const qreal scaleX = normalized.width() / pixelSize.width();
+    const qreal scaleY = normalized.height() / pixelSize.height();
+    return QRectF(normalized.left() + filteredPixels.left() * scaleX,
+                  normalized.top() + filteredPixels.top() * scaleY,
+                  filteredPixels.width() * scaleX, filteredPixels.height() * scaleY);
+}
+
 QImage renderScreenshotOcrFilteredImage(const QImage& source, const QRectF& canvasRect,
                                         const ScreenshotOcrPresentation& presentation,
                                         const QColor& backgroundColor,
-                                        qreal devicePixelRatio) {
-    if (source.isNull()) {
+                                        qreal devicePixelRatio, QRect* filteredPixels,
+                                        SnowCanvasRegionFilterScratch* scratch) {
+    if (filteredPixels != nullptr) {
+        *filteredPixels = {};
+    }
+    const QRectF normalized = canvasRect.normalized();
+    if (source.isNull() || !normalized.isValid() || normalized.isEmpty()) {
         return {};
     }
-    QImage filtered = source.format() == QImage::Format_ARGB32_Premultiplied
-                          ? source.copy()
-                          : source.convertToFormat(QImage::Format_ARGB32_Premultiplied);
-    const QRegion region = screenshotOcrFilterRegion(presentation, canvasRect, filtered.size());
-    if (region.isEmpty()) {
-        return filtered;
-    }
+    const QRect imageRect(QPoint(0, 0), source.size());
+
     SnowCanvasRegionFilterParameters parameters;
     parameters.type = SnowCanvasFilterType::GaussianBlur;
     parameters.strength = 1.0;
     parameters.logicalSigma = 8.0;
     parameters.devicePixelRatio = std::max<qreal>(1.0, devicePixelRatio);
-    const QImage original = filtered.copy();
-    if (!applySnowCanvasRegionFilter(original, filtered, region, parameters)) {
-        return {};
+    // Filtered output only depends on source pixels within this radius, so it
+    // sizes both the cluster merge margin and the crop margin.
+    const int support = snowCanvasRegionFilterSupportPixels(parameters);
+
+    struct Cluster {
+        QRegion region;
+        QRect expandedBounds;
+    };
+    std::vector<Cluster> clusters;
+    for (const ScreenshotOcrLine& line : presentation.lines) {
+        if (line.quad.size() < 3) {
+            continue;
+        }
+        const QPolygon polygon =
+            imagePolygonForQuad(line.quad, normalized, source.size(), true);
+        if (polygon.isEmpty()) {
+            continue;
+        }
+        // Quads whose support-expanded bounds never meet are filtered
+        // independently; merging only spatially close quads keeps each blur
+        // pass proportional to the area it actually covers.
+        Cluster next{QRegion(polygon),
+                     polygon.boundingRect().adjusted(-support, -support, support, support)};
+        for (std::size_t index = 0; index < clusters.size();) {
+            if (!clusters[index].expandedBounds.intersects(next.expandedBounds)) {
+                ++index;
+                continue;
+            }
+            next.region += clusters[index].region;
+            next.expandedBounds =
+                next.expandedBounds.united(clusters[index].expandedBounds);
+            clusters.erase(clusters.begin() + static_cast<std::ptrdiff_t>(index));
+            index = 0;
+        }
+        clusters.push_back(std::move(next));
     }
+    if (clusters.empty()) {
+        if (filteredPixels != nullptr) {
+            *filteredPixels = imageRect;
+        }
+        return source.format() == QImage::Format_ARGB32_Premultiplied
+                   ? source
+                   : source.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    }
+
+    QRect crop = clusters.front().expandedBounds;
+    for (const Cluster& cluster : clusters) {
+        crop = crop.united(cluster.expandedBounds);
+    }
+    crop = crop.intersected(imageRect);
+    if (crop.isEmpty()) {
+        if (filteredPixels != nullptr) {
+            *filteredPixels = imageRect;
+        }
+        return source.format() == QImage::Format_ARGB32_Premultiplied
+                   ? source
+                   : source.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    }
+
+    QImage blurInput = source.copy(crop);
+    if (blurInput.format() != QImage::Format_ARGB32_Premultiplied) {
+        blurInput = blurInput.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    }
+    blurInput.setDevicePixelRatio(1.0);
+    // Sharing with blurInput is safe: the engine detaches destination before its
+    // first write, leaving blurInput as the pristine read-side buffer.
+    QImage filtered = blurInput;
+    // Anchoring the reduced sampling grid to the absolute image origin keeps the
+    // cropped render pixel-identical to filtering the full image.
+    parameters.gridOriginInImage = QPointF(-crop.left(), -crop.top());
+    QRegion fillRegion;
+    for (Cluster& cluster : clusters) {
+        const QRegion localRegion = cluster.region.translated(-crop.topLeft());
+        if (!applySnowCanvasRegionFilter(blurInput, filtered, localRegion, parameters,
+                                         scratch)) {
+            return {};
+        }
+        fillRegion += localRegion;
+    }
+
     QPainter painter(&filtered);
     painter.setRenderHint(QPainter::Antialiasing, false);
-    painter.setClipRegion(region);
+    painter.setClipRegion(fillRegion);
     QColor blendColor = backgroundColor.isValid() ? backgroundColor : QColor(Qt::white);
     blendColor.setAlpha(qBound(0, qRound(kBackgroundBlendAmount * 255.0), 255));
-    painter.fillRect(filtered.rect(), blendColor);
+    painter.fillRect(QRect(QPoint(0, 0), crop.size()), blendColor);
+    if (filteredPixels != nullptr) {
+        *filteredPixels = crop;
+    }
     return filtered;
 }
 

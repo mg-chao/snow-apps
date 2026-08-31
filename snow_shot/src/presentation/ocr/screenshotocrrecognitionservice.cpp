@@ -176,19 +176,28 @@ ScreenshotOcrRecognitionResult runRecognition(OcrEngineHandle& engine, QImage so
 
 QImage renderFilteredImage(QImage source, const QRectF& canvasRect,
                            const std::shared_ptr<ScreenshotOcrPresentation>& presentation,
-                           const QColor& backgroundColor) {
+                           const QColor& backgroundColor,
+                           SnowCanvasRegionFilterScratch& scratch,
+                           QRectF* filteredImageCanvasRect) {
+    if (filteredImageCanvasRect != nullptr) {
+        *filteredImageCanvasRect = {};
+    }
     if (source.isNull() || presentation == nullptr || !canvasRect.isValid() ||
         canvasRect.isEmpty()) {
         return {};
     }
-    if (source.format() != QImage::Format_ARGB32_Premultiplied) {
-        source = source.convertToFormat(QImage::Format_ARGB32_Premultiplied);
-    }
     source.setDevicePixelRatio(1.0);
     const QRectF normalizedCanvasRect = canvasRect.normalized();
-    return renderScreenshotOcrFilteredImage(
+    QRect filteredPixels;
+    QImage filtered = renderScreenshotOcrFilteredImage(
         source, normalizedCanvasRect, *presentation, backgroundColor,
-        std::max<qreal>(1.0, source.width() / normalizedCanvasRect.width()));
+        std::max<qreal>(1.0, source.width() / normalizedCanvasRect.width()), &filteredPixels,
+        &scratch);
+    if (filteredImageCanvasRect != nullptr) {
+        *filteredImageCanvasRect = screenshotOcrFilteredImageCanvasRect(
+            normalizedCanvasRect, source.size(), filteredPixels);
+    }
+    return filtered;
 }
 } // namespace
 
@@ -420,6 +429,9 @@ class ScreenshotOcrRecognitionService::Impl final {
     void workerLoop(WorkerSlot* worker) {
         OcrEngineHandle engine;
         quint64 engineGeneration = 0;
+        // Owned by this worker thread; pools the filter engine's scratch across
+        // render jobs so repeated renders skip reduced-buffer reallocation.
+        SnowCanvasRegionFilterScratch renderScratch;
 
         while (true) {
             std::shared_ptr<Job> job;
@@ -458,7 +470,8 @@ class ScreenshotOcrRecognitionService::Impl final {
                 if (job->request.renderOnly) {
                     result.filteredImage = renderFilteredImage(
                         std::move(job->request.image), job->request.canvasRect,
-                        job->request.presentation, job->request.backgroundColor);
+                        job->request.presentation, job->request.backgroundColor, renderScratch,
+                        &result.filteredImageCanvasRect);
                     if (result.filteredImage.isNull() && job->request.presentation != nullptr) {
                         result.error = QCoreApplication::translate(
                             "ScreenshotOcrController", "Text recognition failed");
@@ -480,14 +493,17 @@ class ScreenshotOcrRecognitionService::Impl final {
                         result.presentation != nullptr) {
                         result.filteredImage = renderFilteredImage(
                             std::move(sourceForRender), job->request.canvasRect,
-                            result.presentation, backgroundColor);
+                            result.presentation, backgroundColor, renderScratch,
+                            &result.filteredImageCanvasRect);
                         // If the user left while the filter was executing, do
                         // not retain or deliver the now-unneeded pixels.
                         if (!renderOptions(job).first) {
                             result.filteredImage = {};
+                            result.filteredImageCanvasRect = {};
                         }
                     }
                 }
+                renderScratch.finishFrame();
             }
             {
                 std::lock_guard lock(m_mutex);

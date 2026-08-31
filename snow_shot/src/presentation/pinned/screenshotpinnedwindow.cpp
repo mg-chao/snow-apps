@@ -1644,12 +1644,16 @@ bool ScreenshotPinnedWindow::present(const Config& config, std::function<void(bo
                 }
             },
             []() { return false; },
-            [this](std::shared_ptr<ScreenshotOcrPresentation> presentation,
-                   QImage filteredImage) {
+            [this](std::shared_ptr<ScreenshotOcrPresentation> presentation, QImage filteredImage,
+                   QRectF filteredImageCanvasRect) {
                 Q_UNUSED(presentation);
                 if (m_screenshotRenderer != nullptr && !filteredImage.isNull()) {
+                    const QRectF canvasRect =
+                        filteredImageCanvasRect.isValid() && !filteredImageCanvasRect.isEmpty()
+                            ? filteredImageCanvasRect.normalized()
+                            : m_backgroundCanvasRect;
                     m_screenshotRenderer->setOcrFilteredImage(std::move(filteredImage),
-                                                              m_backgroundCanvasRect);
+                                                              canvasRect);
                 }
             },
         },

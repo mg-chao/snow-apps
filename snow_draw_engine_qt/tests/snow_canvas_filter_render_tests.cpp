@@ -73,6 +73,104 @@ void publicRegionFilterApiRestrictsEffectsToTheRequestedRegion() {
             "the public region-filter API should reject mismatched image sizes");
 }
 
+void regionFilterSupportPixelsMatchesGaussianPlan() {
+    SnowCanvasRegionFilterParameters parameters;
+    parameters.type = SnowCanvasFilterType::GaussianBlur;
+    int previousSupport = -1;
+    for (const double logicalSigma : {1.0, 4.0, 8.0, 16.0, 32.0}) {
+        for (const qreal devicePixelRatio : {1.0, 1.5, 2.0}) {
+            parameters.logicalSigma = logicalSigma;
+            parameters.devicePixelRatio = devicePixelRatio;
+            const int support = snowCanvasRegionFilterSupportPixels(parameters);
+            snow_canvas_filter_render::Parameters internal;
+            internal.type = 1;
+            internal.logicalSigma = logicalSigma;
+            internal.devicePixelRatio = devicePixelRatio;
+            require(support ==
+                        snow_canvas_filter_render::gaussianBlurPlan(internal).physicalSupportRadius,
+                    "the public support-radius helper must match the Gaussian plan");
+            require(support >= previousSupport,
+                    "the blur support radius must not shrink as sigma or dpr grows");
+            previousSupport = support;
+        }
+    }
+    parameters.logicalSigma = 8.0;
+    parameters.devicePixelRatio = 1.0;
+    require(snowCanvasRegionFilterSupportPixels(parameters) > 0,
+            "a sigma-8 blur must report a positive support radius");
+}
+
+QImage noisyPatternImage(const QSize& size) {
+    QImage image(size, QImage::Format_ARGB32_Premultiplied);
+    for (int y = 0; y < size.height(); ++y) {
+        for (int x = 0; x < size.width(); ++x) {
+            image.setPixel(x, y, qRgba((x * 37 + y * 11) % 256, (x * 7 + y * 53) % 256,
+                                       (x * 97 + y * 29) % 256, 255));
+        }
+    }
+    return image;
+}
+
+void croppedRegionFilterMatchesFullFrameRender() {
+    const QImage source = noisyPatternImage(QSize(120, 90));
+    SnowCanvasRegionFilterParameters parameters;
+    parameters.type = SnowCanvasFilterType::GaussianBlur;
+    parameters.logicalSigma = 8.0;
+    parameters.devicePixelRatio = 1.0;
+    const int support = snowCanvasRegionFilterSupportPixels(parameters);
+
+    // Two disjoint regions that would form independent clusters in the OCR
+    // pipeline; together they exercise per-region calls on a shared crop.
+    const QRegion region =
+        QRegion(QRect(14, 10, 26, 14)) + QRegion(QRect(70, 52, 22, 12));
+
+    QImage fullDestination = source;
+    require(applySnowCanvasRegionFilter(source, fullDestination, region, parameters),
+            "the full-frame reference render should succeed");
+
+    const QRect crop =
+        region.boundingRect().adjusted(-support, -support, support, support)
+            .intersected(source.rect());
+    QImage cropSource = source.copy(crop);
+    QImage cropDestination = cropSource;
+    SnowCanvasRegionFilterParameters cropped = parameters;
+    // Anchoring the reduced sampling grid to the absolute origin keeps the
+    // cropped render pixel-identical to the full-frame render.
+    cropped.gridOriginInImage = QPointF(-crop.left(), -crop.top());
+    SnowCanvasRegionFilterScratch scratch;
+    for (const QRect& rect : region) {
+        require(applySnowCanvasRegionFilter(cropSource, cropDestination,
+                                            QRegion(rect.translated(-crop.topLeft())), cropped,
+                                            &scratch),
+                "each cropped cluster render should succeed");
+    }
+    // A second render through the same scratch must keep producing correct
+    // pixels (scratch reuse must not corrupt state).
+    QImage cropDestinationSecond = cropSource;
+    for (const QRect& rect : region) {
+        require(applySnowCanvasRegionFilter(cropSource, cropDestinationSecond,
+                                            QRegion(rect.translated(-crop.topLeft())), cropped,
+                                            &scratch),
+                "a reused scratch should keep accepting renders");
+    }
+
+    for (int y = 0; y < crop.height(); ++y) {
+        for (int x = 0; x < crop.width(); ++x) {
+            const QPoint cropPosition(x, y);
+            const QPoint imagePosition = cropPosition + crop.topLeft();
+            require(cropDestination.pixel(cropPosition) == fullDestination.pixel(imagePosition),
+                    "the cropped render must match the full-frame render pixel for pixel");
+            require(cropDestinationSecond.pixel(cropPosition) ==
+                        fullDestination.pixel(imagePosition),
+                    "a reused scratch must reproduce the same pixels");
+            if (!region.contains(imagePosition)) {
+                require(cropDestination.pixel(cropPosition) == cropSource.pixel(cropPosition),
+                        "the cropped render must preserve pixels outside the regions");
+            }
+        }
+    }
+}
+
 void inversionPreservesPremultipliedAlpha() {
     QImage image(1, 1, QImage::Format_ARGB32_Premultiplied);
     image.setPixel(0, 0, qRgba(20, 40, 60, 100));
@@ -2093,6 +2191,8 @@ void tiledRenderMatchesFullRender() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     publicRegionFilterApiRestrictsEffectsToTheRequestedRegion();
+    regionFilterSupportPixelsMatchesGaussianPlan();
+    croppedRegionFilterMatchesFullFrameRender();
     tiledRenderMatchesFullRender();
     inversionPreservesPremultipliedAlpha();
     grayscalePreservesPremultipliedAlpha();

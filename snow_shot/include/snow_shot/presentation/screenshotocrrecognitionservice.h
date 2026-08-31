@@ -27,6 +27,9 @@ struct ScreenshotOcrRecognitionResult {
     QString error;
     // Transient worker-produced image. It is never part of the OCR cache.
     QImage filteredImage;
+    // Canvas-space rect covered by filteredImage; the image is a crop of the
+    // request image covering the text regions plus the blur support margin.
+    QRectF filteredImageCanvasRect;
 };
 
 enum class ScreenshotOcrRequestPriority { Interactive, Prefetch };

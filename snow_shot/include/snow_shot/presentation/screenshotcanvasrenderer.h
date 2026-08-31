@@ -140,6 +140,10 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
   private:
     void invalidateCachedContent();
     [[nodiscard]] ScreenshotOcrTextLayer* ensureOcrTextLayer();
+    // Widget-space repaint region for a filtered-image canvas rect; empty when the
+    // rect maps outside the viewport, the full viewport when the display cache is
+    // unsynchronized.
+    [[nodiscard]] QRegion ocrFilterImageDamageRegion(const QRectF& canvasRect) const;
 
     SnowCanvasWidget& m_canvas;
     std::uint64_t m_contentRevision = 0;

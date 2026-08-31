@@ -200,9 +200,10 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
             },
             {},
             {},
-            [this](std::shared_ptr<ScreenshotOcrPresentation> presentation,
-                   QImage filteredImage) {
-                applyOcrBackgroundToOverlays(presentation, std::move(filteredImage));
+            [this](std::shared_ptr<ScreenshotOcrPresentation> presentation, QImage filteredImage,
+                   QRectF filteredImageCanvasRect) {
+                applyOcrBackgroundToOverlays(presentation, std::move(filteredImage),
+                                             filteredImageCanvasRect);
             },
         },
         this);
@@ -545,15 +546,20 @@ void ScreenshotOcrController::updateOverlays() const {
 }
 
 void ScreenshotOcrController::applyOcrBackgroundToOverlays(
-    const std::shared_ptr<ScreenshotOcrPresentation>& presentation, QImage filteredImage) const {
+    const std::shared_ptr<ScreenshotOcrPresentation>& presentation, QImage filteredImage,
+    QRectF filteredImageCanvasRect) const {
     m_context.displaySession.forEachOverlay(
-        [&presentation, &filteredImage](qsizetype, ScreenshotOverlayWindow* overlay) {
+        [&presentation, &filteredImage, &filteredImageCanvasRect](
+            qsizetype, ScreenshotOverlayWindow* overlay) {
             if (overlay != nullptr) {
                 overlay->setScreenshotOcrBackground(presentation);
                 if (!filteredImage.isNull()) {
-                    overlay->setScreenshotOcrFilteredImage(
-                        filteredImage, presentation != nullptr ? QRectF(presentation->selection)
-                                                               : QRectF());
+                    const QRectF canvasRect =
+                        filteredImageCanvasRect.isValid() && !filteredImageCanvasRect.isEmpty()
+                            ? filteredImageCanvasRect.normalized()
+                            : (presentation != nullptr ? QRectF(presentation->selection)
+                                                       : QRectF());
+                    overlay->setScreenshotOcrFilteredImage(filteredImage, canvasRect);
                 }
             }
         });

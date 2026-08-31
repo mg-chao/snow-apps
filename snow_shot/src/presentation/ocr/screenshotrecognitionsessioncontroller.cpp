@@ -1209,8 +1209,8 @@ void ScreenshotRecognitionSessionController::startTextRender() {
                 return;
             }
             if (m_actions.applyOcrBackgroundImage) {
-                m_actions.applyOcrBackgroundImage(m_presentation,
-                                                  std::move(output.filteredImage));
+                m_actions.applyOcrBackgroundImage(m_presentation, std::move(output.filteredImage),
+                                                  output.filteredImageCanvasRect);
             }
             updateBusyState();
             hideRecognitionMessage();
@@ -1309,6 +1309,7 @@ void ScreenshotRecognitionSessionController::handleTextOutput(
     connect(editingSession->document(), &QTextDocument::contentsChanged, this,
             [this, key]() { handleTextDocumentChanged(key); });
     QImage filteredImage = std::move(output.filteredImage);
+    QRectF filteredImageCanvasRect = output.filteredImageCanvasRect;
     TextCacheEntry entry;
     entry.recognitionResult = output;
     entry.presentation = output.presentation;
@@ -1317,7 +1318,7 @@ void ScreenshotRecognitionSessionController::handleTextOutput(
     if (m_active && m_mode == Mode::Text) {
         m_textCacheKey = key;
         m_presentation = m_textCache.value(key).presentation;
-        applyPresentation(m_presentation, filteredImage);
+        applyPresentation(m_presentation, filteredImage, filteredImageCanvasRect);
         if (filteredImage.isNull()) {
             startTextRender();
         }
@@ -1409,7 +1410,8 @@ void ScreenshotRecognitionSessionController::clearContent() {
 }
 
 void ScreenshotRecognitionSessionController::applyPresentation(
-    const std::shared_ptr<ScreenshotOcrPresentation>& presentation, QImage filteredImage) {
+    const std::shared_ptr<ScreenshotOcrPresentation>& presentation, QImage filteredImage,
+    QRectF filteredImageCanvasRect) {
     m_presentation = presentation;
     ensureContent();
     if (m_actions.applyOcrPresentation) {
@@ -1421,7 +1423,8 @@ void ScreenshotRecognitionSessionController::applyPresentation(
         m_actions.applyOcrBackground(presentation);
     }
     if (!filteredImage.isNull() && m_actions.applyOcrBackgroundImage) {
-        m_actions.applyOcrBackgroundImage(presentation, std::move(filteredImage));
+        m_actions.applyOcrBackgroundImage(presentation, std::move(filteredImage),
+                                          filteredImageCanvasRect);
     }
 }
 

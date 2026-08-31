@@ -1640,6 +1640,10 @@ void ScreenshotCanvasRenderer::clearSelection() {
 void ScreenshotCanvasRenderer::setOcrPresentation(
     std::shared_ptr<ScreenshotOcrPresentation> presentation, OcrPresentationMode mode) {
     const bool presentationChanged = m_ocrPresentation != presentation;
+    const bool hadPresentation = m_ocrPresentation != nullptr;
+    const bool modeChanged = m_ocrPresentationMode != mode;
+    const QRectF clearedFilteredCanvasRect = m_ocrFilteredCanvasRect;
+    const bool hadFilteredImage = !m_ocrFilteredImage.isNull();
     m_ocrPresentation = std::move(presentation);
     if (presentationChanged) {
         clearOcrFilteredImage();
@@ -1658,20 +1662,56 @@ void ScreenshotCanvasRenderer::setOcrPresentation(
     } else if (m_ocrTextLayer != nullptr) {
         m_ocrTextLayer->clearPresentation();
     }
-    m_canvas.update();
+    // The presentation alone repaints pixels only when the text layer relayouts
+    // (BackgroundAndText) or when the selection decorations toggle with its
+    // presence; otherwise the damage comes from the filtered image, which is set
+    // separately with its own targeted update.
+    if (m_ocrPresentationMode == OcrPresentationMode::BackgroundAndText ||
+        modeChanged || hadPresentation != (m_ocrPresentation != nullptr)) {
+        m_canvas.update();
+    } else if (hadFilteredImage) {
+        const QRegion dirtyRegion = ocrFilterImageDamageRegion(clearedFilteredCanvasRect);
+        if (!dirtyRegion.isEmpty()) {
+            m_canvas.update(dirtyRegion);
+        }
+    }
+}
+
+QRegion ScreenshotCanvasRenderer::ocrFilterImageDamageRegion(const QRectF& canvasRect) const {
+    if (!canvasRect.isValid() || canvasRect.isEmpty()) {
+        return {};
+    }
+    if (!m_canvas.canvasToViewTransform().isInvertible()) {
+        // The display cache is not synchronized; repaint everything rather than
+        // risk stale content.
+        return QRegion(m_canvas.rect());
+    }
+    // One pixel of padding covers view-space rounding at the rect edges.
+    const QRect viewRect = m_canvas.viewRectForCanvasRect(canvasRect, 1);
+    if (viewRect.isEmpty()) {
+        return {};
+    }
+    return QRegion(viewRect.intersected(m_canvas.rect()));
 }
 
 void ScreenshotCanvasRenderer::setOcrFilteredImage(QImage image, const QRectF& canvasRect) {
+    const QRectF previousCanvasRect = m_ocrFilteredCanvasRect;
+    QRegion dirtyRegion;
     if (!image.isNull() && canvasRect.isValid() && !canvasRect.isEmpty()) {
         image.setDevicePixelRatio(1.0);
         m_ocrFilteredImage = std::move(image);
         m_ocrFilteredCanvasRect = canvasRect.normalized();
+        dirtyRegion = ocrFilterImageDamageRegion(previousCanvasRect) +
+                      ocrFilterImageDamageRegion(m_ocrFilteredCanvasRect);
     } else {
+        dirtyRegion = ocrFilterImageDamageRegion(previousCanvasRect);
         m_ocrFilteredImage = {};
         m_ocrFilteredCanvasRect = {};
     }
     invalidateCachedContent();
-    m_canvas.update();
+    if (!dirtyRegion.isEmpty()) {
+        m_canvas.update(dirtyRegion);
+    }
 }
 
 void ScreenshotCanvasRenderer::clearOcrFilteredImage() {

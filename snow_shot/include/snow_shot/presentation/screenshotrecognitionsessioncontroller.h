@@ -76,7 +76,9 @@ struct ScreenshotRecognitionSessionActions {
     std::function<QColor()> ocrBackgroundColor;
     std::function<void(ScreenshotOcrRequest&)> prepareOcrRenderRequest;
     std::function<bool()> renderRecognitionInWorker;
-    std::function<void(std::shared_ptr<ScreenshotOcrPresentation>, QImage)>
+    // The filtered image is a crop; filteredImageCanvasRect is the canvas-space
+    // rect it covers and may be invalid for legacy full-size results.
+    std::function<void(std::shared_ptr<ScreenshotOcrPresentation>, QImage, QRectF)>
         applyOcrBackgroundImage;
 };
 
@@ -171,7 +173,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void ensureContent();
     void clearContent();
     void applyPresentation(const std::shared_ptr<ScreenshotOcrPresentation>& presentation,
-                           QImage filteredImage = {});
+                           QImage filteredImage = {}, QRectF filteredImageCanvasRect = {});
     void applyFormattedText(const std::shared_ptr<QTextDocument>& document);
     void applyTableSession(const std::shared_ptr<ScreenshotTableEditingSession>& session);
     void applyQrContents(const QStringList& contents);

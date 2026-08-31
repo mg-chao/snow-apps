@@ -58,6 +58,21 @@ void require(bool condition, const char* message) {
     }
 }
 
+// Renders the OCR filter the way the recognition worker does and reports the
+// canvas rect covered by the (cropped) result.
+QImage testRenderOcrFilteredImage(const QImage& source, const QRectF& canvasRect,
+                                  const ScreenshotOcrPresentation& presentation,
+                                  const QColor& background, QRectF* filteredCanvasRect) {
+    QRect filteredPixels;
+    QImage filtered = renderScreenshotOcrFilteredImage(source, canvasRect, presentation,
+                                                       background, 1.0, &filteredPixels);
+    if (filteredCanvasRect != nullptr) {
+        *filteredCanvasRect =
+            screenshotOcrFilteredImageCanvasRect(canvasRect, source.size(), filteredPixels);
+    }
+    return filtered;
+}
+
 class NoopOverlayEventSink final : public ScreenshotOverlayEventSink {
   public:
     bool shouldHandleOverlayMouseEvent(const ScreenshotOverlayWindow*, const QPointF&,
@@ -1828,18 +1843,19 @@ void ocrPresentationRendersWhileCanvasContentIsHidden() {
     presentation->lines.push_back(line);
     renderer.setOcrPresentation(presentation,
                                 ScreenshotCanvasRenderer::OcrPresentationMode::BackgroundOnly);
+    QRectF filteredCanvasRect;
     renderer.setOcrFilteredImage(
-        renderScreenshotOcrFilteredImage(screenshot, screenshotCanvasRect, *presentation,
-                                         QColor(Qt::white)),
-        screenshotCanvasRect);
+        testRenderOcrFilteredImage(screenshot, screenshotCanvasRect, *presentation,
+                                   QColor(Qt::white), &filteredCanvasRect),
+        filteredCanvasRect);
     require(canvas.findChild<QGraphicsView*>(QStringLiteral("snowShotOcrTextLayer")) == nullptr,
             "background-only OCR should not create a text layer on the screenshot canvas");
     renderer.clearOcrPresentation();
     renderer.setOcrPresentation(presentation);
     renderer.setOcrFilteredImage(
-        renderScreenshotOcrFilteredImage(screenshot, screenshotCanvasRect, *presentation,
-                                         QColor(Qt::white)),
-        screenshotCanvasRect);
+        testRenderOcrFilteredImage(screenshot, screenshotCanvasRect, *presentation,
+                                   QColor(Qt::white), &filteredCanvasRect),
+        filteredCanvasRect);
     require(ocrTextItemCount(canvas) == 1,
             "each OCR line should use one layout-backed graphics item");
     canvas.setCanvasContentVisible(false);
@@ -1943,9 +1959,9 @@ void ocrPresentationRendersWhileCanvasContentIsHidden() {
     renderer.setOcrPresentation(presentation,
                                 ScreenshotCanvasRenderer::OcrPresentationMode::BackgroundOnly);
     renderer.setOcrFilteredImage(
-        renderScreenshotOcrFilteredImage(screenshot, screenshotCanvasRect, *presentation,
-                                         QColor(Qt::white)),
-        screenshotCanvasRect);
+        testRenderOcrFilteredImage(screenshot, screenshotCanvasRect, *presentation,
+                                   QColor(Qt::white), &filteredCanvasRect),
+        filteredCanvasRect);
     const QImage backgroundOnlyOutput = renderCanvas(canvas);
     require(ocrTextItemCount(canvas) == 0 && textLayer->isHidden(),
             "background-only OCR should not create or show text widgets");
@@ -1974,14 +1990,99 @@ void ocrFilteredImageBlendsTowardTheSuppliedThemeBackground() {
                            QPointF(5.0, 15.0)});
     presentation.lines.push_back(line);
 
-    const QImage filtered = renderScreenshotOcrFilteredImage(
-        source, QRectF(0.0, 0.0, 20.0, 20.0), presentation, themeBackground);
+    const QRectF canvasRect(0.0, 0.0, 20.0, 20.0);
+    QRectF filteredCanvasRect;
+    const QImage filtered = testRenderOcrFilteredImage(source, canvasRect, presentation,
+                                                       themeBackground, &filteredCanvasRect);
     require(!filtered.isNull(), "OCR filtering should produce an image for a valid source");
-    const QColor center = filtered.pixelColor(10, 10);
-    require(center.red() < 30 && center.green() < 60 && center.blue() < 160,
+    require(filteredCanvasRect.isValid() && canvasRect.contains(filteredCanvasRect),
+            "the filtered crop should report a canvas rect inside the source rect");
+    const QPoint center(10, 10);
+    require(filteredCanvasRect.contains(QPointF(center)),
+            "the filtered crop should cover the recognized quad");
+    const QColor blended = filtered.pixelColor(
+        center.x() - qFloor(filteredCanvasRect.left()), center.y() - qFloor(filteredCanvasRect.top()));
+    require(blended.red() < 30 && blended.green() < 60 && blended.blue() < 160,
             "OCR filtering should blend toward the supplied theme background color");
-    require(center != QColor(127, 167, 247),
+    require(blended != QColor(127, 167, 247),
             "OCR filtering should not use the former white blend destination");
+}
+
+void ocrFilteredCropMatchesFullFrameReference() {
+    const QRectF canvasRect(0.0, 0.0, 260.0, 200.0);
+    QImage source(260, 200, QImage::Format_ARGB32_Premultiplied);
+    for (int y = 0; y < source.height(); ++y) {
+        for (int x = 0; x < source.width(); ++x) {
+            source.setPixel(x, y, qRgba((x * 37 + y * 11) % 256, (x * 7 + y * 53) % 256,
+                                        (x * 97 + y * 29) % 256, 255));
+        }
+    }
+
+    ScreenshotOcrPresentation presentation;
+    presentation.selection = canvasRect.toAlignedRect();
+    auto addLine = [&presentation](const QRectF& quadRect) {
+        ScreenshotOcrLine line;
+        line.text = QStringLiteral("text");
+        line.quad = QPolygonF({quadRect.topLeft(), QPointF(quadRect.right(), quadRect.top()),
+                               QPointF(quadRect.right(), quadRect.bottom()),
+                               quadRect.bottomLeft()});
+        presentation.lines.push_back(line);
+    };
+    // Two distant lines form independent clusters that share one crop.
+    addLine(QRectF(20.0, 14.0, 28.0, 10.0));
+    addLine(QRectF(196.0, 160.0, 24.0, 10.0));
+
+    // Reference: the pre-crop pipeline — one full-size copy, one region filter
+    // over the union, one clipped blend fill.
+    const QRegion region =
+        screenshotOcrFilterRegion(presentation, canvasRect, source.size());
+    QImage reference = source.copy();
+    SnowCanvasRegionFilterParameters parameters;
+    parameters.type = SnowCanvasFilterType::GaussianBlur;
+    parameters.strength = 1.0;
+    parameters.logicalSigma = 8.0;
+    parameters.devicePixelRatio = 1.0;
+    require(applySnowCanvasRegionFilter(source, reference, region, parameters),
+            "the reference full-frame filter should succeed");
+    QPainter referencePainter(&reference);
+    referencePainter.setRenderHint(QPainter::Antialiasing, false);
+    referencePainter.setClipRegion(region);
+    QColor blend(Qt::white);
+    blend.setAlpha(128);
+    referencePainter.fillRect(reference.rect(), blend);
+    referencePainter.end();
+
+    QRect filteredPixels;
+    const QImage filtered = renderScreenshotOcrFilteredImage(
+        source, canvasRect, presentation, QColor(Qt::white), 1.0, &filteredPixels);
+    require(!filtered.isNull() && filtered.size() == filteredPixels.size(),
+            "the filtered result should be sized to its reported crop");
+    require(filteredPixels.contains(region.boundingRect()),
+            "the crop should cover every recognized region");
+    require(filteredPixels.width() < source.width() && filteredPixels.height() < source.height(),
+            "scattered text should render into a strict crop of the source");
+    const QRectF mappedCanvasRect =
+        screenshotOcrFilteredImageCanvasRect(canvasRect, source.size(), filteredPixels);
+    require(mappedCanvasRect.width() >= region.boundingRect().width() &&
+                mappedCanvasRect.height() >= region.boundingRect().height(),
+            "the mapped canvas rect should cover the recognized regions");
+
+    for (int y = 0; y < filteredPixels.height(); ++y) {
+        for (int x = 0; x < filteredPixels.width(); ++x) {
+            const QPoint cropPosition(x, y);
+            const QPoint imagePosition = cropPosition + filteredPixels.topLeft();
+            if (filtered.pixel(cropPosition) != reference.pixel(imagePosition)) {
+                std::cerr << "crop mismatch at " << qPrintable(QString("%1,%2 (image %3,%4)")
+                                                                  .arg(x)
+                                                                  .arg(y)
+                                                                  .arg(imagePosition.x())
+                                                                  .arg(imagePosition.y()))
+                          << ": crop " << filtered.pixel(cropPosition) << " reference "
+                          << reference.pixel(imagePosition) << '\n';
+                require(false, "the cropped clustered render must match the full-frame reference");
+            }
+        }
+    }
 }
 
 void ocrPresentationRendersTextInPinnedResultMode() {
@@ -3092,6 +3193,7 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--ocr-theme-background"))) {
         ocrFilteredImageBlendsTowardTheSuppliedThemeBackground();
+        ocrFilteredCropMatchesFullFrameReference();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--cursor-layer-priority"))) {
@@ -3120,6 +3222,7 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--ocr-presentation"))) {
         ocrPresentationRendersWhileCanvasContentIsHidden();
         ocrFilteredImageBlendsTowardTheSuppliedThemeBackground();
+        ocrFilteredCropMatchesFullFrameReference();
         return 0;
     }
 #if defined(Q_OS_WIN)
