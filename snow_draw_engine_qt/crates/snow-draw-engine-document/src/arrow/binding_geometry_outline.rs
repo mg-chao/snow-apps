@@ -187,14 +187,14 @@ pub(super) fn intersect_outline(
     let mut local_bindable = bindable.clone();
     local_bindable.angle = 0.0;
 
-    let local_points = match canonicalize_bindable_shape(local_bindable.shape) {
-        crate::CanonicalBindableShape::Rectangle => {
+    let local_points = match local_bindable.shape {
+        crate::BindableShape::Rectangle => {
             rectangle_intersections(local_from, local_to, &local_bindable, gap)
         }
-        crate::CanonicalBindableShape::Ellipse => {
+        crate::BindableShape::Ellipse => {
             ellipse_intersections(local_from, local_to, &local_bindable, gap)
         }
-        crate::CanonicalBindableShape::Diamond => {
+        crate::BindableShape::Diamond => {
             diamond_intersections(local_from, local_to, &local_bindable, gap)
         }
     };

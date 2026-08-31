@@ -192,8 +192,10 @@ void displayCachePatchesSpotlightIndependentlyFromStyle() {
             "spotlight viewport creation must succeed");
     require(snow_viewport_set_surface_size(runtime.get(), viewport.get(), 100, 100) == SNOW_OK,
             "spotlight surface setup must succeed");
-    require(snow_viewport_set_active_tool(runtime.get(), viewport.get(),
-                                          SNOW_ACTIVE_TOOL_SPOTLIGHT) == SNOW_OK,
+    ScopedChangedViewportList toolChange;
+    require(snow_viewport_set_active_tool_ex(runtime.get(), viewport.get(),
+                                             SNOW_ACTIVE_TOOL_SPOTLIGHT,
+                                             toolChange.outParam()) == SNOW_OK,
             "spotlight tool setup must succeed");
 
     SnowCanvasDisplayCache cache;
@@ -213,8 +215,9 @@ void displayCachePatchesSpotlightIndependentlyFromStyle() {
                                                                : SNOW_POINTER_BUTTON_PRIMARY;
         event.pointer.buttons = buttons;
         SnowInteractionOutput output{};
-        require(snow_viewport_process_input(runtime.get(), viewport.get(), &event, &output) ==
-                    SNOW_OK,
+        ScopedChangedViewportList changedViewports;
+        require(snow_viewport_process_input_ex(runtime.get(), viewport.get(), &event, &output,
+                                               changedViewports.outParam()) == SNOW_OK,
                 "spotlight pointer input must succeed");
     };
     pointer(SNOW_POINTER_EVENT_DOWN, 30.0, 30.0, 1);
@@ -236,8 +239,9 @@ void displayCachePatchesSpotlightIndependentlyFromStyle() {
                 SNOW_OK,
             "spotlight config query must succeed");
     spotlight.opacity = 0.35;
-    require(snow_viewport_set_spotlight_config(runtime.get(), viewport.get(), &spotlight) ==
-                SNOW_OK,
+    ScopedChangedViewportList spotlightChange;
+    require(snow_viewport_set_spotlight_config_ex(runtime.get(), viewport.get(), &spotlight,
+                                                  spotlightChange.outParam()) == SNOW_OK,
             "spotlight opacity update must succeed");
     require(cache.sync(runtime.get(), viewport.get()), "spotlight opacity sync must succeed");
     require(cache.patchCursor().scene_revision == sceneRevision,

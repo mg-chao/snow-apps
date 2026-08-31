@@ -4,7 +4,6 @@
 #include <stddef.h>
 
 #define SNOW_ARROW_PATH_UTF8_CAPACITY 4096
-#define SNOW_ARROW_PATH_COMMAND_CAPACITY 128
 #define SNOW_ARROWHEAD_PRIMITIVE_CAPACITY 16
 #define SNOW_ARROWHEAD_PRIMITIVE_POINT_CAPACITY 8
 #define SNOW_FONT_FAMILY_UTF8_CAPACITY 128
@@ -15,8 +14,6 @@ extern "C" {
 
 typedef struct SnowRuntimeImpl SnowRuntimeImpl;
 typedef SnowRuntimeImpl* SnowRuntime;
-typedef SnowRuntimeImpl SnowEngineImpl;
-typedef SnowEngineImpl* SnowEngine;
 
 typedef struct SnowViewportImpl SnowViewportImpl;
 typedef SnowViewportImpl* SnowViewport;
@@ -39,15 +36,11 @@ typedef enum SnowError {
 
 SnowError snow_runtime_serialize_document_session(SnowRuntime runtime, uint8_t* buffer,
                                                   size_t buffer_capacity, size_t* out_size);
-SnowError snow_runtime_create_from_document_session(const uint8_t* bytes, size_t size,
-                                                    SnowRuntime* out_runtime);
 SnowError snow_runtime_create_from_document_session_with_config(const uint8_t* bytes, size_t size,
                                                                 const SnowRuntimeConfig* config,
                                                                 SnowRuntime* out_runtime);
 SnowError snow_runtime_serialize_document_history(SnowRuntime runtime, uint8_t* buffer,
                                                   size_t buffer_capacity, size_t* out_size);
-SnowError snow_runtime_create_from_document_history(const uint8_t* bytes, size_t size,
-                                                    SnowRuntime* out_runtime);
 SnowError snow_runtime_create_from_document_history_with_config(const uint8_t* bytes, size_t size,
                                                                 const SnowRuntimeConfig* config,
                                                                 SnowRuntime* out_runtime);
@@ -266,11 +259,6 @@ typedef enum SnowArrowhead {
     SNOW_ARROWHEAD_INVERTED_TRIANGLE = 14
 } SnowArrowhead;
 
-typedef enum SnowArrowStrokeStyle {
-    SNOW_ARROW_STROKE_STYLE_SOLID = 0,
-    SNOW_ARROW_STROKE_STYLE_DASHED = 1,
-    SNOW_ARROW_STROKE_STYLE_DOTTED = 2
-} SnowArrowStrokeStyle;
 
 typedef enum SnowArrowType {
     SNOW_ARROW_TYPE_STRAIGHT = 0,
@@ -410,7 +398,7 @@ typedef struct SnowShapeStyle {
     SnowCornerRadii corner_radii;
     SnowArrowhead start_arrowhead;
     SnowArrowhead end_arrowhead;
-    SnowArrowStrokeStyle stroke_style;
+    SnowStrokeStyle stroke_style;
     SnowArrowType arrow_type;
     SnowFillStyle fill_style;
     double opacity;
@@ -460,7 +448,7 @@ typedef struct SnowArrowStyle {
     double stroke_width;
     SnowArrowhead start_arrowhead;
     SnowArrowhead end_arrowhead;
-    SnowArrowStrokeStyle stroke_style;
+    SnowStrokeStyle stroke_style;
     SnowArrowType arrow_type;
     uint8_t reserved0[4];
 } SnowArrowStyle;
@@ -911,7 +899,7 @@ typedef struct SnowSceneDisplayItem {
     uint8_t reserved1[2];
     SnowArrowhead arrow_start_head;
     SnowArrowhead arrow_end_head;
-    SnowArrowStrokeStyle arrow_stroke_style;
+    SnowStrokeStyle arrow_stroke_style;
     uint32_t bound_text_element_index;
     const SnowArrowPoint* arrow_points;
     uint32_t arrow_path_command_count;
@@ -959,7 +947,7 @@ typedef struct SnowOverlayDisplayItem {
     uint8_t reserved1[3];
     SnowArrowhead arrow_start_head;
     SnowArrowhead arrow_end_head;
-    SnowArrowStrokeStyle arrow_stroke_style;
+    SnowStrokeStyle arrow_stroke_style;
     SnowFillStyle fill_style;
     const SnowArrowPoint* arrow_points;
     uint32_t arrow_path_command_count;
@@ -989,19 +977,11 @@ SnowError snow_runtime_create_with_config(const SnowRuntimeConfig* config,
 
 SnowError snow_runtime_style_defaults_default(SnowStyleDefaults* out_defaults);
 
-SnowError snow_runtime_clone_document_session(SnowRuntime source, SnowRuntime* out_runtime);
-
 SnowError snow_runtime_clone_document_session_with_config(SnowRuntime source,
                                                           const SnowRuntimeConfig* config,
                                                           SnowRuntime* out_runtime);
 
 void snow_runtime_destroy(SnowRuntime runtime);
-
-SnowError snow_engine_create(SnowEngine* out_engine);
-
-void snow_engine_destroy(SnowEngine engine);
-
-SnowError snow_runtime_set_quick_selection_disabled_tools(SnowRuntime runtime, uint64_t tools);
 
 SnowError snow_runtime_set_quick_selection_disabled_tools_ex(
     SnowRuntime runtime, uint64_t tools, SnowChangedViewportList* out_changed_viewports);
@@ -1019,9 +999,6 @@ SnowError snow_viewport_set_camera(SnowRuntime runtime, SnowViewport viewport, d
 
 SnowError snow_viewport_get_id(SnowViewport viewport, uint64_t* out_id);
 
-SnowError snow_viewport_set_active_tool(SnowRuntime runtime, SnowViewport viewport,
-                                        SnowActiveTool tool);
-
 SnowError snow_viewport_set_active_tool_ex(SnowRuntime runtime, SnowViewport viewport,
                                            SnowActiveTool tool,
                                            SnowChangedViewportList* out_changed_viewports);
@@ -1032,18 +1009,12 @@ SnowError snow_viewport_get_active_tool(SnowRuntime runtime, SnowViewport viewpo
 SnowError snow_viewport_get_snap_config(SnowRuntime runtime, SnowViewport viewport,
                                         SnowSnapConfig* out_config);
 
-SnowError snow_viewport_set_snap_config(SnowRuntime runtime, SnowViewport viewport,
-                                        const SnowSnapConfig* config);
-
 SnowError snow_viewport_set_snap_config_ex(SnowRuntime runtime, SnowViewport viewport,
                                            const SnowSnapConfig* config,
                                            SnowChangedViewportList* out_changed_viewports);
 
 SnowError snow_viewport_get_grid_config(SnowRuntime runtime, SnowViewport viewport,
                                         SnowGridConfig* out_config);
-
-SnowError snow_viewport_set_grid_config(SnowRuntime runtime, SnowViewport viewport,
-                                        const SnowGridConfig* config);
 
 SnowError snow_viewport_set_grid_config_ex(SnowRuntime runtime, SnowViewport viewport,
                                            const SnowGridConfig* config,
@@ -1059,23 +1030,9 @@ SnowError snow_runtime_restore_document_history_preserving_editor_styles(
     SnowRuntime runtime, const uint8_t* bytes, size_t size,
     SnowChangedViewportList* out_changed_viewports);
 
-SnowError snow_runtime_undo(SnowRuntime runtime);
-
 SnowError snow_runtime_undo_ex(SnowRuntime runtime, SnowChangedViewportList* out_changed_viewports);
 
-SnowError snow_runtime_redo(SnowRuntime runtime);
-
 SnowError snow_runtime_redo_ex(SnowRuntime runtime, SnowChangedViewportList* out_changed_viewports);
-
-SnowError snow_engine_get_history_state(SnowEngine engine, SnowHistoryState* out_state);
-
-SnowError snow_engine_undo(SnowEngine engine);
-
-SnowError snow_engine_undo_ex(SnowEngine engine, SnowChangedViewportList* out_changed_viewports);
-
-SnowError snow_engine_redo(SnowEngine engine);
-
-SnowError snow_engine_redo_ex(SnowEngine engine, SnowChangedViewportList* out_changed_viewports);
 
 SnowError snow_viewport_get_style_toolbar_state(SnowRuntime runtime, SnowViewport viewport,
                                                 SnowStyleToolbarState* out_state);
@@ -1092,45 +1049,20 @@ SnowError snow_viewport_set_filter_style_ex(SnowRuntime runtime, SnowViewport vi
                                             SnowChangedViewportList* out_changed_viewports);
 SnowError snow_viewport_get_watermark_config(SnowRuntime runtime, SnowViewport viewport,
                                              SnowWatermarkConfig* out_config);
-SnowError snow_viewport_set_watermark_config(SnowRuntime runtime, SnowViewport viewport,
-                                             const SnowWatermarkConfig* config);
 SnowError snow_viewport_set_watermark_config_ex(SnowRuntime runtime, SnowViewport viewport,
                                                 const SnowWatermarkConfig* config,
                                                 SnowChangedViewportList* out_changed_viewports);
-
-SnowError snow_viewport_get_rectangle_shape_style(SnowRuntime runtime, SnowViewport viewport,
-                                                  SnowRectangleShapeStyle* out_style);
-
-SnowError snow_viewport_set_rectangle_shape_style(SnowRuntime runtime, SnowViewport viewport,
-                                                  const SnowRectangleShapeStyle* style);
 
 SnowError
 snow_viewport_set_rectangle_shape_style_ex(SnowRuntime runtime, SnowViewport viewport,
                                            const SnowRectangleShapeStyle* style,
                                            SnowChangedViewportList* out_changed_viewports);
 
-SnowError snow_viewport_get_arrow_style(SnowRuntime runtime, SnowViewport viewport,
-                                        SnowArrowStyle* out_style);
-
-SnowError snow_viewport_get_text_style(SnowRuntime runtime, SnowViewport viewport,
-                                       SnowTextStyle* out_style);
-
-SnowError snow_viewport_set_text_style(SnowRuntime runtime, SnowViewport viewport,
-                                       const SnowTextStyle* style,
-                                       const SnowTextLayoutOverride* layouts,
-                                       uint32_t layout_count);
-
 SnowError snow_viewport_set_text_style_ex(SnowRuntime runtime, SnowViewport viewport,
                                           const SnowTextStyle* style,
                                           const SnowTextLayoutOverride* layouts,
                                           uint32_t layout_count,
                                           SnowChangedViewportList* out_changed_viewports);
-
-SnowError snow_viewport_get_serial_number_style(SnowRuntime runtime, SnowViewport viewport,
-                                                SnowSerialNumberStyle* out_style);
-
-SnowError snow_viewport_set_serial_number_style(SnowRuntime runtime, SnowViewport viewport,
-                                                const SnowSerialNumberStyle* style);
 
 SnowError snow_viewport_set_serial_number_style_ex(SnowRuntime runtime, SnowViewport viewport,
                                                    const SnowSerialNumberStyle* style,
@@ -1139,12 +1071,6 @@ SnowError snow_viewport_set_serial_number_style_ex(SnowRuntime runtime, SnowView
 SnowError snow_viewport_create_text(SnowRuntime runtime, SnowViewport viewport, double center_x,
                                     double center_y, const char* text_utf8, uint32_t text_utf8_len,
                                     double measured_width, double measured_height);
-
-SnowError snow_viewport_create_text_ex(SnowRuntime runtime, SnowViewport viewport, double center_x,
-                                       double center_y, const char* text_utf8,
-                                       uint32_t text_utf8_len, double measured_width,
-                                       double measured_height,
-                                       SnowChangedViewportList* out_changed_viewports);
 
 SnowError snow_viewport_hit_text(SnowRuntime runtime, SnowViewport viewport, double canvas_x,
                                  double canvas_y, SnowElementId* out_id, uint8_t* out_hit);
@@ -1188,30 +1114,12 @@ SnowError snow_viewport_is_text_bound_to_serial_number(SnowRuntime runtime, Snow
 SnowError snow_runtime_get_text_element(SnowRuntime runtime, SnowElementId id,
                                         SnowTextElementInfo* out_info);
 
-/* Legacy unstyled commit path. This preserves the historical behavior of using
-   the editor/default text style and should not be treated as a full draft-style
-   commit. New text editors should prefer snow_viewport_commit_text_draft_payload_ex. */
-SnowError snow_viewport_commit_text_ex(SnowRuntime runtime, SnowViewport viewport,
-                                       SnowElementId existing_id, uint8_t has_existing_id,
-                                       double center_x, double center_y, const char* text_utf8,
-                                       uint32_t text_utf8_len, double measured_width,
-                                       double measured_height,
-                                       SnowChangedViewportList* out_changed_viewports);
-
 /* Typed draft commit path. Persists text content, exact host layout, auto-resize
    state, and full SnowTextStyle from SnowTextCommitDraft. */
 SnowError
 snow_viewport_commit_text_draft_payload_ex(SnowRuntime runtime, SnowViewport viewport,
                                            const SnowTextCommitDraft* draft,
                                            SnowChangedViewportList* out_changed_viewports);
-
-/* Convenience wrapper for snow_viewport_commit_text_draft_payload_ex. Unlike
-   snow_viewport_commit_text_ex, this is a styled draft commit. */
-SnowError snow_viewport_commit_text_draft_ex(
-    SnowRuntime runtime, SnowViewport viewport, SnowElementId existing_id, uint8_t has_existing_id,
-    double center_x, double center_y, const char* text_utf8, uint32_t text_utf8_len,
-    double measured_width, double measured_height, const SnowTextStyle* style, uint8_t auto_resize,
-    uint8_t update_default_style, SnowChangedViewportList* out_changed_viewports);
 
 SnowError snow_viewport_select_element_ex(SnowRuntime runtime, SnowViewport viewport,
                                           SnowElementId id,
@@ -1245,10 +1153,6 @@ snow_viewport_create_serial_number_text_ex(SnowRuntime runtime, SnowViewport vie
                                            double measured_width, double measured_height,
                                            SnowElementId* out_text_id, uint8_t* out_has_text_id,
                                            SnowChangedViewportList* out_changed_viewports);
-
-SnowError snow_viewport_process_input(SnowRuntime runtime, SnowViewport viewport,
-                                      const SnowInputEvent* event,
-                                      SnowInteractionOutput* out_output);
 
 SnowError snow_viewport_process_input_ex(SnowRuntime runtime, SnowViewport viewport,
                                          const SnowInputEvent* event,
@@ -1329,8 +1233,6 @@ SnowError snow_patch_get_overlay_dirty_rects(SnowPatchHandle patch, const SnowDi
                                              uint32_t* out_count);
 SnowError snow_viewport_get_spotlight_config(SnowRuntime runtime, SnowViewport viewport,
                                              SnowSpotlightConfig* out_config);
-SnowError snow_viewport_set_spotlight_config(SnowRuntime runtime, SnowViewport viewport,
-                                             const SnowSpotlightConfig* config);
 SnowError snow_viewport_set_spotlight_config_ex(SnowRuntime runtime, SnowViewport viewport,
                                                 const SnowSpotlightConfig* config,
                                                 SnowChangedViewportList* out_changed_viewports);

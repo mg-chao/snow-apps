@@ -7,8 +7,8 @@ use snow_draw_engine_core::{
 use snow_draw_engine_display::{PatchCursor, ViewportPatch};
 use snow_draw_engine_document::{ElementId, SpotlightConfig, WatermarkConfig};
 use snow_draw_engine_editor::{
-    ActiveTool, ApplyTransactionCommand, ArrowStyle, DocumentSyncSnapshot, EditorCommand,
-    EditorPresentationState, EditorSession, EditorSessionSnapshot, EditorStyleDefaults,
+    ActiveTool, ApplyTransactionCommand, DocumentSyncSnapshot, EditorCommand,
+    EditorSession, EditorSessionSnapshot, EditorStyleDefaults,
     EditorViewportState, FilterStyle, HistoryState, RectangleShapeStyle, SerialNumberToolbarState,
     ShapeStylePatch, StyleToolbarState,
 };
@@ -129,7 +129,7 @@ impl Engine {
         self.refresh_all_viewports()
     }
 
-    pub fn clone_document_session(&self) -> Self {
+    pub(crate) fn clone_document_session(&self) -> Self {
         let mut engine = Self {
             config: self.config.clone(),
             model: self.model.clone(),
@@ -264,11 +264,6 @@ impl Engine {
     ) -> Result<RectangleShapeStyle, ErrorCode> {
         self.ensure_viewport(id)?;
         Ok(self.editor.rectangle_shape_style(&self.model))
-    }
-
-    pub fn viewport_arrow_style(&self, id: ViewportId) -> Result<ArrowStyle, ErrorCode> {
-        self.ensure_viewport(id)?;
-        Ok(self.editor.arrow_style(&self.model))
     }
 
     pub fn set_viewport_shape_style_patch(
@@ -448,10 +443,7 @@ mod tests {
             engine.viewport_rectangle_shape_style(viewport).unwrap(),
             expected.rectangle
         );
-        assert_eq!(
-            engine.viewport_arrow_style(viewport).unwrap(),
-            expected.arrow
-        );
+        assert_eq!(engine.editor.arrow_style(&engine.model), expected.arrow);
 
         for (tool, style) in [
             (ActiveTool::Line, expected.line),

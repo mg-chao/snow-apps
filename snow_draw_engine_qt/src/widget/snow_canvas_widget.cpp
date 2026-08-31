@@ -367,7 +367,6 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     bool setCanvasShapeStylePatch(const SnowCanvasShapeStyle& style, quint32 properties,
                                   SnowCanvasShapeKind kind);
     bool setCanvasFilterStyle(const SnowCanvasFilterStyle& style, quint32 properties);
-    bool setCanvasRectangleShapeStyle(const SnowCanvasRectangleShapeStyle& style);
     bool setCanvasTextStyle(const SnowCanvasTextStyle& style);
     bool setCanvasSerialNumberStyle(const SnowCanvasSerialNumberStyle& style);
     SnowCanvasHistoryState canvasHistoryState() const;
@@ -406,7 +405,6 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     void setCustomRenderer(SnowCanvasCustomRenderer* renderer);
     QTransform canvasToViewTransform() const;
     QRect viewRectForCanvasRect(const QRectF& canvasRect, int paddingPx) const;
-    void updateCanvasRect(const QRectF& canvasRect, int paddingPx);
 
     bool undo();
     bool redo();
@@ -1082,17 +1080,6 @@ bool SnowCanvasWidget::setCanvasFilterStyle(const SnowCanvasFilterStyle& style,
     return m_impl->setCanvasFilterStyle(style, properties);
 }
 
-bool SnowCanvasWidget::Impl::setCanvasRectangleShapeStyle(
-    const SnowCanvasRectangleShapeStyle& style) {
-    return applyMutationResult(snow_canvas_commands::setRectangleShapeStyle(
-        runtimeBinding.engine(), runtimeBinding.viewportHandle(),
-        snow_canvas_types::toEngineRectangleShapeStyle(style)));
-}
-
-bool SnowCanvasWidget::setCanvasRectangleShapeStyle(const SnowCanvasRectangleShapeStyle& style) {
-    return m_impl->setCanvasRectangleShapeStyle(style);
-}
-
 bool SnowCanvasWidget::Impl::setCanvasTextStyle(const SnowCanvasTextStyle& style) {
     const SnowTextStyle engineStyle = snow_canvas_types::toEngineTextStyle(style);
     SnowCanvasWidgetTextInteraction::StyleChangeResult result =
@@ -1498,32 +1485,6 @@ QRect SnowCanvasWidget::Impl::viewRectForCanvasRect(const QRectF& canvasRect, in
 
 QRect SnowCanvasWidget::viewRectForCanvasRect(const QRectF& canvasRect, int paddingPx) const {
     return m_impl->viewRectForCanvasRect(canvasRect, paddingPx);
-}
-
-void SnowCanvasWidget::Impl::updateCanvasRect(const QRectF& canvasRect, int paddingPx) {
-    const QRectF normalized = canvasRect.normalized();
-    if (!normalized.isValid() || normalized.isEmpty()) {
-        return;
-    }
-    if (!displayCacheHasSynced(displayState.displayCache())) {
-        widget.update();
-        return;
-    }
-    const QRect viewRect = viewRectForCanvasRect(canvasRect, paddingPx);
-    if (viewRect.isEmpty()) {
-        return;
-    }
-    const QRect clippedViewRect =
-        filterAffectedViewRect(viewRect, displayState.displayCache(), widget.rect());
-    if (!clippedViewRect.isEmpty()) {
-        snow_canvas_filter_tile_cache::invalidateRegion(&widget, clippedViewRect,
-                                                         widget.devicePixelRatioF());
-        widget.update(clippedViewRect);
-    }
-}
-
-void SnowCanvasWidget::updateCanvasRect(const QRectF& canvasRect, int paddingPx) {
-    m_impl->updateCanvasRect(canvasRect, paddingPx);
 }
 
 void SnowCanvasWidget::Impl::detachRuntime() {

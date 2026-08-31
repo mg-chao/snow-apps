@@ -1657,7 +1657,7 @@ void croppedCoverageWorkspaceAndFailurePathsStayValid() {
     QImage fullResult = source;
     QImage croppedResult = source;
     require(snow_canvas_filter_render::applyMasked(source, fullResult, fullMask, coverage, blur),
-            "the compatibility full-mask overload must remain available");
+            "the full-mask overload must render identically to the cropped-mask path");
     require(snow_canvas_filter_render::applyMasked(source, croppedResult, croppedMask,
                                                    coverage.topLeft(), coverage, blur),
             "cropped masks with an independent physical origin must render");
@@ -1867,7 +1867,7 @@ void mosaicReplayRendersEveryFreeDrawChunk() {
     freeDraw.arrow_path_commands = commands.data();
     freeDraw.arrow_path_command_count = commandCount;
     freeDraw.arrow_type = SNOW_ARROW_TYPE_STRAIGHT;
-    freeDraw.arrow_stroke_style = SNOW_ARROW_STROKE_STYLE_SOLID;
+    freeDraw.arrow_stroke_style = SNOW_STROKE_STYLE_SOLID;
     freeDraw.is_free_draw = 1;
     freeDraw.opacity = 1.0;
 

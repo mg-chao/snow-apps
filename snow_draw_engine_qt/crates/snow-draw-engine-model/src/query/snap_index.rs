@@ -57,22 +57,6 @@ impl SnapIndex {
             .and_then(|bounds| bounds.as_ref().copied())
     }
 
-    pub fn for_each_visible_rect(
-        &self,
-        document: &Document,
-        mut f: impl FnMut(ElementId, &RectangleData, DrawRect),
-    ) {
-        for id in document.paint_order() {
-            let Some(cached_bounds) = self.rect(*id) else {
-                continue;
-            };
-            let Ok(rect) = document.rectangle(*id) else {
-                continue;
-            };
-            f(*id, rect, cached_bounds);
-        }
-    }
-
     pub fn snap_point_filtered(
         &self,
         document: &Document,

@@ -30,19 +30,6 @@ bool shapeStylesEqual(const SnowShapeStyle& lhs, const SnowShapeStyle& rhs) {
            lhs.shape == rhs.shape;
 }
 
-bool rectangleShapeStylesEqual(const SnowRectangleShapeStyle& lhs,
-                               const SnowRectangleShapeStyle& rhs) {
-    return colorsEqual(lhs.fill, rhs.fill) && lhs.fill_style == rhs.fill_style &&
-           colorsEqual(lhs.stroke, rhs.stroke) && lhs.stroke_width == rhs.stroke_width &&
-           cornerRadiiEqual(lhs.corner_radii, rhs.corner_radii);
-}
-
-bool arrowStylesEqual(const SnowArrowStyle& lhs, const SnowArrowStyle& rhs) {
-    return colorsEqual(lhs.stroke, rhs.stroke) && lhs.stroke_width == rhs.stroke_width &&
-           lhs.start_arrowhead == rhs.start_arrowhead && lhs.end_arrowhead == rhs.end_arrowhead &&
-           lhs.stroke_style == rhs.stroke_style && lhs.arrow_type == rhs.arrow_type;
-}
-
 bool fontFamiliesEqual(const char* lhs, std::uint32_t lhsLength, const char* rhs,
                        std::uint32_t rhsLength) {
     return snow_canvas_utf8::fieldsEqual(lhs, lhsLength, rhs, rhsLength,
@@ -151,7 +138,7 @@ bool readSnapshot(SnowRuntime runtime, SnowViewport viewport, Snapshot* outSnaps
         SNOW_OK) {
         return false;
     }
-    if (snow_engine_get_history_state(runtime, &snapshot.historyState) != SNOW_OK) {
+    if (snow_runtime_get_history_state(runtime, &snapshot.historyState) != SNOW_OK) {
         return false;
     }
     if (snow_viewport_get_snap_config(runtime, viewport, &snapshot.snapConfig) != SNOW_OK) {

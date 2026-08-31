@@ -1,10 +1,10 @@
 use snow_draw_engine_core::{
     ColorRgba8, CornerRadii, ErrorCode, Point,
-    arrow::{ArrowStrokeStyle, ArrowType, Arrowhead},
+    arrow::{StrokeStyle, ArrowType, Arrowhead},
 };
 use snow_draw_engine_document::{
     ArrowData, FillStyle, FilterData, MIN_SERIAL_NUMBER_FONT_SIZE, MIN_TEXT_FONT_SIZE,
-    RectangleData, SerialNumberData, SpotlightConfig, StrokeStyle, TextData, Transaction,
+    RectangleData, SerialNumberData, SpotlightConfig, TextData, Transaction,
     WatermarkConfig, normalize_corner_radii, normalize_font_family, serial_number_rect_proxy,
     serial_number_with_label_style, text_with_auto_resize_layout, validate_serial_number,
     validate_text,
@@ -41,22 +41,6 @@ use crate::{
 
 const FONT_SIZE_STEPS: [f64; 5] = [MIN_TEXT_FONT_SIZE, 16.0, 21.0, 27.0, 42.0];
 
-fn rectangle_stroke_style_from_arrow(style: ArrowStrokeStyle) -> StrokeStyle {
-    match style {
-        ArrowStrokeStyle::Solid => StrokeStyle::Solid,
-        ArrowStrokeStyle::Dashed => StrokeStyle::Dashed,
-        ArrowStrokeStyle::Dotted => StrokeStyle::Dotted,
-    }
-}
-
-fn arrow_stroke_style_from_rectangle(style: StrokeStyle) -> ArrowStrokeStyle {
-    match style {
-        StrokeStyle::Solid => ArrowStrokeStyle::Solid,
-        StrokeStyle::Dashed => ArrowStrokeStyle::Dashed,
-        StrokeStyle::Dotted => ArrowStrokeStyle::Dotted,
-    }
-}
-
 pub(crate) fn stepped_font_size(current: f64, increase: bool) -> f64 {
     if increase {
         FONT_SIZE_STEPS
@@ -85,7 +69,7 @@ impl ShapeStyle {
             fill_style: self.fill_style,
             stroke: self.stroke,
             stroke_width: self.stroke_width,
-            stroke_style: rectangle_stroke_style_from_arrow(self.stroke_style),
+            stroke_style: self.stroke_style,
             corner_radii: self.corner_radii,
             shape: self.shape,
         }
@@ -107,7 +91,7 @@ impl ShapeStyle {
         self.fill_style = style.fill_style;
         self.stroke = style.stroke;
         self.stroke_width = style.stroke_width;
-        self.stroke_style = arrow_stroke_style_from_rectangle(style.stroke_style);
+        self.stroke_style = style.stroke_style;
         self.corner_radii = style.corner_radii;
         self.shape = style.shape;
         self
@@ -140,7 +124,7 @@ impl ShapeStyle {
             corner_radii: style.corner_radii,
             start_arrowhead: None,
             end_arrowhead: None,
-            stroke_style: arrow_stroke_style_from_rectangle(style.stroke_style),
+            stroke_style: style.stroke_style,
             arrow_type: ArrowType::Straight,
             opacity: 1.0,
             highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
@@ -185,7 +169,7 @@ impl ShapeStylePatch {
             current.corner_radii = self.style.corner_radii;
         }
         if properties & SHAPE_STYLE_PROPERTY_STROKE_STYLE != 0 {
-            current.stroke_style = rectangle_stroke_style_from_arrow(self.style.stroke_style);
+            current.stroke_style = self.style.stroke_style;
         }
         if properties & SHAPE_STYLE_PROPERTY_SHAPE != 0 {
             current.shape = self.style.shape;
@@ -263,7 +247,7 @@ struct ShapeStyleSample {
     stroke: Option<ColorRgba8>,
     stroke_width: Option<f64>,
     corner_radii: Option<CornerRadii>,
-    stroke_style: Option<ArrowStrokeStyle>,
+    stroke_style: Option<StrokeStyle>,
     start_arrowhead: Option<Option<Arrowhead>>,
     end_arrowhead: Option<Option<Arrowhead>>,
     arrow_type: Option<ArrowType>,
@@ -280,7 +264,7 @@ impl ShapeStyleSample {
             stroke: Some(rectangle.stroke),
             stroke_width: Some(rectangle.stroke_width),
             corner_radii: Some(rectangle.corner_radii),
-            stroke_style: Some(arrow_stroke_style_from_rectangle(rectangle.stroke_style)),
+            stroke_style: Some(rectangle.stroke_style),
             start_arrowhead: None,
             end_arrowhead: None,
             arrow_type: None,
@@ -1486,7 +1470,7 @@ impl Editor {
                     let mut updated = current_arrow.clone();
                     updated.stroke = style.stroke;
                     updated.stroke_width = style.stroke_width;
-                    updated.stroke_style = ArrowStrokeStyle::Solid;
+                    updated.stroke_style = StrokeStyle::Solid;
                     updated.arrow_type = ArrowType::Straight;
                     updated
                 } else {
@@ -1823,7 +1807,7 @@ mod tests {
             stroke_width: 3.0,
             start_arrowhead: None,
             end_arrowhead: Some(Arrowhead::Arrow),
-            stroke_style: ArrowStrokeStyle::Dotted,
+            stroke_style: StrokeStyle::Dotted,
             arrow_type: ArrowType::Curve,
         };
         let mut updated_style =
@@ -1851,7 +1835,7 @@ mod tests {
         assert_eq!(updated_rectangle.corner_radii, rectangle_style.corner_radii);
 
         let mut stroke_style_only = ShapeStyle::from_rectangle_shape_style(rectangle_style);
-        stroke_style_only.stroke_style = ArrowStrokeStyle::Dotted;
+        stroke_style_only.stroke_style = StrokeStyle::Dotted;
         let stroke_style_patch = ShapeStylePatch {
             kind: ShapeKind::Rectangle,
             style: stroke_style_only,
@@ -2070,7 +2054,7 @@ mod tests {
                 a: 255,
             },
             6.0,
-            ArrowStrokeStyle::Dotted,
+            StrokeStyle::Dotted,
             ArrowType::Curve,
             Some(Arrowhead::Bar),
             Some(Arrowhead::Arrow),
@@ -2127,7 +2111,7 @@ mod tests {
                 a: 255,
             },
             3.0,
-            ArrowStrokeStyle::Solid,
+            StrokeStyle::Solid,
             ArrowType::Straight,
             None,
             Some(Arrowhead::Arrow),
@@ -2145,7 +2129,7 @@ mod tests {
                 a: 255,
             },
             2.0,
-            ArrowStrokeStyle::Solid,
+            StrokeStyle::Solid,
             ArrowType::Curve,
             None,
             None,

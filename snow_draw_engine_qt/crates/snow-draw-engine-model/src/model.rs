@@ -140,9 +140,6 @@ impl DocumentModel {
         self.queries.bound_bindable_ids(arrow_id)
     }
 
-    pub fn bindable_element_states(&self) -> Vec<BindableElementState> {
-        self.bindable_element_states_with_overrides(&[])
-    }
 
     pub fn bindable_element_states_with_overrides(
         &self,

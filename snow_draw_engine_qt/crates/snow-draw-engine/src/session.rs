@@ -45,7 +45,8 @@ impl Engine {
         Ok(bytes)
     }
 
-    pub fn from_serialized_document_session(bytes: &[u8]) -> Result<Self, ErrorCode> {
+    #[cfg(test)]
+    fn from_serialized_document_session(bytes: &[u8]) -> Result<Self, ErrorCode> {
         Self::from_serialized_document_session_with_config(bytes, RuntimeEngineConfig::default())
     }
 
@@ -88,7 +89,8 @@ impl Engine {
         Ok(bytes)
     }
 
-    pub fn from_serialized_document_history(bytes: &[u8]) -> Result<Self, ErrorCode> {
+    #[cfg(test)]
+    fn from_serialized_document_history(bytes: &[u8]) -> Result<Self, ErrorCode> {
         Self::from_serialized_document_history_with_config(bytes, RuntimeEngineConfig::default())
     }
 

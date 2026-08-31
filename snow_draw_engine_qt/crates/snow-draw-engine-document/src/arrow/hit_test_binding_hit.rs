@@ -75,10 +75,10 @@ pub fn get_bindables_over_point(
 }
 
 fn sample_outline_points(bindable: &BindableState, offset: f64) -> Vec<Point> {
-    let shape = canonicalize_bindable_shape(bindable.shape);
+    let shape = bindable.shape;
     let bindable_center = center(bindable.x, bindable.y, bindable.width, bindable.height);
 
-    if shape == CanonicalBindableShape::Diamond {
+    if shape == BindableShape::Diamond {
         let [top, right, bottom, left] = get_diamond_vertices(bindable);
         return vec![
             rotate_point([top[0], top[1] - offset], bindable_center, bindable.angle),
@@ -96,7 +96,7 @@ fn sample_outline_points(bindable: &BindableState, offset: f64) -> Vec<Point> {
         ];
     }
 
-    if shape == CanonicalBindableShape::Ellipse {
+    if shape == BindableShape::Ellipse {
         let cx = bindable.x + bindable.width / 2.0;
         let cy = bindable.y + bindable.height / 2.0;
         let rx = bindable.width / 2.0;

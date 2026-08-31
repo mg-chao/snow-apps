@@ -52,19 +52,19 @@ fn is_point_in_convex_polygon(point: Point, vertices: &[Point]) -> bool {
 }
 
 pub fn is_point_in_bindable(point: Point, bindable: &BindableState) -> bool {
-    let shape = canonicalize_bindable_shape(bindable.shape);
+    let shape = bindable.shape;
     let local = unrotate_to_local(point, bindable);
     let x = local[0];
     let y = local[1];
 
-    if shape == CanonicalBindableShape::Rectangle {
+    if shape == BindableShape::Rectangle {
         return x >= bindable.x
             && y >= bindable.y
             && x <= bindable.x + bindable.width
             && y <= bindable.y + bindable.height;
     }
 
-    if shape == CanonicalBindableShape::Ellipse {
+    if shape == BindableShape::Ellipse {
         let cx = bindable.x + bindable.width / 2.0;
         let cy = bindable.y + bindable.height / 2.0;
         let rx = (bindable.width / 2.0).max(1e-6);
@@ -134,9 +134,9 @@ fn distance_to_diamond_outline(point: Point, bindable: &BindableState) -> f64 {
 }
 
 pub fn distance_to_bindable_outline(point: Point, bindable: &BindableState) -> f64 {
-    match canonicalize_bindable_shape(bindable.shape) {
-        CanonicalBindableShape::Rectangle => distance_to_rectangle_outline(point, bindable),
-        CanonicalBindableShape::Ellipse => distance_to_ellipse_outline(point, bindable),
-        CanonicalBindableShape::Diamond => distance_to_diamond_outline(point, bindable),
+    match bindable.shape {
+        BindableShape::Rectangle => distance_to_rectangle_outline(point, bindable),
+        BindableShape::Ellipse => distance_to_ellipse_outline(point, bindable),
+        BindableShape::Diamond => distance_to_diamond_outline(point, bindable),
     }
 }

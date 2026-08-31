@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare a captured watermark baseline with a format-v4 candidate."""
+"""Compare a captured watermark baseline with a current-format candidate."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ COMMON_FIELDS = {
     "render_calls_per_sample",
 }
 
-V4_FIELDS = {
+STRATEGY_FIELDS = {
     "selected_strategy",
     "cache_bytes",
     "fragment_coverage",
@@ -38,12 +38,12 @@ V4_FIELDS = {
 def read_results(
     path: Path,
     expected_versions: set[str],
-    require_v4_fields: bool = False,
+    require_strategy_fields: bool = False,
 ) -> dict[tuple[str, str, str], dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as stream:
         reader = csv.DictReader(stream)
         fields = set(reader.fieldnames or ())
-        required = COMMON_FIELDS | (V4_FIELDS if require_v4_fields else set())
+        required = COMMON_FIELDS | (STRATEGY_FIELDS if require_strategy_fields else set())
         missing = required - fields
         if missing:
             raise ValueError(f"{path}: missing columns: {', '.join(sorted(missing))}")
@@ -260,9 +260,9 @@ def print_comparison(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "baseline", type=Path, help="captured format-v2, format-v3, or format-v4 baseline CSV"
+        "baseline", type=Path, help="captured watermark baseline CSV"
     )
-    parser.add_argument("candidate", type=Path, help="format-v4 candidate CSV")
+    parser.add_argument("candidate", type=Path, help="candidate watermark CSV")
     parser.add_argument(
         "--allow-structural-errors",
         action="store_true",
@@ -276,8 +276,8 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        baseline = read_results(args.baseline, {"2", "3", "4"})
-        candidate = read_results(args.candidate, {"4"}, require_v4_fields=True)
+        baseline = read_results(args.baseline, {"1"})
+        candidate = read_results(args.candidate, {"1"}, require_strategy_fields=True)
     except (OSError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

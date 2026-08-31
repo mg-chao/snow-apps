@@ -9,7 +9,6 @@
 
 namespace snow_canvas_text_editor_connector {
 
-bool previewHasSameElementId(const SnowSceneDisplayItem* preview, const SnowSceneDisplayItem& item);
 bool itemBindsPreview(const SnowSceneDisplayItem& item, const SnowSceneDisplayItem* preview);
 bool connectorBelongsToPreview(const SnowSceneDisplayItem& connector,
                                const SnowCanvasSceneItem* sceneItems, std::uint32_t sceneItemCount,

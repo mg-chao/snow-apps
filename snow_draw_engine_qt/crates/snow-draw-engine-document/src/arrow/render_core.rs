@@ -1,6 +1,6 @@
 use crate::arrow_geom::{distance, rotate_point};
 use crate::{
-    ArrowEndpointPosition, ArrowPathCommand, ArrowStrokeStyle, Arrowhead, ArrowheadCirclePrimitive,
+    ArrowEndpointPosition, ArrowPathCommand, StrokeStyle, Arrowhead, ArrowheadCirclePrimitive,
     ArrowheadDashMode, ArrowheadFillMode, ArrowheadLinePrimitive, ArrowheadPoints,
     ArrowheadPolygonPrimitive, ArrowheadPrimitiveKind, ArrowheadRenderPrimitive, CurvePathOp,
     Point,
@@ -22,7 +22,7 @@ pub struct ArrowheadRenderPrimitivesInput {
     pub curve_ops: Vec<CurvePathOp>,
     pub position: ArrowEndpointPosition,
     pub arrowhead: Arrowhead,
-    pub stroke_style: ArrowStrokeStyle,
+    pub stroke_style: StrokeStyle,
 }
 
 pub fn get_arrowhead_size(arrowhead: Arrowhead) -> f64 {
@@ -307,7 +307,7 @@ pub fn get_arrowhead_render_primitives(
             None,
         )],
         _ => {
-            let dash_mode = if input.stroke_style == ArrowStrokeStyle::Dotted {
+            let dash_mode = if input.stroke_style == StrokeStyle::Dotted {
                 ArrowheadDashMode::DottedCap
             } else {
                 ArrowheadDashMode::Solid

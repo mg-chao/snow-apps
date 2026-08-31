@@ -3,15 +3,15 @@ mod patch_payloads;
 pub(crate) use patch_payloads::*;
 
 use snow_draw_engine::{
-    ActiveTool, ArrowPathCommand, ArrowStrokeStyle, ArrowType, Arrowhead, ArrowheadDisplayDashMode,
+    ActiveTool, ArrowPathCommand, StrokeStyle, ArrowType, Arrowhead, ArrowheadDisplayDashMode,
     ArrowheadDisplayFillMode, ArrowheadDisplayPrimitive, ArrowheadDisplayPrimitiveKind,
     CanvasFilterType, ColorRgba8, CornerRadii, CursorCommand, CursorStyle, DisplayFillStyle,
-    DisplayStrokeStyle, DisplayTextHorizontalAlign, DisplayTextVerticalAlign, ElementId,
+    DisplayTextHorizontalAlign, DisplayTextVerticalAlign, ElementId,
     EngineConfig, FillStyle, FilterStyle, GridConfig, HistoryState, InputEvent, InteractionOutput,
     KeyCode, KeyEvent, KeyEventType, Modifiers, Point, PointerButton, PointerButtons,
     PointerCaptureCommand, PointerDevice, PointerEvent, PointerEventType, RectangleShapeStyle,
     RuntimeConfig, SerialNumberStyle, ShapeKind, ShapeStyle, SnapConfig, SpotlightConfig,
-    StrokeStyle, StyleDefaults, StyleToolbarSource, TextElementInfo, TextHorizontalAlign,
+    StyleDefaults, StyleToolbarSource, TextElementInfo, TextHorizontalAlign,
     TextLayoutOverride, TextLayoutSize, TextStyle, TextVerticalAlign, Vector2, WatermarkConfig,
     WheelDeltaKind, WheelEvent, ZoomFocus, normalize_font_family,
 };
@@ -149,19 +149,19 @@ pub(crate) fn snow_arrowhead_to_rust(value: SnowArrowhead) -> Option<Arrowhead> 
     }
 }
 
-pub(crate) fn snow_arrow_stroke_style_from_rust(value: ArrowStrokeStyle) -> SnowArrowStrokeStyle {
+pub(crate) fn snow_stroke_style_from_rust(value: StrokeStyle) -> SnowStrokeStyle {
     match value {
-        ArrowStrokeStyle::Solid => SnowArrowStrokeStyle::Solid,
-        ArrowStrokeStyle::Dashed => SnowArrowStrokeStyle::Dashed,
-        ArrowStrokeStyle::Dotted => SnowArrowStrokeStyle::Dotted,
+        StrokeStyle::Solid => SnowStrokeStyle::Solid,
+        StrokeStyle::Dashed => SnowStrokeStyle::Dashed,
+        StrokeStyle::Dotted => SnowStrokeStyle::Dotted,
     }
 }
 
-pub(crate) fn snow_arrow_stroke_style_to_rust(value: SnowArrowStrokeStyle) -> ArrowStrokeStyle {
+pub(crate) fn snow_stroke_style_to_rust(value: SnowStrokeStyle) -> StrokeStyle {
     match value {
-        SnowArrowStrokeStyle::Solid => ArrowStrokeStyle::Solid,
-        SnowArrowStrokeStyle::Dashed => ArrowStrokeStyle::Dashed,
-        SnowArrowStrokeStyle::Dotted => ArrowStrokeStyle::Dotted,
+        SnowStrokeStyle::Solid => StrokeStyle::Solid,
+        SnowStrokeStyle::Dashed => StrokeStyle::Dashed,
+        SnowStrokeStyle::Dotted => StrokeStyle::Dotted,
     }
 }
 
@@ -351,30 +351,6 @@ pub(crate) fn snow_document_fill_style_from_rust(value: FillStyle) -> SnowFillSt
         FillStyle::Line => SnowFillStyle::Line,
         FillStyle::CrossLine => SnowFillStyle::CrossLine,
         FillStyle::Solid => SnowFillStyle::Solid,
-    }
-}
-
-pub(crate) fn snow_stroke_style_from_rust(value: DisplayStrokeStyle) -> SnowStrokeStyle {
-    match value {
-        DisplayStrokeStyle::Solid => SnowStrokeStyle::Solid,
-        DisplayStrokeStyle::Dashed => SnowStrokeStyle::Dashed,
-        DisplayStrokeStyle::Dotted => SnowStrokeStyle::Dotted,
-    }
-}
-
-pub(crate) fn snow_document_stroke_style_from_rust(value: StrokeStyle) -> SnowStrokeStyle {
-    match value {
-        StrokeStyle::Solid => SnowStrokeStyle::Solid,
-        StrokeStyle::Dashed => SnowStrokeStyle::Dashed,
-        StrokeStyle::Dotted => SnowStrokeStyle::Dotted,
-    }
-}
-
-pub(crate) fn snow_stroke_style_to_rust(value: SnowStrokeStyle) -> StrokeStyle {
-    match value {
-        SnowStrokeStyle::Solid => StrokeStyle::Solid,
-        SnowStrokeStyle::Dashed => StrokeStyle::Dashed,
-        SnowStrokeStyle::Dotted => StrokeStyle::Dotted,
     }
 }
 
@@ -568,7 +544,7 @@ impl From<SnowShapeStyle> for ShapeStyle {
             corner_radii: value.corner_radii.into(),
             start_arrowhead: snow_arrowhead_to_rust(value.start_arrowhead),
             end_arrowhead: snow_arrowhead_to_rust(value.end_arrowhead),
-            stroke_style: snow_arrow_stroke_style_to_rust(value.stroke_style),
+            stroke_style: snow_stroke_style_to_rust(value.stroke_style),
             arrow_type: snow_arrow_type_to_rust(value.arrow_type),
             opacity: value.opacity,
             highlight_shape: match value.highlight_shape {
@@ -637,7 +613,7 @@ impl From<RectangleShapeStyle> for SnowRectangleShapeStyle {
             fill_style: snow_document_fill_style_from_rust(value.fill_style),
             stroke: value.stroke.into(),
             stroke_width: value.stroke_width,
-            stroke_style: snow_document_stroke_style_from_rust(value.stroke_style),
+            stroke_style: snow_stroke_style_from_rust(value.stroke_style),
             corner_radii: value.corner_radii.into(),
         }
     }
@@ -650,7 +626,7 @@ impl From<SnowArrowStyle> for snow_draw_engine::ArrowStyle {
             stroke_width: value.stroke_width,
             start_arrowhead: snow_arrowhead_to_rust(value.start_arrowhead),
             end_arrowhead: snow_arrowhead_to_rust(value.end_arrowhead),
-            stroke_style: snow_arrow_stroke_style_to_rust(value.stroke_style),
+            stroke_style: snow_stroke_style_to_rust(value.stroke_style),
             arrow_type: snow_arrow_type_to_rust(value.arrow_type),
         }
     }
@@ -663,7 +639,7 @@ impl From<snow_draw_engine::ArrowStyle> for SnowArrowStyle {
             stroke_width: value.stroke_width,
             start_arrowhead: snow_arrowhead_from_rust(value.start_arrowhead),
             end_arrowhead: snow_arrowhead_from_rust(value.end_arrowhead),
-            stroke_style: snow_arrow_stroke_style_from_rust(value.stroke_style),
+            stroke_style: snow_stroke_style_from_rust(value.stroke_style),
             arrow_type: snow_arrow_type_from_rust(value.arrow_type),
             reserved0: [0; 4],
         }
@@ -750,7 +726,7 @@ impl From<SerialNumberStyle> for SnowSerialNumberStyle {
             },
             font_size: value.font_size,
             stroke_width: value.stroke_width,
-            stroke_style: snow_document_stroke_style_from_rust(value.stroke_style),
+            stroke_style: snow_stroke_style_from_rust(value.stroke_style),
             opacity: value.opacity,
             reserved0: [0; 4],
             font_family_utf8_len: 0,
@@ -778,7 +754,7 @@ impl From<ShapeStyle> for SnowShapeStyle {
             corner_radii: value.corner_radii.into(),
             start_arrowhead: snow_arrowhead_from_rust(value.start_arrowhead),
             end_arrowhead: snow_arrowhead_from_rust(value.end_arrowhead),
-            stroke_style: snow_arrow_stroke_style_from_rust(value.stroke_style),
+            stroke_style: snow_stroke_style_from_rust(value.stroke_style),
             arrow_type: snow_arrow_type_from_rust(value.arrow_type),
             opacity: value.opacity,
             highlight_shape: match value.highlight_shape {
@@ -954,10 +930,10 @@ impl From<StyleDefaults> for SnowStyleDefaults {
             fill_style: snow_document_fill_style_from_rust(rectangle.fill_style),
             stroke: rectangle.stroke.into(),
             stroke_width: rectangle.stroke_width,
-            stroke_style: snow_arrow_stroke_style_from_rust(match rectangle.stroke_style {
-                StrokeStyle::Solid => ArrowStrokeStyle::Solid,
-                StrokeStyle::Dashed => ArrowStrokeStyle::Dashed,
-                StrokeStyle::Dotted => ArrowStrokeStyle::Dotted,
+            stroke_style: snow_stroke_style_from_rust(match rectangle.stroke_style {
+                StrokeStyle::Solid => StrokeStyle::Solid,
+                StrokeStyle::Dashed => StrokeStyle::Dashed,
+                StrokeStyle::Dotted => StrokeStyle::Dotted,
             }),
             corner_radii: rectangle.corner_radii.into(),
             shape: match rectangle.shape {
@@ -972,7 +948,7 @@ impl From<StyleDefaults> for SnowStyleDefaults {
             stroke_width: arrow.stroke_width,
             start_arrowhead: snow_arrowhead_from_rust(arrow.start_arrowhead),
             end_arrowhead: snow_arrowhead_from_rust(arrow.end_arrowhead),
-            stroke_style: snow_arrow_stroke_style_from_rust(arrow.stroke_style),
+            stroke_style: snow_stroke_style_from_rust(arrow.stroke_style),
             arrow_type: snow_arrow_type_from_rust(arrow.arrow_type),
             ..SnowShapeStyle::default()
         };

@@ -16,7 +16,7 @@ use selection_visuals::*;
 use snow_draw_engine_core::{
     ColorRgba8, CornerRadii, DrawRect, Point, SnapConfig, SnapGuide, ViewportQuery,
     arrow::{
-        ArrowEndpointPosition, ArrowPathCommand, ArrowStrokeStyle, ArrowType, ArrowheadDashMode,
+        ArrowEndpointPosition, ArrowPathCommand, StrokeStyle, ArrowType, ArrowheadDashMode,
         ArrowheadFillMode, ArrowheadRenderPrimitive,
     },
     canvas_viewport,
@@ -25,7 +25,7 @@ use snow_draw_engine_display::{
     ArrowDisplayItem, ArrowheadDisplayDashMode, ArrowheadDisplayFillMode,
     ArrowheadDisplayPrimitive, ArrowheadDisplayPrimitiveKind, DecorationPatch, DecorationRevision,
     DecorationView, DirtyRegion, DisplayFillStyle, DisplayItemId, DisplaySpotlightCutout,
-    DisplayStrokeStyle, DisplayTextHorizontalAlign, DisplayTextVerticalAlign, FrameView,
+    DisplayTextHorizontalAlign, DisplayTextVerticalAlign, FrameView,
     LayerPatch, OverlayDisplayItem, OverlayRevision, PatchCursor, PathChunkReplacement,
     PathGeometryPatch, PenFilterGeometryPatch, RectangleDisplayItem, ReplaceRangeOp,
     SceneDisplayItem, SceneRevision, SerialNumberConnectorDisplayItem, SerialNumberDisplayItem,
@@ -33,14 +33,14 @@ use snow_draw_engine_display::{
     UiShapeKind, ViewportPatch, full_surface_dirty_region,
 };
 use snow_draw_engine_document::{
-    ArrowData, ElementData, ElementId, FillStyle, RectangleData, SerialNumberData, StrokeStyle,
+    ArrowData, ElementData, ElementId, FillStyle, RectangleData, SerialNumberData,
     TextData, TextHorizontalAlign, TextVerticalAlign, arrow_bounds, arrow_is_degenerate,
     arrowhead_render_primitives, filter_bounds, resolve_serial_number_stroke_width,
     resolve_serial_number_text_connection, serial_number_bounds, serial_number_with_selection_rect,
     text_bounds,
 };
 use snow_draw_engine_editor::{
-    ArrowHandleKind, ArrowHandleState, Editor, EditorPresentationState, EditorSession,
+    ArrowHandleKind, ArrowHandleState, EditorPresentationState, EditorSession,
     EditorViewportState, ElementCreationPreview, SelectionArrowState, SelectionBounds,
     SelectionRectState, selection_box_visible_for_members,
 };
@@ -116,28 +116,6 @@ impl ViewportComposer {
             frame_view,
             &presentation,
             session.snap_config(),
-        );
-    }
-
-    pub fn refresh_editor(
-        &mut self,
-        cache: &DocumentSceneCache,
-        model: &DocumentModel,
-        editor: &Editor,
-    ) {
-        let view = editor.view_state();
-        let frame_view = FrameView {
-            surface: view.surface,
-            camera: view.camera,
-            clear_color: view.clear_color,
-        };
-        let presentation = editor.presentation_state(model);
-        self.refresh_with_presentation(
-            cache,
-            model,
-            frame_view,
-            &presentation,
-            editor.snap_config(),
         );
     }
 
@@ -1481,7 +1459,7 @@ mod tests {
                 a: 255,
             },
             stroke_width: 4.0,
-            stroke_style: ArrowStrokeStyle::Solid,
+            stroke_style: StrokeStyle::Solid,
             fill: ColorRgba8::default(),
             fill_style: DisplayFillStyle::Solid,
             arrowhead_primitives: Vec::new(),
@@ -2120,7 +2098,7 @@ mod tests {
             &[Point::new(-40.0, -20.0), Point::new(60.0, 50.0)],
             ColorRgba8::default(),
             2.0,
-            ArrowStrokeStyle::Solid,
+            StrokeStyle::Solid,
             ArrowType::Straight,
             None,
             None,

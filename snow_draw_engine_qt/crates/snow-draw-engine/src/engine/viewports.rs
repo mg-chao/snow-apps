@@ -58,13 +58,6 @@ impl Engine {
         self.refresh_single_viewport(id)
     }
 
-    pub fn viewport_presentation_state(
-        &self,
-        id: ViewportId,
-    ) -> Result<EditorPresentationState, ErrorCode> {
-        let slot = self.viewport_slot(id)?;
-        Ok(self.editor.presentation_state(&self.model, &slot.view))
-    }
 
     pub fn acquire_patch(
         &self,

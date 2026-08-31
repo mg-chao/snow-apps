@@ -27,9 +27,6 @@ struct Changes {
 bool colorsEqual(const SnowColorRgba8& lhs, const SnowColorRgba8& rhs);
 bool cornerRadiiEqual(const SnowCornerRadii& lhs, const SnowCornerRadii& rhs);
 bool shapeStylesEqual(const SnowShapeStyle& lhs, const SnowShapeStyle& rhs);
-bool rectangleShapeStylesEqual(const SnowRectangleShapeStyle& lhs,
-                               const SnowRectangleShapeStyle& rhs);
-bool arrowStylesEqual(const SnowArrowStyle& lhs, const SnowArrowStyle& rhs);
 bool textStylesEqual(const SnowTextStyle& lhs, const SnowTextStyle& rhs);
 bool serialNumberStylesEqual(const SnowSerialNumberStyle& lhs, const SnowSerialNumberStyle& rhs);
 bool filterStylesEqual(const SnowFilterStyle& lhs, const SnowFilterStyle& rhs);

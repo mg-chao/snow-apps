@@ -2,8 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::ElementId;
 use snow_draw_engine_core::arrow::{
-    ArrowEndpointEdge, Arrowhead, BindMode, BindableRoundness, BindableShape, EngineContext,
-    FixedSegment,
+    ArrowEndpointEdge, Arrowhead, BindMode, BindableShape, EngineContext, FixedSegment,
 };
 
 pub(crate) type Point = [f64; 2];
@@ -28,7 +27,6 @@ pub(crate) struct BindableState {
     pub height: f64,
     pub angle: f64,
     pub stroke_width: f64,
-    pub roundness: Option<BindableRoundness>,
     pub z_index: Option<f64>,
     pub background_opaque: Option<bool>,
     pub binding_enabled: Option<bool>,

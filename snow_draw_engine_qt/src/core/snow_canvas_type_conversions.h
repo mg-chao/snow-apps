@@ -12,15 +12,11 @@ SnowCanvasTool toCanvasTool(SnowActiveTool tool);
 SnowActiveTool toEngineTool(SnowCanvasTool tool);
 
 SnowCanvasStyleToolbarSource toCanvasStyleToolbarSource(SnowStyleToolbarSource source);
-SnowStyleToolbarSource toEngineStyleToolbarSource(SnowCanvasStyleToolbarSource source);
 
 SnowShapeKind toEngineShapeKind(SnowCanvasShapeKind kind);
 
 SnowCanvasArrowhead toCanvasArrowhead(SnowArrowhead arrowhead);
 SnowArrowhead toEngineArrowhead(SnowCanvasArrowhead arrowhead);
-
-SnowCanvasArrowStrokeStyle toCanvasArrowStrokeStyle(SnowArrowStrokeStyle strokeStyle);
-SnowArrowStrokeStyle toEngineArrowStrokeStyle(SnowCanvasArrowStrokeStyle strokeStyle);
 
 SnowCanvasArrowType toCanvasArrowType(SnowArrowType arrowType);
 SnowArrowType toEngineArrowType(SnowCanvasArrowType arrowType);
@@ -43,12 +39,6 @@ SnowCornerRadii toEngineCornerRadii(const SnowCanvasCornerRadii& cornerRadii);
 SnowCanvasShapeStyle toCanvasShapeStyle(const SnowShapeStyle& style);
 SnowShapeStyle toEngineShapeStyle(const SnowCanvasShapeStyle& style);
 
-SnowCanvasRectangleShapeStyle toCanvasRectangleShapeStyle(const SnowRectangleShapeStyle& style);
-SnowRectangleShapeStyle toEngineRectangleShapeStyle(const SnowCanvasRectangleShapeStyle& style);
-
-SnowCanvasArrowStyle toCanvasArrowStyle(const SnowArrowStyle& style);
-SnowArrowStyle toEngineArrowStyle(const SnowCanvasArrowStyle& style);
-
 SnowCanvasTextStyle toCanvasTextStyle(const SnowTextStyle& style);
 SnowTextStyle toEngineTextStyle(const SnowCanvasTextStyle& style);
 
@@ -56,10 +46,8 @@ SnowCanvasSerialNumberStyle toCanvasSerialNumberStyle(const SnowSerialNumberStyl
 SnowSerialNumberStyle toEngineSerialNumberStyle(const SnowCanvasSerialNumberStyle& style);
 
 SnowCanvasStyleToolbarState toCanvasStyleToolbarState(const SnowStyleToolbarState& state);
-SnowStyleToolbarState toEngineStyleToolbarState(const SnowCanvasStyleToolbarState& state);
 
 SnowCanvasHistoryState toCanvasHistoryState(const SnowHistoryState& state);
-SnowHistoryState toEngineHistoryState(const SnowCanvasHistoryState& state);
 
 SnowCanvasSnapConfig toCanvasSnapConfig(const SnowSnapConfig& config);
 SnowSnapConfig toEngineSnapConfig(const SnowCanvasSnapConfig& config);

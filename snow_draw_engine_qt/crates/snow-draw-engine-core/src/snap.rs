@@ -101,9 +101,6 @@ impl DrawRect {
         }
     }
 
-    pub fn from_point(point: Point<f64>) -> Self {
-        Self::new(point.x, point.y, point.x, point.y)
-    }
 
     pub fn from_center(center: Point<f64>, width: f64, height: f64) -> Self {
         Self::new(

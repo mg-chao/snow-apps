@@ -161,13 +161,13 @@ QString arrowheadLabel(SnowCanvasArrowhead arrowhead) {
     return "Unknown";
 }
 
-QString arrowStrokeStyleLabel(SnowCanvasArrowStrokeStyle strokeStyle) {
+QString arrowStrokeStyleLabel(SnowCanvasStrokeStyle strokeStyle) {
     switch (strokeStyle) {
-    case SnowCanvasArrowStrokeStyle::Solid:
+    case SnowCanvasStrokeStyle::Solid:
         return "Solid";
-    case SnowCanvasArrowStrokeStyle::Dashed:
+    case SnowCanvasStrokeStyle::Dashed:
         return "Dashed";
-    case SnowCanvasArrowStrokeStyle::Dotted:
+    case SnowCanvasStrokeStyle::Dotted:
         return "Dotted";
     }
     return "Unknown";
@@ -239,12 +239,12 @@ void populateArrowStrokeStyleComboBox(QComboBox* comboBox) {
         return;
     }
 
-    const SnowCanvasArrowStrokeStyle strokeStyles[] = {
-        SnowCanvasArrowStrokeStyle::Solid,
-        SnowCanvasArrowStrokeStyle::Dashed,
-        SnowCanvasArrowStrokeStyle::Dotted,
+    const SnowCanvasStrokeStyle strokeStyles[] = {
+        SnowCanvasStrokeStyle::Solid,
+        SnowCanvasStrokeStyle::Dashed,
+        SnowCanvasStrokeStyle::Dotted,
     };
-    for (SnowCanvasArrowStrokeStyle strokeStyle : strokeStyles) {
+    for (SnowCanvasStrokeStyle strokeStyle : strokeStyles) {
         comboBox->addItem(arrowStrokeStyleLabel(strokeStyle), static_cast<int>(strokeStyle));
     }
 }
@@ -463,8 +463,8 @@ SnowCanvasArrowhead arrowheadFromComboBox(const QComboBox* comboBox) {
                                                                 : 0);
 }
 
-SnowCanvasArrowStrokeStyle arrowStrokeStyleFromComboBox(const QComboBox* comboBox) {
-    return static_cast<SnowCanvasArrowStrokeStyle>(
+SnowCanvasStrokeStyle arrowStrokeStyleFromComboBox(const QComboBox* comboBox) {
+    return static_cast<SnowCanvasStrokeStyle>(
         comboBox != nullptr ? comboBox->currentData().toInt() : 0);
 }
 

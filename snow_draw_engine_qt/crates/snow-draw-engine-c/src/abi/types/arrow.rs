@@ -51,14 +51,6 @@ pub enum SnowArrowhead {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SnowArrowStrokeStyle {
-    Solid = 0,
-    Dashed = 1,
-    Dotted = 2,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SnowArrowType {
     Straight = 0,
     Curve = 1,

@@ -809,8 +809,6 @@ std::vector<Scenario> makeScenarios() {
               snow_canvas_filter_render::ExecutionOptions{false, true});
     addKernel("kernel_gaussian_full_pool_1920x1080", 1, 1920, 1080, 1.0, false,
               snow_canvas_filter_render::ExecutionOptions{false, false});
-    addKernel("kernel_gaussian_legacy_1920x1080", 1, 1920, 1080, 1.0, false,
-              snow_canvas_filter_render::ExecutionOptions{false, false, true});
 
     const auto addRenderer = [&](RendererConfig config, std::string description) {
         scenarios.push_back(Scenario{
@@ -1050,7 +1048,7 @@ bool writeCsv(const std::string& path, const std::vector<Result>& results, std::
               "reconstruction_ns,presentation_ns,simd_backend\n";
     stream << std::fixed << std::setprecision(6);
     for (const Result& result : results) {
-        stream << "7," << csvEscape(result.suite) << ',' << csvEscape(result.scenario) << ','
+        stream << "1," << csvEscape(result.suite) << ',' << csvEscape(result.scenario) << ','
                << csvEscape(result.effect) << ',' << csvEscape(result.workload) << ','
                << result.width << ',' << result.height << ',' << result.devicePixelRatio << ','
                << result.strength << ',' << result.filterCount << ',' << result.exposedWidth << ','

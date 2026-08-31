@@ -4,8 +4,8 @@ use crate::arrow_geom::{
     center, clamp, distance, normalize_fixed_point, rotate_point, unrotate_point,
 };
 use crate::{
-    BINDABLE_ROUNDNESS, BindableRoundnessAliasType, BindableRoundnessType, BindableState, Bounds,
-    CanonicalBindableShape, Point, canonicalize_bindable_shape,
+    BindableState, Bounds,
+    BindableShape, Point,
 };
 
 #[path = "hit_test_binding_hit.rs"]

@@ -141,7 +141,7 @@ class ScreenshotToolPaletteStyleControls final : private ScreenshotToolPaletteSt
     void setStrokeWidth(double strokeWidth);
     void cycleStrokeWidth();
     void setStrokeColor(const QColor& color);
-    void setStrokeStyle(SnowCanvasArrowStrokeStyle strokeStyle);
+    void setStrokeStyle(SnowCanvasStrokeStyle strokeStyle);
     void setFillColor(const QColor& color);
     void setFillStyle(SnowCanvasFillStyle fillStyle);
     void setCornerRadius(int cornerRadius);
@@ -151,7 +151,7 @@ class ScreenshotToolPaletteStyleControls final : private ScreenshotToolPaletteSt
     void setArrowStrokeWidth(double strokeWidth);
     void cycleArrowStrokeWidth();
     void setArrowStrokeColor(const QColor& color);
-    void setArrowStrokeStyle(SnowCanvasArrowStrokeStyle strokeStyle);
+    void setArrowStrokeStyle(SnowCanvasStrokeStyle strokeStyle);
     void setArrowType(SnowCanvasArrowType arrowType);
     void setArrowhead(bool start, SnowCanvasArrowhead arrowhead);
     void setTextColor(const QColor& color);
@@ -345,7 +345,7 @@ class ScreenshotToolPaletteStyleControls final : private ScreenshotToolPaletteSt
         QVector<adqt::widgets::AdButton*> colorPresets;
         QVector<QColor> colorValues;
         QVector<StrokeStylePreviewButton*> styleButtons;
-        QVector<SnowCanvasArrowStrokeStyle> styleValues;
+        QVector<SnowCanvasStrokeStyle> styleValues;
     };
 
     struct StrokeEditorConfig {
@@ -354,19 +354,19 @@ class ScreenshotToolPaletteStyleControls final : private ScreenshotToolPaletteSt
         QString styleRowObjectName;
         QVector<QColor> colorValues;
         std::function<ScreenshotToolPaletteTranslationText(const QColor& color)> colorTooltip;
-        std::function<ScreenshotToolPaletteTranslationText(SnowCanvasArrowStrokeStyle style)>
+        std::function<ScreenshotToolPaletteTranslationText(SnowCanvasStrokeStyle style)>
             styleTooltip;
     };
 
     [[nodiscard]] StrokeEditor
     addStrokeEditor(QBoxLayout* layout, QWidget* parent, QObject* receiver,
                     const StrokeEditorConfig& config, const QColor& initialColor,
-                    SnowCanvasArrowStrokeStyle initialStyle, bool* handlingChange,
+                    SnowCanvasStrokeStyle initialStyle, bool* handlingChange,
                     const std::function<void(const QColor&)>& setColor,
-                    const std::function<void(SnowCanvasArrowStrokeStyle)>& setStyle,
+                    const std::function<void(SnowCanvasStrokeStyle)>& setStyle,
                     const ScreenshotToolPaletteButtonMetrics& metrics);
     void updateStrokeEditor(StrokeEditor& editor, const QColor& color,
-                            SnowCanvasArrowStrokeStyle style, bool colorMixed, bool styleMixed);
+                            SnowCanvasStrokeStyle style, bool colorMixed, bool styleMixed);
     void refreshStrokeEditorMetrics(StrokeEditor& editor,
                                     const ScreenshotToolPaletteButtonMetrics& metrics);
 

@@ -1,8 +1,8 @@
 use snow_draw_engine_core::{
     ColorRgba8, CornerRadii,
-    arrow::{ArrowStrokeStyle, ArrowType, Arrowhead},
+    arrow::{StrokeStyle, ArrowType, Arrowhead},
 };
-use snow_draw_engine_document::{FillStyle, StrokeStyle, TextHorizontalAlign, TextVerticalAlign};
+use snow_draw_engine_document::{FillStyle, TextHorizontalAlign, TextVerticalAlign};
 
 use crate::{
     ArrowStyle, FilterStyle, RectangleShapeStyle, SerialNumberStyle, ShapeStyle, TextStyle,
@@ -51,7 +51,7 @@ pub fn editor_style_defaults() -> EditorStyleDefaults {
             stroke_width: 2.0,
             start_arrowhead: None,
             end_arrowhead: Some(Arrowhead::Arrow),
-            stroke_style: ArrowStrokeStyle::Solid,
+            stroke_style: StrokeStyle::Solid,
             arrow_type: ArrowType::Curve,
         },
         line: ShapeStyle {
@@ -68,7 +68,7 @@ pub fn editor_style_defaults() -> EditorStyleDefaults {
             corner_radii: CornerRadii::default(),
             start_arrowhead: None,
             end_arrowhead: None,
-            stroke_style: ArrowStrokeStyle::Solid,
+            stroke_style: StrokeStyle::Solid,
             arrow_type: ArrowType::Curve,
             opacity: 1.0,
             highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
@@ -87,7 +87,7 @@ pub fn editor_style_defaults() -> EditorStyleDefaults {
             corner_radii: CornerRadii::default(),
             start_arrowhead: None,
             end_arrowhead: None,
-            stroke_style: ArrowStrokeStyle::Solid,
+            stroke_style: StrokeStyle::Solid,
             arrow_type: ArrowType::Curve,
             opacity: 1.0,
             highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
@@ -101,7 +101,7 @@ pub fn editor_style_defaults() -> EditorStyleDefaults {
             corner_radii: CornerRadii::default(),
             start_arrowhead: None,
             end_arrowhead: None,
-            stroke_style: ArrowStrokeStyle::Solid,
+            stroke_style: StrokeStyle::Solid,
             arrow_type: ArrowType::Straight,
             opacity: 1.0,
             highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,
@@ -115,7 +115,7 @@ pub fn editor_style_defaults() -> EditorStyleDefaults {
             corner_radii: CornerRadii::default(),
             start_arrowhead: None,
             end_arrowhead: None,
-            stroke_style: ArrowStrokeStyle::Solid,
+            stroke_style: StrokeStyle::Solid,
             arrow_type: ArrowType::Straight,
             opacity: 1.0,
             highlight_shape: snow_draw_engine_document::HighlightShape::Rectangle,

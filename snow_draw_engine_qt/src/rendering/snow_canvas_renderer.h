@@ -80,15 +80,12 @@ struct FilterRenderDiagnostics {
     std::uint64_t reconstructionNanoseconds = 0;
     std::uint64_t presentationNanoseconds = 0;
     const char* simdBackend = "scalar";
-    // Compatibility aliases for existing diagnostics consumers.
+    // Aggregated counters surfaced to test/benchmark consumers.
     std::size_t workingSurfacePixelCount = 0;
     std::size_t peakEffectPixelCount = 0;
     std::size_t recorderCount = 0;
     std::size_t layerCount = 0;
     std::size_t filterPassCount = 0;
-    std::size_t batchCount = 0;
-    std::size_t batchCacheHits = 0;
-    std::size_t batchCacheMisses = 0;
 };
 
 struct SceneRenderRequest {
@@ -122,7 +119,6 @@ FilterRenderDiagnostics filterRenderDiagnosticsForCurrentThread();
 void resetFilterRenderDiagnosticsForCurrentThread();
 void accumulateFilterRenderDiagnostics(FilterRenderDiagnostics& target,
                                        const FilterRenderDiagnostics& source);
-void setFilterRenderDiagnosticsForCurrentThread(const FilterRenderDiagnostics& diagnostics);
 std::size_t watermarkLayoutCacheBuildCountForCurrentThread();
 std::size_t watermarkDirectFallbackCountForCurrentThread();
 WatermarkRenderDiagnostics watermarkRenderDiagnosticsForCurrentThread();

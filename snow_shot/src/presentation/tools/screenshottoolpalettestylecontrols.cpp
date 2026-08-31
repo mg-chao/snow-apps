@@ -1003,9 +1003,9 @@ void ScreenshotToolPaletteStyleControls::refreshFillEditorMetrics(
 ScreenshotToolPaletteStyleControls::StrokeEditor
 ScreenshotToolPaletteStyleControls::addStrokeEditor(
     QBoxLayout* layout, QWidget* parent, QObject* receiver, const StrokeEditorConfig& config,
-    const QColor& initialColor, SnowCanvasArrowStrokeStyle initialStyle, bool* handlingChange,
+    const QColor& initialColor, SnowCanvasStrokeStyle initialStyle, bool* handlingChange,
     const std::function<void(const QColor&)>& setColor,
-    const std::function<void(SnowCanvasArrowStrokeStyle)>& setStyle,
+    const std::function<void(SnowCanvasStrokeStyle)>& setStyle,
     const ScreenshotToolPaletteButtonMetrics& metrics) {
     StrokeEditor editor;
     if (layout == nullptr || parent == nullptr || receiver == nullptr) {
@@ -1015,9 +1015,9 @@ ScreenshotToolPaletteStyleControls::addStrokeEditor(
     const ScreenshotToolPaletteButtonMetrics popupMetrics = popupButtonMetrics(metrics);
     editor.colorValues = config.colorValues;
     editor.styleValues = {
-        SnowCanvasArrowStrokeStyle::Solid,
-        SnowCanvasArrowStrokeStyle::Dashed,
-        SnowCanvasArrowStrokeStyle::Dotted,
+        SnowCanvasStrokeStyle::Solid,
+        SnowCanvasStrokeStyle::Dashed,
+        SnowCanvasStrokeStyle::Dotted,
     };
     editor.picker =
         createColorPickerShell(parent, config.accessibleName, initialColor, false, false);
@@ -1031,7 +1031,7 @@ ScreenshotToolPaletteStyleControls::addStrokeEditor(
         createColorPickerPopupContent(editor.picker, config.popupObjectName, popupMetrics);
     ColorPickerPopupLayout styleRow =
         addColorPickerPopupRow(popupContent, config.styleRowObjectName, popupMetrics);
-    for (SnowCanvasArrowStrokeStyle style : editor.styleValues) {
+    for (SnowCanvasStrokeStyle style : editor.styleValues) {
         const ScreenshotToolPaletteTranslationText tooltip =
             config.styleTooltip
                 ? config.styleTooltip(style)
@@ -1076,7 +1076,7 @@ ScreenshotToolPaletteStyleControls::addStrokeEditor(
 
 void ScreenshotToolPaletteStyleControls::updateStrokeEditor(StrokeEditor& editor,
                                                             const QColor& color,
-                                                            SnowCanvasArrowStrokeStyle style,
+                                                            SnowCanvasStrokeStyle style,
                                                             bool colorMixed, bool styleMixed) {
     if (editor.picker != nullptr) {
         const QSignalBlocker blocker(editor.picker);
@@ -1426,10 +1426,10 @@ void ScreenshotToolPaletteStyleControls::addStrokeColorControls(
     strokeConfig.colorTooltip = [](const QColor& color) {
         return ScreenshotToolPaletteTranslationText("Stroke color %1").arg(color.name());
     };
-    strokeConfig.styleTooltip = [](SnowCanvasArrowStrokeStyle style) {
-        return style == SnowCanvasArrowStrokeStyle::Dashed
+    strokeConfig.styleTooltip = [](SnowCanvasStrokeStyle style) {
+        return style == SnowCanvasStrokeStyle::Dashed
                    ? ScreenshotToolPaletteTranslationText("Dashed stroke")
-               : style == SnowCanvasArrowStrokeStyle::Dotted
+               : style == SnowCanvasStrokeStyle::Dotted
                    ? ScreenshotToolPaletteTranslationText("Dotted stroke")
                    : ScreenshotToolPaletteTranslationText("Solid stroke");
     };
@@ -1437,7 +1437,7 @@ void ScreenshotToolPaletteStyleControls::addStrokeColorControls(
         layout, parent, receiver, strokeConfig, m_rectangleStyle.strokeColor(),
         m_rectangleStyle.strokeStyle(), &m_handlingStrokeColorPickerChange,
         [this](const QColor& color) { setStrokeColor(color); },
-        [this](SnowCanvasArrowStrokeStyle style) { setStrokeStyle(style); }, metrics);
+        [this](SnowCanvasStrokeStyle style) { setStrokeStyle(style); }, metrics);
 }
 
 void ScreenshotToolPaletteStyleControls::addFillColorControls(
@@ -1594,10 +1594,10 @@ void ScreenshotToolPaletteStyleControls::addArrowControls(
     arrowStrokeConfig.colorTooltip = [](const QColor& color) {
         return ScreenshotToolPaletteTranslationText("Arrow stroke color %1").arg(color.name());
     };
-    arrowStrokeConfig.styleTooltip = [](SnowCanvasArrowStrokeStyle style) {
-        return style == SnowCanvasArrowStrokeStyle::Dashed
+    arrowStrokeConfig.styleTooltip = [](SnowCanvasStrokeStyle style) {
+        return style == SnowCanvasStrokeStyle::Dashed
                    ? ScreenshotToolPaletteTranslationText("Dashed arrow stroke")
-               : style == SnowCanvasArrowStrokeStyle::Dotted
+               : style == SnowCanvasStrokeStyle::Dotted
                    ? ScreenshotToolPaletteTranslationText("Dotted arrow stroke")
                    : ScreenshotToolPaletteTranslationText("Solid arrow stroke");
     };
@@ -1605,7 +1605,7 @@ void ScreenshotToolPaletteStyleControls::addArrowControls(
         layout, parent, receiver, arrowStrokeConfig, m_arrowStyle.stroke, m_arrowStyle.strokeStyle,
         &m_handlingArrowStrokeColorPickerChange,
         [this](const QColor& color) { setArrowStrokeColor(color); },
-        [this](SnowCanvasArrowStrokeStyle style) { setArrowStrokeStyle(style); }, metrics);
+        [this](SnowCanvasStrokeStyle style) { setArrowStrokeStyle(style); }, metrics);
 
     if (addGroupSeparator) {
         addGroupSeparator();
@@ -2858,7 +2858,7 @@ void ScreenshotToolPaletteStyleControls::setStrokeColor(const QColor& color) {
                             activeShapeKind());
 }
 
-void ScreenshotToolPaletteStyleControls::setStrokeStyle(SnowCanvasArrowStrokeStyle strokeStyle) {
+void ScreenshotToolPaletteStyleControls::setStrokeStyle(SnowCanvasStrokeStyle strokeStyle) {
     const bool wasMixed = hasMixedProperty(SnowCanvasShapeStylePropertyStrokeStyle);
     auto& style = activeShapeStyle();
     auto& creationStyle = activeCreationShapeStyle();
@@ -2993,7 +2993,7 @@ void ScreenshotToolPaletteStyleControls::setArrowStrokeColor(const QColor& color
 }
 
 void ScreenshotToolPaletteStyleControls::setArrowStrokeStyle(
-    SnowCanvasArrowStrokeStyle strokeStyle) {
+    SnowCanvasStrokeStyle strokeStyle) {
     const bool wasMixed = hasMixedProperty(SnowCanvasShapeStylePropertyStrokeStyle);
     if (m_arrowStyle.strokeStyle == strokeStyle && !wasMixed) {
         return;

@@ -1,7 +1,7 @@
 use crate::dirty_regions::clip_dirty_region;
 use snow_draw_engine_core::{
     ColorRgba8, DrawRect, Point, SnapGuideAxis, SnapGuideKind,
-    arrow::{ArrowStrokeStyle, ArrowType, Arrowhead},
+    arrow::{StrokeStyle, ArrowType, Arrowhead},
     rotated_rect_extents,
 };
 use snow_draw_engine_display::{
@@ -464,7 +464,7 @@ fn display_arrow_to_document_arrow(
     end_arrowhead: Option<Arrowhead>,
     stroke: ColorRgba8,
     stroke_width: f64,
-    stroke_style: ArrowStrokeStyle,
+    stroke_style: StrokeStyle,
 ) -> ArrowData {
     let global_points = points
         .iter()

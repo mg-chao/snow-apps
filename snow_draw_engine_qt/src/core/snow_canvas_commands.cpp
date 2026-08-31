@@ -73,7 +73,7 @@ MutationResult undo(SnowRuntime runtime) {
     if (runtime == nullptr) {
         return result;
     }
-    result.success = snow_engine_undo_ex(runtime, result.changedViewports.outParam()) == SNOW_OK;
+    result.success = snow_runtime_undo_ex(runtime, result.changedViewports.outParam()) == SNOW_OK;
     return result;
 }
 
@@ -82,7 +82,7 @@ MutationResult redo(SnowRuntime runtime) {
     if (runtime == nullptr) {
         return result;
     }
-    result.success = snow_engine_redo_ex(runtime, result.changedViewports.outParam()) == SNOW_OK;
+    result.success = snow_runtime_redo_ex(runtime, result.changedViewports.outParam()) == SNOW_OK;
     return result;
 }
 
@@ -265,19 +265,6 @@ MutationResult clearActiveTextDraftPresentation(SnowRuntime runtime, SnowViewpor
     return result;
 }
 
-ActiveTextDraftPresentationResult activeTextDraftPresentation(SnowRuntime runtime,
-                                                              SnowViewport viewport) {
-    ActiveTextDraftPresentationResult result;
-    if (!hasViewport(runtime, viewport)) {
-        return result;
-    }
-    std::uint8_t active = 0;
-    result.success = snow_viewport_get_active_text_draft_presentation(
-                         runtime, viewport, &result.info, &result.style, &active) == SNOW_OK;
-    result.active = active != 0;
-    return result;
-}
-
 MutationResult setShapeStylePatch(SnowRuntime runtime, SnowViewport viewport,
                                   const SnowShapeStyle& style, std::uint32_t properties,
                                   SnowShapeKind kind) {
@@ -322,17 +309,6 @@ MutationResult setFilterStyle(SnowRuntime runtime, SnowViewport viewport,
     result.success =
         snow_viewport_set_filter_style_ex(runtime, viewport, &style, properties,
                                           result.changedViewports.outParam()) == SNOW_OK;
-    return result;
-}
-
-MutationResult setRectangleShapeStyle(SnowRuntime runtime, SnowViewport viewport,
-                                      const SnowRectangleShapeStyle& style) {
-    MutationResult result;
-    if (!hasViewport(runtime, viewport)) {
-        return result;
-    }
-    result.success = snow_viewport_set_rectangle_shape_style_ex(
-                         runtime, viewport, &style, result.changedViewports.outParam()) == SNOW_OK;
     return result;
 }
 

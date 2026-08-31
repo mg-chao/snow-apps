@@ -6,22 +6,16 @@ use crate::{
     ApplyResult, ArrowData, ChangeSet, DocumentDelta, ElementChangeSnapshot, FreeDrawData,
     Operation, Transaction, arrow_bounds, arrow_hit_test, arrow_is_degenerate,
     document_geometry::{
-        element_visible_bounds, filter_bounds, filter_rect_proxy, normalize_font_family,
-        pen_filter_bounds, pen_filter_rect_proxy, rect_bounds, rectangle_hit_test,
-        resolve_serial_number_diameter, serial_number_bounds, serial_number_hit_test,
-        serial_number_rect_proxy, text_bounds, text_hit_test, validate_element_data,
-        validate_filter, validate_serial_number, validate_text,
-    },
-    element_schema::{
-        FILTER_TYPE_ID, PEN_FILTER_TYPE_ID, RECTANGLE_HIGHLIGHT_TYPE_ID, RECTANGLE_TYPE_ID,
-        SERIAL_NUMBER_TYPE_ID, SPOTLIGHT_TYPE_ID, TEXT_TYPE_ID, field,
+        element_visible_bounds, filter_bounds, filter_rect_proxy, pen_filter_bounds,
+        pen_filter_rect_proxy, rect_bounds, rectangle_hit_test, serial_number_bounds,
+        serial_number_hit_test, serial_number_rect_proxy, text_bounds, text_hit_test,
+        validate_element_data,
     },
     free_draw_bounds, free_draw_hit_test,
 };
-use serde_json::{Map, Number, Value};
 pub use snow_draw_engine_core::arrow::StrokeStyle;
 use snow_draw_engine_core::{
-    Camera, ColorRgba8, CornerRadii, DrawRect, ErrorCode, Point, validate_camera,
+    ColorRgba8, CornerRadii, DrawRect, ErrorCode, Point,
 };
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -113,14 +107,6 @@ impl ElementId {
             generation: generation.parse().ok()?,
         })
     }
-}
-
-pub fn element_id_key(id: ElementId) -> String {
-    id.stable_key()
-}
-
-pub fn element_id_from_key(key: &str) -> Option<ElementId> {
-    ElementId::from_stable_key(key)
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -234,75 +220,6 @@ impl FilterData {
             1.0
         }
     }
-
-    pub fn with_strength(mut self, strength: f64) -> Self {
-        self.strength = Self::normalized_strength(strength);
-        self
-    }
-
-    pub fn to_json_payload(&self) -> Result<Map<String, Value>, ErrorCode> {
-        validate_filter(self)?;
-        let mut payload = Map::new();
-        payload.insert(
-            field::TYPE_ID.to_owned(),
-            Value::String(FILTER_TYPE_ID.to_owned()),
-        );
-        payload.insert(
-            field::FILTER_TYPE.to_owned(),
-            Value::String(
-                match self.filter_type {
-                    CanvasFilterType::Mosaic => "mosaic",
-                    CanvasFilterType::GaussianBlur => "gaussianBlur",
-                    CanvasFilterType::Grayscale => "grayscale",
-                    CanvasFilterType::Inversion => "inversion",
-                }
-                .to_owned(),
-            ),
-        );
-        payload.insert(
-            field::STRENGTH.to_owned(),
-            Value::Number(
-                Number::from_f64(Self::normalized_strength(self.strength))
-                    .ok_or(ErrorCode::InvalidArgument)?,
-            ),
-        );
-        Ok(payload)
-    }
-
-    pub fn from_json_payload(
-        payload: &Map<String, Value>,
-        center: Point<f64>,
-        width: f64,
-        height: f64,
-    ) -> Result<Self, ErrorCode> {
-        if payload.len() != 3
-            || payload.get(field::TYPE_ID).and_then(Value::as_str) != Some(FILTER_TYPE_ID)
-        {
-            return Err(ErrorCode::InvalidArgument);
-        }
-        let filter_type = match payload.get(field::FILTER_TYPE).and_then(Value::as_str) {
-            Some("mosaic") => CanvasFilterType::Mosaic,
-            Some("gaussianBlur") => CanvasFilterType::GaussianBlur,
-            Some("grayscale") => CanvasFilterType::Grayscale,
-            Some("inversion") => CanvasFilterType::Inversion,
-            _ => return Err(ErrorCode::InvalidArgument),
-        };
-        let strength = payload
-            .get(field::STRENGTH)
-            .and_then(Value::as_f64)
-            .ok_or(ErrorCode::InvalidArgument)?;
-        let filter = Self {
-            center,
-            width,
-            height,
-            rotation: 0.0,
-            filter_type,
-            strength: Self::normalized_strength(strength),
-            opacity: 1.0,
-        };
-        validate_filter(&filter)?;
-        Ok(filter)
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -333,10 +250,6 @@ impl SpotlightConfig {
             self.opacity.clamp(0.0, 1.0)
         };
         self
-    }
-
-    pub fn effective_alpha(self) -> f64 {
-        f64::from(self.color.a) / 255.0 * self.opacity.clamp(0.0, 1.0)
     }
 }
 
@@ -467,131 +380,6 @@ impl PenFilterData {
             })
             .collect()
     }
-
-    pub fn to_json_payload(&self) -> Result<Map<String, Value>, ErrorCode> {
-        crate::validate_pen_filter(self)?;
-        let mut payload = Map::new();
-        payload.insert(
-            field::TYPE_ID.to_owned(),
-            Value::String(PEN_FILTER_TYPE_ID.to_owned()),
-        );
-        payload.insert(
-            field::POINTS.to_owned(),
-            Value::Array(
-                self.points
-                    .iter()
-                    .map(|point| {
-                        let mut value = Map::new();
-                        value.insert(
-                            "x".to_owned(),
-                            Value::Number(Number::from_f64(point[0]).unwrap()),
-                        );
-                        value.insert(
-                            "y".to_owned(),
-                            Value::Number(Number::from_f64(point[1]).unwrap()),
-                        );
-                        Value::Object(value)
-                    })
-                    .collect(),
-            ),
-        );
-        payload.insert(
-            field::FILTER_TYPE.to_owned(),
-            Value::String(
-                match self.filter_type {
-                    CanvasFilterType::Mosaic => "mosaic",
-                    CanvasFilterType::GaussianBlur => "gaussianBlur",
-                    CanvasFilterType::Grayscale => "grayscale",
-                    CanvasFilterType::Inversion => "inversion",
-                }
-                .to_owned(),
-            ),
-        );
-        payload.insert(
-            field::STRENGTH.to_owned(),
-            Value::Number(
-                Number::from_f64(FilterData::normalized_strength(self.strength)).unwrap(),
-            ),
-        );
-        payload.insert(
-            field::STROKE_WIDTH.to_owned(),
-            Value::Number(Number::from_f64(self.stroke_width).unwrap()),
-        );
-        Ok(payload)
-    }
-
-    pub fn from_json_payload(
-        payload: &Map<String, Value>,
-        bounds: DrawRect,
-    ) -> Result<Self, ErrorCode> {
-        if payload.len() != 5
-            || payload.get(field::TYPE_ID).and_then(Value::as_str) != Some(PEN_FILTER_TYPE_ID)
-            || ![bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y]
-                .into_iter()
-                .all(f64::is_finite)
-            || bounds.max_x < bounds.min_x
-            || bounds.max_y < bounds.min_y
-        {
-            return Err(ErrorCode::InvalidArgument);
-        }
-        let point_values = payload
-            .get(field::POINTS)
-            .and_then(Value::as_array)
-            .ok_or(ErrorCode::InvalidArgument)?;
-        if point_values.len() < 2 {
-            return Err(ErrorCode::InvalidArgument);
-        }
-        let points = point_values
-            .iter()
-            .map(|value| {
-                let point = value.as_object().ok_or(ErrorCode::InvalidArgument)?;
-                if point.len() != 2 {
-                    return Err(ErrorCode::InvalidArgument);
-                }
-                let x = point
-                    .get("x")
-                    .and_then(Value::as_f64)
-                    .ok_or(ErrorCode::InvalidArgument)?;
-                let y = point
-                    .get("y")
-                    .and_then(Value::as_f64)
-                    .ok_or(ErrorCode::InvalidArgument)?;
-                if !(0.0..=1.0).contains(&x) || !(0.0..=1.0).contains(&y) {
-                    return Err(ErrorCode::InvalidArgument);
-                }
-                Ok([x, y])
-            })
-            .collect::<Result<Vec<_>, ErrorCode>>()?;
-        let filter_type = match payload.get(field::FILTER_TYPE).and_then(Value::as_str) {
-            Some("mosaic") => CanvasFilterType::Mosaic,
-            Some("gaussianBlur") => CanvasFilterType::GaussianBlur,
-            Some("grayscale") => CanvasFilterType::Grayscale,
-            Some("inversion") => CanvasFilterType::Inversion,
-            _ => return Err(ErrorCode::InvalidArgument),
-        };
-        let pen_filter = Self {
-            x: bounds.min_x,
-            y: bounds.min_y,
-            width: bounds.max_x - bounds.min_x,
-            height: bounds.max_y - bounds.min_y,
-            rotation: 0.0,
-            points,
-            filter_type,
-            strength: FilterData::normalized_strength(
-                payload
-                    .get(field::STRENGTH)
-                    .and_then(Value::as_f64)
-                    .ok_or(ErrorCode::InvalidArgument)?,
-            ),
-            stroke_width: payload
-                .get(field::STROKE_WIDTH)
-                .and_then(Value::as_f64)
-                .ok_or(ErrorCode::InvalidArgument)?,
-            opacity: 1.0,
-        };
-        crate::validate_pen_filter(&pen_filter)?;
-        Ok(pen_filter)
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -611,82 +399,6 @@ pub enum HighlightShape {
 }
 
 impl RectangleData {
-    pub fn to_rectangle_json_payload(&self) -> Result<Map<String, Value>, ErrorCode> {
-        if self.is_highlight()
-            || self.corner_radii != CornerRadii::splat(self.corner_radii.top_left)
-        {
-            return Err(ErrorCode::InvalidArgument);
-        }
-        crate::validate_rectangle(self)?;
-
-        let mut payload = Map::new();
-        payload.insert(
-            field::TYPE_ID.to_owned(),
-            Value::String(RECTANGLE_TYPE_ID.to_owned()),
-        );
-        payload.insert(
-            field::CORNER_RADIUS.to_owned(),
-            number_value(self.corner_radii.top_left),
-        );
-        payload.insert(
-            field::SHAPE.to_owned(),
-            Value::String(
-                match self.highlight_shape {
-                    HighlightShape::Rectangle => "rectangle",
-                    HighlightShape::Ellipse => "ellipse",
-                    HighlightShape::Diamond => "diamond",
-                }
-                .to_owned(),
-            ),
-        );
-        payload.insert(field::FILL_COLOR.to_owned(), argb_value(self.fill));
-        payload.insert(field::COLOR.to_owned(), argb_value(self.stroke));
-        payload.insert(
-            field::STROKE_WIDTH.to_owned(),
-            number_value(self.stroke_width),
-        );
-        payload.insert(
-            field::STROKE_STYLE.to_owned(),
-            Value::String(stroke_style_name(self.stroke_style).to_owned()),
-        );
-        payload.insert(
-            field::FILL_STYLE.to_owned(),
-            Value::String(fill_style_name(self.fill_style).to_owned()),
-        );
-        Ok(payload)
-    }
-
-    pub fn from_rectangle_json_payload(
-        payload: &Map<String, Value>,
-        center: Point<f64>,
-        width: f64,
-        height: f64,
-    ) -> Result<Self, ErrorCode> {
-        expect_type_id(payload, RECTANGLE_TYPE_ID)?;
-        let rectangle = Self {
-            rectangle_kind: RectangleElementKind::Rectangle,
-            highlight_shape: match payload.get(field::SHAPE).and_then(Value::as_str) {
-                None | Some("rectangle") => HighlightShape::Rectangle,
-                Some("ellipse") => HighlightShape::Ellipse,
-                Some("diamond") => HighlightShape::Diamond,
-                _ => return Err(ErrorCode::InvalidArgument),
-            },
-            center,
-            width,
-            height,
-            rotation: 0.0,
-            fill: required_color(payload, field::FILL_COLOR)?,
-            fill_style: decode_fill_style(required_string(payload, field::FILL_STYLE)?)?,
-            stroke: required_color(payload, field::COLOR)?,
-            stroke_width: required_f64(payload, field::STROKE_WIDTH)?,
-            stroke_style: decode_stroke_style(required_string(payload, field::STROKE_STYLE)?)?,
-            corner_radii: CornerRadii::splat(required_f64(payload, field::CORNER_RADIUS)?),
-            opacity: 1.0,
-        };
-        crate::validate_rectangle(&rectangle)?;
-        Ok(rectangle)
-    }
-
     pub fn into_highlight(mut self, shape: HighlightShape) -> Self {
         debug_assert!(shape != HighlightShape::Diamond);
         self.rectangle_kind = RectangleElementKind::RectangleHighlight;
@@ -731,102 +443,6 @@ impl RectangleData {
         } else {
             ElementKind::Rectangle
         }
-    }
-
-    pub fn to_highlight_json_payload(&self) -> Result<Map<String, Value>, ErrorCode> {
-        if !self.is_highlight() || !self.stroke_width.is_finite() {
-            return Err(ErrorCode::InvalidArgument);
-        }
-        let mut payload = Map::new();
-        payload.insert(
-            field::TYPE_ID.to_owned(),
-            Value::String(RECTANGLE_HIGHLIGHT_TYPE_ID.to_owned()),
-        );
-        payload.insert(field::COLOR.to_owned(), argb_value(self.fill));
-        payload.insert(field::STROKE_COLOR.to_owned(), argb_value(self.stroke));
-        payload.insert(
-            field::STROKE_WIDTH.to_owned(),
-            Value::Number(Number::from_f64(self.stroke_width).ok_or(ErrorCode::InvalidArgument)?),
-        );
-        Ok(payload)
-    }
-
-    pub fn from_highlight_json_payload(
-        payload: &Map<String, Value>,
-        center: Point<f64>,
-        width: f64,
-        height: f64,
-    ) -> Result<Self, ErrorCode> {
-        if payload.get(field::TYPE_ID).and_then(Value::as_str) != Some(RECTANGLE_HIGHLIGHT_TYPE_ID)
-        {
-            return Err(ErrorCode::InvalidArgument);
-        }
-        let color = required_color(payload, field::COLOR)?;
-        let stroke = required_color(payload, field::STROKE_COLOR)?;
-        let stroke_width = payload
-            .get(field::STROKE_WIDTH)
-            .and_then(Value::as_f64)
-            .filter(|value| value.is_finite() && *value >= 0.0)
-            .ok_or(ErrorCode::InvalidArgument)?;
-        let highlight = RectangleData {
-            rectangle_kind: RectangleElementKind::RectangleHighlight,
-            highlight_shape: HighlightShape::Rectangle,
-            center,
-            width,
-            height,
-            rotation: 0.0,
-            fill: color,
-            fill_style: FillStyle::Solid,
-            stroke,
-            stroke_width,
-            stroke_style: StrokeStyle::Solid,
-            corner_radii: CornerRadii::default(),
-            opacity: 1.0,
-        };
-        crate::validate_rectangle(&highlight)?;
-        Ok(highlight)
-    }
-
-    pub fn to_spotlight_json_payload(&self) -> Result<Map<String, Value>, ErrorCode> {
-        if !self.is_spotlight() || self.opacity != 1.0 {
-            return Err(ErrorCode::InvalidArgument);
-        }
-        crate::validate_rectangle(self)?;
-        let mut payload = Map::new();
-        payload.insert(
-            field::TYPE_ID.to_owned(),
-            Value::String(SPOTLIGHT_TYPE_ID.to_owned()),
-        );
-        Ok(payload)
-    }
-
-    pub fn from_spotlight_json_payload(
-        payload: &Map<String, Value>,
-        center: Point<f64>,
-        width: f64,
-        height: f64,
-    ) -> Result<Self, ErrorCode> {
-        expect_type_id(payload, SPOTLIGHT_TYPE_ID)?;
-        if payload.len() != 1 {
-            return Err(ErrorCode::InvalidArgument);
-        }
-        let spotlight = RectangleData {
-            rectangle_kind: RectangleElementKind::Spotlight,
-            highlight_shape: HighlightShape::Rectangle,
-            center,
-            width,
-            height,
-            rotation: 0.0,
-            fill: ColorRgba8::default(),
-            fill_style: FillStyle::Solid,
-            stroke: ColorRgba8::default(),
-            stroke_width: 0.0,
-            stroke_style: StrokeStyle::Solid,
-            corner_radii: CornerRadii::default(),
-            opacity: 1.0,
-        };
-        crate::validate_rectangle(&spotlight)?;
-        Ok(spotlight)
     }
 }
 
@@ -875,82 +491,6 @@ pub struct TextData {
     pub opacity: f64,
 }
 
-impl TextData {
-    pub fn to_json_payload(&self) -> Map<String, Value> {
-        let mut payload = Map::new();
-        payload.insert(
-            field::TYPE_ID.to_owned(),
-            Value::String(TEXT_TYPE_ID.to_owned()),
-        );
-        payload.insert(field::TEXT.to_owned(), Value::String(self.text.clone()));
-        payload.insert(field::COLOR.to_owned(), argb_value(self.color));
-        payload.insert(field::FONT_SIZE.to_owned(), number_value(self.font_size));
-        payload.insert(
-            field::FONT_FAMILY.to_owned(),
-            Value::String(self.font_family.clone().unwrap_or_default()),
-        );
-        payload.insert(
-            field::HORIZONTAL_ALIGN.to_owned(),
-            Value::String(text_horizontal_align_name(self.horizontal_align).to_owned()),
-        );
-        payload.insert(
-            field::VERTICAL_ALIGN.to_owned(),
-            Value::String(text_vertical_align_name(self.vertical_align).to_owned()),
-        );
-        payload.insert(field::FILL_COLOR.to_owned(), argb_value(self.fill));
-        payload.insert(
-            field::FILL_STYLE.to_owned(),
-            Value::String(fill_style_name(self.fill_style).to_owned()),
-        );
-        payload.insert(field::STROKE_COLOR.to_owned(), argb_value(self.stroke));
-        payload.insert(
-            field::STROKE_WIDTH.to_owned(),
-            number_value(self.stroke_width),
-        );
-        payload.insert(
-            field::CORNER_RADIUS.to_owned(),
-            number_value(self.corner_radii.top_left),
-        );
-        payload.insert(field::AUTO_RESIZE.to_owned(), Value::Bool(self.auto_resize));
-        payload
-    }
-
-    pub fn from_json_payload(payload: &Map<String, Value>) -> Result<Self, ErrorCode> {
-        expect_type_id(payload, TEXT_TYPE_ID)?;
-        let mut text = TextData {
-            text: required_string(payload, field::TEXT)?.to_owned(),
-            color: required_color(payload, field::COLOR)?,
-            font_size: required_f64(payload, field::FONT_SIZE)?,
-            font_family: normalize_font_family(required_nullable_string(
-                payload,
-                field::FONT_FAMILY,
-            )?),
-            horizontal_align: decode_text_horizontal_align(required_string(
-                payload,
-                field::HORIZONTAL_ALIGN,
-            )?)?,
-            vertical_align: decode_text_vertical_align(required_string(
-                payload,
-                field::VERTICAL_ALIGN,
-            )?)?,
-            fill: required_color(payload, field::FILL_COLOR)?,
-            fill_style: decode_fill_style(required_string(payload, field::FILL_STYLE)?)?,
-            stroke: required_color(payload, field::STROKE_COLOR)?,
-            stroke_width: required_f64(payload, field::STROKE_WIDTH)?,
-            auto_resize: required_bool(payload, field::AUTO_RESIZE)?,
-            ..TextData::default()
-        };
-        text.corner_radii = CornerRadii::splat(required_f64(payload, field::CORNER_RADIUS)?);
-        validate_text(&text)?;
-        Ok(text)
-    }
-
-    pub fn from_json_value(value: &Value) -> Result<Self, ErrorCode> {
-        let payload = value.as_object().ok_or(ErrorCode::InvalidArgument)?;
-        Self::from_json_payload(payload)
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SerialNumberData {
     pub center: Point<f64>,
@@ -966,235 +506,6 @@ pub struct SerialNumberData {
     pub stroke_style: StrokeStyle,
     pub opacity: f64,
     pub text_element_id: Option<ElementId>,
-}
-
-impl SerialNumberData {
-    pub fn to_json_payload(&self) -> Map<String, Value> {
-        let mut payload = Map::new();
-        payload.insert(
-            field::TYPE_ID.to_owned(),
-            Value::String(SERIAL_NUMBER_TYPE_ID.to_owned()),
-        );
-        payload.insert(field::NUMBER.to_owned(), Value::from(self.number));
-        payload.insert(field::COLOR.to_owned(), argb_value(self.color));
-        payload.insert(field::FILL_COLOR.to_owned(), argb_value(self.fill));
-        payload.insert(
-            field::FILL_STYLE.to_owned(),
-            Value::String(fill_style_name(self.fill_style).to_owned()),
-        );
-        payload.insert(field::FONT_SIZE.to_owned(), number_value(self.font_size));
-        payload.insert(
-            field::FONT_FAMILY.to_owned(),
-            Value::String(self.font_family.clone().unwrap_or_default()),
-        );
-        payload.insert(
-            field::STROKE_WIDTH.to_owned(),
-            number_value(self.stroke_width),
-        );
-        payload.insert(
-            field::STROKE_STYLE.to_owned(),
-            Value::String(stroke_style_name(self.stroke_style).to_owned()),
-        );
-        payload.insert(
-            field::TEXT_ELEMENT_ID.to_owned(),
-            Value::String(
-                self.text_element_id
-                    .map(ElementId::stable_key)
-                    .unwrap_or_default(),
-            ),
-        );
-        payload
-    }
-
-    pub fn from_json_payload(payload: &Map<String, Value>) -> Result<Self, ErrorCode> {
-        expect_type_id(payload, SERIAL_NUMBER_TYPE_ID)?;
-        let number = required_i64(payload, field::NUMBER)?.max(0);
-        let font_size = required_f64(payload, field::FONT_SIZE)?;
-        let mut serial = SerialNumberData {
-            number,
-            color: required_color(payload, field::COLOR)?,
-            fill: required_color(payload, field::FILL_COLOR)?,
-            fill_style: decode_fill_style(required_string(payload, field::FILL_STYLE)?)?,
-            font_size,
-            font_family: normalize_font_family(required_nullable_string(
-                payload,
-                field::FONT_FAMILY,
-            )?),
-            stroke_width: required_f64(payload, field::STROKE_WIDTH)?,
-            stroke_style: decode_stroke_style(required_string(payload, field::STROKE_STYLE)?)?,
-            text_element_id: decode_optional_element_id(payload, field::TEXT_ELEMENT_ID)?,
-            ..SerialNumberData::default()
-        };
-        serial.diameter =
-            resolve_serial_number_diameter(serial.number, serial.font_size, serial.diameter);
-        validate_serial_number(&serial)?;
-        Ok(serial)
-    }
-
-    pub fn from_json_value(value: &Value) -> Result<Self, ErrorCode> {
-        let payload = value.as_object().ok_or(ErrorCode::InvalidArgument)?;
-        Self::from_json_payload(payload)
-    }
-}
-
-fn argb_value(color: ColorRgba8) -> Value {
-    Value::from(
-        ((color.a as u64) << 24)
-            | ((color.r as u64) << 16)
-            | ((color.g as u64) << 8)
-            | color.b as u64,
-    )
-}
-
-fn color_from_argb(argb: u32) -> ColorRgba8 {
-    ColorRgba8 {
-        a: ((argb >> 24) & 0xff) as u8,
-        r: ((argb >> 16) & 0xff) as u8,
-        g: ((argb >> 8) & 0xff) as u8,
-        b: (argb & 0xff) as u8,
-    }
-}
-
-fn number_value(value: f64) -> Value {
-    Value::Number(Number::from_f64(value).unwrap_or_else(|| Number::from(0)))
-}
-
-fn expect_type_id(payload: &Map<String, Value>, expected: &str) -> Result<(), ErrorCode> {
-    if required_string(payload, field::TYPE_ID)? == expected {
-        Ok(())
-    } else {
-        Err(ErrorCode::InvalidArgument)
-    }
-}
-
-fn required_string<'a>(payload: &'a Map<String, Value>, field: &str) -> Result<&'a str, ErrorCode> {
-    payload
-        .get(field)
-        .and_then(Value::as_str)
-        .ok_or(ErrorCode::InvalidArgument)
-}
-
-fn required_nullable_string(
-    payload: &Map<String, Value>,
-    field: &str,
-) -> Result<Option<String>, ErrorCode> {
-    match payload.get(field).ok_or(ErrorCode::InvalidArgument)? {
-        Value::Null => Ok(None),
-        Value::String(value) => Ok(normalize_payload_string(value)),
-        _ => Err(ErrorCode::InvalidArgument),
-    }
-}
-
-fn normalize_payload_string(value: &str) -> Option<String> {
-    let trimmed = value.trim();
-    (!trimmed.is_empty()).then(|| trimmed.to_owned())
-}
-
-fn required_f64(payload: &Map<String, Value>, field: &str) -> Result<f64, ErrorCode> {
-    payload
-        .get(field)
-        .and_then(Value::as_f64)
-        .ok_or(ErrorCode::InvalidArgument)
-}
-
-fn required_i64(payload: &Map<String, Value>, field: &str) -> Result<i64, ErrorCode> {
-    payload
-        .get(field)
-        .and_then(Value::as_i64)
-        .ok_or(ErrorCode::InvalidArgument)
-}
-
-fn required_bool(payload: &Map<String, Value>, field: &str) -> Result<bool, ErrorCode> {
-    payload
-        .get(field)
-        .and_then(Value::as_bool)
-        .ok_or(ErrorCode::InvalidArgument)
-}
-
-fn required_color(payload: &Map<String, Value>, field: &str) -> Result<ColorRgba8, ErrorCode> {
-    let value = payload
-        .get(field)
-        .and_then(Value::as_u64)
-        .ok_or(ErrorCode::InvalidArgument)?;
-    let argb = u32::try_from(value).map_err(|_| ErrorCode::InvalidArgument)?;
-    Ok(color_from_argb(argb))
-}
-
-fn decode_optional_element_id(
-    payload: &Map<String, Value>,
-    field: &str,
-) -> Result<Option<ElementId>, ErrorCode> {
-    required_nullable_string(payload, field)?
-        .map(|value| ElementId::from_stable_key(&value).ok_or(ErrorCode::InvalidArgument))
-        .transpose()
-}
-
-fn fill_style_name(style: FillStyle) -> &'static str {
-    match style {
-        FillStyle::Line => "line",
-        FillStyle::CrossLine => "crossLine",
-        FillStyle::Solid => "solid",
-    }
-}
-
-fn decode_fill_style(value: &str) -> Result<FillStyle, ErrorCode> {
-    match value {
-        "line" => Ok(FillStyle::Line),
-        "crossLine" => Ok(FillStyle::CrossLine),
-        "solid" => Ok(FillStyle::Solid),
-        _ => Err(ErrorCode::InvalidArgument),
-    }
-}
-
-fn stroke_style_name(style: StrokeStyle) -> &'static str {
-    match style {
-        StrokeStyle::Solid => "solid",
-        StrokeStyle::Dashed => "dashed",
-        StrokeStyle::Dotted => "dotted",
-    }
-}
-
-fn decode_stroke_style(value: &str) -> Result<StrokeStyle, ErrorCode> {
-    match value {
-        "solid" => Ok(StrokeStyle::Solid),
-        "dashed" => Ok(StrokeStyle::Dashed),
-        "dotted" => Ok(StrokeStyle::Dotted),
-        _ => Err(ErrorCode::InvalidArgument),
-    }
-}
-
-fn text_horizontal_align_name(align: TextHorizontalAlign) -> &'static str {
-    match align {
-        TextHorizontalAlign::Left => "left",
-        TextHorizontalAlign::Center => "center",
-        TextHorizontalAlign::Right => "right",
-    }
-}
-
-fn decode_text_horizontal_align(value: &str) -> Result<TextHorizontalAlign, ErrorCode> {
-    match value {
-        "left" => Ok(TextHorizontalAlign::Left),
-        "center" => Ok(TextHorizontalAlign::Center),
-        "right" => Ok(TextHorizontalAlign::Right),
-        _ => Err(ErrorCode::InvalidArgument),
-    }
-}
-
-fn text_vertical_align_name(align: TextVerticalAlign) -> &'static str {
-    match align {
-        TextVerticalAlign::Top => "top",
-        TextVerticalAlign::Center => "center",
-        TextVerticalAlign::Bottom => "bottom",
-    }
-}
-
-fn decode_text_vertical_align(value: &str) -> Result<TextVerticalAlign, ErrorCode> {
-    match value {
-        "top" => Ok(TextVerticalAlign::Top),
-        "center" => Ok(TextVerticalAlign::Center),
-        "bottom" => Ok(TextVerticalAlign::Bottom),
-        _ => Err(ErrorCode::InvalidArgument),
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1322,8 +633,8 @@ pub struct ElementRecord {
 
 /// Canonical common fields plus the type-specific element payload.
 ///
-/// This mirrors the reference `ElementState` boundary. The payload-specific
-/// storage remains an implementation detail while editor drafts are migrated.
+/// This mirrors the reference `ElementState` boundary; the payload-specific
+/// storage behind `data` is an implementation detail.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ElementState<'a> {
     pub id: ElementId,
@@ -1638,23 +949,6 @@ impl Document {
         })
     }
 
-    pub fn for_each_visible_rectangle(&self, mut f: impl FnMut(ElementId, &RectangleData)) {
-        for id in &self.paint_order {
-            let Ok(element) = self.element(*id) else {
-                continue;
-            };
-            if !element.meta.visible {
-                continue;
-            }
-            if let ElementData::Rectangle(rect) = &element.data
-                && rect.width > 0.0
-                && rect.height > 0.0
-            {
-                f(*id, rect);
-            }
-        }
-    }
-
     pub fn for_each_visible_arrow(&self, mut f: impl FnMut(ElementId, &ArrowData)) {
         for id in &self.paint_order {
             let Ok(element) = self.element(*id) else {
@@ -1668,63 +962,6 @@ impl Document {
                 _ => {}
             }
         }
-    }
-
-    pub fn for_each_visible_text(&self, mut f: impl FnMut(ElementId, &TextData)) {
-        for id in &self.paint_order {
-            let Ok(element) = self.element(*id) else {
-                continue;
-            };
-            if !element.meta.visible {
-                continue;
-            }
-            match &element.data {
-                ElementData::Text(text) if text.width > 0.0 && text.height > 0.0 => f(*id, text),
-                _ => {}
-            }
-        }
-    }
-
-    pub fn for_each_visible_serial_number(&self, mut f: impl FnMut(ElementId, &SerialNumberData)) {
-        for id in &self.paint_order {
-            let Ok(element) = self.element(*id) else {
-                continue;
-            };
-            if !element.meta.visible {
-                continue;
-            }
-            match &element.data {
-                ElementData::SerialNumber(serial) if serial.diameter > 0.0 => f(*id, serial),
-                _ => {}
-            }
-        }
-    }
-
-    pub fn topmost_rectangle_at(&self, point: Point<f64>) -> Option<ElementId> {
-        self.topmost_rectangle_at_with_tolerance(point, 0.0)
-    }
-
-    pub fn topmost_rectangle_at_with_tolerance(
-        &self,
-        point: Point<f64>,
-        hit_tolerance: f64,
-    ) -> Option<ElementId> {
-        self.paint_order.iter().rev().find_map(|id| {
-            let element = self.element(*id).ok()?;
-            if !element.meta.visible {
-                return None;
-            }
-            match &element.data {
-                ElementData::Rectangle(rect) if rectangle_hit_test(rect, point, hit_tolerance) => {
-                    Some(*id)
-                }
-                _ => None,
-            }
-        })
-    }
-
-    pub fn topmost_element_at(&self, point: Point<f64>) -> Option<(ElementId, ElementKind)> {
-        self.topmost_element_at_with_tolerance(point, 0.0)
     }
 
     pub fn topmost_element_at_with_tolerance(
@@ -1762,22 +999,6 @@ impl Document {
         })
     }
 
-    pub fn topmost_text_at_with_tolerance(
-        &self,
-        point: Point<f64>,
-        hit_tolerance: f64,
-    ) -> Option<ElementId> {
-        self.paint_order.iter().rev().find_map(|id| {
-            let element = self.element(*id).ok()?;
-            if !element.meta.visible {
-                return None;
-            }
-            match &element.data {
-                ElementData::Text(text) if text_hit_test(text, point, hit_tolerance) => Some(*id),
-                _ => None,
-            }
-        })
-    }
 
     pub fn serial_number_text_bindings(&self) -> Vec<SerialNumberTextBinding> {
         self.paint_order
@@ -1790,13 +1011,6 @@ impl Document {
                     text_id,
                 })
             })
-            .collect()
-    }
-
-    pub fn text_ids_bound_to_serial_numbers(&self) -> HashSet<ElementId> {
-        self.serial_number_text_bindings()
-            .into_iter()
-            .map(|binding| binding.text_id)
             .collect()
     }
 
@@ -1821,9 +1035,6 @@ impl Document {
             .collect()
     }
 
-    pub fn validate_view_state(&self, camera: &Camera) -> Result<(), ErrorCode> {
-        validate_camera(camera)
-    }
 
     pub fn paint_order(&self) -> &[ElementId] {
         &self.paint_order
@@ -2172,63 +1383,8 @@ fn element_data_arrow_relation_targets_changed(previous: &ElementData, next: &El
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
 
     use super::*;
-    use crate::{
-        FILTER_SCHEMA, PEN_FILTER_SCHEMA, RECTANGLE_HIGHLIGHT_SCHEMA, RECTANGLE_SCHEMA,
-        SERIAL_NUMBER_SCHEMA, SPOTLIGHT_SCHEMA, TEXT_SCHEMA,
-    };
-
-    fn assert_schema(payload: &Map<String, Value>, schema: crate::ElementPayloadSchema) {
-        assert_eq!(
-            payload.keys().map(String::as_str).collect::<HashSet<_>>(),
-            schema.fields.iter().copied().collect::<HashSet<_>>()
-        );
-        assert_eq!(
-            payload.get(field::TYPE_ID).and_then(Value::as_str),
-            Some(schema.type_id)
-        );
-    }
-
-    #[test]
-    fn element_payload_codecs_emit_the_canonical_reference_fields() {
-        let rectangle = RectangleData {
-            rectangle_kind: RectangleElementKind::Rectangle,
-            highlight_shape: HighlightShape::Rectangle,
-            center: Point::new(10.0, 20.0),
-            width: 80.0,
-            height: 60.0,
-            rotation: 0.0,
-            fill: ColorRgba8::default(),
-            fill_style: FillStyle::Solid,
-            stroke: ColorRgba8::default(),
-            stroke_width: 2.0,
-            stroke_style: StrokeStyle::Dashed,
-            corner_radii: CornerRadii::splat(4.0),
-            opacity: 1.0,
-        };
-        assert_schema(
-            &rectangle.to_rectangle_json_payload().unwrap(),
-            RECTANGLE_SCHEMA,
-        );
-        assert_schema(
-            &rectangle
-                .into_highlight(HighlightShape::Rectangle)
-                .to_highlight_json_payload()
-                .unwrap(),
-            RECTANGLE_HIGHLIGHT_SCHEMA,
-        );
-        assert_schema(
-            &FilterData::default().to_json_payload().unwrap(),
-            FILTER_SCHEMA,
-        );
-        assert_schema(&TextData::default().to_json_payload(), TEXT_SCHEMA);
-        assert_schema(
-            &SerialNumberData::default().to_json_payload(),
-            SERIAL_NUMBER_SCHEMA,
-        );
-    }
 
     #[test]
     fn common_element_state_has_one_geometry_opacity_and_z_order_definition() {
@@ -2320,10 +1476,6 @@ mod tests {
             document.serial_number_text_bindings(),
             vec![SerialNumberTextBinding { serial_id, text_id }]
         );
-        assert_eq!(
-            document.text_ids_bound_to_serial_numbers(),
-            HashSet::from([text_id])
-        );
         assert!(document.is_text_bound_to_serial_number(text_id));
         assert_eq!(
             document.bound_text_id_for_serial_number(serial_id),
@@ -2358,7 +1510,6 @@ mod tests {
         document.apply(&transaction).unwrap();
 
         assert!(document.serial_number_text_bindings().is_empty());
-        assert!(document.text_ids_bound_to_serial_numbers().is_empty());
         assert!(!document.is_text_bound_to_serial_number(missing_text_id));
         assert_eq!(document.bound_text_id_for_serial_number(serial_id), None);
         assert!(
@@ -2366,114 +1517,6 @@ mod tests {
                 .serial_number_ids_with_text(missing_text_id)
                 .is_empty()
         );
-    }
-
-    #[test]
-    fn highlight_payload_is_canonical_and_strict() {
-        let highlight = RectangleData {
-            rectangle_kind: RectangleElementKind::Rectangle,
-            highlight_shape: HighlightShape::Rectangle,
-            center: Point::default(),
-            width: 80.0,
-            height: 60.0,
-            rotation: 0.0,
-            fill: ColorRgba8 {
-                r: 0xf5,
-                g: 0x22,
-                b: 0x2d,
-                a: 0xff,
-            },
-            fill_style: FillStyle::Solid,
-            stroke: ColorRgba8 {
-                r: 0,
-                g: 0,
-                b: 0,
-                a: 0xff,
-            },
-            stroke_width: 0.0,
-            stroke_style: StrokeStyle::Solid,
-            corner_radii: CornerRadii::default(),
-            opacity: 1.0,
-        }
-        .into_highlight(HighlightShape::Rectangle);
-        let payload = highlight.to_highlight_json_payload().unwrap();
-        assert_eq!(
-            payload.get("typeId").and_then(Value::as_str),
-            Some("rectangle_highlight")
-        );
-        assert!(!payload.contains_key("shape"));
-        assert!(
-            RectangleData::from_highlight_json_payload(
-                &payload,
-                Point::new(10.0, 20.0),
-                80.0,
-                60.0,
-            )
-            .unwrap()
-            .is_highlight()
-        );
-
-        let mut legacy_payload = payload.clone();
-        legacy_payload.insert("typeId".to_owned(), Value::String("highlight".to_owned()));
-        assert_eq!(
-            RectangleData::from_highlight_json_payload(
-                &legacy_payload,
-                Point::default(),
-                80.0,
-                60.0
-            ),
-            Err(ErrorCode::InvalidArgument)
-        );
-        let mut missing_color = payload;
-        missing_color.remove("color");
-        assert_eq!(
-            RectangleData::from_highlight_json_payload(
-                &missing_color,
-                Point::default(),
-                80.0,
-                60.0
-            ),
-            Err(ErrorCode::InvalidArgument)
-        );
-    }
-
-    #[test]
-    fn filter_payload_round_trips_all_stable_types_and_is_strict() {
-        for (filter_type, expected) in [
-            (CanvasFilterType::Mosaic, "mosaic"),
-            (CanvasFilterType::GaussianBlur, "gaussianBlur"),
-            (CanvasFilterType::Grayscale, "grayscale"),
-            (CanvasFilterType::Inversion, "inversion"),
-        ] {
-            let filter = FilterData {
-                filter_type,
-                strength: 0.5,
-                ..FilterData::default()
-            };
-            let payload = filter.to_json_payload().unwrap();
-            assert_eq!(payload.len(), 3);
-            assert_eq!(
-                payload.get("typeId").and_then(Value::as_str),
-                Some("filter")
-            );
-            assert_eq!(payload.get("type").and_then(Value::as_str), Some(expected));
-            assert_eq!(
-                FilterData::from_json_payload(&payload, Point::new(1.0, 2.0), 30.0, 40.0)
-                    .unwrap()
-                    .filter_type,
-                filter_type
-            );
-        }
-
-        let mut missing = FilterData::default().to_json_payload().unwrap();
-        missing.remove("strength");
-        assert!(FilterData::from_json_payload(&missing, Point::default(), 1.0, 1.0).is_err());
-        let mut unknown = FilterData::default().to_json_payload().unwrap();
-        unknown.insert("type".to_owned(), Value::String("future".to_owned()));
-        assert!(FilterData::from_json_payload(&unknown, Point::default(), 1.0, 1.0).is_err());
-        let mut extra = FilterData::default().to_json_payload().unwrap();
-        extra.insert("extra".to_owned(), Value::Bool(true));
-        assert!(FilterData::from_json_payload(&extra, Point::default(), 1.0, 1.0).is_err());
     }
 
     #[test]
@@ -2485,7 +1528,7 @@ mod tests {
     }
 
     #[test]
-    fn spotlight_defaults_schema_visibility_and_inverse_are_stable() {
+    fn spotlight_defaults_visibility_and_inverse_are_stable() {
         let default = SpotlightConfig::default();
         assert_eq!(
             default,
@@ -2550,29 +1593,6 @@ mod tests {
             opacity: 1.0,
         }
         .into_spotlight();
-        let payload = spotlight.to_spotlight_json_payload().unwrap();
-        assert_schema(&payload, SPOTLIGHT_SCHEMA);
-        assert_eq!(
-            RectangleData::from_spotlight_json_payload(
-                &payload,
-                spotlight.center,
-                spotlight.width,
-                spotlight.height,
-            )
-            .unwrap(),
-            spotlight
-        );
-        let mut extra = payload;
-        extra.insert("color".to_owned(), Value::String("#000000".to_owned()));
-        assert_eq!(
-            RectangleData::from_spotlight_json_payload(
-                &extra,
-                spotlight.center,
-                spotlight.width,
-                spotlight.height,
-            ),
-            Err(ErrorCode::InvalidArgument)
-        );
 
         let mut document = Document::new();
         assert_eq!(document.spotlight_config(), default);
@@ -2609,59 +1629,6 @@ mod tests {
         assert_eq!(document.spotlight_config(), changed);
         document.apply(&result.inverse).unwrap();
         assert_eq!(document.spotlight_config(), default);
-    }
-
-    #[test]
-    fn pen_filter_payload_round_trip_is_strict_and_preserves_raw_points() {
-        let original = PenFilterData::from_global_points(
-            &[
-                Point::new(10.0, 20.0),
-                Point::new(15.0, 32.0),
-                Point::new(40.0, 25.0),
-            ],
-            CanvasFilterType::GaussianBlur,
-            0.37,
-            8.0,
-            1.0,
-        )
-        .unwrap();
-        let payload = original.to_json_payload().unwrap();
-        assert_eq!(payload.len(), PEN_FILTER_SCHEMA.fields.len());
-        assert_eq!(payload["typeId"], "pen_filter");
-        let decoded = PenFilterData::from_json_payload(
-            &payload,
-            DrawRect::new(
-                original.x,
-                original.y,
-                original.x + original.width,
-                original.y + original.height,
-            ),
-        )
-        .unwrap();
-        assert_eq!(decoded.global_points(), original.global_points());
-        assert_eq!(decoded.filter_type, CanvasFilterType::GaussianBlur);
-        assert_eq!(decoded.strength, 0.37);
-        assert_eq!(decoded.stroke_width, 8.0);
-
-        let mut extra = payload.clone();
-        extra.insert("legacy".to_owned(), Value::Bool(true));
-        assert!(
-            PenFilterData::from_json_payload(&extra, DrawRect::new(0.0, 0.0, 1.0, 1.0)).is_err()
-        );
-
-        let mut invalid_width = payload.clone();
-        invalid_width.insert(field::STROKE_WIDTH.to_owned(), Value::from(0.0));
-        assert!(
-            PenFilterData::from_json_payload(&invalid_width, DrawRect::new(0.0, 0.0, 30.0, 12.0))
-                .is_err()
-        );
-
-        let mut invalid_points = payload;
-        invalid_points.insert(field::POINTS.to_owned(), Value::Array(vec![]));
-        assert!(
-            PenFilterData::from_json_payload(&invalid_points, DrawRect::new(0.0, 0.0, 30.0, 12.0))
-                .is_err()
-        );
     }
 
     #[test]

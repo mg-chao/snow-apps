@@ -9,7 +9,7 @@ pub fn bind_point_to_outline(
     start_or_end: ArrowEndpointEdge,
     custom_intersector: Option<[Point; 2]>,
 ) -> Point {
-    let shape = canonicalize_bindable_shape(bindable.shape);
+    let shape = bindable.shape;
     let point = get_point_at_index_global(
         arrow,
         if start_or_end == ArrowEndpointEdge::Start {
@@ -22,7 +22,7 @@ pub fn bind_point_to_outline(
         return point;
     }
 
-    let edge_point = if shape == crate::CanonicalBindableShape::Rectangle && arrow.elbowed {
+    let edge_point = if shape == crate::BindableShape::Rectangle && arrow.elbowed {
         avoid_rectangular_corner(arrow.elbowed, bindable, point)
     } else {
         point

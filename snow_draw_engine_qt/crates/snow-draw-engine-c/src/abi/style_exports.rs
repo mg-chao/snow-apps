@@ -1,5 +1,4 @@
 use crate::abi::convert::*;
-use crate::abi::exports::snow_changed_viewports_destroy;
 use crate::abi::handles::*;
 use crate::abi::types::*;
 
@@ -21,27 +20,6 @@ pub unsafe extern "C" fn snow_viewport_get_watermark_config(
                 Ok(())
             },
         ))
-    })
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_viewport_set_watermark_config(
-    runtime: SnowRuntime,
-    viewport: SnowViewport,
-    config: *const SnowWatermarkConfig,
-) -> SnowError {
-    ffi_error(|| {
-        if config.is_null() {
-            return SnowError::InvalidArgument;
-        }
-        ffi_status(with_runtime_impl_mut(runtime, |state| {
-            let id = viewport_id(viewport)?;
-            state
-                .runtime
-                .set_viewport_watermark_config(id, unsafe { (*config).into() })
-                .map_err(SnowError::from)?;
-            Ok(())
-        }))
     })
 }
 
@@ -90,27 +68,6 @@ pub unsafe extern "C" fn snow_viewport_get_spotlight_config(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_viewport_set_spotlight_config(
-    runtime: SnowRuntime,
-    viewport: SnowViewport,
-    config: *const SnowSpotlightConfig,
-) -> SnowError {
-    ffi_error(|| {
-        if config.is_null() {
-            return SnowError::InvalidArgument;
-        }
-        ffi_status(with_runtime_impl_mut(runtime, |state| {
-            let id = viewport_id(viewport)?;
-            state
-                .runtime
-                .set_viewport_spotlight_config(id, unsafe { (*config).into() })
-                .map_err(SnowError::from)?;
-            Ok(())
-        }))
-    })
-}
-
-#[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_viewport_set_spotlight_config_ex(
     runtime: SnowRuntime,
     viewport: SnowViewport,
@@ -150,10 +107,11 @@ mod spotlight_export_tests {
                 SnowError::InvalidArgument
             );
             assert_eq!(
-                snow_viewport_set_spotlight_config(
+                snow_viewport_set_spotlight_config_ex(
                     std::ptr::null_mut(),
                     std::ptr::null_mut(),
                     std::ptr::null(),
+                    std::ptr::null_mut(),
                 ),
                 SnowError::InvalidArgument
             );
@@ -282,8 +240,6 @@ pub unsafe extern "C" fn snow_viewport_get_serial_number_toolbar_state(
 
 /// # Safety
 /// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
-/// # Safety
-/// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
 /// `style` must point to a readable `SnowShapeStyle` value.
 /// `out_changed_viewports` must be valid for writes.
 #[unsafe(no_mangle)]
@@ -321,60 +277,6 @@ pub unsafe extern "C" fn snow_viewport_set_shape_style_patch_ex(
 
 /// # Safety
 /// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
-/// `out_style` must be valid for writes of one `SnowRectangleShapeStyle` value.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_viewport_get_rectangle_shape_style(
-    runtime: SnowRuntime,
-    viewport: SnowViewport,
-    out_style: *mut SnowRectangleShapeStyle,
-) -> SnowError {
-    ffi_error(|| {
-        if out_style.is_null() {
-            return SnowError::InvalidArgument;
-        }
-
-        ffi_status(with_runtime_viewport_ref(
-            runtime,
-            viewport,
-            |runtime, id| {
-                let style = runtime
-                    .viewport_rectangle_shape_style(id)
-                    .map_err(SnowError::from)?;
-                write_out(out_style, style.into());
-                Ok(())
-            },
-        ))
-    })
-}
-
-/// # Safety
-/// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
-/// `style` must point to a readable `SnowRectangleShapeStyle` value.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_viewport_set_rectangle_shape_style(
-    runtime: SnowRuntime,
-    viewport: SnowViewport,
-    style: *const SnowRectangleShapeStyle,
-) -> SnowError {
-    ffi_error(|| {
-        let mut changed_viewports = std::ptr::null_mut();
-        let error = unsafe {
-            snow_viewport_set_rectangle_shape_style_ex(
-                runtime,
-                viewport,
-                style,
-                &mut changed_viewports,
-            )
-        };
-        unsafe {
-            snow_changed_viewports_destroy(changed_viewports);
-        }
-        error
-    })
-}
-
-/// # Safety
-/// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
 /// `style` must point to a readable `SnowRectangleShapeStyle` value.
 /// `out_changed_viewports` must be valid for writes.
 #[unsafe(no_mangle)]
@@ -398,88 +300,6 @@ pub unsafe extern "C" fn snow_viewport_set_rectangle_shape_style_ex(
             write_changed_viewports(out_changed_viewports, result.changed_viewports);
             Ok(())
         }))
-    })
-}
-
-/// # Safety
-/// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
-/// `out_style` must be valid for writes of one `SnowArrowStyle` value.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_viewport_get_arrow_style(
-    runtime: SnowRuntime,
-    viewport: SnowViewport,
-    out_style: *mut SnowArrowStyle,
-) -> SnowError {
-    ffi_error(|| {
-        if out_style.is_null() {
-            return SnowError::InvalidArgument;
-        }
-
-        ffi_status(with_runtime_viewport_ref(
-            runtime,
-            viewport,
-            |runtime, id| {
-                let style = runtime.viewport_arrow_style(id).map_err(SnowError::from)?;
-                write_out(out_style, style.into());
-                Ok(())
-            },
-        ))
-    })
-}
-
-/// # Safety
-/// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
-/// `out_style` must be valid for writes of one `SnowTextStyle` value.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_viewport_get_text_style(
-    runtime: SnowRuntime,
-    viewport: SnowViewport,
-    out_style: *mut SnowTextStyle,
-) -> SnowError {
-    ffi_error(|| {
-        if out_style.is_null() {
-            return SnowError::InvalidArgument;
-        }
-
-        ffi_status(with_runtime_viewport_ref(
-            runtime,
-            viewport,
-            |runtime, id| {
-                let style = runtime.viewport_text_style(id).map_err(SnowError::from)?;
-                write_out(out_style, style.into());
-                Ok(())
-            },
-        ))
-    })
-}
-
-/// # Safety
-/// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
-/// `style` must point to a readable `SnowTextStyle` value.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_viewport_set_text_style(
-    runtime: SnowRuntime,
-    viewport: SnowViewport,
-    style: *const SnowTextStyle,
-    layouts: *const SnowTextLayoutOverride,
-    layout_count: u32,
-) -> SnowError {
-    ffi_error(|| {
-        let mut changed_viewports = std::ptr::null_mut();
-        let error = unsafe {
-            snow_viewport_set_text_style_ex(
-                runtime,
-                viewport,
-                style,
-                layouts,
-                layout_count,
-                &mut changed_viewports,
-            )
-        };
-        unsafe {
-            snow_changed_viewports_destroy(changed_viewports);
-        }
-        error
     })
 }
 
@@ -523,60 +343,6 @@ pub unsafe extern "C" fn snow_viewport_set_text_style_ex(
             write_changed_viewports(out_changed_viewports, result.changed_viewports);
             Ok(())
         }))
-    })
-}
-
-/// # Safety
-/// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
-/// `out_style` must be valid for writes of one `SnowSerialNumberStyle` value.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_viewport_get_serial_number_style(
-    runtime: SnowRuntime,
-    viewport: SnowViewport,
-    out_style: *mut SnowSerialNumberStyle,
-) -> SnowError {
-    ffi_error(|| {
-        if out_style.is_null() {
-            return SnowError::InvalidArgument;
-        }
-
-        ffi_status(with_runtime_viewport_ref(
-            runtime,
-            viewport,
-            |runtime, id| {
-                let style = runtime
-                    .viewport_serial_number_style(id)
-                    .map_err(SnowError::from)?;
-                write_out(out_style, style.into());
-                Ok(())
-            },
-        ))
-    })
-}
-
-/// # Safety
-/// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
-/// `style` must point to a readable `SnowSerialNumberStyle` value.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_viewport_set_serial_number_style(
-    runtime: SnowRuntime,
-    viewport: SnowViewport,
-    style: *const SnowSerialNumberStyle,
-) -> SnowError {
-    ffi_error(|| {
-        let mut changed_viewports = std::ptr::null_mut();
-        let error = unsafe {
-            snow_viewport_set_serial_number_style_ex(
-                runtime,
-                viewport,
-                style,
-                &mut changed_viewports,
-            )
-        };
-        unsafe {
-            snow_changed_viewports_destroy(changed_viewports);
-        }
-        error
     })
 }
 

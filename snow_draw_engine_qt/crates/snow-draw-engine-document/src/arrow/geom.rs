@@ -1,6 +1,5 @@
 use crate::{
-    ArrowState, BindableState, Bounds, CanonicalBindableShape, FixedPointBinding, Point,
-    canonicalize_bindable_shape,
+    ArrowState, BindableState, Bounds, BindableShape, FixedPointBinding, Point,
 };
 use serde::{Deserialize, Serialize};
 
@@ -280,7 +279,7 @@ pub fn reverse_heading(heading: Heading) -> Heading {
 }
 
 pub fn heading_from_bindable(point: Point, bindable: &BindableState) -> Heading {
-    let shape = canonicalize_bindable_shape(bindable.shape);
+    let shape = bindable.shape;
     const SEARCH_CONE_MULTIPLIER: f64 = 2.0;
     let bindable_center = center(bindable.x, bindable.y, bindable.width, bindable.height);
 
@@ -317,7 +316,7 @@ pub fn heading_from_bindable(point: Point, bindable: &BindableState) -> Heading 
     let heading_for_point = |from: Point, to: Point| -> Heading { vector_to_heading(from, to) };
     let mid_point = [(aabb[0] + aabb[2]) / 2.0, (aabb[1] + aabb[3]) / 2.0];
 
-    if shape == CanonicalBindableShape::Diamond {
+    if shape == BindableShape::Diamond {
         const SHRINK: f64 = 0.95;
         let top = scale_from_origin(
             rotate_point(

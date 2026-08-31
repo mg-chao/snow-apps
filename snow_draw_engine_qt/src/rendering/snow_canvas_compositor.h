@@ -49,12 +49,7 @@ struct Frame {
 };
 
 void clearSurface(QPainter& painter, const Frame& frame);
-void renderSceneContent(QPainter& painter, const Frame& frame);
 void renderDocumentDecorations(QPainter& painter, const Frame& frame);
 void renderEditorOverlays(QPainter& painter, const Frame& frame);
-// Retained names for custom renderer and test callers during the pass split.
-void renderCanvasContent(QPainter& painter, const Frame& frame);
-void renderOverlays(QPainter& painter, const Frame& frame);
-void renderContent(QPainter& painter, const Frame& frame);
 
 } // namespace snow_canvas_compositor

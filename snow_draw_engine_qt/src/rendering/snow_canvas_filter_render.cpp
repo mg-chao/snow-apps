@@ -179,17 +179,6 @@ std::array<int, 3> gaussianBoxRadii(double sigma) {
     return radii;
 }
 
-void clampRadiiToSupport(std::array<int, 3>& radii, int support) {
-    support = std::max(0, support);
-    while (radii[0] + radii[1] + radii[2] > support) {
-        auto largest = std::max_element(radii.begin(), radii.end());
-        if (*largest <= 0) {
-            break;
-        }
-        --*largest;
-    }
-}
-
 struct BoxAverage {
     int count = 1;
     std::uint32_t reciprocal = 1u << 24;
@@ -731,28 +720,26 @@ std::size_t upsampleBilinearComposited(const QImage& source, QImage& destination
     }
 }
 
-GaussianBlurPlan makeGaussianBlurPlan(const Parameters& parameters, bool legacy) {
+GaussianBlurPlan makeGaussianBlurPlan(const Parameters& parameters) {
     const double sigma =
         std::max(0.0, parameters.logicalSigma * static_cast<double>(parameters.devicePixelRatio));
+    // Keep the reduced kernel compact. Bilinear reconstruction supplies the final
+    // low-pass stage, so product rendering can reduce one level more aggressively
+    // than the reference-quality plan without exposing block boundaries.
+    constexpr std::array<std::pair<double, int>, 7> bands{{
+        {2.0, 1},
+        {4.0, 2},
+        {8.0, 4},
+        {16.0, 8},
+        {32.0, 16},
+        {128.0, 32},
+        {std::numeric_limits<double>::infinity(), 64},
+    }};
     int factor = 1;
-    if (!legacy) {
-        // Keep the reduced kernel compact. Bilinear reconstruction supplies the final
-        // low-pass stage, so product rendering can reduce one level more aggressively
-        // than the reference-quality plan without exposing block boundaries.
-        constexpr std::array<std::pair<double, int>, 7> bands{{
-            {2.0, 1},
-            {4.0, 2},
-            {8.0, 4},
-            {16.0, 8},
-            {32.0, 16},
-            {128.0, 32},
-            {std::numeric_limits<double>::infinity(), 64},
-        }};
-        for (const auto& [upperSigma, reduction] : bands) {
-            if (sigma < upperSigma) {
-                factor = reduction;
-                break;
-            }
+    for (const auto& [upperSigma, reduction] : bands) {
+        if (sigma < upperSigma) {
+            factor = reduction;
+            break;
         }
     }
 
@@ -763,20 +750,10 @@ GaussianBlurPlan makeGaussianBlurPlan(const Parameters& parameters, bool legacy)
     for (int index = 0; index < plan.passCount; ++index) {
         plan.radii[index] = radii[index];
     }
-    if (legacy) {
-        std::array<int, 3> limited = radii;
-        const double logicalSupport = parameters.logicalSamplingRadius > 0.0
-                                          ? parameters.logicalSamplingRadius
-                                          : parameters.logicalSigma * 3.0 + 1.0;
-        clampRadiiToSupport(limited, qCeil(logicalSupport * parameters.devicePixelRatio / factor));
-        std::copy(limited.begin(), limited.end(), plan.radii);
-    }
     const int reducedSupport = plan.radii[0] + plan.radii[1] + plan.radii[2];
     // One reduced pixel covers the bilinear neighbor and one covers the farthest
     // stratified downsample tap. Box support itself is the sum of pass radii.
     plan.physicalSupportRadius = reducedSupport * factor + (factor > 1 ? 2 * factor : 0);
-    plan.estimatedWork =
-        static_cast<std::size_t>(1000000.0 * (1.0 + 2.0 * plan.passCount / (factor * factor)));
     return plan;
 }
 
@@ -790,7 +767,7 @@ template <typename Function> void measureStage(std::uint64_t& destination, Funct
 
 bool blur(QImage& image, const Parameters& parameters, RenderWorkspace& workspace,
           const ExecutionOptions& options) {
-    const GaussianBlurPlan plan = makeGaussianBlurPlan(parameters, options.legacyGaussian);
+    const GaussianBlurPlan plan = makeGaussianBlurPlan(parameters);
     const int factor = plan.reductionFactor;
     KernelDiagnostics& diagnostics = const_cast<KernelDiagnostics&>(workspace.diagnostics());
     diagnostics.adaptiveBlurFactor = factor;
@@ -867,7 +844,7 @@ bool blurMasked(const QImage& source, QImage& destination, AlphaView mask, const
                 const QRegion& destinationRegion, int constantMix, const Parameters& parameters,
                 RenderWorkspace& workspace, const ExecutionOptions& options) {
     const QRect destinationPixels = destinationRegion.boundingRect();
-    const GaussianBlurPlan plan = makeGaussianBlurPlan(parameters, options.legacyGaussian);
+    const GaussianBlurPlan plan = makeGaussianBlurPlan(parameters);
     const int support = plan.physicalSupportRadius;
     const int factor = plan.reductionFactor;
     const QRect requestedSourcePixels =
@@ -1260,13 +1237,13 @@ const char* simdBackendName(SimdBackend backend) {
 
 int samplingRadiusPixels(const Parameters& parameters) {
     if (parameters.type == 1) {
-        return makeGaussianBlurPlan(parameters, false).physicalSupportRadius;
+        return makeGaussianBlurPlan(parameters).physicalSupportRadius;
     }
     return qMax(0, qCeil(parameters.logicalSamplingRadius * parameters.devicePixelRatio));
 }
 
-GaussianBlurPlan gaussianBlurPlan(const Parameters& parameters, bool legacy) {
-    return makeGaussianBlurPlan(parameters, legacy);
+GaussianBlurPlan gaussianBlurPlan(const Parameters& parameters) {
+    return makeGaussianBlurPlan(parameters);
 }
 
 void apply(QImage& image, const Parameters& parameters, RenderWorkspace* workspace,
@@ -1504,7 +1481,7 @@ bool applyMaskedSparse(const QImage& source, QImage& destination, const QImage& 
                 QRect expandedBounds;
             };
             const int support =
-                makeGaussianBlurPlan(parameters, options.legacyGaussian).physicalSupportRadius;
+                makeGaussianBlurPlan(parameters).physicalSupportRadius;
             std::vector<Cluster> clusters;
             for (const QRect& block : occupiedBlocks) {
                 Cluster next{

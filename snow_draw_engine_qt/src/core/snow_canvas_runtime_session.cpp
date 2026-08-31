@@ -32,6 +32,13 @@ std::uint64_t quickSelectionDisabledToolMask(const SnowCanvasRuntimeConfig& conf
     return mask;
 }
 
+void applyQuickSelectionPolicy(SnowRuntime runtime, std::uint64_t toolMask) {
+    // Runtime policy is shared by every viewport attached to this document session.
+    ScopedChangedViewportList changedViewports;
+    static_cast<void>(snow_runtime_set_quick_selection_disabled_tools_ex(
+        runtime, toolMask, changedViewports.outParam()));
+}
+
 ScopedRuntimeHandle createRuntime(const SnowCanvasRuntimeConfig& config) {
     ScopedRuntimeHandle runtime;
     SnowStyleDefaults styleDefaults{};
@@ -40,10 +47,8 @@ ScopedRuntimeHandle createRuntime(const SnowCanvasRuntimeConfig& config) {
         snow_runtime_create_with_config(&engineConfig, runtime.outParam()) != SNOW_OK) {
         runtime.reset();
     }
-    // Runtime policy is shared by every viewport attached to this document session.
     if (runtime.get() != nullptr) {
-        static_cast<void>(snow_runtime_set_quick_selection_disabled_tools(
-            runtime.get(), quickSelectionDisabledToolMask(config)));
+        applyQuickSelectionPolicy(runtime.get(), quickSelectionDisabledToolMask(config));
     }
     return runtime;
 }
@@ -61,8 +66,7 @@ ScopedRuntimeHandle cloneRuntimeFrom(SnowRuntime source, const SnowCanvasRuntime
         runtime.reset();
     }
     if (runtime.get() != nullptr) {
-        static_cast<void>(snow_runtime_set_quick_selection_disabled_tools(
-            runtime.get(), quickSelectionDisabledToolMask(config)));
+        applyQuickSelectionPolicy(runtime.get(), quickSelectionDisabledToolMask(config));
     }
     return runtime;
 }
@@ -80,8 +84,7 @@ ScopedRuntimeHandle runtimeFromSerializedSession(const QByteArray& payload,
         runtime.reset();
     }
     if (runtime.get() != nullptr) {
-        static_cast<void>(snow_runtime_set_quick_selection_disabled_tools(
-            runtime.get(), quickSelectionDisabledToolMask(config)));
+        applyQuickSelectionPolicy(runtime.get(), quickSelectionDisabledToolMask(config));
     }
     return runtime;
 }
@@ -99,8 +102,7 @@ ScopedRuntimeHandle runtimeFromSerializedHistory(const QByteArray& payload,
         runtime.reset();
     }
     if (runtime.get() != nullptr) {
-        static_cast<void>(snow_runtime_set_quick_selection_disabled_tools(
-            runtime.get(), quickSelectionDisabledToolMask(config)));
+        applyQuickSelectionPolicy(runtime.get(), quickSelectionDisabledToolMask(config));
     }
     return runtime;
 }
