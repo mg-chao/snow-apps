@@ -19,6 +19,7 @@ typedef struct SnowOcrEngineConfigV2 {
     uint8_t enable_cpu_mem_arena;
     uint8_t use_directml;
     uint8_t reserved[2];
+    const char* model_store_dir_utf8;
 } SnowOcrEngineConfigV2;
 
 typedef struct SnowOcrRuntimeInfoV1 {

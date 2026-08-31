@@ -34,6 +34,7 @@ clap = { version = "4.5", features = ["derive"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["ndarray", "std"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Threading"] }
 
 [features]
 default = ["download-binaries", "copy-dylibs", "ort/default", "turbojpeg-decode", "full-image-io"]

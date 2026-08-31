@@ -691,7 +691,14 @@ void ScreenshotController::Impl::createPresentationInfrastructure() {
                 .toBool()
             ? ScreenshotOcrBackendPreference::DirectMl
             : ScreenshotOcrBackendPreference::Cpu;
-    m_ocrRecognition = std::make_unique<ScreenshotOcrRecognitionService>(backendPreference, &owner);
+    ScreenshotOcrRecognitionService::Options ocrOptions;
+    if (applicationStorage.isInitialized() &&
+        !applicationStorage.configurationDirectory().trimmed().isEmpty()) {
+        ocrOptions.modelStoreDirectory = QDir(applicationStorage.configurationDirectory())
+                                             .filePath(QStringLiteral("assets/ocr"));
+    }
+    m_ocrRecognition = std::make_unique<ScreenshotOcrRecognitionService>(
+        ocrOptions, backendPreference, &owner);
     QObject::connect(
         &applicationStorage.configuration(), &snow_shot::storage::ConfigurationStore::valueChanged,
         &owner, [this](const QString& key, const QJsonValue& value) {

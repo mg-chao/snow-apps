@@ -47,6 +47,9 @@ class ScreenshotOcrRecognitionPort : public QObject {
                                    Completion completion) = 0;
     virtual void cancel(RequestToken token) = 0;
     virtual bool reprioritize(RequestToken token, ScreenshotOcrRequestPriority priority) = 0;
+    // Implementations that manage disk-backed models report whether the
+    // required files are already available before a request is queued.
+    virtual bool modelFilesReady() const { return true; }
 };
 
 class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPort {
@@ -56,6 +59,7 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
     struct Options {
         // Maximum concurrent workers; the pool grows only while queued demand requires it.
         int workerCount = 2;
+        QString modelStoreDirectory;
     };
 
     explicit ScreenshotOcrRecognitionService(QObject* parent = nullptr);
@@ -71,6 +75,7 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
                            Completion completion) override;
     void cancel(RequestToken token) override;
     bool reprioritize(RequestToken token, ScreenshotOcrRequestPriority priority) override;
+    [[nodiscard]] bool modelFilesReady() const override;
     void setBackendPreference(ScreenshotOcrBackendPreference preference);
     [[nodiscard]] int liveWorkerCount() const;
 

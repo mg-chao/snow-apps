@@ -216,6 +216,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
     quint64 m_translationGeneration = 0;
     Mode m_mode = Mode::Text;
     bool m_active = false;
+    bool m_textModelDownloadShown = false;
     bool m_editing = false;
     bool m_translating = false;
     QPointer<adqt::widgets::AdModal> m_translationSettingsModal;

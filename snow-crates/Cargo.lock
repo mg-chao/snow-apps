@@ -2302,6 +2302,7 @@ dependencies = [
  "thiserror 2.0.20",
  "turbojpeg",
  "unicode-bidi",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2839,7 +2840,6 @@ version = "0.1.0"
 dependencies = [
  "num_cpus",
  "rapid-ocr-rs",
- "sha2",
 ]
 
 [[package]]

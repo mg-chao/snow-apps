@@ -5,7 +5,10 @@
 #include "snow_ocr_c.h"
 
 #include <QCoreApplication>
+#include <QByteArray>
 #include <QDebug>
+#include <QDir>
+#include <QFileInfo>
 #include <QHash>
 #include <QMetaObject>
 #include <QPointer>
@@ -39,6 +42,10 @@ struct OcrResultDeleter {
 
 using OcrEngineHandle = std::unique_ptr<SnowOcrEngine, OcrEngineDeleter>;
 using OcrResultHandle = std::unique_ptr<SnowOcrResult, OcrResultDeleter>;
+
+constexpr const char* kDetectorModelFile = "PP-OCRv6_det_small.onnx";
+constexpr const char* kRecognizerModelFile = "PP-OCRv6_rec_small.onnx";
+constexpr const char* kDictionaryFile = "ppocrv6_dict.txt";
 
 QString lastOcrError() {
     const char* message = snow_ocr_last_error_message();
@@ -78,13 +85,15 @@ ScreenshotOcrTextDirection textDirectionForQuad(const QPolygonF& quad) {
                                                   : ScreenshotOcrTextDirection::Horizontal;
 }
 
-OcrEngineHandle createEngine(ScreenshotOcrBackendPreference preference) {
+OcrEngineHandle createEngine(ScreenshotOcrBackendPreference preference,
+                             const QString& modelStoreDirectory) {
     SnowOcrRuntimeInfoV1 runtimeInfo{
         static_cast<std::uint32_t>(sizeof(SnowOcrRuntimeInfoV1)), 0};
     const std::uint32_t physicalCores =
         snow_ocr_runtime_info_v1(&runtimeInfo) != 0 ? runtimeInfo.physical_core_count : 1;
     const std::uint32_t threadBudget = (std::max)(1u, physicalCores / 2u);
     const bool preferDirectMl = preference == ScreenshotOcrBackendPreference::DirectMl;
+    const QByteArray modelStoreDirectoryUtf8 = modelStoreDirectory.toUtf8();
     const SnowOcrEngineConfigV2 config{
         static_cast<std::uint32_t>(sizeof(SnowOcrEngineConfigV2)),
         threadBudget,
@@ -93,8 +102,19 @@ OcrEngineHandle createEngine(ScreenshotOcrBackendPreference preference) {
         1,
         static_cast<std::uint8_t>(preferDirectMl ? 1 : 0),
         {0, 0},
+        modelStoreDirectoryUtf8.constData(),
     };
     return OcrEngineHandle(snow_ocr_engine_create_with_config_v2(&config));
+}
+
+bool modelFilesReadyAt(const QString& modelStoreDirectory) {
+    if (modelStoreDirectory.trimmed().isEmpty()) {
+        return false;
+    }
+    const QDir directory(modelStoreDirectory);
+    return QFileInfo(directory.filePath(QString::fromLatin1(kDetectorModelFile))).isFile() &&
+           QFileInfo(directory.filePath(QString::fromLatin1(kRecognizerModelFile))).isFile() &&
+           QFileInfo(directory.filePath(QString::fromLatin1(kDictionaryFile))).isFile();
 }
 
 ScreenshotOcrRecognitionResult runRecognition(OcrEngineHandle& engine, QImage source,
@@ -160,7 +180,8 @@ class ScreenshotOcrRecognitionService::Impl final {
          ScreenshotOcrBackendPreference preference)
         : m_owner(owner),
           m_workerLimit(std::clamp(options.workerCount, 1, 2)),
-          m_backendPreference(preference) {
+          m_backendPreference(preference),
+          m_modelStoreDirectory(options.modelStoreDirectory) {
         m_workers.reserve(static_cast<std::size_t>(m_workerLimit));
     }
 
@@ -255,6 +276,10 @@ class ScreenshotOcrRecognitionService::Impl final {
     [[nodiscard]] int liveWorkerCount() const {
         std::lock_guard lock(m_mutex);
         return m_liveWorkerCount;
+    }
+
+    [[nodiscard]] bool modelFilesReady() const {
+        return modelFilesReadyAt(m_modelStoreDirectory);
     }
 
   private:
@@ -392,7 +417,7 @@ class ScreenshotOcrRecognitionService::Impl final {
             if (!job->cancelled.load(std::memory_order_acquire)) {
                 if (engine == nullptr || engineGeneration != generation) {
                     engine.reset();
-                    engine = createEngine(preference);
+                    engine = createEngine(preference, m_modelStoreDirectory);
                     engineGeneration = generation;
                 }
                 result =
@@ -466,6 +491,7 @@ class ScreenshotOcrRecognitionService::Impl final {
     int m_liveWorkerCount = 0;
     int m_activeWorkerCount = 0;
     ScreenshotOcrBackendPreference m_backendPreference = ScreenshotOcrBackendPreference::Cpu;
+    QString m_modelStoreDirectory;
     quint64 m_backendGeneration = 1;
     bool m_stopping = false;
 };
@@ -506,6 +532,10 @@ void ScreenshotOcrRecognitionService::cancel(RequestToken token) {
 bool ScreenshotOcrRecognitionService::reprioritize(RequestToken token,
                                                    ScreenshotOcrRequestPriority priority) {
     return m_impl != nullptr && token != 0 && m_impl->reprioritize(token, priority);
+}
+
+bool ScreenshotOcrRecognitionService::modelFilesReady() const {
+    return m_impl != nullptr && m_impl->modelFilesReady();
 }
 
 void ScreenshotOcrRecognitionService::setBackendPreference(

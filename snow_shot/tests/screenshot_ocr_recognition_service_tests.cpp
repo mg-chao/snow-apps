@@ -3,8 +3,11 @@
 #include "snow_ocr_c.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QEventLoop>
+#include <QFile>
 #include <QImage>
+#include <QTemporaryDir>
 #include <QTimer>
 
 #include <algorithm>
@@ -67,7 +70,28 @@ void processEventsFor(int durationMs) {
     loop.exec();
 }
 
-void embeddedEngineCompletesThroughTheQtWorker(bool directMlEnabled) {
+void modelStoreReadinessTracksRequiredFiles() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "temporary OCR model directory should be available");
+
+    ScreenshotOcrRecognitionService::Options options;
+    options.modelStoreDirectory = directory.path();
+    ScreenshotOcrRecognitionService service(options);
+    require(!service.modelFilesReady(),
+            "an empty OCR model directory must report that models are unavailable");
+
+    for (const QString& name : {QStringLiteral("PP-OCRv6_det_small.onnx"),
+                                QStringLiteral("PP-OCRv6_rec_small.onnx"),
+                                QStringLiteral("ppocrv6_dict.txt")}) {
+        QFile file(QDir(directory.path()).filePath(name));
+        require(file.open(QIODevice::WriteOnly), "OCR readiness fixture file should be writable");
+        file.write("fixture");
+    }
+    require(service.modelFilesReady(),
+            "an OCR model directory with all required files must report ready");
+}
+
+void diskBackedEngineCompletesThroughTheQtWorker(bool directMlEnabled) {
     ScreenshotOcrRecognitionService service(
         directMlEnabled ? ScreenshotOcrBackendPreference::DirectMl
                         : ScreenshotOcrBackendPreference::Cpu);
@@ -102,7 +126,7 @@ void embeddedEngineCompletesThroughTheQtWorker(bool directMlEnabled) {
     if (!output.error.isEmpty()) {
         std::cerr << "OCR error: " << output.error.toStdString() << '\n';
     }
-    require(output.error.isEmpty(), "the embedded OCR engine should not report an error");
+    require(output.error.isEmpty(), "the disk-backed OCR engine should not report an error");
     require(output.presentation != nullptr, "OCR recognition should return a presentation");
 }
 
@@ -342,7 +366,8 @@ void serviceDestructionJoinsWorkersAndSuppressesLateDelivery() {
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     const bool directMlRequested = application.arguments().contains(QStringLiteral("--directml"));
-    embeddedEngineCompletesThroughTheQtWorker(directMlRequested);
+    modelStoreReadinessTracksRequiredFiles();
+    diskBackedEngineCompletesThroughTheQtWorker(directMlRequested);
     if (!directMlRequested) {
         concurrentRequestsCompleteExactlyOnce();
         interactiveRequestsPrecedeQueuedPrefetch();
