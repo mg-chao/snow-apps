@@ -119,10 +119,38 @@ class FakeOcrRecognition final : public ScreenshotOcrRecognitionPort {
         return pending.token;
     }
 
+    RequestToken render(ScreenshotOcrRequest request, QObject* receiver,
+                        Completion completion) override {
+        if (!supportsRender) {
+            return 0;
+        }
+        renderPending = Pending{
+            ++nextToken,
+            std::move(request),
+            receiver,
+            std::move(completion),
+        };
+        return renderPending.token;
+    }
+
+    bool setRenderFilteredImage(RequestToken token, bool enabled,
+                                const QColor& backgroundColor = {}) override {
+        if (pending.token != token) {
+            return false;
+        }
+        pending.request.renderFilteredImage = enabled;
+        pending.request.backgroundColor = enabled ? backgroundColor : QColor();
+        renderIntentUpdates.push_back(enabled);
+        return true;
+    }
+
     void cancel(RequestToken token) override {
         cancelledTokens.push_back(token);
         if (pending.token == token) {
             pending = {};
+        }
+        if (renderPending.token == token) {
+            renderPending = {};
         }
     }
 
@@ -134,6 +162,10 @@ class FakeOcrRecognition final : public ScreenshotOcrRecognitionPort {
         return true;
     }
 
+    bool modelFilesReady() const override {
+        return modelsReady;
+    }
+
     void complete(ScreenshotOcrRecognitionResult result) {
         Pending request = std::move(pending);
         pending = {};
@@ -142,9 +174,22 @@ class FakeOcrRecognition final : public ScreenshotOcrRecognitionPort {
         }
     }
 
+    void completeRender(QImage filteredImage) {
+        Pending request = std::move(renderPending);
+        renderPending = {};
+        if (request.receiver != nullptr && request.completion) {
+            request.completion(ScreenshotOcrRecognitionResult{
+                nullptr, {}, std::move(filteredImage)});
+        }
+    }
+
     RequestToken nextToken = 0;
     Pending pending;
+    Pending renderPending;
     QVector<RequestToken> cancelledTokens;
+    QVector<bool> renderIntentUpdates;
+    bool modelsReady = true;
+    bool supportsRender = false;
 };
 
 class FakeQrRecognition final : public ScreenshotQrRecognitionPort {
@@ -223,6 +268,119 @@ void recognitionResultsSurviveTargetImageReallocationAndSeedAllModes() {
     session.invalidate();
     require(session.cachedRecognitionResults().isEmpty(),
             "full recognition invalidation should clear retained results");
+}
+
+void modelDownloadStatusTransitionsToRecognition() {
+    FakeOcrRecognition recognition;
+    recognition.modelsReady = false;
+    QStringList modelDownloadMessages;
+    QStringList recognitionMessages;
+    int modelDownloadHideCount = 0;
+    QStringList statusEvents;
+    ScreenshotRecognitionSessionActions actions;
+    actions.showModelDownload = [&](const QString& message) {
+        modelDownloadMessages.push_back(message);
+        statusEvents.push_back(QStringLiteral("download"));
+    };
+    actions.showRecognition = [&](const QString& message) {
+        recognitionMessages.push_back(message);
+        statusEvents.push_back(QStringLiteral("recognition"));
+    };
+    actions.hideModelDownload = [&]() {
+        ++modelDownloadHideCount;
+        statusEvents.push_back(QStringLiteral("hide-download"));
+    };
+    actions.hideLoading = []() {};
+    ScreenshotRecognitionSessionController session(&recognition, nullptr, nullptr,
+                                                    std::move(actions));
+
+    const QImage image(QSize(80, 50), QImage::Format_ARGB32_Premultiplied);
+    session.setTarget(ScreenshotRecognitionTarget{
+        QStringLiteral("capture-download-status"), image,
+        QRectF(QPointF(), QSizeF(image.size()))});
+    session.activate(ScreenshotRecognitionSessionController::Mode::Text);
+    require(recognition.pending.token != 0 && modelDownloadMessages.size() == 1 &&
+                modelDownloadMessages.constLast() == QStringLiteral("Downloading OCR model files") &&
+                recognitionMessages.isEmpty(),
+            "text recognition should show model download status until model files are ready");
+
+    recognition.modelsReady = true;
+    QEventLoop loop;
+    QTimer::singleShot(200, &loop, &QEventLoop::quit);
+    loop.exec();
+    require(recognitionMessages.size() == 1 &&
+                recognitionMessages.constLast() == QStringLiteral("Recognizing text") &&
+                modelDownloadMessages.size() == 1 && modelDownloadHideCount == 1 &&
+                statusEvents == QStringList{QStringLiteral("download"),
+                                            QStringLiteral("hide-download"),
+                                            QStringLiteral("recognition")},
+            "text recognition should close the download status before showing a separate "
+            "recognition status");
+}
+
+void textRenderLifecycleUsesTransientWorkerResults() {
+    FakeOcrRecognition recognition;
+    recognition.supportsRender = true;
+    QVector<QImage> appliedImages;
+    ScreenshotRecognitionSessionActions actions;
+    actions.applyOcrPresentation = [](std::shared_ptr<ScreenshotOcrPresentation>) {};
+    actions.applyOcrBackground = [](std::shared_ptr<ScreenshotOcrPresentation>) {};
+    actions.clearOcrBackground = []() {};
+    actions.applyOcrBackgroundImage =
+        [&](std::shared_ptr<ScreenshotOcrPresentation>, QImage image) {
+            appliedImages.push_back(std::move(image));
+        };
+    actions.ocrBackgroundColor = []() { return QColor(20, 30, 40); };
+    ScreenshotRecognitionSessionController session(&recognition, nullptr, nullptr,
+                                                    std::move(actions));
+
+    QImage image(QSize(80, 50), QImage::Format_ARGB32_Premultiplied);
+    image.fill(QColor(18, 36, 54));
+    const QString key = QStringLiteral("transient-render");
+    const QRectF canvasRect(QPointF(), QSizeF(image.size()));
+    session.setTarget(ScreenshotRecognitionTarget{key, image, canvasRect});
+    session.prefetchText();
+    require(recognition.pending.token != 0 &&
+                !recognition.pending.request.renderFilteredImage,
+            "automatic text prefetch must not request an OCR effect");
+
+    session.activate(ScreenshotRecognitionSessionController::Mode::Text);
+    require(recognition.pending.request.renderFilteredImage &&
+                recognition.renderIntentUpdates == QVector<bool>{true},
+            "opening OCR should promote pending recognition to render in its existing worker");
+    session.deactivate();
+    require(!recognition.pending.request.renderFilteredImage &&
+                recognition.renderIntentUpdates == QVector<bool>({true, false}),
+            "leaving OCR midway should suppress its worker render without cancelling recognition");
+
+    session.activate(ScreenshotRecognitionSessionController::Mode::Text);
+    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+    presentation->selection = canvasRect.toAlignedRect();
+    ScreenshotOcrLine line;
+    line.text = QStringLiteral("Transient OCR");
+    line.quad = QPolygonF({QPointF(5.0, 5.0), QPointF(70.0, 5.0),
+                           QPointF(70.0, 25.0), QPointF(5.0, 25.0)});
+    presentation->lines.push_back(line);
+    QImage filtered(image.size(), QImage::Format_ARGB32_Premultiplied);
+    filtered.fill(QColor(60, 70, 80));
+    recognition.complete({presentation, {}, filtered});
+    require(appliedImages.size() == 1 && !appliedImages.constFirst().isNull() &&
+                recognition.renderPending.token == 0,
+            "interactive uncached recognition should consume its worker-rendered image directly");
+    const ScreenshotRecognitionResults cached = session.cachedRecognitionResults();
+    require(cached.text.has_value() && cached.text->filteredImage.isNull(),
+            "OCR caches must never retain the transient filtered image");
+
+    session.deactivate();
+    appliedImages.clear();
+    session.activate(ScreenshotRecognitionSessionController::Mode::Text);
+    require(recognition.renderPending.token != 0 &&
+                recognition.renderPending.request.presentation == presentation,
+            "activating cached OCR should submit render-only work to the OCR worker");
+    recognition.completeRender(filtered);
+    require(appliedImages.size() == 1 && !appliedImages.constFirst().isNull(),
+            "the cached render-only result should be retained only by the visible presentation");
+    session.deactivate();
 }
 
 QGraphicsTextItem* formattedTextItem(QGraphicsView* layer) {
@@ -3307,6 +3465,11 @@ int main(int argc, char* argv[]) {
         SnowCanvasRuntime sourceRuntime;
         require(sourceRuntime.isValid(), "source runtime creation failed");
         recognitionResultsSurviveTargetImageReallocationAndSeedAllModes();
+        modelDownloadStatusTransitionsToRecognition();
+        textRenderLifecycleUsesTransientWorkerResults();
+        if (app.arguments().contains(QStringLiteral("--ocr-render-lifecycle-only"))) {
+            return 0;
+        }
         pinnedSeededRecognitionSkipsAutomaticRequests(sourceRuntime);
         if (app.arguments().contains(QStringLiteral("--large-edit-only"))) {
             pinnedLargeImageRemainsOpenWhenEnteringDrawingMode(sourceRuntime);

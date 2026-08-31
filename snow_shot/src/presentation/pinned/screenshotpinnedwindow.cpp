@@ -115,6 +115,8 @@ constexpr int kWheelOpacityStep = 5;
 const QColor kDefaultPinnedBorderColor(219, 219, 219, 255);
 constexpr auto kTranslationSourceProperty = "screenshotPinnedTranslationSource";
 constexpr auto kShortcutDisplayProperty = "screenshotPinnedShortcutDisplay";
+constexpr auto kRecognitionMessageKey = "screenshot-pinned-recognition-status";
+constexpr auto kModelDownloadMessageKey = "screenshot-pinned-model-download-status";
 constexpr auto kOcrTooLargeDescription = "Image size is too large.";
 [[maybe_unused]] constexpr const char* kPinnedTranslations[] = {
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Enable drawing mode"),
@@ -1321,6 +1323,9 @@ bool ScreenshotPinnedWindow::present(const Config& config, std::function<void(bo
     m_qrRecognition = config.qrRecognition;
     m_tableRecognition = config.tableRecognition;
     m_recognitionResults = config.recognitionResults;
+    if (m_recognitionResults.text.has_value()) {
+        m_recognitionResults.text->filteredImage = {};
+    }
     m_initialPhysicalSize =
         config.fullResolutionScaleBasis.isValid() && !config.fullResolutionScaleBasis.isEmpty()
             ? config.fullResolutionScaleBasis
@@ -1585,11 +1590,11 @@ bool ScreenshotPinnedWindow::present(const Config& config, std::function<void(bo
             },
             [this](const QString& message) {
                 ScreenshotMessageService::loadingFor(
-                    this, QStringLiteral("screenshot-pinned-recognition-status"), message);
+                    this, QString::fromLatin1(kRecognitionMessageKey), message);
             },
             [this]() {
                 ScreenshotMessageService::destroyFor(
-                    this, QStringLiteral("screenshot-pinned-recognition-status"));
+                    this, QString::fromLatin1(kRecognitionMessageKey));
             },
             [this](const QString& message, bool error) {
                 if (error) {
@@ -1610,6 +1615,41 @@ bool ScreenshotPinnedWindow::present(const Config& config, std::function<void(bo
                             m_editController->toolbarWindow()->palette()) {
                         toolbar->setTextTransformSelections(formatting, punctuation);
                     }
+                }
+            },
+            [this](const QString& message) {
+                ScreenshotMessageService::loadingFor(
+                    this, QString::fromLatin1(kModelDownloadMessageKey), message);
+            },
+            [this](const QString& message) {
+                ScreenshotMessageService::loadingFor(
+                    this, QString::fromLatin1(kRecognitionMessageKey), message);
+            },
+            [this]() {
+                ScreenshotMessageService::destroyFor(
+                    this, QString::fromLatin1(kModelDownloadMessageKey));
+            },
+            [this]() {
+                const auto theme = adqt::theme::ThemeManager::instance().resolveTheme(this);
+                return theme.colorBgContainer.isValid() ? theme.colorBgContainer
+                                                         : QColor(Qt::white);
+            },
+            [this](ScreenshotOcrRequest& request) {
+                if (!m_transformedImage.isNull() && !m_backgroundCanvasRect.isEmpty()) {
+                    request.image = m_transformedImage;
+                    request.canvasRect = m_backgroundCanvasRect;
+                }
+                if (m_displayOcrPresentation != nullptr) {
+                    request.presentation = m_displayOcrPresentation;
+                }
+            },
+            []() { return false; },
+            [this](std::shared_ptr<ScreenshotOcrPresentation> presentation,
+                   QImage filteredImage) {
+                Q_UNUSED(presentation);
+                if (m_screenshotRenderer != nullptr && !filteredImage.isNull()) {
+                    m_screenshotRenderer->setOcrFilteredImage(std::move(filteredImage),
+                                                              m_backgroundCanvasRect);
                 }
             },
         },
@@ -3352,6 +3392,10 @@ void ScreenshotPinnedWindow::rebuildTransformedImage() {
                                                  m_resultStyle);
     if (m_ocrReady) {
         updateOcrPresentation();
+        if (m_ocrMode && m_recognitionSession != nullptr && m_recognitionSession->active() &&
+            m_recognitionSession->mode() == ScreenshotRecognitionSessionController::Mode::Text) {
+            m_recognitionSession->renderTextBackground();
+        }
     }
 }
 

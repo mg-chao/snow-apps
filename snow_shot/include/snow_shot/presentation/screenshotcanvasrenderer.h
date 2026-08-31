@@ -110,6 +110,8 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     void setOcrPresentation(
         std::shared_ptr<ScreenshotOcrPresentation> presentation,
         OcrPresentationMode mode = OcrPresentationMode::BackgroundAndText);
+    void setOcrFilteredImage(QImage image, const QRectF& canvasRect);
+    void clearOcrFilteredImage();
     [[nodiscard]] ScreenshotOcrTextPosition ocrTextPositionAt(const QPointF& canvasPosition,
                                                               bool useClosestLine = false) const;
     void updateOcrSelection();
@@ -155,6 +157,8 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     QColor m_monitorCenterGuideLineColor = QColor(0, 0, 0, 0);
     bool m_guideLinesVisible = false;
     std::shared_ptr<ScreenshotOcrPresentation> m_ocrPresentation;
+    QImage m_ocrFilteredImage;
+    QRectF m_ocrFilteredCanvasRect;
     QColor m_ocrBackgroundColor;
     OcrPresentationMode m_ocrPresentationMode = OcrPresentationMode::BackgroundAndText;
     // The canvas owns this widget through QObject parenting.

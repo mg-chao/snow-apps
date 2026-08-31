@@ -1812,7 +1812,8 @@ void ocrPresentationRendersWhileCanvasContentIsHidden() {
     QApplication::processEvents();
     QImage screenshot(80, 80, QImage::Format_RGBA8888);
     screenshot.fill(QColor(0, 80, 240));
-    renderer.setImage(std::move(screenshot), QRectF(-40.0, -40.0, 80.0, 80.0));
+    const QRectF screenshotCanvasRect(-40.0, -40.0, 80.0, 80.0);
+    renderer.setImage(screenshot, screenshotCanvasRect);
 
     auto presentation = std::make_shared<ScreenshotOcrPresentation>();
     presentation->selection = QRect(-20, -10, 40, 20);
@@ -1827,10 +1828,18 @@ void ocrPresentationRendersWhileCanvasContentIsHidden() {
     presentation->lines.push_back(line);
     renderer.setOcrPresentation(presentation,
                                 ScreenshotCanvasRenderer::OcrPresentationMode::BackgroundOnly);
+    renderer.setOcrFilteredImage(
+        renderScreenshotOcrFilteredImage(screenshot, screenshotCanvasRect, *presentation,
+                                         QColor(Qt::white)),
+        screenshotCanvasRect);
     require(canvas.findChild<QGraphicsView*>(QStringLiteral("snowShotOcrTextLayer")) == nullptr,
             "background-only OCR should not create a text layer on the screenshot canvas");
     renderer.clearOcrPresentation();
     renderer.setOcrPresentation(presentation);
+    renderer.setOcrFilteredImage(
+        renderScreenshotOcrFilteredImage(screenshot, screenshotCanvasRect, *presentation,
+                                         QColor(Qt::white)),
+        screenshotCanvasRect);
     require(ocrTextItemCount(canvas) == 1,
             "each OCR line should use one layout-backed graphics item");
     canvas.setCanvasContentVisible(false);
@@ -1933,6 +1942,10 @@ void ocrPresentationRendersWhileCanvasContentIsHidden() {
             "clearing OCR should destroy its graphics text items");
     renderer.setOcrPresentation(presentation,
                                 ScreenshotCanvasRenderer::OcrPresentationMode::BackgroundOnly);
+    renderer.setOcrFilteredImage(
+        renderScreenshotOcrFilteredImage(screenshot, screenshotCanvasRect, *presentation,
+                                         QColor(Qt::white)),
+        screenshotCanvasRect);
     const QImage backgroundOnlyOutput = renderCanvas(canvas);
     require(ocrTextItemCount(canvas) == 0 && textLayer->isHidden(),
             "background-only OCR should not create or show text widgets");
@@ -3104,6 +3117,11 @@ int main(int argc, char** argv) {
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/msyh.ttc")) >= 0,
             "the vertical OCR renderer test requires a system CJK font");
 #endif
+    if (application.arguments().contains(QStringLiteral("--ocr-presentation"))) {
+        ocrPresentationRendersWhileCanvasContentIsHidden();
+        ocrFilteredImageBlendsTowardTheSuppliedThemeBackground();
+        return 0;
+    }
 #if defined(Q_OS_WIN)
     if (application.arguments().contains(
             QStringLiteral("--native-scrolling-thumbnail-presentation"))) {

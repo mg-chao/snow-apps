@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTOCRRECOGNITIONSERVICE_H
 
 #include <QImage>
+#include <QColor>
 #include <QObject>
 #include <QRectF>
 #include <QSize>
@@ -24,6 +25,8 @@ class ScreenshotOcrPresentation;
 struct ScreenshotOcrRecognitionResult {
     std::shared_ptr<ScreenshotOcrPresentation> presentation;
     QString error;
+    // Transient worker-produced image. It is never part of the OCR cache.
+    QImage filteredImage;
 };
 
 enum class ScreenshotOcrRequestPriority { Interactive, Prefetch };
@@ -34,6 +37,10 @@ struct ScreenshotOcrRequest {
     QImage image;
     QRectF canvasRect;
     ScreenshotOcrRequestPriority priority = ScreenshotOcrRequestPriority::Interactive;
+    bool renderFilteredImage = false;
+    bool renderOnly = false;
+    std::shared_ptr<ScreenshotOcrPresentation> presentation;
+    QColor backgroundColor;
 };
 
 class ScreenshotOcrRecognitionPort : public QObject {
@@ -45,6 +52,27 @@ class ScreenshotOcrRecognitionPort : public QObject {
     virtual ~ScreenshotOcrRecognitionPort() = default;
     virtual RequestToken recognize(ScreenshotOcrRequest request, QObject* receiver,
                                    Completion completion) = 0;
+    // Optional render-only operation. The default keeps lightweight test and
+    // alternate implementations source-compatible; the production service
+    // executes it on the same bounded worker pool as recognition.
+    virtual RequestToken render(ScreenshotOcrRequest request, QObject* receiver,
+                                Completion completion) {
+        Q_UNUSED(request);
+        Q_UNUSED(receiver);
+        Q_UNUSED(completion);
+        return 0;
+    }
+    // Updates whether an in-flight recognition job should render its transient
+    // filtered image before leaving the worker. This lets a prefetch become
+    // visible, or an abandoned interactive request suppress rendering, without
+    // cancelling recognition and recreating its worker.
+    virtual bool setRenderFilteredImage(RequestToken token, bool enabled,
+                                        const QColor& backgroundColor = {}) {
+        Q_UNUSED(token);
+        Q_UNUSED(enabled);
+        Q_UNUSED(backgroundColor);
+        return false;
+    }
     virtual void cancel(RequestToken token) = 0;
     virtual bool reprioritize(RequestToken token, ScreenshotOcrRequestPriority priority) = 0;
     // Implementations that manage disk-backed models report whether the
@@ -73,6 +101,10 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
 
     RequestToken recognize(ScreenshotOcrRequest request, QObject* receiver,
                            Completion completion) override;
+    RequestToken render(ScreenshotOcrRequest request, QObject* receiver,
+                        Completion completion) override;
+    bool setRenderFilteredImage(RequestToken token, bool enabled,
+                                const QColor& backgroundColor = {}) override;
     void cancel(RequestToken token) override;
     bool reprioritize(RequestToken token, ScreenshotOcrRequestPriority priority) override;
     [[nodiscard]] bool modelFilesReady() const override;

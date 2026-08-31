@@ -50,6 +50,7 @@ class ScreenshotOverlayWindow final : public QWidget {
     void setScreenshotSelectionBorderVisible(bool visible);
     [[nodiscard]] bool screenshotSelectionBorderVisible() const;
     void setScreenshotOcrBackground(std::shared_ptr<ScreenshotOcrPresentation> presentation);
+    void setScreenshotOcrFilteredImage(QImage image, const QRectF& canvasRect);
     void clearScreenshotOcrBackground();
     void setHistoryLoadingVisible(bool visible);
     void resetScreenshotRendering();

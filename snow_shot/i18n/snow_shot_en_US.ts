@@ -1081,6 +1081,11 @@
         <translation>Recognizing text</translation>
     </message>
     <message>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1542"/>
+        <source>Downloading OCR model files</source>
+        <translation>Downloading OCR model files</translation>
+    </message>
+    <message>
         <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1363"/>
         <source>QR code recognition failed</source>
         <translation>QR code recognition failed</translation>

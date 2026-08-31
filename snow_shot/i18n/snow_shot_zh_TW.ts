@@ -1080,6 +1080,11 @@
         <translation>正在辨識文字</translation>
     </message>
     <message>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1542"/>
+        <source>Downloading OCR model files</source>
+        <translation>正在下載 OCR 模型檔案</translation>
+    </message>
+    <message>
         <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1363"/>
         <source>QR code recognition failed</source>
         <translation>QR 碼辨識失敗</translation>

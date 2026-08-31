@@ -13,6 +13,8 @@
 #include "snow_shot/presentation/screenshottableeditor.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
 
+#include "theme/theme_manager.h"
+
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 
 #include <QApplication>
@@ -27,6 +29,7 @@
 
 namespace {
 constexpr auto kRecognitionMessageKey = "screenshot-ocr-recognition";
+constexpr auto kModelDownloadMessageKey = "screenshot-ocr-model-download";
 constexpr auto kStatusMessageKey = "screenshot-ocr-status";
 
 ScreenshotToolPalette::Tool paletteTool(ScreenshotActiveTool tool) {
@@ -174,6 +177,32 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                 if (ScreenshotToolbarWindow* toolbar = m_context.overlayCoordinator.toolbar()) {
                     toolbar->setTextTransformSelections(formatting, punctuation);
                 }
+            },
+            [this](const QString& message) {
+                m_messages->loading(QString::fromLatin1(kModelDownloadMessageKey), message, {},
+                                    m_recognitionWindow.data());
+            },
+            [this](const QString& message) {
+                m_messages->loading(QString::fromLatin1(kRecognitionMessageKey), message, {},
+                                    m_recognitionWindow.data());
+            },
+            [this]() {
+                m_messages->destroy(QString::fromLatin1(kModelDownloadMessageKey));
+            },
+            [this]() {
+                if (ensureRecognitionWindow() && m_recognitionWindow != nullptr) {
+                    const auto theme = adqt::theme::ThemeManager::instance().resolveTheme(
+                        m_recognitionWindow.data());
+                    return theme.colorBgContainer.isValid() ? theme.colorBgContainer
+                                                             : QColor(Qt::white);
+                }
+                return QColor(Qt::white);
+            },
+            {},
+            {},
+            [this](std::shared_ptr<ScreenshotOcrPresentation> presentation,
+                   QImage filteredImage) {
+                applyOcrBackgroundToOverlays(presentation, std::move(filteredImage));
             },
         },
         this);
@@ -516,11 +545,16 @@ void ScreenshotOcrController::updateOverlays() const {
 }
 
 void ScreenshotOcrController::applyOcrBackgroundToOverlays(
-    const std::shared_ptr<ScreenshotOcrPresentation>& presentation) const {
+    const std::shared_ptr<ScreenshotOcrPresentation>& presentation, QImage filteredImage) const {
     m_context.displaySession.forEachOverlay(
-        [&presentation](qsizetype, ScreenshotOverlayWindow* overlay) {
+        [&presentation, &filteredImage](qsizetype, ScreenshotOverlayWindow* overlay) {
             if (overlay != nullptr) {
                 overlay->setScreenshotOcrBackground(presentation);
+                if (!filteredImage.isNull()) {
+                    overlay->setScreenshotOcrFilteredImage(
+                        filteredImage, presentation != nullptr ? QRectF(presentation->selection)
+                                                               : QRectF());
+                }
             }
         });
 }

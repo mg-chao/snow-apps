@@ -1735,6 +1735,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenshotscrollingtypes.h
         include/snow_shot/presentation/screenshotscrollingthumbnailwidget.h
         src/presentation/capture/screenshotscrollingthumbnailwidget.cpp
+        src/presentation/core/screenshotcanvastoolstyles.cpp
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/selection/screenshotselectiongeometry.cpp
         src/presentation/selection/screenshotselectionmodel.cpp
@@ -1760,13 +1761,24 @@ if(SNOW_SHOT_BUILD_TESTS)
         ant_design_qt
         Qt6::Widgets
         Qt6::QOffscreenIntegrationPlugin
+        snow_shot_storage
         snow_draw_engine_qt_canvas
     )
     add_test(
         NAME snow-shot-screenshot-canvas-renderer-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests
     )
+    add_test(
+        NAME snow-shot-ocr-canvas-renderer-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --ocr-presentation
+    )
     set_tests_properties(snow-shot-screenshot-canvas-renderer-tests PROPERTIES
+        ENVIRONMENT
+            "QT_QPA_PLATFORM=offscreen"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+    set_tests_properties(snow-shot-ocr-canvas-renderer-tests PROPERTIES
         ENVIRONMENT
             "QT_QPA_PLATFORM=offscreen"
         ENVIRONMENT_MODIFICATION
@@ -2024,6 +2036,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --recognition-priority-only
     )
     add_test(
+        NAME snow-shot-pinned-ocr-render-lifecycle-tests
+        COMMAND snow-shot-pinned-window-tests --ocr-render-lifecycle-only
+    )
+    add_test(
         NAME snow-shot-pinned-clipboard-content-tests
         COMMAND snow-shot-pinned-window-tests --clipboard-content-only
     )
@@ -2035,6 +2051,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-pinned-window-tests
         snow-shot-pinned-recognition-provider-loss-tests
         snow-shot-pinned-recognition-priority-tests
+        snow-shot-pinned-ocr-render-lifecycle-tests
         snow-shot-pinned-clipboard-content-tests
         snow-shot-pinned-async-presentation-tests
         snow-shot-pinned-toolbar-parity-tests
@@ -2763,13 +2780,16 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenshotocrrecognitionservice.h
         src/presentation/ocr/screenshotocrpresentation.cpp
         src/presentation/ocr/screenshotocrrecognitionservice.cpp
+        src/presentation/ocr/screenshotocrvisuals.cpp
     )
     target_include_directories(snow-shot-ocr-recognition-service-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${SNOW_DRAW_ENGINE_SOURCE_DIR}/include"
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-ocr-c/include"
     )
     target_link_libraries(snow-shot-ocr-recognition-service-tests PRIVATE
         snow_ocr_c
+        snow_draw_engine_qt_canvas
         Qt6::Core
         Qt6::Gui
     )

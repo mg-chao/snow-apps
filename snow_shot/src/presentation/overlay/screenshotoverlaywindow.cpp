@@ -201,6 +201,13 @@ void ScreenshotOverlayWindow::setScreenshotOcrBackground(
     }
 }
 
+void ScreenshotOverlayWindow::setScreenshotOcrFilteredImage(QImage image,
+                                                            const QRectF& canvasRect) {
+    if (m_screenshotRenderer != nullptr) {
+        m_screenshotRenderer->setOcrFilteredImage(std::move(image), canvasRect);
+    }
+}
+
 void ScreenshotOverlayWindow::clearScreenshotOcrBackground() {
     if (m_screenshotRenderer != nullptr) {
         m_screenshotRenderer->clearOcrPresentation();

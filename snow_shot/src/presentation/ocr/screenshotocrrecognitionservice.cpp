@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 
 #include "snow_shot/presentation/screenshotocrpresentation.h"
+#include "snow_shot/presentation/screenshotocrvisuals.h"
 
 #include "snow_ocr_c.h"
 
@@ -172,6 +173,23 @@ ScreenshotOcrRecognitionResult runRecognition(OcrEngineHandle& engine, QImage so
     output.presentation->prepareForRendering();
     return output;
 }
+
+QImage renderFilteredImage(QImage source, const QRectF& canvasRect,
+                           const std::shared_ptr<ScreenshotOcrPresentation>& presentation,
+                           const QColor& backgroundColor) {
+    if (source.isNull() || presentation == nullptr || !canvasRect.isValid() ||
+        canvasRect.isEmpty()) {
+        return {};
+    }
+    if (source.format() != QImage::Format_ARGB32_Premultiplied) {
+        source = source.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    }
+    source.setDevicePixelRatio(1.0);
+    const QRectF normalizedCanvasRect = canvasRect.normalized();
+    return renderScreenshotOcrFilteredImage(
+        source, normalizedCanvasRect, *presentation, backgroundColor,
+        std::max<qreal>(1.0, source.width() / normalizedCanvasRect.width()));
+}
 } // namespace
 
 class ScreenshotOcrRecognitionService::Impl final {
@@ -259,6 +277,19 @@ class ScreenshotOcrRecognitionService::Impl final {
         eraseQueuedJob(job);
         job->request.priority = priority;
         queueFor(priority).push_back(job);
+        return true;
+    }
+
+    bool setRenderFilteredImage(RequestToken token, bool enabled,
+                                const QColor& backgroundColor) {
+        std::lock_guard lock(m_mutex);
+        const auto request = m_requests.find(token);
+        if (request == m_requests.end() || request.value()->request.renderOnly ||
+            request.value()->cancelled.load(std::memory_order_acquire)) {
+            return false;
+        }
+        request.value()->request.renderFilteredImage = enabled;
+        request.value()->request.backgroundColor = enabled ? backgroundColor : QColor();
         return true;
     }
 
@@ -377,6 +408,15 @@ class ScreenshotOcrRecognitionService::Impl final {
         worker->finished = true;
     }
 
+    [[nodiscard]] std::pair<bool, QColor>
+    renderOptions(const std::shared_ptr<Job>& job) const {
+        std::lock_guard lock(m_mutex);
+        if (job->cancelled.load(std::memory_order_acquire)) {
+            return {false, {}};
+        }
+        return {job->request.renderFilteredImage, job->request.backgroundColor};
+    }
+
     void workerLoop(WorkerSlot* worker) {
         OcrEngineHandle engine;
         quint64 engineGeneration = 0;
@@ -415,13 +455,39 @@ class ScreenshotOcrRecognitionService::Impl final {
 
             ScreenshotOcrRecognitionResult result;
             if (!job->cancelled.load(std::memory_order_acquire)) {
-                if (engine == nullptr || engineGeneration != generation) {
-                    engine.reset();
-                    engine = createEngine(preference, m_modelStoreDirectory);
-                    engineGeneration = generation;
+                if (job->request.renderOnly) {
+                    result.filteredImage = renderFilteredImage(
+                        std::move(job->request.image), job->request.canvasRect,
+                        job->request.presentation, job->request.backgroundColor);
+                    if (result.filteredImage.isNull() && job->request.presentation != nullptr) {
+                        result.error = QCoreApplication::translate(
+                            "ScreenshotOcrController", "Text recognition failed");
+                    }
+                } else {
+                    // Keep an implicitly shared source only for the lifetime of
+                    // this job. Rendering may be enabled while recognition is
+                    // running if a prefetch becomes interactive.
+                    QImage sourceForRender = job->request.image;
+                    if (engine == nullptr || engineGeneration != generation) {
+                        engine.reset();
+                        engine = createEngine(preference, m_modelStoreDirectory);
+                        engineGeneration = generation;
+                    }
+                    result = runRecognition(engine, std::move(job->request.image),
+                                            job->request.canvasRect);
+                    const auto [shouldRender, backgroundColor] = renderOptions(job);
+                    if (shouldRender && result.error.isEmpty() &&
+                        result.presentation != nullptr) {
+                        result.filteredImage = renderFilteredImage(
+                            std::move(sourceForRender), job->request.canvasRect,
+                            result.presentation, backgroundColor);
+                        // If the user left while the filter was executing, do
+                        // not retain or deliver the now-unneeded pixels.
+                        if (!renderOptions(job).first) {
+                            result.filteredImage = {};
+                        }
+                    }
                 }
-                result =
-                    runRecognition(engine, std::move(job->request.image), job->request.canvasRect);
             }
             {
                 std::lock_guard lock(m_mutex);
@@ -521,6 +587,28 @@ ScreenshotOcrRecognitionService::recognize(ScreenshotOcrRequest request, QObject
         ++m_nextToken;
     } while (m_nextToken == 0);
     return m_impl->enqueue(m_nextToken, std::move(request), receiver, std::move(completion));
+}
+
+ScreenshotOcrRecognitionPort::RequestToken
+ScreenshotOcrRecognitionService::render(ScreenshotOcrRequest request, QObject* receiver,
+                                        Completion completion) {
+    if (request.image.isNull() || !request.canvasRect.isValid() || request.canvasRect.isEmpty() ||
+        request.presentation == nullptr || receiver == nullptr || !completion ||
+        m_impl == nullptr) {
+        return 0;
+    }
+    request.renderOnly = true;
+    request.renderFilteredImage = false;
+    do {
+        ++m_nextToken;
+    } while (m_nextToken == 0);
+    return m_impl->enqueue(m_nextToken, std::move(request), receiver, std::move(completion));
+}
+
+bool ScreenshotOcrRecognitionService::setRenderFilteredImage(
+    RequestToken token, bool enabled, const QColor& backgroundColor) {
+    return m_impl != nullptr && token != 0 &&
+           m_impl->setRenderFilteredImage(token, enabled, backgroundColor);
 }
 
 void ScreenshotOcrRecognitionService::cancel(RequestToken token) {

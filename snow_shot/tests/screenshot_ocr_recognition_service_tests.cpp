@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
+#include "snow_shot/presentation/screenshotocrpresentation.h"
 
 #include "snow_ocr_c.h"
 
@@ -128,6 +129,113 @@ void diskBackedEngineCompletesThroughTheQtWorker(bool directMlEnabled) {
     }
     require(output.error.isEmpty(), "the disk-backed OCR engine should not report an error");
     require(output.presentation != nullptr, "OCR recognition should return a presentation");
+}
+
+std::shared_ptr<ScreenshotOcrPresentation> filterPresentation(const QRect& selection) {
+    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+    presentation->selection = selection;
+    ScreenshotOcrLine line;
+    line.text = QStringLiteral("OCR");
+    line.quad = QPolygonF({QPointF(selection.left() + 8.0, selection.top() + 8.0),
+                           QPointF(selection.right() - 8.0, selection.top() + 8.0),
+                           QPointF(selection.right() - 8.0, selection.bottom() - 8.0),
+                           QPointF(selection.left() + 8.0, selection.bottom() - 8.0)});
+    presentation->lines.push_back(std::move(line));
+    presentation->prepareForRendering();
+    return presentation;
+}
+
+void renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine() {
+    require(resourceCounts().engines == 0,
+            "render-only OCR work should start without a live recognition engine");
+    ScreenshotOcrRecognitionService service;
+    QObject receiver;
+    QImage image(96, 64, QImage::Format_RGBA8888);
+    image.fill(QColor(20, 80, 220));
+    const QRectF canvasRect(QPointF(), QSizeF(image.size()));
+    ScreenshotOcrRequest request;
+    request.image = image;
+    request.canvasRect = canvasRect;
+    request.presentation = filterPresentation(canvasRect.toAlignedRect());
+    request.backgroundColor = QColor(30, 40, 50);
+
+    ScreenshotOcrRecognitionResult output;
+    bool completed = false;
+    const auto token = service.render(
+        std::move(request), &receiver, [&](ScreenshotOcrRecognitionResult result) {
+            output = std::move(result);
+            completed = true;
+        });
+    require(token != 0, "a valid render-only OCR request should be accepted");
+    require(waitUntil([&]() { return completed; }, kRecognitionTimeoutMs),
+            "render-only OCR work should complete on the worker");
+    require(output.error.isEmpty() && output.presentation == nullptr &&
+                !output.filteredImage.isNull(),
+            "render-only OCR work should return only its transient filtered image");
+    require(resourceCounts().engines == 0,
+            "render-only OCR work must not initialize a recognition engine");
+    require(waitUntil([&]() { return service.liveWorkerCount() == 0; }, 1'000),
+            "the render-only OCR worker should retire after its queue drains");
+}
+
+void recognitionRenderIntentCanChangeWhileQueued() {
+    ScreenshotOcrRecognitionService::Options options;
+    options.workerCount = 1;
+    ScreenshotOcrRecognitionService service(options);
+    QObject receiver;
+    const QImage blocker = whiteImage(768);
+    bool blockerCompleted = false;
+    const auto blockerToken = service.recognize(
+        ScreenshotOcrRequest{blocker, QRectF(QPointF(), QSizeF(blocker.size()))}, &receiver,
+        [&](ScreenshotOcrRecognitionResult result) {
+            require(result.error.isEmpty() && result.presentation != nullptr,
+                    "the render-intent blocker recognition should succeed");
+            blockerCompleted = true;
+        });
+    require(blockerToken != 0, "the render-intent blocker should be accepted");
+
+    QImage promotedImage(96, 64, QImage::Format_RGBA8888);
+    promotedImage.fill(QColor(20, 80, 220));
+    ScreenshotOcrRequest promotedRequest;
+    promotedRequest.image = promotedImage;
+    promotedRequest.canvasRect = QRectF(QPointF(), QSizeF(promotedImage.size()));
+    promotedRequest.priority = ScreenshotOcrRequestPriority::Prefetch;
+    bool promotedCompleted = false;
+    ScreenshotOcrRecognitionResult promotedOutput;
+    const auto promotedToken = service.recognize(
+        std::move(promotedRequest), &receiver, [&](ScreenshotOcrRecognitionResult result) {
+            promotedOutput = std::move(result);
+            promotedCompleted = true;
+        });
+    require(promotedToken != 0 &&
+                service.setRenderFilteredImage(promotedToken, true, QColor(Qt::white)),
+            "a queued prefetch should accept interactive render promotion");
+    require(waitUntil([&]() { return blockerCompleted && promotedCompleted; },
+                      kRecognitionTimeoutMs),
+            "promoted recognition should finish within the timeout");
+    require(promotedOutput.error.isEmpty() && promotedOutput.presentation != nullptr &&
+                !promotedOutput.filteredImage.isNull(),
+            "a promoted prefetch should render its transient effect in the recognition worker");
+
+    ScreenshotOcrRequest suppressedRequest;
+    suppressedRequest.image = promotedImage;
+    suppressedRequest.canvasRect = QRectF(QPointF(), QSizeF(promotedImage.size()));
+    suppressedRequest.renderFilteredImage = true;
+    bool suppressedCompleted = false;
+    ScreenshotOcrRecognitionResult suppressedOutput;
+    const auto suppressedToken = service.recognize(
+        std::move(suppressedRequest), &receiver, [&](ScreenshotOcrRecognitionResult result) {
+            suppressedOutput = std::move(result);
+            suppressedCompleted = true;
+        });
+    require(suppressedToken != 0 &&
+                service.setRenderFilteredImage(suppressedToken, false),
+            "an abandoned recognition should accept render suppression");
+    require(waitUntil([&]() { return suppressedCompleted; }, kRecognitionTimeoutMs),
+            "render-suppressed recognition should still complete and remain cacheable");
+    require(suppressedOutput.error.isEmpty() && suppressedOutput.presentation != nullptr &&
+                suppressedOutput.filteredImage.isNull(),
+            "render suppression should preserve OCR output without retaining filtered pixels");
 }
 
 void concurrentRequestsCompleteExactlyOnce() {
@@ -367,8 +475,10 @@ int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     const bool directMlRequested = application.arguments().contains(QStringLiteral("--directml"));
     modelStoreReadinessTracksRequiredFiles();
+    renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine();
     diskBackedEngineCompletesThroughTheQtWorker(directMlRequested);
     if (!directMlRequested) {
+        recognitionRenderIntentCanChangeWhileQueued();
         concurrentRequestsCompleteExactlyOnce();
         interactiveRequestsPrecedeQueuedPrefetch();
         queuedCancellationSkipsExecution();

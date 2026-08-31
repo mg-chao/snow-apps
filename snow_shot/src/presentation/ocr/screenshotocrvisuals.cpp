@@ -62,6 +62,58 @@ QPolygon imagePolygonForQuad(const QPolygonF& quad, const QRectF& canvasRect,
 
 } // namespace
 
+QImage materializeScreenshotImageSource(const ScreenshotImageSource& source,
+                                        const QRectF& canvasRect, const QSize& pixelSize) {
+    const QRectF normalized = canvasRect.normalized();
+    if (!source.isValid() || !normalized.isValid() || normalized.isEmpty() ||
+        !pixelSize.isValid() || pixelSize.isEmpty()) {
+        return {};
+    }
+    if (source.isMaterialized() && source.materializedCanvasRect == normalized &&
+        source.materializedImage.size() == pixelSize) {
+        QImage image = source.materializedImage;
+        if (image.format() != QImage::Format_ARGB32_Premultiplied) {
+            image = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+        }
+        image.setDevicePixelRatio(1.0);
+        return image;
+    }
+    QImage image(pixelSize, QImage::Format_ARGB32_Premultiplied);
+    image.setDevicePixelRatio(1.0);
+    image.fill(Qt::transparent);
+    const qreal scaleX = pixelSize.width() / normalized.width();
+    const qreal scaleY = pixelSize.height() / normalized.height();
+    QPainter painter(&image);
+    painter.setRenderHint(QPainter::Antialiasing, false);
+    painter.setTransform(QTransform(scaleX, 0.0, 0.0, scaleY,
+                                    -normalized.left() * scaleX,
+                                    -normalized.top() * scaleY));
+    const auto drawLayer = [&painter](const ScreenshotImageLayer& layer) {
+        if (!layer.isValid()) {
+            return;
+        }
+        const qreal sourceScaleX = layer.image.width() / layer.imageCanvasRect.width();
+        const qreal sourceScaleY = layer.image.height() / layer.imageCanvasRect.height();
+        const QRectF sourceRect(
+            (layer.destinationCanvasRect.left() - layer.imageCanvasRect.left()) * sourceScaleX,
+            (layer.destinationCanvasRect.top() - layer.imageCanvasRect.top()) * sourceScaleY,
+            layer.destinationCanvasRect.width() * sourceScaleX,
+            layer.destinationCanvasRect.height() * sourceScaleY);
+        painter.drawImage(layer.destinationCanvasRect, layer.image, sourceRect);
+    };
+    if (source.isMaterialized()) {
+        drawLayer(ScreenshotImageLayer{source.materializedImage, source.materializedCanvasRect,
+                                       source.materializedCanvasRect.intersected(normalized)});
+    } else {
+        for (const ScreenshotImageLayer& layer : source.layers) {
+            ScreenshotImageLayer clipped = layer;
+            clipped.destinationCanvasRect = clipped.destinationCanvasRect.intersected(normalized);
+            drawLayer(clipped);
+        }
+    }
+    return image;
+}
+
 QRegion screenshotOcrFilterRegion(const ScreenshotOcrPresentation& presentation,
                                   const QRectF& canvasRect, const QSize& pixelSize) {
     const QRectF normalized = canvasRect.normalized();

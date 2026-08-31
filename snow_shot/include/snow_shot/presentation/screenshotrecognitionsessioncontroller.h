@@ -68,6 +68,16 @@ struct ScreenshotRecognitionSessionActions {
     std::function<void(const QUrl&)> handleQrLink;
     std::function<QWidget*()> translationSettingsOwner;
     std::function<void(const QString&, const QString&)> setTextTransformState;
+    // Optional split loading callbacks. The legacy showLoading callback remains a fallback for
+    // lightweight clients and tests that do not need separate message keys.
+    std::function<void(const QString&)> showModelDownload;
+    std::function<void(const QString&)> showRecognition;
+    std::function<void()> hideModelDownload;
+    std::function<QColor()> ocrBackgroundColor;
+    std::function<void(ScreenshotOcrRequest&)> prepareOcrRenderRequest;
+    std::function<bool()> renderRecognitionInWorker;
+    std::function<void(std::shared_ptr<ScreenshotOcrPresentation>, QImage)>
+        applyOcrBackgroundImage;
 };
 
 class ScreenshotRecognitionSessionController final : public QObject {
@@ -88,6 +98,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
     [[nodiscard]] ScreenshotRecognitionResults cachedRecognitionResults() const;
     [[nodiscard]] bool hasTarget() const;
     void prefetchText();
+    void renderTextBackground();
     void activate(Mode mode);
     void deactivate();
     void invalidate();
@@ -149,6 +160,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
     };
 
     void startTextRecognition(ScreenshotOcrRequestPriority priority);
+    void startTextRender();
     void startTableRecognition();
     void startQrRecognition();
     void handleTextOutput(quint64 generation, const QString& key,
@@ -158,7 +170,8 @@ class ScreenshotRecognitionSessionController final : public QObject {
                         ScreenshotQrRecognitionResult result);
     void ensureContent();
     void clearContent();
-    void applyPresentation(const std::shared_ptr<ScreenshotOcrPresentation>& presentation);
+    void applyPresentation(const std::shared_ptr<ScreenshotOcrPresentation>& presentation,
+                           QImage filteredImage = {});
     void applyFormattedText(const std::shared_ptr<QTextDocument>& document);
     void applyTableSession(const std::shared_ptr<ScreenshotTableEditingSession>& session);
     void applyQrContents(const QStringList& contents);
@@ -176,6 +189,11 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void updateTableState(const ScreenshotTableCommandState& state) const;
     void clearTextEditingState();
     void ensureTextEditingSession(const QString& key, TextCacheEntry& entry);
+    [[nodiscard]] bool shouldRenderRecognitionInWorker() const;
+    void setPendingTextRecognitionRendering(bool enabled);
+    void pollTextModelDownload(quint64 generation);
+    void showModelDownloadMessage() const;
+    void hideModelDownloadMessage() const;
     void showRecognitionMessage() const;
     void hideRecognitionMessage() const;
     void showStatus(const QString& message, bool error) const;
@@ -205,18 +223,21 @@ class ScreenshotRecognitionSessionController final : public QObject {
     QString m_editingKey;
     QString m_translationKey;
     ScreenshotOcrRecognitionPort::RequestToken m_textRequestToken = 0;
+    ScreenshotOcrRecognitionPort::RequestToken m_textRenderRequestToken = 0;
     SnowShotApiClient::RequestToken m_tableRequestToken = 0;
     SnowShotApiClient::RequestToken m_modelsRequestToken = 0;
     SnowShotApiClient::RequestToken m_settingsModelsRequestToken = 0;
     SnowShotApiClient::RequestToken m_translationRequestToken = 0;
     ScreenshotQrRecognitionPort::RequestToken m_qrRequestToken = 0;
     quint64 m_textGeneration = 0;
+    quint64 m_textRenderGeneration = 0;
     quint64 m_tableGeneration = 0;
     quint64 m_qrGeneration = 0;
     quint64 m_translationGeneration = 0;
     Mode m_mode = Mode::Text;
     bool m_active = false;
     bool m_textModelDownloadShown = false;
+    bool m_textModelDownloadInProgress = false;
     bool m_editing = false;
     bool m_translating = false;
     QPointer<adqt::widgets::AdModal> m_translationSettingsModal;

@@ -148,6 +148,7 @@ void ScreenshotRecognitionSessionController::seedRecognitionResults(
                 [this, key = m_target.key]() { handleTextDocumentChanged(key); });
         TextCacheEntry entry;
         entry.recognitionResult = *results.text;
+        entry.recognitionResult.filteredImage = {};
         entry.presentation = results.text->presentation;
         entry.editingSession = std::move(editingSession);
         m_textCache.insert(m_target.key, std::move(entry));
@@ -175,6 +176,7 @@ void ScreenshotRecognitionSessionController::seedRecognitionResults(
         m_textCacheKey = m_target.key;
         m_presentation = m_textCache.value(m_target.key).presentation;
         applyPresentation(m_presentation);
+        startTextRender();
         emit textResultChanged(true);
     }
     if (m_active && m_mode == Mode::Table) {
@@ -206,6 +208,7 @@ ScreenshotRecognitionSessionController::cachedRecognitionResults() const {
         text->recognitionResult.error.isEmpty() &&
         text->recognitionResult.presentation != nullptr) {
         results.text = text->recognitionResult;
+        results.text->filteredImage = {};
     }
     if (const auto table = m_tableResults.constFind(m_target.key);
         table != m_tableResults.cend() && table->succeeded()) {
@@ -238,6 +241,13 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
         return;
     }
     clearTextEditingState();
+    if (mode != Mode::Text && m_textRenderRequestToken != 0) {
+        if (m_recognition != nullptr) {
+            m_recognition->cancel(m_textRenderRequestToken);
+        }
+        m_textRenderRequestToken = 0;
+        ++m_textRenderGeneration;
+    }
     m_mode = mode;
     m_active = true;
     ensureContent();
@@ -273,6 +283,7 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
             } else {
                 m_presentation = cached->presentation;
                 applyPresentation(m_presentation);
+                startTextRender();
             }
             emit textResultChanged(true);
             if (cached->editing) {
@@ -281,13 +292,19 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
                 beginTextEditing();
             }
         } else if (m_textRequestToken != 0) {
+            setPendingTextRecognitionRendering(true);
             static_cast<void>(m_recognition->reprioritize(
                 m_textRequestToken, ScreenshotOcrRequestPriority::Interactive));
-            showRecognitionMessage();
+            if (m_textModelDownloadInProgress) {
+                showModelDownloadMessage();
+            } else {
+                showRecognitionMessage();
+            }
         } else {
             startTextRecognition(ScreenshotOcrRequestPriority::Interactive);
         }
     } else if (mode == Mode::Table) {
+        setPendingTextRecognitionRendering(false);
         auto cached = m_tableCache.constFind(m_target.key);
         if (cached == m_tableCache.cend()) {
             const auto result = m_tableResults.constFind(m_target.key);
@@ -308,6 +325,7 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
             startTableRecognition();
         }
     } else {
+        setPendingTextRecognitionRendering(false);
         const auto cached = m_qrCache.constFind(m_target.key);
         if (cached != m_qrCache.cend()) {
             m_qrCacheKey = m_target.key;
@@ -326,7 +344,16 @@ void ScreenshotRecognitionSessionController::deactivate() {
     }
     clearTextEditingState();
     m_active = false;
+    if (m_textModelDownloadInProgress) {
+        hideModelDownloadMessage();
+    }
+    if (m_recognition != nullptr && m_textRenderRequestToken != 0) {
+        m_recognition->cancel(m_textRenderRequestToken);
+    }
+    m_textRenderRequestToken = 0;
+    ++m_textRenderGeneration;
     if (m_recognition != nullptr && m_textRequestToken != 0) {
+        setPendingTextRecognitionRendering(false);
         static_cast<void>(m_recognition->reprioritize(m_textRequestToken,
                                                       ScreenshotOcrRequestPriority::Prefetch));
     }
@@ -410,7 +437,7 @@ bool ScreenshotRecognitionSessionController::busy() const {
 bool ScreenshotRecognitionSessionController::busy(Mode mode) const {
     switch (mode) {
     case Mode::Text:
-        return m_textRequestToken != 0;
+        return m_textRequestToken != 0 || m_textRenderRequestToken != 0;
     case Mode::Table:
         return m_tableRequestToken != 0;
     case Mode::Qr:
@@ -1091,12 +1118,24 @@ void ScreenshotRecognitionSessionController::startTextRecognition(
     const quint64 generation = ++m_textGeneration;
     const QString key = m_target.key;
     m_textModelDownloadShown = !m_recognition->modelFilesReady();
-    if (m_active || m_textModelDownloadShown) {
+    m_textModelDownloadInProgress = m_textModelDownloadShown;
+    if (m_textModelDownloadInProgress) {
+        showModelDownloadMessage();
+    } else if (m_active) {
         showRecognitionMessage();
+    }
+    ScreenshotOcrRequest request;
+    request.image = m_target.image;
+    request.canvasRect = m_target.canvasRect;
+    request.priority = priority;
+    request.renderFilteredImage = m_active && m_mode == Mode::Text &&
+                                  shouldRenderRecognitionInWorker();
+    if (request.renderFilteredImage && m_actions.ocrBackgroundColor) {
+        request.backgroundColor = m_actions.ocrBackgroundColor();
     }
     const auto callbackCompleted = std::make_shared<bool>(false);
     m_textRequestToken = m_recognition->recognize(
-        ScreenshotOcrRequest{m_target.image, m_target.canvasRect, priority}, this,
+        std::move(request), this,
         [this, generation, key, callbackCompleted](ScreenshotOcrRecognitionResult output) {
             *callbackCompleted = true;
             if (generation == m_textGeneration) {
@@ -1112,9 +1151,74 @@ void ScreenshotRecognitionSessionController::startTextRecognition(
         if (m_active || m_textModelDownloadShown) {
             showStatus(tr("Text recognition request could not be prepared"), true);
         }
+        if (m_textModelDownloadInProgress) {
+            hideModelDownloadMessage();
+        }
         m_textModelDownloadShown = false;
+        m_textModelDownloadInProgress = false;
         hideRecognitionMessage();
+    } else if (m_textModelDownloadShown) {
+        pollTextModelDownload(generation);
     }
+}
+
+void ScreenshotRecognitionSessionController::renderTextBackground() {
+    if (m_active && m_mode == Mode::Text) {
+        startTextRender();
+    }
+}
+
+void ScreenshotRecognitionSessionController::startTextRender() {
+    if (!m_active || m_mode != Mode::Text || !hasTarget() || m_recognition == nullptr ||
+        m_presentation == nullptr || !m_actions.applyOcrBackgroundImage) {
+        return;
+    }
+    if (m_textRenderRequestToken != 0) {
+        m_recognition->cancel(m_textRenderRequestToken);
+        m_textRenderRequestToken = 0;
+    }
+    const quint64 generation = ++m_textRenderGeneration;
+    const QString key = m_target.key;
+    ScreenshotOcrRequest request;
+    request.image = m_target.image;
+    request.canvasRect = m_target.canvasRect;
+    request.priority = ScreenshotOcrRequestPriority::Interactive;
+    request.presentation = m_presentation;
+    request.backgroundColor = m_actions.ocrBackgroundColor ? m_actions.ocrBackgroundColor()
+                                                            : QColor();
+    if (m_actions.prepareOcrRenderRequest) {
+        m_actions.prepareOcrRenderRequest(request);
+    }
+    const auto callbackCompleted = std::make_shared<bool>(false);
+    m_textRenderRequestToken = m_recognition->render(
+        std::move(request), this,
+        [this, generation, key, callbackCompleted](ScreenshotOcrRecognitionResult output) {
+            *callbackCompleted = true;
+            if (generation == m_textRenderGeneration) {
+                m_textRenderRequestToken = 0;
+            }
+            const bool current = generation == m_textRenderGeneration && key == m_target.key &&
+                                 m_active && m_mode == Mode::Text;
+            if (!current) {
+                updateBusyState();
+                return;
+            }
+            if (!output.error.isEmpty() || output.filteredImage.isNull()) {
+                updateBusyState();
+                hideRecognitionMessage();
+                return;
+            }
+            if (m_actions.applyOcrBackgroundImage) {
+                m_actions.applyOcrBackgroundImage(m_presentation,
+                                                  std::move(output.filteredImage));
+            }
+            updateBusyState();
+            hideRecognitionMessage();
+        });
+    if (*callbackCompleted) {
+        m_textRenderRequestToken = 0;
+    }
+    updateBusyState();
 }
 
 void ScreenshotRecognitionSessionController::startTableRecognition() {
@@ -1185,7 +1289,12 @@ void ScreenshotRecognitionSessionController::handleTextOutput(
         return;
     }
     const bool modelDownloadWasShown = m_textModelDownloadShown;
+    const bool modelDownloadWasInProgress = m_textModelDownloadInProgress;
     m_textModelDownloadShown = false;
+    m_textModelDownloadInProgress = false;
+    if (modelDownloadWasInProgress) {
+        hideModelDownloadMessage();
+    }
     if (!output.error.isEmpty() || output.presentation == nullptr) {
         if ((m_active && m_mode == Mode::Text) || modelDownloadWasShown) {
             showStatus(output.error.isEmpty() ? tr("Text recognition failed") : output.error,
@@ -1199,6 +1308,7 @@ void ScreenshotRecognitionSessionController::handleTextOutput(
     auto editingSession = std::make_shared<ScreenshotOcrTextEditingSession>(original);
     connect(editingSession->document(), &QTextDocument::contentsChanged, this,
             [this, key]() { handleTextDocumentChanged(key); });
+    QImage filteredImage = std::move(output.filteredImage);
     TextCacheEntry entry;
     entry.recognitionResult = output;
     entry.presentation = output.presentation;
@@ -1207,7 +1317,10 @@ void ScreenshotRecognitionSessionController::handleTextOutput(
     if (m_active && m_mode == Mode::Text) {
         m_textCacheKey = key;
         m_presentation = m_textCache.value(key).presentation;
-        applyPresentation(m_presentation);
+        applyPresentation(m_presentation, filteredImage);
+        if (filteredImage.isNull()) {
+            startTextRender();
+        }
         emit textResultChanged(true);
     }
     hideRecognitionMessage();
@@ -1296,7 +1409,7 @@ void ScreenshotRecognitionSessionController::clearContent() {
 }
 
 void ScreenshotRecognitionSessionController::applyPresentation(
-    const std::shared_ptr<ScreenshotOcrPresentation>& presentation) {
+    const std::shared_ptr<ScreenshotOcrPresentation>& presentation, QImage filteredImage) {
     m_presentation = presentation;
     ensureContent();
     if (m_actions.applyOcrPresentation) {
@@ -1306,6 +1419,9 @@ void ScreenshotRecognitionSessionController::applyPresentation(
     }
     if (m_actions.applyOcrBackground) {
         m_actions.applyOcrBackground(presentation);
+    }
+    if (!filteredImage.isNull() && m_actions.applyOcrBackgroundImage) {
+        m_actions.applyOcrBackgroundImage(presentation, std::move(filteredImage));
     }
 }
 
@@ -1341,6 +1457,40 @@ void ScreenshotRecognitionSessionController::handleTextDocumentChanged(const QSt
         emit textDraftChanged(session->text());
     }
     updateTextState();
+}
+
+bool ScreenshotRecognitionSessionController::shouldRenderRecognitionInWorker() const {
+    return m_actions.applyOcrBackgroundImage &&
+           (!m_actions.renderRecognitionInWorker || m_actions.renderRecognitionInWorker());
+}
+
+void ScreenshotRecognitionSessionController::setPendingTextRecognitionRendering(bool enabled) {
+    if (m_recognition == nullptr || m_textRequestToken == 0) {
+        return;
+    }
+    const bool shouldRender = enabled && shouldRenderRecognitionInWorker();
+    const QColor backgroundColor = shouldRender && m_actions.ocrBackgroundColor
+                                       ? m_actions.ocrBackgroundColor()
+                                       : QColor();
+    static_cast<void>(m_recognition->setRenderFilteredImage(
+        m_textRequestToken, shouldRender, backgroundColor));
+}
+
+void ScreenshotRecognitionSessionController::pollTextModelDownload(quint64 generation) {
+    if (generation != m_textGeneration || m_textRequestToken == 0 ||
+        !m_textModelDownloadInProgress || m_recognition == nullptr) {
+        return;
+    }
+    if (m_recognition->modelFilesReady()) {
+        m_textModelDownloadInProgress = false;
+        hideModelDownloadMessage();
+        if (m_active && m_mode == Mode::Text) {
+            showRecognitionMessage();
+        }
+        return;
+    }
+    QTimer::singleShot(100, this,
+                       [this, generation]() { pollTextModelDownload(generation); });
 }
 
 void ScreenshotRecognitionSessionController::applyFormattedText(
@@ -1434,16 +1584,32 @@ void ScreenshotRecognitionSessionController::updateTableState(
                                    available && state.canReset);
 }
 
+void ScreenshotRecognitionSessionController::showModelDownloadMessage() const {
+    const QString message = tr("Downloading OCR model files");
+    if (m_actions.showModelDownload) {
+        m_actions.showModelDownload(message);
+    } else if (m_actions.showLoading) {
+        m_actions.showLoading(message);
+    } else if (m_actions.showStatus) {
+        m_actions.showStatus(message, false);
+    }
+}
+
+void ScreenshotRecognitionSessionController::hideModelDownloadMessage() const {
+    if (m_actions.hideModelDownload) {
+        m_actions.hideModelDownload();
+    } else if (m_actions.hideLoading) {
+        m_actions.hideLoading();
+    }
+}
+
 void ScreenshotRecognitionSessionController::showRecognitionMessage() const {
-    const bool downloadingModels =
-        m_mode == Mode::Text &&
-        (m_textModelDownloadShown ||
-         (m_recognition != nullptr && !m_recognition->modelFilesReady()));
-    const QString message = downloadingModels ? tr("Downloading OCR model files")
-                        : m_mode == Mode::Table ? tr("Recognizing table")
+    const QString message = m_mode == Mode::Table ? tr("Recognizing table")
                         : m_mode == Mode::Qr ? tr("Recognizing QR code")
                                              : tr("Recognizing text");
-    if (m_actions.showLoading) {
+    if (m_actions.showRecognition) {
+        m_actions.showRecognition(message);
+    } else if (m_actions.showLoading) {
         m_actions.showLoading(message);
     } else if (m_actions.showStatus) {
         m_actions.showStatus(message, false);
@@ -1463,8 +1629,12 @@ void ScreenshotRecognitionSessionController::showStatus(const QString& message, 
 }
 
 void ScreenshotRecognitionSessionController::cancelOutstandingRequests() {
+    const bool modelDownloadWasInProgress = m_textModelDownloadInProgress;
     if (m_recognition != nullptr && m_textRequestToken != 0) {
         m_recognition->cancel(m_textRequestToken);
+    }
+    if (m_recognition != nullptr && m_textRenderRequestToken != 0) {
+        m_recognition->cancel(m_textRenderRequestToken);
     }
     if (m_qrRecognition != nullptr && m_qrRequestToken != 0) {
         m_qrRecognition->cancel(m_qrRequestToken);
@@ -1482,23 +1652,34 @@ void ScreenshotRecognitionSessionController::cancelOutstandingRequests() {
         m_tableRecognition->cancel(m_translationRequestToken);
     }
     m_textRequestToken = 0;
+    m_textRenderRequestToken = 0;
     m_qrRequestToken = 0;
     m_tableRequestToken = 0;
     m_modelsRequestToken = 0;
     m_settingsModelsRequestToken = 0;
     m_translationRequestToken = 0;
     m_textModelDownloadShown = false;
+    ++m_textRenderGeneration;
+    m_textModelDownloadInProgress = false;
+    if (modelDownloadWasInProgress) {
+        hideModelDownloadMessage();
+    }
     hideRecognitionMessage();
 }
 
 void ScreenshotRecognitionSessionController::handleRecognitionProviderDestroyed(Mode mode) {
     bool requestWasPending = false;
     bool translationWasPending = false;
+    bool modelDownloadWasInProgress = false;
     switch (mode) {
     case Mode::Text:
         requestWasPending = m_textRequestToken != 0;
+        modelDownloadWasInProgress = m_textModelDownloadInProgress;
         m_textRequestToken = 0;
+        m_textRenderRequestToken = 0;
+        ++m_textRenderGeneration;
         m_textModelDownloadShown = false;
+        m_textModelDownloadInProgress = false;
         ++m_textGeneration;
         break;
     case Mode::Table:
@@ -1535,6 +1716,9 @@ void ScreenshotRecognitionSessionController::handleRecognitionProviderDestroyed(
         break;
     }
 
+    if (modelDownloadWasInProgress) {
+        hideModelDownloadMessage();
+    }
     updateBusyState();
     updateTextState();
     hideRecognitionMessage();
