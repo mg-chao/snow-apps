@@ -102,14 +102,27 @@ bool ScreenshotSelectionExportWorkflow::pinSelectionToScreen(ResultValidator val
                 }
                 return;
             }
-            const bool success =
-                pinRequest.isValid() && m_context.destination.presentPinnedSelection(pinRequest);
-            SNOW_SHOT_PIN_PERF_MILESTONE("workflow.destination_complete");
-            if (success) {
-                persistSelectionParams(savedSelectionParams);
+            if (!pinRequest.isPrepared()) {
+                if (completion) completion(false, {});
+                return;
             }
-            if (completion) {
-                completion(success, success ? std::move(pinRequest.image) : QImage{});
+            const auto terminal = std::make_shared<bool>(false);
+            const auto finish = std::make_shared<std::function<void(bool, QImage)>>();
+            *finish = [this, terminal, savedSelectionParams,
+                       validator = std::move(validator), completion = std::move(completion)](
+                          bool success, QImage image) mutable {
+                if (*terminal) return;
+                *terminal = true;
+                if (validator && !validator()) success = false;
+                SNOW_SHOT_PIN_PERF_MILESTONE("workflow.destination_complete");
+                if (success) persistSelectionParams(savedSelectionParams);
+                if (completion) completion(success, success ? std::move(image) : QImage{});
+            };
+            if (!m_context.destination.presentPinnedSelection(
+                    pinRequest, [finish](bool success, QImage image) mutable {
+                        (*finish)(success, std::move(image));
+                    })) {
+                (*finish)(false, {});
             }
         });
 }

@@ -46,6 +46,8 @@ class ScreenshotOverlayCanvasPresenter final {
     void setCanvasInteractionEnabled(const ScreenshotDisplaySession& displaySession,
                                      bool enabled) const;
     void setCanvasTool(const ScreenshotDisplaySession& displaySession, SnowCanvasTool tool) const;
+    void refreshCanvasCreationStyles(const ScreenshotDisplaySession& displaySession,
+                                     const SnowCanvasStyleDefaults& defaults) const;
     [[nodiscard]] bool resetEditingState(const ScreenshotDisplaySession& displaySession) const;
     [[nodiscard]] bool tryCurrentRectangleStyle(const ScreenshotDisplaySession& displaySession,
                                                 SnowCanvasShapeStyle* outStyle) const;

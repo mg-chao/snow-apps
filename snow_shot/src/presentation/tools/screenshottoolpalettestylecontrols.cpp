@@ -2025,6 +2025,21 @@ void ScreenshotToolPaletteStyleControls::reset() {
     updateSerialNumberStyleControls();
 }
 
+void ScreenshotToolPaletteStyleControls::setCreationStyleDefaults(
+    const SnowCanvasStyleDefaults& defaults) {
+    const SnowCanvasWatermarkConfig watermark = m_watermarkConfig;
+    const SnowCanvasSpotlightConfig spotlight = spotlightConfig;
+    ScreenshotToolPaletteStyleState::reset(defaults);
+    m_watermarkConfig = watermark;
+    spotlightConfig = spotlight;
+    updateRectangleStyleControls();
+    updateArrowStyleControls();
+    updateHighlightStyleControls();
+    updatePenHighlightStyleControls();
+    updateTextStyleControls();
+    updateSerialNumberStyleControls();
+}
+
 bool ScreenshotToolPaletteStyleControls::stepStrokeWidth(int direction) {
     if (m_penHighlightControlsActive) {
         if (direction == 0) {
@@ -2371,8 +2386,8 @@ SnowCanvasStyleDefaults ScreenshotToolPaletteStyleControls::creationStyleDefault
     defaults.arrow.arrowType = m_creationArrowStyle.arrowType;
     defaults.text = m_creationTextStyle.textStyle();
     defaults.serialNumber = m_creationSerialNumberStyle;
-    defaults.rectangleFilter = rectangleFilterStyle;
-    defaults.penFilter = penFilterStyle;
+    defaults.rectangleFilter = creationRectangleFilterStyle;
+    defaults.penFilter = creationPenFilterStyle;
     defaults.watermark = m_watermarkConfig;
     defaults.spotlight = spotlightConfig;
     return defaults;

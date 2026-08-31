@@ -131,6 +131,34 @@ QImage waitForResult(ScheduleRequest scheduleRequest, ResultImage resultImage) {
     return image;
 }
 
+QImage materializePinnedRequest(ScreenshotPinnedSelectionRequest request) {
+    if (!request.imageLoader) {
+        return request.imageSource.isMaterialized() ? request.imageSource.materializedImage
+                                                   : QImage{};
+    }
+
+    QObject receiver;
+    QEventLoop loop;
+    QTimer timeout;
+    timeout.setSingleShot(true);
+    timeout.setInterval(5000);
+    QImage image;
+    bool timedOut = false;
+    QObject::connect(&timeout, &QTimer::timeout, &loop, [&]() {
+        timedOut = true;
+        loop.quit();
+    });
+    request.imageLoader(&receiver, [&image, &loop](QImage loaded) {
+        image = std::move(loaded);
+        loop.quit();
+    });
+    timeout.start();
+    loop.exec();
+    timeout.stop();
+    require(!timedOut, "pinned image materialization timed out");
+    return image;
+}
+
 void directSourceKeepsFullWgcFrameForResultAndClipboard() {
     ExportFixture fixture;
     require(fixture.isValid(), "export fixture could not initialize the canvas runtime");
@@ -261,11 +289,13 @@ void pinnedSelectionMaterializesCompositedImage() {
                     callback(std::move(request));
                 });
         },
-        [](ScreenshotPinnedSelectionRequest request) { return std::move(request.image); });
-    require(materialized.has_value() && materialized->isValid(),
-            "pinned selection callback did not receive a valid materialized request");
-    require(materialized->image.size() == materialized->fullResolutionScaleBasis,
-            "materialized pinned image size did not match its scale basis");
+        [](ScreenshotPinnedSelectionRequest request) {
+            return materializePinnedRequest(std::move(request));
+        });
+    require(materialized.has_value() && materialized->isPrepared(),
+            "pinned selection callback did not receive a valid prepared request");
+    require(materialized->imageSource.isLayered(),
+            "pinned selection callback should retain a lazy layered source");
 
     const QImage expected = waitForResult(
         [&](QObject* receiver, auto callback) {

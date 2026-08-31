@@ -32,15 +32,23 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
                                         quint64 publicationId) override;
     void cancelClipboardPublication();
     void setClipboardImage(const QImage& image);
+    // Prepares an off-screen pinned shell for content whose dimensions are not
+    // available until decoding or rendering completes.
+    void prewarmPinnedWindow(QScreen* screen = nullptr);
+    // A null image is accepted when imageLoader is provided and
+    // fullResolutionScaleBasis supplies the known canvas dimensions.
     [[nodiscard]] bool presentPinnedImage(const QImage& image, QScreen* screen,
                                           const QRect& nativeGeometry,
                                           const QSize& fullResolutionScaleBasis = {},
                                           std::shared_ptr<QTextDocument> formattedTextDocument = {},
                                           const QString& formattedPlainText = {},
                                           qreal formattedTextDevicePixelRatio = 1.0,
-                                          ScreenshotClipboardOriginalContent originalContent = {});
+                                          ScreenshotClipboardOriginalContent originalContent = {},
+                                          ScreenshotImageLoader imageLoader = {},
+                                          PinnedCompletion completion = {});
     [[nodiscard]] bool
-    presentPinnedSelection(const ScreenshotPinnedSelectionRequest& request) override;
+    presentPinnedSelection(const ScreenshotPinnedSelectionRequest& request,
+                           PinnedCompletion completion) override;
 
   private:
     ScreenshotOcrRecognitionPort* m_recognition = nullptr;

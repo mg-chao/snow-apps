@@ -260,6 +260,18 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
       QStringLiteral("rectangle-filter"), QStringLiteral("pen-filter"),
       QStringLiteral("text"), QStringLiteral("serial-number"), QStringLiteral("eraser"),
       QStringLiteral("watermark")}},
+    {QStringLiteral("drawing/shape_style"), QJsonObject(), ConfigurationValueKind::Structured},
+    {QStringLiteral("drawing/arrow_style"), QJsonObject(), ConfigurationValueKind::Structured},
+    {QStringLiteral("drawing/line_style"), QJsonObject(), ConfigurationValueKind::Structured},
+    {QStringLiteral("drawing/free_draw_style"), QJsonObject(), ConfigurationValueKind::Structured},
+    {QStringLiteral("drawing/rectangle_highlight_style"), QJsonObject(),
+     ConfigurationValueKind::Structured},
+    {QStringLiteral("drawing/pen_highlight_style"), QJsonObject(), ConfigurationValueKind::Structured},
+    {QStringLiteral("drawing/rectangle_filter_style"), QJsonObject(),
+     ConfigurationValueKind::Structured},
+    {QStringLiteral("drawing/pen_filter_style"), QJsonObject(), ConfigurationValueKind::Structured},
+    {QStringLiteral("drawing/text_style"), QJsonObject(), ConfigurationValueKind::Structured},
+    {QStringLiteral("drawing/serial_number_style"), QJsonObject(), ConfigurationValueKind::Structured},
     {QStringLiteral("drawing_shortcuts/select"), QJsonArray{QStringLiteral("V")},
      ConfigurationValueKind::StringList, std::nullopt, {}, 2},
     {QStringLiteral("drawing_shortcuts/shape"), QJsonArray{QStringLiteral("1")},
@@ -1009,7 +1021,7 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
         return normalizeShortcuts(value, schemaEntry->maximumListItems,
                                   key.startsWith(QStringLiteral("screenshot_shortcuts/")));
     case ConfigurationValueKind::Structured:
-        break;
+        return exactType(value, QJsonValue::Object);
     }
     return {};
 }

@@ -30,8 +30,10 @@ void ScreenshotToolPaletteStyleState::reset(const SnowCanvasStyleDefaults& defau
     m_textStyle.setTextStyle(defaults.text);
     m_creationSerialNumberStyle = defaults.serialNumber;
     m_serialNumberStyle = defaults.serialNumber;
-    rectangleFilterStyle = defaults.rectangleFilter;
-    penFilterStyle = defaults.penFilter;
+    creationRectangleFilterStyle = defaults.rectangleFilter;
+    rectangleFilterStyle = creationRectangleFilterStyle;
+    creationPenFilterStyle = defaults.penFilter;
+    penFilterStyle = creationPenFilterStyle;
     m_watermarkConfig = defaults.watermark;
     spotlightConfig = defaults.spotlight;
     m_showingSelectedStyle = false;

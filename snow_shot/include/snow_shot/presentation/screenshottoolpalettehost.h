@@ -41,6 +41,8 @@ class ScreenshotToolPaletteHost final : public QWidget {
     void moveContentTo(const QPoint& position);
     void prepareForDisplay();
     void resetStyleState();
+    void setCreationStyleDefaults(const SnowCanvasStyleDefaults& defaults);
+    [[nodiscard]] SnowCanvasStyleDefaults creationStyleDefaults() const;
     bool stepStrokeWidth(int direction);
     bool stepSelectionOpacity(int direction);
     bool stepSpotlightOpacity(int direction);

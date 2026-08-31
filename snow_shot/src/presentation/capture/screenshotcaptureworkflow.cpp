@@ -234,12 +234,18 @@ void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
         m_context.runtime.ensureCaptureWorker();
     }
     if (m_presentationMode == ScreenshotCapturePresentationMode::Silent) {
+        if (m_context.refreshCanvasCreationStyles) {
+            m_context.refreshCanvasCreationStyles();
+        }
         m_context.runtime.captureAsync(
             ScreenshotCaptureRequest{sessionId, m_state.layoutDirty, m_focusedWindowHandle});
         return;
     }
     const bool preCapturePrepared =
         m_context.runtime.preparePreCaptureOverlayWindows(m_context.displaySession);
+    if (m_context.refreshCanvasCreationStyles) {
+        m_context.refreshCanvasCreationStyles();
+    }
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.overlay_prep_done");
     // Once Snow Shot's windows are excluded, start native acquisition at
     // once. The capture worker can initialize lazy GPU resources while the

@@ -3,6 +3,7 @@
 
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotclipboardservice.h"
+#include "snow_shot/presentation/screenshotimagesource.h"
 #include "snow_shot/presentation/screenshotrecognitionresults.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
 #include "snow_shot/presentation/screenshotselectionparams.h"
@@ -19,7 +20,10 @@ class QObject;
 class QScreen;
 
 struct ScreenshotPinnedSelectionRequest {
-    QImage image;
+    ScreenshotImageSource imageSource;
+    ScreenshotImageLoader imageLoader;
+    QRectF contentCanvasRect;
+    QRectF surfaceCanvasRect;
     QRect selection;
     ScreenshotResultStyle resultStyle;
     ScreenshotPinnedImageGeometry geometry;
@@ -28,17 +32,21 @@ struct ScreenshotPinnedSelectionRequest {
     ScreenshotRecognitionResults recognitionResults;
 
     [[nodiscard]] bool isPrepared() const {
-        return !selection.isEmpty() && geometry.nativeGeometry.isValid() &&
+        return (imageSource.isValid() || static_cast<bool>(imageLoader)) &&
+               !selection.isEmpty() && geometry.nativeGeometry.isValid() &&
                !geometry.nativeGeometry.isEmpty() && geometry.canvasSourceRect.isValid() &&
                !geometry.canvasSourceRect.isEmpty() && geometry.initialPhysicalSize.isValid() &&
                !geometry.initialPhysicalSize.isEmpty() &&
+               contentCanvasRect.isValid() && !contentCanvasRect.isEmpty() &&
+               surfaceCanvasRect.isValid() && !surfaceCanvasRect.isEmpty() &&
+               surfaceCanvasRect.contains(contentCanvasRect) &&
                fullResolutionScaleBasis.isValid() && !fullResolutionScaleBasis.isEmpty() &&
                screen != nullptr;
     }
 
     [[nodiscard]] bool isValid() const {
-        return isPrepared() && !image.isNull() && !image.size().isEmpty() &&
-               image.size() == fullResolutionScaleBasis;
+        return isPrepared() && imageSource.isMaterialized() &&
+               imageSource.materializedImage.size() == fullResolutionScaleBasis;
     }
 };
 
@@ -77,6 +85,7 @@ class ScreenshotSelectionImageComposerPort {
 class ScreenshotSelectionExportDestinationPort {
   public:
     using ClipboardCompletion = std::function<void(bool)>;
+    using PinnedCompletion = std::function<void(bool, QImage)>;
 
     virtual ~ScreenshotSelectionExportDestinationPort() = default;
 
@@ -92,7 +101,8 @@ class ScreenshotSelectionExportDestinationPort {
     }
 
     [[nodiscard]] virtual bool
-    presentPinnedSelection(const ScreenshotPinnedSelectionRequest& request) = 0;
+    presentPinnedSelection(const ScreenshotPinnedSelectionRequest& request,
+                           PinnedCompletion completion) = 0;
 };
 
 class ScreenshotSelectionParamsStorePort {

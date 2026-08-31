@@ -146,6 +146,8 @@ class ScreenshotToolPalette final : public QWidget {
     quint64 layoutRevision() const;
     void prepareForDisplay();
     void resetStyleState();
+    void setCreationStyleDefaults(const SnowCanvasStyleDefaults& defaults);
+    [[nodiscard]] SnowCanvasStyleDefaults creationStyleDefaults() const;
     bool setShadowMargins(const QMargins& margins);
     bool setPhysicalScale(qreal scale);
     qreal physicalScale() const;

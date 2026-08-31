@@ -376,8 +376,8 @@ void configuredRuntimeProfileFollowsRestoreAndResetLifecycle() {
     require(runtime.clearDocumentPreservingViewports(),
             "configured clear should preserve attached viewports");
     require(toolbarState(runtime, viewport, SNOW_ACTIVE_TOOL_SHAPE).shape_style.stroke_width ==
-                defaults.rectangle.strokeWidth,
-            "configured clear should restore the profile on the retained viewport");
+                42.0,
+            "configured clear should preserve the current creation style on the retained viewport");
 
     require(runtime.reset(), "configured runtime reset should succeed");
     viewport = createViewport(runtime);

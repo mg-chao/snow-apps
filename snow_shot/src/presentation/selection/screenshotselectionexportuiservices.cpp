@@ -64,11 +64,6 @@ void applyPinRuntimeSettings(ScreenshotPinnedWindow::Config* config) {
 }
 } // namespace
 
-#if defined(Q_OS_WIN) || defined(_WIN32)
-#include <Windows.h>
-#include <dwmapi.h>
-#endif
-
 class ScreenshotPinnedWindowPool final : public QObject {
   public:
     explicit ScreenshotPinnedWindowPool(QObject* parent = nullptr) : QObject(parent) {
@@ -106,6 +101,25 @@ class ScreenshotPinnedWindowPool final : public QObject {
         return window;
     }
 
+    void prewarm(QScreen* screen) {
+        if (m_spare != nullptr) {
+            if (m_spare->prewarm(screen)) {
+                return;
+            }
+            m_spare->deleteLater();
+            m_spare = nullptr;
+        }
+
+        auto* spare = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
+        if (spare == nullptr || !spare->prewarm(screen)) {
+            if (spare != nullptr) {
+                spare->deleteLater();
+            }
+            return;
+        }
+        m_spare = spare;
+    }
+
   private:
     void scheduleReplenish() {
         if (m_replenishQueued) {
@@ -134,7 +148,8 @@ class ScreenshotPinnedWindowPool final : public QObject {
 namespace {
 bool presentPinnedWindowAndSynchronize(ScreenshotPinnedWindow* window,
                                        const ScreenshotPinnedWindow::Config& config,
-                                       const std::function<void()>& showMainWindowRequested) {
+                                       const std::function<void()>& showMainWindowRequested,
+                                       std::function<void(bool, QImage)> completion = {}) {
     if (window == nullptr) {
         return false;
     }
@@ -144,7 +159,7 @@ bool presentPinnedWindowAndSynchronize(ScreenshotPinnedWindow* window,
                          showMainWindowRequested);
     }
     SNOW_SHOT_PIN_PERF_MILESTONE("ui.pinned_window_constructed");
-    if (!window->present(config)) {
+    if (!window->present(config, std::move(completion))) {
         window->deleteLater();
         return false;
     }
@@ -152,10 +167,6 @@ bool presentPinnedWindowAndSynchronize(ScreenshotPinnedWindow* window,
     SNOW_SHOT_PIN_PERF_COUNTER("window.geometry_valid",
                                window->currentNativeGeometry() == config.nativeGeometry ? 1 : 0);
     SNOW_SHOT_PIN_PERF_MILESTONE("window.present_returned");
-#if defined(SNOW_SHOT_PIN_PERF_INSTRUMENTATION) && (defined(Q_OS_WIN) || defined(_WIN32))
-    DwmFlush();
-#endif
-    SNOW_SHOT_PIN_PERF_MILESTONE("window.dwm_flushed");
     return true;
 }
 } // namespace
@@ -225,10 +236,16 @@ void ScreenshotSelectionExportUiServices::setClipboardImage(const QImage& image)
         ScreenshotClipboardService::prepareImage(image), [](ScreenshotClipboardCommitResult) {}));
 }
 
+void ScreenshotSelectionExportUiServices::prewarmPinnedWindow(QScreen* screen) {
+    if (m_windowPool != nullptr) {
+        m_windowPool->prewarm(screen);
+    }
+}
+
 bool ScreenshotSelectionExportUiServices::presentPinnedSelection(
-    const ScreenshotPinnedSelectionRequest& request) {
+    const ScreenshotPinnedSelectionRequest& request, PinnedCompletion completion) {
     SNOW_SHOT_PIN_PERF_SCOPE("ui.present_pinned_selection");
-    if (!request.isValid()) {
+    if (!request.isPrepared()) {
         return false;
     }
 
@@ -241,38 +258,48 @@ bool ScreenshotSelectionExportUiServices::presentPinnedSelection(
     }
     ScreenshotPinnedWindow::Config config;
     config.nativeGeometry = request.geometry.nativeGeometry;
-    config.canvasSourceRect = QRectF(QPointF(0.0, 0.0), QSizeF(request.image.size()));
-    config.contentCanvasRect = config.canvasSourceRect;
-    config.surfaceCanvasRect = config.canvasSourceRect;
-    // The request image is already composited using resultStyle. Keep the pinned renderer neutral
-    // so rounded corners and shadows are not applied a second time.
+    config.canvasSourceRect = request.surfaceCanvasRect;
+    config.contentCanvasRect = request.surfaceCanvasRect;
+    config.surfaceCanvasRect = request.surfaceCanvasRect;
+    // The worker loader returns a fully composited result image. Keep the live
+    // renderer neutral so the result style is not applied twice after loading.
     config.resultStyle = ScreenshotResultStyle{};
     config.fullResolutionScaleBasis = request.fullResolutionScaleBasis;
-    config.imageSource = ScreenshotImageSource::fromImage(request.image, config.canvasSourceRect);
+    config.imageSource = request.imageSource;
+    config.imageLoader = request.imageLoader;
     config.screen = request.screen;
     config.recognition = m_recognition;
     config.qrRecognition = m_qrRecognition;
     config.tableRecognition = m_tableRecognition;
     config.recognitionResults = recognitionResultsForPinnedImage(
-        request.recognitionResults, request.selection, request.resultStyle, request.image.size());
+        request.recognitionResults, request.selection, request.resultStyle,
+        request.fullResolutionScaleBasis);
     config.formattedTextDocument.reset();
     config.formattedPlainText.clear();
     applyPinRuntimeSettings(&config);
-    return presentPinnedWindowAndSynchronize(pinnedWindow, config, m_showMainWindowRequested);
+    return presentPinnedWindowAndSynchronize(pinnedWindow, config, m_showMainWindowRequested,
+                                             std::move(completion));
 }
 
 bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     const QImage& image, QScreen* screen, const QRect& nativeGeometry,
     const QSize& fullResolutionScaleBasis, std::shared_ptr<QTextDocument> formattedTextDocument,
     const QString& formattedPlainText, qreal formattedTextDevicePixelRatio,
-    ScreenshotClipboardOriginalContent originalContent) {
+    ScreenshotClipboardOriginalContent originalContent, ScreenshotImageLoader imageLoader,
+    PinnedCompletion completion) {
     SNOW_SHOT_PIN_PERF_SCOPE("ui.present_pinned_image");
-    if (image.isNull() || screen == nullptr || nativeGeometry.isEmpty()) {
+    const QSize imageSize = !image.isNull() && !image.size().isEmpty()
+                                ? image.size()
+                                : fullResolutionScaleBasis;
+    if (imageSize.isEmpty() || (!imageLoader && image.isNull()) || screen == nullptr ||
+        nativeGeometry.isEmpty()) {
         return false;
     }
 
-    SNOW_SHOT_PIN_PERF_COUNTER("source.mode.materialized", 1);
-    SNOW_SHOT_PIN_PERF_COUNTER("source.retained_bytes", image.sizeInBytes());
+    if (!image.isNull()) {
+        SNOW_SHOT_PIN_PERF_COUNTER("source.mode.materialized", 1);
+        SNOW_SHOT_PIN_PERF_COUNTER("source.retained_bytes", image.sizeInBytes());
+    }
 
     auto* pinnedWindow =
         m_windowPool != nullptr
@@ -283,12 +310,14 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     }
     ScreenshotPinnedWindow::Config config;
     config.nativeGeometry = nativeGeometry;
-    config.canvasSourceRect = QRectF(QPointF(0.0, 0.0), QSizeF(image.size()));
-    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    config.canvasSourceRect = QRectF(QPointF(0.0, 0.0), QSizeF(imageSize));
+    if (!image.isNull()) {
+        config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    }
     config.contentCanvasRect = config.canvasSourceRect;
     config.surfaceCanvasRect = config.canvasSourceRect;
     config.fullResolutionScaleBasis =
-        fullResolutionScaleBasis.isEmpty() ? image.size() : fullResolutionScaleBasis;
+        fullResolutionScaleBasis.isEmpty() ? imageSize : fullResolutionScaleBasis;
     config.initialScalePercent =
         100.0 * nativeGeometry.width() / (std::max)(1, config.fullResolutionScaleBasis.width());
     config.screen = screen;
@@ -297,9 +326,11 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     config.formattedPlainText = formattedPlainText;
     config.formattedTextDevicePixelRatio = formattedTextDevicePixelRatio;
     config.originalClipboardContent = std::move(originalContent);
+    config.imageLoader = std::move(imageLoader);
     config.recognition = m_recognition;
     config.qrRecognition = m_qrRecognition;
     config.tableRecognition = m_tableRecognition;
     applyPinRuntimeSettings(&config);
-    return presentPinnedWindowAndSynchronize(pinnedWindow, config, m_showMainWindowRequested);
+    return presentPinnedWindowAndSynchronize(pinnedWindow, config, m_showMainWindowRequested,
+                                             std::move(completion));
 }

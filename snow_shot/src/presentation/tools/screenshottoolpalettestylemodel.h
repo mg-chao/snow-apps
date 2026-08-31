@@ -123,7 +123,9 @@ struct ScreenshotToolPaletteStyleState {
     ScreenshotToolPaletteTextStyleModel m_textStyle;
     SnowCanvasSerialNumberStyle m_creationSerialNumberStyle;
     SnowCanvasSerialNumberStyle m_serialNumberStyle;
+    SnowCanvasFilterStyle creationRectangleFilterStyle;
     SnowCanvasFilterStyle rectangleFilterStyle;
+    SnowCanvasFilterStyle creationPenFilterStyle;
     SnowCanvasFilterStyle penFilterStyle;
     SnowCanvasWatermarkConfig m_watermarkConfig;
     SnowCanvasSpotlightConfig spotlightConfig;

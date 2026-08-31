@@ -113,13 +113,13 @@ impl Engine {
     }
 
     pub fn clear_document_preserving_viewports(&mut self) -> Result<MutationResult, ErrorCode> {
-        let view_config = self.editor.config();
-        let quick_selection_disabled_tools = self.editor.quick_selection_disabled_tools();
+        // Clearing a document must discard document/transient state without
+        // discarding the user's current creation styles. Those styles live in
+        // the editor session rather than in the immutable runtime profile.
+        let mut editor = self.editor.clone();
+        editor.reset_editing_state();
         let mut replacement = Self::try_new(self.config.clone())?;
-        replacement.editor.set_config(view_config)?;
-        replacement
-            .editor
-            .set_quick_selection_disabled_tools(quick_selection_disabled_tools);
+        replacement.editor = editor;
         self.model = replacement.model;
         self.history = HistoryStore::default();
         self.editor = replacement.editor;
@@ -544,7 +544,10 @@ mod tests {
             .unwrap();
 
         engine.clear_document_preserving_viewports().unwrap();
-        assert_editor_defaults(&mut engine, viewport, &config.style_defaults.editor);
+        let mut expected_editor = config.style_defaults.editor.clone();
+        expected_editor.rectangle = changed_rectangle;
+        expected_editor.pen_filter = changed_filter;
+        assert_editor_defaults(&mut engine, viewport, &expected_editor);
         assert_eq!(engine.watermark_config(), &config.style_defaults.watermark);
         assert_eq!(engine.spotlight_config(), config.style_defaults.spotlight);
     }
@@ -618,10 +621,14 @@ mod tests {
         assert_eq!(full.watermark_config(), &edited_watermark);
         assert_eq!(full.style_defaults(), &target_config.style_defaults);
         full.clear_document_preserving_viewports().unwrap();
+        let mut expected_full_editor = source.style_defaults().editor.clone();
+        expected_full_editor.rectangle = edited_rectangle;
         assert_editor_defaults(
             &mut full,
             full_viewport,
-            &target_config.style_defaults.editor,
+            &EditorStyleDefaults {
+                ..expected_full_editor
+            },
         );
         assert_eq!(
             full.watermark_config(),
@@ -658,10 +665,14 @@ mod tests {
         assert_eq!(cloned.watermark_config(), &edited_watermark);
         assert_eq!(cloned.style_defaults(), &target_config.style_defaults);
         cloned.clear_document_preserving_viewports().unwrap();
+        let mut expected_clone_editor = source.style_defaults().editor.clone();
+        expected_clone_editor.rectangle = edited_rectangle;
         assert_editor_defaults(
             &mut cloned,
             source_viewport,
-            &target_config.style_defaults.editor,
+            &EditorStyleDefaults {
+                ..expected_clone_editor
+            },
         );
         assert_eq!(
             cloned.watermark_config(),

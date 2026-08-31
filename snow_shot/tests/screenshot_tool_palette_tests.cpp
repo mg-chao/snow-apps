@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 #include "snow_shot/presentation/components/icons/iconrenderutils.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
@@ -5364,6 +5365,47 @@ void tableQrEntrySelectionPersistsAcrossPaletteInstances() {
     require(snow_shot::storage::ApplicationStorage::instance().flushNow().success,
             "toolbar entry preferences should flush to the configuration file");
 }
+
+void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
+    SnowCanvasStyleDefaults styles = snow_shot::presentation::screenshotCanvasStyleDefaults();
+    styles.rectangle.stroke = QColor(1, 2, 3, 4);
+    styles.rectangle.strokeWidth = 3.0;
+    styles.arrow.stroke = QColor(5, 6, 7, 8);
+    styles.arrow.strokeWidth = 4.0;
+    styles.line.strokeWidth = 5.0;
+    styles.freeDraw.strokeWidth = 6.0;
+    styles.rectangleHighlight.fill = QColor(9, 10, 11, 12);
+    styles.penHighlight.strokeWidth = 7.0;
+    styles.rectangleFilter = {SnowCanvasFilterType::GaussianBlur, 0.25, 0.8, 8.0};
+    styles.penFilter = {SnowCanvasFilterType::Inversion, 0.75, 0.6, 44.0};
+    styles.text.color = QColor(13, 14, 15, 16);
+    styles.text.fontFamily = QStringLiteral("Persisted text font");
+    styles.text.fontSize = 36.0;
+    styles.serialNumber.number = 9'007'199'254'740'993LL;
+    styles.serialNumber.color = QColor(17, 18, 19, 20);
+    styles.serialNumber.fontFamily = QStringLiteral("Persisted serial font");
+    styles.watermark.text = QStringLiteral("must not persist");
+    styles.watermark.opacity = 0.91;
+    styles.spotlight.color = QColor(21, 22, 23, 24);
+    styles.spotlight.opacity = 0.17;
+
+    require(snow_shot::presentation::persistScreenshotCanvasToolStyles(styles),
+            "canvas tool styles should be accepted by configuration storage");
+
+    SnowCanvasStyleDefaults expected = styles;
+    const SnowCanvasStyleDefaults globalDefaults =
+        snow_shot::presentation::screenshotCanvasStyleDefaults();
+    expected.watermark = globalDefaults.watermark;
+    expected.spotlight = globalDefaults.spotlight;
+    require(snow_shot::presentation::screenshotCanvasToolStyleDefaults() == expected,
+            "persisted tool styles should round-trip independently without global styles");
+
+    const auto configuration =
+        snow_shot::storage::ApplicationStorage::instance().configuration().snapshot();
+    require(!configuration.contains(QStringLiteral("drawing/watermark_style")) &&
+                !configuration.contains(QStringLiteral("drawing/spotlight_style")),
+            "watermark and spotlight styles must not be added to persistent tool configuration");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -5378,6 +5420,11 @@ int main(int argc, char** argv) {
                 .initialize({executableDirectory, storageDirectory.path(), 60000})
                 .success,
             "failed to initialize isolated toolbar test storage");
+    if (application.arguments().contains(QStringLiteral("--canvas-style-persistence-only"))) {
+        canvasToolStylesPersistIndependentlyWithoutGlobalStyles();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--ocr-translation-only"))) {
         ocrToolReplacesSelectionActionToolbarContents();
         return 0;

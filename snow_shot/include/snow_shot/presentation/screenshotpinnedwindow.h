@@ -85,6 +85,7 @@ class ScreenshotPinnedWindow final : public QWidget {
         double initialScalePercent = 100.0;
         QString mouseWheelZoomMode = QStringLiteral("mouse_position");
         ScreenshotImageSource imageSource;
+        ScreenshotImageLoader imageLoader;
         // Compatibility input for direct callers. New pin transactions use imageSource.
         QImage backgroundImage;
         QScreen* screen = nullptr;
@@ -103,7 +104,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     explicit ScreenshotPinnedWindow(RuntimeMode mode, QWidget* parent = nullptr);
     ~ScreenshotPinnedWindow() override;
 
-    bool present(const Config& config);
+    bool present(const Config& config, std::function<void(bool, QImage)> completion = {});
     bool prewarm(QScreen* screen = nullptr);
     QRect currentNativeGeometry() const;
     static void setRuntimeBorderColor(const QColor& color);
@@ -151,8 +152,10 @@ class ScreenshotPinnedWindow final : public QWidget {
     void updateControlsGeometry();
     void destroyCanvas();
     using MaterializationCallback = std::function<void(bool)>;
+    using PresentationCompletion = std::function<void(bool, QImage)>;
     void requestMaterializedImage(MaterializationCallback callback);
     void finishMaterializedImage(ScreenshotExportTaskResult result);
+    void finishPresentation(bool succeeded, QImage image = {});
     void commitClipboardPayload(ScreenshotClipboardPayload payload);
     void ensureEditController();
     void setEditMode(bool enabled);
@@ -233,6 +236,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     ScreenshotExportJobHandle m_fileSaveJob;
     ScreenshotClipboardCommitHandle m_clipboardCommit;
     std::vector<MaterializationCallback> m_materializationCallbacks;
+    PresentationCompletion m_presentationCompletion;
+    ScreenshotImageLoader m_imageLoader;
+    bool m_materializationLoading = false;
     SnowCanvasWidget* m_canvas = nullptr;
     std::unique_ptr<ScreenshotCanvasRenderer> m_screenshotRenderer;
     QFrame* m_borderFrame = nullptr;

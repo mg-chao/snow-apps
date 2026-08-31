@@ -162,6 +162,18 @@ void ScreenshotToolPaletteHost::resetStyleState() {
     }
 }
 
+void ScreenshotToolPaletteHost::setCreationStyleDefaults(
+    const SnowCanvasStyleDefaults& defaults) {
+    if (m_palette != nullptr) {
+        m_palette->setCreationStyleDefaults(defaults);
+    }
+}
+
+SnowCanvasStyleDefaults ScreenshotToolPaletteHost::creationStyleDefaults() const {
+    return m_palette != nullptr ? m_palette->creationStyleDefaults()
+                                : snow_shot::presentation::screenshotCanvasStyleDefaults();
+}
+
 bool ScreenshotToolPaletteHost::stepStrokeWidth(int direction) {
     return m_palette != nullptr && m_palette->stepStrokeWidth(direction);
 }

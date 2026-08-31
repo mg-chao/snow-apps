@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
 
+#include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/presentation/screenshottoolpalettehost.h"
@@ -270,10 +271,20 @@ void ScreenshotToolbarWindow::connectStyleCommands(ScreenshotToolPalette& toolPa
         &toolPalette, &ScreenshotToolPalette::shapeStyleChanged, this,
         [this](const SnowCanvasShapeStyle& style, quint32 properties, SnowCanvasShapeKind kind) {
             m_commands.setShapeStyleFromToolbar(style, properties, kind);
+            if (ScreenshotToolPalette* palette = this->palette()) {
+                static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
+                    palette->creationStyleDefaults()));
+            }
         });
     connect(
         &toolPalette, &ScreenshotToolPalette::textStyleChanged, this,
-        [this](const SnowCanvasTextStyle& style) { m_commands.setTextStyleFromToolbar(style); });
+        [this](const SnowCanvasTextStyle& style) {
+            m_commands.setTextStyleFromToolbar(style);
+            if (ScreenshotToolPalette* palette = this->palette()) {
+                static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
+                    palette->creationStyleDefaults()));
+            }
+        });
     connect(&toolPalette, &ScreenshotToolPalette::lineRequested, this, [this]() {
         m_commands.setLineTool();
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::Line);
@@ -313,6 +324,10 @@ void ScreenshotToolbarWindow::connectStyleCommands(ScreenshotToolPalette& toolPa
     connect(&toolPalette, &ScreenshotToolPalette::filterStyleChanged, this,
             [this](const SnowCanvasFilterStyle& style, quint32 properties) {
                 m_commands.setFilterStyleFromToolbar(style, properties);
+                if (ScreenshotToolPalette* palette = this->palette()) {
+                    static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
+                        palette->creationStyleDefaults()));
+                }
             });
     connect(&toolPalette, &ScreenshotToolPalette::watermarkRequested, this, [this]() {
         m_commands.setWatermarkTool();
@@ -329,6 +344,10 @@ void ScreenshotToolbarWindow::connectStyleCommands(ScreenshotToolPalette& toolPa
     connect(&toolPalette, &ScreenshotToolPalette::serialNumberStyleChanged, this,
             [this](const SnowCanvasSerialNumberStyle& style) {
                 m_commands.setSerialNumberStyleFromToolbar(style);
+                if (ScreenshotToolPalette* palette = this->palette()) {
+                    static_cast<void>(snow_shot::presentation::persistScreenshotCanvasToolStyles(
+                        palette->creationStyleDefaults()));
+                }
             });
     connect(&toolPalette, &ScreenshotToolPalette::spotlightConfigChanged, this,
             [this](const SnowCanvasSpotlightConfig& config) {
@@ -382,6 +401,8 @@ void ScreenshotToolbarWindow::resetForNewCapture() {
         host->setStyleToolbarAboveMain(false);
         host->setStyleToolbarVisible(false);
         host->resetStyleState();
+        host->setCreationStyleDefaults(
+            snow_shot::presentation::screenshotCanvasToolStyleDefaults());
         host->setScrollingScreenshotMode(false);
         host->setActiveTool(ScreenshotToolPalette::Tool::Move);
     }

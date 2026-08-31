@@ -3,6 +3,7 @@
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
+#include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenshotoverlayeventsink.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
@@ -307,6 +308,17 @@ void ScreenshotOverlayCoordinator::setCanvasInteractionEnabled(
 void ScreenshotOverlayCoordinator::setCanvasTool(const ScreenshotDisplaySession& displaySession,
                                                  SnowCanvasTool tool) {
     m_canvasPresenter.setCanvasTool(displaySession, tool);
+}
+
+void ScreenshotOverlayCoordinator::refreshCanvasCreationStyles(
+    const ScreenshotDisplaySession& displaySession,
+    const SnowCanvasStyleDefaults& defaults) const {
+    m_canvasPresenter.refreshCanvasCreationStyles(displaySession, defaults);
+    if (ScreenshotToolbarWindow* toolbarWindow = toolbar()) {
+        if (ScreenshotToolPalette* palette = toolbarWindow->palette()) {
+            palette->setCreationStyleDefaults(defaults);
+        }
+    }
 }
 
 bool ScreenshotOverlayCoordinator::resetEditingState(

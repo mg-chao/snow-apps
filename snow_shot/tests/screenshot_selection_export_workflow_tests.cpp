@@ -69,14 +69,22 @@ class FakeDestination final : public ScreenshotSelectionExportDestinationPort {
         return true;
     }
 
-    bool presentPinnedSelection(const ScreenshotPinnedSelectionRequest&) override {
-        return false;
+    bool presentPinnedSelection(const ScreenshotPinnedSelectionRequest& request,
+                                PinnedCompletion completion) override {
+        ++presentCount;
+        if (!presentationSucceeds) {
+            return false;
+        }
+        completion(true, QImage(request.fullResolutionScaleBasis, QImage::Format_ARGB32));
+        return true;
     }
 
     bool publicationSucceeds = true;
     bool schedulingSucceeds = true;
     bool receivedValidPayload = false;
     int publishCount = 0;
+    int presentCount = 0;
+    bool presentationSucceeds = true;
 };
 
 class FakeStore final : public ScreenshotSelectionParamsStorePort {

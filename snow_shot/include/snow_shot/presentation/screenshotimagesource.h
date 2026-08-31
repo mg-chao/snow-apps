@@ -6,7 +6,14 @@
 #include <QRectF>
 #include <QSize>
 
+#include <functional>
 #include <utility>
+
+class QObject;
+
+using ScreenshotImageLoadCallback = std::function<void(QImage)>;
+using ScreenshotImageLoader =
+    std::function<void(QObject* receiver, ScreenshotImageLoadCallback callback)>;
 
 struct ScreenshotImageLayer {
     QImage image;

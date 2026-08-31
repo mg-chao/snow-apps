@@ -36,6 +36,7 @@ struct ScreenshotCaptureWorkflowContext {
     std::function<bool()> smartSelectionEnabled = []() { return true; };
     std::function<void(std::optional<ScreenshotWindowCaptureFrame>)> focusedWindowCaptured =
         [](std::optional<ScreenshotWindowCaptureFrame>) {};
+    std::function<void()> refreshCanvasCreationStyles = []() {};
 };
 
 enum class ScreenshotCapturePresentationMode {

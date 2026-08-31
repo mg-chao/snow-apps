@@ -108,6 +108,7 @@ class ScreenshotToolPaletteStyleControls final : private ScreenshotToolPaletteSt
     [[nodiscard]] SnowCanvasArrowStyle arrowStyle() const;
     [[nodiscard]] SnowCanvasTextStyle textStyle() const;
     [[nodiscard]] SnowCanvasStyleDefaults creationStyleDefaults() const;
+    void setCreationStyleDefaults(const SnowCanvasStyleDefaults& defaults);
     void setRectangleStyle(const SnowCanvasShapeStyle& style);
     void setWatermarkConfig(const SnowCanvasWatermarkConfig& config);
     void setStyleToolbarState(const SnowCanvasStyleToolbarState& state);

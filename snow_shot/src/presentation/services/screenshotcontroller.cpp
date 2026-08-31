@@ -12,6 +12,7 @@
 #include "snow_shot/presentation/screenshotcolorpickercontroller.h"
 #include "snow_shot/presentation/screenshotdisplayconfigurationobserver.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
+#include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotexportservice.h"
 #include "snow_shot/presentation/screenshotexportcoordinator.h"
@@ -93,6 +94,17 @@ namespace {
 constexpr auto kCopyMessageKey = "screenshot-copy";
 constexpr auto kSaveMessageKey = "screenshot-save";
 constexpr auto kPinClipboardMessageKey = "screenshot-pin-clipboard";
+
+struct ScrollingPinMaterializationState final {
+    QPointer<ScreenshotController> controller;
+    QPointer<QObject> windowReceiver;
+    std::optional<ScreenshotScrollingSnapshot> snapshot;
+    ScreenshotImageLoadCallback callback;
+    ScreenshotExportJobHandle job;
+    quint64 generation = 0;
+    bool snapshotFailed = false;
+    bool loadingStarted = false;
+};
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
 QString cameraShutterAudioPath() {
@@ -945,6 +957,13 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
             [this](std::optional<ScreenshotWindowCaptureFrame> frame) {
                 m_focusedWindowCapture = std::move(frame);
             },
+            [this]() {
+                if (m_overlayCoordinator != nullptr) {
+                    m_overlayCoordinator->refreshCanvasCreationStyles(
+                        m_displaySession,
+                        snow_shot::presentation::screenshotCanvasToolStyleDefaults());
+                }
+            },
         });
 }
 
@@ -1720,103 +1739,118 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
         }
         const QPointer<ScreenshotController> receiver(&owner);
         const QPointer<QScreen> targetScreen(display->screen);
-        const QString targetScreenName = display->name;
-        const QRect targetPhysicalRect = display->physicalRect;
         const bool autoResizeWindow = snow_shot::storage::PinToScreenSettings().autoResizeWindow();
         const std::optional<quint64> exportGeneration = beginImageExport();
         if (!exportGeneration.has_value()) {
             SNOW_SHOT_PIN_PERF_FINISH(false);
             return;
         }
-        const bool scheduled = m_scrollingCaptureController->requestTrimmedSnapshot(
-            [receiver, targetScreen, targetScreenName, targetPhysicalRect, autoResizeWindow,
-             generation = *exportGeneration](ScreenshotScrollingSnapshot snapshot) mutable {
-                if (receiver.isNull() || receiver->m_impl == nullptr) {
-                    SNOW_SHOT_PIN_PERF_FINISH(false);
-                    return;
-                }
-                if (!receiver->m_impl->imageExportCurrent(generation)) {
-                    SNOW_SHOT_PIN_PERF_FINISH(false);
-                    return;
-                }
-                receiver->m_impl->m_exportJob = ScreenshotExportCoordinator::shared().submit(
-                    receiver, ScreenshotExportCoordinator::Priority::Foreground,
-                    [snapshot = std::move(snapshot)](
-                        const ScreenshotExportCancellation& cancellation) mutable {
-                        if (cancellation.isCancellationRequested()) {
-                            return ScreenshotExportTaskResult::failure(
-                                ScreenshotExportFailureStage::Cancelled,
-                                QStringLiteral("The screenshot pin was cancelled"));
-                        }
-                        QImage image = snapshot.materialize();
-                        if (image.isNull()) {
-                            return ScreenshotExportTaskResult::failure(
-                                ScreenshotExportFailureStage::Render,
-                                QStringLiteral("The scrolling screenshot could not be rendered"));
-                        }
-                        ScreenshotExportTaskResult result;
-                        result.image = std::move(image);
-                        return result;
-                    },
-                    [receiver, targetScreen, targetScreenName, targetPhysicalRect, autoResizeWindow,
-                     generation](ScreenshotExportTaskResult result) mutable {
-                        if (receiver.isNull() || receiver->m_impl == nullptr ||
-                            !receiver->m_impl->imageExportCurrent(generation)) {
-                            SNOW_SHOT_PIN_PERF_FINISH(false);
-                            return;
-                        }
-                        QScreen* resolvedScreen = targetScreen;
-                        if (resolvedScreen == nullptr ||
-                            !QGuiApplication::screens().contains(resolvedScreen)) {
-                            resolvedScreen = ScreenshotGeometryMapper::screenForCaptureDisplay(
-                                targetScreenName, targetPhysicalRect);
-                        }
-                        const ScreenshotPinnedImageFit fit =
-                            resolvedScreen != nullptr && !result.image.isNull()
-                                ? (autoResizeWindow
-                                       ? ScreenshotGeometryMapper::fitImageToAvailableGeometry(
-                                             result.image.size(),
-                                             resolvedScreen->availableGeometry(),
-                                             resolvedScreen->geometry(),
-                                             ScreenshotGeometryMapper::physicalRectForScreen(
-                                                 *resolvedScreen),
-                                             16)
-                                       : ScreenshotGeometryMapper::centerImageAtFullResolution(
-                                             result.image.size(),
-                                             resolvedScreen->availableGeometry(),
-                                             resolvedScreen->geometry(),
-                                             ScreenshotGeometryMapper::physicalRectForScreen(
-                                                 *resolvedScreen)))
-                                : ScreenshotPinnedImageFit{};
-                        const bool presented =
-                            result.succeeded() && fit.valid &&
-                            receiver->m_impl->m_selectionExportUiServices->presentPinnedImage(
-                                result.image, resolvedScreen, fit.nativeGeometry,
-                                fit.fullResolutionSize);
-                        SNOW_SHOT_PIN_PERF_MILESTONE("controller.presentation_complete");
-                        SNOW_SHOT_PIN_PERF_FINISH(presented);
-                        if (!presented &&
-                            receiver->m_impl->imageExportNotificationCurrent(generation)) {
-                            receiver->m_impl->m_messages->error(
-                                QString::fromLatin1(kCopyMessageKey),
-                                QCoreApplication::translate(
-                                    "ScreenshotController",
-                                    "The scrolling screenshot could not be pinned: %1")
-                                    .arg(result.error));
-                        }
-                        receiver->m_impl->completeScrollingResultExport(generation);
-                    });
-                receiver->m_impl->trackExportJob(receiver->m_impl->m_exportJob);
-                if (!receiver->m_impl->m_exportJob.isValid()) {
-                    SNOW_SHOT_PIN_PERF_FINISH(false);
-                    if (receiver->m_impl->imageExportNotificationCurrent(generation)) {
-                        receiver->m_impl->m_messages->error(
-                        QString::fromLatin1(kCopyMessageKey),
-                        QCoreApplication::translate("ScreenshotController",
-                                                    "The screenshot export queue is full"));
+        // The trimmed dimensions are already known from the scrolling thumbnail. Keep the
+        // snapshot request in flight while presenting the shell, then materialize it through the
+        // pinned window loader after the capture is detached.
+        const ScreenshotPinnedImageFit fit =
+            autoResizeWindow
+                ? ScreenshotGeometryMapper::fitImageToAvailableGeometry(
+                      sourceSize, display->screen->availableGeometry(), display->screen->geometry(),
+                      ScreenshotGeometryMapper::physicalRectForScreen(*display->screen), 16)
+                : ScreenshotGeometryMapper::centerImageAtFullResolution(
+                      sourceSize, display->screen->availableGeometry(), display->screen->geometry(),
+                      ScreenshotGeometryMapper::physicalRectForScreen(*display->screen));
+        const auto loadState = std::make_shared<ScrollingPinMaterializationState>();
+        loadState->controller = receiver;
+        loadState->generation = *exportGeneration;
+        const auto failLoad = [loadState]() {
+            if (loadState->callback) {
+                auto callback = std::move(loadState->callback);
+                callback({});
+            }
+        };
+        QObject::connect(m_scrollingCaptureController.get(), &QObject::destroyed,
+                         [loadState, failLoad]() {
+                             loadState->snapshotFailed = true;
+                             failLoad();
+                         });
+        const auto startMaterialization = std::make_shared<std::function<void()>>();
+        *startMaterialization = [loadState, failLoad]() mutable {
+            if (loadState->loadingStarted || !loadState->callback) {
+                return;
+            }
+            if (loadState->snapshotFailed) {
+                failLoad();
+                return;
+            }
+            if (!loadState->snapshot.has_value()) {
+                return;
+            }
+            if (loadState->controller.isNull() || loadState->controller->m_impl == nullptr ||
+                !loadState->controller->m_impl->imageExportCurrent(loadState->generation)) {
+                failLoad();
+                return;
+            }
+            const QPointer<QObject> windowReceiver = loadState->windowReceiver;
+            if (windowReceiver.isNull()) {
+                failLoad();
+                return;
+            }
+            loadState->loadingStarted = true;
+            ScreenshotScrollingSnapshot snapshot = std::move(*loadState->snapshot);
+            loadState->snapshot.reset();
+            auto callback = std::move(loadState->callback);
+            loadState->job = ScreenshotExportCoordinator::shared().submit(
+                windowReceiver, ScreenshotExportCoordinator::Priority::Foreground,
+                [snapshot = std::move(snapshot)](
+                    const ScreenshotExportCancellation& cancellation) mutable {
+                    if (cancellation.isCancellationRequested()) {
+                        return ScreenshotExportTaskResult::failure(
+                            ScreenshotExportFailureStage::Cancelled,
+                            QStringLiteral("The screenshot pin was cancelled"));
                     }
-                    receiver->m_impl->completeScrollingResultExport(generation);
+                    QImage image = snapshot.materialize();
+                    if (image.isNull()) {
+                        return ScreenshotExportTaskResult::failure(
+                            ScreenshotExportFailureStage::Render,
+                            QStringLiteral("The scrolling screenshot could not be rendered"));
+                    }
+                    ScreenshotExportTaskResult result;
+                    result.image = std::move(image);
+                    return result;
+                },
+                [loadState, callback = std::move(callback)](
+                    ScreenshotExportTaskResult result) mutable {
+                    loadState->job = {};
+                    if (callback) {
+                        callback(result.succeeded() ? std::move(result.image) : QImage{});
+                    }
+                });
+            if (!loadState->job.isValid()) {
+                loadState->loadingStarted = false;
+                failLoad();
+                return;
+            }
+            loadState->controller->m_impl->m_exportJob = loadState->job;
+            loadState->controller->m_impl->trackExportJob(loadState->job);
+        };
+        const ScreenshotImageLoader imageLoader = [loadState, startMaterialization](
+                                                       QObject* windowReceiver,
+                                                       ScreenshotImageLoadCallback callback) mutable {
+            loadState->windowReceiver = windowReceiver;
+            loadState->callback = std::move(callback);
+            (*startMaterialization)();
+        };
+        const bool scheduled = m_scrollingCaptureController->requestTrimmedSnapshot(
+            [loadState, startMaterialization](ScreenshotScrollingSnapshot snapshot) mutable {
+                if (loadState->controller.isNull() || loadState->controller->m_impl == nullptr ||
+                    !loadState->controller->m_impl->imageExportCurrent(loadState->generation) ||
+                    !snapshot.isValid()) {
+                    loadState->snapshotFailed = true;
+                    if (loadState->callback) {
+                        auto callback = std::move(loadState->callback);
+                        callback({});
+                    }
+                    return;
                 }
+                loadState->snapshot = std::move(snapshot);
+                (*startMaterialization)();
             });
         if (!scheduled) {
             SNOW_SHOT_PIN_PERF_FINISH(false);
@@ -1826,6 +1860,43 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
                                             "The scrolling screenshot could not be prepared"));
             completeScrollingResultExport(*exportGeneration);
             return;
+        }
+        const bool presented = fit.valid && targetScreen != nullptr &&
+                               m_selectionExportUiServices != nullptr &&
+                               m_selectionExportUiServices->presentPinnedImage(
+                                   QImage{}, targetScreen, fit.nativeGeometry, fit.fullResolutionSize,
+                                   {}, {}, 1.0, {}, imageLoader,
+                                   [receiver, loadState,
+                                    generation = *exportGeneration](bool success, QImage) {
+                                       SNOW_SHOT_PIN_PERF_MILESTONE(
+                                           "controller.presentation_complete");
+                                       SNOW_SHOT_PIN_PERF_FINISH(success);
+                                       if (!success) {
+                                           loadState->job.cancel();
+                                       }
+                                       if (receiver.isNull() || receiver->m_impl == nullptr ||
+                                           !receiver->m_impl->imageExportCurrent(generation)) {
+                                           return;
+                                       }
+                                       if (!success && receiver->m_impl->imageExportNotificationCurrent(
+                                                           generation)) {
+                                           receiver->m_impl->m_messages->error(
+                                               QString::fromLatin1(kCopyMessageKey),
+                                               QCoreApplication::translate(
+                                                   "ScreenshotController",
+                                                   "The scrolling screenshot could not be pinned"));
+                                       }
+                                       receiver->m_impl->completeScrollingResultExport(generation);
+                                   });
+        if (!presented) {
+            SNOW_SHOT_PIN_PERF_FINISH(false);
+            if (imageExportNotificationCurrent(*exportGeneration)) {
+                m_messages->error(
+                    QString::fromLatin1(kCopyMessageKey),
+                    QCoreApplication::translate(
+                        "ScreenshotController", "The scrolling screenshot could not be pinned"));
+            }
+            completeScrollingResultExport(*exportGeneration);
         }
         detachCaptureForExport();
         SNOW_SHOT_PIN_PERF_MILESTONE("controller.presentation_hidden");
@@ -1950,6 +2021,109 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
     const bool autoResizeWindow = snow_shot::storage::PinToScreenSettings().autoResizeWindow();
     m_clipboardPinJob.cancel();
     const quint64 generation = ++m_clipboardPinGeneration;
+
+    // QMimeData may already expose a detached image with its final dimensions. In
+    // that case the shell can be placed immediately while the clipboard decode
+    // runs asynchronously. Encoded, file-backed, and text payloads continue
+    // through the decode-first path below because their size is not known yet.
+    if (snapshot->encodedImages.isEmpty() && !snapshot->localImage.has_value() &&
+        !snapshot->detachedImage.isNull() && !snapshot->detachedImage.size().isEmpty()) {
+        const QImage placeholder = snapshot->detachedImage;
+        const ScreenshotPinnedImageFit fit =
+            autoResizeWindow
+                ? ScreenshotGeometryMapper::fitImageToAvailableGeometry(
+                      placeholder.size(), screen->availableGeometry(), screen->geometry(),
+                      ScreenshotGeometryMapper::physicalRectForScreen(*screen), 16)
+                : ScreenshotGeometryMapper::centerImageAtFullResolution(
+                      placeholder.size(), screen->availableGeometry(), screen->geometry(),
+                      ScreenshotGeometryMapper::physicalRectForScreen(*screen));
+        const QPointer<ScreenshotController> receiver(&owner);
+        const QPointer<QScreen> guardedScreen(screen);
+        const ScreenshotImageLoader imageLoader =
+            [receiver, guardedScreen, generation, snapshot = std::move(*snapshot)](
+                QObject* windowReceiver, ScreenshotImageLoadCallback callback) mutable {
+                const QPointer<QObject> guardedWindow(windowReceiver);
+                auto content = std::make_shared<std::optional<ScreenshotClipboardContent>>();
+                const ScreenshotExportJobHandle job = ScreenshotExportCoordinator::shared().submit(
+                    windowReceiver, ScreenshotExportCoordinator::Priority::Foreground,
+                    [snapshot = std::move(snapshot), content](
+                        const ScreenshotExportCancellation& cancellation) mutable {
+                        *content = ScreenshotClipboardContentReader::decode(
+                            std::move(snapshot), [&cancellation]() {
+                                return cancellation.isCancellationRequested();
+                            });
+                        if (!content->has_value() || !content->value().isValid()) {
+                            return ScreenshotExportTaskResult::failure(
+                                cancellation.isCancellationRequested()
+                                    ? ScreenshotExportFailureStage::Cancelled
+                                    : ScreenshotExportFailureStage::Source,
+                                cancellation.isCancellationRequested()
+                                    ? QStringLiteral("The clipboard pin was cancelled")
+                                    : QStringLiteral("The clipboard content could not be decoded"));
+                        }
+                        return ScreenshotExportTaskResult{};
+                    },
+                    [receiver, guardedScreen, guardedWindow, generation, content,
+                     callback = std::move(callback)](ScreenshotExportTaskResult result) mutable {
+                        if (guardedWindow.isNull()) {
+                            return;
+                        }
+                        if (receiver.isNull() || receiver->m_impl == nullptr ||
+                            generation != receiver->m_impl->m_clipboardPinGeneration ||
+                            guardedScreen.isNull() || !result.succeeded() ||
+                            !content->has_value() || !content->value().isValid()) {
+                            callback({});
+                            return;
+                        }
+                        receiver->m_impl->m_clipboardPinJob = {};
+                        callback(std::move(content->value().image));
+                    });
+                if (receiver.isNull() || receiver->m_impl == nullptr ||
+                    generation != receiver->m_impl->m_clipboardPinGeneration) {
+                    callback({});
+                    return;
+                }
+                receiver->m_impl->m_clipboardPinJob = job;
+                if (!job.isValid()) {
+                    receiver->m_impl->m_clipboardPinJob = {};
+                    callback({});
+                }
+            };
+        const bool presented = fit.valid &&
+                               m_selectionExportUiServices != nullptr &&
+                               m_selectionExportUiServices->presentPinnedImage(
+                                   placeholder, screen, fit.nativeGeometry, fit.fullResolutionSize,
+                                   {}, {}, 1.0, {}, imageLoader,
+                                   [receiver, generation](bool success, QImage) {
+                                       if (success || receiver.isNull() ||
+                                           receiver->m_impl == nullptr ||
+                                           generation != receiver->m_impl->m_clipboardPinGeneration) {
+                                           return;
+                                       }
+                                       receiver->m_impl->m_clipboardPinJob.cancel();
+                                       receiver->m_impl->m_clipboardPinJob = {};
+                                       receiver->m_impl->m_messages->error(
+                                           QString::fromLatin1(kPinClipboardMessageKey),
+                                           QCoreApplication::translate(
+                                               "ScreenshotController",
+                                               "The clipboard content could not be pinned"));
+                                   });
+        if (!presented) {
+            m_messages->error(
+                QString::fromLatin1(kPinClipboardMessageKey),
+                QCoreApplication::translate("ScreenshotController",
+                                            "The clipboard pin could not be presented"));
+        }
+        return;
+    }
+
+    // Encoded images, local files, and text do not expose their final pixel size
+    // until the export worker decodes or renders them. Prepare the native pinned
+    // shell now, but leave it hidden until the decoded size is available.
+    if (m_selectionExportUiServices != nullptr) {
+        m_selectionExportUiServices->prewarmPinnedWindow(screen);
+    }
+
     auto content = std::make_shared<std::optional<ScreenshotClipboardContent>>();
     const QPointer<ScreenshotController> receiver(&owner);
     const QPointer<QScreen> guardedScreen(screen);

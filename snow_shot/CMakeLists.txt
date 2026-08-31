@@ -661,6 +661,7 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshotcontroller.h
     include/snow_shot/presentation/globalshortcuttypes.h
     include/snow_shot/presentation/screenshotdefaultstyles.h
+    include/snow_shot/presentation/screenshotcanvastoolstyles.h
     include/snow_shot/presentation/screenshotdisplayconfigurationobserver.h
     include/snow_shot/presentation/screenshotdisplaysession.h
     include/snow_shot/presentation/screenshotexportservice.h
@@ -783,6 +784,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
     src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
     src/presentation/core/screenshotgeometry.cpp
+    src/presentation/core/screenshotcanvastoolstyles.cpp
     src/presentation/core/screenshotintelligentselectionmodel.cpp
     src/presentation/core/screenshotinteractionstate.cpp
     src/presentation/core/screenshotsmartselectiontransition.cpp
@@ -1891,6 +1893,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/styles/thememanager.h
         src/presentation/components/icons/snowshoticons.cpp
         src/presentation/core/screenshotgeometry.cpp
+        src/presentation/core/screenshotcanvastoolstyles.cpp
         src/presentation/ocr/screenshotocrpresentation.cpp
         src/presentation/ocr/screenshotocrvisuals.cpp
         src/presentation/ocr/screenshotocrtexteditingsession.cpp
@@ -2024,11 +2027,16 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-pinned-clipboard-content-tests
         COMMAND snow-shot-pinned-window-tests --clipboard-content-only
     )
+    add_test(
+        NAME snow-shot-pinned-async-presentation-tests
+        COMMAND snow-shot-pinned-window-tests --async-presentation-only
+    )
     set(_snow_shot_pinned_window_test_names
         snow-shot-pinned-window-tests
         snow-shot-pinned-recognition-provider-loss-tests
         snow-shot-pinned-recognition-priority-tests
         snow-shot-pinned-clipboard-content-tests
+        snow-shot-pinned-async-presentation-tests
         snow-shot-pinned-toolbar-parity-tests
     )
     if(WIN32)
@@ -2118,7 +2126,9 @@ if(SNOW_SHOT_BUILD_TESTS)
             include/snow_shot/presentation/styles/thememanager.h
             src/presentation/components/icons/snowshoticons.cpp
             src/presentation/core/screenshotgeometry.cpp
+            src/presentation/core/screenshotcanvastoolstyles.cpp
             src/presentation/ocr/screenshotocrpresentation.cpp
+            src/presentation/ocr/screenshotocrvisuals.cpp
             src/presentation/ocr/screenshotocrtexteditingsession.cpp
             src/presentation/ocr/screenshotocrtexttransform.cpp
             src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp
@@ -2168,6 +2178,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             Qt6::Network
             Qt6::Widgets
             snow_shot_image_codec
+            snow_shot_storage
             snow_draw_engine_qt_canvas
             snow_shot_window_shortcuts
             comctl32
@@ -2193,6 +2204,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenshottoolpalette.h
         include/snow_shot/presentation/styles/thememanager.h
         src/presentation/components/icons/snowshoticons.cpp
+        src/presentation/core/screenshotcanvastoolstyles.cpp
         src/presentation/services/languagemanager.cpp
         src/presentation/tools/screenshottoolbarmainpanel.cpp
         src/presentation/tools/screenshottoolpalettebuttons.cpp

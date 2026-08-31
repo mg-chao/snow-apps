@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshotoverlaycanvaspresenter.h"
 
+#include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
@@ -454,6 +455,16 @@ void ScreenshotOverlayCanvasPresenter::setCanvasInteractionEnabled(
 void ScreenshotOverlayCanvasPresenter::setCanvasTool(const ScreenshotDisplaySession& displaySession,
                                                      SnowCanvasTool tool) const {
     setCanvasToolForDisplaySession(displaySession, tool);
+}
+
+void ScreenshotOverlayCanvasPresenter::refreshCanvasCreationStyles(
+    const ScreenshotDisplaySession& displaySession,
+    const SnowCanvasStyleDefaults& defaults) const {
+    displaySession.forEachOverlay([&defaults](qsizetype, ScreenshotOverlayWindow* overlay) {
+        if (overlay != nullptr && overlay->canvas() != nullptr) {
+            snow_shot::presentation::applyScreenshotCanvasToolStyles(*overlay->canvas(), defaults);
+        }
+    });
 }
 
 bool ScreenshotOverlayCanvasPresenter::resetEditingState(

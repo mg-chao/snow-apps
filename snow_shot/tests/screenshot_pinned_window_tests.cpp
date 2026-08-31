@@ -1403,6 +1403,115 @@ void pinnedCloseCancelsPendingRecognition(SnowCanvasRuntime&) {
             "pinned window was not deleted after canceling text recognition");
 }
 
+void pinnedAsyncPresentationDefersContent(SnowCanvasRuntime&) {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+
+    QImage expectedImage(QSize(160, 96), QImage::Format_ARGB32_Premultiplied);
+    expectedImage.fill(QColor(36, 132, 204));
+
+    auto makeConfig = [screen](const QImage& placeholder, ScreenshotImageLoader loader) {
+        ScreenshotPinnedWindow::Config config;
+        config.nativeGeometry = physicalPinGeometry(*screen, QPoint(60, 60), placeholder.size());
+        config.canvasSourceRect = QRectF(QPointF(), QSizeF(placeholder.size()));
+        config.imageSource = ScreenshotImageSource::fromImage(placeholder, config.canvasSourceRect);
+        config.fullResolutionScaleBasis = placeholder.size();
+        config.screen = screen;
+        config.imageLoader = std::move(loader);
+        config.enableEditing = false;
+        return config;
+    };
+
+    ScreenshotImageLoadCallback successLoad;
+    auto* successfulWindow =
+        new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
+    QPointer<ScreenshotPinnedWindow> guardedSuccessfulWindow(successfulWindow);
+    int successCompletionCount = 0;
+    bool successCompletionValue = false;
+    const ScreenshotImageLoader successLoader =
+        [&successLoad](QObject*, ScreenshotImageLoadCallback callback) {
+            successLoad = std::move(callback);
+        };
+    QImage placeholder(QSize(160, 96), QImage::Format_ARGB32_Premultiplied);
+    placeholder.fill(Qt::transparent);
+    require(successfulWindow->present(
+                makeConfig(placeholder, successLoader),
+                [&successCompletionCount, &successCompletionValue](bool succeeded, QImage image) {
+                    ++successCompletionCount;
+                    successCompletionValue = succeeded && !image.isNull();
+                }),
+            "asynchronous pinned presentation failed to create its shell");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    SnowCanvasWidget* successCanvas =
+        successfulWindow->findChild<SnowCanvasWidget*>();
+    require(successfulWindow->isVisible() && successCanvas != nullptr &&
+                !successCanvas->canvasContentVisible() && successCompletionCount == 0,
+            "the pinned shell should be visible with hidden content while loading");
+    const QImage transparentFrame = renderWidget(*successCanvas);
+    require(transparentFrame.pixelColor(transparentFrame.rect().center()).alpha() == 0,
+            "the pinned canvas should stay transparent until materialization completes");
+    require(static_cast<bool>(successLoad),
+            "the pinned image loader should start after the shell is shown");
+    successLoad(expectedImage);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    require(successCanvas->canvasContentVisible() && successCompletionCount == 1 &&
+                successCompletionValue,
+            "successful pinned materialization should reveal content exactly once");
+    const QImage loadedFrame = renderWidget(*successCanvas);
+    require(loadedFrame.pixelColor(loadedFrame.rect().center()).alpha() > 0,
+            "the pinned canvas should render materialized content");
+    successfulWindow->close();
+    require(processUntilDeleted(guardedSuccessfulWindow, 2000),
+            "successful asynchronous pinned window was not deleted");
+
+    ScreenshotImageLoadCallback failureLoad;
+    auto* failedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
+    QPointer<ScreenshotPinnedWindow> guardedFailedWindow(failedWindow);
+    int failureCompletionCount = 0;
+    bool failureCompletionValue = true;
+    const ScreenshotImageLoader failureLoader =
+        [&failureLoad](QObject*, ScreenshotImageLoadCallback callback) {
+            failureLoad = std::move(callback);
+        };
+    require(failedWindow->present(
+                makeConfig(placeholder, failureLoader),
+                [&failureCompletionCount, &failureCompletionValue](bool succeeded, QImage) {
+                    ++failureCompletionCount;
+                    failureCompletionValue = succeeded;
+                }),
+            "failed asynchronous pinned presentation could not create its shell");
+    require(static_cast<bool>(failureLoad), "the failed pinned loader did not start");
+    failureLoad({});
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    require(failureCompletionCount == 1 && !failureCompletionValue,
+            "failed pinned materialization should complete exactly once with failure");
+    require(processUntilDeleted(guardedFailedWindow, 2000),
+            "failed asynchronous pinned window was not closed");
+
+    ScreenshotImageLoadCallback closeLoad;
+    auto* closedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
+    QPointer<ScreenshotPinnedWindow> guardedClosedWindow(closedWindow);
+    int closeCompletionCount = 0;
+    bool closeCompletionValue = true;
+    const ScreenshotImageLoader closeLoader =
+        [&closeLoad](QObject*, ScreenshotImageLoadCallback callback) {
+            closeLoad = std::move(callback);
+        };
+    require(closedWindow->present(
+                makeConfig(placeholder, closeLoader),
+                [&closeCompletionCount, &closeCompletionValue](bool succeeded, QImage) {
+                    ++closeCompletionCount;
+                    closeCompletionValue = succeeded;
+                }),
+            "close-during-load pinned presentation could not create its shell");
+    closedWindow->close();
+    closeLoad = {};
+    require(closeCompletionCount == 1 && !closeCompletionValue,
+            "closing a loading pinned window should resolve presentation exactly once");
+    require(processUntilDeleted(guardedClosedWindow, 2000),
+            "close-during-load pinned window was not deleted");
+}
+
 void pinnedRecognitionPromotesAutomaticPrefetch(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -3219,6 +3328,10 @@ int main(int argc, char* argv[]) {
             pinnedCloseAfterRecognizedText(sourceRuntime);
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--async-presentation-only"))) {
+            pinnedAsyncPresentationDefersContent(sourceRuntime);
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--tray-pin-runtime-only"))) {
             pinnedContextMenuAndModes(sourceRuntime);
             pinnedControlsMatchReferenceStyle(sourceRuntime);
@@ -3253,6 +3366,7 @@ int main(int argc, char* argv[]) {
         pinnedCloseCancelsPendingRecognition(sourceRuntime);
         pinnedAutomaticRecognitionCanBeDisabled(sourceRuntime);
         pinnedCloseAfterRecognizedText(sourceRuntime);
+        pinnedAsyncPresentationDefersContent(sourceRuntime);
         pinnedRecognitionProviderLossEndsBusyState(sourceRuntime);
         pinnedFormattedClipboardTextSkipsOcrAndSeedsPlainTextEditing(sourceRuntime);
         pinnedControlsMatchReferenceStyle(sourceRuntime);
