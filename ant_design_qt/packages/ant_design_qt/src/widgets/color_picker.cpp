@@ -238,6 +238,13 @@ class ColorSaturationPanel final : public QWidget {
     changeCallback_ = std::move(callback);
   }
 
+  // The popup retains this panel between openings, but its raster cache should
+  // only live while the popup is in use.
+  void clearBackgroundCache() {
+    backgroundCache_.reset();
+    backgroundCacheRequested_ = false;
+  }
+
  protected:
   void changeEvent(QEvent* event) override {
     QWidget::changeEvent(event);
@@ -264,7 +271,7 @@ class ColorSaturationPanel final : public QWidget {
     }
     if (hasCurrentBackgroundCache(size(), dpr)) {
       backgroundCacheRequested_ = false;
-      painter.drawImage(0, 0, backgroundCache_);
+      painter.drawImage(0, 0, backgroundCache_->image);
     } else {
       drawStaticBackground(painter, panelRect);
     }
@@ -387,9 +394,11 @@ class ColorSaturationPanel final : public QWidget {
   // brightness is dragged. Keep that static layer in a DPR-aware image so a drag
   // frame only has to composite it and draw the selection handle.
   bool hasCurrentBackgroundCache(const QSize& logicalSize, qreal dpr) const {
-    return !backgroundCache_.isNull() && backgroundCacheSize_ == logicalSize &&
-           qFuzzyCompare(backgroundCacheDpr_ + 1.0, dpr + 1.0) && backgroundCacheHue_ == hue_ &&
-           backgroundCacheBase_ == palette().color(backgroundRole());
+    return backgroundCache_ && !backgroundCache_->image.isNull() &&
+           backgroundCache_->size == logicalSize &&
+           qFuzzyCompare(backgroundCache_->dpr + 1.0, dpr + 1.0) &&
+           backgroundCache_->hue == hue_ &&
+           backgroundCache_->base == palette().color(backgroundRole());
   }
 
   void ensureBackgroundCache(const QSize& logicalSize, qreal dpr, const QRectF& panelRect) {
@@ -398,12 +407,7 @@ class ColorSaturationPanel final : public QWidget {
     // device. In that uncommon case, bypass the cache rather than baking in an
     // incorrect backdrop.
     if (cacheBackground.alpha() < 255) {
-      backgroundCache_ = QImage();
-      backgroundCacheSize_ = QSize();
-      backgroundCacheDpr_ = 0.0;
-      backgroundCacheHue_ = -1;
-      backgroundCacheBase_ = QColor();
-      backgroundCacheRequested_ = false;
+      clearBackgroundCache();
       return;
     }
 
@@ -413,12 +417,7 @@ class ColorSaturationPanel final : public QWidget {
     }
 
     if (logicalSize.width() <= 0 || logicalSize.height() <= 0 || dpr <= 0.0) {
-      backgroundCache_ = QImage();
-      backgroundCacheSize_ = QSize();
-      backgroundCacheDpr_ = 0.0;
-      backgroundCacheHue_ = -1;
-      backgroundCacheBase_ = QColor();
-      backgroundCacheRequested_ = false;
+      clearBackgroundCache();
       return;
     }
 
@@ -431,11 +430,12 @@ class ColorSaturationPanel final : public QWidget {
     drawStaticBackground(cachePainter, panelRect);
     cachePainter.end();
 
-    backgroundCache_ = cache;
-    backgroundCacheSize_ = logicalSize;
-    backgroundCacheDpr_ = dpr;
-    backgroundCacheHue_ = hue_;
-    backgroundCacheBase_ = cacheBackground;
+    backgroundCache_ = std::make_unique<BackgroundCache>();
+    backgroundCache_->image = std::move(cache);
+    backgroundCache_->size = logicalSize;
+    backgroundCache_->dpr = dpr;
+    backgroundCache_->hue = hue_;
+    backgroundCache_->base = cacheBackground;
     backgroundCacheRequested_ = false;
   }
 
@@ -521,11 +521,16 @@ class ColorSaturationPanel final : public QWidget {
   double brightness_ = 1.0;
   bool dragging_ = false;
   std::function<void(double saturation, double brightness, bool completed)> changeCallback_;
-  QImage backgroundCache_;
-  QSize backgroundCacheSize_;
-  qreal backgroundCacheDpr_ = 0.0;
-  int backgroundCacheHue_ = -1;
-  QColor backgroundCacheBase_;
+
+  struct BackgroundCache {
+    QImage image;
+    QSize size;
+    qreal dpr = 0.0;
+    int hue = -1;
+    QColor base;
+  };
+
+  std::unique_ptr<BackgroundCache> backgroundCache_;
   bool backgroundCacheRequested_ = false;
 };
 
@@ -3434,6 +3439,9 @@ void AdColorPicker::ensurePopover() {
 
   connect(popover_, &AdPopover::visibleChanged, this, [this](bool openValue) {
     if (!openValue) {
+      if (saturationPanel_) {
+        saturationPanel_->clearBackgroundCache();
+      }
       resumeTriggerUpdatesAfterInteraction();
       if (pendingEditingFinished_) {
         pendingEditingFinished_ = false;

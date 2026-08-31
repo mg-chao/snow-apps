@@ -68,7 +68,7 @@ HWND toNativeHwnd(WId windowId) {
 #endif
 
 constexpr int kReportSchemaVersion = 2;
-constexpr int kScenarioManifestVersion = 4;
+constexpr int kScenarioManifestVersion = 5;
 constexpr int kCrossMonitorDragSteps = 240;
 constexpr double kRegressionPercent = 15.0;
 constexpr double kRegressionAbsoluteMilliseconds = 0.5;
@@ -527,7 +527,6 @@ struct Fixture {
 
     void reset() {
         app.monitor(toolbar.get(), owner.get());
-        prewarmedToolbar.reset();
         QToolTip::hideText();
         for (QWidget* topLevel : QApplication::topLevelWidgets()) {
             if (topLevel != toolbar.get() && topLevel != owner.get() && topLevel->isVisible()) {
@@ -547,7 +546,6 @@ struct Fixture {
     NoOpToolbarCommands commands;
     std::unique_ptr<QWidget> owner;
     std::unique_ptr<ScreenshotToolbarWindow> toolbar;
-    std::unique_ptr<ScreenshotToolbarWindow> prewarmedToolbar;
 };
 
 class TransitionEventAudit final : public QObject {
@@ -975,27 +973,6 @@ QVector<Scenario> createScenarios() {
              fresh.hide();
          },
          10});
-    scenarios.push_back(
-        {QStringLiteral("lifecycle.prewarmed_first_show"), QStringLiteral("lifecycle"),
-         QStringLiteral(
-             "Attach and show a hidden toolbar whose layout, style, and icons were prewarmed"),
-         [](Fixture& f) {
-             f.prewarmedToolbar = std::make_unique<ScreenshotToolbarWindow>(f.commands);
-             f.prewarmedToolbar->prewarmForScreen(f.screen);
-             f.app.monitor(f.prewarmedToolbar.get(), f.owner.get());
-         },
-         [](Fixture& f) {
-             ScreenshotToolbarWindow& toolbar = *f.prewarmedToolbar;
-             toolbar.setOwnerWindow(f.owner.get());
-             const QRect bounds = f.screen->availableGeometry();
-             toolbar.setPlacementContext(f.screen, bounds, nativeScreenPhysicalBounds(f.screen));
-             toolbar.moveContentTo(bounds.center() -
-                                   QPoint(toolbar.contentSizeHint().width() / 2,
-                                          toolbar.contentSizeHint().height() / 2));
-             toolbar.show();
-             toolbar.raise();
-         },
-         20});
     scenarios.push_back({QStringLiteral("placement.reanchor"),
                          QStringLiteral("placement"),
                          QStringLiteral("Move content without changing the preset window size"),

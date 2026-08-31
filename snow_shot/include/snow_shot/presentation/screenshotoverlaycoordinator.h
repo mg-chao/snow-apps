@@ -113,7 +113,6 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     void deleteSelectedElements(const ScreenshotDisplaySession& displaySession);
 
     ScreenshotToolbarWindow* ensureToolbar();
-    void prewarmToolbar();
     void prewarmOverlayTransientUi(const ScreenshotDisplaySession& displaySession);
     ScreenshotToolbarWindow* toolbar() const;
     void attachToolbarToOverlay(ScreenshotOverlayWindow* overlay);

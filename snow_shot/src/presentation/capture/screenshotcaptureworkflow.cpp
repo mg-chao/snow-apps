@@ -455,7 +455,7 @@ void ScreenshotCaptureWorkflow::prewarmOverlayPool() {
 void ScreenshotCaptureWorkflow::initializeIdleResources(quint64 requestId) {
     m_context.runtime.prepareAsync(requestId);
     prewarmOverlayPool();
-    m_context.runtime.prewarmToolbar();
+    m_context.runtime.ensureToolbar();
     m_context.runtime.prewarmOverlayTransientUi(m_context.displaySession);
     if (!m_captureModelsClean) {
         resetCaptureModels();

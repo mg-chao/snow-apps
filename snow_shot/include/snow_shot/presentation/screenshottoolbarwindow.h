@@ -17,7 +17,6 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
   public:
     explicit ScreenshotToolbarWindow(ScreenshotToolbarCommandSink& commands,
                                      QWidget* parent = nullptr);
-    void prewarmForScreen(QScreen* screen);
     void resetForNewCapture();
     void setToolbarSize(const QString& size);
     void setToolbarLayout(const snow_shot::storage::ScreenshotToolbarLayout& layout);
@@ -65,7 +64,6 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
     QRect m_movementLogicalBounds;
     QRect m_movementPhysicalBounds;
     QScreen* m_placementScreen = nullptr;
-    QString m_prewarmKey;
     bool m_manuallyDragged = false;
 };
 
