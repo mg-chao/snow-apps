@@ -174,7 +174,11 @@ if(SNOW_SHOT_RELEASE_STATIC)
     # x64/<runtime>/staticlib target files instead of the shared-library set.
     set(OpenCV_STATIC ON)
 endif()
+# OpenCV backs the in-process QR-code recognition service (objdetect);
+# text recognition lives in the standalone OCR process.
 find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc objdetect)
+# ONNX Runtime backs the standalone OCR process: static release builds link
+# its closure into snow-ocr-process.exe, dynamic builds stage its DLL.
 find_package(onnxruntime CONFIG REQUIRED)
 
 if(WIN32)
@@ -203,10 +207,84 @@ if(WIN32)
     unset(_snow_shot_directml_runtimes)
 endif()
 
+# The standalone OCR process owns every OCR dependency. Static release builds
+# link the vcpkg ONNX Runtime closure into the executable itself; the dynamic
+# workspace builds keep loading the staged onnxruntime.dll at runtime.
+set(SNOW_SHOT_OCR_STATIC_ONNXRUNTIME OFF)
+if(SNOW_SHOT_RELEASE_STATIC OR SNOW_APPS_RELEASE_STATIC)
+    set(SNOW_SHOT_OCR_STATIC_ONNXRUNTIME ON)
+endif()
+
+# Depth-first walk of the onnxruntime::onnxruntime imported-target closure.
+# Depth-first expansion keeps every library behind its dependents, matching
+# the order the previous in-process C++ link received from CMake. Interface
+# libraries are header-only and contribute no linker input; configuration
+# generator expressions (Debug-only diagnostics helpers) are skipped.
+function(_snow_shot_onnxruntime_link_items out_items)
+    set(_pending onnxruntime::onnxruntime)
+    set(_visited)
+    set(_items)
+    while(_pending)
+        list(POP_FRONT _pending _current)
+        # A LINK_ONLY wrapper may carry either a library file or another
+        # target name; strip it before resolving the item.
+        string(REGEX REPLACE "^\\$<LINK_ONLY:(.+)>$" "\\1" _current "${_current}")
+        if("${_current}" IN_LIST _visited)
+            continue()
+        endif()
+        list(APPEND _visited "${_current}")
+        if(NOT TARGET "${_current}")
+            string(FIND "${_current}" "$<" _genex_pos)
+            if(NOT _current STREQUAL "" AND _genex_pos EQUAL -1)
+                list(APPEND _items "${_current}")
+            endif()
+            continue()
+        endif()
+        get_target_property(_current_type "${_current}" TYPE)
+        if(NOT _current_type STREQUAL "INTERFACE_LIBRARY")
+            list(APPEND _items "$<TARGET_FILE:${_current}>")
+        endif()
+        get_target_property(_current_deps "${_current}" INTERFACE_LINK_LIBRARIES)
+        if(_current_deps)
+            list(PREPEND _pending ${_current_deps})
+        endif()
+    endwhile()
+    get_target_property(_link_options onnxruntime::onnxruntime INTERFACE_LINK_OPTIONS)
+    if(_link_options)
+        foreach(_link_option IN LISTS _link_options)
+            list(APPEND _items "${_link_option}")
+        endforeach()
+    endif()
+    set(${out_items} "${_items}" PARENT_SCOPE)
+endfunction()
+
+set(SNOW_SHOT_OCR_PROCESS_FEATURES)
+set(SNOW_SHOT_OCR_PROCESS_NO_DEFAULT_FEATURES)
+set(SNOW_SHOT_OCR_PROCESS_ENVIRONMENT)
+if(SNOW_SHOT_OCR_STATIC_ONNXRUNTIME)
+    _snow_shot_onnxruntime_link_items(_snow_shot_onnxruntime_link_items)
+    if(NOT _snow_shot_onnxruntime_link_items)
+        message(FATAL_ERROR
+            "The static ONNX Runtime link closure for the OCR process is empty.")
+    endif()
+    list(JOIN _snow_shot_onnxruntime_link_items "\n" _snow_shot_onnxruntime_link_manifest)
+    file(GENERATE
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/snow-ocr-process-onnxruntime-$<CONFIG>.rsp"
+        CONTENT "${_snow_shot_onnxruntime_link_manifest}\n")
+    set(SNOW_SHOT_OCR_PROCESS_FEATURES static-onnx-runtime directml-provider)
+    set(SNOW_SHOT_OCR_PROCESS_NO_DEFAULT_FEATURES NO_DEFAULT_FEATURES)
+    set(SNOW_SHOT_OCR_PROCESS_ENVIRONMENT
+        "SNOW_ONNXRUNTIME_LINK_FILE=${CMAKE_CURRENT_BINARY_DIR}/generated/snow-ocr-process-onnxruntime-$<CONFIG>.rsp")
+endif()
+
 snow_add_rust_executable(snow_ocr_process
     PACKAGE snow-ocr-process
     MANIFEST_DIR "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
     OUTPUT_NAME snow-ocr-process
+    PERFORMANCE_PROFILE
+    ${SNOW_SHOT_OCR_PROCESS_NO_DEFAULT_FEATURES}
+    FEATURES ${SNOW_SHOT_OCR_PROCESS_FEATURES}
+    ENVIRONMENT ${SNOW_SHOT_OCR_PROCESS_ENVIRONMENT}
 )
 
 set(SNOW_SHOT_SNOW_IMAGE_DIR
@@ -3181,6 +3259,10 @@ endif()
 snow_shot_add_translations(snow_shot)
 
 if(WIN32)
+    # These DLLs are consumed by the standalone OCR process that is staged
+    # next to each host target, not by snow_shot itself. DirectML is
+    # delay-loaded by the statically linked ONNX Runtime; onnxruntime.dll is
+    # only needed when the process links it dynamically.
     foreach(_ocr_runtime_target IN ITEMS snow_shot snow-shot-ocr-recognition-service-tests)
         if(TARGET ${_ocr_runtime_target})
             add_custom_command(TARGET ${_ocr_runtime_target} POST_BUILD
@@ -3190,7 +3272,7 @@ if(WIN32)
                 COMMENT "Staging DirectML for ${_ocr_runtime_target}"
                 VERBATIM
             )
-            if(NOT SNOW_SHOT_RELEASE_STATIC)
+            if(NOT SNOW_SHOT_OCR_STATIC_ONNXRUNTIME)
                 add_custom_command(TARGET ${_ocr_runtime_target} POST_BUILD
                     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
                         "$<TARGET_FILE:onnxruntime::onnxruntime>"
@@ -3279,7 +3361,6 @@ if(WIN32)
     target_link_libraries(snow_shot PRIVATE PkgConfig::SNOW_SHOT_FFMPEG)
     if(TARGET snow-shot-screenshot-canvas-renderer-tests)
         target_link_libraries(snow-shot-screenshot-canvas-renderer-tests PRIVATE
-            onnxruntime::onnxruntime
             PkgConfig::SNOW_SHOT_FFMPEG
         )
     endif()
@@ -3471,13 +3552,18 @@ if(NOT SNOW_SHOT_IMAGE_CODEC_BACKEND_STATIC)
         )
     endif()
 endif()
-if(WIN32 AND NOT SNOW_SHOT_RELEASE_STATIC)
+if(WIN32 AND NOT SNOW_SHOT_OCR_STATIC_ONNXRUNTIME)
+    # Dynamic ONNX Runtime for the standalone OCR process; the static release
+    # links the runtime into snow-ocr-process.exe instead.
     install(FILES "$<TARGET_FILE:onnxruntime::onnxruntime>"
         DESTINATION ${CMAKE_INSTALL_BINDIR}
     )
 endif()
 
 if(WIN32)
+    # DirectML remains a runtime dependency of the standalone OCR process;
+    # even the statically linked ONNX Runtime delay-loads it for the
+    # DirectML execution provider.
     install(FILES "${SNOW_SHOT_DIRECTML_RUNTIME_DLL_RELEASE}"
         DESTINATION ${CMAKE_INSTALL_BINDIR}
     )

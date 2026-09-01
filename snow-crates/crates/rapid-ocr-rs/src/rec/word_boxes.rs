@@ -102,7 +102,7 @@ fn compute_word_boxes_unchecked(
         let item = word_content
             .into_iter()
             .zip(confs.into_iter().chain(std::iter::repeat(0.0)))
-            .zip(mapped.into_iter())
+            .zip(mapped)
             .map(|((text, score), bbox)| WordBox { text, score, bbox })
             .collect::<Vec<_>>();
 

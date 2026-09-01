@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$BuildDirectory = "build\snow-shot-msvc-release",
     [string]$InstallDirectory = "artifacts\snow-shot",
@@ -324,6 +324,7 @@ foreach ($property in $expectedBinaryMetadata.Keys) {
 
 $requiredStageFiles = @(
     "bin\snow_shot.exe",
+    "bin\snow-ocr-process.exe",
     "bin\DirectML.dll",
     "share\snow-shot\licenses\LICENSE",
     "share\snow-shot\licenses\COPYRIGHT",
@@ -366,7 +367,8 @@ if (Test-Path -LiteralPath $stagedQtPluginDirectory -PathType Container) {
 }
 
 $stagedExecutables = @(Get-ChildItem -LiteralPath $installDirectory -Recurse -File -Filter "*.exe")
-$unexpectedExecutables = @($stagedExecutables | Where-Object { $_.Name -ne "snow_shot.exe" })
+$expectedExecutables = @("snow_shot.exe", "snow-ocr-process.exe")
+$unexpectedExecutables = @($stagedExecutables | Where-Object { $_.Name -notin $expectedExecutables })
 if ($unexpectedExecutables.Count -gt 0) {
     throw "Release staging contains unexpected executables: $($unexpectedExecutables.FullName -join ', ')"
 }
@@ -387,6 +389,7 @@ $stagedBinaries = @(Get-ChildItem -LiteralPath $installDirectory -Recurse -File 
     Where-Object { $_.Extension.ToLowerInvariant() -in @(".dll", ".exe") })
 $expectedBinaryPaths = @(
     "bin\snow_shot.exe",
+    "bin\snow-ocr-process.exe",
     "bin\DirectML.dll"
 )
 $unexpectedBinaries = @($stagedBinaries | Where-Object {
@@ -421,6 +424,7 @@ $allowedSystemImports = @(
     "dbghelp.dll",
     "dnsapi.dll",
     "dwrite.dll",
+    "dxcore.dll",
     "dwmapi.dll",
     "dxgi.dll",
     "gdi32.dll",
@@ -461,7 +465,8 @@ $allowedSystemImports = @(
     "wtsapi32.dll"
 )
 $allowedLocalImports = @{
-    "snow_shot.exe" = @("directml.dll")
+    "snow_shot.exe" = @()
+    "snow-ocr-process.exe" = @("directml.dll")
     "directml.dll" = @()
 }
 foreach ($binary in $stagedBinaries) {

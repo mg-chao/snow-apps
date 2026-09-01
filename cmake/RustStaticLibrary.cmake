@@ -247,9 +247,10 @@ function(snow_add_rust_static_library target_name)
 endfunction()
 
 function(snow_add_rust_executable target_name)
-    set(options)
+    set(options PERFORMANCE_PROFILE NO_DEFAULT_FEATURES)
     set(oneValueArgs PACKAGE MANIFEST_DIR OUTPUT_NAME)
-    cmake_parse_arguments(SNOW_RUST "${options}" "${oneValueArgs}" "" ${ARGN})
+    set(multiValueArgs FEATURES ENVIRONMENT)
+    cmake_parse_arguments(SNOW_RUST "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
     foreach(_required IN ITEMS PACKAGE MANIFEST_DIR)
         if(NOT SNOW_RUST_${_required})
             message(FATAL_ERROR "snow_add_rust_executable requires ${_required}")
@@ -274,7 +275,12 @@ function(snow_add_rust_executable target_name)
     else()
         set(_rust_target "x86_64-unknown-linux-gnu")
     endif()
-    if(CMAKE_CONFIGURATION_TYPES)
+    if(SNOW_RUST_PERFORMANCE_PROFILE)
+        # The executable is performance-critical and independent of the CMake
+        # configuration, so always build it with the release profile.
+        set(_profile "${SNOW_RUST_RELEASE_PROFILE}")
+        set(_cargo_profile "${SNOW_RUST_RELEASE_PROFILE}")
+    elseif(CMAKE_CONFIGURATION_TYPES)
         set(_profile "$<IF:$<CONFIG:Debug>,debug,${SNOW_RUST_RELEASE_PROFILE}>")
         set(_cargo_profile "$<IF:$<CONFIG:Debug>,dev,${SNOW_RUST_RELEASE_PROFILE}>")
     elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -310,6 +316,49 @@ function(snow_add_rust_executable target_name)
     else()
         list(APPEND _cargo_environment "VCPKGRS_DYNAMIC=1")
     endif()
+    if(SNOW_RUST_ENVIRONMENT)
+        list(APPEND _cargo_environment ${SNOW_RUST_ENVIRONMENT})
+    endif()
+    if(MSVC)
+        set(_snow_rust_static_crt FALSE)
+        if(SNOW_APPS_RELEASE_STATIC OR SNOW_SHOT_RELEASE_STATIC OR
+           (CMAKE_MSVC_RUNTIME_LIBRARY MATCHES "^MultiThreaded" AND
+            NOT CMAKE_MSVC_RUNTIME_LIBRARY MATCHES "DLL"))
+            set(_snow_rust_static_crt TRUE)
+        endif()
+        # Select the CRT flavor from the Cargo profile actually being built so
+        # a performance-profile executable stays on the release CRT even in a
+        # Debug CMake configuration.
+        if(_cargo_profile STREQUAL "dev")
+            if(_snow_rust_static_crt)
+                set(_rust_c_runtime "/MTd /D_DEBUG")
+            else()
+                set(_rust_c_runtime "/MDd /D_DEBUG")
+            endif()
+        else()
+            if(_snow_rust_static_crt)
+                set(_rust_c_runtime "/MT")
+            else()
+                set(_rust_c_runtime "/MD")
+            endif()
+        endif()
+        list(APPEND _cargo_environment
+            "CXXFLAGS=$ENV{CXXFLAGS} ${_rust_c_runtime}"
+            "CFLAGS=$ENV{CFLAGS} ${_rust_c_runtime}"
+        )
+        if(_snow_rust_static_crt)
+            list(INSERT _cargo_environment 0
+                "RUSTFLAGS=$ENV{RUSTFLAGS} -Dwarnings -C target-feature=+crt-static")
+        endif()
+    endif()
+    set(_cargo_feature_args)
+    if(SNOW_RUST_NO_DEFAULT_FEATURES)
+        list(APPEND _cargo_feature_args --no-default-features)
+    endif()
+    if(SNOW_RUST_FEATURES)
+        list(JOIN SNOW_RUST_FEATURES "," _cargo_features)
+        list(APPEND _cargo_feature_args --features "${_cargo_features}")
+    endif()
     add_custom_target("${target_name}_build"
         COMMAND "${CMAKE_COMMAND}" -E env
             ${_cargo_environment}
@@ -317,6 +366,7 @@ function(snow_add_rust_executable target_name)
             --package "${SNOW_RUST_PACKAGE}"
             --target "${_rust_target}"
             --profile "${_cargo_profile}"
+            ${_cargo_feature_args}
         BYPRODUCTS "${_binary_path}"
         WORKING_DIRECTORY "${SNOW_RUST_MANIFEST_DIR}"
         USES_TERMINAL
@@ -324,7 +374,16 @@ function(snow_add_rust_executable target_name)
         VERBATIM
     )
     add_executable("${target_name}" IMPORTED GLOBAL)
-    if(CMAKE_CONFIGURATION_TYPES)
+    if(SNOW_RUST_PERFORMANCE_PROFILE)
+        set_target_properties("${target_name}" PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE;RELWITHDEBINFO;MINSIZEREL"
+            IMPORTED_LOCATION "${_release_binary_path}"
+            IMPORTED_LOCATION_DEBUG "${_release_binary_path}"
+            IMPORTED_LOCATION_RELEASE "${_release_binary_path}"
+            IMPORTED_LOCATION_RELWITHDEBINFO "${_release_binary_path}"
+            IMPORTED_LOCATION_MINSIZEREL "${_release_binary_path}"
+        )
+    elseif(CMAKE_CONFIGURATION_TYPES)
         set_target_properties("${target_name}" PROPERTIES
             IMPORTED_CONFIGURATIONS "DEBUG;RELEASE;RELWITHDEBINFO;MINSIZEREL"
             IMPORTED_LOCATION_DEBUG "${_debug_binary_path}"

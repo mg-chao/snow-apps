@@ -468,7 +468,7 @@ fn worker_loop(
                         if wants_directml && !provider_ok {
                             config.directml_cache.write(false);
                             config.directml_enabled.store(false, Ordering::Release);
-                            make_engine(&config, false).map_err(|error| error).ok()
+                            make_engine(&config, false).ok()
                         } else {
                             Some(candidate)
                         }
@@ -476,7 +476,7 @@ fn worker_loop(
                     Err(_) if wants_directml => {
                         config.directml_cache.write(false);
                         config.directml_enabled.store(false, Ordering::Release);
-                        make_engine(&config, false).map_err(|error| error).ok()
+                        make_engine(&config, false).ok()
                     }
                     Err(_error) => None,
                 };
@@ -704,8 +704,8 @@ fn main() -> io::Result<()> {
                     let sequence = d.u64()?;
                     let priority = d.u8()?;
                     if !d.done() || slot >= config.slot_count {
-                        let mut p = error_payload("invalid OCR submit payload");
-                        write_frame(&mut writer, Kind::Complete, frame.request_id, &mut p)?;
+                        let p = error_payload("invalid OCR submit payload");
+                        write_frame(&mut writer, Kind::Complete, frame.request_id, &p)?;
                     } else {
                         match shared.read_bgr(slot, width, height, stride, sequence) {
                             Ok(data) => scheduler.submit(

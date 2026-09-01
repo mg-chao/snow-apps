@@ -2323,7 +2323,7 @@ fn filter_det_res(
     let mut out_boxes = Vec::with_capacity(dt_boxes.len());
     let mut out_scores = Vec::with_capacity(scores.len());
 
-    for (box_, score) in dt_boxes.into_iter().zip(scores.into_iter()) {
+    for (box_, score) in dt_boxes.into_iter().zip(scores) {
         let mut box_ = order_points_clockwise(box_);
         box_ = clip_det_res(box_, img_height, img_width);
 
