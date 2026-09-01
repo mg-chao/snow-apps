@@ -2025,6 +2025,67 @@ void ScreenshotToolPaletteStyleControls::reset() {
     updateSerialNumberStyleControls();
 }
 
+void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
+    clearTextStylePopupInteractions();
+
+    m_handlingStrokeColorPickerChange = false;
+    m_handlingArrowStrokeColorPickerChange = false;
+    m_handlingTextColorPickerChange = false;
+    m_handlingTextStrokeColorPickerChange = false;
+    m_handlingTextFillColorPickerChange = false;
+    m_handlingHighlightColorPickerChange = false;
+    m_handlingHighlightStrokeColorPickerChange = false;
+    m_handlingPenHighlightColorPickerChange = false;
+    m_handlingSerialNumberColorPickerChange = false;
+    m_handlingSerialNumberFillColorPickerChange = false;
+    m_arrowControlsActive = false;
+    m_lineControlsActive = false;
+    m_freeDrawControlsActive = false;
+    m_highlightControlsActive = false;
+    m_penHighlightControlsActive = false;
+    m_textControlsActive = false;
+
+    m_shapeStrokeWidthEditor = {};
+    m_shapeStrokeEditor = {};
+    m_shapeFillEditor = {};
+    m_cornerRadiusEditor = nullptr;
+    m_shapeControlsContainer = nullptr;
+    m_highlightColorEditor = {};
+    m_spotlightColorEditor = {};
+    m_shapeButtonGroup = nullptr;
+    m_rectangleShapeButton = nullptr;
+    m_ellipseShapeButton = nullptr;
+    m_diamondShapeButton = nullptr;
+    m_highlightStrokeEditor = {};
+    m_penHighlightColorEditor = {};
+    m_penHighlightStrokeWidthEditor = {};
+    m_penFilterStrokeWidthEditor = {};
+    m_arrowStrokeWidthEditor = {};
+    m_arrowStrokeEditor = {};
+    m_arrowTypeControlsContainer = nullptr;
+    m_arrowTypeButtonGroup = nullptr;
+    m_startArrowheadEditor = {};
+    m_endArrowheadEditor = {};
+    m_textColorEditor = {};
+    m_textFontEditor = {};
+    m_textStrokeEditor = {};
+    m_textFillEditor = {};
+    m_textCornerRadiusEditor = nullptr;
+    m_textAlignmentEditor = {};
+    m_serialNumberColorEditor = {};
+    m_serialNumberFillEditor = {};
+    m_serialNumberEditor = nullptr;
+    m_serialNumberFontEditor = {};
+    m_watermarkColorPreviewPending = false;
+    m_watermarkColorEditor = {};
+    m_watermarkTextEdit = nullptr;
+    m_watermarkFontEditor = {};
+    m_watermarkAngleEditor = nullptr;
+    m_watermarkGapEditor = nullptr;
+    m_watermarkOpacityEditor = {};
+    m_toolbarSpacingItems.clear();
+}
+
 void ScreenshotToolPaletteStyleControls::setCreationStyleDefaults(
     const SnowCanvasStyleDefaults& defaults) {
     const SnowCanvasWatermarkConfig watermark = m_watermarkConfig;
