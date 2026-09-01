@@ -2,7 +2,6 @@
 
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 
-#include <QDebug>
 #include <QGuiApplication>
 #include <QScreen>
 #include <QtGlobal>
@@ -910,43 +909,73 @@ QPoint ScreenshotGeometryMapper::cursorPanelPosition(const QPoint& cursorPositio
 }
 
 ScreenshotAnchoredToolbarPlacement ScreenshotGeometryMapper::anchoredToolbarPlacement(
-    const QPoint& bottomRightAnchor, const QPoint& topRightAnchor, const QRect& toolbarOccupiedRect,
-    const QRect& bounds, int gap, const QRect& topRightToolbarRect,
-    const QRect& topRightReservedRect) {
-    if (toolbarOccupiedRect.isEmpty()) {
+    const QPoint& bottomRightAnchor, const QPoint& topRightAnchor,
+    const ScreenshotToolbarPlacementGeometry& bottomPlacement,
+    const ScreenshotToolbarPlacementGeometry& topPlacement, const QRect& bounds, int gap) {
+    const bool bottomMainValid = !bottomPlacement.mainToolbarContentRect.isEmpty();
+    const bool topMainValid = !topPlacement.mainToolbarContentRect.isEmpty();
+    if (!bottomMainValid && !topMainValid) {
         return {};
     }
 
-    const QRect reservedTopRightRect =
-        topRightReservedRect.isEmpty() ? toolbarOccupiedRect : topRightReservedRect;
-    const QRect anchorTopRightRect =
-        topRightToolbarRect.isEmpty() ? toolbarOccupiedRect : topRightToolbarRect;
-    const auto contentPositionForAnchor = [gap](const QPoint& anchor, const QRect& contentRect,
-                                                bool aboveAnchor) {
-        return QPoint(anchor.x() - contentRect.right(),
-                      aboveAnchor ? anchor.y() - contentRect.bottom() - gap - 1
-                                  : anchor.y() + gap + 1 - contentRect.top());
+    const int effectiveGap = std::max(0, gap);
+    const auto contentPositionForAnchor = [effectiveGap](const QPoint& anchor,
+                                                          const QRect& mainRect,
+                                                          bool aboveAnchor) {
+        return QPoint(anchor.x() - mainRect.right(),
+                      aboveAnchor ? anchor.y() - mainRect.bottom() - effectiveGap - 1
+                                  : anchor.y() + effectiveGap + 1 - mainRect.top());
     };
-    const auto fullyVisible = [toolbarOccupiedRect, bounds](const QPoint& position) {
-        const QRect contentRect = toolbarOccupiedRect.translated(position);
-        return contentRect.intersected(bounds) == contentRect;
-    };
-    const auto reservedFullyVisible = [reservedTopRightRect, bounds](const QPoint& position) {
-        const QRect contentRect = reservedTopRightRect.translated(position);
-        return contentRect.intersected(bounds) == contentRect;
+    const auto fullyVisible = [&bounds](const QRect& occupiedRect, const QPoint& position) {
+        if (occupiedRect.isEmpty() || !bounds.isValid() || bounds.isEmpty()) {
+            return false;
+        }
+        const QRect translated = occupiedRect.translated(position);
+        return translated.intersected(bounds) == translated;
     };
 
-    const QPoint bottomRightPosition =
-        contentPositionForAnchor(bottomRightAnchor, toolbarOccupiedRect, false);
-    const QPoint topRightPosition =
-        contentPositionForAnchor(topRightAnchor, anchorTopRightRect, true);
-    const bool useTopRightPlacement =
-        !fullyVisible(bottomRightPosition) && reservedFullyVisible(topRightPosition);
-    const QPoint candidatePosition = useTopRightPlacement ? topRightPosition : bottomRightPosition;
-    const QRect candidateRect = useTopRightPlacement ? reservedTopRightRect : toolbarOccupiedRect;
+    const auto occupiedRectFor = [](const ScreenshotToolbarPlacementGeometry& placement) {
+        return placement.occupiedContentRect.isEmpty() ? placement.mainToolbarContentRect
+                                                       : placement.occupiedContentRect;
+    };
+
+    QPoint bottomPosition;
+    QRect bottomOccupied;
+    bool bottomFits = false;
+    if (bottomMainValid) {
+        bottomPosition = contentPositionForAnchor(
+            bottomRightAnchor, bottomPlacement.mainToolbarContentRect, false);
+        bottomOccupied = occupiedRectFor(bottomPlacement);
+        bottomFits = fullyVisible(bottomOccupied, bottomPosition);
+    }
+    if (bottomFits) {
+        return ScreenshotAnchoredToolbarPlacement{
+            clampContentPositionToRect(bottomPosition, bottomOccupied, bounds), false};
+    }
+
+    QPoint topPosition;
+    QRect topOccupied;
+    bool topFits = false;
+    if (topMainValid) {
+        topPosition = contentPositionForAnchor(topRightAnchor, topPlacement.mainToolbarContentRect,
+                                               true);
+        topOccupied = occupiedRectFor(topPlacement);
+        topFits = fullyVisible(topOccupied, topPosition);
+    }
+    if (topFits) {
+        return ScreenshotAnchoredToolbarPlacement{
+            clampContentPositionToRect(topPosition, topOccupied, bounds), true};
+    }
+
+    // If neither candidate fits, retain the normal bottom-first preference and
+    // clamp its occupied extent. This keeps an oversized toolbar deterministic
+    // while still choosing the top candidate when the bottom geometry is absent.
+    const bool useTopRightPlacement = !bottomMainValid;
+    const QRect& selectedOccupied = useTopRightPlacement ? topOccupied : bottomOccupied;
+    const QPoint& selectedPosition = useTopRightPlacement ? topPosition : bottomPosition;
 
     return ScreenshotAnchoredToolbarPlacement{
-        clampContentPositionToRect(candidatePosition, candidateRect, bounds),
+        clampContentPositionToRect(selectedPosition, selectedOccupied, bounds),
         useTopRightPlacement,
     };
 }

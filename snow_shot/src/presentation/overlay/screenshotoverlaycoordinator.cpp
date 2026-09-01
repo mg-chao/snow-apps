@@ -417,24 +417,6 @@ void ScreenshotOverlayCoordinator::previewSpotlightConfig(ScreenshotDisplaySessi
     m_canvasPresenter.previewSpotlightConfig(displaySession, config);
 }
 
-void ScreenshotOverlayCoordinator::prewarmOverlayTransientUi(
-    const ScreenshotDisplaySession& displaySession) {
-    m_uiHost.prewarmOverlayTransientUi();
-
-    // Exactly one pooled overlay: cycling the toolbar through every overlay
-    // keeps its native window attached per-parent, which measurably slows the
-    // attach step on every later capture. One full cycle is enough to move the
-    // first capture onto the steady path.
-    ScreenshotOverlayWindow* pooledOverlay = nullptr;
-    displaySession.forEachOverlay(
-        [&pooledOverlay](qsizetype, ScreenshotOverlayWindow* overlay) {
-            if (pooledOverlay == nullptr && overlay != nullptr) {
-                pooledOverlay = overlay;
-            }
-        });
-    m_uiHost.prewarmSelectionToolbarOverlayCycle(pooledOverlay);
-}
-
 ScreenshotToolbarWindow* ScreenshotOverlayCoordinator::toolbar() const {
     return m_uiHost.toolbar();
 }
@@ -504,7 +486,7 @@ bool ScreenshotOverlayCoordinator::stepToolbarSelectionOpacity(int direction) {
     return m_uiHost.stepToolbarSelectionOpacity(direction);
 }
 
-ScreenshotSelectionToolbarWindow* ScreenshotOverlayCoordinator::selectionToolbar() const {
+ScreenshotSelectionToolbarWidget* ScreenshotOverlayCoordinator::selectionToolbar() const {
     return m_uiHost.selectionToolbar();
 }
 

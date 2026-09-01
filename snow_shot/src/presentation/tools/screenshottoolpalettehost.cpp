@@ -72,10 +72,6 @@ QSize ScreenshotToolPaletteHost::contentSizeHint() const {
     return m_palette != nullptr ? m_palette->contentSizeHint() : QSize();
 }
 
-QSize ScreenshotToolPaletteHost::hostSizeHint() const {
-    return m_palette != nullptr ? m_palette->size() : QSize();
-}
-
 QRect ScreenshotToolPaletteHost::occupiedContentRect() const {
     return m_palette != nullptr ? m_palette->occupiedContentRect()
                                 : QRect(QPoint(0, 0), contentSizeHint());
@@ -109,6 +105,14 @@ QRect ScreenshotToolPaletteHost::topRightMainToolbarContentRect() const {
 QRect ScreenshotToolPaletteHost::mainToolbarContentRect() const {
     return m_palette != nullptr ? m_palette->mainToolbarContentRect()
                                 : QRect(QPoint(0, 0), contentSizeHint());
+}
+
+ScreenshotToolbarPlacementSnapshot ScreenshotToolPaletteHost::placementSnapshot() const {
+    ScreenshotToolbarPlacementSnapshot snapshot =
+        m_palette != nullptr ? m_palette->placementSnapshot()
+                             : ScreenshotToolbarPlacementSnapshot{};
+    snapshot.contentOffset = contentOffset();
+    return snapshot;
 }
 
 QRect ScreenshotToolPaletteHost::occupiedHostRect() const {
@@ -155,6 +159,15 @@ QPoint ScreenshotToolPaletteHost::contentPosition() const {
 }
 
 void ScreenshotToolPaletteHost::moveContentTo(const QPoint& position) {
+    // Once the host has been assigned the native frame, it is the full-frame
+    // surface and must remain at the origin. The outer floating window owns
+    // movement in that mode; retain the old behavior for standalone hosts.
+    if (m_frameSize.isValid() && !m_frameSize.isEmpty()) {
+        if (pos() != QPoint(0, 0)) {
+            move(0, 0);
+        }
+        return;
+    }
     move(position - contentOffset());
 }
 
@@ -228,22 +241,24 @@ qreal ScreenshotToolPaletteHost::physicalScale() const {
     return m_palette != nullptr ? m_palette->physicalScale() : 1.0;
 }
 
-void ScreenshotToolPaletteHost::setLogicalClientExtent(const QSize& extent) {
-    if (m_palette != nullptr && m_palette->setLogicalClientExtent(extent)) {
-        applyHostSize();
-    }
-}
-
-void ScreenshotToolPaletteHost::commitDpiScale(qreal scale, const QSize& logicalClientExtent,
-                                               const QMargins& shadowMargins) {
+void ScreenshotToolPaletteHost::commitDpiScale(qreal scale, const QMargins& shadowMargins) {
     if (m_palette == nullptr) {
         return;
     }
 
-    m_palette->setLogicalClientExtent(logicalClientExtent);
     m_palette->setShadowMargins(shadowMargins);
     m_palette->setPhysicalScale(scale);
     m_palette->prepareForDisplay();
+    syncHostSize();
+}
+
+void ScreenshotToolPaletteHost::setFrameSize(const QSize& frameSize, bool anchorToBottom) {
+    if (!frameSize.isValid() || frameSize.isEmpty()) {
+        return;
+    }
+
+    m_frameSize = frameSize;
+    m_anchorPaletteToBottom = anchorToBottom;
     syncHostSize();
 }
 
@@ -252,6 +267,7 @@ void ScreenshotToolPaletteHost::setStyleToolbarAboveMain(bool above) {
         return;
     }
 
+    m_anchorPaletteToBottom = above;
     m_palette->setStyleToolbarAboveMain(above);
     applyHostSize();
 }
@@ -390,14 +406,37 @@ void ScreenshotToolPaletteHost::syncHostSize() {
         return;
     }
 
-    const QSize paletteSize = m_palette->size();
-    if (size() != paletteSize) {
-        setFixedSize(paletteSize);
+    const QSize targetSize = m_frameSize.isValid() && !m_frameSize.isEmpty()
+                                 ? m_frameSize
+                                 : m_palette->size();
+    if (size() != targetSize) {
+        setFixedSize(targetSize);
         SNOW_SHOT_TOOLBAR_PERF_COUNTER("host.size_sync");
 #if defined(SNOW_SHOT_TEST_HOOKS)
         ++m_sizeSynchronizationCount;
 #endif
         update();
+    }
+    if (m_frameSize.isValid() && !m_frameSize.isEmpty()) {
+        syncPalettePosition();
+    }
+}
+
+void ScreenshotToolPaletteHost::syncPalettePosition() {
+    if (m_palette == nullptr || !m_frameSize.isValid() || m_frameSize.isEmpty()) {
+        return;
+    }
+
+    const QSize paletteSize = m_palette->size();
+    if (paletteSize.isEmpty()) {
+        return;
+    }
+
+    const QPoint palettePosition(
+        m_frameSize.width() - paletteSize.width(),
+        m_anchorPaletteToBottom ? m_frameSize.height() - paletteSize.height() : 0);
+    if (m_palette->pos() != palettePosition) {
+        m_palette->move(palettePosition);
     }
 }
 

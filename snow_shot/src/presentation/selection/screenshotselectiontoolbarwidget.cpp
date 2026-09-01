@@ -1,4 +1,4 @@
-#include "snow_shot/presentation/screenshotselectiontoolbarwindow.h"
+#include "snow_shot/presentation/screenshotselectiontoolbarwidget.h"
 
 #include "screenshotselectiontoolbarwidgets.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
@@ -9,10 +9,10 @@
 
 #include <QApplication>
 #include <QCoreApplication>
-#include <QCursor>
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QHideEvent>
+#include <QHoverEvent>
 #include <QLabel>
 #include <QMargins>
 #include <QMouseEvent>
@@ -27,12 +27,6 @@
 #include <QtMath>
 
 #include <algorithm>
-#include <cmath>
-
-#if defined(Q_OS_WIN) || defined(_WIN32)
-#include <qt_windows.h>
-#include <windowsx.h>
-#endif
 
 namespace {
 namespace custom_outlined_icons = snow_shot::presentation::icons::custom::outlined;
@@ -50,7 +44,7 @@ void setTranslationSource(QLabel* label, const char* source) {
 }
 
 QString translateToolbarText(const char* source) {
-    return QCoreApplication::translate("ScreenshotSelectionToolbarWindow", source);
+    return QCoreApplication::translate("ScreenshotSelectionToolbarWidget", source);
 }
 
 QString pxText(int value) {
@@ -115,6 +109,10 @@ void setMouseTransparentForWidget(QWidget* widget, bool transparent) {
 
     const bool alwaysTransparent = widget->property(kAlwaysMouseTransparentProperty).toBool();
     const bool interactionEnabled = !transparent && !alwaysTransparent;
+    if (auto* panel = dynamic_cast<SelectionToolbarPanel*>(widget)) {
+        panel->setPointerInteractionEnabled(interactionEnabled);
+        return;
+    }
     if (auto* valueLabel = dynamic_cast<SelectionToolbarValueLabel*>(widget)) {
         valueLabel->setPointerInteractionEnabled(interactionEnabled);
         return;
@@ -122,21 +120,30 @@ void setMouseTransparentForWidget(QWidget* widget, bool transparent) {
     widget->setAttribute(Qt::WA_TransparentForMouseEvents, !interactionEnabled);
 }
 
-QPointF globalPositionForPointerEvent(const QEvent* event) {
+QPointF globalPositionForPointerEvent(const QObject* watched, const QEvent* event) {
     if (event == nullptr) {
-        return QPointF(QCursor::pos());
+        return {};
     }
 
-    if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseMove ||
-        event->type() == QEvent::MouseButtonRelease) {
+    switch (event->type()) {
+    case QEvent::MouseButtonPress:
+    case QEvent::MouseMove:
+    case QEvent::MouseButtonRelease:
         return static_cast<const QMouseEvent*>(event)->globalPosition();
-    }
-
-    if (event->type() == QEvent::Wheel) {
+    case QEvent::Wheel:
         return static_cast<const QWheelEvent*>(event)->globalPosition();
+    case QEvent::Enter:
+        return static_cast<const QEnterEvent*>(event)->globalPosition();
+    case QEvent::HoverEnter:
+    case QEvent::HoverMove: {
+        const auto* widget = qobject_cast<const QWidget*>(watched);
+        const auto* hoverEvent = static_cast<const QHoverEvent*>(event);
+        return widget != nullptr ? QPointF(widget->mapToGlobal(hoverEvent->position().toPoint()))
+                                 : QPointF();
     }
-
-    return QPointF(QCursor::pos());
+    default:
+        return {};
+    }
 }
 
 ScreenshotOverlayWindow* overlayParentForObject(const QObject* object) {
@@ -152,17 +159,30 @@ ScreenshotOverlayWindow* overlayParentForObject(const QObject* object) {
 }
 } // namespace
 
-ScreenshotSelectionToolbarWindow::ScreenshotSelectionToolbarWindow(
+Qt::CursorShape ScreenshotSelectionToolbarWidget::cursorShapeForField(Field field) {
+    switch (field) {
+    case Field::PositionX:
+    case Field::Width:
+        return Qt::SplitHCursor;
+    case Field::PositionY:
+    case Field::Height:
+    case Field::Radius:
+    case Field::Shadow:
+        return Qt::SplitVCursor;
+    }
+
+    return Qt::ArrowCursor;
+}
+
+ScreenshotSelectionToolbarWidget::ScreenshotSelectionToolbarWidget(
     ScreenshotSelectionToolbarCommandSink& commands, QWidget* parent)
     : QWidget(parent), m_commands(commands) {
-    setWindowFlags(Qt::FramelessWindowHint);
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
     setAttribute(Qt::WA_Hover, true);
     setFocusPolicy(Qt::NoFocus);
     setAutoFillBackground(false);
     setMouseTracking(true);
-    installEventFilter(this);
 
     auto* rootLayout = new QHBoxLayout(this);
     rootLayout->setContentsMargins(toolbar_widgets::ShadowMargin, toolbar_widgets::ShadowMargin,
@@ -174,7 +194,7 @@ ScreenshotSelectionToolbarWindow::ScreenshotSelectionToolbarWindow(
     panel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     panel->setCursor(Qt::PointingHandCursor);
     connect(panel, &SelectionToolbarPanel::hoverChanged, this,
-            &ScreenshotSelectionToolbarWindow::setToolbarHovered);
+            &ScreenshotSelectionToolbarWidget::setToolbarHovered);
     panel->installEventFilter(this);
 
     auto* panelLayout = new QHBoxLayout(panel);
@@ -184,9 +204,9 @@ ScreenshotSelectionToolbarWindow::ScreenshotSelectionToolbarWindow(
     panelLayout->setSpacing(toolbar_widgets::PanelItemSpacing);
     panelLayout->setAlignment(Qt::AlignVCenter);
 
-    m_xLabel = addValueLabel(tr("X coordinate"), Field::PositionX, QCursor(Qt::SplitHCursor));
+    m_xLabel = addValueLabel(tr("X coordinate"), Field::PositionX);
     setTranslationSource(m_xLabel, "X coordinate");
-    m_yLabel = addValueLabel(tr("Y coordinate"), Field::PositionY, QCursor(Qt::SplitVCursor));
+    m_yLabel = addValueLabel(tr("Y coordinate"), Field::PositionY);
     setTranslationSource(m_yLabel, "Y coordinate");
     auto* positionCommaLabel = addStaticLabel(QStringLiteral(","), QString(),
                                               QMargins(toolbar_widgets::SymbolHorizontalMargin, 0,
@@ -206,9 +226,9 @@ ScreenshotSelectionToolbarWindow::ScreenshotSelectionToolbarWindow(
     m_lockIconLabel->installEventFilter(this);
     panelLayout->addWidget(m_lockIconLabel);
 
-    m_widthLabel = addValueLabel(tr("Width"), Field::Width, QCursor(Qt::SplitHCursor));
+    m_widthLabel = addValueLabel(tr("Width"), Field::Width);
     setTranslationSource(m_widthLabel, "Width");
-    m_heightLabel = addValueLabel(tr("Height"), Field::Height, QCursor(Qt::SplitVCursor));
+    m_heightLabel = addValueLabel(tr("Height"), Field::Height);
     setTranslationSource(m_heightLabel, "Height");
     auto* sizeSeparatorLabel = addStaticLabel(QStringLiteral("x"), QString(),
                                               QMargins(toolbar_widgets::SymbolHorizontalMargin, 0,
@@ -225,8 +245,7 @@ ScreenshotSelectionToolbarWindow::ScreenshotSelectionToolbarWindow(
     QWidget* selectionSettingsSeparator = addSeparator();
     panelLayout->addWidget(selectionSettingsSeparator);
 
-    m_radiusLabel =
-        addValueLabel(tr("Corner radius"), Field::Radius, QCursor(Qt::SplitVCursor));
+    m_radiusLabel = addValueLabel(tr("Corner radius"), Field::Radius);
     setTranslationSource(m_radiusLabel, "Corner radius");
     auto* radiusUnitLabel = addStaticLabel(QStringLiteral("px"), tr("Pixels"),
                                            QMargins(toolbar_widgets::UnitLeftMargin, 0, 0, 0));
@@ -240,8 +259,7 @@ ScreenshotSelectionToolbarWindow::ScreenshotSelectionToolbarWindow(
     radiusShadowSpacer->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     panelLayout->addWidget(radiusShadowSpacer);
 
-    m_shadowLabel =
-        addValueLabel(tr("Shadow width"), Field::Shadow, QCursor(Qt::SplitVCursor));
+    m_shadowLabel = addValueLabel(tr("Shadow width"), Field::Shadow);
     setTranslationSource(m_shadowLabel, "Shadow width");
     auto* shadowUnitLabel = addStaticLabel(QStringLiteral("px"), tr("Pixels"),
                                            QMargins(toolbar_widgets::UnitLeftMargin, 0, 0, 0));
@@ -259,7 +277,7 @@ ScreenshotSelectionToolbarWindow::ScreenshotSelectionToolbarWindow(
     updateWindowSize();
 }
 
-void ScreenshotSelectionToolbarWindow::resetForNewCapture() {
+void ScreenshotSelectionToolbarWidget::resetForNewCapture() {
     m_selection = QRect();
     m_aspectRatioLocked = false;
     m_displayMode = DisplayMode::Full;
@@ -269,14 +287,14 @@ void ScreenshotSelectionToolbarWindow::resetForNewCapture() {
     updateDisplayMode();
 }
 
-void ScreenshotSelectionToolbarWindow::prepareForDisplay() {
+void ScreenshotSelectionToolbarWidget::prepareForDisplay() {
     updateLabels(true);
     updateIconPixmaps();
     updateDisplayMode();
     updateWindowSize();
 }
 
-void ScreenshotSelectionToolbarWindow::prewarm() {
+void ScreenshotSelectionToolbarWidget::prewarm() {
     if (isVisible()) {
         return;
     }
@@ -300,7 +318,7 @@ void ScreenshotSelectionToolbarWindow::prewarm() {
     resetForNewCapture();
 }
 
-void ScreenshotSelectionToolbarWindow::setSelectionState(const QRect& selection,
+void ScreenshotSelectionToolbarWidget::setSelectionState(const QRect& selection,
                                                          bool aspectRatioLocked, int cornerRadius,
                                                          int shadowWidth, DisplayMode displayMode) {
     const QRect normalized = selection.normalized();
@@ -337,11 +355,11 @@ void ScreenshotSelectionToolbarWindow::setSelectionState(const QRect& selection,
     }
 }
 
-QSize ScreenshotSelectionToolbarWindow::contentSizeHint() const {
+QSize ScreenshotSelectionToolbarWidget::contentSizeHint() const {
     return m_panel != nullptr ? m_panel->size() : size();
 }
 
-QRect ScreenshotSelectionToolbarWindow::visualContentRect() const {
+QRect ScreenshotSelectionToolbarWidget::visualContentRect() const {
     if (m_panel == nullptr) {
         return QRect(QPoint(-toolbar_widgets::ShadowMargin, -toolbar_widgets::ShadowMargin),
                      contentSizeHint() + QSize(toolbar_widgets::ShadowMargin * 2,
@@ -354,29 +372,20 @@ QRect ScreenshotSelectionToolbarWindow::visualContentRect() const {
                   toolbar_widgets::ShadowMargin, toolbar_widgets::ShadowMargin);
 }
 
-QPoint ScreenshotSelectionToolbarWindow::contentPosition() const {
+QPoint ScreenshotSelectionToolbarWidget::contentPosition() const {
     return pos() + contentOffset();
 }
 
-bool ScreenshotSelectionToolbarWindow::containsInteractiveGlobalPoint(
+bool ScreenshotSelectionToolbarWidget::containsInteractiveGlobalPoint(
     const QPoint& globalPosition) const {
     return isPointInInteractiveContent(mapFromGlobal(globalPosition));
 }
 
-void ScreenshotSelectionToolbarWindow::moveContentTo(const QPoint& position) {
+void ScreenshotSelectionToolbarWidget::moveContentTo(const QPoint& position) {
     move(position - contentOffset());
 }
 
-bool ScreenshotSelectionToolbarWindow::eventFilter(QObject* watched, QEvent* event) {
-    const bool panelBoundaryEvent = watched == m_panel && event != nullptr &&
-                                    (event->type() == QEvent::Enter ||
-                                     event->type() == QEvent::Leave);
-    if (!panelBoundaryEvent && shouldForwardPointerEventToOverlayCanvas(event)) {
-        if (forwardPointerEventToOverlayCanvas(event)) {
-            return true;
-        }
-    }
-
+bool ScreenshotSelectionToolbarWidget::eventFilter(QObject* watched, QEvent* event) {
     if (watched == m_lockIconLabel && event != nullptr) {
         if (event->type() == QEvent::MouseButtonPress) {
             auto* mouseEvent = static_cast<QMouseEvent*>(event);
@@ -414,14 +423,25 @@ bool ScreenshotSelectionToolbarWindow::eventFilter(QObject* watched, QEvent* eve
     return QWidget::eventFilter(watched, event);
 }
 
-void ScreenshotSelectionToolbarWindow::changeEvent(QEvent* event) {
+bool ScreenshotSelectionToolbarWidget::event(QEvent* event) {
+    // Only the transparent shadow margin belongs to the toolbar surface. Child controls must
+    // receive their normal Qt enter/leave events so they can maintain their own hover visuals.
+    if (shouldForwardPointerEventToOverlayCanvas(this, event) &&
+        forwardPointerEventToOverlayCanvas(event)) {
+        return true;
+    }
+
+    return QWidget::event(event);
+}
+
+void ScreenshotSelectionToolbarWidget::changeEvent(QEvent* event) {
     if (event != nullptr && event->type() == QEvent::LanguageChange) {
         retranslateUi();
     }
     QWidget::changeEvent(event);
 }
 
-void ScreenshotSelectionToolbarWindow::retranslateUi() {
+void ScreenshotSelectionToolbarWidget::retranslateUi() {
     const auto updateLabel = [](QLabel* label) {
         if (label == nullptr) {
             return;
@@ -443,53 +463,12 @@ void ScreenshotSelectionToolbarWindow::retranslateUi() {
     updateWindowSize();
 }
 
-void ScreenshotSelectionToolbarWindow::hideEvent(QHideEvent* event) {
+void ScreenshotSelectionToolbarWidget::hideEvent(QHideEvent* event) {
     setToolbarHovered(false);
     QWidget::hideEvent(event);
 }
 
-bool ScreenshotSelectionToolbarWindow::nativeEvent(const QByteArray& eventType, void* message,
-                                                   qintptr* result) {
-#if defined(Q_OS_WIN) || defined(_WIN32)
-    Q_UNUSED(eventType);
-    if (message != nullptr && result != nullptr) {
-        const auto* nativeMessage = static_cast<const MSG*>(message);
-        if (nativeMessage->message == WM_NCHITTEST) {
-            bool transparent = m_displayMode == DisplayMode::SizeOnly;
-            if (!transparent) {
-                RECT nativeWindowRect{};
-                if (nativeMessage->hwnd != nullptr &&
-                    GetWindowRect(nativeMessage->hwnd, &nativeWindowRect) != 0) {
-                    const qreal devicePixelRatio = devicePixelRatioF();
-                    const qreal scale = devicePixelRatio > 0.0 ? devicePixelRatio : 1.0;
-                    const QPoint localPosition(
-                        static_cast<int>(
-                            std::floor(static_cast<qreal>(GET_X_LPARAM(nativeMessage->lParam) -
-                                                          nativeWindowRect.left) /
-                                       scale)),
-                        static_cast<int>(
-                            std::floor(static_cast<qreal>(GET_Y_LPARAM(nativeMessage->lParam) -
-                                                          nativeWindowRect.top) /
-                                       scale)));
-                    transparent = !isPointInInteractiveContent(localPosition);
-                }
-            }
-            if (transparent) {
-                *result = HTTRANSPARENT;
-                return true;
-            }
-        }
-    }
-#else
-    Q_UNUSED(eventType);
-    Q_UNUSED(message);
-    Q_UNUSED(result);
-#endif
-
-    return QWidget::nativeEvent(eventType, message, result);
-}
-
-void ScreenshotSelectionToolbarWindow::showEvent(QShowEvent* event) {
+void ScreenshotSelectionToolbarWidget::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
     // The toolbar is pooled with its overlay. Paint the prepared state during
     // showEvent so a layered child surface cannot expose its previous frame
@@ -498,7 +477,7 @@ void ScreenshotSelectionToolbarWindow::showEvent(QShowEvent* event) {
     scheduleToolbarHoverSync();
 }
 
-void ScreenshotSelectionToolbarWindow::paintEvent(QPaintEvent* event) {
+void ScreenshotSelectionToolbarWidget::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
 
     QPainter painter(this);
@@ -510,13 +489,12 @@ void ScreenshotSelectionToolbarWindow::paintEvent(QPaintEvent* event) {
     }
 }
 
-QLabel* ScreenshotSelectionToolbarWindow::addValueLabel(const QString& tooltip, Field field,
-                                                        const QCursor& cursor) {
+QLabel* ScreenshotSelectionToolbarWidget::addValueLabel(const QString& tooltip, Field field) {
     auto* label = new SelectionToolbarValueLabel(m_panel);
     label->setToolTip(tooltip);
     label->setAccessibleName(tooltip);
     label->setProperty("selectionToolbarField", static_cast<int>(field));
-    label->setCursor(cursor);
+    label->setCursor(cursorShapeForField(field));
     label->installEventFilter(this);
 
     QFont valueFont = label->font();
@@ -527,7 +505,7 @@ QLabel* ScreenshotSelectionToolbarWindow::addValueLabel(const QString& tooltip, 
     return label;
 }
 
-QLabel* ScreenshotSelectionToolbarWindow::addStaticLabel(const QString& text,
+QLabel* ScreenshotSelectionToolbarWidget::addStaticLabel(const QString& text,
                                                          const QString& tooltip,
                                                          const QMargins& margins) {
     auto* label = new QLabel(text, m_panel);
@@ -550,7 +528,7 @@ QLabel* ScreenshotSelectionToolbarWindow::addStaticLabel(const QString& text,
     return label;
 }
 
-QLabel* ScreenshotSelectionToolbarWindow::addIconLabel(const QString& tooltip) {
+QLabel* ScreenshotSelectionToolbarWidget::addIconLabel(const QString& tooltip) {
     auto* label = new SelectionToolbarValueLabel(m_panel);
     label->setFocusPolicy(Qt::NoFocus);
     label->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
@@ -560,13 +538,13 @@ QLabel* ScreenshotSelectionToolbarWindow::addIconLabel(const QString& tooltip) {
     return label;
 }
 
-QWidget* ScreenshotSelectionToolbarWindow::addSeparator() {
+QWidget* ScreenshotSelectionToolbarWidget::addSeparator() {
     auto* separator = new SelectionToolbarSeparator(m_panel);
     separator->installEventFilter(this);
     return separator;
 }
 
-void ScreenshotSelectionToolbarWindow::setToolbarHovered(bool hovered) {
+void ScreenshotSelectionToolbarWidget::setToolbarHovered(bool hovered) {
     hovered = hovered && m_displayMode == DisplayMode::Full;
     if (m_toolbarHovered == hovered) {
         return;
@@ -580,7 +558,7 @@ void ScreenshotSelectionToolbarWindow::setToolbarHovered(bool hovered) {
     }
 }
 
-void ScreenshotSelectionToolbarWindow::scheduleToolbarHoverSync() {
+void ScreenshotSelectionToolbarWidget::scheduleToolbarHoverSync() {
     QTimer::singleShot(0, this, [this]() {
         if (isVisible()) {
             setToolbarHovered(m_panel != nullptr && m_panel->underMouse());
@@ -588,7 +566,7 @@ void ScreenshotSelectionToolbarWindow::scheduleToolbarHoverSync() {
     });
 }
 
-void ScreenshotSelectionToolbarWindow::refreshHoverVisuals() {
+void ScreenshotSelectionToolbarWidget::refreshHoverVisuals() {
     update();
     if (m_panel == nullptr) {
         return;
@@ -597,7 +575,7 @@ void ScreenshotSelectionToolbarWindow::refreshHoverVisuals() {
     m_panel->update();
 }
 
-bool ScreenshotSelectionToolbarWindow::fieldForObject(QObject* object, Field* outField) const {
+bool ScreenshotSelectionToolbarWidget::fieldForObject(QObject* object, Field* outField) const {
     if (object == nullptr || outField == nullptr) {
         return false;
     }
@@ -617,7 +595,7 @@ bool ScreenshotSelectionToolbarWindow::fieldForObject(QObject* object, Field* ou
     return true;
 }
 
-void ScreenshotSelectionToolbarWindow::handleFieldWheel(Field field, int deltaY) {
+void ScreenshotSelectionToolbarWidget::handleFieldWheel(Field field, int deltaY) {
     const int direction = deltaY > 0 ? 1 : -1;
     switch (field) {
     case Field::PositionX:
@@ -643,18 +621,20 @@ void ScreenshotSelectionToolbarWindow::handleFieldWheel(Field field, int deltaY)
     }
 }
 
-bool ScreenshotSelectionToolbarWindow::shouldForwardPointerEventToOverlayCanvas(
-    const QEvent* event) const {
+bool ScreenshotSelectionToolbarWidget::shouldForwardPointerEventToOverlayCanvas(
+    QObject* watched, const QEvent* event) const {
     if (event == nullptr) {
         return false;
     }
 
     const QEvent::Type eventType = event->type();
-    const bool pointerEvent = eventType == QEvent::MouseButtonPress ||
-                              eventType == QEvent::MouseMove ||
-                              eventType == QEvent::MouseButtonRelease ||
-                              eventType == QEvent::Enter || eventType == QEvent::HoverEnter ||
-                              eventType == QEvent::HoverMove || eventType == QEvent::Wheel;
+    const bool mouseEvent = eventType == QEvent::MouseButtonPress ||
+                            eventType == QEvent::MouseMove ||
+                            eventType == QEvent::MouseButtonRelease;
+    const bool rootHoverEvent =
+        watched == this && (eventType == QEvent::Enter || eventType == QEvent::HoverEnter ||
+                            eventType == QEvent::HoverMove);
+    const bool pointerEvent = mouseEvent || rootHoverEvent || eventType == QEvent::Wheel;
     if (!pointerEvent) {
         return false;
     }
@@ -665,11 +645,12 @@ bool ScreenshotSelectionToolbarWindow::shouldForwardPointerEventToOverlayCanvas(
         return false;
     }
 
-    const QPoint localPosition = mapFromGlobal(globalPositionForPointerEvent(event).toPoint());
+    const QPoint localPosition =
+        mapFromGlobal(globalPositionForPointerEvent(watched, event).toPoint());
     return !isPointInInteractiveContent(localPosition);
 }
 
-bool ScreenshotSelectionToolbarWindow::forwardPointerEventToOverlayCanvas(QEvent* event) const {
+bool ScreenshotSelectionToolbarWidget::forwardPointerEventToOverlayCanvas(QEvent* event) const {
     if (event == nullptr) {
         return false;
     }
@@ -688,10 +669,10 @@ bool ScreenshotSelectionToolbarWindow::forwardPointerEventToOverlayCanvas(QEvent
     ScreenshotOverlayWindow* overlay = overlayParentForObject(this);
     QWidget* canvas = overlay != nullptr ? static_cast<QWidget*>(overlay->canvas()) : nullptr;
     if (canvas == nullptr) {
-        return true;
+        return false;
     }
 
-    const QPointF globalPosition = globalPositionForPointerEvent(event);
+    const QPointF globalPosition = globalPositionForPointerEvent(this, event);
     const QPointF canvasPosition = QPointF(canvas->mapFromGlobal(globalPosition.toPoint()));
 
     if (mouseEvent) {
@@ -720,7 +701,7 @@ bool ScreenshotSelectionToolbarWindow::forwardPointerEventToOverlayCanvas(QEvent
     return true;
 }
 
-bool ScreenshotSelectionToolbarWindow::isPointInInteractiveContent(
+bool ScreenshotSelectionToolbarWidget::isPointInInteractiveContent(
     const QPoint& localPosition) const {
     if (!rect().contains(localPosition)) {
         return false;
@@ -732,7 +713,7 @@ bool ScreenshotSelectionToolbarWindow::isPointInInteractiveContent(
     return m_panel->geometry().contains(localPosition);
 }
 
-bool ScreenshotSelectionToolbarWindow::updateLabels(bool refreshGeometry) {
+bool ScreenshotSelectionToolbarWidget::updateLabels(bool refreshGeometry) {
     bool geometryChanged = false;
     geometryChanged |= updateLabelText(m_xLabel, pxText(m_selection.left()), refreshGeometry);
     geometryChanged |= updateLabelText(m_yLabel, pxText(m_selection.top()), refreshGeometry);
@@ -744,7 +725,7 @@ bool ScreenshotSelectionToolbarWindow::updateLabels(bool refreshGeometry) {
     return geometryChanged;
 }
 
-void ScreenshotSelectionToolbarWindow::updateLockIconPixmap() {
+void ScreenshotSelectionToolbarWidget::updateLockIconPixmap() {
     if (m_lockIconLabel != nullptr) {
         auto* valueLabel = static_cast<SelectionToolbarValueLabel*>(m_lockIconLabel);
         valueLabel->setIconOnlyPixmap(toolbar_widgets::renderToolbarIcon(
@@ -756,7 +737,7 @@ void ScreenshotSelectionToolbarWindow::updateLockIconPixmap() {
     }
 }
 
-void ScreenshotSelectionToolbarWindow::updateIconPixmaps() {
+void ScreenshotSelectionToolbarWidget::updateIconPixmaps() {
     updateLockIconPixmap();
 
     if (m_radiusLabel != nullptr) {
@@ -776,7 +757,7 @@ void ScreenshotSelectionToolbarWindow::updateIconPixmaps() {
     }
 }
 
-void ScreenshotSelectionToolbarWindow::updateDisplayMode() {
+void ScreenshotSelectionToolbarWidget::updateDisplayMode() {
     const bool fullMode = m_displayMode == DisplayMode::Full;
     updateMouseEventTransparency();
     if (!fullMode) {
@@ -798,26 +779,31 @@ void ScreenshotSelectionToolbarWindow::updateDisplayMode() {
             widget->setVisible(fullMode);
         }
     }
+    // SizeOnly keeps dimensions visible as read-only click-through content, so they must not
+    // advertise the directional cursor used by the editable controls in Full mode.
     if (m_widthLabel != nullptr) {
-        m_widthLabel->setCursor(fullMode ? QCursor(Qt::SplitHCursor) : QCursor(Qt::ArrowCursor));
+        m_widthLabel->setCursor(fullMode ? cursorShapeForField(Field::Width) : Qt::ArrowCursor);
     }
     if (m_heightLabel != nullptr) {
-        m_heightLabel->setCursor(fullMode ? QCursor(Qt::SplitVCursor) : QCursor(Qt::ArrowCursor));
+        m_heightLabel->setCursor(fullMode ? cursorShapeForField(Field::Height) : Qt::ArrowCursor);
     }
 }
 
-void ScreenshotSelectionToolbarWindow::updateMouseEventTransparency() {
+void ScreenshotSelectionToolbarWidget::updateMouseEventTransparency() {
     const bool transparent = m_displayMode == DisplayMode::SizeOnly;
     setMouseTransparentForWidget(this, transparent);
     setMouseTransparentForWidget(m_panel, transparent);
 
     const QList<QWidget*> childWidgets = findChildren<QWidget*>();
     for (QWidget* child : childWidgets) {
+        if (child == m_panel) {
+            continue;
+        }
         setMouseTransparentForWidget(child, transparent);
     }
 }
 
-void ScreenshotSelectionToolbarWindow::updateWindowSize() {
+void ScreenshotSelectionToolbarWidget::updateWindowSize() {
     if (m_panel == nullptr) {
         adjustSize();
         return;
@@ -834,6 +820,6 @@ void ScreenshotSelectionToolbarWindow::updateWindowSize() {
                  QSize(toolbar_widgets::ShadowMargin * 2, toolbar_widgets::ShadowMargin * 2));
 }
 
-QPoint ScreenshotSelectionToolbarWindow::contentOffset() const {
+QPoint ScreenshotSelectionToolbarWidget::contentOffset() const {
     return QPoint(toolbar_widgets::ShadowMargin, toolbar_widgets::ShadowMargin);
 }

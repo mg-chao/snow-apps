@@ -699,20 +699,25 @@ QRect ScreenshotToolPalette::fullContentRect() const {
 }
 
 QRect ScreenshotToolPalette::bottomPlacementContentRect() const {
-    return placementContentRectForStyleToolbarAboveMain(false);
+    return placementSnapshot().bottom.occupiedContentRect;
 }
 
 QRect ScreenshotToolPalette::topPlacementContentRect() const {
-    return placementContentRectForStyleToolbarAboveMain(true);
+    return placementSnapshot().top.occupiedContentRect;
 }
 
 QRect ScreenshotToolPalette::topRightMainToolbarContentRect() const {
-    return mainToolbarContentRectForStyleToolbarAboveMain(true);
+    return placementSnapshot().top.mainToolbarContentRect;
 }
 
 QRect ScreenshotToolPalette::mainToolbarContentRect() const {
     ensureLayoutApplied();
     return m_layoutResult.mainToolbarContentRect;
+}
+
+ScreenshotToolbarPlacementSnapshot ScreenshotToolPalette::placementSnapshot() const {
+    ensureLayoutApplied();
+    return buildPlacementSnapshot();
 }
 
 void ScreenshotToolPalette::prepareForDisplay() {
@@ -990,9 +995,9 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
         m_selectActionPanel->updateGeometry();
         applyCumulativeStyleLayoutMetrics(m_selectActionPanel);
     }
-    // The reserve widget permanently owns the secondary row. Visibility only
-    // changes which manually positioned panel occupies that reserve; it does
-    // not change root row order.
+    // Visibility changes which secondary row participates in the root layout.
+    // Keep the layout dirty so its measured extent and row geometry are rebuilt
+    // synchronously by the next geometry query.
     markLayoutDirty(false);
     return true;
 }
@@ -1216,17 +1221,12 @@ void ScreenshotToolPalette::refreshTableQrTrigger() {
         return;
     }
     const bool table = m_tableQrEntryTool == Tool::Table;
-    if (m_tableQrPopover != nullptr) {
-        configureScreenshotToolPalettePopoverTrigger(m_tableButton, table ? "Table recognition"
-                                                                          : "QR code recognition");
-    } else {
-        configureScreenshotToolPaletteTooltip(m_tableButton,
-                                              table ? "Table recognition" : "QR code recognition");
-        applyScreenshotShortcutTooltip(
-            m_tableButton, table ? QStringLiteral("Table recognition")
-                                 : QStringLiteral("QR code recognition"),
-            table ? QStringLiteral("table_recognition") : QStringLiteral("qr_code_recognition"));
-    }
+    configureScreenshotToolPaletteTooltip(m_tableButton,
+                                          table ? "Table recognition" : "QR code recognition");
+    applyScreenshotShortcutTooltip(
+        m_tableButton,
+        table ? QStringLiteral("Table recognition") : QStringLiteral("QR code recognition"),
+        table ? QStringLiteral("table_recognition") : QStringLiteral("qr_code_recognition"));
     setScreenshotToolPaletteToolButtonIcon(m_tableButton,
                                            table ? custom_outlined_icons::TableRecognition()
                                                  : custom_outlined_icons::ScanQrcode());
@@ -1781,20 +1781,6 @@ void ScreenshotToolPalette::updateToolbarGeometry() {
     ensureLayoutApplied();
 }
 
-bool ScreenshotToolPalette::setLogicalClientExtent(const QSize& extent) {
-    const QSize normalized = extent.isValid() && !extent.isEmpty() ? extent : QSize();
-    if (m_logicalClientExtent == normalized) {
-        return false;
-    }
-    m_logicalClientExtent = normalized;
-    if (m_logicalClientExtent.isEmpty()) {
-        m_shadowMargins = scaledMargins(m_baseShadowMargins.left(), m_baseShadowMargins.top(),
-                                        m_baseShadowMargins.right(), m_baseShadowMargins.bottom());
-    }
-    markLayoutDirty(false);
-    return true;
-}
-
 void ScreenshotToolPalette::updateStyleToolbarGeometryOnly() {
     SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.style_panel_geometry");
     if (m_rectangleStylePanel == nullptr) {
@@ -1808,26 +1794,10 @@ void ScreenshotToolPalette::updateStyleToolbarGeometryOnly() {
         m_rectangleStylePanel->maximumSize() != styleSize) {
         m_rectangleStylePanel->setFixedSize(styleSize);
     }
-    if (m_styleReserveWidget != nullptr) {
-        const QRect reserveGeometry = m_styleReserveWidget->geometry();
-        const QPoint targetPosition(
-            reserveGeometry.right() - m_rectangleStylePanel->width() + 1,
-            m_styleToolbarAboveMain ? reserveGeometry.bottom() - m_rectangleStylePanel->height() + 1
-                                    : reserveGeometry.top());
-        if (m_rectangleStylePanel->pos() != targetPosition) {
-            m_rectangleStylePanel->move(targetPosition);
-        }
-    }
-
-    QRect occupied = m_layoutResult.mainToolbarContentRect;
-    if (m_actionToolbarTargetVisible) {
-        occupied = occupied.united(panelContentRect(m_selectActionPanel));
-    }
-    if (m_styleToolbarTargetVisible) {
-        occupied = occupied.united(panelContentRect(m_rectangleStylePanel));
-    }
-    m_layoutResult.occupiedContentRect = occupied;
-    ++m_layoutResult.revision;
+    // The root layout owns both row geometry and the palette extent.  Re-run
+    // that single path after an active editor changes size so no stale row
+    // position can leak into placement snapshots.
+    updateToolbarGeometry();
 }
 
 void ScreenshotToolPalette::markLayoutDirty(bool rowOrderChanged) {
@@ -1849,9 +1819,10 @@ void ScreenshotToolPalette::ensureLayoutApplied() const {
 
     self->commitLayout();
     self->m_layoutResult.paletteSize = self->size();
-    self->m_layoutResult.contentSize = self->contentSizeForStyleToolbarVisibility(true);
+    self->m_layoutResult.contentSize = self->contentSizeForVisibleRows();
     self->m_layoutResult.contentOffset = self->contentOffset();
-    self->m_layoutResult.fullContentRect = QRect(QPoint(0, 0), self->m_layoutResult.contentSize);
+    self->m_layoutResult.fullContentRect =
+        QRect(QPoint(0, 0), self->fullContentSize());
     self->m_layoutResult.mainToolbarContentRect = self->panelContentRect(self->m_mainPanel);
     QRect cachedOccupied = self->m_layoutResult.mainToolbarContentRect;
     if (self->m_actionToolbarTargetVisible) {
@@ -1874,83 +1845,78 @@ void ScreenshotToolPalette::commitLayout() {
         return;
     }
 
-    bool rootLayoutNeedsActivation = m_rowOrderDirty;
-    m_mainPanel->ensurePolished();
+    // Size hints are consumed synchronously by the placement code.  Activate
+    // every row layout before reading them; otherwise a visibility/material-
+    // ization change can leave the first committed frame with the previous
+    // (usually much smaller) nested-layout extent.
+    const auto activateLayout = [](QWidget* widget) {
+        if (widget == nullptr) {
+            return;
+        }
+        widget->ensurePolished();
+        if (QLayout* layout = widget->layout()) {
+            layout->activate();
+        }
+    };
+
+    activateLayout(m_mainPanel);
     const QSize mainSize = m_mainPanel->sizeHint();
     if (m_mainPanel->size() != mainSize || m_mainPanel->minimumSize() != mainSize ||
         m_mainPanel->maximumSize() != mainSize) {
         m_mainPanel->setFixedSize(mainSize);
-        rootLayoutNeedsActivation = true;
+    }
+    if (m_selectActionPanel != nullptr) {
+        activateLayout(m_selectActionPanel);
+        const QSize actionSize = m_selectActionPanel->sizeHint();
+        if (m_selectActionPanel->size() != actionSize ||
+            m_selectActionPanel->minimumSize() != actionSize ||
+            m_selectActionPanel->maximumSize() != actionSize) {
+            m_selectActionPanel->setFixedSize(actionSize);
+        }
     }
     if (m_rectangleStylePanel != nullptr) {
-        m_rectangleStylePanel->ensurePolished();
-
+        activateLayout(m_rectangleStylePanel);
         const QSize styleSize = styleToolbarSizeHint();
         if (m_rectangleStylePanel->size() != styleSize ||
             m_rectangleStylePanel->minimumSize() != styleSize ||
             m_rectangleStylePanel->maximumSize() != styleSize) {
             m_rectangleStylePanel->setFixedSize(styleSize);
         }
-        if (m_styleReserveWidget != nullptr) {
-            QSize actionSize;
-            if (m_selectActionPanel != nullptr) {
-                m_selectActionPanel->ensurePolished();
-                actionSize = m_selectActionPanel->sizeHint();
-                if (m_selectActionPanel->size() != actionSize ||
-                    m_selectActionPanel->minimumSize() != actionSize ||
-                    m_selectActionPanel->maximumSize() != actionSize) {
-                    m_selectActionPanel->setFixedSize(actionSize);
-                }
-            }
-            if (m_secondaryToolbarPresetSize.isEmpty()) {
-                static_cast<void>(styleToolbarPresetSizeHint());
-                if (!actionSize.isEmpty()) {
-                    const QSize baseActionSize(
-                        qMax(1, qRound(actionSize.width() / m_physicalScale)),
-                        qMax(1, qRound(actionSize.height() / m_physicalScale)));
-                    m_secondaryToolbarBasePresetSize =
-                        m_secondaryToolbarBasePresetSize.expandedTo(baseActionSize);
-                }
-                m_secondaryToolbarPresetSize = QSize(
-                    qMax(1, qRound(m_secondaryToolbarBasePresetSize.width() * m_physicalScale)),
-                    qMax(1, qRound(m_secondaryToolbarBasePresetSize.height() * m_physicalScale)));
-            }
-            if (m_styleReserveWidget->size() != m_secondaryToolbarPresetSize ||
-                m_styleReserveWidget->minimumSize() != m_secondaryToolbarPresetSize ||
-                m_styleReserveWidget->maximumSize() != m_secondaryToolbarPresetSize) {
-                m_styleReserveWidget->setFixedSize(m_secondaryToolbarPresetSize);
-                rootLayoutNeedsActivation = true;
-            }
-        }
     }
-    const QSize contentSize = contentSizeForStyleToolbarVisibility(true);
-    if (!m_logicalClientExtent.isEmpty()) {
-        m_shadowMargins.setRight(std::max(0, m_logicalClientExtent.width() - contentSize.width() -
-                                                 m_shadowMargins.left()));
-        m_shadowMargins.setBottom(std::max(0, m_logicalClientExtent.height() -
-                                                  contentSize.height() - m_shadowMargins.top()));
-    }
+    const QSize contentSize = contentSizeForVisibleRows();
     const QSize paletteSize = contentSize + QSize(m_shadowMargins.left() + m_shadowMargins.right(),
                                                   m_shadowMargins.top() + m_shadowMargins.bottom());
     if (m_rootLayout->contentsMargins() != m_shadowMargins) {
         m_rootLayout->setContentsMargins(m_shadowMargins.left(), m_shadowMargins.top(),
                                          m_shadowMargins.right(), m_shadowMargins.bottom());
-        rootLayoutNeedsActivation = true;
     }
     const int rowSpacing = scaledMetric(TOOLBAR_ROW_SPACING);
     if (m_rootLayout->spacing() != rowSpacing) {
         m_rootLayout->setSpacing(rowSpacing);
-        rootLayoutNeedsActivation = true;
     }
     if (size() != paletteSize || minimumSize() != paletteSize || maximumSize() != paletteSize) {
         setFixedSize(paletteSize);
-        rootLayoutNeedsActivation = true;
     }
     updateToolbarRowGeometry(m_styleToolbarTargetVisible);
-    if (rootLayoutNeedsActivation && layout() != nullptr) {
+    // Always activate after visibility/order changes.  This is the synchronous
+    // boundary used by placement callers and prevents first-show geometry from
+    // observing a pre-layout child size.
+    if (layout() != nullptr) {
         layout()->activate();
     }
-    updateSecondaryToolbarPanelGeometry();
+    // A row can be resized by the palette's fixed-size commit after its own
+    // metrics were applied. Reapply the child layout geometry at this
+    // synchronous boundary so callers never observe the previous row extent.
+    const auto activateRowLayout = [](QWidget* row) {
+        if (row == nullptr || row->layout() == nullptr) {
+            return;
+        }
+        row->layout()->setGeometry(row->contentsRect());
+        row->layout()->activate();
+    };
+    activateRowLayout(m_mainPanel);
+    activateRowLayout(m_selectActionPanel);
+    activateRowLayout(m_rectangleStylePanel);
 }
 
 QSize ScreenshotToolPalette::styleToolbarSizeHint() {
@@ -1974,7 +1940,7 @@ QSize ScreenshotToolPalette::styleToolbarSizeHint() {
     return intrinsicSize;
 }
 
-QSize ScreenshotToolPalette::styleToolbarPresetSizeHint() {
+QSize ScreenshotToolPalette::maximumSecondaryToolbarSizeHint() const {
     if (m_rectangleStylePanel == nullptr || m_rectangleStyleLayout == nullptr) {
         return {};
     }
@@ -1998,19 +1964,7 @@ QSize ScreenshotToolPalette::styleToolbarPresetSizeHint() {
     }
 
     const QMargins margins = m_rectangleStyleLayout->contentsMargins();
-    const QSize result =
-        controlsSize + QSize(margins.left() + margins.right(), margins.top() + margins.bottom());
-    if (!result.isEmpty()) {
-        const QSize intrinsicBase(qMax(1, qRound(result.width() / m_physicalScale)),
-                                  qMax(1, qRound(result.height() / m_physicalScale)));
-        m_secondaryToolbarBasePresetSize =
-            m_secondaryToolbarBasePresetSize.expandedTo(intrinsicBase);
-    }
-    if (m_secondaryToolbarBasePresetSize.isValid()) {
-        return QSize(qMax(1, qRound(m_secondaryToolbarBasePresetSize.width() * m_physicalScale)),
-                     qMax(1, qRound(m_secondaryToolbarBasePresetSize.height() * m_physicalScale)));
-    }
-    return result;
+    return controlsSize + QSize(margins.left() + margins.right(), margins.top() + margins.bottom());
 }
 
 int ScreenshotToolPalette::scaledMetric(int value) const {
@@ -2215,13 +2169,6 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
     }
 
     updateRecordingControlMetrics();
-    if (m_secondaryToolbarBasePresetSize.isValid()) {
-        m_secondaryToolbarPresetSize =
-            QSize(qMax(1, qRound(m_secondaryToolbarBasePresetSize.width() * m_physicalScale)),
-                  qMax(1, qRound(m_secondaryToolbarBasePresetSize.height() * m_physicalScale)));
-    } else {
-        m_secondaryToolbarPresetSize = QSize();
-    }
     updateToolbarGeometry();
 }
 
@@ -2932,17 +2879,8 @@ void ScreenshotToolPalette::refreshDrawingToolGroup(int groupIndex) {
     if (group.trigger == nullptr || descriptor == nullptr) {
         return;
     }
-    if (group.popover != nullptr) {
-        configureScreenshotToolPalettePopoverTrigger(group.trigger, descriptor->label);
-        const QSet<QString> items(group.itemIds.cbegin(), group.itemIds.cend());
-        if (items != QSet<QString>{QStringLiteral("arrow"), QStringLiteral("line")}) {
-            applyDrawingShortcutTooltip(group.trigger, QString::fromUtf8(descriptor->label),
-                                        itemId);
-        }
-    } else {
-        configureScreenshotToolPaletteTooltip(group.trigger, descriptor->label);
-        applyDrawingShortcutTooltip(group.trigger, QString::fromUtf8(descriptor->label), itemId);
-    }
+    configureScreenshotToolPaletteTooltip(group.trigger, descriptor->label);
+    applyDrawingShortcutTooltip(group.trigger, QString::fromUtf8(descriptor->label), itemId);
     setScreenshotToolPaletteToolButtonIcon(group.trigger, toolbar_layout::icon(descriptor->icon));
     group.trigger->setProperty("screenshotToolbarItemId", itemId);
     group.trigger->setProperty("screenshotToolbarPositionItems", group.itemIds);
@@ -2970,7 +2908,6 @@ void ScreenshotToolPalette::ensureDrawingToolGroupPopover(adqt::widgets::AdButto
         }
         group.popoverConstructing = true;
         ScreenshotToolPaletteOptionPopoverEditorConfig config;
-        config.accessibleName = trigger->accessibleName();
         const QSet<QString> items(group.itemIds.cbegin(), group.itemIds.cend());
         if (items == QSet<QString>{QStringLiteral("arrow"), QStringLiteral("line")}) {
             config.contentObjectName = QStringLiteral("screenshotArrowLinePopoverContent");
@@ -3022,7 +2959,6 @@ void ScreenshotToolPalette::ensureTableQrPopover() {
         return;
     }
     ScreenshotToolPaletteOptionPopoverEditorConfig config;
-    config.accessibleName = QStringLiteral("Table recognition");
     config.contentObjectName = QStringLiteral("screenshotTableQrPopoverContent");
     config.optionSpacing = TOOLBAR_ITEM_SPACING;
     config.options = {
@@ -3148,8 +3084,7 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
                                  : QStringLiteral("screenshotDrawingToolGroupButton%1")
                                        .arg(m_drawingToolGroups.size()));
 
-            group.popover = createScreenshotToolPaletteOptionPopoverShell(
-                group.trigger, QString::fromUtf8(entryDescriptor->label));
+            group.popover = createScreenshotToolPaletteOptionPopoverShell(group.trigger);
             // AdPopover intentionally suppresses open requests while it has no content. Observe
             // the trigger before the popover's hover delay elapses so the first real hover can
             // materialize the options and continue through the normal opening path.
@@ -3475,8 +3410,7 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
             adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
         addButton(m_tableButton);
 
-        m_tableQrPopover = createScreenshotToolPaletteOptionPopoverShell(
-            m_tableButton, QStringLiteral("Table recognition"));
+        m_tableQrPopover = createScreenshotToolPaletteOptionPopoverShell(m_tableButton);
         m_tableButton->installEventFilter(this);
         connect(m_tableQrPopover, &adqt::widgets::AdPopover::visibilityRequested, this,
                 [this](bool visible) {
@@ -3931,18 +3865,9 @@ void ScreenshotToolPalette::createSecondaryToolbarShell() {
         STYLE_PANEL_HORIZONTAL_MARGIN, STYLE_PANEL_VERTICAL_MARGIN, STYLE_BUTTON_SIZE));
     m_rectangleStyleLayout->setSpacing(0);
 
-    m_styleReserveWidget = new QWidget(this);
-    m_styleReserveWidget->setObjectName(QStringLiteral("screenshotStyleToolbarReserve"));
-    m_styleReserveWidget->setAttribute(Qt::WA_NoSystemBackground, true);
-    m_styleReserveWidget->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-    m_styleReserveWidget->setAutoFillBackground(false);
-    m_styleReserveWidget->setFocusPolicy(Qt::NoFocus);
-    m_styleReserveWidget->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-
     if (m_rootLayout != nullptr) {
         m_rootLayout->addWidget(m_selectActionPanel, 0, Qt::AlignRight);
         m_rootLayout->addWidget(m_rectangleStylePanel, 0, Qt::AlignRight);
-        m_rootLayout->addWidget(m_styleReserveWidget, 0, Qt::AlignRight);
     }
     m_selectActionPanel->hide();
     m_rectangleStylePanel->hide();
@@ -3962,9 +3887,6 @@ void ScreenshotToolPalette::registerStyleFamily(QWidget* controls,
     m_styleEditorBindings.push_back(binding);
     m_rectangleStyleLayout->addWidget(controls);
     controls->hide();
-    // Recompute the shell reserve after a lazy editor is added. This keeps
-    // the editor inside the palette so popup anchors remain valid.
-    m_secondaryToolbarPresetSize = QSize();
     markLayoutDirty(false);
     initializeStyleLayoutProfiles();
     applyCumulativeStyleLayoutMetrics(controls);
@@ -4001,7 +3923,6 @@ bool ScreenshotToolPalette::ensureActionFamily(ActionFamily family) {
         createScrollingRecognitionActionFamily();
         break;
     }
-    m_secondaryToolbarPresetSize = QSize();
     markLayoutDirty(false);
     m_actionFamilyStates.insert(key, MaterializationState::Ready);
     initializeStyleLayoutProfiles();
@@ -4574,22 +4495,34 @@ void ScreenshotToolPalette::addRecordingControls(QBoxLayout* layout) {
 
 void ScreenshotToolPalette::updateToolbarRowGeometry(bool styleToolbarVisible) {
     SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.update_row_geometry");
-    if (m_rootLayout == nullptr || m_mainPanel == nullptr || m_selectActionPanel == nullptr ||
-        m_rectangleStylePanel == nullptr || m_styleReserveWidget == nullptr) {
+    if (m_rootLayout == nullptr || m_mainPanel == nullptr) {
         return;
     }
 
     if (m_rowOrderDirty) {
         m_rootLayout->removeWidget(m_mainPanel);
-        m_rootLayout->removeWidget(m_selectActionPanel);
-        m_rootLayout->removeWidget(m_rectangleStylePanel);
-        m_rootLayout->removeWidget(m_styleReserveWidget);
+        if (m_selectActionPanel != nullptr) {
+            m_rootLayout->removeWidget(m_selectActionPanel);
+        }
+        if (m_rectangleStylePanel != nullptr) {
+            m_rootLayout->removeWidget(m_rectangleStylePanel);
+        }
         if (m_styleToolbarAboveMain) {
-            m_rootLayout->addWidget(m_styleReserveWidget, 0, Qt::AlignRight);
+            if (m_selectActionPanel != nullptr) {
+                m_rootLayout->addWidget(m_selectActionPanel, 0, Qt::AlignRight);
+            }
+            if (m_rectangleStylePanel != nullptr) {
+                m_rootLayout->addWidget(m_rectangleStylePanel, 0, Qt::AlignRight);
+            }
             m_rootLayout->addWidget(m_mainPanel, 0, Qt::AlignRight);
         } else {
             m_rootLayout->addWidget(m_mainPanel, 0, Qt::AlignRight);
-            m_rootLayout->addWidget(m_styleReserveWidget, 0, Qt::AlignRight);
+            if (m_selectActionPanel != nullptr) {
+                m_rootLayout->addWidget(m_selectActionPanel, 0, Qt::AlignRight);
+            }
+            if (m_rectangleStylePanel != nullptr) {
+                m_rootLayout->addWidget(m_rectangleStylePanel, 0, Qt::AlignRight);
+            }
         }
         m_rowOrderDirty = false;
         SNOW_SHOT_TOOLBAR_PERF_COUNTER("layout.row_reorder");
@@ -4600,41 +4533,14 @@ void ScreenshotToolPalette::updateToolbarRowGeometry(bool styleToolbarVisible) {
     // `isVisible()` is false while the palette's parent is hidden, even when
     // the child has never been explicitly hidden. Use the child visibility
     // state so a new palette hides its secondary rows before first display.
-    if (m_selectActionPanel->isHidden() == m_actionToolbarTargetVisible) {
+    if (m_selectActionPanel != nullptr &&
+        m_selectActionPanel->isHidden() == m_actionToolbarTargetVisible) {
         m_selectActionPanel->setVisible(m_actionToolbarTargetVisible);
     }
-    if (m_rectangleStylePanel->isHidden() == styleToolbarVisible) {
+    if (m_rectangleStylePanel != nullptr &&
+        m_rectangleStylePanel->isHidden() == styleToolbarVisible) {
         m_rectangleStylePanel->setVisible(styleToolbarVisible);
     }
-    if (!m_styleReserveWidget->isVisible()) {
-        m_styleReserveWidget->setVisible(true);
-    }
-}
-
-void ScreenshotToolPalette::updateSecondaryToolbarPanelGeometry() {
-    if (m_styleReserveWidget == nullptr) {
-        return;
-    }
-
-    const QRect reserveGeometry = m_styleReserveWidget->geometry();
-    const auto positionPanel = [this, reserveGeometry](QWidget* panel) {
-        if (panel == nullptr) {
-            return;
-        }
-
-        const int x = reserveGeometry.right() - panel->width() + 1;
-        const int y = m_styleToolbarAboveMain ? reserveGeometry.bottom() - panel->height() + 1
-                                              : reserveGeometry.top();
-        const QPoint targetPosition(x, y);
-        if (panel->pos() != targetPosition) {
-            panel->move(targetPosition);
-        }
-        if (panel->isVisible()) {
-            panel->raise();
-        }
-    };
-    positionPanel(m_selectActionPanel);
-    positionPanel(m_rectangleStylePanel);
 }
 
 void ScreenshotToolPalette::setActiveToolButton(adqt::widgets::AdButton* activeButton) {
@@ -4936,7 +4842,7 @@ quint64 ScreenshotToolPalette::layoutRevision() const {
     return m_layoutResult.revision;
 }
 
-QSize ScreenshotToolPalette::contentSizeForStyleToolbarVisibility(bool styleToolbarVisible) const {
+QSize ScreenshotToolPalette::contentSizeForVisibleRows() const {
     int width = 0;
     int height = 0;
     int visibleRows = 0;
@@ -4959,20 +4865,12 @@ QSize ScreenshotToolPalette::contentSizeForStyleToolbarVisibility(bool styleTool
     };
 
     appendPanel(m_mainPanel, m_mainPanel != nullptr);
-    if (m_styleReserveWidget != nullptr && styleToolbarVisible) {
-        QSize styleSize = m_styleReserveWidget != nullptr ? m_styleReserveWidget->size() : QSize();
-        if (styleSize.isEmpty() && m_rectangleStylePanel != nullptr) {
-            styleSize = m_rectangleStylePanel->size();
-        }
-        if (styleSize.isEmpty() && m_rectangleStylePanel != nullptr) {
-            styleSize = m_rectangleStylePanel->sizeHint();
-        }
-        if (!styleSize.isEmpty()) {
-            width = std::max(width, styleSize.width());
-            height += styleSize.height();
-            ++visibleRows;
-        }
-    }
+    const QWidget* secondaryPanel = m_actionToolbarTargetVisible
+                                        ? m_selectActionPanel
+                                        : m_styleToolbarTargetVisible
+                                              ? m_rectangleStylePanel
+                                              : nullptr;
+    appendPanel(secondaryPanel, secondaryPanel != nullptr);
 
     if (visibleRows > 1) {
         height += scaledMetric(TOOLBAR_ROW_SPACING) * (visibleRows - 1);
@@ -4981,37 +4879,28 @@ QSize ScreenshotToolPalette::contentSizeForStyleToolbarVisibility(bool styleTool
     return QSize(width, height);
 }
 
-QRect ScreenshotToolPalette::placementContentRectForStyleToolbarAboveMain(bool above) const {
-    ensureLayoutApplied();
+QSize ScreenshotToolPalette::fullContentSize() const {
+    const auto panelSize = [](const QWidget* panel) {
+        if (panel == nullptr) {
+            return QSize();
+        }
+        QSize size = panel->size();
+        if (size.isEmpty()) {
+            size = panel->sizeHint();
+        }
+        return size;
+    };
 
-    const QRect mainRect = mainToolbarContentRectForStyleToolbarAboveMain(above);
-    const QWidget* secondaryPanel = nullptr;
-    if (m_actionToolbarTargetVisible) {
-        secondaryPanel = m_selectActionPanel;
-    } else if (m_styleToolbarTargetVisible) {
-        secondaryPanel = m_rectangleStylePanel;
-    }
-    if (secondaryPanel == nullptr) {
-        return mainRect;
-    }
-
-    QSize secondarySize = secondaryPanel->size();
-    if (secondarySize.isEmpty()) {
-        secondarySize = secondaryPanel->sizeHint();
-    }
-    if (secondarySize.isEmpty()) {
-        return mainRect;
+    const QSize mainSize = panelSize(m_mainPanel);
+    QSize maximumSecondarySize = panelSize(m_selectActionPanel);
+    maximumSecondarySize = maximumSecondarySize.expandedTo(maximumSecondaryToolbarSizeHint());
+    if (maximumSecondarySize.isEmpty()) {
+        return mainSize;
     }
 
-    const QSize contentSize = contentSizeForStyleToolbarVisibility(true);
-    const int reserveHeight =
-        std::max(0, contentSize.height() - mainRect.height() - scaledMetric(TOOLBAR_ROW_SPACING));
-    const int secondaryY = above ? std::max(0, reserveHeight - secondarySize.height())
-                                 : mainRect.bottom() + 1 + scaledMetric(TOOLBAR_ROW_SPACING);
-    const QRect secondaryRect(
-        QPoint(std::max(0, contentSize.width() - secondarySize.width()), secondaryY),
-        secondarySize);
-    return mainRect.united(secondaryRect);
+    return QSize(std::max(mainSize.width(), maximumSecondarySize.width()),
+                 mainSize.height() + scaledMetric(TOOLBAR_ROW_SPACING) +
+                     maximumSecondarySize.height());
 }
 
 QRect ScreenshotToolPalette::panelContentRect(const QWidget* panel) const {
@@ -5025,9 +4914,13 @@ QRect ScreenshotToolPalette::panelVisualRect(const QWidget* panel) const {
     return panelContentRect(panel);
 }
 
-QRect ScreenshotToolPalette::mainToolbarContentRectForStyleToolbarAboveMain(bool above) const {
+ScreenshotToolbarPlacementSnapshot ScreenshotToolPalette::buildPlacementSnapshot() const {
+    ScreenshotToolbarPlacementSnapshot snapshot;
+    snapshot.contentOffset = m_layoutResult.contentOffset;
+    snapshot.contentSize = m_layoutResult.contentSize;
+
     if (m_mainPanel == nullptr) {
-        return {};
+        return snapshot;
     }
 
     QSize mainSize = m_mainPanel->size();
@@ -5035,11 +4928,53 @@ QRect ScreenshotToolPalette::mainToolbarContentRectForStyleToolbarAboveMain(bool
         mainSize = m_mainPanel->sizeHint();
     }
     if (mainSize.isEmpty()) {
-        return {};
+        return snapshot;
     }
 
-    const QSize contentSize = contentSizeForStyleToolbarVisibility(true);
-    const int x = std::max(0, contentSize.width() - mainSize.width());
-    const int y = above ? std::max(0, contentSize.height() - mainSize.height()) : 0;
-    return QRect(QPoint(x, y), mainSize);
+    const QWidget* secondaryPanel = nullptr;
+    if (m_actionToolbarTargetVisible) {
+        secondaryPanel = m_selectActionPanel;
+    } else if (m_styleToolbarTargetVisible) {
+        secondaryPanel = m_rectangleStylePanel;
+    }
+
+    QSize secondarySize;
+    if (secondaryPanel != nullptr) {
+        secondarySize = secondaryPanel->size();
+        if (secondarySize.isEmpty()) {
+            secondarySize = secondaryPanel->sizeHint();
+        }
+    }
+
+    const bool hasSecondary = !secondarySize.isEmpty();
+    const int visibleWidth = std::max(mainSize.width(), hasSecondary ? secondarySize.width() : 0);
+    const int rowSpacing = hasSecondary ? scaledMetric(TOOLBAR_ROW_SPACING) : 0;
+    const int visibleHeight = mainSize.height() + rowSpacing +
+                              (hasSecondary ? secondarySize.height() : 0);
+    snapshot.visibleContentSize = QSize(visibleWidth, visibleHeight);
+
+    // Both rows share the content area's right edge.  Derive it from the
+    // visible extent rather than a child geometry that may still be pending a
+    // parent-layout activation during a first display.
+    const int right = visibleWidth - 1;
+    const QRect bottomMain(QPoint(right - mainSize.width() + 1, 0), mainSize);
+    const int topMainY = hasSecondary ? secondarySize.height() + rowSpacing : 0;
+    const QRect topMain(QPoint(right - mainSize.width() + 1, topMainY), mainSize);
+    QRect bottomSecondary;
+    QRect topSecondary;
+    if (hasSecondary) {
+        const int secondaryX = right - secondarySize.width() + 1;
+        bottomSecondary = QRect(QPoint(secondaryX, mainSize.height() + rowSpacing), secondarySize);
+        topSecondary = QRect(QPoint(secondaryX, topMain.top() - rowSpacing - secondarySize.height()),
+                             secondarySize);
+    }
+
+    const auto occupied = [](const QRect& mainRect, const QRect& secondaryRect) {
+        return secondaryRect.isEmpty() ? mainRect : mainRect.united(secondaryRect);
+    };
+    snapshot.bottom = ScreenshotToolbarPlacementGeometry{
+        bottomMain, bottomSecondary, occupied(bottomMain, bottomSecondary)};
+    snapshot.top = ScreenshotToolbarPlacementGeometry{
+        topMain, topSecondary, occupied(topMain, topSecondary)};
+    return snapshot;
 }

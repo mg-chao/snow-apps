@@ -496,12 +496,12 @@ void ScreenshotPinnedEditController::updatePlacement() {
     m_toolbarWindow->setPlacementContext(placementScreen(), logicalBounds, physicalBounds);
     m_toolbarWindow->prepareForDisplay();
 
-    const QRect bottomToolbarRect = m_toolbarWindow->bottomPlacementContentRect();
-    if (bottomToolbarRect.isEmpty()) {
-        return;
-    }
-
     if (!m_manuallyPlaced) {
+        const ScreenshotToolbarPlacementSnapshot toolbarGeometry =
+            m_toolbarWindow->placementSnapshot();
+        if (!toolbarGeometry.bottom.isValid()) {
+            return;
+        }
         const QRect pinnedGeometry =
             m_pinnedWindow.frameGeometry().isValid() && !m_pinnedWindow.frameGeometry().isEmpty()
                 ? m_pinnedWindow.frameGeometry()
@@ -518,9 +518,7 @@ void ScreenshotPinnedEditController::updatePlacement() {
                 QPoint(pinnedGeometry.left() + pinnedGeometry.width(),
                        pinnedGeometry.top() + pinnedGeometry.height()),
                 QPoint(pinnedGeometry.left() + pinnedGeometry.width(), pinnedGeometry.top()),
-                bottomToolbarRect, placementBounds, kToolbarGap,
-                m_toolbarWindow->topRightMainToolbarContentRect(),
-                m_toolbarWindow->topPlacementContentRect());
+                toolbarGeometry.bottom, toolbarGeometry.top, placementBounds, kToolbarGap);
         m_toolbarWindow->setStyleToolbarAboveMain(placement.usesTopRightPlacement);
         m_globalContentPosition = placement.contentPosition;
         m_toolbarWindow->resetPhysicalSizeInvariant();

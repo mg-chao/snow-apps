@@ -1251,16 +1251,6 @@ void configureScreenshotToolPaletteTooltip(QWidget* trigger,
     trigger->setAccessibleName(translated);
 }
 
-void configureScreenshotToolPalettePopoverTrigger(QWidget* trigger, const char* source) {
-    if (trigger == nullptr || source == nullptr || source[0] == '\0') {
-        return;
-    }
-
-    setScreenshotToolPaletteAccessibleNameSource(trigger, source);
-    trigger->setToolTip(QString());
-    trigger->setAccessibleName(ScreenshotToolPaletteTranslationText(source).translated());
-}
-
 void setScreenshotToolPaletteTooltipSource(QWidget* widget, const char* source) {
     if (source == nullptr || source[0] == '\0') {
         return;
@@ -1493,13 +1483,11 @@ createScreenshotToolPaletteRadioEditor(QWidget* parent,
     return editor;
 }
 
-adqt::widgets::AdPopover* createScreenshotToolPaletteOptionPopoverShell(
-    adqt::widgets::AdButton* trigger, const QString& accessibleName) {
+adqt::widgets::AdPopover*
+createScreenshotToolPaletteOptionPopoverShell(adqt::widgets::AdButton* trigger) {
     if (trigger == nullptr) {
         return nullptr;
     }
-    configureScreenshotToolPalettePopoverTrigger(trigger,
-                                                 accessibleName.toUtf8().constData());
     auto* popover = new adqt::widgets::AdPopover(trigger);
     popover->setSourceWidget(trigger);
     popover->setTriggers(adqt::widgets::AdPopover::Trigger::Hover);
@@ -1556,8 +1544,8 @@ ScreenshotToolPaletteOptionPopoverEditor createScreenshotToolPaletteOptionPopove
     const std::function<void(int)>& activateValue,
     const ScreenshotToolPaletteButtonMetrics& metrics) {
     return materializeScreenshotToolPaletteOptionPopoverEditor(
-        createScreenshotToolPaletteOptionPopoverShell(trigger, config.accessibleName), receiver,
-        config, activateValue, metrics);
+        createScreenshotToolPaletteOptionPopoverShell(trigger), receiver, config, activateValue,
+        metrics);
 }
 
 void configureScreenshotToolPaletteOptionPopoverEditor(

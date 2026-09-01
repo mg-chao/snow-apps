@@ -4,6 +4,7 @@
 #include <QCoreApplication>
 #include <QEnterEvent>
 #include <QEvent>
+#include <QHideEvent>
 #include <QImage>
 #include <QLabel>
 #include <QPainter>
@@ -33,6 +34,12 @@ void sendEnter(QWidget* widget) {
 void sendLeave(QWidget* widget) {
     require(widget != nullptr, "leave-event target should exist");
     QEvent event(QEvent::Leave);
+    QCoreApplication::sendEvent(widget, &event);
+}
+
+void sendHide(QWidget* widget) {
+    require(widget != nullptr, "hide-event target should exist");
+    QHideEvent event;
     QCoreApplication::sendEvent(widget, &event);
 }
 
@@ -67,6 +74,10 @@ void panelBoundaryExclusivelyOwnsToolbarHoverState() {
     require(hoverTransitions == std::vector<bool>({true}),
             "entering the panel should begin one hover session");
 
+    sendEnter(&panel);
+    require(hoverTransitions == std::vector<bool>({true}),
+            "repeated panel enter events must not duplicate the hover transition");
+
     sendEnter(&child);
     sendLeave(&child);
     require(hoverTransitions == std::vector<bool>({true}),
@@ -75,6 +86,29 @@ void panelBoundaryExclusivelyOwnsToolbarHoverState() {
     sendLeave(&panel);
     require(hoverTransitions == std::vector<bool>({true, false}),
             "leaving the panel should end the hover session");
+
+    panel.setPointerInteractionEnabled(false);
+    sendEnter(&panel);
+    require(hoverTransitions == std::vector<bool>({true, false}),
+            "a transparent panel must ignore a stale or synthetic enter event");
+
+    panel.setPointerInteractionEnabled(true);
+    sendEnter(&panel);
+    require(hoverTransitions == std::vector<bool>({true, false, true}),
+            "re-enabling the panel must restore its next hover session");
+
+    sendHide(&panel);
+    require(hoverTransitions == std::vector<bool>({true, false, true, false}),
+            "hiding the panel must clear its hover state");
+
+    sendEnter(&panel);
+    require(hoverTransitions == std::vector<bool>({true, false, true, false, true}),
+            "showing the panel must allow a fresh hover session");
+
+    sendLeave(&panel);
+    panel.setPointerInteractionEnabled(false);
+    require(hoverTransitions == std::vector<bool>({true, false, true, false, true, false}),
+            "disabling a hovered panel must synchronously clear its hover state");
 }
 
 void valueLabelPaintsFromItsOwnEnterLeaveState() {
@@ -95,6 +129,11 @@ void valueLabelPaintsFromItsOwnEnterLeaveState() {
             "value-label enter events should enable the hover visual without cursor polling");
     require(transparentImage == idleImage && restoredImage == idleImage,
             "disabled value labels should clear hover and ignore stale enter events");
+
+    sendEnter(&label);
+    sendHide(&label);
+    require(renderWidget(&label) == idleImage,
+            "hiding a value label should clear its hover visual");
 
     sendEnter(&label);
     sendLeave(&label);

@@ -11,6 +11,7 @@
 #include <QWidget>
 
 class QEnterEvent;
+class QHideEvent;
 class QPainter;
 
 namespace screenshot_selection_toolbar {
@@ -38,13 +39,19 @@ class SelectionToolbarPanel final : public QFrame {
   public:
     explicit SelectionToolbarPanel(QWidget* parent = nullptr);
 
+    void setPointerInteractionEnabled(bool enabled);
+
   signals:
     void hoverChanged(bool hovered);
 
   protected:
     void enterEvent(QEnterEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
     void leaveEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
+
+  private:
+    bool m_hovered = false;
 };
 
 class SelectionToolbarValueLabel final : public QLabel {
@@ -60,6 +67,7 @@ class SelectionToolbarValueLabel final : public QLabel {
 
   protected:
     void enterEvent(QEnterEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
     void leaveEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 
@@ -67,6 +75,7 @@ class SelectionToolbarValueLabel final : public QLabel {
     QPixmap m_leadingIcon;
     bool m_iconOnly = false;
     bool m_lockAspectRatioControl = false;
+    bool m_pointerInteractionEnabled = true;
     bool m_hovered = false;
 };
 

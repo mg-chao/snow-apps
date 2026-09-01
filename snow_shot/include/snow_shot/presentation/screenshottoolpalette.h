@@ -4,6 +4,7 @@
 #include "icon_core.h"
 #include "snow_draw_engine_qt/snow_canvas_types.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
+#include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotscrollingtypes.h"
 #include "snow_shot/storage/settingsadapters.h"
 
@@ -156,6 +157,7 @@ class ScreenshotToolPalette final : public QWidget {
     QRect topPlacementContentRect() const;
     QRect topRightMainToolbarContentRect() const;
     QRect mainToolbarContentRect() const;
+    ScreenshotToolbarPlacementSnapshot placementSnapshot() const;
     QPoint contentOffset() const;
     quint64 layoutRevision() const;
     void prepareForDisplay();
@@ -166,7 +168,6 @@ class ScreenshotToolPalette final : public QWidget {
     bool setPhysicalScale(qreal scale);
     qreal physicalScale() const;
     void setToolbarLayout(const snow_shot::storage::ScreenshotToolbarLayout& layout);
-    bool setLogicalClientExtent(const QSize& extent);
     bool stepStrokeWidth(int direction);
     bool stepSelectionOpacity(int direction);
     bool stepSpotlightOpacity(int direction);
@@ -351,7 +352,6 @@ class ScreenshotToolPalette final : public QWidget {
     void ensureLayoutApplied() const;
     void markLayoutDirty(bool rowOrderChanged = false);
     void updateToolbarRowGeometry(bool styleToolbarVisible);
-    void updateSecondaryToolbarPanelGeometry();
     void setActiveToolButton(adqt::widgets::AdButton* activeButton);
     bool setStyleControlsActive(Tool tool);
     QWidget* styleControlsForTool(Tool tool) const;
@@ -370,12 +370,12 @@ class ScreenshotToolPalette final : public QWidget {
     void updateRecordingControls();
     void updateRecordingControlMetrics();
     QSize styleToolbarSizeHint();
-    QSize styleToolbarPresetSizeHint();
-    QSize contentSizeForStyleToolbarVisibility(bool styleToolbarVisible) const;
-    QRect placementContentRectForStyleToolbarAboveMain(bool above) const;
+    QSize maximumSecondaryToolbarSizeHint() const;
+    QSize contentSizeForVisibleRows() const;
+    QSize fullContentSize() const;
     QRect panelContentRect(const QWidget* panel) const;
     QRect panelVisualRect(const QWidget* panel) const;
-    QRect mainToolbarContentRectForStyleToolbarAboveMain(bool above) const;
+    ScreenshotToolbarPlacementSnapshot buildPlacementSnapshot() const;
     int scaledMetric(int value) const;
     qreal scaledMetric(qreal value) const;
     QMargins scaledMargins(int left, int top, int right, int bottom) const;
@@ -475,7 +475,6 @@ class ScreenshotToolPalette final : public QWidget {
     ScreenshotToolbarMainPanel* m_mainPanel = nullptr;
     QWidget* m_selectActionPanel = nullptr;
     QWidget* m_rectangleStylePanel = nullptr;
-    QWidget* m_styleReserveWidget = nullptr;
     QBoxLayout* m_rootLayout = nullptr;
     QBoxLayout* m_rectangleStyleLayout = nullptr;
     QBoxLayout* m_selectActionLayout = nullptr;
@@ -567,12 +566,9 @@ class ScreenshotToolPalette final : public QWidget {
     std::unique_ptr<ScreenshotToolPaletteStyleControls> m_styleControls;
     QMargins m_baseShadowMargins;
     QMargins m_shadowMargins;
-    QSize m_secondaryToolbarPresetSize;
-    QSize m_secondaryToolbarBasePresetSize;
     QHash<QWidget*, quint64> m_styleMetricRevisions;
     quint64 m_metricProfileRevision = 1;
     qreal m_physicalScale = 1.0;
-    QSize m_logicalClientExtent;
     qreal m_selectionOpacity = 1.0;
     bool m_selectionOpacityMixed = false;
     bool m_selectionOpacityInitialized = false;

@@ -584,7 +584,7 @@ void screenshotToolbarUsesCanonicalOrderAndSectionSeparators() {
         QStringLiteral("Edit selection"),
         QStringLiteral("Select elements (V)"),
         QStringLiteral("Shape (1)"),
-        QStringLiteral("Arrow"),
+        QStringLiteral("Arrow (2)"),
         QStringLiteral("Pen (3, P)"),
         QStringLiteral("Highlighter Tool (4, H)"),
         QStringLiteral("Text (5, T)"),
@@ -731,12 +731,14 @@ void configurableToolbarLayoutSupportsArbitraryPopoverGroups() {
                     QStringLiteral("screenshotRectangleHighlightButton")) == nullptr,
             "multi-tool positions should use one trigger while singleton positions stay direct");
     require(firstTrigger->accessibleName() == QStringLiteral("Shape") &&
+                firstTrigger->toolTip() == QStringLiteral("Shape (1)") &&
                 firstTrigger->property("screenshotToolbarItemId").toString() ==
                     QStringLiteral("shape") &&
                 secondTrigger->accessibleName() == QStringLiteral("Arrow") &&
+                secondTrigger->toolTip() == QStringLiteral("Arrow (2)") &&
                 secondTrigger->property("screenshotToolbarItemId").toString() ==
                     QStringLiteral("arrow"),
-            "the last configured item should be each live group's initial trigger");
+            "the last configured item should be each live group's initial trigger and tooltip");
 
     adqt::widgets::AdPopover* firstPopover = popoverForTrigger(firstTrigger);
     adqt::widgets::AdPopover* secondPopover = popoverForTrigger(secondTrigger);
@@ -858,7 +860,7 @@ void arrowAndLineUseConfiguredPopoverGroup() {
     auto* lineOption = popoverButtonWithTooltip(popover, "Line");
     require(trigger != nullptr && mainDrawingToolbarButtons(palette).size() == 1 &&
                 mainDrawingToolbarButtons(palette).constFirst() == trigger &&
-                trigger->toolTip().isEmpty() &&
+                trigger->toolTip() == QStringLiteral("Arrow (2)") &&
                 trigger->accessibleName() == QStringLiteral("Arrow") && popover != nullptr &&
                 popover->triggers() == adqt::widgets::AdPopover::Trigger::Hover &&
                 popover->placement() == adqt::widgets::AdPopover::Placement::Top &&
@@ -885,6 +887,7 @@ void arrowAndLineUseConfiguredPopoverGroup() {
     lineOption->click();
     require(lineRequests == 1 && arrowRequests == 1 &&
                 palette.activeToolForTests() == ScreenshotToolPalette::Tool::Line &&
+                trigger->toolTip() == QStringLiteral("Line") &&
                 trigger->accessibleName() == QStringLiteral("Line") &&
                 trigger->property("screenshotToolbarItemId").toString() == QStringLiteral("line"),
             "selecting Line should activate it and replace the shared trigger");
@@ -913,7 +916,8 @@ void tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode() {
             "Table and QR recognition should occupy one main toolbar slot");
     auto* trigger =
         palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotTableQrButton"));
-    require(trigger == mainButtons.front() && trigger->toolTip().isEmpty() &&
+    require(trigger == mainButtons.front() &&
+                trigger->toolTip() == QStringLiteral("Table recognition (Ctrl+X)") &&
                 trigger->accessibleName() == QStringLiteral("Table recognition"),
             "the shared recognition slot should initially present Table recognition");
 

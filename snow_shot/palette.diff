@@ -1,0 +1,2406 @@
+diff --git a/snow_shot/src/presentation/tools/screenshottoolpalette.cpp b/snow_shot/src/presentation/tools/screenshottoolpalette.cpp
+index 19005392..3e8496b7 100644
+--- a/snow_shot/src/presentation/tools/screenshottoolpalette.cpp
++++ b/snow_shot/src/presentation/tools/screenshottoolpalette.cpp
+@@ -622,176 +622,181 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
+     installWheelFilters(this);
+ 
+     const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
+     connect(&themeManager, &snow_shot::presentation::styles::ThemeManager::themeChanged, this,
+             [this](const snow_shot::presentation::styles::ThemeColorScheme&) {
+                 const QString separatorStyle = styleToolbarSeparatorStyleSheet();
+                 for (QFrame* separator : std::as_const(m_styleSeparatorFrames)) {
+                     if (separator != nullptr) {
+                         separator->setStyleSheet(separatorStyle);
+                     }
+                 }
+                 refreshThemeDependentIcons();
+                 refreshFilterEditorMetrics(m_filterEditor);
+                 refreshFilterEditorMetrics(m_penFilterEditor);
+                 ScreenshotToolPaletteSliderEditor spotlightEditor;
+                 spotlightEditor.icon = m_spotlightOpacityIcon;
+                 spotlightEditor.slider = m_spotlightOpacitySlider;
+                 spotlightEditor.iconRef = custom_outlined_icons::Opacity();
+                 spotlightEditor.baseIconSize = COMPACT_SLIDER_ICON_SIZE;
+                 spotlightEditor.baseSliderWidth = COMPACT_SLIDER_WIDTH;
+                 configureScreenshotToolPaletteSliderEditor(spotlightEditor,
+                                                            styleButtonMetrics(m_physicalScale));
+             });
+ }
+ 
+ ScreenshotToolPalette::~ScreenshotToolPalette() {
+     m_styleControls->clearTextStylePopupInteractions();
+ }
+ 
+ void ScreenshotToolPalette::hideEvent(QHideEvent* event) {
+     m_styleControls->clearTextStylePopupInteractions();
+     QWidget::hideEvent(event);
+ }
+ 
+ QWidget* ScreenshotToolPalette::mainPanel() const {
+     return m_mainPanel;
+ }
+ 
+ QWidget* ScreenshotToolPalette::actionPanel() const {
+     return m_selectActionPanel;
+ }
+ 
+ QWidget* ScreenshotToolPalette::stylePanel() const {
+     return m_rectangleStylePanel;
+ }
+ 
+ QWidget* ScreenshotToolPalette::dragHandle() const {
+     return m_mainPanel != nullptr ? m_mainPanel->dragHandle() : nullptr;
+ }
+ 
+ QWidget* ScreenshotToolPalette::trailingDragHandle() const {
+     return m_mainPanel != nullptr ? m_mainPanel->trailingDragHandle() : nullptr;
+ }
+ 
+ QSize ScreenshotToolPalette::contentSizeHint() const {
+     ensureLayoutApplied();
+     const QSize contentSize = m_layoutResult.contentSize;
+     if (!contentSize.isEmpty()) {
+         return contentSize;
+     }
+ 
+     return sizeHint();
+ }
+ 
+ QRect ScreenshotToolPalette::occupiedContentRect() const {
+     ensureLayoutApplied();
+     return m_layoutResult.occupiedContentRect;
+ }
+ 
+ QRect ScreenshotToolPalette::visualContentRect() const {
+     ensureLayoutApplied();
+     return m_layoutResult.occupiedContentRect;
+ }
+ 
+ QRect ScreenshotToolPalette::fullContentRect() const {
+     ensureLayoutApplied();
+     return m_layoutResult.fullContentRect;
+ }
+ 
+ QRect ScreenshotToolPalette::bottomPlacementContentRect() const {
+-    return placementContentRectForStyleToolbarAboveMain(false);
++    return placementSnapshot().bottom.occupiedContentRect;
+ }
+ 
+ QRect ScreenshotToolPalette::topPlacementContentRect() const {
+-    return placementContentRectForStyleToolbarAboveMain(true);
++    return placementSnapshot().top.occupiedContentRect;
+ }
+ 
+ QRect ScreenshotToolPalette::topRightMainToolbarContentRect() const {
+-    return mainToolbarContentRectForStyleToolbarAboveMain(true);
++    return placementSnapshot().top.mainToolbarContentRect;
+ }
+ 
+ QRect ScreenshotToolPalette::mainToolbarContentRect() const {
+     ensureLayoutApplied();
+     return m_layoutResult.mainToolbarContentRect;
+ }
+ 
++ScreenshotToolbarPlacementSnapshot ScreenshotToolPalette::placementSnapshot() const {
++    ensureLayoutApplied();
++    return buildPlacementSnapshot();
++}
++
+ void ScreenshotToolPalette::prepareForDisplay() {
+     ensureLayoutApplied();
+ }
+ 
+ bool ScreenshotToolPalette::setShadowMargins(const QMargins& margins) {
+     if (m_baseShadowMargins == margins) {
+         return false;
+     }
+ 
+     m_baseShadowMargins = margins;
+     m_shadowMargins = QMargins(scaledMetric(margins.left()), scaledMetric(margins.top()),
+                                scaledMetric(margins.right()), scaledMetric(margins.bottom()));
+     markLayoutDirty();
+     ensureLayoutApplied();
+     return true;
+ }
+ 
+ bool ScreenshotToolPalette::setPhysicalScale(qreal scale) {
+     if (!std::isfinite(scale) || scale <= 0.0) {
+         scale = 1.0;
+     }
+     scale = std::clamp<qreal>(scale, 0.25, 4.0);
+     if (qFuzzyCompare(m_physicalScale + 1.0, scale + 1.0)) {
+         return false;
+     }
+ 
+     m_physicalScale = scale;
+     ++m_metricProfileRevision;
+     applyScaledToolbarMetrics();
+     ensureLayoutApplied();
+     return true;
+ }
+ 
+ qreal ScreenshotToolPalette::physicalScale() const {
+     return m_physicalScale;
+ }
+ 
+ void ScreenshotToolPalette::setToolbarLayout(
+     const snow_shot::storage::ScreenshotToolbarLayout& layout) {
+     const snow_shot::storage::ScreenshotToolbarLayout normalized =
+         toolbar_layout::normalizedLayout(layout);
+     if (m_toolbarLayout.has_value() && *m_toolbarLayout == normalized) {
+         return;
+     }
+     m_toolbarLayout = normalized;
+     applyMainToolbarLayout(true);
+ }
+ 
+ void ScreenshotToolPalette::resetStyleState() {
+     m_styleControls->reset();
+     refreshFilterEditorState(m_filterEditor, false);
+     refreshFilterEditorState(m_penFilterEditor, true);
+     setSpotlightConfig(m_styleDefaults.spotlight);
+     m_selectionOpacityAvailable = false;
+     updateSelectionActionAvailability(false);
+     updateSerialNumberControls();
+ }
+ 
+ void ScreenshotToolPalette::setCreationStyleDefaults(const SnowCanvasStyleDefaults& defaults) {
+     m_styleControls->setCreationStyleDefaults(defaults);
+     refreshFilterEditorState(m_filterEditor, false);
+     refreshFilterEditorState(m_penFilterEditor, true);
+     updateSerialNumberControls();
+ }
+ 
+ SnowCanvasStyleDefaults ScreenshotToolPalette::creationStyleDefaults() const {
+     return m_styleControls != nullptr ? m_styleControls->creationStyleDefaults()
+                                       : snow_shot::presentation::screenshotCanvasStyleDefaults();
+ }
+ 
+ bool ScreenshotToolPalette::stepStrokeWidth(int direction) {
+     return m_styleControls->stepStrokeWidth(direction);
+ }
+ 
+ bool ScreenshotToolPalette::stepSelectionOpacity(int direction) {
+     if (direction == 0 || m_activeTool != Tool::Select || !m_hasSelectedElements ||
+         m_selectionOpacitySlider == nullptr) {
+         return false;
+     }
+ 
+@@ -913,163 +918,163 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
+     if (m_selectActionPanel == nullptr || m_rectangleStylePanel == nullptr) {
+         return false;
+     }
+ 
+     const bool ocrVisible =
+         m_activeTool == Tool::Ocr || m_activeTool == Tool::TextTranslation;
+     const bool tableVisible = m_activeTool == Tool::Table;
+     const bool qrVisible = m_activeTool == Tool::Qr;
+     const bool scrollingVisible = m_activeTool == Tool::ScrollingScreenshot;
+     const bool recognitionActionVisible =
+         ocrVisible || tableVisible || qrVisible || scrollingVisible;
+     const bool recognitionControlsMatch =
+         (m_textEditButton == nullptr || m_textEditButton->isHidden() == !ocrVisible) &&
+         (m_tableMergeButton == nullptr || m_tableMergeButton->isHidden() == !tableVisible) &&
+         (m_scrollingRecognitionControls == nullptr ||
+          m_scrollingRecognitionControls->isHidden() == !scrollingVisible);
+     if (m_actionToolbarTargetVisible == actionToolbarVisible &&
+         m_styleToolbarTargetVisible == styleToolbarVisible && recognitionControlsMatch) {
+         return false;
+     }
+ 
+     m_actionToolbarTargetVisible = actionToolbarVisible;
+     m_styleToolbarTargetVisible = styleToolbarVisible;
+     for (QWidget* widget : std::as_const(m_selectionActionControls)) {
+         if (widget != nullptr) {
+             widget->setVisible(!recognitionActionVisible);
+         }
+     }
+     if (m_textEditButton != nullptr) {
+         m_textEditButton->setVisible(ocrVisible);
+     }
+     if (m_textTranslateButton != nullptr) {
+         m_textTranslateButton->setVisible(ocrVisible);
+     }
+     if (m_textResetButton != nullptr) {
+         m_textResetButton->setVisible(ocrVisible);
+     }
+     if (m_textSettingsButton != nullptr) {
+         m_textSettingsButton->setVisible(ocrVisible);
+     }
+     if (m_textFormattingSelect != nullptr) {
+         m_textFormattingSelect->setVisible(ocrVisible);
+     }
+     if (m_textPunctuationSelect != nullptr) {
+         m_textPunctuationSelect->setVisible(ocrVisible);
+     }
+     if (m_tableMergeButton != nullptr) {
+         m_tableMergeButton->setVisible(tableVisible);
+     }
+     if (m_tableSplitButton != nullptr) {
+         m_tableSplitButton->setVisible(tableVisible);
+     }
+     if (m_tableResetButton != nullptr) {
+         m_tableResetButton->setVisible(tableVisible);
+     }
+     if (m_scrollingRecognitionControls != nullptr) {
+         m_scrollingRecognitionControls->setVisible(scrollingVisible);
+     }
+     // The OCR mode shares the selection action panel for compatibility with
+     // the existing toolbar layout, but it must not retain selection-only
+     // separators and spacers. Otherwise the OCR controls appear shifted right
+     // with the old selection toolbar contents still occupying the row.
+     const auto setSpacersVisible = [this](const QVector<QSpacerItem*>& spacers, bool visible) {
+         for (QSpacerItem* spacer : spacers) {
+             setStyleToolbarSpacingVisible(spacer, visible);
+         }
+     };
+     setSpacersVisible(m_selectionActionSpacers, !recognitionActionVisible);
+     setSpacersVisible(m_textActionSpacers, ocrVisible);
+     setSpacersVisible(m_tableActionSpacers, tableVisible);
+     for (QFrame* separator : std::as_const(m_styleSeparatorFrames)) {
+         if (separator != nullptr && separator->parentWidget() == m_selectActionPanel) {
+             separator->setVisible(!recognitionActionVisible);
+         }
+     }
+     if (m_selectActionLayout != nullptr) {
+         m_selectActionLayout->invalidate();
+         m_selectActionPanel->updateGeometry();
+         applyCumulativeStyleLayoutMetrics(m_selectActionPanel);
+     }
+-    // The reserve widget permanently owns the secondary row. Visibility only
+-    // changes which manually positioned panel occupies that reserve; it does
+-    // not change root row order.
++    // Visibility changes which secondary row participates in the root layout.
++    // Keep the layout dirty so its measured extent and row geometry are rebuilt
++    // synchronously by the next geometry query.
+     markLayoutDirty(false);
+     return true;
+ }
+ 
+ void ScreenshotToolPalette::updateSelectionActionAvailability(bool hasSelection) {
+     if (m_selectionActionAvailabilityInitialized && m_hasSelectedElements == hasSelection) {
+         return;
+     }
+     m_selectionActionAvailabilityInitialized = true;
+     m_hasSelectedElements = hasSelection;
+     for (QWidget* control : std::as_const(m_selectionActionControls)) {
+         if (control != nullptr) {
+             control->setEnabled(hasSelection);
+         }
+     }
+     if (m_selectionOpacitySlider != nullptr) {
+         m_selectionOpacitySlider->setEnabled(m_selectionOpacityAvailable);
+     }
+     updateSelectionOpacityIcon();
+ }
+ 
+ void ScreenshotToolPalette::updateSelectionOpacityIcon() {
+     if (m_selectionOpacityIcon == nullptr) {
+         return;
+     }
+ 
+     const int controlSize = scaledMetric(32);
+     const int iconSize = scaledMetric(STYLE_ICON_SIZE);
+     const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
+     const QColor iconColor =
+         m_selectionOpacitySlider != nullptr && !m_selectionOpacitySlider->isEnabled()
+             ? scheme.map.colorTextQuaternary
+             : scheme.map.colorText;
+     m_selectionOpacityIcon->setFixedSize(controlSize, controlSize);
+     m_selectionOpacityIcon->setPixmap(snow_shot::presentation::icons::renderTintedIconPixmap(
+         custom_outlined_icons::Opacity(), QSize(iconSize, iconSize), devicePixelRatioF(),
+         iconColor));
+ }
+ 
+ void ScreenshotToolPalette::updateFilterIntensityIcon(FilterEditor& editor) {
+     if (editor.intensityIcon == nullptr) {
+         return;
+     }
+     const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
+     const QColor iconColor =
+         editor.intensitySlider != nullptr && !editor.intensitySlider->isEnabled()
+             ? scheme.map.colorTextQuaternary
+             : scheme.map.colorText;
+     const int iconSize = scaledMetric(COMPACT_SLIDER_ICON_SIZE);
+     editor.intensityIcon->setPixmap(snow_shot::presentation::icons::renderTintedIconPixmap(
+         custom_outlined_icons::Blur(), QSize(iconSize, iconSize), devicePixelRatioF(), iconColor));
+ }
+ 
+ void ScreenshotToolPalette::refreshThemeDependentIcons() {
+     updateSelectionOpacityIcon();
+     updateFilterIntensityIcon(m_filterEditor);
+     updateFilterIntensityIcon(m_penFilterEditor);
+     m_styleControls->refreshThemeIcons(styleButtonMetrics(m_physicalScale));
+ 
+     const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
+     if (m_copyButton != nullptr && !m_options.copyButtonWithNeutralIcon) {
+         m_copyButton->setIconRef(snow_shot::presentation::icons::withPrimaryColor(
+             outlined_icons::Copy(), scheme.map.colorPrimary));
+     }
+     if (m_confirmButton != nullptr) {
+         m_confirmButton->setIconRef(snow_shot::presentation::icons::withPrimaryColor(
+             outlined_icons::Check(), scheme.map.colorPrimary));
+     }
+     if (m_recordStartButton != nullptr) {
+         m_recordStartButton->setIconRef(snow_shot::presentation::icons::withPrimaryColor(
+             custom_outlined_icons::RecordingStart(), scheme.map.colorPrimary));
+     }
+     if (m_recordResumeButton != nullptr) {
+         m_recordResumeButton->setIconRef(snow_shot::presentation::icons::withPrimaryColor(
+             custom_outlined_icons::RecordingResume(), scheme.map.colorPrimary));
+     }
+ 
+     updateRecordingControls();
+     updateRecordingControlMetrics();
+ }
+@@ -1139,171 +1144,166 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
+         break;
+     case Tool::Eraser:
+         activeButton = drawingToolEntryButton(tool);
+         break;
+     case Tool::RectangleFilter:
+     case Tool::PenFilter:
+         activeButton = drawingToolEntryButton(tool);
+         break;
+     case Tool::Watermark:
+         activeButton = drawingToolEntryButton(tool);
+         break;
+     case Tool::Text:
+         activeButton = drawingToolEntryButton(tool);
+         break;
+     case Tool::SerialNumber:
+         activeButton = drawingToolEntryButton(tool);
+         break;
+     case Tool::Ocr:
+         activeButton = m_ocrButton;
+         break;
+     case Tool::TextTranslation:
+         activeButton = m_textTranslationButton;
+         break;
+     case Tool::Table:
+         activeButton = m_tableButton;
+         break;
+     case Tool::Qr:
+         activeButton = m_tableButton;
+         break;
+     case Tool::ScrollingScreenshot:
+         activeButton = m_scrollingScreenshotButton;
+         break;
+     default:
+         clearActiveTool();
+         return;
+     }
+ 
+     m_activeTool = tool;
+     setActiveToolButton(activeButton);
+     updateTextRecognitionBusy();
+     updateHistoryActionAvailability();
+     const bool styleControlsChanged = setStyleControlsActive(tool);
+     const bool visibilityChanged = applyActiveToolSecondaryToolbarVisibility();
+     if (visibilityChanged) {
+         updateToolbarGeometry();
+         update();
+         emit visibleContentChanged();
+     } else if (styleControlsChanged && activeToolUsesStyleToolbar()) {
+         updateStyleToolbarGeometryOnly();
+         update();
+         emit visibleContentChanged();
+     }
+     updateSerialNumberControls();
+ }
+ 
+ void ScreenshotToolPalette::activateTableQrTool(Tool tool, bool toggleVisibleButton) {
+     if (tool == Tool::Table && m_tableEnabled) {
+         activateToolFromToolbar(tool, toggleVisibleButton);
+     } else if (tool == Tool::Qr && m_qrEnabled) {
+         activateToolFromToolbar(tool, toggleVisibleButton);
+     }
+ }
+ 
+ void ScreenshotToolPalette::setTableQrEntryTool(Tool tool) {
+     if (tool != Tool::Table && tool != Tool::Qr) {
+         return;
+     }
+     if (m_tableQrEntryTool != tool) {
+         static_cast<void>(
+             toolbar_settings::ScreenshotToolbarSettings().setTableQrTool(tableQrToolSetting(tool)));
+     }
+     m_tableQrEntryTool = tool;
+     refreshTableQrTrigger();
+ }
+ 
+ void ScreenshotToolPalette::refreshTableQrTrigger() {
+     if (m_tableButton == nullptr) {
+         return;
+     }
+     const bool table = m_tableQrEntryTool == Tool::Table;
+-    if (m_tableQrPopover != nullptr) {
+-        configureScreenshotToolPalettePopoverTrigger(m_tableButton, table ? "Table recognition"
+-                                                                          : "QR code recognition");
+-    } else {
+-        configureScreenshotToolPaletteTooltip(m_tableButton,
+-                                              table ? "Table recognition" : "QR code recognition");
+-        applyScreenshotShortcutTooltip(
+-            m_tableButton, table ? QStringLiteral("Table recognition")
+-                                 : QStringLiteral("QR code recognition"),
+-            table ? QStringLiteral("table_recognition") : QStringLiteral("qr_code_recognition"));
+-    }
++    configureScreenshotToolPaletteTooltip(m_tableButton,
++                                          table ? "Table recognition" : "QR code recognition");
++    applyScreenshotShortcutTooltip(
++        m_tableButton,
++        table ? QStringLiteral("Table recognition") : QStringLiteral("QR code recognition"),
++        table ? QStringLiteral("table_recognition") : QStringLiteral("qr_code_recognition"));
+     setScreenshotToolPaletteToolButtonIcon(m_tableButton,
+                                            table ? custom_outlined_icons::TableRecognition()
+                                                  : custom_outlined_icons::ScanQrcode());
+     updateTableQrEnabled();
+ }
+ 
+ void ScreenshotToolPalette::selectDynamicEntryTool(Tool tool) {
+     if (!drawingToolItemId(tool).isEmpty()) {
+         selectDrawingToolGroupEntry(tool);
+     } else if (tool == Tool::Table || tool == Tool::Qr) {
+         setTableQrEntryTool(tool);
+     }
+ }
+ 
+ void ScreenshotToolPalette::updateTableQrBusy() {
+     if (m_tableOptionButton != nullptr) {
+         m_tableOptionButton->setBusy(m_tableBusy);
+     }
+     if (m_qrButton != nullptr) {
+         m_qrButton->setBusy(m_qrBusy);
+     }
+     if (m_tableButton != nullptr) {
+         const bool currentBusy = m_tableQrEntryTool == Tool::Qr ? m_qrBusy : m_tableBusy;
+         m_tableButton->setBusy(m_tableQrPopover != nullptr ? m_tableBusy || m_qrBusy : currentBusy);
+     }
+ }
+ 
+ void ScreenshotToolPalette::updateTableQrEnabled() {
+     if (m_tableOptionButton != nullptr) {
+         m_tableOptionButton->setEnabled(m_tableEnabled);
+     }
+     if (m_qrButton != nullptr) {
+         m_qrButton->setEnabled(m_qrEnabled);
+     }
+     if (m_tableButton != nullptr) {
+         const bool currentEnabled = m_tableQrEntryTool == Tool::Qr ? m_qrEnabled : m_tableEnabled;
+         m_tableButton->setEnabled(m_tableQrPopover != nullptr ? m_tableEnabled || m_qrEnabled
+                                                               : currentEnabled);
+     }
+ }
+ 
+ void ScreenshotToolPalette::setSelectionOpacity(qreal opacity, bool mixed) {
+     opacity = std::clamp<qreal>(opacity, 0.0, 1.0);
+     if (m_selectionOpacityInitialized && snowCanvasExactDoubleEqual(m_selectionOpacity, opacity) &&
+         m_selectionOpacityMixed == mixed) {
+         return;
+     }
+     m_selectionOpacityInitialized = true;
+     m_selectionOpacity = opacity;
+     m_selectionOpacityMixed = mixed;
+     if (m_selectionOpacitySlider != nullptr) {
+         const QSignalBlocker blocker(m_selectionOpacitySlider);
+         m_selectionOpacitySlider->setValue(qRound(m_selectionOpacity * 100.0));
+         m_selectionOpacitySlider->setProperty("mixed", mixed);
+         m_selectionOpacitySlider->setAccessibleDescription(
+             mixed ? tr("Mixed") : QStringLiteral("%1%").arg(m_selectionOpacitySlider->value()));
+     }
+ }
+ 
+ void ScreenshotToolPalette::clearActiveTool() {
+     if (!m_activeTool.has_value() && m_activeToolButton == nullptr) {
+         return;
+     }
+     m_activeTool.reset();
+     setActiveToolButton(nullptr);
+     updateHistoryActionAvailability();
+     m_activeStyleTool.reset();
+     if (applyActiveToolSecondaryToolbarVisibility()) {
+         updateToolbarGeometry();
+         update();
+         emit visibleContentChanged();
+     }
+     updateSerialNumberControls();
+ }
+ 
+ void ScreenshotToolPalette::setScrollingScreenshotMode(bool enabled) {
+     if (m_scrollingScreenshotMode == enabled) {
+         return;
+     }
+     m_scrollingScreenshotMode = enabled;
+@@ -1704,390 +1704,317 @@ void ScreenshotToolPalette::setStyleToolbarState(const SnowCanvasStyleToolbarSta
+         qreal opacity = 1.0;
+         bool mixed = false;
+         if (state.source == SnowCanvasStyleToolbarSource::SelectedText) {
+             opacity = state.textStyle.opacity;
+             mixed = (state.textStyleMixed & SnowCanvasTextStyleMixedOpacity) != 0;
+         } else if (state.source == SnowCanvasStyleToolbarSource::SelectedSerialNumber) {
+             opacity = state.serialNumberStyle.opacity;
+             mixed = (state.serialNumberStyleMixed & SnowCanvasSerialNumberStyleMixedOpacity) != 0;
+         } else if (state.source == SnowCanvasStyleToolbarSource::SelectedRectangle ||
+                    state.source == SnowCanvasStyleToolbarSource::SelectedArrow ||
+                    state.source == SnowCanvasStyleToolbarSource::SelectedLine ||
+                    state.source == SnowCanvasStyleToolbarSource::SelectedFreeDraw ||
+                    state.source == SnowCanvasStyleToolbarSource::SelectedRectangleHighlight ||
+                    state.source == SnowCanvasStyleToolbarSource::SelectedPenHighlight) {
+             opacity = state.shapeStyle.opacity;
+             mixed = (state.shapeStyleMixed & SnowCanvasShapeStyleMixedOpacity) != 0;
+         }
+         setSelectionOpacity(opacity, mixed);
+         activeStyleTool = Tool::Shape;
+     } else if (state.source == SnowCanvasStyleToolbarSource::DefaultArrow ||
+                state.source == SnowCanvasStyleToolbarSource::SelectedArrow) {
+         activeStyleTool = Tool::Arrow;
+     } else if (state.source == SnowCanvasStyleToolbarSource::DefaultLine ||
+                state.source == SnowCanvasStyleToolbarSource::SelectedLine) {
+         activeStyleTool = Tool::Line;
+     } else if (state.source == SnowCanvasStyleToolbarSource::DefaultFreeDraw ||
+                state.source == SnowCanvasStyleToolbarSource::SelectedFreeDraw) {
+         activeStyleTool = Tool::FreeDraw;
+     } else if (state.source == SnowCanvasStyleToolbarSource::DefaultRectangleHighlight ||
+                state.source == SnowCanvasStyleToolbarSource::SelectedRectangleHighlight) {
+         activeStyleTool = Tool::RectangleHighlight;
+     } else if (state.source == SnowCanvasStyleToolbarSource::DefaultPenHighlight ||
+                state.source == SnowCanvasStyleToolbarSource::SelectedPenHighlight) {
+         activeStyleTool = Tool::PenHighlight;
+     } else if (state.source == SnowCanvasStyleToolbarSource::DefaultSpotlight ||
+                state.source == SnowCanvasStyleToolbarSource::SelectedSpotlight) {
+         activeStyleTool = Tool::Spotlight;
+     } else if (state.source == SnowCanvasStyleToolbarSource::DefaultText ||
+                state.source == SnowCanvasStyleToolbarSource::SelectedText) {
+         activeStyleTool = Tool::Text;
+     } else if (state.source == SnowCanvasStyleToolbarSource::DefaultSerialNumber ||
+                state.source == SnowCanvasStyleToolbarSource::SelectedSerialNumber) {
+         activeStyleTool = Tool::SerialNumber;
+     } else if (state.source == SnowCanvasStyleToolbarSource::DefaultRectangle ||
+                state.source == SnowCanvasStyleToolbarSource::SelectedRectangle) {
+         activeStyleTool = Tool::Shape;
+     } else {
+         styleToolbarChanged = false;
+     }
+ 
+     if (styleToolbarChanged && styleToolbarActive) {
+         static_cast<void>(ensureStyleFamily(activeStyleTool));
+         if (setStyleControlsActive(activeStyleTool)) {
+             updateToolbarGeometry();
+             update();
+             emit visibleContentChanged();
+         }
+     }
+ }
+ 
+ void ScreenshotToolPalette::setWatermarkConfig(const SnowCanvasWatermarkConfig& config) {
+     m_styleControls->setWatermarkConfig(config);
+ }
+ 
+ void ScreenshotToolPalette::setSpotlightConfig(const SnowCanvasSpotlightConfig& config) {
+     m_styleControls->styleState().spotlightConfig = config;
+     m_styleControls->updateSpotlightColorControls(config.color);
+     if (m_spotlightOpacitySlider != nullptr) {
+         const QSignalBlocker blocker(m_spotlightOpacitySlider);
+         m_spotlightOpacitySlider->setValue(qRound(std::clamp(config.opacity, 0.0, 1.0) * 100.0));
+         m_spotlightOpacitySlider->setAccessibleDescription(
+             QStringLiteral("%1%").arg(qRound(m_spotlightOpacitySlider->value())));
+     }
+ }
+ 
+ void ScreenshotToolPalette::updateToolbarGeometry() {
+     markLayoutDirty();
+     ensureLayoutApplied();
+ }
+ 
+-bool ScreenshotToolPalette::setLogicalClientExtent(const QSize& extent) {
+-    const QSize normalized = extent.isValid() && !extent.isEmpty() ? extent : QSize();
+-    if (m_logicalClientExtent == normalized) {
+-        return false;
+-    }
+-    m_logicalClientExtent = normalized;
+-    if (m_logicalClientExtent.isEmpty()) {
+-        m_shadowMargins = scaledMargins(m_baseShadowMargins.left(), m_baseShadowMargins.top(),
+-                                        m_baseShadowMargins.right(), m_baseShadowMargins.bottom());
+-    }
+-    markLayoutDirty(false);
+-    return true;
+-}
+-
+ void ScreenshotToolPalette::updateStyleToolbarGeometryOnly() {
+     SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.style_panel_geometry");
+     if (m_rectangleStylePanel == nullptr) {
+         return;
+     }
+ 
+     m_rectangleStylePanel->ensurePolished();
+     const QSize styleSize = styleToolbarSizeHint();
+     if (m_rectangleStylePanel->size() != styleSize ||
+         m_rectangleStylePanel->minimumSize() != styleSize ||
+         m_rectangleStylePanel->maximumSize() != styleSize) {
+         m_rectangleStylePanel->setFixedSize(styleSize);
+     }
+-    if (m_styleReserveWidget != nullptr) {
+-        const QRect reserveGeometry = m_styleReserveWidget->geometry();
+-        const QPoint targetPosition(
+-            reserveGeometry.right() - m_rectangleStylePanel->width() + 1,
+-            m_styleToolbarAboveMain ? reserveGeometry.bottom() - m_rectangleStylePanel->height() + 1
+-                                    : reserveGeometry.top());
+-        if (m_rectangleStylePanel->pos() != targetPosition) {
+-            m_rectangleStylePanel->move(targetPosition);
+-        }
+-    }
+-
+-    QRect occupied = m_layoutResult.mainToolbarContentRect;
+-    if (m_actionToolbarTargetVisible) {
+-        occupied = occupied.united(panelContentRect(m_selectActionPanel));
+-    }
+-    if (m_styleToolbarTargetVisible) {
+-        occupied = occupied.united(panelContentRect(m_rectangleStylePanel));
+-    }
+-    m_layoutResult.occupiedContentRect = occupied;
+-    ++m_layoutResult.revision;
++    // The root layout owns both row geometry and the palette extent.  Re-run
++    // that single path after an active editor changes size so no stale row
++    // position can leak into placement snapshots.
++    updateToolbarGeometry();
+ }
+ 
+ void ScreenshotToolPalette::markLayoutDirty(bool rowOrderChanged) {
+     m_layoutDirty = true;
+     m_rowOrderDirty = m_rowOrderDirty || rowOrderChanged;
+ }
+ 
+ void ScreenshotToolPalette::ensureLayoutApplied() const {
+     SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.ensure_layout_applied");
+     if (!m_layoutDirty) {
+         return;
+     }
+ 
+     auto* self = const_cast<ScreenshotToolPalette*>(this);
+     self->m_layoutDirty = false;
+     if (self->m_rootLayout == nullptr || self->m_mainPanel == nullptr) {
+         return;
+     }
+ 
+     self->commitLayout();
+     self->m_layoutResult.paletteSize = self->size();
+-    self->m_layoutResult.contentSize = self->contentSizeForStyleToolbarVisibility(true);
++    self->m_layoutResult.contentSize = self->contentSizeForVisibleRows();
+     self->m_layoutResult.contentOffset = self->contentOffset();
+-    self->m_layoutResult.fullContentRect = QRect(QPoint(0, 0), self->m_layoutResult.contentSize);
++    self->m_layoutResult.fullContentRect =
++        QRect(QPoint(0, 0), self->fullContentSize());
+     self->m_layoutResult.mainToolbarContentRect = self->panelContentRect(self->m_mainPanel);
+     QRect cachedOccupied = self->m_layoutResult.mainToolbarContentRect;
+     if (self->m_actionToolbarTargetVisible) {
+         cachedOccupied = cachedOccupied.united(self->panelContentRect(self->m_selectActionPanel));
+     }
+     if (self->m_styleToolbarTargetVisible) {
+         cachedOccupied = cachedOccupied.united(self->panelContentRect(self->m_rectangleStylePanel));
+     }
+     self->m_layoutResult.occupiedContentRect = cachedOccupied;
+     ++self->m_layoutResult.revision;
+     SNOW_SHOT_TOOLBAR_PERF_COUNTER("layout.commit");
+ #if defined(SNOW_SHOT_TEST_HOOKS)
+     ++self->m_layoutCommitCount;
+ #endif
+ }
+ 
+ void ScreenshotToolPalette::commitLayout() {
+     SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.layout_commit");
+     if (m_rootLayout == nullptr || m_mainPanel == nullptr) {
+         return;
+     }
+ 
+-    bool rootLayoutNeedsActivation = m_rowOrderDirty;
+     m_mainPanel->ensurePolished();
+     const QSize mainSize = m_mainPanel->sizeHint();
+     if (m_mainPanel->size() != mainSize || m_mainPanel->minimumSize() != mainSize ||
+         m_mainPanel->maximumSize() != mainSize) {
+         m_mainPanel->setFixedSize(mainSize);
+-        rootLayoutNeedsActivation = true;
++    }
++    if (m_selectActionPanel != nullptr) {
++        m_selectActionPanel->ensurePolished();
++        const QSize actionSize = m_selectActionPanel->sizeHint();
++        if (m_selectActionPanel->size() != actionSize ||
++            m_selectActionPanel->minimumSize() != actionSize ||
++            m_selectActionPanel->maximumSize() != actionSize) {
++            m_selectActionPanel->setFixedSize(actionSize);
++        }
+     }
+     if (m_rectangleStylePanel != nullptr) {
+         m_rectangleStylePanel->ensurePolished();
+-
+         const QSize styleSize = styleToolbarSizeHint();
+         if (m_rectangleStylePanel->size() != styleSize ||
+             m_rectangleStylePanel->minimumSize() != styleSize ||
+             m_rectangleStylePanel->maximumSize() != styleSize) {
+             m_rectangleStylePanel->setFixedSize(styleSize);
+         }
+-        if (m_styleReserveWidget != nullptr) {
+-            QSize actionSize;
+-            if (m_selectActionPanel != nullptr) {
+-                m_selectActionPanel->ensurePolished();
+-                actionSize = m_selectActionPanel->sizeHint();
+-                if (m_selectActionPanel->size() != actionSize ||
+-                    m_selectActionPanel->minimumSize() != actionSize ||
+-                    m_selectActionPanel->maximumSize() != actionSize) {
+-                    m_selectActionPanel->setFixedSize(actionSize);
+-                }
+-            }
+-            if (m_secondaryToolbarPresetSize.isEmpty()) {
+-                static_cast<void>(styleToolbarPresetSizeHint());
+-                if (!actionSize.isEmpty()) {
+-                    const QSize baseActionSize(
+-                        qMax(1, qRound(actionSize.width() / m_physicalScale)),
+-                        qMax(1, qRound(actionSize.height() / m_physicalScale)));
+-                    m_secondaryToolbarBasePresetSize =
+-                        m_secondaryToolbarBasePresetSize.expandedTo(baseActionSize);
+-                }
+-                m_secondaryToolbarPresetSize = QSize(
+-                    qMax(1, qRound(m_secondaryToolbarBasePresetSize.width() * m_physicalScale)),
+-                    qMax(1, qRound(m_secondaryToolbarBasePresetSize.height() * m_physicalScale)));
+-            }
+-            if (m_styleReserveWidget->size() != m_secondaryToolbarPresetSize ||
+-                m_styleReserveWidget->minimumSize() != m_secondaryToolbarPresetSize ||
+-                m_styleReserveWidget->maximumSize() != m_secondaryToolbarPresetSize) {
+-                m_styleReserveWidget->setFixedSize(m_secondaryToolbarPresetSize);
+-                rootLayoutNeedsActivation = true;
+-            }
+-        }
+-    }
+-    const QSize contentSize = contentSizeForStyleToolbarVisibility(true);
+-    if (!m_logicalClientExtent.isEmpty()) {
+-        m_shadowMargins.setRight(std::max(0, m_logicalClientExtent.width() - contentSize.width() -
+-                                                 m_shadowMargins.left()));
+-        m_shadowMargins.setBottom(std::max(0, m_logicalClientExtent.height() -
+-                                                  contentSize.height() - m_shadowMargins.top()));
+     }
++    const QSize contentSize = contentSizeForVisibleRows();
+     const QSize paletteSize = contentSize + QSize(m_shadowMargins.left() + m_shadowMargins.right(),
+                                                   m_shadowMargins.top() + m_shadowMargins.bottom());
+     if (m_rootLayout->contentsMargins() != m_shadowMargins) {
+         m_rootLayout->setContentsMargins(m_shadowMargins.left(), m_shadowMargins.top(),
+                                          m_shadowMargins.right(), m_shadowMargins.bottom());
+-        rootLayoutNeedsActivation = true;
+     }
+     const int rowSpacing = scaledMetric(TOOLBAR_ROW_SPACING);
+     if (m_rootLayout->spacing() != rowSpacing) {
+         m_rootLayout->setSpacing(rowSpacing);
+-        rootLayoutNeedsActivation = true;
+     }
+     if (size() != paletteSize || minimumSize() != paletteSize || maximumSize() != paletteSize) {
+         setFixedSize(paletteSize);
+-        rootLayoutNeedsActivation = true;
+     }
+     updateToolbarRowGeometry(m_styleToolbarTargetVisible);
+-    if (rootLayoutNeedsActivation && layout() != nullptr) {
++    // Always activate after visibility/order changes.  This is the synchronous
++    // boundary used by placement callers and prevents first-show geometry from
++    // observing a pre-layout child size.
++    if (layout() != nullptr) {
+         layout()->activate();
+     }
+-    updateSecondaryToolbarPanelGeometry();
+ }
+ 
+ QSize ScreenshotToolPalette::styleToolbarSizeHint() {
+     if (m_rectangleStylePanel == nullptr || m_rectangleStyleLayout == nullptr) {
+         return {};
+     }
+ 
+     QSize controlsSize;
+     if (m_activeStyleControlsWidget != nullptr) {
+         if (m_activeStyleControlsWidget->layout() != nullptr) {
+             m_activeStyleControlsWidget->layout()->activate();
+             controlsSize = m_activeStyleControlsWidget->layout()->sizeHint();
+         } else {
+             controlsSize = m_activeStyleControlsWidget->sizeHint();
+         }
+     }
+ 
+     const QMargins margins = m_rectangleStyleLayout->contentsMargins();
+     const QSize intrinsicSize =
+         controlsSize + QSize(margins.left() + margins.right(), margins.top() + margins.bottom());
+     return intrinsicSize;
+ }
+ 
+-QSize ScreenshotToolPalette::styleToolbarPresetSizeHint() {
++QSize ScreenshotToolPalette::maximumSecondaryToolbarSizeHint() const {
+     if (m_rectangleStylePanel == nullptr || m_rectangleStyleLayout == nullptr) {
+         return {};
+     }
+ 
+     QSize controlsSize;
+     const QWidget* controlGroups[] = {
+         m_rectangleStyleControlsWidget,    m_arrowStyleControlsWidget,
+         m_highlightStyleControlsWidget,    m_penHighlightStyleControlsWidget,
+         m_spotlightStyleControlsWidget,    m_textStyleControlsWidget,
+         m_serialNumberStyleControlsWidget, m_watermarkStyleControlsWidget,
+     };
+     for (const QWidget* group : controlGroups) {
+         if (group == nullptr) {
+             continue;
+         }
+ 
+         if (group->layout() != nullptr) {
+             group->layout()->activate();
+         }
+         controlsSize = controlsSize.expandedTo(group->sizeHint());
+     }
+ 
+     const QMargins margins = m_rectangleStyleLayout->contentsMargins();
+-    const QSize result =
+-        controlsSize + QSize(margins.left() + margins.right(), margins.top() + margins.bottom());
+-    if (!result.isEmpty()) {
+-        const QSize intrinsicBase(qMax(1, qRound(result.width() / m_physicalScale)),
+-                                  qMax(1, qRound(result.height() / m_physicalScale)));
+-        m_secondaryToolbarBasePresetSize =
+-            m_secondaryToolbarBasePresetSize.expandedTo(intrinsicBase);
+-    }
+-    if (m_secondaryToolbarBasePresetSize.isValid()) {
+-        return QSize(qMax(1, qRound(m_secondaryToolbarBasePresetSize.width() * m_physicalScale)),
+-                     qMax(1, qRound(m_secondaryToolbarBasePresetSize.height() * m_physicalScale)));
+-    }
+-    return result;
++    return controlsSize + QSize(margins.left() + margins.right(), margins.top() + margins.bottom());
+ }
+ 
+ int ScreenshotToolPalette::scaledMetric(int value) const {
+     if (value <= 0) {
+         return 0;
+     }
+     return qMax(1, qRound(static_cast<qreal>(value) * m_physicalScale));
+ }
+ 
+ qreal ScreenshotToolPalette::scaledMetric(qreal value) const {
+     return value * m_physicalScale;
+ }
+ 
+ QMargins ScreenshotToolPalette::scaledMargins(int left, int top, int right, int bottom) const {
+     return QMargins(scaledMetric(left), scaledMetric(top), scaledMetric(right),
+                     scaledMetric(bottom));
+ }
+ 
+ QMargins ScreenshotToolPalette::scaledPanelMargins(int horizontalMargin, int verticalMargin,
+                                                    int baseContentHeight) const {
+     const int horizontal = scaledMetric(horizontalMargin);
+     const int contentHeight = scaledMetric(baseContentHeight);
+     const int totalHeight = scaledMetric(baseContentHeight + verticalMargin * 2);
+     const int top = std::min(scaledMetric(verticalMargin),
+                              std::max(0, totalHeight - contentHeight));
+     const int bottom = std::max(0, totalHeight - contentHeight - top);
+     return QMargins(horizontal, top, horizontal, bottom);
+ }
+ 
+ void ScreenshotToolPalette::addMainToolbarSpacing(int baseSpacing) {
+     if (m_mainPanel != nullptr) {
+         m_mainPanel->addSpacing(baseSpacing);
+     }
+ }
+ 
+ void ScreenshotToolPalette::addMainToolbarSeparator() {
+     if (m_mainPanel != nullptr) {
+         m_mainPanel->addSeparator();
+     }
+ }
+ 
+ QSpacerItem* ScreenshotToolPalette::addStyleToolbarSpacing(QBoxLayout* layout, int baseSpacing) {
+     if (layout == nullptr) {
+         return nullptr;
+     }
+ 
+     auto* spacer =
+         new QSpacerItem(scaledMetric(baseSpacing), 0, QSizePolicy::Fixed, QSizePolicy::Minimum);
+     layout->addSpacerItem(spacer);
+     m_styleSpacingItems.push_back(SpacingItem{spacer, layout->parentWidget(), baseSpacing});
+     return spacer;
+ }
+ 
+ QSpacerItem* ScreenshotToolPalette::insertStyleToolbarSpacing(QBoxLayout* layout, int index,
+                                                               int baseSpacing) {
+     if (layout == nullptr) {
+         return nullptr;
+     }
+ 
+     auto* spacer =
+         new QSpacerItem(scaledMetric(baseSpacing), 0, QSizePolicy::Fixed, QSizePolicy::Minimum);
+     layout->insertSpacerItem(index, spacer);
+     m_styleSpacingItems.push_back(SpacingItem{spacer, layout->parentWidget(), baseSpacing});
+     return spacer;
+ }
+ 
+ void ScreenshotToolPalette::setStyleToolbarSpacingVisible(QSpacerItem* spacer, bool visible) {
+     if (spacer == nullptr) {
+         return;
+     }
+ 
+     for (SpacingItem& item : m_styleSpacingItems) {
+         if (item.item != spacer) {
+             continue;
+         }
+ 
+         item.visible = visible;
+         spacer->changeSize(visible ? scaledMetric(item.baseSpacing) : 0, 0, QSizePolicy::Fixed,
+                            QSizePolicy::Minimum);
+         if (m_rectangleStyleControlsWidget != nullptr) {
+@@ -2138,167 +2065,160 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
+ 
+     if (m_mainPanel != nullptr) {
+         m_mainPanel->setPhysicalScale(m_physicalScale);
+     }
+     for (const DrawingToolGroup& group : std::as_const(m_drawingToolGroups)) {
+         if (group.ownsTrigger) {
+             configureScreenshotToolPaletteBaseButton(group.trigger, nullptr,
+                                                      actionButtonMetrics(m_physicalScale));
+         }
+         configureScreenshotToolPaletteOptionPopoverEditor(
+             group.popover, group.optionButtons, TOOLBAR_ITEM_SPACING, actionButtonMetrics(1.0));
+     }
+     const ScreenshotToolPaletteButtonMetrics popupMetrics = actionButtonMetrics(1.0);
+     configureScreenshotToolPaletteOptionPopoverEditor(m_tableQrPopover, m_tableQrOptionButtons,
+                                                       TOOLBAR_ITEM_SPACING, popupMetrics);
+ 
+     applyStyleMetricsForScope(m_activeStyleControlsWidget);
+ 
+     if (m_selectActionPanel != nullptr) {
+         const auto metrics = actionButtonMetrics(m_physicalScale);
+         for (adqt::widgets::AdButton* button :
+              m_selectActionPanel->findChildren<adqt::widgets::AdButton*>()) {
+             if (button != nullptr) {
+                 const QByteArray tooltip = button->toolTip().toUtf8();
+                 configureScreenshotToolPaletteStyleButton(button, tooltip.constData(), metrics);
+             }
+         }
+         for (adqt::widgets::AdButton* button :
+              {m_scrollingVerticalButton, m_scrollingHorizontalButton}) {
+             configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
+         }
+         if (m_scrollingRecognitionControls != nullptr &&
+             m_scrollingRecognitionControls->layout() != nullptr) {
+             m_scrollingRecognitionControls->layout()->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
+         }
+         ScreenshotToolPaletteSliderEditor opacityEditor;
+         opacityEditor.icon = m_selectionOpacityIcon;
+         opacityEditor.slider = m_selectionOpacitySlider;
+         opacityEditor.iconRef = custom_outlined_icons::Opacity();
+         opacityEditor.baseIconSize = STYLE_ICON_SIZE;
+         opacityEditor.baseSliderWidth = COMPACT_SLIDER_WIDTH;
+         configureScreenshotToolPaletteSliderEditor(opacityEditor, metrics);
+         updateSelectionOpacityIcon();
+     }
+ 
+     if (m_rectangleStyleLayout != nullptr) {
+         m_rectangleStyleLayout->setContentsMargins(scaledPanelMargins(
+             STYLE_PANEL_HORIZONTAL_MARGIN, STYLE_PANEL_VERTICAL_MARGIN, STYLE_BUTTON_SIZE));
+         m_rectangleStyleLayout->setSpacing(0);
+         m_rectangleStyleLayout->invalidate();
+     }
+     if (m_selectActionLayout != nullptr) {
+         m_selectActionLayout->setContentsMargins(scaledPanelMargins(
+             TOOLBAR_PANEL_HORIZONTAL_MARGIN, TOOLBAR_PANEL_VERTICAL_MARGIN, 32));
+         m_selectActionLayout->setSpacing(0);
+         m_selectActionLayout->invalidate();
+     }
+ 
+     for (QFrame* separator : std::as_const(m_styleSeparatorFrames)) {
+         if (separator != nullptr && m_selectActionPanel != nullptr &&
+             (separator->parentWidget() == m_selectActionPanel ||
+              m_selectActionPanel->isAncestorOf(separator))) {
+             separator->setFixedSize(scaledMetric(TOOLBAR_SEPARATOR_WIDTH),
+                                     scaledMetric(TOOLBAR_SEPARATOR_HEIGHT));
+         }
+     }
+     for (const SpacingItem& item : std::as_const(m_styleSpacingItems)) {
+         if (item.item != nullptr && item.owner != nullptr && m_selectActionPanel != nullptr &&
+             (item.owner == m_selectActionPanel || m_selectActionPanel->isAncestorOf(item.owner))) {
+             item.item->changeSize(item.visible ? scaledMetric(item.baseSpacing) : 0, 0,
+                                   QSizePolicy::Fixed, QSizePolicy::Minimum);
+         }
+     }
+     applyCumulativeStyleLayoutMetrics(m_selectActionPanel);
+ 
+     for (QFrame* panel : m_panelFrames) {
+         updatePanelMetrics(panel);
+     }
+ 
+     updateRecordingControlMetrics();
+-    if (m_secondaryToolbarBasePresetSize.isValid()) {
+-        m_secondaryToolbarPresetSize =
+-            QSize(qMax(1, qRound(m_secondaryToolbarBasePresetSize.width() * m_physicalScale)),
+-                  qMax(1, qRound(m_secondaryToolbarBasePresetSize.height() * m_physicalScale)));
+-    } else {
+-        m_secondaryToolbarPresetSize = QSize();
+-    }
+     updateToolbarGeometry();
+ }
+ 
+ void ScreenshotToolPalette::applyStyleMetricsForScope(QWidget* scope) {
+     if (scope == nullptr || m_styleMetricRevisions.value(scope) == m_metricProfileRevision) {
+         return;
+     }
+ 
+     ScreenshotToolPaletteButtonMetrics metrics = styleButtonMetrics(m_physicalScale);
+     metrics.scope = scope;
+     if (m_styleControls != nullptr) {
+         m_styleControls->refreshToolbarMetrics(metrics);
+     }
+     for (adqt::widgets::AdRadioButtonGroup* group : m_highlightModeGroups) {
+         configureScreenshotToolPaletteStyleRadioButtonGroup(group, metrics);
+     }
+     for (adqt::widgets::AdRadioButtonGroup* group : m_filterModeGroups) {
+         configureScreenshotToolPaletteStyleRadioButtonGroup(group, metrics);
+     }
+ 
+     if (scope == m_filterStyleControlsWidget) {
+         refreshFilterEditorMetrics(m_filterEditor);
+     }
+     if (scope == m_penFilterStyleControlsWidget) {
+         refreshFilterEditorMetrics(m_penFilterEditor);
+     }
+     if (scope == m_spotlightStyleControlsWidget) {
+         ScreenshotToolPaletteSliderEditor spotlightEditor;
+         spotlightEditor.icon = m_spotlightOpacityIcon;
+         spotlightEditor.slider = m_spotlightOpacitySlider;
+         spotlightEditor.iconRef = custom_outlined_icons::Opacity();
+         spotlightEditor.baseIconSize = COMPACT_SLIDER_ICON_SIZE;
+         spotlightEditor.baseSliderWidth = COMPACT_SLIDER_WIDTH;
+         configureScreenshotToolPaletteSliderEditor(spotlightEditor, metrics);
+     }
+ 
+     for (QFrame* separator : std::as_const(m_styleSeparatorFrames)) {
+         if (separator != nullptr && scope->isAncestorOf(separator)) {
+             separator->setFixedSize(scaledMetric(TOOLBAR_SEPARATOR_WIDTH),
+                                     scaledMetric(TOOLBAR_SEPARATOR_HEIGHT));
+         }
+     }
+     for (const SpacingItem& item : std::as_const(m_styleSpacingItems)) {
+         if (item.item != nullptr && item.owner != nullptr &&
+             (item.owner == scope || scope->isAncestorOf(item.owner))) {
+             item.item->changeSize(item.visible ? scaledMetric(item.baseSpacing) : 0, 0,
+                                   QSizePolicy::Fixed, QSizePolicy::Minimum);
+         }
+     }
+     if (QBoxLayout* layout = qobject_cast<QBoxLayout*>(scope->layout())) {
+         layout->invalidate();
+     }
+     applyCumulativeStyleLayoutMetrics(scope);
+     m_styleMetricRevisions.insert(scope, m_metricProfileRevision);
+ }
+ 
+ void ScreenshotToolPalette::initializeStyleLayoutProfiles() {
+     for (QBoxLayout* layout : std::as_const(m_styleControlLayouts)) {
+         if (layout == nullptr) {
+             continue;
+         }
+ 
+         auto existingProfile = std::find_if(
+             m_styleLayoutProfiles.begin(), m_styleLayoutProfiles.end(),
+             [layout](const StyleLayoutProfile& profile) { return profile.layout == layout; });
+         const qsizetype managedItemCount =
+             existingProfile == m_styleLayoutProfiles.end()
+                 ? 0
+                 : existingProfile->segments.size() + existingProfile->automaticGaps.size();
+         if (existingProfile != m_styleLayoutProfiles.end() &&
+             static_cast<qsizetype>(layout->count()) == managedItemCount) {
+             continue;
+         }
+ 
+         layout->activate();
+         const QMargins margins = layout->contentsMargins();
+         const qreal referenceScale = std::max<qreal>(0.01, m_physicalScale);
+         const int originalReferenceWidth = qMax(
+             0, qRound(static_cast<qreal>(
+                           layout->sizeHint().width() - margins.left() - margins.right()) /
+@@ -2855,378 +2775,366 @@ void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
+         break;
+     case Tool::TextTranslation:
+         emit textTranslationRequested();
+         break;
+     case Tool::Table:
+         emit tableRequested();
+         break;
+     case Tool::Qr:
+         emit qrRequested();
+         break;
+     case Tool::ScrollingScreenshot:
+         emit scrollingScreenshotRequested();
+         break;
+     default:
+         break;
+     }
+ }
+ 
+ void ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibleButton) {
+     // Toolbar clicks are toggle-like: clicking the active drawing/action tool
+     // returns to selection mode. Programmatic setActiveTool() calls remain
+     // explicit so state synchronization does not unexpectedly toggle.
+     adqt::widgets::AdButton* requestedButton = nullptr;
+     switch (tool) {
+     case Tool::Move:
+         requestedButton = m_moveButton;
+         break;
+     case Tool::Select:
+         requestedButton = m_selectButton;
+         break;
+     case Tool::Ocr:
+         requestedButton = m_ocrButton;
+         break;
+     case Tool::TextTranslation:
+         requestedButton = m_textTranslationButton;
+         break;
+     case Tool::Table:
+     case Tool::Qr:
+         requestedButton = m_tableButton;
+         break;
+     case Tool::ScrollingScreenshot:
+         requestedButton = m_scrollingScreenshotButton;
+         break;
+     default:
+         requestedButton = drawingToolEntryButton(tool);
+         break;
+     }
+     const bool alreadyActive = !toggleVisibleButton
+                                    ? m_activeTool.has_value() && *m_activeTool == tool
+                                : requestedButton != nullptr
+                                    ? m_activeToolButton == requestedButton
+                                    : m_activeTool.has_value() && *m_activeTool == tool;
+     const Tool requestedTool = alreadyActive && tool != Tool::Select ? Tool::Select : tool;
+     activateDrawingTool(requestedTool);
+ }
+ 
+ void ScreenshotToolPalette::selectDrawingToolGroupEntry(Tool tool) {
+     const Tool entryTool = toolbarFacingDrawingTool(tool);
+     const QString itemId = drawingToolItemId(entryTool);
+     for (int groupIndex = 0; groupIndex < m_drawingToolGroups.size(); ++groupIndex) {
+         DrawingToolGroup& group = m_drawingToolGroups[groupIndex];
+         if (!group.itemIds.contains(itemId) || group.entryTool == entryTool) {
+             continue;
+         }
+         group.entryTool = entryTool;
+         refreshDrawingToolGroup(groupIndex);
+         return;
+     }
+ }
+ 
+ void ScreenshotToolPalette::refreshDrawingToolGroup(int groupIndex) {
+     if (groupIndex < 0 || groupIndex >= m_drawingToolGroups.size()) {
+         return;
+     }
+     DrawingToolGroup& group = m_drawingToolGroups[groupIndex];
+     const QString itemId = drawingToolItemId(group.entryTool);
+     const toolbar_layout::Descriptor* descriptor = toolbar_layout::descriptor(itemId);
+     if (group.trigger == nullptr || descriptor == nullptr) {
+         return;
+     }
+-    if (group.popover != nullptr) {
+-        configureScreenshotToolPalettePopoverTrigger(group.trigger, descriptor->label);
+-        const QSet<QString> items(group.itemIds.cbegin(), group.itemIds.cend());
+-        if (items != QSet<QString>{QStringLiteral("arrow"), QStringLiteral("line")}) {
+-            applyDrawingShortcutTooltip(group.trigger, QString::fromUtf8(descriptor->label),
+-                                        itemId);
+-        }
+-    } else {
+-        configureScreenshotToolPaletteTooltip(group.trigger, descriptor->label);
+-        applyDrawingShortcutTooltip(group.trigger, QString::fromUtf8(descriptor->label), itemId);
+-    }
++    configureScreenshotToolPaletteTooltip(group.trigger, descriptor->label);
++    applyDrawingShortcutTooltip(group.trigger, QString::fromUtf8(descriptor->label), itemId);
+     setScreenshotToolPaletteToolButtonIcon(group.trigger, toolbar_layout::icon(descriptor->icon));
+     group.trigger->setProperty("screenshotToolbarItemId", itemId);
+     group.trigger->setProperty("screenshotToolbarPositionItems", group.itemIds);
+     for (adqt::widgets::AdButton* optionButton : group.optionButtons) {
+         if (optionButton == nullptr) {
+             continue;
+         }
+         applyDrawingShortcutTooltip(
+             optionButton,
+             optionButton->property("snowShotDrawingShortcutTooltipSource").toString(),
+             optionButton->property("screenshotToolbarItemId").toString());
+     }
+     const int activeValue = m_activeTool.has_value()
+                                 ? static_cast<int>(toolbarFacingDrawingTool(*m_activeTool))
+                                 : -1;
+     updateScreenshotToolPaletteOptionPopoverEditor(group.optionButtons, group.optionValues,
+                                                    activeValue);
+ }
+ 
+ void ScreenshotToolPalette::ensureDrawingToolGroupPopover(adqt::widgets::AdButton* trigger) {
+     for (DrawingToolGroup& group : m_drawingToolGroups) {
+         if (group.trigger != trigger || group.popover == nullptr ||
+             group.popover->contentWidget() != nullptr || group.popoverConstructing) {
+             continue;
+         }
+         group.popoverConstructing = true;
+         ScreenshotToolPaletteOptionPopoverEditorConfig config;
+-        config.accessibleName = trigger->accessibleName();
+         const QSet<QString> items(group.itemIds.cbegin(), group.itemIds.cend());
+         if (items == QSet<QString>{QStringLiteral("arrow"), QStringLiteral("line")}) {
+             config.contentObjectName = QStringLiteral("screenshotArrowLinePopoverContent");
+         } else if (items ==
+                    QSet<QString>{QStringLiteral("highlighter"), QStringLiteral("spotlight")}) {
+             config.contentObjectName = QStringLiteral("screenshotHighlightPopoverContent");
+         } else {
+             config.contentObjectName = QStringLiteral("screenshotDrawingToolGroupPopoverContent");
+         }
+         config.optionSpacing = TOOLBAR_ITEM_SPACING;
+         for (const QString& itemId : std::as_const(group.popoverItemIds)) {
+             const toolbar_layout::Descriptor* descriptor = toolbar_layout::descriptor(itemId);
+             if (descriptor == nullptr) {
+                 continue;
+             }
+             config.options.push_back({
+                 static_cast<int>(drawingToolFromItem(descriptor->item)),
+                 QString::fromUtf8(descriptor->label), toolbar_layout::icon(descriptor->icon)});
+         }
+         const auto editor = materializeScreenshotToolPaletteOptionPopoverEditor(
+             group.popover, this, config,
+             [this](int value) { activateToolFromToolbar(static_cast<Tool>(value), false); },
+             actionButtonMetrics(1.0));
+         group.optionButtons = editor.buttons;
+         group.optionValues = editor.values;
+         for (int index = 0;
+              index < group.optionButtons.size() && index < group.popoverItemIds.size(); ++index) {
+             auto* button = group.optionButtons.at(index);
+             const QString itemId = group.popoverItemIds.at(index);
+             button->setObjectName(QStringLiteral("screenshotDrawingToolGroupOption-%1").arg(itemId));
+             button->setProperty("screenshotToolbarItemId", itemId);
+             const toolbar_layout::Descriptor* descriptor = toolbar_layout::descriptor(itemId);
+             if (descriptor != nullptr) {
+                 applyDrawingShortcutTooltip(button, QString::fromUtf8(descriptor->label), itemId);
+             }
+         }
+         group.popoverConstructing = false;
+         refreshDrawingToolGroup(static_cast<int>(&group - m_drawingToolGroups.data()));
+         if (group.popover->contentWidget() != nullptr) {
+             emit materializedScope(group.popover->contentWidget());
+         }
+         SNOW_SHOT_TOOLBAR_PERF_COUNTER("hydrate.group_popover");
+         return;
+     }
+ }
+ 
+ void ScreenshotToolPalette::ensureTableQrPopover() {
+     if (m_tableQrPopover == nullptr || m_tableQrPopover->contentWidget() != nullptr) {
+         return;
+     }
+     ScreenshotToolPaletteOptionPopoverEditorConfig config;
+-    config.accessibleName = QStringLiteral("Table recognition");
+     config.contentObjectName = QStringLiteral("screenshotTableQrPopoverContent");
+     config.optionSpacing = TOOLBAR_ITEM_SPACING;
+     config.options = {
+         {static_cast<int>(Tool::Table), QStringLiteral("Table recognition"),
+          custom_outlined_icons::TableRecognition()},
+         {static_cast<int>(Tool::Qr), QStringLiteral("QR code recognition"),
+          custom_outlined_icons::ScanQrcode()}};
+     const auto editor = materializeScreenshotToolPaletteOptionPopoverEditor(
+         m_tableQrPopover, this, config,
+         [this](int value) { activateTableQrTool(static_cast<Tool>(value), false); },
+         actionButtonMetrics(1.0));
+     m_tableQrOptionButtons = editor.buttons;
+     m_tableQrOptionValues = editor.values;
+     m_tableOptionButton = m_tableQrOptionButtons.value(0);
+     m_qrButton = m_tableQrOptionButtons.value(1);
+     if (m_tableOptionButton != nullptr) {
+         m_tableOptionButton->setObjectName(QStringLiteral("screenshotTableRecognitionOptionButton"));
+         m_tableOptionButton->setBusyIndicatorPresentation(
+             adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
+         applyScreenshotShortcutTooltip(m_tableOptionButton, QStringLiteral("Table recognition"),
+                                        QStringLiteral("table_recognition"));
+     }
+     if (m_qrButton != nullptr) {
+         m_qrButton->setObjectName(QStringLiteral("screenshotQrRecognitionOptionButton"));
+         m_qrButton->setBusyIndicatorPresentation(
+             adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
+         applyScreenshotShortcutTooltip(m_qrButton, QStringLiteral("QR code recognition"),
+                                        QStringLiteral("qr_code_recognition"));
+     }
+     updateTableQrBusy();
+     updateTableQrEnabled();
+     setActiveToolButton(m_activeToolButton);
+     emit materializedScope(m_tableQrPopover->contentWidget());
+     SNOW_SHOT_TOOLBAR_PERF_COUNTER("hydrate.table_qr_popover");
+ }
+ 
+ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
+     if (m_mainPanel == nullptr || !m_toolbarLayout.has_value()) {
+         return;
+     }
+ 
+     const snow_shot::storage::ScreenshotToolbarLayout normalized =
+         toolbar_layout::normalizedLayout(*m_toolbarLayout);
+     m_toolbarLayout = normalized;
+     m_mainPanel->resetContentLayout();
+     clearDrawingToolGroups();
+     QBoxLayout* layout = m_mainPanel->contentLayout();
+     if (layout == nullptr) {
+         return;
+     }
+ 
+     bool hasContent = false;
+     bool separated = false;
+     const auto addFixedWidget = [this, layout, &hasContent, &separated](QWidget* widget) {
+         if (widget == nullptr) {
+             return;
+         }
+         if (hasContent && !separated) {
+             addMainToolbarSpacing(TOOLBAR_ITEM_SPACING);
+         }
+         widget->show();
+         layout->addWidget(widget, 0, Qt::AlignBottom);
+         hasContent = true;
+         separated = false;
+     };
+     const auto addSeparator = [this, &hasContent, &separated]() {
+         if (hasContent && !separated) {
+             addMainToolbarSeparator();
+             separated = true;
+         }
+     };
+ 
+     addFixedWidget(m_moveButton);
+     addFixedWidget(m_selectButton);
+ 
+     bool hasDrawingPositions = false;
+     for (const QStringList& position : normalized.positions) {
+         QStringList availableItemIds;
+         QVector<Tool> tools;
+         for (const QString& itemId : position) {
+             const toolbar_layout::Descriptor* descriptor = toolbar_layout::descriptor(itemId);
+             if (descriptor == nullptr || drawingToolButton(itemId) == nullptr) {
+                 continue;
+             }
+             availableItemIds.push_back(itemId);
+             tools.push_back(drawingToolFromItem(descriptor->item));
+         }
+         if (tools.isEmpty()) {
+             continue;
+         }
+         if (!hasDrawingPositions &&
+             (m_options.separatorAfterSelect || m_options.separatorBeforeShape) && hasContent) {
+             addSeparator();
+         }
+         if (hasContent && !separated) {
+             addMainToolbarSpacing(TOOLBAR_ITEM_SPACING);
+         }
+         DrawingToolGroup group;
+         group.itemIds = availableItemIds;
+         group.tools = tools;
+         group.entryTool = tools.constLast();
+         if (tools.size() == 1) {
+             group.trigger = drawingToolButton(availableItemIds.constFirst());
+         } else {
+             const toolbar_layout::Descriptor* entryDescriptor =
+                 toolbar_layout::descriptor(availableItemIds.constLast());
+             if (entryDescriptor == nullptr) {
+                 continue;
+             }
+             group.trigger = createScreenshotToolPaletteToolButton(
+                 m_mainPanel, entryDescriptor->label, toolbar_layout::icon(entryDescriptor->icon),
+                 actionButtonMetrics(m_physicalScale));
+             group.ownsTrigger = true;
+             const QSet<QString> groupItems(availableItemIds.cbegin(), availableItemIds.cend());
+             const QSet<QString> arrowLineItems{QStringLiteral("arrow"), QStringLiteral("line")};
+             const QSet<QString> highlightItems{QStringLiteral("highlighter"),
+                                                QStringLiteral("spotlight")};
+             const bool arrowLineGroup = groupItems == arrowLineItems;
+             const bool highlightGroup = groupItems == highlightItems;
+             group.trigger->setObjectName(
+                 arrowLineGroup   ? QStringLiteral("screenshotArrowLineButton")
+                 : highlightGroup ? QStringLiteral("screenshotHighlightButton")
+                                  : QStringLiteral("screenshotDrawingToolGroupButton%1")
+                                        .arg(m_drawingToolGroups.size()));
+ 
+-            group.popover = createScreenshotToolPaletteOptionPopoverShell(
+-                group.trigger, QString::fromUtf8(entryDescriptor->label));
++            group.popover = createScreenshotToolPaletteOptionPopoverShell(group.trigger);
+             // AdPopover intentionally suppresses open requests while it has no content. Observe
+             // the trigger before the popover's hover delay elapses so the first real hover can
+             // materialize the options and continue through the normal opening path.
+             group.trigger->installEventFilter(this);
+             for (int optionIndex = availableItemIds.size() - 1; optionIndex >= 0; --optionIndex) {
+                 const toolbar_layout::Descriptor* descriptor =
+                     toolbar_layout::descriptor(availableItemIds.at(optionIndex));
+                 if (descriptor == nullptr) {
+                     continue;
+                 }
+                 group.popoverItemIds.push_back(availableItemIds.at(optionIndex));
+             }
+             connect(group.popover, &adqt::widgets::AdPopover::visibilityRequested, this,
+                     [this, trigger = group.trigger](bool visible) {
+                         if (visible) {
+                             ensureDrawingToolGroupPopover(trigger);
+                         }
+                     });
+             connect(group.trigger, &adqt::widgets::AdButton::pressed, this,
+                     [this, trigger = group.trigger]() {
+                         for (const DrawingToolGroup& candidate :
+                              std::as_const(m_drawingToolGroups)) {
+                             if (candidate.trigger == trigger) {
+                                 activateToolFromToolbar(candidate.entryTool);
+                                 return;
+                             }
+                         }
+                     });
+         }
+         if (group.trigger == nullptr) {
+             continue;
+         }
+         group.trigger->show();
+         layout->addWidget(group.trigger);
+         m_drawingToolGroups.push_back(group);
+         refreshDrawingToolGroup(m_drawingToolGroups.size() - 1);
+         hasContent = true;
+         separated = false;
+         hasDrawingPositions = true;
+     }
+ 
+     if (hasContent && (m_undoButton != nullptr || m_redoButton != nullptr)) {
+         addSeparator();
+     }
+     addFixedWidget(m_undoButton);
+     addFixedWidget(m_redoButton);
+ 
+     QVector<QWidget*> secondaryTools{m_tableButton, m_screenRecordButton, m_pinButton, m_ocrButton,
+                                      m_textTranslationButton, m_scrollingScreenshotButton,
+                                      m_options.saveButtonWithResultActions ? nullptr : m_saveButton};
+     secondaryTools.erase(std::remove(secondaryTools.begin(), secondaryTools.end(), nullptr),
+                          secondaryTools.end());
+     if (!secondaryTools.isEmpty() && hasContent) {
+         addSeparator();
+     }
+     for (QWidget* widget : secondaryTools) {
+         addFixedWidget(widget);
+     }
+ 
+     QVector<QWidget*> resultActions{
+         m_cancelButton,
+         m_options.saveButtonWithResultActions ? m_saveButton : nullptr,
+         m_copyButton,
+         m_confirmButton,
+     };
+     resultActions.erase(std::remove(resultActions.begin(), resultActions.end(), nullptr),
+                         resultActions.end());
+     if (!resultActions.isEmpty() && hasContent) {
+         addSeparator();
+     }
+     for (QWidget* widget : resultActions) {
+         if (widget == m_confirmButton && m_options.separatorBeforeConfirm && !separated) {
+             addSeparator();
+         }
+         addFixedWidget(widget);
+     }
+     if (m_options.showTrailingDragHandle) {
+         m_mainPanel->addTrailingDragHandle();
+     }
+ 
+@@ -3398,162 +3306,161 @@ void ScreenshotToolPalette::updateHistoryActionAvailability() {
+     const bool textActive =
+         m_activeTool == Tool::Ocr || m_activeTool == Tool::TextTranslation;
+     const bool qrActive = m_activeTool == Tool::Qr;
+     if (m_undoButton != nullptr) {
+         m_undoButton->setEnabled(qrActive      ? false
+                                  : tableActive ? m_tableEditingAvailable && m_tableCanUndo
+                                  : textActive  ? m_textEditingAvailable && m_textCanUndo
+                                                : m_canvasHistoryState.canUndo);
+     }
+     if (m_redoButton != nullptr) {
+         m_redoButton->setEnabled(qrActive      ? false
+                                  : tableActive ? m_tableEditingAvailable && m_tableCanRedo
+                                  : textActive  ? m_textEditingAvailable && m_textCanRedo
+                                                : m_canvasHistoryState.canRedo);
+     }
+ }
+ 
+ void ScreenshotToolPalette::updateTextRecognitionBusy() {
+     const bool translationActive = m_activeTool == Tool::TextTranslation;
+     if (m_ocrButton != nullptr) {
+         m_ocrButton->setBusy(m_ocrBusy && !translationActive);
+     }
+     if (m_textTranslationButton != nullptr) {
+         m_textTranslationButton->setBusy(
+             translationActive && (m_ocrBusy || m_textTranslationStreaming));
+     }
+ }
+ 
+ bool ScreenshotToolPalette::addMainHistoryButtons(const Options& options, QBoxLayout* layout) {
+     if (!options.showHistoryActions || layout == nullptr) {
+         return false;
+     }
+ 
+     m_undoButton = addActionButton("Undo", outlined_icons::Undo());
+     m_redoButton = addActionButton("Redo", outlined_icons::Redo());
+     applyScreenshotShortcutTooltip(m_undoButton, QStringLiteral("Undo"),
+                                    QStringLiteral("undo"));
+     applyScreenshotShortcutTooltip(m_redoButton, QStringLiteral("Redo"),
+                                    QStringLiteral("redo"));
+     m_undoButton->setObjectName(QStringLiteral("screenshotUndoButton"));
+     m_redoButton->setObjectName(QStringLiteral("screenshotRedoButton"));
+     m_undoButton->setEnabled(false);
+     m_redoButton->setEnabled(false);
+     layout->addWidget(m_undoButton);
+     addMainToolbarSpacing(TOOLBAR_ITEM_SPACING);
+     layout->addWidget(m_redoButton);
+     connect(m_undoButton, &adqt::widgets::AdButton::clicked, this,
+             &ScreenshotToolPalette::undoRequested);
+     connect(m_redoButton, &adqt::widgets::AdButton::clicked, this,
+             &ScreenshotToolPalette::redoRequested);
+     return true;
+ }
+ 
+ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBoxLayout* layout) {
+     if (layout == nullptr) {
+         return false;
+     }
+ 
+     bool hasButton = false;
+     const auto addButton = [this, layout, &hasButton](adqt::widgets::AdButton* button) {
+         if (button == nullptr) {
+             return;
+         }
+         if (hasButton) {
+             addMainToolbarSpacing(TOOLBAR_ITEM_SPACING);
+         }
+         layout->addWidget(button);
+         hasButton = true;
+     };
+ 
+     if (options.showTableTool && options.showQrTool) {
+         m_tableButton =
+             addToolButton("Table recognition", custom_outlined_icons::TableRecognition());
+         applyScreenshotShortcutTooltip(m_tableButton, QStringLiteral("Table recognition"),
+                                        QStringLiteral("table_recognition"));
+         m_tableButton->setObjectName(QStringLiteral("screenshotTableQrButton"));
+         m_tableButton->setBusyIndicatorPresentation(
+             adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
+         addButton(m_tableButton);
+ 
+-        m_tableQrPopover = createScreenshotToolPaletteOptionPopoverShell(
+-            m_tableButton, QStringLiteral("Table recognition"));
++        m_tableQrPopover = createScreenshotToolPaletteOptionPopoverShell(m_tableButton);
+         m_tableButton->installEventFilter(this);
+         connect(m_tableQrPopover, &adqt::widgets::AdPopover::visibilityRequested, this,
+                 [this](bool visible) {
+                     if (visible) {
+                         ensureTableQrPopover();
+                     }
+                 });
+         connect(m_tableButton, &adqt::widgets::AdButton::pressed, this,
+                 [this]() { activateTableQrTool(m_tableQrEntryTool); });
+         refreshTableQrTrigger();
+         updateTableQrBusy();
+     } else if (options.showTableTool) {
+         m_tableQrEntryTool = Tool::Table;
+         m_tableButton =
+             addToolButton("Table recognition", custom_outlined_icons::TableRecognition());
+         applyScreenshotShortcutTooltip(m_tableButton, QStringLiteral("Table recognition"),
+                                        QStringLiteral("table_recognition"));
+         m_tableButton->setBusyIndicatorPresentation(
+             adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
+         addButton(m_tableButton);
+         connect(m_tableButton, &adqt::widgets::AdButton::clicked, this,
+                 [this]() { activateTableQrTool(Tool::Table); });
+     } else if (options.showQrTool) {
+         m_tableQrEntryTool = Tool::Qr;
+         m_tableButton = addToolButton("QR code recognition", custom_outlined_icons::ScanQrcode());
+         applyScreenshotShortcutTooltip(m_tableButton, QStringLiteral("QR code recognition"),
+                                        QStringLiteral("qr_code_recognition"));
+         m_tableButton->setBusyIndicatorPresentation(
+             adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
+         addButton(m_tableButton);
+         connect(m_tableButton, &adqt::widgets::AdButton::clicked, this,
+                 [this]() { activateTableQrTool(Tool::Qr); });
+     }
+ 
+     if (options.showScreenRecordButton) {
+         m_screenRecordButton = addToolButton("Record screen", custom_outlined_icons::RecordScreen());
+         applyScreenshotShortcutTooltip(m_screenRecordButton, QStringLiteral("Record screen"),
+                                        QStringLiteral("video_recording"));
+         addButton(m_screenRecordButton);
+         connect(m_screenRecordButton, &adqt::widgets::AdButton::clicked, this,
+                 &ScreenshotToolPalette::screenRecordRequested);
+     }
+ 
+     if (!options.showRecordingControls && (options.actions & PinAction) != 0) {
+         m_pinButton = addActionButton("Pin to screen", custom_outlined_icons::PinToScreen());
+         applyScreenshotShortcutTooltip(m_pinButton, QStringLiteral("Pin to screen"),
+                                        QStringLiteral("pin_to_screen"));
+         m_pinButton->setObjectName(QStringLiteral("screenshotPinToScreenButton"));
+         addButton(m_pinButton);
+         connect(m_pinButton, &adqt::widgets::AdButton::clicked, this,
+                 &ScreenshotToolPalette::pinRequested);
+     }
+ 
+     if (options.showOcrTool) {
+         m_ocrButton = addToolButton("Text recognition", custom_outlined_icons::ToolRecognizeText());
+         applyScreenshotShortcutTooltip(m_ocrButton, QStringLiteral("Text recognition"),
+                                        QStringLiteral("text_recognition"));
+         m_ocrButton->setBusyIndicatorPresentation(
+             adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
+         addButton(m_ocrButton);
+         connect(m_ocrButton, &adqt::widgets::AdButton::clicked, this, [this]() {
+             activateToolFromToolbar(Tool::Ocr);
+         });
+     }
+ 
+     if (options.showTextTranslationTool) {
+         m_textTranslationButton =
+             addToolButton("Text Translation", custom_outlined_icons::OcrTranslate());
+         applyScreenshotShortcutTooltip(m_textTranslationButton, QStringLiteral("Text Translation"),
+                                        QStringLiteral("text_translation"));
+         m_textTranslationButton->setObjectName(QStringLiteral("screenshotTextTranslationButton"));
+         m_textTranslationButton->setBusyIndicatorPresentation(
+             adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
+         addButton(m_textTranslationButton);
+         connect(m_textTranslationButton, &adqt::widgets::AdButton::clicked, this, [this]() {
+             activateToolFromToolbar(Tool::TextTranslation);
+         });
+     }
+ 
+     if (options.showScrollingScreenshotTool) {
+@@ -3854,231 +3761,218 @@ ScreenshotToolPalette::createFilterEditor(const FilterEditorConfig& config) {
+             setPenFilterWidth, styleButtonMetrics(m_physicalScale));
+         addGroupSeparator();
+     }
+ 
+     ScreenshotToolPaletteSliderEditorConfig intensityConfig;
+     intensityConfig.iconObjectName = config.intensityIconObjectName;
+     intensityConfig.sliderObjectName = config.intensitySliderObjectName;
+     intensityConfig.accessibleName = QStringLiteral("Filter intensity");
+     intensityConfig.sliderTooltip = QStringLiteral("Adjust filter intensity");
+     intensityConfig.iconRef = custom_outlined_icons::Blur();
+     intensityConfig.initialValue = 50;
+     intensityConfig.baseIconSize = COMPACT_SLIDER_ICON_SIZE;
+     intensityConfig.baseSliderWidth = COMPACT_SLIDER_WIDTH;
+     const ScreenshotToolPaletteSliderEditor intensityEditor =
+         createScreenshotToolPaletteSliderEditor(layout, editor.controls, intensityConfig,
+                                                 styleButtonMetrics(m_physicalScale));
+     editor.intensityIcon = intensityEditor.icon;
+     editor.intensitySlider = intensityEditor.slider;
+ 
+     connect(editor.typeSelect, &adqt::widgets::AdSelect::currentValueChanged, this,
+             [this, tool = config.tool](const QVariant& value) {
+                 if (!value.canConvert<int>()) {
+                     return;
+                 }
+                 FilterEditor& target = tool == Tool::PenFilter ? m_penFilterEditor : m_filterEditor;
+                 SnowCanvasFilterStyle& style = filterStyleForEditor(target);
+                 style.type = static_cast<SnowCanvasFilterType>(value.toInt());
+                 if (tool == Tool::PenFilter) {
+                     m_styleControls->styleState().creationPenFilterStyle.type = style.type;
+                 } else {
+                     m_styleControls->styleState().creationRectangleFilterStyle.type = style.type;
+                 }
+                 if (target.intensitySlider != nullptr) {
+                     target.intensitySlider->setEnabled(filterTypeSupportsIntensity(style.type));
+                 }
+                 updateFilterIntensityIcon(target);
+                 emit filterStyleChanged(style, SnowCanvasFilterStylePropertyType);
+             });
+     connect(editor.intensitySlider, &adqt::widgets::AdSlider::valueChanged, this,
+             [this, tool = config.tool](double value) {
+                 FilterEditor& target = tool == Tool::PenFilter ? m_penFilterEditor : m_filterEditor;
+                 SnowCanvasFilterStyle& style = filterStyleForEditor(target);
+                 style.strength = qBound(0.0, value / 100.0, 1.0);
+                 if (tool == Tool::PenFilter) {
+                     m_styleControls->styleState().creationPenFilterStyle.strength = style.strength;
+                 } else {
+                     m_styleControls->styleState().creationRectangleFilterStyle.strength =
+                         style.strength;
+                 }
+                 emit filterStyleChanged(style, SnowCanvasFilterStylePropertyStrength);
+             });
+     refreshFilterEditorMetrics(editor);
+     return editor;
+ }
+ 
+ void ScreenshotToolPalette::createSecondaryToolbarShell() {
+     if (m_selectActionPanel != nullptr) {
+         return;
+     }
+     m_selectActionPanel = createPanel(this, QStringLiteral("screenshotSelectActionPanel"));
+     if (auto* frame = qobject_cast<QFrame*>(m_selectActionPanel)) {
+         m_panelFrames.push_back(frame);
+         updatePanelMetrics(frame);
+     }
+     m_selectActionLayout = new QHBoxLayout(m_selectActionPanel);
+     m_styleControlLayouts.push_back(m_selectActionLayout);
+     m_selectActionLayout->setContentsMargins(scaledPanelMargins(
+         TOOLBAR_PANEL_HORIZONTAL_MARGIN, TOOLBAR_PANEL_VERTICAL_MARGIN, 32));
+     m_selectActionLayout->setSpacing(0);
+ 
+     m_rectangleStylePanel = createPanel(this, QStringLiteral("screenshotRectangleStylePanel"));
+     if (auto* frame = qobject_cast<QFrame*>(m_rectangleStylePanel)) {
+         m_panelFrames.push_back(frame);
+         updatePanelMetrics(frame);
+     }
+     m_rectangleStyleLayout = new QVBoxLayout(m_rectangleStylePanel);
+     m_rectangleStyleLayout->setContentsMargins(scaledPanelMargins(
+         STYLE_PANEL_HORIZONTAL_MARGIN, STYLE_PANEL_VERTICAL_MARGIN, STYLE_BUTTON_SIZE));
+     m_rectangleStyleLayout->setSpacing(0);
+ 
+-    m_styleReserveWidget = new QWidget(this);
+-    m_styleReserveWidget->setObjectName(QStringLiteral("screenshotStyleToolbarReserve"));
+-    m_styleReserveWidget->setAttribute(Qt::WA_NoSystemBackground, true);
+-    m_styleReserveWidget->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+-    m_styleReserveWidget->setAutoFillBackground(false);
+-    m_styleReserveWidget->setFocusPolicy(Qt::NoFocus);
+-    m_styleReserveWidget->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+-
+     if (m_rootLayout != nullptr) {
+         m_rootLayout->addWidget(m_selectActionPanel, 0, Qt::AlignRight);
+         m_rootLayout->addWidget(m_rectangleStylePanel, 0, Qt::AlignRight);
+-        m_rootLayout->addWidget(m_styleReserveWidget, 0, Qt::AlignRight);
+     }
+     m_selectActionPanel->hide();
+     m_rectangleStylePanel->hide();
+ }
+ 
+ void ScreenshotToolPalette::registerStyleFamily(QWidget* controls,
+                                                 std::initializer_list<Tool> tools) {
+     if (controls == nullptr || m_rectangleStyleLayout == nullptr) {
+         return;
+     }
+     StyleEditorBinding binding;
+     binding.controls = controls;
+     for (Tool tool : tools) {
+         binding.tools.push_back(tool);
+         m_styleFamilyStates.insert(static_cast<int>(tool), MaterializationState::Ready);
+     }
+     m_styleEditorBindings.push_back(binding);
+     m_rectangleStyleLayout->addWidget(controls);
+     controls->hide();
+-    // Recompute the shell reserve after a lazy editor is added. This keeps
+-    // the editor inside the palette so popup anchors remain valid.
+-    m_secondaryToolbarPresetSize = QSize();
+     markLayoutDirty(false);
+     initializeStyleLayoutProfiles();
+     applyCumulativeStyleLayoutMetrics(controls);
+     installWheelFilters(this, controls);
+     emit materializedScope(controls);
+ }
+ 
+ bool ScreenshotToolPalette::ensureActionFamily(ActionFamily family) {
+     if (!m_options.enableStyleToolbar) {
+         return false;
+     }
+     createSecondaryToolbarShell();
+     const int key = static_cast<int>(family);
+     const MaterializationState state =
+         m_actionFamilyStates.value(key, MaterializationState::Uninitialized);
+     if (state == MaterializationState::Ready) {
+         return true;
+     }
+     if (state == MaterializationState::Constructing) {
+         return false;
+     }
+     m_actionFamilyStates.insert(key, MaterializationState::Constructing);
+     switch (family) {
+     case ActionFamily::Selection:
+         createSelectionActionFamily();
+         break;
+     case ActionFamily::TextRecognition:
+         createTextRecognitionActionFamily();
+         break;
+     case ActionFamily::TableRecognition:
+         createTableRecognitionActionFamily();
+         break;
+     case ActionFamily::ScrollingRecognition:
+         createScrollingRecognitionActionFamily();
+         break;
+     }
+-    m_secondaryToolbarPresetSize = QSize();
+     markLayoutDirty(false);
+     m_actionFamilyStates.insert(key, MaterializationState::Ready);
+     initializeStyleLayoutProfiles();
+     installWheelFilters(this, m_selectActionPanel);
+     emit materializedScope(m_selectActionPanel);
+     SNOW_SHOT_TOOLBAR_PERF_COUNTER("hydrate.action_family");
+     return true;
+ }
+ 
+ void ScreenshotToolPalette::createSelectionActionFamily() {
+     if (m_selectActionLayout == nullptr || !m_selectionActionControls.isEmpty()) {
+         return;
+     }
+     const auto addSelectButton =
+         [this](const char* tooltip, const adqt::icons::IconRef& icon, auto signal) {
+             auto* button = createScreenshotToolPaletteStyleActionButton(
+                 m_selectActionPanel, tooltip, icon, actionButtonMetrics(m_physicalScale));
+             button->setEnabled(false);
+             m_selectionActionControls.push_back(button);
+             m_selectActionLayout->addWidget(button);
+             connect(button, &adqt::widgets::AdButton::clicked, this, signal);
+         };
+     const auto addSpacing = [this](int spacing) {
+         m_selectionActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, spacing));
+     };
+     addSelectButton("Send to back", outlined_icons::VerticalAlignBottom(),
+                     &ScreenshotToolPalette::sendSelectionToBackRequested);
+     addSpacing(STYLE_ITEM_SPACING);
+     addSelectButton("Send backward", outlined_icons::ArrowDown(),
+                     &ScreenshotToolPalette::sendSelectionBackwardRequested);
+     addSpacing(STYLE_ITEM_SPACING);
+     addSelectButton("Bring forward", outlined_icons::ArrowUp(),
+                     &ScreenshotToolPalette::bringSelectionForwardRequested);
+     addSpacing(STYLE_ITEM_SPACING);
+     addSelectButton("Bring to front", outlined_icons::VerticalAlignTop(),
+                     &ScreenshotToolPalette::bringSelectionToFrontRequested);
+     addSpacing(STYLE_GROUP_SPACING * 2);
+     m_selectActionLayout->addWidget(createStyleToolbarSeparator(m_selectActionPanel));
+     addSpacing(STYLE_GROUP_SPACING * 2);
+     ScreenshotToolPaletteSliderEditorConfig opacityConfig;
+     opacityConfig.iconObjectName = QStringLiteral("screenshotSelectionOpacityIcon");
+     opacityConfig.sliderObjectName = QStringLiteral("screenshotSelectionOpacitySlider");
+     opacityConfig.accessibleName = QStringLiteral("Opacity");
+     opacityConfig.sliderTooltip = QStringLiteral("Adjust opacity");
+     opacityConfig.iconRef = custom_outlined_icons::Opacity();
+     opacityConfig.initialValue = qRound(m_selectionOpacity * 100.0);
+     opacityConfig.baseIconSize = STYLE_ICON_SIZE;
+     opacityConfig.baseSliderWidth = COMPACT_SLIDER_WIDTH;
+     const auto editor = createScreenshotToolPaletteSliderEditor(
+         m_selectActionLayout, m_selectActionPanel, opacityConfig,
+         actionButtonMetrics(m_physicalScale));
+     m_selectionOpacityIcon = editor.icon;
+     m_selectionOpacitySlider = editor.slider;
+     m_selectionActionControls.push_back(m_selectionOpacityIcon);
+     m_selectionActionControls.push_back(m_selectionOpacitySlider);
+     connect(m_selectionOpacitySlider, &adqt::widgets::AdSlider::valueChanged, this,
+             [this](double value) {
+                 setSelectionOpacity(value / 100.0);
+                 if (!m_replayingMaterializedState) {
+                     emit selectionOpacityChanged(m_selectionOpacity);
+                 }
+             });
+     addSpacing(STYLE_ITEM_SPACING);
+     m_selectActionLayout->addWidget(createStyleToolbarSeparator(m_selectActionPanel));
+     addSpacing(STYLE_GROUP_SPACING * 2);
+     addSelectButton("Copy selected elements", custom_outlined_icons::Duplicate(),
+                     &ScreenshotToolPalette::duplicateSelectionRequested);
+     addSpacing(STYLE_ITEM_SPACING);
+     addSelectButton("Delete selected elements", custom_outlined_icons::Trash(),
+                     &ScreenshotToolPalette::deleteSelectionRequested);
+     m_selectionActionAvailabilityInitialized = false;
+     updateSelectionActionAvailability(m_hasSelectedElements);
+     setSelectionOpacity(m_selectionOpacity, m_selectionOpacityMixed);
+ }
+ 
+ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
+     if (m_selectActionLayout == nullptr || m_textEditButton != nullptr) {
+         return;
+     }
+     const auto addButton = [this](const char* tooltip, const adqt::icons::IconRef& icon,
+@@ -4497,221 +4391,206 @@ void ScreenshotToolPalette::addRecordingControls(QBoxLayout* layout) {
+         return;
+     }
+ 
+     const auto addItemSpacing = [this]() { addMainToolbarSpacing(TOOLBAR_ITEM_SPACING); };
+ 
+     m_recordStartButton =
+         addActionButton("Start recording", primaryIcon(custom_outlined_icons::RecordingStart()));
+     m_recordStopButton =
+         addActionButton("Stop recording", custom_outlined_icons::RecordingStop(), true);
+     m_recordPauseButton = addActionButton("Pause recording", outlined_icons::Pause());
+     m_recordResumeButton =
+         addActionButton("Resume recording", primaryIcon(custom_outlined_icons::RecordingResume()));
+     layout->addWidget(m_recordStartButton);
+     layout->addWidget(m_recordStopButton);
+     addItemSpacing();
+     layout->addWidget(m_recordPauseButton);
+     layout->addWidget(m_recordResumeButton);
+ 
+     addItemSpacing();
+     m_recordDurationLabel = new QLabel(QStringLiteral("00:00:00"), m_mainPanel);
+     m_recordDurationLabel->setObjectName(QStringLiteral("screenRecordingDuration"));
+     m_recordDurationLabel->setAlignment(Qt::AlignCenter);
+     m_recordDurationLabel->setAccessibleName(tr("Recording duration"));
+     m_recordDurationLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+     layout->addWidget(m_recordDurationLabel);
+     addItemSpacing();
+ 
+     m_recordMicrophoneButton =
+         addActionButton("Record microphone", custom_outlined_icons::RecordingMicrophone());
+     m_recordSystemAudioButton = addActionButton("Record speakers", outlined_icons::Sound());
+     layout->addWidget(m_recordMicrophoneButton);
+     addItemSpacing();
+     layout->addWidget(m_recordSystemAudioButton);
+ 
+     addMainToolbarSeparator();
+     m_recordOpenFolderButton =
+         addActionButton("Open recording folder", custom_outlined_icons::RecordingFolder());
+     m_recordCloseButton = addActionButton("Close recording", outlined_icons::Close(), true);
+     m_recordCopyAnimatedImageButton =
+         addActionButton("Copy animated image", outlined_icons::Gif());
+     m_recordCopyVideoButton = addActionButton("Copy video", outlined_icons::Copy());
+     layout->addWidget(m_recordOpenFolderButton);
+     addItemSpacing();
+     layout->addWidget(m_recordCloseButton);
+     addItemSpacing();
+     layout->addWidget(m_recordCopyAnimatedImageButton);
+     addItemSpacing();
+     layout->addWidget(m_recordCopyVideoButton);
+ 
+     connect(m_recordStartButton, &adqt::widgets::AdButton::clicked, this,
+             &ScreenshotToolPalette::recordingStartRequested);
+     connect(m_recordStopButton, &adqt::widgets::AdButton::clicked, this,
+             &ScreenshotToolPalette::recordingStopRequested);
+     connect(m_recordPauseButton, &adqt::widgets::AdButton::clicked, this,
+             &ScreenshotToolPalette::recordingPauseRequested);
+     connect(m_recordResumeButton, &adqt::widgets::AdButton::clicked, this,
+             &ScreenshotToolPalette::recordingResumeRequested);
+     connect(m_recordMicrophoneButton, &adqt::widgets::AdButton::clicked, this, [this]() {
+         setRecordingMicrophoneEnabled(!m_recordingMicrophoneEnabled);
+         emit recordingMicrophoneToggled(m_recordingMicrophoneEnabled);
+     });
+     connect(m_recordSystemAudioButton, &adqt::widgets::AdButton::clicked, this, [this]() {
+         setRecordingSystemAudioEnabled(!m_recordingSystemAudioEnabled);
+         emit recordingSystemAudioToggled(m_recordingSystemAudioEnabled);
+     });
+     connect(m_recordOpenFolderButton, &adqt::widgets::AdButton::clicked, this,
+             &ScreenshotToolPalette::recordingOpenFolderRequested);
+     connect(m_recordCloseButton, &adqt::widgets::AdButton::clicked, this,
+             &ScreenshotToolPalette::recordingCloseRequested);
+     connect(m_recordCopyAnimatedImageButton, &adqt::widgets::AdButton::clicked, this,
+             &ScreenshotToolPalette::recordingCopyAnimatedImageRequested);
+     connect(m_recordCopyVideoButton, &adqt::widgets::AdButton::clicked, this,
+             &ScreenshotToolPalette::recordingCopyVideoRequested);
+ 
+     updateRecordingControls();
+     updateRecordingControlMetrics();
+ }
+ 
+ void ScreenshotToolPalette::updateToolbarRowGeometry(bool styleToolbarVisible) {
+     SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.update_row_geometry");
+-    if (m_rootLayout == nullptr || m_mainPanel == nullptr || m_selectActionPanel == nullptr ||
+-        m_rectangleStylePanel == nullptr || m_styleReserveWidget == nullptr) {
++    if (m_rootLayout == nullptr || m_mainPanel == nullptr) {
+         return;
+     }
+ 
+     if (m_rowOrderDirty) {
+         m_rootLayout->removeWidget(m_mainPanel);
+-        m_rootLayout->removeWidget(m_selectActionPanel);
+-        m_rootLayout->removeWidget(m_rectangleStylePanel);
+-        m_rootLayout->removeWidget(m_styleReserveWidget);
++        if (m_selectActionPanel != nullptr) {
++            m_rootLayout->removeWidget(m_selectActionPanel);
++        }
++        if (m_rectangleStylePanel != nullptr) {
++            m_rootLayout->removeWidget(m_rectangleStylePanel);
++        }
+         if (m_styleToolbarAboveMain) {
+-            m_rootLayout->addWidget(m_styleReserveWidget, 0, Qt::AlignRight);
++            if (m_selectActionPanel != nullptr) {
++                m_rootLayout->addWidget(m_selectActionPanel, 0, Qt::AlignRight);
++            }
++            if (m_rectangleStylePanel != nullptr) {
++                m_rootLayout->addWidget(m_rectangleStylePanel, 0, Qt::AlignRight);
++            }
+             m_rootLayout->addWidget(m_mainPanel, 0, Qt::AlignRight);
+         } else {
+             m_rootLayout->addWidget(m_mainPanel, 0, Qt::AlignRight);
+-            m_rootLayout->addWidget(m_styleReserveWidget, 0, Qt::AlignRight);
++            if (m_selectActionPanel != nullptr) {
++                m_rootLayout->addWidget(m_selectActionPanel, 0, Qt::AlignRight);
++            }
++            if (m_rectangleStylePanel != nullptr) {
++                m_rootLayout->addWidget(m_rectangleStylePanel, 0, Qt::AlignRight);
++            }
+         }
+         m_rowOrderDirty = false;
+         SNOW_SHOT_TOOLBAR_PERF_COUNTER("layout.row_reorder");
+ #if defined(SNOW_SHOT_TEST_HOOKS)
+         ++m_rootRowReorderCount;
+ #endif
+     }
+     // `isVisible()` is false while the palette's parent is hidden, even when
+     // the child has never been explicitly hidden. Use the child visibility
+     // state so a new palette hides its secondary rows before first display.
+-    if (m_selectActionPanel->isHidden() == m_actionToolbarTargetVisible) {
++    if (m_selectActionPanel != nullptr &&
++        m_selectActionPanel->isHidden() == m_actionToolbarTargetVisible) {
+         m_selectActionPanel->setVisible(m_actionToolbarTargetVisible);
+     }
+-    if (m_rectangleStylePanel->isHidden() == styleToolbarVisible) {
++    if (m_rectangleStylePanel != nullptr &&
++        m_rectangleStylePanel->isHidden() == styleToolbarVisible) {
+         m_rectangleStylePanel->setVisible(styleToolbarVisible);
+     }
+-    if (!m_styleReserveWidget->isVisible()) {
+-        m_styleReserveWidget->setVisible(true);
+-    }
+-}
+-
+-void ScreenshotToolPalette::updateSecondaryToolbarPanelGeometry() {
+-    if (m_styleReserveWidget == nullptr) {
+-        return;
+-    }
+-
+-    const QRect reserveGeometry = m_styleReserveWidget->geometry();
+-    const auto positionPanel = [this, reserveGeometry](QWidget* panel) {
+-        if (panel == nullptr) {
+-            return;
+-        }
+-
+-        const int x = reserveGeometry.right() - panel->width() + 1;
+-        const int y = m_styleToolbarAboveMain ? reserveGeometry.bottom() - panel->height() + 1
+-                                              : reserveGeometry.top();
+-        const QPoint targetPosition(x, y);
+-        if (panel->pos() != targetPosition) {
+-            panel->move(targetPosition);
+-        }
+-        if (panel->isVisible()) {
+-            panel->raise();
+-        }
+-    };
+-    positionPanel(m_selectActionPanel);
+-    positionPanel(m_rectangleStylePanel);
+ }
+ 
+ void ScreenshotToolPalette::setActiveToolButton(adqt::widgets::AdButton* activeButton) {
+     m_activeToolButton = activeButton;
+     adqt::widgets::AdButton* buttons[] = {
+         m_moveButton,
+         m_selectButton,
+         m_shapeButton,
+         m_arrowButton,
+         m_lineButton,
+         m_freeDrawButton,
+         m_highlighterButton,
+         m_spotlightButton,
+         m_eraserButton,
+         m_filterButton,
+         m_watermarkButton,
+         m_textButton,
+         m_serialNumberButton,
+         m_ocrButton,
+         m_textTranslationButton,
+         m_tableButton,
+         m_scrollingScreenshotButton,
+     };
+ 
+     for (adqt::widgets::AdButton* button : buttons) {
+         if (button == nullptr) {
+             continue;
+         }
+ 
+         applyMainToolbarToolActiveStyle(button, button == activeButton);
+     }
+     for (const DrawingToolGroup& group : std::as_const(m_drawingToolGroups)) {
+         if (group.trigger != nullptr) {
+             applyMainToolbarToolActiveStyle(group.trigger, group.trigger == activeButton);
+         }
+     }
+ 
+     const int activeValue = m_activeTool.has_value()
+                                 ? static_cast<int>(toolbarFacingDrawingTool(*m_activeTool))
+                                 : -1;
+     for (const DrawingToolGroup& group : std::as_const(m_drawingToolGroups)) {
+         updateScreenshotToolPaletteOptionPopoverEditor(group.optionButtons, group.optionValues,
+                                                        activeValue);
+     }
+     updateScreenshotToolPaletteOptionPopoverEditor(m_tableQrOptionButtons, m_tableQrOptionValues,
+                                                    activeValue);
+ }
+ 
+ #if defined(SNOW_SHOT_TEST_HOOKS)
+ std::optional<ScreenshotToolPalette::Tool> ScreenshotToolPalette::activeToolForTests() const {
+     return m_activeTool;
+ }
+ 
+ quint64 ScreenshotToolPalette::styleStateNoopCountForTests() const {
+     return m_styleStateNoopCount +
+            (m_styleControls != nullptr ? m_styleControls->styleStateNoopCount() : 0);
+ }
+ 
+ quint64 ScreenshotToolPalette::propertyGroupRefreshCountForTests() const {
+     return m_propertyGroupRefreshCount +
+            (m_styleControls != nullptr ? m_styleControls->propertyGroupRefreshCount() : 0);
+ }
+ 
+ quint64 ScreenshotToolPalette::layoutCommitCountForTests() const {
+     return m_layoutCommitCount;
+ }
+ 
+ SnowCanvasStyleDefaults ScreenshotToolPalette::styleStateForTests() const {
+     return m_styleControls->creationStyleDefaults();
+ }
+ 
+ ScreenshotToolPalette::MaterializationState
+ ScreenshotToolPalette::actionFamilyStateForTests(ActionFamily family) const {
+     return m_actionFamilyStates.value(static_cast<int>(family),
+                                       MaterializationState::Uninitialized);
+ }
+ 
+ ScreenshotToolPalette::MaterializationState
+ ScreenshotToolPalette::styleFamilyStateForTests(Tool tool) const {
+     return m_styleFamilyStates.value(static_cast<int>(tool),
+@@ -4859,187 +4738,216 @@ void ScreenshotToolPalette::updateRecordingControls() {
+                                                 : scheme.map.colorTextQuaternary;
+ 
+         // Keep the system-audio toggle visually consistent with the
+         // microphone toggle: no filled state, and disabling interaction must
+         // not change the icon color selected by the setting.
+         m_recordSystemAudioButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
+         m_recordSystemAudioButton->setAccentRole(adqt::widgets::AdButton::AccentRole::Neutral);
+         m_recordSystemAudioButton->setIconRef(snow_shot::presentation::icons::withPrimaryColor(
+             outlined_icons::Sound(), systemAudioIconColor));
+         m_recordSystemAudioButton->setEnabled(systemAudioControlEnabled);
+     }
+     if (m_recordCloseButton != nullptr) {
+         m_recordCloseButton->setEnabled(!m_recordingBusy);
+     }
+     if (m_recordCopyAnimatedImageButton != nullptr) {
+         const bool copyGifEnabled = active && !m_recordingBusy;
+         const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
+ 
+         // The original toolbar keeps this as a text button and highlights the
+         // GIF glyph in the primary color only while an active recording can be
+         // copied.  Leave the icon untinted when disabled so the button's
+         // disabled palette supplies the correct gray.
+         m_recordCopyAnimatedImageButton->setButtonStyle(
+             adqt::widgets::AdButton::ButtonStyle::Text);
+         m_recordCopyAnimatedImageButton->setAccentRole(
+             adqt::widgets::AdButton::AccentRole::Neutral);
+         m_recordCopyAnimatedImageButton->setIconRef(
+             copyGifEnabled
+                 ? snow_shot::presentation::icons::withPrimaryColor(outlined_icons::Gif(),
+                                                                     scheme.map.colorPrimary)
+                 : outlined_icons::Gif());
+         m_recordCopyAnimatedImageButton->setEnabled(copyGifEnabled);
+     }
+     if (m_recordCopyVideoButton != nullptr) {
+         const bool copyVideoEnabled = active && !m_recordingBusy;
+         const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
+ 
+         // Keep the regular-copy action in lockstep with the reference toolbar
+         // and the GIF-copy action: use the primary glyph only while copying is
+         // possible, while the disabled button retains the normal gray glyph.
+         m_recordCopyVideoButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
+         m_recordCopyVideoButton->setAccentRole(adqt::widgets::AdButton::AccentRole::Neutral);
+         m_recordCopyVideoButton->setIconRef(
+             copyVideoEnabled ? snow_shot::presentation::icons::withPrimaryColor(
+                                    outlined_icons::Copy(), scheme.map.colorPrimary)
+                              : outlined_icons::Copy());
+         m_recordCopyVideoButton->setEnabled(copyVideoEnabled);
+     }
+ 
+     if (visibilityChanged) {
+         updateToolbarGeometry();
+         emit visibleContentChanged();
+     }
+ }
+ 
+ void ScreenshotToolPalette::updateRecordingControlMetrics() {
+     if (m_recordDurationLabel == nullptr) {
+         return;
+     }
+     m_recordDurationLabel->setFixedSize(scaledMetric(RECORDING_DURATION_WIDTH),
+                                         m_mainPanel != nullptr ? m_mainPanel->buttonSize()
+                                                                : scaledMetric(32));
+     QFont font = m_recordDurationLabel->font();
+     font.setPixelSize(scaledMetric(RECORDING_DURATION_FONT_SIZE));
+     font.setWeight(QFont::Normal);
+     m_recordDurationLabel->setFont(font);
+     const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
+     m_recordDurationLabel->setStyleSheet(
+         QStringLiteral("color: %1;").arg(scheme.map.colorTextSecondary.name(QColor::HexArgb)));
+ }
+ 
+ QPoint ScreenshotToolPalette::contentOffset() const {
+     return QPoint(m_shadowMargins.left(), m_shadowMargins.top());
+ }
+ 
+ quint64 ScreenshotToolPalette::layoutRevision() const {
+     ensureLayoutApplied();
+     return m_layoutResult.revision;
+ }
+ 
+-QSize ScreenshotToolPalette::contentSizeForStyleToolbarVisibility(bool styleToolbarVisible) const {
++QSize ScreenshotToolPalette::contentSizeForVisibleRows() const {
+     int width = 0;
+     int height = 0;
+     int visibleRows = 0;
+     const auto appendPanel = [&](const QWidget* panel, bool visible) {
+         if (panel == nullptr || !visible) {
+             return;
+         }
+ 
+         QSize panelSize = panel->size();
+         if (panelSize.isEmpty()) {
+             panelSize = panel->sizeHint();
+         }
+         if (panelSize.isEmpty()) {
+             return;
+         }
+ 
+         width = std::max(width, panelSize.width());
+         height += panelSize.height();
+         ++visibleRows;
+     };
+ 
+     appendPanel(m_mainPanel, m_mainPanel != nullptr);
+-    if (m_styleReserveWidget != nullptr && styleToolbarVisible) {
+-        QSize styleSize = m_styleReserveWidget != nullptr ? m_styleReserveWidget->size() : QSize();
+-        if (styleSize.isEmpty() && m_rectangleStylePanel != nullptr) {
+-            styleSize = m_rectangleStylePanel->size();
+-        }
+-        if (styleSize.isEmpty() && m_rectangleStylePanel != nullptr) {
+-            styleSize = m_rectangleStylePanel->sizeHint();
+-        }
+-        if (!styleSize.isEmpty()) {
+-            width = std::max(width, styleSize.width());
+-            height += styleSize.height();
+-            ++visibleRows;
+-        }
+-    }
++    const QWidget* secondaryPanel = m_actionToolbarTargetVisible
++                                        ? m_selectActionPanel
++                                        : m_styleToolbarTargetVisible
++                                              ? m_rectangleStylePanel
++                                              : nullptr;
++    appendPanel(secondaryPanel, secondaryPanel != nullptr);
+ 
+     if (visibleRows > 1) {
+         height += scaledMetric(TOOLBAR_ROW_SPACING) * (visibleRows - 1);
+     }
+ 
+     return QSize(width, height);
+ }
+ 
+-QRect ScreenshotToolPalette::placementContentRectForStyleToolbarAboveMain(bool above) const {
+-    ensureLayoutApplied();
+-
+-    const QRect mainRect = mainToolbarContentRectForStyleToolbarAboveMain(above);
+-    const QWidget* secondaryPanel = nullptr;
+-    if (m_actionToolbarTargetVisible) {
+-        secondaryPanel = m_selectActionPanel;
+-    } else if (m_styleToolbarTargetVisible) {
+-        secondaryPanel = m_rectangleStylePanel;
+-    }
+-    if (secondaryPanel == nullptr) {
+-        return mainRect;
+-    }
++QSize ScreenshotToolPalette::fullContentSize() const {
++    const auto panelSize = [](const QWidget* panel) {
++        if (panel == nullptr) {
++            return QSize();
++        }
++        QSize size = panel->size();
++        if (size.isEmpty()) {
++            size = panel->sizeHint();
++        }
++        return size;
++    };
+ 
+-    QSize secondarySize = secondaryPanel->size();
+-    if (secondarySize.isEmpty()) {
+-        secondarySize = secondaryPanel->sizeHint();
+-    }
+-    if (secondarySize.isEmpty()) {
+-        return mainRect;
++    const QSize mainSize = panelSize(m_mainPanel);
++    QSize maximumSecondarySize = panelSize(m_selectActionPanel);
++    maximumSecondarySize = maximumSecondarySize.expandedTo(maximumSecondaryToolbarSizeHint());
++    if (maximumSecondarySize.isEmpty()) {
++        return mainSize;
+     }
+ 
+-    const QSize contentSize = contentSizeForStyleToolbarVisibility(true);
+-    const int reserveHeight =
+-        std::max(0, contentSize.height() - mainRect.height() - scaledMetric(TOOLBAR_ROW_SPACING));
+-    const int secondaryY = above ? std::max(0, reserveHeight - secondarySize.height())
+-                                 : mainRect.bottom() + 1 + scaledMetric(TOOLBAR_ROW_SPACING);
+-    const QRect secondaryRect(
+-        QPoint(std::max(0, contentSize.width() - secondarySize.width()), secondaryY),
+-        secondarySize);
+-    return mainRect.united(secondaryRect);
++    return QSize(std::max(mainSize.width(), maximumSecondarySize.width()),
++                 mainSize.height() + scaledMetric(TOOLBAR_ROW_SPACING) +
++                     maximumSecondarySize.height());
+ }
+ 
+ QRect ScreenshotToolPalette::panelContentRect(const QWidget* panel) const {
+     if (panel == nullptr) {
+         return QRect();
+     }
+     return panel->geometry().translated(-contentOffset());
+ }
+ 
+ QRect ScreenshotToolPalette::panelVisualRect(const QWidget* panel) const {
+     return panelContentRect(panel);
+ }
+ 
+-QRect ScreenshotToolPalette::mainToolbarContentRectForStyleToolbarAboveMain(bool above) const {
++ScreenshotToolbarPlacementSnapshot ScreenshotToolPalette::buildPlacementSnapshot() const {
++    ScreenshotToolbarPlacementSnapshot snapshot;
++    snapshot.contentOffset = m_layoutResult.contentOffset;
++    snapshot.contentSize = m_layoutResult.contentSize;
++
+     if (m_mainPanel == nullptr) {
+-        return {};
++        return snapshot;
+     }
+ 
+     QSize mainSize = m_mainPanel->size();
+     if (mainSize.isEmpty()) {
+         mainSize = m_mainPanel->sizeHint();
+     }
+     if (mainSize.isEmpty()) {
+-        return {};
++        return snapshot;
++    }
++
++    const QWidget* secondaryPanel = nullptr;
++    if (m_actionToolbarTargetVisible) {
++        secondaryPanel = m_selectActionPanel;
++    } else if (m_styleToolbarTargetVisible) {
++        secondaryPanel = m_rectangleStylePanel;
++    }
++
++    QSize secondarySize;
++    if (secondaryPanel != nullptr) {
++        secondarySize = secondaryPanel->size();
++        if (secondarySize.isEmpty()) {
++            secondarySize = secondaryPanel->sizeHint();
++        }
+     }
+ 
+-    const QSize contentSize = contentSizeForStyleToolbarVisibility(true);
+-    const int x = std::max(0, contentSize.width() - mainSize.width());
+-    const int y = above ? std::max(0, contentSize.height() - mainSize.height()) : 0;
+-    return QRect(QPoint(x, y), mainSize);
++    const bool hasSecondary = !secondarySize.isEmpty();
++    const int visibleWidth = std::max(mainSize.width(), hasSecondary ? secondarySize.width() : 0);
++    const int rowSpacing = hasSecondary ? scaledMetric(TOOLBAR_ROW_SPACING) : 0;
++    const int visibleHeight = mainSize.height() + rowSpacing +
++                              (hasSecondary ? secondarySize.height() : 0);
++    snapshot.visibleContentSize = QSize(visibleWidth, visibleHeight);
++
++    // Both rows share the content area's right edge.  Derive it from the
++    // visible extent rather than a child geometry that may still be pending a
++    // parent-layout activation during a first display.
++    const int right = visibleWidth - 1;
++    const QRect bottomMain(QPoint(right - mainSize.width() + 1, 0), mainSize);
++    const int topMainY = hasSecondary ? secondarySize.height() + rowSpacing : 0;
++    const QRect topMain(QPoint(right - mainSize.width() + 1, topMainY), mainSize);
++    QRect bottomSecondary;
++    QRect topSecondary;
++    if (hasSecondary) {
++        const int secondaryX = right - secondarySize.width() + 1;
++        bottomSecondary = QRect(QPoint(secondaryX, mainSize.height() + rowSpacing), secondarySize);
++        topSecondary = QRect(QPoint(secondaryX, topMain.top() - rowSpacing - secondarySize.height()),
++                             secondarySize);
++    }
++
++    const auto occupied = [](const QRect& mainRect, const QRect& secondaryRect) {
++        return secondaryRect.isEmpty() ? mainRect : mainRect.united(secondaryRect);
++    };
++    snapshot.bottom = ScreenshotToolbarPlacementGeometry{
++        bottomMain, bottomSecondary, occupied(bottomMain, bottomSecondary)};
++    snapshot.top = ScreenshotToolbarPlacementGeometry{
++        topMain, topSecondary, occupied(topMain, topSecondary)};
++    return snapshot;
+ }

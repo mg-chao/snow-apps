@@ -16,7 +16,6 @@
 
 #include <QEvent>
 #include <QGuiApplication>
-#include <QHBoxLayout>
 #include <QHideEvent>
 #include <QJsonValue>
 #include <QLineEdit>
@@ -27,7 +26,6 @@
 #include <QScreen>
 #include <QShowEvent>
 #include <QTimer>
-#include <QVBoxLayout>
 #include <QWheelEvent>
 #include <QWindow>
 #include <QtGlobal>
@@ -42,6 +40,8 @@
 
 namespace {
 namespace native = screenshot_floating_palette_native;
+
+constexpr QSize kToolbarWindowPresetSize(1042, 142);
 }
 
 ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
@@ -49,24 +49,10 @@ ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
     : QWidget(parent, native::windowFlags()) {
     applyWindowAttributes();
 
-    auto* layout = new QVBoxLayout(this);
-    layout->setSizeConstraint(QLayout::SetNoConstraint);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
-
-    auto* contentPanel = new QWidget(this);
-    m_panel = contentPanel;
-    contentPanel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    contentPanel->setAttribute(Qt::WA_NoSystemBackground, true);
-    contentPanel->setAutoFillBackground(false);
-
-    auto* contentLayout = new QHBoxLayout(contentPanel);
-    contentLayout->setContentsMargins(0, 0, 0, 0);
-    contentLayout->setSpacing(0);
-
-    m_paletteHost = new ScreenshotToolPaletteHost(options, contentPanel);
-    contentLayout->addWidget(m_paletteHost);
-    layout->addWidget(contentPanel);
+    // The native window is deliberately larger than the currently visible rows. Keep the
+    // palette host as the only child at the frame origin and right-align the visible palette
+    // inside that frame so the toolbar's content coordinate system is deterministic.
+    m_paletteHost = new ScreenshotToolPaletteHost(options, this);
 
     refreshGeometryForVisibleContent(false);
     const QList<adqt::widgets::AdButton*> buttons =
@@ -91,8 +77,7 @@ ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
             &ScreenshotFloatingToolPaletteWindow::registerMaterializedScope);
     connect(
         m_dpiController, &adqt::widgets::AdDpiStableWindowController::scaleCommitCompleted, this,
-        [this](const adqt::widgets::AdControlScaleContext& context,
-               const QSize& logicalClientExtent) {
+        [this](const adqt::widgets::AdControlScaleContext& context, const QSize&) {
             m_processingNativeDpiChange = true;
             m_committedWindowDevicePixelRatio = context.currentDpr;
             ensureReferenceDevicePixelRatio();
@@ -101,10 +86,10 @@ ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
                     m_referenceDevicePixelRatio, context.currentDpr, m_paletteScaleMultiplier,
                     context.revision);
             if (m_scaleScope != nullptr) {
-                m_scaleScope->publishScale(effectiveContext, logicalClientExtent);
+                m_scaleScope->publishScale(effectiveContext);
             }
             if (m_paletteHost != nullptr) {
-                m_paletteHost->commitDpiScale(effectiveContext.logicalScale, logicalClientExtent,
+                m_paletteHost->commitDpiScale(effectiveContext.logicalScale,
                                               ScreenshotToolPaletteHost::defaultShadowMargins());
             }
             refreshGeometryForVisibleContent(true, true);
@@ -238,7 +223,10 @@ void ScreenshotFloatingToolPaletteWindow::setStyleToolbarAboveMain(bool above) {
         return;
     }
 
+    m_styleToolbarAboveMain = above;
+    m_paletteHost->setFrameSize(fixedWindowSizeHint(), above);
     m_paletteHost->setStyleToolbarAboveMain(above);
+    refreshGeometryForVisibleContent(m_lastRequestedContentPositionValid || isVisible());
     if (m_draggingPalette) {
         m_dragContentPosition = QPointF(contentPosition());
     }
@@ -249,9 +237,19 @@ void ScreenshotFloatingToolPaletteWindow::prepareForDisplay() {
         m_paletteHost->prepareForDisplay();
     }
     const qreal currentDpr = currentWindowDevicePixelRatio();
+    const QSize windowSize = fixedWindowSizeHint();
+    const bool windowSizeChanged = windowSize != size();
+    const bool cachedWindowSizeChanged = m_lastAppliedWindowSize != windowSize;
+    const bool cachedContentOffsetChanged = m_lastAppliedContentOffset != contentOffset();
+    const bool cachedMainRectChanged =
+        m_lastAppliedMainToolbarContentRect != mainToolbarContentRect();
+    const bool hostAnchorChanged = m_paletteHost != nullptr &&
+                                   (m_paletteHost->pos() != QPoint(0, 0) ||
+                                    m_paletteHost->size() != windowSize);
     if (m_lastAppliedWindowDevicePixelRatio <= 0.0 ||
         !qFuzzyCompare(m_lastAppliedWindowDevicePixelRatio + 1.0, currentDpr + 1.0) ||
-        (m_paletteHost != nullptr && fixedWindowSizeHint() != size())) {
+        windowSizeChanged || cachedWindowSizeChanged || cachedContentOffsetChanged ||
+        cachedMainRectChanged || hostAnchorChanged) {
         refreshGeometryForVisibleContent(m_lastRequestedContentPositionValid || isVisible());
     }
 }
@@ -267,11 +265,6 @@ void ScreenshotFloatingToolPaletteWindow::resetPhysicalSizeInvariant() {
 }
 
 void ScreenshotFloatingToolPaletteWindow::moveContentTo(const QPoint& position) {
-    moveContentTo(position, QSize());
-}
-
-void ScreenshotFloatingToolPaletteWindow::moveContentTo(const QPoint& position,
-                                                        const QSize& windowSize) {
     SNOW_SHOT_TOOLBAR_PERF_SCOPE("window.move_content");
     const qreal currentDpr = currentWindowDevicePixelRatio();
     if (m_lastAppliedWindowDevicePixelRatio <= 0.0 ||
@@ -281,10 +274,10 @@ void ScreenshotFloatingToolPaletteWindow::moveContentTo(const QPoint& position,
     }
     const QPoint targetPosition =
         m_movementClampingEnabled ? constrainedContentPosition(position) : position;
-    const QSize hintSize = fixedWindowSizeHint();
-    const QSize fallbackSize = hintSize.isValid() && !hintSize.isEmpty() ? hintSize : size();
-    const QSize targetSize =
-        windowSize.isValid() && !windowSize.isEmpty() ? windowSize : fallbackSize;
+    const QSize targetSize = fixedWindowSizeHint();
+    if (!targetSize.isValid() || targetSize.isEmpty()) {
+        return;
+    }
     const bool windowSizeChanged = targetSize != size();
     m_lastRequestedContentPosition = targetPosition;
     m_lastRequestedContentPositionValid = true;
@@ -345,6 +338,14 @@ QRect ScreenshotFloatingToolPaletteWindow::topPlacementContentRect() const {
 QRect ScreenshotFloatingToolPaletteWindow::topRightMainToolbarContentRect() const {
     return m_paletteHost != nullptr ? m_paletteHost->topRightMainToolbarContentRect()
                                     : QRect(QPoint(0, 0), contentSizeHint());
+}
+
+ScreenshotToolbarPlacementSnapshot ScreenshotFloatingToolPaletteWindow::placementSnapshot() const {
+    ScreenshotToolbarPlacementSnapshot snapshot =
+        m_paletteHost != nullptr ? m_paletteHost->placementSnapshot()
+                                 : ScreenshotToolbarPlacementSnapshot{};
+    snapshot.contentOffset = contentOffset();
+    return snapshot;
 }
 
 QSize ScreenshotFloatingToolPaletteWindow::contentSizeHint() const {
@@ -528,20 +529,21 @@ ScreenshotFloatingToolPaletteWindow::constrainedContentPosition(const QPointF& p
 }
 
 void ScreenshotFloatingToolPaletteWindow::updatePaletteGeometryForVisibleContent() {
-    if (m_panel == nullptr || m_paletteHost == nullptr) {
+    if (m_paletteHost == nullptr) {
         return;
     }
 
-#if defined(SNOW_SHOT_TEST_HOOKS)
     const QSize previousHostSize = m_paletteHost->size();
-#endif
+    const QPoint previousHostPosition = m_paletteHost->pos();
     m_paletteHost->prepareForDisplay();
     const QSize windowSize = fixedWindowSizeHint();
-    if (m_panel->size() != windowSize) {
-        m_panel->setFixedSize(windowSize);
+    m_paletteHost->setFrameSize(windowSize, m_styleToolbarAboveMain);
+    if (m_paletteHost->pos() != QPoint(0, 0)) {
+        m_paletteHost->move(0, 0);
     }
 #if defined(SNOW_SHOT_TEST_HOOKS)
-    if (previousHostSize != windowSize) {
+    if (previousHostSize != m_paletteHost->size() ||
+        previousHostPosition != m_paletteHost->pos()) {
         ++m_paletteGeometryRefreshCount;
     }
 #endif
@@ -616,14 +618,10 @@ void ScreenshotFloatingToolPaletteWindow::handlePaletteContentChange() {
         return;
     }
 
-    if (!m_processingNativeDpiChange && !m_draggingPalette) {
-        m_paletteHost->setLogicalClientExtent(QSize());
-    }
-
-    const QSize newHostSize = fixedWindowSizeHint();
+    const QSize newWindowSize = fixedWindowSizeHint();
     const QPoint newContentOffset = contentOffset();
     const QRect newMainRect = mainToolbarContentRect();
-    const bool sizeChanged = newHostSize != m_lastAppliedHostSize;
+    const bool sizeChanged = newWindowSize != m_lastAppliedWindowSize;
     const bool offsetChanged = newContentOffset != m_lastAppliedContentOffset;
     const bool mainAnchorChanged = newMainRect != m_lastAppliedMainToolbarContentRect;
     if (!sizeChanged && !offsetChanged && !mainAnchorChanged) {
@@ -635,7 +633,7 @@ void ScreenshotFloatingToolPaletteWindow::handlePaletteContentChange() {
     const QPoint previousMainToolbarGlobalTopLeft = m_lastMainToolbarGlobalTopLeft;
     refreshGeometryForVisibleContent(true);
     if (restoreMainToolbarPosition && !newMainRect.isEmpty()) {
-        moveContentTo(previousMainToolbarGlobalTopLeft - newMainRect.topLeft(), size());
+        moveContentTo(previousMainToolbarGlobalTopLeft - newMainRect.topLeft());
     }
     emit visibleContentChanged();
 }
@@ -726,7 +724,8 @@ bool ScreenshotFloatingToolPaletteWindow::commitGeometryUpdate(bool preserveCont
     const bool changed =
         m_lastAppliedWindowDevicePixelRatio <= 0.0 ||
         !qFuzzyCompare(m_lastAppliedWindowDevicePixelRatio + 1.0, currentDpr + 1.0) ||
-        m_lastAppliedHostSize != windowSize || m_lastAppliedContentOffset != newContentOffset ||
+        m_lastAppliedWindowSize != windowSize || size() != windowSize ||
+        m_lastAppliedContentOffset != newContentOffset ||
         m_lastAppliedMainToolbarContentRect != newMainToolbarRect;
     if (!changed) {
         return false;
@@ -757,7 +756,7 @@ bool ScreenshotFloatingToolPaletteWindow::commitGeometryUpdate(bool preserveCont
     }
     updateMainToolbarPositionSnapshot();
     m_lastAppliedWindowDevicePixelRatio = currentDpr;
-    m_lastAppliedHostSize = windowSize;
+    m_lastAppliedWindowSize = windowSize;
     m_lastAppliedContentOffset = newContentOffset;
     m_lastAppliedMainToolbarContentRect = newMainToolbarRect;
 #if defined(SNOW_SHOT_TEST_HOOKS)
@@ -1149,12 +1148,13 @@ void ScreenshotFloatingToolPaletteWindow::endKeyboardFocusInteraction(QWidget* e
 }
 
 QSize ScreenshotFloatingToolPaletteWindow::fixedWindowSizeHint() const {
-    return m_paletteHost != nullptr ? m_paletteHost->hostSizeHint() : QSize();
+    const qreal scale = m_paletteHost != nullptr ? m_paletteHost->physicalScale() : 1.0;
+    return QSize(qMax(1, qRound(kToolbarWindowPresetSize.width() * scale)),
+                 qMax(1, qRound(kToolbarWindowPresetSize.height() * scale)));
 }
 
 QPoint ScreenshotFloatingToolPaletteWindow::contentOffset() const {
-    return (m_panel != nullptr ? m_panel->pos() : QPoint()) +
-           (m_paletteHost != nullptr ? m_paletteHost->contentOffset() : QPoint());
+    return m_paletteHost != nullptr ? m_paletteHost->contentOffset() : QPoint();
 }
 
 QPointF

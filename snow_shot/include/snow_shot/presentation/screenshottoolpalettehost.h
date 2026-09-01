@@ -25,7 +25,6 @@ class ScreenshotToolPaletteHost final : public QWidget {
 
     ScreenshotToolPalette* palette() const;
     QSize contentSizeHint() const;
-    QSize hostSizeHint() const;
     QRect occupiedContentRect() const;
     QRect visualContentRect() const;
     QRect fullContentRect() const;
@@ -33,6 +32,7 @@ class ScreenshotToolPaletteHost final : public QWidget {
     QRect topPlacementContentRect() const;
     QRect topRightMainToolbarContentRect() const;
     QRect mainToolbarContentRect() const;
+    ScreenshotToolbarPlacementSnapshot placementSnapshot() const;
     QRect occupiedHostRect() const;
     QRegion interactiveHostRegion() const;
     QPoint contentOffset() const;
@@ -52,9 +52,8 @@ class ScreenshotToolPaletteHost final : public QWidget {
     void setShadowMargins(const QMargins& margins);
     void setPhysicalScale(qreal scale);
     qreal physicalScale() const;
-    void setLogicalClientExtent(const QSize& extent);
-    void commitDpiScale(qreal scale, const QSize& logicalClientExtent,
-                        const QMargins& shadowMargins);
+    void commitDpiScale(qreal scale, const QMargins& shadowMargins);
+    void setFrameSize(const QSize& frameSize, bool anchorToBottom);
     void setStyleToolbarAboveMain(bool above);
     void setStyleToolbarVisible(bool visible);
     void setScrollingScreenshotMode(bool enabled);
@@ -76,9 +75,12 @@ class ScreenshotToolPaletteHost final : public QWidget {
     void handlePaletteVisibleContentChanged();
     void applyHostSize();
     void syncHostSize();
+    void syncPalettePosition();
     QMargins currentShadowMargins() const;
 
     ScreenshotToolPalette* m_palette = nullptr;
+    QSize m_frameSize;
+    bool m_anchorPaletteToBottom = false;
     bool m_dragging = false;
 
 #if defined(SNOW_SHOT_TEST_HOOKS)
