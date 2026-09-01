@@ -13,7 +13,6 @@ const DEFAULT_WIDTH: u32 = 800;
 const DEFAULT_HEIGHT: u32 = 600;
 const DEFAULT_WARMUPS: usize = 30;
 const DEFAULT_SAMPLES: usize = 240;
-const STREAM_CONFIG_VERSION: u32 = 1;
 const WGC_UPDATE_MODE_COMPLETE_ONLY: u8 = 1;
 const CAPTURE_BACKEND_AUTO: u8 = 0;
 const PIXEL_FORMAT_RGBA8: u8 = 0;
@@ -209,17 +208,29 @@ fn parse_args() -> Result<Options> {
     Ok(options)
 }
 
+fn screenshot_request() -> SnowCaptureScreenshotRequest {
+    SnowCaptureScreenshotRequest {
+        version: SCREENSHOT_REQUEST_VERSION,
+        struct_size: std::mem::size_of::<SnowCaptureScreenshotRequest>() as u32,
+        flags: 0,
+        reserved0: 0,
+        focused_window: 0,
+        cancellation_token: ptr::null(),
+        reserved: [0; 32],
+    }
+}
+
 fn primary_bounds(session: *mut SnowCaptureDesktopSessionImpl) -> Result<(i32, i32, u32, u32)> {
-    let snapshot = snow_capture_desktop_session_capture_all(session);
+    let snapshot = unsafe { snow_capture_desktop_session_capture(session, &screenshot_request()) };
     if snapshot.is_null() {
         bail!("desktop capture failed");
     }
-    let result = (0..snow_capture_snapshot_count(snapshot)).find_map(|index| {
+    let result = (0..snow_capture_screenshot_result_display_count(snapshot)).find_map(|index| {
         let mut info = empty_desktop_info();
-        let ok = unsafe { snow_capture_snapshot_frame_info(snapshot, index, &mut info) };
+        let ok = unsafe { snow_capture_screenshot_result_display_info(snapshot, index, &mut info) };
         (ok != 0 && info.is_primary != 0).then_some((info.x, info.y, info.width, info.height))
     });
-    unsafe { snow_capture_snapshot_destroy(snapshot) };
+    unsafe { snow_capture_screenshot_result_destroy(snapshot) };
     result.context("no primary monitor frame")
 }
 
@@ -228,15 +239,15 @@ fn capture_desktop_crop(
     region: (i32, i32, u32, u32),
     destination: &mut [u8],
 ) -> Result<()> {
-    let snapshot = snow_capture_desktop_session_capture_all(session);
+    let snapshot = unsafe { snow_capture_desktop_session_capture(session, &screenshot_request()) };
     if snapshot.is_null() {
         bail!("desktop capture failed");
     }
     destination.fill(0);
     let mut copied_pixels = 0u64;
-    for index in 0..snow_capture_snapshot_count(snapshot) {
+    for index in 0..snow_capture_screenshot_result_display_count(snapshot) {
         let mut info = empty_desktop_info();
-        if unsafe { snow_capture_snapshot_frame_info(snapshot, index, &mut info) } == 0 {
+        if unsafe { snow_capture_screenshot_result_display_info(snapshot, index, &mut info) } == 0 {
             continue;
         }
         let left = i64::from(region.0).max(i64::from(info.x));
@@ -264,7 +275,7 @@ fn capture_desktop_crop(
         }
         copied_pixels += copy_width as u64 * copy_height as u64;
     }
-    unsafe { snow_capture_snapshot_destroy(snapshot) };
+    unsafe { snow_capture_screenshot_result_destroy(snapshot) };
     (copied_pixels == u64::from(region.2) * u64::from(region.3))
         .then_some(())
         .context("region was not fully covered by non-overlapping monitor frames")
@@ -297,9 +308,9 @@ fn run_continuous_stream(
     warmups: usize,
     samples: usize,
 ) -> Result<ContinuousMetrics> {
-    let config = SnowCaptureStreamConfigV1 {
+    let config = SnowCaptureStreamConfig {
         version: STREAM_CONFIG_VERSION,
-        struct_size: std::mem::size_of::<SnowCaptureStreamConfigV1>() as u32,
+        struct_size: std::mem::size_of::<SnowCaptureStreamConfig>() as u32,
         x: region.0,
         y: region.1,
         width: region.2,
@@ -316,7 +327,7 @@ fn run_continuous_stream(
         include_cursor: 0,
         reserved: [0; 27],
     };
-    let stream = Stream(unsafe { snow_capture_stream_create_region_v1(&config) });
+    let stream = Stream(unsafe { snow_capture_stream_create_region(&config) });
     if stream.0.is_null() {
         bail!(
             "failed to create continuous region stream: {}",
@@ -336,7 +347,7 @@ fn run_continuous_stream(
     }
     let elapsed = start.elapsed();
 
-    let mut stream_stats = SnowCaptureStreamStatsV1 {
+    let mut stream_stats = SnowCaptureStreamStats {
         frames_captured: 0,
         frames_dropped: 0,
         errors_recovered: 0,
@@ -345,7 +356,7 @@ fn run_continuous_stream(
         buffer_fill: 0,
         capture_latency_ns: 0,
     };
-    if unsafe { snow_capture_stream_stats_v1(stream.0, &mut stream_stats) } == 0 {
+    if unsafe { snow_capture_stream_stats(stream.0, &mut stream_stats) } == 0 {
         bail!("failed to read continuous stream stats: {}", last_error());
     }
 
@@ -371,7 +382,7 @@ fn receive_stream_frame(
 ) -> Result<()> {
     for _ in 0..20 {
         let mut event = empty_stream_event();
-        if unsafe { snow_capture_stream_receive_v1(stream, 1000, &mut event) } == 0 {
+        if unsafe { snow_capture_stream_receive(stream, 1000, &mut event) } == 0 {
             bail!("continuous stream receive failed: {}", last_error());
         }
         match event.kind {
@@ -380,7 +391,7 @@ fn receive_stream_frame(
                 if event.frame.is_null() {
                     bail!("continuous stream returned a null frame");
                 }
-                let mut info = SnowCaptureStreamFrameInfoV1 {
+                let mut info = SnowCaptureStreamFrameInfo {
                     version: 0,
                     struct_size: 0,
                     x: 0,
@@ -396,7 +407,7 @@ fn receive_stream_frame(
                     rgba_len: 0,
                 };
                 let info_ok =
-                    unsafe { snow_capture_stream_frame_info_v1(event.frame, &mut info) } != 0;
+                    unsafe { snow_capture_stream_frame_info(event.frame, &mut info) } != 0;
                 if !info_ok {
                     unsafe { snow_capture_stream_frame_release(event.frame) };
                     bail!("continuous stream frame info failed: {}", last_error());
@@ -429,8 +440,8 @@ fn receive_stream_frame(
     bail!("continuous stream timed out waiting for a frame")
 }
 
-fn empty_stream_event() -> SnowCaptureStreamEventV1 {
-    SnowCaptureStreamEventV1 {
+fn empty_stream_event() -> SnowCaptureStreamEvent {
+    SnowCaptureStreamEvent {
         kind: SnowCaptureStreamEventKind::Timeout,
         frame: ptr::null_mut(),
         dropped_count: 0,

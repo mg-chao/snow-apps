@@ -11,7 +11,7 @@ extern "C" {
 typedef struct SnowOcrEngine SnowOcrEngine;
 typedef struct SnowOcrResult SnowOcrResult;
 
-typedef struct SnowOcrEngineConfigV2 {
+typedef struct SnowOcrEngineConfig {
     uint32_t struct_size;
     uint32_t intra_threads;
     uint32_t inter_threads;
@@ -20,60 +20,60 @@ typedef struct SnowOcrEngineConfigV2 {
     uint8_t use_directml;
     uint8_t reserved[2];
     const char* model_store_dir_utf8;
-} SnowOcrEngineConfigV2;
+} SnowOcrEngineConfig;
 
-typedef struct SnowOcrRuntimeInfoV1 {
+typedef struct SnowOcrRuntimeInfo {
     uint32_t struct_size;
     uint32_t physical_core_count;
-} SnowOcrRuntimeInfoV1;
+} SnowOcrRuntimeInfo;
 
-typedef struct SnowOcrResourceCountsV1 {
+typedef struct SnowOcrResourceCounts {
     uint32_t struct_size;
     size_t engines;
     size_t results;
-} SnowOcrResourceCountsV1;
+} SnowOcrResourceCounts;
 
-typedef struct SnowOcrRequestV1 {
+typedef struct SnowOcrRequest {
     uint32_t struct_size;
     uint32_t width;
     uint32_t height;
     uint32_t stride_bytes;
     const uint8_t* rgba_bytes;
     size_t rgba_len;
-} SnowOcrRequestV1;
+} SnowOcrRequest;
 
 typedef struct SnowOcrQuad {
     float points[8];
 } SnowOcrQuad;
 
-typedef struct SnowOcrLineInfoV1 {
+typedef struct SnowOcrLineInfo {
     uint32_t struct_size;
     const uint8_t* text_utf8;
     size_t text_len;
     float confidence;
     SnowOcrQuad quad;
-} SnowOcrLineInfoV1;
+} SnowOcrLineInfo;
 
 SnowOcrEngine* snow_ocr_engine_create(void);
 SnowOcrEngine* snow_ocr_engine_create_with_directml(uint8_t enabled);
-SnowOcrEngine* snow_ocr_engine_create_with_config_v2(
-    const SnowOcrEngineConfigV2* config
+SnowOcrEngine* snow_ocr_engine_create_with_config(
+    const SnowOcrEngineConfig* config
 );
 uint8_t snow_ocr_directml_is_available(void);
 uint8_t snow_ocr_engine_uses_directml(const SnowOcrEngine* engine);
-uint8_t snow_ocr_runtime_info_v1(SnowOcrRuntimeInfoV1* out_info);
-uint8_t snow_ocr_resource_counts_v1(SnowOcrResourceCountsV1* out_counts);
+uint8_t snow_ocr_runtime_info(SnowOcrRuntimeInfo* out_info);
+uint8_t snow_ocr_resource_counts(SnowOcrResourceCounts* out_counts);
 void snow_ocr_engine_destroy(SnowOcrEngine* engine);
 SnowOcrResult* snow_ocr_engine_recognize_rgba(
     SnowOcrEngine* engine,
-    const SnowOcrRequestV1* request
+    const SnowOcrRequest* request
 );
 void snow_ocr_result_destroy(SnowOcrResult* result);
 size_t snow_ocr_result_line_count(const SnowOcrResult* result);
 uint8_t snow_ocr_result_line(
     const SnowOcrResult* result,
     size_t line_index,
-    SnowOcrLineInfoV1* out_line
+    SnowOcrLineInfo* out_line
 );
 const char* snow_ocr_last_error_message(void);
 

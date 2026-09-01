@@ -88,15 +88,15 @@ ScreenshotOcrTextDirection textDirectionForQuad(const QPolygonF& quad) {
 
 OcrEngineHandle createEngine(ScreenshotOcrBackendPreference preference,
                              const QString& modelStoreDirectory) {
-    SnowOcrRuntimeInfoV1 runtimeInfo{
-        static_cast<std::uint32_t>(sizeof(SnowOcrRuntimeInfoV1)), 0};
+    SnowOcrRuntimeInfo runtimeInfo{
+        static_cast<std::uint32_t>(sizeof(SnowOcrRuntimeInfo)), 0};
     const std::uint32_t physicalCores =
-        snow_ocr_runtime_info_v1(&runtimeInfo) != 0 ? runtimeInfo.physical_core_count : 1;
+        snow_ocr_runtime_info(&runtimeInfo) != 0 ? runtimeInfo.physical_core_count : 1;
     const std::uint32_t threadBudget = (std::max)(1u, physicalCores / 2u);
     const bool preferDirectMl = preference == ScreenshotOcrBackendPreference::DirectMl;
     const QByteArray modelStoreDirectoryUtf8 = modelStoreDirectory.toUtf8();
-    const SnowOcrEngineConfigV2 config{
-        static_cast<std::uint32_t>(sizeof(SnowOcrEngineConfigV2)),
+    const SnowOcrEngineConfig config{
+        static_cast<std::uint32_t>(sizeof(SnowOcrEngineConfig)),
         threadBudget,
         1u,
         threadBudget,
@@ -105,7 +105,7 @@ OcrEngineHandle createEngine(ScreenshotOcrBackendPreference preference,
         {0, 0},
         modelStoreDirectoryUtf8.constData(),
     };
-    return OcrEngineHandle(snow_ocr_engine_create_with_config_v2(&config));
+    return OcrEngineHandle(snow_ocr_engine_create_with_config(&config));
 }
 
 bool modelFilesReadyAt(const QString& modelStoreDirectory) {
@@ -131,8 +131,8 @@ ScreenshotOcrRecognitionResult runRecognition(OcrEngineHandle& engine, QImage so
                                                      "Text recognition failed")};
     }
 
-    const SnowOcrRequestV1 request{
-        static_cast<std::uint32_t>(sizeof(SnowOcrRequestV1)),
+    const SnowOcrRequest request{
+        static_cast<std::uint32_t>(sizeof(SnowOcrRequest)),
         static_cast<std::uint32_t>(source.width()),
         static_cast<std::uint32_t>(source.height()),
         static_cast<std::uint32_t>(source.bytesPerLine()),
@@ -154,8 +154,8 @@ ScreenshotOcrRecognitionResult runRecognition(OcrEngineHandle& engine, QImage so
     }
     output.presentation->lines.reserve(static_cast<qsizetype>(lineCount));
     for (std::size_t lineIndex = 0; lineIndex < lineCount; ++lineIndex) {
-        SnowOcrLineInfoV1 lineInfo{};
-        lineInfo.struct_size = static_cast<std::uint32_t>(sizeof(SnowOcrLineInfoV1));
+        SnowOcrLineInfo lineInfo{};
+        lineInfo.struct_size = static_cast<std::uint32_t>(sizeof(SnowOcrLineInfo));
         if (snow_ocr_result_line(result.get(), lineIndex, &lineInfo) == 0 ||
             (lineInfo.text_len > 0 && lineInfo.text_utf8 == nullptr) ||
             lineInfo.text_len >

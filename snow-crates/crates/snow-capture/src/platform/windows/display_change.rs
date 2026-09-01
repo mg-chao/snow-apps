@@ -63,7 +63,6 @@ impl DisplayInfoCache {
     }
 
     /// Return the current generation counter. Bumped on every display change.
-    #[allow(dead_code)]
     pub(crate) fn generation(&self) -> u64 {
         self.generation.load(Ordering::Acquire)
     }

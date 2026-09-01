@@ -4,11 +4,12 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use snow_capture_c::{
-    snow_capture_desktop_session_capture_all, snow_capture_desktop_session_create,
+    SCREENSHOT_REQUEST_VERSION, SnowCaptureScreenshotRequest,
+    snow_capture_desktop_session_capture, snow_capture_desktop_session_create,
     snow_capture_desktop_session_destroy, snow_capture_desktop_session_prepare,
     snow_capture_desktop_session_refresh_layout,
-    snow_capture_desktop_session_release_idle_resources, snow_capture_snapshot_count,
-    snow_capture_snapshot_destroy,
+    snow_capture_desktop_session_release_idle_resources, snow_capture_screenshot_result_destroy,
+    snow_capture_screenshot_result_display_count,
 };
 use windows::Win32::System::ProcessStatus::{
     K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX,
@@ -104,15 +105,24 @@ impl DesktopSession {
         Ok(())
     }
 
-    fn capture_all(&mut self) -> Result<usize> {
-        let snapshot = snow_capture_desktop_session_capture_all(self.raw);
-        if snapshot.is_null() {
-            bail!("snow_capture_desktop_session_capture_all failed");
+    fn capture(&mut self) -> Result<usize> {
+        let request = SnowCaptureScreenshotRequest {
+            version: SCREENSHOT_REQUEST_VERSION,
+            struct_size: std::mem::size_of::<SnowCaptureScreenshotRequest>() as u32,
+            flags: 0,
+            reserved0: 0,
+            focused_window: 0,
+            cancellation_token: std::ptr::null(),
+            reserved: [0; 32],
+        };
+        let result = unsafe { snow_capture_desktop_session_capture(self.raw, &request) };
+        if result.is_null() {
+            bail!("snow_capture_desktop_session_capture failed");
         }
 
-        let frame_count = snow_capture_snapshot_count(snapshot);
+        let frame_count = snow_capture_screenshot_result_display_count(result);
         unsafe {
-            snow_capture_snapshot_destroy(snapshot);
+            snow_capture_screenshot_result_destroy(result);
         }
         Ok(frame_count)
     }
@@ -163,8 +173,8 @@ fn parse_u64_arg(flag: &str, value: Option<&str>) -> Result<u64> {
 fn print_usage() {
     println!(
         "Usage: cargo run --release -p snow-capture-c --example desktop_session_benchmark -- [options]
-  --warm-samples <n>   warm capture_all samples before trim (default: {DEFAULT_WARM_SAMPLES})
-  --trim-samples <n>   capture_all samples after explicit trim (default: {DEFAULT_TRIM_SAMPLES})
+  --warm-samples <n>   warm capture samples before trim (default: {DEFAULT_WARM_SAMPLES})
+  --trim-samples <n>   capture samples after explicit trim (default: {DEFAULT_TRIM_SAMPLES})
   --idle-ms <n>        sleep before final post-idle memory sample (default: {DEFAULT_IDLE_MS})
   --output <path>      csv output path (default: target/perf/desktop-session-benchmark.csv)
   --allow-debug        allow running outside Release for smoke checks"
@@ -238,7 +248,7 @@ fn measure_capture(
 ) -> Result<BenchRow> {
     let base = ProcessMemorySample::capture()?;
     let started = Instant::now();
-    let frame_count = session.capture_all()?;
+    let frame_count = session.capture()?;
     let latency_ms = elapsed_ms(started);
     let peak = ProcessMemorySample::capture()?;
     let (peak_ws_delta_mb, peak_private_delta_mb) = memory_deltas_mb(base, peak);

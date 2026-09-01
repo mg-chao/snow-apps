@@ -22,7 +22,6 @@ pub use error::{RapidOcrError, Result};
 pub use input::image_loader::{LoadImage, OcrInput};
 pub use model_source::{DictionarySource, ModelSource, PipelineSources};
 pub use output::json::OcrJsonItem;
-pub use pipeline::compat_rapidocr::{from_rapidocr_yaml_file, from_rapidocr_yaml_str};
 pub use pipeline::{
     config::{EngineConfig, GlobalConfig},
     rapid_ocr::{PipelineProviderResolutions, RapidOcr, RapidOcrEngine},

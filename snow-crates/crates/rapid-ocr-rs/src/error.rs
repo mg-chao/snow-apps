@@ -25,10 +25,7 @@ pub enum RapidOcrError {
     #[error("decoding failed: {0}")]
     Decode(String),
 
-    #[error("unsupported provider for v1: {0}")]
-    UnsupportedProvider(String),
-
-    #[error("unsupported runtime backend for v1: {0}")]
+    #[error("unsupported runtime backend: {0}")]
     UnsupportedBackend(String),
 
     #[error(transparent)]

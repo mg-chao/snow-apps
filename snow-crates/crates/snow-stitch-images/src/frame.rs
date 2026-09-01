@@ -191,7 +191,7 @@ impl Frame {
         &mut self.pixels
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn set_height(&mut self, height: u32) {
         self.height = height;
     }

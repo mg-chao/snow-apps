@@ -93,7 +93,6 @@ enum RegressionMetric {
     FirstCapture,
     WarmAvg,
     WarmP50,
-    #[allow(dead_code)]
     WarmP95,
     InitWsDelta,
     InitPrivDelta,

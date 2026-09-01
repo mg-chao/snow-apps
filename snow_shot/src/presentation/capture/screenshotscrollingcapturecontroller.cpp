@@ -201,8 +201,8 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
             return;
         }
         m_cadence.recordStitch(duration);
-        SnowCaptureStreamStatsV1 stats{};
-        if (m_stream != nullptr && snow_capture_stream_stats_v1(m_stream, &stats) != 0) {
+        SnowCaptureStreamStats stats{};
+        if (m_stream != nullptr && snow_capture_stream_stats(m_stream, &stats) != 0) {
             if (stats.capture_latency_ns != 0) {
                 const auto captureNanos = std::min(
                     stats.capture_latency_ns,
@@ -220,10 +220,10 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
         if (!m_active || generation != m_generation) {
             return;
         }
-        SnowCaptureStreamStatsV1 stats{};
+        SnowCaptureStreamStats stats{};
         std::uint32_t queueDepth = 2;
         std::uint64_t droppedFrames = 0;
-        if (m_stream != nullptr && snow_capture_stream_stats_v1(m_stream, &stats) != 0) {
+        if (m_stream != nullptr && snow_capture_stream_stats(m_stream, &stats) != 0) {
             queueDepth = std::max(queueDepth, stats.buffer_fill);
             droppedFrames = stats.frames_dropped;
         }
@@ -258,7 +258,7 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
         if (m_physicalSelection.isEmpty()) {
             return false;
         }
-        SnowCaptureStreamConfigV1 config{};
+        SnowCaptureStreamConfig config{};
         config.version = SNOW_CAPTURE_STREAM_CONFIG_VERSION;
         config.struct_size = sizeof(config);
         config.x = m_physicalSelection.x();
@@ -275,7 +275,7 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
         config.pixel_format = SNOW_CAPTURE_PIXEL_FORMAT_RGBA8;
         config.adaptive_fps = 1;
         config.include_cursor = 0;
-        m_stream = snow_capture_stream_create_region_v1(&config);
+        m_stream = snow_capture_stream_create_region(&config);
         if (m_stream != nullptr) {
             m_lastAppliedFps = 30;
             return true;
@@ -284,7 +284,7 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
         qWarning("Direct scrolling stream unavailable; retrying with automatic backend: %s",
                  snow_capture_last_error_message());
         config.capture_backend = SNOW_CAPTURE_BACKEND_AUTO;
-        m_stream = snow_capture_stream_create_region_v1(&config);
+        m_stream = snow_capture_stream_create_region(&config);
         if (m_stream == nullptr) {
             qWarning("Failed to create continuous scrolling stream: %s",
                      snow_capture_last_error_message());
@@ -328,9 +328,9 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
 
     void consumeStream(quint64 generation) {
         while (!m_stopRequested.load(std::memory_order_acquire)) {
-            SnowCaptureStreamEventV1 event{};
+            SnowCaptureStreamEvent event{};
             if (m_stream == nullptr ||
-                snow_capture_stream_receive_v1(m_stream, 100, &event) == 0) {
+                snow_capture_stream_receive(m_stream, 100, &event) == 0) {
                 if (m_stopRequested.load(std::memory_order_acquire)) {
                     break;
                 }
@@ -382,8 +382,8 @@ class ScreenshotScrollingCaptureProducer final : public QObject {
             result.errorMessage = QStringLiteral("capture stream returned a null frame");
             return;
         }
-        SnowCaptureStreamFrameInfoV1 info{};
-        if (snow_capture_stream_frame_info_v1(frame, &info) == 0) {
+        SnowCaptureStreamFrameInfo info{};
+        if (snow_capture_stream_frame_info(frame, &info) == 0) {
             result.fatalError = true;
             result.errorMessage = QString::fromUtf8(snow_capture_last_error_message());
             snow_capture_stream_frame_release(frame);

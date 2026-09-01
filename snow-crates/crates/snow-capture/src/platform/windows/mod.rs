@@ -611,21 +611,6 @@ impl WindowsBackend {
         })
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn with_kind_and_policy_for_screenshot(
-        kind: CaptureBackendKind,
-        auto_policy: AutoBackendPolicy,
-        auto_policy_is_explicit: bool,
-    ) -> CaptureResult<Self> {
-        let resolver = Arc::new(monitor::MonitorResolver::new(Duration::from_secs(60)));
-        Ok(Self {
-            resolver,
-            kind,
-            auto_policy,
-            auto_policy_is_explicit,
-        })
-    }
-
     fn create_by_kind(
         &self,
         kind: CaptureBackendKind,

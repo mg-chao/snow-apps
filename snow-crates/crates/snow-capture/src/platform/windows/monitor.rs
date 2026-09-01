@@ -67,7 +67,7 @@ pub(crate) struct MonitorResolver {
 }
 
 impl MonitorResolver {
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn new(ttl: Duration) -> Self {
         Self {
             display_cache: None,
@@ -76,9 +76,6 @@ impl MonitorResolver {
         }
     }
 
-    /// Create a resolver backed by a shared `DisplayInfoCache`.
-    /// When present, enumeration reads from the event-driven cache
-    /// instead of polling DXGI on a TTL.
     pub(crate) fn with_display_cache(display_cache: Arc<DisplayInfoCache>) -> Self {
         Self {
             display_cache: Some(display_cache),
