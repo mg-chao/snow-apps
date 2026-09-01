@@ -1652,6 +1652,8 @@ bool ScreenshotController::Impl::imageExportNotificationCurrent(quint64 generati
 }
 
 void ScreenshotController::Impl::hideImageExportPresentation() {
+    SNOW_SHOT_PIN_PERF_SCOPE("controller.hide_presentation");
+    SNOW_SHOT_PIN_PERF_MILESTONE("controller.hide_presentation.enter");
     if (m_colorPickerController != nullptr) {
         m_colorPickerController->hide();
     }
@@ -1661,9 +1663,12 @@ void ScreenshotController::Impl::hideImageExportPresentation() {
     if (m_overlayCoordinator != nullptr) {
         m_overlayCoordinator->hideOverlayWindowsImmediately(m_displaySession);
     }
+    SNOW_SHOT_PIN_PERF_MILESTONE("controller.hide_presentation.exit");
 }
 
 void ScreenshotController::Impl::detachCaptureForExport(ExportDetachMode mode) {
+    SNOW_SHOT_PIN_PERF_SCOPE("controller.detach_capture");
+    SNOW_SHOT_PIN_PERF_MILESTONE("controller.detach_capture.enter");
     if (mode == ExportDetachMode::Immediate) {
         hideImageExportPresentation();
     }
@@ -1681,6 +1686,7 @@ void ScreenshotController::Impl::detachCaptureForExport(ExportDetachMode mode) {
             m_captureWorkflow->cancelCapture();
         }
     }
+    SNOW_SHOT_PIN_PERF_MILESTONE("controller.detach_capture.exit");
 }
 
 void ScreenshotController::Impl::scheduleDeferredExportCleanup() {
@@ -1994,7 +2000,9 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
                    receiver->m_impl->imageExportCurrent(generation);
         },
          [receiver, generation = *exportGeneration, historyState,
-          maybeCommitHistory](bool success, QImage image) mutable {
+         maybeCommitHistory](bool success, QImage image) mutable {
+            SNOW_SHOT_PIN_PERF_SCOPE("controller.pin_result_callback");
+            SNOW_SHOT_PIN_PERF_MILESTONE("controller.pin_result_callback.enter");
             SNOW_SHOT_PIN_PERF_FINISH(success);
             if (receiver.isNull() || receiver->m_impl == nullptr ||
                 !receiver->m_impl->finishImageExport(generation)) {
@@ -2010,9 +2018,12 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
             }
             (*maybeCommitHistory)();
             if (receiver->m_impl->m_historyService != nullptr) {
+                SNOW_SHOT_PIN_PERF_MILESTONE("controller.history_navigation_reset.enter");
                 receiver->m_impl->m_historyService->resetCaptureNavigation();
+                SNOW_SHOT_PIN_PERF_MILESTONE("controller.history_navigation_reset.exit");
             }
             receiver->m_impl->scheduleDeferredExportCleanup();
+            SNOW_SHOT_PIN_PERF_MILESTONE("controller.pin_result_callback.exit");
         });
     if (!scheduled) {
         historyState->pinDone = true;
@@ -3132,20 +3143,29 @@ void ScreenshotController::Impl::completeCopyExport(
 }
 
 bool ScreenshotController::Impl::resetCanvasEditingState() {
-    return m_overlayCoordinator != nullptr &&
-           m_overlayCoordinator->resetEditingState(m_displaySession);
+    SNOW_SHOT_PIN_PERF_SCOPE("controller.reset_canvas_editing_state");
+    SNOW_SHOT_PIN_PERF_MILESTONE("controller.reset_canvas_editing_state.enter");
+    const bool reset = m_overlayCoordinator != nullptr &&
+                       m_overlayCoordinator->resetEditingState(m_displaySession);
+    SNOW_SHOT_PIN_PERF_MILESTONE("controller.reset_canvas_editing_state.exit");
+    return reset;
 }
 
 bool ScreenshotController::Impl::prepareHistoryCandidate(
     std::optional<ScreenshotHistoryEntry>* candidate) {
+    SNOW_SHOT_PIN_PERF_SCOPE("controller.history_snapshot");
+    SNOW_SHOT_PIN_PERF_MILESTONE("controller.history_snapshot.enter");
     if (candidate == nullptr) {
+        SNOW_SHOT_PIN_PERF_MILESTONE("controller.history_snapshot.exit");
         return true;
     }
     candidate->reset();
     if (m_historyService == nullptr) {
+        SNOW_SHOT_PIN_PERF_MILESTONE("controller.history_snapshot.exit");
         return true;
     }
     *candidate = m_historyService->snapshotCurrent(true);
+    SNOW_SHOT_PIN_PERF_MILESTONE("controller.history_snapshot.exit");
     return true;
 }
 

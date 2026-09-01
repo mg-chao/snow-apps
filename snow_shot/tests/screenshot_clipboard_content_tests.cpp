@@ -349,6 +349,96 @@ void formattedTextUsesOwningDisplayDevicePixelRatio() {
 }
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
+ScreenshotClipboardContentSnapshot nativeDibSnapshot(QByteArray bytes, QSize size) {
+    ScreenshotClipboardContentSnapshot snapshot;
+    snapshot.devicePixelRatio = 1.0;
+    snapshot.nativeDib = ScreenshotClipboardNativeDib{
+        std::move(bytes), size, ScreenshotClipboardNativeDibFormat::Dib};
+    return snapshot;
+}
+
+QByteArray makeRgbDib(int width, int height, bool topDown) {
+    const int absoluteHeight = std::abs(height);
+    QByteArray bytes(static_cast<int>(sizeof(BITMAPINFOHEADER)) + width * absoluteHeight * 4, 0);
+    auto* header = reinterpret_cast<BITMAPINFOHEADER*>(bytes.data());
+    header->biSize = sizeof(BITMAPINFOHEADER);
+    header->biWidth = width;
+    header->biHeight = topDown ? -absoluteHeight : absoluteHeight;
+    header->biPlanes = 1;
+    header->biBitCount = 32;
+    header->biCompression = BI_RGB;
+    auto* pixels = reinterpret_cast<std::uint32_t*>(bytes.data() + sizeof(BITMAPINFOHEADER));
+    for (int y = 0; y < absoluteHeight; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const std::uint32_t red = static_cast<std::uint32_t>(x * 31 + 16) & 0xffu;
+            const std::uint32_t green = static_cast<std::uint32_t>(y * 47 + 32) & 0xffu;
+            const std::uint32_t blue = static_cast<std::uint32_t>(x * 13 + y * 17) & 0xffu;
+            const int storageY = topDown ? y : absoluteHeight - 1 - y;
+            pixels[storageY * width + x] = (blue << 16) | (green << 8) | red;
+        }
+    }
+    return bytes;
+}
+
+void standardRgbDibOrientationAndAlphaAreHandled() {
+    const QSize size(3, 2);
+    auto topDown = nativeDibSnapshot(makeRgbDib(size.width(), size.height(), true), size);
+    auto bottomUp = nativeDibSnapshot(makeRgbDib(size.width(), size.height(), false), size);
+    const auto top = ScreenshotClipboardContentReader::decode(std::move(topDown));
+    const auto bottom = ScreenshotClipboardContentReader::decode(std::move(bottomUp));
+    require(top.has_value() && bottom.has_value() && top->image == bottom->image,
+            "BI_RGB DIB orientation should decode to the same logical image");
+    require(top->image.pixelColor(0, 0).alpha() == 255 &&
+                top->image.pixelColor(size.width() - 1, size.height() - 1).alpha() == 255,
+            "BI_RGB DIB pixels should be treated as opaque");
+}
+
+void nonstandardDibMasksPreservePremultipliedAlpha() {
+    BITMAPV5HEADER header{};
+    header.bV5Size = sizeof(BITMAPV5HEADER);
+    header.bV5Width = 1;
+    header.bV5Height = -1;
+    header.bV5Planes = 1;
+    header.bV5BitCount = 32;
+    header.bV5Compression = BI_BITFIELDS;
+    header.bV5RedMask = 0x000003ffu;
+    header.bV5GreenMask = 0x000ffc00u;
+    header.bV5BlueMask = 0x3ff00000u;
+    header.bV5AlphaMask = 0xc0000000u;
+    QByteArray bytes(static_cast<int>(sizeof(BITMAPV5HEADER) + 4), 0);
+    std::memcpy(bytes.data(), &header, sizeof(header));
+    auto* pixel = reinterpret_cast<std::uint32_t*>(bytes.data() + sizeof(header));
+    *pixel = (2u << 30) | (512u << 20) | (256u << 10) | 768u;
+    auto decoded = ScreenshotClipboardContentReader::decode(nativeDibSnapshot(
+        std::move(bytes), QSize(1, 1)));
+    require(decoded.has_value(), "nonstandard DIB masks should decode");
+    const QColor color = decoded->image.pixelColor(0, 0);
+    require(color.alpha() >= 160 && color.alpha() <= 180 && color.red() <= color.alpha() &&
+                color.green() <= color.alpha() && color.blue() <= color.alpha(),
+            "nonstandard DIB alpha should be scaled and premultiplied");
+}
+
+void malformedAndLargeDibsAreHandled() {
+    QByteArray malformed(static_cast<int>(sizeof(BITMAPINFOHEADER)), 0);
+    auto* malformedHeader = reinterpret_cast<BITMAPINFOHEADER*>(malformed.data());
+    malformedHeader->biSize = sizeof(BITMAPINFOHEADER);
+    malformedHeader->biWidth = 0x7fffffff;
+    malformedHeader->biHeight = 0x7fffffff;
+    malformedHeader->biPlanes = 1;
+    malformedHeader->biBitCount = 32;
+    malformedHeader->biCompression = BI_RGB;
+    require(!ScreenshotClipboardContentReader::decode(nativeDibSnapshot(
+                         std::move(malformed), QSize(1, 1)))
+                 .has_value(),
+            "malformed DIB dimensions should be rejected");
+
+    const QSize largeSize(1024, 1024);
+    auto decoded = ScreenshotClipboardContentReader::decode(nativeDibSnapshot(
+        makeRgbDib(largeSize.width(), largeSize.height(), true), largeSize));
+    require(decoded.has_value() && decoded->image.size() == largeSize,
+            "large DIBs should decode through the parallel conversion path");
+}
+
 void nativeDibSnapshotDecodesOffClipboard() {
     BITMAPV5HEADER header{};
     header.bV5Size = sizeof(BITMAPV5HEADER);
@@ -402,6 +492,9 @@ int main(int argc, char** argv) {
     htmlSourceBackgroundOverridesApplicationTheme();
     formattedTextUsesOwningDisplayDevicePixelRatio();
 #if defined(Q_OS_WIN) || defined(_WIN32)
+    standardRgbDibOrientationAndAlphaAreHandled();
+    nonstandardDibMasksPreservePremultipliedAlpha();
+    malformedAndLargeDibsAreHandled();
     nativeDibSnapshotDecodesOffClipboard();
 #endif
     return 0;

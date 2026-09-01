@@ -776,6 +776,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/services/screenshotcanvascolorsamplerwindow.cpp
     src/presentation/services/screenshotcolorpickercontroller.cpp
     src/presentation/services/screenshotclipboardcontent.cpp
+    src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
     src/presentation/services/screenshotclipboardservice.cpp
     src/network/snowshotapiclient.cpp
     src/presentation/services/screenshotcolorpickerwidget.cpp
@@ -859,6 +860,14 @@ set(PROJECT_CXX_SOURCES
     src/presentation/recording/screenrecordingtoolbarwindow.cpp
     src/presentation/styles/floatingcontroltoolbarstyle.cpp
 )
+
+if(MSVC)
+    set_source_files_properties(src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
+        PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    set_source_files_properties(src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
+        PROPERTIES COMPILE_OPTIONS "-mavx2")
+endif()
 
 set(PROJECT_RCC_SOURCES)
 
@@ -2052,6 +2061,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/screenshot_clipboard_content_tests.cpp
         include/snow_shot/presentation/screenshotclipboardcontent.h
         src/presentation/services/screenshotclipboardcontent.cpp
+        src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
     )
     target_include_directories(snow-shot-clipboard-content-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"

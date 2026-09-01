@@ -416,6 +416,27 @@ class PinnedControlButton final : public adqt::widgets::AdButton {
     bool m_hovered = false;
 };
 
+class ScreenshotPinnedCanvasWidget final : public SnowCanvasWidget {
+  public:
+    ScreenshotPinnedCanvasWidget(SnowCanvasRuntime& runtime, QWidget* parent,
+                                 std::function<void()> afterPaint)
+        : SnowCanvasWidget(runtime, parent), m_afterPaint(std::move(afterPaint)) {}
+
+  protected:
+    void paintEvent(QPaintEvent* event) override {
+        SNOW_SHOT_PIN_PERF_SCOPE("paint.event");
+        SNOW_SHOT_PIN_PERF_MILESTONE("paint.event.enter");
+        SnowCanvasWidget::paintEvent(event);
+        SNOW_SHOT_PIN_PERF_MILESTONE("paint.event.exit");
+        if (m_afterPaint) {
+            m_afterPaint();
+        }
+    }
+
+  private:
+    std::function<void()> m_afterPaint;
+};
+
 void configurePinnedControlButton(adqt::widgets::AdButton* button) {
     if (button == nullptr) {
         return;
@@ -1322,6 +1343,9 @@ bool ScreenshotPinnedWindow::presentInternal(
     m_deferredPresentationSetupScheduled = false;
     m_recognitionTargetReady = false;
     m_firstContentFramePublished = false;
+    m_firstFramePaintPending = false;
+    m_firstFramePaintSucceeded = true;
+    m_completePresentationAfterFirstFrame = false;
     setAttribute(Qt::WA_TransparentForMouseEvents, m_pendingImage);
     // A materialized source may only be a geometry placeholder when a loader
     // is present. Do not expose it to OCR or editing as the final image.
@@ -1718,44 +1742,10 @@ bool ScreenshotPinnedWindow::presentInternal(
     show();
     SNOW_SHOT_PIN_PERF_MILESTONE("window.show_returned");
     SNOW_SHOT_PIN_PERF_MILESTONE("window.shell_visible");
-#if defined(Q_OS_WIN) || defined(_WIN32)
-    if (!deferContent) {
-        SNOW_SHOT_PIN_PERF_COUNTER(
-            configuredPinPaintMode() == PinPaintMode::Control ? "paint.mode.control"
-                                                               : "paint.mode.single",
-            1);
-        SNOW_SHOT_PIN_PERF_MILESTONE("window.first_frame.update");
-        SNOW_SHOT_PIN_PERF_COUNTER("paint.update_calls", 1);
-        m_canvas->update();
-        SNOW_SHOT_PIN_PERF_MILESTONE("window.first_frame.update_finished");
-        if (configuredPinPaintMode() == PinPaintMode::Control) {
-            SNOW_SHOT_PIN_PERF_SCOPE("window.first_frame.repaint");
-            SNOW_SHOT_PIN_PERF_COUNTER("paint.repaint_calls", 1);
-            m_canvas->repaint();
-            SNOW_SHOT_PIN_PERF_MILESTONE("window.canvas_repainted");
-        }
-        SNOW_SHOT_PIN_PERF_SCOPE("window.first_frame.native_sync");
-        SNOW_SHOT_PIN_PERF_COUNTER("paint.native_sync_calls", 1);
-        if (!native::synchronizeClientPaint(nativeWindowId)) {
-            hide();
-            finishPresentation(false);
-            return false;
-        }
-        SNOW_SHOT_PIN_PERF_MILESTONE("window.native_paint_synchronized");
-        m_firstContentFramePublished = true;
-        SNOW_SHOT_PIN_PERF_MILESTONE("window.first_content_frame");
-        scheduleDeferredPresentationSetup();
-    }
-#endif
     if (currentNativeGeometry() != config.nativeGeometry) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
         if (!native::applyClientGeometry(nativeWindowId, config.nativeGeometry,
                                           native::GeometryUpdate::DiscardClientPixels)) {
-            hide();
-            finishPresentation(false);
-            return false;
-        }
-        if (!deferContent && !native::synchronizeClientPaint(nativeWindowId)) {
             hide();
             finishPresentation(false);
             return false;
@@ -1772,7 +1762,12 @@ bool ScreenshotPinnedWindow::presentInternal(
     m_synchronizedResizeWindowId = nativeWindowId;
     m_presented = true;
     raise();
+    if (!deferContent) {
+        m_completePresentationAfterFirstFrame = true;
+        requestFirstContentFramePaint();
+    }
     if (deferContent && !m_pendingImage) {
+        m_completePresentationAfterFirstFrame = true;
         requestMaterializedImage([this](bool succeeded) {
             if (!succeeded || m_closing) {
                 finishPresentation(false);
@@ -1781,12 +1776,9 @@ bool ScreenshotPinnedWindow::presentInternal(
             }
             if (m_canvas != nullptr) {
                 m_canvas->setCanvasContentVisible(!m_ocrMode);
-                m_canvas->update();
             }
-            finishPresentation(true, m_originalImage);
+            requestFirstContentFramePaint();
         });
-    } else if (!deferContent && m_presentationCompletion) {
-        QTimer::singleShot(0, this, [this]() { finishPresentation(true, m_originalImage); });
     }
     return true;
 }
@@ -1928,6 +1920,9 @@ void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
     m_closing = true;
     m_pendingImage = false;
     m_firstContentFramePublished = false;
+    m_firstFramePaintPending = false;
+    m_firstFramePaintSucceeded = false;
+    m_completePresentationAfterFirstFrame = false;
     setAttribute(Qt::WA_TransparentForMouseEvents, false);
     invalidatePendingCopy();
     finishPresentation(false);
@@ -2090,7 +2085,8 @@ void ScreenshotPinnedWindow::createUi() {
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    m_canvas = new SnowCanvasWidget(m_runtime, this);
+    m_canvas = new ScreenshotPinnedCanvasWidget(
+        m_runtime, this, [this]() { handleFirstContentFramePainted(); });
     m_canvas->setAttribute(Qt::WA_NativeWindow, false);
     m_canvas->setAttribute(Qt::WA_OpaquePaintEvent, false);
     m_canvas->setMinimumSize(1, 1);
@@ -2643,43 +2639,13 @@ void ScreenshotPinnedWindow::finishMaterializedImage(ScreenshotExportTaskResult 
     }
 
     if (succeeded && m_canvas != nullptr && !m_firstContentFramePublished) {
-        SNOW_SHOT_PIN_PERF_COUNTER(
-            configuredPinPaintMode() == PinPaintMode::Control ? "paint.mode.control"
-                                                               : "paint.mode.single",
-            1);
         m_pendingImage = false;
         m_canvas->setCanvasContentVisible(!m_ocrMode);
-        SNOW_SHOT_PIN_PERF_MILESTONE("window.finish.first_frame.update");
-        SNOW_SHOT_PIN_PERF_COUNTER("paint.update_calls", 1);
-        m_canvas->update();
-        SNOW_SHOT_PIN_PERF_MILESTONE("window.finish.first_frame.update_finished");
-#if defined(Q_OS_WIN) || defined(_WIN32)
-        if (configuredPinPaintMode() == PinPaintMode::Control) {
-            SNOW_SHOT_PIN_PERF_SCOPE("window.finish.first_frame.repaint");
-            SNOW_SHOT_PIN_PERF_COUNTER("paint.repaint_calls", 1);
-            m_canvas->repaint();
-            SNOW_SHOT_PIN_PERF_MILESTONE("window.canvas_repainted");
-        }
-        SNOW_SHOT_PIN_PERF_SCOPE("window.finish.first_frame.native_sync");
-        SNOW_SHOT_PIN_PERF_COUNTER("paint.native_sync_calls", 1);
-        if (!native::synchronizeClientPaint(winId())) {
-            succeeded = false;
-        }
-#endif
-        if (succeeded) {
-            m_firstContentFramePublished = true;
-            SNOW_SHOT_PIN_PERF_MILESTONE("window.first_content_frame");
-            scheduleDeferredPresentationSetup();
-        }
+        m_firstFramePaintSucceeded = true;
+        requestFirstContentFramePaint();
+        return;
     }
-
-    std::vector<MaterializationCallback> callbacks = std::move(m_materializationCallbacks);
-    m_materializationCallbacks.clear();
-    for (MaterializationCallback& callback : callbacks) {
-        if (callback) {
-            callback(succeeded);
-        }
-    }
+    finishMaterializationCallbacks(succeeded);
     if (!succeeded && m_presented && !m_closing) {
         close();
     }
@@ -2712,6 +2678,66 @@ bool ScreenshotPinnedWindow::installMaterializedImage(QImage image) {
     }
     m_recognitionTargetReady = false;
     return true;
+}
+
+void ScreenshotPinnedWindow::requestFirstContentFramePaint() {
+    if (m_closing || m_canvas == nullptr || m_firstContentFramePublished) {
+        return;
+    }
+    if (m_firstFramePaintPending) {
+        return;
+    }
+    m_firstFramePaintPending = true;
+    m_firstFramePaintSucceeded = true;
+    SNOW_SHOT_PIN_PERF_COUNTER(
+        configuredPinPaintMode() == PinPaintMode::Control ? "paint.mode.control"
+                                                           : "paint.mode.single",
+        1);
+    SNOW_SHOT_PIN_PERF_MILESTONE("window.first_frame.update");
+    SNOW_SHOT_PIN_PERF_COUNTER("paint.update_calls", 1);
+    m_canvas->update();
+    SNOW_SHOT_PIN_PERF_MILESTONE("window.first_frame.update_finished");
+}
+
+void ScreenshotPinnedWindow::handleFirstContentFramePainted() {
+    if (!m_firstFramePaintPending || m_closing || !m_presented) {
+        return;
+    }
+    m_firstFramePaintPending = false;
+    SNOW_SHOT_PIN_PERF_MILESTONE("paint.first_frame.accepted");
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    SNOW_SHOT_PIN_PERF_SCOPE("window.first_frame.native_sync");
+    SNOW_SHOT_PIN_PERF_COUNTER("paint.native_sync_calls", 1);
+    if (!native::synchronizeClientPaint(winId(), native::PaintSynchronization::FlushAlreadyPainted)) {
+        m_firstFramePaintSucceeded = false;
+    }
+#endif
+    if (!m_firstFramePaintSucceeded) {
+        finishMaterializationCallbacks(false);
+        finishPresentation(false);
+        if (!m_closing) {
+            close();
+        }
+        return;
+    }
+    m_firstContentFramePublished = true;
+    SNOW_SHOT_PIN_PERF_MILESTONE("window.first_content_frame");
+    scheduleDeferredPresentationSetup();
+    finishMaterializationCallbacks(true);
+    if (m_completePresentationAfterFirstFrame) {
+        m_completePresentationAfterFirstFrame = false;
+        finishPresentation(true, m_originalImage);
+    }
+}
+
+void ScreenshotPinnedWindow::finishMaterializationCallbacks(bool succeeded) {
+    std::vector<MaterializationCallback> callbacks = std::move(m_materializationCallbacks);
+    m_materializationCallbacks.clear();
+    for (MaterializationCallback& callback : callbacks) {
+        if (callback) {
+            callback(succeeded);
+        }
+    }
 }
 
 void ScreenshotPinnedWindow::configureRecognitionTarget() {
@@ -2800,36 +2826,11 @@ bool ScreenshotPinnedWindow::publishMaterializedImage(QImage image) {
 
     m_pendingImage = false;
     setAttribute(Qt::WA_TransparentForMouseEvents, false);
-    SNOW_SHOT_PIN_PERF_COUNTER(
-        configuredPinPaintMode() == PinPaintMode::Control ? "paint.mode.control"
-                                                           : "paint.mode.single",
-        1);
     if (m_canvas != nullptr) {
         m_canvas->setCanvasContentVisible(!m_ocrMode);
-        SNOW_SHOT_PIN_PERF_MILESTONE("window.publish.first_frame.update");
-        SNOW_SHOT_PIN_PERF_COUNTER("paint.update_calls", 1);
-        m_canvas->update();
-        SNOW_SHOT_PIN_PERF_MILESTONE("window.publish.first_frame.update_finished");
+        m_completePresentationAfterFirstFrame = true;
+        requestFirstContentFramePaint();
     }
-#if defined(Q_OS_WIN) || defined(_WIN32)
-    if (m_canvas != nullptr && configuredPinPaintMode() == PinPaintMode::Control) {
-        SNOW_SHOT_PIN_PERF_SCOPE("window.publish.first_frame.repaint");
-        SNOW_SHOT_PIN_PERF_COUNTER("paint.repaint_calls", 1);
-        m_canvas->repaint();
-        SNOW_SHOT_PIN_PERF_MILESTONE("window.canvas_repainted");
-    }
-    SNOW_SHOT_PIN_PERF_SCOPE("window.publish.first_frame.native_sync");
-    SNOW_SHOT_PIN_PERF_COUNTER("paint.native_sync_calls", 1);
-    if (!native::synchronizeClientPaint(winId())) {
-        finishPresentation(false);
-        close();
-        return false;
-    }
-#endif
-    m_firstContentFramePublished = true;
-    SNOW_SHOT_PIN_PERF_MILESTONE("window.first_content_frame");
-    scheduleDeferredPresentationSetup();
-    finishPresentation(true, m_originalImage);
     return true;
 }
 

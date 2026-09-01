@@ -288,11 +288,17 @@ bool ScreenshotSelectionExportUiServices::presentPinnedSelection(
     }
     const bool subscribed = result.subscribe(
         pinnedWindow, [pinnedWindow](bool success, QImage image) mutable {
+            SNOW_SHOT_PIN_PERF_SCOPE("export.result_callback");
+            SNOW_SHOT_PIN_PERF_MILESTONE("export.result_callback.enter");
             if (success) {
+                SNOW_SHOT_PIN_PERF_MILESTONE("window.publish_materialized_image.enter");
                 static_cast<void>(pinnedWindow->publishMaterializedImage(std::move(image)));
             } else {
+                SNOW_SHOT_PIN_PERF_MILESTONE("window.publish_materialized_image.enter");
                 static_cast<void>(pinnedWindow->publishMaterializedImage({}));
             }
+            SNOW_SHOT_PIN_PERF_MILESTONE("window.publish_materialized_image.exit");
+            SNOW_SHOT_PIN_PERF_MILESTONE("export.result_callback.exit");
         });
     if (!subscribed) {
         result.cancel();

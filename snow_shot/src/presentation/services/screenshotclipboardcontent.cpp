@@ -27,6 +27,14 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <thread>
+#include <vector>
+
+#if defined(Q_OS_WIN) || defined(_WIN32)
+bool screenshotClipboardDibAvx2Available();
+bool screenshotClipboardDibDecodeBgrxAvx2(const std::uint32_t* source,
+                                          std::uint32_t* destination, int pixels);
+#endif
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #include <qt_windows.h>
@@ -456,38 +464,94 @@ std::optional<ScreenshotClipboardNativeDib> captureNativeDib() {
                            : ScreenshotClipboardNativeDibFormat::Dib};
 }
 
-unsigned char dibChannel(std::uint32_t value, std::uint32_t mask, unsigned char fallback) {
-    if (mask == 0) return fallback;
-    const std::uint32_t shifted = value & mask;
+struct DibChannelMetadata {
+    std::uint32_t mask = 0;
+    std::uint32_t compactMask = 0;
     unsigned shift = 0;
-    while (((mask >> shift) & 1u) == 0u) ++shift;
-    const std::uint32_t maxValue = mask >> shift;
-    return static_cast<unsigned char>((static_cast<std::uint64_t>(shifted >> shift) * 255u +
-                                       maxValue / 2u) /
+    unsigned bitCount = 0;
+    bool contiguous = true;
+};
+
+DibChannelMetadata makeDibChannelMetadata(std::uint32_t mask) {
+    DibChannelMetadata metadata;
+    metadata.mask = mask;
+    if (mask == 0) return metadata;
+    while (metadata.shift < 32 && ((mask >> metadata.shift) & 1u) == 0u) ++metadata.shift;
+    unsigned highestBit = 31;
+    while (highestBit > metadata.shift && ((mask >> highestBit) & 1u) == 0u) --highestBit;
+    unsigned compactBit = 0;
+    bool gap = false;
+    for (unsigned bit = metadata.shift; bit <= highestBit; ++bit) {
+        if ((mask & (1u << bit)) != 0u) {
+            metadata.compactMask |= 1u << compactBit++;
+        } else if (compactBit != 0) {
+            gap = true;
+        }
+    }
+    metadata.bitCount = compactBit;
+    metadata.contiguous = !gap;
+    return metadata;
+}
+
+unsigned char dibChannel(std::uint32_t value, const DibChannelMetadata& metadata,
+                         unsigned char fallback) {
+    if (metadata.mask == 0 || metadata.bitCount == 0) return fallback;
+    std::uint32_t raw = 0;
+    if (metadata.contiguous) {
+        raw = (value & metadata.mask) >> metadata.shift;
+    } else {
+        unsigned compactBit = 0;
+        for (unsigned bit = metadata.shift; bit < 32; ++bit) {
+            if ((metadata.mask & (1u << bit)) != 0u) {
+                raw |= ((value >> bit) & 1u) << compactBit++;
+            }
+        }
+    }
+    const std::uint32_t maxValue = metadata.compactMask;
+    return static_cast<unsigned char>((static_cast<std::uint64_t>(raw) * 255u + maxValue / 2u) /
                                       maxValue);
 }
 
 QImage decodeNativeDib(const ScreenshotClipboardNativeDib& native) {
     if (!native.isValid()) return {};
     const auto* header = reinterpret_cast<const BITMAPINFOHEADER*>(native.bytes.constData());
+    if (native.bytes.size() < static_cast<int>(sizeof(BITMAPINFOHEADER)) ||
+        header->biSize < sizeof(BITMAPINFOHEADER) ||
+        header->biSize > static_cast<DWORD>(native.bytes.size()) || header->biWidth <= 0 ||
+        header->biHeight == 0 || header->biPlanes != 1 || header->biBitCount != 32 ||
+        (header->biCompression != BI_RGB && header->biCompression != BI_BITFIELDS)) {
+        return {};
+    }
     const qint64 width = header->biWidth;
     const qint64 height = header->biHeight < 0
                               ? -static_cast<qint64>(header->biHeight)
                               : static_cast<qint64>(header->biHeight);
     const bool topDown = header->biHeight < 0;
-    const qint64 stride = ((width * 4) + 3) & ~qint64(3);
+    if (height <= 0 || width > std::numeric_limits<qint64>::max() / 4 ||
+        width * height > kMaximumClipboardImagePixels || width > std::numeric_limits<int>::max() ||
+        height > std::numeric_limits<int>::max()) {
+        return {};
+    }
+    const qint64 rowBytes = width * 4;
+    if (rowBytes > std::numeric_limits<qint64>::max() - 3) return {};
+    const qint64 stride = (rowBytes + 3) & ~qint64(3);
     const qint64 pixelOffset = static_cast<qint64>(header->biSize) +
                                (header->biCompression == BI_BITFIELDS &&
                                         header->biSize < sizeof(BITMAPV4HEADER)
                                     ? 12
                                     : 0);
-    if (pixelOffset < 0 || pixelOffset + stride * height > native.bytes.size()) return {};
+    if (pixelOffset < 0 || pixelOffset > native.bytes.size() ||
+        height > (native.bytes.size() - pixelOffset) / stride ||
+        native.size != QSize(static_cast<int>(width), static_cast<int>(height))) {
+        return {};
+    }
 
     std::uint32_t redMask = 0x00ff0000u;
     std::uint32_t greenMask = 0x0000ff00u;
     std::uint32_t blueMask = 0x000000ffu;
     std::uint32_t alphaMask = 0;
     if (header->biCompression == BI_BITFIELDS) {
+        if (native.bytes.size() < static_cast<int>(sizeof(BITMAPINFOHEADER) + 12)) return {};
         const auto* masks = reinterpret_cast<const std::uint32_t*>(
             native.bytes.constData() + sizeof(BITMAPINFOHEADER));
         redMask = masks[0];
@@ -495,25 +559,69 @@ QImage decodeNativeDib(const ScreenshotClipboardNativeDib& native) {
         blueMask = masks[2];
         alphaMask = 0;
         if (header->biSize >= sizeof(BITMAPV4HEADER)) {
+            if (native.bytes.size() < static_cast<int>(sizeof(BITMAPV5HEADER))) return {};
             const auto* v5 = reinterpret_cast<const BITMAPV5HEADER*>(native.bytes.constData());
             alphaMask = v5->bV5AlphaMask;
         }
     }
+    const DibChannelMetadata red = makeDibChannelMetadata(redMask);
+    const DibChannelMetadata green = makeDibChannelMetadata(greenMask);
+    const DibChannelMetadata blue = makeDibChannelMetadata(blueMask);
+    const DibChannelMetadata alpha = makeDibChannelMetadata(alphaMask);
+    const bool standardOpaque = alphaMask == 0 && redMask == 0x00ff0000u &&
+                                greenMask == 0x0000ff00u && blueMask == 0x000000ffu;
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    const bool useAvx2 = standardOpaque && screenshotClipboardDibAvx2Available();
+#else
+    const bool useAvx2 = false;
+#endif
     QImage image(native.size, QImage::Format_ARGB32_Premultiplied);
     if (image.isNull()) return {};
-    for (int y = 0; y < image.height(); ++y) {
-        const int sourceY = topDown ? y : image.height() - 1 - y;
-        const char* source = native.bytes.constData() + pixelOffset +
-                             static_cast<qint64>(sourceY) * stride;
-        auto* destination = reinterpret_cast<std::uint32_t*>(image.scanLine(y));
-        for (int x = 0; x < image.width(); ++x) {
-            std::uint32_t value = 0;
-            std::memcpy(&value, source + static_cast<qint64>(x) * sizeof(value), sizeof(value));
-            const unsigned char alpha = alphaMask == 0 ? 255 : dibChannel(value, alphaMask, 255);
-            destination[x] = qPremultiply(qRgba(dibChannel(value, redMask, 0),
-                                                dibChannel(value, greenMask, 0),
-                                                dibChannel(value, blueMask, 0), alpha));
+    const auto decodeRows = [&](int firstRow, int lastRow) {
+        for (int y = firstRow; y < lastRow; ++y) {
+            const int sourceY = topDown ? y : image.height() - 1 - y;
+            const auto* source = reinterpret_cast<const std::uint32_t*>(
+                native.bytes.constData() + pixelOffset + static_cast<qint64>(sourceY) * stride);
+            auto* destination = reinterpret_cast<std::uint32_t*>(image.scanLine(y));
+            if (standardOpaque) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+                if (useAvx2) {
+                    static_cast<void>(screenshotClipboardDibDecodeBgrxAvx2(
+                        source, destination, image.width()));
+                    continue;
+                }
+#endif
+                for (int x = 0; x < image.width(); ++x) destination[x] = source[x] | 0xff000000u;
+                continue;
+            }
+            for (int x = 0; x < image.width(); ++x) {
+                const std::uint32_t value = source[x];
+                const unsigned char a = alphaMask == 0 ? 255 : dibChannel(value, alpha, 255);
+                destination[x] = qPremultiply(qRgba(dibChannel(value, red, 0),
+                                                    dibChannel(value, green, 0),
+                                                    dibChannel(value, blue, 0), a));
+            }
         }
+    };
+    if (standardOpaque) SNOW_SHOT_PIN_PERF_COUNTER("clipboard.dib.fast_path", 1);
+    else SNOW_SHOT_PIN_PERF_COUNTER("clipboard.dib.generic_path", 1);
+    if (useAvx2) SNOW_SHOT_PIN_PERF_COUNTER("clipboard.dib.avx2", 1);
+    SNOW_SHOT_PIN_PERF_COUNTER("clipboard.dib.decoded_bytes", native.bytes.size());
+    const qint64 pixels = static_cast<qint64>(image.width()) * image.height();
+    const int workersCount = std::min(8, std::max(1, QThread::idealThreadCount() - 1));
+    if (pixels < 1'000'000 || workersCount <= 1 || image.height() < 2) {
+        decodeRows(0, image.height());
+    } else {
+        SNOW_SHOT_PIN_PERF_COUNTER("clipboard.dib.parallel_jobs", workersCount);
+        const int rowsPerWorker = (image.height() + workersCount - 1) / workersCount;
+        std::vector<std::thread> workers;
+        for (int worker = 0; worker < workersCount; ++worker) {
+            const int first = worker * rowsPerWorker;
+            const int last = std::min(image.height(), first + rowsPerWorker);
+            if (first >= last) break;
+            workers.emplace_back([&, first, last]() { decodeRows(first, last); });
+        }
+        for (auto& worker : workers) worker.join();
     }
     return image;
 }

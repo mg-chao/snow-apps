@@ -177,14 +177,21 @@ bool screenshot_pinned_window_native::applyCursor(Qt::CursorShape shape) {
 #endif
 }
 
-bool screenshot_pinned_window_native::synchronizeClientPaint(WId windowId) {
+bool screenshot_pinned_window_native::synchronizeClientPaint(
+    WId windowId, PaintSynchronization synchronization) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
     const HWND hwnd = toNativeHwnd(windowId);
-    return hwnd != nullptr &&
-           RedrawWindow(hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN) !=
-               FALSE;
+    if (hwnd == nullptr) {
+        return false;
+    }
+    UINT flags = RDW_UPDATENOW | RDW_ALLCHILDREN;
+    if (synchronization == PaintSynchronization::InvalidateAndUpdate) {
+        flags |= RDW_INVALIDATE;
+    }
+    return RedrawWindow(hwnd, nullptr, nullptr, flags) != FALSE;
 #else
     Q_UNUSED(windowId);
+    Q_UNUSED(synchronization);
     return true;
 #endif
 }

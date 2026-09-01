@@ -160,6 +160,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     using PresentationCompletion = std::function<void(bool, QImage)>;
     void requestMaterializedImage(MaterializationCallback callback);
     void finishMaterializedImage(ScreenshotExportTaskResult result);
+    void requestFirstContentFramePaint();
+    void handleFirstContentFramePainted();
+    void finishMaterializationCallbacks(bool succeeded);
     bool installMaterializedImage(QImage image);
     void configureRecognitionTarget();
     void scheduleDeferredPresentationSetup();
@@ -250,6 +253,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_materializationLoading = false;
     bool m_pendingImage = false;
     bool m_firstContentFramePublished = false;
+    bool m_firstFramePaintPending = false;
+    bool m_firstFramePaintSucceeded = true;
+    bool m_completePresentationAfterFirstFrame = false;
     bool m_recognitionTargetReady = false;
     bool m_deferredPresentationSetupScheduled = false;
     quint64 m_presentationGeneration = 0;

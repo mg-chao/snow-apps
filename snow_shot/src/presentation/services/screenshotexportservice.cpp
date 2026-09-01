@@ -425,6 +425,7 @@ bool ScreenshotExportService::schedulePinnedSelection(
          documentSession = std::move(documentSession), sources = std::move(sources),
          directSourceImage = std::move(directSourceImage), selection = request.selection,
          style = request.resultStyle]() mutable {
+            SNOW_SHOT_PIN_PERF_SCOPE("export.worker_callback");
             if (guardedWorker.isNull() || resultState->isCancelled()) {
                 return;
             }

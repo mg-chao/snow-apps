@@ -11,6 +11,11 @@ enum class GeometryUpdate {
     DiscardClientPixels,
 };
 
+enum class PaintSynchronization {
+    InvalidateAndUpdate,
+    FlushAlreadyPainted,
+};
+
 [[nodiscard]] Qt::WindowFlags windowFlags();
 [[nodiscard]] bool
 applyClientGeometry(WId windowId, const QRect& geometry,
@@ -20,7 +25,8 @@ applyClientGeometry(WId windowId, const QRect& geometry,
 [[nodiscard]] bool installSynchronizedResize(WId windowId, const bool* interactiveResizeActive);
 void removeSynchronizedResize(WId windowId);
 [[nodiscard]] bool applyCursor(Qt::CursorShape shape);
-[[nodiscard]] bool synchronizeClientPaint(WId windowId);
+[[nodiscard]] bool synchronizeClientPaint(
+    WId windowId, PaintSynchronization synchronization = PaintSynchronization::InvalidateAndUpdate);
 [[nodiscard]] bool beginWindowMoveCapture(WId windowId);
 void endWindowMoveCapture(WId windowId);
 } // namespace screenshot_pinned_window_native
