@@ -518,6 +518,36 @@ void applyScreenshotShortcutTooltip(QWidget* widget, const QString& source,
     widget->setAccessibleName(title);
 }
 
+void applyPinToScreenShortcutTooltip(QWidget* widget, const QString& source,
+                                     const QString& actionId) {
+    if (widget == nullptr || source.isEmpty() || actionId.isEmpty()) {
+        return;
+    }
+
+    const QStringList shortcuts =
+        snow_shot::storage::PinToScreenShortcutSettings().shortcuts(actionId);
+    QStringList displayShortcuts;
+    for (const QString& shortcut : shortcuts) {
+        const QString displayShortcut = formatDrawingShortcutForTooltip(shortcut);
+        if (!displayShortcut.isEmpty()) {
+            displayShortcuts.push_back(displayShortcut);
+        }
+    }
+    const QString title = ScreenshotToolPaletteTranslationText(source).translated();
+    if (displayShortcuts.isEmpty()) {
+        configureScreenshotToolPaletteTooltip(
+            widget, ScreenshotToolPaletteTranslationText(source));
+        return;
+    }
+
+    configureScreenshotToolPaletteTooltip(
+        widget, ScreenshotToolPaletteTranslationText(QStringLiteral("%1 (%2)"))
+                    .arg(title)
+                    .arg(displayShortcuts.join(QStringLiteral(", "))));
+    setScreenshotToolPaletteAccessibleNameSource(widget, source.toUtf8().constData());
+    widget->setAccessibleName(title);
+}
+
 void applyDrawingShortcutTooltip(QWidget* widget, const QString& source,
                                  const QString& itemId = QString()) {
     if (widget == nullptr || source.isEmpty()) {
@@ -2615,6 +2645,15 @@ void ScreenshotToolPalette::retranslateUi() {
     if (m_recordDurationLabel != nullptr) {
         m_recordDurationLabel->setAccessibleName(tr("Recording duration"));
     }
+    refreshConfirmShortcutHint();
+}
+
+void ScreenshotToolPalette::refreshConfirmShortcutHint() {
+    if (!m_options.showDrawingModeShortcutOnConfirm || m_confirmButton == nullptr) {
+        return;
+    }
+    applyPinToScreenShortcutTooltip(m_confirmButton, QStringLiteral("Confirm edit"),
+                                    QStringLiteral("drawing_mode"));
 }
 
 void ScreenshotToolPalette::paintEvent(QPaintEvent* event) {
@@ -3615,6 +3654,10 @@ void ScreenshotToolPalette::addMainActionButtons(const Options& options, QBoxLay
 
     if ((options.actions & ConfirmAction) != 0) {
         m_confirmButton = addActionButton("Confirm edit", primaryIcon(outlined_icons::Check()));
+        if (options.showDrawingModeShortcutOnConfirm) {
+            applyPinToScreenShortcutTooltip(m_confirmButton, QStringLiteral("Confirm edit"),
+                                            QStringLiteral("drawing_mode"));
+        }
         addButton(m_confirmButton);
         connect(m_confirmButton, &adqt::widgets::AdButton::clicked, this,
                 &ScreenshotToolPalette::confirmRequested);

@@ -59,6 +59,7 @@ ScreenshotToolPalette::Options pinnedEditToolbarOptions() {
     options.copyButtonWithNeutralIcon = true;
     options.separatorAfterSelect = true;
     options.separatorBeforeConfirm = true;
+    options.showDrawingModeShortcutOnConfirm = true;
     options.actions =
         ScreenshotToolPalette::CopyAction | ScreenshotToolPalette::ConfirmAction;
     options.styleDefaults = snow_shot::presentation::screenshotCanvasStyleDefaults();
@@ -231,6 +232,9 @@ ScreenshotPinnedEditController::ScreenshotPinnedEditController(
                         reloadDrawingShortcuts();
                     } else if (key.startsWith(QStringLiteral("screenshot_shortcuts/"))) {
                         reloadRecognitionShortcuts();
+                    } else if (key.startsWith(QStringLiteral("pin_to_screen_shortcuts/")) &&
+                               m_toolbarWindow != nullptr && m_toolbarWindow->palette() != nullptr) {
+                        m_toolbarWindow->palette()->refreshConfirmShortcutHint();
                     }
                 });
     }

@@ -414,7 +414,7 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     bool setSelectedOpacity(double opacity);
     bool adjustSelectedSerialNumbers(qint64 delta);
     bool createSerialNumberText();
-    bool resetEditingState();
+    bool resetEditingState(bool restoreSelectTool);
     bool cancelActiveTextEditing();
     bool hasActiveTextEditing() const;
     SnowCanvasWidgetTextInteraction::CommitResult commitText(bool refocusWidget = true,
@@ -1638,7 +1638,8 @@ bool SnowCanvasWidget::createSerialNumberText() {
     return m_impl->createSerialNumberText();
 }
 
-bool SnowCanvasWidget::Impl::resetEditingState() {
+bool SnowCanvasWidget::Impl::resetEditingState(bool restoreSelectTool) {
+    const SnowCanvasTool previousTool = canvasTool();
     if (pendingLiveStrokePreservesEverySample) {
         flushLiveStrokeMoves();
     } else {
@@ -1667,9 +1668,17 @@ bool SnowCanvasWidget::Impl::resetEditingState() {
     }
 
     clearRenderState();
-    requestedCanvasTool = SnowCanvasTool::Select;
     inputHandler.clearTransientState();
-    applyCanvasToolCursor(SnowCanvasTool::Select);
+    if (restoreSelectTool) {
+        requestedCanvasTool = SnowCanvasTool::Select;
+        applyCanvasToolCursor(SnowCanvasTool::Select);
+    } else if (previousTool != SnowCanvasTool::Select) {
+        // The engine reset also selects the Select tool. Export callers need
+        // the editing cleanup while preserving the user's active tool.
+        if (!setCanvasTool(previousTool)) {
+            return false;
+        }
+    }
     refreshSerialNumberToolbar();
     if (!previewRegion.isEmpty()) {
         widget.update(previewRegion);
@@ -1678,7 +1687,11 @@ bool SnowCanvasWidget::Impl::resetEditingState() {
 }
 
 bool SnowCanvasWidget::resetEditingState() {
-    return m_impl->resetEditingState();
+    return m_impl->resetEditingState(true);
+}
+
+bool SnowCanvasWidget::resetEditingStatePreservingTool() {
+    return m_impl->resetEditingState(false);
 }
 
 void SnowCanvasWidget::clearRenderState() {

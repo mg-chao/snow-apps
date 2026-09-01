@@ -402,6 +402,9 @@ void hoveringFillColorTriggerShowsPicker() {
     toolbar.raise();
     waitFor(150);
     require(toolbar.isVisible(), "screenshot toolbar should be visible");
+    require(toolbar.windowHandle() != nullptr && overlay.windowHandle() != nullptr &&
+                toolbar.windowHandle()->transientParent() == overlay.windowHandle(),
+            "screenshot toolbar should retain its overlay transient parent");
 
     toolbar.setActiveTool(ScreenshotToolPalette::Tool::Watermark);
     waitFor(50);

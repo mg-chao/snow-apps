@@ -354,12 +354,16 @@ bool ScreenshotOcrController::copyRecognitionToClipboard(bool endCapture) {
             m_recognitionWindow->commitActiveTableEdit();
         }
     }
-    std::unique_ptr<QMimeData> mimeData =
-        m_session->recognitionClipboardMimeData(m_presentation.get());
-    if (mimeData == nullptr) {
-        return false;
+    bool copied = m_recognitionWindow != nullptr &&
+                  m_recognitionWindow->copyVisibleContentToClipboard();
+    if (!copied) {
+        std::unique_ptr<QMimeData> mimeData =
+            m_session->recognitionClipboardMimeData(m_presentation.get());
+        if (mimeData == nullptr) {
+            return false;
+        }
+        QApplication::clipboard()->setMimeData(mimeData.release(), QClipboard::Clipboard);
     }
-    QApplication::clipboard()->setMimeData(mimeData.release(), QClipboard::Clipboard);
     if (endCapture) {
         m_context.cancelCapture();
     }
@@ -651,7 +655,9 @@ bool ScreenshotOcrController::ensureRecognitionWindow() {
             updateRecognitionWindowGeometry();
         },
         []() {},
-    });
+        [this]() { m_context.cancelCapture(); },
+    }, nullptr, ScreenshotRecognitionWindow::PresentationMode::TopLevelWindow,
+    m_context.shortcutManager);
     if (!window->present(config)) {
         delete window;
         showStatus(tr("Unable to read the selected screenshot"), true);

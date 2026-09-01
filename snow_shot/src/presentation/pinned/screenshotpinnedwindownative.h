@@ -22,6 +22,7 @@ applyClientGeometry(WId windowId, const QRect& geometry,
                     GeometryUpdate update = GeometryUpdate::PreserveClientPixels);
 [[nodiscard]] QRect currentClientGeometry(WId windowId);
 [[nodiscard]] bool applySystemResizeStyle(WId windowId);
+[[nodiscard]] bool activateWindow(WId windowId);
 [[nodiscard]] bool installSynchronizedResize(WId windowId, const bool* interactiveResizeActive);
 void removeSynchronizedResize(WId windowId);
 [[nodiscard]] bool applyCursor(Qt::CursorShape shape);

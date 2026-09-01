@@ -546,6 +546,13 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
         return !m_closing && !focusAcceptsTextInput(context.focusWidget) &&
                (m_canvas == nullptr || !m_canvas->hasActiveTextEditing());
     };
+    const auto ocrCommandsAllowed = [this](const ShortcutManager::ActivationContext& context) {
+        // OCR replaces the canvas interaction surface. Let its read-only result layer handle
+        // Select All/Copy even if the hidden canvas still has an unfinished drawing edit, while
+        // preserving native shortcuts for an actual text input that owns keyboard focus.
+        return !m_closing && m_ocrMode && m_displayOcrPresentation != nullptr &&
+               !focusAcceptsTextInput(context.focusWidget);
+    };
 
     ShortcutManager::Binding copyCurrent;
     copyCurrent.id = QStringLiteral("pinned.copy_current");
@@ -668,10 +675,7 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
         QKeyCombination(Qt::MetaModifier, Qt::Key_A),
     };
     selectAll.priority = ShortcutManager::StandardPriority::WindowCommand;
-    selectAll.canActivate = [this, localCommandsAllowed](const auto& context) {
-        return m_ocrMode && m_displayOcrPresentation != nullptr &&
-               localCommandsAllowed(context);
-    };
+    selectAll.canActivate = ocrCommandsAllowed;
     selectAll.activate = [this](const auto&) {
         m_displayOcrPresentation->selectAll();
         m_screenshotRenderer->updateOcrSelection();
@@ -686,10 +690,7 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
         QKeyCombination(Qt::MetaModifier, Qt::Key_C),
     };
     copy.priority = ShortcutManager::StandardPriority::WindowCommand;
-    copy.canActivate = [this, localCommandsAllowed](const auto& context) {
-        return m_ocrMode && m_displayOcrPresentation != nullptr &&
-               localCommandsAllowed(context);
-    };
+    copy.canActivate = ocrCommandsAllowed;
     copy.activate = [this](const auto&) {
         copyEditToolbarContent();
         return true;
@@ -1778,6 +1779,16 @@ bool ScreenshotPinnedWindow::presentInternal(
     m_synchronizedResizeWindowId = nativeWindowId;
     m_presented = true;
     raise();
+    static_cast<void>(native::activateWindow(nativeWindowId));
+    activateWindow();
+    if (QWindow* handle = windowHandle()) {
+        handle->requestActivate();
+    }
+    if (m_canvas != nullptr) {
+        m_canvas->setFocus(Qt::OtherFocusReason);
+    } else {
+        setFocus(Qt::OtherFocusReason);
+    }
     if (!deferContent) {
         m_completePresentationAfterFirstFrame = true;
         requestFirstContentFramePaint();
@@ -3307,7 +3318,7 @@ void ScreenshotPinnedWindow::copyCurrentViewport() {
     const QSize contentPixelSize(
         std::max(1, qRound(m_backgroundCanvasRect.width() * surfaceScale)),
         std::max(1, qRound(m_backgroundCanvasRect.height() * surfaceScale)));
-    if (m_canvas != nullptr && !m_canvas->resetEditingState()) {
+    if (m_canvas != nullptr && !m_canvas->resetEditingStatePreservingTool()) {
         return;
     }
     QByteArray documentSession = m_runtime.serializeDocumentSession();
@@ -3423,7 +3434,7 @@ void ScreenshotPinnedWindow::saveAsFile() {
     const ScreenshotImageFileFormat format =
         ScreenshotImageFileService::formatForDialogSelection(selectedPath, selectedFilter);
     const QString outputPath = ScreenshotImageFileService::normalizedPath(selectedPath, format);
-    if (m_canvas != nullptr && !m_canvas->resetEditingState()) {
+    if (m_canvas != nullptr && !m_canvas->resetEditingStatePreservingTool()) {
         return;
     }
     const QByteArray documentSession = m_runtime.serializeDocumentSession();

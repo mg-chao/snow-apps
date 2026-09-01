@@ -8,6 +8,7 @@
 #include <QPointer>
 #include <QSet>
 #include <QWidget>
+#include <QWindow>
 
 #include <algorithm>
 #include <utility>
@@ -91,7 +92,7 @@ struct WindowShortcutManager::Impl {
 
     explicit Impl(WindowShortcutManager& manager) : q(manager) {}
 
-    [[nodiscard]] bool containsReceiver(QObject* receiver) {
+    [[nodiscard]] QWidget* scopeForReceiver(QObject* receiver) {
         m_scopeWindows.erase(
             std::remove_if(m_scopeWindows.begin(), m_scopeWindows.end(),
                            [](const QPointer<QWidget>& window) { return window.isNull(); }),
@@ -99,14 +100,63 @@ struct WindowShortcutManager::Impl {
 
         auto* widget = qobject_cast<QWidget*>(receiver);
         if (widget == nullptr) {
-            return false;
+            return nullptr;
         }
+
         QWidget* receiverWindow = widget->window();
-        return std::any_of(m_scopeWindows.cbegin(), m_scopeWindows.cend(),
-                           [receiverWindow](const QPointer<QWidget>& scopeWindow) {
-                               return scopeWindow != nullptr &&
-                                      scopeWindow->window() == receiverWindow;
-                           });
+        if (receiverWindow == nullptr) {
+            return nullptr;
+        }
+
+        // The common case is a child widget of the registered top-level
+        // window. Keep the comparison on window() so ordinary child widgets
+        // do not require a native handle.
+        for (const QPointer<QWidget>& scopeWindow : m_scopeWindows) {
+            if (scopeWindow != nullptr && scopeWindow->window() == receiverWindow) {
+                return scopeWindow.data();
+            }
+        }
+
+        // QtTool popups are independent top-level widgets. Their transient
+        // parent is the toolbar (and eventually the screenshot overlay), so
+        // walk that native ownership chain instead of treating every tool
+        // window as out of scope.
+        QWindow* candidate = receiverWindow->windowHandle();
+        QSet<QWindow*> visited;
+        while (candidate != nullptr && !visited.contains(candidate)) {
+            visited.insert(candidate);
+            for (const QPointer<QWidget>& scopeWindow : m_scopeWindows) {
+                if (scopeWindow == nullptr) {
+                    continue;
+                }
+                QWindow* scopeHandle = scopeWindow->windowHandle();
+                if (scopeHandle != nullptr && scopeHandle == candidate) {
+                    return scopeWindow.data();
+                }
+            }
+            candidate = candidate->transientParent();
+        }
+
+        // Some platforms do not expose a QWindow transient parent until the
+        // first native show. Qt still retains the QObject parent relationship
+        // established by setParent(owner, Qt::Tool), so use it as a fallback.
+        for (QWidget* parent = receiverWindow->parentWidget(); parent != nullptr;
+             parent = parent->parentWidget()) {
+            for (const QPointer<QWidget>& scopeWindow : m_scopeWindows) {
+                if (scopeWindow != nullptr && scopeWindow->window() == parent->window()) {
+                    return scopeWindow.data();
+                }
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] bool inputSuspended() const { return !m_inputSuspensions.isEmpty(); }
+
+    void clearHeldBindings() {
+        for (RegisteredBinding& registered : m_bindings) {
+            registered.activeReleaseCombinations.clear();
+        }
     }
 
     [[nodiscard]] RegisteredBinding* findBinding(BindingHandle handle) {
@@ -181,6 +231,8 @@ struct WindowShortcutManager::Impl {
     QVector<RegisteredBinding> m_bindings;
     BindingHandle m_nextHandle = 1;
     quint64 m_nextOrder = 1;
+    InputSuspensionHandle m_nextSuspensionHandle = 1;
+    QSet<InputSuspensionHandle> m_inputSuspensions;
 };
 
 WindowShortcutManager::WindowShortcutManager(QObject* parent)
@@ -224,6 +276,19 @@ void WindowShortcutManager::removeScopeWindow(QWidget* window) {
                            return item.isNull() || item == root;
                        }),
         m_impl->m_scopeWindows.end());
+}
+
+WindowShortcutManager::InputSuspensionHandle WindowShortcutManager::suspendInput() {
+    const InputSuspensionHandle handle = m_impl->m_nextSuspensionHandle++;
+    m_impl->m_inputSuspensions.insert(handle);
+    m_impl->clearHeldBindings();
+    return handle;
+}
+
+void WindowShortcutManager::resumeInput(InputSuspensionHandle handle) {
+    if (handle == 0 || !m_impl->m_inputSuspensions.remove(handle)) {
+        return;
+    }
 }
 
 WindowShortcutManager::BindingHandle WindowShortcutManager::addBinding(QObject* owner,
@@ -296,8 +361,13 @@ bool WindowShortcutManager::eventFilter(QObject* watched, QEvent* event) {
     const bool keyRelease = event->type() == QEvent::KeyRelease;
     const QVector<Impl::Candidate> candidates =
         keyRelease ? m_impl->releaseCandidates(*keyEvent) : m_impl->candidates(*keyEvent);
-    const bool receiverInScope = m_impl->containsReceiver(watched);
-    const ActivationContext context{watched, QApplication::focusWidget(), keyEvent};
+    if (m_impl->inputSuspended()) {
+        return QObject::eventFilter(watched, event);
+    }
+
+    QWidget* scopeWindow = m_impl->scopeForReceiver(watched);
+    const bool receiverInScope = scopeWindow != nullptr;
+    const ActivationContext context{watched, QApplication::focusWidget(), keyEvent, scopeWindow};
     const auto candidateAllowedForReceiver = [this, receiverInScope,
                                               &context](BindingHandle handle) {
         if (receiverInScope) {

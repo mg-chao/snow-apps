@@ -368,7 +368,7 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
     {QStringLiteral("pin_to_screen_shortcuts/show_text_recognition_results"),
      QJsonArray{QStringLiteral("Ctrl+D")}, ConfigurationValueKind::StringList, std::nullopt, {}, 2},
     {QStringLiteral("pin_to_screen_shortcuts/drawing_mode"),
-     QJsonArray{QStringLiteral("Ctrl+E")}, ConfigurationValueKind::StringList, std::nullopt, {}, 2},
+     QJsonArray{QStringLiteral("Space")}, ConfigurationValueKind::StringList, std::nullopt, {}, 2},
     {QStringLiteral("pin_to_screen_shortcuts/thumbnail_mode"),
      QJsonArray{QStringLiteral("R")}, ConfigurationValueKind::StringList, std::nullopt, {}, 2},
     {QStringLiteral("pin_to_screen_shortcuts/close_window"),

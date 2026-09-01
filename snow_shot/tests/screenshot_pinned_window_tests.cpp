@@ -609,7 +609,9 @@ void pinnedWatermarkEditorAcceptsKeyboardInput(SnowCanvasRuntime&) {
             "keyboard input should update the pinned watermark text");
 
     QPushButton* confirmButton = buttonNamed(*toolbar, QStringLiteral("Confirm edit"));
-    require(confirmButton != nullptr, "pinned confirm button was not found");
+    require(confirmButton != nullptr &&
+                confirmButton->toolTip() == QStringLiteral("Confirm edit (Space)"),
+            "pinned confirm button should show the drawing-mode shortcut hint");
     confirmButton->click();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     QPushButton* closeButton = buttonNamed(*pinnedWindow, QStringLiteral("Close"));
@@ -831,6 +833,8 @@ void pinnedCopyIncludesSourceCanvasDrawing() {
 
     require(containsRedDrawing(copied),
             "pinned clipboard image should include canvas-drawn elements");
+    require(canvas->canvasTool() == SnowCanvasTool::Shape,
+            "copying from the pinned toolbar must preserve the active drawing tool");
     require(editController->editMode() && toolbarWindow->isVisible(),
             "copying from the pinned toolbar must keep the editing session open");
 
@@ -1336,7 +1340,7 @@ void pinnedContextMenuAndModes(SnowCanvasRuntime&) {
                 actions.at(1)->text().endsWith(QStringLiteral("\tCtrl+Shift+C")) &&
                 actions.at(2)->text().endsWith(QStringLiteral("\tCtrl+S")) &&
                 actions.at(3)->text().endsWith(QStringLiteral("\tCtrl+D")) &&
-                actions.at(5)->text().endsWith(QStringLiteral("\tCtrl+E")) &&
+                actions.at(5)->text().endsWith(QStringLiteral("\tSpace")) &&
                 actions.at(10)->text().endsWith(QStringLiteral("\tR")) &&
                 actions.constLast()->text().endsWith(QStringLiteral("\tEsc")),
             "pinned menu commands should display every default shortcut");
@@ -1398,16 +1402,25 @@ void pinnedContextMenuAndModes(SnowCanvasRuntime&) {
     recognizedPresentation->lines.push_back(std::move(recognizedLine));
     recognition.complete({std::move(recognizedPresentation), {}});
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    auto* editController = pinnedWindow->findChild<ScreenshotPinnedEditController*>();
+    auto* toolbarWindow =
+        editController != nullptr ? editController->toolbarWindow() : nullptr;
+    require(toolbarWindow != nullptr && toolbarWindow->isVisible(),
+            "the pinned edit toolbar should remain visible while OCR is active");
+    QApplication::clipboard()->clear();
+    sendShortcut(*toolbarWindow, Qt::Key_A, Qt::ControlModifier);
+    sendShortcut(*toolbarWindow, Qt::Key_C, Qt::ControlModifier);
+    require(QApplication::clipboard()->text() == QStringLiteral("Pinned OCR text"),
+            "Copy to Clipboard should copy all OCR text when the pinned toolbar owns the event");
     QApplication::clipboard()->clear();
     sendShortcut(*canvas, Qt::Key_A, Qt::ControlModifier);
     sendShortcut(*canvas, Qt::Key_C, Qt::ControlModifier);
     require(QApplication::clipboard()->text() == QStringLiteral("Pinned OCR text"),
             "Copy to Clipboard should copy selected OCR text while recognition is active");
-    sendShortcut(*canvas, Qt::Key_E, Qt::ControlModifier);
+    sendShortcut(*canvas, Qt::Key_Space);
     require(!actions.at(3)->isChecked() && canvas->canvasContentVisible() &&
                 canvas->interactionEnabled(),
             "drawing mode should exit OCR mode and restore canvas interaction");
-    auto* editController = pinnedWindow->findChild<ScreenshotPinnedEditController*>();
     ScreenshotToolPalette* editToolbar =
         editController != nullptr && editController->toolbarWindow() != nullptr
             ? editController->toolbarWindow()->palette()
@@ -1438,7 +1451,7 @@ void pinnedContextMenuAndModes(SnowCanvasRuntime&) {
         require(systemCursorPosition() == start,
                 "Right should move the cursor right by one pixel in drawing mode");
     }
-    sendShortcut(*canvas, Qt::Key_E, Qt::ControlModifier);
+    sendShortcut(*canvas, Qt::Key_Space);
 
     QApplication::clipboard()->clear();
     sendShortcut(*canvas, Qt::Key_C, Qt::ControlModifier);
@@ -1487,7 +1500,7 @@ void pinnedContextMenuAndModes(SnowCanvasRuntime&) {
     require(scaledCopy.pixelColor(scaledCopy.width() / 2, scaledCopy.height() / 2).alpha() == 255,
             "transformed viewport copy should include the transformed background");
 
-    sendShortcut(*canvas, Qt::Key_E, Qt::ControlModifier);
+    sendShortcut(*canvas, Qt::Key_Space);
     require(canvas->interactionEnabled(),
             "drawing mode should be active before entering thumbnail mode");
 
@@ -1521,7 +1534,7 @@ void pinnedContextMenuAndModes(SnowCanvasRuntime&) {
     require(imagesPixelEquivalent(originalCopy, background),
             "Copy Original Content should preserve the immutable pixels and dimensions");
 
-    sendShortcut(*canvas, Qt::Key_E, Qt::ControlModifier);
+    sendShortcut(*canvas, Qt::Key_Space);
     require(!actions.at(10)->isChecked() && !actions.at(5)->isChecked() &&
                 !canvas->interactionEnabled(),
             "drawing from thumbnail mode should restore the window before editing");
@@ -2226,6 +2239,26 @@ void pinnedConfiguredShortcutUpdatesImmediately(SnowCanvasRuntime&) {
         pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedDrawingAction"));
     require(canvas != nullptr && drawingAction != nullptr,
             "shortcut test pin controls were not found");
+    waitForUi(50);
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    require(GetForegroundWindow() == toNativeHwnd(pinnedWindow->winId()),
+            "a newly created pinned window should take foreground focus");
+#else
+    require(pinnedWindow->isActiveWindow(),
+            "a newly created pinned window should take window focus");
+#endif
+    require(canvas->hasFocus(),
+            "a newly created pinned window should focus its keyboard interaction surface");
+    drawingAction->setChecked(true);
+    drawingAction->setChecked(false);
+    auto* editController = pinnedWindow->findChild<ScreenshotPinnedEditController*>();
+    auto* toolbarWindow = editController != nullptr ? editController->toolbarWindow() : nullptr;
+    auto* confirmButton = toolbarWindow != nullptr && toolbarWindow->palette() != nullptr
+                              ? buttonNamed(*toolbarWindow->palette(), QStringLiteral("Confirm edit"))
+                              : nullptr;
+    require(confirmButton != nullptr &&
+                confirmButton->toolTip() == QStringLiteral("Confirm edit (Space)"),
+            "pinned Confirm Edit should show the default drawing-mode shortcut");
 
     const snow_shot::storage::PinToScreenShortcutSettings shortcuts;
     require(shortcuts.setShortcuts(QStringLiteral("drawing_mode"), {QStringLiteral("Ctrl+Alt+E")}),
@@ -2233,6 +2266,8 @@ void pinnedConfiguredShortcutUpdatesImmediately(SnowCanvasRuntime&) {
     waitForUi(50);
     require(drawingAction->text().endsWith(QStringLiteral("\tCtrl+Alt+E")),
             "an open pinned window should refresh its menu shortcut display immediately");
+    require(confirmButton->toolTip() == QStringLiteral("Confirm edit (Ctrl+Alt+E)"),
+            "pinned Confirm Edit should refresh its drawing-mode shortcut hint immediately");
     sendShortcut(*canvas, Qt::Key_E, Qt::ControlModifier);
     require(!drawingAction->isChecked(),
             "the previous pinned drawing-mode shortcut should stop activating immediately");
@@ -2240,10 +2275,10 @@ void pinnedConfiguredShortcutUpdatesImmediately(SnowCanvasRuntime&) {
     require(drawingAction->isChecked(),
             "the configured pinned drawing-mode shortcut should activate immediately");
     drawingAction->setChecked(false);
-    require(shortcuts.setShortcuts(QStringLiteral("drawing_mode"), {QStringLiteral("Ctrl+E")}),
+    require(shortcuts.setShortcuts(QStringLiteral("drawing_mode"), {QStringLiteral("Space")}),
             "the pinned drawing-mode shortcut fixture should restore its default");
     waitForUi(50);
-    require(drawingAction->text().endsWith(QStringLiteral("\tCtrl+E")),
+    require(drawingAction->text().endsWith(QStringLiteral("\tSpace")),
             "restoring a pinned shortcut should immediately restore the menu display");
 
     pinnedWindow->close();
@@ -3554,6 +3589,14 @@ int main(int argc, char* argv[]) {
     try {
         SnowCanvasRuntime sourceRuntime;
         require(sourceRuntime.isValid(), "source runtime creation failed");
+        if (app.arguments().contains(QStringLiteral("--pinned-ocr-shortcut-only"))) {
+            pinnedContextMenuAndModes(sourceRuntime);
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--pinned-shortcut-only"))) {
+            pinnedConfiguredShortcutUpdatesImmediately(sourceRuntime);
+            return 0;
+        }
         recognitionResultsSurviveTargetImageReallocationAndSeedAllModes();
         modelDownloadStatusTransitionsToRecognition();
         textRenderLifecycleUsesTransientWorkerResults();
@@ -3592,10 +3635,6 @@ int main(int argc, char* argv[]) {
         if (app.arguments().contains(QStringLiteral("--tray-pin-runtime-only"))) {
             pinnedContextMenuAndModes(sourceRuntime);
             pinnedControlsMatchReferenceStyle(sourceRuntime);
-            return 0;
-        }
-        if (app.arguments().contains(QStringLiteral("--pinned-shortcut-only"))) {
-            pinnedConfiguredShortcutUpdatesImmediately(sourceRuntime);
             return 0;
         }
 #if defined(Q_OS_WIN) || defined(_WIN32)

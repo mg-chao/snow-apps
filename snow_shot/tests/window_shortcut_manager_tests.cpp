@@ -4,6 +4,7 @@
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QWidget>
+#include <QWindow>
 
 #include <cstdlib>
 #include <iostream>
@@ -367,6 +368,106 @@ void heldModifierParsingAndAdditionalModifiersAreScoped() {
             "ordinary bare shortcuts must retain exact modifier matching");
 }
 
+void inputSuspensionBlocksDispatchAndClearsHeldState() {
+    QWidget window;
+    WindowShortcutManager manager;
+    manager.addScopeWindow(&window);
+
+    int activationCount = 0;
+    int releaseCount = 0;
+    WindowShortcutManager::Binding binding;
+    binding.id = QStringLiteral("suspendable-held");
+    binding.keyCombinations = {QKeyCombination(Qt::ControlModifier, Qt::Key_Space)};
+    binding.activate = [&activationCount](const auto&) {
+        ++activationCount;
+        return true;
+    };
+    binding.release = [&releaseCount](const auto&) {
+        ++releaseCount;
+        return true;
+    };
+    require(manager.addBinding(&window, std::move(binding)) != 0,
+            "suspendable binding registration failed");
+
+    require(sendKey(&window, QEvent::KeyPress, Qt::Key_Space, Qt::ControlModifier) &&
+                activationCount == 1,
+            "suspendable binding did not activate before suspension");
+    const auto suspension = manager.suspendInput();
+    require(suspension != 0, "input suspension did not return a token");
+    sendKey(&window, QEvent::ShortcutOverride, Qt::Key_Space, Qt::ControlModifier);
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Space, Qt::ControlModifier);
+    require(activationCount == 1, "input suspension did not block shortcut dispatch");
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Space, Qt::NoModifier);
+    require(releaseCount == 0,
+            "input suspension left a held shortcut armed across the modal interaction");
+
+    manager.resumeInput(suspension);
+    require(sendKey(&window, QEvent::KeyPress, Qt::Key_Space, Qt::ControlModifier) &&
+                activationCount == 2,
+            "shortcut dispatch did not resume after suspension");
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Space, Qt::NoModifier);
+    require(releaseCount == 1, "resumed held shortcut did not release normally");
+    manager.resumeInput(suspension);
+}
+
+void childWindowOwnershipFallbackKeepsToolbarScope() {
+    QWidget overlay;
+    QWidget toolbar(&overlay);
+    WindowShortcutManager manager;
+    manager.addScopeWindow(&overlay);
+
+    int count = 0;
+    require(manager.addBinding(&overlay,
+                               binding(QStringLiteral("toolbar-child"), Qt::Key_T, 100, [&]() {
+                                   ++count;
+                                   return true;
+                               })) != 0,
+            "toolbar-child binding registration failed");
+    require(sendKey(&toolbar, QEvent::KeyPress, Qt::Key_T) && count == 1,
+            "a toolbar child did not resolve to its overlay scope");
+}
+
+void transientToolWindowOwnershipKeepsScope() {
+    QWidget overlay(nullptr, Qt::Tool);
+    QWidget toolbar(nullptr, Qt::Tool);
+    QWidget popup(nullptr, Qt::Tool);
+    overlay.show();
+    toolbar.show();
+    popup.show();
+    overlay.winId();
+    toolbar.winId();
+    popup.winId();
+    toolbar.windowHandle()->setTransientParent(overlay.windowHandle());
+    popup.windowHandle()->setTransientParent(toolbar.windowHandle());
+
+    WindowShortcutManager manager;
+    manager.addScopeWindow(&overlay);
+    int count = 0;
+    QWidget* resolvedScope = nullptr;
+    auto scopedBinding = binding(QStringLiteral("transient-tool"), Qt::Key_P, 100, [&]() {
+        ++count;
+        return true;
+    });
+    scopedBinding.activate = [&count, &resolvedScope](const auto& context) {
+        ++count;
+        resolvedScope = context.scopeWindow;
+        return true;
+    };
+    require(manager.addBinding(&overlay,
+                               std::move(scopedBinding)) != 0,
+            "transient-tool binding registration failed");
+    require(sendKey(&popup, QEvent::KeyPress, Qt::Key_P) && count == 1,
+            "nested transient tool window did not resolve to its overlay scope");
+    require(resolvedScope == &overlay,
+            "transient tool activation did not expose the resolved overlay scope");
+
+    QWidget unrelated(nullptr, Qt::Tool);
+    unrelated.show();
+    unrelated.winId();
+    sendKey(&unrelated, QEvent::KeyPress, Qt::Key_P);
+    require(count == 1, "unrelated top-level window escaped the screenshot scope");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -381,5 +482,8 @@ int main(int argc, char** argv) {
     dispatchSurvivesBindingRemovalFromCallbacks();
     heldBindingsReleaseByTriggerKey();
     heldModifierParsingAndAdditionalModifiersAreScoped();
+    inputSuspensionBlocksDispatchAndClearsHeldState();
+    childWindowOwnershipFallbackKeepsToolbarScope();
+    transientToolWindowOwnershipKeepsScope();
     return 0;
 }

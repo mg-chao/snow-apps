@@ -73,8 +73,10 @@
 #include <QMimeData>
 #include <QPlainTextEdit>
 #include <QTextEdit>
+#include <QTextBrowser>
 #include <QTimer>
 #include <QPainter>
+#include <QWindow>
 
 #include <algorithm>
 #include <QHash>
@@ -96,6 +98,29 @@ namespace {
 constexpr auto kCopyMessageKey = "screenshot-copy";
 constexpr auto kSaveMessageKey = "screenshot-save";
 constexpr auto kPinClipboardMessageKey = "screenshot-pin-clipboard";
+
+template <typename Function> class ScopeExit final {
+  public:
+    explicit ScopeExit(Function function) : m_function(std::move(function)) {}
+    ScopeExit(const ScopeExit&) = delete;
+    ScopeExit& operator=(const ScopeExit&) = delete;
+    ScopeExit(ScopeExit&& other) noexcept
+        : m_function(std::move(other.m_function)), m_active(std::exchange(other.m_active, false)) {}
+    ~ScopeExit() {
+        if (m_active) {
+            m_function();
+        }
+    }
+    void dismiss() { m_active = false; }
+
+  private:
+    Function m_function;
+    bool m_active = true;
+};
+
+template <typename Function> ScopeExit<Function> makeScopeExit(Function function) {
+    return ScopeExit<Function>(std::move(function));
+}
 
 struct ScrollingPinMaterializationState final {
     QPointer<ScreenshotController> controller;
@@ -273,6 +298,10 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void executeAutomaticSelection();
     [[nodiscard]] bool canBeginCapture() const;
     [[nodiscard]] ScreenshotOverlayWindow* overlayUnderCursor() const;
+    [[nodiscard]] ScreenshotOverlayWindow* overlayForWidget(QWidget* widget) const;
+    [[nodiscard]] ScreenshotOverlayWindow* keyboardOwnerOverlay() const;
+    void rememberKeyboardOwner(QWidget* widget = nullptr);
+    void restoreKeyboardOwnerQueued(ScreenshotOverlayWindow* overlay);
     void setHistoryLoadingMessageVisible(bool visible);
     [[nodiscard]] bool stopScrollingCapture(bool restoreScreenshotPresentation);
     void pauseScrollingCaptureForSelectionResize();
@@ -421,6 +450,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     std::unique_ptr<ScreenshotOverlayShortcutController> m_overlayShortcutController;
     std::unique_ptr<ScreenshotSelectorWorkflow> m_selectorWorkflow;
     QPointer<ScreenshotOverlayWindow> m_historyLoadingMessageOwner;
+    QPointer<ScreenshotOverlayWindow> m_keyboardOwnerOverlay;
     QPointer<adqt::widgets::AdColorPicker> m_canvasColorSamplingTarget;
     QMetaObject::Connection m_canvasColorSamplingDestroyedConnection;
     bool m_canvasColorSamplingCursorOverridden = false;
@@ -664,6 +694,97 @@ ScreenshotOverlayWindow* ScreenshotController::Impl::overlayUnderCursor() const 
     return result;
 }
 
+ScreenshotOverlayWindow* ScreenshotController::Impl::overlayForWidget(QWidget* widget) const {
+    if (widget == nullptr) {
+        return nullptr;
+    }
+
+    QWidget* widgetWindow = widget->window();
+    QWindow* widgetHandle = widgetWindow != nullptr ? widgetWindow->windowHandle() : nullptr;
+    ScreenshotOverlayWindow* result = nullptr;
+    m_displaySession.forEachActiveOverlay(
+        [widget, widgetWindow, widgetHandle, &result](
+            qsizetype, const CapturedDisplayModel&, ScreenshotOverlayWindow* overlay) {
+            if (result != nullptr || overlay == nullptr) {
+                return;
+            }
+            if (widget == overlay || overlay->isAncestorOf(widget) || widgetWindow == overlay) {
+                result = overlay;
+                return;
+            }
+
+            QWindow* candidate = widgetHandle;
+            QSet<QWindow*> visited;
+            while (candidate != nullptr && !visited.contains(candidate)) {
+                visited.insert(candidate);
+                if (candidate == overlay->windowHandle()) {
+                    result = overlay;
+                    return;
+                }
+                candidate = candidate->transientParent();
+            }
+
+            // Before a QtTool surface has a native handle, Qt retains the
+            // QObject parent used by setParent(owner, Qt::Tool).
+            for (QWidget* parent = widgetWindow != nullptr ? widgetWindow->parentWidget()
+                                                            : nullptr;
+                 parent != nullptr; parent = parent->parentWidget()) {
+                if (parent == overlay || parent->window() == overlay) {
+                    result = overlay;
+                    return;
+                }
+            }
+        });
+    return result;
+}
+
+ScreenshotOverlayWindow* ScreenshotController::Impl::keyboardOwnerOverlay() const {
+    if (m_keyboardOwnerOverlay != nullptr && m_keyboardOwnerOverlay->isVisible()) {
+        return m_keyboardOwnerOverlay.data();
+    }
+    if (ScreenshotOverlayWindow* focused = overlayForWidget(QApplication::focusWidget())) {
+        return focused;
+    }
+    return overlayUnderCursor();
+}
+
+void ScreenshotController::Impl::rememberKeyboardOwner(QWidget* widget) {
+    ScreenshotOverlayWindow* overlay = overlayForWidget(widget);
+    if (overlay != nullptr && overlay->isVisible()) {
+        m_keyboardOwnerOverlay = overlay;
+    }
+}
+
+void ScreenshotController::Impl::restoreKeyboardOwnerQueued(ScreenshotOverlayWindow* overlay) {
+    QPointer<ScreenshotOverlayWindow> target(overlay != nullptr ? overlay
+                                                                   : keyboardOwnerOverlay());
+    if (target == nullptr) {
+        return;
+    }
+    m_keyboardOwnerOverlay = target;
+    const QPointer<ScreenshotController> controller(&owner);
+    QTimer::singleShot(0, &owner, [target, controller]() {
+        if (!controller || target == nullptr || !target->isVisible()) {
+            return;
+        }
+        target->raise();
+        target->activateWindow();
+        if (target->canvas() != nullptr) {
+            target->canvas()->setFocus(Qt::OtherFocusReason);
+        }
+        target->commitInitialSelectionCursor();
+        QTimer::singleShot(0, target, [target, controller]() {
+            if (!controller || target == nullptr || !target->isVisible()) {
+                return;
+            }
+            target->activateWindow();
+            if (target->canvas() != nullptr) {
+                target->canvas()->setFocus(Qt::OtherFocusReason);
+            }
+        });
+    });
+}
+
 void ScreenshotController::Impl::setHistoryLoadingMessageVisible(bool visible) {
     if (!visible) {
         if (m_historyLoadingMessageOwner != nullptr) {
@@ -694,6 +815,10 @@ void ScreenshotController::Impl::createPresentationInfrastructure() {
     m_overlayEventAdapter = std::make_unique<ScreenshotOverlayEventAdapter>();
     m_overlayCoordinator = std::make_unique<ScreenshotOverlayCoordinator>(
         *m_overlayEventAdapter, m_canvasRuntime, *m_windowShortcutManager);
+    QObject::connect(qApp, &QApplication::focusChanged, &owner,
+                     [this](QWidget*, QWidget* nowFocused) {
+                         rememberKeyboardOwner(nowFocused);
+                     });
     m_messages = std::make_unique<ScreenshotMessageService>(
         m_displaySession, m_geometry, m_selection, [this]() {
             return m_overlayCoordinator != nullptr ? m_overlayCoordinator->toolbar() : nullptr;
@@ -788,6 +913,7 @@ bool ScreenshotController::Impl::ensureRecognitionFeature() {
                     m_overlayInputHandler->finishSelectionResizeAtCanvasPosition(canvasPosition);
                 }
             },
+            m_windowShortcutManager.get(),
         },
         &owner);
     QObject::connect(m_ocrController.get(), &ScreenshotOcrController::textResultChanged, &owner,
@@ -838,8 +964,13 @@ bool ScreenshotController::Impl::ensureCanvasSamplingUi() {
 }
 
 void ScreenshotController::Impl::deactivateRecognition() {
-    if (m_ocrController != nullptr) {
-        m_ocrController->deactivate();
+    if (m_ocrController == nullptr) {
+        return;
+    }
+    const bool wasActive = m_ocrController->active();
+    m_ocrController->deactivate();
+    if (wasActive) {
+        restoreKeyboardOwnerQueued(nullptr);
     }
 }
 
@@ -1156,9 +1287,24 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
         },
         [this]() {
             QWidget* focus = QApplication::focusWidget();
-            if (qobject_cast<QLineEdit*>(focus) != nullptr ||
-                qobject_cast<QTextEdit*>(focus) != nullptr ||
-                qobject_cast<QPlainTextEdit*>(focus) != nullptr) {
+            // A QR result is a read-only selection surface. It derives from
+            // QTextEdit, but must not suppress screenshot commands such as
+            // save, pin, drawing, cancel, or image copy.
+            const auto isQrResultSurface = [](QWidget* widget) {
+                for (QWidget* current = widget; current != nullptr;
+                     current = current->parentWidget()) {
+                    const auto* browser = qobject_cast<const QTextBrowser*>(current);
+                    if (browser != nullptr &&
+                        browser->objectName() == QStringLiteral("screenshotQrContents")) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+            if (!isQrResultSurface(focus) &&
+                (qobject_cast<QLineEdit*>(focus) != nullptr ||
+                 qobject_cast<QTextEdit*>(focus) != nullptr ||
+                 qobject_cast<QPlainTextEdit*>(focus) != nullptr)) {
                 return false;
             }
             bool allowed = true;
@@ -1433,7 +1579,11 @@ bool ScreenshotController::Impl::activateToolForSelectionResize(ScreenshotActive
     switch (tool) {
     case ScreenshotActiveTool::Move: {
         if (m_ocrController != nullptr) {
+            const bool wasActive = m_ocrController->active();
             m_ocrController->deactivateForSelectionResize();
+            if (wasActive) {
+                restoreKeyboardOwnerQueued(nullptr);
+            }
         }
         const bool scrollingCaptureStopped = stopScrollingCapture(true);
         static_cast<void>(resetCanvasEditingState());
@@ -2441,13 +2591,16 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
 }
 
 void ScreenshotController::Impl::saveSelectionToFile() {
-    if (m_ocrController != nullptr && m_ocrController->active()) {
-        m_messages->warning(
-            QString::fromLatin1(kSaveMessageKey),
-            QCoreApplication::translate("ScreenshotController",
-                                        "Exit text recognition before saving the screenshot"));
-        return;
-    }
+    rememberKeyboardOwner(QApplication::focusWidget());
+    QPointer<ScreenshotOverlayWindow> dialogOwner(keyboardOwnerOverlay());
+    const snow_shot::presentation::WindowShortcutManager::InputSuspensionHandle suspension =
+        m_windowShortcutManager != nullptr ? m_windowShortcutManager->suspendInput() : 0;
+    [[maybe_unused]] const auto interactionGuard = makeScopeExit([this, dialogOwner, suspension]() {
+        if (m_windowShortcutManager != nullptr && suspension != 0) {
+            m_windowShortcutManager->resumeInput(suspension);
+        }
+        restoreKeyboardOwnerQueued(dialogOwner.data());
+    });
 
     const snow_shot::storage::ScreenshotSettings outputSettings;
     const QString directory = ScreenshotImageFileService::saveDialogDirectory(
@@ -2458,9 +2611,9 @@ void ScreenshotController::Impl::saveSelectionToFile() {
         QStringLiteral(".png"));
     QString selectedFilter =
         ScreenshotImageFileService::dialogFilter(ScreenshotImageFileFormat::Png);
-    QWidget* parent = m_overlayCoordinator != nullptr ? m_overlayCoordinator->toolbar() : nullptr;
     const QString selectedPath = QFileDialog::getSaveFileName(
-        parent, QCoreApplication::translate("ScreenshotController", "Save screenshot"), initialPath,
+        dialogOwner.data(), QCoreApplication::translate("ScreenshotController", "Save screenshot"),
+        initialPath,
         ScreenshotImageFileService::saveDialogFilter(), &selectedFilter);
     if (selectedPath.isEmpty()) {
         return;
@@ -3790,6 +3943,7 @@ void ScreenshotController::Impl::executeAutomaticSelection() {
 
 void ScreenshotController::Impl::shutdown() {
     clearCanvasColorSampling();
+    m_keyboardOwnerOverlay.clear();
     if (m_overlayInputHandler != nullptr) {
         m_overlayInputHandler->resetTransientShortcuts();
     }

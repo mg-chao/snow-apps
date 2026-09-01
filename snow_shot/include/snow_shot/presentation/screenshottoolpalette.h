@@ -135,6 +135,7 @@ class ScreenshotToolPalette final : public QWidget {
         bool separatorBeforeShape = false;
         bool separatorAfterArrow = false;
         bool separatorBeforeConfirm = false;
+        bool showDrawingModeShortcutOnConfirm = false;
         Actions actions = NoActions;
         std::optional<snow_shot::storage::ScreenshotToolbarLayout> toolbarLayout;
         SnowCanvasStyleDefaults styleDefaults =
@@ -179,6 +180,7 @@ class ScreenshotToolPalette final : public QWidget {
     bool styleToolbarVisible() const;
     bool actionToolbarVisible() const;
     void setActiveTool(Tool tool);
+    void refreshConfirmShortcutHint();
     [[nodiscard]] bool activateDrawingShortcut(const QString& toolId);
     void clearActiveTool();
     void setHistoryState(const SnowCanvasHistoryState& state);

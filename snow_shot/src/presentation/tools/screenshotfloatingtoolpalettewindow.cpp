@@ -147,9 +147,8 @@ ScreenshotToolPaletteHost* ScreenshotFloatingToolPaletteWindow::paletteHost() co
 }
 
 void ScreenshotFloatingToolPaletteWindow::setOwnerWindow(QWidget* owner) {
-    m_transientOwnerWindow.clear();
     if (parentWidget() == owner && (windowFlags() & Qt::WindowType_Mask) == Qt::Tool) {
-        native::setNativePaletteOwner(winId(), owner);
+        setTransientOwnerWindow(owner);
         return;
     }
 
@@ -165,7 +164,7 @@ void ScreenshotFloatingToolPaletteWindow::setOwnerWindow(QWidget* owner) {
     if (previousGeometry.isValid() && !previousGeometry.isEmpty()) {
         setGeometry(previousGeometry);
     }
-    native::setNativePaletteOwner(winId(), owner);
+    setTransientOwnerWindow(owner);
     if (m_placementScreen != nullptr) {
         applyPlacementScreen();
     }

@@ -2,6 +2,7 @@
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include "snow_shot/presentation/screenshottableeditor.h"
+#include "snow_shot/presentation/windowshortcutmanager.h"
 
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "theme/theme_manager.h"
@@ -219,9 +220,11 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
     overlayHost.show();
     overlayHost.raise();
     int recognitionCancelCalls = 0;
+    int recognitionCopyCalls = 0;
     int textEditedCalls = 0;
     ScreenshotRecognitionWindowActions actions;
     actions.handleCancel = [&recognitionCancelCalls]() { ++recognitionCancelCalls; };
+    actions.handleCopy = [&recognitionCopyCalls]() { ++recognitionCopyCalls; };
     actions.handleTextEdited = [&textEditedCalls](const QString&) { ++textEditedCalls; };
     int tableStateChanges = 0;
     ScreenshotTableCommandState latestTableState;
@@ -234,7 +237,37 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
     actions.handleTableOperationRejected = [&rejectedOperations](const QString&) {
         ++rejectedOperations;
     };
-    ScreenshotRecognitionWindow window(std::move(actions));
+    snow_shot::presentation::WindowShortcutManager shortcutManager;
+    shortcutManager.addScopeWindow(&overlayHost);
+    int sessionShortcutCalls = 0;
+    snow_shot::presentation::WindowShortcutManager::Binding sessionShortcut;
+    sessionShortcut.id = QStringLiteral("test.session.shortcut");
+    sessionShortcut.keyCombinations = {
+        QKeyCombination(Qt::NoModifier, Qt::Key_P),
+    };
+    sessionShortcut.activate = [&sessionShortcutCalls](const auto&) {
+        ++sessionShortcutCalls;
+        return true;
+    };
+    int lowerPriorityCopyCalls = 0;
+    snow_shot::presentation::WindowShortcutManager::Binding lowerPriorityCopy;
+    lowerPriorityCopy.id = QStringLiteral("test.session.copy");
+    lowerPriorityCopy.keyCombinations = {
+        QKeyCombination(Qt::ControlModifier, Qt::Key_C),
+    };
+    lowerPriorityCopy.priority =
+        snow_shot::presentation::WindowShortcutManager::StandardPriority::ScreenshotShortcut;
+    lowerPriorityCopy.activate = [&lowerPriorityCopyCalls](const auto&) {
+        ++lowerPriorityCopyCalls;
+        return true;
+    };
+    require(shortcutManager.addBinding(&overlayHost, std::move(sessionShortcut)) != 0,
+            "shared screenshot shortcut registration should succeed");
+    require(shortcutManager.addBinding(&overlayHost, std::move(lowerPriorityCopy)) != 0,
+            "lower-priority screenshot copy registration should succeed");
+    ScreenshotRecognitionWindow window(std::move(actions), nullptr,
+                                      ScreenshotRecognitionWindow::PresentationMode::TopLevelWindow,
+                                      &shortcutManager);
     require(window.present(ScreenshotRecognitionWindow::Config{
                 screen,
                 &overlayHost,
@@ -249,6 +282,10 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
     require(window.windowHandle() != nullptr &&
                 window.windowHandle()->transientParent() == overlayHost.windowHandle(),
             "the screenshot overlay should own recognition stacking through Qt");
+    QKeyEvent sessionShortcutEvent(QEvent::KeyPress, Qt::Key_P, Qt::NoModifier);
+    QApplication::sendEvent(&window, &sessionShortcutEvent);
+    require(sessionShortcutCalls == 1 && sessionShortcutEvent.isAccepted(),
+            "a focused recognition surface should dispatch through its shared screenshot manager");
     require(window.geometry() == logicalSelection,
             "the recognition window should preserve the mapped selection geometry");
     require(window.windowHandle() != nullptr && window.windowHandle()->screen() == screen,
@@ -315,6 +352,13 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
     QApplication::sendEvent(&window, &selectAll);
     require(presentation->selectedText() == recognizedLine.text,
             "Select All should be handled locally by the recognition window");
+    QKeyEvent copy(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
+    QApplication::sendEvent(&window, &copy);
+    require(lowerPriorityCopyCalls == 0 && copy.isAccepted() &&
+                QGuiApplication::clipboard()->text() == recognizedLine.text &&
+                recognitionCopyCalls == 1,
+            "recognition copy must win over the lower-priority screenshot copy binding and end "
+            "the screenshot");
 
     const QPointF blankCanvasPosition = canvasSelection.topLeft() + QPointF(12.0, 12.0);
     const QPointF blankLocalPosition = localForCanvas(blankCanvasPosition);
@@ -372,6 +416,18 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
                 adTextEditor != nullptr && textEditor->frameStyle() == QFrame::NoFrame &&
                 adTextEditor->variant() == adqt::widgets::AdTextEdit::Variant::Borderless,
             "the OCR text editor should use a themed borderless container");
+
+    QTextCursor noTextSelection = textEditor->textCursor();
+    noTextSelection.clearSelection();
+    textEditor->setTextCursor(noTextSelection);
+    QKeyEvent copyWholeDraft(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
+    QApplication::sendEvent(textEditor, &copyWholeDraft);
+    require(copyWholeDraft.isAccepted() &&
+                QGuiApplication::clipboard()->text() == QStringLiteral("Editable recognized text") &&
+                recognitionCopyCalls == 2,
+            "text-recognition edit mode should copy the complete draft when no text is selected "
+            "and end the screenshot");
+
     auto* overlayScrollBar = textEditor->findChild<QScrollBar*>(
         QStringLiteral("adtextarea-overlay-vbar"));
     require(overlayScrollBar != nullptr && textEditor->verticalScrollBar()->isHidden(),
@@ -561,10 +617,14 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
     require(session->document == session->baseline && !window.tableCommandState().canReset,
             "Reset should restore recognized values and spans without changing dimensions");
 
-    editor->selectAll();
+    editor->setCurrentIndex(editor->model()->index(1, 1));
+    editor->selectionModel()->clearSelection();
     editor->copySelection();
-    require(QApplication::clipboard()->text() == QStringLiteral("A\tB\nC\tD"),
-            "in-table Copy should export the selected range as TSV");
+    QApplication::processEvents();
+    require(QApplication::clipboard()->text() == QStringLiteral("A\tB\nC\tD") &&
+                recognitionCopyCalls == 3,
+            "table recognition should copy the complete table when no cells are selected and end "
+            "the screenshot");
     editor->setCurrentIndex(editor->model()->index(1, 1));
     editor->pasteSelection();
     require(rejectedOperations == 1 && session->document == session->baseline,
@@ -831,10 +891,44 @@ void qrContentsUseStrictRichTextLinksAndPreserveOrder() {
     overlayHost.show();
 
     QList<QUrl> activatedLinks;
+    int recognitionCancelCalls = 0;
+    int recognitionCopyCalls = 0;
     ScreenshotRecognitionWindowActions actions;
+    actions.handleCancel = [&recognitionCancelCalls]() { ++recognitionCancelCalls; };
+    actions.handleCopy = [&recognitionCopyCalls]() { ++recognitionCopyCalls; };
     actions.handleLinkActivated =
         [&activatedLinks](const QUrl& url) { activatedLinks.push_back(url); };
-    ScreenshotRecognitionWindow window(std::move(actions));
+    snow_shot::presentation::WindowShortcutManager shortcutManager;
+    shortcutManager.addScopeWindow(&overlayHost);
+    int sessionShortcutCalls = 0;
+    snow_shot::presentation::WindowShortcutManager::Binding sessionShortcut;
+    sessionShortcut.id = QStringLiteral("test.qr.screenshot.command");
+    sessionShortcut.keyCombinations = {
+        QKeyCombination(Qt::NoModifier, Qt::Key_P),
+    };
+    sessionShortcut.activate = [&sessionShortcutCalls](const auto&) {
+        ++sessionShortcutCalls;
+        return true;
+    };
+    require(shortcutManager.addBinding(&overlayHost, std::move(sessionShortcut)) != 0,
+            "QR shortcut regression setup should register the screenshot command binding");
+    int lowerPriorityCopyCalls = 0;
+    snow_shot::presentation::WindowShortcutManager::Binding lowerPriorityCopy;
+    lowerPriorityCopy.id = QStringLiteral("test.qr.screenshot.copy");
+    lowerPriorityCopy.keyCombinations = {
+        QKeyCombination(Qt::ControlModifier, Qt::Key_C),
+    };
+    lowerPriorityCopy.priority =
+        snow_shot::presentation::WindowShortcutManager::StandardPriority::ScreenshotShortcut;
+    lowerPriorityCopy.activate = [&lowerPriorityCopyCalls](const auto&) {
+        ++lowerPriorityCopyCalls;
+        return true;
+    };
+    require(shortcutManager.addBinding(&overlayHost, std::move(lowerPriorityCopy)) != 0,
+            "QR shortcut regression setup should register the screenshot copy binding");
+    ScreenshotRecognitionWindow window(
+        std::move(actions), nullptr, ScreenshotRecognitionWindow::PresentationMode::TopLevelWindow,
+        &shortcutManager);
     const QRect geometry(screen->availableGeometry().center() - QPoint(240, 90),
                          QSize(480, 180));
     require(window.present(ScreenshotRecognitionWindow::Config{
@@ -862,6 +956,21 @@ void qrContentsUseStrictRichTextLinksAndPreserveOrder() {
             "QR contents should use a read-only browser with controller-owned navigation");
     require(browser->toPlainText() == contents.join(QLatin1Char('\n')),
             "QR payloads should be rendered as escaped text in recognition order");
+    require(QApplication::focusWidget() == browser,
+            "QR results should focus their read-only selection surface");
+
+    QKeyEvent sessionShortcutEvent(QEvent::KeyPress, Qt::Key_P, Qt::NoModifier);
+    QApplication::sendEvent(browser, &sessionShortcutEvent);
+    require(sessionShortcutEvent.isAccepted() && sessionShortcutCalls == 1,
+            "screenshot-session shortcuts should dispatch while QR results have focus");
+
+    QKeyEvent copyAll(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
+    QApplication::sendEvent(browser, &copyAll);
+    require(copyAll.isAccepted() && lowerPriorityCopyCalls == 0 &&
+                QGuiApplication::clipboard()->text() == contents.join(QLatin1Char('\n')) &&
+                recognitionCopyCalls == 1,
+            "Ctrl+C should copy all QR result text when no selection is active and end the "
+            "screenshot");
     require(qobject_cast<adqt::widgets::AdScrollBar*>(browser->verticalScrollBar()) != nullptr,
             "QR contents should use the themed vertical scrollbar");
 
@@ -890,6 +999,11 @@ void qrContentsUseStrictRichTextLinksAndPreserveOrder() {
             "the QR browser should expose its anchor activation signal");
     require(activatedLinks == QList<QUrl>{clicked},
             "QR anchor activation should be forwarded exactly once to the controller");
+
+    QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+    QApplication::sendEvent(browser, &escape);
+    require(escape.isAccepted() && recognitionCancelCalls == 1,
+            "Escape should remain available while QR results have focus");
 
     window.clearQrContents();
     require(window.findChild<QTextBrowser*>(QStringLiteral("screenshotQrContents")) == nullptr,

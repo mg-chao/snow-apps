@@ -475,9 +475,7 @@ ScreenshotTableRange ScreenshotTableEditor::selectedRange() const {
     }
     const QModelIndexList selected = selectionModel()->selectedIndexes();
     if (selected.isEmpty()) {
-        const QModelIndex current = currentIndex();
-        return current.isValid() ? m_session->document.spanRangeAt(current.row(), current.column())
-                                 : ScreenshotTableRange{};
+        return {};
     }
     ScreenshotTableRange range{selected.constFirst().row(), selected.constFirst().column(),
                                selected.constFirst().row(), selected.constFirst().column()};
@@ -576,17 +574,30 @@ void ScreenshotTableEditor::redoEdit() {
 }
 
 void ScreenshotTableEditor::copySelection() {
-    if (m_session == nullptr || QApplication::clipboard() == nullptr) {
-        return;
+    if (copySelectionToClipboard()) {
+        emit copyCompleted();
     }
-    const ScreenshotTableRange range = selectedRange();
+}
+
+bool ScreenshotTableEditor::copySelectionToClipboard() {
+    if (m_session == nullptr || QApplication::clipboard() == nullptr) {
+        return false;
+    }
+    // A current cell is navigation state, not a text selection. Copy the
+    // complete recognized table when the selection model has no indexes.
+    const ScreenshotTableRange range = selectionModel()->selectedIndexes().isEmpty()
+                                           ? ScreenshotTableRange{
+                                                 0, 0, m_session->document.rowCount() - 1,
+                                                 m_session->document.columnCount() - 1}
+                                           : selectedRange();
     if (!range.isValid()) {
-        return;
+        return false;
     }
     auto* mimeData = new QMimeData;
     mimeData->setHtml(m_session->document.toHtml(range));
     mimeData->setText(m_session->document.toPlainText(range));
     QApplication::clipboard()->setMimeData(mimeData);
+    return true;
 }
 
 void ScreenshotTableEditor::pasteSelection() {
@@ -735,7 +746,7 @@ void ScreenshotTableEditor::contextMenuEvent(QContextMenuEvent* event) {
         menu.addItem(tr("Split cells"), adqt::icons::antd::outlined::SplitCells());
     const ScreenshotTableCommandState state = commandState();
     editAction->setEnabled(clicked.isValid());
-    copyAction->setEnabled(state.hasSelection);
+    copyAction->setEnabled(m_session != nullptr && !m_session->document.empty());
     pasteAction->setEnabled(QApplication::clipboard() != nullptr &&
                             QApplication::clipboard()->mimeData() != nullptr);
     clearAction->setEnabled(state.hasSelection);
@@ -940,10 +951,13 @@ void ScreenshotTableEditor::restoreSessionViewState() {
         current = m_model->index(0, 0);
     }
     setCurrentIndex(anchorIndex(current));
-    const ScreenshotTableRange range = m_session->selection.isValid()
-                                           ? m_session->selection
-                                           : m_session->document.spanRangeAt(0, 0);
-    selectRange(range);
+    if (m_session->selection.isValid()) {
+        selectRange(m_session->selection);
+    } else {
+        const QSignalBlocker blocker(selectionModel());
+        selectionModel()->clearSelection();
+        refreshCommandState();
+    }
     horizontalScrollBar()->setValue(m_session->horizontalScrollValue);
     verticalScrollBar()->setValue(m_session->verticalScrollValue);
 }

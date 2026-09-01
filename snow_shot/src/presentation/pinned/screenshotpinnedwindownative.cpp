@@ -130,6 +130,36 @@ bool screenshot_pinned_window_native::applySystemResizeStyle(WId windowId) {
 #endif
 }
 
+bool screenshot_pinned_window_native::activateWindow(WId windowId) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    const HWND hwnd = toNativeHwnd(windowId);
+    if (hwnd == nullptr) {
+        return false;
+    }
+
+    const HWND foregroundHwnd = GetForegroundWindow();
+    const DWORD currentThread = GetCurrentThreadId();
+    const DWORD foregroundThread =
+        foregroundHwnd != nullptr ? GetWindowThreadProcessId(foregroundHwnd, nullptr) : 0;
+    const bool attached = foregroundThread != 0 && foregroundThread != currentThread &&
+                          AttachThreadInput(currentThread, foregroundThread, TRUE) != FALSE;
+
+    static_cast<void>(SetForegroundWindow(hwnd));
+    static_cast<void>(BringWindowToTop(hwnd));
+    static_cast<void>(SetActiveWindow(hwnd));
+    static_cast<void>(SetFocus(hwnd));
+    const bool activated = GetForegroundWindow() == hwnd;
+
+    if (attached) {
+        static_cast<void>(AttachThreadInput(currentThread, foregroundThread, FALSE));
+    }
+    return activated;
+#else
+    Q_UNUSED(windowId);
+    return false;
+#endif
+}
+
 bool screenshot_pinned_window_native::installSynchronizedResize(
     WId windowId, const bool* interactiveResizeActive) {
 #if defined(Q_OS_WIN) || defined(_WIN32)

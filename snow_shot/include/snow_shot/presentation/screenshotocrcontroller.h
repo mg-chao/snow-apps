@@ -34,6 +34,10 @@ struct ScreenshotCaptureState;
 struct ScreenshotTableCommandState;
 struct ScreenshotRecognitionResults;
 
+namespace snow_shot::presentation {
+class WindowShortcutManager;
+}
+
 struct ScreenshotOcrControllerContext {
     ScreenshotCaptureState& captureState;
     ScreenshotInteractionState& interaction;
@@ -53,6 +57,9 @@ struct ScreenshotOcrControllerContext {
     };
     std::function<void(const QPointF&)> updateSelectionResize = [](const QPointF&) {};
     std::function<void(const QPointF&)> finishSelectionResize = [](const QPointF&) {};
+    // Keep this optional dependency at the end so existing aggregate
+    // initializers remain source-compatible.
+    snow_shot::presentation::WindowShortcutManager* shortcutManager = nullptr;
 };
 
 class ScreenshotOcrController final : public QObject {

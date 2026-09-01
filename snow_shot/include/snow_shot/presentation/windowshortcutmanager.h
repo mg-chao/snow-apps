@@ -18,6 +18,7 @@ namespace snow_shot::presentation {
 class WindowShortcutManager final : public QObject {
   public:
     using BindingHandle = quint64;
+    using InputSuspensionHandle = quint64;
 
     struct StandardPriority {
         static constexpr int ContextualFallback = 100;
@@ -30,6 +31,9 @@ class WindowShortcutManager final : public QObject {
         QObject* receiver = nullptr;
         QWidget* focusWidget = nullptr;
         const QKeyEvent* event = nullptr;
+        // The registered scope root reached from the event receiver. This is
+        // populated for direct scope children and owned/transient tool windows.
+        QWidget* scopeWindow = nullptr;
     };
 
     struct Binding {
@@ -56,6 +60,12 @@ class WindowShortcutManager final : public QObject {
 
     void addScopeWindow(QWidget* window);
     void removeScopeWindow(QWidget* window);
+
+    // Temporarily prevents this manager from dispatching shortcut presses.
+    // Suspension is tokenized so nested modal interactions cannot resume one
+    // another accidentally.
+    [[nodiscard]] InputSuspensionHandle suspendInput();
+    void resumeInput(InputSuspensionHandle handle);
 
     [[nodiscard]] BindingHandle addBinding(QObject* owner, Binding binding);
     [[nodiscard]] bool setKeyCombinations(BindingHandle handle,

@@ -155,7 +155,7 @@ const QHash<QString, QStringList>& pinToScreenShortcutDefaults() {
         {QStringLiteral("copy_original_content"), {QStringLiteral("Ctrl+Shift+C")}},
         {QStringLiteral("save_as_file"), {QStringLiteral("Ctrl+S")}},
         {QStringLiteral("show_text_recognition_results"), {QStringLiteral("Ctrl+D")}},
-        {QStringLiteral("drawing_mode"), {QStringLiteral("Ctrl+E")}},
+        {QStringLiteral("drawing_mode"), {QStringLiteral("Space")}},
         {QStringLiteral("thumbnail_mode"), {QStringLiteral("R")}},
         {QStringLiteral("close_window"), {QStringLiteral("Esc")}},
         {QStringLiteral("move_cursor_up"), {QStringLiteral("W"), QStringLiteral("Up")}},

@@ -78,6 +78,9 @@ class SnowCanvasWidget : public QWidget {
     // Commits active text, clears transient editing state and selection, and
     // restores the select tool.
     bool resetEditingState();
+    // Commits active text and clears transient editing state and selection while
+    // preserving the currently active canvas tool.
+    bool resetEditingStatePreservingTool();
     // Discards an uncommitted inline text draft without adding it to history.
     bool cancelActiveTextEditing();
     // Releases renderer cache and scratch memory without changing document, view, styles, or

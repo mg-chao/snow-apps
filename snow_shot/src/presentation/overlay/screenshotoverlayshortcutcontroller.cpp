@@ -90,7 +90,6 @@ struct ScreenshotOverlayShortcutController::Impl {
     [[nodiscard]] bool localShortcutState() const {
         return (interaction.movingSelection() || interaction.modifyingSelection() ||
                 interaction.editing()) &&
-               !recognitionTool(interaction.activeTool()) &&
                actions.localShortcutInputAllowed();
     }
 
@@ -192,11 +191,11 @@ struct ScreenshotOverlayShortcutController::Impl {
             binding.canActivate = [this, actionId](const auto&) {
                 if (actionId == QStringLiteral("cancel_screenshot") ||
                     actionId == QStringLiteral("copy_to_clipboard")) {
-                    return !recognitionTool(interaction.activeTool()) &&
-                           actions.localShortcutInputAllowed();
+                    return actions.localShortcutInputAllowed();
                 }
                 if (actionId == QStringLiteral("undo") || actionId == QStringLiteral("redo")) {
-                    return actions.mainToolbarVisible() && screenshotShortcutState();
+                    return !recognitionTool(interaction.activeTool()) &&
+                           actions.mainToolbarVisible() && screenshotShortcutState();
                 }
                 if (actionId == QStringLiteral("table_recognition") ||
                     actionId == QStringLiteral("qr_code_recognition") ||

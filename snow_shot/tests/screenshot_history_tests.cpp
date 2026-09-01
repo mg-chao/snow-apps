@@ -30,6 +30,7 @@
 #include <QThread>
 #include <QVector>
 #include <QWidget>
+#include <QWindow>
 
 #include <cstdlib>
 #include <iostream>
@@ -1813,6 +1814,31 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
                 pinActivations == 2 && cancelActivations == 2 && copyActivations == 2 &&
                 undoActivations == 2 && redoActivations == 2,
             "custom toolbar bindings must invoke the same commands immediately");
+
+    // Recognition presents an independent top-level surface, but it remains
+    // part of the screenshot session. Screenshot and drawing commands must
+    // continue to dispatch through the shared manager while that surface has
+    // focus.
+    interaction.setCanvasTool(ScreenshotActiveTool::Ocr);
+    QWidget recognitionWindow(nullptr, Qt::Tool);
+    recognitionWindow.show();
+    recognitionWindow.winId();
+    shortcutWindow.show();
+    shortcutWindow.winId();
+    if (recognitionWindow.windowHandle() != nullptr &&
+        shortcutWindow.windowHandle() != nullptr) {
+        recognitionWindow.windowHandle()->setTransientParent(shortcutWindow.windowHandle());
+    }
+    shortcutManager.addScopeWindow(&recognitionWindow);
+    require(dispatchShortcut(recognitionWindow, Qt::Key_F, Qt::AltModifier) &&
+                dispatchShortcut(recognitionWindow, Qt::Key_Escape, Qt::AltModifier) &&
+                dispatchShortcut(recognitionWindow, Qt::Key_C, Qt::AltModifier) &&
+                pinActivations == 3 && cancelActivations == 3 && copyActivations == 3,
+            "screenshot commands must remain available from a focused recognition surface");
+    require(dispatchShortcut(recognitionWindow, Qt::Key_W) && drawingToolActivations == 3,
+            "drawing shortcuts must remain available from a focused recognition surface");
+    recognitionWindow.hide();
+    interaction.setCanvasTool(ScreenshotActiveTool::Shape);
 
     require(shortcutSettings.setAllShortcutsAtomic(originalShortcuts),
             "failed to restore screenshot shortcuts after input test");

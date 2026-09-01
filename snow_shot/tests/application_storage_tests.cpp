@@ -315,7 +315,7 @@ void newSettingsSchemaDefaultsAndValidationAreComplete() {
         {QStringLiteral("save_as_file"), QJsonArray{QStringLiteral("Ctrl+S")}},
         {QStringLiteral("show_text_recognition_results"),
          QJsonArray{QStringLiteral("Ctrl+D")}},
-        {QStringLiteral("drawing_mode"), QJsonArray{QStringLiteral("Ctrl+E")}},
+        {QStringLiteral("drawing_mode"), QJsonArray{QStringLiteral("Space")}},
         {QStringLiteral("thumbnail_mode"), QJsonArray{QStringLiteral("R")}},
         {QStringLiteral("close_window"), QJsonArray{QStringLiteral("Esc")}},
         {QStringLiteral("move_cursor_up"),
@@ -595,7 +595,7 @@ void verifyPinToScreenShortcutSettings() {
                 defaults.value(QStringLiteral("show_text_recognition_results")) ==
                     QStringList{QStringLiteral("Ctrl+D")} &&
                 defaults.value(QStringLiteral("drawing_mode")) ==
-                    QStringList{QStringLiteral("Ctrl+E")} &&
+                    QStringList{QStringLiteral("Space")} &&
                 defaults.value(QStringLiteral("thumbnail_mode")) ==
                     QStringList{QStringLiteral("R")} &&
                 defaults.value(QStringLiteral("close_window")) ==

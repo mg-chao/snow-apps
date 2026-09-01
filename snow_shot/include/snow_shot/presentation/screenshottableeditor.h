@@ -66,6 +66,7 @@ class ScreenshotTableEditor final : public QTableView {
     [[nodiscard]] bool isEditingCell() const;
     bool commitActiveEdit();
     bool cancelActiveEdit();
+    [[nodiscard]] bool copySelectionToClipboard();
 
   public slots:
     void mergeSelection();
@@ -81,6 +82,7 @@ class ScreenshotTableEditor final : public QTableView {
     void commandStateChanged(const ScreenshotTableCommandState& state);
     void documentChanged();
     void operationRejected(const QString& message);
+    void copyCompleted();
 
   protected:
     void mousePressEvent(QMouseEvent* event) override;

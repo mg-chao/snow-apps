@@ -30,10 +30,12 @@
 #include <QSizePolicy>
 #include <QStackedLayout>
 #include <QStyleOptionGraphicsItem>
+#include <QTimer>
 #include <QTextBrowser>
 #include <QTextCharFormat>
 #include <QTextCursor>
 #include <QTextDocument>
+#include <QTextDocumentFragment>
 #include <QTextEdit>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -238,6 +240,10 @@ ScreenshotRecognitionWindow::ScreenshotRecognitionWindow(
         shortcutManager = m_ownedShortcutManager.get();
     }
     m_shortcutManager = shortcutManager;
+    // The recognition surface is an input-bearing top-level window. Register
+    // it with the manager that owns the surrounding screenshot session so
+    // shortcut dispatch remains active even before the platform publishes its
+    // transient-parent relationship.
     m_shortcutManager->addScopeWindow(this);
     setObjectName(QStringLiteral("screenshotRecognitionWindow"));
     if (m_presentationMode == PresentationMode::TopLevelWindow) {
@@ -408,6 +414,14 @@ void ScreenshotRecognitionWindow::setTableSession(
                 [this](const QString& message) {
                     m_actions.handleTableOperationRejected(message);
                 });
+        connect(m_tableEditor, &ScreenshotTableEditor::copyCompleted, this,
+                [this]() {
+                    // Context-menu copies originate inside the table editor's
+                    // copy method. Defer capture teardown until that call has
+                    // returned, otherwise the editor can be destroyed
+                    // re-entrantly while it is still unwinding.
+                    QTimer::singleShot(0, this, [this]() { m_actions.handleCopy(); });
+                });
     }
     m_tableEditor->setSession(std::move(session));
     m_stack->setCurrentWidget(m_tableEditor);
@@ -527,7 +541,9 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
     cancel.id = QStringLiteral("recognition.cancel");
     cancel.keyCombinations = {QKeyCombination(Qt::NoModifier, Qt::Key_Escape)};
     cancel.priority = ShortcutManager::StandardPriority::WindowCommand;
-    cancel.canActivate = [this](const auto&) { return isVisible(); };
+    cancel.canActivate = [this](const ShortcutManager::ActivationContext& context) {
+        return context.scopeWindow == this && isVisible();
+    };
     cancel.activate = [this](const auto&) {
         if (m_tableEditor == nullptr || !m_tableEditor->cancelActiveEdit()) {
             m_actions.handleCancel();
@@ -536,11 +552,37 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
     };
     static_cast<void>(m_shortcutManager->addBinding(this, std::move(cancel)));
 
-    const auto ocrCommandsAllowed = [this](const ShortcutManager::ActivationContext& context) {
+    const auto recognitionCommandsAllowed = [this](
+                                                const ShortcutManager::ActivationContext& context) {
         QWidget* focus = context.focusWidget;
-        return isVisible() && m_ocrPresentation != nullptr &&
-               !focusInside(m_textEditorContainer, focus) &&
-               !focusInside(m_tableEditor, focus) && !focusInside(m_qrBrowser, focus) &&
+        if (context.scopeWindow != this || !isVisible()) {
+            return false;
+        }
+
+        // OCR's canvas and QR's read-only browser are recognition surfaces. The
+        // editable/table/formatted-text pages retain native Qt command handling.
+        if (m_qrBrowser != nullptr) {
+            return focusInside(m_qrBrowser, focus);
+        }
+        return m_ocrPresentation != nullptr && !focusInside(m_textEditorContainer, focus) &&
+               !focusInside(m_tableEditor, focus) && !focusInside(m_formattedTextLayer, focus);
+    };
+
+    const auto copyCommandsAllowed = [this](const ShortcutManager::ActivationContext& context) {
+        QWidget* focus = context.focusWidget;
+        if (context.scopeWindow != this || !isVisible()) {
+            return false;
+        }
+        if (m_tableEditor != nullptr) {
+            return focusInside(m_tableEditor, focus);
+        }
+        if (m_textEditor != nullptr) {
+            return focusInside(m_textEditor, focus);
+        }
+        if (m_qrBrowser != nullptr) {
+            return focusInside(m_qrBrowser, focus);
+        }
+        return m_ocrPresentation != nullptr && !focusInside(m_textEditorContainer, focus) &&
                !focusInside(m_formattedTextLayer, focus);
     };
 
@@ -548,8 +590,15 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
     selectAll.id = QStringLiteral("recognition.select_all");
     selectAll.keyCombinations = commandCombinations(Qt::Key_A);
     selectAll.priority = ShortcutManager::StandardPriority::WindowCommand;
-    selectAll.canActivate = ocrCommandsAllowed;
+    selectAll.canActivate = recognitionCommandsAllowed;
     selectAll.activate = [this](const auto&) {
+        if (m_qrBrowser != nullptr) {
+            m_qrBrowser->selectAll();
+            return true;
+        }
+        if (m_ocrPresentation == nullptr) {
+            return false;
+        }
         const quint64 previousRevision = m_ocrPresentation->selectionRevision();
         m_ocrPresentation->selectAll();
         if (m_ocrPresentation->selectionRevision() != previousRevision) {
@@ -563,28 +612,17 @@ void ScreenshotRecognitionWindow::registerWindowShortcuts() {
     copy.id = QStringLiteral("recognition.copy");
     copy.keyCombinations = commandCombinations(Qt::Key_C);
     copy.priority = ShortcutManager::StandardPriority::WindowCommand;
-    copy.canActivate = ocrCommandsAllowed;
+    copy.canActivate = copyCommandsAllowed;
     copy.activate = [this](const auto&) {
-        QString text;
-        if (m_ocrPresentation->hasTextSelection()) {
-            text = m_ocrPresentation->selectedText();
-        } else {
-            QStringList lines;
-            lines.reserve(m_ocrPresentation->lines.size());
-            for (const ScreenshotOcrLine& line : m_ocrPresentation->lines) {
-                lines.push_back(line.text);
-            }
-            text = lines.join(QLatin1Char('\n'));
-        }
-        if (!text.isEmpty() && QApplication::clipboard() != nullptr) {
-            QApplication::clipboard()->setText(text);
+        if (copyVisibleContentToClipboard()) {
+            m_actions.handleCopy();
         }
         return true;
     };
     static_cast<void>(m_shortcutManager->addBinding(this, std::move(copy)));
 
     const auto textEditorActive = [this](const ShortcutManager::ActivationContext& context) {
-        return focusInside(m_textEditor, context.focusWidget);
+        return context.scopeWindow == this && focusInside(m_textEditor, context.focusWidget);
     };
     ShortcutManager::Binding undo;
     undo.id = QStringLiteral("recognition.text.undo");
@@ -729,6 +767,45 @@ void ScreenshotRecognitionWindow::clearQrContents() {
     delete m_qrBrowser;
     m_qrBrowser = nullptr;
     m_stack->setCurrentWidget(m_textLayer);
+}
+
+bool ScreenshotRecognitionWindow::copyVisibleContentToClipboard() {
+    QClipboard* clipboard = QApplication::clipboard();
+    if (clipboard == nullptr) {
+        return false;
+    }
+
+    if (m_tableEditor != nullptr) {
+        return m_tableEditor->copySelectionToClipboard();
+    }
+
+    QString text;
+    if (m_textEditor != nullptr) {
+        const QTextCursor cursor = m_textEditor->textCursor();
+        text = cursor.hasSelection() ? QTextDocumentFragment(cursor).toPlainText()
+                                     : m_textEditor->toPlainText();
+    } else if (m_qrBrowser != nullptr) {
+        const QTextCursor cursor = m_qrBrowser->textCursor();
+        text = cursor.hasSelection() ? QTextDocumentFragment(cursor).toPlainText()
+                                     : m_qrBrowser->toPlainText();
+    } else if (m_ocrPresentation != nullptr) {
+        if (m_ocrPresentation->hasTextSelection()) {
+            text = m_ocrPresentation->selectedText();
+        } else {
+            QStringList lines;
+            lines.reserve(m_ocrPresentation->lines.size());
+            for (const ScreenshotOcrLine& line : m_ocrPresentation->lines) {
+                lines.push_back(line.text);
+            }
+            text = lines.join(QLatin1Char('\n'));
+        }
+    }
+    text.replace(QChar::ParagraphSeparator, QLatin1Char('\n'));
+    if (text.isEmpty()) {
+        return false;
+    }
+    clipboard->setText(text);
+    return true;
 }
 
 void ScreenshotRecognitionWindow::focusOutEvent(QFocusEvent* event) {

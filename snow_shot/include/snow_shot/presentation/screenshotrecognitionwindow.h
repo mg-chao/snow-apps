@@ -55,6 +55,7 @@ struct ScreenshotRecognitionWindowActions {
     std::function<void(const QPointF&)> updateSelectionResize = [](const QPointF&) {};
     std::function<void(const QPointF&)> finishSelectionResize = [](const QPointF&) {};
     std::function<void()> selectionResizeFinished = []() {};
+    std::function<void()> handleCopy = []() {};
 };
 
 class ScreenshotRecognitionWindow final : public QWidget {
@@ -109,6 +110,8 @@ class ScreenshotRecognitionWindow final : public QWidget {
 
     void showQrContents(const QStringList& contents);
     void clearQrContents();
+
+    [[nodiscard]] bool copyVisibleContentToClipboard();
 
   signals:
     void embeddedContextMenuRequested(const QPoint& globalPosition);
