@@ -66,9 +66,7 @@ void applyPinRuntimeSettings(ScreenshotPinnedWindow::Config* config) {
 
 class ScreenshotPinnedWindowPool final : public QObject {
   public:
-    explicit ScreenshotPinnedWindowPool(QObject* parent = nullptr) : QObject(parent) {
-        scheduleReplenish();
-    }
+    explicit ScreenshotPinnedWindowPool(QObject* parent = nullptr) : QObject(parent) {}
 
     ~ScreenshotPinnedWindowPool() override {
         if (m_spare != nullptr) {
@@ -97,7 +95,6 @@ class ScreenshotPinnedWindowPool final : public QObject {
         }
 
         SNOW_SHOT_PIN_PERF_COUNTER(usedSpare ? "shell.hit" : "shell.miss", 1);
-        scheduleReplenish();
         return window;
     }
 
@@ -121,28 +118,7 @@ class ScreenshotPinnedWindowPool final : public QObject {
     }
 
   private:
-    void scheduleReplenish() {
-        if (m_replenishQueued) {
-            return;
-        }
-        m_replenishQueued = true;
-        QTimer::singleShot(0, this, [this]() {
-            m_replenishQueued = false;
-            if (m_spare != nullptr) {
-                return;
-            }
-            auto* spare =
-                new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
-            if (!spare->prewarm(QGuiApplication::primaryScreen())) {
-                spare->deleteLater();
-                return;
-            }
-            m_spare = spare;
-        });
-    }
-
     QPointer<ScreenshotPinnedWindow> m_spare;
-    bool m_replenishQueued = false;
 };
 
 namespace {
@@ -177,11 +153,12 @@ bool presentPinnedWindowAndSynchronize(ScreenshotPinnedWindow* window,
 ScreenshotSelectionExportUiServices::ScreenshotSelectionExportUiServices(
     ScreenshotOcrRecognitionPort* recognition,
     ScreenshotQrRecognitionPort* qrRecognition, SnowShotApiClient* tableRecognition,
-    std::function<void()> showMainWindowRequested)
+    std::function<void()> showMainWindowRequested,
+    std::function<ScreenshotPinnedRecognitionProviders()> recognitionProvider)
     : m_recognition(recognition), m_qrRecognition(qrRecognition),
       m_tableRecognition(tableRecognition),
       m_showMainWindowRequested(std::move(showMainWindowRequested)),
-      m_windowPool(std::make_unique<ScreenshotPinnedWindowPool>()) {}
+      m_recognitionProvider(std::move(recognitionProvider)) {}
 
 ScreenshotSelectionExportUiServices::~ScreenshotSelectionExportUiServices() {
     cancelClipboardPublication();
@@ -232,7 +209,7 @@ void ScreenshotSelectionExportUiServices::cancelClipboardPublication() {
 
 void ScreenshotSelectionExportUiServices::setClipboardImage(const QImage& image) {
     if (m_windowPool == nullptr) {
-        return;
+        m_windowPool = std::make_unique<ScreenshotPinnedWindowPool>();
     }
     static_cast<void>(ScreenshotClipboardService::commit(
         QApplication::clipboard(), m_windowPool.get(),
@@ -240,9 +217,10 @@ void ScreenshotSelectionExportUiServices::setClipboardImage(const QImage& image)
 }
 
 void ScreenshotSelectionExportUiServices::prewarmPinnedWindow(QScreen* screen) {
-    if (m_windowPool != nullptr) {
-        m_windowPool->prewarm(screen);
+    if (m_windowPool == nullptr) {
+        m_windowPool = std::make_unique<ScreenshotPinnedWindowPool>();
     }
+    m_windowPool->prewarm(screen);
 }
 
 bool ScreenshotSelectionExportUiServices::presentPinnedSelection(
@@ -251,6 +229,10 @@ bool ScreenshotSelectionExportUiServices::presentPinnedSelection(
     SNOW_SHOT_PIN_PERF_SCOPE("ui.present_pinned_selection");
     if (!request.isPrepared() || !result.isValid()) {
         return false;
+    }
+
+    if (m_windowPool == nullptr) {
+        m_windowPool = std::make_unique<ScreenshotPinnedWindowPool>();
     }
 
     auto* pinnedWindow =
@@ -274,6 +256,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedSelection(
     config.recognition = m_recognition;
     config.qrRecognition = m_qrRecognition;
     config.tableRecognition = m_tableRecognition;
+    config.recognitionProvider = m_recognitionProvider;
     config.recognitionResults = recognitionResultsForPinnedImage(
         request.recognitionResults, request.selection, request.resultStyle,
         request.fullResolutionScaleBasis);
@@ -323,6 +306,10 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
         return false;
     }
 
+    if (m_windowPool == nullptr) {
+        m_windowPool = std::make_unique<ScreenshotPinnedWindowPool>();
+    }
+
     if (!image.isNull()) {
         SNOW_SHOT_PIN_PERF_COUNTER("source.mode.materialized", 1);
         SNOW_SHOT_PIN_PERF_COUNTER("source.retained_bytes", image.sizeInBytes());
@@ -357,6 +344,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     config.recognition = m_recognition;
     config.qrRecognition = m_qrRecognition;
     config.tableRecognition = m_tableRecognition;
+    config.recognitionProvider = m_recognitionProvider;
     applyPinRuntimeSettings(&config);
     return presentPinnedWindowAndSynchronize(pinnedWindow, config, m_showMainWindowRequested,
                                              std::move(completion));

@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
+#include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
 #include "snow_shot/presentation/screenshottoolpalettehost.h"
@@ -444,6 +445,17 @@ ScreenshotToolPalette::Options testToolbarOptions() {
     options.showSelectTool = false;
     options.showShapeTool = false;
     options.showArrowTool = false;
+    options.enableStyleToolbar = false;
+    return options;
+}
+
+ScreenshotToolPalette::Options recordingToolbarOptionsForPresetTest() {
+    ScreenshotToolPalette::Options options;
+    options.showDragHandle = true;
+    options.showSelectTool = false;
+    options.showShapeTool = false;
+    options.showArrowTool = false;
+    options.showRecordingControls = true;
     options.enableStyleToolbar = false;
     return options;
 }
@@ -946,14 +958,23 @@ void styleToolChangesKeepThePresetWindowSize() {
     options.actions = ScreenshotToolPalette::PinAction | ScreenshotToolPalette::CancelAction |
                       ScreenshotToolPalette::CopyAction;
     ScreenshotFloatingToolPaletteWindow window(options);
-    window.prepareForDisplay();
-    const QSize presetWindowSize = window.size();
-
     constexpr ScreenshotToolPalette::Tool tools[] = {
         ScreenshotToolPalette::Tool::Select,       ScreenshotToolPalette::Tool::Shape,
         ScreenshotToolPalette::Tool::Arrow,        ScreenshotToolPalette::Tool::Text,
         ScreenshotToolPalette::Tool::SerialNumber,
     };
+    require(window.palette()->ensureActionFamily(
+                ScreenshotToolPalette::ActionFamily::Selection),
+            "preset test should materialize the inspected selection actions");
+    for (const ScreenshotToolPalette::Tool tool : tools) {
+        if (tool != ScreenshotToolPalette::Tool::Select) {
+            require(window.palette()->ensureStyleFamily(tool),
+                    "preset test should materialize every inspected style family");
+        }
+    }
+    window.prepareForDisplay();
+    const QSize presetWindowSize = window.size();
+
     for (const ScreenshotToolPalette::Tool tool : tools) {
         window.palette()->setActiveTool(tool);
         settleQueuedRefreshes();
@@ -965,6 +986,22 @@ void styleToolChangesKeepThePresetWindowSize() {
 void placementRectsTrackTheDisplayedStyleToolbar() {
     NoOpToolbarCommands commands;
     ScreenshotToolbarWindow window(commands);
+    constexpr ScreenshotToolPalette::Tool referenceFamilies[] = {
+        ScreenshotToolPalette::Tool::Shape,
+        ScreenshotToolPalette::Tool::Arrow,
+        ScreenshotToolPalette::Tool::RectangleHighlight,
+        ScreenshotToolPalette::Tool::PenHighlight,
+        ScreenshotToolPalette::Tool::Spotlight,
+        ScreenshotToolPalette::Tool::Text,
+        ScreenshotToolPalette::Tool::SerialNumber,
+        ScreenshotToolPalette::Tool::RectangleFilter,
+        ScreenshotToolPalette::Tool::PenFilter,
+        ScreenshotToolPalette::Tool::Watermark,
+    };
+    for (const ScreenshotToolPalette::Tool tool : referenceFamilies) {
+        require(window.palette()->ensureStyleFamily(tool),
+                "placement test should materialize its reference style families");
+    }
     window.prepareForDisplay();
     const QSize presetWindowSize = window.windowSizeHint();
     ScreenshotToolPalette* palette = window.palette();
@@ -986,10 +1023,16 @@ void placementRectsTrackTheDisplayedStyleToolbar() {
     const QRect textPlacementRect = window.bottomPlacementContentRect();
     require(textPlacementRect == expectedVisibleRect(),
             "bottom placement should use the displayed text style toolbar size");
-    require(shapePlacementRect != window.fullContentRect() ||
-                textPlacementRect != window.fullContentRect(),
-            "placement should not always use the maximum reserved toolbar extent");
 
+    window.setActiveTool(ScreenshotToolPalette::Tool::Move);
+    settleQueuedRefreshes();
+        const QRect movePlacementRect = window.bottomPlacementContentRect();
+        require(movePlacementRect == palette->mainToolbarContentRect() &&
+                    movePlacementRect != window.fullContentRect(),
+                "an editorless tool should exclude hidden secondary rows from placement");
+
+    window.setActiveTool(ScreenshotToolPalette::Tool::Text);
+    settleQueuedRefreshes();
     window.setStyleToolbarAboveMain(true);
     settleQueuedRefreshes();
     require(window.topPlacementContentRect() == expectedVisibleRect(),
@@ -1012,7 +1055,7 @@ void toolChangesRepositionOnlyBeforeManualDrag() {
     require(commands.repositionCount == 1,
             "a manually dragged toolbar should retain its position after a tool change");
 
-    window.resetPositionForSelection(window.contentPosition(), window.windowSizeHint());
+    window.resetPositionForSelection(window.contentPosition());
     window.setActiveTool(ScreenshotToolPalette::Tool::Shape);
     require(commands.repositionCount == 2,
             "resetting the toolbar after a selection change should restore "
@@ -1046,6 +1089,180 @@ void screenshotToolbarSizeMultiplierSurvivesCaptureReset() {
     window.prepareForDisplay();
     require(qFuzzyCompare(window.paletteHost()->physicalScale() + 1.0, 2.0),
             "normal screenshot toolbar should restore the unmodified DPI scale");
+}
+
+void requireDynamicToolbarContentFits(ScreenshotFloatingToolPaletteWindow& window,
+                                      const char* description) {
+    const QRect outerRect = window.rect();
+    const auto requireWidgetFits = [&](const QWidget* widget) {
+        if (widget == nullptr || widget->size().isEmpty()) {
+            return;
+        }
+        const QRect widgetRect(widget->mapTo(&window, QPoint(0, 0)), widget->size());
+        require(outerRect.contains(widgetRect.topLeft()) &&
+                    outerRect.contains(widgetRect.bottomRight()),
+                description);
+    };
+
+    requireWidgetFits(window.paletteHost());
+    if (ScreenshotToolPalette* palette = window.palette()) {
+        requireWidgetFits(palette->mainPanel());
+        requireWidgetFits(palette->actionPanel());
+        requireWidgetFits(palette->stylePanel());
+    }
+}
+
+void floatingToolbarsUseTheFixedWindowPreset() {
+    constexpr QSize normalPreset(1042, 142);
+    constexpr QSize smallPreset(834, 114);
+
+    NoOpToolbarCommands commands;
+    ScreenshotToolbarWindow screenshotToolbar(commands);
+    screenshotToolbar.setToolbarSize(QStringLiteral("normal"));
+    screenshotToolbar.prepareForDisplay();
+    require(screenshotToolbar.windowSizeHint() == normalPreset &&
+                screenshotToolbar.size() == normalPreset,
+            "screenshot toolbar should use the fixed normal window preset");
+    require(screenshotToolbar.palette()->findChild<QWidget*>(
+                QStringLiteral("screenshotStyleToolbarReserve")) == nullptr,
+            "screenshot toolbar should not create a placeholder reserve control");
+    requireDynamicToolbarContentFits(
+        screenshotToolbar, "screenshot toolbar content must fit the fixed normal preset");
+    const QRect bounds(0, 0, 1920, 1080);
+    screenshotToolbar.setPlacementContext(nullptr, bounds, bounds);
+    const QPoint anchor(1400, 1060);
+    const ScreenshotToolbarPlacementSnapshot initialSnapshot =
+        screenshotToolbar.placementSnapshot();
+    const auto initialPlacement = ScreenshotGeometryMapper::anchoredToolbarPlacement(
+        anchor, QPoint(anchor.x(), 800), initialSnapshot.bottom, initialSnapshot.top, bounds, 4);
+    screenshotToolbar.setStyleToolbarAboveMain(initialPlacement.usesTopRightPlacement);
+    screenshotToolbar.resetPositionForSelection(initialPlacement.contentPosition);
+    screenshotToolbar.palette()->setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    settleQueuedRefreshes();
+
+    const QMargins shadowMargins = ScreenshotToolPaletteHost::defaultShadowMargins();
+    screenshotToolbar.setStyleToolbarAboveMain(false);
+    settleQueuedRefreshes();
+    ScreenshotToolbarPlacementSnapshot snapshot = screenshotToolbar.placementSnapshot();
+    const QRect bottomMain =
+        snapshot.bottom.mainToolbarContentRect.translated(snapshot.contentOffset);
+    require(bottomMain.right() == normalPreset.width() - shadowMargins.right() - 1 &&
+                bottomMain.top() == shadowMargins.top(),
+            "the normal arrangement should anchor the main row to the frame top-right");
+
+    screenshotToolbar.setStyleToolbarAboveMain(true);
+    settleQueuedRefreshes();
+    snapshot = screenshotToolbar.placementSnapshot();
+    const QRect topMain = snapshot.top.mainToolbarContentRect.translated(snapshot.contentOffset);
+    const QRect topSecondary =
+        snapshot.top.secondaryToolbarContentRect.translated(snapshot.contentOffset);
+    require(topMain.right() == normalPreset.width() - shadowMargins.right() - 1 &&
+                topMain.bottom() == normalPreset.height() - shadowMargins.bottom() - 1,
+            "the top arrangement should anchor the main row to the frame bottom-right");
+    require(topSecondary.right() == topMain.right() &&
+                topMain.top() - topSecondary.bottom() - 1 == 6,
+            "the top arrangement should place the secondary row above the main row");
+
+    screenshotToolbar.setToolbarSize(QStringLiteral("small"));
+    screenshotToolbar.prepareForDisplay();
+    require(screenshotToolbar.windowSizeHint() == smallPreset &&
+                screenshotToolbar.size() == smallPreset,
+            "screenshot toolbar should use the rounded small window preset");
+    requireDynamicToolbarContentFits(
+        screenshotToolbar, "screenshot toolbar content must fit the fixed small preset");
+
+    ScreenshotFloatingToolPaletteWindow recordingToolbar(recordingToolbarOptionsForPresetTest());
+    recordingToolbar.prepareForDisplay();
+    require(recordingToolbar.windowSizeHint() == normalPreset &&
+                recordingToolbar.size() == normalPreset,
+            "screen recording toolbar should use the fixed normal window preset");
+    requireDynamicToolbarContentFits(
+        recordingToolbar, "screen recording toolbar content must fit the fixed preset");
+
+    ScreenshotFloatingToolPaletteWindow pinnedToolbar(testToolbarOptions());
+    pinnedToolbar.prepareForDisplay();
+    require(pinnedToolbar.windowSizeHint() == normalPreset &&
+                pinnedToolbar.size() == normalPreset,
+            "pinned toolbar should use the fixed normal window preset");
+    requireDynamicToolbarContentFits(pinnedToolbar,
+                                     "pinned toolbar content must fit the fixed preset");
+}
+
+void firstDisplayUsesThePreparedToolbarGeometry() {
+    constexpr int toolbarGap = 4;
+    const QRect bounds(0, 0, 1920, 1080);
+    const QPoint bottomRightAnchor(1400, 900);
+    const QPoint topRightAnchor(bottomRightAnchor.x(), 700);
+
+    NoOpToolbarCommands commands;
+    ScreenshotToolbarWindow window(commands);
+    window.prepareForDisplay();
+
+    require(window.palette()->findChild<QWidget*>(
+                QStringLiteral("screenshotStyleToolbarReserve")) == nullptr,
+            "first-display toolbar should not create a reserve control");
+    window.setPlacementContext(nullptr, bounds, bounds);
+    const ScreenshotToolbarPlacementSnapshot preparedSnapshot = window.placementSnapshot();
+    const auto placement = ScreenshotGeometryMapper::anchoredToolbarPlacement(
+        bottomRightAnchor, topRightAnchor, preparedSnapshot.bottom, preparedSnapshot.top, bounds,
+        toolbarGap);
+    require(!placement.usesTopRightPlacement,
+            "first-display regression should use the bottom-right arrangement");
+
+    window.setStyleToolbarAboveMain(placement.usesTopRightPlacement);
+    window.resetPositionForSelection(placement.contentPosition);
+    const QRect expectedMain =
+        preparedSnapshot.bottom.mainToolbarContentRect.translated(placement.contentPosition);
+    require(window.paletteHost()->pos() == QPoint(0, 0) &&
+                window.paletteHost()->size() == window.windowSizeHint(),
+            "first-display toolbar host should occupy the fixed frame at the origin");
+    require(expectedMain.top() - bottomRightAnchor.y() - 1 == toolbarGap,
+            "first-display toolbar should preserve the requested bottom gap");
+
+    window.show();
+    settleQueuedRefreshes();
+
+    const ScreenshotToolbarPlacementSnapshot displayedSnapshot = window.placementSnapshot();
+    const QRect displayedMain =
+        displayedSnapshot.bottom.mainToolbarContentRect.translated(window.contentPosition());
+    const QRect actualMain(window.palette()->mainPanel()->mapToGlobal(QPoint(0, 0)),
+                           window.palette()->mainPanel()->size());
+    require(actualMain == expectedMain,
+            "first display should place the main toolbar at the prepared global rectangle");
+    require(displayedMain == expectedMain,
+            "showing the toolbar should not change its prepared content geometry");
+    require(displayedMain.top() - bottomRightAnchor.y() - 1 == toolbarGap,
+            "first display should retain the requested bottom gap");
+    window.hide();
+}
+
+void captureResetRestoresTheNormalFrameAnchor() {
+    NoOpToolbarCommands commands;
+    ScreenshotToolbarWindow window(commands);
+    window.prepareForDisplay();
+    window.setActiveTool(ScreenshotToolPalette::Tool::Text);
+    settleQueuedRefreshes();
+    window.setStyleToolbarAboveMain(true);
+    settleQueuedRefreshes();
+
+    const QSize frameSize = window.windowSizeHint();
+    const int topPlacementY = frameSize.height() - window.palette()->height();
+    require(window.paletteHost()->pos() == QPoint(0, 0) &&
+                window.palette()->y() == topPlacementY,
+            "top placement should anchor the palette to the fixed frame bottom");
+
+    window.resetForNewCapture();
+    settleQueuedRefreshes();
+
+    const QMargins shadowMargins = ScreenshotToolPaletteHost::defaultShadowMargins();
+    require(window.paletteHost()->pos() == QPoint(0, 0) &&
+                window.paletteHost()->size() == frameSize,
+            "capture reset should restore the host to the fixed frame origin");
+    const ScreenshotToolbarPlacementSnapshot snapshot = window.placementSnapshot();
+    const QRect mainRect = snapshot.bottom.mainToolbarContentRect.translated(snapshot.contentOffset);
+    require(mainRect.top() == shadowMargins.top() &&
+                mainRect.right() == frameSize.width() - shadowMargins.right() - 1,
+            "capture reset should leave the main toolbar flush with the frame's normal anchor");
 }
 
 void translateButtonRoutesEveryClickThroughTheToggleCommand() {
@@ -1143,6 +1360,9 @@ int main(int argc, char* argv[]) {
         toolChangesRepositionOnlyBeforeManualDrag();
         unchangedShadowMarginsAreNoOps();
         screenshotToolbarSizeMultiplierSurvivesCaptureReset();
+        floatingToolbarsUseTheFixedWindowPreset();
+        firstDisplayUsesThePreparedToolbarGeometry();
+        captureResetRestoresTheNormalFrameAnchor();
         translateButtonRoutesEveryClickThroughTheToggleCommand();
         mainTextTranslationButtonUsesTranslationPresentation();
         return 0;

@@ -1251,16 +1251,6 @@ void configureScreenshotToolPaletteTooltip(QWidget* trigger,
     trigger->setAccessibleName(translated);
 }
 
-void configureScreenshotToolPalettePopoverTrigger(QWidget* trigger, const char* source) {
-    if (trigger == nullptr || source == nullptr || source[0] == '\0') {
-        return;
-    }
-
-    setScreenshotToolPaletteAccessibleNameSource(trigger, source);
-    trigger->setToolTip(QString());
-    trigger->setAccessibleName(ScreenshotToolPaletteTranslationText(source).translated());
-}
-
 void setScreenshotToolPaletteTooltipSource(QWidget* widget, const char* source) {
     if (source == nullptr || source[0] == '\0') {
         return;
@@ -1493,24 +1483,33 @@ createScreenshotToolPaletteRadioEditor(QWidget* parent,
     return editor;
 }
 
-ScreenshotToolPaletteOptionPopoverEditor createScreenshotToolPaletteOptionPopoverEditor(
-    adqt::widgets::AdButton* trigger, QObject* receiver,
+adqt::widgets::AdPopover*
+createScreenshotToolPaletteOptionPopoverShell(adqt::widgets::AdButton* trigger) {
+    if (trigger == nullptr) {
+        return nullptr;
+    }
+    auto* popover = new adqt::widgets::AdPopover(trigger);
+    popover->setSourceWidget(trigger);
+    popover->setTriggers(adqt::widgets::AdPopover::Trigger::Hover);
+    popover->setPlacement(adqt::widgets::AdPopover::Placement::Top);
+    popover->setPopupLayerMode(adqt::widgets::AdPopover::PopupLayerMode::QtTool);
+    popover->setArrowVisible(true);
+    return popover;
+}
+
+ScreenshotToolPaletteOptionPopoverEditor materializeScreenshotToolPaletteOptionPopoverEditor(
+    adqt::widgets::AdPopover* popover, QObject* receiver,
     const ScreenshotToolPaletteOptionPopoverEditorConfig& config,
     const std::function<void(int)>& activateValue,
     const ScreenshotToolPaletteButtonMetrics& metrics) {
     ScreenshotToolPaletteOptionPopoverEditor editor;
-    if (trigger == nullptr || receiver == nullptr || config.options.isEmpty()) {
+    editor.popover = popover;
+    if (popover == nullptr || receiver == nullptr || config.options.isEmpty()) {
         return editor;
     }
-
-    configureScreenshotToolPalettePopoverTrigger(trigger,
-                                                 config.accessibleName.toUtf8().constData());
-    editor.popover = new adqt::widgets::AdPopover(trigger);
-    editor.popover->setSourceWidget(trigger);
-    editor.popover->setTriggers(adqt::widgets::AdPopover::Trigger::Hover);
-    editor.popover->setPlacement(adqt::widgets::AdPopover::Placement::Top);
-    editor.popover->setPopupLayerMode(adqt::widgets::AdPopover::PopupLayerMode::QtTool);
-    editor.popover->setArrowVisible(true);
+    if (popover->contentWidget() != nullptr) {
+        return editor;
+    }
 
     auto* content = new QWidget();
     content->setObjectName(config.contentObjectName);
@@ -1526,17 +1525,27 @@ ScreenshotToolPaletteOptionPopoverEditor createScreenshotToolPaletteOptionPopove
         editor.values.push_back(option.value);
         layout->addWidget(button);
         QObject::connect(button, &adqt::widgets::AdButton::clicked, receiver,
-                         [popover = editor.popover, activateValue, value = option.value]() {
+                             [popover, activateValue, value = option.value]() {
                              if (activateValue) {
                                  activateValue(value);
                              }
                              popover->hide();
                          });
     }
-    editor.popover->setContentWidget(content);
-    configureScreenshotToolPaletteOptionPopoverEditor(editor.popover, editor.buttons,
-                                                      config.optionSpacing, metrics);
+    popover->setContentWidget(content);
+    configureScreenshotToolPaletteOptionPopoverEditor(popover, editor.buttons,
+                                                       config.optionSpacing, metrics);
     return editor;
+}
+
+ScreenshotToolPaletteOptionPopoverEditor createScreenshotToolPaletteOptionPopoverEditor(
+    adqt::widgets::AdButton* trigger, QObject* receiver,
+    const ScreenshotToolPaletteOptionPopoverEditorConfig& config,
+    const std::function<void(int)>& activateValue,
+    const ScreenshotToolPaletteButtonMetrics& metrics) {
+    return materializeScreenshotToolPaletteOptionPopoverEditor(
+        createScreenshotToolPaletteOptionPopoverShell(trigger), receiver, config, activateValue,
+        metrics);
 }
 
 void configureScreenshotToolPaletteOptionPopoverEditor(

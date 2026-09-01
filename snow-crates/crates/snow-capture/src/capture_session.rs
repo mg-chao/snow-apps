@@ -986,9 +986,26 @@ impl CaptureSession {
         let mut snapshot = self.sample_native_cursor().ok().flatten();
         stats.used_native = snapshot.is_some();
 
-        if snapshot.is_none() {
-            snapshot = self.sample_fallback_cursor();
-            stats.used_fallback = snapshot.is_some();
+        let native_has_shape = snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.shape.shape())
+            .is_some();
+        if (snapshot.is_none() || !native_has_shape)
+            && let Some(fallback) = self.sample_fallback_cursor()
+        {
+            // Native cursor metadata is frame-aligned and remains the
+            // authority for position/visibility. The global Win32 sampler
+            // only supplies the missing image when a backend has none.
+            let (resolved, used_fallback) = match snapshot {
+                Some(mut native) if fallback.shape.shape().is_some() => {
+                    native.shape = fallback.shape;
+                    (native, true)
+                }
+                Some(native) => (native, false),
+                None => (fallback, true),
+            };
+            snapshot = Some(resolved);
+            stats.used_fallback = used_fallback;
         }
 
         if let Some(snapshot) = snapshot {

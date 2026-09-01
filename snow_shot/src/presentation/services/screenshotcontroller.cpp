@@ -41,6 +41,7 @@
 #include "snow_shot/presentation/screenshotoverlayshortcutcontroller.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/presentation/screenshotpresentationservices.h"
+#include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/screenshotselectorcoordinator.h"
 #include "snow_shot/presentation/screenshotselectorworkflow.h"
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
@@ -65,6 +66,7 @@
 #include <QPointer>
 #include <QRectF>
 #include <QScreen>
+#include <QScopedValueRollback>
 #include <QSet>
 #include <QUrl>
 #include <QLineEdit>
@@ -234,6 +236,13 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
 
     void createPresentationInfrastructure();
     void createSelectionWorkflows();
+    [[nodiscard]] bool ensureRecognitionFeature();
+    [[nodiscard]] bool ensureScrollingFeature();
+    [[nodiscard]] bool ensureRecordingFeature();
+    [[nodiscard]] bool ensureExportFeature();
+    [[nodiscard]] bool ensureCanvasSamplingUi();
+    void deactivateRecognition();
+    void invalidateRecognitionSession();
     void createSelectorWorkflow();
     void createToolCommandWorkflow();
     void createCaptureRuntimeAdapter();
@@ -450,6 +459,11 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     QSet<SnowCanvasTool> m_quickSelectionDisabledTools;
     ScreenshotUiPreferences m_uiPreferences;
     std::unique_ptr<ScreenRecordingController> m_screenRecordingController;
+    bool m_constructingRecognitionFeature = false;
+    bool m_constructingScrollingFeature = false;
+    bool m_constructingRecordingFeature = false;
+    bool m_constructingExportFeature = false;
+    bool m_constructingCanvasSamplingUi = false;
 };
 
 ScreenshotController::Impl::Impl(ScreenshotController& controller)
@@ -475,6 +489,16 @@ ScreenshotController::Impl::Impl(ScreenshotController& controller)
                     if (!m_interaction.inactive()) {
                         m_presentationServices->updateOverlayState();
                     }
+                } else if (key == QStringLiteral("text_recognition/direct_ml_acceleration") &&
+                           m_ocrRecognition != nullptr) {
+                    const auto preference =
+                        value.toBool() ? ScreenshotOcrBackendPreference::DirectMl
+                                       : ScreenshotOcrBackendPreference::Cpu;
+                    m_ocrRecognition->setBackendPreference(preference);
+                } else if (key == QStringLiteral("network/proxy") &&
+                           m_tableRecognition != nullptr) {
+                    m_tableRecognition->setUseSystemProxy(
+                        value.toString() == QStringLiteral("system"));
                 }
             });
     }
@@ -677,18 +701,9 @@ void ScreenshotController::Impl::createPresentationInfrastructure() {
     m_physicalCursor = std::make_unique<snow_shot::platform::PhysicalCursor>();
     m_colorPickerController = std::make_unique<ScreenshotColorPickerController>(
         *m_overlayCoordinator, m_geometry, m_displaySession, *m_physicalCursor);
-    m_canvasColorSamplerWindow = std::make_unique<ScreenshotCanvasColorSamplerWindow>();
     m_toolbarPresenter = std::make_unique<ScreenshotToolbarPresenter>(*m_overlayCoordinator,
                                                                       m_geometry, m_displaySession);
-    m_scrollingCaptureController = std::make_unique<ScreenshotScrollingCaptureController>(
-        ScreenshotScrollingCaptureControllerContext{
-            m_displaySession,
-            m_geometry,
-            *m_overlayCoordinator,
-        },
-        &owner);
     m_selectorCoordinator = new ScreenshotSelectorCoordinator(&owner);
-    m_screenRecordingController = std::make_unique<ScreenRecordingController>(&owner);
     m_selectionSettings = std::make_unique<ScreenshotSelectionSettingsStore>();
     m_presentationServices =
         std::make_unique<ScreenshotPresentationServices>(ScreenshotPresentationServicesContext{
@@ -702,6 +717,18 @@ void ScreenshotController::Impl::createPresentationInfrastructure() {
             m_intelligentSelection,
             m_quickSelectionDisabledTools,
         });
+}
+
+bool ScreenshotController::Impl::ensureRecognitionFeature() {
+    if (m_ocrController != nullptr) {
+        return true;
+    }
+    if (m_constructingRecognitionFeature || m_overlayCoordinator == nullptr ||
+        m_colorPickerController == nullptr) {
+        return false;
+    }
+
+    const QScopedValueRollback<bool> constructingGuard(m_constructingRecognitionFeature, true);
     auto& applicationStorage = snow_shot::storage::ApplicationStorage::instance();
     const auto backendPreference =
         applicationStorage.configuration()
@@ -717,18 +744,6 @@ void ScreenshotController::Impl::createPresentationInfrastructure() {
     }
     m_ocrRecognition = std::make_unique<ScreenshotOcrRecognitionService>(
         ocrOptions, backendPreference, &owner);
-    QObject::connect(
-        &applicationStorage.configuration(), &snow_shot::storage::ConfigurationStore::valueChanged,
-        &owner, [this](const QString& key, const QJsonValue& value) {
-            if (key == QStringLiteral("text_recognition/direct_ml_acceleration") &&
-                m_ocrRecognition != nullptr) {
-                const auto preference = value.toBool() ? ScreenshotOcrBackendPreference::DirectMl
-                                                       : ScreenshotOcrBackendPreference::Cpu;
-                m_ocrRecognition->setBackendPreference(preference);
-            } else if (key == QStringLiteral("network/proxy") && m_tableRecognition != nullptr) {
-                m_tableRecognition->setUseSystemProxy(value.toString() == QStringLiteral("system"));
-            }
-        });
     m_qrRecognition = std::make_unique<ScreenshotQrRecognitionService>(&owner);
     QString tableApiUrl = QStringLiteral(SNOW_SHOT_API_BASE_URL);
     const QString runtimeTableApiUrl =
@@ -777,35 +792,64 @@ void ScreenshotController::Impl::createPresentationInfrastructure() {
         &owner);
     QObject::connect(m_ocrController.get(), &ScreenshotOcrController::textResultChanged, &owner,
                      [this](bool available) { handleAutomaticTextRecognitionAction(available); });
+    return true;
+}
+
+bool ScreenshotController::Impl::ensureScrollingFeature() {
+    if (m_scrollingCaptureController != nullptr) {
+        return true;
+    }
+    if (m_constructingScrollingFeature || m_overlayCoordinator == nullptr) {
+        return false;
+    }
+    const QScopedValueRollback<bool> constructingGuard(m_constructingScrollingFeature, true);
+    m_scrollingCaptureController = std::make_unique<ScreenshotScrollingCaptureController>(
+        ScreenshotScrollingCaptureControllerContext{
+            m_displaySession,
+            m_geometry,
+            *m_overlayCoordinator,
+        },
+        &owner);
+    return m_scrollingCaptureController != nullptr;
+}
+
+bool ScreenshotController::Impl::ensureRecordingFeature() {
+    if (m_screenRecordingController != nullptr) {
+        return true;
+    }
+    if (m_constructingRecordingFeature) {
+        return false;
+    }
+    const QScopedValueRollback<bool> constructingGuard(m_constructingRecordingFeature, true);
+    m_screenRecordingController = std::make_unique<ScreenRecordingController>(&owner);
+    return m_screenRecordingController != nullptr;
+}
+
+bool ScreenshotController::Impl::ensureCanvasSamplingUi() {
+    if (m_canvasColorSamplerWindow != nullptr) {
+        return true;
+    }
+    if (m_constructingCanvasSamplingUi) {
+        return false;
+    }
+    const QScopedValueRollback<bool> constructingGuard(m_constructingCanvasSamplingUi, true);
+    m_canvasColorSamplerWindow = std::make_unique<ScreenshotCanvasColorSamplerWindow>();
+    return m_canvasColorSamplerWindow != nullptr;
+}
+
+void ScreenshotController::Impl::deactivateRecognition() {
+    if (m_ocrController != nullptr) {
+        m_ocrController->deactivate();
+    }
+}
+
+void ScreenshotController::Impl::invalidateRecognitionSession() {
+    if (m_ocrController != nullptr) {
+        m_ocrController->invalidateSession();
+    }
 }
 
 void ScreenshotController::Impl::createSelectionWorkflows() {
-    m_exportService = std::make_unique<ScreenshotExportService>(ScreenshotExportServiceContext{
-        m_displaySession,
-        m_canvasRuntime,
-        m_geometry,
-    });
-    m_selectionExportUiServices = std::make_unique<ScreenshotSelectionExportUiServices>(
-        m_ocrRecognition.get(), m_qrRecognition.get(), m_tableRecognition.get(),
-        [controller = QPointer<ScreenshotController>(&owner)]() {
-            if (controller != nullptr) {
-                emit controller->showMainWindowRequested();
-            }
-        });
-    m_selectionExportWorkflow = std::make_unique<ScreenshotSelectionExportWorkflow>(
-        ScreenshotSelectionExportWorkflowContext{
-            m_captureState,
-            m_geometry,
-            m_selection,
-            *m_exportService,
-            *m_selectionExportUiServices,
-            *m_selectionSettings,
-            owner,
-            [this]() {
-                return m_ocrController != nullptr ? m_ocrController->cachedRecognitionResults()
-                                                   : ScreenshotRecognitionResults{};
-            },
-        });
     m_selectionResizeWorkflow =
         std::make_unique<ScreenshotSelectionResizeWorkflow>(*m_selectionSettings);
     m_selectionEditWorkflow =
@@ -831,6 +875,59 @@ void ScreenshotController::Impl::createSelectionWorkflows() {
                 [this](bool suppressed) { m_colorPickerController->setSuppressed(suppressed); },
             },
         });
+}
+
+bool ScreenshotController::Impl::ensureExportFeature() {
+    if (m_exportService != nullptr && m_selectionExportUiServices != nullptr &&
+        m_selectionExportWorkflow != nullptr) {
+        return true;
+    }
+    if (m_constructingExportFeature || m_selectionSettings == nullptr) {
+        return false;
+    }
+
+    const QScopedValueRollback<bool> constructingGuard(m_constructingExportFeature, true);
+    auto exportService = std::make_unique<ScreenshotExportService>(ScreenshotExportServiceContext{
+        m_displaySession,
+        m_canvasRuntime,
+        m_geometry,
+    });
+    auto exportUiServices = std::make_unique<ScreenshotSelectionExportUiServices>(
+        m_ocrRecognition.get(), m_qrRecognition.get(), m_tableRecognition.get(),
+        [controller = QPointer<ScreenshotController>(&owner)]() {
+            if (controller != nullptr) {
+                emit controller->showMainWindowRequested();
+            }
+        },
+        [controller = QPointer<ScreenshotController>(&owner)]() {
+            ScreenshotPinnedRecognitionProviders providers;
+            if (controller == nullptr || controller->m_impl == nullptr ||
+                !controller->m_impl->ensureRecognitionFeature()) {
+                return providers;
+            }
+            providers.recognition = controller->m_impl->m_ocrRecognition.get();
+            providers.qrRecognition = controller->m_impl->m_qrRecognition.get();
+            providers.tableRecognition = controller->m_impl->m_tableRecognition.get();
+            return providers;
+        });
+    auto exportWorkflow = std::make_unique<ScreenshotSelectionExportWorkflow>(
+        ScreenshotSelectionExportWorkflowContext{
+            m_captureState,
+            m_geometry,
+            m_selection,
+            *exportService,
+            *exportUiServices,
+            *m_selectionSettings,
+            owner,
+            [this]() {
+                return m_ocrController != nullptr ? m_ocrController->cachedRecognitionResults()
+                                                   : ScreenshotRecognitionResults{};
+            },
+        });
+    m_exportService = std::move(exportService);
+    m_selectionExportUiServices = std::move(exportUiServices);
+    m_selectionExportWorkflow = std::move(exportWorkflow);
+    return true;
 }
 
 void ScreenshotController::Impl::createSelectorWorkflow() {
@@ -995,7 +1092,7 @@ void ScreenshotController::Impl::startHistoryEdit(const QString& recordId) {
 
     resetPendingCaptureRequest();
     m_pendingHistoryEditRecordId = recordId;
-    m_ocrController->invalidateSession();
+    invalidateRecognitionSession();
     m_historyService->resetCaptureNavigation();
     m_captureWorkflow->startCapture();
 }
@@ -1325,7 +1422,7 @@ void ScreenshotController::Impl::connectSelectorSignals() {
 }
 
 void ScreenshotController::Impl::setMoveTool() {
-    m_ocrController->deactivate();
+    deactivateRecognition();
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
     static_cast<void>(resetCanvasEditingState());
     m_toolCommandWorkflow->setMoveTool();
@@ -1335,7 +1432,9 @@ void ScreenshotController::Impl::setMoveTool() {
 bool ScreenshotController::Impl::activateToolForSelectionResize(ScreenshotActiveTool tool) {
     switch (tool) {
     case ScreenshotActiveTool::Move: {
-        m_ocrController->deactivateForSelectionResize();
+        if (m_ocrController != nullptr) {
+            m_ocrController->deactivateForSelectionResize();
+        }
         const bool scrollingCaptureStopped = stopScrollingCapture(true);
         static_cast<void>(resetCanvasEditingState());
         m_toolCommandWorkflow->setMoveTool();
@@ -1407,6 +1506,9 @@ void ScreenshotController::Impl::activateRecognitionToolAfterSelectionResize(
     }
 
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
+    if (!ensureRecognitionFeature()) {
+        return;
+    }
     if (tool == ScreenshotActiveTool::Ocr) {
         m_ocrController->activate();
     } else if (tool == ScreenshotActiveTool::Table) {
@@ -1421,35 +1523,35 @@ void ScreenshotController::Impl::activateRecognitionToolAfterSelectionResize(
 }
 
 void ScreenshotController::Impl::setSelectTool() {
-    m_ocrController->deactivate();
+    deactivateRecognition();
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
     m_toolCommandWorkflow->setSelectTool();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
 }
 
 void ScreenshotController::Impl::setShapeTool() {
-    m_ocrController->deactivate();
+    deactivateRecognition();
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
     m_toolCommandWorkflow->setShapeTool();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
 }
 
 void ScreenshotController::Impl::setArrowTool() {
-    m_ocrController->deactivate();
+    deactivateRecognition();
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
     m_toolCommandWorkflow->setArrowTool();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
 }
 
 void ScreenshotController::Impl::setTextTool() {
-    m_ocrController->deactivate();
+    deactivateRecognition();
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
     m_toolCommandWorkflow->setTextTool();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
 }
 
 void ScreenshotController::Impl::setSerialNumberTool() {
-    m_ocrController->deactivate();
+    deactivateRecognition();
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
     m_toolCommandWorkflow->setSerialNumberTool();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
@@ -1462,6 +1564,9 @@ void ScreenshotController::Impl::setOcrTool() {
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
     if (resetCanvasEditingState()) {
         m_interaction.setCanvasTool(ScreenshotActiveTool::Select);
+    }
+    if (!ensureRecognitionFeature()) {
+        return;
     }
     m_ocrController->activate();
     m_presentationServices->updateOverlayState();
@@ -1506,6 +1611,9 @@ void ScreenshotController::Impl::handleAutomaticTextRecognitionAction(bool avail
 
 void ScreenshotController::Impl::setTableTool() {
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
+    if (!ensureRecognitionFeature()) {
+        return;
+    }
     m_ocrController->activateTable();
     m_presentationServices->updateOverlayState();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
@@ -1513,6 +1621,9 @@ void ScreenshotController::Impl::setTableTool() {
 
 void ScreenshotController::Impl::setQrTool() {
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
+    if (!ensureRecognitionFeature()) {
+        return;
+    }
     m_ocrController->activateQr();
     m_presentationServices->updateOverlayState();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
@@ -1526,6 +1637,9 @@ void ScreenshotController::Impl::setTextTranslationTool() {
     if (resetCanvasEditingState()) {
         m_interaction.setCanvasTool(ScreenshotActiveTool::Select);
     }
+    if (!ensureRecognitionFeature()) {
+        return;
+    }
     m_ocrController->activate();
     m_presentationServices->updateOverlayState();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
@@ -1537,18 +1651,27 @@ void ScreenshotController::Impl::setTextTranslationTool() {
 }
 
 void ScreenshotController::Impl::mergeTableSelection() {
-    m_ocrController->mergeTableSelection();
+    if (m_ocrController != nullptr) {
+        m_ocrController->mergeTableSelection();
+    }
 }
 
 void ScreenshotController::Impl::splitTableSelection() {
-    m_ocrController->splitTableSelection();
+    if (m_ocrController != nullptr) {
+        m_ocrController->splitTableSelection();
+    }
 }
 
 void ScreenshotController::Impl::resetTable() {
-    m_ocrController->resetTable();
+    if (m_ocrController != nullptr) {
+        m_ocrController->resetTable();
+    }
 }
 
 void ScreenshotController::Impl::toggleTextEditing() {
+    if (m_ocrController == nullptr) {
+        return;
+    }
     if (m_ocrController->translating()) {
         m_ocrController->endTextEditing();
         m_ocrController->beginTextEditing();
@@ -1560,6 +1683,9 @@ void ScreenshotController::Impl::toggleTextEditing() {
 }
 
 void ScreenshotController::Impl::toggleTextTranslation() {
+    if (m_ocrController == nullptr) {
+        return;
+    }
     if (m_ocrController->translating()) {
         m_ocrController->endTextEditing();
     } else {
@@ -1568,19 +1694,27 @@ void ScreenshotController::Impl::toggleTextTranslation() {
 }
 
 void ScreenshotController::Impl::resetTextEditing() {
-    m_ocrController->resetTextEditing();
+    if (m_ocrController != nullptr) {
+        m_ocrController->resetTextEditing();
+    }
 }
 
 void ScreenshotController::Impl::openTextTranslationSettings() {
-    m_ocrController->openTranslationSettings();
+    if (ensureRecognitionFeature()) {
+        m_ocrController->openTranslationSettings();
+    }
 }
 
 void ScreenshotController::Impl::applyTextFormatting(const QString& value) {
-    m_ocrController->applyTextFormatting(value);
+    if (m_ocrController != nullptr) {
+        m_ocrController->applyTextFormatting(value);
+    }
 }
 
 void ScreenshotController::Impl::applyTextPunctuation(const QString& value) {
-    m_ocrController->applyTextPunctuation(value);
+    if (m_ocrController != nullptr) {
+        m_ocrController->applyTextPunctuation(value);
+    }
 }
 
 bool ScreenshotController::Impl::stopScrollingCapture(bool restoreScreenshotPresentation) {
@@ -1734,8 +1868,8 @@ void ScreenshotController::Impl::restoreToolUiAfterScrollingCapture(bool scrolli
 }
 
 void ScreenshotController::Impl::startScrollingScreenshot() {
-    m_ocrController->deactivate();
-    if (m_scrollingCaptureController == nullptr || m_scrollingCaptureController->active() ||
+    deactivateRecognition();
+    if (!ensureScrollingFeature() || m_scrollingCaptureController->active() ||
         !m_selection.hasPixelSelection()) {
         return;
     }
@@ -1761,6 +1895,9 @@ void ScreenshotController::Impl::startScrollingScreenshot() {
 }
 
 void ScreenshotController::Impl::pinSelectionToScreen() {
+    if (!ensureExportFeature()) {
+        return;
+    }
     if (m_scrollingCaptureController != nullptr && m_scrollingCaptureController->active()) {
         const QSize sourceSize = m_scrollingCaptureController->trimmedSize();
         if (sourceSize.isEmpty()) {
@@ -1960,7 +2097,7 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
     const bool historyEligible = m_interaction.activeTool() != ScreenshotActiveTool::Ocr &&
                                  m_interaction.activeTool() != ScreenshotActiveTool::Table &&
                                  m_interaction.activeTool() != ScreenshotActiveTool::Qr;
-    m_ocrController->deactivate();
+    deactivateRecognition();
     SNOW_SHOT_PIN_PERF_MILESTONE("controller.ocr_deactivated");
     const std::optional<quint64> exportGeneration = beginImageExport();
     if (!exportGeneration.has_value()) {
@@ -2055,6 +2192,9 @@ void ScreenshotController::Impl::setScrollingScreenshotRecognitionMode(
 }
 
 void ScreenshotController::Impl::pinClipboardContentToScreen() {
+    if (!ensureExportFeature()) {
+        return;
+    }
     QScreen* screen = QGuiApplication::screenAt(QCursor::pos());
     if (screen == nullptr) {
         screen = QGuiApplication::primaryScreen();
@@ -2325,6 +2465,9 @@ void ScreenshotController::Impl::saveSelectionToFile() {
     if (selectedPath.isEmpty()) {
         return;
     }
+    if (!ensureExportFeature()) {
+        return;
+    }
     static_cast<void>(
         outputSettings.setLastManualSaveDirectory(QFileInfo(selectedPath).absolutePath()));
 
@@ -2477,7 +2620,7 @@ void ScreenshotController::Impl::cancelCapture() {
         m_overlayInputHandler->resetTransientShortcuts();
     }
     resetPendingCaptureRequest();
-    m_ocrController->invalidateSession();
+    invalidateRecognitionSession();
     static_cast<void>(stopScrollingCapture(false));
     if (m_historyService != nullptr) {
         m_historyService->resetCaptureNavigation();
@@ -2491,7 +2634,10 @@ void ScreenshotController::Impl::copySelectionToClipboard() {
 
 void ScreenshotController::Impl::copySelectionToClipboardWithSource(
     snow_shot::storage::CaptureHistorySource historySource) {
-    if (m_ocrController->active()) {
+    if (!ensureExportFeature()) {
+        return;
+    }
+    if (m_ocrController != nullptr && m_ocrController->active()) {
         if (m_ocrController->copyRecognitionToClipboard()) {
             return;
         }
@@ -2621,7 +2767,7 @@ void ScreenshotController::Impl::copySelectionToClipboardWithSource(
     const bool historyEligible = m_interaction.activeTool() != ScreenshotActiveTool::Ocr &&
                                  m_interaction.activeTool() != ScreenshotActiveTool::Table &&
                                  m_interaction.activeTool() != ScreenshotActiveTool::Qr;
-    m_ocrController->deactivate();
+    deactivateRecognition();
     const std::optional<quint64> exportGeneration = beginImageExport();
     if (!exportGeneration.has_value()) {
         return;
@@ -3170,8 +3316,8 @@ bool ScreenshotController::Impl::prepareHistoryCandidate(
 }
 
 void ScreenshotController::Impl::startScreenRecording() {
-    m_ocrController->deactivate();
-    if (!m_selection.hasPixelSelection() || m_screenRecordingController == nullptr ||
+    deactivateRecognition();
+    if (!m_selection.hasPixelSelection() || !ensureRecordingFeature() ||
         (m_scrollingCaptureController != nullptr && m_scrollingCaptureController->active())) {
         return;
     }
@@ -3181,7 +3327,7 @@ void ScreenshotController::Impl::startScreenRecording() {
     }
     static_cast<void>(resetCanvasEditingState());
 
-    m_ocrController->invalidateSession();
+    invalidateRecognitionSession();
     m_captureWorkflow->cancelCapture();
     if (m_historyService != nullptr) {
         m_historyService->resetCaptureNavigation();
@@ -3197,35 +3343,35 @@ void ScreenshotController::Impl::setShapeStyleFromToolbar(const SnowCanvasShapeS
 }
 
 void ScreenshotController::Impl::setLineTool() {
-    m_ocrController->deactivate();
+    deactivateRecognition();
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
     m_toolCommandWorkflow->setLineTool();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
 }
 
 void ScreenshotController::Impl::setFreeDrawTool() {
-    m_ocrController->deactivate();
+    deactivateRecognition();
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
     m_toolCommandWorkflow->setFreeDrawTool();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
 }
 
 void ScreenshotController::Impl::setHighlightTool() {
-    m_ocrController->deactivate();
+    deactivateRecognition();
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
     m_toolCommandWorkflow->setHighlightTool();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
 }
 
 void ScreenshotController::Impl::setPenHighlightTool() {
-    m_ocrController->deactivate();
+    deactivateRecognition();
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
     m_toolCommandWorkflow->setPenHighlightTool();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
 }
 
 void ScreenshotController::Impl::setEraserTool() {
-    m_ocrController->deactivate();
+    deactivateRecognition();
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
     m_toolCommandWorkflow->setEraserTool();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
@@ -3236,28 +3382,28 @@ void ScreenshotController::Impl::setFilterTool() {
 }
 
 void ScreenshotController::Impl::setSpotlightTool() {
-    m_ocrController->deactivate();
+    deactivateRecognition();
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
     m_toolCommandWorkflow->setSpotlightTool();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
 }
 
 void ScreenshotController::Impl::setRectangleFilterTool() {
-    m_ocrController->deactivate();
+    deactivateRecognition();
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
     m_toolCommandWorkflow->setRectangleFilterTool();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
 }
 
 void ScreenshotController::Impl::setPenFilterTool() {
-    m_ocrController->deactivate();
+    deactivateRecognition();
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
     m_toolCommandWorkflow->setPenFilterTool();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
 }
 
 void ScreenshotController::Impl::setWatermarkTool() {
-    m_ocrController->deactivate();
+    deactivateRecognition();
     const bool scrollingCaptureStopped = stopScrollingCapture(true);
     m_toolCommandWorkflow->setWatermarkTool();
     restoreToolUiAfterScrollingCapture(scrollingCaptureStopped);
@@ -3418,6 +3564,9 @@ void ScreenshotController::Impl::beginCanvasColorSampling(adqt::widgets::AdColor
     if (picker == nullptr || m_overlayInputHandler == nullptr || m_interaction.scrollingCapture()) {
         return;
     }
+    if (!ensureCanvasSamplingUi()) {
+        return;
+    }
 
     clearCanvasColorSampling();
     m_canvasColorSamplingTarget = picker;
@@ -3481,7 +3630,7 @@ bool ScreenshotController::Impl::canBeginCapture() const {
          m_captureState.sessionState != ScreenshotSessionState::IdlePrepared)) {
         return false;
     }
-    return m_captureWorkflow != nullptr && m_ocrController != nullptr;
+    return m_captureWorkflow != nullptr;
 }
 
 bool ScreenshotController::Impl::beginCapture(
@@ -3507,7 +3656,7 @@ bool ScreenshotController::Impl::beginCapture(
     if (automaticMode != AutomaticSelectionMode::FocusedWindow) {
         m_focusedWindowCapture.reset();
     }
-    m_ocrController->invalidateSession();
+    invalidateRecognitionSession();
     static_cast<void>(stopScrollingCapture(false));
     if (m_historyService != nullptr) {
         m_historyService->resetCaptureNavigation();
@@ -3586,7 +3735,7 @@ void ScreenshotController::Impl::handleSelectionConfirmed() {
                                setTextTranslationTool();
                                break;
                            case PendingSelectionAction::Copy:
-                               if (!directSourceImage.isNull() && m_exportService != nullptr) {
+                               if (!directSourceImage.isNull() && ensureExportFeature()) {
                                    m_exportService->setNextSelectionSourceImage(
                                        std::move(directSourceImage));
                                }
@@ -3667,7 +3816,6 @@ void ScreenshotController::Impl::shutdown() {
     m_activeImageExports.clear();
     m_imageExportCaptureEpochs.clear();
     resetPendingCaptureRequest();
-    m_exportService.reset();
     m_ocrController.reset();
     static_cast<void>(stopScrollingCapture(false));
     if (m_captureWorkflow != nullptr) {
@@ -3699,8 +3847,9 @@ void ScreenshotController::Impl::shutdown() {
     m_colorPickerController.reset();
     m_toolbarPresenter.reset();
     m_selectionResizeWorkflow.reset();
-    m_selectionExportWorkflow.reset();
     m_selectionExportUiServices.reset();
+    m_selectionExportWorkflow.reset();
+    m_exportService.reset();
     m_selectionSettings.reset();
     m_screenRecordingController.reset();
     m_overlayCoordinator.reset();
@@ -3802,6 +3951,7 @@ void ScreenshotController::captureAndStartScreenRecording() {
 
 void ScreenshotController::startOrStopScreenRecordingAndCopy() {
     if (m_impl->m_screenRecordingController == nullptr) {
+        captureAndStartScreenRecording();
         return;
     }
     if (!m_impl->m_screenRecordingController->isOpen()) {

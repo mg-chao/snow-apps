@@ -46,7 +46,7 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
                              const QRect& physicalBounds = QRect());
     void setPlacementScreen(QScreen* screen);
     void setMovementBounds(const QRect& logicalBounds, const QRect& physicalBounds = QRect());
-    void resetPositionForSelection(const QPoint& position, const QSize& windowSize);
+    void resetPositionForSelection(const QPoint& position);
 
   protected:
     void enterEvent(QEnterEvent* event) override;

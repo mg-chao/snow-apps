@@ -44,7 +44,6 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     void prepareForDisplay();
     void resetPhysicalSizeInvariant();
     void moveContentTo(const QPoint& position);
-    void moveContentTo(const QPoint& position, const QSize& windowSize);
     QPoint contentPosition() const;
     QRect occupiedContentRect() const;
     QRect visualContentRect() const;
@@ -52,6 +51,7 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     QRect bottomPlacementContentRect() const;
     QRect topPlacementContentRect() const;
     QRect topRightMainToolbarContentRect() const;
+    ScreenshotToolbarPlacementSnapshot placementSnapshot() const;
     QSize contentSizeHint() const;
     QSize windowSizeHint() const;
     bool containsInteractiveGlobalPoint(const QPoint& globalPosition) const;
@@ -117,13 +117,14 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     void finishPaletteDrag(bool emitFinished);
     bool handleToolbarWheel(QWheelEvent* event);
     void applyWindowAttributes();
+    void registerMaterializedScope(QWidget* scope);
+    void prewarmScopeIcons(QWidget* scope);
     QSize fixedWindowSizeHint() const;
     QPoint contentOffset() const;
     QPointF dragPositionForEvent(const QPoint& globalPosition) const;
     QPointF dragPositionForEvent(const QPoint& globalPosition,
                                  const QPointF& physicalPosition) const;
 
-    QWidget* m_panel = nullptr;
     ScreenshotToolPaletteHost* m_paletteHost = nullptr;
     adqt::widgets::AdControlScaleScope* m_scaleScope = nullptr;
     adqt::widgets::AdDpiStableWindowController* m_dpiController = nullptr;
@@ -143,8 +144,12 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     qreal m_referenceDevicePixelRatio = 0.0;
     qreal m_committedWindowDevicePixelRatio = 0.0;
     qreal m_paletteScaleMultiplier = 1.0;
+    // The fixed native frame is larger than the visible rows.  Keep the rows
+    // at the frame's top edge for the normal arrangement and at its bottom
+    // edge when the secondary row is above the main toolbar.
+    bool m_styleToolbarAboveMain = false;
     qreal m_lastAppliedWindowDevicePixelRatio = 0.0;
-    QSize m_lastAppliedHostSize;
+    QSize m_lastAppliedWindowSize;
     QPoint m_lastAppliedContentOffset;
     QRect m_lastAppliedMainToolbarContentRect;
     bool m_draggingPalette = false;

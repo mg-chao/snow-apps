@@ -102,7 +102,10 @@ bool imageContainsColor(const QImage& image, const QColor& expected) {
 
 adqt::widgets::AdButton* buttonWithTooltip(ScreenshotToolPalette& palette, const QString& tooltip) {
     for (adqt::widgets::AdButton* button : palette.findChildren<adqt::widgets::AdButton*>()) {
-        if (button != nullptr && button->toolTip() == tooltip) {
+        if (button != nullptr &&
+            (button->toolTip() == tooltip ||
+             (button->toolTip().startsWith(tooltip + QStringLiteral(" (")) &&
+              button->toolTip().endsWith(')')))) {
             return button;
         }
     }
@@ -263,6 +266,9 @@ void cachedToolbarIconsFollowThemeColors() {
     options.showWatermarkTool = true;
     options.actions = ScreenshotToolPalette::CopyAction;
     ScreenshotToolPalette toolbar(options);
+    require(toolbar.ensureActionFamily(ScreenshotToolPalette::ActionFamily::Selection) &&
+                toolbar.ensureStyleFamily(ScreenshotToolPalette::Tool::Watermark),
+            "theme icon test should materialize the inspected toolbar families");
     prepare(toolbar);
 
     auto* selectionOpacity =
@@ -521,32 +527,58 @@ void cornerRadiusTextKeepsItsPhysicalSizeAcrossDpiChanges() {
     }
 }
 
-void styleToolbarPresetFitsEveryToolWithoutResizing() {
+void visibleToolbarRowsDrivePaletteGeometry() {
     ScreenshotToolPalette::Options options;
     options.showTextTool = true;
     ScreenshotToolPalette toolbar(options);
-    toolbar.setStyleToolbarAboveMain(true);
-    prepare(toolbar);
-
-    const QSize presetSize = toolbar.size();
-    const QSize presetContentSize = toolbar.contentSizeHint();
-    const QRect presetMainToolbarRect = toolbar.mainToolbarContentRect();
-    int visibleContentChangeCount = 0;
-    QObject::connect(&toolbar, &ScreenshotToolPalette::visibleContentChanged,
-                     [&visibleContentChangeCount]() { ++visibleContentChangeCount; });
     constexpr ScreenshotToolPalette::Tool tools[] = {
         ScreenshotToolPalette::Tool::Select,
         ScreenshotToolPalette::Tool::Shape,
         ScreenshotToolPalette::Tool::Arrow,
         ScreenshotToolPalette::Tool::Text,
     };
+    require(toolbar.ensureActionFamily(ScreenshotToolPalette::ActionFamily::Selection),
+            "preset test should materialize the inspected selection actions");
+    for (const ScreenshotToolPalette::Tool tool : tools) {
+        if (tool != ScreenshotToolPalette::Tool::Select) {
+            require(toolbar.ensureStyleFamily(tool),
+                    "preset test should materialize every inspected style family");
+        }
+    }
+    toolbar.setStyleToolbarAboveMain(true);
+    prepare(toolbar);
+
+    require(toolbar.findChild<QWidget*>(QStringLiteral("screenshotStyleToolbarReserve")) == nullptr,
+            "the toolbar should not create a placeholder reserve control");
+    const QMargins shadowMargins = ScreenshotToolbarMainPanel::shadowMargins();
+    const QSize mainPanelSize = toolbar.mainPanel()->size();
+    int visibleContentChangeCount = 0;
+    QObject::connect(&toolbar, &ScreenshotToolPalette::visibleContentChanged,
+                     [&visibleContentChangeCount]() { ++visibleContentChangeCount; });
     for (const ScreenshotToolPalette::Tool tool : tools) {
         const int previousChangeCount = visibleContentChangeCount;
         toolbar.setActiveTool(tool);
         flushEvents();
-        require(toolbar.size() == presetSize && toolbar.contentSizeHint() == presetContentSize &&
-                    toolbar.mainToolbarContentRect() == presetMainToolbarRect,
-                "activating a style tool must not resize the toolbar preset");
+        const ScreenshotToolbarPlacementSnapshot snapshot = toolbar.placementSnapshot();
+        const QSize expectedPaletteSize =
+            snapshot.visibleContentSize +
+            QSize(shadowMargins.left() + shadowMargins.right(),
+                  shadowMargins.top() + shadowMargins.bottom());
+        require(toolbar.size() == expectedPaletteSize &&
+                    toolbar.contentSizeHint() == snapshot.visibleContentSize &&
+                    toolbar.mainPanel()->size() == mainPanelSize &&
+                    toolbar.mainToolbarContentRect() == snapshot.top.mainToolbarContentRect,
+                "visible toolbar rows should determine the palette geometry");
+        const QWidget* secondaryPanel = toolbar.actionToolbarVisible()
+                                             ? toolbar.actionPanel()
+                                             : toolbar.styleToolbarVisible() ? toolbar.stylePanel()
+                                                                             : nullptr;
+        require(secondaryPanel != nullptr,
+                "each inspected tool should expose its active secondary toolbar");
+        const QRect secondaryRect =
+            secondaryPanel->geometry().translated(-toolbar.contentOffset());
+        require(secondaryRect == snapshot.top.secondaryToolbarContentRect,
+                "the active secondary toolbar should match the placement snapshot");
         require(visibleContentChangeCount == previousChangeCount + 1,
                 "switching secondary toolbars should refresh the window only once");
     }
@@ -554,20 +586,24 @@ void styleToolbarPresetFitsEveryToolWithoutResizing() {
     constexpr qreal scales[] = {0.8, 1.25};
     for (const qreal scale : scales) {
         toolbar.setPhysicalScale(scale);
-        const QSize scaledPresetSize = toolbar.size();
-        const QSize scaledPresetContentSize = toolbar.contentSizeHint();
         for (const ScreenshotToolPalette::Tool tool : tools) {
             toolbar.setActiveTool(tool);
             flushEvents();
-            require(toolbar.size() == scaledPresetSize &&
-                        toolbar.contentSizeHint() == scaledPresetContentSize,
-                    "the precomputed toolbar size must stay fixed at every scale");
+            const ScreenshotToolbarPlacementSnapshot snapshot = toolbar.placementSnapshot();
+            const QSize currentShadowExtent =
+                toolbar.size() - toolbar.contentSizeHint();
+            const QSize expectedPaletteSize =
+                snapshot.visibleContentSize + currentShadowExtent;
+            require(toolbar.size() == expectedPaletteSize,
+                    "scaled visible rows should determine the palette extent without a reserve");
         }
     }
 }
 
 void styleToolbarButtonGroupLayoutRequestQuiesces() {
     ScreenshotToolPalette toolbar(ScreenshotToolPalette::Options{});
+    require(toolbar.ensureStyleFamily(ScreenshotToolPalette::Tool::Shape),
+            "layout test should materialize the inspected shape family");
     prepare(toolbar);
 
     QWidget* shapeGroup = toolbar.findChild<QWidget*>(QStringLiteral("screenshotShapeButtonGroup"));
@@ -598,6 +634,8 @@ void styleRadioIconsMatchTheirCurrentDevicePixelRatio() {
     flushEvents();
 
     ScreenshotToolPalette toolbar(ScreenshotToolPalette::Options{});
+    require(toolbar.ensureStyleFamily(ScreenshotToolPalette::Tool::Shape),
+            "DPI test should materialize the inspected shape family");
     prepare(toolbar);
 
     QWidget* shapeGroup = toolbar.findChild<QWidget*>(QStringLiteral("screenshotShapeButtonGroup"));
@@ -764,7 +802,7 @@ int main(int argc, char** argv) {
     screenshotToolbarRendersShadowOutsideItsPanel();
     toolbarTooltipsUseApplicationBridge();
     cornerRadiusTextKeepsItsPhysicalSizeAcrossDpiChanges();
-    styleToolbarPresetFitsEveryToolWithoutResizing();
+    visibleToolbarRowsDrivePaletteGeometry();
     styleToolbarButtonGroupLayoutRequestQuiesces();
     styleRadioIconsMatchTheirCurrentDevicePixelRatio();
     duplicateStyleStateDoesNotInvalidateToolbarGeometry();

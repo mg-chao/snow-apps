@@ -1,5 +1,5 @@
-#ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONTOOLBARWINDOW_H
-#define SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONTOOLBARWINDOW_H
+#ifndef SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONTOOLBARWIDGET_H
+#define SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONTOOLBARWIDGET_H
 
 #include <QList>
 #include <QMargins>
@@ -9,15 +9,13 @@
 #include <QWidget>
 
 class QLabel;
-class QByteArray;
-class QCursor;
 class QEvent;
 class QHideEvent;
 class QPaintEvent;
 class QShowEvent;
 class ScreenshotSelectionToolbarCommandSink;
 
-class ScreenshotSelectionToolbarWindow final : public QWidget {
+class ScreenshotSelectionToolbarWidget final : public QWidget {
     Q_OBJECT
 
   public:
@@ -26,7 +24,7 @@ class ScreenshotSelectionToolbarWindow final : public QWidget {
         SizeOnly,
     };
 
-    explicit ScreenshotSelectionToolbarWindow(ScreenshotSelectionToolbarCommandSink& commands,
+    explicit ScreenshotSelectionToolbarWidget(ScreenshotSelectionToolbarCommandSink& commands,
                                               QWidget* parent = nullptr);
 
     void resetForNewCapture();
@@ -51,13 +49,14 @@ class ScreenshotSelectionToolbarWindow final : public QWidget {
     };
 
     bool eventFilter(QObject* watched, QEvent* event) override;
+    bool event(QEvent* event) override;
     void changeEvent(QEvent* event) override;
     void hideEvent(QHideEvent* event) override;
-    bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
     void showEvent(QShowEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
 
-    QLabel* addValueLabel(const QString& tooltip, Field field, const QCursor& cursor);
+    static Qt::CursorShape cursorShapeForField(Field field);
+    QLabel* addValueLabel(const QString& tooltip, Field field);
     QLabel* addStaticLabel(const QString& text, const QString& tooltip = QString(),
                            const QMargins& margins = QMargins());
     QLabel* addIconLabel(const QString& tooltip);
@@ -67,7 +66,7 @@ class ScreenshotSelectionToolbarWindow final : public QWidget {
     void refreshHoverVisuals();
     bool fieldForObject(QObject* object, Field* outField) const;
     void handleFieldWheel(Field field, int deltaY);
-    bool shouldForwardPointerEventToOverlayCanvas(const QEvent* event) const;
+    bool shouldForwardPointerEventToOverlayCanvas(QObject* watched, const QEvent* event) const;
     bool forwardPointerEventToOverlayCanvas(QEvent* event) const;
     bool isPointInInteractiveContent(const QPoint& localPosition) const;
     bool updateLabels(bool refreshGeometry = false);
@@ -99,4 +98,4 @@ class ScreenshotSelectionToolbarWindow final : public QWidget {
     int m_shadowWidth = 0;
 };
 
-#endif // SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONTOOLBARWINDOW_H
+#endif // SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONTOOLBARWIDGET_H

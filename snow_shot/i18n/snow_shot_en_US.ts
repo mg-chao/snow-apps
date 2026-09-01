@@ -1234,47 +1234,47 @@
     </message>
 </context>
 <context>
-    <name>ScreenshotSelectionToolbarWindow</name>
+    <name>ScreenshotSelectionToolbarWidget</name>
     <message>
-        <location filename="../src/presentation/selection/screenshotselectiontoolbarwindow.cpp" line="187"/>
+        <location filename="../src/presentation/selection/screenshotselectiontoolbarwidget.cpp" line="180"/>
         <source>X coordinate</source>
         <translation>X coordinate</translation>
     </message>
     <message>
-        <location filename="../src/presentation/selection/screenshotselectiontoolbarwindow.cpp" line="189"/>
+        <location filename="../src/presentation/selection/screenshotselectiontoolbarwidget.cpp" line="182"/>
         <source>Y coordinate</source>
         <translation>Y coordinate</translation>
     </message>
     <message>
-        <location filename="../src/presentation/selection/screenshotselectiontoolbarwindow.cpp" line="194"/>
-        <location filename="../src/presentation/selection/screenshotselectiontoolbarwindow.cpp" line="216"/>
-        <location filename="../src/presentation/selection/screenshotselectiontoolbarwindow.cpp" line="231"/>
-        <location filename="../src/presentation/selection/screenshotselectiontoolbarwindow.cpp" line="246"/>
+        <location filename="../src/presentation/selection/screenshotselectiontoolbarwidget.cpp" line="187"/>
+        <location filename="../src/presentation/selection/screenshotselectiontoolbarwidget.cpp" line="209"/>
+        <location filename="../src/presentation/selection/screenshotselectiontoolbarwidget.cpp" line="224"/>
+        <location filename="../src/presentation/selection/screenshotselectiontoolbarwidget.cpp" line="239"/>
         <source>Pixels</source>
         <translation>Pixels</translation>
     </message>
     <message>
-        <location filename="../src/presentation/selection/screenshotselectiontoolbarwindow.cpp" line="203"/>
+        <location filename="../src/presentation/selection/screenshotselectiontoolbarwidget.cpp" line="196"/>
         <source>Lock selection aspect ratio</source>
         <translation>Lock selection aspect ratio</translation>
     </message>
     <message>
-        <location filename="../src/presentation/selection/screenshotselectiontoolbarwindow.cpp" line="209"/>
+        <location filename="../src/presentation/selection/screenshotselectiontoolbarwidget.cpp" line="202"/>
         <source>Width</source>
         <translation>Width</translation>
     </message>
     <message>
-        <location filename="../src/presentation/selection/screenshotselectiontoolbarwindow.cpp" line="211"/>
+        <location filename="../src/presentation/selection/screenshotselectiontoolbarwidget.cpp" line="204"/>
         <source>Height</source>
         <translation>Height</translation>
     </message>
     <message>
-        <location filename="../src/presentation/selection/screenshotselectiontoolbarwindow.cpp" line="229"/>
+        <location filename="../src/presentation/selection/screenshotselectiontoolbarwidget.cpp" line="222"/>
         <source>Corner radius</source>
         <translation>Corner radius</translation>
     </message>
     <message>
-        <location filename="../src/presentation/selection/screenshotselectiontoolbarwindow.cpp" line="244"/>
+        <location filename="../src/presentation/selection/screenshotselectiontoolbarwidget.cpp" line="237"/>
         <source>Shadow width</source>
         <translation>Shadow width</translation>
     </message>

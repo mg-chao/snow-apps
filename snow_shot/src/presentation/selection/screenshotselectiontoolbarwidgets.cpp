@@ -4,6 +4,7 @@
 
 #include <QEnterEvent>
 #include <QFontMetrics>
+#include <QHideEvent>
 #include <QPaintEvent>
 #include <QPainter>
 #include <QSizePolicy>
@@ -86,13 +87,35 @@ SelectionToolbarPanel::SelectionToolbarPanel(QWidget* parent) : QFrame(parent) {
     setAutoFillBackground(false);
 }
 
+void SelectionToolbarPanel::setPointerInteractionEnabled(bool enabled) {
+    setAttribute(Qt::WA_TransparentForMouseEvents, !enabled);
+    if (!enabled && m_hovered) {
+        m_hovered = false;
+        emit hoverChanged(false);
+    }
+}
+
 void SelectionToolbarPanel::enterEvent(QEnterEvent* event) {
-    emit hoverChanged(true);
+    if (!testAttribute(Qt::WA_TransparentForMouseEvents) && !m_hovered) {
+        m_hovered = true;
+        emit hoverChanged(true);
+    }
     QFrame::enterEvent(event);
 }
 
+void SelectionToolbarPanel::hideEvent(QHideEvent* event) {
+    if (m_hovered) {
+        m_hovered = false;
+        emit hoverChanged(false);
+    }
+    QFrame::hideEvent(event);
+}
+
 void SelectionToolbarPanel::leaveEvent(QEvent* event) {
-    emit hoverChanged(false);
+    if (m_hovered) {
+        m_hovered = false;
+        emit hoverChanged(false);
+    }
     QFrame::leaveEvent(event);
 }
 
@@ -112,6 +135,7 @@ SelectionToolbarValueLabel::SelectionToolbarValueLabel(QWidget* parent) : QLabel
     setAlignment(Qt::AlignCenter);
     setFocusPolicy(Qt::NoFocus);
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    setMouseTracking(true);
     setFixedHeight(screenshot_selection_toolbar::PanelHeight -
                    screenshot_selection_toolbar::PanelVerticalPadding * 2);
 }
@@ -139,6 +163,12 @@ void SelectionToolbarValueLabel::setLockAspectRatioControl(bool enabled) {
 }
 
 void SelectionToolbarValueLabel::setPointerInteractionEnabled(bool enabled) {
+    if (m_pointerInteractionEnabled == enabled &&
+        testAttribute(Qt::WA_TransparentForMouseEvents) == !enabled) {
+        return;
+    }
+
+    m_pointerInteractionEnabled = enabled;
     setAttribute(Qt::WA_TransparentForMouseEvents, !enabled);
     if (!enabled && m_hovered) {
         m_hovered = false;
@@ -147,11 +177,20 @@ void SelectionToolbarValueLabel::setPointerInteractionEnabled(bool enabled) {
 }
 
 void SelectionToolbarValueLabel::enterEvent(QEnterEvent* event) {
-    if (!testAttribute(Qt::WA_TransparentForMouseEvents) && !m_hovered) {
+    if (m_pointerInteractionEnabled && !testAttribute(Qt::WA_TransparentForMouseEvents) &&
+        !m_hovered) {
         m_hovered = true;
         update();
     }
     QLabel::enterEvent(event);
+}
+
+void SelectionToolbarValueLabel::hideEvent(QHideEvent* event) {
+    if (m_hovered) {
+        m_hovered = false;
+        update();
+    }
+    QLabel::hideEvent(event);
 }
 
 void SelectionToolbarValueLabel::leaveEvent(QEvent* event) {
@@ -184,7 +223,8 @@ QSize SelectionToolbarValueLabel::minimumSizeHint() const {
 void SelectionToolbarValueLabel::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
 
-    if (!testAttribute(Qt::WA_TransparentForMouseEvents) && m_hovered) {
+    if (m_pointerInteractionEnabled && !testAttribute(Qt::WA_TransparentForMouseEvents) &&
+        m_hovered) {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
         painter.setPen(Qt::NoPen);

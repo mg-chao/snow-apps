@@ -2325,7 +2325,9 @@ void pinnedThumbnailUsesOpaqueThemeBackground(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
 
-    QImage transparentImage(400, 400, QImage::Format_ARGB32_Premultiplied);
+    // Thumbnail mode uses a square viewport. Keep the source non-square so
+    // the scaled result leaves transparent letterbox pixels around the image.
+    QImage transparentImage(400, 200, QImage::Format_ARGB32_Premultiplied);
     transparentImage.fill(Qt::transparent);
 
     auto* pinnedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
@@ -2337,6 +2339,8 @@ void pinnedThumbnailUsesOpaqueThemeBackground(SnowCanvasRuntime&) {
     config.screen = screen;
     require(pinnedWindow->present(config), "transparent pinned window presentation failed");
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    require(renderWidget(*pinnedWindow).pixelColor(pinnedWindow->rect().center()).alpha() == 0,
+            "transparent pinned content should preserve alpha outside thumbnail mode");
 
     auto* thumbnailAction =
         pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
@@ -2354,6 +2358,14 @@ void pinnedThumbnailUsesOpaqueThemeBackground(SnowCanvasRuntime&) {
     const QImage thumbnail = renderWidget(*pinnedWindow);
     requireColorNear(thumbnail.pixelColor(thumbnail.rect().center()), expectedBackground, 0,
                      "transparent thumbnail regions should use the opaque theme background");
+    requireColorNear(thumbnail.pixelColor(thumbnail.width() / 2, 3), expectedBackground, 0,
+                     "thumbnail letterbox regions should use the opaque theme background");
+
+    thumbnailAction->setChecked(false);
+    waitForUi(200);
+    require(!thumbnailAction->isChecked(), "pinned window should leave thumbnail mode");
+    require(renderWidget(*pinnedWindow).pixelColor(pinnedWindow->rect().center()).alpha() == 0,
+            "leaving thumbnail mode should restore transparent pinned content");
 
     pinnedWindow->close();
     require(processUntilDeleted(guardedWindow, 2000),

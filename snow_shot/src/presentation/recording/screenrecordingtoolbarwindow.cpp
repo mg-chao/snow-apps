@@ -45,14 +45,16 @@ void ScreenRecordingToolbarWindow::placeForPhysicalRegion(const QRect& physicalR
     setPlacementContext(screen, logicalBounds, physicalBounds);
     prepareForDisplay();
 
-    const QRect toolbarRect = bottomPlacementContentRect();
+    const ScreenshotToolbarPlacementSnapshot toolbarGeometry = placementSnapshot();
+    if (!toolbarGeometry.bottom.isValid()) {
+        return;
+    }
     const ScreenshotAnchoredToolbarPlacement placement =
         ScreenshotGeometryMapper::anchoredToolbarPlacement(
             QPoint(anchorRegion.left() + anchorRegion.width(),
                    anchorRegion.top() + anchorRegion.height()),
-            QPoint(anchorRegion.left() + anchorRegion.width(), anchorRegion.top()), toolbarRect,
-            logicalBounds, kToolbarGap, topRightMainToolbarContentRect(),
-            topPlacementContentRect());
+            QPoint(anchorRegion.left() + anchorRegion.width(), anchorRegion.top()),
+            toolbarGeometry.bottom, toolbarGeometry.top, logicalBounds, kToolbarGap);
     setStyleToolbarAboveMain(placement.usesTopRightPlacement);
     resetPhysicalSizeInvariant();
     moveContentTo(placement.contentPosition);

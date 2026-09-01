@@ -1476,9 +1476,19 @@ void ScreenshotCanvasRenderer::setPinnedResultSurface(
     setRenderMode(RenderMode::PinnedResult);
 }
 
+void ScreenshotCanvasRenderer::setPinnedBackgroundColor(const QColor& color) {
+    const QColor normalized = color.isValid() ? color : QColor();
+    if (m_pinnedBackgroundColor == normalized) {
+        return;
+    }
+    m_pinnedBackgroundColor = normalized;
+    invalidateCachedContent();
+    m_canvas.update();
+}
+
 void ScreenshotCanvasRenderer::clearImage() {
     if (!m_imageSource.isValid() && m_imageViewportPhysicalSize.isEmpty() &&
-        m_ocrFilteredImage.isNull()) {
+        m_ocrFilteredImage.isNull() && !m_pinnedBackgroundColor.isValid()) {
         return;
     }
     m_imageSource = {};
@@ -1487,6 +1497,7 @@ void ScreenshotCanvasRenderer::clearImage() {
     m_pinnedSurfaceCanvasRect = {};
     m_pinnedResultStyle = {};
     clearOcrFilteredImage();
+    m_pinnedBackgroundColor = {};
     invalidateCachedContent();
     m_canvas.update();
 }
@@ -1771,6 +1782,7 @@ void ScreenshotCanvasRenderer::reset() {
     m_pinnedContentCanvasRect = {};
     m_pinnedSurfaceCanvasRect = {};
     m_pinnedResultStyle = {};
+    m_pinnedBackgroundColor = {};
     m_selectionState = ScreenshotSelectionVisualState{};
     m_renderMode = RenderMode::Standard;
     m_maskVisible = false;
@@ -1863,7 +1875,11 @@ void ScreenshotCanvasRenderer::renderBeforeCanvas(QPainter& painter,
     if (m_renderMode == RenderMode::ScrollingCapture ||
         m_renderMode == RenderMode::PinnedResult) {
         painter.setCompositionMode(QPainter::CompositionMode_Source);
-        painter.fillRect(context.viewportRect, Qt::transparent);
+        painter.fillRect(context.viewportRect,
+                         m_renderMode == RenderMode::PinnedResult &&
+                                 m_pinnedBackgroundColor.isValid()
+                             ? m_pinnedBackgroundColor
+                             : QColor(Qt::transparent));
         painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
         if (m_renderMode == RenderMode::ScrollingCapture) {
             return;
@@ -1944,6 +1960,16 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
             context.devicePixelRatio,
             std::hypot(context.canvasToViewTransform.m11(),
                        context.canvasToViewTransform.m12()));
+        // The live-surface compositor clears pixels outside the result shape.
+        // In thumbnail mode the viewport is square while the result can keep
+        // its original aspect ratio, so restore the themed backing color in
+        // those letterbox areas without covering the image or its shadow.
+        if (m_pinnedBackgroundColor.isValid()) {
+            painter.save();
+            painter.setCompositionMode(QPainter::CompositionMode_DestinationOver);
+            painter.fillRect(context.viewportRect, m_pinnedBackgroundColor);
+            painter.restore();
+        }
         if (m_ocrPresentation != nullptr &&
             m_ocrPresentationMode == OcrPresentationMode::BackgroundAndText &&
             m_ocrTextLayer != nullptr) {

@@ -1479,6 +1479,8 @@ void ScreenshotToolPaletteStyleControls::addCornerRadiusControl(
     m_cornerRadiusEditor = createScreenshotToolPaletteCornerRadiusEditor(
         parent, "Corner radius (scroll to adjust)", custom_outlined_icons::SelectionRadius(),
         m_rectangleStyle.cornerRadius(), metrics);
+    m_cornerRadiusEditor->setObjectName(
+        QStringLiteral("screenshotSelectionCornerRadiusButton"));
     QObject::connect(m_cornerRadiusEditor, &adqt::widgets::AdButton::clicked, parent,
                      [this]() { setCornerRadius(defaultCornerRadius()); });
     layout->addWidget(m_cornerRadiusEditor);
@@ -1502,8 +1504,6 @@ void ScreenshotToolPaletteStyleControls::addHighlightControls(
         layout, parent, receiver, highlightColorConfig, m_highlightStyle.fillColor(),
         &m_handlingHighlightColorPickerChange, [this](const QColor& color) { setFillColor(color); },
         {}, metrics);
-    m_cornerRadiusEditor->setObjectName(QStringLiteral("screenshotSelectionCornerRadiusButton"));
-
     if (addGroupSeparator) {
         addGroupSeparator();
     }

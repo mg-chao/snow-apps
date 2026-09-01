@@ -533,10 +533,9 @@ void ScreenshotCaptureWorkflow::prewarmOverlayPool() {
 }
 
 void ScreenshotCaptureWorkflow::initializeIdleResources(quint64 requestId) {
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("idle.kernel_prepare_started");
     m_context.runtime.prepareAsync(requestId);
     prewarmOverlayPool();
-    m_context.runtime.ensureToolbar();
-    m_context.runtime.prewarmOverlayTransientUi(m_context.displaySession);
     if (!m_captureModelsClean) {
         resetCaptureModels();
     }
@@ -548,6 +547,7 @@ void ScreenshotCaptureWorkflow::initializeIdleResources(quint64 requestId) {
         m_context.presentation.hideToolbar();
     }
     m_state.sessionState = ScreenshotSessionState::IdlePrepared;
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("idle.kernel_prepared");
 }
 
 void ScreenshotCaptureWorkflow::resetCanvasRuntimeState() {

@@ -23,7 +23,7 @@ class ScreenshotColorPickerWidget;
 class ScreenshotDisplaySession;
 class ScreenshotOverlayEventSink;
 class ScreenshotSelectionToolbarCommandSink;
-class ScreenshotSelectionToolbarWindow;
+class ScreenshotSelectionToolbarWidget;
 class ScreenshotToolbarCommandSink;
 class ScreenshotToolbarWindow;
 class SnowCanvasRuntime;
@@ -113,12 +113,11 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     void deleteSelectedElements(const ScreenshotDisplaySession& displaySession);
 
     ScreenshotToolbarWindow* ensureToolbar();
-    void prewarmOverlayTransientUi(const ScreenshotDisplaySession& displaySession);
     ScreenshotToolbarWindow* toolbar() const;
     void attachToolbarToOverlay(ScreenshotOverlayWindow* overlay);
     void undoCanvasEdit();
     void redoCanvasEdit();
-    ScreenshotSelectionToolbarWindow* selectionToolbar() const;
+    ScreenshotSelectionToolbarWidget* selectionToolbar() const;
     void attachSelectionToolbarToOverlay(ScreenshotOverlayWindow* overlay);
     ScreenshotColorPickerWidget* ensureColorPicker();
     ScreenshotColorPickerWidget* colorPicker() const;

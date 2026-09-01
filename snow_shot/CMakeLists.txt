@@ -710,7 +710,7 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshotselectionresizeworkflow.h
     include/snow_shot/presentation/screenshotselectionsettingsstore.h
     include/snow_shot/presentation/screenshotsourceimagecomposer.h
-    include/snow_shot/presentation/screenshotselectiontoolbarwindow.h
+    include/snow_shot/presentation/screenshotselectiontoolbarwidget.h
     include/snow_shot/presentation/screenshotscrollingcapturecontroller.h
     include/snow_shot/presentation/screenshotscrollingsnapshot.h
     include/snow_shot/presentation/screenshotscrollingtypes.h
@@ -825,7 +825,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/selection/screenshotselectionresizemodalcontent.cpp
     src/presentation/selection/screenshotselectionresizeworkflow.cpp
     src/presentation/selection/screenshotselectionsettingsstore.cpp
-    src/presentation/selection/screenshotselectiontoolbarwindow.cpp
+    src/presentation/selection/screenshotselectiontoolbarwidget.cpp
     src/presentation/selection/screenshotselectiontoolbarwidgets.cpp
     src/presentation/overlay/screenshotoverlaycanvaspresenter.cpp
     src/presentation/overlay/screenshotoverlaycanvaswidget.cpp
@@ -2346,6 +2346,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             include/snow_shot/presentation/styles/thememanager.h
             src/presentation/components/icons/snowshoticons.cpp
             src/presentation/core/screenshotgeometry.cpp
+            src/presentation/core/screenshotcanvastoolstyles.cpp
             src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
             src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
             src/presentation/tools/screenshottoolbarmainpanel.cpp
@@ -2398,6 +2399,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             include/snow_shot/presentation/styles/thememanager.h
             src/presentation/components/icons/snowshoticons.cpp
             src/presentation/core/screenshotgeometry.cpp
+            src/presentation/core/screenshotcanvastoolstyles.cpp
             src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
             src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
             src/presentation/tools/screenshottoolbarmainpanel.cpp
@@ -2445,6 +2447,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/styles/thememanager.h
         src/presentation/components/icons/snowshoticons.cpp
         src/presentation/core/screenshotgeometry.cpp
+        src/presentation/core/screenshotcanvastoolstyles.cpp
         src/presentation/styles/thememanager.cpp
         src/presentation/styles/themecolorscheme.cpp
         src/presentation/tools/screenshotfloatingtoolpalettenative.cpp

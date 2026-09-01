@@ -92,7 +92,6 @@ ScreenshotPinnedEditController::ScreenshotPinnedEditController(
     : QObject(parent), m_pinnedWindow(pinnedWindow), m_canvas(canvas),
       m_shortcutManager(shortcutManager) {
     m_canvas.installEventFilter(this);
-    m_canvasColorSamplerWindow = std::make_unique<ScreenshotCanvasColorSamplerWindow>();
     m_toolbarWindow = new ScreenshotFloatingToolPaletteWindow(pinnedEditToolbarOptions());
     m_toolbarWindow->setAttribute(Qt::WA_DeleteOnClose, false);
     m_toolbarWindow->setTransientOwnerWindow(&m_pinnedWindow);
@@ -497,12 +496,12 @@ void ScreenshotPinnedEditController::updatePlacement() {
     m_toolbarWindow->setPlacementContext(placementScreen(), logicalBounds, physicalBounds);
     m_toolbarWindow->prepareForDisplay();
 
-    const QRect bottomToolbarRect = m_toolbarWindow->bottomPlacementContentRect();
-    if (bottomToolbarRect.isEmpty()) {
-        return;
-    }
-
     if (!m_manuallyPlaced) {
+        const ScreenshotToolbarPlacementSnapshot toolbarGeometry =
+            m_toolbarWindow->placementSnapshot();
+        if (!toolbarGeometry.bottom.isValid()) {
+            return;
+        }
         const QRect pinnedGeometry =
             m_pinnedWindow.frameGeometry().isValid() && !m_pinnedWindow.frameGeometry().isEmpty()
                 ? m_pinnedWindow.frameGeometry()
@@ -519,9 +518,7 @@ void ScreenshotPinnedEditController::updatePlacement() {
                 QPoint(pinnedGeometry.left() + pinnedGeometry.width(),
                        pinnedGeometry.top() + pinnedGeometry.height()),
                 QPoint(pinnedGeometry.left() + pinnedGeometry.width(), pinnedGeometry.top()),
-                bottomToolbarRect, placementBounds, kToolbarGap,
-                m_toolbarWindow->topRightMainToolbarContentRect(),
-                m_toolbarWindow->topPlacementContentRect());
+                toolbarGeometry.bottom, toolbarGeometry.top, placementBounds, kToolbarGap);
         m_toolbarWindow->setStyleToolbarAboveMain(placement.usesTopRightPlacement);
         m_globalContentPosition = placement.contentPosition;
         m_toolbarWindow->resetPhysicalSizeInvariant();
@@ -720,6 +717,9 @@ void ScreenshotPinnedEditController::beginCanvasColorSampling(
     }
 
     cancelCanvasColorSampling();
+    if (m_canvasColorSamplerWindow == nullptr) {
+        m_canvasColorSamplerWindow = std::make_unique<ScreenshotCanvasColorSamplerWindow>();
+    }
     m_canvasColorSamplingTarget = picker;
     m_canvasColorSamplingDestroyedConnection =
         connect(picker, &QObject::destroyed, this, [this]() { cancelCanvasColorSampling(); });

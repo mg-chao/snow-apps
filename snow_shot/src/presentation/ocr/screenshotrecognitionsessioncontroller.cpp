@@ -87,26 +87,32 @@ ScreenshotRecognitionSessionController::ScreenshotRecognitionSessionController(
     SnowShotApiClient* tableRecognition, ScreenshotRecognitionSessionActions actions,
     QObject* parent)
     : QObject(parent),
-      m_recognition(recognition),
-      m_qrRecognition(qrRecognition),
-      m_tableRecognition(tableRecognition),
       m_actions(std::move(actions)) {
-    if (recognition != nullptr) {
-        connect(recognition, &QObject::destroyed, this,
-                [this]() { handleRecognitionProviderDestroyed(Mode::Text); });
-    }
-    if (tableRecognition != nullptr) {
-        connect(tableRecognition, &QObject::destroyed, this,
-                [this]() { handleRecognitionProviderDestroyed(Mode::Table); });
-    }
-    if (qrRecognition != nullptr) {
-        connect(qrRecognition, &QObject::destroyed, this,
-                [this]() { handleRecognitionProviderDestroyed(Mode::Qr); });
-    }
+    setProviders(recognition, qrRecognition, tableRecognition);
 }
 
 ScreenshotRecognitionSessionController::~ScreenshotRecognitionSessionController() {
     invalidate();
+}
+
+void ScreenshotRecognitionSessionController::setProviders(
+    ScreenshotOcrRecognitionPort* recognition, ScreenshotQrRecognitionPort* qrRecognition,
+    SnowShotApiClient* tableRecognition) {
+    if (m_recognition == nullptr && recognition != nullptr) {
+        m_recognition = recognition;
+        connect(recognition, &QObject::destroyed, this,
+                [this]() { handleRecognitionProviderDestroyed(Mode::Text); });
+    }
+    if (m_qrRecognition == nullptr && qrRecognition != nullptr) {
+        m_qrRecognition = qrRecognition;
+        connect(qrRecognition, &QObject::destroyed, this,
+                [this]() { handleRecognitionProviderDestroyed(Mode::Qr); });
+    }
+    if (m_tableRecognition == nullptr && tableRecognition != nullptr) {
+        m_tableRecognition = tableRecognition;
+        connect(tableRecognition, &QObject::destroyed, this,
+                [this]() { handleRecognitionProviderDestroyed(Mode::Table); });
+    }
 }
 
 void ScreenshotRecognitionSessionController::setTarget(ScreenshotRecognitionTarget target) {

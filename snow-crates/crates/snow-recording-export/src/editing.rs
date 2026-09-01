@@ -2039,7 +2039,7 @@ struct CompiledCursorShapePlan {
 
 #[derive(Clone, Debug)]
 enum CompiledCursorShape {
-    Fallback,
+    Invalid,
     Plan(CompiledCursorShapePlan),
 }
 
@@ -2106,7 +2106,7 @@ fn compile_cursor_shape(shape: CursorShapeRecord) -> CompiledCursorShape {
         .and_then(|px| px.checked_mul(4))
         .unwrap_or(0);
     if expected_len == 0 || shape.shape_rgba.len() < expected_len {
-        return CompiledCursorShape::Fallback;
+        return CompiledCursorShape::Invalid;
     }
 
     let mut rgba = shape.shape_rgba;
@@ -2115,7 +2115,7 @@ fn compile_cursor_shape(shape: CursorShapeRecord) -> CompiledCursorShape {
     let yuva = rgba_to_yuva(&rgba);
     let Some((rows, yuv420p_compatible)) = compile_cursor_rows(shape.mode, &rgba, width, height)
     else {
-        return CompiledCursorShape::Fallback;
+        return CompiledCursorShape::Invalid;
     };
 
     CompiledCursorShape::Plan(CompiledCursorShapePlan {
@@ -2480,7 +2480,9 @@ fn advance_overlay_state(
     let current = &tracks.samples[current_idx];
     let mut decision = OverlayDecision {
         current_idx: Some(current_idx),
-        has_cursor: config.visible && current.visible,
+        has_cursor: config.visible
+            && current.visible
+            && compiled_cursor_shape(current, tracks).is_some(),
         ..OverlayDecision::default()
     };
 
@@ -3150,19 +3152,26 @@ fn draw_click_ripples_from(
 }
 
 fn draw_cursor(surface: &mut FrameSurfaceMut<'_>, current: &MouseSample, tracks: &MouseTracks) {
-    if let Some(shape_id) = current.shape_id
-        && let Some(CompiledCursorShape::Plan(shape)) = tracks.cursor_shapes.get(&shape_id)
-    {
+    if let Some(shape) = compiled_cursor_shape(current, tracks) {
         draw_compiled_cursor_shape(
             surface,
             current.x.saturating_sub(shape.hotspot_x),
             current.y.saturating_sub(shape.hotspot_y),
             shape,
         );
-        return;
     }
+}
 
-    draw_fallback_cursor(surface, current.x, current.y);
+fn compiled_cursor_shape<'a>(
+    current: &MouseSample,
+    tracks: &'a MouseTracks,
+) -> Option<&'a CompiledCursorShapePlan> {
+    current.shape_id.and_then(|shape_id| {
+        let CompiledCursorShape::Plan(shape) = tracks.cursor_shapes.get(&shape_id)? else {
+            return None;
+        };
+        Some(shape)
+    })
 }
 
 struct Yuv420pFrameViewMut<'a> {
@@ -3198,6 +3207,7 @@ struct YuvBlendColor {
     a: u8,
 }
 
+#[cfg(test)]
 impl YuvBlendColor {
     #[inline(always)]
     fn from_rgba(color: [u8; 4]) -> Self {
@@ -3538,9 +3548,7 @@ fn draw_cursor_native(
     current: &MouseSample,
     tracks: &MouseTracks,
 ) {
-    if let Some(shape_id) = current.shape_id
-        && let Some(shape) = tracks.cursor_shapes.get(&shape_id)
-        && let CompiledCursorShape::Plan(shape) = shape
+    if let Some(shape) = compiled_cursor_shape(current, tracks)
         && shape.yuv420p_compatible
     {
         draw_compiled_cursor_shape_native(
@@ -3549,10 +3557,7 @@ fn draw_cursor_native(
             current.y.saturating_sub(shape.hotspot_y),
             shape,
         );
-        return;
     }
-
-    draw_fallback_cursor_native(surface, current.x, current.y);
 }
 
 fn draw_compiled_cursor_shape_native(
@@ -3620,44 +3625,6 @@ fn set_native_pixel_blended(
     surface.blend_pixel(x, y, color);
 }
 
-fn draw_line_native(
-    surface: &mut NativeFrameViewMut<'_>,
-    x0: i32,
-    y0: i32,
-    x1: i32,
-    y1: i32,
-    color: YuvBlendColor,
-    thickness: i32,
-) {
-    let mut x0 = x0;
-    let mut y0 = y0;
-    let dx = (x1 - x0).abs();
-    let sx = if x0 < x1 { 1 } else { -1 };
-    let dy = -(y1 - y0).abs();
-    let sy = if y0 < y1 { 1 } else { -1 };
-    let mut err = dx + dy;
-
-    loop {
-        for oy in -thickness..=thickness {
-            for ox in -thickness..=thickness {
-                set_native_pixel_blended(surface, x0 + ox, y0 + oy, color);
-            }
-        }
-        if x0 == x1 && y0 == y1 {
-            break;
-        }
-        let e2 = err * 2;
-        if e2 >= dy {
-            err += dy;
-            x0 += sx;
-        }
-        if e2 <= dx {
-            err += dx;
-            y0 += sy;
-        }
-    }
-}
-
 fn draw_circle_outline_native(
     surface: &mut NativeFrameViewMut<'_>,
     cx: i32,
@@ -3697,44 +3664,6 @@ fn draw_circle_outline_native(
     }
 }
 
-fn fill_triangle_native(
-    surface: &mut NativeFrameViewMut<'_>,
-    points: [(i32, i32); 3],
-    color: YuvBlendColor,
-) {
-    let min_x = points.iter().map(|p| p.0).min().unwrap_or(0);
-    let max_x = points.iter().map(|p| p.0).max().unwrap_or(0);
-    let min_y = points.iter().map(|p| p.1).min().unwrap_or(0);
-    let max_y = points.iter().map(|p| p.1).max().unwrap_or(0);
-
-    let area = edge(points[0], points[1], points[2]) as f32;
-    if area.abs() < f32::EPSILON {
-        return;
-    }
-
-    for y in min_y..=max_y {
-        for x in min_x..=max_x {
-            let p = (x, y);
-            let w0 = edge(points[1], points[2], p) as f32 / area;
-            let w1 = edge(points[2], points[0], p) as f32 / area;
-            let w2 = edge(points[0], points[1], p) as f32 / area;
-            if w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0 {
-                set_native_pixel_blended(surface, x, y, color);
-            }
-        }
-    }
-}
-
-fn draw_fallback_cursor_native(surface: &mut NativeFrameViewMut<'_>, x: i32, y: i32) {
-    let points = [(x, y), (x + 12, y + 4), (x + 4, y + 12)];
-    let fill = YuvBlendColor::from_rgba([255, 255, 255, 235]);
-    let stroke = YuvBlendColor::from_rgba([0, 0, 0, 200]);
-    fill_triangle_native(surface, points, fill);
-    draw_line_native(surface, x, y, x + 12, y + 4, stroke, 1);
-    draw_line_native(surface, x, y, x + 4, y + 12, stroke, 1);
-    draw_line_native(surface, x + 12, y + 4, x + 4, y + 12, stroke, 1);
-}
-
 fn try_apply_mouse_overlays_native_from_decision_impl(
     frame: &mut ffmpeg::frame::Video,
     timestamp_ms: u64,
@@ -3757,6 +3686,15 @@ fn try_apply_mouse_overlays_native_from_decision_impl(
     let Some(current_idx) = decision.current_idx else {
         return Ok(false);
     };
+    if decision.has_cursor
+        && !compiled_cursor_shape(&tracks.samples[current_idx], tracks)
+            .is_some_and(|shape| shape.yuv420p_compatible)
+    {
+        // Mask-copy/XOR cursor operations depend on the RGB destination and
+        // cannot be reproduced exactly in subsampled YUV. Let the caller use
+        // the RGBA compositor for the entire overlay frame.
+        return Ok(false);
+    }
 
     if decision.has_trail {
         draw_compiled_trail_segments_native(
@@ -4293,14 +4231,6 @@ fn xor_cursor_row(dst_rgba: &mut [u8], src_rgba: &[u8]) {
     }
 }
 
-fn draw_fallback_cursor(surface: &mut FrameSurfaceMut<'_>, x: i32, y: i32) {
-    let points = [(x, y), (x + 12, y + 4), (x + 4, y + 12)];
-    fill_triangle(surface, points, [255, 255, 255, 235]);
-    draw_line(surface, x, y, x + 12, y + 4, [0, 0, 0, 200], 1);
-    draw_line(surface, x, y, x + 4, y + 12, [0, 0, 0, 200], 1);
-    draw_line(surface, x + 12, y + 4, x + 4, y + 12, [0, 0, 0, 200], 1);
-}
-
 fn pixel_offset(width: u32, height: u32, x: i32, y: i32) -> Option<usize> {
     if x < 0 || y < 0 || x >= width as i32 || y >= height as i32 {
         return None;
@@ -4425,34 +4355,6 @@ fn draw_circle_outline(
             err -= 2 * x + 1;
         }
     }
-}
-
-fn fill_triangle(surface: &mut FrameSurfaceMut<'_>, points: [(i32, i32); 3], color: [u8; 4]) {
-    let min_x = points.iter().map(|p| p.0).min().unwrap_or(0);
-    let max_x = points.iter().map(|p| p.0).max().unwrap_or(0);
-    let min_y = points.iter().map(|p| p.1).min().unwrap_or(0);
-    let max_y = points.iter().map(|p| p.1).max().unwrap_or(0);
-
-    let area = edge(points[0], points[1], points[2]) as f32;
-    if area.abs() < f32::EPSILON {
-        return;
-    }
-
-    for y in min_y..=max_y {
-        for x in min_x..=max_x {
-            let p = (x, y);
-            let w0 = edge(points[1], points[2], p) as f32 / area;
-            let w1 = edge(points[2], points[0], p) as f32 / area;
-            let w2 = edge(points[0], points[1], p) as f32 / area;
-            if w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0 {
-                set_pixel_blended(surface.rgba, surface.width, surface.height, x, y, color);
-            }
-        }
-    }
-}
-
-fn edge(a: (i32, i32), b: (i32, i32), p: (i32, i32)) -> i32 {
-    (p.0 - a.0) * (b.1 - a.1) - (p.1 - a.1) * (b.0 - a.0)
 }
 
 #[derive(Clone, Debug)]
@@ -9859,7 +9761,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_mouse_overlays_uses_fallback_for_fully_transparent_alpha_shape() {
+    fn apply_mouse_overlays_skips_fully_transparent_alpha_shape() {
         let mut frame = StoredFrame {
             timestamp_ms: 0,
             duration_ms: 16,
@@ -9901,10 +9803,9 @@ mod tests {
             },
         );
 
-        let cursor_pixel = (8usize * 16 + 8usize) * 4;
         assert!(
-            frame.rgba[cursor_pixel + 3] > 0,
-            "fallback cursor should draw even when sampled shape is fully transparent"
+            frame.rgba.iter().all(|&value| value == 0),
+            "invalid cursor data must not be replaced by an invented shape"
         );
     }
 
@@ -9962,7 +9863,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_mouse_overlays_uses_fallback_for_noop_masked_shape() {
+    fn apply_mouse_overlays_skips_noop_masked_shape() {
         let mut frame = StoredFrame {
             timestamp_ms: 0,
             duration_ms: 16,
@@ -10002,10 +9903,9 @@ mod tests {
             },
         );
 
-        let cursor_pixel = (8usize * 16 + 8usize) * 4;
         assert!(
-            frame.rgba[cursor_pixel + 3] > 0,
-            "fallback cursor should draw when masked shape pixels are all no-op"
+            frame.rgba.iter().all(|&value| value == 0),
+            "a no-op mask must remain a no-op instead of drawing a substitute cursor"
         );
     }
 
@@ -10140,7 +10040,7 @@ mod tests {
     }
 
     #[test]
-    fn native_overlay_path_draws_cursor_on_yuv420p_frame() {
+    fn native_overlay_path_skips_missing_cursor_shape_on_yuv420p_frame() {
         let mut frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::YUV420P, 16, 16);
         frame.data_mut(0).fill(16);
         frame.data_mut(1).fill(128);
@@ -10167,19 +10067,18 @@ mod tests {
         let decision = advance_overlay_state(0, &tracks, &config, &mut state);
 
         assert!(
-            try_apply_mouse_overlays_native_from_decision(
+            !try_apply_mouse_overlays_native_from_decision(
                 &mut frame, 0, &tracks, &config, &mut state, decision,
             )
             .unwrap()
         );
-        assert!(
-            frame.data(0).iter().any(|&value| value != 16),
-            "native YUV420P overlay should modify luma plane"
-        );
+        assert!(frame.data(0).iter().all(|&value| value == 16));
+        assert!(frame.data(1).iter().all(|&value| value == 128));
+        assert!(frame.data(2).iter().all(|&value| value == 128));
     }
 
     #[test]
-    fn native_overlay_path_draws_cursor_on_nv12_frame() {
+    fn native_overlay_path_skips_missing_cursor_shape_on_nv12_frame() {
         let mut frame = ffmpeg::frame::Video::new(ffmpeg::format::Pixel::NV12, 16, 16);
         frame.data_mut(0).fill(16);
         frame.data_mut(1).fill(128);
@@ -10205,15 +10104,13 @@ mod tests {
         let decision = advance_overlay_state(0, &tracks, &config, &mut state);
 
         assert!(
-            try_apply_mouse_overlays_native_from_decision(
+            !try_apply_mouse_overlays_native_from_decision(
                 &mut frame, 0, &tracks, &config, &mut state, decision,
             )
             .unwrap()
         );
-        assert!(
-            frame.data(0).iter().any(|&value| value != 16),
-            "native NV12 overlay should modify luma plane"
-        );
+        assert!(frame.data(0).iter().all(|&value| value == 16));
+        assert!(frame.data(1).iter().all(|&value| value == 128));
     }
 
     #[test]

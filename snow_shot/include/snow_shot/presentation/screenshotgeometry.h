@@ -59,6 +59,24 @@ struct ScreenshotPinnedImageFit {
     bool valid = false;
 };
 
+struct ScreenshotToolbarPlacementGeometry {
+    QRect mainToolbarContentRect;
+    QRect secondaryToolbarContentRect;
+    QRect occupiedContentRect;
+
+    [[nodiscard]] bool isValid() const {
+        return !mainToolbarContentRect.isEmpty();
+    }
+};
+
+struct ScreenshotToolbarPlacementSnapshot {
+    ScreenshotToolbarPlacementGeometry bottom;
+    ScreenshotToolbarPlacementGeometry top;
+    QPoint contentOffset;
+    QSize visibleContentSize;
+    QSize contentSize;
+};
+
 struct ScreenshotAnchoredToolbarPlacement {
     QPoint contentPosition;
     bool usesTopRightPlacement = false;
@@ -155,9 +173,9 @@ class ScreenshotGeometryMapper final {
                                                      const QRect& bounds, int gap);
     [[nodiscard]] static ScreenshotAnchoredToolbarPlacement
     anchoredToolbarPlacement(const QPoint& bottomRightAnchor, const QPoint& topRightAnchor,
-                             const QRect& toolbarOccupiedRect, const QRect& bounds, int gap,
-                             const QRect& topRightToolbarRect = QRect(),
-                             const QRect& topRightReservedRect = QRect());
+                             const ScreenshotToolbarPlacementGeometry& bottomPlacement,
+                             const ScreenshotToolbarPlacementGeometry& topPlacement,
+                             const QRect& bounds, int gap);
     [[nodiscard]] static QPointF
     nativePositionForLogicalPlacementPoint(const QPointF& logicalPosition,
                                            const QRect& ownerLogicalBounds,

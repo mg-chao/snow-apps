@@ -4,6 +4,7 @@
 #include "icon_core.h"
 #include "snow_draw_engine_qt/snow_canvas_types.h"
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
+#include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotscrollingtypes.h"
 #include "snow_shot/storage/settingsadapters.h"
 
@@ -18,6 +19,7 @@
 #include <QWidget>
 
 #include <memory>
+#include <initializer_list>
 #include <optional>
 
 class QFrame;
@@ -75,6 +77,19 @@ class ScreenshotToolPalette final : public QWidget {
         Idle,
         Recording,
         Paused,
+    };
+
+    enum class ActionFamily {
+        Selection,
+        TextRecognition,
+        TableRecognition,
+        ScrollingRecognition,
+    };
+
+    enum class MaterializationState {
+        Uninitialized,
+        Constructing,
+        Ready,
     };
 
     enum Action {
@@ -142,6 +157,7 @@ class ScreenshotToolPalette final : public QWidget {
     QRect topPlacementContentRect() const;
     QRect topRightMainToolbarContentRect() const;
     QRect mainToolbarContentRect() const;
+    ScreenshotToolbarPlacementSnapshot placementSnapshot() const;
     QPoint contentOffset() const;
     quint64 layoutRevision() const;
     void prepareForDisplay();
@@ -152,7 +168,6 @@ class ScreenshotToolPalette final : public QWidget {
     bool setPhysicalScale(qreal scale);
     qreal physicalScale() const;
     void setToolbarLayout(const snow_shot::storage::ScreenshotToolbarLayout& layout);
-    bool setLogicalClientExtent(const QSize& extent);
     bool stepStrokeWidth(int direction);
     bool stepSelectionOpacity(int direction);
     bool stepSpotlightOpacity(int direction);
@@ -177,7 +192,7 @@ class ScreenshotToolPalette final : public QWidget {
     void setWatermarkConfig(const SnowCanvasWatermarkConfig& config);
     void setSpotlightConfig(const SnowCanvasSpotlightConfig& config);
     void setSelectionOpacity(qreal opacity, bool mixed = false);
-    void installWheelFilters(QObject* receiver);
+    void installWheelFilters(QObject* receiver, QWidget* scope = nullptr);
     bool handleToolbarWheel(QWheelEvent* event);
     void setRecordingState(RecordingState state);
     RecordingState recordingState() const;
@@ -200,6 +215,8 @@ class ScreenshotToolPalette final : public QWidget {
                                  bool canReset = false);
     void setTextTransformSelections(const QString& formatting, const QString& punctuation);
     void clearTextTransformSelections();
+    [[nodiscard]] bool ensureActionFamily(ActionFamily family);
+    [[nodiscard]] bool ensureStyleFamily(Tool tool);
 
 #if defined(SNOW_SHOT_TEST_HOOKS)
     [[nodiscard]] std::optional<Tool> activeToolForTests() const;
@@ -207,6 +224,8 @@ class ScreenshotToolPalette final : public QWidget {
     [[nodiscard]] quint64 propertyGroupRefreshCountForTests() const;
     [[nodiscard]] quint64 layoutCommitCountForTests() const;
     [[nodiscard]] SnowCanvasStyleDefaults styleStateForTests() const;
+    [[nodiscard]] MaterializationState actionFamilyStateForTests(ActionFamily family) const;
+    [[nodiscard]] MaterializationState styleFamilyStateForTests(Tool tool) const;
 #endif
 
   signals:
@@ -282,6 +301,7 @@ class ScreenshotToolPalette final : public QWidget {
     void recordingCloseRequested();
     void recordingCopyAnimatedImageRequested();
     void recordingCopyVideoRequested();
+    void materializedScope(QWidget* scope);
 
   private:
     void changeEvent(QEvent* event) override;
@@ -296,7 +316,14 @@ class ScreenshotToolPalette final : public QWidget {
                                              const adqt::icons::IconRef& iconRef,
                                              bool danger = false, bool primary = false);
     void createMainToolbar(const Options& options);
-    void createRectangleStyleToolbar();
+    void createSecondaryToolbarShell();
+    void createSelectionActionFamily();
+    void createTextRecognitionActionFamily();
+    void createTableRecognitionActionFamily();
+    void createScrollingRecognitionActionFamily();
+    void createStyleFamily(Tool tool);
+    void registerStyleFamily(QWidget* controls, std::initializer_list<Tool> tools);
+    void replayMaterializedState(Tool tool);
     bool addMainToolButtons(const Options& options, QBoxLayout* layout);
     bool addMainHistoryButtons(const Options& options, QBoxLayout* layout);
     bool addMainSecondaryButtons(const Options& options, QBoxLayout* layout);
@@ -325,7 +352,6 @@ class ScreenshotToolPalette final : public QWidget {
     void ensureLayoutApplied() const;
     void markLayoutDirty(bool rowOrderChanged = false);
     void updateToolbarRowGeometry(bool styleToolbarVisible);
-    void updateSecondaryToolbarPanelGeometry();
     void setActiveToolButton(adqt::widgets::AdButton* activeButton);
     bool setStyleControlsActive(Tool tool);
     QWidget* styleControlsForTool(Tool tool) const;
@@ -344,12 +370,12 @@ class ScreenshotToolPalette final : public QWidget {
     void updateRecordingControls();
     void updateRecordingControlMetrics();
     QSize styleToolbarSizeHint();
-    QSize styleToolbarPresetSizeHint();
-    QSize contentSizeForStyleToolbarVisibility(bool styleToolbarVisible) const;
-    QRect placementContentRectForStyleToolbarAboveMain(bool above) const;
+    QSize maximumSecondaryToolbarSizeHint() const;
+    QSize contentSizeForVisibleRows() const;
+    QSize fullContentSize() const;
     QRect panelContentRect(const QWidget* panel) const;
     QRect panelVisualRect(const QWidget* panel) const;
-    QRect mainToolbarContentRectForStyleToolbarAboveMain(bool above) const;
+    ScreenshotToolbarPlacementSnapshot buildPlacementSnapshot() const;
     int scaledMetric(int value) const;
     qreal scaledMetric(qreal value) const;
     QMargins scaledMargins(int left, int top, int right, int bottom) const;
@@ -438,13 +464,17 @@ class ScreenshotToolPalette final : public QWidget {
         adqt::widgets::AdPopover* popover = nullptr;
         QVector<adqt::widgets::AdButton*> optionButtons;
         QVector<int> optionValues;
+        QStringList popoverItemIds;
         bool ownsTrigger = false;
+        bool popoverConstructing = false;
     };
+
+    void ensureDrawingToolGroupPopover(adqt::widgets::AdButton* trigger);
+    void ensureTableQrPopover();
 
     ScreenshotToolbarMainPanel* m_mainPanel = nullptr;
     QWidget* m_selectActionPanel = nullptr;
     QWidget* m_rectangleStylePanel = nullptr;
-    QWidget* m_styleReserveWidget = nullptr;
     QBoxLayout* m_rootLayout = nullptr;
     QBoxLayout* m_rectangleStyleLayout = nullptr;
     QBoxLayout* m_selectActionLayout = nullptr;
@@ -536,12 +566,9 @@ class ScreenshotToolPalette final : public QWidget {
     std::unique_ptr<ScreenshotToolPaletteStyleControls> m_styleControls;
     QMargins m_baseShadowMargins;
     QMargins m_shadowMargins;
-    QSize m_secondaryToolbarPresetSize;
-    QSize m_secondaryToolbarBasePresetSize;
     QHash<QWidget*, quint64> m_styleMetricRevisions;
     quint64 m_metricProfileRevision = 1;
     qreal m_physicalScale = 1.0;
-    QSize m_logicalClientExtent;
     qreal m_selectionOpacity = 1.0;
     bool m_selectionOpacityMixed = false;
     bool m_selectionOpacityInitialized = false;
@@ -549,6 +576,7 @@ class ScreenshotToolPalette final : public QWidget {
     bool m_styleToolbarTargetVisible = false;
     bool m_actionToolbarTargetVisible = false;
     bool m_hasSelectedElements = false;
+    bool m_selectionOpacityAvailable = false;
     bool m_selectionActionAvailabilityInitialized = false;
     bool m_scrollingScreenshotMode = false;
     ScreenshotScrollingRecognitionMode m_scrollingRecognitionMode =
@@ -573,6 +601,15 @@ class ScreenshotToolPalette final : public QWidget {
     bool m_textCanUndo = false;
     bool m_textCanRedo = false;
     bool m_textCanReset = false;
+    bool m_tableCanMerge = false;
+    bool m_tableCanSplit = false;
+    bool m_tableCanReset = false;
+    QString m_textFormattingSelection;
+    QString m_textPunctuationSelection;
+    qint64 m_recordingDurationMilliseconds = 0;
+    bool m_replayingMaterializedState = false;
+    QHash<int, MaterializationState> m_actionFamilyStates;
+    QHash<int, MaterializationState> m_styleFamilyStates;
     SnowCanvasHistoryState m_canvasHistoryState;
     const SnowCanvasStyleDefaults m_styleDefaults;
     const Options m_options;

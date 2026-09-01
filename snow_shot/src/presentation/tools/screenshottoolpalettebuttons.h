@@ -116,11 +116,20 @@ struct ScreenshotToolPaletteOptionPopoverEditor {
 };
 
 struct ScreenshotToolPaletteOptionPopoverEditorConfig {
-    QString accessibleName;
     QString contentObjectName;
     QVector<ScreenshotToolPaletteOptionPopoverOption> options;
     int optionSpacing = 0;
 };
+
+[[nodiscard]] adqt::widgets::AdPopover*
+createScreenshotToolPaletteOptionPopoverShell(adqt::widgets::AdButton* trigger);
+
+[[nodiscard]] ScreenshotToolPaletteOptionPopoverEditor
+materializeScreenshotToolPaletteOptionPopoverEditor(
+    adqt::widgets::AdPopover* popover, QObject* receiver,
+    const ScreenshotToolPaletteOptionPopoverEditorConfig& config,
+    const std::function<void(int)>& activateValue,
+    const ScreenshotToolPaletteButtonMetrics& metrics);
 
 [[nodiscard]] ScreenshotToolPaletteOptionPopoverEditor
 createScreenshotToolPaletteOptionPopoverEditor(
@@ -377,8 +386,6 @@ void configureScreenshotToolPaletteTooltip(QWidget* trigger, const char* source)
 
 void configureScreenshotToolPaletteTooltip(QWidget* trigger,
                                            const ScreenshotToolPaletteTranslationText& text);
-
-void configureScreenshotToolPalettePopoverTrigger(QWidget* trigger, const char* source);
 
 void setScreenshotToolPaletteTooltipSource(QWidget* widget, const char* source);
 

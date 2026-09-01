@@ -83,12 +83,6 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     void prewarmDisplayPool(ScreenshotDisplaySession&, int) override {
         ++prewarmDisplayPoolCalls;
     }
-    void ensureToolbar() override {
-        ++ensureToolbarCalls;
-    }
-    void prewarmOverlayTransientUi(ScreenshotDisplaySession&) override {
-        ++prewarmOverlayTransientUiCalls;
-    }
     void clearOverlayCanvases(const ScreenshotDisplaySession&) const override {
         ++clearOverlayCanvasCalls;
     }
@@ -144,8 +138,6 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     int resetForNewCaptureCalls = 0;
     int clearDocumentCalls = 0;
     int prewarmDisplayPoolCalls = 0;
-    int ensureToolbarCalls = 0;
-    int prewarmOverlayTransientUiCalls = 0;
     bool selectorIsReady = false;
     bool selectorRefreshActive = false;
     bool captureWasQueuedBeforeSelectorRefresh = false;
@@ -195,11 +187,8 @@ void idlePrewarmDoesNotInitializeSelector() {
 
     workflow.prewarmResources();
     workflow.prewarmResources();
-    require(runtime.prepareAsyncCalls == 1 && runtime.prewarmDisplayPoolCalls == 1 &&
-                runtime.ensureToolbarCalls == 1,
-            "idle toolbar creation must be idempotent once resources are prepared");
-    require(runtime.prewarmOverlayTransientUiCalls == 1,
-            "idle prewarm must construct the transient overlay UI exactly once");
+    require(runtime.prepareAsyncCalls == 1 && runtime.prewarmDisplayPoolCalls == 1,
+            "idle kernel preparation must be idempotent once resources are prepared");
     require(state.sessionState == ScreenshotSessionState::IdlePrepared,
             "idle prewarm must leave the workflow prepared");
     require(runtime.startWorkflowRefreshCalls == 0 && !runtime.selectorRefreshActive,
@@ -207,10 +196,6 @@ void idlePrewarmDoesNotInitializeSelector() {
 
     workflow.startCapture();
     workflow.prewarmResources();
-    require(runtime.ensureToolbarCalls == 1,
-            "active capture must not repeat idle toolbar creation");
-    require(runtime.prewarmOverlayTransientUiCalls == 1,
-            "active capture must not run transient overlay UI prewarm");
     require(runtime.startWorkflowRefreshCalls == 1 && runtime.selectorRefreshActive,
             "capture start must initialize the selector cache");
 }
@@ -252,9 +237,7 @@ void endingScreenshotSkipsCaptureReleaseAndPrewarm() {
             "canceling a capture must immediately release the selector cache");
     require(runtime.cancelActiveCaptureCalls == 1,
             "canceling a capture must signal the native cancellation token");
-    require(runtime.prepareAsyncCalls == 0 && runtime.prewarmDisplayPoolCalls == 0 &&
-                runtime.ensureToolbarCalls == 0 &&
-                runtime.prewarmOverlayTransientUiCalls == 0,
+    require(runtime.prepareAsyncCalls == 0 && runtime.prewarmDisplayPoolCalls == 0,
             "ending a screenshot must not prepare or prewarm capture resources");
     require(captureTerminatedCalls == 1,
             "canceling a capture must stop active capture-scoped features before cleanup");
@@ -355,9 +338,7 @@ void synchronousCaptureFailureDoesNotRestartSelectorRefresh() {
             "synchronous capture failure must return the workflow to idle");
     require(runtime.startWorkflowRefreshCalls == 0 && !runtime.selectorRefreshActive,
             "synchronous capture failure must not restart selector refresh after cleanup");
-    require(runtime.prepareAsyncCalls == 0 && runtime.prewarmDisplayPoolCalls == 0 &&
-                runtime.ensureToolbarCalls == 0 &&
-                runtime.prewarmOverlayTransientUiCalls == 0,
+    require(runtime.prepareAsyncCalls == 0 && runtime.prewarmDisplayPoolCalls == 0,
             "synchronous failure cleanup must not release or prewarm capture resources");
 }
 

@@ -5,7 +5,7 @@
 #include "snow_shot/presentation/components/icons/iconrenderutils.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/screenshotcolorpickerwidget.h"
-#include "snow_shot/presentation/screenshotselectiontoolbarwindow.h"
+#include "snow_shot/presentation/screenshotselectiontoolbarwidget.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
@@ -326,6 +326,25 @@ void showPreparedWidget(QWidget* widget) {
         widget->setWindowOpacity(previousOpacity);
     }
 }
+
+void showPreparedChildWidget(QWidget* widget) {
+    if (widget == nullptr) {
+        return;
+    }
+
+    {
+        SNOW_SHOT_CAPTURE_PERF_SCOPE("show_prepared_child.show");
+        widget->show();
+    }
+    {
+        SNOW_SHOT_CAPTURE_PERF_SCOPE("show_prepared_child.repaint");
+        widget->repaint();
+    }
+    {
+        SNOW_SHOT_CAPTURE_PERF_SCOPE("show_prepared_child.posted_events");
+        QCoreApplication::sendPostedEvents(widget, QEvent::UpdateRequest);
+    }
+}
 } // namespace
 
 ScreenshotOverlayUiHost::ScreenshotOverlayUiHost() = default;
@@ -339,6 +358,21 @@ void ScreenshotOverlayUiHost::setToolbarCommandSinks(
     ScreenshotSelectionToolbarCommandSink& selectionToolbarCommands) {
     m_toolbarCommands = &toolbarCommands;
     m_selectionToolbarCommands = &selectionToolbarCommands;
+
+    if (m_selectionToolbar == nullptr) {
+        auto* selectionToolbar = new ScreenshotSelectionToolbarWidget(selectionToolbarCommands);
+        m_ownedWidgets.add(selectionToolbar);
+        m_selectionToolbar = selectionToolbar;
+        selectionToolbar->hide();
+        selectionToolbar->prewarm();
+    }
+
+    if (m_shortcutHints == nullptr) {
+        auto* hints = new ScreenshotShortcutHintsWidget();
+        m_ownedWidgets.add(hints);
+        m_shortcutHints = hints;
+        hints->prewarm();
+    }
 }
 
 ScreenshotToolbarWindow* ScreenshotOverlayUiHost::ensureToolbar() {
@@ -355,46 +389,6 @@ ScreenshotToolbarWindow* ScreenshotOverlayUiHost::ensureToolbar() {
 
 ScreenshotToolbarWindow* ScreenshotOverlayUiHost::toolbar() const {
     return m_toolbar.data();
-}
-
-void ScreenshotOverlayUiHost::prewarmOverlayTransientUi() {
-    if (m_transientUiPrewarmed) {
-        return;
-    }
-    m_transientUiPrewarmed = true;
-
-    if (m_selectionToolbar == nullptr && m_selectionToolbarCommands != nullptr) {
-        auto* selectionToolbar = new ScreenshotSelectionToolbarWindow(*m_selectionToolbarCommands);
-        m_ownedWidgets.add(selectionToolbar);
-        m_selectionToolbar = selectionToolbar;
-        selectionToolbar->hide();
-        selectionToolbar->prewarm();
-    }
-
-    if (m_shortcutHints == nullptr) {
-        auto* hints = new ScreenshotShortcutHintsWidget();
-        m_ownedWidgets.add(hints);
-        m_shortcutHints = hints;
-        hints->prewarm();
-    }
-}
-
-void ScreenshotOverlayUiHost::prewarmSelectionToolbarOverlayCycle(ScreenshotOverlayWindow* overlay) {
-    ScreenshotSelectionToolbarWindow* toolbar = trackedWidget(m_selectionToolbar);
-    if (toolbar == nullptr || overlay == nullptr) {
-        return;
-    }
-
-    // The first capture parents this toolbar into a pooled overlay and shows
-    // it while that overlay is still hidden; the first parenting, native child
-    // creation, and synchronous RedrawWindow pass dominate that session's
-    // smart-selection latency. Running one attach/show/detach cycle inside
-    // each pooled overlay at startup keeps every later cycle on the steady
-    // path, whichever display the first selection lands on.
-    attachSelectionToolbarToOverlay(overlay);
-    showSelectionToolbar();
-    detachOverlayTransientUi(overlay);
-    toolbar->resetForNewCapture();
 }
 
 void ScreenshotOverlayUiHost::attachToolbarToOverlay(ScreenshotOverlayWindow* overlay) {
@@ -468,28 +462,28 @@ void ScreenshotOverlayUiHost::redoCanvasEdit() {
     }
 }
 
-ScreenshotSelectionToolbarWindow* ScreenshotOverlayUiHost::selectionToolbar() const {
+ScreenshotSelectionToolbarWidget* ScreenshotOverlayUiHost::selectionToolbar() const {
     return m_selectionToolbar.data();
 }
 
 void ScreenshotOverlayUiHost::attachSelectionToolbarToOverlay(ScreenshotOverlayWindow* overlay) {
-    ScreenshotSelectionToolbarWindow* toolbarWindow = trackedWidget(m_selectionToolbar);
-    if (toolbarWindow == nullptr) {
+    ScreenshotSelectionToolbarWidget* toolbarWidget = trackedWidget(m_selectionToolbar);
+    if (toolbarWidget == nullptr) {
         return;
     }
-    if (toolbarWindow->parentWidget() == overlay) {
+    if (toolbarWidget->parentWidget() == overlay) {
         return;
     }
 
-    const bool wasVisible = toolbarWindow->isVisible();
-    toolbarWindow->hide();
-    toolbarWindow->setParent(overlay);
-    toolbarWindow->setWindowFlags(Qt::FramelessWindowHint);
-    toolbarWindow->setAttribute(Qt::WA_TranslucentBackground, true);
-    toolbarWindow->setFocusPolicy(Qt::NoFocus);
+    const bool wasVisible = toolbarWidget->isVisible();
+    toolbarWidget->hide();
+    toolbarWidget->setParent(overlay, Qt::Widget);
+    toolbarWidget->setAttribute(Qt::WA_TranslucentBackground, true);
+    toolbarWidget->setAttribute(Qt::WA_NoSystemBackground, true);
+    toolbarWidget->setFocusPolicy(Qt::NoFocus);
     if (wasVisible && overlay != nullptr && overlay->isVisible()) {
-        showPreparedWidget(toolbarWindow);
-        toolbarWindow->raise();
+        showPreparedChildWidget(toolbarWidget);
+        toolbarWidget->raise();
     }
 }
 
@@ -727,13 +721,13 @@ void ScreenshotOverlayUiHost::hideSelectionToolbar() {
 }
 
 void ScreenshotOverlayUiHost::showSelectionToolbar() {
-    ScreenshotSelectionToolbarWindow* toolbarWindow = trackedWidget(m_selectionToolbar);
-    if (toolbarWindow == nullptr) {
+    ScreenshotSelectionToolbarWidget* toolbarWidget = trackedWidget(m_selectionToolbar);
+    if (toolbarWidget == nullptr || toolbarWidget->parentWidget() == nullptr) {
         return;
     }
-    toolbarWindow->prepareForDisplay();
-    showPreparedWidget(toolbarWindow);
-    toolbarWindow->raise();
+    toolbarWidget->prepareForDisplay();
+    showPreparedChildWidget(toolbarWidget);
+    toolbarWidget->raise();
 }
 
 void ScreenshotOverlayUiHost::raiseSelectionToolbar() {
@@ -750,7 +744,6 @@ void ScreenshotOverlayUiHost::detachOverlayTransientUi(ScreenshotOverlayWindow* 
     if (m_selectionToolbar != nullptr && m_selectionToolbar->parentWidget() == overlay) {
         m_selectionToolbar->hide();
         m_selectionToolbar->setParent(nullptr);
-        m_selectionToolbar->setWindowFlags(Qt::FramelessWindowHint);
     }
 
     if (m_toolbarStyleCanvas == overlay->canvas() && m_toolbarStyleConnection) {

@@ -333,7 +333,7 @@ void ScreenshotToolbarWindow::resetForNewCapture() {
         const QSignalBlocker blocker(host);
         host->setPhysicalScale(paletteScaleMultiplier());
         host->setShadowMargins(ScreenshotToolPaletteHost::defaultShadowMargins());
-        host->setStyleToolbarAboveMain(false);
+        setStyleToolbarAboveMain(false);
         host->setStyleToolbarVisible(false);
         host->resetStyleState();
         host->setCreationStyleDefaults(
@@ -477,8 +477,7 @@ void ScreenshotToolbarWindow::setMovementBounds(const QRect& logicalBounds,
     }
 }
 
-void ScreenshotToolbarWindow::resetPositionForSelection(const QPoint& position,
-                                                        const QSize& windowSize) {
-    moveContentTo(position, windowSize);
+void ScreenshotToolbarWindow::resetPositionForSelection(const QPoint& position) {
+    moveContentTo(position);
     m_manuallyDragged = false;
 }

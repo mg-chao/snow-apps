@@ -109,13 +109,15 @@ void physicalSelectionMapsToItsLogicalSubregion() {
 void toolbarUsesBottomRightThenTopRight() {
     const QRect bounds(0, 0, 1920, 1080);
     const QRect toolbarRect(12, 8, 520, 48);
+    const ScreenshotToolbarPlacementGeometry toolbarPlacement{
+        toolbarRect, {}, toolbarRect};
     const QRect upperRegion(500, 200, 700, 400);
     const ScreenshotAnchoredToolbarPlacement bottomRightPlacement =
         ScreenshotGeometryMapper::anchoredToolbarPlacement(
             QPoint(upperRegion.left() + upperRegion.width(),
                    upperRegion.top() + upperRegion.height()),
-            QPoint(upperRegion.left() + upperRegion.width(), upperRegion.top()), toolbarRect,
-            bounds, 4, toolbarRect, toolbarRect);
+            QPoint(upperRegion.left() + upperRegion.width(), upperRegion.top()),
+            toolbarPlacement, toolbarPlacement, bounds, 4);
     const QRect bottomRightToolbar = toolbarRect.translated(bottomRightPlacement.contentPosition);
     require(!bottomRightPlacement.usesTopRightPlacement,
             "toolbar should prefer the recording region bottom-right corner");
@@ -129,8 +131,8 @@ void toolbarUsesBottomRightThenTopRight() {
         ScreenshotGeometryMapper::anchoredToolbarPlacement(
             QPoint(lowerRegion.left() + lowerRegion.width(),
                    lowerRegion.top() + lowerRegion.height()),
-            QPoint(lowerRegion.left() + lowerRegion.width(), lowerRegion.top()), toolbarRect,
-            bounds, 4, toolbarRect, toolbarRect);
+            QPoint(lowerRegion.left() + lowerRegion.width(), lowerRegion.top()),
+            toolbarPlacement, toolbarPlacement, bounds, 4);
     const QRect topRightToolbar = toolbarRect.translated(topRightPlacement.contentPosition);
     require(topRightPlacement.usesTopRightPlacement,
             "toolbar should use top-right when bottom-right lacks vertical space");
@@ -143,18 +145,66 @@ void toolbarUsesBottomRightThenTopRight() {
 void toolbarRemainsInsideTheAvailableScreen() {
     const QRect bounds(0, 0, 800, 600);
     const QRect toolbarRect(10, 6, 1000, 48);
+    const ScreenshotToolbarPlacementGeometry toolbarPlacement{
+        toolbarRect, {}, toolbarRect};
     const QRect region(5, 570, 100, 20);
     const ScreenshotAnchoredToolbarPlacement placement =
         ScreenshotGeometryMapper::anchoredToolbarPlacement(
             QPoint(region.left() + region.width(), region.top() + region.height()),
-            QPoint(region.left() + region.width(), region.top()), toolbarRect, bounds, 4,
-            toolbarRect, toolbarRect);
+            QPoint(region.left() + region.width(), region.top()), toolbarPlacement,
+            toolbarPlacement, bounds, 4);
     const QRect toolbar = toolbarRect.translated(placement.contentPosition);
 
     require(toolbar.left() == bounds.left() && toolbar.top() >= bounds.top(),
             "oversized toolbar placement should clamp to the screen origin");
     require(toolbar.bottom() <= bounds.bottom(),
             "toolbar placement should clamp vertically to the screen");
+}
+
+void toolbarAnchorsTheMainRowAndUsesTheVisibleSecondaryRow() {
+    const QRect bounds(0, 0, 1000, 800);
+    const ScreenshotToolbarPlacementGeometry bottom{
+        QRect(100, 0, 200, 40),
+        QRect(180, 44, 120, 20),
+        QRect(100, 0, 200, 64),
+    };
+    const ScreenshotToolbarPlacementGeometry top{
+        QRect(100, 60, 200, 40),
+        QRect(180, 16, 120, 40),
+        QRect(100, 16, 200, 84),
+    };
+    const ScreenshotAnchoredToolbarPlacement placement =
+        ScreenshotGeometryMapper::anchoredToolbarPlacement(
+            QPoint(500, 200), QPoint(500, 500), bottom, top, bounds, 4);
+    require(!placement.usesTopRightPlacement,
+            "visible bottom content should remain at the bottom-right anchor");
+
+    const QRect main = bottom.mainToolbarContentRect.translated(placement.contentPosition);
+    const QRect secondary = bottom.secondaryToolbarContentRect.translated(placement.contentPosition);
+    require(main.right() == 500 && main.top() == 205,
+            "bottom placement should anchor the main row's top-right corner");
+    require(secondary.right() == 500 && secondary.top() == 249 &&
+                secondary.top() - main.bottom() - 1 == 4,
+            "bottom placement should right-align and space the active secondary row");
+
+    const ScreenshotToolbarPlacementGeometry crampedBottom{
+        bottom.mainToolbarContentRect,
+        bottom.secondaryToolbarContentRect,
+        QRect(100, 0, 200, 700),
+    };
+    const ScreenshotAnchoredToolbarPlacement topPlacement =
+        ScreenshotGeometryMapper::anchoredToolbarPlacement(
+            QPoint(500, 750), QPoint(500, 500), crampedBottom, top, bounds, 4);
+    require(topPlacement.usesTopRightPlacement,
+            "placement should fall back to the top-right anchor when bottom content does not fit");
+    const QRect topMain = top.mainToolbarContentRect.translated(topPlacement.contentPosition);
+    const QRect topSecondary =
+        top.secondaryToolbarContentRect.translated(topPlacement.contentPosition);
+    require(topMain.right() == 500 && topMain.bottom() == 495,
+            "top placement should anchor the main row's bottom-right corner");
+    require(topSecondary.right() == 500 &&
+                topMain.top() - topSecondary.bottom() - 1 == 4,
+            "top placement should right-align and space the active secondary row");
 }
 
 void encoderCompatibilityNeverShrinksTheSelection() {
@@ -224,6 +274,7 @@ int main(int argc, char** argv) {
     recordingFrameStaysOutsideTheSelection(2.0);
     toolbarUsesBottomRightThenTopRight();
     toolbarRemainsInsideTheAvailableScreen();
+    toolbarAnchorsTheMainRowAndUsesTheVisibleSecondaryRow();
     encoderCompatibilityNeverShrinksTheSelection();
     claritySettingsMapToMaximumOutputSizes();
     clarityBoundsFollowCaptureOrientation();
