@@ -1000,6 +1000,14 @@ void qrContentsUseStrictRichTextLinksAndPreserveOrder() {
     require(activatedLinks == QList<QUrl>{clicked},
             "QR anchor activation should be forwarded exactly once to the controller");
 
+    window.showQrContents({});
+    QApplication::clipboard()->setText(QStringLiteral("stale clipboard text"));
+    QKeyEvent copyEmpty(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
+    QApplication::sendEvent(browser, &copyEmpty);
+    require(copyEmpty.isAccepted() && QApplication::clipboard()->text().isEmpty() &&
+                recognitionCopyCalls == 2,
+            "Ctrl+C should directly copy empty text for a completed QR result with no payload");
+
     QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
     QApplication::sendEvent(browser, &escape);
     require(escape.isAccepted() && recognitionCancelCalls == 1,
@@ -1010,6 +1018,35 @@ void qrContentsUseStrictRichTextLinksAndPreserveOrder() {
             "leaving QR mode should remove its rich-text content surface");
     window.hide();
     QApplication::processEvents();
+}
+
+void emptyOcrResultCopiesEmptyText() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+
+    int recognitionCopyCalls = 0;
+    ScreenshotRecognitionWindowActions actions;
+    actions.handleCopy = [&recognitionCopyCalls]() { ++recognitionCopyCalls; };
+    ScreenshotRecognitionWindow window(std::move(actions));
+    require(window.present(ScreenshotRecognitionWindow::Config{
+                screen,
+                nullptr,
+                QRect(screen->availableGeometry().center() - QPoint(120, 60), QSize(240, 120)),
+                QRectF(0.0, 0.0, 240.0, 120.0),
+            }),
+            "the empty OCR copy test should present a valid recognition window");
+
+    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+    presentation->selection = QRect(0, 0, 240, 120);
+    window.setOcrPresentation(std::move(presentation));
+    QApplication::processEvents();
+    QApplication::clipboard()->setText(QStringLiteral("stale clipboard text"));
+
+    QKeyEvent copyEmpty(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
+    QApplication::sendEvent(&window, &copyEmpty);
+    require(copyEmpty.isAccepted() && QApplication::clipboard()->text().isEmpty() &&
+                recognitionCopyCalls == 1,
+            "Ctrl+C should directly copy empty text for a completed OCR result with no lines");
 }
 } // namespace
 
@@ -1022,5 +1059,6 @@ int main(int argc, char** argv) {
     shortRecognitionWindowPreservesExactSelectionGeometryAcrossModes();
     formattedClipboardTextUsesASelectableQtDocument();
     qrContentsUseStrictRichTextLinksAndPreserveOrder();
+    emptyOcrResultCopiesEmptyText();
     return 0;
 }

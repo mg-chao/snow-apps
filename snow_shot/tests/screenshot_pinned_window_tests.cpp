@@ -196,16 +196,35 @@ class FakeQrRecognition final : public ScreenshotQrRecognitionPort {
   public:
     RequestToken recognize(QImage image, QObject* receiver, Completion completion) override {
         Q_UNUSED(image);
-        Q_UNUSED(receiver);
-        Q_UNUSED(completion);
-        return ++nextToken;
+        pendingToken = ++nextToken;
+        pendingReceiver = receiver;
+        pendingCompletion = std::move(completion);
+        return pendingToken;
     }
 
     void cancel(RequestToken token) override {
         cancelledTokens.push_back(token);
+        if (pendingToken == token) {
+            pendingToken = 0;
+            pendingReceiver = nullptr;
+            pendingCompletion = {};
+        }
+    }
+
+    void complete(ScreenshotQrRecognitionResult result) {
+        QPointer<QObject> receiver = pendingReceiver;
+        Completion completion = std::move(pendingCompletion);
+        pendingToken = 0;
+        pendingReceiver = nullptr;
+        if (receiver != nullptr && completion) {
+            completion(std::move(result));
+        }
     }
 
     RequestToken nextToken = 0;
+    RequestToken pendingToken = 0;
+    QPointer<QObject> pendingReceiver;
+    Completion pendingCompletion;
     QVector<RequestToken> cancelledTokens;
 };
 
@@ -268,6 +287,42 @@ void recognitionResultsSurviveTargetImageReallocationAndSeedAllModes() {
     session.invalidate();
     require(session.cachedRecognitionResults().isEmpty(),
             "full recognition invalidation should clear retained results");
+}
+
+void emptyTextAndQrResultsRemainCopyable() {
+    FakeOcrRecognition recognition;
+    FakeQrRecognition qrRecognition;
+    ScreenshotRecognitionSessionController session(&recognition, &qrRecognition, nullptr, {});
+
+    QImage image(QSize(80, 50), QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    session.setTarget(ScreenshotRecognitionTarget{
+        QStringLiteral("empty-recognition-results"), image,
+        QRectF(QPointF(), QSizeF(image.size()))});
+
+    session.activate(ScreenshotRecognitionSessionController::Mode::Text);
+    auto emptyPresentation = std::make_shared<ScreenshotOcrPresentation>();
+    emptyPresentation->selection = QRect(QPoint(), image.size());
+    recognition.complete({emptyPresentation, {}});
+    std::unique_ptr<QMimeData> mimeData = session.recognitionClipboardMimeData();
+    require(mimeData != nullptr && mimeData->hasText() && mimeData->text().isEmpty(),
+            "a completed OCR result without text should produce copyable empty text");
+    QApplication::clipboard()->setText(QStringLiteral("stale clipboard text"));
+    QApplication::clipboard()->setMimeData(mimeData.release(), QClipboard::Clipboard);
+    require(QApplication::clipboard()->text().isEmpty(),
+            "copying an empty OCR result should clear stale clipboard text");
+
+    session.activate(ScreenshotRecognitionSessionController::Mode::Qr);
+    require(qrRecognition.pendingToken != 0,
+            "empty-result QR copy setup should start recognition");
+    qrRecognition.complete({{}, {}});
+    mimeData = session.recognitionClipboardMimeData();
+    require(mimeData != nullptr && mimeData->hasText() && mimeData->text().isEmpty(),
+            "a completed QR result without payloads should produce copyable empty text");
+    QApplication::clipboard()->setText(QStringLiteral("stale clipboard text"));
+    QApplication::clipboard()->setMimeData(mimeData.release(), QClipboard::Clipboard);
+    require(QApplication::clipboard()->text().isEmpty(),
+            "copying an empty QR result should clear stale clipboard text");
 }
 
 void modelDownloadStatusTransitionsToRecognition() {
@@ -3598,6 +3653,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         recognitionResultsSurviveTargetImageReallocationAndSeedAllModes();
+        emptyTextAndQrResultsRemainCopyable();
         modelDownloadStatusTransitionsToRecognition();
         textRenderLifecycleUsesTransientWorkerResults();
         if (app.arguments().contains(QStringLiteral("--ocr-render-lifecycle-only"))) {

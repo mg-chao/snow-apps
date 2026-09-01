@@ -1058,7 +1058,7 @@ ScreenshotRecognitionSessionController::recognitionClipboardMimeData(
     const ScreenshotOcrPresentation* displayedPresentation) const {
     auto mimeData = std::make_unique<QMimeData>();
     if (m_mode == Mode::Qr) {
-        if (m_qrContents.isEmpty()) {
+        if (m_qrCacheKey.isEmpty() || !m_qrCache.contains(m_qrCacheKey)) {
             return {};
         }
         mimeData->setText(m_qrContents.join(QLatin1Char('\n')));
@@ -1074,16 +1074,20 @@ ScreenshotRecognitionSessionController::recognitionClipboardMimeData(
     }
 
     QString text;
+    bool resultAvailable = false;
     if (editing()) {
+        resultAvailable = hasTextResult();
         text = textDraft();
     } else if (displayedPresentation != nullptr) {
+        resultAvailable = true;
         text = displayedPresentation->hasTextSelection()
                    ? displayedPresentation->selectedText()
                    : snow_shot::presentation::originalOcrText(*displayedPresentation);
     } else {
+        resultAvailable = hasTextResult();
         text = originalText();
     }
-    if (text.isEmpty()) {
+    if (!resultAvailable) {
         return {};
     }
     mimeData->setText(text);
@@ -1383,6 +1387,12 @@ void ScreenshotRecognitionSessionController::handleQrOutput(
         return;
     }
     if (result.contents.isEmpty()) {
+        m_qrCache.insert(key, result.contents);
+        m_qrResults.insert(key, result);
+        if (m_active && m_mode == Mode::Qr) {
+            m_qrCacheKey = key;
+            applyQrContents(result.contents);
+        }
         if (m_active && m_mode == Mode::Qr) {
             showStatus(tr("No QR code was recognized"), false);
         }

@@ -780,15 +780,19 @@ bool ScreenshotRecognitionWindow::copyVisibleContentToClipboard() {
     }
 
     QString text;
+    bool contentAvailable = false;
     if (m_textEditor != nullptr) {
+        contentAvailable = true;
         const QTextCursor cursor = m_textEditor->textCursor();
         text = cursor.hasSelection() ? QTextDocumentFragment(cursor).toPlainText()
                                      : m_textEditor->toPlainText();
     } else if (m_qrBrowser != nullptr) {
+        contentAvailable = true;
         const QTextCursor cursor = m_qrBrowser->textCursor();
         text = cursor.hasSelection() ? QTextDocumentFragment(cursor).toPlainText()
                                      : m_qrBrowser->toPlainText();
     } else if (m_ocrPresentation != nullptr) {
+        contentAvailable = true;
         if (m_ocrPresentation->hasTextSelection()) {
             text = m_ocrPresentation->selectedText();
         } else {
@@ -800,10 +804,10 @@ bool ScreenshotRecognitionWindow::copyVisibleContentToClipboard() {
             text = lines.join(QLatin1Char('\n'));
         }
     }
-    text.replace(QChar::ParagraphSeparator, QLatin1Char('\n'));
-    if (text.isEmpty()) {
+    if (!contentAvailable) {
         return false;
     }
+    text.replace(QChar::ParagraphSeparator, QLatin1Char('\n'));
     clipboard->setText(text);
     return true;
 }
