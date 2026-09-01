@@ -245,3 +245,95 @@ function(snow_add_rust_static_library target_name)
         ${_strip_option}
     )
 endfunction()
+
+function(snow_add_rust_executable target_name)
+    set(options)
+    set(oneValueArgs PACKAGE MANIFEST_DIR OUTPUT_NAME)
+    cmake_parse_arguments(SNOW_RUST "${options}" "${oneValueArgs}" "" ${ARGN})
+    foreach(_required IN ITEMS PACKAGE MANIFEST_DIR)
+        if(NOT SNOW_RUST_${_required})
+            message(FATAL_ERROR "snow_add_rust_executable requires ${_required}")
+        endif()
+    endforeach()
+    if(NOT SNOW_RUST_OUTPUT_NAME)
+        set(SNOW_RUST_OUTPUT_NAME "${SNOW_RUST_PACKAGE}")
+    endif()
+    find_program(CARGO_EXECUTABLE NAMES cargo REQUIRED)
+    if(NOT DEFINED SNOW_RUST_CARGO_TARGET_DIR OR SNOW_RUST_CARGO_TARGET_DIR STREQUAL "")
+        set(SNOW_RUST_CARGO_TARGET_DIR "${CMAKE_BINARY_DIR}/cargo" CACHE PATH
+            "Cargo target directory for the active CMake build tree.")
+    endif()
+    if(NOT DEFINED SNOW_RUST_RELEASE_PROFILE OR SNOW_RUST_RELEASE_PROFILE STREQUAL "")
+        set(SNOW_RUST_RELEASE_PROFILE "release" CACHE STRING
+            "Cargo profile used for non-Debug Rust builds.")
+    endif()
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|MinGW")
+        set(_rust_target "x86_64-pc-windows-gnu")
+    elseif(MSVC)
+        set(_rust_target "x86_64-pc-windows-msvc")
+    else()
+        set(_rust_target "x86_64-unknown-linux-gnu")
+    endif()
+    if(CMAKE_CONFIGURATION_TYPES)
+        set(_profile "$<IF:$<CONFIG:Debug>,debug,${SNOW_RUST_RELEASE_PROFILE}>")
+        set(_cargo_profile "$<IF:$<CONFIG:Debug>,dev,${SNOW_RUST_RELEASE_PROFILE}>")
+    elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set(_profile debug)
+        set(_cargo_profile dev)
+    else()
+        set(_profile "${SNOW_RUST_RELEASE_PROFILE}")
+        set(_cargo_profile "${SNOW_RUST_RELEASE_PROFILE}")
+    endif()
+    if(WIN32)
+        set(_binary_suffix ".exe")
+    else()
+        set(_binary_suffix)
+    endif()
+    set(_binary_path
+        "${SNOW_RUST_CARGO_TARGET_DIR}/${_rust_target}/${_profile}/${SNOW_RUST_OUTPUT_NAME}${_binary_suffix}")
+    set(_debug_binary_path
+        "${SNOW_RUST_CARGO_TARGET_DIR}/${_rust_target}/debug/${SNOW_RUST_OUTPUT_NAME}${_binary_suffix}")
+    set(_release_binary_path
+        "${SNOW_RUST_CARGO_TARGET_DIR}/${_rust_target}/${SNOW_RUST_RELEASE_PROFILE}/${SNOW_RUST_OUTPUT_NAME}${_binary_suffix}")
+    set(_cargo_environment
+        "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}")
+    if(DEFINED VCPKG_ROOT)
+        list(APPEND _cargo_environment "VCPKG_ROOT=${VCPKG_ROOT}")
+    elseif(DEFINED ENV{VCPKG_ROOT})
+        list(APPEND _cargo_environment "VCPKG_ROOT=$ENV{VCPKG_ROOT}")
+    endif()
+    if(DEFINED VCPKG_TARGET_TRIPLET)
+        list(APPEND _cargo_environment "VCPKGRS_TRIPLET=${VCPKG_TARGET_TRIPLET}")
+    endif()
+    if(SNOW_SHOT_RELEASE_STATIC OR SNOW_APPS_RELEASE_STATIC)
+        list(APPEND _cargo_environment "VCPKGRS_DYNAMIC=0")
+    else()
+        list(APPEND _cargo_environment "VCPKGRS_DYNAMIC=1")
+    endif()
+    add_custom_target("${target_name}_build"
+        COMMAND "${CMAKE_COMMAND}" -E env
+            ${_cargo_environment}
+            "${CARGO_EXECUTABLE}" build --locked
+            --package "${SNOW_RUST_PACKAGE}"
+            --target "${_rust_target}"
+            --profile "${_cargo_profile}"
+        BYPRODUCTS "${_binary_path}"
+        WORKING_DIRECTORY "${SNOW_RUST_MANIFEST_DIR}"
+        USES_TERMINAL
+        COMMAND_EXPAND_LISTS
+        VERBATIM
+    )
+    add_executable("${target_name}" IMPORTED GLOBAL)
+    if(CMAKE_CONFIGURATION_TYPES)
+        set_target_properties("${target_name}" PROPERTIES
+            IMPORTED_CONFIGURATIONS "DEBUG;RELEASE;RELWITHDEBINFO;MINSIZEREL"
+            IMPORTED_LOCATION_DEBUG "${_debug_binary_path}"
+            IMPORTED_LOCATION_RELEASE "${_release_binary_path}"
+            IMPORTED_LOCATION_RELWITHDEBINFO "${_release_binary_path}"
+            IMPORTED_LOCATION_MINSIZEREL "${_release_binary_path}"
+        )
+    else()
+        set_target_properties("${target_name}" PROPERTIES IMPORTED_LOCATION "${_binary_path}")
+    endif()
+    add_dependencies("${target_name}" "${target_name}_build")
+endfunction()

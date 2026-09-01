@@ -57,7 +57,7 @@ class ScreenshotOcrRecognitionPort : public QObject {
                                    Completion completion) = 0;
     // Optional render-only operation. The default keeps lightweight test and
     // alternate implementations source-compatible; the production service
-    // executes it on the same bounded worker pool as recognition.
+    // performs this Qt-side image work off the caller thread.
     virtual RequestToken render(ScreenshotOcrRequest request, QObject* receiver,
                                 Completion completion) {
         Q_UNUSED(request);
@@ -88,9 +88,13 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
 
   public:
     struct Options {
-        // Maximum concurrent workers; the pool grows only while queued demand requires it.
+        // Maximum concurrent workers in the OCR child process.
         int workerCount = 2;
         QString modelStoreDirectory;
+        // Resolved HTTP(S) proxy URL for model downloads. Empty means direct access.
+        QString proxyUrl;
+        // Optional executable override, primarily for tests and portable bundles.
+        QString processPath;
     };
 
     explicit ScreenshotOcrRecognitionService(QObject* parent = nullptr);
@@ -112,6 +116,7 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
     bool reprioritize(RequestToken token, ScreenshotOcrRequestPriority priority) override;
     [[nodiscard]] bool modelFilesReady() const override;
     void setBackendPreference(ScreenshotOcrBackendPreference preference);
+    void setProxyUrl(const QString& proxyUrl);
     [[nodiscard]] int liveWorkerCount() const;
 
   private:

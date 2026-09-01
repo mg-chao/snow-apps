@@ -21,6 +21,7 @@ pub use config::{
 pub use error::{RapidOcrError, Result};
 pub use input::image_loader::{LoadImage, OcrInput};
 pub use model_source::{DictionarySource, ModelSource, PipelineSources};
+pub use model_store::set_download_proxy;
 pub use output::json::OcrJsonItem;
 pub use pipeline::{
     config::{EngineConfig, GlobalConfig},
@@ -37,7 +38,21 @@ pub use types::{LineResult, RecognizeOutput, WordBox, WordInfo, WordType};
 pub type Quad = [[f32; 2]; 4];
 
 pub fn initialize_onnx_runtime() -> Result<()> {
-    ort::init().commit();
+    // Keep managed ONNX diagnostics on stderr; the host protocol reader also
+    // resynchronizes on the frame magic for native runtime builds that emit
+    // unavoidable cpuinfo diagnostics on stdout.
+    let _ = ort::init()
+        .with_telemetry(false)
+        .with_logger(std::sync::Arc::new(
+            |_level: ort::logging::LogLevel,
+             _category: &str,
+             _id: &str,
+             _location: &str,
+             message: &str| {
+                eprintln!("ONNX Runtime: {message}");
+            },
+        ))
+        .commit();
     Ok(())
 }
 

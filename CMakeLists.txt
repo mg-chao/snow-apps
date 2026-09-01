@@ -127,7 +127,6 @@ if(SNOW_APPS_BUILD_SNOW_SHOT)
             snow_capture_c
             snow_ui_selector_c
             snow_stitch_images_c
-            snow_ocr_c
             snow_draw_engine_c)
         add_library("${_snow_rust_ffi_target}" INTERFACE)
         target_link_libraries("${_snow_rust_ffi_target}" INTERFACE

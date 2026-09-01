@@ -1,8 +1,6 @@
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 
-#include "snow_ocr_c.h"
-
 #include <QCoreApplication>
 #include <QDir>
 #include <QEventLoop>
@@ -13,7 +11,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
@@ -35,14 +32,6 @@ QImage whiteImage(int edge = 64) {
     QImage image(edge, edge, QImage::Format_RGBA8888);
     image.fill(Qt::white);
     return image;
-}
-
-SnowOcrResourceCounts resourceCounts() {
-    SnowOcrResourceCounts counts{};
-    counts.struct_size = static_cast<std::uint32_t>(sizeof(SnowOcrResourceCounts));
-    require(snow_ocr_resource_counts(&counts) != 0,
-            "OCR resource counts should be available");
-    return counts;
 }
 
 bool waitUntil(const std::function<bool()>& condition, int timeoutMs) {
@@ -147,8 +136,6 @@ std::shared_ptr<ScreenshotOcrPresentation> filterPresentation(const QRect& selec
 }
 
 void renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine() {
-    require(resourceCounts().engines == 0,
-            "render-only OCR work should start without a live recognition engine");
     ScreenshotOcrRecognitionService service;
     QObject receiver;
     QImage image(96, 64, QImage::Format_RGBA8888);
@@ -183,8 +170,6 @@ void renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine() {
                 std::abs(output.filteredImage.height() -
                          output.filteredImageCanvasRect.height() * renderScale) <= 1.0,
             "the filtered image should be sized to match its canvas rect at source resolution");
-    require(resourceCounts().engines == 0,
-            "render-only OCR work must not initialize a recognition engine");
     require(waitUntil([&]() { return service.liveWorkerCount() == 0; }, 1'000),
             "the render-only OCR worker should retire after its queue drains");
 }
@@ -300,12 +285,7 @@ void concurrentRequestsCompleteExactlyOnce() {
     require(waitUntil([&]() { return service.liveWorkerCount() == 0; }, 1'000),
             "OCR workers should exit once a concurrent burst is drained");
 
-    SnowOcrResourceCounts counts = resourceCounts();
-    require(counts.engines == 0,
-            "draining a concurrent burst should destroy every OCR engine");
-    require(counts.results == 0, "FFI results should be released before Qt delivery");
     outputs.clear();
-    counts = resourceCounts();
 }
 
 void interactiveRequestsPrecedeQueuedPrefetch() {
@@ -351,8 +331,6 @@ void interactiveRequestsPrecedeQueuedPrefetch() {
 }
 
 void workerRecyclesImmediatelyAndCanBeRecreated() {
-    require(resourceCounts().engines == 0,
-            "the previous OCR service should destroy its engines during shutdown");
     ScreenshotOcrRecognitionService service;
     require(service.liveWorkerCount() == 0,
             "OCR service construction must not create worker threads eagerly");
@@ -378,14 +356,9 @@ void workerRecyclesImmediatelyAndCanBeRecreated() {
     loop.exec();
     require(!timedOut && output.presentation != nullptr && output.error.isEmpty(),
             "the OCR request should complete successfully");
-    require(waitUntil([]() { return resourceCounts().engines == 0; }, 1'000),
-            "an OCR worker should destroy its engine as soon as its queue is empty");
     require(waitUntil([&]() { return service.liveWorkerCount() == 0; }, 1'000),
             "an OCR worker thread should exit as soon as its queue is empty");
     output.presentation.reset();
-    const SnowOcrResourceCounts counts = resourceCounts();
-    require(counts.results == 0,
-            "immediate recycling should leave no live OCR result resources");
 
     bool recreated = false;
     const auto secondToken = service.recognize(
@@ -396,8 +369,6 @@ void workerRecyclesImmediatelyAndCanBeRecreated() {
     require(secondToken != 0, "a request after immediate recycling should be accepted");
     require(waitUntil([&]() { return recreated; }, kRecognitionTimeoutMs),
             "a request after immediate recycling should recreate the OCR engine");
-    require(waitUntil([]() { return resourceCounts().engines == 0; }, 1'000),
-            "the recreated OCR worker should destroy its engine after completing the request");
     require(waitUntil([&]() { return service.liveWorkerCount() == 0; }, 1'000),
             "the recreated OCR worker should exit after completing the request");
 }
@@ -469,16 +440,13 @@ void serviceDestructionJoinsWorkersAndSuppressesLateDelivery() {
         require(token != 0, "requests queued before service shutdown should be accepted");
     }
 
-    require(waitUntil([]() { return resourceCounts().engines > 0; }, kRecognitionTimeoutMs),
+    require(waitUntil([&]() { return service->liveWorkerCount() > 0; }, kRecognitionTimeoutMs),
             "at least one OCR worker should initialize before shutdown");
     const int completionsBeforeDestruction = completions;
     service.reset();
     processEventsFor(250);
     require(completions == completionsBeforeDestruction,
             "destroyed OCR services must not deliver queued completions");
-    const SnowOcrResourceCounts counts = resourceCounts();
-    require(counts.engines == 0 && counts.results == 0,
-            "service destruction should synchronously join workers and release FFI resources");
 }
 } // namespace
 

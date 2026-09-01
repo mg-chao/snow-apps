@@ -1,11 +1,20 @@
 #include "snow_shot/presentation/settings/textrecognitionacceleration.h"
 
-#include "snow_ocr_c.h"
+#include <QLibrary>
 
 namespace snow_shot::presentation::settings {
 
 bool directMlTextRecognitionSupported() {
-    static const bool supported = snow_ocr_directml_is_available() != 0;
+    // Loading the provider DLL is a cheap, process-local capability hint. The
+    // OCR child performs the definitive ONNX provider probe once at startup.
+    static const bool supported = [] {
+#ifdef Q_OS_WIN
+        QLibrary directMl(QStringLiteral("DirectML"));
+        return directMl.load();
+#else
+        return false;
+#endif
+    }();
     return supported;
 }
 

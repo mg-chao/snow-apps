@@ -147,17 +147,14 @@ if(NOT TARGET snow_capture_c)
             snow_capture_c
             snow_ui_selector_c
             snow_stitch_images_c
-            snow_ocr_c
         PACKAGES
             snow-capture-c
             snow-ui-selector-c
             snow-stitch-images-c
-            snow-ocr-c
         OUTPUT_NAMES
             snow_capture_c
             snow_ui_selector_c
             snow_stitch_images_c
-            snow_ocr_c
         STRIP_MSVC_DIRECTIVES
     )
 endif()
@@ -206,7 +203,11 @@ if(WIN32)
     unset(_snow_shot_directml_runtimes)
 endif()
 
-target_link_libraries(snow_ocr_c INTERFACE onnxruntime::onnxruntime)
+snow_add_rust_executable(snow_ocr_process
+    PACKAGE snow-ocr-process
+    MANIFEST_DIR "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
+    OUTPUT_NAME snow-ocr-process
+)
 
 set(SNOW_SHOT_SNOW_IMAGE_DIR
     "${SNOW_IMAGE_SOURCE_DIR}"
@@ -616,15 +617,11 @@ unset(_snow_shot_history_global_pool_call)
 add_library(snow_shot_settings STATIC ${SNOW_SHOT_SETTINGS_SOURCES})
 snow_enable_unity_build(snow_shot_settings)
 target_include_directories(snow_shot_settings PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_include_directories(snow_shot_settings PRIVATE
-    "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-ocr-c/include"
-)
 target_link_libraries(snow_shot_settings PUBLIC
     ant_design_icons_qt
     ant_design_qt
     snow_shot_settings_search
     snow_shot_storage
-    snow_ocr_c
     Qt6::Widgets
 )
 if(WIN32)
@@ -2852,10 +2849,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_include_directories(snow-shot-ocr-recognition-service-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${SNOW_DRAW_ENGINE_SOURCE_DIR}/include"
-        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-ocr-c/include"
     )
     target_link_libraries(snow-shot-ocr-recognition-service-tests PRIVATE
-        snow_ocr_c
         snow_draw_engine_qt_canvas
         Qt6::Core
         Qt6::Gui
@@ -2884,6 +2879,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+    add_dependencies(snow-shot-ocr-recognition-service-tests snow_ocr_process)
 
     add_executable(snow-shot-qr-recognition-service-tests
         tests/screenshot_qr_recognition_service_tests.cpp
@@ -3094,7 +3090,6 @@ target_include_directories(snow_shot PRIVATE
     "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include"
     "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-ui-selector-c/include"
     "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-stitch-images-c/include"
-    "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-ocr-c/include"
 )
 target_precompile_headers(snow_shot PRIVATE
     <algorithm>
@@ -3122,7 +3117,6 @@ target_link_libraries(
         snow_capture_c
         snow_ui_selector_c
         snow_stitch_images_c
-        snow_ocr_c
         opencv_objdetect
         Qt6::Widgets
         Qt6::Svg
@@ -3132,6 +3126,7 @@ target_link_libraries(
 target_compile_definitions(snow_shot PRIVATE
     $<$<CONFIG:Release>:QT_NO_DEBUG_OUTPUT>
 )
+add_dependencies(snow_shot snow_ocr_process)
 
 if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
     add_executable(snow-shot-pin-to-screen-performance-benchmark
@@ -3208,6 +3203,20 @@ if(WIN32)
     endforeach()
     unset(_ocr_runtime_target)
 endif()
+
+foreach(_ocr_process_host_target IN ITEMS snow_shot snow-shot-ocr-recognition-service-tests)
+    if(TARGET ${_ocr_process_host_target})
+        add_dependencies(${_ocr_process_host_target} snow_ocr_process)
+        add_custom_command(TARGET ${_ocr_process_host_target} POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "$<TARGET_FILE:snow_ocr_process>"
+                "$<TARGET_FILE_DIR:${_ocr_process_host_target}>/$<TARGET_FILE_NAME:snow_ocr_process>"
+            COMMENT "Staging standalone OCR process for ${_ocr_process_host_target}"
+            VERBATIM
+        )
+    endif()
+endforeach()
+unset(_ocr_process_host_target)
 
 if(SNOW_SHOT_ENABLE_AGGRESSIVE_RELEASE_OPTIMIZATION OR SNOW_SHOT_RELEASE_STATIC)
     snow_apply_release_options(snow_shot)
@@ -3429,6 +3438,9 @@ install(TARGETS snow_shot
     BUNDLE DESTINATION .
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+install(FILES "$<TARGET_FILE:snow_ocr_process>"
+    DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 if(EXISTS "${SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE}")
     install(FILES "${SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE}"
