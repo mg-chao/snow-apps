@@ -85,6 +85,15 @@ void beginSample(const char* scenario, qint64 width, qint64 height) {
     state.scenario = QString::fromLatin1(scenario);
     state.width = width; state.height = height; state.timer.start(); state.active = true;
 }
+void setSampleDescriptor(const char* scenario, qint64 width, qint64 height) {
+    QMutexLocker lock(&mutex);
+    if (!state.active) return;
+    if (scenario != nullptr && scenario[0] != '\0') {
+        state.scenario = QString::fromLatin1(scenario);
+    }
+    if (width > 0) state.width = width;
+    if (height > 0) state.height = height;
+}
 void milestone(const char* name) { QMutexLocker lock(&mutex); if (activeSink && state.active) { const qint64 elapsed = state.timer.nsecsElapsed(); activeSink->recordMilestone(name, elapsed); } }
 void counter(const char* name, qint64 value) { QMutexLocker lock(&mutex); if (activeSink && state.active) activeSink->recordCounter(name, value); }
 Scope::~Scope() {
@@ -98,6 +107,7 @@ namespace snow_shot::presentation::pin_perf {
 void setSink(Sink*) {}
 void configureTrace(const QString&) {}
 void beginSample(const char*, qint64, qint64) {}
+void setSampleDescriptor(const char*, qint64, qint64) {}
 void milestone(const char*) {}
 void counter(const char*, qint64) {}
 Scope::~Scope() = default;

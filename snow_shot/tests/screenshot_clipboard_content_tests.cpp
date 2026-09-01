@@ -14,8 +14,14 @@
 #include <QUrl>
 
 #include <cstdlib>
+#include <cstdint>
+#include <cstring>
 #include <future>
 #include <iostream>
+
+#if defined(Q_OS_WIN) || defined(_WIN32)
+#include <windows.h>
+#endif
 
 namespace {
 void require(bool condition, const char* message) {
@@ -341,6 +347,42 @@ void formattedTextUsesOwningDisplayDevicePixelRatio() {
                               standard->formattedDocument->textWidth()),
             "display DPR should not change the formatted document's logical layout size");
 }
+
+#if defined(Q_OS_WIN) || defined(_WIN32)
+void nativeDibSnapshotDecodesOffClipboard() {
+    BITMAPV5HEADER header{};
+    header.bV5Size = sizeof(BITMAPV5HEADER);
+    header.bV5Width = 2;
+    header.bV5Height = 2;
+    header.bV5Planes = 1;
+    header.bV5BitCount = 32;
+    header.bV5Compression = BI_BITFIELDS;
+    header.bV5RedMask = 0x00ff0000;
+    header.bV5GreenMask = 0x0000ff00;
+    header.bV5BlueMask = 0x000000ff;
+    header.bV5AlphaMask = 0xff000000;
+    QByteArray bytes(static_cast<int>(sizeof(BITMAPV5HEADER) + 16), 0);
+    std::memcpy(bytes.data(), &header, sizeof(header));
+    auto* pixels = reinterpret_cast<std::uint32_t*>(bytes.data() + sizeof(header));
+    pixels[0] = 0xff0000ff; // bottom row: blue, red
+    pixels[1] = 0xffff0000;
+    pixels[2] = 0xff00ff00; // top row: green, white
+    pixels[3] = 0xffffffff;
+
+    ScreenshotClipboardContentSnapshot snapshot;
+    snapshot.devicePixelRatio = 1.0;
+    snapshot.nativeDib = ScreenshotClipboardNativeDib{
+        std::move(bytes), QSize(2, 2), ScreenshotClipboardNativeDibFormat::DibV5};
+    const auto decoded = ScreenshotClipboardContentReader::decode(std::move(snapshot));
+    require(decoded.has_value() && decoded->image.size() == QSize(2, 2),
+            "native DIB snapshot should decode into an image");
+    require(decoded->image.pixelColor(0, 0) == QColor(Qt::green) &&
+                decoded->image.pixelColor(1, 0) == QColor(Qt::white) &&
+                decoded->image.pixelColor(0, 1) == QColor(Qt::blue) &&
+                decoded->image.pixelColor(1, 1) == QColor(Qt::red),
+            "native DIB snapshot should preserve orientation and channels");
+}
+#endif
 } // namespace
 
 int main(int argc, char** argv) {
@@ -359,5 +401,8 @@ int main(int argc, char** argv) {
     formattedTextBackgroundFollowsApplicationTheme();
     htmlSourceBackgroundOverridesApplicationTheme();
     formattedTextUsesOwningDisplayDevicePixelRatio();
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    nativeDibSnapshotDecodesOffClipboard();
+#endif
     return 0;
 }

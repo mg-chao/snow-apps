@@ -24,6 +24,7 @@
 #include <QPointer>
 #include <QThread>
 #include <QSet>
+#include <QTimer>
 
 #include <algorithm>
 #include <atomic>
@@ -901,6 +902,10 @@ struct ScreenshotScrollingCaptureController::Impl {
         pendingResultRequestId.reset();
         mailbox->reset(generation);
         latestOutputSize = {};
+        cachedSnapshot = {};
+        cachedSnapshotTop = -1;
+        cachedSnapshotBottom = -1;
+        cachedSnapshotGeneration = 0;
 
         const quint64 requestGeneration = generation;
         const QRect requestSelection = canvasSelection;
@@ -931,6 +936,10 @@ struct ScreenshotScrollingCaptureController::Impl {
         pendingResultRequestId.reset();
         mailbox->reset(generation);
         latestOutputSize = {};
+        cachedSnapshot = {};
+        cachedSnapshotTop = -1;
+        cachedSnapshotBottom = -1;
+        cachedSnapshotGeneration = 0;
         canvasSelection = {};
 
         if (worker != nullptr) {
@@ -1211,6 +1220,10 @@ struct ScreenshotScrollingCaptureController::Impl {
                                                 result.addedRows, result.previewReplaced,
                                                 result.replacedPreviewRows);
         latestOutputSize = result.sourceSize;
+        cachedSnapshot = {};
+        cachedSnapshotTop = -1;
+        cachedSnapshotBottom = -1;
+        cachedSnapshotGeneration = 0;
     }
 
     QSize trimmedSize() const {
@@ -1359,6 +1372,19 @@ struct ScreenshotScrollingCaptureController::Impl {
         if (!trim.isValid()) {
             return false;
         }
+        if (cachedSnapshot.isValid() && cachedSnapshotGeneration == generation &&
+            cachedSnapshotTop == trim.top && cachedSnapshotBottom == trim.bottom) {
+            SNOW_SHOT_PIN_PERF_COUNTER("scrolling.snapshot_cache_hit", 1);
+            const QPointer<ScreenshotScrollingCaptureController> receiver(&owner);
+            QTimer::singleShot(0, &owner, [receiver, cached = cachedSnapshot,
+                                            callback = std::move(callback)]() mutable {
+                if (!receiver.isNull() && receiver->m_impl != nullptr &&
+                    receiver->m_impl->active) {
+                    callback(std::move(cached));
+                }
+            });
+            return true;
+        }
         const quint64 requestGeneration = generation;
         const quint64 requestId = ++nextResultRequestId;
         pendingResultRequestId = requestId;
@@ -1377,7 +1403,7 @@ struct ScreenshotScrollingCaptureController::Impl {
                 }
                 static_cast<void>(QMetaObject::invokeMethod(
                     receiver,
-                    [receiver, requestId, requestGeneration, result = std::move(result),
+                    [receiver, requestId, requestGeneration, trim, result = std::move(result),
                      callback = std::move(callback)]() mutable {
                         if (receiver.isNull() || receiver->m_impl == nullptr ||
                             (receiver->m_impl->pendingResultRequestId != requestId &&
@@ -1394,6 +1420,12 @@ struct ScreenshotScrollingCaptureController::Impl {
                         if (!detached && (!receiver->m_impl->active ||
                                           receiver->m_impl->generation != requestGeneration)) {
                             return;
+                        }
+                        if (result.isValid()) {
+                            receiver->m_impl->cachedSnapshot = result;
+                            receiver->m_impl->cachedSnapshotTop = trim.top;
+                            receiver->m_impl->cachedSnapshotBottom = trim.bottom;
+                            receiver->m_impl->cachedSnapshotGeneration = requestGeneration;
                         }
                         callback(std::move(result));
                     },
@@ -1418,6 +1450,10 @@ struct ScreenshotScrollingCaptureController::Impl {
     QPointer<ScreenshotOverlayWindow> excludedOverlay;
     QPointer<ScreenshotToolbarWindow> excludedToolbar;
     QSize latestOutputSize;
+    ScreenshotScrollingSnapshot cachedSnapshot;
+    int cachedSnapshotTop = -1;
+    int cachedSnapshotBottom = -1;
+    quint64 cachedSnapshotGeneration = 0;
     std::optional<quint64> pendingResultRequestId;
     QSet<quint64> detachedResultRequestIds;
     QRect canvasSelection;

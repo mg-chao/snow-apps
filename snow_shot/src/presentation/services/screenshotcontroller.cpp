@@ -1684,11 +1684,14 @@ void ScreenshotController::Impl::detachCaptureForExport(ExportDetachMode mode) {
 }
 
 void ScreenshotController::Impl::scheduleDeferredExportCleanup() {
+    SNOW_SHOT_PIN_PERF_MILESTONE("cleanup.schedule_deferred");
     const QPointer<ScreenshotController> receiver(&owner);
     QTimer::singleShot(0, &owner, [receiver]() {
         if (!receiver.isNull() && receiver->m_impl != nullptr &&
             receiver->m_impl->m_captureWorkflow != nullptr) {
+            SNOW_SHOT_PIN_PERF_MILESTONE("cleanup.deferred_started");
             receiver->m_impl->m_captureWorkflow->completeDeferredExportCleanup();
+            SNOW_SHOT_PIN_PERF_MILESTONE("cleanup.deferred_finished");
         }
     });
 }
@@ -2050,14 +2053,19 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
         return;
     }
 
+    SNOW_SHOT_PIN_PERF_BEGIN("clipboard-input", 0, 0);
+    SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.input_started");
     const auto perfReaderStarted = std::chrono::steady_clock::now();
+    SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.snapshot_started");
     auto snapshot = ScreenshotClipboardContentReader::snapshot(QApplication::clipboard(),
                                                                screen->devicePixelRatio());
     const qint64 perfReaderNanoseconds =
         std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - perfReaderStarted)
             .count();
+    SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.snapshot_finished");
     if (!snapshot.has_value()) {
+        SNOW_SHOT_PIN_PERF_FINISH(false);
         qWarning("Clipboard content could not be pinned");
         m_messages->error(QString::fromLatin1(kPinClipboardMessageKey),
                           QCoreApplication::translate(
@@ -2068,8 +2076,10 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
 
     const bool clipboardFastPath = snapshot->encodedImages.isEmpty() &&
                                    !snapshot->localImage.has_value() &&
-                                   !snapshot->detachedImage.isNull() &&
-                                   !snapshot->detachedImage.size().isEmpty();
+                                   ((snapshot->nativeDib.has_value() &&
+                                     snapshot->nativeDib->isValid()) ||
+                                    (!snapshot->detachedImage.isNull() &&
+                                     !snapshot->detachedImage.size().isEmpty()));
     const char* perfScenario = !snapshot->encodedImages.isEmpty()
                                    ? "clipboard-image-encoded"
                                    : clipboardFastPath
@@ -2078,8 +2088,9 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
                                                ? "clipboard-file-image"
                                                : !snapshot->html.isEmpty() ? "clipboard-html"
                                                                            : "clipboard-text";
-    SNOW_SHOT_PIN_PERF_BEGIN(perfScenario, snapshot->detachedImage.width(),
-                             snapshot->detachedImage.height());
+    const QSize nativeSize = snapshot->nativeDib.has_value() ? snapshot->nativeDib->size
+                                                               : snapshot->detachedImage.size();
+    SNOW_SHOT_PIN_PERF_DESCRIPTOR(perfScenario, nativeSize.width(), nativeSize.height());
     SNOW_SHOT_PIN_PERF_MILESTONE("controller.enter");
     SNOW_SHOT_PIN_PERF_COUNTER("clipboard.reader_snapshot_ns", perfReaderNanoseconds);
 
@@ -2092,18 +2103,18 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
     // runs asynchronously. Encoded, file-backed, and text payloads continue
     // through the decode-first path below because their size is not known yet.
     if (clipboardFastPath) {
-        const QImage placeholder = snapshot->detachedImage;
         const ScreenshotPinnedImageFit fit =
             autoResizeWindow
                 ? ScreenshotGeometryMapper::fitImageToAvailableGeometry(
-                      placeholder.size(), screen->availableGeometry(), screen->geometry(),
+                      nativeSize, screen->availableGeometry(), screen->geometry(),
                       ScreenshotGeometryMapper::physicalRectForScreen(*screen), 16)
                     : ScreenshotGeometryMapper::centerImageAtFullResolution(
-                          placeholder.size(), screen->availableGeometry(), screen->geometry(),
+                          nativeSize, screen->availableGeometry(), screen->geometry(),
                           ScreenshotGeometryMapper::physicalRectForScreen(*screen));
         SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.fit_computed");
         const QPointer<ScreenshotController> receiver(&owner);
         const QPointer<QScreen> guardedScreen(screen);
+        const bool nativeSnapshot = snapshot->nativeDib.has_value();
         const ScreenshotImageLoader imageLoader =
             [receiver, guardedScreen, generation, snapshot = std::move(*snapshot)](
                 QObject* windowReceiver, ScreenshotImageLoadCallback callback) mutable {
@@ -2118,6 +2129,9 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
                             std::move(snapshot), [&cancellation]() {
                                 return cancellation.isCancellationRequested();
                             });
+                        if (content->has_value() && content->value().isValid()) {
+                            SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.decode_finished");
+                        }
                         if (!content->has_value() || !content->value().isValid()) {
                             return ScreenshotExportTaskResult::failure(
                                 cancellation.isCancellationRequested()
@@ -2158,7 +2172,8 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
         const bool presented = fit.valid &&
                                m_selectionExportUiServices != nullptr &&
                                m_selectionExportUiServices->presentPinnedImage(
-                                   placeholder, screen, fit.nativeGeometry, fit.fullResolutionSize,
+                                   nativeSnapshot ? QImage{} : snapshot->detachedImage,
+                                   screen, fit.nativeGeometry, fit.fullResolutionSize,
                                    {}, {}, 1.0, {}, imageLoader,
                                    [receiver, generation](bool success, QImage) {
                                        SNOW_SHOT_PIN_PERF_MILESTONE(

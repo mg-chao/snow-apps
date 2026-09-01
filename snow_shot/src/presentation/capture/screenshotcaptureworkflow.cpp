@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/screenshotcaptureworkflow.h"
 
 #include "screenshotcaptureperfinstrumentation.h"
+#include "../pinned/screenshotpintoperfinstrumentation.h"
 #include "snow_shot/presentation/screenshotcapturedisplaymodelreconciler.h"
 #include "snow_shot/presentation/screenshotcapturestate.h"
 #include "snow_shot/presentation/screenshotdisplaysession.h"
@@ -135,9 +136,15 @@ void ScreenshotCaptureWorkflow::cancelCapture() {
 }
 
 void ScreenshotCaptureWorkflow::cancelCaptureForExport() {
+    SNOW_SHOT_PIN_PERF_SCOPE("cleanup.cancel_capture_for_export");
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("workflow.export_cancel_requested");
-    m_context.runtime.cancelActiveCapture();
+    SNOW_SHOT_PIN_PERF_MILESTONE("cleanup.export_cancel_started");
+    {
+        SNOW_SHOT_PIN_PERF_SCOPE("cleanup.cancel_active_capture");
+        m_context.runtime.cancelActiveCapture();
+    }
     if (m_context.captureTerminated) {
+        SNOW_SHOT_PIN_PERF_SCOPE("cleanup.capture_terminated");
         m_context.captureTerminated();
     }
     ++m_state.sessionId;
@@ -174,21 +181,35 @@ void ScreenshotCaptureWorkflow::clearDisplays() {
 }
 
 void ScreenshotCaptureWorkflow::finishCaptureSession(bool deferExportCleanup) {
-    m_context.runtime.releaseSelectorCache();
+    SNOW_SHOT_PIN_PERF_SCOPE("cleanup.finish_capture_session");
     if (deferExportCleanup) {
+        SNOW_SHOT_PIN_PERF_SCOPE("cleanup.hide_overlays_immediately");
         m_context.runtime.hideOverlayWindowsImmediately(m_context.displaySession);
     } else {
-        m_context.runtime.hideOverlayWindows(m_context.displaySession);
+        {
+            SNOW_SHOT_PIN_PERF_SCOPE("cleanup.release_selector_cache");
+            m_context.runtime.releaseSelectorCache();
+        }
+        {
+            SNOW_SHOT_PIN_PERF_SCOPE("cleanup.hide_overlays");
+            m_context.runtime.hideOverlayWindows(m_context.displaySession);
+        }
+        if (m_context.presentation.hideToolbar) {
+            SNOW_SHOT_PIN_PERF_SCOPE("cleanup.hide_toolbar");
+            m_context.presentation.hideToolbar();
+        }
+        {
+            SNOW_SHOT_PIN_PERF_SCOPE("cleanup.clear_displays");
+            clearDisplays();
+        }
+        {
+            SNOW_SHOT_PIN_PERF_SCOPE("cleanup.reset_runtime");
+            m_context.runtime.resetForNewCapture(m_context.displaySession);
+        }
+        m_deferredExportCleanup = false;
     }
-    if (m_context.presentation.hideToolbar) {
-        m_context.presentation.hideToolbar();
-    }
-    clearDisplays();
     if (deferExportCleanup) {
         m_deferredExportCleanup = true;
-    } else {
-        m_context.runtime.resetForNewCapture(m_context.displaySession);
-        m_deferredExportCleanup = false;
     }
     m_state.sessionState = ScreenshotSessionState::IdlePrepared;
 }
@@ -197,11 +218,25 @@ void ScreenshotCaptureWorkflow::completeDeferredExportCleanup() {
     if (!m_deferredExportCleanup) {
         return;
     }
-    m_context.runtime.resetForNewCapture(m_context.displaySession);
+    SNOW_SHOT_PIN_PERF_SCOPE("cleanup.deferred_export_cleanup");
+    {
+        SNOW_SHOT_PIN_PERF_SCOPE("cleanup.release_selector_cache");
+        m_context.runtime.releaseSelectorCache();
+    }
+    {
+        SNOW_SHOT_PIN_PERF_SCOPE("cleanup.clear_displays");
+        clearDisplays();
+    }
+    {
+        SNOW_SHOT_PIN_PERF_SCOPE("cleanup.reset_runtime");
+        m_context.runtime.resetForNewCapture(m_context.displaySession);
+    }
     if (!m_canvasRuntimeClean) {
+        SNOW_SHOT_PIN_PERF_SCOPE("cleanup.reset_canvas_runtime");
         resetCanvasRuntimeState();
     }
     if (m_context.presentation.hideToolbar) {
+        SNOW_SHOT_PIN_PERF_SCOPE("cleanup.hide_toolbar");
         m_context.presentation.hideToolbar();
     }
     m_deferredExportCleanup = false;

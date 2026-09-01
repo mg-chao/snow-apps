@@ -6,6 +6,7 @@
 #include <QDateTime>
 #include <QImage>
 #include <QList>
+#include <QSize>
 #include <QString>
 
 #include <functional>
@@ -61,8 +62,24 @@ struct ScreenshotClipboardLocalImage final {
     QDateTime lastModifiedUtc;
 };
 
+enum class ScreenshotClipboardNativeDibFormat {
+    Dib,
+    DibV5,
+};
+
+struct ScreenshotClipboardNativeDib final {
+    QByteArray bytes;
+    QSize size;
+    ScreenshotClipboardNativeDibFormat format = ScreenshotClipboardNativeDibFormat::Dib;
+
+    [[nodiscard]] bool isValid() const {
+        return !bytes.isEmpty() && size.isValid() && !size.isEmpty();
+    }
+};
+
 struct ScreenshotClipboardContentSnapshot final {
     QList<ScreenshotClipboardEncodedImage> encodedImages;
+    std::optional<ScreenshotClipboardNativeDib> nativeDib;
     QImage detachedImage;
     std::optional<ScreenshotClipboardLocalImage> localImage;
     QString html;
@@ -71,7 +88,8 @@ struct ScreenshotClipboardContentSnapshot final {
     qreal devicePixelRatio = 1.0;
 
     [[nodiscard]] bool isValid() const {
-        return !encodedImages.isEmpty() || !detachedImage.isNull() || localImage.has_value() ||
+        return !encodedImages.isEmpty() || (nativeDib.has_value() && nativeDib->isValid()) ||
+               !detachedImage.isNull() || localImage.has_value() ||
                !html.isEmpty() || !text.isEmpty();
     }
 };

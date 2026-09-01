@@ -644,10 +644,13 @@ struct ScenarioSeries final {
     QHash<QString, QVector<double>> stages;
     QHash<QString, QVector<double>> spans;
     QHash<QString, QVector<double>> counters;
+    QHash<QString, QVector<double>> postFirstFrameCompletion;
     QVector<double> endToEnd;
     QVector<double> workingSet;
     QVector<double> peakWorkingSet;
     QVector<double> materializationMegabytes;
+    QVector<double> inputToFirstContentFrame;
+    QVector<double> decodeToFirstContentFrame;
     QVector<double> firstContentFrameResidual;
     int shellHits = 0;
     int samples = 0;
@@ -673,6 +676,10 @@ void accumulateRecord(ScenarioSeries& series, const QJsonObject& record) {
         if (completion.has_value() && *firstContentFrame > *completion) {
             throw std::runtime_error("first content frame occurred after destination completion");
         }
+        if (completion.has_value()) {
+            series.postFirstFrameCompletion[completionKey].push_back(
+                (*completion - *firstContentFrame) / 1e6);
+        }
     }
     ++series.samples;
     series.endToEnd.push_back(record.value(QStringLiteral("end_to_end_ns")).toDouble() / 1e6);
@@ -688,6 +695,13 @@ void accumulateRecord(ScenarioSeries& series, const QJsonObject& record) {
     }
     const std::optional<double> renderFinished =
         milestoneValue(QStringLiteral("export.render_finished"));
+    series.inputToFirstContentFrame.push_back(*firstContentFrame / 1e6);
+    const std::optional<double> decodeFinished =
+        milestoneValue(QStringLiteral("clipboard.decode_finished"));
+    if (decodeFinished.has_value()) {
+        series.decodeToFirstContentFrame.push_back(
+            (*firstContentFrame - *decodeFinished) / 1e6);
+    }
     if (renderFinished.has_value()) {
         series.firstContentFrameResidual.push_back(
             (*firstContentFrame - *renderFinished) / 1e6);
@@ -755,16 +769,27 @@ QJsonObject coreReport(const ScenarioSeries& series) {
     add(QStringLiteral("end_to_end"), series.endToEnd);
     add(QStringLiteral("residual_first_content_frame_after_export"),
         series.firstContentFrameResidual);
+    add(QStringLiteral("input_to_first_content_frame"), series.inputToFirstContentFrame);
+    add(QStringLiteral("decode_to_first_content_frame"), series.decodeToFirstContentFrame);
     const QStringList milestoneKeys{
         QStringLiteral("controller.enter"), QStringLiteral("window.hwnd_created"),
         QStringLiteral("window.before_show"), QStringLiteral("window.show_returned"),
         QStringLiteral("window.shell_visible"), QStringLiteral("window.first_content_frame"),
-        QStringLiteral("window.canvas_repainted"), QStringLiteral("export.render_started"),
+        QStringLiteral("window.first_frame.update"),
+        QStringLiteral("window.first_frame.update_finished"),
+        QStringLiteral("window.canvas_repainted"),
+        QStringLiteral("window.native_paint_synchronized"),
+        QStringLiteral("window.recognition_target_ready"),
+        QStringLiteral("window.controls_ready"), QStringLiteral("export.render_started"),
         QStringLiteral("export.dispatch_started"), QStringLiteral("export.render_finished"),
         QStringLiteral("export.result_published"),
         QStringLiteral("controller.snapshot_ready"),
         QStringLiteral("controller.materialize_started"),
         QStringLiteral("clipboard.decode_started"), QStringLiteral("clipboard.decode_finished"),
+        QStringLiteral("clipboard.input_started"), QStringLiteral("clipboard.snapshot_started"),
+        QStringLiteral("clipboard.snapshot_finished"),
+        QStringLiteral("clipboard.native_dib_copied"),
+        QStringLiteral("clipboard.native_dib_decoded"),
         QStringLiteral("controller.presentation_complete")};
     for (const QString& key : milestoneKeys) {
         add(QStringLiteral("time_to_") + key, series.milestones.value(key));
@@ -776,13 +801,31 @@ QJsonObject coreReport(const ScenarioSeries& series) {
         QStringLiteral("export.scrolling_trimmed_snapshot"),
         QStringLiteral("export.materialize_scrolling_snapshot"),
         QStringLiteral("clipboard.reader_snapshot"),
+        QStringLiteral("clipboard.decode_native_dib"),
         QStringLiteral("clipboard.decode_file_image"),
         QStringLiteral("clipboard.decode_html_document"),
         QStringLiteral("clipboard.html_document_layout"),
         QStringLiteral("clipboard.html_document_render"),
         QStringLiteral("clipboard.decode_detached_image"),
         QStringLiteral("ui.present_pinned_selection"), QStringLiteral("ui.present_pinned_image"),
-        QStringLiteral("window.present"), QStringLiteral("window.materialize_image")};
+        QStringLiteral("window.present"), QStringLiteral("window.materialize_image"),
+        QStringLiteral("window.finish_materialized_image"),
+        QStringLiteral("window.publish_materialized_image"), QStringLiteral("window.install_image"),
+        QStringLiteral("window.install_normalize"), QStringLiteral("window.install_renderer_source"),
+        QStringLiteral("window.install_renderer"), QStringLiteral("window.install_recognition"),
+        QStringLiteral("window.first_frame.repaint"), QStringLiteral("window.first_frame.native_sync"),
+        QStringLiteral("window.publish.first_frame.repaint"),
+        QStringLiteral("window.publish.first_frame.native_sync"),
+        QStringLiteral("window.finish.first_frame.repaint"),
+        QStringLiteral("window.finish.first_frame.native_sync"),
+        QStringLiteral("cleanup.cancel_capture_for_export"),
+        QStringLiteral("cleanup.cancel_active_capture"), QStringLiteral("cleanup.capture_terminated"),
+        QStringLiteral("cleanup.finish_capture_session"),
+        QStringLiteral("cleanup.hide_overlays_immediately"),
+        QStringLiteral("cleanup.deferred_export_cleanup"),
+        QStringLiteral("cleanup.release_selector_cache"), QStringLiteral("cleanup.clear_displays"),
+        QStringLiteral("cleanup.reset_runtime"), QStringLiteral("cleanup.reset_canvas_runtime"),
+        QStringLiteral("cleanup.hide_toolbar")};
     for (const QString& key : spanKeys) {
         add(QStringLiteral("duration_") + key, series.spans.value(key));
     }
@@ -797,6 +840,10 @@ QJsonObject coreReport(const ScenarioSeries& series) {
     for (const QString& key : stageKeys) {
         add(QStringLiteral("stage_") + key, series.stages.value(key));
     }
+    for (auto iterator = series.postFirstFrameCompletion.cbegin();
+         iterator != series.postFirstFrameCompletion.cend(); ++iterator) {
+        add(QStringLiteral("post_first_content_frame_to_") + iterator.key(), iterator.value());
+    }
     return core;
 }
 
@@ -808,7 +855,7 @@ QJsonObject firstContentFrameAcceptance(const ScenarioSeries& series) {
              QStringLiteral("first_content_frame_minus_export_render_finished")},
             {QStringLiteral("target_p95_ms"), targetP95Milliseconds},
             {QStringLiteral("p95_ms"), p95},
-            {QStringLiteral("passed"), series.firstContentFrameResidual.isEmpty() ||
+            {QStringLiteral("passed"), !series.firstContentFrameResidual.isEmpty() &&
                                            p95 <= targetP95Milliseconds},
             {QStringLiteral("applicable"), !series.firstContentFrameResidual.isEmpty()},
             {QStringLiteral("samples"), series.firstContentFrameResidual.size()}};
@@ -856,6 +903,7 @@ struct BenchmarkConfiguration {
     int scrollDistance = 96;
     int scrollSettleMilliseconds = 700;
     QSize clipboardImageSize{1920, 1080};
+    QString paintMode = QStringLiteral("control");
 };
 
 void invokeQuickScreenshot(IUIAutomation& automation, const ChildProcess& child, int timeout) {
@@ -1091,6 +1139,13 @@ int run(const QCommandLineParser& parser) {
             .split(QLatin1Char('x'), Qt::SkipEmptyParts);
     require(sizeParts.size() == 2, "invalid --clipboard-image-size (expected WxH)");
     configuration.clipboardImageSize = {sizeParts.at(0).toInt(), sizeParts.at(1).toInt()};
+    configuration.paintMode = parser.value(QStringLiteral("paint-mode"));
+    if (configuration.paintMode == QStringLiteral("single-paint")) {
+        configuration.paintMode = QStringLiteral("single");
+    }
+    require(configuration.paintMode == QStringLiteral("control") ||
+                configuration.paintMode == QStringLiteral("single"),
+            "invalid --paint-mode (expected control or single-paint)");
     configuration.scenarios =
         parser.value(QStringLiteral("scenarios"))
             .split(QLatin1Char(','), Qt::SkipEmptyParts);
@@ -1126,6 +1181,7 @@ int run(const QCommandLineParser& parser) {
         QDir(configuration.output).filePath(QStringLiteral("app-trace.jsonl"));
     QFile::remove(tracePath);
     _putenv_s("SNOW_SHOT_PIN_PERF_TRACE", tracePath.toLocal8Bit().constData());
+    _putenv_s("SNOW_SHOT_PIN_PERF_PAINT_MODE", configuration.paintMode.toLocal8Bit().constData());
     ScopedCom com; require(SUCCEEDED(com.result()), "COM initialization failed");
     auto automation = createAutomation();
     ChildProcess child; require(child.start(configuration.appPath), "could not start snow_shot");
@@ -1229,7 +1285,7 @@ int run(const QCommandLineParser& parser) {
         scenarioReports.append(scenarioReport(scenario, series));
     }
     const QJsonObject report{
-        {QStringLiteral("schema_version"), 2},
+        {QStringLiteral("schema_version"), 3},
         {QStringLiteral("benchmark"), QStringLiteral("screenshot_pin_to_screen")},
         {QStringLiteral("generated_utc"),
          QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)},
@@ -1238,6 +1294,7 @@ int run(const QCommandLineParser& parser) {
         {QStringLiteral("screen_index"), configuration.screenIndex},
         {QStringLiteral("scroll_steps"), configuration.scrollSteps},
         {QStringLiteral("scroll_distance"), configuration.scrollDistance},
+        {QStringLiteral("paint_mode"), configuration.paintMode},
         {QStringLiteral("clipboard_image"),
          QJsonObject{{QStringLiteral("width"), payloads.imageSize.width()},
                      {QStringLiteral("height"), payloads.imageSize.height()},
@@ -1286,6 +1343,7 @@ int main(int argc, char** argv) {
     parser.addOption({QStringLiteral("scroll-distance"), QStringLiteral("scroll distance per step in pixels"), QStringLiteral("pixels"), QStringLiteral("96")});
     parser.addOption({QStringLiteral("scroll-settle-ms"), QStringLiteral("settle time after each scroll step"), QStringLiteral("milliseconds"), QStringLiteral("700")});
     parser.addOption({QStringLiteral("clipboard-image-size"), QStringLiteral("clipboard image size"), QStringLiteral("WxH"), QStringLiteral("1920x1080")});
+    parser.addOption({QStringLiteral("paint-mode"), QStringLiteral("paint sequence (control or single-paint)"), QStringLiteral("mode"), QStringLiteral("control")});
     parser.addOption({QStringLiteral("self-test"), QStringLiteral("run report self-tests")});
     parser.process(application);
     try {

@@ -161,6 +161,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     void requestMaterializedImage(MaterializationCallback callback);
     void finishMaterializedImage(ScreenshotExportTaskResult result);
     bool installMaterializedImage(QImage image);
+    void configureRecognitionTarget();
+    void scheduleDeferredPresentationSetup();
+    void finishDeferredPresentationSetup(quint64 generation);
     void finishPresentation(bool succeeded, QImage image = {});
     void commitClipboardPayload(ScreenshotClipboardPayload payload);
     void ensureEditController();
@@ -247,6 +250,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_materializationLoading = false;
     bool m_pendingImage = false;
     bool m_firstContentFramePublished = false;
+    bool m_recognitionTargetReady = false;
+    bool m_deferredPresentationSetupScheduled = false;
+    quint64 m_presentationGeneration = 0;
     SnowCanvasWidget* m_canvas = nullptr;
     std::unique_ptr<ScreenshotCanvasRenderer> m_screenshotRenderer;
     QFrame* m_borderFrame = nullptr;
