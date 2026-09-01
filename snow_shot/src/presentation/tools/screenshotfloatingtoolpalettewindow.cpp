@@ -254,6 +254,37 @@ void ScreenshotFloatingToolPaletteWindow::prepareForDisplay() {
     }
 }
 
+void ScreenshotFloatingToolPaletteWindow::releaseNativeSurface() {
+    endKeyboardFocusInteraction();
+    cancelDrag();
+    hide();
+
+    if (internalWinId() == 0 && !testAttribute(Qt::WA_WState_Created)) {
+        return;
+    }
+
+    // Keep the palette QObject graph and all signal wiring reusable while
+    // releasing the native window, child native surfaces, and backing store.
+    destroy(true, true);
+}
+
+void ScreenshotFloatingToolPaletteWindow::restoreNativeSurface() {
+    if (internalWinId() != 0 && testAttribute(Qt::WA_WState_Created)) {
+        return;
+    }
+
+    applyWindowAttributes();
+    resetPhysicalSizeInvariant();
+    const WId paletteWindowId = winId();
+    if (m_transientOwnerWindow != nullptr) {
+        setTransientOwnerWindow(m_transientOwnerWindow.data());
+    } else {
+        native::setNativePaletteOwner(paletteWindowId, parentWidget());
+    }
+    applyPlacementScreen();
+    hide();
+}
+
 void ScreenshotFloatingToolPaletteWindow::resetPhysicalSizeInvariant() {
     if (m_dpiController != nullptr) {
         m_dpiController->resetBaseline();

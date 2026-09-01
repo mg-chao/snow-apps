@@ -62,6 +62,7 @@ class ScreenshotOverlayUiHost final {
     [[nodiscard]] bool stepToolbarWatermarkFontSize(int direction);
     void resetToolbarForNewCapture();
     void hideToolbar();
+    void releaseToolbarNativeSurface();
     void showToolbar();
     void raiseToolbar();
     void hideSelectionToolbar();

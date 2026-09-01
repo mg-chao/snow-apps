@@ -2867,17 +2867,10 @@ void ScreenshotPinnedWindow::ensureEditController() {
                 }
                 updateControlsGeometry();
             });
+    connect(m_editController, &ScreenshotPinnedEditController::toolbarCreated, this,
+            &ScreenshotPinnedWindow::configureEditToolbar);
 
-    if (m_editController->toolbarWindow() != nullptr) {
-        if (ScreenshotToolPalette* toolbar = m_editController->toolbarWindow()->palette()) {
-            connect(toolbar, &ScreenshotToolPalette::saveRequested, this,
-                    &ScreenshotPinnedWindow::saveAsFile);
-            connect(toolbar, &ScreenshotToolPalette::copyRequested, this,
-                    &ScreenshotPinnedWindow::copyEditToolbarContent);
-        }
-    }
-
-    if (m_recognitionSession != nullptr && m_editController->toolbarWindow() != nullptr) {
+    if (m_recognitionSession != nullptr) {
         connect(m_editController, &ScreenshotPinnedEditController::textRecognitionRequested, this,
                 [this]() {
                     m_translateAfterRecognition = false;
@@ -2898,53 +2891,65 @@ void ScreenshotPinnedWindow::ensureEditController() {
                 });
         connect(m_editController, &ScreenshotPinnedEditController::textTranslationRequested, this,
                 &ScreenshotPinnedWindow::activateTextTranslation);
-        if (ScreenshotToolPalette* toolbar = m_editController->toolbarWindow()->palette()) {
-            connect(toolbar, &ScreenshotToolPalette::textEditRequested, this,
-                    &ScreenshotPinnedWindow::handleTextEditingRequested);
-            connect(toolbar, &ScreenshotToolPalette::textTranslateRequested, this,
-                    &ScreenshotPinnedWindow::handleTextTranslationRequested);
-            connect(toolbar, &ScreenshotToolPalette::textResetRequested, this,
-                    &ScreenshotPinnedWindow::handleTextResetRequested);
-            connect(toolbar, &ScreenshotToolPalette::textSettingsRequested, this,
-                    &ScreenshotPinnedWindow::handleTextSettingsRequested);
-            connect(toolbar, &ScreenshotToolPalette::textFormattingRequested, this,
-                    &ScreenshotPinnedWindow::handleTextFormattingRequested);
-            connect(toolbar, &ScreenshotToolPalette::textPunctuationRequested, this,
-                    &ScreenshotPinnedWindow::handleTextPunctuationRequested);
-            connect(toolbar, &ScreenshotToolPalette::tableMergeRequested, this,
-                    &ScreenshotPinnedWindow::handleTableMergeRequested);
-            connect(toolbar, &ScreenshotToolPalette::tableSplitRequested, this,
-                    &ScreenshotPinnedWindow::handleTableSplitRequested);
-            connect(toolbar, &ScreenshotToolPalette::tableResetRequested, this,
-                    &ScreenshotPinnedWindow::handleTableResetRequested);
-            const auto leaveRecognition = [this]() { deactivateRecognition(); };
-            connect(toolbar, &ScreenshotToolPalette::selectRequested, this, leaveRecognition);
-            connect(toolbar, &ScreenshotToolPalette::shapeRequested, this, leaveRecognition);
-            connect(toolbar, &ScreenshotToolPalette::arrowRequested, this, leaveRecognition);
-            connect(toolbar, &ScreenshotToolPalette::lineRequested, this, leaveRecognition);
-            connect(toolbar, &ScreenshotToolPalette::freeDrawRequested, this, leaveRecognition);
-            connect(toolbar, &ScreenshotToolPalette::highlightRequested, this, leaveRecognition);
-            connect(toolbar, &ScreenshotToolPalette::penHighlightRequested, this, leaveRecognition);
-            connect(toolbar, &ScreenshotToolPalette::spotlightRequested, this, leaveRecognition);
-            connect(toolbar, &ScreenshotToolPalette::eraserRequested, this, leaveRecognition);
-            connect(toolbar, &ScreenshotToolPalette::filterRequested, this, leaveRecognition);
-            connect(toolbar, &ScreenshotToolPalette::rectangleFilterRequested, this,
-                    leaveRecognition);
-            connect(toolbar, &ScreenshotToolPalette::penFilterRequested, this, leaveRecognition);
-            connect(toolbar, &ScreenshotToolPalette::watermarkRequested, this, leaveRecognition);
-            connect(toolbar, &ScreenshotToolPalette::textRequested, this, leaveRecognition);
-            connect(toolbar, &ScreenshotToolPalette::serialNumberRequested, this, leaveRecognition);
-            connect(toolbar, &ScreenshotToolPalette::confirmRequested, this, leaveRecognition);
-            toolbar->setOcrEnabled(m_formattedTextAvailable ||
-                                   (m_ocrSupported && m_recognition != nullptr));
-            toolbar->setTableEnabled(m_ocrSupported && m_tableRecognition != nullptr);
-            toolbar->setQrEnabled(m_ocrSupported && m_qrRecognition != nullptr);
-        }
     }
 
-    m_editController->updatePlacement();
     updateRecognitionToolbarState();
     SNOW_SHOT_PIN_PERF_MILESTONE("window.edit_controller_created");
+}
+
+void ScreenshotPinnedWindow::configureEditToolbar(
+    ScreenshotFloatingToolPaletteWindow* toolbarWindow) {
+    if (toolbarWindow == nullptr || toolbarWindow->palette() == nullptr) {
+        return;
+    }
+
+    ScreenshotToolPalette* toolbar = toolbarWindow->palette();
+    connect(toolbar, &ScreenshotToolPalette::saveRequested, this,
+            &ScreenshotPinnedWindow::saveAsFile);
+    connect(toolbar, &ScreenshotToolPalette::copyRequested, this,
+            &ScreenshotPinnedWindow::copyEditToolbarContent);
+
+    if (m_recognitionSession == nullptr) {
+        return;
+    }
+
+    connect(toolbar, &ScreenshotToolPalette::textEditRequested, this,
+            &ScreenshotPinnedWindow::handleTextEditingRequested);
+    connect(toolbar, &ScreenshotToolPalette::textTranslateRequested, this,
+            &ScreenshotPinnedWindow::handleTextTranslationRequested);
+    connect(toolbar, &ScreenshotToolPalette::textResetRequested, this,
+            &ScreenshotPinnedWindow::handleTextResetRequested);
+    connect(toolbar, &ScreenshotToolPalette::textSettingsRequested, this,
+            &ScreenshotPinnedWindow::handleTextSettingsRequested);
+    connect(toolbar, &ScreenshotToolPalette::textFormattingRequested, this,
+            &ScreenshotPinnedWindow::handleTextFormattingRequested);
+    connect(toolbar, &ScreenshotToolPalette::textPunctuationRequested, this,
+            &ScreenshotPinnedWindow::handleTextPunctuationRequested);
+    connect(toolbar, &ScreenshotToolPalette::tableMergeRequested, this,
+            &ScreenshotPinnedWindow::handleTableMergeRequested);
+    connect(toolbar, &ScreenshotToolPalette::tableSplitRequested, this,
+            &ScreenshotPinnedWindow::handleTableSplitRequested);
+    connect(toolbar, &ScreenshotToolPalette::tableResetRequested, this,
+            &ScreenshotPinnedWindow::handleTableResetRequested);
+    const auto leaveRecognition = [this]() { deactivateRecognition(); };
+    connect(toolbar, &ScreenshotToolPalette::selectRequested, this, leaveRecognition);
+    connect(toolbar, &ScreenshotToolPalette::shapeRequested, this, leaveRecognition);
+    connect(toolbar, &ScreenshotToolPalette::arrowRequested, this, leaveRecognition);
+    connect(toolbar, &ScreenshotToolPalette::lineRequested, this, leaveRecognition);
+    connect(toolbar, &ScreenshotToolPalette::freeDrawRequested, this, leaveRecognition);
+    connect(toolbar, &ScreenshotToolPalette::highlightRequested, this, leaveRecognition);
+    connect(toolbar, &ScreenshotToolPalette::penHighlightRequested, this, leaveRecognition);
+    connect(toolbar, &ScreenshotToolPalette::spotlightRequested, this, leaveRecognition);
+    connect(toolbar, &ScreenshotToolPalette::eraserRequested, this, leaveRecognition);
+    connect(toolbar, &ScreenshotToolPalette::filterRequested, this, leaveRecognition);
+    connect(toolbar, &ScreenshotToolPalette::rectangleFilterRequested, this, leaveRecognition);
+    connect(toolbar, &ScreenshotToolPalette::penFilterRequested, this, leaveRecognition);
+    connect(toolbar, &ScreenshotToolPalette::watermarkRequested, this, leaveRecognition);
+    connect(toolbar, &ScreenshotToolPalette::textRequested, this, leaveRecognition);
+    connect(toolbar, &ScreenshotToolPalette::serialNumberRequested, this, leaveRecognition);
+    connect(toolbar, &ScreenshotToolPalette::confirmRequested, this, leaveRecognition);
+
+    updateRecognitionToolbarState();
 }
 
 void ScreenshotPinnedWindow::setEditMode(bool enabled) {
