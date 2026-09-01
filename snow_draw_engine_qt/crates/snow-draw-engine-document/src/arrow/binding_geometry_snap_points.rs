@@ -85,7 +85,7 @@ pub(super) fn snap_to_mid(
     tolerance: Option<f64>,
     arrow: Option<&ArrowState>,
 ) -> Option<Point> {
-    let shape = canonicalize_bindable_shape(bindable.shape);
+    let shape = bindable.shape;
     let tolerance = tolerance.unwrap_or(0.05);
     let raw_center = center(bindable.x, bindable.y, bindable.width, bindable.height);
     let bindable_center = [raw_center[0] - 0.1, raw_center[1] - 0.1];
@@ -148,7 +148,7 @@ pub(super) fn snap_to_mid(
         ));
     }
 
-    if shape == crate::CanonicalBindableShape::Diamond {
+    if shape == crate::BindableShape::Diamond {
         let offset_threshold = horizontal_threshold.max(vertical_threshold);
         let qx = bindable.width / 4.0;
         let qy = bindable.height / 4.0;
@@ -201,10 +201,10 @@ pub fn get_snap_outline_mid_point(
 }
 
 fn get_diagonal_guide_segments(bindable: &BindableState) -> [LineSegment; 2] {
-    let shape = canonicalize_bindable_shape(bindable.shape);
+    let shape = bindable.shape;
     let c = center(bindable.x, bindable.y, bindable.width, bindable.height);
 
-    if shape == crate::CanonicalBindableShape::Rectangle {
+    if shape == crate::BindableShape::Rectangle {
         let top_left = rotate_point([bindable.x, bindable.y], c, bindable.angle);
         let top_right = rotate_point([bindable.x + bindable.width, bindable.y], c, bindable.angle);
         let bottom_right = rotate_point(

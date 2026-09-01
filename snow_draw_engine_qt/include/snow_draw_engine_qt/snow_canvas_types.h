@@ -47,9 +47,7 @@ enum class SnowCanvasStyleToolbarSource {
     DefaultFreeDraw,
     SelectedFreeDraw,
     DefaultRectangleHighlight,
-    DefaultHighlight = DefaultRectangleHighlight,
     SelectedRectangleHighlight,
-    SelectedHighlight = SelectedRectangleHighlight,
     Eraser,
     DefaultRectangleFilter,
     DefaultFilter = DefaultRectangleFilter,
@@ -89,8 +87,6 @@ enum SnowCanvasSerialNumberStyleMixedFlag : quint32 {
     SnowCanvasSerialNumberStyleMixedFillStyle = 1u << 3,
     SnowCanvasSerialNumberStyleMixedFontSize = 1u << 4,
     SnowCanvasSerialNumberStyleMixedFontFamily = 1u << 5,
-    SnowCanvasSerialNumberStyleMixedStrokeWidth = 1u << 6,
-    SnowCanvasSerialNumberStyleMixedStrokeStyle = 1u << 7,
     SnowCanvasSerialNumberStyleMixedOpacity = 1u << 8,
 };
 
@@ -127,7 +123,6 @@ enum SnowCanvasShapeStyleProperty : quint32 {
     SnowCanvasShapeStylePropertyStrokeStyle = 1u << 7,
     SnowCanvasShapeStylePropertyArrowType = 1u << 8,
     SnowCanvasShapeStylePropertyOpacity = 1u << 9,
-    SnowCanvasShapeStylePropertyHighlightShape = 1u << 10,
     SnowCanvasShapeStylePropertyShape = 1u << 11,
 };
 
@@ -200,12 +195,6 @@ enum class SnowCanvasArrowhead {
     CrowfootOneOrMany,
 };
 
-enum class SnowCanvasArrowStrokeStyle {
-    Solid,
-    Dashed,
-    Dotted,
-};
-
 enum class SnowCanvasArrowType {
     Straight,
     Curve,
@@ -262,7 +251,7 @@ struct SnowCanvasShapeStyle {
     SnowCanvasCornerRadii cornerRadii;
     SnowCanvasArrowhead startArrowhead = SnowCanvasArrowhead::None;
     SnowCanvasArrowhead endArrowhead = SnowCanvasArrowhead::None;
-    SnowCanvasArrowStrokeStyle strokeStyle = SnowCanvasArrowStrokeStyle::Solid;
+    SnowCanvasStrokeStyle strokeStyle = SnowCanvasStrokeStyle::Solid;
     SnowCanvasArrowType arrowType = SnowCanvasArrowType::Straight;
     double opacity = 1.0;
     SnowCanvasHighlightShape highlightShape = SnowCanvasHighlightShape::Rectangle;
@@ -343,7 +332,7 @@ struct SnowCanvasArrowStyle {
     double strokeWidth = 0.0;
     SnowCanvasArrowhead startArrowhead = SnowCanvasArrowhead::None;
     SnowCanvasArrowhead endArrowhead = SnowCanvasArrowhead::None;
-    SnowCanvasArrowStrokeStyle strokeStyle = SnowCanvasArrowStrokeStyle::Solid;
+    SnowCanvasStrokeStyle strokeStyle = SnowCanvasStrokeStyle::Solid;
     SnowCanvasArrowType arrowType = SnowCanvasArrowType::Straight;
 };
 

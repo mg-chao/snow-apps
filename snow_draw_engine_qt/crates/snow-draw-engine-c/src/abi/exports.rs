@@ -59,27 +59,6 @@ pub unsafe extern "C" fn snow_runtime_style_defaults_default(
 /// If `out_runtime` is non-null, it must be valid for writes of one `SnowRuntime` value.
 /// The returned handle must later be released with `snow_runtime_destroy`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_runtime_clone_document_session(
-    source: SnowRuntime,
-    out_runtime: *mut SnowRuntime,
-) -> SnowError {
-    ffi_error(|| {
-        if source.is_null() || out_runtime.is_null() {
-            return SnowError::InvalidArgument;
-        }
-
-        let source = unsafe { &*source };
-        write_out(
-            out_runtime,
-            Box::into_raw(Box::new(SnowRuntimeImpl {
-                runtime: source.runtime.clone_document_session(),
-            })),
-        );
-        SnowError::Ok
-    })
-}
-
-#[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_runtime_clone_document_session_with_config(
     source: SnowRuntime,
     config: *const SnowRuntimeConfig,
@@ -136,31 +115,6 @@ pub unsafe extern "C" fn snow_runtime_serialize_document_session(
             std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, bytes.len());
         }
         SnowError::Ok
-    })
-}
-
-/// Constructs a new runtime from validated session bytes.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_runtime_create_from_document_session(
-    bytes: *const u8,
-    size: usize,
-    out_runtime: *mut SnowRuntime,
-) -> SnowError {
-    ffi_error(|| {
-        if bytes.is_null() || size == 0 || out_runtime.is_null() {
-            return SnowError::InvalidArgument;
-        }
-        let bytes = unsafe { std::slice::from_raw_parts(bytes, size) };
-        match Runtime::from_serialized_document_session(bytes) {
-            Ok(runtime) => {
-                write_out(
-                    out_runtime,
-                    Box::into_raw(Box::new(SnowRuntimeImpl { runtime })),
-                );
-                SnowError::Ok
-            }
-            Err(error) => SnowError::from(error),
-        }
     })
 }
 
@@ -225,32 +179,6 @@ pub unsafe extern "C" fn snow_runtime_serialize_document_history(
     })
 }
 
-/// Constructs a new runtime from validated document-history bytes. Editor and
-/// session configuration state are initialized to their defaults.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_runtime_create_from_document_history(
-    bytes: *const u8,
-    size: usize,
-    out_runtime: *mut SnowRuntime,
-) -> SnowError {
-    ffi_error(|| {
-        if bytes.is_null() || size == 0 || out_runtime.is_null() {
-            return SnowError::InvalidArgument;
-        }
-        let bytes = unsafe { std::slice::from_raw_parts(bytes, size) };
-        match Runtime::from_serialized_document_history(bytes) {
-            Ok(runtime) => {
-                write_out(
-                    out_runtime,
-                    Box::into_raw(Box::new(SnowRuntimeImpl { runtime })),
-                );
-                SnowError::Ok
-            }
-            Err(error) => SnowError::from(error),
-        }
-    })
-}
-
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_runtime_create_from_document_history_with_config(
     bytes: *const u8,
@@ -281,14 +209,6 @@ pub unsafe extern "C" fn snow_runtime_create_from_document_history_with_config(
 }
 
 /// # Safety
-/// If `out_engine` is non-null, it must be valid for writes of one `SnowEngine` value.
-/// The returned handle must later be released with `snow_engine_destroy`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_engine_create(out_engine: *mut SnowEngine) -> SnowError {
-    ffi_error(|| unsafe { snow_runtime_create(out_engine.cast()) })
-}
-
-/// # Safety
 /// If `runtime` is non-null, it must be a live handle returned by `snow_runtime_create`.
 /// The handle must not be used again after this call.
 #[unsafe(no_mangle)]
@@ -300,37 +220,6 @@ pub unsafe extern "C" fn snow_runtime_destroy(runtime: SnowRuntime) {
         unsafe {
             drop(Box::from_raw(runtime));
         }
-    })
-}
-
-/// # Safety
-/// If `engine` is non-null, it must be a live handle returned by `snow_engine_create`.
-/// The handle must not be used again after this call.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_engine_destroy(engine: SnowEngine) {
-    ffi_void(|| unsafe { snow_runtime_destroy(engine) })
-}
-
-/// # Safety
-/// If `runtime` is non-null, it must be a live handle returned by `snow_runtime_create`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_runtime_set_quick_selection_disabled_tools(
-    runtime: SnowRuntime,
-    tools: u64,
-) -> SnowError {
-    ffi_error(|| {
-        let mut changed_viewports = std::ptr::null_mut();
-        let error = unsafe {
-            snow_runtime_set_quick_selection_disabled_tools_ex(
-                runtime,
-                tools,
-                &mut changed_viewports,
-            )
-        };
-        unsafe {
-            snow_changed_viewports_destroy(changed_viewports);
-        }
-        error
     })
 }
 
@@ -501,26 +390,6 @@ pub unsafe extern "C" fn snow_viewport_get_id(
 
 /// # Safety
 /// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_viewport_set_active_tool(
-    runtime: SnowRuntime,
-    viewport: SnowViewport,
-    tool: SnowActiveTool,
-) -> SnowError {
-    ffi_error(|| {
-        let mut changed_viewports = std::ptr::null_mut();
-        let error = unsafe {
-            snow_viewport_set_active_tool_ex(runtime, viewport, tool, &mut changed_viewports)
-        };
-        unsafe {
-            snow_changed_viewports_destroy(changed_viewports);
-        }
-        error
-    })
-}
-
-/// # Safety
-/// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
 /// `out_changed_viewports` must be valid for writes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_viewport_set_active_tool_ex(
@@ -608,27 +477,6 @@ pub unsafe extern "C" fn snow_viewport_get_snap_config(
 /// # Safety
 /// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
 /// `config` must point to a readable `SnowSnapConfig` value.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_viewport_set_snap_config(
-    runtime: SnowRuntime,
-    viewport: SnowViewport,
-    config: *const SnowSnapConfig,
-) -> SnowError {
-    ffi_error(|| {
-        let mut changed_viewports = std::ptr::null_mut();
-        let error = unsafe {
-            snow_viewport_set_snap_config_ex(runtime, viewport, config, &mut changed_viewports)
-        };
-        unsafe {
-            snow_changed_viewports_destroy(changed_viewports);
-        }
-        error
-    })
-}
-
-/// # Safety
-/// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
-/// `config` must point to a readable `SnowSnapConfig` value.
 /// `out_changed_viewports` must be valid for writes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_viewport_set_snap_config_ex(
@@ -684,27 +532,6 @@ pub unsafe extern "C" fn snow_viewport_get_grid_config(
                 Ok(())
             },
         ))
-    })
-}
-
-/// # Safety
-/// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
-/// `config` must point to a readable `SnowGridConfig` value.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_viewport_set_grid_config(
-    runtime: SnowRuntime,
-    viewport: SnowViewport,
-    config: *const SnowGridConfig,
-) -> SnowError {
-    ffi_error(|| {
-        let mut changed_viewports = std::ptr::null_mut();
-        let error = unsafe {
-            snow_viewport_set_grid_config_ex(runtime, viewport, config, &mut changed_viewports)
-        };
-        unsafe {
-            snow_changed_viewports_destroy(changed_viewports);
-        }
-        error
     })
 }
 
@@ -796,6 +623,15 @@ mod session_tests {
     #[test]
     fn session_abi_is_two_pass_and_rejects_bad_input() {
         unsafe {
+            let mut defaults = snow_draw_engine::StyleDefaults::default().into();
+            assert_eq!(
+                snow_runtime_style_defaults_default(&mut defaults),
+                SnowError::Ok
+            );
+            let config = SnowRuntimeConfig {
+                style_defaults: &defaults,
+            };
+
             let mut runtime = std::ptr::null_mut();
             assert_eq!(snow_runtime_create(&mut runtime), SnowError::Ok);
 
@@ -836,9 +672,10 @@ mod session_tests {
             );
             let mut restored = std::ptr::null_mut();
             assert_eq!(
-                snow_runtime_create_from_document_session(
+                snow_runtime_create_from_document_session_with_config(
                     payload.as_ptr(),
                     payload.len(),
+                    &config,
                     &mut restored,
                 ),
                 SnowError::Ok
@@ -868,9 +705,10 @@ mod session_tests {
             );
             let mut history_restored = std::ptr::null_mut();
             assert_eq!(
-                snow_runtime_create_from_document_history(
+                snow_runtime_create_from_document_history_with_config(
                     history_payload.as_ptr(),
                     history_payload.len(),
+                    &config,
                     &mut history_restored,
                 ),
                 SnowError::Ok
@@ -880,9 +718,10 @@ mod session_tests {
             let malformed = br#"{"schemaVersion":999}"#;
             let mut rejected = std::ptr::null_mut();
             assert_ne!(
-                snow_runtime_create_from_document_session(
+                snow_runtime_create_from_document_session_with_config(
                     malformed.as_ptr(),
                     malformed.len(),
+                    &config,
                     &mut rejected,
                 ),
                 SnowError::Ok

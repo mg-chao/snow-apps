@@ -37,7 +37,6 @@ enum class Mutation {
     Camera,
     RenderArea,
     Geometry,
-    LegacyReference,
 };
 
 struct Options {
@@ -145,7 +144,7 @@ void usage(std::ostream& out, const char* program) {
         << "  --scenario <name>       Run one exact scenario\n"
         << "  --warmup <count>        Warmup samples (default: 5)\n"
         << "  --iterations <count>    Measured samples (default: 100)\n"
-        << "  --csv <path>            Write format-v2 CSV results\n"
+        << "  --csv <path>            Write CSV results\n"
         << "  --list                  List scenarios\n"
         << "  --help, -h              Show help\n";
 }
@@ -178,22 +177,6 @@ std::vector<Scenario> scenarios() {
                 scenario.dpr = dpr;
                 scenario.cutoutCount = count;
                 scenario.compactExposure = width == 3840 && dpr == 2.0;
-                out.push_back(scenario);
-            }
-        }
-    }
-    for (const auto [width, height] : {std::pair{1920, 1080}, std::pair{3840, 2160}}) {
-        for (double dpr : {1.0, 2.0}) {
-            for (int count : {1, 16, 128}) {
-                Scenario scenario;
-                scenario.name = "legacy_reference_" + std::to_string(width) + "x" +
-                                std::to_string(height) + "_dpr" + dprLabel(dpr) + "_cutouts" +
-                                std::to_string(count);
-                scenario.width = width;
-                scenario.height = height;
-                scenario.dpr = dpr;
-                scenario.cutoutCount = count;
-                scenario.mutation = Mutation::LegacyReference;
                 out.push_back(scenario);
             }
         }
@@ -281,38 +264,6 @@ void accumulate(snow_canvas_spotlight_renderer::RenderDiagnostics* target,
     target->renderedRegionCount += source.renderedRegionCount;
 }
 
-void renderLegacyReference(QPainter& painter, const SceneDisplayInfo& sceneInfo,
-                           const SpotlightDisplayInfo& spotlightInfo,
-                           const std::vector<SnowSpotlightCutout>& cutouts,
-                           const QRectF& renderArea, const QRegion& exposure) {
-    const double zoom = sceneInfo.camera_zoom > 0.0 ? sceneInfo.camera_zoom : 1.0;
-    const QTransform canvasToView(
-        zoom, 0.0, 0.0, zoom, sceneInfo.surface_width / 2.0 - sceneInfo.camera_center_x * zoom,
-        sceneInfo.surface_height / 2.0 - sceneInfo.camera_center_y * zoom);
-    QPainterPath holes;
-    holes.setFillRule(Qt::WindingFill);
-    for (const SnowSpotlightCutout& cutout : cutouts) {
-        QPainterPath rectangle;
-        rectangle.addRect(
-            QRectF(-cutout.width / 2.0, -cutout.height / 2.0, cutout.width, cutout.height));
-        QTransform element;
-        element.translate(cutout.center_x, cutout.center_y);
-        element.rotateRadians(cutout.rotation);
-        holes = holes.united(canvasToView.map(element.map(rectangle)));
-    }
-    QPainterPath mask;
-    mask.addRect(renderArea);
-    mask = mask.subtracted(holes);
-    QColor color(spotlightInfo.color.r, spotlightInfo.color.g, spotlightInfo.color.b,
-                 spotlightInfo.color.a);
-    color.setAlphaF(std::clamp(color.alphaF() * spotlightInfo.opacity, 0.0, 1.0));
-    painter.save();
-    painter.setClipRegion(exposure, Qt::IntersectClip);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.fillPath(mask, color);
-    painter.restore();
-}
-
 std::optional<Result> run(const Scenario& scenario, const Options& options, std::string* error) {
     constexpr std::size_t targetCount = 1;
     std::vector<QImage> targets;
@@ -395,24 +346,15 @@ std::optional<Result> run(const Scenario& scenario, const Options& options, std:
         for (std::size_t targetIndex = 0; targetIndex < targets.size(); ++targetIndex) {
             QPainter painter(&targets[targetIndex]);
             painter.setClipRegion(exposure);
-            if (scenario.mutation == Mutation::LegacyReference) {
-                renderLegacyReference(painter, sceneInfo, spotlightInfo, cutouts, renderArea,
-                                      exposure);
-            } else {
-                snow_canvas_spotlight_renderer::render(
-                    painter, sceneInfo, spotlightInfo, cutouts.data(),
-                    static_cast<std::uint32_t>(cutouts.size()), renderArea, exposure);
-            }
+            snow_canvas_spotlight_renderer::render(
+                painter, sceneInfo, spotlightInfo, cutouts.data(),
+                static_cast<std::uint32_t>(cutouts.size()), renderArea, exposure);
             painter.end();
         }
         const qint64 nanoseconds = timer.nsecsElapsed();
         if (measured) {
             *elapsed = nanoseconds / 1'000'000.0;
-            if (scenario.mutation == Mutation::LegacyReference) {
-                diagnostics->processedCutoutCount = cutouts.size() * targets.size();
-            } else {
-                *diagnostics = snow_canvas_spotlight_renderer::diagnosticsForCurrentThread();
-            }
+            *diagnostics = snow_canvas_spotlight_renderer::diagnosticsForCurrentThread();
         }
     };
 
@@ -457,14 +399,14 @@ bool writeCsv(const std::string& path, const std::vector<Result>& results, int s
     if (!stream) {
         return false;
     }
-    stream << "format_version,suite,scenario,operation,logical_width,logical_height,dpr,cutouts,"
+    stream << "suite,scenario,operation,logical_width,logical_height,dpr,cutouts,"
               "samples,mean_ms,p50_ms,p95_ms,p99_ms,min_ms,max_ms,processed_cutouts,"
               "locally_culled_cutouts,early_exits,zero_cutout_fast_paths,rendered_pixels,"
               "rendered_regions,checksum,"
               "qt_version,platform,architecture\n";
     for (const Result& result : results) {
         const auto& d = result.diagnostics;
-        stream << "2,renderer," << result.scenario.name << ",paint," << result.scenario.width << ','
+        stream << "renderer," << result.scenario.name << ",paint," << result.scenario.width << ','
                << result.scenario.height << ',' << result.scenario.dpr << ','
                << result.scenario.cutoutCount << ',' << samples << ',' << result.timing.mean << ','
                << result.timing.p50 << ',' << result.timing.p95 << ',' << result.timing.p99 << ','

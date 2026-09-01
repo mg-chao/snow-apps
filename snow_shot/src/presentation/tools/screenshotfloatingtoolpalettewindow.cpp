@@ -12,7 +12,7 @@
 #include "widgets/dpi_stable_window_controller.h"
 #include "widgets/button.h"
 #include "widgets/select.h"
-#include "icon_registry.h"
+#include "icon_renderer.h"
 
 #include <QEvent>
 #include <QGuiApplication>

@@ -95,10 +95,10 @@ struct ScreenshotWindowCapture::Impl final {
             return std::nullopt;
         }
 
-        SnowCaptureWindowFrameInfoV1 info{};
+        SnowCaptureWindowFrameInfo info{};
         info.version = SNOW_CAPTURE_WINDOW_FRAME_INFO_VERSION;
         info.struct_size = sizeof(info);
-        if (snow_capture_window_session_capture_v1(session, &info) == 0) {
+        if (snow_capture_window_session_capture(session, &info) == 0) {
             error = nativeCaptureError("Failed to capture focused window");
             return std::nullopt;
         }

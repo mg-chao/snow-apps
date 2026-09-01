@@ -6,7 +6,7 @@
 #include "snow_canvas_render_geometry.h"
 #include "snow_canvas_renderer.h"
 #include "icons/draw_engine_icons.h"
-#include "icon_registry.h"
+#include "icon_renderer.h"
 
 #include <QApplication>
 #include <QColor>
@@ -182,7 +182,7 @@ void highlightItemsRenderWithMultiplyBlendMode() {
     pen.stroke_width = 30.0;
     pen.opacity = 1.0;
     pen.arrow_type = SNOW_ARROW_TYPE_STRAIGHT;
-    pen.arrow_stroke_style = SNOW_ARROW_STROKE_STYLE_SOLID;
+    pen.arrow_stroke_style = SNOW_STROKE_STYLE_SOLID;
     pen.setArrowPoints(points, 2);
     pen.arrow_path_commands = commands;
     pen.arrow_path_command_count = 2;
@@ -232,7 +232,7 @@ void ownedAxisAlignedFreeDrawChunksRenderWithoutRawGeometry() {
     item.is_free_draw = 1;
     item.stroke = SnowColorRgba8{0, 0, 0, 255};
     item.stroke_width = 6.0;
-    item.arrow_stroke_style = SNOW_ARROW_STROKE_STYLE_SOLID;
+    item.arrow_stroke_style = SNOW_STROKE_STYLE_SOLID;
     item.opacity = 1.0;
     require(item.applyPathGeometryPatch(0, 1, &range, 1, chunks, 2, commands, 3, false, true),
             "free-draw path geometry should be accepted");

@@ -1623,7 +1623,7 @@ void mixedColorsKeepUniformStyleButtonsActive() {
 
     SnowCanvasStyleToolbarState selectedState;
     selectedState.source = SnowCanvasStyleToolbarSource::SelectedRectangle;
-    selectedState.shapeStyle.strokeStyle = SnowCanvasArrowStrokeStyle::Dotted;
+    selectedState.shapeStyle.strokeStyle = SnowCanvasStrokeStyle::Dotted;
     selectedState.shapeStyle.fillStyle = SnowCanvasFillStyle::CrossLine;
     selectedState.shapeStyleMixed =
         SnowCanvasShapeStylePropertyStrokeColor | SnowCanvasShapeStylePropertyFillColor;
@@ -3197,7 +3197,7 @@ void arrowStyleControlsExposeAndEmitAllStyleProperties() {
     require(qFuzzyCompare(emittedStyle.strokeWidth + 1.0, 5.0), "arrow stroke width should update");
     require(emittedStyle.stroke == QColor(QStringLiteral("#f5222d")),
             "arrow stroke color should update");
-    require(emittedStyle.strokeStyle == SnowCanvasArrowStrokeStyle::Dashed,
+    require(emittedStyle.strokeStyle == SnowCanvasStrokeStyle::Dashed,
             "arrow stroke style should update");
     require(emittedStyle.arrowType == SnowCanvasArrowType::Elbow, "arrow type should update");
     require(emittedStyle.startArrowhead == SnowCanvasArrowhead::Triangle,
@@ -3259,7 +3259,7 @@ void selectedArrowMixedPropertiesResolveIndependently() {
     state.source = SnowCanvasStyleToolbarSource::SelectedArrow;
     state.shapeStyle.stroke = QColor(QStringLiteral("#f5222d"));
     state.shapeStyle.strokeWidth = 4.0;
-    state.shapeStyle.strokeStyle = SnowCanvasArrowStrokeStyle::Dashed;
+    state.shapeStyle.strokeStyle = SnowCanvasStrokeStyle::Dashed;
     state.shapeStyle.arrowType = SnowCanvasArrowType::Elbow;
     state.shapeStyle.startArrowhead = SnowCanvasArrowhead::Triangle;
     state.shapeStyle.endArrowhead = SnowCanvasArrowhead::Diamond;
@@ -5365,13 +5365,13 @@ void screenshotProductStyleProfileIsComplete() {
     require(defaults.rectangle.fill == transparent &&
                 defaults.rectangle.fillStyle == SnowCanvasFillStyle::Solid &&
                 defaults.rectangle.stroke == red && exact(defaults.rectangle.strokeWidth, 2.0) &&
-                defaults.rectangle.strokeStyle == SnowCanvasArrowStrokeStyle::Solid &&
+                defaults.rectangle.strokeStyle == SnowCanvasStrokeStyle::Solid &&
                 defaults.rectangle.cornerRadii == SnowCanvasCornerRadii{6.0, 6.0, 6.0, 6.0},
             "rectangle defaults should match the Snow Shot product profile");
     require(defaults.arrow.stroke == red && exact(defaults.arrow.strokeWidth, 2.0) &&
                 defaults.arrow.startArrowhead == SnowCanvasArrowhead::None &&
                 defaults.arrow.endArrowhead == SnowCanvasArrowhead::Arrow &&
-                defaults.arrow.strokeStyle == SnowCanvasArrowStrokeStyle::Solid &&
+                defaults.arrow.strokeStyle == SnowCanvasStrokeStyle::Solid &&
                 defaults.arrow.arrowType == SnowCanvasArrowType::Curve,
             "arrow defaults should match the Snow Shot product profile");
 
@@ -5404,7 +5404,7 @@ void screenshotProductStyleProfileIsComplete() {
                     expected.style->fillStyle == SnowCanvasFillStyle::Solid &&
                     expected.style->stroke == expected.stroke &&
                     exact(expected.style->strokeWidth, expected.strokeWidth) &&
-                    expected.style->strokeStyle == SnowCanvasArrowStrokeStyle::Solid &&
+                    expected.style->strokeStyle == SnowCanvasStrokeStyle::Solid &&
                     expected.style->startArrowhead == SnowCanvasArrowhead::None &&
                     expected.style->endArrowhead == SnowCanvasArrowhead::None &&
                     expected.style->arrowType == expected.arrowType &&

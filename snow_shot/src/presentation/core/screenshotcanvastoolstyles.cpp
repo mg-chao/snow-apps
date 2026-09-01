@@ -168,7 +168,7 @@ void readShapeValue(const QJsonObject& object, SnowCanvasShapeStyle* style) {
     readEnum(object, QStringLiteral("end_arrowhead"),
              static_cast<int>(SnowCanvasArrowhead::CrowfootOneOrMany), &style->endArrowhead);
     readEnum(object, QStringLiteral("stroke_style"),
-             static_cast<int>(SnowCanvasArrowStrokeStyle::Dotted), &style->strokeStyle);
+             static_cast<int>(SnowCanvasStrokeStyle::Dotted), &style->strokeStyle);
     readEnum(object, QStringLiteral("arrow_type"), static_cast<int>(SnowCanvasArrowType::Elbow),
              &style->arrowType);
     readDouble(object, QStringLiteral("opacity"), &style->opacity);

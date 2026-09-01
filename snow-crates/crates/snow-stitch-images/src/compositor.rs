@@ -75,7 +75,7 @@ pub fn append_and_repaint(
     )
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn append_and_repaint_in_place(
     old: &mut Frame,
     incoming: &Frame,
@@ -160,7 +160,7 @@ pub fn prepend_and_repaint(
     )
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub(crate) fn prepend_and_repaint_in_place(
     old: &mut Frame,
     incoming: &Frame,

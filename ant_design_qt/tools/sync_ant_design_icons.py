@@ -27,7 +27,7 @@ ET.register_namespace("", SVG_NS)
 
 
 def _download_bytes(url: str, timeout: int = 60) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "ant_design_icons_qt_sync/2.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "ant_design_icons_qt_sync/1.0"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read()
 

@@ -99,11 +99,12 @@ int main(int argc, char** argv) {
     const Options options = parseOptions(argc, argv);
     ScopedRuntimeHandle runtime;
     SnowCanvasViewport viewport;
+    ScopedChangedViewportList toolChange;
     if (snow_runtime_create(runtime.outParam()) != SNOW_OK ||
         !viewport.create(runtime.get(), snow_canvas_viewport::defaultEngineConfig()) ||
         snow_viewport_set_surface_size(runtime.get(), viewport.get(), 1920, 1080) != SNOW_OK ||
-        snow_viewport_set_active_tool(runtime.get(), viewport.get(), SNOW_ACTIVE_TOOL_PEN_FILTER) !=
-            SNOW_OK) {
+        snow_viewport_set_active_tool_ex(runtime.get(), viewport.get(), SNOW_ACTIVE_TOOL_PEN_FILTER,
+                                         toolChange.outParam()) != SNOW_OK) {
         return 1;
     }
     SnowCanvasDisplayCache cache;
@@ -114,7 +115,9 @@ int main(int argc, char** argv) {
     const QPointF first = tracePoint(options, 0);
     SnowInputEvent down = pointerEvent(SNOW_POINTER_EVENT_DOWN, first.x(), first.y());
     SnowInteractionOutput output{};
-    if (snow_viewport_process_input(runtime.get(), viewport.get(), &down, &output) != SNOW_OK) {
+    ScopedChangedViewportList downChange;
+    if (snow_viewport_process_input_ex(runtime.get(), viewport.get(), &down, &output,
+                                       downChange.outParam()) != SNOW_OK) {
         return 3;
     }
     std::vector<SnowInputEvent> initial;

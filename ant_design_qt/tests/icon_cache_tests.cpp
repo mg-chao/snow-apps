@@ -1,4 +1,4 @@
-#include "icon_registry.h"
+#include "icon_renderer.h"
 
 #include <QApplication>
 #include <QColor>
@@ -204,14 +204,14 @@ void trimmingReportsExactReclamationAndPreservesCallers() {
   require(before.entryCount == 3 && before.costBytes == 3 * 64 * 64 * 4,
           "the trim fixture should begin with three exact-size entries");
 
-  const auto partial = renderer.trimCacheToBytes(64 * 64 * 4);
+  const auto partial = renderer.trimCache(64 * 64 * 4);
   require(partial.bytesBefore == 3 * 64 * 64 * 4 &&
               partial.bytesAfter == 64 * 64 * 4 &&
               partial.reclaimedBytes == 2 * 64 * 64 * 4 && partial.entriesBefore == 3 &&
               partial.entriesAfter == 1 && partial.generation == before.generation + 1,
           "trim reports should describe the exact whole-entry reclamation");
 
-  const auto all = renderer.trimCacheToBytes(0);
+  const auto all = renderer.trimCache(0);
   const auto empty = renderer.cacheStatistics();
   require(all.bytesBefore == 64 * 64 * 4 && all.bytesAfter == 0 &&
               all.reclaimedBytes == 64 * 64 * 4 && empty.entryCount == 0 &&

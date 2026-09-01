@@ -333,9 +333,6 @@ impl DocumentDelta {
 }
 
 pub type ChangeSet = DocumentDelta;
-pub type DocumentChangeSet = DocumentDelta;
-pub type ElementContent = ElementData;
-pub type TransactionOp = Operation;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ApplyResult {

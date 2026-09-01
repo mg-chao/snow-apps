@@ -128,8 +128,8 @@ class GeneratorTests(unittest.TestCase):
         self.assertEqual(len(entries), 1)
 
     def test_large_assets_are_emitted_as_separate_msvc_safe_literals(self) -> None:
-        expression = generator._byte_array_expression("x" * 30_000, 7)
-        self.assertEqual(expression.count(".append("), 3)
+        expression = generator._string_view_expression("x" * 30_000, 7)
+        self.assertEqual(expression.count(")ADQT_SVG"), 3)
         self.assertIn("ADQT_SVG_7_0", expression)
         self.assertIn("ADQT_SVG_7_2", expression)
         self.assertNotIn(')ADQT_SVG_7_0"\n          R"', expression)

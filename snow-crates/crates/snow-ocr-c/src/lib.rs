@@ -26,7 +26,7 @@ thread_local! {
 }
 
 #[repr(C)]
-pub struct SnowOcrRequestV1 {
+pub struct SnowOcrRequest {
     pub struct_size: u32,
     pub width: u32,
     pub height: u32,
@@ -36,7 +36,7 @@ pub struct SnowOcrRequestV1 {
 }
 
 #[repr(C)]
-pub struct SnowOcrEngineConfigV2 {
+pub struct SnowOcrEngineConfig {
     pub struct_size: u32,
     pub intra_threads: u32,
     pub inter_threads: u32,
@@ -48,13 +48,13 @@ pub struct SnowOcrEngineConfigV2 {
 }
 
 #[repr(C)]
-pub struct SnowOcrRuntimeInfoV1 {
+pub struct SnowOcrRuntimeInfo {
     pub struct_size: u32,
     pub physical_core_count: u32,
 }
 
 #[repr(C)]
-pub struct SnowOcrResourceCountsV1 {
+pub struct SnowOcrResourceCounts {
     pub struct_size: u32,
     pub engines: usize,
     pub results: usize,
@@ -67,7 +67,7 @@ pub struct SnowOcrQuad {
 }
 
 #[repr(C)]
-pub struct SnowOcrLineInfoV1 {
+pub struct SnowOcrLineInfo {
     pub struct_size: u32,
     pub text_utf8: *const u8,
     pub text_len: usize,
@@ -101,7 +101,7 @@ fn clear_last_error() {
     set_last_error("");
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct EngineSettings {
     intra_threads: Option<usize>,
     inter_threads: Option<usize>,
@@ -111,21 +111,8 @@ struct EngineSettings {
     model_store_dir: Option<PathBuf>,
 }
 
-impl EngineSettings {
-    fn legacy(use_directml: bool) -> Self {
-        Self {
-            intra_threads: None,
-            inter_threads: None,
-            rayon_threads: None,
-            enable_cpu_mem_arena: true,
-            use_directml,
-            model_store_dir: None,
-        }
-    }
-}
-
 fn engine_settings_from_config(
-    config: &SnowOcrEngineConfigV2,
+    config: &SnowOcrEngineConfig,
 ) -> std::result::Result<EngineSettings, String> {
     let nonzero = |value: u32| (value > 0).then_some(value as usize);
     let model_store_dir = if config.model_store_dir_utf8.is_null() {
@@ -216,8 +203,8 @@ fn pipeline_config(settings: &EngineSettings) -> EngineConfig {
             runtime.fail_if_provider_unavailable = true;
         }
     } else {
-        // The C ABI's flag is an explicit provider choice. Preserve its legacy
-        // meaning even though generic Rust defaults use stage-aware Auto.
+        // The C ABI's flag is an explicit provider choice, so keep it
+        // deterministic instead of the stage-aware Auto default.
         config.det.runtime.provider_preference = ProviderPreference::Cpu;
         config.rec.runtime.provider_preference = ProviderPreference::Cpu;
     }
@@ -232,11 +219,6 @@ fn ensure_onnx_runtime() -> Result<(), String> {
                 .map_err(|error| format!("unable to initialize ONNX Runtime: {error}"))
         })
         .clone()
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn snow_ocr_engine_create() -> *mut SnowOcrEngine {
-    snow_ocr_engine_create_with_directml(0)
 }
 
 fn create_engine_handle(settings: EngineSettings) -> *mut SnowOcrEngine {
@@ -258,21 +240,16 @@ fn create_engine_handle(settings: EngineSettings) -> *mut SnowOcrEngine {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn snow_ocr_engine_create_with_directml(enabled: u8) -> *mut SnowOcrEngine {
-    create_engine_handle(EngineSettings::legacy(enabled != 0))
-}
-
-#[unsafe(no_mangle)]
 /// # Safety
-/// `config` must be null or point to a readable `SnowOcrEngineConfigV2`.
-pub unsafe extern "C" fn snow_ocr_engine_create_with_config_v2(
-    config: *const SnowOcrEngineConfigV2,
+/// `config` must be null or point to a readable `SnowOcrEngineConfig`.
+pub unsafe extern "C" fn snow_ocr_engine_create_with_config(
+    config: *const SnowOcrEngineConfig,
 ) -> *mut SnowOcrEngine {
     let Some(config) = (unsafe { config.as_ref() }) else {
         set_last_error("OCR engine config is null");
         return ptr::null_mut();
     };
-    if config.struct_size as usize != size_of::<SnowOcrEngineConfigV2>() {
+    if config.struct_size as usize != size_of::<SnowOcrEngineConfig>() {
         set_last_error("OCR engine config has an incompatible struct size");
         return ptr::null_mut();
     }
@@ -306,18 +283,18 @@ pub unsafe extern "C" fn snow_ocr_engine_uses_directml(engine: *const SnowOcrEng
 
 #[unsafe(no_mangle)]
 /// # Safety
-/// `out_info` must point to a writable `SnowOcrRuntimeInfoV1`.
-pub unsafe extern "C" fn snow_ocr_runtime_info_v1(out_info: *mut SnowOcrRuntimeInfoV1) -> u8 {
+/// `out_info` must point to a writable `SnowOcrRuntimeInfo`.
+pub unsafe extern "C" fn snow_ocr_runtime_info(out_info: *mut SnowOcrRuntimeInfo) -> u8 {
     let Some(out_info) = (unsafe { out_info.as_mut() }) else {
         set_last_error("OCR runtime info output is null");
         return 0;
     };
-    if out_info.struct_size as usize != size_of::<SnowOcrRuntimeInfoV1>() {
+    if out_info.struct_size as usize != size_of::<SnowOcrRuntimeInfo>() {
         set_last_error("OCR runtime info output has an incompatible struct size");
         return 0;
     }
-    *out_info = SnowOcrRuntimeInfoV1 {
-        struct_size: size_of::<SnowOcrRuntimeInfoV1>() as u32,
+    *out_info = SnowOcrRuntimeInfo {
+        struct_size: size_of::<SnowOcrRuntimeInfo>() as u32,
         physical_core_count: num_cpus::get_physical().max(1) as u32,
     };
     clear_last_error();
@@ -326,20 +303,20 @@ pub unsafe extern "C" fn snow_ocr_runtime_info_v1(out_info: *mut SnowOcrRuntimeI
 
 #[unsafe(no_mangle)]
 /// # Safety
-/// `out_counts` must point to a writable `SnowOcrResourceCountsV1`.
-pub unsafe extern "C" fn snow_ocr_resource_counts_v1(
-    out_counts: *mut SnowOcrResourceCountsV1,
+/// `out_counts` must point to a writable `SnowOcrResourceCounts`.
+pub unsafe extern "C" fn snow_ocr_resource_counts(
+    out_counts: *mut SnowOcrResourceCounts,
 ) -> u8 {
     let Some(out_counts) = (unsafe { out_counts.as_mut() }) else {
         set_last_error("OCR resource counts output is null");
         return 0;
     };
-    if out_counts.struct_size as usize != size_of::<SnowOcrResourceCountsV1>() {
+    if out_counts.struct_size as usize != size_of::<SnowOcrResourceCounts>() {
         set_last_error("OCR resource counts output has an incompatible struct size");
         return 0;
     }
-    *out_counts = SnowOcrResourceCountsV1 {
-        struct_size: size_of::<SnowOcrResourceCountsV1>() as u32,
+    *out_counts = SnowOcrResourceCounts {
+        struct_size: size_of::<SnowOcrResourceCounts>() as u32,
         engines: LIVE_ENGINES.load(Ordering::Relaxed),
         results: LIVE_RESULTS.load(Ordering::Relaxed),
     };
@@ -363,7 +340,7 @@ pub unsafe extern "C" fn snow_ocr_engine_destroy(engine: *mut SnowOcrEngine) {
 /// the call. The engine must be live and exclusively accessed.
 pub unsafe extern "C" fn snow_ocr_engine_recognize_rgba(
     engine: *mut SnowOcrEngine,
-    request: *const SnowOcrRequestV1,
+    request: *const SnowOcrRequest,
 ) -> *mut SnowOcrResult {
     let Some(engine) = (unsafe { engine.as_mut() }) else {
         set_last_error("OCR engine is null");
@@ -373,7 +350,7 @@ pub unsafe extern "C" fn snow_ocr_engine_recognize_rgba(
         set_last_error("OCR request is null");
         return ptr::null_mut();
     };
-    if request.struct_size as usize != size_of::<SnowOcrRequestV1>() {
+    if request.struct_size as usize != size_of::<SnowOcrRequest>() {
         set_last_error("OCR request has an incompatible struct size");
         return ptr::null_mut();
     }
@@ -397,7 +374,7 @@ pub unsafe extern "C" fn snow_ocr_engine_recognize_rgba(
 
 fn recognize(
     engine: &mut SnowOcrEngine,
-    request: &SnowOcrRequestV1,
+    request: &SnowOcrRequest,
 ) -> Result<SnowOcrResult, String> {
     let width = request.width as usize;
     let height = request.height as usize;
@@ -489,7 +466,7 @@ pub unsafe extern "C" fn snow_ocr_result_line_count(result: *const SnowOcrResult
 pub unsafe extern "C" fn snow_ocr_result_line(
     result: *const SnowOcrResult,
     line_index: usize,
-    out_line: *mut SnowOcrLineInfoV1,
+    out_line: *mut SnowOcrLineInfo,
 ) -> u8 {
     let (Some(result), Some(out_line)) =
         ((unsafe { result.as_ref() }), (unsafe { out_line.as_mut() }))
@@ -497,7 +474,7 @@ pub unsafe extern "C" fn snow_ocr_result_line(
         set_last_error("OCR result or line output is null");
         return 0;
     };
-    if out_line.struct_size as usize != size_of::<SnowOcrLineInfoV1>() {
+    if out_line.struct_size as usize != size_of::<SnowOcrLineInfo>() {
         set_last_error("OCR line output has an incompatible struct size");
         return 0;
     }
@@ -505,8 +482,8 @@ pub unsafe extern "C" fn snow_ocr_result_line(
         set_last_error("OCR line index is out of range");
         return 0;
     };
-    *out_line = SnowOcrLineInfoV1 {
-        struct_size: size_of::<SnowOcrLineInfoV1>() as u32,
+    *out_line = SnowOcrLineInfo {
+        struct_size: size_of::<SnowOcrLineInfo>() as u32,
         text_utf8: line.text.as_ptr(),
         text_len: line.text.len(),
         confidence: line.confidence,
@@ -534,8 +511,8 @@ mod tests {
                 quad: [[1.0, 2.0], [9.0, 2.0], [9.0, 6.0], [1.0, 6.0]],
             }],
         };
-        let mut line = SnowOcrLineInfoV1 {
-            struct_size: size_of::<SnowOcrLineInfoV1>() as u32,
+        let mut line = SnowOcrLineInfo {
+            struct_size: size_of::<SnowOcrLineInfo>() as u32,
             text_utf8: ptr::null(),
             text_len: 0,
             confidence: 0.0,
@@ -553,26 +530,26 @@ mod tests {
 
     #[test]
     fn ffi_runtime_info_validates_the_versioned_output() {
-        let mut invalid = SnowOcrRuntimeInfoV1 {
+        let mut invalid = SnowOcrRuntimeInfo {
             struct_size: 0,
             physical_core_count: 0,
         };
-        assert_eq!(unsafe { snow_ocr_runtime_info_v1(&mut invalid) }, 0);
-        assert_eq!(unsafe { snow_ocr_runtime_info_v1(ptr::null_mut()) }, 0);
+        assert_eq!(unsafe { snow_ocr_runtime_info(&mut invalid) }, 0);
+        assert_eq!(unsafe { snow_ocr_runtime_info(ptr::null_mut()) }, 0);
 
-        let mut info = SnowOcrRuntimeInfoV1 {
-            struct_size: size_of::<SnowOcrRuntimeInfoV1>() as u32,
+        let mut info = SnowOcrRuntimeInfo {
+            struct_size: size_of::<SnowOcrRuntimeInfo>() as u32,
             physical_core_count: 0,
         };
-        assert_eq!(unsafe { snow_ocr_runtime_info_v1(&mut info) }, 1);
-        assert_eq!(info.struct_size as usize, size_of::<SnowOcrRuntimeInfoV1>());
+        assert_eq!(unsafe { snow_ocr_runtime_info(&mut info) }, 1);
+        assert_eq!(info.struct_size as usize, size_of::<SnowOcrRuntimeInfo>());
         assert!(info.physical_core_count >= 1);
     }
 
     #[test]
     fn ffi_engine_config_maps_zero_threads_to_automatic_values() {
-        let settings = engine_settings_from_config(&SnowOcrEngineConfigV2 {
-            struct_size: size_of::<SnowOcrEngineConfigV2>() as u32,
+        let settings = engine_settings_from_config(&SnowOcrEngineConfig {
+            struct_size: size_of::<SnowOcrEngineConfig>() as u32,
             intra_threads: 0,
             inter_threads: 2,
             rayon_threads: 3,
@@ -595,7 +572,7 @@ mod tests {
         let path = PathBuf::from("test-model-store");
         let settings = EngineSettings {
             model_store_dir: Some(path.clone()),
-            ..EngineSettings::legacy(false)
+            ..EngineSettings::default()
         };
         let config = pipeline_config(&settings);
         assert!(config.det.allow_download);
@@ -607,12 +584,12 @@ mod tests {
     #[test]
     #[ignore = "downloads PP-OCRv6 models and runs ONNX inference"]
     fn disk_pipeline_recognizes_an_rgba_image() {
-        let (pipeline, backend) = create_engine_with_settings(EngineSettings::legacy(false))
+        let (pipeline, backend) = create_engine_with_settings(EngineSettings::default())
             .expect("disk-backed OCR pipeline should initialize");
         let mut engine = SnowOcrEngine { pipeline, backend };
         let rgba = vec![255_u8; 64 * 64 * 4];
-        let request = SnowOcrRequestV1 {
-            struct_size: size_of::<SnowOcrRequestV1>() as u32,
+        let request = SnowOcrRequest {
+            struct_size: size_of::<SnowOcrRequest>() as u32,
             width: 64,
             height: 64,
             stride_bytes: 64 * 4,

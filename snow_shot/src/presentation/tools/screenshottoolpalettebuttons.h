@@ -283,7 +283,7 @@ class StrokeStylePreviewTrigger final : public StylePreviewButton {
     explicit StrokeStylePreviewTrigger(QWidget* parent = nullptr);
 
     void setStrokeColor(const QColor& color);
-    void setStrokeStyle(SnowCanvasArrowStrokeStyle strokeStyle);
+    void setStrokeStyle(SnowCanvasStrokeStyle strokeStyle);
     void setMixed(bool mixed);
     void setPhysicalScale(qreal scale);
     void commitControlScale(const adqt::widgets::AdControlScaleContext& context) override;
@@ -293,7 +293,7 @@ class StrokeStylePreviewTrigger final : public StylePreviewButton {
 
   private:
     QColor m_color;
-    SnowCanvasArrowStrokeStyle m_strokeStyle = SnowCanvasArrowStrokeStyle::Solid;
+    SnowCanvasStrokeStyle m_strokeStyle = SnowCanvasStrokeStyle::Solid;
     qreal m_physicalScale = 1.0;
     bool m_mixed = false;
 };
@@ -302,7 +302,7 @@ class StrokeStylePreviewButton final : public adqt::widgets::AdButton {
   public:
     explicit StrokeStylePreviewButton(QWidget* parent = nullptr);
 
-    void setStrokeStyle(SnowCanvasArrowStrokeStyle strokeStyle);
+    void setStrokeStyle(SnowCanvasStrokeStyle strokeStyle);
     void setPhysicalScale(qreal scale);
     void commitControlScale(const adqt::widgets::AdControlScaleContext& context) override;
 
@@ -310,7 +310,7 @@ class StrokeStylePreviewButton final : public adqt::widgets::AdButton {
     void paintEvent(QPaintEvent* event) override;
 
   private:
-    SnowCanvasArrowStrokeStyle m_strokeStyle = SnowCanvasArrowStrokeStyle::Solid;
+    SnowCanvasStrokeStyle m_strokeStyle = SnowCanvasStrokeStyle::Solid;
     qreal m_physicalScale = 1.0;
 };
 
@@ -457,14 +457,14 @@ void configureScreenshotToolPaletteIconValuePreviewTrigger(
 
 StrokeStylePreviewTrigger* createScreenshotToolPaletteStrokeStyleTrigger(
     QWidget* parent, const char* tooltip, const QColor& color,
-    SnowCanvasArrowStrokeStyle strokeStyle, const ScreenshotToolPaletteButtonMetrics& metrics);
+    SnowCanvasStrokeStyle strokeStyle, const ScreenshotToolPaletteButtonMetrics& metrics);
 
 void configureScreenshotToolPaletteStrokeStyleTrigger(
     StrokeStylePreviewTrigger* trigger, const ScreenshotToolPaletteButtonMetrics& metrics);
 
 StrokeStylePreviewButton*
 createScreenshotToolPaletteStrokeStyleButton(QWidget* parent, const char* tooltip,
-                                             SnowCanvasArrowStrokeStyle strokeStyle,
+                                             SnowCanvasStrokeStyle strokeStyle,
                                              const ScreenshotToolPaletteButtonMetrics& metrics);
 
 FillStylePreviewTrigger*

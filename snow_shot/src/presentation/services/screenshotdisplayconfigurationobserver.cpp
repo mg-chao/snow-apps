@@ -1,6 +1,6 @@
 #include "snow_shot/presentation/screenshotdisplayconfigurationobserver.h"
 
-#include "icon_registry.h"
+#include "icon_renderer.h"
 
 #include <QGuiApplication>
 #include <QRect>

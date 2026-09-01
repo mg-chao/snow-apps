@@ -34,7 +34,7 @@ pub(crate) fn heading_for_point_from_bindable(
     bindable: &BindableState,
     aabb: Bounds,
 ) -> Heading {
-    if canonicalize_bindable_shape(bindable.shape) == crate::CanonicalBindableShape::Diamond {
+    if bindable.shape == crate::BindableShape::Diamond {
         return heading_from_bindable(point, bindable);
     }
 

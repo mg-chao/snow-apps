@@ -145,7 +145,7 @@ void ScreenshotCaptureWorker::capture(
     }
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.session_ready");
 
-    SnowCaptureScreenshotRequestV1 nativeRequest{};
+    SnowCaptureScreenshotRequest nativeRequest{};
     nativeRequest.version = SNOW_CAPTURE_SCREENSHOT_REQUEST_VERSION;
     nativeRequest.struct_size = sizeof(nativeRequest);
     nativeRequest.flags = request.refreshLayout ? SNOW_CAPTURE_SCREENSHOT_REQUEST_REFRESH_LAYOUT : 0;
@@ -155,7 +155,7 @@ void ScreenshotCaptureWorker::capture(
     SnowCaptureScreenshotResult* nativeResult = nullptr;
     {
         SNOW_SHOT_CAPTURE_PERF_SCOPE("capture.native_ffi");
-        nativeResult = snow_capture_desktop_session_capture_v1(m_session, &nativeRequest);
+        nativeResult = snow_capture_desktop_session_capture(m_session, &nativeRequest);
     }
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.native_returned");
     if (nativeResult == nullptr) {
@@ -199,10 +199,10 @@ void ScreenshotCaptureWorker::capture(
     }
 
     if (valid && request.focusedWindowHandle != 0) {
-        SnowCaptureWindowFrameInfoV1 info{};
+        SnowCaptureWindowFrameInfo info{};
         info.version = SNOW_CAPTURE_WINDOW_FRAME_INFO_VERSION;
         info.struct_size = sizeof(info);
-        if (snow_capture_screenshot_result_focused_window_info_v1(nativeResult, &info) == 0) {
+        if (snow_capture_screenshot_result_focused_window_info(nativeResult, &info) == 0) {
             valid = false;
         } else {
             SnowCaptureFrameLease* lease =

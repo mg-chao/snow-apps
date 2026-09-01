@@ -19,7 +19,7 @@ inline SnowCanvasStyleDefaults screenshotCanvasStyleDefaults() {
     defaults.rectangle.fillStyle = SnowCanvasFillStyle::Solid;
     defaults.rectangle.stroke = red;
     defaults.rectangle.strokeWidth = 2.0;
-    defaults.rectangle.strokeStyle = SnowCanvasArrowStrokeStyle::Solid;
+    defaults.rectangle.strokeStyle = SnowCanvasStrokeStyle::Solid;
     defaults.rectangle.cornerRadii = {6.0, 6.0, 6.0, 6.0};
 
     defaults.arrow = defaults.rectangle;
@@ -31,7 +31,7 @@ inline SnowCanvasStyleDefaults screenshotCanvasStyleDefaults() {
     defaults.line.fillStyle = SnowCanvasFillStyle::Solid;
     defaults.line.stroke = red;
     defaults.line.strokeWidth = 2.0;
-    defaults.line.strokeStyle = SnowCanvasArrowStrokeStyle::Solid;
+    defaults.line.strokeStyle = SnowCanvasStrokeStyle::Solid;
     defaults.line.startArrowhead = SnowCanvasArrowhead::None;
     defaults.line.endArrowhead = SnowCanvasArrowhead::None;
     defaults.line.opacity = 1.0;
@@ -43,7 +43,7 @@ inline SnowCanvasStyleDefaults screenshotCanvasStyleDefaults() {
     defaults.rectangleHighlight.fillStyle = SnowCanvasFillStyle::Solid;
     defaults.rectangleHighlight.stroke = redAccent;
     defaults.rectangleHighlight.strokeWidth = 0.0;
-    defaults.rectangleHighlight.strokeStyle = SnowCanvasArrowStrokeStyle::Solid;
+    defaults.rectangleHighlight.strokeStyle = SnowCanvasStrokeStyle::Solid;
     defaults.rectangleHighlight.opacity = 1.0;
     defaults.rectangleHighlight.highlightShape = SnowCanvasHighlightShape::Rectangle;
 
@@ -51,7 +51,7 @@ inline SnowCanvasStyleDefaults screenshotCanvasStyleDefaults() {
     defaults.penHighlight.fillStyle = SnowCanvasFillStyle::Solid;
     defaults.penHighlight.stroke = red;
     defaults.penHighlight.strokeWidth = 30.0;
-    defaults.penHighlight.strokeStyle = SnowCanvasArrowStrokeStyle::Solid;
+    defaults.penHighlight.strokeStyle = SnowCanvasStrokeStyle::Solid;
     defaults.penHighlight.opacity = 1.0;
 
     defaults.rectangleFilter = {

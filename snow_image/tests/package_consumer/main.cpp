@@ -5,7 +5,7 @@
 
 int main() {
     snow::image::Service service;
-    if (service.formats().empty() || SNOW_IMAGE_VERSION_MAJOR != 3) {
+    if (service.formats().empty() || SNOW_IMAGE_VERSION_MAJOR != 1) {
         return 1;
     }
     std::cout << service.formats().size() << " formats\n";

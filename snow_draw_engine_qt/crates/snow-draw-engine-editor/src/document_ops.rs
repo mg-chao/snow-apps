@@ -1113,7 +1113,7 @@ mod tests {
                 &[Point::new(0.0, 0.0), Point::new(100.0, 100.0)],
                 stroke,
                 2.0,
-                snow_draw_engine_core::arrow::ArrowStrokeStyle::Solid,
+                snow_draw_engine_core::arrow::StrokeStyle::Solid,
                 snow_draw_engine_core::arrow::ArrowType::Straight,
                 None,
                 None,

@@ -67,19 +67,6 @@ fn text_style_from_text(text: &TextData) -> TextStyle {
 }
 
 impl Engine {
-    pub fn viewport_text_style(&self, id: ViewportId) -> Result<TextStyle, ErrorCode> {
-        self.ensure_viewport(id)?;
-        Ok(self.editor.text_style(&self.model))
-    }
-
-    pub fn viewport_serial_number_style(
-        &self,
-        id: ViewportId,
-    ) -> Result<SerialNumberStyle, ErrorCode> {
-        self.ensure_viewport(id)?;
-        Ok(self.editor.serial_number_style(&self.model))
-    }
-
     pub fn set_viewport_text_style(
         &mut self,
         id: ViewportId,
@@ -154,30 +141,6 @@ impl Engine {
             auto_resize: text.auto_resize,
             measure_natural_width: false,
         })
-    }
-
-    pub fn commit_text_element_with_viewport_changes(
-        &mut self,
-        source_viewport_id: ViewportId,
-        existing_id: Option<ElementId>,
-        center: Point<f64>,
-        text_content: impl Into<String>,
-        layout: TextLayoutSize,
-    ) -> Result<MutationResult, ErrorCode> {
-        self.ensure_viewport(source_viewport_id)?;
-        let before = self.editor.snapshot();
-        let command = if let Some(id) = existing_id {
-            self.editor
-                .update_text_element(&self.model, id, text_content, layout)?
-        } else {
-            self.editor
-                .queue_create_text_element(&self.model, center, text_content, layout)?
-        };
-        if let Some(command) = command {
-            self.apply_editor_command(source_viewport_id, command)
-        } else {
-            self.refresh_after_session_mutation(before)
-        }
     }
 
     pub fn commit_text_draft_with_viewport_changes(

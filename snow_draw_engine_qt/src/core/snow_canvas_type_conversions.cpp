@@ -39,8 +39,8 @@ bool validShapeStyleEnums(const SnowCanvasShapeStyle& style) {
                        SnowCanvasArrowhead::CrowfootOneOrMany) &&
            enumInRange(style.endArrowhead, SnowCanvasArrowhead::None,
                        SnowCanvasArrowhead::CrowfootOneOrMany) &&
-           enumInRange(style.strokeStyle, SnowCanvasArrowStrokeStyle::Solid,
-                       SnowCanvasArrowStrokeStyle::Dotted) &&
+           enumInRange(style.strokeStyle, SnowCanvasStrokeStyle::Solid,
+                       SnowCanvasStrokeStyle::Dotted) &&
            enumInRange(style.arrowType, SnowCanvasArrowType::Straight,
                        SnowCanvasArrowType::Elbow) &&
            enumInRange(style.highlightShape, SnowCanvasHighlightShape::Rectangle,
@@ -187,60 +187,6 @@ SnowCanvasStyleToolbarSource toCanvasStyleToolbarSource(SnowStyleToolbarSource s
     return SnowCanvasStyleToolbarSource::DefaultRectangle;
 }
 
-SnowStyleToolbarSource toEngineStyleToolbarSource(SnowCanvasStyleToolbarSource source) {
-    switch (source) {
-    case SnowCanvasStyleToolbarSource::DefaultRectangle:
-        return SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_RECTANGLE;
-    case SnowCanvasStyleToolbarSource::SelectedRectangle:
-        return SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_RECTANGLE;
-    case SnowCanvasStyleToolbarSource::DefaultArrow:
-        return SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_ARROW;
-    case SnowCanvasStyleToolbarSource::SelectedArrow:
-        return SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_ARROW;
-    case SnowCanvasStyleToolbarSource::DefaultLine:
-        return SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_LINE;
-    case SnowCanvasStyleToolbarSource::SelectedLine:
-        return SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_LINE;
-    case SnowCanvasStyleToolbarSource::DefaultFreeDraw:
-        return SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_FREE_DRAW;
-    case SnowCanvasStyleToolbarSource::SelectedFreeDraw:
-        return SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_FREE_DRAW;
-    case SnowCanvasStyleToolbarSource::DefaultRectangleHighlight:
-        return SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_RECTANGLE_HIGHLIGHT;
-    case SnowCanvasStyleToolbarSource::SelectedRectangleHighlight:
-        return SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_RECTANGLE_HIGHLIGHT;
-    case SnowCanvasStyleToolbarSource::DefaultPenHighlight:
-        return SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_PEN_HIGHLIGHT;
-    case SnowCanvasStyleToolbarSource::SelectedPenHighlight:
-        return SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_PEN_HIGHLIGHT;
-    case SnowCanvasStyleToolbarSource::Eraser:
-        return SNOW_STYLE_TOOLBAR_SOURCE_ERASER;
-    case SnowCanvasStyleToolbarSource::DefaultRectangleFilter:
-        return SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_RECTANGLE_FILTER;
-    case SnowCanvasStyleToolbarSource::SelectedRectangleFilter:
-        return SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_RECTANGLE_FILTER;
-    case SnowCanvasStyleToolbarSource::DefaultPenFilter:
-        return SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_PEN_FILTER;
-    case SnowCanvasStyleToolbarSource::SelectedPenFilter:
-        return SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_PEN_FILTER;
-    case SnowCanvasStyleToolbarSource::Watermark:
-        return SNOW_STYLE_TOOLBAR_SOURCE_WATERMARK;
-    case SnowCanvasStyleToolbarSource::DefaultText:
-        return SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_TEXT;
-    case SnowCanvasStyleToolbarSource::SelectedText:
-        return SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_TEXT;
-    case SnowCanvasStyleToolbarSource::DefaultSerialNumber:
-        return SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_SERIAL_NUMBER;
-    case SnowCanvasStyleToolbarSource::SelectedSerialNumber:
-        return SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_SERIAL_NUMBER;
-    case SnowCanvasStyleToolbarSource::DefaultSpotlight:
-        return SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_SPOTLIGHT;
-    case SnowCanvasStyleToolbarSource::SelectedSpotlight:
-        return SNOW_STYLE_TOOLBAR_SOURCE_SELECTED_SPOTLIGHT;
-    }
-    return SNOW_STYLE_TOOLBAR_SOURCE_DEFAULT_RECTANGLE;
-}
-
 SnowShapeKind toEngineShapeKind(SnowCanvasShapeKind kind) {
     switch (kind) {
     case SnowCanvasShapeKind::Rectangle:
@@ -323,30 +269,6 @@ SnowArrowhead toEngineArrowhead(SnowCanvasArrowhead arrowhead) {
         return SNOW_ARROWHEAD_CROWFOOT_ONE_OR_MANY;
     }
     return SNOW_ARROWHEAD_NONE;
-}
-
-SnowCanvasArrowStrokeStyle toCanvasArrowStrokeStyle(SnowArrowStrokeStyle strokeStyle) {
-    switch (strokeStyle) {
-    case SNOW_ARROW_STROKE_STYLE_SOLID:
-        return SnowCanvasArrowStrokeStyle::Solid;
-    case SNOW_ARROW_STROKE_STYLE_DASHED:
-        return SnowCanvasArrowStrokeStyle::Dashed;
-    case SNOW_ARROW_STROKE_STYLE_DOTTED:
-        return SnowCanvasArrowStrokeStyle::Dotted;
-    }
-    return SnowCanvasArrowStrokeStyle::Solid;
-}
-
-SnowArrowStrokeStyle toEngineArrowStrokeStyle(SnowCanvasArrowStrokeStyle strokeStyle) {
-    switch (strokeStyle) {
-    case SnowCanvasArrowStrokeStyle::Solid:
-        return SNOW_ARROW_STROKE_STYLE_SOLID;
-    case SnowCanvasArrowStrokeStyle::Dashed:
-        return SNOW_ARROW_STROKE_STYLE_DASHED;
-    case SnowCanvasArrowStrokeStyle::Dotted:
-        return SNOW_ARROW_STROKE_STYLE_DOTTED;
-    }
-    return SNOW_ARROW_STROKE_STYLE_SOLID;
 }
 
 SnowCanvasArrowType toCanvasArrowType(SnowArrowType arrowType) {
@@ -496,7 +418,7 @@ SnowCanvasShapeStyle toCanvasShapeStyle(const SnowShapeStyle& style) {
         toCanvasCornerRadii(style.corner_radii),
         toCanvasArrowhead(style.start_arrowhead),
         toCanvasArrowhead(style.end_arrowhead),
-        toCanvasArrowStrokeStyle(style.stroke_style),
+        toCanvasStrokeStyle(style.stroke_style),
         toCanvasArrowType(style.arrow_type),
         style.opacity,
         style.highlight_shape == SNOW_HIGHLIGHT_SHAPE_ELLIPSE ? SnowCanvasHighlightShape::Ellipse
@@ -516,7 +438,7 @@ SnowShapeStyle toEngineShapeStyle(const SnowCanvasShapeStyle& style) {
     engineStyle.corner_radii = toEngineCornerRadii(style.cornerRadii);
     engineStyle.start_arrowhead = toEngineArrowhead(style.startArrowhead);
     engineStyle.end_arrowhead = toEngineArrowhead(style.endArrowhead);
-    engineStyle.stroke_style = toEngineArrowStrokeStyle(style.strokeStyle);
+    engineStyle.stroke_style = toEngineStrokeStyle(style.strokeStyle);
     engineStyle.arrow_type = toEngineArrowType(style.arrowType);
     engineStyle.opacity = style.opacity;
     engineStyle.highlight_shape = style.highlightShape == SnowCanvasHighlightShape::Ellipse
@@ -526,50 +448,6 @@ SnowShapeStyle toEngineShapeStyle(const SnowCanvasShapeStyle& style) {
         style.shape == SnowCanvasRectangleShape::Ellipse   ? SNOW_RECTANGLE_SHAPE_ELLIPSE
         : style.shape == SnowCanvasRectangleShape::Diamond ? SNOW_RECTANGLE_SHAPE_DIAMOND
                                                            : SNOW_RECTANGLE_SHAPE_RECTANGLE;
-    return engineStyle;
-}
-
-SnowCanvasRectangleShapeStyle toCanvasRectangleShapeStyle(const SnowRectangleShapeStyle& style) {
-    return SnowCanvasRectangleShapeStyle{
-        toQColor(style.fill),
-        toCanvasFillStyle(style.fill_style),
-        toQColor(style.stroke),
-        style.stroke_width,
-        toCanvasStrokeStyle(style.stroke_style),
-        toCanvasCornerRadii(style.corner_radii),
-    };
-}
-
-SnowRectangleShapeStyle toEngineRectangleShapeStyle(const SnowCanvasRectangleShapeStyle& style) {
-    SnowRectangleShapeStyle engineStyle{};
-    engineStyle.fill = toEngineColor(style.fill);
-    engineStyle.fill_style = toEngineFillStyle(style.fillStyle);
-    engineStyle.stroke = toEngineColor(style.stroke);
-    engineStyle.stroke_width = style.strokeWidth;
-    engineStyle.stroke_style = toEngineStrokeStyle(style.strokeStyle);
-    engineStyle.corner_radii = toEngineCornerRadii(style.cornerRadii);
-    return engineStyle;
-}
-
-SnowCanvasArrowStyle toCanvasArrowStyle(const SnowArrowStyle& style) {
-    return SnowCanvasArrowStyle{
-        toQColor(style.stroke),
-        style.stroke_width,
-        toCanvasArrowhead(style.start_arrowhead),
-        toCanvasArrowhead(style.end_arrowhead),
-        toCanvasArrowStrokeStyle(style.stroke_style),
-        toCanvasArrowType(style.arrow_type),
-    };
-}
-
-SnowArrowStyle toEngineArrowStyle(const SnowCanvasArrowStyle& style) {
-    SnowArrowStyle engineStyle{};
-    engineStyle.stroke = toEngineColor(style.stroke);
-    engineStyle.stroke_width = style.strokeWidth;
-    engineStyle.start_arrowhead = toEngineArrowhead(style.startArrowhead);
-    engineStyle.end_arrowhead = toEngineArrowhead(style.endArrowhead);
-    engineStyle.stroke_style = toEngineArrowStrokeStyle(style.strokeStyle);
-    engineStyle.arrow_type = toEngineArrowType(style.arrowType);
     return engineStyle;
 }
 
@@ -658,35 +536,11 @@ SnowCanvasStyleToolbarState toCanvasStyleToolbarState(const SnowStyleToolbarStat
     };
 }
 
-SnowStyleToolbarState toEngineStyleToolbarState(const SnowCanvasStyleToolbarState& state) {
-    SnowStyleToolbarState engineState{};
-    engineState.source = toEngineStyleToolbarSource(state.source);
-    engineState.shape_style = toEngineShapeStyle(state.shapeStyle);
-    engineState.text_style = toEngineTextStyle(state.textStyle);
-    engineState.serial_number_style = toEngineSerialNumberStyle(state.serialNumberStyle);
-    engineState.text_style_mixed = state.textStyleMixed;
-    engineState.serial_number_style_mixed = state.serialNumberStyleMixed;
-    engineState.shape_style_mixed = state.shapeStyleMixed;
-    engineState.filter_style.filter_type = static_cast<SnowFilterType>(state.filterStyle.type);
-    engineState.filter_style.strength = state.filterStyle.strength;
-    engineState.filter_style.opacity = state.filterStyle.opacity;
-    engineState.filter_style.stroke_width = state.filterStyle.strokeWidth;
-    engineState.filter_style_mixed = state.filterStyleMixed;
-    return engineState;
-}
-
 SnowCanvasHistoryState toCanvasHistoryState(const SnowHistoryState& state) {
     return SnowCanvasHistoryState{
         fromFlag(state.can_undo),
         fromFlag(state.can_redo),
     };
-}
-
-SnowHistoryState toEngineHistoryState(const SnowCanvasHistoryState& state) {
-    SnowHistoryState engineState{};
-    engineState.can_undo = toFlag(state.canUndo);
-    engineState.can_redo = toFlag(state.canRedo);
-    return engineState;
 }
 
 SnowCanvasSnapConfig toCanvasSnapConfig(const SnowSnapConfig& config) {

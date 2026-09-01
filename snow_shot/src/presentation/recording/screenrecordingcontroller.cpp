@@ -453,7 +453,7 @@ struct ScreenRecordingController::Impl {
                 static_cast<uint32_t>(exportSettings.preset),
                 {},
             };
-            const bool ok = snow_capture_recording_session_stop_and_export_v1(session, &config) != 0;
+            const bool ok = snow_capture_recording_session_stop_and_export(session, &config) != 0;
             return std::make_pair(ok, ok ? QString() : captureError());
         });
         pendingOutputPath = outputPath;

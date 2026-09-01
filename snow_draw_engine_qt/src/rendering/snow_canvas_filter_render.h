@@ -51,8 +51,6 @@ struct Parameters {
 struct ExecutionOptions {
     bool forceScalar = false;
     bool singleThreaded = false;
-    // Test/benchmark-only comparison switch. Product callers always use the plan backend.
-    bool legacyGaussian = false;
     bool forceDenseMask = false;
 };
 
@@ -62,25 +60,11 @@ struct MaskSpan {
     int endX = 0;
 };
 
-enum class ReconstructionMode {
-    Nearest,
-    Bilinear,
-};
-
-enum class CoverageKind {
-    OpaqueRect,
-    ConstantOpacityRect,
-    OpaqueRegion,
-    AlphaMask,
-};
-
 struct GaussianBlurPlan {
     int reductionFactor = 1;
     int passCount = 0;
     int radii[3] = {0, 0, 0};
-    ReconstructionMode reconstruction = ReconstructionMode::Bilinear;
     int physicalSupportRadius = 0;
-    std::size_t estimatedWork = 0;
 };
 
 struct KernelDiagnostics {
@@ -152,7 +136,7 @@ AlphaView alphaView(const QImage& image);
 SimdBackend selectedSimdBackend();
 const char* simdBackendName(SimdBackend backend);
 int samplingRadiusPixels(const Parameters& parameters);
-GaussianBlurPlan gaussianBlurPlan(const Parameters& parameters, bool legacy = false);
+GaussianBlurPlan gaussianBlurPlan(const Parameters& parameters);
 void apply(QImage& image, const Parameters& parameters, RenderWorkspace* workspace = nullptr,
            const ExecutionOptions& options = {});
 bool applyMasked(const QImage& source, QImage& destination, const QImage& mask,

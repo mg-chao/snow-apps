@@ -221,12 +221,12 @@ mod tests {
         );
 
         let dotted_group = ImageGroup {
-            directory: PathBuf::from("test-imgs/scroll.v2"),
+            directory: PathBuf::from("test-imgs/scroll-2"),
             images: vec![],
         };
         assert_eq!(
             output_path(Path::new("artifacts"), input_root, &dotted_group).unwrap(),
-            PathBuf::from("artifacts/scroll.v2.png")
+            PathBuf::from("artifacts/scroll-2.png")
         );
     }
 

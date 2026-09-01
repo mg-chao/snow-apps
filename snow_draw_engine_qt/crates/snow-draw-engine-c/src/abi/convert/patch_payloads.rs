@@ -9,8 +9,8 @@ use crate::abi::types::*;
 
 use super::{
     snow_arrow_path_commands_from_rust, snow_arrow_points_from_rust,
-    snow_arrow_stroke_style_from_rust, snow_arrow_type_from_rust, snow_arrowhead_from_rust,
-    snow_arrowhead_primitives_from_rust, snow_fill_style_from_rust, snow_stroke_style_from_rust,
+    snow_stroke_style_from_rust, snow_arrow_type_from_rust, snow_arrowhead_from_rust,
+    snow_arrowhead_primitives_from_rust, snow_fill_style_from_rust,
     snow_text_horizontal_align_from_rust, snow_text_vertical_align_from_rust,
 };
 
@@ -252,7 +252,7 @@ pub(crate) fn snow_scene_display_item_from_rust(
             out.is_free_draw = u8::from(item.is_free_draw);
             out.arrow_start_head = snow_arrowhead_from_rust(item.start_arrowhead);
             out.arrow_end_head = snow_arrowhead_from_rust(item.end_arrowhead);
-            out.arrow_stroke_style = snow_arrow_stroke_style_from_rust(item.stroke_style);
+            out.arrow_stroke_style = snow_stroke_style_from_rust(item.stroke_style);
             out.opacity = item.opacity;
             out.blend_mode = match item.blend_mode {
                 snow_draw_engine::DisplayBlendMode::Normal => SnowBlendMode::Normal,
@@ -395,7 +395,7 @@ pub(crate) fn snow_overlay_display_item_from_rust(
             out.arrow_type = snow_arrow_type_from_rust(item.arrow_type);
             out.arrow_start_head = snow_arrowhead_from_rust(item.start_arrowhead);
             out.arrow_end_head = snow_arrowhead_from_rust(item.end_arrowhead);
-            out.arrow_stroke_style = snow_arrow_stroke_style_from_rust(item.stroke_style);
+            out.arrow_stroke_style = snow_stroke_style_from_rust(item.stroke_style);
             converted.arrow_points = snow_arrow_points_from_rust(&item.points).into_boxed_slice();
             out.arrow_point_count = converted.arrow_points.len() as u32;
             converted.arrow_path_commands =
@@ -481,7 +481,7 @@ mod tests {
         ArrowDisplayItem, ArrowPathCommand, ArrowheadDisplayDashMode, ArrowheadDisplayFillMode,
         ArrowheadDisplayPrimitive, ArrowheadDisplayPrimitiveKind, ColorRgba8, DecorationPatch,
         DecorationView, DirtyRegion, DisplayFillStyle, DisplayFilterType, DisplaySpotlightConfig,
-        DisplaySpotlightCutout, DisplayStrokeStyle, DisplayWatermarkConfig, FilterDisplayItem,
+        DisplaySpotlightCutout, StrokeStyle, DisplayWatermarkConfig, FilterDisplayItem,
         FrameView, LayerPatch, RectangleDisplayItem, ReplaceRangeOp, SerialNumberDisplayItem,
         TextDisplayItem, UiFocusConnectionDisplayItem, UiRectangleDisplayItem, ViewportPatch,
     };
@@ -668,7 +668,7 @@ mod tests {
     fn rectangle_display_item_exports_stroke_style() {
         let item = snow_scene_display_item_from_rust(
             &SceneDisplayItem::Rectangle(RectangleDisplayItem {
-                stroke_style: DisplayStrokeStyle::Dashed,
+                stroke_style: StrokeStyle::Dashed,
                 ..RectangleDisplayItem::default()
             }),
             false,

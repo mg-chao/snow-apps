@@ -4,7 +4,9 @@ use ort::ep::CANN;
 use ort::ep::CUDA;
 #[cfg(feature = "directml-provider")]
 use ort::ep::DirectML;
-use ort::ep::{CPU, ExecutionProvider, ExecutionProviderDispatch};
+use ort::ep::{CPU, ExecutionProviderDispatch};
+#[cfg(any(feature = "cann-provider", feature = "cuda-provider", feature = "directml-provider"))]
+use ort::ep::ExecutionProvider;
 
 use crate::{
     config::ProviderPreference,

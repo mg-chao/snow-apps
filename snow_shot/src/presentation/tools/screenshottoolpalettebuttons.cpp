@@ -383,7 +383,7 @@ void drawTransparentColorSwatch(QPainter* painter, const QRectF& swatchRect, qre
 }
 
 void drawStrokeStyleIcon(QPainter* painter, const QRectF& iconRect,
-                         SnowCanvasArrowStrokeStyle strokeStyle, const QColor& color) {
+                         SnowCanvasStrokeStyle strokeStyle, const QColor& color) {
     if (painter == nullptr || iconRect.isEmpty()) {
         return;
     }
@@ -391,7 +391,7 @@ void drawStrokeStyleIcon(QPainter* painter, const QRectF& iconRect,
     painter->save();
     painter->translate(iconRect.topLeft());
 
-    if (strokeStyle == SnowCanvasArrowStrokeStyle::Solid) {
+    if (strokeStyle == SnowCanvasStrokeStyle::Solid) {
         painter->scale(iconRect.width() / 20.0, iconRect.height() / 20.0);
         QPen pen(color, 1.25);
         pen.setCapStyle(Qt::RoundCap);
@@ -407,7 +407,7 @@ void drawStrokeStyleIcon(QPainter* painter, const QRectF& iconRect,
     pen.setCapStyle(Qt::RoundCap);
     pen.setJoinStyle(Qt::RoundJoin);
     painter->setPen(pen);
-    if (strokeStyle == SnowCanvasArrowStrokeStyle::Dashed) {
+    if (strokeStyle == SnowCanvasStrokeStyle::Dashed) {
         painter->drawLine(QPointF(5.0, 12.0), QPointF(7.0, 12.0));
         painter->drawLine(QPointF(11.0, 12.0), QPointF(13.0, 12.0));
         painter->drawLine(QPointF(17.0, 12.0), QPointF(19.0, 12.0));
@@ -471,7 +471,7 @@ void drawMixedValueMark(QPainter* painter, const QRectF& bounds, const QColor& c
 }
 
 void drawStrokeStylePreview(QPainter* painter, const QWidget* widget, const QColor& color,
-                            SnowCanvasArrowStrokeStyle strokeStyle, qreal physicalScale,
+                            SnowCanvasStrokeStyle strokeStyle, qreal physicalScale,
                             bool highlighted, bool outerBorderVisible) {
     if (painter == nullptr || widget == nullptr) {
         return;
@@ -941,7 +941,7 @@ void StrokeStylePreviewTrigger::setStrokeColor(const QColor& color) {
     update();
 }
 
-void StrokeStylePreviewTrigger::setStrokeStyle(SnowCanvasArrowStrokeStyle strokeStyle) {
+void StrokeStylePreviewTrigger::setStrokeStyle(SnowCanvasStrokeStyle strokeStyle) {
     if (m_strokeStyle == strokeStyle) {
         return;
     }
@@ -989,7 +989,7 @@ void StrokeStylePreviewTrigger::paintEvent(QPaintEvent* event) {
 StrokeStylePreviewButton::StrokeStylePreviewButton(QWidget* parent)
     : adqt::widgets::AdButton(parent) {}
 
-void StrokeStylePreviewButton::setStrokeStyle(SnowCanvasArrowStrokeStyle strokeStyle) {
+void StrokeStylePreviewButton::setStrokeStyle(SnowCanvasStrokeStyle strokeStyle) {
     if (m_strokeStyle == strokeStyle) {
         return;
     }
@@ -1822,7 +1822,7 @@ void configureScreenshotToolPaletteIconValuePreviewTrigger(
 
 StrokeStylePreviewTrigger* createScreenshotToolPaletteStrokeStyleTrigger(
     QWidget* parent, const char* tooltip, const QColor& color,
-    SnowCanvasArrowStrokeStyle strokeStyle, const ScreenshotToolPaletteButtonMetrics& metrics) {
+    SnowCanvasStrokeStyle strokeStyle, const ScreenshotToolPaletteButtonMetrics& metrics) {
     auto* trigger = new StrokeStylePreviewTrigger(parent);
     trigger->setStrokeColor(color);
     trigger->setStrokeStyle(strokeStyle);
@@ -1842,7 +1842,7 @@ void configureScreenshotToolPaletteStrokeStyleTrigger(
 
 StrokeStylePreviewButton*
 createScreenshotToolPaletteStrokeStyleButton(QWidget* parent, const char* tooltip,
-                                             SnowCanvasArrowStrokeStyle strokeStyle,
+                                             SnowCanvasStrokeStyle strokeStyle,
                                              const ScreenshotToolPaletteButtonMetrics& metrics) {
     auto* button = new StrokeStylePreviewButton(parent);
     configureScreenshotToolPaletteStyleButton(button, tooltip, metrics);

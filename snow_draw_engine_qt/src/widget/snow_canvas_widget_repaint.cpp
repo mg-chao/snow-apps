@@ -11,14 +11,6 @@ QRegion clippedUpdateRegion(const QRegion& region, const QRect& clip) {
     return region.intersected(clip);
 }
 
-QRect coalescedUpdateRect(const QRegion& region, const QRect& clip) {
-    if (region.isEmpty()) {
-        return {};
-    }
-    // QWidget partial repaints with fragmented QRegions can leave antialiasing seams behind.
-    // Repainting the accumulated bounding rect is more stable than relying on the exact region.
-    return region.boundingRect().intersected(clip);
-}
 
 QRegion adaptiveUpdateRegion(const QRegion& region, const QRect& clip, double boundingAreaFactor,
                              int maximumRectCount) {

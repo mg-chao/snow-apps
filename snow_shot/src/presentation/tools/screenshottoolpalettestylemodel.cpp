@@ -206,7 +206,7 @@ const QColor& ScreenshotToolPaletteRectangleStyleModel::strokeColor() const {
     return m_strokeColor;
 }
 
-SnowCanvasArrowStrokeStyle ScreenshotToolPaletteRectangleStyleModel::strokeStyle() const {
+SnowCanvasStrokeStyle ScreenshotToolPaletteRectangleStyleModel::strokeStyle() const {
     return m_strokeStyle;
 }
 
@@ -296,7 +296,7 @@ bool ScreenshotToolPaletteRectangleStyleModel::cycleStrokeColor() {
 }
 
 bool ScreenshotToolPaletteRectangleStyleModel::setStrokeStyle(
-    SnowCanvasArrowStrokeStyle strokeStyle) {
+    SnowCanvasStrokeStyle strokeStyle) {
     if (m_strokeStyle == strokeStyle) {
         return false;
     }

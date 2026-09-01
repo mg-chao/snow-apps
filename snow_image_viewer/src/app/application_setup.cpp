@@ -3,7 +3,7 @@
 #include "ui/app_icons.h"
 #include "ui/icon_theme_adapter.h"
 
-#include "icon_registry.h"
+#include "icon_renderer.h"
 #include "theme/theme_manager.h"
 #include "widgets/tooltip.h"
 

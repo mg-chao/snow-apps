@@ -20,7 +20,7 @@ fn main() {
 }
 
 fn run_main() -> Result<(), Box<dyn std::error::Error>> {
-    let cli = Cli::parse_from(normalize_legacy_args(env::args_os()));
+    let cli = Cli::parse_from(env::args_os());
     match cli.command {
         Commands::Run(args) => run_cmd(args),
         Commands::Config(args) => config_cmd(args),
@@ -48,7 +48,7 @@ enum Commands {
 
 #[derive(Debug, Args, Clone)]
 struct RunArgs {
-    #[arg(long = "img-path", alias = "img")]
+    #[arg(long = "img-path")]
     img_path: Option<String>,
     #[arg(value_name = "IMG_PATH", conflicts_with = "img_path")]
     img_path_positional: Option<String>,
@@ -270,23 +270,6 @@ fn check_cmd() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn normalize_legacy_args<I, S>(args: I) -> Vec<std::ffi::OsString>
-where
-    I: IntoIterator<Item = S>,
-    S: Into<std::ffi::OsString>,
-{
-    args.into_iter()
-        .map(Into::into)
-        .map(|arg| {
-            if arg == "-img" {
-                "--img-path".into()
-            } else {
-                arg
-            }
-        })
-        .collect()
-}
-
 fn parse_input(value: &str) -> OcrInput {
     if value.starts_with("http://") || value.starts_with("https://") {
         OcrInput::Url(value.to_string())
@@ -466,13 +449,13 @@ fn infer_stem(img_path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Cli, Commands, ProviderCli, normalize_legacy_args};
+    use super::{Cli, Commands, ProviderCli};
     use clap::Parser;
 
     fn parse_cli(input: &[&str]) -> Result<Cli, clap::Error> {
         let mut args = vec!["rapidocr".to_string()];
         args.extend(input.iter().map(|v| (*v).to_string()));
-        Cli::try_parse_from(normalize_legacy_args(args))
+        Cli::try_parse_from(args)
     }
 
     #[test]
@@ -521,30 +504,5 @@ mod tests {
             panic!("expected run command");
         };
         assert!(run.allow_provider_fallback);
-    }
-
-    #[test]
-    fn parse_run_cli_rejects_removed_config_format_flag() {
-        let err = parse_cli(&[
-            "run",
-            "--img-path",
-            "test.png",
-            "--config-format",
-            "rapidocr",
-        ])
-        .expect_err("removed flag should be rejected");
-        assert!(
-            err.to_string()
-                .contains("unexpected argument '--config-format'")
-        );
-    }
-
-    #[test]
-    fn parse_run_cli_accepts_legacy_single_dash_img_alias() {
-        let cli = parse_cli(&["run", "-img", "test.png"]).expect("legacy alias should parse");
-        let Commands::Run(run) = cli.command else {
-            panic!("expected run command");
-        };
-        assert_eq!(run.img_path.as_deref(), Some("test.png"));
     }
 }

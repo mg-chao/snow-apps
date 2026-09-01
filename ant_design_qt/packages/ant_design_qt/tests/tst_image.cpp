@@ -42,13 +42,15 @@ class TestReply final : public AdImageReply {
   std::function<void()> aborted;
 };
 
-class LegacyLoader : public AdImageLoader {
+class CountingLoader : public AdImageLoader {
  public:
   using AdImageLoader::AdImageLoader;
 
-  AdImageReply* load(const QUrl& source, QObject* parent = nullptr) override {
+  AdImageReply* load(const QUrl& source, const AdImageLoadOptions& options,
+                     QObject* parent = nullptr) override {
     ++calls;
     sources.push_back(source);
+    receivedOptions.push_back(options);
     auto* reply = new TestReply(parent);
     QTimer::singleShot(0, reply, [reply]() {
       QImage image(32, 24, QImage::Format_ARGB32_Premultiplied);
@@ -60,19 +62,6 @@ class LegacyLoader : public AdImageLoader {
 
   int calls = 0;
   QList<QUrl> sources;
-};
-
-class OptionsLoader final : public LegacyLoader {
- public:
-  using LegacyLoader::LegacyLoader;
-  using LegacyLoader::load;
-
-  AdImageReply* load(const QUrl& source, const AdImageLoadOptions& options,
-                     QObject* parent = nullptr) override {
-    receivedOptions.push_back(options);
-    return LegacyLoader::load(source, parent);
-  }
-
   QList<AdImageLoadOptions> receivedOptions;
 };
 
@@ -80,7 +69,7 @@ class DeferredLoader final : public AdImageLoader {
  public:
   using AdImageLoader::AdImageLoader;
 
-  AdImageReply* load(const QUrl&, QObject* parent = nullptr) override {
+  AdImageReply* load(const QUrl&, const AdImageLoadOptions&, QObject* parent = nullptr) override {
     auto* reply = new TestReply(parent);
     reply->aborted = [this]() { ++abortCalls; };
     replies.push_back(reply);
@@ -126,20 +115,8 @@ class ImageTests final : public QObject {
     QCoreApplication::removeTranslator(&translator);
   }
 
-  void legacyLoaderCompatibilityOverload() {
-    LegacyLoader loader;
-    QObject owner;
-    AdImageLoadOptions options;
-    options.targetPixelSize = QSize(128, 64);
-    AdImageLoader* base = &loader;
-    AdImageReply* reply = base->load(QUrl(QStringLiteral("test:legacy")), options, &owner);
-    QVERIFY(reply != nullptr);
-    QTRY_VERIFY(reply->isFinished());
-    QCOMPARE(loader.calls, 1);
-  }
-
   void whenVisibleAndFitWidgetOptions() {
-    OptionsLoader loader;
+    CountingLoader loader;
     AdImage image;
     image.resize(101, 75);
     image.setImageLoader(&loader);
@@ -168,7 +145,7 @@ class ImageTests final : public QObject {
   }
 
   void hiddenCarouselSlidesDoNotLoad() {
-    LegacyLoader loader;
+    CountingLoader loader;
     AdCarousel carousel;
     carousel.resize(320, 180);
     carousel.setTransitionDuration(0);
@@ -222,8 +199,8 @@ class ImageTests final : public QObject {
     source.fill(Qt::blue);
     const QUrl url = dataUrl(source);
     QObject owner;
-    AdImageReply* first = defaultAdImageLoader()->load(url, &owner);
-    AdImageReply* second = defaultAdImageLoader()->load(url, &owner);
+    AdImageReply* first = defaultAdImageLoader()->load(url, AdImageLoadOptions{}, &owner);
+    AdImageReply* second = defaultAdImageLoader()->load(url, AdImageLoadOptions{}, &owner);
     QVERIFY(!first->isFinished());
     QVERIFY(!second->isFinished());
     QSignalSpy firstFinished(first, &AdImageReply::finished);
@@ -238,8 +215,8 @@ class ImageTests final : public QObject {
     source.fill(Qt::cyan);
     const QUrl url = dataUrl(source);
     QObject owner;
-    AdImageReply* first = defaultAdImageLoader()->load(url, &owner);
-    AdImageReply* second = defaultAdImageLoader()->load(url, &owner);
+    AdImageReply* first = defaultAdImageLoader()->load(url, AdImageLoadOptions{}, &owner);
+    AdImageReply* second = defaultAdImageLoader()->load(url, AdImageLoadOptions{}, &owner);
     QVERIFY(!second->isFinished());
     first->abort();
     first->deleteLater();
@@ -292,13 +269,13 @@ class ImageTests final : public QObject {
     const QUrl url = dataUrl(source);
     QObject owner;
 
-    AdImageReply* first = defaultAdImageLoader()->load(url, &owner);
+    AdImageReply* first = defaultAdImageLoader()->load(url, AdImageLoadOptions{}, &owner);
     QSignalSpy firstFinished(first, &AdImageReply::finished);
     QVERIFY(firstFinished.wait());
     QVERIFY(first->isSuccessful());
     const quint64 firstKey = first->image().cacheKey();
 
-    AdImageReply* second = defaultAdImageLoader()->load(url, &owner);
+    AdImageReply* second = defaultAdImageLoader()->load(url, AdImageLoadOptions{}, &owner);
     QVERIFY(!second->isFinished());
     QSignalSpy secondFinished(second, &AdImageReply::finished);
     QVERIFY(secondFinished.wait());

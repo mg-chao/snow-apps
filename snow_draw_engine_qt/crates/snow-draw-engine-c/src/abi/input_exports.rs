@@ -4,35 +4,6 @@ use crate::abi::types::*;
 
 /// # Safety
 /// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
-/// `event` must point to a readable `SnowInputEvent` and `out_output` must be writable.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_viewport_process_input(
-    runtime: SnowRuntime,
-    viewport: SnowViewport,
-    event: *const SnowInputEvent,
-    out_output: *mut SnowInteractionOutput,
-) -> SnowError {
-    ffi_error(|| {
-        if event.is_null() || out_output.is_null() {
-            return SnowError::InvalidArgument;
-        }
-
-        ffi_status(with_runtime_impl_mut(runtime, |state| {
-            let id = viewport_id(viewport)?;
-            let event = snow_input_event_to_rust(unsafe { &*event })?;
-            let output = state
-                .runtime
-                .process_input_with_viewport_changes(id, event)
-                .map_err(SnowError::from)?
-                .interaction;
-            write_out(out_output, snow_interaction_output_from_rust(output));
-            Ok(())
-        }))
-    })
-}
-
-/// # Safety
-/// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
 /// `event` must point to a readable `SnowInputEvent`.
 /// `out_output` and `out_changed_viewports` must be writable.
 #[unsafe(no_mangle)]

@@ -63,8 +63,6 @@ QPainterPath arrowPathForPoints(const QVector<QPointF>& points, SnowArrowType ar
 QPainterPath arrowPathFromCommands(const ViewProjection& projection,
                                    const SnowArrowPathCommand* commands,
                                    std::uint32_t commandCount);
-QRectF arrowViewBounds(const QVector<QPointF>& points, SnowArrowType arrowType, double strokeWidth,
-                       double zoom, SnowArrowhead startHead, SnowArrowhead endHead);
 
 QRectF sceneItemBounds(const SceneDisplayInfo& displayInfo, const SnowSceneDisplayItem& item);
 QRectF sceneItemBounds(const SceneDisplayInfo& displayInfo, const SnowCanvasSceneItem& item);

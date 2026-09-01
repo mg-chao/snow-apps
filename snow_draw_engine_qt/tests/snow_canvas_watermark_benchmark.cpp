@@ -1338,7 +1338,7 @@ bool writeCsv(const std::string& path, const std::vector<Result>& results, std::
     const std::string compiler = compilerName();
     for (const Result& result : results) {
         const auto& diagnostics = result.diagnostics;
-        stream << "4," << csvEscape(result.suite) << ',' << csvEscape(result.scenario) << ','
+        stream << "1," << csvEscape(result.suite) << ',' << csvEscape(result.scenario) << ','
                << csvEscape(result.operation) << ',' << csvEscape(result.cacheMode) << ','
                << result.logicalWidth << ',' << result.logicalHeight << ',' << result.physicalWidth
                << ',' << result.physicalHeight << ',' << result.devicePixelRatio << ','

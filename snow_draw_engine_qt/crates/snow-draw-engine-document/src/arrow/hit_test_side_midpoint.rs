@@ -1,25 +1,10 @@
 use super::*;
 
-fn resolve_roundness_type(type_: BindableRoundnessType) -> u8 {
-    match type_ {
-        BindableRoundnessType::Numeric(value) => value,
-        BindableRoundnessType::Alias(BindableRoundnessAliasType::Legacy) => {
-            BINDABLE_ROUNDNESS.legacy
-        }
-        BindableRoundnessType::Alias(BindableRoundnessAliasType::Proportional) => {
-            BINDABLE_ROUNDNESS.proportional
-        }
-        BindableRoundnessType::Alias(BindableRoundnessAliasType::Adaptive) => {
-            BINDABLE_ROUNDNESS.adaptive
-        }
-    }
-}
-
 pub fn get_binding_side_mid_point<T: ?Sized>(
     binding: (&T, Point),
     bindable: &BindableState,
 ) -> Point {
-    let shape = canonicalize_bindable_shape(bindable.shape);
+    let shape = bindable.shape;
     let side = get_shape_side(normalize_fixed_point(binding.1), shape);
     let bindable_center = center(bindable.x, bindable.y, bindable.width, bindable.height);
     const OFFSET: f64 = 0.01;
@@ -27,28 +12,7 @@ pub fn get_binding_side_mid_point<T: ?Sized>(
 
     let midpoint = |a: Point, b: Point| -> Point { [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0] };
 
-    let get_corner_radius = |size: f64| -> f64 {
-        let Some(roundness) = bindable.roundness else {
-            return 0.0;
-        };
-        let roundness_type = resolve_roundness_type(roundness.type_);
-        if roundness_type == BINDABLE_ROUNDNESS.proportional
-            || roundness_type == BINDABLE_ROUNDNESS.legacy
-        {
-            return size * 0.25;
-        }
-        if roundness_type == BINDABLE_ROUNDNESS.adaptive {
-            let fixed_radius = roundness.value.unwrap_or(32.0);
-            let cutoff_size = fixed_radius / 0.25;
-            if size <= cutoff_size {
-                return size * 0.25;
-            }
-            return fixed_radius;
-        }
-        0.0
-    };
-
-    if shape == CanonicalBindableShape::Diamond {
+    if shape == BindableShape::Diamond {
         let top_x = bindable.width.floor() / 2.0 + 1.0;
         let top_y = 0.0;
         let right_x = bindable.width;
@@ -58,16 +22,8 @@ pub fn get_binding_side_mid_point<T: ?Sized>(
         let left_x = 0.0;
         let left_y = right_y;
 
-        let vertical_radius = if bindable.roundness.is_some() {
-            get_corner_radius((top_x - left_x).abs())
-        } else {
-            (top_x - left_x) * 0.01
-        };
-        let horizontal_radius = if bindable.roundness.is_some() {
-            get_corner_radius((right_y - top_y).abs())
-        } else {
-            (right_y - top_y) * 0.01
-        };
+        let vertical_radius = (top_x - left_x) * 0.01;
+        let horizontal_radius = (right_y - top_y) * 0.01;
 
         let top = [bindable.x + top_x, bindable.y + top_y];
         let right = [bindable.x + right_x, bindable.y + right_y];
@@ -116,7 +72,7 @@ pub fn get_binding_side_mid_point<T: ?Sized>(
             ]
         };
 
-        let legacy_diamond_corner_sample = |flat_corner_index: usize| -> Point {
+        let diamond_corner_sample = |flat_corner_index: usize| -> Point {
             let steps = 50.0;
             let i = flat_corner_index as f64;
             let t0 = if i - 1.0 < 0.0 {
@@ -137,19 +93,19 @@ pub fn get_binding_side_mid_point<T: ?Sized>(
 
         let [x, y] = match side {
             Side::Left => {
-                let point = legacy_diamond_corner_sample(2);
+                let point = diamond_corner_sample(2);
                 [point[0] - OFFSET, point[1]]
             }
             Side::Right => {
-                let point = legacy_diamond_corner_sample(0);
+                let point = diamond_corner_sample(0);
                 [point[0] + OFFSET, point[1]]
             }
             Side::Top => {
-                let point = legacy_diamond_corner_sample(3);
+                let point = diamond_corner_sample(3);
                 [point[0], point[1] - OFFSET]
             }
             Side::Bottom => {
-                let point = legacy_diamond_corner_sample(1);
+                let point = diamond_corner_sample(1);
                 [point[0], point[1] + OFFSET]
             }
             Side::TopRight => {
@@ -173,7 +129,7 @@ pub fn get_binding_side_mid_point<T: ?Sized>(
         return rotate_point([x, y], bindable_center, bindable.angle);
     }
 
-    if shape == CanonicalBindableShape::Ellipse {
+    if shape == BindableShape::Ellipse {
         let ellipse_center_x = bindable.x + bindable.width / 2.0;
         let ellipse_center_y = bindable.y + bindable.height / 2.0;
         let radius_x = bindable.width / 2.0;
@@ -217,10 +173,7 @@ pub fn get_binding_side_mid_point<T: ?Sized>(
         return rotate_point([x, y], bindable_center, bindable.angle);
     }
 
-    let mut radius = get_corner_radius(bindable.width.min(bindable.height));
-    if radius == 0.0 {
-        radius = 0.01;
-    }
+    let radius = 0.01;
 
     let top = [
         [bindable.x + radius, bindable.y],
@@ -396,10 +349,10 @@ fn normalize_degrees(degrees: f64) -> f64 {
     ((degrees % 360.0) + 360.0) % 360.0
 }
 
-fn get_shape_side(fixed_point: Point, shape: CanonicalBindableShape) -> Side {
+fn get_shape_side(fixed_point: Point, shape: BindableShape) -> Side {
     let config = match shape {
-        CanonicalBindableShape::Rectangle => &RECTANGLE_SECTORS[..],
-        CanonicalBindableShape::Diamond | CanonicalBindableShape::Ellipse => &DIAMOND_SECTORS[..],
+        BindableShape::Rectangle => &RECTANGLE_SECTORS[..],
+        BindableShape::Diamond | BindableShape::Ellipse => &DIAMOND_SECTORS[..],
     };
 
     let centered_x = fixed_point[0] - 0.5;

@@ -69,13 +69,6 @@ struct TextResizeMeasurementResult {
     SnowTextElementInfo info{};
 };
 
-struct ActiveTextDraftPresentationResult {
-    bool success = false;
-    bool active = false;
-    SnowTextElementInfo info{};
-    SnowTextStyle style{};
-};
-
 MutationResult setActiveTool(SnowRuntime runtime, SnowViewport viewport, SnowActiveTool tool);
 MutationResult undo(SnowRuntime runtime);
 MutationResult redo(SnowRuntime runtime);
@@ -102,8 +95,6 @@ MutationResult applyActiveTextResizeMeasurement(SnowRuntime runtime, SnowViewpor
 MutationResult setActiveTextDraftPresentation(SnowRuntime runtime, SnowViewport viewport,
                                               const ActiveTextDraftPresentationRequest& request);
 MutationResult clearActiveTextDraftPresentation(SnowRuntime runtime, SnowViewport viewport);
-ActiveTextDraftPresentationResult activeTextDraftPresentation(SnowRuntime runtime,
-                                                              SnowViewport viewport);
 MutationResult setShapeStylePatch(SnowRuntime runtime, SnowViewport viewport,
                                   const SnowShapeStyle& style, std::uint32_t properties,
                                   SnowShapeKind kind);
@@ -113,8 +104,6 @@ MutationResult setSpotlightConfig(SnowRuntime runtime, SnowViewport viewport,
                                   const SnowSpotlightConfig& config);
 MutationResult setFilterStyle(SnowRuntime runtime, SnowViewport viewport,
                               const SnowFilterStyle& style, std::uint32_t properties);
-MutationResult setRectangleShapeStyle(SnowRuntime runtime, SnowViewport viewport,
-                                      const SnowRectangleShapeStyle& style);
 MutationResult setTextStyle(SnowRuntime runtime, SnowViewport viewport, const SnowTextStyle& style,
                             const std::vector<SnowTextLayoutOverride>& layouts = {});
 MutationResult setSerialNumberStyle(SnowRuntime runtime, SnowViewport viewport,

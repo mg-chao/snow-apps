@@ -11,9 +11,6 @@ bool Controller::isEnabled() const {
     return m_enabled;
 }
 
-std::uint32_t Controller::capturedPointerId() const {
-    return m_capturedPointerId;
-}
 
 void Controller::setEnabled(QWidget& widget, SnowCanvasCursorController& cursorController,
                             bool enabled) {

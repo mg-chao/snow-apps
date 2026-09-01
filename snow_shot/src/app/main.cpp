@@ -10,7 +10,7 @@
 #include "../presentation/capture/screenshotcaptureperfinstrumentation.h"
 #include "../presentation/pinned/screenshotpintoperfinstrumentation.h"
 
-#include "icon_registry.h"
+#include "icon_renderer.h"
 #include "locale/locale.h"
 #include "widgets/tooltip.h"
 

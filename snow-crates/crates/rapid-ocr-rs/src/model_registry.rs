@@ -47,8 +47,6 @@ struct ModelCandidate<'a> {
 
 #[derive(Debug, Clone)]
 pub struct ResolvedRecModel {
-    #[allow(dead_code)]
-    pub model_name: String,
     pub model_url: String,
     pub sha256: Option<String>,
     pub dict_url: Option<String>,
@@ -56,8 +54,6 @@ pub struct ResolvedRecModel {
 
 #[derive(Debug, Clone)]
 pub struct ResolvedTaskModel {
-    #[allow(dead_code)]
-    pub model_name: String,
     pub model_url: String,
     pub sha256: Option<String>,
 }
@@ -104,7 +100,6 @@ impl ModelRegistry {
         )?;
 
         Ok(ResolvedRecModel {
-            model_name: selected.0.clone(),
             model_url: selected.1.model_dir.clone(),
             sha256: selected.1.sha256.clone(),
             dict_url: selected.1.dict_url.clone(),
@@ -126,7 +121,6 @@ impl ModelRegistry {
             ocr_version,
         )?;
         Ok(ResolvedTaskModel {
-            model_name: selected.0.clone(),
             model_url: selected.1.model_dir.clone(),
             sha256: selected.1.sha256.clone(),
         })
@@ -147,7 +141,6 @@ impl ModelRegistry {
             ocr_version,
         )?;
         Ok(ResolvedTaskModel {
-            model_name: selected.0.clone(),
             model_url: selected.1.model_dir.clone(),
             sha256: selected.1.sha256.clone(),
         })
@@ -378,13 +371,13 @@ onnxruntime:
         let mobile = reg
             .resolve_rec(OcrVersion::PPocrV4, LangRec::Ch, ModelType::Mobile)
             .expect("mobile model should resolve");
-        assert!(mobile.model_name.contains("ch_PP-OCRv4_rec_infer"));
-        assert!(!mobile.model_name.contains("server"));
+        assert!(mobile.model_url.contains("ch_PP-OCRv4_rec_infer"));
+        assert!(!mobile.model_url.contains("server"));
 
         let server = reg
             .resolve_rec(OcrVersion::PPocrV4, LangRec::Ch, ModelType::Server)
             .expect("server model should resolve");
-        assert!(server.model_name.contains("server"));
+        assert!(server.model_url.contains("server"));
     }
 
     #[test]
@@ -394,12 +387,12 @@ onnxruntime:
         let det = reg
             .resolve_det(OcrVersion::PPocrV4, LangDet::Ch, ModelType::Mobile)
             .expect("det model should resolve");
-        assert!(det.model_name.contains("det"));
+        assert!(det.model_url.contains("det"));
 
         let cls = reg
             .resolve_cls(OcrVersion::PPocrV4, LangCls::Ch, ModelType::Mobile)
             .expect("cls model should resolve");
-        assert!(cls.model_name.contains("cls"));
+        assert!(cls.model_url.contains("cls"));
     }
 
     #[test]
@@ -409,14 +402,12 @@ onnxruntime:
         let det = reg
             .resolve_det(OcrVersion::PPocrV6, LangDet::Ch, ModelType::Small)
             .expect("v6 det model should resolve");
-        assert_eq!(det.model_name, "multi_PP-OCRv6_det_small");
-        assert!(det.model_url.ends_with("PP-OCRv6_det_small.onnx"));
+        assert!(det.model_url.ends_with("multi_PP-OCRv6_det_small.onnx"));
 
         let rec = reg
             .resolve_rec(OcrVersion::PPocrV6, LangRec::Ch, ModelType::Small)
             .expect("v6 rec model should resolve");
-        assert_eq!(rec.model_name, "multi_PP-OCRv6_rec_small");
-        assert!(rec.model_url.ends_with("PP-OCRv6_rec_small.onnx"));
+        assert!(rec.model_url.ends_with("multi_PP-OCRv6_rec_small.onnx"));
         assert!(
             rec.dict_url
                 .as_deref()
@@ -425,7 +416,7 @@ onnxruntime:
     }
 
     #[test]
-    fn resolve_ppocr_v6_rejects_legacy_model_type() {
+    fn resolve_ppocr_v6_rejects_mobile_model_type() {
         let reg = ModelRegistry::from_default_yaml().expect("registry should parse");
         let err = reg
             .resolve_rec(OcrVersion::PPocrV6, LangRec::Ch, ModelType::Mobile)
@@ -451,7 +442,7 @@ onnxruntime:
         let mobile = reg
             .resolve_rec(OcrVersion::PPocrV4, LangRec::Ch, ModelType::Mobile)
             .expect("mobile model should resolve");
-        assert!(mobile.model_name.starts_with("ch_PP-OCRv4_rec_infer"));
+        assert!(mobile.model_url.contains("ch_PP-OCRv4_rec_infer"));
     }
 
     #[test]

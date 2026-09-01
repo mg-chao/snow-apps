@@ -1,4 +1,3 @@
-use crate::abi::exports::snow_changed_viewports_destroy;
 use crate::abi::handles::*;
 use crate::abi::types::*;
 
@@ -20,17 +19,6 @@ pub unsafe extern "C" fn snow_runtime_get_history_state(
             Ok(())
         }))
     })
-}
-
-/// # Safety
-/// If `engine` is non-null, it must be a live handle returned by `snow_engine_create`.
-/// `out_state` must be valid for writes of one `SnowHistoryState` value.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_engine_get_history_state(
-    engine: SnowEngine,
-    out_state: *mut SnowHistoryState,
-) -> SnowError {
-    ffi_error(|| unsafe { snow_runtime_get_history_state(engine, out_state) })
 }
 
 /// # Safety
@@ -87,20 +75,6 @@ pub unsafe extern "C" fn snow_runtime_restore_document_history_preserving_editor
 
 /// # Safety
 /// If `runtime` is non-null, it must be a live handle returned by `snow_runtime_create`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_runtime_undo(runtime: SnowRuntime) -> SnowError {
-    ffi_error(|| {
-        let mut changed_viewports = std::ptr::null_mut();
-        let error = unsafe { snow_runtime_undo_ex(runtime, &mut changed_viewports) };
-        unsafe {
-            snow_changed_viewports_destroy(changed_viewports);
-        }
-        error
-    })
-}
-
-/// # Safety
-/// If `runtime` is non-null, it must be a live handle returned by `snow_runtime_create`.
 /// `out_changed_viewports` must be valid for writes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_runtime_undo_ex(
@@ -120,38 +94,6 @@ pub unsafe extern "C" fn snow_runtime_undo_ex(
             write_changed_viewports(out_changed_viewports, result.changed_viewports);
             Ok(())
         }))
-    })
-}
-
-/// # Safety
-/// If `engine` is non-null, it must be a live handle returned by `snow_engine_create`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_engine_undo(engine: SnowEngine) -> SnowError {
-    ffi_error(|| unsafe { snow_runtime_undo(engine) })
-}
-
-/// # Safety
-/// If `engine` is non-null, it must be a live handle returned by `snow_engine_create`.
-/// `out_changed_viewports` must be valid for writes.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_engine_undo_ex(
-    engine: SnowEngine,
-    out_changed_viewports: *mut SnowChangedViewportList,
-) -> SnowError {
-    ffi_error(|| unsafe { snow_runtime_undo_ex(engine, out_changed_viewports) })
-}
-
-/// # Safety
-/// If `runtime` is non-null, it must be a live handle returned by `snow_runtime_create`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_runtime_redo(runtime: SnowRuntime) -> SnowError {
-    ffi_error(|| {
-        let mut changed_viewports = std::ptr::null_mut();
-        let error = unsafe { snow_runtime_redo_ex(runtime, &mut changed_viewports) };
-        unsafe {
-            snow_changed_viewports_destroy(changed_viewports);
-        }
-        error
     })
 }
 
@@ -177,22 +119,4 @@ pub unsafe extern "C" fn snow_runtime_redo_ex(
             Ok(())
         }))
     })
-}
-
-/// # Safety
-/// If `engine` is non-null, it must be a live handle returned by `snow_engine_create`.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_engine_redo(engine: SnowEngine) -> SnowError {
-    ffi_error(|| unsafe { snow_runtime_redo(engine) })
-}
-
-/// # Safety
-/// If `engine` is non-null, it must be a live handle returned by `snow_engine_create`.
-/// `out_changed_viewports` must be valid for writes.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_engine_redo_ex(
-    engine: SnowEngine,
-    out_changed_viewports: *mut SnowChangedViewportList,
-) -> SnowError {
-    ffi_error(|| unsafe { snow_runtime_redo_ex(engine, out_changed_viewports) })
 }

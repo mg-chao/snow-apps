@@ -32,7 +32,6 @@ pub struct PointerButtons(pub u8);
 impl PointerButtons {
     pub const PRIMARY: u8 = 0b0000_0001;
     pub const SECONDARY: u8 = 0b0000_0010;
-    pub const MIDDLE: u8 = 0b0000_0100;
 
     pub fn contains(self, bit: u8) -> bool {
         self.0 & bit != 0

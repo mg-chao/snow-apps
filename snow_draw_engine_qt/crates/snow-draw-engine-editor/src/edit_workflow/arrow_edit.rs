@@ -278,10 +278,10 @@ mod tests {
     use super::*;
     use snow_draw_engine_core::{
         ColorRgba8, CornerRadii, EngineConfig,
-        arrow::{ArrowStrokeStyle, ArrowType},
+        arrow::{StrokeStyle, ArrowType},
     };
     use snow_draw_engine_document::{
-        ElementMeta, FillStyle, HighlightShape, RectangleData, RectangleElementKind, StrokeStyle,
+        ElementMeta, FillStyle, HighlightShape, RectangleData, RectangleElementKind,
         Transaction,
     };
     use snow_draw_engine_interaction::{
@@ -299,7 +299,7 @@ mod tests {
             ],
             ColorRgba8::default(),
             2.0,
-            ArrowStrokeStyle::Solid,
+            StrokeStyle::Solid,
             ArrowType::Elbow,
             None,
             None,
@@ -401,7 +401,7 @@ mod tests {
             &[Point::new(-150.0, 30.0), Point::new(-100.0, 30.0)],
             ColorRgba8::default(),
             2.0,
-            ArrowStrokeStyle::Solid,
+            StrokeStyle::Solid,
             ArrowType::Elbow,
             None,
             None,

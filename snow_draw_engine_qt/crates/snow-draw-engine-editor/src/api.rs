@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 use snow_draw_engine_core::{
     Camera, ColorRgba8, CornerRadii, ErrorCode, PathGeometry, Point, SnapGuide, SurfaceSize,
-    arrow::{ArrowStrokeStyle, ArrowType, Arrowhead},
+    arrow::{StrokeStyle, ArrowType, Arrowhead},
     validate_camera,
 };
 use snow_draw_engine_document::{
     ArrowData, CanvasFilterType, ElementId, FillStyle, FilterData, FreeDrawData, HighlightShape,
-    PenFilterData, RectangleData, SerialNumberData, StrokeStyle, TextData,
+    PenFilterData, RectangleData, SerialNumberData, TextData,
 };
 use std::sync::Arc;
 
@@ -61,7 +61,7 @@ pub struct ArrowStyle {
     pub stroke_width: f64,
     pub start_arrowhead: Option<Arrowhead>,
     pub end_arrowhead: Option<Arrowhead>,
-    pub stroke_style: ArrowStrokeStyle,
+    pub stroke_style: StrokeStyle,
     pub arrow_type: ArrowType,
 }
 
@@ -74,7 +74,7 @@ pub struct ShapeStyle {
     pub corner_radii: CornerRadii,
     pub start_arrowhead: Option<Arrowhead>,
     pub end_arrowhead: Option<Arrowhead>,
-    pub stroke_style: ArrowStrokeStyle,
+    pub stroke_style: StrokeStyle,
     pub arrow_type: ArrowType,
     pub opacity: f64,
     pub highlight_shape: HighlightShape,

@@ -219,7 +219,7 @@ mod double_click_tests {
     use super::*;
     use snow_draw_engine_core::{
         ColorRgba8, EngineConfig,
-        arrow::{ArrowStrokeStyle, ArrowType},
+        arrow::{StrokeStyle, ArrowType},
     };
     use snow_draw_engine_document::{ElementMeta, FillStyle};
     use snow_draw_engine_interaction::{InputEvent, Modifiers, PointerButtons, PointerDevice};
@@ -236,7 +236,7 @@ mod double_click_tests {
             ],
             ColorRgba8::default(),
             2.0,
-            ArrowStrokeStyle::Solid,
+            StrokeStyle::Solid,
             ArrowType::Curve,
             None,
             None,
@@ -279,10 +279,10 @@ mod stroke_cursor_tests {
     use super::*;
     use snow_draw_engine_core::{
         EngineConfig, PathSegmentMode,
-        arrow::{ArrowStrokeStyle, ArrowType},
+        arrow::{StrokeStyle, ArrowType},
     };
     use snow_draw_engine_document::{
-        ElementMeta, FillStyle, FreeDrawData, FreeDrawStyle, StrokeStyle,
+        ElementMeta, FillStyle, FreeDrawData, FreeDrawStyle,
     };
     use snow_draw_engine_interaction::{InputEvent, Modifiers, PointerButtons, PointerDevice};
 
@@ -510,7 +510,7 @@ mod stroke_cursor_tests {
             &[Point::new(-40.0, 0.0), Point::new(40.0, 0.0)],
             Default::default(),
             12.0,
-            ArrowStrokeStyle::Solid,
+            StrokeStyle::Solid,
             ArrowType::Straight,
             None,
             None,

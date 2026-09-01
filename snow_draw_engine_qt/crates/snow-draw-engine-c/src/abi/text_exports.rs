@@ -1,7 +1,6 @@
 use snow_draw_engine::{ElementId, Point, TextLayoutSize};
 
 use crate::abi::convert::*;
-use crate::abi::exports::snow_changed_viewports_destroy;
 use crate::abi::handles::*;
 use crate::abi::text::{active_text_draft_from_c, text_draft_commit_from_c, text_string_from_raw};
 use crate::abi::types::*;
@@ -21,47 +20,6 @@ pub unsafe extern "C" fn snow_viewport_create_text(
     measured_height: f64,
 ) -> SnowError {
     ffi_error(|| {
-        let mut changed_viewports = std::ptr::null_mut();
-        let error = unsafe {
-            snow_viewport_create_text_ex(
-                runtime,
-                viewport,
-                center_x,
-                center_y,
-                text_utf8,
-                text_utf8_len,
-                measured_width,
-                measured_height,
-                &mut changed_viewports,
-            )
-        };
-        unsafe {
-            snow_changed_viewports_destroy(changed_viewports);
-        }
-        error
-    })
-}
-
-/// # Safety
-/// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
-/// `text_utf8` must either be null with `text_utf8_len == 0`, or point to `text_utf8_len` readable bytes.
-/// `out_changed_viewports` must be valid for writes.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_viewport_create_text_ex(
-    runtime: SnowRuntime,
-    viewport: SnowViewport,
-    center_x: f64,
-    center_y: f64,
-    text_utf8: *const std::ffi::c_char,
-    text_utf8_len: u32,
-    measured_width: f64,
-    measured_height: f64,
-    out_changed_viewports: *mut SnowChangedViewportList,
-) -> SnowError {
-    ffi_error(|| {
-        if out_changed_viewports.is_null() {
-            return SnowError::InvalidArgument;
-        }
         let text = match text_string_from_raw(text_utf8, text_utf8_len) {
             Ok(text) => text,
             Err(error) => return error,
@@ -69,7 +27,7 @@ pub unsafe extern "C" fn snow_viewport_create_text_ex(
 
         ffi_status(with_runtime_impl_mut(runtime, |state| {
             let id = viewport_id(viewport)?;
-            let result = state
+            state
                 .runtime
                 .create_text_with_viewport_changes(
                     id,
@@ -80,8 +38,8 @@ pub unsafe extern "C" fn snow_viewport_create_text_ex(
                         height: measured_height,
                     },
                 )
+                .map(|_| ())
                 .map_err(SnowError::from)?;
-            write_changed_viewports(out_changed_viewports, result.changed_viewports);
             Ok(())
         }))
     })
@@ -175,7 +133,7 @@ pub unsafe extern "C" fn snow_viewport_get_selected_text_elements(
                 if capacity != 0 {
                     let out_slice =
                         unsafe { std::slice::from_raw_parts_mut(out_items, capacity as usize) };
-                    for (target, item) in out_slice.iter_mut().zip(items.into_iter()) {
+                    for (target, item) in out_slice.iter_mut().zip(items) {
                         *target = snow_text_element_info_from_rust(item);
                     }
                 }
@@ -399,69 +357,13 @@ pub unsafe extern "C" fn snow_runtime_get_text_element(
 
 /// # Safety
 /// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
-/// `text_utf8` must either be null with `text_utf8_len == 0`, or point to `text_utf8_len` readable bytes.
-/// `out_changed_viewports` must be valid for writes.
-///
-/// This is the legacy unstyled commit path. It intentionally preserves the
-/// historical behavior of committing content/layout through the editor default
-/// style instead of accepting a full draft style payload.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_viewport_commit_text_ex(
-    runtime: SnowRuntime,
-    viewport: SnowViewport,
-    existing_id: SnowElementId,
-    has_existing_id: u8,
-    center_x: f64,
-    center_y: f64,
-    text_utf8: *const std::ffi::c_char,
-    text_utf8_len: u32,
-    measured_width: f64,
-    measured_height: f64,
-    out_changed_viewports: *mut SnowChangedViewportList,
-) -> SnowError {
-    ffi_error(|| {
-        if out_changed_viewports.is_null() {
-            return SnowError::InvalidArgument;
-        }
-        let text = match text_string_from_raw(text_utf8, text_utf8_len) {
-            Ok(text) => text,
-            Err(error) => return error,
-        };
-
-        ffi_status(with_runtime_impl_mut(runtime, |state| {
-            let id = viewport_id(viewport)?;
-            let existing = (has_existing_id != 0).then_some(ElementId {
-                index: existing_id.index,
-                generation: existing_id.generation,
-            });
-            let result = state
-                .runtime
-                .commit_text_element_with_viewport_changes(
-                    id,
-                    existing,
-                    Point::new(center_x, center_y),
-                    text,
-                    TextLayoutSize {
-                        width: measured_width,
-                        height: measured_height,
-                    },
-                )
-                .map_err(SnowError::from)?;
-            write_changed_viewports(out_changed_viewports, result.changed_viewports);
-            Ok(())
-        }))
-    })
-}
-
-/// # Safety
-/// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
 /// `draft` must point to a readable `SnowTextCommitDraft`.
 /// `draft.text_utf8` must either be null with `draft.text_utf8_len == 0`, or point to
 /// `draft.text_utf8_len` readable bytes.
 /// `out_changed_viewports` must be valid for writes.
 ///
-/// This is the typed styled draft commit path. It persists the supplied text,
-/// exact host layout, auto-resize state, and full text style.
+/// Typed draft commit path: persists the supplied text, exact host layout,
+/// auto-resize state, and full text style.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn snow_viewport_commit_text_draft_payload_ex(
     runtime: SnowRuntime,
@@ -487,67 +389,6 @@ pub unsafe extern "C" fn snow_viewport_commit_text_draft_payload_ex(
             write_changed_viewports(out_changed_viewports, result.changed_viewports);
             Ok(())
         }))
-    })
-}
-
-/// # Safety
-/// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
-/// `text_utf8` must either be null with `text_utf8_len == 0`, or point to `text_utf8_len` readable bytes.
-/// `style` must point to a readable `SnowTextStyle`.
-/// `out_changed_viewports` must be valid for writes.
-///
-/// Convenience wrapper for `snow_viewport_commit_text_draft_payload_ex`; unlike
-/// `snow_viewport_commit_text_ex`, this is a styled draft commit.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_viewport_commit_text_draft_ex(
-    runtime: SnowRuntime,
-    viewport: SnowViewport,
-    existing_id: SnowElementId,
-    has_existing_id: u8,
-    center_x: f64,
-    center_y: f64,
-    text_utf8: *const std::ffi::c_char,
-    text_utf8_len: u32,
-    measured_width: f64,
-    measured_height: f64,
-    style: *const SnowTextStyle,
-    auto_resize: u8,
-    update_default_style: u8,
-    out_changed_viewports: *mut SnowChangedViewportList,
-) -> SnowError {
-    ffi_error(|| {
-        if out_changed_viewports.is_null()
-            || style.is_null()
-            || (text_utf8.is_null() && text_utf8_len != 0)
-        {
-            return SnowError::InvalidArgument;
-        }
-
-        let draft = SnowTextCommitDraft {
-            element_id: existing_id,
-            has_existing_element: has_existing_id,
-            auto_resize,
-            update_default_style,
-            reserved0: [0; 5],
-            center_x,
-            center_y,
-            text_utf8,
-            text_utf8_len,
-            reserved1: 0,
-            measured_layout: SnowTextLayoutSize {
-                width: measured_width,
-                height: measured_height,
-            },
-            style: unsafe { *style },
-        };
-        unsafe {
-            snow_viewport_commit_text_draft_payload_ex(
-                runtime,
-                viewport,
-                &draft,
-                out_changed_viewports,
-            )
-        }
     })
 }
 

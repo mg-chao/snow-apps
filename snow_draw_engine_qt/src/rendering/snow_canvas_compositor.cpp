@@ -43,40 +43,6 @@ void clearSurface(QPainter& painter, const Frame& frame) {
     }
 }
 
-void renderSceneContent(QPainter& painter, const Frame& frame) {
-    if (frame.sceneInfo == nullptr || frame.widget == nullptr) {
-        return;
-    }
-
-    const QRegion exposedRegion = painter.clipRegion();
-    const QRect exposedRect = exposedRegion.boundingRect().intersected(frame.widget->rect());
-    if (exposedRect.isEmpty()) {
-        return;
-    }
-
-    if (frame.sceneItemCount != 0 || frame.backgroundImage != nullptr ||
-        frame.backgroundRenderer != nullptr) {
-        snow_canvas_renderer::renderSceneItems(snow_canvas_renderer::SceneRenderRequest{
-            &painter,
-            frame.sceneInfo,
-            frame.sceneItems,
-            frame.sceneItemCount,
-            exposedRegion,
-            nullptr,
-            0,
-            frame.backgroundImage,
-            frame.backgroundRenderer,
-            frame.backgroundContext,
-            frame.displayCache,
-            frame.workspace,
-            {},
-            nullptr,
-            frame.widget,
-            frame.penMaskAtlas,
-        });
-    }
-}
-
 void renderDocumentDecorations(QPainter& painter, const Frame& frame) {
     if (frame.widget == nullptr) {
         return;
@@ -119,20 +85,6 @@ void renderEditorOverlays(QPainter& painter, const Frame& frame) {
                                              frame.overlayItemCount, exposedRegion, frame.sceneInfo,
                                              frame.sceneItems, frame.sceneItemCount);
     renderDirtyRectOverlay(painter, frame);
-}
-
-void renderCanvasContent(QPainter& painter, const Frame& frame) {
-    renderSceneContent(painter, frame);
-}
-
-void renderOverlays(QPainter& painter, const Frame& frame) {
-    renderEditorOverlays(painter, frame);
-}
-
-void renderContent(QPainter& painter, const Frame& frame) {
-    renderSceneContent(painter, frame);
-    renderDocumentDecorations(painter, frame);
-    renderEditorOverlays(painter, frame);
 }
 
 } // namespace snow_canvas_compositor

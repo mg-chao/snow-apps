@@ -18,7 +18,7 @@ mod abi {
 pub use abi::document_exports::*;
 pub use abi::exports::*;
 pub use abi::handles::{
-    SnowChangedViewportList, SnowEngine, SnowPatchHandle, SnowRuntime, SnowViewport,
+    SnowChangedViewportList, SnowPatchHandle, SnowRuntime, SnowViewport,
 };
 pub use abi::history_exports::*;
 pub use abi::input_exports::*;

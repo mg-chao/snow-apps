@@ -20,7 +20,7 @@
 #define SNOW_SHOT_IMAGE_CODEC_CALL
 #endif
 
-#define SNOW_SHOT_IMAGE_CODEC_ABI_VERSION 3U
+#define SNOW_SHOT_IMAGE_CODEC_ABI_VERSION 1U
 
 #ifdef __cplusplus
 extern "C" {

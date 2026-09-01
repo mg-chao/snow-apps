@@ -513,7 +513,7 @@ mod tests {
             &[Point::new(10.0, 20.0), Point::new(110.0, 70.0)],
             ColorRgba8::default(),
             4.0,
-            ArrowStrokeStyle::Dashed,
+            StrokeStyle::Dashed,
             ArrowType::Straight,
             None,
             None,
@@ -532,7 +532,7 @@ mod tests {
         assert_eq!(hover.points, vec![[10.0, 20.0], [110.0, 70.0]]);
         assert_eq!(hover.stroke, SELECTION_COLOR);
         assert_eq!(hover.stroke_width, 1.0);
-        assert_eq!(hover.stroke_style, ArrowStrokeStyle::Solid);
+        assert_eq!(hover.stroke_style, StrokeStyle::Solid);
     }
 
     #[test]
@@ -578,7 +578,7 @@ mod tests {
         assert_eq!(hover.arrow_type, ArrowType::Curve);
         assert_eq!(hover.stroke, SELECTION_COLOR);
         assert_eq!(hover.stroke_width, 1.0);
-        assert_eq!(hover.stroke_style, ArrowStrokeStyle::Solid);
+        assert_eq!(hover.stroke_style, StrokeStyle::Solid);
         assert_eq!(hover.start_arrowhead, None);
         assert_eq!(hover.end_arrowhead, None);
     }
@@ -613,7 +613,7 @@ mod tests {
         );
         assert_eq!(hover.stroke, SELECTION_COLOR);
         assert_eq!(hover.stroke_width, 30.0);
-        assert_eq!(hover.stroke_style, ArrowStrokeStyle::Solid);
+        assert_eq!(hover.stroke_style, StrokeStyle::Solid);
         assert_eq!(
             hover.path_commands,
             vec![
@@ -711,7 +711,7 @@ mod tests {
             &[Point::new(-40.0, -20.0), Point::new(40.0, 20.0)],
             ColorRgba8::default(),
             2.0,
-            ArrowStrokeStyle::Solid,
+            StrokeStyle::Solid,
             ArrowType::Straight,
             None,
             None,
@@ -779,7 +779,7 @@ mod tests {
             ],
             ColorRgba8::default(),
             2.0,
-            ArrowStrokeStyle::Solid,
+            StrokeStyle::Solid,
             ArrowType::Straight,
             None,
             None,

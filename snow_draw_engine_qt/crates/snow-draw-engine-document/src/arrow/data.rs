@@ -1,13 +1,11 @@
 use crate::{
     ArrowPatch, ArrowState, ElementId, ElementKind, FillStyle, FixedPointBinding,
     arrow_engine as editing, arrow_geom as geometry, arrow_render_core as rendering,
-    element_schema::{ARROW_TYPE_ID, LINE_TYPE_ID, PEN_HIGHLIGHT_TYPE_ID, field},
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Number, Value};
 use snow_draw_engine_core::arrow::{
-    ArrowEndpointPosition, ArrowPathCommand, ArrowStrokeStyle, ArrowType, Arrowhead,
-    ArrowheadFillMode, ArrowheadRenderPrimitive, BindMode, CurvePathOp, FixedSegment,
+    ArrowEndpointPosition, ArrowPathCommand, StrokeStyle, ArrowType, Arrowhead,
+    ArrowheadFillMode, ArrowheadRenderPrimitive, CurvePathOp, FixedSegment,
 };
 use snow_draw_engine_core::{ColorRgba8, DrawRect, ErrorCode, Point};
 
@@ -76,7 +74,7 @@ pub struct ArrowData {
     pub end_is_special: Option<bool>,
     pub stroke: ColorRgba8,
     pub stroke_width: f64,
-    pub stroke_style: ArrowStrokeStyle,
+    pub stroke_style: StrokeStyle,
     pub fill: ColorRgba8,
     pub fill_style: FillStyle,
     pub opacity: f64,
@@ -87,7 +85,7 @@ impl ArrowData {
         points: &[Point<f64>],
         stroke: ColorRgba8,
         stroke_width: f64,
-        stroke_style: ArrowStrokeStyle,
+        stroke_style: StrokeStyle,
         arrow_type: ArrowType,
         start_arrowhead: Option<Arrowhead>,
         end_arrowhead: Option<Arrowhead>,
@@ -142,7 +140,7 @@ impl ArrowData {
         self.start_arrowhead = None;
         self.end_arrowhead = None;
         self.arrow_type = ArrowType::Straight;
-        self.stroke_style = ArrowStrokeStyle::Solid;
+        self.stroke_style = StrokeStyle::Solid;
         self.fill = ColorRgba8::default();
         self.fill_style = FillStyle::Solid;
         self.start_binding = None;
@@ -151,100 +149,6 @@ impl ArrowData {
         self.start_is_special = None;
         self.end_is_special = None;
         self
-    }
-
-    pub fn to_arrow_json_payload(&self) -> Result<Map<String, Value>, ErrorCode> {
-        if self.linear_kind != LinearElementKind::Arrow || validate_arrow(self).is_err() {
-            return Err(ErrorCode::InvalidArgument);
-        }
-        let (min_x, min_y, max_x, max_y) = point_extents(&self.points)?;
-        let width = max_x - min_x;
-        let height = max_y - min_y;
-        let mut payload = Map::new();
-        payload.insert(
-            field::TYPE_ID.to_owned(),
-            Value::String(ARROW_TYPE_ID.to_owned()),
-        );
-        payload.insert(
-            field::POINTS.to_owned(),
-            normalized_points_json(&self.points, min_x, min_y, width, height)?,
-        );
-        payload.insert(field::COLOR.to_owned(), argb_json_value(self.stroke));
-        payload.insert(
-            field::STROKE_WIDTH.to_owned(),
-            json_number(self.stroke_width)?,
-        );
-        payload.insert(
-            field::STROKE_STYLE.to_owned(),
-            Value::String(stroke_style_json_name(self.stroke_style).to_owned()),
-        );
-        payload.insert(
-            field::ARROW_TYPE.to_owned(),
-            Value::String(arrow_type_json_name(self.arrow_type).to_owned()),
-        );
-        payload.insert(
-            field::START_ARROWHEAD.to_owned(),
-            Value::String(arrowhead_json_name(self.start_arrowhead)?.to_owned()),
-        );
-        payload.insert(
-            field::END_ARROWHEAD.to_owned(),
-            Value::String(arrowhead_json_name(self.end_arrowhead)?.to_owned()),
-        );
-        payload.insert(
-            field::START_BINDING.to_owned(),
-            binding_json_value(self.start_binding.as_ref())?,
-        );
-        payload.insert(
-            field::END_BINDING.to_owned(),
-            binding_json_value(self.end_binding.as_ref())?,
-        );
-        payload.insert(
-            field::FIXED_SEGMENTS.to_owned(),
-            fixed_segments_json_value(self.fixed_segments.as_deref(), min_x, min_y, width, height)?,
-        );
-        payload.insert(
-            field::START_IS_SPECIAL.to_owned(),
-            self.start_is_special
-                .map(Value::Bool)
-                .unwrap_or(Value::Null),
-        );
-        payload.insert(
-            field::END_IS_SPECIAL.to_owned(),
-            self.end_is_special.map(Value::Bool).unwrap_or(Value::Null),
-        );
-        Ok(payload)
-    }
-
-    pub fn from_arrow_json_payload(
-        payload: &Map<String, Value>,
-        bounds: DrawRect,
-    ) -> Result<Self, ErrorCode> {
-        if required_json_string(payload, field::TYPE_ID)? != ARROW_TYPE_ID {
-            return Err(ErrorCode::InvalidArgument);
-        }
-        validate_payload_bounds(bounds)?;
-        let points = decode_normalized_points_json(payload, bounds)?;
-        let stroke_width = required_json_f64(payload, field::STROKE_WIDTH)?;
-        if stroke_width < 0.0 {
-            return Err(ErrorCode::InvalidArgument);
-        }
-        let mut arrow = Self::from_global_points(
-            &points,
-            required_json_color(payload, field::COLOR)?,
-            stroke_width,
-            decode_stroke_style_json(required_json_string(payload, field::STROKE_STYLE)?)?,
-            decode_arrow_type_json(required_json_string(payload, field::ARROW_TYPE)?)?,
-            decode_arrowhead_json(required_json_string(payload, field::START_ARROWHEAD)?)?,
-            decode_arrowhead_json(required_json_string(payload, field::END_ARROWHEAD)?)?,
-        )
-        .ok_or(ErrorCode::InvalidArgument)?;
-        arrow.start_binding = decode_binding_json(payload, field::START_BINDING)?;
-        arrow.end_binding = decode_binding_json(payload, field::END_BINDING)?;
-        arrow.fixed_segments = decode_fixed_segments_json(payload, field::FIXED_SEGMENTS, bounds)?;
-        arrow.start_is_special = required_nullable_bool(payload, field::START_IS_SPECIAL)?;
-        arrow.end_is_special = required_nullable_bool(payload, field::END_IS_SPECIAL)?;
-        validate_arrow(&arrow)?;
-        Ok(arrow)
     }
 
     pub fn inherit_linear_metadata_from(&mut self, source: &Self) {
@@ -261,241 +165,6 @@ impl ArrowData {
                 ArrowType::Curve
             };
         }
-    }
-
-    pub fn to_pen_highlight_json_payload(&self) -> Result<Map<String, Value>, ErrorCode> {
-        if !self.is_pen_highlight() || self.points.len() != 2 || validate_arrow(self).is_err() {
-            return Err(ErrorCode::InvalidArgument);
-        }
-        let (min_x, min_y, max_x, max_y) = point_extents(&self.points)?;
-        let mut payload = Map::new();
-        payload.insert(
-            field::TYPE_ID.to_owned(),
-            Value::String(PEN_HIGHLIGHT_TYPE_ID.to_owned()),
-        );
-        payload.insert(
-            field::POINTS.to_owned(),
-            normalized_points_json(&self.points, min_x, min_y, max_x - min_x, max_y - min_y)?,
-        );
-        payload.insert(field::COLOR.to_owned(), argb_json_value(self.stroke));
-        payload.insert(
-            field::STROKE_WIDTH.to_owned(),
-            json_number(self.stroke_width)?,
-        );
-        Ok(payload)
-    }
-
-    pub fn from_pen_highlight_json_payload(
-        payload: &Map<String, Value>,
-        bounds: DrawRect,
-    ) -> Result<Self, ErrorCode> {
-        if required_json_string(payload, field::TYPE_ID)? != PEN_HIGHLIGHT_TYPE_ID {
-            return Err(ErrorCode::InvalidArgument);
-        }
-        let point_values = payload
-            .get(field::POINTS)
-            .and_then(Value::as_array)
-            .filter(|points| points.len() == 2)
-            .ok_or(ErrorCode::InvalidArgument)?;
-        let points = point_values
-            .iter()
-            .map(|value| {
-                let point = value.as_object().ok_or(ErrorCode::InvalidArgument)?;
-                let x = required_json_f64(point, "x")?;
-                let y = required_json_f64(point, "y")?;
-                if !(0.0..=1.0).contains(&x) || !(0.0..=1.0).contains(&y) {
-                    return Err(ErrorCode::InvalidArgument);
-                }
-                Ok(Point::new(
-                    bounds.min_x + x * (bounds.max_x - bounds.min_x),
-                    bounds.min_y + y * (bounds.max_y - bounds.min_y),
-                ))
-            })
-            .collect::<Result<Vec<_>, ErrorCode>>()?;
-        let stroke_width = required_json_f64(payload, field::STROKE_WIDTH)?;
-        if !(stroke_width.is_finite() && stroke_width > 0.0) {
-            return Err(ErrorCode::InvalidArgument);
-        }
-        let pen = Self::from_global_points(
-            &points,
-            required_json_color(payload, field::COLOR)?,
-            stroke_width,
-            ArrowStrokeStyle::Solid,
-            ArrowType::Straight,
-            None,
-            None,
-        )
-        .ok_or(ErrorCode::InvalidArgument)?
-        .into_pen_highlight();
-        validate_arrow(&pen)?;
-        Ok(pen)
-    }
-
-    pub fn to_line_json_payload(&self) -> Result<Map<String, Value>, ErrorCode> {
-        if !self.is_line() || validate_arrow(self).is_err() {
-            return Err(ErrorCode::InvalidArgument);
-        }
-        let (min_x, min_y, max_x, max_y) = self.points.iter().fold(
-            (
-                f64::INFINITY,
-                f64::INFINITY,
-                f64::NEG_INFINITY,
-                f64::NEG_INFINITY,
-            ),
-            |(min_x, min_y, max_x, max_y), point| {
-                (
-                    min_x.min(point[0]),
-                    min_y.min(point[1]),
-                    max_x.max(point[0]),
-                    max_y.max(point[1]),
-                )
-            },
-        );
-        let width = max_x - min_x;
-        let height = max_y - min_y;
-        let mut payload = Map::new();
-        payload.insert(
-            field::TYPE_ID.to_owned(),
-            Value::String(LINE_TYPE_ID.to_owned()),
-        );
-        payload.insert(
-            field::POINTS.to_owned(),
-            Value::Array(
-                self.points
-                    .iter()
-                    .map(|point| {
-                        let mut value = Map::new();
-                        value.insert(
-                            "x".to_owned(),
-                            json_number(normalize_axis(point[0] - min_x, width))?,
-                        );
-                        value.insert(
-                            "y".to_owned(),
-                            json_number(normalize_axis(point[1] - min_y, height))?,
-                        );
-                        Ok(Value::Object(value))
-                    })
-                    .collect::<Result<Vec<_>, ErrorCode>>()?,
-            ),
-        );
-        payload.insert(field::COLOR.to_owned(), argb_json_value(self.stroke));
-        payload.insert(field::FILL_COLOR.to_owned(), argb_json_value(self.fill));
-        payload.insert(
-            field::STROKE_WIDTH.to_owned(),
-            json_number(self.stroke_width)?,
-        );
-        payload.insert(
-            field::STROKE_STYLE.to_owned(),
-            Value::String(stroke_style_json_name(self.stroke_style).to_owned()),
-        );
-        payload.insert(
-            field::FILL_STYLE.to_owned(),
-            Value::String(fill_style_json_name(self.fill_style).to_owned()),
-        );
-        payload.insert(
-            field::ARROW_TYPE.to_owned(),
-            Value::String("curved".to_owned()),
-        );
-        payload.insert(
-            field::START_ARROWHEAD.to_owned(),
-            Value::String("none".to_owned()),
-        );
-        payload.insert(
-            field::END_ARROWHEAD.to_owned(),
-            Value::String("none".to_owned()),
-        );
-        payload.insert(
-            field::START_BINDING.to_owned(),
-            binding_json_value(self.start_binding.as_ref())?,
-        );
-        payload.insert(
-            field::END_BINDING.to_owned(),
-            binding_json_value(self.end_binding.as_ref())?,
-        );
-        payload.insert(
-            field::FIXED_SEGMENTS.to_owned(),
-            fixed_segments_json_value(self.fixed_segments.as_deref(), min_x, min_y, width, height)?,
-        );
-        payload.insert(
-            field::START_IS_SPECIAL.to_owned(),
-            self.start_is_special
-                .map(Value::Bool)
-                .unwrap_or(Value::Null),
-        );
-        payload.insert(
-            field::END_IS_SPECIAL.to_owned(),
-            self.end_is_special.map(Value::Bool).unwrap_or(Value::Null),
-        );
-        Ok(payload)
-    }
-
-    pub fn from_line_json_payload(
-        payload: &Map<String, Value>,
-        bounds: DrawRect,
-    ) -> Result<Self, ErrorCode> {
-        if required_json_string(payload, field::TYPE_ID)? != LINE_TYPE_ID
-            || required_json_string(payload, field::ARROW_TYPE)? != "curved"
-            || required_json_string(payload, field::START_ARROWHEAD)? != "none"
-            || required_json_string(payload, field::END_ARROWHEAD)? != "none"
-            || ![bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y]
-                .into_iter()
-                .all(f64::is_finite)
-            || bounds.max_x < bounds.min_x
-            || bounds.max_y < bounds.min_y
-        {
-            return Err(ErrorCode::InvalidArgument);
-        }
-        let width = bounds.max_x - bounds.min_x;
-        let height = bounds.max_y - bounds.min_y;
-        let point_values = payload
-            .get(field::POINTS)
-            .and_then(Value::as_array)
-            .ok_or(ErrorCode::InvalidArgument)?;
-        if point_values.len() < 2 {
-            return Err(ErrorCode::InvalidArgument);
-        }
-        let points = point_values
-            .iter()
-            .map(|value| {
-                let point = value.as_object().ok_or(ErrorCode::InvalidArgument)?;
-                let x = required_json_f64(point, "x")?;
-                let y = required_json_f64(point, "y")?;
-                if !(0.0..=1.0).contains(&x) || !(0.0..=1.0).contains(&y) {
-                    return Err(ErrorCode::InvalidArgument);
-                }
-                Ok(Point::new(
-                    bounds.min_x + x * width,
-                    bounds.min_y + y * height,
-                ))
-            })
-            .collect::<Result<Vec<_>, ErrorCode>>()?;
-        let stroke = required_json_color(payload, field::COLOR)?;
-        let fill = required_json_color(payload, field::FILL_COLOR)?;
-        let stroke_width = required_json_f64(payload, field::STROKE_WIDTH)?;
-        if stroke_width < 0.0 {
-            return Err(ErrorCode::InvalidArgument);
-        }
-        let stroke_style =
-            decode_stroke_style_json(required_json_string(payload, field::STROKE_STYLE)?)?;
-        let fill_style = decode_fill_style_json(required_json_string(payload, field::FILL_STYLE)?)?;
-        let mut line = Self::from_global_points(
-            &points,
-            stroke,
-            stroke_width,
-            stroke_style,
-            ArrowType::Curve,
-            None,
-            None,
-        )
-        .ok_or(ErrorCode::InvalidArgument)?
-        .into_line(fill, fill_style);
-        line.start_binding = decode_binding_json(payload, field::START_BINDING)?;
-        line.end_binding = decode_binding_json(payload, field::END_BINDING)?;
-        line.fixed_segments = decode_fixed_segments_json(payload, field::FIXED_SEGMENTS, bounds)?;
-        line.start_is_special = required_nullable_bool(payload, field::START_IS_SPECIAL)?;
-        line.end_is_special = required_nullable_bool(payload, field::END_IS_SPECIAL)?;
-        validate_arrow(&line)?;
-        Ok(line)
     }
 
     pub fn element_kind(&self) -> ElementKind {
@@ -646,395 +315,6 @@ impl ArrowData {
     }
 }
 
-fn normalize_axis(offset: f64, extent: f64) -> f64 {
-    if extent.abs() <= f64::EPSILON {
-        0.0
-    } else {
-        offset / extent
-    }
-}
-
-fn json_number(value: f64) -> Result<Value, ErrorCode> {
-    Number::from_f64(value)
-        .map(Value::Number)
-        .ok_or(ErrorCode::InvalidArgument)
-}
-
-fn point_extents(points: &[[f64; 2]]) -> Result<(f64, f64, f64, f64), ErrorCode> {
-    if points.len() < 2 || points.iter().flatten().any(|value| !value.is_finite()) {
-        return Err(ErrorCode::InvalidArgument);
-    }
-    Ok(points.iter().fold(
-        (
-            f64::INFINITY,
-            f64::INFINITY,
-            f64::NEG_INFINITY,
-            f64::NEG_INFINITY,
-        ),
-        |(min_x, min_y, max_x, max_y), point| {
-            (
-                min_x.min(point[0]),
-                min_y.min(point[1]),
-                max_x.max(point[0]),
-                max_y.max(point[1]),
-            )
-        },
-    ))
-}
-
-fn normalized_points_json(
-    points: &[[f64; 2]],
-    min_x: f64,
-    min_y: f64,
-    width: f64,
-    height: f64,
-) -> Result<Value, ErrorCode> {
-    Ok(Value::Array(
-        points
-            .iter()
-            .map(|point| {
-                let mut value = Map::new();
-                value.insert(
-                    "x".to_owned(),
-                    json_number(normalize_axis(point[0] - min_x, width))?,
-                );
-                value.insert(
-                    "y".to_owned(),
-                    json_number(normalize_axis(point[1] - min_y, height))?,
-                );
-                Ok(Value::Object(value))
-            })
-            .collect::<Result<Vec<_>, ErrorCode>>()?,
-    ))
-}
-
-fn validate_payload_bounds(bounds: DrawRect) -> Result<(), ErrorCode> {
-    if [bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y]
-        .into_iter()
-        .all(f64::is_finite)
-        && bounds.max_x >= bounds.min_x
-        && bounds.max_y >= bounds.min_y
-    {
-        Ok(())
-    } else {
-        Err(ErrorCode::InvalidArgument)
-    }
-}
-
-fn decode_normalized_points_json(
-    payload: &Map<String, Value>,
-    bounds: DrawRect,
-) -> Result<Vec<Point<f64>>, ErrorCode> {
-    let point_values = payload
-        .get(field::POINTS)
-        .and_then(Value::as_array)
-        .ok_or(ErrorCode::InvalidArgument)?;
-    if point_values.len() < 2 {
-        return Err(ErrorCode::InvalidArgument);
-    }
-    let width = bounds.max_x - bounds.min_x;
-    let height = bounds.max_y - bounds.min_y;
-    point_values
-        .iter()
-        .map(|value| {
-            let point = value.as_object().ok_or(ErrorCode::InvalidArgument)?;
-            let x = required_json_f64(point, "x")?;
-            let y = required_json_f64(point, "y")?;
-            if !(0.0..=1.0).contains(&x) || !(0.0..=1.0).contains(&y) {
-                return Err(ErrorCode::InvalidArgument);
-            }
-            Ok(Point::new(
-                bounds.min_x + x * width,
-                bounds.min_y + y * height,
-            ))
-        })
-        .collect()
-}
-
-fn fixed_segments_json_value(
-    segments: Option<&[FixedSegment]>,
-    min_x: f64,
-    min_y: f64,
-    width: f64,
-    height: f64,
-) -> Result<Value, ErrorCode> {
-    let Some(segments) = segments.filter(|segments| !segments.is_empty()) else {
-        return Ok(Value::Null);
-    };
-    Ok(Value::Array(
-        segments
-            .iter()
-            .map(|segment| {
-                let point = |point: [f64; 2]| -> Result<Value, ErrorCode> {
-                    let mut value = Map::new();
-                    value.insert(
-                        "x".to_owned(),
-                        json_number(normalize_axis(point[0] - min_x, width))?,
-                    );
-                    value.insert(
-                        "y".to_owned(),
-                        json_number(normalize_axis(point[1] - min_y, height))?,
-                    );
-                    Ok(Value::Object(value))
-                };
-                let mut value = Map::new();
-                value.insert("index".to_owned(), Value::from(segment.index));
-                value.insert("start".to_owned(), point(segment.start)?);
-                value.insert("end".to_owned(), point(segment.end)?);
-                Ok(Value::Object(value))
-            })
-            .collect::<Result<Vec<_>, ErrorCode>>()?,
-    ))
-}
-
-fn argb_json_value(color: ColorRgba8) -> Value {
-    Value::from(
-        ((color.a as u64) << 24)
-            | ((color.r as u64) << 16)
-            | ((color.g as u64) << 8)
-            | color.b as u64,
-    )
-}
-
-fn required_json_string<'a>(
-    payload: &'a Map<String, Value>,
-    field: &str,
-) -> Result<&'a str, ErrorCode> {
-    payload
-        .get(field)
-        .and_then(Value::as_str)
-        .ok_or(ErrorCode::InvalidArgument)
-}
-
-fn required_json_f64(payload: &Map<String, Value>, field: &str) -> Result<f64, ErrorCode> {
-    payload
-        .get(field)
-        .and_then(Value::as_f64)
-        .filter(|value| value.is_finite())
-        .ok_or(ErrorCode::InvalidArgument)
-}
-
-fn required_json_color(payload: &Map<String, Value>, field: &str) -> Result<ColorRgba8, ErrorCode> {
-    let argb = payload
-        .get(field)
-        .and_then(Value::as_u64)
-        .filter(|value| *value <= u32::MAX as u64)
-        .ok_or(ErrorCode::InvalidArgument)? as u32;
-    Ok(ColorRgba8 {
-        a: ((argb >> 24) & 0xff) as u8,
-        r: ((argb >> 16) & 0xff) as u8,
-        g: ((argb >> 8) & 0xff) as u8,
-        b: (argb & 0xff) as u8,
-    })
-}
-
-fn required_nullable_bool(
-    payload: &Map<String, Value>,
-    field: &str,
-) -> Result<Option<bool>, ErrorCode> {
-    match payload.get(field).ok_or(ErrorCode::InvalidArgument)? {
-        Value::Null => Ok(None),
-        Value::Bool(value) => Ok(Some(*value)),
-        _ => Err(ErrorCode::InvalidArgument),
-    }
-}
-
-fn decode_fixed_segments_json(
-    payload: &Map<String, Value>,
-    field: &str,
-    bounds: DrawRect,
-) -> Result<Option<Vec<FixedSegment>>, ErrorCode> {
-    match payload.get(field).ok_or(ErrorCode::InvalidArgument)? {
-        Value::Null => Ok(None),
-        Value::Array(values) => {
-            let width = bounds.max_x - bounds.min_x;
-            let height = bounds.max_y - bounds.min_y;
-            let segments = values
-                .iter()
-                .map(|value| {
-                    let segment = value.as_object().ok_or(ErrorCode::InvalidArgument)?;
-                    let index = segment
-                        .get("index")
-                        .and_then(Value::as_u64)
-                        .and_then(|index| usize::try_from(index).ok())
-                        .ok_or(ErrorCode::InvalidArgument)?;
-                    let decode_point = |field: &str| -> Result<[f64; 2], ErrorCode> {
-                        let point = segment
-                            .get(field)
-                            .and_then(Value::as_object)
-                            .ok_or(ErrorCode::InvalidArgument)?;
-                        let x = required_json_f64(point, "x")?;
-                        let y = required_json_f64(point, "y")?;
-                        if !(0.0..=1.0).contains(&x) || !(0.0..=1.0).contains(&y) {
-                            return Err(ErrorCode::InvalidArgument);
-                        }
-                        Ok([x * width, y * height])
-                    };
-                    Ok(FixedSegment {
-                        index,
-                        start: decode_point("start")?,
-                        end: decode_point("end")?,
-                    })
-                })
-                .collect::<Result<Vec<_>, ErrorCode>>()?;
-            Ok((!segments.is_empty()).then_some(segments))
-        }
-        _ => Err(ErrorCode::InvalidArgument),
-    }
-}
-
-fn arrow_type_json_name(arrow_type: ArrowType) -> &'static str {
-    match arrow_type {
-        ArrowType::Straight => "straight",
-        ArrowType::Curve => "curved",
-        ArrowType::Elbow => "elbow",
-    }
-}
-
-fn decode_arrow_type_json(value: &str) -> Result<ArrowType, ErrorCode> {
-    match value {
-        "straight" => Ok(ArrowType::Straight),
-        "curved" => Ok(ArrowType::Curve),
-        "elbow" => Ok(ArrowType::Elbow),
-        _ => Err(ErrorCode::InvalidArgument),
-    }
-}
-
-fn arrowhead_json_name(arrowhead: Option<Arrowhead>) -> Result<&'static str, ErrorCode> {
-    match arrowhead {
-        None => Ok("none"),
-        Some(Arrowhead::Arrow) => Ok("standard"),
-        Some(Arrowhead::Triangle) => Ok("triangle"),
-        Some(Arrowhead::Circle) => Ok("circle"),
-        Some(Arrowhead::Diamond) => Ok("diamond"),
-        Some(Arrowhead::Bar) => Ok("verticalLine"),
-        Some(Arrowhead::Square) => Ok("square"),
-        Some(Arrowhead::InvertedTriangle) => Ok("invertedTriangle"),
-        Some(
-            Arrowhead::Dot
-            | Arrowhead::CircleOutline
-            | Arrowhead::TriangleOutline
-            | Arrowhead::DiamondOutline
-            | Arrowhead::CrowfootOne
-            | Arrowhead::CrowfootMany
-            | Arrowhead::CrowfootOneOrMany,
-        ) => Err(ErrorCode::InvalidArgument),
-    }
-}
-
-fn decode_arrowhead_json(value: &str) -> Result<Option<Arrowhead>, ErrorCode> {
-    match value {
-        "none" => Ok(None),
-        "standard" => Ok(Some(Arrowhead::Arrow)),
-        "triangle" => Ok(Some(Arrowhead::Triangle)),
-        "circle" => Ok(Some(Arrowhead::Circle)),
-        "diamond" => Ok(Some(Arrowhead::Diamond)),
-        "verticalLine" => Ok(Some(Arrowhead::Bar)),
-        "square" => Ok(Some(Arrowhead::Square)),
-        "invertedTriangle" => Ok(Some(Arrowhead::InvertedTriangle)),
-        _ => Err(ErrorCode::InvalidArgument),
-    }
-}
-
-fn stroke_style_json_name(style: ArrowStrokeStyle) -> &'static str {
-    match style {
-        ArrowStrokeStyle::Solid => "solid",
-        ArrowStrokeStyle::Dashed => "dashed",
-        ArrowStrokeStyle::Dotted => "dotted",
-    }
-}
-
-fn decode_stroke_style_json(value: &str) -> Result<ArrowStrokeStyle, ErrorCode> {
-    match value {
-        "solid" => Ok(ArrowStrokeStyle::Solid),
-        "dashed" => Ok(ArrowStrokeStyle::Dashed),
-        "dotted" => Ok(ArrowStrokeStyle::Dotted),
-        _ => Err(ErrorCode::InvalidArgument),
-    }
-}
-
-fn fill_style_json_name(style: FillStyle) -> &'static str {
-    match style {
-        FillStyle::Solid => "solid",
-        FillStyle::Line => "line",
-        FillStyle::CrossLine => "crossLine",
-    }
-}
-
-fn decode_fill_style_json(value: &str) -> Result<FillStyle, ErrorCode> {
-    match value {
-        "solid" => Ok(FillStyle::Solid),
-        "line" => Ok(FillStyle::Line),
-        "crossLine" => Ok(FillStyle::CrossLine),
-        _ => Err(ErrorCode::InvalidArgument),
-    }
-}
-
-fn bind_mode_json_name(mode: BindMode) -> &'static str {
-    match mode {
-        BindMode::Inside => "inside",
-        BindMode::Orbit => "orbit",
-        BindMode::Skip => "skip",
-    }
-}
-
-fn decode_bind_mode_json(value: &str) -> Result<BindMode, ErrorCode> {
-    match value {
-        "inside" => Ok(BindMode::Inside),
-        "orbit" => Ok(BindMode::Orbit),
-        "skip" => Ok(BindMode::Skip),
-        _ => Err(ErrorCode::InvalidArgument),
-    }
-}
-
-fn binding_json_value(binding: Option<&ArrowEndpointBinding>) -> Result<Value, ErrorCode> {
-    let Some(binding) = binding else {
-        return Ok(Value::Null);
-    };
-    if !binding.fixed_point.into_iter().all(f64::is_finite) {
-        return Err(ErrorCode::InvalidArgument);
-    }
-    let mut fixed_point = Map::new();
-    fixed_point.insert("x".to_owned(), json_number(binding.fixed_point[0])?);
-    fixed_point.insert("y".to_owned(), json_number(binding.fixed_point[1])?);
-    let mut value = Map::new();
-    value.insert(
-        "elementId".to_owned(),
-        Value::String(binding.element_id.stable_key()),
-    );
-    value.insert("fixedPoint".to_owned(), Value::Object(fixed_point));
-    value.insert(
-        "mode".to_owned(),
-        Value::String(bind_mode_json_name(binding.mode).to_owned()),
-    );
-    Ok(Value::Object(value))
-}
-
-fn decode_binding_json(
-    payload: &Map<String, Value>,
-    field: &str,
-) -> Result<Option<ArrowEndpointBinding>, ErrorCode> {
-    let value = payload.get(field).ok_or(ErrorCode::InvalidArgument)?;
-    if value.is_null() {
-        return Ok(None);
-    }
-    let binding = value.as_object().ok_or(ErrorCode::InvalidArgument)?;
-    let element_id = ElementId::from_stable_key(required_json_string(binding, "elementId")?)
-        .ok_or(ErrorCode::InvalidArgument)?;
-    let fixed_point = binding
-        .get("fixedPoint")
-        .and_then(Value::as_object)
-        .ok_or(ErrorCode::InvalidArgument)?;
-    Ok(Some(ArrowEndpointBinding {
-        element_id,
-        fixed_point: [
-            required_json_f64(fixed_point, "x")?,
-            required_json_f64(fixed_point, "y")?,
-        ],
-        mode: decode_bind_mode_json(required_json_string(binding, "mode")?)?,
-    }))
-}
-
 impl ArrowState {
     pub(crate) fn from_arrow_data(id: ElementId, arrow: &ArrowData) -> Self {
         Self {
@@ -1066,12 +346,12 @@ pub(crate) fn apply_arrow_patch(arrow: &ArrowData, patch: &ArrowPatch) -> ArrowD
     arrow.apply_patch(patch)
 }
 
-pub fn arrow_point_global(arrow: &ArrowData, index: usize) -> Option<Point<f64>> {
+fn arrow_point_global(arrow: &ArrowData, index: usize) -> Option<Point<f64>> {
     let point = arrow.points.get(index)?;
     Some(Point::new(arrow.x + point[0], arrow.y + point[1]))
 }
 
-pub fn arrow_global_points(arrow: &ArrowData) -> Vec<Point<f64>> {
+fn arrow_global_points(arrow: &ArrowData) -> Vec<Point<f64>> {
     arrow
         .points
         .iter()
@@ -1237,7 +517,7 @@ fn path_is_closed_with_tolerance(points: &[Point<f64>], tolerance: f64) -> bool 
             })
 }
 
-pub fn arrow_curve_ops(arrow: &ArrowData) -> Vec<CurvePathOp> {
+fn arrow_curve_ops(arrow: &ArrowData) -> Vec<CurvePathOp> {
     let global_points = arrow_global_points(arrow);
     if arrow.is_curve() {
         return curve_curve_ops(
@@ -1752,10 +1032,7 @@ fn point_in_polygon(points: &[Point<f64>], point: Point<f64>) -> bool {
 
 #[cfg(test)]
 mod line_tests {
-    use std::collections::HashSet;
-
     use super::*;
-    use crate::LINE_SCHEMA;
 
     fn line(points: &[Point<f64>], fill: ColorRgba8) -> ArrowData {
         ArrowData::from_global_points(
@@ -1767,7 +1044,7 @@ mod line_tests {
                 a: 255,
             },
             2.0,
-            ArrowStrokeStyle::Dashed,
+            StrokeStyle::Dashed,
             ArrowType::Curve,
             None,
             None,
@@ -1787,7 +1064,7 @@ mod line_tests {
             ],
             ColorRgba8::default(),
             2.0,
-            ArrowStrokeStyle::Solid,
+            StrokeStyle::Solid,
             ArrowType::Elbow,
             None,
             None,
@@ -1812,75 +1089,6 @@ mod line_tests {
     }
 
     #[test]
-    fn line_json_round_trip_normalizes_points_and_preserves_bindings() {
-        let mut original = line(
-            &[
-                Point::new(30.0, 40.0),
-                Point::new(10.0, 80.0),
-                Point::new(30.0, 60.0),
-            ],
-            ColorRgba8 {
-                r: 1,
-                g: 2,
-                b: 3,
-                a: 128,
-            },
-        );
-        original.start_binding = Some(ArrowEndpointBinding {
-            element_id: ElementId {
-                index: 7,
-                generation: 3,
-            },
-            fixed_point: [0.25, 0.75],
-            mode: BindMode::Orbit,
-        });
-        original.start_is_special = Some(true);
-        original.end_is_special = Some(false);
-        let payload = original.to_line_json_payload().unwrap();
-        assert_eq!(
-            payload.keys().map(String::as_str).collect::<HashSet<_>>(),
-            LINE_SCHEMA.fields.iter().copied().collect::<HashSet<_>>()
-        );
-        assert_eq!(payload["typeId"], "line");
-        assert_eq!(payload["arrowType"], "curved");
-        assert_eq!(payload["startArrowhead"], "none");
-        assert_eq!(payload["endArrowhead"], "none");
-        let normalized = payload["points"].as_array().unwrap();
-        assert_eq!(normalized[0]["x"], 1.0);
-        assert_eq!(normalized[1]["x"], 0.0);
-
-        let decoded =
-            ArrowData::from_line_json_payload(&payload, DrawRect::new(10.0, 40.0, 30.0, 80.0))
-                .unwrap();
-        assert_eq!(decoded.global_points(), original.global_points());
-        assert_eq!(decoded.linear_kind, LinearElementKind::Line);
-        assert_eq!(decoded.fill, original.fill);
-        assert_eq!(decoded.fill_style, original.fill_style);
-        assert_eq!(decoded.start_binding, original.start_binding);
-        assert_eq!(decoded.start_is_special, original.start_is_special);
-        assert_eq!(decoded.end_is_special, original.end_is_special);
-        assert_eq!(decoded.start_arrowhead, None);
-        assert_eq!(decoded.end_arrowhead, None);
-        assert_eq!(decoded.arrow_type, ArrowType::Curve);
-    }
-
-    #[test]
-    fn horizontal_line_json_round_trip_avoids_division_by_zero() {
-        let original = line(
-            &[Point::new(50.0, 10.0), Point::new(10.0, 10.0)],
-            ColorRgba8::default(),
-        );
-        let payload = original.to_line_json_payload().unwrap();
-        let points = payload["points"].as_array().unwrap();
-        assert_eq!(points[0]["y"], 0.0);
-        assert_eq!(points[1]["y"], 0.0);
-        let decoded =
-            ArrowData::from_line_json_payload(&payload, DrawRect::new(10.0, 10.0, 50.0, 10.0))
-                .unwrap();
-        assert_eq!(decoded.global_points(), original.global_points());
-    }
-
-    #[test]
     fn curved_line_segment_handles_follow_the_rendered_curve() {
         let line = line(
             &[
@@ -1899,39 +1107,6 @@ mod line_tests {
             curve_bezier_segments(&line.global_points(), line.curve_tension(), false, None)[0];
         let expected = point_at_bezier(start, control_1, control_2, end, 0.5);
         assert_eq!(midpoints[0].1, expected);
-    }
-
-    #[test]
-    fn line_json_rejects_noncanonical_or_malformed_fields() {
-        let original = line(
-            &[Point::new(0.0, 0.0), Point::new(10.0, 10.0)],
-            ColorRgba8::default(),
-        );
-        let payload = original.to_line_json_payload().unwrap();
-        for (field, invalid) in [
-            ("typeId", "arrow"),
-            ("arrowType", "straight"),
-            ("startArrowhead", "arrow"),
-            ("endArrowhead", "dot"),
-            ("strokeStyle", "unknown"),
-            ("fillStyle", "unknown"),
-        ] {
-            let mut malformed = payload.clone();
-            malformed.insert(field.to_owned(), Value::String(invalid.to_owned()));
-            assert_eq!(
-                ArrowData::from_line_json_payload(&malformed, DrawRect::new(0.0, 0.0, 10.0, 10.0),),
-                Err(ErrorCode::InvalidArgument)
-            );
-        }
-        let mut too_few_points = payload;
-        too_few_points.insert("points".to_owned(), Value::Array(vec![]));
-        assert!(
-            ArrowData::from_line_json_payload(
-                &too_few_points,
-                DrawRect::new(0.0, 0.0, 10.0, 10.0),
-            )
-            .is_err()
-        );
     }
 
     #[test]
@@ -1973,140 +1148,5 @@ mod line_tests {
             ..transparent
         };
         assert!(!arrow_hit_test(&invisible, Point::new(50.0, 35.0), 0.0));
-    }
-}
-
-#[cfg(test)]
-mod arrow_json_tests {
-    use std::collections::HashSet;
-
-    use super::*;
-    use crate::ARROW_SCHEMA;
-
-    #[test]
-    fn arrow_json_round_trip_uses_the_canonical_reference_schema() {
-        let mut original = ArrowData::from_global_points(
-            &[
-                Point::new(10.0, 20.0),
-                Point::new(30.0, 60.0),
-                Point::new(50.0, 20.0),
-            ],
-            ColorRgba8 {
-                r: 1,
-                g: 2,
-                b: 3,
-                a: 255,
-            },
-            3.0,
-            ArrowStrokeStyle::Dotted,
-            ArrowType::Curve,
-            Some(Arrowhead::Triangle),
-            Some(Arrowhead::Bar),
-        )
-        .unwrap();
-        original.end_binding = Some(ArrowEndpointBinding {
-            element_id: ElementId {
-                index: 4,
-                generation: 2,
-            },
-            fixed_point: [0.25, 0.75],
-            mode: BindMode::Inside,
-        });
-        original.start_is_special = Some(true);
-
-        let payload = original.to_arrow_json_payload().unwrap();
-        assert_eq!(
-            payload.keys().map(String::as_str).collect::<HashSet<_>>(),
-            ARROW_SCHEMA.fields.iter().copied().collect::<HashSet<_>>()
-        );
-        assert_eq!(payload[field::ARROW_TYPE], "curved");
-        assert_eq!(payload[field::START_ARROWHEAD], "triangle");
-        assert_eq!(payload[field::END_ARROWHEAD], "verticalLine");
-
-        let decoded =
-            ArrowData::from_arrow_json_payload(&payload, DrawRect::new(10.0, 20.0, 50.0, 60.0))
-                .unwrap();
-        assert_eq!(decoded.global_points(), original.global_points());
-        assert_eq!(decoded.stroke, original.stroke);
-        assert_eq!(decoded.stroke_width, original.stroke_width);
-        assert_eq!(decoded.stroke_style, original.stroke_style);
-        assert_eq!(decoded.arrow_type, original.arrow_type);
-        assert_eq!(decoded.start_arrowhead, original.start_arrowhead);
-        assert_eq!(decoded.end_arrowhead, original.end_arrowhead);
-        assert_eq!(decoded.end_binding, original.end_binding);
-        assert_eq!(decoded.start_is_special, original.start_is_special);
-    }
-
-    #[test]
-    fn arrow_json_rejects_legacy_arrowheads_without_reference_equivalents() {
-        let arrow = ArrowData::from_global_points(
-            &[Point::new(0.0, 0.0), Point::new(10.0, 10.0)],
-            ColorRgba8::default(),
-            1.0,
-            ArrowStrokeStyle::Solid,
-            ArrowType::Straight,
-            Some(Arrowhead::CrowfootMany),
-            None,
-        )
-        .unwrap();
-
-        assert_eq!(
-            arrow.to_arrow_json_payload(),
-            Err(ErrorCode::InvalidArgument)
-        );
-    }
-}
-
-#[cfg(test)]
-mod pen_highlight_tests {
-    use super::*;
-
-    fn pen_highlight() -> ArrowData {
-        ArrowData::from_global_points(
-            &[Point::new(10.0, 20.0), Point::new(50.0, 60.0)],
-            ColorRgba8 {
-                r: 245,
-                g: 34,
-                b: 45,
-                a: 255,
-            },
-            30.0,
-            ArrowStrokeStyle::Solid,
-            ArrowType::Straight,
-            None,
-            None,
-        )
-        .unwrap()
-        .into_pen_highlight()
-    }
-
-    #[test]
-    fn pen_highlight_payload_round_trips_two_points() {
-        let payload = pen_highlight().to_pen_highlight_json_payload().unwrap();
-        assert_eq!(payload["typeId"], PEN_HIGHLIGHT_TYPE_ID);
-        assert_eq!(payload["strokeWidth"], 30.0);
-        let decoded = ArrowData::from_pen_highlight_json_payload(
-            &payload,
-            DrawRect::new(10.0, 20.0, 50.0, 60.0),
-        )
-        .unwrap();
-        assert!(decoded.is_pen_highlight());
-        assert_eq!(decoded.global_points(), pen_highlight().global_points());
-        assert_eq!(decoded.arrow_type, ArrowType::Straight);
-        assert_eq!(decoded.start_arrowhead, None);
-        assert_eq!(decoded.end_arrowhead, None);
-    }
-
-    #[test]
-    fn pen_highlight_payload_rejects_non_two_point_paths() {
-        let mut payload = pen_highlight().to_pen_highlight_json_payload().unwrap();
-        payload["points"] = Value::Array(vec![payload["points"][0].clone()]);
-        assert_eq!(
-            ArrowData::from_pen_highlight_json_payload(
-                &payload,
-                DrawRect::new(10.0, 20.0, 50.0, 60.0),
-            ),
-            Err(ErrorCode::InvalidArgument)
-        );
     }
 }

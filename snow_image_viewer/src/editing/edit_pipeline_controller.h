@@ -98,15 +98,6 @@ struct EncodedEditResult final {
     }
 };
 
-struct ExactPreviewResult final {
-    EditRequestId requestId = 0;
-    EditExportSettings settings;
-    QString warning;
-    std::optional<DecodedImage> displayPreview;
-    ExactPreviewSource previewSource = ExactPreviewSource::base_raster;
-    RasterProvenance provenance = RasterProvenance::cpu_reference;
-};
-
 class EditPipelineController final : public QObject {
     Q_OBJECT
 
@@ -192,10 +183,10 @@ class EditPipelineController final : public QObject {
     void sourceReady();
     void visualReady(EditRequestId requestId);
     void artifactReady(const snow::image_viewer::EncodedEditResult& result);
-    void exactPreviewReady(const snow::image_viewer::ExactPreviewResult& result);
-    void previewUnavailable(EditRequestId requestId, const QString& message);
-    // Compatibility notification emitted with exactPreviewReady.
+    // Emitted once the exact export is complete; displayPreview may still be
+    // absent when the preview is pending or unavailable.
     void exactReady(const snow::image_viewer::ExactEditResult& result);
+    void previewUnavailable(EditRequestId requestId, const QString& message);
     void failed(const QString& message);
 
   private:
@@ -318,4 +309,3 @@ class EditPipelineController final : public QObject {
 Q_DECLARE_METATYPE(snow::image_viewer::EditPipelineState)
 Q_DECLARE_METATYPE(snow::image_viewer::ExactEditResult)
 Q_DECLARE_METATYPE(snow::image_viewer::EncodedEditResult)
-Q_DECLARE_METATYPE(snow::image_viewer::ExactPreviewResult)

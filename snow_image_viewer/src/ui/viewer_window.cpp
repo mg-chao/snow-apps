@@ -429,7 +429,7 @@ void ViewerWindow::finishEditModePerformanceTest(bool succeeded, const QString& 
     benchmark.insert(QStringLiteral("warmup_iterations"), performanceWarmupTarget_);
     benchmark.insert(QStringLiteral("measured_iterations"), performanceIterationsTarget_);
     benchmark.insert(QStringLiteral("cache_layer_cleared"), QStringLiteral("per_scenario"));
-    benchmark.insert(QStringLiteral("report_version"), 11);
+    benchmark.insert(QStringLiteral("report_version"), 1);
     benchmark.insert(QStringLiteral("worker_startup_nanoseconds"),
                      editSession_ ? static_cast<double>(editSession_->workerStartupNanoseconds())
                                   : 0.0);
@@ -511,7 +511,7 @@ void ViewerWindow::finishEditModePerformanceTest(bool succeeded, const QString& 
 
     QJsonObject report;
     report.insert(QStringLiteral("schema"),
-                  QStringLiteral("snow-image-viewer.edit-mode-performance.v11"));
+                  QStringLiteral("snow-image-viewer.edit-mode-performance.v1"));
     report.insert(QStringLiteral("succeeded"), succeeded);
     report.insert(QStringLiteral("error"), error);
     report.insert(QStringLiteral("image"), image);
@@ -1497,8 +1497,8 @@ void ViewerWindow::openSizeFormatEditor() {
                 }
             });
     connect(
-        editSession_, &EditPipelineController::exactPreviewReady, this,
-        [this](const ExactPreviewResult& result) {
+        editSession_, &EditPipelineController::exactReady, this,
+        [this](const ExactEditResult& result) {
             if (!editWindow_ || !editSession_ ||
                 result.requestId != editSession_->latestRequestId())
                 return;

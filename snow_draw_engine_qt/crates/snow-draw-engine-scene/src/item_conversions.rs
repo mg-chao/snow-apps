@@ -19,7 +19,7 @@ pub(crate) fn scene_item_from_rect(id: ElementId, rect: RectangleData) -> SceneD
         fill_style: display_fill_style(rect.fill_style),
         stroke: rect.stroke,
         stroke_width: rect.stroke_width,
-        stroke_style: display_stroke_style(rect.stroke_style),
+        stroke_style: rect.stroke_style,
         corner_radii: rect.corner_radii,
         opacity: rect.opacity,
         shape: match rect.highlight_shape {
@@ -253,7 +253,7 @@ pub(crate) fn scene_item_from_serial_number(
         font_size: serial.font_size,
         font_family: serial.font_family,
         stroke_width,
-        stroke_style: display_stroke_style(serial.stroke_style),
+        stroke_style: serial.stroke_style,
         opacity: serial.opacity,
         bound_text_id: bound_text_id.map(display_item_id),
     })
@@ -404,13 +404,6 @@ fn display_fill_style(style: FillStyle) -> DisplayFillStyle {
     }
 }
 
-fn display_stroke_style(style: StrokeStyle) -> DisplayStrokeStyle {
-    match style {
-        StrokeStyle::Solid => DisplayStrokeStyle::Solid,
-        StrokeStyle::Dashed => DisplayStrokeStyle::Dashed,
-        StrokeStyle::Dotted => DisplayStrokeStyle::Dotted,
-    }
-}
 
 fn display_text_horizontal_align(align: TextHorizontalAlign) -> DisplayTextHorizontalAlign {
     match align {
@@ -464,7 +457,7 @@ pub(crate) fn focus_connection_item(
         end_arrowhead: None,
         stroke: SNOW_SHOT_FOCUS_CONNECTION_STROKE,
         stroke_width: 1.0 / zoom.max(0.0001),
-        stroke_style: ArrowStrokeStyle::Dashed,
+        stroke_style: StrokeStyle::Dashed,
         arrowhead_primitives: Vec::new(),
     }
 }
@@ -482,7 +475,7 @@ pub(crate) fn hover_arrow_item(arrow: &ArrowData, zoom: f64) -> UiFocusConnectio
         end_arrowhead: arrow.end_arrowhead,
         stroke: SELECTION_COLOR,
         stroke_width: 1.0 / zoom.max(0.0001),
-        stroke_style: ArrowStrokeStyle::Solid,
+        stroke_style: StrokeStyle::Solid,
         arrowhead_primitives: arrowhead_display_primitives(arrow),
     }
 }
@@ -503,7 +496,7 @@ pub(crate) fn hover_free_draw_item(
         end_arrowhead: None,
         stroke: SELECTION_COLOR,
         stroke_width: 1.0 / zoom.max(0.0001),
-        stroke_style: ArrowStrokeStyle::Solid,
+        stroke_style: StrokeStyle::Solid,
         arrowhead_primitives: Vec::new(),
     }
 }
@@ -533,7 +526,7 @@ pub(crate) fn hover_pen_filter_item(filter: &PenFilterData) -> UiFocusConnection
         end_arrowhead: None,
         stroke: SELECTION_COLOR,
         stroke_width: filter.stroke_width,
-        stroke_style: ArrowStrokeStyle::Solid,
+        stroke_style: StrokeStyle::Solid,
         arrowhead_primitives: Vec::new(),
     }
 }
@@ -709,7 +702,7 @@ mod tests {
             panic!("expected a rectangle display item");
         };
         assert_eq!(rectangle.fill_style, DisplayFillStyle::CrossLine);
-        assert_eq!(rectangle.stroke_style, DisplayStrokeStyle::Dotted);
+        assert_eq!(rectangle.stroke_style, StrokeStyle::Dotted);
         assert_eq!(rectangle.opacity, 0.6);
     }
 
@@ -748,7 +741,7 @@ mod tests {
             ],
             ColorRgba8::default(),
             2.0,
-            ArrowStrokeStyle::Solid,
+            StrokeStyle::Solid,
             ArrowType::Curve,
             None,
             None,
@@ -823,7 +816,7 @@ mod tests {
             &[Point::new(10.0, 20.0), Point::new(50.0, 60.0)],
             ColorRgba8::default(),
             30.0,
-            ArrowStrokeStyle::Solid,
+            StrokeStyle::Solid,
             ArrowType::Straight,
             None,
             None,

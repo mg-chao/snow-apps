@@ -56,7 +56,6 @@ class SnowCanvasWidget : public QWidget {
     bool setCanvasShapeStylePatch(const SnowCanvasShapeStyle& style, quint32 properties,
                                   SnowCanvasShapeKind kind);
     bool setCanvasFilterStyle(const SnowCanvasFilterStyle& style, quint32 properties);
-    bool setCanvasRectangleShapeStyle(const SnowCanvasRectangleShapeStyle& style);
     bool setCanvasTextStyle(const SnowCanvasTextStyle& style);
     bool setCanvasSerialNumberStyle(const SnowCanvasSerialNumberStyle& style);
 
@@ -122,7 +121,6 @@ class SnowCanvasWidget : public QWidget {
     void setCustomRenderer(SnowCanvasCustomRenderer* renderer);
     [[nodiscard]] QTransform canvasToViewTransform() const;
     QRect viewRectForCanvasRect(const QRectF& canvasRect, int paddingPx = 0) const;
-    void updateCanvasRect(const QRectF& canvasRect, int paddingPx = 0);
 
   public slots:
     void setShowDirtyRects(bool show);

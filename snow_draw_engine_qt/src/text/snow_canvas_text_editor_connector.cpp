@@ -116,12 +116,6 @@ bool resolveSerialTextConnection(const SnowSceneDisplayItem& serial,
 
 } // namespace
 
-bool previewHasSameElementId(const SnowSceneDisplayItem* preview,
-                             const SnowSceneDisplayItem& item) {
-    return preview != nullptr && snow_canvas_element_id::hasElementId(preview->element_id) &&
-           snow_canvas_element_id::sameElementId(preview->element_id, item.element_id);
-}
-
 bool itemBindsPreview(const SnowSceneDisplayItem& item, const SnowSceneDisplayItem* preview) {
     if (preview == nullptr || preview->kind != SNOW_SCENE_DISPLAY_ITEM_TEXT ||
         !snow_canvas_element_id::hasElementId(preview->element_id)) {

@@ -8,7 +8,7 @@
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 
-#include "icon_registry.h"
+#include "icon_renderer.h"
 
 #include <QObject>
 

@@ -1,4 +1,4 @@
-#include "icon_registry.h"
+#include "icon_renderer.h"
 #include "external_icon_pack.h"
 #include "widgets/button.h"
 #include "widgets/control_scale.h"
@@ -441,32 +441,36 @@ void radioButtonContentInsetsFollowDpiScale() {
             "radio button padding moved or resized its icon after DPI scaling");
 }
 
-const adqt::icons::ExternalIconPack& testIconPack() {
-    static const adqt::icons::ExternalIconPack pack([]() {
-        adqt::icons::ExternalIconPackDefinition definition;
-        definition.pack = QStringLiteral("dpi-test");
-        definition.source = QStringLiteral("DPI stability tests");
-        definition.entries.append(adqt::icons::ExternalIconPackEntry{
-            QStringLiteral("outlined"),
-            QStringLiteral("square"),
-            adqt::icons::IconColorModel::Monochrome,
-            adqt::icons::IconFit::Contain,
-            {},
-            QByteArrayLiteral(
-                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\">"
-                "<rect x=\"1\" y=\"1\" width=\"14\" height=\"14\" fill=\"currentColor\"/>"
-                "</svg>"),
-            {},
-            false});
-        return definition;
-    }());
-    return pack;
-}
+namespace {
 
-adqt::icons::IconRef testIconRef(adqt::icons::IconRegistry& registry) {
-    const auto ref =
-        testIconPack().icon(registry, QStringLiteral("outlined"), QStringLiteral("square"));
-    require(ref.isValid(), "test icon registration failed");
+constexpr adqt::icons::IconDescriptor kDpiTestEntries[] = {{
+    std::string_view("dpi-test"),
+    std::string_view("outlined"),
+    std::string_view("square"),
+    std::string_view(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\">"
+        "<rect x=\"1\" y=\"1\" width=\"14\" height=\"14\" fill=\"__ADQT_SLOT_PRIMARY__\"/>"
+        "</svg>"),
+    std::string_view("dpi-test-square"),
+    adqt::icons::IconColorModel::Monochrome,
+    adqt::icons::IconFit::Contain,
+    adqt::icons::IconStaticColors{},
+    false,
+}};
+
+constexpr adqt::icons::IconPack kDpiTestPack{
+    std::string_view("dpi-test"),
+    std::string_view("DPI stability tests"),
+    std::string_view("dpi-test-pack"),
+    kDpiTestEntries,
+    sizeof(kDpiTestEntries) / sizeof(kDpiTestEntries[0]),
+};
+
+}  // namespace
+
+adqt::icons::IconRef testIconRef() {
+    const auto ref = kDpiTestPack.icon(0);
+    require(ref.isValid(), "test icon lookup failed");
     return ref;
 }
 
@@ -482,8 +486,8 @@ adqt::icons::IconRenderRequest iconRequest(const QSize& size, qreal dpr,
 }
 
 void iconCacheSharesPhysicalRasters() {
-    adqt::icons::IconRegistry registry;
-    const auto ref = testIconRef(registry);
+    adqt::icons::IconRenderer registry;
+    const auto ref = testIconRef();
     const QPixmap first = registry.renderIconPixmap(ref, iconRequest(QSize(16, 16), 1.5));
     const QPixmap second = registry.renderIconPixmap(ref, iconRequest(QSize(24, 24), 1.0));
     require(!first.isNull() && !second.isNull(), "icon rasterization failed");
@@ -497,8 +501,8 @@ void iconCacheSharesPhysicalRasters() {
 }
 
 void iconCacheSeparatesVisualKeys() {
-    adqt::icons::IconRegistry registry;
-    const auto ref = testIconRef(registry);
+    adqt::icons::IconRenderer registry;
+    const auto ref = testIconRef();
 
     registry.renderIconPixmap(ref, iconRequest(QSize(16, 16), 1.0));
     registry.renderIconPixmap(ref, iconRequest(QSize(16, 16), 1.0, QIcon::Normal, QIcon::On));
@@ -523,8 +527,8 @@ void iconCacheSeparatesVisualKeys() {
 }
 
 void concurrentIconMissesRasterizeOnce() {
-    adqt::icons::IconRegistry registry;
-    const auto ref = testIconRef(registry);
+    adqt::icons::IconRenderer registry;
+    const auto ref = testIconRef();
 
     constexpr int threadCount = 8;
     std::atomic_int ready{0};

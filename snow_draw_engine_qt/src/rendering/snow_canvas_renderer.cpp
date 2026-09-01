@@ -147,32 +147,32 @@ void applyMultiSelectionDashStyle(QPen& pen) {
     pen.setDashPattern({5.0, 3.0});
 }
 
-void applyArrowStrokeStyle(QPen& pen, SnowArrowStrokeStyle style) {
+void applyArrowStrokeStyle(QPen& pen, SnowStrokeStyle style) {
     switch (style) {
-    case SNOW_ARROW_STROKE_STYLE_DASHED:
+    case SNOW_STROKE_STYLE_DASHED:
         pen.setStyle(Qt::DashLine);
         break;
-    case SNOW_ARROW_STROKE_STYLE_DOTTED:
+    case SNOW_STROKE_STYLE_DOTTED:
         pen.setStyle(Qt::DotLine);
         break;
-    case SNOW_ARROW_STROKE_STYLE_SOLID:
+    case SNOW_STROKE_STYLE_SOLID:
     default:
         pen.setStyle(Qt::SolidLine);
         break;
     }
 }
 
-void applyFreeDrawStrokeStyle(QPen& pen, SnowArrowStrokeStyle style) {
+void applyFreeDrawStrokeStyle(QPen& pen, SnowStrokeStyle style) {
     switch (style) {
-    case SNOW_ARROW_STROKE_STYLE_DASHED:
+    case SNOW_STROKE_STYLE_DASHED:
         pen.setStyle(Qt::CustomDashLine);
         pen.setDashPattern({2.0, 2.4});
         break;
-    case SNOW_ARROW_STROKE_STYLE_DOTTED:
+    case SNOW_STROKE_STYLE_DOTTED:
         pen.setStyle(Qt::CustomDashLine);
         pen.setDashPattern({0.0001, 1.9999});
         break;
-    case SNOW_ARROW_STROKE_STYLE_SOLID:
+    case SNOW_STROKE_STYLE_SOLID:
     default:
         pen.setStyle(Qt::SolidLine);
         break;
@@ -290,7 +290,7 @@ ArrowRenderProjection focusConnectionProjection(const OverlayDisplayInfo& displa
 }
 
 void drawArrowhead(QPainter& painter, const QVector<QPointF>& points, SnowArrowType arrowType,
-                   bool atStart, SnowArrowhead head, SnowArrowStrokeStyle style, double strokeWidth,
+                   bool atStart, SnowArrowhead head, SnowStrokeStyle style, double strokeWidth,
                    double zoom, const QColor& stroke, const QColor& background) {
     if (head == SNOW_ARROWHEAD_NONE || points.size() < 2) {
         return;
@@ -387,7 +387,7 @@ void drawArrowhead(QPainter& painter, const QVector<QPointF>& points, SnowArrowT
 }
 
 void applyArrowheadDashMode(QPen& pen, SnowArrowheadDashMode dashMode,
-                            SnowArrowStrokeStyle inheritedStyle) {
+                            SnowStrokeStyle inheritedStyle) {
     switch (dashMode) {
     case SNOW_ARROWHEAD_DASH_SOLID:
         pen.setStyle(Qt::SolidLine);
@@ -409,7 +409,7 @@ QPointF arrowheadPointToView(const snow_canvas_render_geometry::ViewProjection& 
 
 void drawArrowheadPrimitive(QPainter& painter, const ArrowRenderProjection& projection,
                             const SnowArrowheadPrimitive& primitive,
-                            SnowArrowStrokeStyle inheritedStyle, const QColor& stroke,
+                            SnowStrokeStyle inheritedStyle, const QColor& stroke,
                             double strokeWidth) {
     if (!stroke.isValid() || stroke.alpha() == 0 || strokeWidth <= 0.0) {
         return;
@@ -471,7 +471,7 @@ void drawArrowheadPrimitive(QPainter& painter, const ArrowRenderProjection& proj
 
 void drawArrowheadPrimitives(QPainter& painter, const ArrowRenderProjection& projection,
                              const SnowArrowheadPrimitive* primitives, std::uint32_t primitiveCount,
-                             SnowArrowStrokeStyle inheritedStyle, const QColor& stroke,
+                             SnowStrokeStyle inheritedStyle, const QColor& stroke,
                              double strokeWidth) {
     if (primitives == nullptr) {
         return;
@@ -488,7 +488,7 @@ void drawArrowPath(QPainter& painter, const QVector<QPointF>& points,
                    const QPainterPath* pathOverride, const ArrowRenderProjection& projection,
                    const SnowArrowheadPrimitive* arrowheadPrimitives,
                    std::uint32_t arrowheadPrimitiveCount, SnowArrowType arrowType,
-                   SnowArrowhead startHead, SnowArrowhead endHead, SnowArrowStrokeStyle style,
+                   SnowArrowhead startHead, SnowArrowhead endHead, SnowStrokeStyle style,
                    bool isFreeDraw, bool roundCaps, const QColor& stroke, double strokeWidth,
                    double zoom, const QColor& background) {
     if (points.size() < 2 || !stroke.isValid() || stroke.alpha() == 0 || strokeWidth <= 0.0) {
@@ -525,7 +525,7 @@ void drawArrowPath(QPainter& painter, const QVector<QPointF>& points,
 void drawArrowDisplayItem(QPainter& painter, const ArrowRenderProjection& projection,
                           const SnowArrowPoint* points, std::uint32_t pointCount,
                           SnowArrowType arrowType, SnowArrowhead startHead, SnowArrowhead endHead,
-                          SnowArrowStrokeStyle strokeStyle, bool isFreeDraw, bool roundCaps,
+                          SnowStrokeStyle strokeStyle, bool isFreeDraw, bool roundCaps,
                           const SnowColorRgba8& stroke, double strokeWidth,
                           const QPainterPath* pathOverride,
                           const SnowArrowheadPrimitive* arrowheadPrimitives,
@@ -2677,7 +2677,6 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
         g_filterDiagnostics.workingSurfacePixelCount = g_filterDiagnostics.totalWorkingPixelCount;
         g_filterDiagnostics.layerCount = g_filterDiagnostics.filterLayerCount;
         g_filterDiagnostics.filterPassCount = g_filterDiagnostics.effectDispatchCount;
-        g_filterDiagnostics.batchCount = g_filterDiagnostics.batchedFilterCount;
         return;
     }
     if (backgroundImage != nullptr && !backgroundImage->isNull()) {
@@ -2787,13 +2786,6 @@ void accumulateFilterRenderDiagnostics(FilterRenderDiagnostics& target,
     target.recorderCount += source.recorderCount;
     target.layerCount += source.layerCount;
     target.filterPassCount += source.filterPassCount;
-    target.batchCount += source.batchCount;
-    target.batchCacheHits += source.batchCacheHits;
-    target.batchCacheMisses += source.batchCacheMisses;
-}
-
-void setFilterRenderDiagnosticsForCurrentThread(const FilterRenderDiagnostics& diagnostics) {
-    g_filterDiagnostics = diagnostics;
 }
 
 void drawOverlayItem(QPainter& painter, const OverlayDisplayInfo& displayInfo,

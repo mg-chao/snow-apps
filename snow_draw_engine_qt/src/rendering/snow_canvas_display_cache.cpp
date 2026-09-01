@@ -186,7 +186,6 @@ void SnowCanvasDisplayCache::reset(const SnowColorRgba8& clearColor) {
     std::vector<SnowCanvasSceneItem>().swap(m_sceneStorage);
     std::vector<SnowCanvasOverlayItem>().swap(m_overlayStorage);
     std::vector<SnowSpotlightCutout>().swap(m_spotlightStorage);
-    m_lastPenFilterGeometryOpCount = 0;
     m_lastPenFilterGeometryPointCount = 0;
     std::vector<AppliedPenFilterGeometryDelta>().swap(m_appliedPenFilterGeometryDeltas);
     std::vector<SnowDirtyRect>().swap(m_sceneDirtyStorage);
@@ -227,7 +226,6 @@ bool SnowCanvasDisplayCache::sync(SnowRuntime runtime, SnowViewport viewport) {
     if (!readPatchPayload(patch.get(), &payload)) {
         return false;
     }
-    m_lastPenFilterGeometryOpCount = payload.penFilterGeometryOpCount;
     m_lastPenFilterGeometryPointCount = payload.penFilterGeometryPointCount;
     if (patchInfo.scene_reset != 0) {
         std::vector<AppliedPenFilterGeometryDelta>().swap(m_appliedPenFilterGeometryDeltas);
@@ -422,9 +420,6 @@ std::uint32_t SnowCanvasDisplayCache::spotlightCutoutCount() const {
     return m_spotlightCutoutCount;
 }
 
-std::uint32_t SnowCanvasDisplayCache::lastPenFilterGeometryOpCount() const {
-    return m_lastPenFilterGeometryOpCount;
-}
 
 std::uint32_t SnowCanvasDisplayCache::lastPenFilterGeometryPointCount() const {
     return m_lastPenFilterGeometryPointCount;

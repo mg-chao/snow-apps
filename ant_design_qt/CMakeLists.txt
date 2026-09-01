@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.22)
-project(ant_design_qt VERSION 2.0.0 LANGUAGES CXX)
+project(ant_design_qt VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_AUTOMOC ON)
 
-option(ADQT_BUILD_TESTS "Build ant_design_qt icon architecture tests." OFF)
+option(ADQT_BUILD_TESTS "Build ant_design_qt tests." OFF)
 option(ADQT_BUILD_BENCHMARKS "Build ant_design_qt performance benchmarks." OFF)
 option(ADQT_STRICT_COMPILE "Treat ant_design_qt compiler warnings as errors." ON)
 
@@ -124,18 +124,18 @@ if(ADQT_BUILD_TESTS)
         set_tests_properties(adqt-icon-cache-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     endif()
 
-    add_executable(adqt-icon-core-v2-tests tests/icon_core_v2_tests.cpp)
-    target_link_libraries(adqt-icon-core-v2-tests PRIVATE adqt::widgets Qt6::Widgets)
-    add_test(NAME adqt-icon-core-v2-tests COMMAND adqt-icon-core-v2-tests)
+    add_executable(adqt-icon-core-tests tests/icon_core_tests.cpp)
+    target_link_libraries(adqt-icon-core-tests PRIVATE adqt::widgets Qt6::Widgets)
+    add_test(NAME adqt-icon-core-tests COMMAND adqt-icon-core-tests)
     if(WIN32)
-        set_tests_properties(adqt-icon-core-v2-tests PROPERTIES
+        set_tests_properties(adqt-icon-core-tests PROPERTIES
             ENVIRONMENT
                 "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
             ENVIRONMENT_MODIFICATION
                 "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         )
     else()
-        set_tests_properties(adqt-icon-core-v2-tests PROPERTIES
+        set_tests_properties(adqt-icon-core-tests PROPERTIES
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
         )
     endif()

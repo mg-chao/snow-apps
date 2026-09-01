@@ -19,13 +19,6 @@ pub enum BindMode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum ArrowEndpointBindingField {
-    StartBinding,
-    EndBinding,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ArrowEndpointEdge {
     Start,
@@ -54,45 +47,6 @@ pub fn normalize_arrow_endpoint_edge(edge: ArrowEndpointSelector) -> ArrowEndpoi
         }
         ArrowEndpointSelector::End | ArrowEndpointSelector::EndBinding => ArrowEndpointEdge::End,
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct BindableRoundnessConstants {
-    pub legacy: u8,
-    pub proportional: u8,
-    pub adaptive: u8,
-}
-
-pub const BINDABLE_ROUNDNESS: BindableRoundnessConstants = BindableRoundnessConstants {
-    legacy: 1,
-    proportional: 2,
-    adaptive: 3,
-};
-
-pub type BindableRoundnessNumericType = u8;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum BindableRoundnessAliasType {
-    Legacy,
-    Proportional,
-    Adaptive,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum BindableRoundnessType {
-    Numeric(BindableRoundnessNumericType),
-    Alias(BindableRoundnessAliasType),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BindableRoundness {
-    #[serde(rename = "type")]
-    pub type_: BindableRoundnessType,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub value: Option<f64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -135,10 +89,6 @@ pub enum StrokeStyle {
     Dashed,
     Dotted,
 }
-
-/// Compatibility name for callers that previously treated arrow strokes as
-/// a separate vocabulary. All canvas elements now use [`StrokeStyle`].
-pub type ArrowStrokeStyle = StrokeStyle;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -228,34 +178,10 @@ pub enum ArrowheadRenderPrimitive {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum CanonicalBindableShape {
-    Rectangle,
-    Ellipse,
-    Diamond,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum BindableShape {
-    #[serde(rename = "rectangle")]
     Rectangle,
-    #[serde(rename = "ellipse")]
     Ellipse,
-    #[serde(rename = "diamond")]
     Diamond,
-    #[serde(rename = "rect")]
-    Rect,
-    #[serde(rename = "circle")]
-    Circle,
-    #[serde(rename = "rhombus")]
-    Rhombus,
-}
-
-pub fn canonicalize_bindable_shape(shape: BindableShape) -> CanonicalBindableShape {
-    match shape {
-        BindableShape::Rectangle | BindableShape::Rect => CanonicalBindableShape::Rectangle,
-        BindableShape::Ellipse | BindableShape::Circle => CanonicalBindableShape::Ellipse,
-        BindableShape::Diamond | BindableShape::Rhombus => CanonicalBindableShape::Diamond,
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

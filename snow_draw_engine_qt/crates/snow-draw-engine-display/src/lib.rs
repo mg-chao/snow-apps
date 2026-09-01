@@ -1,7 +1,7 @@
 use snow_draw_engine_core::{
     Camera, ColorRgba8, CornerRadii, PathGeometry, Point, SnapGuideAxis, SnapGuideKind,
     SurfaceSize,
-    arrow::{ArrowPathCommand, ArrowStrokeStyle, ArrowType, Arrowhead},
+    arrow::{ArrowPathCommand, ArrowType, Arrowhead, StrokeStyle},
 };
 use std::sync::Arc;
 
@@ -167,7 +167,7 @@ pub struct RectangleDisplayItem {
     pub fill_style: DisplayFillStyle,
     pub stroke: ColorRgba8,
     pub stroke_width: f64,
-    pub stroke_style: DisplayStrokeStyle,
+    pub stroke_style: StrokeStyle,
     pub corner_radii: CornerRadii,
     pub opacity: f64,
     pub shape: DisplayRectangleShape,
@@ -347,7 +347,7 @@ pub struct ArrowDisplayItem {
     pub end_arrowhead: Option<Arrowhead>,
     pub stroke: ColorRgba8,
     pub stroke_width: f64,
-    pub stroke_style: ArrowStrokeStyle,
+    pub stroke_style: StrokeStyle,
     pub fill: ColorRgba8,
     pub fill_style: DisplayFillStyle,
     pub arrowhead_primitives: Vec<ArrowheadDisplayPrimitive>,
@@ -378,14 +378,6 @@ pub enum DisplayFillStyle {
     CrossLine,
     #[default]
     Solid,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum DisplayStrokeStyle {
-    #[default]
-    Solid,
-    Dashed,
-    Dotted,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -424,7 +416,7 @@ pub struct SerialNumberDisplayItem {
     pub font_size: f64,
     pub font_family: Option<String>,
     pub stroke_width: f64,
-    pub stroke_style: DisplayStrokeStyle,
+    pub stroke_style: StrokeStyle,
     pub opacity: f64,
     pub bound_text_id: Option<DisplayItemId>,
 }
@@ -458,7 +450,7 @@ impl Default for ArrowDisplayItem {
             end_arrowhead: None,
             stroke: ColorRgba8::default(),
             stroke_width: 0.0,
-            stroke_style: ArrowStrokeStyle::Solid,
+            stroke_style: StrokeStyle::Solid,
             fill: ColorRgba8::default(),
             fill_style: DisplayFillStyle::Solid,
             arrowhead_primitives: Vec::new(),
@@ -482,7 +474,7 @@ impl Default for RectangleDisplayItem {
             fill_style: DisplayFillStyle::Solid,
             stroke: ColorRgba8::default(),
             stroke_width: 0.0,
-            stroke_style: DisplayStrokeStyle::Solid,
+            stroke_style: StrokeStyle::Solid,
             corner_radii: CornerRadii::default(),
             opacity: 1.0,
             shape: DisplayRectangleShape::Rectangle,
@@ -531,7 +523,7 @@ impl Default for SerialNumberDisplayItem {
             font_size: 0.0,
             font_family: None,
             stroke_width: 0.0,
-            stroke_style: DisplayStrokeStyle::Solid,
+            stroke_style: StrokeStyle::Solid,
             opacity: 1.0,
             bound_text_id: None,
         }
@@ -599,7 +591,7 @@ pub struct UiFocusConnectionDisplayItem {
     pub end_arrowhead: Option<Arrowhead>,
     pub stroke: ColorRgba8,
     pub stroke_width: f64,
-    pub stroke_style: ArrowStrokeStyle,
+    pub stroke_style: StrokeStyle,
     pub arrowhead_primitives: Vec<ArrowheadDisplayPrimitive>,
 }
 
@@ -613,7 +605,7 @@ impl Default for UiFocusConnectionDisplayItem {
             end_arrowhead: None,
             stroke: ColorRgba8::default(),
             stroke_width: 0.0,
-            stroke_style: ArrowStrokeStyle::Solid,
+            stroke_style: StrokeStyle::Solid,
             arrowhead_primitives: Vec::new(),
         }
     }

@@ -53,10 +53,6 @@ pub struct SnowCaptureCancellationTokenImpl {
     canceled: Arc<AtomicBool>,
 }
 
-pub struct SnowCaptureSnapshotImpl {
-    frames: Vec<SnapshotFrame>,
-}
-
 pub struct SnowCaptureScreenshotResultImpl {
     frames: Vec<SnapshotFrame>,
     focused_window: Option<SnapshotWindowFrame>,
@@ -144,17 +140,6 @@ pub struct SnowCaptureWindowSessionConfig {
 
 #[repr(C)]
 pub struct SnowCaptureWindowFrameInfo {
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
-    stride_bytes: u32,
-    rgba_bytes: *const u8,
-    rgba_len: usize,
-}
-
-#[repr(C)]
-pub struct SnowCaptureWindowFrameInfoV1 {
     version: u32,
     struct_size: u32,
     x: i32,
@@ -171,14 +156,14 @@ pub struct SnowCaptureWindowFrameInfoV1 {
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct SnowCaptureScreenshotRequestV1 {
-    version: u32,
-    struct_size: u32,
-    flags: u32,
-    reserved0: u32,
-    focused_window: isize,
-    cancellation_token: *const SnowCaptureCancellationTokenImpl,
-    reserved: [u8; 32],
+pub struct SnowCaptureScreenshotRequest {
+    pub version: u32,
+    pub struct_size: u32,
+    pub flags: u32,
+    pub reserved0: u32,
+    pub focused_window: isize,
+    pub cancellation_token: *const SnowCaptureCancellationTokenImpl,
+    pub reserved: [u8; 32],
 }
 
 #[repr(C)]
@@ -215,7 +200,7 @@ pub enum SnowCaptureStreamEventKind {
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct SnowCaptureStreamConfigV1 {
+pub struct SnowCaptureStreamConfig {
     pub version: u32,
     pub struct_size: u32,
     pub x: i32,
@@ -236,7 +221,7 @@ pub struct SnowCaptureStreamConfigV1 {
 }
 
 #[repr(C)]
-pub struct SnowCaptureStreamEventV1 {
+pub struct SnowCaptureStreamEvent {
     pub kind: SnowCaptureStreamEventKind,
     pub frame: *mut SnowCaptureStreamFrameImpl,
     pub dropped_count: u64,
@@ -248,7 +233,7 @@ pub struct SnowCaptureStreamEventV1 {
 }
 
 #[repr(C)]
-pub struct SnowCaptureStreamFrameInfoV1 {
+pub struct SnowCaptureStreamFrameInfo {
     pub version: u32,
     pub struct_size: u32,
     pub x: i32,
@@ -265,7 +250,7 @@ pub struct SnowCaptureStreamFrameInfoV1 {
 }
 
 #[repr(C)]
-pub struct SnowCaptureStreamStatsV1 {
+pub struct SnowCaptureStreamStats {
     pub frames_captured: u64,
     pub frames_dropped: u64,
     pub errors_recovered: u64,
@@ -337,20 +322,20 @@ enum WorkerCommand {
     Stop,
 }
 
-const SCREENSHOT_REQUEST_VERSION: u32 = 1;
+pub const SCREENSHOT_REQUEST_VERSION: u32 = 1;
 const SCREENSHOT_REQUEST_V1_SIZE: u32 =
-    std::mem::size_of::<SnowCaptureScreenshotRequestV1>() as u32;
+    std::mem::size_of::<SnowCaptureScreenshotRequest>() as u32;
 const SCREENSHOT_REQUEST_REFRESH_LAYOUT: u32 = 1 << 0;
-const WINDOW_FRAME_INFO_VERSION: u32 = 1;
-const WINDOW_FRAME_INFO_V1_SIZE: u32 = std::mem::size_of::<SnowCaptureWindowFrameInfoV1>() as u32;
-const STREAM_CONFIG_VERSION: u32 = 1;
-const STREAM_CONFIG_V1_SIZE: u32 = std::mem::size_of::<SnowCaptureStreamConfigV1>() as u32;
-const STREAM_FRAME_INFO_VERSION: u32 = 1;
-const STREAM_FRAME_INFO_V1_SIZE: u32 = std::mem::size_of::<SnowCaptureStreamFrameInfoV1>() as u32;
+pub const WINDOW_FRAME_INFO_VERSION: u32 = 1;
+const WINDOW_FRAME_INFO_SIZE: u32 = std::mem::size_of::<SnowCaptureWindowFrameInfo>() as u32;
+pub const STREAM_CONFIG_VERSION: u32 = 1;
+const STREAM_CONFIG_SIZE: u32 = std::mem::size_of::<SnowCaptureStreamConfig>() as u32;
+pub const STREAM_FRAME_INFO_VERSION: u32 = 1;
+const STREAM_FRAME_INFO_SIZE: u32 = std::mem::size_of::<SnowCaptureStreamFrameInfo>() as u32;
 
 unsafe fn read_stream_config(
-    config: *const SnowCaptureStreamConfigV1,
-) -> Result<SnowCaptureStreamConfigV1, String> {
+    config: *const SnowCaptureStreamConfig,
+) -> Result<SnowCaptureStreamConfig, String> {
     if config.is_null() {
         return Err("stream config is null".to_owned());
     }
@@ -361,10 +346,10 @@ unsafe fn read_stream_config(
             header.version
         ));
     }
-    if header.struct_size < STREAM_CONFIG_V1_SIZE {
+    if header.struct_size < STREAM_CONFIG_SIZE {
         return Err(format!(
             "stream config is too small: {} < {}",
-            header.struct_size, STREAM_CONFIG_V1_SIZE
+            header.struct_size, STREAM_CONFIG_SIZE
         ));
     }
     let config = unsafe { *config };
@@ -384,8 +369,8 @@ unsafe fn read_stream_config(
 }
 
 unsafe fn read_screenshot_request(
-    request: *const SnowCaptureScreenshotRequestV1,
-) -> Result<SnowCaptureScreenshotRequestV1, String> {
+    request: *const SnowCaptureScreenshotRequest,
+) -> Result<SnowCaptureScreenshotRequest, String> {
     if request.is_null() {
         return Err("screenshot request is null".to_owned());
     }
@@ -504,8 +489,8 @@ struct SnowCaptureRecordingExportConfigHeader {
     struct_size: u32,
 }
 
-const RECORDING_EXPORT_CONFIG_VERSION: u32 = 1;
-const RECORDING_EXPORT_CONFIG_V1_SIZE: u32 =
+pub const RECORDING_EXPORT_CONFIG_VERSION: u32 = 1;
+const RECORDING_EXPORT_CONFIG_SIZE: u32 =
     std::mem::size_of::<SnowCaptureRecordingExportConfig>() as u32;
 
 fn default_options(
@@ -736,17 +721,6 @@ fn session_mut<'a>(
         None
     } else {
         Some(unsafe { &mut *session })
-    }
-}
-
-fn snapshot_ref<'a>(
-    snapshot: *const SnowCaptureSnapshotImpl,
-) -> Option<&'a SnowCaptureSnapshotImpl> {
-    if snapshot.is_null() {
-        set_last_error("snapshot is null");
-        None
-    } else {
-        Some(unsafe { &*snapshot })
     }
 }
 
@@ -1081,9 +1055,9 @@ fn write_snapshot_frame_info(
     Ok(())
 }
 
-fn write_window_frame_info_v1(
+fn write_window_frame_info(
     frame: &SnapshotWindowFrame,
-    out_info: *mut SnowCaptureWindowFrameInfoV1,
+    out_info: *mut SnowCaptureWindowFrameInfo,
 ) -> Result<(), String> {
     let rgba = frame.frame.as_bytes();
     let stride_bytes = frame
@@ -1099,9 +1073,9 @@ fn write_window_frame_info_v1(
         return Err("window frame buffer is smaller than its dimensions".to_owned());
     }
     unsafe {
-        *out_info = SnowCaptureWindowFrameInfoV1 {
+        *out_info = SnowCaptureWindowFrameInfo {
             version: WINDOW_FRAME_INFO_VERSION,
-            struct_size: WINDOW_FRAME_INFO_V1_SIZE,
+            struct_size: WINDOW_FRAME_INFO_SIZE,
             x: frame.x,
             y: frame.y,
             width: frame.frame.width(),
@@ -1334,31 +1308,6 @@ pub extern "C" fn snow_capture_desktop_session_reset_to_prepared(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn snow_capture_desktop_session_capture_all(
-    session: *mut SnowCaptureDesktopSessionImpl,
-) -> *mut SnowCaptureSnapshotImpl {
-    let Some(session) = session_mut(session) else {
-        return ptr::null_mut();
-    };
-
-    if !session.prepared && snow_capture_desktop_session_prepare(session as *mut _) == 0 {
-        return ptr::null_mut();
-    }
-
-    let frames = match capture_all_frames_with_layout_retry(session) {
-        Ok(frames) => frames,
-        Err(error) => {
-            set_last_error(error);
-            return ptr::null_mut();
-        }
-    };
-
-    session.prepared = true;
-    clear_last_error();
-    Box::into_raw(Box::new(SnowCaptureSnapshotImpl { frames }))
-}
-
-#[unsafe(no_mangle)]
 pub extern "C" fn snow_capture_cancellation_token_create() -> *mut SnowCaptureCancellationTokenImpl
 {
     clear_last_error();
@@ -1386,9 +1335,9 @@ pub unsafe extern "C" fn snow_capture_cancellation_token_destroy(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_capture_desktop_session_capture_v1(
+pub unsafe extern "C" fn snow_capture_desktop_session_capture(
     session: *mut SnowCaptureDesktopSessionImpl,
-    request: *const SnowCaptureScreenshotRequestV1,
+    request: *const SnowCaptureScreenshotRequest,
 ) -> *mut SnowCaptureScreenshotResultImpl {
     let Some(session) = session_mut(session) else {
         return ptr::null_mut();
@@ -1638,8 +1587,8 @@ pub unsafe extern "C" fn snow_capture_region_session_capture(
     1
 }
 
-fn empty_stream_event() -> SnowCaptureStreamEventV1 {
-    SnowCaptureStreamEventV1 {
+fn empty_stream_event() -> SnowCaptureStreamEvent {
+    SnowCaptureStreamEvent {
         kind: SnowCaptureStreamEventKind::Timeout,
         frame: ptr::null_mut(),
         dropped_count: 0,
@@ -1653,7 +1602,7 @@ fn empty_stream_event() -> SnowCaptureStreamEventV1 {
 
 fn write_stream_frame_info(
     frame: &SnowCaptureStreamFrameImpl,
-    out_info: *mut SnowCaptureStreamFrameInfoV1,
+    out_info: *mut SnowCaptureStreamFrameInfo,
 ) -> Result<(), String> {
     let bytes = frame.frame.as_bytes();
     let width = frame.frame.width();
@@ -1669,9 +1618,9 @@ fn write_stream_frame_info(
         return Err("stream frame buffer is smaller than its dimensions".to_owned());
     }
     unsafe {
-        *out_info = SnowCaptureStreamFrameInfoV1 {
+        *out_info = SnowCaptureStreamFrameInfo {
             version: STREAM_FRAME_INFO_VERSION,
-            struct_size: STREAM_FRAME_INFO_V1_SIZE,
+            struct_size: STREAM_FRAME_INFO_SIZE,
             x: frame.origin_x,
             y: frame.origin_y,
             width,
@@ -1689,8 +1638,8 @@ fn write_stream_frame_info(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_capture_stream_create_region_v1(
-    config: *const SnowCaptureStreamConfigV1,
+pub unsafe extern "C" fn snow_capture_stream_create_region(
+    config: *const SnowCaptureStreamConfig,
 ) -> *mut SnowCaptureStreamImpl {
     let config = match unsafe { read_stream_config(config) } {
         Ok(config) => config,
@@ -1810,10 +1759,10 @@ pub unsafe extern "C" fn snow_capture_stream_set_target_fps(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_capture_stream_receive_v1(
+pub unsafe extern "C" fn snow_capture_stream_receive(
     stream: *mut SnowCaptureStreamImpl,
     timeout_ms: u32,
-    out_event: *mut SnowCaptureStreamEventV1,
+    out_event: *mut SnowCaptureStreamEvent,
 ) -> u8 {
     if out_event.is_null() {
         set_last_error("stream event out_event is null");
@@ -1895,9 +1844,9 @@ pub unsafe extern "C" fn snow_capture_stream_receive_v1(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_capture_stream_frame_info_v1(
+pub unsafe extern "C" fn snow_capture_stream_frame_info(
     frame: *const SnowCaptureStreamFrameImpl,
-    out_info: *mut SnowCaptureStreamFrameInfoV1,
+    out_info: *mut SnowCaptureStreamFrameInfo,
 ) -> u8 {
     if out_info.is_null() {
         set_last_error("stream frame out_info is null");
@@ -1927,9 +1876,9 @@ pub unsafe extern "C" fn snow_capture_stream_frame_release(frame: *mut SnowCaptu
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_capture_stream_stats_v1(
+pub unsafe extern "C" fn snow_capture_stream_stats(
     stream: *const SnowCaptureStreamImpl,
-    out_stats: *mut SnowCaptureStreamStatsV1,
+    out_stats: *mut SnowCaptureStreamStats,
 ) -> u8 {
     if out_stats.is_null() {
         set_last_error("stream stats out_stats is null");
@@ -1948,7 +1897,7 @@ pub unsafe extern "C" fn snow_capture_stream_stats_v1(
         }
     };
     unsafe {
-        *out_stats = SnowCaptureStreamStatsV1 {
+        *out_stats = SnowCaptureStreamStats {
             frames_captured: snapshot.frames_captured,
             frames_dropped: snapshot.frames_dropped,
             errors_recovered: snapshot.errors_recovered,
@@ -2081,62 +2030,6 @@ pub unsafe extern "C" fn snow_capture_window_session_capture(
         set_last_error("capture access remained active after one-shot window capture");
         return 0;
     }
-
-    let stride_bytes = match session.frame.width().checked_mul(4) {
-        Some(stride) => stride,
-        None => {
-            set_last_error("window frame stride overflow");
-            return 0;
-        }
-    };
-    let rgba = session.frame.as_bytes();
-    let target_info = match session
-        .session
-        .target_info_for_backend(session.frame.metadata().backend_kind())
-    {
-        Ok(info) => info,
-        Err(error) => {
-            set_last_error(error);
-            return 0;
-        }
-    };
-    unsafe {
-        *out_info = SnowCaptureWindowFrameInfo {
-            x: target_info.origin_x,
-            y: target_info.origin_y,
-            width: session.frame.width(),
-            height: session.frame.height(),
-            stride_bytes,
-            rgba_bytes: rgba.as_ptr(),
-            rgba_len: rgba.len(),
-        };
-    }
-    clear_last_error();
-    1
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_capture_window_session_capture_v1(
-    session: *mut SnowCaptureWindowSessionImpl,
-    out_info: *mut SnowCaptureWindowFrameInfoV1,
-) -> u8 {
-    if out_info.is_null() {
-        set_last_error("window frame out_info is null");
-        return 0;
-    }
-    if session.is_null() {
-        set_last_error("window session is null");
-        return 0;
-    }
-    let session = unsafe { &mut *session };
-    if let Err(error) = session.session.capture_once_into(&mut session.frame) {
-        set_last_error(error);
-        return 0;
-    }
-    if session.session.active_capture_access_count() != 0 {
-        set_last_error("capture access remained active after one-shot window capture");
-        return 0;
-    }
     let target = match session
         .session
         .target_info_for_backend(session.frame.metadata().backend_kind())
@@ -2152,7 +2045,7 @@ pub unsafe extern "C" fn snow_capture_window_session_capture_v1(
         y: target.origin_y,
         frame: Arc::new(session.frame.clone()),
     };
-    if let Err(error) = write_window_frame_info_v1(&frame, out_info) {
+    if let Err(error) = write_window_frame_info(&frame, out_info) {
         set_last_error(error);
         return 0;
     }
@@ -2202,56 +2095,6 @@ pub unsafe extern "C" fn snow_capture_window_session_release_frame(
             0
         }
     }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn snow_capture_snapshot_count(snapshot: *const SnowCaptureSnapshotImpl) -> usize {
-    snapshot_ref(snapshot).map_or(0, |snapshot| snapshot.frames.len())
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_capture_snapshot_frame_info(
-    snapshot: *const SnowCaptureSnapshotImpl,
-    index: usize,
-    out_info: *mut SnowCaptureFrameInfo,
-) -> u8 {
-    if out_info.is_null() {
-        set_last_error("out_info is null");
-        return 0;
-    }
-    let Some(snapshot) = snapshot_ref(snapshot) else {
-        return 0;
-    };
-    let Some(frame) = snapshot.frames.get(index) else {
-        set_last_error("snapshot frame index is out of range");
-        return 0;
-    };
-
-    if let Err(error) = write_snapshot_frame_info(frame, out_info) {
-        set_last_error(error);
-        return 0;
-    }
-    clear_last_error();
-    1
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn snow_capture_snapshot_frame_retain(
-    snapshot: *const SnowCaptureSnapshotImpl,
-    index: usize,
-) -> *mut SnowCaptureFrameLeaseImpl {
-    let Some(snapshot) = snapshot_ref(snapshot) else {
-        return ptr::null_mut();
-    };
-    let Some(frame) = snapshot.frames.get(index) else {
-        set_last_error("snapshot frame index is out of range");
-        return ptr::null_mut();
-    };
-
-    clear_last_error();
-    Box::into_raw(Box::new(SnowCaptureFrameLeaseImpl {
-        _frame: Arc::clone(&frame.frame),
-    }))
 }
 
 #[unsafe(no_mangle)]
@@ -2312,9 +2155,9 @@ pub extern "C" fn snow_capture_screenshot_result_display_retain(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_capture_screenshot_result_focused_window_info_v1(
+pub unsafe extern "C" fn snow_capture_screenshot_result_focused_window_info(
     result: *const SnowCaptureScreenshotResultImpl,
-    out_info: *mut SnowCaptureWindowFrameInfoV1,
+    out_info: *mut SnowCaptureWindowFrameInfo,
 ) -> u8 {
     if result.is_null() {
         set_last_error("screenshot result is null");
@@ -2328,7 +2171,7 @@ pub unsafe extern "C" fn snow_capture_screenshot_result_focused_window_info_v1(
         set_last_error("screenshot result has no focused-window frame");
         return 0;
     };
-    if let Err(error) = write_window_frame_info_v1(frame, out_info) {
+    if let Err(error) = write_window_frame_info(frame, out_info) {
         set_last_error(error);
         return 0;
     }
@@ -2367,13 +2210,6 @@ pub unsafe extern "C" fn snow_capture_screenshot_result_destroy(
 pub unsafe extern "C" fn snow_capture_frame_lease_release(lease: *mut SnowCaptureFrameLeaseImpl) {
     if !lease.is_null() {
         drop(unsafe { Box::from_raw(lease) });
-    }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_capture_snapshot_destroy(snapshot: *mut SnowCaptureSnapshotImpl) {
-    if !snapshot.is_null() {
-        drop(unsafe { Box::from_raw(snapshot) });
     }
 }
 
@@ -2620,25 +2456,6 @@ struct RecordingExportOptions {
     preset: VideoEncodingSpeed,
 }
 
-fn legacy_recording_export_options(
-    output_path: PathBuf,
-    export_gif: bool,
-) -> RecordingExportOptions {
-    RecordingExportOptions {
-        output_path,
-        format: if export_gif {
-            ExportFormat::Gif
-        } else {
-            ExportFormat::Mp4
-        },
-        maximum_width: None,
-        maximum_height: None,
-        target_fps: None,
-        codec: VideoCodec::H264,
-        preset: VideoEncodingSpeed::UltraFast,
-    }
-}
-
 fn parse_recording_export_config(
     config: &SnowCaptureRecordingExportConfig,
 ) -> Result<RecordingExportOptions, String> {
@@ -2648,7 +2465,7 @@ fn parse_recording_export_config(
             config.version
         ));
     }
-    if config.struct_size < RECORDING_EXPORT_CONFIG_V1_SIZE {
+    if config.struct_size < RECORDING_EXPORT_CONFIG_SIZE {
         return Err("recording export config is smaller than version 1".to_string());
     }
     if (config.maximum_width == 0) != (config.maximum_height == 0) {
@@ -2710,7 +2527,7 @@ unsafe fn read_recording_export_config(
             header.version
         ));
     }
-    if header.struct_size < RECORDING_EXPORT_CONFIG_V1_SIZE {
+    if header.struct_size < RECORDING_EXPORT_CONFIG_SIZE {
         return Err("recording export config is smaller than version 1".to_string());
     }
 
@@ -2783,26 +2600,7 @@ fn stop_and_export_recording(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn snow_capture_recording_session_stop_and_export(
-    session: *mut SnowCaptureRecordingSessionImpl,
-    output_file_utf8: *const c_char,
-    export_gif: u8,
-) -> u8 {
-    let output_path = match path_from_utf8(output_file_utf8, "output file") {
-        Ok(path) => path,
-        Err(error) => {
-            set_last_error(error);
-            return 0;
-        }
-    };
-    stop_and_export_recording(
-        session,
-        legacy_recording_export_options(output_path, export_gif != 0),
-    )
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn snow_capture_recording_session_stop_and_export_v1(
+pub unsafe extern "C" fn snow_capture_recording_session_stop_and_export(
     session: *mut SnowCaptureRecordingSessionImpl,
     config: *const SnowCaptureRecordingExportConfig,
 ) -> u8 {
@@ -2845,22 +2643,21 @@ mod tests {
         }
     }
 
-    fn test_snapshot() -> *mut SnowCaptureSnapshotImpl {
-        let frame = Frame::from_rgba8(2, 2, vec![7; 16]).expect("valid test frame");
-        Box::into_raw(Box::new(SnowCaptureSnapshotImpl {
-            frames: vec![SnapshotFrame {
-                entry: test_entry(),
-                frame: Arc::new(frame),
-            }],
-        }))
-    }
 
     #[test]
     fn immediate_gif_export_includes_recorded_cursor_motion() {
         let output_path = PathBuf::from("recording.gif");
         let request = configure_recording_export_request(
             ExportRequest::default(),
-            legacy_recording_export_options(output_path.clone(), true),
+            RecordingExportOptions {
+                output_path: output_path.clone(),
+                format: ExportFormat::Gif,
+                maximum_width: None,
+                maximum_height: None,
+                target_fps: None,
+                codec: VideoCodec::H264,
+                preset: VideoEncodingSpeed::UltraFast,
+            },
         );
 
         assert_eq!(request.output_path, output_path);
@@ -2947,8 +2744,19 @@ mod tests {
         assert!(unsafe { read_recording_export_config(config) }.is_err());
     }
 
+    fn test_result() -> *mut SnowCaptureScreenshotResultImpl {
+        let frame = Frame::from_rgba8(2, 2, vec![7; 16]).expect("valid test frame");
+        Box::into_raw(Box::new(SnowCaptureScreenshotResultImpl {
+            frames: vec![SnapshotFrame {
+                entry: test_entry(),
+                frame: Arc::new(frame),
+            }],
+            focused_window: None,
+        }))
+    }
+
     #[test]
-    fn null_snapshot_info_fails() {
+    fn null_screenshot_result_info_fails() {
         let mut info = SnowCaptureFrameInfo {
             stable_id: ptr::null(),
             name: ptr::null(),
@@ -2965,14 +2773,14 @@ mod tests {
             rgba_len: 0,
         };
 
-        let ok = unsafe { snow_capture_snapshot_frame_info(ptr::null(), 0, &mut info) };
+        let ok = unsafe { snow_capture_screenshot_result_display_info(ptr::null(), 0, &mut info) };
         assert_eq!(ok, 0);
         assert!(!snow_capture_last_error_message().is_null());
     }
 
     #[test]
-    fn snapshot_frame_info_reports_monitor_and_tight_stride() {
-        let snapshot = test_snapshot();
+    fn screenshot_result_display_info_reports_monitor_and_tight_stride() {
+        let snapshot = test_result();
         let mut info = SnowCaptureFrameInfo {
             stable_id: ptr::null(),
             name: ptr::null(),
@@ -2989,7 +2797,7 @@ mod tests {
             rgba_len: 0,
         };
 
-        let ok = unsafe { snow_capture_snapshot_frame_info(snapshot, 0, &mut info) };
+        let ok = unsafe { snow_capture_screenshot_result_display_info(snapshot, 0, &mut info) };
         assert_eq!(ok, 1);
         assert_eq!(info.x, -10);
         assert_eq!(info.y, 20);
@@ -2999,15 +2807,15 @@ mod tests {
         assert_eq!(info.rgba_len, 16);
         assert!(!info.rgba_bytes.is_null());
 
-        unsafe { snow_capture_snapshot_destroy(snapshot) };
+        unsafe { snow_capture_screenshot_result_destroy(snapshot) };
     }
 
     #[test]
-    fn frame_lease_survives_snapshot_destroy() {
-        let snapshot = test_snapshot();
-        let lease = snow_capture_snapshot_frame_retain(snapshot, 0);
+    fn frame_lease_survives_result_destroy() {
+        let snapshot = test_result();
+        let lease = snow_capture_screenshot_result_display_retain(snapshot, 0);
         assert!(!lease.is_null());
-        unsafe { snow_capture_snapshot_destroy(snapshot) };
+        unsafe { snow_capture_screenshot_result_destroy(snapshot) };
 
         let lease_ref = unsafe { &*lease };
         assert_eq!(lease_ref._frame.width(), 2);
@@ -3102,6 +2910,8 @@ mod tests {
     #[test]
     fn window_capture_rejects_null_handles() {
         let mut info = SnowCaptureWindowFrameInfo {
+            version: WINDOW_FRAME_INFO_VERSION,
+            struct_size: std::mem::size_of::<SnowCaptureWindowFrameInfo>() as u32,
             x: 0,
             y: 0,
             width: 0,
@@ -3109,6 +2919,9 @@ mod tests {
             stride_bytes: 0,
             rgba_bytes: ptr::null(),
             rgba_len: 0,
+            backend_kind: 0,
+            pixel_format: 0,
+            reserved: [0; 6],
         };
         assert_eq!(
             unsafe { snow_capture_window_session_capture(ptr::null_mut(), &mut info) },
@@ -3223,29 +3036,29 @@ mod tests {
     #[test]
     fn stream_abi_layout_is_stable() {
         assert_eq!(
-            std::mem::size_of::<SnowCaptureStreamConfigV1>(),
+            std::mem::size_of::<SnowCaptureStreamConfig>(),
             std::mem::size_of::<usize>() + 72
         );
-        assert_eq!(std::mem::size_of::<SnowCaptureStreamEventV1>(), 40 + 32);
+        assert_eq!(std::mem::size_of::<SnowCaptureStreamEvent>(), 40 + 32);
         assert_eq!(
-            std::mem::size_of::<SnowCaptureStreamFrameInfoV1>(),
+            std::mem::size_of::<SnowCaptureStreamFrameInfo>(),
             40 + std::mem::size_of::<usize>() * 2
         );
         assert_eq!(
-            std::mem::offset_of!(SnowCaptureStreamFrameInfoV1, sequence),
+            std::mem::offset_of!(SnowCaptureStreamFrameInfo, sequence),
             32
         );
         assert_eq!(
-            std::mem::size_of::<SnowCaptureStreamStatsV1>(),
+            std::mem::size_of::<SnowCaptureStreamStats>(),
             40 + std::mem::size_of::<usize>()
         );
     }
 
     #[test]
     fn stream_config_validation_checks_version_size_and_dimensions() {
-        let valid = SnowCaptureStreamConfigV1 {
+        let valid = SnowCaptureStreamConfig {
             version: STREAM_CONFIG_VERSION,
-            struct_size: STREAM_CONFIG_V1_SIZE,
+            struct_size: STREAM_CONFIG_SIZE,
             x: 0,
             y: 0,
             width: 16,
@@ -3269,7 +3082,7 @@ mod tests {
         assert!(unsafe { read_stream_config(&wrong_version) }.is_err());
 
         let mut too_small = valid;
-        too_small.struct_size = STREAM_CONFIG_V1_SIZE - 1;
+        too_small.struct_size = STREAM_CONFIG_SIZE - 1;
         assert!(unsafe { read_stream_config(&too_small) }.is_err());
 
         let mut empty = valid;
@@ -3281,7 +3094,7 @@ mod tests {
     fn stream_abi_null_handles_fail_without_touching_output() {
         let mut event = empty_stream_event();
         assert_eq!(
-            unsafe { snow_capture_stream_receive_v1(ptr::null_mut(), 0, &mut event) },
+            unsafe { snow_capture_stream_receive(ptr::null_mut(), 0, &mut event) },
             0
         );
         assert_eq!(
@@ -3289,7 +3102,7 @@ mod tests {
             0
         );
         assert_eq!(unsafe { snow_capture_stream_stop(ptr::null_mut()) }, 0);
-        let mut info = SnowCaptureStreamFrameInfoV1 {
+        let mut info = SnowCaptureStreamFrameInfo {
             version: 99,
             struct_size: 99,
             x: 0,
@@ -3305,12 +3118,12 @@ mod tests {
             rgba_len: 0,
         };
         assert_eq!(
-            unsafe { snow_capture_stream_frame_info_v1(ptr::null(), &mut info) },
+            unsafe { snow_capture_stream_frame_info(ptr::null(), &mut info) },
             0
         );
         assert_eq!(info.version, 99);
         assert_eq!(
-            unsafe { snow_capture_stream_stats_v1(ptr::null(), ptr::null_mut()) },
+            unsafe { snow_capture_stream_stats(ptr::null(), ptr::null_mut()) },
             0
         );
         unsafe {
@@ -3378,20 +3191,20 @@ mod tests {
     fn versioned_screenshot_abi_has_expected_layout() {
         assert_eq!(
             SCREENSHOT_REQUEST_V1_SIZE as usize,
-            std::mem::size_of::<SnowCaptureScreenshotRequestV1>()
+            std::mem::size_of::<SnowCaptureScreenshotRequest>()
         );
         assert_eq!(
-            WINDOW_FRAME_INFO_V1_SIZE as usize,
-            std::mem::size_of::<SnowCaptureWindowFrameInfoV1>()
+            WINDOW_FRAME_INFO_SIZE as usize,
+            std::mem::size_of::<SnowCaptureWindowFrameInfo>()
         );
-        assert_eq!(std::mem::size_of::<SnowCaptureScreenshotRequestV1>(), 64);
-        assert_eq!(std::mem::size_of::<SnowCaptureWindowFrameInfoV1>(), 56);
+        assert_eq!(std::mem::size_of::<SnowCaptureScreenshotRequest>(), 64);
+        assert_eq!(std::mem::size_of::<SnowCaptureWindowFrameInfo>(), 56);
         assert_eq!(
-            std::mem::offset_of!(SnowCaptureScreenshotRequestV1, cancellation_token),
+            std::mem::offset_of!(SnowCaptureScreenshotRequest, cancellation_token),
             24
         );
         assert_eq!(
-            std::mem::offset_of!(SnowCaptureWindowFrameInfoV1, backend_kind),
+            std::mem::offset_of!(SnowCaptureWindowFrameInfo, backend_kind),
             48
         );
     }
@@ -3402,7 +3215,7 @@ mod tests {
             version: SCREENSHOT_REQUEST_VERSION,
             struct_size: std::mem::size_of::<SnowCaptureScreenshotRequestHeader>() as u32,
         };
-        let request = (&raw const short).cast::<SnowCaptureScreenshotRequestV1>();
+        let request = (&raw const short).cast::<SnowCaptureScreenshotRequest>();
 
         assert!(unsafe { read_screenshot_request(request) }.is_err());
 
@@ -3410,13 +3223,13 @@ mod tests {
             version: SCREENSHOT_REQUEST_VERSION + 1,
             struct_size: SCREENSHOT_REQUEST_V1_SIZE,
         };
-        let request = (&raw const unknown).cast::<SnowCaptureScreenshotRequestV1>();
+        let request = (&raw const unknown).cast::<SnowCaptureScreenshotRequest>();
         assert!(unsafe { read_screenshot_request(request) }.is_err());
     }
 
     #[test]
     fn versioned_screenshot_request_rejects_unsupported_flags() {
-        let request = SnowCaptureScreenshotRequestV1 {
+        let request = SnowCaptureScreenshotRequest {
             version: SCREENSHOT_REQUEST_VERSION,
             struct_size: SCREENSHOT_REQUEST_V1_SIZE,
             flags: SCREENSHOT_REQUEST_REFRESH_LAYOUT | (1 << 31),

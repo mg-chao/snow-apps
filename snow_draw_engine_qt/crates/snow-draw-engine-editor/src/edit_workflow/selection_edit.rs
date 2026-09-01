@@ -897,7 +897,7 @@ mod tests {
     use crate::{ActiveTextDraftPresentation, ActiveTextDraftTarget};
     use snow_draw_engine_core::{
         ColorRgba8, CornerRadii, EngineConfig,
-        arrow::{ArrowStrokeStyle, ArrowType, Arrowhead, BindMode},
+        arrow::{StrokeStyle, ArrowType, Arrowhead, BindMode},
     };
     use snow_draw_engine_document::{
         ArrowData, ArrowEndpointBinding, ElementData, ElementMeta, MIN_SERIAL_NUMBER_FONT_SIZE,
@@ -1070,7 +1070,7 @@ mod tests {
             &[Point::new(0.0, 0.0), Point::new(100.0, 0.0)],
             ColorRgba8::default(),
             2.0,
-            ArrowStrokeStyle::Solid,
+            StrokeStyle::Solid,
             ArrowType::Straight,
             None,
             None,
@@ -1210,7 +1210,7 @@ mod tests {
             &[Point::new(0.0, 0.0), Point::new(100.0, 0.0)],
             ColorRgba8::default(),
             2.0,
-            ArrowStrokeStyle::Solid,
+            StrokeStyle::Solid,
             ArrowType::Straight,
             None,
             Some(Arrowhead::Arrow),
@@ -1759,7 +1759,7 @@ mod tests {
                 a: 255,
             },
             2.0,
-            ArrowStrokeStyle::Solid,
+            StrokeStyle::Solid,
             ArrowType::Straight,
             None,
             None,

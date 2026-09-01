@@ -37,10 +37,10 @@ QImage whiteImage(int edge = 64) {
     return image;
 }
 
-SnowOcrResourceCountsV1 resourceCounts() {
-    SnowOcrResourceCountsV1 counts{};
-    counts.struct_size = static_cast<std::uint32_t>(sizeof(SnowOcrResourceCountsV1));
-    require(snow_ocr_resource_counts_v1(&counts) != 0,
+SnowOcrResourceCounts resourceCounts() {
+    SnowOcrResourceCounts counts{};
+    counts.struct_size = static_cast<std::uint32_t>(sizeof(SnowOcrResourceCounts));
+    require(snow_ocr_resource_counts(&counts) != 0,
             "OCR resource counts should be available");
     return counts;
 }
@@ -300,7 +300,7 @@ void concurrentRequestsCompleteExactlyOnce() {
     require(waitUntil([&]() { return service.liveWorkerCount() == 0; }, 1'000),
             "OCR workers should exit once a concurrent burst is drained");
 
-    SnowOcrResourceCountsV1 counts = resourceCounts();
+    SnowOcrResourceCounts counts = resourceCounts();
     require(counts.engines == 0,
             "draining a concurrent burst should destroy every OCR engine");
     require(counts.results == 0, "FFI results should be released before Qt delivery");
@@ -383,7 +383,7 @@ void workerRecyclesImmediatelyAndCanBeRecreated() {
     require(waitUntil([&]() { return service.liveWorkerCount() == 0; }, 1'000),
             "an OCR worker thread should exit as soon as its queue is empty");
     output.presentation.reset();
-    const SnowOcrResourceCountsV1 counts = resourceCounts();
+    const SnowOcrResourceCounts counts = resourceCounts();
     require(counts.results == 0,
             "immediate recycling should leave no live OCR result resources");
 
@@ -476,7 +476,7 @@ void serviceDestructionJoinsWorkersAndSuppressesLateDelivery() {
     processEventsFor(250);
     require(completions == completionsBeforeDestruction,
             "destroyed OCR services must not deliver queued completions");
-    const SnowOcrResourceCountsV1 counts = resourceCounts();
+    const SnowOcrResourceCounts counts = resourceCounts();
     require(counts.engines == 0 && counts.results == 0,
             "service destruction should synchronously join workers and release FFI resources");
 }

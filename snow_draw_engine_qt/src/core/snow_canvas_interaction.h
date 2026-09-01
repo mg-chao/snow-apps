@@ -12,7 +12,6 @@ namespace snow_canvas_interaction {
 class Controller final {
   public:
     bool isEnabled() const;
-    std::uint32_t capturedPointerId() const;
 
     void setEnabled(QWidget& widget, SnowCanvasCursorController& cursorController, bool enabled);
     void clearTransientState(QWidget& widget, SnowCanvasCursorController& cursorController);

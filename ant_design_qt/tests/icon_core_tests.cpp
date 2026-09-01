@@ -1,6 +1,6 @@
 #include "antd_icons.h"
 #include "external_icon_pack.h"
-#include "icon_registry.h"
+#include "icon_renderer.h"
 #include "icons/widget_icons.h"
 
 #include <QApplication>
@@ -41,123 +41,104 @@ bool containsOpaqueColor(const QImage& image, const QColor& expected) {
   return false;
 }
 
-adqt::icons::IconDefinition definition(const QString& name, const QByteArray& svg) {
-  adqt::icons::IconDefinition value;
-  value.key = {QStringLiteral("core-test"), QStringLiteral("outlined"), name};
-  value.colorModel = adqt::icons::IconColorModel::Monochrome;
-  value.svg = svg;
-  return value;
+using adqt::icons::IconColorModel;
+using adqt::icons::IconDescriptor;
+using adqt::icons::IconFit;
+using adqt::icons::IconPack;
+using adqt::icons::IconStaticColors;
+
+constexpr IconDescriptor kEntries[] = {
+    {// A non-square monochrome entry for containment, DPR, and direct-paint coverage.
+     std::string_view("core-test"), std::string_view("outlined"), std::string_view("wide"),
+     std::string_view(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10">)"
+                      R"(<rect width="20" height="10" fill="__ADQT_SLOT_PRIMARY__"/>)"
+                      R"(</svg>)"),
+     std::string_view("core-test-wide"), IconColorModel::Monochrome, IconFit::Contain,
+     IconStaticColors{}, false},
+    {// A full-color entry that must reject theme-slot overrides.
+     std::string_view("core-test"), std::string_view("app"), std::string_view("full-color"),
+     std::string_view(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">)"
+                      R"(<rect width="10" height="10" fill="#E53935"/>)"
+                      R"(</svg>)"),
+     std::string_view("core-test-full-color"), IconColorModel::FullColor, IconFit::Contain,
+     IconStaticColors{}, false},
+    {// A two-tone entry whose secondary slot keeps a fixed pack default color.
+     std::string_view("core-test"), std::string_view("twotone"),
+     std::string_view("fixed-secondary"),
+     std::string_view(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10">)"
+                      R"(<rect width="10" height="10" fill="__ADQT_SLOT_PRIMARY__"/>)"
+                      R"(<rect x="10" width="10" height="10" fill="__ADQT_SLOT_SECONDARY__"/>)"
+                      R"(</svg>)"),
+     std::string_view("core-test-fixed-secondary"), IconColorModel::TwoTone, IconFit::Contain,
+     IconStaticColors{std::string_view(""), std::string_view("#9254DE"), std::string_view("")},
+     false},
+    {// A monochrome entry with a translucent default primary color.
+     std::string_view("core-test"), std::string_view("outlined"),
+     std::string_view("translucent-default"),
+     std::string_view(R"(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">)"
+                      R"(<rect x="1" y="1" width="14" height="14" fill="__ADQT_SLOT_PRIMARY__"/>)"
+                      R"(</svg>)"),
+     std::string_view("core-test-translucent"), IconColorModel::Monochrome, IconFit::Contain,
+     IconStaticColors{std::string_view("#490C2238"), std::string_view(""), std::string_view("")},
+     false},
+};
+
+constexpr IconPack kTestPack{std::string_view("core-test"),
+                             std::string_view("icon core tests"),
+                             std::string_view("core-test-pack"), kEntries,
+                             sizeof(kEntries) / sizeof(kEntries[0])};
+
+constexpr std::size_t kWide = 0;
+constexpr std::size_t kFullColor = 1;
+constexpr std::size_t kFixedSecondary = 2;
+constexpr std::size_t kTranslucentDefault = 3;
+
+void staticPackRegistrationIsValidAndIdempotent() {
+  adqt::icons::IconRenderer renderer;
+  const auto invalid = renderer.registerStaticPack(IconPack{});
+  require(!invalid.ok(), "an invalid static pack should be rejected");
+
+  const auto first = renderer.registerStaticPack(kTestPack);
+  require(first.ok() && first.registeredCount == static_cast<int>(kTestPack.entryCount),
+          "a valid static pack should register every entry");
+  const auto repeated = renderer.registerStaticPack(kTestPack);
+  require(repeated.ok() && repeated.existingCount == static_cast<int>(kTestPack.entryCount) &&
+              repeated.registeredCount == 0,
+          "registering the same static pack again should be idempotent");
 }
 
-QByteArray squareSvg() {
-  return QByteArrayLiteral(
-      "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\">"
-      "<rect x=\"1\" y=\"1\" width=\"14\" height=\"14\" fill=\"currentColor\"/>"
-      "</svg>");
-}
-
-adqt::icons::ExternalIconPackDefinition externalDefinition() {
-  adqt::icons::ExternalIconPackDefinition value;
-  value.pack = QStringLiteral("external-test");
-  value.source = QStringLiteral("icon core v2 tests");
-  value.entries.append(
-      {QStringLiteral("outlined"),
-       QStringLiteral("wide"),
-       adqt::icons::IconColorModel::Monochrome,
-       adqt::icons::IconFit::Contain,
-       {},
-       QByteArrayLiteral("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 20 10\">"
-                         "<rect width=\"20\" height=\"10\" fill=\"currentColor\"/>"
-                         "</svg>"),
-       {},
-       false});
-  value.entries.append(
-      {QStringLiteral("app"),
-       QStringLiteral("full-color"),
-       adqt::icons::IconColorModel::FullColor,
-       adqt::icons::IconFit::Contain,
-       {},
-       QByteArrayLiteral("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\">"
-                         "<rect width=\"10\" height=\"10\" fill=\"#E53935\"/>"
-                         "</svg>"),
-       {},
-       false});
-  value.entries.append(
-      {QStringLiteral("twotone"),
-       QStringLiteral("fixed-secondary"),
-       adqt::icons::IconColorModel::TwoTone,
-       adqt::icons::IconFit::Contain,
-       adqt::icons::IconColors().withSecondary(QColor("#9254DE")),
-       QByteArrayLiteral("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 20 10\">"
-                         "<rect width=\"10\" height=\"10\" fill=\"currentColor\"/>"
-                         "<rect x=\"10\" width=\"10\" height=\"10\" data-adqt-slot=\"secondary\"/>"
-                         "</svg>"),
-       {},
-       false});
-  return value;
-}
-
-void registrationIsAtomicIdempotentAndConflictAware() {
-  adqt::icons::IconRegistry registry;
-  const auto valid = definition(QStringLiteral("valid"), squareSvg());
-  const auto invalid = definition(QStringLiteral("invalid"), QByteArrayLiteral("not svg"));
-  const auto failed = registry.registerPack(QStringLiteral("core-test"), {valid, invalid});
-  require(!failed.ok(), "an invalid pack should fail validation");
-  require(!registry.containsIcon(valid.key),
-          "failed pack registration must not commit valid siblings");
-
-  const auto first = registry.registerPack(QStringLiteral("core-test"), {valid});
-  require(first.ok() && first.registeredCount == 1, "first valid registration should commit");
-  const auto repeated = registry.registerPack(QStringLiteral("core-test"), {valid});
-  require(repeated.ok() && repeated.existingCount == 1,
-          "identical registration should be idempotent");
-
-  const auto changed = definition(
-      QStringLiteral("valid"),
-      QByteArrayLiteral("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\">"
-                        "<circle cx=\"8\" cy=\"8\" r=\"7\" fill=\"currentColor\"/>"
-                        "</svg>"));
-  const auto conflict = registry.registerPack(QStringLiteral("core-test"), {changed});
-  bool hasConflictDiagnostic = false;
-  for (const auto& diagnostic : conflict.diagnostics) {
-    hasConflictDiagnostic =
-        hasConflictDiagnostic ||
-        diagnostic.error == adqt::icons::IconRegistrationError::ConflictingRegistration;
-  }
-  require(!conflict.ok() && hasConflictDiagnostic,
-          "conflicting content should return a structured diagnostic");
-}
-
-void referencesAreImmutableValuesAndSupportIsolatedRegistries() {
-  adqt::icons::ExternalIconPack pack(externalDefinition());
-  adqt::icons::IconRegistry registry;
-  const auto registered = pack.registerWith(registry);
-  require(registered.ok() && registered.registeredCount == 3,
-          "external pack should register into an isolated registry");
-  const auto ref = pack.icon(registry, QStringLiteral("outlined"), QStringLiteral("wide"));
+void referencesAreImmutableValuesAndSupportIsolatedRenderers() {
+  const adqt::icons::ExternalIconPack pack(kTestPack);
+  adqt::icons::IconRenderer renderer;
+  const auto registered = pack.registerWith(renderer);
+  require(registered.ok() && registered.registeredCount == static_cast<int>(kTestPack.entryCount),
+          "a static pack should register into an isolated renderer");
+  const auto ref = pack.icon(kWide);
   const auto red = ref.withColors(adqt::icons::IconColors::primary(QColor(Qt::red)));
   require(ref.isValid() && red.isValid() && ref != red,
           "withColors should derive a distinct immutable value");
   QSet<adqt::icons::IconRef> values{ref, ref, red};
   require(values.size() == 2, "reference equality and hashing should use identity and colors");
-  const auto metadata = registry.describeIcon(ref);
-  require(metadata.key.pack == QStringLiteral("external-test") &&
+  const auto metadata = renderer.describeIcon(ref);
+  require(metadata.key.pack == QStringLiteral("core-test") &&
               metadata.key.variant == QStringLiteral("outlined") &&
               metadata.key.name == QStringLiteral("wide"),
           "metadata inspection should expose the canonical key");
+  const auto view = renderer.describeIconView(ref);
+  require(view.pack == std::string_view("core-test") && view.name == std::string_view("wide") &&
+              view.isValid(),
+          "the metadata view should expose the same descriptor fields without owning them");
 }
 
 void primaryOverridesPreserveFixedDefaultSecondaryColors() {
-  adqt::icons::ExternalIconPack pack(externalDefinition());
-  adqt::icons::IconRegistry registry;
+  adqt::icons::IconRenderer renderer;
   const QColor primary("#345678");
   const QColor fixedSecondary("#9254DE");
-  const auto ref = pack.icon(registry, QStringLiteral("twotone"), QStringLiteral("fixed-secondary"),
-                             adqt::icons::IconColors::primary(primary));
+  const auto ref = kTestPack.icon(kFixedSecondary, adqt::icons::IconColors::primary(primary));
   adqt::icons::IconRenderRequest request;
   request.logicalSize = QSize(20, 10);
   request.devicePixelRatio = 1.0;
-  const QImage image = registry.renderIconPixmap(ref, request).toImage();
+  const QImage image = renderer.renderIconPixmap(ref, request).toImage();
   require(containsOpaqueColor(image, primary),
           "an explicit primary color should still override the primary slot");
   require(containsOpaqueColor(image, fixedSecondary),
@@ -165,54 +146,27 @@ void primaryOverridesPreserveFixedDefaultSecondaryColors() {
 
   adqt::icons::IconStatePalette palette;
   palette.set(QIcon::Normal, QIcon::Off, adqt::icons::IconColors::primary(primary));
-  const auto uncoloredRef =
-      pack.icon(registry, QStringLiteral("twotone"), QStringLiteral("fixed-secondary"));
-  const QImage stateImage = registry.renderIconPixmap(uncoloredRef, request, palette).toImage();
+  const auto uncoloredRef = kTestPack.icon(kFixedSecondary);
+  const QImage stateImage = renderer.renderIconPixmap(uncoloredRef, request, palette).toImage();
   require(containsOpaqueColor(stateImage, primary),
           "a state primary color should override the primary slot");
   require(containsOpaqueColor(stateImage, fixedSecondary),
           "a state primary override should preserve a pack's fixed default secondary color");
 }
 
-void dynamicDefaultColorsPreserveAlpha() {
-  adqt::icons::IconRegistry registry;
-  auto value = definition(QStringLiteral("translucent-default"), squareSvg());
-  value.defaultColors = adqt::icons::IconColors::primary(QColor(12, 34, 56, 73));
-  const auto registered = registry.registerPack(QStringLiteral("core-test"), {value});
-  require(registered.ok(), "the translucent dynamic fixture should register");
-
+void staticDefaultColorsPreserveAlpha() {
+  adqt::icons::IconRenderer renderer;
+  const auto ref = kTestPack.icon(kTranslucentDefault);
   adqt::icons::IconRenderRequest request;
   request.logicalSize = QSize(16, 16);
   request.devicePixelRatio = 1.0;
-  const QImage image = registry.renderIconImage(registry.reference(value.key), request);
+  const QImage image = renderer.renderIconImage(ref, request);
   require(!image.isNull() && image.pixelColor(8, 8).alpha() == 73,
-          "dynamic descriptor defaults should preserve their alpha channel");
+          "descriptor default colors should preserve their alpha channel");
 }
 
-void dynamicImagePermissionIsStrict() {
-  adqt::icons::IconRegistry registry;
-  auto monochrome = definition(
-      QStringLiteral("embedded-monochrome"),
-      QByteArrayLiteral("<svg viewBox=\"0 0 16 16\"><image href=\"data:image/png;base64,AA==\"/></svg>"));
-  monochrome.allowEmbeddedDataImages = true;
-  require(!registry.registerPack(QStringLiteral("core-test"), {monochrome}).ok(),
-          "embedded images must remain restricted to explicitly permitted full-color entries");
-
-  auto local = definition(
-      QStringLiteral("local-image"),
-      QByteArrayLiteral("<svg viewBox=\"0 0 16 16\"><image href=\"local.png\"/></svg>"));
-  local.colorModel = adqt::icons::IconColorModel::FullColor;
-  local.allowEmbeddedDataImages = true;
-  require(!registry.registerPack(QStringLiteral("core-test"), {local}).ok(),
-          "permitted embedded images must still reject local file references");
-}
-
-void lazyRegistrationIsThreadSafe() {
-  static const adqt::icons::ExternalIconPack pack([] {
-    auto value = externalDefinition();
-    value.pack = QStringLiteral("lazy-thread-test");
-    return value;
-  }());
+void lazyPackAccessIsThreadSafe() {
+  static const adqt::icons::ExternalIconPack pack(kTestPack);
   constexpr int threadCount = 12;
   std::atomic_int ready{0};
   std::atomic_bool start{false};
@@ -223,7 +177,7 @@ void lazyRegistrationIsThreadSafe() {
     threads.emplace_back([&, index] {
       ready.fetch_add(1, std::memory_order_release);
       while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
-      refs[index] = pack.icon(QStringLiteral("outlined"), QStringLiteral("wide"));
+      refs[index] = pack.icon(kWide);
     });
   }
   while (ready.load(std::memory_order_acquire) != threadCount) std::this_thread::yield();
@@ -257,15 +211,13 @@ void statePaletteUsesTheDocumentedFallbackOrder() {
 }
 
 void renderingContainsAndPreservesFractionalDpr() {
-  adqt::icons::ExternalIconPack pack(externalDefinition());
-  adqt::icons::IconRegistry registry;
-  const auto ref = pack.icon(registry, QStringLiteral("outlined"), QStringLiteral("wide"),
-                             adqt::icons::IconColors::primary(QColor(Qt::black)));
+  adqt::icons::IconRenderer renderer;
+  const auto ref = kTestPack.icon(kWide, adqt::icons::IconColors::primary(QColor(Qt::black)));
   adqt::icons::IconRenderRequest request;
   request.logicalSize = QSize(20, 20);
   for (const qreal dpr : {1.0, 1.25, 1.5, 2.0, 3.0}) {
     request.devicePixelRatio = dpr;
-    const QPixmap pixmap = registry.renderIconPixmap(ref, request);
+    const QPixmap pixmap = renderer.renderIconPixmap(ref, request);
     const int physicalSize = qRound(20 * dpr);
     require(pixmap.size() == QSize(physicalSize, physicalSize) &&
                 qFuzzyCompare(pixmap.devicePixelRatio(), dpr),
@@ -277,18 +229,16 @@ void renderingContainsAndPreservesFractionalDpr() {
             "Contain should center a non-square SVG without distortion");
   }
 
-  const auto fullColor = pack.icon(registry, QStringLiteral("app"), QStringLiteral("full-color"));
-  const auto invalid = pack.icon(registry, QStringLiteral("app"), QStringLiteral("full-color"),
-                                 adqt::icons::IconColors::primary(QColor(Qt::blue)));
+  const auto fullColor = kTestPack.icon(kFullColor);
+  const auto invalid =
+      kTestPack.icon(kFullColor, adqt::icons::IconColors::primary(QColor(Qt::blue)));
   require(fullColor.isValid() && !invalid.isValid(),
           "full-color entries should reject theme slots");
 }
 
 void directPaintingUsesTheEntireHighDpiPixmap() {
-  adqt::icons::ExternalIconPack pack(externalDefinition());
-  adqt::icons::IconRegistry registry;
-  const auto ref = pack.icon(registry, QStringLiteral("outlined"), QStringLiteral("wide"),
-                             adqt::icons::IconColors::primary(QColor(Qt::black)));
+  adqt::icons::IconRenderer renderer;
+  const auto ref = kTestPack.icon(kWide, adqt::icons::IconColors::primary(QColor(Qt::black)));
   const QRectF targetRect(8.0, 8.0, 20.0, 20.0);
   for (const qreal dpr : {1.25, 1.5, 2.0}) {
     const int physicalCanvasSide = qRound(36.0 * dpr);
@@ -298,13 +248,13 @@ void directPaintingUsesTheEntireHighDpiPixmap() {
     actual.fill(Qt::transparent);
     {
       QPainter painter(&actual);
-      registry.paintIcon(&painter, ref, targetRect);
+      renderer.paintIcon(&painter, ref, targetRect);
     }
 
     adqt::icons::IconRenderRequest request;
     request.logicalSize = targetRect.size().toSize();
     request.devicePixelRatio = dpr;
-    const QPixmap expectedPixmap = registry.renderIconPixmap(ref, request);
+    const QPixmap expectedPixmap = renderer.renderIconPixmap(ref, request);
     QImage expected(physicalCanvasSize, QImage::Format_ARGB32_Premultiplied);
     expected.setDevicePixelRatio(dpr);
     expected.fill(Qt::transparent);
@@ -320,8 +270,8 @@ void directPaintingUsesTheEntireHighDpiPixmap() {
 }
 
 void renderPackEntries(const adqt::icons::ExternalIconPack& pack,
-                       adqt::icons::IconRegistry& registry) {
-  const auto registered = pack.registerWith(registry);
+                       adqt::icons::IconRenderer& renderer) {
+  const auto registered = pack.registerWith(renderer);
   require(registered.ok(), "generated pack registration should succeed");
   const adqt::icons::IconPack* staticPack = pack.staticPack();
   require(staticPack != nullptr && staticPack->isValid() && staticPack->entryCount != 0,
@@ -334,11 +284,11 @@ void renderPackEntries(const adqt::icons::ExternalIconPack& pack,
     const adqt::icons::IconDescriptor* entry = staticPack->entry(index);
     const auto ref = pack.icon(index);
     require(ref.isValid(), "every generated entry should create a valid reference");
-    const auto metadata = registry.describeIconView(ref);
+    const auto metadata = renderer.describeIconView(ref);
     require(metadata.pack == staticPack->packName && metadata.variant == entry->variant &&
                 metadata.name == entry->name && metadata.sourceHash == entry->sourceHash,
             "generated entry metadata should match its pack definition");
-    const QPixmap pixmap = registry.renderIconPixmap(ref, request);
+    const QPixmap pixmap = renderer.renderIconPixmap(ref, request);
     require(!pixmap.isNull() && pixmap.size() == QSize(20, 20) &&
                 qFuzzyCompare(pixmap.devicePixelRatio(), 1.25),
             "every generated entry should render at fractional DPR");
@@ -348,9 +298,9 @@ void renderPackEntries(const adqt::icons::ExternalIconPack& pack,
 }
 
 void everyBuiltInAndWidgetEntryRenders() {
-  adqt::icons::IconRegistry registry;
-  renderPackEntries(adqt::icons::antd::pack(), registry);
-  renderPackEntries(adqt::widgets::icons::pack(), registry);
+  adqt::icons::IconRenderer renderer;
+  renderPackEntries(adqt::icons::antd::pack(), renderer);
+  renderPackEntries(adqt::widgets::icons::pack(), renderer);
   require(adqt::icons::antd::pack().staticPack()->entryCount == 829,
           "the pinned built-in Ant pack should contain exactly 829 upstream entries");
   require(adqt::widgets::icons::pack().staticPack()->entryCount == 1,
@@ -362,12 +312,11 @@ void everyBuiltInAndWidgetEntryRenders() {
 int main(int argc, char** argv) {
   QApplication app(argc, argv);
   try {
-    registrationIsAtomicIdempotentAndConflictAware();
-    referencesAreImmutableValuesAndSupportIsolatedRegistries();
+    staticPackRegistrationIsValidAndIdempotent();
+    referencesAreImmutableValuesAndSupportIsolatedRenderers();
     primaryOverridesPreserveFixedDefaultSecondaryColors();
-    dynamicDefaultColorsPreserveAlpha();
-    dynamicImagePermissionIsStrict();
-    lazyRegistrationIsThreadSafe();
+    staticDefaultColorsPreserveAlpha();
+    lazyPackAccessIsThreadSafe();
     statePaletteUsesTheDocumentedFallbackOrder();
     renderingContainsAndPreservesFractionalDpr();
     directPaintingUsesTheEntireHighDpiPixmap();

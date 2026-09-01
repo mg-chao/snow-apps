@@ -59,10 +59,6 @@ using QtColorValue = AdColorValue;
 
 namespace {
 
-QtColorValue toQtColorValue(const ColorValue& value) { return toColorValue(value); }
-
-ColorValue toLegacyColorValue(const QtColorValue& value) { return toColorSelection(value); }
-
 void setInputNumberValueIfChanged(AdInputNumber* input, double value) {
   if (!input) {
     return;
@@ -2242,11 +2238,11 @@ void AdColorPickerState::setCssText(const QString& value) {
 
 QString AdColorPickerState::displayText() const { return cachedDisplayText_; }
 
-AdColorValue AdColorPickerState::value() const { return toQtColorValue(colorValue_); }
+AdColorValue AdColorPickerState::value() const { return toColorValue(colorValue_); }
 
 void AdColorPickerState::setValue(const AdColorValue& value) {
   const detail::ColorPickerValueModel::State nextState =
-      detail::ColorPickerValueModel::stateFromSelection(toLegacyColorValue(value), modeOptions_,
+      detail::ColorPickerValueModel::stateFromSelection(toColorSelection(value), modeOptions_,
                                                         mode_, activeStopIndex_);
   applyState(nextState.selection, nextState.mode, nextState.modeOptions, format_, allowClear_,
              alphaChannelEnabled_, formatSelectorEnabled_, nextState.activeStopIndex, presets_);
@@ -2374,7 +2370,7 @@ void AdColorPickerState::applyNormalizedState(const AdColorSelection& selection,
     emit activeStopIndexChanged(activeStopIndex_);
   }
   if (colorValueChangedFlag) {
-    emit valueChanged(toQtColorValue(colorValue_));
+    emit valueChanged(toColorValue(colorValue_));
   }
   if (presetsChangedFlag) {
     emit presetsChanged();
@@ -2491,7 +2487,7 @@ void AdColorPicker::setMode(Mode value) {
     emit modeChanged(mode_);
   }
   if (selectionChanged) {
-    emit valueChanged(toQtColorValue(exportColorValue()));
+    emit valueChanged(toColorValue(exportColorValue()));
   }
   refreshPanelControlsFromState();
   refreshTriggerDisplay();
@@ -2524,7 +2520,7 @@ void AdColorPicker::setModeOptions(const QVector<Mode>& options) {
     emit modeChanged(mode_);
   }
   if (selectionChanged) {
-    emit valueChanged(toQtColorValue(exportColorValue()));
+    emit valueChanged(toColorValue(exportColorValue()));
   }
   if (modeChangedByModel || selectionChanged) {
     emit cssTextChanged(this->cssText());
@@ -2708,14 +2704,14 @@ QString AdColorPicker::displayText() const {
                                                        activeStopIndex_);
 }
 
-AdColorValue AdColorPicker::value() const { return toQtColorValue(exportColorValue()); }
+AdColorValue AdColorPicker::value() const { return toColorValue(exportColorValue()); }
 
 void AdColorPicker::setValue(const AdColorValue& value) {
-  importColorValue(toLegacyColorValue(value), false, false, true);
+  importColorValue(toColorSelection(value), false, false, true);
 }
 
 void AdColorPicker::commitValue(const AdColorValue& value) {
-  importColorValue(toLegacyColorValue(value), true, true, true);
+  importColorValue(toColorSelection(value), true, true, true);
 }
 
 QVector<AdColorPicker::PresetItem> AdColorPicker::presets() const { return presets_; }
@@ -3445,7 +3441,7 @@ void AdColorPicker::ensurePopover() {
       resumeTriggerUpdatesAfterInteraction();
       if (pendingEditingFinished_) {
         pendingEditingFinished_ = false;
-        emit editingFinished(toQtColorValue(pendingFinishedValue_));
+        emit editingFinished(toColorValue(pendingFinishedValue_));
       }
     }
     emit popupVisibleChanged(openValue);
@@ -4382,7 +4378,7 @@ void AdColorPicker::rebuildPresetsPanel() {
 
       for (int colorIndex = 0; colorIndex < preset.colors.size(); ++colorIndex) {
         const QtColorValue& value = preset.colors.at(colorIndex);
-        const ColorValue selectionValue = toLegacyColorValue(value);
+        const ColorValue selectionValue = toColorSelection(value);
         auto* swatch = new PresetColorButton(itemsHost);
         swatch->setObjectName(QString::fromLatin1(kPresetSwatchObjectName));
         swatch->setToolTip(colorValueToCss(selectionValue));
@@ -5179,7 +5175,7 @@ void AdColorPicker::refreshTriggerDisplay(bool deferTextUpdate) {
     QString text;
     bool useRichText = false;
     if (showTextFormatter_) {
-      text = showTextFormatter_(toQtColorValue(displayValue), format_, activeStopIndex_);
+      text = showTextFormatter_(toColorValue(displayValue), format_, activeStopIndex_);
     }
 
     if (text.trimmed().isEmpty()) {
@@ -6148,7 +6144,7 @@ void AdColorPicker::emitChangeSignals(bool emitCompleted, bool emitCssTextSignal
   const QString formatted = displayText();
 
   syncStateObject(exported, css, formatted);
-  emit valueChanged(toQtColorValue(exported));
+  emit valueChanged(toColorValue(exported));
   if (emitCssTextSignal) {
     emit cssTextChanged(css);
   }
@@ -6158,13 +6154,13 @@ void AdColorPicker::emitChangeSignals(bool emitCompleted, bool emitCssTextSignal
       pendingFinishedValue_ = exported;
       pendingEditingFinished_ = true;
     } else {
-      emit editingFinished(toQtColorValue(exported));
+      emit editingFinished(toColorValue(exported));
     }
   }
 }
 
 void AdColorPicker::applyPreset(const AdColorValue& value) {
-  importColorValue(toLegacyColorValue(value), true, true, true);
+  importColorValue(toColorSelection(value), true, true, true);
 }
 
 void AdColorPicker::applyStateObject() {
@@ -6178,7 +6174,7 @@ void AdColorPicker::applyStateObject() {
       createValueModelState(exportColorValue(), mode_, modeOptions_, activeStopIndex_);
 
   detail::ColorPickerValueModel::State nextState =
-      createValueModelState(toLegacyColorValue(state_->value()), state_->mode(),
+      createValueModelState(toColorSelection(state_->value()), state_->mode(),
                             state_->modeOptions(), state_->activeStopIndex());
   nextState = detail::ColorPickerValueModel::normalizedState(nextState);
 
@@ -6245,7 +6241,7 @@ void AdColorPicker::applyStateObject() {
     emit presetsChanged();
   }
   if (activeStopIndexChangedFlag || colorValueChangedFlag) {
-    emit valueChanged(toQtColorValue(exportColorValue()));
+    emit valueChanged(toColorValue(exportColorValue()));
   }
 
   const QString nextCss = cssText();

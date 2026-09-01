@@ -157,7 +157,7 @@ mod tests {
     use crate::{ActiveTextDraftPresentation, ActiveTextDraftTarget};
     use snow_draw_engine_core::{
         ColorRgba8, CornerRadii, EngineConfig,
-        arrow::{ArrowEndpointEdge, ArrowStrokeStyle, ArrowType},
+        arrow::{ArrowEndpointEdge, StrokeStyle, ArrowType},
     };
     use snow_draw_engine_document::{
         ArrowData, CanvasFilterType, ElementMeta, FilterData, PenFilterData, Transaction,
@@ -209,7 +209,7 @@ mod tests {
             points,
             ColorRgba8::default(),
             2.0,
-            ArrowStrokeStyle::Solid,
+            StrokeStyle::Solid,
             ArrowType::Straight,
             None,
             None,

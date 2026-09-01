@@ -7,7 +7,7 @@
 namespace adqt::widgets::icons {
 
 const adqt::icons::ExternalIconPack& pack();
-adqt::icons::IconPackRegistrationResult registerWith(adqt::icons::IconRegistry& registry);
+adqt::icons::IconPackRegistrationResult registerWith(adqt::icons::IconRenderer& renderer);
 adqt::icons::IconPackRegistrationResult ensureRegistered();
 
 namespace twotone {

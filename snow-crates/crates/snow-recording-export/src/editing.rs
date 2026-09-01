@@ -2649,27 +2649,6 @@ fn blend_horizontal_span(
     }
 }
 
-#[allow(dead_code)]
-fn draw_mouse_trail(
-    surface: &mut FrameSurfaceMut<'_>,
-    samples: &[MouseSample],
-    ts: u64,
-    config: &MouseEditConfig,
-) {
-    let mut points = Vec::with_capacity(samples.len());
-    points.extend(
-        samples
-            .iter()
-            .filter(|sample| sample.visible)
-            .map(|sample| TrailCurvePoint {
-                x: sample.x as f32,
-                y: sample.y as f32,
-                ts_ms: sample.ts_ms as f32,
-            }),
-    );
-    draw_mouse_trail_points(surface, &points, ts, config);
-}
-
 fn draw_mouse_trail_points(
     surface: &mut FrameSurfaceMut<'_>,
     points: &[TrailCurvePoint],
@@ -4486,7 +4465,6 @@ fn build_audio_track_plan(
 }
 
 const AUDIO_RENDER_CACHE_FRAMES: usize = 16_384;
-#[allow(dead_code)]
 const I16_TO_F32_PCM_SCALE: f32 = 1.0 / 32768.0;
 const MIX_LIMITER_START: f32 = 0.82;
 const MIX_LIMITER_CEILING: f32 = 0.891_250_9;
@@ -4688,66 +4666,6 @@ impl AudioMixRenderer {
         }
     }
 
-    #[allow(dead_code)]
-    fn render_into_f32_packed(
-        &mut self,
-        start_output_frame: usize,
-        frame_count: usize,
-        out: &mut [f32],
-    ) -> Result<()> {
-        let expected_samples = frame_count.saturating_mul(self.channels_usize);
-        if out.len() < expected_samples {
-            return Err(ScreenRecorderError::Export(
-                "audio render target buffer is too small".to_string(),
-            ));
-        }
-        out[..expected_samples].fill(0.0);
-        if frame_count == 0 || self.readers.is_empty() {
-            return Ok(());
-        }
-
-        let active_end_frame = start_output_frame
-            .saturating_add(frame_count)
-            .min(self.plan.target_frames)
-            .min(self.natural_output_frames);
-        if active_end_frame <= start_output_frame {
-            return Ok(());
-        }
-
-        let active_frame_count = active_end_frame - start_output_frame;
-
-        if (self.plan.playback_speed - 1.0).abs() < f32::EPSILON {
-            if self.readers.len() == 1 {
-                self.render_direct_single_track_f32_packed(
-                    start_output_frame,
-                    active_frame_count,
-                    &mut out[..expected_samples],
-                )?;
-            } else {
-                self.render_direct_mixed_tracks_f32_packed(
-                    start_output_frame,
-                    active_frame_count,
-                    &mut out[..expected_samples],
-                )?;
-            }
-            return Ok(());
-        }
-
-        if self.readers.len() == 1 {
-            self.render_retimed_single_track_f32_packed(
-                start_output_frame,
-                active_frame_count,
-                &mut out[..expected_samples],
-            )
-        } else {
-            self.render_retimed_tracks_f32_packed(
-                start_output_frame,
-                active_frame_count,
-                &mut out[..expected_samples],
-            )
-        }
-    }
-
     fn render_direct_single_track(
         &mut self,
         start_output_frame: usize,
@@ -4793,64 +4711,6 @@ impl AudioMixRenderer {
                         reader.sample_at(source_frame, channel_index) as f32 * reader.plan.volume;
                 }
                 out[out_base + channel_index] = mixed_sample_i16(acc, self.readers.len());
-            }
-        }
-        Ok(())
-    }
-
-    #[allow(dead_code)]
-    fn render_direct_single_track_f32_packed(
-        &mut self,
-        start_output_frame: usize,
-        active_frame_count: usize,
-        out: &mut [f32],
-    ) -> Result<()> {
-        let Some(reader) = self.readers.first_mut() else {
-            return Ok(());
-        };
-        reader.ensure_cached_range(
-            start_output_frame,
-            start_output_frame.saturating_add(active_frame_count),
-        )?;
-
-        let sample_count = active_frame_count * self.channels_usize;
-        let track_start = (start_output_frame - reader.cache_start_frame) * self.channels_usize;
-        let cache = &reader.cache_samples_i16[track_start..track_start + sample_count];
-        let volume = reader.plan.volume * I16_TO_F32_PCM_SCALE;
-        if (reader.plan.volume - 1.0).abs() < f32::EPSILON {
-            for (dst, src) in out[..sample_count].iter_mut().zip(cache.iter().copied()) {
-                *dst = src as f32 * I16_TO_F32_PCM_SCALE;
-            }
-        } else {
-            for (dst, src) in out[..sample_count].iter_mut().zip(cache.iter().copied()) {
-                *dst = src as f32 * volume;
-            }
-        }
-        Ok(())
-    }
-
-    #[allow(dead_code)]
-    fn render_direct_mixed_tracks_f32_packed(
-        &mut self,
-        start_output_frame: usize,
-        active_frame_count: usize,
-        out: &mut [f32],
-    ) -> Result<()> {
-        let end_frame = start_output_frame.saturating_add(active_frame_count);
-        for reader in &mut self.readers {
-            reader.ensure_cached_range(start_output_frame, end_frame)?;
-        }
-
-        for frame_offset in 0..active_frame_count {
-            let out_base = frame_offset * self.channels_usize;
-            let source_frame = start_output_frame + frame_offset;
-            for channel_index in 0..self.channels_usize {
-                let mut acc = 0.0f32;
-                for reader in &self.readers {
-                    acc +=
-                        reader.sample_at(source_frame, channel_index) as f32 * reader.plan.volume;
-                }
-                out[out_base + channel_index] = mixed_sample_normalized(acc, self.readers.len());
             }
         }
         Ok(())
@@ -4920,71 +4780,6 @@ impl AudioMixRenderer {
         Ok(())
     }
 
-    #[allow(dead_code)]
-    fn render_retimed_single_track_f32_packed(
-        &mut self,
-        start_output_frame: usize,
-        active_frame_count: usize,
-        out: &mut [f32],
-    ) -> Result<()> {
-        let Some(reader) = self.readers.first_mut() else {
-            return Ok(());
-        };
-
-        let speed = f64::from(self.plan.playback_speed);
-        let max_source_frame = self.plan.input_frame_count.saturating_sub(1);
-        let first_source_frame = ((start_output_frame as f64) * speed).floor() as usize;
-        let last_source_frame =
-            ((((start_output_frame + active_frame_count - 1) as f64) * speed).floor() as usize + 1)
-                .min(max_source_frame);
-        let end_source_frame_exclusive = last_source_frame.saturating_add(1);
-        reader.ensure_cached_range(first_source_frame, end_source_frame_exclusive)?;
-
-        let cache = &reader.cache_samples_i16;
-        let cache_start_frame = reader.cache_start_frame;
-        let volume = reader.plan.volume * I16_TO_F32_PCM_SCALE;
-        let apply_volume = (reader.plan.volume - 1.0).abs() >= f32::EPSILON;
-
-        let mut src_pos = start_output_frame as f64 * speed;
-        for frame_offset in 0..active_frame_count {
-            let src_index = src_pos.floor() as usize;
-            let next_index = (src_index + 1).min(max_source_frame);
-            let frac = (src_pos - src_index as f64) as f32;
-            let out_base = frame_offset * self.channels_usize;
-            let src_base = (src_index - cache_start_frame) * self.channels_usize;
-
-            if src_index == next_index || frac <= f32::EPSILON {
-                if !apply_volume {
-                    for channel_index in 0..self.channels_usize {
-                        out[out_base + channel_index] =
-                            cache[src_base + channel_index] as f32 * I16_TO_F32_PCM_SCALE;
-                    }
-                } else {
-                    for channel_index in 0..self.channels_usize {
-                        out[out_base + channel_index] =
-                            cache[src_base + channel_index] as f32 * volume;
-                    }
-                }
-                src_pos += speed;
-                continue;
-            }
-
-            let next_base = (next_index - cache_start_frame) * self.channels_usize;
-            for channel_index in 0..self.channels_usize {
-                let sample_a = cache[src_base + channel_index] as f32;
-                let sample_b = cache[next_base + channel_index] as f32;
-                let mut interpolated = sample_a + (sample_b - sample_a) * frac;
-                if apply_volume {
-                    interpolated *= reader.plan.volume;
-                }
-                out[out_base + channel_index] = interpolated * I16_TO_F32_PCM_SCALE;
-            }
-            src_pos += speed;
-        }
-
-        Ok(())
-    }
-
     fn render_retimed_tracks(
         &mut self,
         start_output_frame: usize,
@@ -5025,46 +4820,6 @@ impl AudioMixRenderer {
         Ok(())
     }
 
-    #[allow(dead_code)]
-    fn render_retimed_tracks_f32_packed(
-        &mut self,
-        start_output_frame: usize,
-        active_frame_count: usize,
-        out: &mut [f32],
-    ) -> Result<()> {
-        let speed = f64::from(self.plan.playback_speed);
-        let first_source_frame = ((start_output_frame as f64) * speed).floor() as usize;
-        let last_source_frame =
-            ((((start_output_frame + active_frame_count - 1) as f64) * speed).floor() as usize + 1)
-                .min(self.plan.input_frame_count.saturating_sub(1));
-        let end_source_frame_exclusive = last_source_frame.saturating_add(1);
-
-        for reader in &mut self.readers {
-            reader.ensure_cached_range(first_source_frame, end_source_frame_exclusive)?;
-        }
-
-        let mut src_pos = start_output_frame as f64 * speed;
-        for frame_offset in 0..active_frame_count {
-            let src_index = src_pos.floor() as usize;
-            let next_index = (src_index + 1).min(self.plan.input_frame_count.saturating_sub(1));
-            let frac = (src_pos - src_index as f64) as f32;
-            let out_base = frame_offset * self.channels_usize;
-
-            for channel_index in 0..self.channels_usize {
-                let mut acc = 0.0f32;
-                for reader in &self.readers {
-                    let sample_a = reader.sample_at(src_index, channel_index) as f32;
-                    let sample_b = reader.sample_at(next_index, channel_index) as f32;
-                    let interpolated = sample_a + (sample_b - sample_a) * frac;
-                    acc += interpolated * reader.plan.volume;
-                }
-                out[out_base + channel_index] = mixed_sample_normalized(acc, self.readers.len());
-            }
-            src_pos += speed;
-        }
-
-        Ok(())
-    }
 }
 
 fn read_pcm_i16_frame_range(

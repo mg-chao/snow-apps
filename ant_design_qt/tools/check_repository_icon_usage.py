@@ -11,7 +11,7 @@ from pathlib import Path
 
 CPP_SUFFIXES = {".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp"}
 SCANNED_SUFFIXES = CPP_SUFFIXES | {".py", ".qrc"}
-CORE_RENDERER = Path("ant_design_qt/packages/adqt_icon_core/src/icon_registry.cpp")
+CORE_RENDERER = Path("ant_design_qt/packages/adqt_icon_core/src/icon_renderer.cpp")
 
 
 @dataclass(frozen=True)
@@ -23,7 +23,7 @@ class Rule:
 
 RULES = (
     Rule(
-        "removed 1.x icon API",
+        "retired icon API",
         re.compile(r"\b(?:IconTheme|IconRenderModel|IconColorOverrides|makeIconRef|registerIcon)\b"),
         CPP_SUFFIXES | {".py"},
     ),

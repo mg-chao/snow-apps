@@ -1,7 +1,7 @@
 # Snow Canvas spotlight benchmark
 
-`snow-canvas-spotlight-benchmark` measures the dedicated spotlight decoration renderer. CSV format
-version 2 records p50/p95/p99 timing, processed and culled cutouts, early exits, fast paths, output
+`snow-canvas-spotlight-benchmark` measures the dedicated spotlight decoration renderer. CSV output
+records p50/p95/p99 timing, processed and culled cutouts, early exits, fast paths, output
 checksums, and environment metadata.
 
 ## Build and run
@@ -25,8 +25,5 @@ The stable scenario matrix covers 1920x1080 and 3840x2160, DPR 1, 1.25, and 2, a
 128 rotated cutouts. Additional scenarios cover fragmented and bounded exposure, opacity and color
 preview bursts, zero visible cutouts, fractional geometry, small geometry changes, camera changes,
 and render-area changes.
-
-`legacy_reference_*` scenarios execute the repeated `QPainterPath::united()` algorithm inside the
-benchmark only, providing same-build reference measurements without changing production behavior.
 
 Functional or diagnostics mismatches return a nonzero exit code; timing values never do.

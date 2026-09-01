@@ -74,8 +74,8 @@ function Invoke-Benchmark([string]$Format, [string]$Scale, [string]$Mode,
         throw "Edit benchmark failed for format '$Format', scale '$Scale', mode '$Mode', metadata '$MetadataMode' (exit $exitCode)."
     }
     $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
-    if ($report.schema -ne "snow-image-viewer.edit-mode-performance.v11" -or !$report.succeeded) {
-        throw "Edit benchmark returned an invalid or failed v11 report for '$Format' at '$Scale'."
+    if ($report.schema -ne "snow-image-viewer.edit-mode-performance.v1" -or !$report.succeeded) {
+        throw "Edit benchmark returned an invalid or failed report for '$Format' at '$Scale'."
     }
     $expectedPreservation = $MetadataMode -eq "preserved"
     if ([bool]$report.request.preserve_metadata -ne $expectedPreservation) {
@@ -139,10 +139,10 @@ try {
     }
 
     $report = [ordered]@{
-        schema = "snow-image-viewer.edit-mode-performance.v11"
+        schema = "snow-image-viewer.edit-mode-performance.v1"
         succeeded = $true
         benchmark = [ordered]@{
-            report_version = 11
+            report_version = 1
             iterations = $Iterations
             warmup_iterations = $Warmups
             ratios = @($selectedRatios.Name)

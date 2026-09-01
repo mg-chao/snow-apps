@@ -690,7 +690,7 @@ mod tests {
     use super::*;
     use snow_draw_engine_core::{
         ColorRgba8,
-        arrow::{ArrowStrokeStyle, ArrowType, Arrowhead},
+        arrow::{StrokeStyle, ArrowType, Arrowhead},
     };
 
     fn assert_close(actual: f64, expected: f64) {
@@ -867,7 +867,7 @@ mod tests {
             &[Point::new(0.0, 0.0), Point::new(100.0, 0.0)],
             ColorRgba8::default(),
             24.0,
-            ArrowStrokeStyle::Solid,
+            StrokeStyle::Solid,
             ArrowType::Straight,
             Some(Arrowhead::Circle),
             Some(Arrowhead::Arrow),

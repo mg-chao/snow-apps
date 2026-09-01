@@ -6,7 +6,6 @@ use crate::abi::patch::SnowPatchPayload;
 use crate::abi::types::SnowError;
 
 pub type SnowRuntime = *mut SnowRuntimeImpl;
-pub type SnowEngine = SnowRuntime;
 pub type SnowViewport = *mut SnowViewportImpl;
 pub type SnowPatchHandle = *mut SnowPatchHandleImpl;
 pub type SnowChangedViewportList = *mut SnowChangedViewportListImpl;

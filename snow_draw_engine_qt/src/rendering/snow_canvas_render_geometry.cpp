@@ -549,17 +549,6 @@ QPainterPath arrowPathFromCommands(const ViewProjection& projection,
     return path;
 }
 
-QRectF arrowViewBounds(const QVector<QPointF>& points, SnowArrowType arrowType, double strokeWidth,
-                       double zoom, SnowArrowhead startHead, SnowArrowhead endHead) {
-    if (points.isEmpty()) {
-        return {};
-    }
-
-    QRectF bounds = arrowPathForPoints(points, arrowType, zoom).boundingRect();
-    const double maxHeadSize = qMax(arrowheadSize(startHead), arrowheadSize(endHead)) * zoom;
-    const double padding = qMax(0.0, strokeWidth) / 2.0 + maxHeadSize;
-    return bounds.adjusted(-padding, -padding, padding, padding);
-}
 
 QRectF sceneItemBounds(const SceneDisplayInfo& displayInfo, const SnowSceneDisplayItem& item) {
     const ViewProjection projection = sceneProjection(displayInfo);

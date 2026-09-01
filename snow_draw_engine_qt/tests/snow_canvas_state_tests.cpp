@@ -1,4 +1,5 @@
 #include "snow_canvas_state.h"
+#include "snow_canvas_ffi_handles.h"
 #include "snow_canvas_runtime_access.h"
 #include "snow_canvas_type_conversions.h"
 #include "snow_canvas_viewport.h"
@@ -87,7 +88,7 @@ void publicCanvasDtosUseExactCompleteEquality() {
     REQUIRE_SHAPE_CHANGE(cornerRadii, (SnowCanvasCornerRadii{1, 2, 3, 4}));
     REQUIRE_SHAPE_CHANGE(startArrowhead, SnowCanvasArrowhead::Bar);
     REQUIRE_SHAPE_CHANGE(endArrowhead, SnowCanvasArrowhead::Arrow);
-    REQUIRE_SHAPE_CHANGE(strokeStyle, SnowCanvasArrowStrokeStyle::Dashed);
+    REQUIRE_SHAPE_CHANGE(strokeStyle, SnowCanvasStrokeStyle::Dashed);
     REQUIRE_SHAPE_CHANGE(arrowType, SnowCanvasArrowType::Curve);
     REQUIRE_SHAPE_CHANGE(opacity, 0.5);
     REQUIRE_SHAPE_CHANGE(highlightShape, SnowCanvasHighlightShape::Ellipse);
@@ -122,7 +123,7 @@ void publicCanvasDtosUseExactCompleteEquality() {
     REQUIRE_ARROW_CHANGE(strokeWidth, 4.0);
     REQUIRE_ARROW_CHANGE(startArrowhead, SnowCanvasArrowhead::Dot);
     REQUIRE_ARROW_CHANGE(endArrowhead, SnowCanvasArrowhead::Triangle);
-    REQUIRE_ARROW_CHANGE(strokeStyle, SnowCanvasArrowStrokeStyle::Dotted);
+    REQUIRE_ARROW_CHANGE(strokeStyle, SnowCanvasStrokeStyle::Dotted);
     REQUIRE_ARROW_CHANGE(arrowType, SnowCanvasArrowType::Elbow);
 #undef REQUIRE_ARROW_CHANGE
 
@@ -286,7 +287,9 @@ SnowViewport createViewport(SnowCanvasRuntime& runtime) {
 SnowStyleToolbarState toolbarState(SnowCanvasRuntime& runtime, SnowViewport viewport,
                                    SnowActiveTool tool) {
     SnowRuntime handle = snow_canvas_runtime::Access::handle(runtime);
-    require(snow_viewport_set_active_tool(handle, viewport, tool) == SNOW_OK,
+    ScopedChangedViewportList changed;
+    require(snow_viewport_set_active_tool_ex(handle, viewport, tool, changed.outParam()) ==
+                SNOW_OK,
             "configured tool selection should succeed");
     SnowStyleToolbarState state{};
     require(snow_viewport_get_style_toolbar_state(handle, viewport, &state) == SNOW_OK,
@@ -402,19 +405,19 @@ void configuredRuntimeProfileFollowsRestoreAndResetLifecycle() {
             "an invalid configured enum should be rejected before C ABI conversion");
 }
 
-void legacyRuntimeUsesGenericEngineDefaults() {
+void defaultRuntimeUsesGenericEngineDefaults() {
     SnowStyleDefaults expected{};
     require(snow_runtime_style_defaults_default(&expected) == SNOW_OK,
             "generic C defaults should be available");
     SnowCanvasRuntime runtime;
-    require(runtime.isValid(), "legacy runtime creation should remain valid");
+    require(runtime.isValid(), "default runtime creation should be valid");
     SnowViewport viewport = createViewport(runtime);
     const SnowStyleToolbarState state = toolbarState(runtime, viewport, SNOW_ACTIVE_TOOL_SHAPE);
     require(state.shape_style.stroke.r == expected.rectangle.stroke.r &&
                 state.shape_style.stroke.g == expected.rectangle.stroke.g &&
                 state.shape_style.stroke.b == expected.rectangle.stroke.b &&
                 state.shape_style.stroke_width == expected.rectangle.stroke_width,
-            "legacy runtime creation should retain generic engine defaults");
+            "default runtime creation should retain generic engine defaults");
 }
 } // namespace
 
@@ -422,6 +425,6 @@ int main() {
     filterStyleParticipatesInToolbarStateDiffs();
     publicCanvasDtosUseExactCompleteEquality();
     configuredRuntimeProfileFollowsRestoreAndResetLifecycle();
-    legacyRuntimeUsesGenericEngineDefaults();
+    defaultRuntimeUsesGenericEngineDefaults();
     return 0;
 }

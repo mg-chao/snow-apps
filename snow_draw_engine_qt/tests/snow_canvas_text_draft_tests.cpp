@@ -1203,19 +1203,25 @@ void selectToolDragRendersSelectionMarquee() {
             "selection marquee viewport should be created");
     require(snow_viewport_set_surface_size(runtimeHandle, viewport.get(), 320, 240) == SNOW_OK,
             "selection marquee viewport should accept its surface size");
-    require(snow_viewport_set_active_tool(runtimeHandle, viewport.get(), SNOW_ACTIVE_TOOL_SELECT) ==
-                SNOW_OK,
+    ScopedChangedViewportList toolChange;
+    require(snow_viewport_set_active_tool_ex(runtimeHandle, viewport.get(),
+                                             SNOW_ACTIVE_TOOL_SELECT,
+                                             toolChange.outParam()) == SNOW_OK,
             "selection marquee test should activate select tool");
 
     SnowInteractionOutput output{};
     SnowInputEvent press =
         pointerInput(SNOW_POINTER_EVENT_DOWN, 60.0, 70.0, SNOW_POINTER_BUTTON_PRIMARY, 0b0000'0001);
-    require(snow_viewport_process_input(runtimeHandle, viewport.get(), &press, &output) == SNOW_OK,
+    ScopedChangedViewportList pressChange;
+    require(snow_viewport_process_input_ex(runtimeHandle, viewport.get(), &press, &output,
+                                           pressChange.outParam()) == SNOW_OK,
             "selection marquee press should reach the engine");
 
     SnowInputEvent move =
         pointerInput(SNOW_POINTER_EVENT_MOVE, 260.0, 190.0, SNOW_POINTER_BUTTON_NONE, 0b0000'0001);
-    require(snow_viewport_process_input(runtimeHandle, viewport.get(), &move, &output) == SNOW_OK,
+    ScopedChangedViewportList moveChange;
+    require(snow_viewport_process_input_ex(runtimeHandle, viewport.get(), &move, &output,
+                                           moveChange.outParam()) == SNOW_OK,
             "selection marquee move should reach the engine");
 
     SnowCanvasDisplayCache displayCache;
@@ -1347,8 +1353,10 @@ void textEditorActivationPreservesSelectToolSelectionBox() {
                                       static_cast<std::uint32_t>(text.size()), 260.0,
                                       84.0) == SNOW_OK,
             "selection box consistency test should create a text element");
-    require(snow_viewport_set_active_tool(runtime.get(), viewport.get(), SNOW_ACTIVE_TOOL_SELECT) ==
-                SNOW_OK,
+    ScopedChangedViewportList selectToolChange;
+    require(snow_viewport_set_active_tool_ex(runtime.get(), viewport.get(),
+                                             SNOW_ACTIVE_TOOL_SELECT,
+                                             selectToolChange.outParam()) == SNOW_OK,
             "selection box consistency test should activate the select tool");
 
     const std::optional<SnowTextElementInfo> target =
@@ -1366,8 +1374,9 @@ void textEditorActivationPreservesSelectToolSelectionBox() {
     const std::vector<SnowOverlayDisplayItem> selectControls = textSelectionControls(displayCache);
     require(selectControls.size() == 7, "select tool should render all text selection controls");
 
-    require(snow_viewport_set_active_tool(runtime.get(), viewport.get(), SNOW_ACTIVE_TOOL_TEXT) ==
-                SNOW_OK,
+    ScopedChangedViewportList textToolChange;
+    require(snow_viewport_set_active_tool_ex(runtime.get(), viewport.get(), SNOW_ACTIVE_TOOL_TEXT,
+                                             textToolChange.outParam()) == SNOW_OK,
             "selection box consistency test should activate the text tool");
     require(displayCache.sync(runtime.get(), viewport.get()),
             "selection box consistency test should synchronize the text tool");
@@ -1590,8 +1599,9 @@ void textEditorDoesNotSynthesizeSelectionControlsWithoutEngineOverlay() {
                                       static_cast<std::uint32_t>(text.size()), 40.0,
                                       20.0) == SNOW_OK,
             "canonical text selection test should create a text element");
-    require(snow_viewport_set_active_tool(runtime.get(), viewport.get(), SNOW_ACTIVE_TOOL_TEXT) ==
-                SNOW_OK,
+    ScopedChangedViewportList textToolChange;
+    require(snow_viewport_set_active_tool_ex(runtime.get(), viewport.get(), SNOW_ACTIVE_TOOL_TEXT,
+                                             textToolChange.outParam()) == SNOW_OK,
             "canonical text selection test should activate the text tool");
 
     SnowCanvasDisplayCache displayCache;
@@ -1822,7 +1832,7 @@ void closedLineRendererHonorsFillStyleAndExactClosure() {
             "closed Line cross hatch should render both hatch directions");
 }
 
-void longOpenPathsRenderPastLegacyCapacity() {
+void longOpenPathsRenderAllCommands() {
     QImage image(QSize(240, 120), QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::transparent);
     std::vector<SnowArrowPathCommand> commands(3001);
@@ -1868,7 +1878,7 @@ void longOpenPathsRenderPastLegacyCapacity() {
         }
     }
     require(tailVisible,
-            "dynamic paths should render commands beyond the legacy 128-command capacity");
+            "dynamic paths should render all path commands");
     QPainter cachedPainter(&image);
     cachedPainter.setClipRect(QRect(180, 0, 60, 120));
     snow_canvas_renderer::renderSceneItems(snow_canvas_renderer::SceneRenderRequest{
@@ -3135,7 +3145,7 @@ int main(int argc, char** argv) {
     overlayRectangleRendererHonorsFillStyle();
     sceneRectangleRendererBuildsFillPathForEveryCornerStyle();
     closedLineRendererHonorsFillStyleAndExactClosure();
-    longOpenPathsRenderPastLegacyCapacity();
+    longOpenPathsRenderAllCommands();
     textBackgroundUsesRectangleHatchTexture();
     serialNumberBackgroundUsesTextHatchTexture();
     textHoverUnderlineRendererDrawsOnlyTheUnderline();
