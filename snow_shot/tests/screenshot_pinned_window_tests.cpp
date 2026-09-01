@@ -2089,7 +2089,9 @@ void pinnedThumbnailUsesOpaqueThemeBackground(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
 
-    QImage transparentImage(400, 400, QImage::Format_ARGB32_Premultiplied);
+    // Thumbnail mode uses a square viewport. Keep the source non-square so
+    // the scaled result leaves transparent letterbox pixels around the image.
+    QImage transparentImage(400, 200, QImage::Format_ARGB32_Premultiplied);
     transparentImage.fill(Qt::transparent);
 
     auto* pinnedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
@@ -2120,6 +2122,8 @@ void pinnedThumbnailUsesOpaqueThemeBackground(SnowCanvasRuntime&) {
     const QImage thumbnail = renderWidget(*pinnedWindow);
     requireColorNear(thumbnail.pixelColor(thumbnail.rect().center()), expectedBackground, 0,
                      "transparent thumbnail regions should use the opaque theme background");
+    requireColorNear(thumbnail.pixelColor(thumbnail.width() / 2, 3), expectedBackground, 0,
+                     "thumbnail letterbox regions should use the opaque theme background");
 
     thumbnailAction->setChecked(false);
     waitForUi(200);

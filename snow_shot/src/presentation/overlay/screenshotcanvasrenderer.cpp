@@ -1941,6 +1941,16 @@ void ScreenshotCanvasRenderer::renderAfterCanvas(QPainter& painter,
             context.devicePixelRatio,
             std::hypot(context.canvasToViewTransform.m11(),
                        context.canvasToViewTransform.m12()));
+        // The live-surface compositor clears pixels outside the result shape.
+        // In thumbnail mode the viewport is square while the result can keep
+        // its original aspect ratio, so restore the themed backing color in
+        // those letterbox areas without covering the image or its shadow.
+        if (m_pinnedBackgroundColor.isValid()) {
+            painter.save();
+            painter.setCompositionMode(QPainter::CompositionMode_DestinationOver);
+            painter.fillRect(context.viewportRect, m_pinnedBackgroundColor);
+            painter.restore();
+        }
         if (m_ocrPresentation != nullptr &&
             m_ocrPresentationMode == OcrPresentationMode::BackgroundAndText &&
             m_ocrTextLayer != nullptr) {
