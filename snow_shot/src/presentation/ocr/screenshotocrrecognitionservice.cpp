@@ -26,7 +26,8 @@
 
 namespace {
 constexpr quint32 kProtocolMagic = 0x52434f53; // "SOCR" in little endian.
-constexpr quint16 kProtocolVersion = 1;
+constexpr quint16 kProtocolVersion = 2;
+constexpr auto kRuntimeVersion = "1.0.0";
 constexpr quint16 kHello = 1;
 constexpr quint16 kReady = 2;
 constexpr quint16 kSubmit = 3;
@@ -125,7 +126,7 @@ QByteArray makeFrame(quint16 kind, quint64 requestId, const QByteArray& payload 
     return frame;
 }
 
-QString defaultProcessPath() {
+QString developmentProcessPath() {
 #ifdef Q_OS_WIN
     const QString suffix = QStringLiteral(".exe");
 #else
@@ -133,7 +134,7 @@ QString defaultProcessPath() {
 #endif
     const QString sibling = QDir(QCoreApplication::applicationDirPath())
                                 .filePath(QStringLiteral("snow-ocr-process") + suffix);
-    return QFileInfo::exists(sibling) ? sibling : QStringLiteral("snow-ocr-process") + suffix;
+    return QFileInfo::exists(sibling) ? sibling : QString{};
 }
 
 QPolygonF quadFromValues(const float* points, const QRectF& canvasRect, const QSize& imageSize) {
@@ -158,14 +159,6 @@ ScreenshotOcrTextDirection textDirectionForQuad(const QPolygonF& quad) {
     const qreal height = std::max(edgeLength(quad.at(0), quad.at(3)), edgeLength(quad.at(1), quad.at(2)));
     return height >= width * 1.5 ? ScreenshotOcrTextDirection::Vertical
                                  : ScreenshotOcrTextDirection::Horizontal;
-}
-
-bool modelFilesReadyAt(const QString& directoryPath) {
-    if (directoryPath.trimmed().isEmpty()) return false;
-    const QDir directory(directoryPath);
-    return QFileInfo::exists(directory.filePath(QStringLiteral("PP-OCRv6_det_small.onnx"))) &&
-           QFileInfo::exists(directory.filePath(QStringLiteral("PP-OCRv6_rec_small.onnx"))) &&
-           QFileInfo::exists(directory.filePath(QStringLiteral("ppocrv6_dict.txt")));
 }
 
 QImage renderFilteredImage(QImage source, const QRectF& canvasRect,
@@ -194,12 +187,71 @@ class ScreenshotOcrRecognitionService::Impl final {
          ScreenshotOcrBackendPreference preference)
         : m_owner(owner),
           m_workerLimit(std::clamp(options.workerCount, 1, 2)),
-          m_modelStoreDirectory(options.modelStoreDirectory),
           m_proxyUrl(options.proxyUrl),
-          m_processPath(options.processPath.trimmed().isEmpty() ? defaultProcessPath() : options.processPath),
           m_backendPreference(preference) {
         m_slots.resize(std::max(4, m_workerLimit + 2));
         m_localPool.setMaxThreadCount(m_workerLimit);
+        if (!options.processPath.trimmed().isEmpty() &&
+            !options.detectorModelPath.trimmed().isEmpty() &&
+            !options.recognizerModelPath.trimmed().isEmpty() &&
+            !options.dictionaryPath.trimmed().isEmpty()) {
+            m_assets.runtimeVersion = QString::fromLatin1(kRuntimeVersion);
+            m_assets.processPath = options.processPath;
+            m_assets.runtimeDirectory = QFileInfo(options.processPath).absolutePath();
+            m_assets.detectorModelPath = options.detectorModelPath;
+            m_assets.recognizerModelPath = options.recognizerModelPath;
+            m_assets.dictionaryPath = options.dictionaryPath;
+            m_assets.stateDirectory = options.stateDirectory;
+            m_assetStatus = {ScreenshotOcrAssetPhase::ReadyCached, QStringLiteral("assets")};
+#ifndef NDEBUG
+        } else if (!developmentProcessPath().isEmpty() &&
+                   QFileInfo(QDir(qEnvironmentVariable("LOCALAPPDATA"))
+                                 .filePath(QStringLiteral(
+                                     "rapid-ocr-rs/models/PP-OCRv6_det_small.onnx")))
+                       .isFile() &&
+                   QFileInfo(QDir(qEnvironmentVariable("LOCALAPPDATA"))
+                                 .filePath(QStringLiteral(
+                                     "rapid-ocr-rs/models/PP-OCRv6_rec_small.onnx")))
+                       .isFile() &&
+                   QFileInfo(QDir(qEnvironmentVariable("LOCALAPPDATA"))
+                                 .filePath(QStringLiteral("rapid-ocr-rs/models/ppocrv6_dict.txt")))
+                       .isFile()) {
+            const QString models = QDir(qEnvironmentVariable("LOCALAPPDATA"))
+                                       .filePath(QStringLiteral("rapid-ocr-rs/models"));
+            m_assets.runtimeVersion = QString::fromLatin1(kRuntimeVersion);
+            m_assets.processPath = developmentProcessPath();
+            m_assets.runtimeDirectory = QFileInfo(m_assets.processPath).absolutePath();
+            m_assets.detectorModelPath = QDir(models).filePath(
+                QStringLiteral("PP-OCRv6_det_small.onnx"));
+            m_assets.recognizerModelPath = QDir(models).filePath(
+                QStringLiteral("PP-OCRv6_rec_small.onnx"));
+            m_assets.dictionaryPath = QDir(models).filePath(QStringLiteral("ppocrv6_dict.txt"));
+            m_assets.stateDirectory = QDir::temp().filePath(QStringLiteral("snow-shot-ocr-state"));
+            m_assetStatus = {m_assets.valid() ? ScreenshotOcrAssetPhase::ReadyCached
+                                              : ScreenshotOcrAssetPhase::Unchecked,
+                             QStringLiteral("assets")};
+#endif
+        } else {
+            const QString offlineRoot = options.offlineRoot.trimmed().isEmpty()
+                                            ? QDir(QCoreApplication::applicationDirPath())
+                                                  .filePath(QStringLiteral("assets/ocr"))
+                                            : options.offlineRoot;
+            m_assetManager = std::make_unique<ScreenshotOcrAssets>(
+                ScreenshotOcrAssets::Options{offlineRoot, options.cacheRoot, options.proxyUrl},
+                owner);
+            connect(m_assetManager.get(), &ScreenshotOcrAssets::statusChanged, owner,
+                    [this](const ScreenshotOcrAssetStatus& status) {
+                        m_assetStatus = status;
+                        emit m_owner->assetStatusChanged(status);
+                    });
+            connect(m_assetManager.get(), &ScreenshotOcrAssets::ready, owner,
+                    [this](const ScreenshotOcrResolvedAssets& assets) {
+                        m_assets = assets;
+                        if (ensureProcess()) flushPending();
+                    });
+            connect(m_assetManager.get(), &ScreenshotOcrAssets::failed, owner,
+                    [this](const QString&) { failPendingForAssetError(); });
+        }
     }
 
     ~Impl() { shutdown(); }
@@ -213,7 +265,9 @@ class ScreenshotOcrRecognitionService::Impl final {
             m_jobs.insert(token, job);
             m_pending.push_back(job);
         }
-        if (!ensureProcess()) {
+        if (!assetsReady()) {
+            if (m_assetManager != nullptr) m_assetManager->prepare();
+        } else if (!ensureProcess()) {
             bool shuttingDown = false;
             {
                 std::lock_guard lock(m_mutex);
@@ -312,15 +366,9 @@ class ScreenshotOcrRecognitionService::Impl final {
     }
 
     void setProxyUrl(const QString& proxyUrl) {
-        bool restart = false;
-        {
-            std::lock_guard lock(m_mutex);
-            if (m_proxyUrl == proxyUrl) return;
-            m_proxyUrl = proxyUrl;
-            restart = m_process != nullptr && !m_stopping;
-            if (restart) m_configurationDirty = true;
-        }
-        if (restart) maybeShutdownProcess();
+        if (m_proxyUrl == proxyUrl) return;
+        m_proxyUrl = proxyUrl;
+        if (m_assetManager != nullptr) m_assetManager->setProxyUrl(proxyUrl);
     }
 
     int liveWorkerCount() const {
@@ -329,7 +377,8 @@ class ScreenshotOcrRecognitionService::Impl final {
                    ? std::min(m_workerLimit, m_runningCount + static_cast<int>(m_pending.size())) : 0;
     }
 
-    bool modelFilesReady() const { return modelFilesReadyAt(m_modelStoreDirectory); }
+    bool modelFilesReady() const { return assetsReady(); }
+    ScreenshotOcrAssetStatus assetStatus() const { return m_assetStatus; }
 
   private:
     struct Job {
@@ -357,6 +406,7 @@ class ScreenshotOcrRecognitionService::Impl final {
 
     bool ensureProcess() {
         std::lock_guard lock(m_mutex);
+        if (!assetsReady()) return false;
         if (m_process != nullptr && m_process->state() != QProcess::NotRunning && !m_shuttingDown) return true;
         if (m_shuttingDown) {
             // A shutdown frame is already queued. Keep the request pending;
@@ -397,13 +447,16 @@ class ScreenshotOcrRecognitionService::Impl final {
                     else processFailed();
                 });
         m_process->setProcessChannelMode(QProcess::SeparateChannels);
-        m_process->start(m_processPath);
+        m_process->setWorkingDirectory(m_assets.runtimeDirectory);
+        m_process->start(m_assets.processPath);
         if (!m_process->waitForStarted(5000)) { m_process.reset(); return false; }
         QByteArray payload;
         appendU32(payload, static_cast<quint32>(m_workerLimit));
         appendU8(payload, m_backendPreference == ScreenshotOcrBackendPreference::DirectMl ? 1 : 0);
-        appendString(payload, m_modelStoreDirectory);
-        appendString(payload, m_proxyUrl);
+        appendString(payload, m_assets.detectorModelPath);
+        appendString(payload, m_assets.recognizerModelPath);
+        appendString(payload, m_assets.dictionaryPath);
+        appendString(payload, m_assets.stateDirectory);
         appendString(payload, m_shmFile->fileName());
         appendU64(payload, static_cast<quint64>(m_slotBytes));
         appendU32(payload, static_cast<quint32>(m_slots.size()));
@@ -514,9 +567,18 @@ class ScreenshotOcrRecognitionService::Impl final {
     }
 
     void handleReady(const QByteArray& payload) {
-        qsizetype offset = 0; quint8 ok = 0, directMl = 0; QString provider;
-        if (!takeU8(payload, offset, &ok) || !takeU8(payload, offset, &directMl) || !takeString(payload, offset, &provider)) { processFailed(); return; }
-        Q_UNUSED(ok); Q_UNUSED(directMl); Q_UNUSED(provider);
+        qsizetype offset = 0; quint8 ok = 0, directMl = 0; QString provider, runtimeVersion;
+        quint32 protocolVersion = 0;
+        if (!takeU8(payload, offset, &ok) || !takeU8(payload, offset, &directMl) ||
+            !takeString(payload, offset, &provider) ||
+            !takeString(payload, offset, &runtimeVersion) ||
+            !takeU32(payload, offset, &protocolVersion) || offset != payload.size() || ok == 0 ||
+            runtimeVersion != QString::fromLatin1(kRuntimeVersion) ||
+            protocolVersion != kProtocolVersion) {
+            processFailed();
+            return;
+        }
+        Q_UNUSED(directMl); Q_UNUSED(provider);
         m_ready = true;
         flushPending();
         maybeShutdownProcess();
@@ -647,6 +709,27 @@ class ScreenshotOcrRecognitionService::Impl final {
         for (const auto& job : failed) { QObject::disconnect(job->receiverDestroyed); if (!job->cancelled.load() && job->receiver != nullptr && job->completion) { ScreenshotOcrRecognitionResult result; result.error = QCoreApplication::translate("ScreenshotOcrController", "Text recognition failed"); job->completion(std::move(result)); } }
     }
 
+    void failPendingForAssetError() {
+        std::vector<std::shared_ptr<Job>> failed;
+        {
+            std::lock_guard lock(m_mutex);
+            failed = m_pending;
+            for (const auto& job : failed) m_jobs.remove(job->token);
+            m_pending.clear();
+        }
+        for (const auto& job : failed) {
+            QObject::disconnect(job->receiverDestroyed);
+            if (!job->cancelled.load() && job->receiver != nullptr && job->completion) {
+                ScreenshotOcrRecognitionResult result;
+                result.error = QCoreApplication::translate(
+                    "ScreenshotOcrController", "Text recognition components could not be prepared");
+                job->completion(std::move(result));
+            }
+        }
+    }
+
+    bool assetsReady() const { return m_assets.valid(); }
+
     void maybeShutdownProcess() {
         std::lock_guard lock(m_mutex);
         if (m_process == nullptr || !m_ready || m_shuttingDown || m_runningCount != 0 ||
@@ -683,7 +766,10 @@ class ScreenshotOcrRecognitionService::Impl final {
 
     ScreenshotOcrRecognitionService* m_owner = nullptr;
     const int m_workerLimit;
-    QString m_modelStoreDirectory, m_proxyUrl, m_processPath;
+    QString m_proxyUrl;
+    ScreenshotOcrResolvedAssets m_assets;
+    ScreenshotOcrAssetStatus m_assetStatus;
+    std::unique_ptr<ScreenshotOcrAssets> m_assetManager;
     mutable std::mutex m_mutex;
     QHash<RequestToken, std::shared_ptr<Job>> m_jobs;
     std::vector<std::shared_ptr<Job>> m_pending, m_slots;
@@ -725,6 +811,7 @@ bool ScreenshotOcrRecognitionService::setRenderFilteredImage(RequestToken token,
 void ScreenshotOcrRecognitionService::cancel(RequestToken token) { if (m_impl != nullptr && token != 0) m_impl->cancel(token); }
 bool ScreenshotOcrRecognitionService::reprioritize(RequestToken token, ScreenshotOcrRequestPriority priority) { return m_impl != nullptr && token != 0 && m_impl->reprioritize(token, priority); }
 bool ScreenshotOcrRecognitionService::modelFilesReady() const { return m_impl != nullptr && m_impl->modelFilesReady(); }
+ScreenshotOcrAssetStatus ScreenshotOcrRecognitionService::assetStatus() const { return m_impl != nullptr ? m_impl->assetStatus() : ScreenshotOcrAssetStatus{}; }
 void ScreenshotOcrRecognitionService::setBackendPreference(ScreenshotOcrBackendPreference preference) { if (m_impl != nullptr) m_impl->setBackendPreference(preference); }
 void ScreenshotOcrRecognitionService::setProxyUrl(const QString& proxyUrl) { if (m_impl != nullptr) m_impl->setProxyUrl(proxyUrl); }
 int ScreenshotOcrRecognitionService::liveWorkerCount() const { return m_impl != nullptr ? m_impl->liveWorkerCount() : 0; }

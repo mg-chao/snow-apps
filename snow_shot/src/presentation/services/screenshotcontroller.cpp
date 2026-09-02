@@ -771,10 +771,12 @@ bool ScreenshotController::Impl::ensureRecognitionFeature() {
             ? ScreenshotOcrBackendPreference::DirectMl
             : ScreenshotOcrBackendPreference::Cpu;
     ScreenshotOcrRecognitionService::Options ocrOptions;
+    ocrOptions.offlineRoot = QDir(QCoreApplication::applicationDirPath())
+                                 .filePath(QStringLiteral("assets/ocr"));
     if (applicationStorage.isInitialized() &&
         !applicationStorage.configurationDirectory().trimmed().isEmpty()) {
-        ocrOptions.modelStoreDirectory = QDir(applicationStorage.configurationDirectory())
-                                             .filePath(QStringLiteral("assets/ocr"));
+        ocrOptions.cacheRoot = QDir(applicationStorage.configurationDirectory())
+                                   .filePath(QStringLiteral("assets/ocr"));
     }
     if (applicationStorage.isInitialized()) {
         ocrOptions.proxyUrl = resolvedOcrProxyUrl(

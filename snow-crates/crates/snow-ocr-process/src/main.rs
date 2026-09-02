@@ -5,9 +5,9 @@ use protocol::{
     Decoder, Frame, Kind, put_f32, put_string, put_u8, put_u32, read_frame, write_frame,
 };
 use rapid_ocr_rs::{
-    EngineConfig, LangDet, LangRec, ModelType, OcrCallOptions, OcrInput, OcrResult,
-    ProviderPreference, RapidOcr, ResolvedExecutionProvider, directml_is_available,
-    initialize_onnx_runtime, set_download_proxy,
+    DictionarySource, EngineConfig, LangDet, LangRec, ModelSource, ModelType, OcrCallOptions,
+    OcrInput, OcrResult, PipelineSources, ProviderPreference, RapidOcr,
+    ResolvedExecutionProvider, directml_is_available, initialize_onnx_runtime,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -41,8 +41,9 @@ struct Config {
     directml: bool,
     directml_enabled: Arc<AtomicBool>,
     directml_cache: Arc<DirectMlCapabilityCache>,
-    model_dir: Option<PathBuf>,
-    proxy: Option<String>,
+    detector_model: PathBuf,
+    recognizer_model: PathBuf,
+    dictionary: PathBuf,
     slot_bytes: usize,
     slot_count: usize,
     shm_path: PathBuf,
@@ -61,9 +62,9 @@ struct DirectMlCapabilityCache {
 }
 
 impl DirectMlCapabilityCache {
-    fn new(model_dir: Option<&Path>) -> Self {
-        let path = model_dir
-            .map(|dir| dir.join(".snow-shot-directml-capability.json"))
+    fn new(state_dir: Option<&Path>) -> Self {
+        let path = state_dir
+            .map(|dir| dir.join("directml-capability.json"))
             .unwrap_or_else(|| std::env::temp_dir().join("snow-shot-directml-capability.json"));
         let key = capability_key();
         Self { path, key }
@@ -394,13 +395,14 @@ fn make_engine(config: &Config, directml: bool) -> rapid_ocr_rs::Result<RapidOcr
     engine.det.lang = LangDet::Multi;
     engine.det.ocr_version = rapid_ocr_rs::OcrVersion::PPocrV6;
     engine.det.model_type = ModelType::Small;
-    engine.det.allow_download = true;
-    engine.det.model_store_dir = config.model_dir.clone();
+    engine.det.allow_download = false;
+    engine.det.model_path = Some(config.detector_model.clone());
     engine.rec.model.lang = LangRec::Ch;
     engine.rec.model.ocr_version = rapid_ocr_rs::OcrVersion::PPocrV6;
     engine.rec.model.model_type = ModelType::Small;
-    engine.rec.model.allow_download = true;
-    engine.rec.model_store_dir = config.model_dir.clone();
+    engine.rec.model.allow_download = false;
+    engine.rec.model.model_path = Some(config.recognizer_model.clone());
+    engine.rec.model.rec_keys_path = Some(config.dictionary.clone());
     let physical = num_cpus::get_physical().max(1);
     let budget = (physical / config.workers.max(1)).max(1);
     for runtime in [
@@ -425,7 +427,15 @@ fn make_engine(config: &Config, directml: bool) -> rapid_ocr_rs::Result<RapidOcr
             runtime.fail_if_provider_unavailable = false;
         }
     }
-    RapidOcr::new(engine)
+    RapidOcr::new_with_sources(
+        engine,
+        PipelineSources {
+            det: Some(ModelSource::File(&config.detector_model)),
+            cls: None,
+            rec: Some(ModelSource::File(&config.recognizer_model)),
+            rec_dictionary: Some(DictionarySource::File(&config.dictionary)),
+        },
+    )
 }
 
 fn worker_loop(
@@ -531,8 +541,10 @@ fn hello(frame: &Frame) -> io::Result<Config> {
     let mut d = Decoder::new(&frame.payload);
     let workers = (d.u32()? as usize).clamp(1, 2);
     let directml = d.u8()? != 0;
-    let model = d.string()?;
-    let proxy = d.string()?;
+    let detector_model = PathBuf::from(d.string()?);
+    let recognizer_model = PathBuf::from(d.string()?);
+    let dictionary = PathBuf::from(d.string()?);
+    let state = d.string()?;
     let shm_path = PathBuf::from(d.string()?);
     let slot_bytes = d.u64()? as usize;
     let slot_count = d.u32()? as usize;
@@ -542,15 +554,24 @@ fn hello(frame: &Frame) -> io::Result<Config> {
             "invalid OCR startup configuration",
         ));
     }
-    let model_dir = (!model.trim().is_empty()).then(|| PathBuf::from(model));
-    let directml_cache = Arc::new(DirectMlCapabilityCache::new(model_dir.as_deref()));
+    for path in [&detector_model, &recognizer_model, &dictionary] {
+        if !path.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("required OCR asset is missing: {}", path.display()),
+            ));
+        }
+    }
+    let state_dir = (!state.trim().is_empty()).then(|| PathBuf::from(state));
+    let directml_cache = Arc::new(DirectMlCapabilityCache::new(state_dir.as_deref()));
     Ok(Config {
         workers,
         directml,
         directml_enabled: Arc::new(AtomicBool::new(false)),
         directml_cache,
-        model_dir,
-        proxy: (!proxy.trim().is_empty()).then_some(proxy),
+        detector_model,
+        recognizer_model,
+        dictionary,
         slot_bytes,
         slot_count,
         shm_path,
@@ -563,6 +584,8 @@ fn ready_payload(config: &Config) -> Vec<u8> {
     let available = config.directml_enabled.load(Ordering::Acquire);
     put_u8(&mut p, available as u8);
     put_string(&mut p, if available { "directml" } else { "cpu" });
+    put_string(&mut p, env!("CARGO_PKG_VERSION"));
+    protocol::put_u32(&mut p, protocol::VERSION as u32);
     p
 }
 fn error_payload(message: &str) -> Vec<u8> {
@@ -608,6 +631,16 @@ fn completion_payload(completion: &Completion) -> Vec<u8> {
 }
 
 fn main() -> io::Result<()> {
+    if std::env::args_os().any(|argument| argument == "--version") {
+        println!(
+            "snow-ocr-process {} {}-{} protocol {}",
+            env!("CARGO_PKG_VERSION"),
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            protocol::VERSION
+        );
+        return Ok(());
+    }
     // Native ONNX Runtime diagnostics must never share stdout with the binary
     // IPC stream. Severity 3 suppresses the cpuinfo debug chatter emitted by
     // the Windows runtime before its custom logger is installed.
@@ -636,7 +669,6 @@ fn main() -> io::Result<()> {
         }
     };
     initialize_onnx_runtime().map_err(|e| io::Error::other(e.to_string()))?;
-    set_download_proxy(config.proxy.clone());
     config
         .directml_enabled
         .store(directml_capability(&config), Ordering::Release);

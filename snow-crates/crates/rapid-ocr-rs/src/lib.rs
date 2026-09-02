@@ -21,7 +21,6 @@ pub use config::{
 pub use error::{RapidOcrError, Result};
 pub use input::image_loader::{LoadImage, OcrInput};
 pub use model_source::{DictionarySource, ModelSource, PipelineSources};
-pub use model_store::set_download_proxy;
 pub use output::json::OcrJsonItem;
 pub use pipeline::{
     config::{EngineConfig, GlobalConfig},

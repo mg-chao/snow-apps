@@ -8,6 +8,8 @@
 #include <QSize>
 #include <QString>
 
+#include "snow_shot/presentation/screenshotocrassets.h"
+
 #include <functional>
 #include <memory>
 
@@ -78,9 +80,12 @@ class ScreenshotOcrRecognitionPort : public QObject {
     }
     virtual void cancel(RequestToken token) = 0;
     virtual bool reprioritize(RequestToken token, ScreenshotOcrRequestPriority priority) = 0;
-    // Implementations that manage disk-backed models report whether the
-    // required files are already available before a request is queued.
+    // Implementations that manage disk-backed components report whether the
+    // complete runtime and model set is ready before a request is queued.
     virtual bool modelFilesReady() const { return true; }
+    virtual ScreenshotOcrAssetStatus assetStatus() const {
+        return {ScreenshotOcrAssetPhase::ReadyCached};
+    }
 };
 
 class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPort {
@@ -90,11 +95,17 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
     struct Options {
         // Maximum concurrent workers in the OCR child process.
         int workerCount = 2;
-        QString modelStoreDirectory;
-        // Resolved HTTP(S) proxy URL for model downloads. Empty means direct access.
+        // Packaged descriptor/offline payload and writable online component cache.
+        QString offlineRoot;
+        QString cacheRoot;
+        // Resolved HTTP(S) proxy URL for component downloads. Empty means direct access.
         QString proxyUrl;
-        // Optional executable override, primarily for tests and portable bundles.
+        // Explicit local assets, primarily for tests and development builds.
         QString processPath;
+        QString detectorModelPath;
+        QString recognizerModelPath;
+        QString dictionaryPath;
+        QString stateDirectory;
     };
 
     explicit ScreenshotOcrRecognitionService(QObject* parent = nullptr);
@@ -115,6 +126,7 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
     void cancel(RequestToken token) override;
     bool reprioritize(RequestToken token, ScreenshotOcrRequestPriority priority) override;
     [[nodiscard]] bool modelFilesReady() const override;
+    [[nodiscard]] ScreenshotOcrAssetStatus assetStatus() const override;
     void setBackendPreference(ScreenshotOcrBackendPreference preference);
     void setProxyUrl(const QString& proxyUrl);
     [[nodiscard]] int liveWorkerCount() const;
@@ -123,6 +135,9 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
     class Impl;
     std::unique_ptr<Impl> m_impl;
     RequestToken m_nextToken = 0;
+
+  signals:
+    void assetStatusChanged(const ScreenshotOcrAssetStatus& status);
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTOCRRECOGNITIONSERVICE_H

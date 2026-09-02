@@ -176,10 +176,11 @@ if(SNOW_SHOT_RELEASE_STATIC)
 endif()
 # OpenCV backs the in-process QR-code recognition service (objdetect);
 # text recognition lives in the standalone OCR process.
-find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc objdetect)
+find_package(OpenCV CONFIG REQUIRED COMPONENTS core objdetect)
 # ONNX Runtime backs the standalone OCR process: static release builds link
 # its closure into snow-ocr-process.exe, dynamic builds stage its DLL.
 find_package(onnxruntime CONFIG REQUIRED)
+find_package(minizip-ng CONFIG REQUIRED)
 
 if(WIN32)
     set(SNOW_SHOT_DIRECTML_RUNTIME_DLL_RELEASE
@@ -757,6 +758,7 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshotinteractionstate.h
     include/snow_shot/presentation/screenshotocrcontroller.h
     include/snow_shot/presentation/screenshotocrrecognitionservice.h
+    include/snow_shot/presentation/screenshotocrassets.h
     include/snow_shot/presentation/screenshotrecognitionresults.h
     include/snow_shot/presentation/screenshotqrrecognitionservice.h
     include/snow_shot/presentation/screenshotmessageservice.h
@@ -876,6 +878,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/ocr/screenshottableeditor.cpp
     src/presentation/ocr/screenshotocrtexttransform.cpp
     src/presentation/ocr/screenshotocrrecognitionservice.cpp
+    src/presentation/ocr/screenshotocrassets.cpp
     src/presentation/ocr/screenshotqrrecognitionservice.cpp
     src/presentation/ocr/screenshotocrpresentation.cpp
     src/presentation/ocr/screenshotocrvisuals.cpp
@@ -978,7 +981,10 @@ if(WIN32)
         SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE=\"${SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE}\"
     )
 endif()
-target_link_libraries(snow_shot PRIVATE snow_shot_image_codec)
+target_link_libraries(snow_shot PRIVATE
+    snow_shot_image_codec
+    MINIZIP::minizip-ng
+)
 
 if(EXISTS "${SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE}")
     add_custom_command(TARGET snow_shot POST_BUILD
@@ -2920,8 +2926,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/screenshot_ocr_recognition_service_tests.cpp
         include/snow_shot/presentation/screenshotocrpresentation.h
         include/snow_shot/presentation/screenshotocrrecognitionservice.h
+        include/snow_shot/presentation/screenshotocrassets.h
         src/presentation/ocr/screenshotocrpresentation.cpp
         src/presentation/ocr/screenshotocrrecognitionservice.cpp
+        src/presentation/ocr/screenshotocrassets.cpp
         src/presentation/ocr/screenshotocrvisuals.cpp
     )
     target_include_directories(snow-shot-ocr-recognition-service-tests PRIVATE
@@ -2932,6 +2940,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow_draw_engine_qt_canvas
         Qt6::Core
         Qt6::Gui
+        Qt6::Network
+        MINIZIP::minizip-ng
     )
     if(WIN32)
         target_link_libraries(snow-shot-ocr-recognition-service-tests PRIVATE

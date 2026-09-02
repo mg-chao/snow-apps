@@ -13,6 +13,28 @@ use std::fs;
 use std::path::PathBuf;
 
 fn main() {
+    #[cfg(windows)]
+    {
+        let mut resource = winres::WindowsResource::new();
+        resource
+            .set("CompanyName", "Snow Apps")
+            .set("FileDescription", "Snow Shot OCR runtime")
+            .set("FileVersion", "1.0.0.0")
+            .set("InternalName", "snow-ocr-process")
+            .set("LegalCopyright", "Copyright (C) 2025-2026 mg-chao")
+            .set(
+                "OriginalFilename",
+                "snow-ocr-process-1.0.0-windows-x64.exe",
+            )
+            .set("ProductName", "Snow Shot OCR Runtime")
+            .set("ProductVersion", "1.0.0")
+            .set_version_info(winres::VersionInfo::FILEVERSION, 0x0001_0000_0000_0000)
+            .set_version_info(winres::VersionInfo::PRODUCTVERSION, 0x0001_0000_0000_0000);
+        resource
+            .compile()
+            .expect("failed to compile snow-ocr-process Windows resources");
+    }
+
     if env::var_os("CARGO_FEATURE_STATIC_ONNX_RUNTIME").is_none() {
         return;
     }

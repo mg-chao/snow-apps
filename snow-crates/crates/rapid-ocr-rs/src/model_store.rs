@@ -2,12 +2,11 @@ use std::{
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
-    sync::{OnceLock, RwLock},
     time::Duration,
 };
 
 #[cfg(not(target_os = "windows"))]
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 #[cfg(target_os = "windows")]
 use std::{ffi::OsStr, os::windows::ffi::OsStrExt, ptr};
@@ -16,17 +15,6 @@ use reqwest::blocking::Client;
 use sha2::{Digest, Sha256};
 
 use crate::error::{RapidOcrError, Result};
-
-static DOWNLOAD_PROXY: OnceLock<RwLock<Option<String>>> = OnceLock::new();
-
-/// Configure the proxy used for model downloads. The value is process-local and
-/// should be set before constructing any OCR engine.
-pub fn set_download_proxy(proxy: Option<String>) {
-    let slot = DOWNLOAD_PROXY.get_or_init(|| RwLock::new(None));
-    if let Ok(mut value) = slot.write() {
-        *value = proxy.filter(|value| !value.trim().is_empty());
-    }
-}
 
 #[cfg(not(target_os = "windows"))]
 static DOWNLOAD_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -200,18 +188,7 @@ pub fn ensure_downloaded(
 }
 
 fn build_http_client() -> Result<Client> {
-    let mut builder = Client::builder();
-    if let Some(proxy) = DOWNLOAD_PROXY
-        .get()
-        .and_then(|slot| slot.read().ok())
-        .and_then(|value| value.clone())
-    {
-        let configured = reqwest::Proxy::all(&proxy).map_err(|error| {
-            RapidOcrError::Download(format!("invalid OCR model proxy: {error}"))
-        })?;
-        builder = builder.proxy(configured);
-    }
-    builder
+    Client::builder()
         .timeout(Duration::from_secs(60))
         .build()
         .map_err(Into::into)

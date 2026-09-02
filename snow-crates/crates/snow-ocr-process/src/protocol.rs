@@ -1,7 +1,7 @@
 use std::io::{self, Read, Write};
 
 pub const MAGIC: [u8; 4] = *b"SOCR";
-pub const VERSION: u16 = 1;
+pub const VERSION: u16 = 2;
 pub const MAX_FRAME: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

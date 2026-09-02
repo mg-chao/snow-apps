@@ -1498,6 +1498,7 @@ void ScreenshotRecognitionSessionController::pollTextModelDownload(quint64 gener
         }
         return;
     }
+    showModelDownloadMessage();
     QTimer::singleShot(100, this,
                        [this, generation]() { pollTextModelDownload(generation); });
 }
@@ -1594,7 +1595,15 @@ void ScreenshotRecognitionSessionController::updateTableState(
 }
 
 void ScreenshotRecognitionSessionController::showModelDownloadMessage() const {
-    const QString message = tr("Downloading OCR model files");
+    QString message = tr("Preparing text recognition components");
+    if (m_recognition != nullptr) {
+        const ScreenshotOcrAssetStatus status = m_recognition->assetStatus();
+        if (status.phase == ScreenshotOcrAssetPhase::Downloading && status.totalBytes > 0) {
+            const int percent = static_cast<int>(
+                std::clamp<qint64>(status.receivedBytes * 100 / status.totalBytes, 0, 100));
+            message = tr("Preparing text recognition components (%1%)").arg(percent);
+        }
+    }
     if (m_actions.showModelDownload) {
         m_actions.showModelDownload(message);
     } else if (m_actions.showLoading) {
