@@ -137,7 +137,7 @@ PinPaintMode configuredPinPaintMode() {
 [[maybe_unused]] constexpr const char* kPinnedTranslations[] = {
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Enable drawing mode"),
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Close"),
-    QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Save as File"),
+    QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Save as file"),
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Image size is too large."),
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "The pinned image could not be prepared"),
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "The pinned image copy could not be started"),
@@ -2190,20 +2190,20 @@ void ScreenshotPinnedWindow::createContextMenu() {
     m_contextMenu->setObjectName(QStringLiteral("screenshotPinnedContextMenu"));
     m_contextMenu->setFixedWidth(300);
 
-    QAction* copyAction = m_contextMenu->addItem(tr("Copy to Clipboard"), outlined_icons::Copy());
-    setActionTranslationSource(copyAction, "Copy to Clipboard");
+    QAction* copyAction = m_contextMenu->addItem(tr("Copy to clipboard"), outlined_icons::Copy());
+    setActionTranslationSource(copyAction, "Copy to clipboard");
     copyAction->setObjectName(QStringLiteral("screenshotPinnedCopyAction"));
     connect(copyAction, &QAction::triggered, this, &ScreenshotPinnedWindow::copyCurrentViewport);
 
     QAction* copyOriginalAction =
-        m_contextMenu->addItem(tr("Copy Original Content"), outlined_icons::FileImage());
-    setActionTranslationSource(copyOriginalAction, "Copy Original Content");
+        m_contextMenu->addItem(tr("Copy original content"), outlined_icons::FileImage());
+    setActionTranslationSource(copyOriginalAction, "Copy original content");
     copyOriginalAction->setObjectName(QStringLiteral("screenshotPinnedCopyOriginalAction"));
     connect(copyOriginalAction, &QAction::triggered, this,
             &ScreenshotPinnedWindow::copyOriginalContent);
 
-    QAction* saveAction = m_contextMenu->addItem(tr("Save as File"), custom_outlined_icons::Save());
-    setActionTranslationSource(saveAction, "Save as File");
+    QAction* saveAction = m_contextMenu->addItem(tr("Save as file"), custom_outlined_icons::Save());
+    setActionTranslationSource(saveAction, "Save as file");
     saveAction->setObjectName(QStringLiteral("screenshotPinnedSaveAsFileAction"));
     connect(saveAction, &QAction::triggered, this, &ScreenshotPinnedWindow::saveAsFile);
 
@@ -2225,8 +2225,8 @@ void ScreenshotPinnedWindow::createContextMenu() {
 
     m_contextMenu->addSeparator();
 
-    m_drawingAction = m_contextMenu->addItem(tr("Drawing Mode"), outlined_icons::Edit());
-    setActionTranslationSource(m_drawingAction, "Drawing Mode");
+    m_drawingAction = m_contextMenu->addItem(tr("Drawing mode"), outlined_icons::Edit());
+    setActionTranslationSource(m_drawingAction, "Drawing mode");
     m_drawingAction->setObjectName(QStringLiteral("screenshotPinnedDrawingAction"));
     m_drawingAction->setCheckable(true);
     connect(m_drawingAction, &QAction::toggled, this, [this](bool enabled) {
@@ -2236,43 +2236,43 @@ void ScreenshotPinnedWindow::createContextMenu() {
         setEditMode(enabled);
     });
 
-    auto* processMenu = m_contextMenu->addSubMenu(tr("Process Image"), outlined_icons::Picture());
-    setActionTranslationSource(processMenu->menuAction(), "Process Image");
+    auto* processMenu = m_contextMenu->addSubMenu(tr("Process image"), outlined_icons::Picture());
+    setActionTranslationSource(processMenu->menuAction(), "Process image");
     processMenu->setObjectName(QStringLiteral("screenshotPinnedProcessImageMenu"));
     QAction* rotateClockwise =
-        processMenu->addItem(tr("Rotate Clockwise"), outlined_icons::RotateRight());
-    setActionTranslationSource(rotateClockwise, "Rotate Clockwise");
+        processMenu->addItem(tr("Rotate clockwise"), outlined_icons::RotateRight());
+    setActionTranslationSource(rotateClockwise, "Rotate clockwise");
     connect(rotateClockwise, &QAction::triggered, this, [this]() {
         QTransform operation;
         operation.rotate(90.0);
         applyImageOperation(operation, 1);
     });
     QAction* rotateCounterClockwise =
-        processMenu->addItem(tr("Rotate Counterclockwise"), outlined_icons::RotateLeft());
-    setActionTranslationSource(rotateCounterClockwise, "Rotate Counterclockwise");
+        processMenu->addItem(tr("Rotate counterclockwise"), outlined_icons::RotateLeft());
+    setActionTranslationSource(rotateCounterClockwise, "Rotate counterclockwise");
     connect(rotateCounterClockwise, &QAction::triggered, this, [this]() {
         QTransform operation;
         operation.rotate(-90.0);
         applyImageOperation(operation, -1);
     });
-    QAction* flipHorizontal = processMenu->addItem(tr("Flip Horizontally"), outlined_icons::Swap());
-    setActionTranslationSource(flipHorizontal, "Flip Horizontally");
+    QAction* flipHorizontal = processMenu->addItem(tr("Flip horizontally"), outlined_icons::Swap());
+    setActionTranslationSource(flipHorizontal, "Flip horizontally");
     connect(flipHorizontal, &QAction::triggered, this, [this]() {
         QTransform operation;
         operation.scale(-1.0, 1.0);
         applyImageOperation(operation);
     });
     QAction* flipVertical =
-        processMenu->addItem(tr("Flip Vertically"), custom_outlined_icons::FlipVertical());
-    setActionTranslationSource(flipVertical, "Flip Vertically");
+        processMenu->addItem(tr("Flip vertically"), custom_outlined_icons::FlipVertical());
+    setActionTranslationSource(flipVertical, "Flip vertically");
     connect(flipVertical, &QAction::triggered, this, [this]() {
         QTransform operation;
         operation.scale(1.0, -1.0);
         applyImageOperation(operation);
     });
     processMenu->addSeparator();
-    QAction* resetTransform = processMenu->addItem(tr("Reset Transform"), outlined_icons::Reload());
-    setActionTranslationSource(resetTransform, "Reset Transform");
+    QAction* resetTransform = processMenu->addItem(tr("Reset transform"), outlined_icons::Reload());
+    setActionTranslationSource(resetTransform, "Reset transform");
     connect(resetTransform, &QAction::triggered, this,
             &ScreenshotPinnedWindow::resetImageTransform);
 
@@ -2321,39 +2321,39 @@ void ScreenshotPinnedWindow::createContextMenu() {
 
     m_contextMenu->addSeparator();
 
-    m_thumbnailAction = m_contextMenu->addItem(tr("Thumbnail Mode"), outlined_icons::Compress());
-    setActionTranslationSource(m_thumbnailAction, "Thumbnail Mode");
+    m_thumbnailAction = m_contextMenu->addItem(tr("Thumbnail mode"), outlined_icons::Compress());
+    setActionTranslationSource(m_thumbnailAction, "Thumbnail mode");
     m_thumbnailAction->setObjectName(QStringLiteral("screenshotPinnedThumbnailAction"));
     m_thumbnailAction->setCheckable(true);
     connect(m_thumbnailAction, &QAction::toggled, this,
             [this](bool enabled) { setThumbnailMode(enabled); });
 
-    auto* focusMenu = m_contextMenu->addSubMenu(tr("Focus Mode"), outlined_icons::Eye());
-    setActionTranslationSource(focusMenu->menuAction(), "Focus Mode");
+    auto* focusMenu = m_contextMenu->addSubMenu(tr("Focus mode"), outlined_icons::Eye());
+    setActionTranslationSource(focusMenu->menuAction(), "Focus mode");
     focusMenu->setObjectName(QStringLiteral("screenshotPinnedFocusMenu"));
-    QAction* showAllWindows = focusMenu->addItem(tr("Show All Windows"), outlined_icons::Expand());
-    setActionTranslationSource(showAllWindows, "Show All Windows");
+    QAction* showAllWindows = focusMenu->addItem(tr("Show all windows"), outlined_icons::Expand());
+    setActionTranslationSource(showAllWindows, "Show all windows");
     connect(showAllWindows, &QAction::triggered, this,
             &ScreenshotPinnedWindow::showAllPinnedWindows);
     QAction* hideOtherWindows =
-        focusMenu->addItem(tr("Hide Other Windows"), outlined_icons::EyeInvisible());
-    setActionTranslationSource(hideOtherWindows, "Hide Other Windows");
+        focusMenu->addItem(tr("Hide other windows"), outlined_icons::EyeInvisible());
+    setActionTranslationSource(hideOtherWindows, "Hide other windows");
     connect(hideOtherWindows, &QAction::triggered, this,
             &ScreenshotPinnedWindow::hideOtherPinnedWindows);
     QAction* closeOtherWindows =
-        focusMenu->addItem(tr("Close Other Windows"), outlined_icons::Close());
-    setActionTranslationSource(closeOtherWindows, "Close Other Windows");
+        focusMenu->addItem(tr("Close other windows"), outlined_icons::Close());
+    setActionTranslationSource(closeOtherWindows, "Close other windows");
     connect(closeOtherWindows, &QAction::triggered, this,
             &ScreenshotPinnedWindow::closeOtherPinnedWindows);
-    QAction* closeAll = focusMenu->addItem(tr("Close All Windows"), outlined_icons::CloseCircle());
-    setActionTranslationSource(closeAll, "Close All Windows");
+    QAction* closeAll = focusMenu->addItem(tr("Close all windows"), outlined_icons::CloseCircle());
+    setActionTranslationSource(closeAll, "Close all windows");
     focusMenu->setActionDanger(closeAll);
     connect(closeAll, &QAction::triggered, this, &ScreenshotPinnedWindow::closeAllPinnedWindows);
 
     m_contextMenu->addSeparator();
     m_showMainInterfaceAction =
-        m_contextMenu->addItem(tr("Show Main Interface"), custom_outlined_icons::Window());
-    setActionTranslationSource(m_showMainInterfaceAction, "Show Main Interface");
+        m_contextMenu->addItem(tr("Show main interface"), custom_outlined_icons::Window());
+    setActionTranslationSource(m_showMainInterfaceAction, "Show main interface");
     m_showMainInterfaceAction->setObjectName(
         QStringLiteral("screenshotPinnedShowMainInterfaceAction"));
     connect(m_showMainInterfaceAction, &QAction::triggered, this,
@@ -2410,7 +2410,7 @@ void ScreenshotPinnedWindow::refreshContextMenu() {
                                             m_recognitionSession->busy(
                                                 ScreenshotRecognitionSessionController::Mode::Text)
                                         ? tr("Recognizing text")
-                                        : tr("Display Text Recognition Results")));
+                                        : tr("Display text recognition results")));
         m_ocrAction->setEnabled(m_formattedTextAvailable ||
                                 (m_ocrSupported && m_recognition != nullptr));
         const QSignalBlocker blocker(m_ocrAction);
@@ -3428,7 +3428,7 @@ void ScreenshotPinnedWindow::saveAsFile() {
     QString selectedFilter =
         ScreenshotImageFileService::dialogFilter(ScreenshotImageFileFormat::Png);
     const QString selectedPath = QFileDialog::getSaveFileName(
-        this, translatePinnedText("Save as File"), initialPath,
+        this, translatePinnedText("Save as file"), initialPath,
         ScreenshotImageFileService::saveDialogFilter(), &selectedFilter);
     if (selectedPath.isEmpty()) {
         return;

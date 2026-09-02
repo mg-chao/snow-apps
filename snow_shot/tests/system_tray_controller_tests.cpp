@@ -257,10 +257,10 @@ int main(int argc, char* argv[]) {
             "the tray menu should expose the ten default options in four catalog groups");
     requireActionText(screenshotMenuAction, QStringLiteral("Screenshot"),
                       "Screenshot should use its catalog label");
-    requireActionText(delayedScreenshotMenuAction, QStringLiteral("Delay 3s to Execute"),
+    requireActionText(delayedScreenshotMenuAction, QStringLiteral("Delay 3s to execute"),
                       "Delayed screenshot should use the canonical shortcut title");
     requireActionText(recordingToggleMenuAction,
-                      QStringLiteral("Start Screen Recording / Stop and Copy Video"),
+                      QStringLiteral("Start screen recording / stop and copy video"),
                       "Recording toggle should use the canonical shortcut title");
     const QString screenshotShortcut = QStringLiteral("Ctrl+Alt+1");
     const QString alternateScreenshotShortcut = QStringLiteral("Meta+Shift+S");
@@ -280,11 +280,11 @@ int main(int argc, char* argv[]) {
     controller.setScreenshotDelaySeconds(7);
     require(controller.screenshotDelaySeconds() == 7,
             "the tray should retain a normalized screenshot delay value");
-    requireActionText(delayedScreenshotMenuAction, QStringLiteral("Delay 7s to Execute"),
+    requireActionText(delayedScreenshotMenuAction, QStringLiteral("Delay 7s to execute"),
                       "the tray should refresh the canonical delayed screenshot title");
     controller.setScreenshotDelaySeconds(3);
-    requireActionText(showMainWindowMenuAction, QStringLiteral("Show Main Interface"),
-                      "Show Main Interface should follow Disable Shortcut Functions");
+    requireActionText(showMainWindowMenuAction, QStringLiteral("Show main interface"),
+                      "Show main interface should follow Disable shortcut functions");
     requireActionText(exitMenuAction, QStringLiteral("Exit"), "Exit should be last");
 
     int screenshotRequests = 0;
@@ -339,7 +339,7 @@ int main(int argc, char* argv[]) {
                     snow_shot::presentation::GlobalShortcutAction::Screenshot},
             "generated tray actions should emit their catalog shortcut commands");
     require(screenshotRequests == 1 && showMainWindowRequests == 2,
-            "Show Main Interface should emit the dedicated tray request");
+            "Show main interface should emit the dedicated tray request");
     require(exitRequests == 1, "the Exit action should emit its request");
 
     disableMenuAction->trigger();
@@ -369,9 +369,9 @@ int main(int argc, char* argv[]) {
             snow_shot::presentation::GlobalShortcutAction::ScreenRecordCopy),
         "Simplified Chinese recording text should equal the canonical shortcut title");
     requireActionText(showMainWindowMenuAction, QStringLiteral("\u663e\u793a\u4e3b\u754c\u9762"),
-                       "Show Main Interface should translate to Simplified Chinese");
+                       "Show main interface should translate to Simplified Chinese");
     requireActionText(disableMenuAction, QStringLiteral("\u7981\u7528\u5feb\u6377\u529f\u80fd"),
-                      "Disable Shortcut Functions should translate to Simplified Chinese");
+                      "Disable shortcut functions should translate to Simplified Chinese");
     requireActionText(exitMenuAction, QStringLiteral("\u9000\u51fa"),
                        "Exit should translate to Simplified Chinese");
 
@@ -391,9 +391,9 @@ int main(int argc, char* argv[]) {
             snow_shot::presentation::GlobalShortcutAction::ScreenRecordCopy),
         "Traditional Chinese recording text should equal the canonical shortcut title");
     requireActionText(showMainWindowMenuAction, QStringLiteral("\u986f\u793a\u4e3b\u4ecb\u9762"),
-                       "Show Main Interface should translate to Traditional Chinese");
+                       "Show main interface should translate to Traditional Chinese");
     requireActionText(disableMenuAction, QStringLiteral("\u505c\u7528\u5feb\u6377\u529f\u80fd"),
-                      "Disable Shortcut Functions should translate to Traditional Chinese");
+                      "Disable shortcut functions should translate to Traditional Chinese");
     requireActionText(exitMenuAction, QStringLiteral("\u7d50\u675f"),
                        "Exit should translate to Traditional Chinese");
     controller.setGlobalShortcuts(

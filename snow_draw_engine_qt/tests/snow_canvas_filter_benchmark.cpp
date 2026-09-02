@@ -1,5 +1,6 @@
 #include "snow_canvas_display_item.h"
 #include "snow_canvas_filter_render.h"
+#include "snow_canvas_render_diagnostics.h"
 #include "snow_canvas_renderer.h"
 
 #include <QApplication>
@@ -1116,6 +1117,7 @@ bool writeCsv(const std::string& path, const std::vector<Result>& results, std::
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    snow_canvas_render_diagnostics::setEnabled(true);
     std::string error;
     const std::optional<Options> parsed = parseOptions(argc, argv, error);
     if (!parsed) {

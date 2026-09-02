@@ -43,8 +43,8 @@ struct ScreenshotShortcutHintRow {
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget",
                       "Horizontal scroll: Shift + mouse wheel"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Switch element level: mouse wheel"),
-    QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Switch Color Format: Shift"),
-    QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Switch Screenshot History"),
+    QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Switch color format: Shift"),
+    QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Switch screenshot history"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Maintain aspect ratio: Shift"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Fixed-angle rotation: Shift"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Scale from center: Alt"),
@@ -195,24 +195,24 @@ inline void appendScreenshotCursorMovementShortcutHintRows(
             appendScreenshotConfiguredShortcutHintRow(
                 rows, configuredShortcuts,
                 QStringLiteral("switch_selection_between_window_and_window_sub_element"),
-                "Select Window/Window Sub-element", {QStringLiteral("Tab")});
+                "Select window/window sub-element", {QStringLiteral("Tab")});
         }
     } else {
         appendScreenshotConfiguredShortcutHintRow(
             rows, configuredShortcuts, QStringLiteral("move_entire_selection"),
-            "Move Entire Selection", {QStringLiteral("Space")});
+            "Move entire selection", {QStringLiteral("Space")});
         appendScreenshotConfiguredShortcutHintRow(
             rows, configuredShortcuts,
             QStringLiteral("keep_selection_width_and_height_consistent"),
-            "Keep Selection Width and Height Consistent", {QStringLiteral("Shift")});
+            "Keep selection width and height consistent", {QStringLiteral("Shift")});
     }
     appendScreenshotConfiguredShortcutHintRow(
         rows, configuredShortcuts, QStringLiteral("select_previously_selected_area"),
-        "Select Previously Selected Area", {QStringLiteral("R")});
+        "Select previously selected area", {QStringLiteral("R")});
     appendScreenshotConfiguredShortcutHintRow(rows, configuredShortcuts,
-                                              QStringLiteral("copy_color"), "Copy Color",
+                                              QStringLiteral("copy_color"), "Copy color",
                                               {QStringLiteral("C")});
-    rows.push_back(screenshotFixedShortcutHintRow("Switch Color Format: Shift"));
+    rows.push_back(screenshotFixedShortcutHintRow("Switch color format: Shift"));
 
     const QStringList previousHistoryShortcuts = screenshotConfiguredShortcutHintKeys(
         configuredShortcuts, QStringLiteral("previous_screenshot_history"), {QStringLiteral(",")});
@@ -228,7 +228,7 @@ inline void appendScreenshotCursorMovementShortcutHintRows(
         if (!nextHistoryShortcuts.isEmpty()) {
             historyShortcutChips.push_back(nextHistoryShortcuts.join(QStringLiteral(" / ")));
         }
-        rows.push_back({screenshotShortcutHintText("Switch Screenshot History"),
+        rows.push_back({screenshotShortcutHintText("Switch screenshot history"),
                         historyShortcuts.join(QStringLiteral(" / ")),
                         ScreenshotShortcutHintInput::Keyboard, std::move(historyShortcutChips)});
     }

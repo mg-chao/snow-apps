@@ -2088,9 +2088,9 @@ void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime&) {
     auto* translationButton = toolbar->findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotTextTranslationButton"));
     require(translationButton != nullptr &&
-                translationButton->toolTip().contains(QStringLiteral("Text Translation")) &&
+                translationButton->toolTip().contains(QStringLiteral("Text translation")) &&
                 translationButton->toolTip().contains(QStringLiteral("Ctrl+T")),
-            "pinned drawing toolbar should expose Text Translation with its configured shortcut");
+            "pinned drawing toolbar should expose Text translation with its configured shortcut");
 
     const QPoint localPosition = canvas->rect().center();
     const auto sendWheel = [canvas, localPosition](int angleDelta) {

@@ -187,6 +187,10 @@ class AdButton : public QPushButton, public AdControlScaleParticipant {
   void showEvent(QShowEvent* event) override;
   void hideEvent(QHideEvent* event) override;
 
+  // For subclasses that paint their own content but still want the standard
+  // busy indicator visuals.
+  void drawSpinner(QPainter& painter, const QRect& iconRect, const QColor& color) const;
+
  private:
   struct ContentLayout;
   struct Private;
@@ -231,7 +235,6 @@ class AdButton : public QPushButton, public AdControlScaleParticipant {
                                      const QString& displayText, const QFontMetrics& fm,
                                      int iconGap, const QFont& contentFont, bool twoCjkAutoSpacing,
                                      int textFlags) const;
-  void drawSpinner(QPainter& painter, const QRect& iconRect, const QColor& color) const;
 
   friend void detail::setButtonSegmentPosition(AdButton* button, detail::SegmentPosition value);
   friend detail::SegmentPosition detail::buttonSegmentPosition(const AdButton* button);

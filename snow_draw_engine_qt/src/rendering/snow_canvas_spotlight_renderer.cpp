@@ -1,5 +1,6 @@
 #include "snow_canvas_spotlight_renderer.h"
 
+#include "snow_canvas_render_diagnostics.h"
 #include "snow_canvas_renderer.h"
 
 #include <QColor>
@@ -139,8 +140,10 @@ void render(QPainter& painter, const SceneDisplayInfo& sceneInfo,
     const QTransform canvasToView = canvasToViewTransform(sceneInfo);
     const std::vector<ValidCutout> visible = visibleCutouts(
         cutouts, cutoutCount, canvasToView, normalizedArea.intersected(paintRegion.boundingRect()));
-    g_diagnostics.renderedPixelCount += regionPixels(paintRegion);
-    g_diagnostics.renderedRegionCount += static_cast<std::size_t>(paintRegion.rectCount());
+    if (snow_canvas_render_diagnostics::isEnabled()) {
+        g_diagnostics.renderedPixelCount += regionPixels(paintRegion);
+        g_diagnostics.renderedRegionCount += static_cast<std::size_t>(paintRegion.rectCount());
+    }
 
     if (visible.empty()) {
         ++g_diagnostics.zeroCutoutFastPathCount;

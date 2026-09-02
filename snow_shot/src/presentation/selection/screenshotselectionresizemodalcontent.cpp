@@ -308,7 +308,7 @@ void ScreenshotSelectionResizeModalContent::retranslateUi() {
     }
 
     if (m_quickSet != nullptr) {
-        m_quickSet->setPlaceholder(translate("Quick Set"));
+        m_quickSet->setPlaceholder(translate("Quick set"));
     }
     if (m_lockAspectRatioButton != nullptr) {
         const QString translated = translate("Lock aspect ratio");
@@ -318,22 +318,22 @@ void ScreenshotSelectionResizeModalContent::retranslateUi() {
     if (auto* addButton =
             findChild<adqt::widgets::AdButton*>(QStringLiteral("selectionPresetAddButton"))) {
         addButton->setText(translate("Add"));
-        const QString translated = translate("Add Preset");
+        const QString translated = translate("Add preset");
         addButton->setToolTip(translated);
         addButton->setAccessibleName(translated);
     }
 
     if (m_createPresetModal != nullptr) {
-        m_createPresetModal->setWindowTitle(translate("Add Preset"));
+        m_createPresetModal->setWindowTitle(translate("Add preset"));
         m_createPresetModal->setAcceptText(translate("Add"));
         m_createPresetModal->setRejectText(translate("Cancel"));
     }
     if (m_createPresetNameItem != nullptr) {
-        m_createPresetNameItem->setLabel(translate("Preset Name"));
+        m_createPresetNameItem->setLabel(translate("Preset name"));
         m_createPresetNameItem->setRequiredMessage(translate("Please enter a preset name"));
     }
     if (m_deletePresetModal != nullptr) {
-        m_deletePresetModal->setWindowTitle(translate("Delete Preset"));
+        m_deletePresetModal->setWindowTitle(translate("Delete preset"));
         m_deletePresetModal->setText(
             translate("Delete preset \"%1\"? This action cannot be undone")
                 .arg(m_deletePresetName));
@@ -393,9 +393,9 @@ QWidget* ScreenshotSelectionResizeModalContent::createNormalPage() {
     m_quickSet->setMode(adqt::widgets::AdSelect::Mode::Single);
     m_quickSet->setControlSize(adqt::widgets::AdSelect::ControlSize::Middle);
     m_quickSet->setVariant(adqt::widgets::AdSelect::Variant::Outlined);
-    m_quickSet->setPlaceholder(tr("Quick Set"));
+    m_quickSet->setPlaceholder(tr("Quick set"));
     m_quickSet->setFixedWidth(240);
-    addNormalField(tr("Quick Set"), m_quickSet, QString::fromLatin1(kFieldQuickSet), true);
+    addNormalField(tr("Quick set"), m_quickSet, QString::fromLatin1(kFieldQuickSet), true);
     connect(m_quickSet, &adqt::widgets::AdSelect::selected, this,
             [this](const QVariant& value, const QString&) { handleQuickSetValue(value); });
     m_quickSet->setPopupExtraContentFactory([this](QWidget* parent) {
@@ -406,8 +406,8 @@ QWidget* ScreenshotSelectionResizeModalContent::createNormalPage() {
         addButton->setIconRef(outlined_icons::Plus());
         addButton->setIconPosition(adqt::widgets::AdButton::IconPosition::Leading);
         addButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        addButton->setToolTip(tr("Add Preset"));
-        addButton->setAccessibleName(tr("Add Preset"));
+        addButton->setToolTip(tr("Add preset"));
+        addButton->setAccessibleName(tr("Add preset"));
         connect(addButton, &QAbstractButton::clicked, this, [this]() {
             if (m_quickSet != nullptr) {
                 m_quickSet->hidePopup();
@@ -470,7 +470,7 @@ QWidget* ScreenshotSelectionResizeModalContent::createNormalPage() {
     heightItem->setFixedWidth(kDimensionFieldWidth);
 
     m_radiusInput = createIntegerInput(0, kScreenshotSelectionCornerRadiusMax);
-    addNormalField(tr("Radius"), m_radiusInput, QString::fromLatin1(kFieldRadius));
+    addNormalField(tr("Corner radius"), m_radiusInput, QString::fromLatin1(kFieldRadius));
     addNormalColumnSpacer();
 
     m_shadowWidthInput = createIntegerInput(0, kScreenshotSelectionShadowWidthMax);
@@ -481,8 +481,8 @@ QWidget* ScreenshotSelectionResizeModalContent::createNormalPage() {
     m_shadowColorPicker->setAlphaChannelEnabled(false);
     m_shadowColorPicker->setTriggerTextVisible(true);
     m_shadowColorPicker->setFixedWidth(kColorPickerWidth);
-    addNormalField(tr("Shadow Width"), m_shadowWidthInput, QString::fromLatin1(kFieldShadowWidth));
-    addNormalField(tr("Shadow Color"), m_shadowColorPicker, QString::fromLatin1(kFieldShadowColor));
+    addNormalField(tr("Shadow width"), m_shadowWidthInput, QString::fromLatin1(kFieldShadowWidth));
+    addNormalField(tr("Shadow color"), m_shadowColorPicker, QString::fromLatin1(kFieldShadowColor));
 
     const QStringList geometryFields{
         QString::fromLatin1(kFieldX),
@@ -578,7 +578,7 @@ ScreenshotSelectionResizeModalContent::addNormalField(const QString& label, QWid
     adqt::widgets::AdFormItem* item = m_normalForm->addField(label, control, fieldName);
     const char* source = nullptr;
     if (fieldName == QString::fromLatin1(kFieldQuickSet)) {
-        source = "Quick Set";
+        source = "Quick set";
     } else if (fieldName == QString::fromLatin1(kFieldX)) {
         source = "Position X";
     } else if (fieldName == QString::fromLatin1(kFieldY)) {
@@ -588,11 +588,11 @@ ScreenshotSelectionResizeModalContent::addNormalField(const QString& label, QWid
     } else if (fieldName == QString::fromLatin1(kFieldHeight)) {
         source = "Height";
     } else if (fieldName == QString::fromLatin1(kFieldRadius)) {
-        source = "Radius";
+        source = "Corner radius";
     } else if (fieldName == QString::fromLatin1(kFieldShadowWidth)) {
-        source = "Shadow Width";
+        source = "Shadow width";
     } else if (fieldName == QString::fromLatin1(kFieldShadowColor)) {
-        source = "Shadow Color";
+        source = "Shadow color";
     }
     if (source != nullptr) {
         item->setProperty(kTranslationSourceProperty, QString::fromLatin1(source));
@@ -667,9 +667,9 @@ void ScreenshotSelectionResizeModalContent::updateQuickSetOptions() {
     }
 
     QVector<adqt::widgets::AdSelect::Option> options;
-    options.push_back(option(QString::fromLatin1(kQuickSetCurrent), tr("Current Selection"), false,
+    options.push_back(option(QString::fromLatin1(kQuickSetCurrent), tr("Current selection"), false,
                              tr("Selection")));
-    options.push_back(option(QString::fromLatin1(kQuickSetPrevious), tr("Previous Selection"),
+    options.push_back(option(QString::fromLatin1(kQuickSetPrevious), tr("Previous selection"),
                              !m_hasPreviousParams, tr("Selection")));
     for (int i = 0; i < m_presets.size(); ++i) {
         options.push_back(option(QString::fromLatin1(kQuickSetPresetPrefix) + QString::number(i),
@@ -737,7 +737,7 @@ void ScreenshotSelectionResizeModalContent::openCreatePresetModal() {
     nameInput->setMaxLength(80);
     nameInput->setText(defaultName);
     auto* nameItem =
-        form->addField(tr("Preset Name"), nameInput, QString::fromLatin1(kFieldPresetName));
+        form->addField(tr("Preset name"), nameInput, QString::fromLatin1(kFieldPresetName));
     nameItem->setItemLayout(adqt::widgets::AdFormItem::ItemLayout::Vertical);
     nameItem->setRequired(true);
     nameItem->setRequiredMessage(tr("Please enter a preset name"));
@@ -755,7 +755,7 @@ void ScreenshotSelectionResizeModalContent::openCreatePresetModal() {
     modal->setOwnerWindow(modalOwnerWindow());
     modal->setMode(adqt::widgets::AdModal::Mode::Window);
     modal->setWindowModality(Qt::ApplicationModal);
-    modal->setWindowTitle(tr("Add Preset"));
+    modal->setWindowTitle(tr("Add preset"));
     modal->setCentered(true);
     modal->setPreferredWidth(400);
     modal->setMaskVisible(false);
@@ -819,7 +819,7 @@ void ScreenshotSelectionResizeModalContent::openDeletePresetModal(const QString&
     modal->setOwnerWindow(modalOwnerWindow());
     modal->setMode(adqt::widgets::AdModal::Mode::Window);
     modal->setWindowModality(Qt::ApplicationModal);
-    modal->setWindowTitle(tr("Delete Preset"));
+    modal->setWindowTitle(tr("Delete preset"));
     modal->setCentered(true);
     modal->setPreferredWidth(400);
     modal->setMaskVisible(false);

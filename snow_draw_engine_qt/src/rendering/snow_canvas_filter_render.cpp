@@ -1,5 +1,6 @@
 #include "snow_canvas_filter_render.h"
 #include "snow_canvas_filter_avx2.h"
+#include "snow_canvas_render_diagnostics.h"
 
 #include <QThread>
 #include <QtGlobal>
@@ -757,7 +758,12 @@ GaussianBlurPlan makeGaussianBlurPlan(const Parameters& parameters) {
     return plan;
 }
 
-template <typename Function> void measureStage(std::uint64_t& destination, Function&& function) {
+template <typename Function>
+void measureStage(bool enabled, std::uint64_t& destination, Function&& function) {
+    if (!enabled) {
+        function();
+        return;
+    }
     const auto begin = std::chrono::steady_clock::now();
     function();
     destination += static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -769,6 +775,7 @@ bool blur(QImage& image, const Parameters& parameters, RenderWorkspace& workspac
           const ExecutionOptions& options) {
     const GaussianBlurPlan plan = makeGaussianBlurPlan(parameters);
     const int factor = plan.reductionFactor;
+    const bool instrument = snow_canvas_render_diagnostics::isEnabled();
     KernelDiagnostics& diagnostics = const_cast<KernelDiagnostics&>(workspace.diagnostics());
     diagnostics.adaptiveBlurFactor = factor;
     const bool useAvx2 = !options.forceScalar && selectedSimdBackend() == SimdBackend::Avx2;
@@ -777,7 +784,7 @@ bool blur(QImage& image, const Parameters& parameters, RenderWorkspace& workspac
         if (scratch.isNull()) {
             return false;
         }
-        measureStage(diagnostics.reducedBlurNanoseconds, [&] {
+        measureStage(instrument, diagnostics.reducedBlurNanoseconds, [&] {
             for (int index = 0; index < plan.passCount; ++index) {
                 const int radius = plan.radii[index];
                 if (radius <= 0) {
@@ -802,13 +809,13 @@ bool blur(QImage& image, const Parameters& parameters, RenderWorkspace& workspac
     }
     bool downsampleAvx2Executed = false;
     bool reconstructionAvx2Executed = false;
-    measureStage(diagnostics.downsampleNanoseconds, [&] {
+    measureStage(instrument, diagnostics.downsampleNanoseconds, [&] {
         diagnostics.parallelJobs +=
             downsample(image, a, factor, options.singleThreaded, useAvx2, &downsampleAvx2Executed);
     });
     diagnostics.copiedBytes += image.sizeInBytes() + a.sizeInBytes();
 
-    measureStage(diagnostics.reducedBlurNanoseconds, [&] {
+    measureStage(instrument, diagnostics.reducedBlurNanoseconds, [&] {
         for (int index = 0; index < plan.passCount; ++index) {
             const int radius = plan.radii[index];
             if (radius <= 0) {
@@ -822,7 +829,7 @@ bool blur(QImage& image, const Parameters& parameters, RenderWorkspace& workspac
             ++diagnostics.gaussianPasses;
         }
     });
-    measureStage(diagnostics.reconstructionNanoseconds, [&] {
+    measureStage(instrument, diagnostics.reconstructionNanoseconds, [&] {
         diagnostics.parallelJobs += upsampleBilinear(a, image, factor, options.singleThreaded,
                                                      useAvx2, &reconstructionAvx2Executed);
     });
@@ -881,10 +888,11 @@ bool blurMasked(const QImage& source, QImage& destination, AlphaView mask, const
     }
     KernelDiagnostics& diagnostics = const_cast<KernelDiagnostics&>(workspace.diagnostics());
     diagnostics.adaptiveBlurFactor = factor;
+    const bool instrument = snow_canvas_render_diagnostics::isEnabled();
     bool downsampleAvx2Executed = false;
     bool reconstructionAvx2Executed = false;
     const bool useAvx2 = !options.forceScalar && selectedSimdBackend() == SimdBackend::Avx2;
-    measureStage(diagnostics.downsampleNanoseconds, [&] {
+    measureStage(instrument, diagnostics.downsampleNanoseconds, [&] {
         diagnostics.parallelJobs +=
             downsample(source, sourcePixels, a, factor, options.singleThreaded, useAvx2,
                        &downsampleAvx2Executed);
@@ -892,7 +900,7 @@ bool blurMasked(const QImage& source, QImage& destination, AlphaView mask, const
     diagnostics.copiedBytes += static_cast<std::size_t>(sourcePixels.width()) *
                                    static_cast<std::size_t>(sourcePixels.height()) * sizeof(QRgb) +
                                a.sizeInBytes();
-    measureStage(diagnostics.reducedBlurNanoseconds, [&] {
+    measureStage(instrument, diagnostics.reducedBlurNanoseconds, [&] {
         for (int index = 0; index < plan.passCount; ++index) {
             const int radius = plan.radii[index];
             if (radius <= 0) {
@@ -906,7 +914,7 @@ bool blurMasked(const QImage& source, QImage& destination, AlphaView mask, const
             ++diagnostics.gaussianPasses;
         }
     });
-    measureStage(diagnostics.reconstructionNanoseconds, [&] {
+    measureStage(instrument, diagnostics.reconstructionNanoseconds, [&] {
         for (const QRect& rect : destinationRegion) {
             diagnostics.parallelJobs += upsampleBilinearComposited(
                 a, destination, mask, maskOrigin, rect, sourcePixels, factor, constantMix,

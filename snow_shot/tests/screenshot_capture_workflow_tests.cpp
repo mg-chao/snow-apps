@@ -630,7 +630,7 @@ void intelligentSelectionTargetsPreserveElementPathBehavior() {
                     ScreenshotIntelligentSelectionTarget::WindowSubElement &&
                 selection.applyCanvasHitPath({nestedElement, childElement, window}, bounds, 1.0) &&
                 selection.index() == 0 && selection.currentSelection() == nestedElement,
-            "enabled Smart Selection must initially capture the deepest child element");
+            "enabled Smart selection must initially capture the deepest child element");
     require(selection.setIndex(1) && selection.currentSelection() == childElement &&
                 selection.applyCanvasHitPath({nestedElement, childElement, window}, bounds, 1.0) &&
                 selection.index() == 1,
@@ -665,7 +665,7 @@ void intelligentSelectionTargetsPreserveElementPathBehavior() {
                 !selection.toggleSelectionTarget() &&
                 selection.applyCanvasHitPath({nestedElement, childElement, window}, bounds, 1.0) &&
                 selection.index() == 2 && selection.currentSelection() == window,
-            "disabled Smart Selection must remain locked to window capture");
+            "disabled Smart selection must remain locked to window capture");
 
     require(selection.updateSmartSelectionEnabled(true) &&
                 selection.selectionTarget() ==
@@ -674,7 +674,7 @@ void intelligentSelectionTargetsPreserveElementPathBehavior() {
                 selection.updateSmartSelectionEnabled(false) &&
                 selection.selectionTarget() == ScreenshotIntelligentSelectionTarget::Window &&
                 selection.index() == 2 && selection.currentSelection() == window,
-            "a live Smart Selection setting change must immediately enforce its target policy");
+            "a live Smart selection setting change must immediately enforce its target policy");
 }
 
 void captureSessionsApplyTheCurrentSmartSelectionSetting() {

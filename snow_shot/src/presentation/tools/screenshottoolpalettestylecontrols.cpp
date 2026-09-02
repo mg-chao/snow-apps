@@ -93,7 +93,7 @@ constexpr double kMaxWatermarkFontSize = 512.0;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Text fill color %1"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Watermark color"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Watermark color %1"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Watermark Text"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Watermark text"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Watermark font family"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Sequence number color"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Sequence number color %1"),
@@ -138,40 +138,40 @@ constexpr double kMaxWatermarkFontSize = 512.0;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Cross-line sequence number fill"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Line sequence number fill"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Solid sequence number fill"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "%1 (Unavailable)"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "%1 (unavailable)"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Highlight stroke width"),
 };
 
 [[maybe_unused]] constexpr const char* kStartArrowheadOptionTranslations[] = {
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead None"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead Standard"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead Bar"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead Dot"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead Circle"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead Circle outline"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead Triangle"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead Triangle outline"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead Diamond"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead Diamond outline"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead Crowfoot one"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead Crowfoot many"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead Crowfoot one or many"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead none"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead standard"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead bar"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead dot"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead circle"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead circle outline"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead triangle"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead triangle outline"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead diamond"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead diamond outline"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead crowfoot one"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead crowfoot many"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Start arrowhead crowfoot one or many"),
 };
 
 [[maybe_unused]] constexpr const char* kEndArrowheadOptionTranslations[] = {
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead None"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead Standard"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead Bar"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead Dot"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead Circle"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead Circle outline"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead Triangle"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead Triangle outline"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead Diamond"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead Diamond outline"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead Crowfoot one"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead Crowfoot many"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead Crowfoot one or many"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead none"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead standard"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead bar"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead dot"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead circle"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead circle outline"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead triangle"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead triangle outline"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead diamond"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead diamond outline"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead crowfoot one"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead crowfoot many"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "End arrowhead crowfoot one or many"),
 };
 
 int defaultCornerRadius() {
@@ -539,7 +539,7 @@ void ScreenshotToolPaletteStyleControls::updateFontEditor(FontEditor& editor, do
         }
         if (!found) {
             const ScreenshotToolPaletteTranslationText unavailableText =
-                ScreenshotToolPaletteTranslationText("%1 (Unavailable)").arg(family);
+                ScreenshotToolPaletteTranslationText("%1 (unavailable)").arg(family);
             auto* item = new QStandardItem(unavailableText.translated());
             setScreenshotToolPaletteItemTranslationSource(item, unavailableText);
             item->setData(family, adqt::widgets::AdSelect::DefaultValueRole);
@@ -1853,11 +1853,11 @@ void ScreenshotToolPaletteStyleControls::addWatermarkControls(
     m_watermarkTextEdit = new adqt::widgets::AdLineEdit(parent);
     m_watermarkTextEdit->setFocusPolicy(Qt::ClickFocus);
     m_watermarkTextEdit->setObjectName(QStringLiteral("screenshotWatermarkTextEdit"));
-    setScreenshotToolPalettePlaceholderSource(m_watermarkTextEdit, "Watermark Text");
-    setScreenshotToolPaletteTooltipSource(m_watermarkTextEdit, "Watermark Text");
-    setScreenshotToolPaletteAccessibleNameSource(m_watermarkTextEdit, "Watermark Text");
+    setScreenshotToolPalettePlaceholderSource(m_watermarkTextEdit, "Watermark text");
+    setScreenshotToolPaletteTooltipSource(m_watermarkTextEdit, "Watermark text");
+    setScreenshotToolPaletteAccessibleNameSource(m_watermarkTextEdit, "Watermark text");
     const QString watermarkTextLabel =
-        QCoreApplication::translate("ScreenshotToolPalette", "Watermark Text");
+        QCoreApplication::translate("ScreenshotToolPalette", "Watermark text");
     m_watermarkTextEdit->setPlaceholderText(watermarkTextLabel);
     m_watermarkTextEdit->setToolTip(watermarkTextLabel);
     m_watermarkTextEdit->setAccessibleName(watermarkTextLabel);

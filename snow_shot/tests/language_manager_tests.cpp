@@ -67,13 +67,13 @@ int main(int argc, char** argv) {
             "a selected locale should persist immediately");
 
     require(manager.setLanguage(QStringLiteral("system")),
-            "Follow System should be a persistent preference");
+            "Follow system should be a persistent preference");
     require(manager.languagePreference() == QStringLiteral("system"),
-            "Follow System should remain the stored preference");
+            "Follow system should remain the stored preference");
     require(settings.language() == QStringLiteral("system"),
-            "Follow System should persist as system");
+            "Follow system should persist as system");
     require(manager.currentLocale().language() != QLocale::AnyLanguage,
-            "Follow System should resolve to a valid bundled locale");
+            "Follow system should resolve to a valid bundled locale");
 
     const QString preferenceBeforeFailure = manager.languagePreference();
     const QString settingBeforeFailure =

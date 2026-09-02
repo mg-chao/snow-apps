@@ -57,7 +57,7 @@ struct Descriptor {
         {Item::FreeDraw, "free-draw",
          QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Pen"), Icon::FreeDraw},
         {Item::Highlighter, "highlighter",
-         QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Highlighter Tool"),
+         QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Highlight"),
          Icon::Highlight},
         {Item::Spotlight, "spotlight",
          QT_TRANSLATE_NOOP("DrawingToolbarEditorSettingsWidget", "Spotlight"), Icon::Spotlight},

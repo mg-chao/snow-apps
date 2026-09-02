@@ -339,7 +339,8 @@ class ShortcutConfigValidationButton final : public adqt::widgets::AdButton {
         const int textWidth = fontMetrics.horizontalAdvance(text());
         const int horizontalFrameWidth =
             (style.metrics.horizontalPadding + style.metrics.borderWidth) * 2;
-        return QSize(horizontalFrameWidth + textWidth + m_infoGap + m_info->width(),
+        return QSize(horizontalFrameWidth + busyIndicatorSlotWidth(style.metrics) + textWidth +
+                         m_infoGap + m_info->width(),
                      style.metrics.height);
     }
 
@@ -396,24 +397,38 @@ class ShortcutConfigValidationButton final : public adqt::widgets::AdButton {
         const int contentInset = metrics.horizontalPadding + metrics.borderWidth;
         const QRect contentRect =
             rect().adjusted(contentInset, metrics.borderWidth, -contentInset, -metrics.borderWidth);
+        const int busySlotWidth = busyIndicatorSlotWidth(metrics);
         const int availableTextWidth =
-            std::max(0, contentRect.width() - m_infoGap - m_info->width());
+            std::max(0, contentRect.width() - busySlotWidth - m_infoGap - m_info->width());
         painter.setFont(metrics.font);
         const QFontMetrics fontMetrics(metrics.font);
         const QString displayText =
             fontMetrics.elidedText(text(), Qt::ElideRight, availableTextWidth);
         const int textWidth = fontMetrics.horizontalAdvance(displayText);
-        const int contentWidth = textWidth + m_infoGap + m_info->width();
-        const int textX =
+        const int contentWidth = busySlotWidth + textWidth + m_infoGap + m_info->width();
+        const int startX =
             contentRect.left() + std::max(0, (contentRect.width() - contentWidth) / 2);
+        const int textX = startX + busySlotWidth;
 
-        painter.setPen(state.text);
+        QColor contentColor = state.text;
+        if (busy()) {
+            contentColor.setAlphaF(contentColor.alphaF() * 0.72F);
+        }
+
+        if (busySlotWidth > 0) {
+            const int indicatorSide = busyIndicatorSide(metrics);
+            drawSpinner(painter,
+                        QRect(startX, (height() - indicatorSide) / 2, indicatorSide, indicatorSide),
+                        contentColor);
+        }
+
+        painter.setPen(contentColor);
         painter.drawText(QRect(textX, contentRect.top(), textWidth, contentRect.height()),
                          Qt::AlignLeft | Qt::AlignVCenter, displayText);
 
         m_info->setGeometry(textX + textWidth + m_infoGap, (height() - m_info->height()) / 2,
                             m_info->width(), m_info->height());
-        m_info->setIconColor(state.text);
+        m_info->setIconColor(contentColor);
         m_info->raise();
     }
 
@@ -447,7 +462,11 @@ class ShortcutConfigValidationButton final : public adqt::widgets::AdButton {
 
     void syncInfoColor() {
         const adqt::widgets::detail::ButtonVisualStyle style = buttonVisualStyle();
-        m_info->setIconColor(buttonState(style).text);
+        QColor infoColor = buttonState(style).text;
+        if (busy()) {
+            infoColor.setAlphaF(infoColor.alphaF() * 0.72F);
+        }
+        m_info->setIconColor(infoColor);
     }
 
     void syncInfoGeometry() {
@@ -456,18 +475,27 @@ class ShortcutConfigValidationButton final : public adqt::widgets::AdButton {
         const int contentInset = metrics.horizontalPadding + metrics.borderWidth;
         const QRect contentRect =
             rect().adjusted(contentInset, metrics.borderWidth, -contentInset, -metrics.borderWidth);
+        const int busySlotWidth = busyIndicatorSlotWidth(metrics);
         const int availableTextWidth =
-            std::max(0, contentRect.width() - m_infoGap - m_info->width());
+            std::max(0, contentRect.width() - busySlotWidth - m_infoGap - m_info->width());
         const QFontMetrics fontMetrics(metrics.font);
         const QString displayText =
             fontMetrics.elidedText(text(), Qt::ElideRight, availableTextWidth);
         const int textWidth = fontMetrics.horizontalAdvance(displayText);
-        const int contentWidth = textWidth + m_infoGap + m_info->width();
+        const int contentWidth = busySlotWidth + textWidth + m_infoGap + m_info->width();
         const int textX =
             contentRect.left() + std::max(0, (contentRect.width() - contentWidth) / 2);
         m_info->setGeometry(textX + textWidth + m_infoGap, (height() - m_info->height()) / 2,
                             m_info->width(), m_info->height());
         m_info->raise();
+    }
+
+    static int busyIndicatorSide(const adqt::widgets::detail::ButtonMetrics& metrics) {
+        return std::max(10, metrics.font.pixelSize());
+    }
+
+    int busyIndicatorSlotWidth(const adqt::widgets::detail::ButtonMetrics& metrics) const {
+        return busy() ? busyIndicatorSide(metrics) + metrics.iconGap : 0;
     }
 
     int m_infoGap = 6;
@@ -648,13 +676,16 @@ class ShortcutKeyConfigContent final : public QWidget {
                                                                  : QStringLiteral("valid")));
                 keyButton->setProperty("shortcutValidationMessage", m_validationMessage);
                 keyButton->setAccessibleDescription(m_validationMessage);
+                // Recording continues after a rejected key, so the busy state
+                // must stay on in the invalid state as well; the row still
+                // owns the keyboard and waits for the next key press.
+                keyButton->setBusy(true);
                 if (hasValidationError) {
                     keyButton->setText(m_rejectedShortcut.trimmed().isEmpty()
                                            ? QObject::tr("Unsupported key")
                                            : formatShortcutDisplayText(m_rejectedShortcut));
                     validationButton->setValidationTooltipText(m_validationMessage);
                 } else {
-                    keyButton->setBusy(true);
                     keyButton->setText(m_pendingShortcut.trimmed().isEmpty()
                                            ? QObject::tr("Please press a key")
                                            : formatShortcutDisplayText(m_pendingShortcut));
@@ -1448,7 +1479,7 @@ void ShortcutKeyRow::openShortcutConfigDialog() {
     const QPointer<ShortcutKeyConfigContent> contentGuard(content);
 
     modal->setOwnerWindow(hostWindow);
-    modal->setWindowTitle(tr("Key Configuration for \"%1\"")
+    modal->setWindowTitle(tr("Key configuration for \"%1\"")
                               .arg(m_titleLabel != nullptr ? m_titleLabel->text() : QString()));
     modal->setCentered(true);
     modal->setPreferredWidth(SHORTCUT_CONFIG_MODAL_WIDTH);

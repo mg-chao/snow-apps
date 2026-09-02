@@ -1,3 +1,4 @@
+#include "snow_canvas_render_diagnostics.h"
 #include "snow_canvas_renderer.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
@@ -1409,6 +1410,7 @@ bool registerBenchmarkFont(std::string& error) {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    snow_canvas_render_diagnostics::setEnabled(true);
     std::string error;
     const std::optional<Options> parsed = parseOptions(argc, argv, error);
     if (!parsed) {

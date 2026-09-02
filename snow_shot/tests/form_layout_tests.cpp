@@ -131,7 +131,7 @@ void inlineFormPreservesAntItemLayoutPrecedence() {
     AdForm form;
     form.setFormLayout(AdForm::FormLayout::Inline);
 
-    AdFormItem* quick = form.addField(QStringLiteral("Quick Set"), fixedControl(240));
+    AdFormItem* quick = form.addField(QStringLiteral("Quick set"), fixedControl(240));
     quick->setItemLayout(AdFormItem::ItemLayout::Vertical);
     quick->setFixedWidth(452);
 
@@ -332,7 +332,7 @@ void selectionResizeModalUsesSettledFirstFrameGeometry() {
     adqt::widgets::AdModal modal(&owner);
     modal.setOwnerWindow(&owner);
     modal.setMode(adqt::widgets::AdModal::Mode::Window);
-    modal.setWindowTitle(QStringLiteral("Resize Selection"));
+    modal.setWindowTitle(QStringLiteral("Resize selection"));
     modal.setCentered(true);
     modal.setPreferredWidth(500);
     modal.setMaskVisible(false);

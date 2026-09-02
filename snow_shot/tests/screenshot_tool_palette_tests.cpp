@@ -622,7 +622,7 @@ void screenshotToolbarUsesCanonicalOrderAndSectionSeparators() {
         QStringLiteral("Shape (1)"),
         QStringLiteral("Arrow (2)"),
         QStringLiteral("Pen (3, P)"),
-        QStringLiteral("Highlighter Tool (4, H)"),
+        QStringLiteral("Highlight (4, H)"),
         QStringLiteral("Text (5, T)"),
         QStringLiteral("Serial number (6, N)"),
         QStringLiteral("Filter (7, F)"),
@@ -847,7 +847,7 @@ void configurableToolbarLayoutSupportsArbitraryPopoverGroups() {
     require(updatedDrawingButtons.size() == 4 && updatedPopover != nullptr &&
                 updatedGroupTrigger->accessibleName() == QStringLiteral("Pen") &&
                 popoverButtonWithTooltip(updatedPopover, "Pen") != nullptr &&
-                popoverButtonWithTooltip(updatedPopover, "Highlighter Tool") != nullptr &&
+                popoverButtonWithTooltip(updatedPopover, "Highlight") != nullptr &&
                 std::none_of(updatedDrawingButtons.cbegin(), updatedDrawingButtons.cend(),
                              [](const adqt::widgets::AdButton* button) {
                                  return button != nullptr &&
@@ -1324,7 +1324,7 @@ void ocrToolReplacesSelectionActionToolbarContents() {
     };
     adqt::widgets::AdButton* sendToBack = buttonWithTooltip("Send to back");
     adqt::widgets::AdButton* edit = buttonWithTooltip("Edit");
-    adqt::widgets::AdButton* translate = buttonWithTooltip("Text Translation");
+    adqt::widgets::AdButton* translate = buttonWithTooltip("Text translation");
     adqt::widgets::AdButton* reset = buttonWithTooltip("Reset");
     adqt::widgets::AdButton* settings = buttonWithTooltip("Translation settings");
     auto* undo =
@@ -1813,13 +1813,13 @@ void highlightVariantsUseConfiguredPopoverGroup() {
     adqt::widgets::AdPopover* popover = popoverForTrigger(trigger);
     materializeLazyPopover(trigger);
     QWidget* content = popover != nullptr ? popover->contentWidget() : nullptr;
-    auto* highlighterOption = popoverButtonWithTooltip(popover, "Highlighter Tool");
-    auto* penHighlightOption = popoverButtonWithTooltip(popover, "Pen Highlighter Tool");
+    auto* highlighterOption = popoverButtonWithTooltip(popover, "Highlight");
+    auto* penHighlightOption = popoverButtonWithTooltip(popover, "Pen highlight");
     auto* rectangleHighlightOption =
-        popoverButtonWithTooltip(popover, "Rectangle Highlighter Tool");
+        popoverButtonWithTooltip(popover, "Rectangle highlight");
     auto* spotlightOption = popoverButtonWithTooltip(popover, "Spotlight");
     require(trigger != nullptr &&
-                trigger->accessibleName() == QStringLiteral("Highlighter Tool") &&
+                trigger->accessibleName() == QStringLiteral("Highlight") &&
                 popover != nullptr && content != nullptr &&
                 content->objectName() == QStringLiteral("screenshotHighlightPopoverContent") &&
                 qobject_cast<QHBoxLayout*>(content->layout()) != nullptr &&
@@ -1830,7 +1830,7 @@ void highlightVariantsUseConfiguredPopoverGroup() {
                     QStringLiteral("screenshotRectangleHighlightButton")) == nullptr &&
                 content->layout()->indexOf(highlighterOption) <
                     content->layout()->indexOf(spotlightOption),
-            "the live toolbar should expose one generic Highlighter Tool alongside Spotlight");
+            "the live toolbar should expose one generic Highlight alongside Spotlight");
 
     palette.setActiveTool(ScreenshotToolPalette::Tool::PenHighlight);
     const QList<QWidget*> highlightModeSelectors =
@@ -1844,15 +1844,15 @@ void highlightVariantsUseConfiguredPopoverGroup() {
         require(group != nullptr && group->buttons().size() == 2,
                 "highlight style mode selectors should contain only rectangle and pen");
         const QStringList expectedModes{
-            QStringLiteral("Pen Highlighter Tool"),
-            QStringLiteral("Rectangle Highlighter Tool"),
+            QStringLiteral("Pen highlight"),
+            QStringLiteral("Rectangle highlight"),
         };
         for (int index = 0; index < expectedModes.size(); ++index) {
             require(group->buttons().at(index)->toolTip() == expectedModes.at(index),
                     "highlight style mode selectors should place the default pen mode first");
         }
         require(group->checkedId() == static_cast<int>(ScreenshotToolPalette::Tool::PenHighlight),
-                "highlight style mode selectors should default to Pen Highlighter Tool");
+                "highlight style mode selectors should default to Pen highlight");
     }
     QWidget* spotlightControls =
         palette.findChild<QWidget*>(QStringLiteral("screenshotSpotlightStyleControls"));
@@ -1880,16 +1880,16 @@ void highlightVariantsUseConfiguredPopoverGroup() {
     auto* rectangleHighlightMode =
         qobject_cast<adqt::widgets::AdRadio*>(highlightModeGroup->buttons().at(1));
     require(rectangleHighlightMode != nullptr,
-            "the highlight style selector should expose Rectangle Highlighter Tool");
+            "the highlight style selector should expose Rectangle highlight");
     rectangleHighlightMode->click();
     require(penRequests == 0 && rectangleRequests == 1 &&
                 palette.activeToolForTests() == ScreenshotToolPalette::Tool::RectangleHighlight &&
-                trigger->accessibleName() == QStringLiteral("Highlighter Tool") &&
+                trigger->accessibleName() == QStringLiteral("Highlight") &&
                 trigger->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
                 trigger->accentRole() == adqt::widgets::AdButton::AccentRole::Primary &&
                 highlighterOption->buttonStyle() ==
                     adqt::widgets::AdButton::ButtonStyle::Solid,
-            "Rectangle Highlighter Tool should remain style-selectable through the generic item");
+            "Rectangle highlight should remain style-selectable through the generic item");
 
     palette.setToolbarLayout({
         {{QStringLiteral("highlighter"), QStringLiteral("spotlight")},
@@ -1901,10 +1901,10 @@ void highlightVariantsUseConfiguredPopoverGroup() {
         palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotHighlightButton"));
     popover = popoverForTrigger(trigger);
     materializeLazyPopover(trigger);
-    highlighterOption = popoverButtonWithTooltip(popover, "Highlighter Tool");
+    highlighterOption = popoverButtonWithTooltip(popover, "Highlight");
     spotlightOption = popoverButtonWithTooltip(popover, "Spotlight");
     require(trigger != nullptr &&
-                trigger->accessibleName() == QStringLiteral("Highlighter Tool") &&
+                trigger->accessibleName() == QStringLiteral("Highlight") &&
                 trigger->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
                 highlighterOption != nullptr &&
                 highlighterOption->buttonStyle() ==
@@ -1914,10 +1914,10 @@ void highlightVariantsUseConfiguredPopoverGroup() {
     trigger->click();
     require(penRequests == 0 && rectangleRequests == 1 &&
                 palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select &&
-                trigger->accessibleName() == QStringLiteral("Highlighter Tool") &&
+                trigger->accessibleName() == QStringLiteral("Highlight") &&
                 highlighterOption->buttonStyle() ==
                     adqt::widgets::AdButton::ButtonStyle::Text,
-            "clicking the active Highlighter Tool trigger should return to selection");
+            "clicking the active Highlight trigger should return to selection");
 
     spotlightOption->click();
     require(penRequests == 0 && rectangleRequests == 1 && spotlightRequests == 1 &&
@@ -1930,10 +1930,10 @@ void highlightVariantsUseConfiguredPopoverGroup() {
     highlighterOption->click();
     require(penRequests == 1 && rectangleRequests == 1 && spotlightRequests == 1 &&
                 palette.activeToolForTests() == ScreenshotToolPalette::Tool::PenHighlight &&
-                trigger->accessibleName() == QStringLiteral("Highlighter Tool") &&
+                trigger->accessibleName() == QStringLiteral("Highlight") &&
                 highlighterOption->buttonStyle() ==
                     adqt::widgets::AdButton::ButtonStyle::Solid,
-            "the generic Highlighter Tool option should activate Pen Highlighter Tool");
+            "the generic Highlight option should activate Pen highlight");
 
     palette.setActiveTool(ScreenshotToolPalette::Tool::FreeDraw);
     require(trigger->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text &&
@@ -2076,7 +2076,7 @@ void filterToolExposesTypeAndIntensityControls() {
     };
     const adqt::widgets::AdSelect::Option gaussianBlurFilter{
         static_cast<int>(SnowCanvasFilterType::GaussianBlur),
-        QStringLiteral("Gaussian Blur"),
+        QStringLiteral("Gaussian blur"),
     };
     require(filterTypeSortComparator &&
                 filterTypeSortComparator(mosaicFilter, gaussianBlurFilter) &&
@@ -2346,7 +2346,7 @@ void drawingToolbarGroupsUseToolbarPopoverMetrics() {
     const QList<adqt::widgets::AdButton*> popupButtons{
         popoverButtonWithTooltip(arrowLinePopover, "Arrow"),
         popoverButtonWithTooltip(arrowLinePopover, "Line"),
-        popoverButtonWithTooltip(highlightPopover, "Highlighter Tool"),
+        popoverButtonWithTooltip(highlightPopover, "Highlight"),
         popoverButtonWithTooltip(highlightPopover, "Spotlight"),
     };
     require(std::all_of(popupButtons.cbegin(), popupButtons.cend(),
@@ -2539,8 +2539,8 @@ void watermarkToolExposesSharedStyleControls() {
                     nullptr,
                 "Watermark should reuse all text color presets");
     }
-    require(text->placeholderText() == QStringLiteral("Watermark Text") &&
-                text->accessibleName() == QStringLiteral("Watermark Text") &&
+    require(text->placeholderText() == QStringLiteral("Watermark text") &&
+                text->accessibleName() == QStringLiteral("Watermark text") &&
                 text->controlSize() == adqt::widgets::AdLineEdit::ControlSize::Small &&
                 text->variant() == adqt::widgets::AdLineEdit::Variant::Borderless,
             "Watermark text should use the borderless small AdLineEdit");
@@ -3210,7 +3210,7 @@ void arrowStyleControlsExposeAndEmitAllStyleProperties() {
     require(endArrowheadContent != nullptr, "end arrowhead popup content should be present");
     adqt::widgets::AdButton* defaultEndArrowhead = nullptr;
     for (QWidget* control : endArrowheadContent->findChildren<QWidget*>()) {
-        if (control != nullptr && control->toolTip() == QStringLiteral("End arrowhead Standard")) {
+        if (control != nullptr && control->toolTip() == QStringLiteral("End arrowhead standard")) {
             defaultEndArrowhead = qobject_cast<adqt::widgets::AdButton*>(control);
             break;
         }
@@ -3239,10 +3239,10 @@ void arrowStyleControlsExposeAndEmitAllStyleProperties() {
     elbowArrowType->click();
     require(styleChangeCount == 4, "arrow type should emit once");
     clickPopoverStyleControl(showPopoverForTrigger(startArrowheadControl),
-                             "Start arrowhead Triangle");
+                             "Start arrowhead triangle");
     require(styleChangeCount == 5, "start arrowhead should emit once");
     clickPopoverStyleControl(showPopoverForTrigger(endArrowheadControl),
-                             "End arrowhead Diamond outline");
+                             "End arrowhead diamond outline");
 
     require(styleChangeCount == 6, "each arrow style edit should emit once");
     require(qFuzzyCompare(emittedStyle.strokeWidth + 1.0, 5.0), "arrow stroke width should update");
@@ -3274,7 +3274,7 @@ void arrowheadOptionsRetranslateInPlace() {
     QWidget* startTrigger = controlWithAccessibleName(palette, "Start arrowhead");
     require(startTrigger != nullptr, "start arrowhead trigger should be present");
     auto* popover = showPopoverForTrigger(startTrigger);
-    auto* noneOption = popoverButtonWithTooltip(popover, "Start arrowhead None");
+    auto* noneOption = popoverButtonWithTooltip(popover, "Start arrowhead none");
     require(noneOption != nullptr, "English arrowhead option should be present");
 
     require(languageManager.setLanguage(QStringLiteral("zh_CN")),
@@ -3297,7 +3297,7 @@ void arrowheadOptionsRetranslateInPlace() {
             "English should be restorable after arrowhead retranslation");
     QCoreApplication::processEvents();
     require(startTrigger->accessibleName() == QStringLiteral("Start arrowhead") &&
-                noneOption->toolTip() == QStringLiteral("Start arrowhead None"),
+                noneOption->toolTip() == QStringLiteral("Start arrowhead none"),
             "open arrowhead controls should restore English");
     palette.hide();
 }
@@ -3346,8 +3346,8 @@ void selectedArrowMixedPropertiesResolveIndependently() {
     require(arrowTypeGroup->checkedId() == -1 && !elbowArrowType->isChecked(),
             "mixed arrow type should not select a button-group option");
     for (const auto& option : {
-             std::pair{startArrowheadPopover, "Start arrowhead Triangle"},
-             std::pair{endArrowheadPopover, "End arrowhead Diamond"},
+             std::pair{startArrowheadPopover, "Start arrowhead triangle"},
+             std::pair{endArrowheadPopover, "End arrowhead diamond"},
          }) {
         adqt::widgets::AdButton* button = popoverButtonWithTooltip(option.first, option.second);
         require(button != nullptr, "mixed arrow option should be present");
@@ -3378,8 +3378,8 @@ void selectedArrowMixedPropertiesResolveIndependently() {
     requireControlInactive(palette, "Arrow stroke width 4",
                            "resolving arrow type must preserve mixed width");
     for (const auto& option : {
-             std::pair{startArrowheadPopover, "Start arrowhead Triangle"},
-             std::pair{endArrowheadPopover, "End arrowhead Diamond"},
+             std::pair{startArrowheadPopover, "Start arrowhead triangle"},
+             std::pair{endArrowheadPopover, "End arrowhead diamond"},
          }) {
         adqt::widgets::AdButton* button = popoverButtonWithTooltip(option.first, option.second);
         require(button != nullptr, "mixed arrowhead option should be present");
@@ -4798,9 +4798,9 @@ void toolbarScalingDoesNotRelayoutPopupContent() {
         adqt::widgets::AdPopover* endArrowheadPopover =
             showPopoverForTrigger(endArrowheadTrigger);
         adqt::widgets::AdButton* startArrowhead =
-            popoverButtonWithTooltip(startArrowheadPopover, "Start arrowhead None");
+            popoverButtonWithTooltip(startArrowheadPopover, "Start arrowhead none");
         adqt::widgets::AdButton* endArrowhead =
-            popoverButtonWithTooltip(endArrowheadPopover, "End arrowhead None");
+            popoverButtonWithTooltip(endArrowheadPopover, "End arrowhead none");
         require(arrowStrokeStyle != nullptr && arrowType != nullptr && startArrowhead != nullptr &&
                     endArrowhead != nullptr,
                 "arrow toolbar and popup options should be present");

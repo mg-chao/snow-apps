@@ -329,7 +329,7 @@ settings::SettingsRegistry testRegistry(
     settings::SettingsSectionReset reset = settings::SettingsSectionReset::None) {
     settings::SettingsSelectDefinition theme;
     theme.binding = settings::SettingsSelectBinding::Theme;
-    theme.options = {{QStringLiteral("system"), text("Follow System")},
+    theme.options = {{QStringLiteral("system"), text("Follow system")},
                      {QStringLiteral("light"), text("Light")},
                      {QStringLiteral("dark"), text("Dark")}};
 

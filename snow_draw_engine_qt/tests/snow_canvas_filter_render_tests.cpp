@@ -3,6 +3,7 @@
 #include "snow_canvas_filter_render.h"
 #include "snow_canvas_filter_tile_cache.h"
 #include "snow_canvas_pen_mask_atlas.h"
+#include "snow_canvas_render_diagnostics.h"
 #include "snow_canvas_render_geometry.h"
 #include "snow_canvas_renderer.h"
 #include "snow_draw_engine_qt/snow_canvas_custom_renderer.h"
@@ -2190,6 +2191,7 @@ void tiledRenderMatchesFullRender() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    snow_canvas_render_diagnostics::setEnabled(true);
     publicRegionFilterApiRestrictsEffectsToTheRequestedRegion();
     regionFilterSupportPixelsMatchesGaussianPlan();
     croppedRegionFilterMatchesFullFrameRender();

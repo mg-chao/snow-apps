@@ -1,5 +1,6 @@
 #include "snow_canvas_watermark_renderer.h"
 
+#include "snow_canvas_render_diagnostics.h"
 #include "snow_canvas_renderer.h"
 
 #include <QBrush>
@@ -437,8 +438,11 @@ std::shared_ptr<UnitEntry> findOrBuildUnit(const UnitKey& key, const QFont& font
         }
     }
 
+    const bool instrument = snow_canvas_render_diagnostics::isEnabled();
     QElapsedTimer shapeTimer;
-    shapeTimer.start();
+    if (instrument) {
+        shapeTimer.start();
+    }
     if (reusableShape) {
         ++g_diagnostics.shapeHitCount;
     } else {
@@ -447,13 +451,19 @@ std::shared_ptr<UnitEntry> findOrBuildUnit(const UnitKey& key, const QFont& font
         std::lock_guard<std::mutex> lock(g_cache.mutex);
         ++g_cache.lifetimeShapeBuilds;
     }
-    g_diagnostics.shapeMilliseconds += elapsedMilliseconds(shapeTimer);
+    if (instrument) {
+        g_diagnostics.shapeMilliseconds += elapsedMilliseconds(shapeTimer);
+    }
 
     ++g_diagnostics.unitMissCount;
     QElapsedTimer rasterTimer;
-    rasterTimer.start();
+    if (instrument) {
+        rasterTimer.start();
+    }
     std::shared_ptr<UnitEntry> built = buildUnit(key, reusableShape);
-    g_diagnostics.rasterMilliseconds += elapsedMilliseconds(rasterTimer);
+    if (instrument) {
+        g_diagnostics.rasterMilliseconds += elapsedMilliseconds(rasterTimer);
+    }
 
     {
         std::lock_guard<std::mutex> lock(g_cache.mutex);
@@ -479,8 +489,11 @@ QVector<TintedChunk> tintedChunksFor(UnitEntry& entry, QRgb tintKey, const QColo
             return entry.tintedChunks;
         }
     }
+    const bool instrument = snow_canvas_render_diagnostics::isEnabled();
     QElapsedTimer timer;
-    timer.start();
+    if (instrument) {
+        timer.start();
+    }
     QVector<TintedChunk> built;
     built.reserve(entry.alphaChunks.size());
     for (const UnitChunk& chunk : entry.alphaChunks) {
@@ -492,7 +505,9 @@ QVector<TintedChunk> tintedChunksFor(UnitEntry& entry, QRgb tintKey, const QColo
         built.push_back(
             TintedChunk{std::move(tinted), chunk.contentStart, chunk.contentWidth, chunk.sourceX});
     }
-    g_diagnostics.tintMilliseconds += elapsedMilliseconds(timer);
+    if (instrument) {
+        g_diagnostics.tintMilliseconds += elapsedMilliseconds(timer);
+    }
     ++g_diagnostics.tintBuildCount;
     {
         std::lock_guard<std::mutex> lock(entry.resourceMutex);
@@ -785,18 +800,25 @@ void WatermarkPatternRenderer::render(QPainter& painter, const WatermarkRenderRe
         ++g_diagnostics.earlyExitCount;
         return;
     }
-    g_diagnostics.renderedLogicalBounds = exposedRegion.boundingRect();
-    g_diagnostics.renderedDeviceBounds =
-        request.effectiveDeviceTransform.mapRect(QRectF(exposedRegion.boundingRect()))
-            .toAlignedRect();
+    const bool instrument = snow_canvas_render_diagnostics::isEnabled();
+    if (instrument) {
+        g_diagnostics.renderedLogicalBounds = exposedRegion.boundingRect();
+        g_diagnostics.renderedDeviceBounds =
+            request.effectiveDeviceTransform.mapRect(QRectF(exposedRegion.boundingRect()))
+                .toAlignedRect();
+    }
 
     QElapsedTimer placementTimer;
-    placementTimer.start();
+    if (instrument) {
+        placementTimer.start();
+    }
     if (!entry->glyphFallback) {
         planPlacements(*entry, localBounds, horizontalStep, verticalStep, scaleX, scaleY);
         g_diagnostics.fragmentCoverage = fragmentCoverage(localBounds, scaleX, scaleY);
     }
-    g_diagnostics.placementMilliseconds += elapsedMilliseconds(placementTimer);
+    if (instrument) {
+        g_diagnostics.placementMilliseconds += elapsedMilliseconds(placementTimer);
+    }
 
     painter.save();
     painter.setClipRegion(exposedRegion, Qt::IntersectClip);
@@ -804,7 +826,9 @@ void WatermarkPatternRenderer::render(QPainter& painter, const WatermarkRenderRe
     painter.translate(center);
     painter.rotate(configuration.watermark_angle);
     QElapsedTimer compositionTimer;
-    compositionTimer.start();
+    if (instrument) {
+        compositionTimer.start();
+    }
 
     if (entry->glyphFallback) {
         ++g_fallbackCount;
@@ -851,7 +875,9 @@ void WatermarkPatternRenderer::render(QPainter& painter, const WatermarkRenderRe
             }
         }
     }
-    g_diagnostics.compositionMilliseconds += elapsedMilliseconds(compositionTimer);
+    if (instrument) {
+        g_diagnostics.compositionMilliseconds += elapsedMilliseconds(compositionTimer);
+    }
     painter.restore();
 }
 

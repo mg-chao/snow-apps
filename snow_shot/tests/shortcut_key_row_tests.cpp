@@ -299,6 +299,8 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
     require(!actionButton->isEnabled(), "a backend-rejected key must not be confirmable");
     require(!modal->acceptButton()->isEnabled(),
             "the modal must not commit while the active recording is invalid");
+    require(keyButton->busy(),
+            "a backend-rejected key must keep the busy recording indicator so editing continues");
 
     QKeyEvent supportedNumpadEvent(QEvent::KeyPress, Qt::Key_1, Qt::KeypadModifier);
     QCoreApplication::sendEvent(configContent, &supportedNumpadEvent);
@@ -315,7 +317,7 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
                 !keyButton->text().contains(QStringLiteral("Num+1")),
             "a keypad digit should not be displayed as a modifier combination");
     require(keyButton->property("shortcutValidationState").toString() == QStringLiteral("valid") &&
-                actionButton->isEnabled(),
+                keyButton->busy() && actionButton->isEnabled(),
             "a backend-supported key should recover from an earlier validation error");
     require(modal->acceptButton()->isEnabled(),
             "the modal should become confirmable after backend validation succeeds");
@@ -324,7 +326,8 @@ void recorderAcceptsOnlyBackendSupportedShortcuts() {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QApplication::processEvents();
     keyButton = row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutConfigKeyButton"));
-    require(keyButton != nullptr && keyButton->text().contains(QStringLiteral("Num 1")) &&
+    require(keyButton != nullptr && !keyButton->busy() &&
+                keyButton->text().contains(QStringLiteral("Num 1")) &&
                 !keyButton->text().contains(QStringLiteral("Num+1")),
             "the committed shortcut should retain a clear numpad display");
 
@@ -424,6 +427,8 @@ void drawingRecorderUsesLocalValidationLanguage() {
                     QStringLiteral("Windows global shortcut")) &&
                 keyButton->accessibleDescription() == validationInfo->tooltipText(),
             "drawing shortcut conflicts must use local validation and accessibility wording");
+    require(keyButton->busy(),
+            "a conflicting drawing shortcut must keep the busy recording indicator while editing");
 }
 
 void compactTitleAndKeyButtonStylesMatchReference() {
@@ -488,7 +493,7 @@ void adjustableDelayUsesWheelAndClampsRange() {
     int changeSignals = 0;
     bool acceptWrites = true;
     ShortcutKeyRowConfig config;
-    config.title = QStringLiteral("Delay %1s to Execute");
+    config.title = QStringLiteral("Delay %1s to execute");
     config.adjustableDelay = true;
     config.delaySeconds = 3;
     config.delaySetter = [&persistedDelay, &setterCalls, &acceptWrites](int seconds) {
@@ -514,7 +519,7 @@ void adjustableDelayUsesWheelAndClampsRange() {
     auto* delayTitleWrap = delayTitleLabel != nullptr ? delayTitleLabel->parentWidget() : nullptr;
     bool titleShowsDefaultDelay = false;
     for (const QLabel* label : row.findChildren<QLabel*>()) {
-        if (label->text() == QStringLiteral("Delay 3s to Execute")) {
+        if (label->text() == QStringLiteral("Delay 3s to execute")) {
             titleShowsDefaultDelay = true;
             break;
         }
