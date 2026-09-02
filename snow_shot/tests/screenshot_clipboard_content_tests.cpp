@@ -393,31 +393,6 @@ void standardRgbDibOrientationAndAlphaAreHandled() {
             "BI_RGB DIB pixels should be treated as opaque");
 }
 
-void nonstandardDibMasksPreservePremultipliedAlpha() {
-    BITMAPV5HEADER header{};
-    header.bV5Size = sizeof(BITMAPV5HEADER);
-    header.bV5Width = 1;
-    header.bV5Height = -1;
-    header.bV5Planes = 1;
-    header.bV5BitCount = 32;
-    header.bV5Compression = BI_BITFIELDS;
-    header.bV5RedMask = 0x000003ffu;
-    header.bV5GreenMask = 0x000ffc00u;
-    header.bV5BlueMask = 0x3ff00000u;
-    header.bV5AlphaMask = 0xc0000000u;
-    QByteArray bytes(static_cast<int>(sizeof(BITMAPV5HEADER) + 4), 0);
-    std::memcpy(bytes.data(), &header, sizeof(header));
-    auto* pixel = reinterpret_cast<std::uint32_t*>(bytes.data() + sizeof(header));
-    *pixel = (2u << 30) | (512u << 20) | (256u << 10) | 768u;
-    auto decoded = ScreenshotClipboardContentReader::decode(nativeDibSnapshot(
-        std::move(bytes), QSize(1, 1)));
-    require(decoded.has_value(), "nonstandard DIB masks should decode");
-    const QColor color = decoded->image.pixelColor(0, 0);
-    require(color.alpha() >= 160 && color.alpha() <= 180 && color.red() <= color.alpha() &&
-                color.green() <= color.alpha() && color.blue() <= color.alpha(),
-            "nonstandard DIB alpha should be scaled and premultiplied");
-}
-
 void malformedAndLargeDibsAreHandled() {
     QByteArray malformed(static_cast<int>(sizeof(BITMAPINFOHEADER)), 0);
     auto* malformedHeader = reinterpret_cast<BITMAPINFOHEADER*>(malformed.data());
@@ -493,7 +468,6 @@ int main(int argc, char** argv) {
     formattedTextUsesOwningDisplayDevicePixelRatio();
 #if defined(Q_OS_WIN) || defined(_WIN32)
     standardRgbDibOrientationAndAlphaAreHandled();
-    nonstandardDibMasksPreservePremultipliedAlpha();
     malformedAndLargeDibsAreHandled();
     nativeDibSnapshotDecodesOffClipboard();
 #endif

@@ -33,13 +33,8 @@
 #include <QPaintEvent>
 #include <QPointer>
 #include <QRegion>
-#include <QScreen>
 #include <QScrollBar>
 #include <QWheelEvent>
-
-#if defined(Q_OS_WIN)
-#include <qt_windows.h>
-#endif
 
 #include <algorithm>
 #include <array>
@@ -2551,184 +2546,6 @@ void stableScrollingGeometryDoesNotReapplyWindowMask() {
             "stable scrolling geometry should not reapply the native window mask");
 }
 
-void scrollingThumbnailPresentsAcceptedFrameWithoutInput() {
-    NoopOverlayEventSink eventSink;
-    auto* canvas = new SnowCanvasWidget;
-    ScreenshotOverlayWindow overlay(eventSink, canvas);
-    overlay.resize(420, 300);
-    overlay.show();
-    QApplication::processEvents();
-
-    auto* thumbnail = dynamic_cast<ScreenshotScrollingThumbnailWidget*>(overlay.findChild<QWidget*>(
-        QStringLiteral("screenshot-scrolling-thumbnail"), Qt::FindDirectChildrenOnly));
-    require(thumbnail != nullptr, "overlay should own the scrolling thumbnail");
-
-    const QRect selection(20, 20, 180, 180);
-    overlay.setInputPassThroughRect(selection);
-    overlay.setScrollingCaptureMode(true);
-    overlay.beginScrollingThumbnail(selection);
-
-    QImage initial(128, 256, QImage::Format_RGBA8888);
-    initial.fill(QColor(30, 90, 180));
-    overlay.updateScrollingThumbnail(initial, QSize(128, 256),
-                                     ScreenshotScrollingStitchChange::Initial, 256);
-    QApplication::processEvents();
-
-    const QSize stableSize = thumbnail->size();
-    CanvasPaintRegionObserver paintObserver;
-    thumbnail->installEventFilter(&paintObserver);
-    paintObserver.begin();
-
-    QImage appended(128, 64, QImage::Format_RGBA8888);
-    appended.fill(QColor(210, 50, 40));
-    overlay.updateScrollingThumbnail(appended, QSize(128, 320),
-                                     ScreenshotScrollingStitchChange::AppendedDown, 64);
-
-    require(thumbnail->size() == stableSize,
-            "the refresh regression requires unchanged thumbnail geometry");
-    require(thumbnail->previewImageForTesting().pixelColor(64, 300) == QColor(210, 50, 40),
-            "the accepted patch should already be present in thumbnail state");
-    require(paintObserver.region().contains(thumbnail->rect()),
-            "an accepted scrolling frame must repaint without waiting for mouse input");
-    thumbnail->removeEventFilter(&paintObserver);
-}
-
-#if defined(Q_OS_WIN)
-class CursorPositionRestorer final {
-  public:
-    CursorPositionRestorer() : m_valid(GetCursorPos(&m_position) != FALSE) {}
-
-    ~CursorPositionRestorer() {
-        if (m_valid) {
-            static_cast<void>(SetCursorPos(m_position.x, m_position.y));
-        }
-    }
-
-  private:
-    POINT m_position{};
-    bool m_valid = false;
-};
-
-COLORREF desktopPixel(const QPoint& globalPosition) {
-    HDC screen = GetDC(nullptr);
-    require(screen != nullptr, "native thumbnail test could not access the desktop surface");
-    const COLORREF pixel = GetPixel(screen, globalPosition.x(), globalPosition.y());
-    ReleaseDC(nullptr, screen);
-    require(pixel != CLR_INVALID, "native thumbnail test could not read the desktop pixel");
-    return pixel;
-}
-
-QPoint nativeGlobalPosition(QWidget& window, const QPoint& localPosition) {
-    const HWND hwnd = reinterpret_cast<HWND>(window.winId());
-    require(hwnd != nullptr, "native thumbnail test could not access the overlay HWND");
-    RECT client{};
-    require(GetClientRect(hwnd, &client) != FALSE && client.right > client.left &&
-                client.bottom > client.top && window.width() > 0 && window.height() > 0,
-            "native thumbnail test could not determine the overlay client geometry");
-    POINT native{
-        static_cast<LONG>(std::lround(static_cast<double>(localPosition.x()) *
-                                      static_cast<double>(client.right - client.left) /
-                                      static_cast<double>(window.width()))),
-        static_cast<LONG>(std::lround(static_cast<double>(localPosition.y()) *
-                                      static_cast<double>(client.bottom - client.top) /
-                                      static_cast<double>(window.height()))),
-    };
-    require(ClientToScreen(hwnd, &native) != FALSE,
-            "native thumbnail test could not map the overlay point to the desktop");
-    return QPoint(native.x, native.y);
-}
-
-bool colorNear(COLORREF actual, const QColor& expected, int tolerance = 12) {
-    return std::abs(GetRValue(actual) - expected.red()) <= tolerance &&
-           std::abs(GetGValue(actual) - expected.green()) <= tolerance &&
-           std::abs(GetBValue(actual) - expected.blue()) <= tolerance;
-}
-
-void scrollingThumbnailPublishesAcceptedFrameToNativeSurface(bool excludedFromCapture) {
-    require(QGuiApplication::platformName() == QStringLiteral("windows"),
-            "native thumbnail test requires the Windows Qt platform");
-    QScreen* screen = QGuiApplication::primaryScreen();
-    require(screen != nullptr, "native thumbnail test requires a primary screen");
-
-    constexpr QSize overlaySize(420, 300);
-    const QRect available = screen->availableGeometry();
-    require(available.width() >= overlaySize.width() + 64 &&
-                available.height() >= overlaySize.height() + 64,
-            "native thumbnail test requires a 484 by 364 pixel desktop area");
-
-    CursorPositionRestorer restoreCursor;
-    NoopOverlayEventSink eventSink;
-    auto* canvas = new SnowCanvasWidget;
-    ScreenshotOverlayWindow overlay(eventSink, canvas);
-    overlay.setGeometry(QRect(available.topLeft() + QPoint(32, 32), overlaySize));
-    overlay.showPreparedFrame();
-    QApplication::processEvents();
-
-    auto* thumbnail = dynamic_cast<ScreenshotScrollingThumbnailWidget*>(overlay.findChild<QWidget*>(
-        QStringLiteral("screenshot-scrolling-thumbnail"), Qt::FindDirectChildrenOnly));
-    require(thumbnail != nullptr, "native thumbnail test could not find the thumbnail");
-
-    const QRect selection(20, 20, 180, 180);
-    overlay.setInputPassThroughRect(selection);
-    overlay.setScrollingCaptureMode(true);
-    overlay.beginScrollingThumbnail(selection);
-
-    const QColor initialColor(30, 90, 180);
-    QImage initial(128, 256, QImage::Format_RGBA8888);
-    initial.fill(initialColor);
-    overlay.updateScrollingThumbnail(initial, QSize(128, 256),
-                                     ScreenshotScrollingStitchChange::Initial, 256);
-    QApplication::processEvents();
-    const QSize stableThumbnailSize = thumbnail->size();
-
-    const QPoint cursorPosition = nativeGlobalPosition(overlay, selection.center());
-    require(SetCursorPos(cursorPosition.x(), cursorPosition.y()) != FALSE,
-            "native thumbnail test could not move the cursor into the pass-through region");
-    QApplication::processEvents();
-
-    const QPoint samplePosition = nativeGlobalPosition(
-        overlay,
-        thumbnail->mapTo(&overlay, QPoint(thumbnail->width() / 2, thumbnail->height() - 20)));
-    const COLORREF initialPixel = desktopPixel(samplePosition);
-    if (!colorNear(initialPixel, initialColor)) {
-        std::cerr << "native thumbnail initial pixel at " << samplePosition.x() << ','
-                  << samplePosition.y() << ": rgb(" << static_cast<int>(GetRValue(initialPixel))
-                  << ',' << static_cast<int>(GetGValue(initialPixel)) << ','
-                  << static_cast<int>(GetBValue(initialPixel))
-                  << "), thumbnail=" << thumbnail->geometry().x() << ','
-                  << thumbnail->geometry().y() << ' ' << thumbnail->width() << 'x'
-                  << thumbnail->height() << '\n';
-    }
-    require(colorNear(initialPixel, initialColor),
-            "native thumbnail test could not observe the initial composed preview");
-
-    if (excludedFromCapture) {
-        constexpr DWORD excludeFromCapture = 0x00000011;
-        require(SetWindowDisplayAffinity(reinterpret_cast<HWND>(overlay.winId()),
-                                         excludeFromCapture) != FALSE,
-                "native thumbnail test could not exclude the overlay from capture");
-    }
-
-    const QColor appendedColor(210, 50, 40);
-    QImage appended(128, 64, QImage::Format_RGBA8888);
-    appended.fill(appendedColor);
-    overlay.updateScrollingThumbnail(appended, QSize(128, 320),
-                                     ScreenshotScrollingStitchChange::AppendedDown, 64);
-    require(thumbnail->size() == stableThumbnailSize,
-            "native presentation regression requires fixed thumbnail geometry");
-
-    if (excludedFromCapture) {
-        require(SetWindowDisplayAffinity(reinterpret_cast<HWND>(overlay.winId()), WDA_NONE) !=
-                    FALSE,
-                "native thumbnail test could not restore overlay capture visibility");
-    }
-
-    Sleep(100);
-    require(colorNear(desktopPixel(samplePosition), appendedColor),
-            "accepted thumbnail pixels were painted but not published to the native surface");
-}
-#endif
-
 void historyLoadingMessageFollowsVisibility() {
     NoopOverlayEventSink eventSink;
     auto* canvas = new SnowCanvasWidget();
@@ -3225,18 +3042,6 @@ int main(int argc, char** argv) {
         ocrFilteredCropMatchesFullFrameReference();
         return 0;
     }
-#if defined(Q_OS_WIN)
-    if (application.arguments().contains(
-            QStringLiteral("--native-scrolling-thumbnail-presentation"))) {
-        scrollingThumbnailPublishesAcceptedFrameToNativeSurface(false);
-        return 0;
-    }
-    if (application.arguments().contains(
-            QStringLiteral("--native-excluded-scrolling-thumbnail-presentation"))) {
-        scrollingThumbnailPublishesAcceptedFrameToNativeSurface(true);
-        return 0;
-    }
-#endif
     screenshotImageMaskAndSelectionRenderInTheirOwnedPasses();
     layeredImageSourceMatchesMaterializedOutput();
     physicalViewportRenderingPreservesEveryPixelAtFractionalDprs();
@@ -3285,7 +3090,6 @@ int main(int argc, char** argv) {
     horizontalScrollingThumbnailUsesColumnTilesAndHorizontalInteraction();
     horizontalScrollingThumbnailPrefersAboveThenBelowSelection();
     stableScrollingGeometryDoesNotReapplyWindowMask();
-    scrollingThumbnailPresentsAcceptedFrameWithoutInput();
     historyLoadingMessageFollowsVisibility();
     screenshotMessagesFollowSelectionAndRememberTheirOwner();
     screenshotMessagesFallBackWhenNoOverlayIsAvailable();

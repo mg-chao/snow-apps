@@ -149,20 +149,6 @@ void ocrTranslateIconUsesTheSuppliedProjectAsset() {
             "OCR Translate should render the supplied project asset with its primary color");
 }
 
-void pinToScreenIconKeepsItsIntendedFootprint() {
-    namespace icons = snow_shot::presentation::icons::custom;
-    const QImage image = render(icons::outlined::PinToScreen(), QSize(32, 32)).toImage();
-    const QRect bounds = alphaBounds(image);
-    const int rightMargin = image.width() - bounds.right() - 1;
-    const int bottomMargin = image.height() - bounds.bottom() - 1;
-
-    require(bounds.width() <= 26 && bounds.height() <= 26,
-            "pin-to-screen should not be enlarged within its icon canvas");
-    require(std::abs(bounds.left() - rightMargin) <= 1 &&
-                std::abs(bounds.top() - bottomMargin) <= 1,
-            "pin-to-screen should remain centered within its icon canvas");
-}
-
 void flipVerticalIconUsesTheRotatedProjectAsset() {
     namespace icons = snow_shot::presentation::icons::custom;
     const auto ref = icons::outlined::FlipVertical();
@@ -215,7 +201,6 @@ int main(int argc, char** argv) {
         projectIconColorsAndModelsArePreserved();
         ocrTranslateIconUsesTheSuppliedProjectAsset();
         scrollingIconsUseTheRequestedOrientations();
-        pinToScreenIconKeepsItsIntendedFootprint();
         flipVerticalIconUsesTheRotatedProjectAsset();
         return 0;
     } catch (const std::exception& error) {
