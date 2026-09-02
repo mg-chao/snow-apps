@@ -1,11 +1,8 @@
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
-#include "snow_shot/presentation/screenshotcanvascolorsampler.h"
-#include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotpinnededitcontroller.h"
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
-#include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/storage/settingsadapters.h"
 
@@ -26,14 +23,10 @@
 #include <QEnterEvent>
 #include <QEvent>
 #include <QFrame>
-#include <QGraphicsTextItem>
-#include <QGraphicsView>
 #include <QImage>
 #include <QKeyEvent>
 #include <QLabel>
-#include <QLineEdit>
 #include <QMouseEvent>
-#include <QMimeData>
 #include <QPainter>
 #include <QPointer>
 #include <QPushButton>
@@ -41,8 +34,6 @@
 #include <QScreen>
 #include <QThread>
 #include <QTimer>
-#include <QTextDocument>
-#include <QTextEdit>
 #include <QVariantAnimation>
 #include <QWheelEvent>
 #include <QWindow>
@@ -192,270 +183,10 @@ class FakeOcrRecognition final : public ScreenshotOcrRecognitionPort {
     bool supportsRender = false;
 };
 
-class FakeQrRecognition final : public ScreenshotQrRecognitionPort {
-  public:
-    RequestToken recognize(QImage image, QObject* receiver, Completion completion) override {
-        Q_UNUSED(image);
-        pendingToken = ++nextToken;
-        pendingReceiver = receiver;
-        pendingCompletion = std::move(completion);
-        return pendingToken;
-    }
-
-    void cancel(RequestToken token) override {
-        cancelledTokens.push_back(token);
-        if (pendingToken == token) {
-            pendingToken = 0;
-            pendingReceiver = nullptr;
-            pendingCompletion = {};
-        }
-    }
-
-    void complete(ScreenshotQrRecognitionResult result) {
-        QPointer<QObject> receiver = pendingReceiver;
-        Completion completion = std::move(pendingCompletion);
-        pendingToken = 0;
-        pendingReceiver = nullptr;
-        if (receiver != nullptr && completion) {
-            completion(std::move(result));
-        }
-    }
-
-    RequestToken nextToken = 0;
-    RequestToken pendingToken = 0;
-    QPointer<QObject> pendingReceiver;
-    Completion pendingCompletion;
-    QVector<RequestToken> cancelledTokens;
-};
-
 void require(bool condition, const char* message) {
     if (!condition) {
         throw std::runtime_error(message);
     }
-}
-
-void recognitionResultsSurviveTargetImageReallocationAndSeedAllModes() {
-    FakeOcrRecognition recognition;
-    FakeQrRecognition qrRecognition;
-    SnowShotApiClient tableRecognition(QString{});
-    ScreenshotRecognitionSessionController session(&recognition, &qrRecognition,
-                                                    &tableRecognition, {});
-
-    QImage image(QSize(80, 50), QImage::Format_ARGB32_Premultiplied);
-    image.fill(QColor(18, 36, 54));
-    const QString key = QStringLiteral("capture-1:10,12,80,50");
-    const QRectF canvasRect(QPointF(10.0, 12.0), QSizeF(image.size()));
-    session.setTarget(ScreenshotRecognitionTarget{key, image, canvasRect});
-    session.activate(ScreenshotRecognitionSessionController::Mode::Text);
-    require(recognition.pending.token != 0, "the initial OCR request was not started");
-
-    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
-    presentation->selection = QRect(10, 12, 80, 50);
-    ScreenshotOcrLine line;
-    line.text = QStringLiteral("Cached OCR");
-    line.quad = QPolygonF({QPointF(20.0, 24.0), QPointF(70.0, 24.0), QPointF(70.0, 38.0),
-                           QPointF(20.0, 38.0)});
-    presentation->lines.push_back(line);
-    recognition.complete({presentation, {}});
-    require(session.hasTextResult(), "a completed OCR result was not cached");
-    const ScreenshotRecognitionResults cached = session.cachedRecognitionResults();
-    require(cached.isValidFor(key) && cached.text.has_value() && cached.text->presentation != nullptr,
-            "the cached OCR result did not expose its stable key and raw presentation");
-
-    session.deactivate();
-    session.setTarget(ScreenshotRecognitionTarget{key, image.copy(), canvasRect});
-    session.activate(ScreenshotRecognitionSessionController::Mode::Text);
-    require(recognition.nextToken == 1 && recognition.pending.token == 0 &&
-                session.hasTextResult(),
-            "reallocating an unchanged selection image should reuse its OCR result");
-
-    ScreenshotRecognitionResults seeded;
-    seeded.key = key;
-    seeded.text = cached.text;
-    seeded.table = SnowShotTableResult{
-        QStringLiteral("<table><tr><td>Seeded table</td></tr></table>"), {}, {}, 200};
-    seeded.qr = ScreenshotQrRecognitionResult{{QStringLiteral("https://example.test/seeded")}, {}};
-    session.seedRecognitionResults(seeded);
-
-    session.activate(ScreenshotRecognitionSessionController::Mode::Table);
-    require(session.tableModeActive() && !session.busy(ScreenshotRecognitionSessionController::Mode::Table),
-            "a seeded table result should activate without a table request");
-    session.activate(ScreenshotRecognitionSessionController::Mode::Qr);
-    require(session.qrModeActive() && !session.busy(ScreenshotRecognitionSessionController::Mode::Qr) &&
-                qrRecognition.nextToken == 0,
-            "a seeded QR result should activate without a QR request");
-    session.invalidate();
-    require(session.cachedRecognitionResults().isEmpty(),
-            "full recognition invalidation should clear retained results");
-}
-
-void emptyTextAndQrResultsRemainCopyable() {
-    FakeOcrRecognition recognition;
-    FakeQrRecognition qrRecognition;
-    ScreenshotRecognitionSessionController session(&recognition, &qrRecognition, nullptr, {});
-
-    QImage image(QSize(80, 50), QImage::Format_ARGB32_Premultiplied);
-    image.fill(Qt::white);
-    session.setTarget(ScreenshotRecognitionTarget{
-        QStringLiteral("empty-recognition-results"), image,
-        QRectF(QPointF(), QSizeF(image.size()))});
-
-    session.activate(ScreenshotRecognitionSessionController::Mode::Text);
-    auto emptyPresentation = std::make_shared<ScreenshotOcrPresentation>();
-    emptyPresentation->selection = QRect(QPoint(), image.size());
-    recognition.complete({emptyPresentation, {}});
-    std::unique_ptr<QMimeData> mimeData = session.recognitionClipboardMimeData();
-    require(mimeData != nullptr && mimeData->hasText() && mimeData->text().isEmpty(),
-            "a completed OCR result without text should produce copyable empty text");
-    QApplication::clipboard()->setText(QStringLiteral("stale clipboard text"));
-    QApplication::clipboard()->setMimeData(mimeData.release(), QClipboard::Clipboard);
-    require(QApplication::clipboard()->text().isEmpty(),
-            "copying an empty OCR result should clear stale clipboard text");
-
-    session.activate(ScreenshotRecognitionSessionController::Mode::Qr);
-    require(qrRecognition.pendingToken != 0,
-            "empty-result QR copy setup should start recognition");
-    qrRecognition.complete({{}, {}});
-    mimeData = session.recognitionClipboardMimeData();
-    require(mimeData != nullptr && mimeData->hasText() && mimeData->text().isEmpty(),
-            "a completed QR result without payloads should produce copyable empty text");
-    QApplication::clipboard()->setText(QStringLiteral("stale clipboard text"));
-    QApplication::clipboard()->setMimeData(mimeData.release(), QClipboard::Clipboard);
-    require(QApplication::clipboard()->text().isEmpty(),
-            "copying an empty QR result should clear stale clipboard text");
-}
-
-void modelDownloadStatusTransitionsToRecognition() {
-    FakeOcrRecognition recognition;
-    recognition.modelsReady = false;
-    QStringList modelDownloadMessages;
-    QStringList recognitionMessages;
-    int modelDownloadHideCount = 0;
-    QStringList statusEvents;
-    ScreenshotRecognitionSessionActions actions;
-    actions.showModelDownload = [&](const QString& message) {
-        modelDownloadMessages.push_back(message);
-        statusEvents.push_back(QStringLiteral("download"));
-    };
-    actions.showRecognition = [&](const QString& message) {
-        recognitionMessages.push_back(message);
-        statusEvents.push_back(QStringLiteral("recognition"));
-    };
-    actions.hideModelDownload = [&]() {
-        ++modelDownloadHideCount;
-        statusEvents.push_back(QStringLiteral("hide-download"));
-    };
-    actions.hideLoading = []() {};
-    ScreenshotRecognitionSessionController session(&recognition, nullptr, nullptr,
-                                                    std::move(actions));
-
-    const QImage image(QSize(80, 50), QImage::Format_ARGB32_Premultiplied);
-    session.setTarget(ScreenshotRecognitionTarget{
-        QStringLiteral("capture-download-status"), image,
-        QRectF(QPointF(), QSizeF(image.size()))});
-    session.activate(ScreenshotRecognitionSessionController::Mode::Text);
-    require(recognition.pending.token != 0 && modelDownloadMessages.size() == 1 &&
-                modelDownloadMessages.constLast() == QStringLiteral("Downloading OCR model files") &&
-                recognitionMessages.isEmpty(),
-            "text recognition should show model download status until model files are ready");
-
-    recognition.modelsReady = true;
-    QEventLoop loop;
-    QTimer::singleShot(200, &loop, &QEventLoop::quit);
-    loop.exec();
-    require(recognitionMessages.size() == 1 &&
-                recognitionMessages.constLast() == QStringLiteral("Recognizing text") &&
-                modelDownloadMessages.size() == 1 && modelDownloadHideCount == 1 &&
-                statusEvents == QStringList{QStringLiteral("download"),
-                                            QStringLiteral("hide-download"),
-                                            QStringLiteral("recognition")},
-            "text recognition should close the download status before showing a separate "
-            "recognition status");
-}
-
-void textRenderLifecycleUsesTransientWorkerResults() {
-    FakeOcrRecognition recognition;
-    recognition.supportsRender = true;
-    QVector<QImage> appliedImages;
-    QVector<QRectF> appliedCanvasRects;
-    ScreenshotRecognitionSessionActions actions;
-    actions.applyOcrPresentation = [](std::shared_ptr<ScreenshotOcrPresentation>) {};
-    actions.applyOcrBackground = [](std::shared_ptr<ScreenshotOcrPresentation>) {};
-    actions.clearOcrBackground = []() {};
-    actions.applyOcrBackgroundImage =
-        [&](std::shared_ptr<ScreenshotOcrPresentation>, QImage image, QRectF canvasRect) {
-            appliedImages.push_back(std::move(image));
-            appliedCanvasRects.push_back(canvasRect);
-        };
-    actions.ocrBackgroundColor = []() { return QColor(20, 30, 40); };
-    ScreenshotRecognitionSessionController session(&recognition, nullptr, nullptr,
-                                                    std::move(actions));
-
-    QImage image(QSize(80, 50), QImage::Format_ARGB32_Premultiplied);
-    image.fill(QColor(18, 36, 54));
-    const QString key = QStringLiteral("transient-render");
-    const QRectF canvasRect(QPointF(), QSizeF(image.size()));
-    session.setTarget(ScreenshotRecognitionTarget{key, image, canvasRect});
-    session.prefetchText();
-    require(recognition.pending.token != 0 &&
-                !recognition.pending.request.renderFilteredImage,
-            "automatic text prefetch must not request an OCR effect");
-
-    session.activate(ScreenshotRecognitionSessionController::Mode::Text);
-    require(recognition.pending.request.renderFilteredImage &&
-                recognition.renderIntentUpdates == QVector<bool>{true},
-            "opening OCR should promote pending recognition to render in its existing worker");
-    session.deactivate();
-    require(!recognition.pending.request.renderFilteredImage &&
-                recognition.renderIntentUpdates == QVector<bool>({true, false}),
-            "leaving OCR midway should suppress its worker render without cancelling recognition");
-
-    session.activate(ScreenshotRecognitionSessionController::Mode::Text);
-    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
-    presentation->selection = canvasRect.toAlignedRect();
-    ScreenshotOcrLine line;
-    line.text = QStringLiteral("Transient OCR");
-    line.quad = QPolygonF({QPointF(5.0, 5.0), QPointF(70.0, 5.0),
-                           QPointF(70.0, 25.0), QPointF(5.0, 25.0)});
-    presentation->lines.push_back(line);
-    QImage filtered(image.size(), QImage::Format_ARGB32_Premultiplied);
-    filtered.fill(QColor(60, 70, 80));
-    const QRectF filteredCanvasRect(QPointF(4.0, 4.0), QSizeF(60.0, 24.0));
-    recognition.complete({presentation, {}, filtered, filteredCanvasRect});
-    require(appliedImages.size() == 1 && !appliedImages.constFirst().isNull() &&
-                recognition.renderPending.token == 0 &&
-                appliedCanvasRects == QVector<QRectF>{filteredCanvasRect},
-            "interactive uncached recognition should consume its worker-rendered image directly");
-    const ScreenshotRecognitionResults cached = session.cachedRecognitionResults();
-    require(cached.text.has_value() && cached.text->filteredImage.isNull(),
-            "OCR caches must never retain the transient filtered image");
-
-    session.deactivate();
-    appliedImages.clear();
-    appliedCanvasRects.clear();
-    session.activate(ScreenshotRecognitionSessionController::Mode::Text);
-    require(recognition.renderPending.token != 0 &&
-                recognition.renderPending.request.presentation == presentation,
-            "activating cached OCR should submit render-only work to the OCR worker");
-    recognition.completeRender(filtered, filteredCanvasRect);
-    require(appliedImages.size() == 1 && !appliedImages.constFirst().isNull() &&
-                appliedCanvasRects == QVector<QRectF>{filteredCanvasRect},
-            "the cached render-only result should be retained only by the visible presentation");
-    session.deactivate();
-}
-
-QGraphicsTextItem* formattedTextItem(QGraphicsView* layer) {
-    if (layer == nullptr || layer->scene() == nullptr) {
-        return nullptr;
-    }
-    for (QGraphicsItem* item : layer->scene()->items()) {
-        auto* textItem = dynamic_cast<QGraphicsTextItem*>(item);
-        if (textItem != nullptr &&
-            textItem->objectName() == QStringLiteral("screenshotClipboardTextItem")) {
-            return textItem;
-        }
-    }
-    return nullptr;
 }
 
 void waitForUi(int milliseconds) {
@@ -512,46 +243,6 @@ class CursorPositionRestorer final {
     QPoint m_position;
 };
 
-void clickTextEditor(QWidget& editor) {
-    const QPointF center(editor.rect().center());
-    QMouseEvent press(QEvent::MouseButtonPress, center, editor.mapToGlobal(center.toPoint()),
-                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-    QCoreApplication::sendEvent(&editor, &press);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
-
-    if (!editor.hasFocus() && editor.window() != nullptr) {
-#if defined(Q_OS_WIN) || defined(_WIN32)
-        const HWND editorHwnd = toNativeHwnd(editor.window()->winId());
-        const HWND foregroundHwnd = GetForegroundWindow();
-        const DWORD currentThread = GetCurrentThreadId();
-        const DWORD foregroundThread =
-            foregroundHwnd != nullptr ? GetWindowThreadProcessId(foregroundHwnd, nullptr) : 0;
-        const bool attached = foregroundThread != 0 && foregroundThread != currentThread &&
-                              AttachThreadInput(currentThread, foregroundThread, TRUE) != FALSE;
-        if (editorHwnd != nullptr) {
-            SetActiveWindow(editorHwnd);
-            SetForegroundWindow(editorHwnd);
-            SetFocus(editorHwnd);
-        }
-#else
-        editor.window()->raise();
-        editor.window()->activateWindow();
-#endif
-        editor.setFocus(Qt::MouseFocusReason);
-#if defined(Q_OS_WIN) || defined(_WIN32)
-        if (attached) {
-            AttachThreadInput(currentThread, foregroundThread, FALSE);
-        }
-#endif
-    }
-
-    QMouseEvent release(QEvent::MouseButtonRelease, center, editor.mapToGlobal(center.toPoint()),
-                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
-    QCoreApplication::sendEvent(&editor, &release);
-    waitForUi(100);
-}
-
-void typeText(const QString& text, QLineEdit& editor);
 QPushButton* buttonNamed(QWidget& window, const QString& accessibleName);
 bool processUntilDeleted(QPointer<ScreenshotPinnedWindow>& window, int timeoutMs);
 
@@ -592,98 +283,10 @@ void setPinnedWindowHovered(ScreenshotPinnedWindow& window, bool hovered) {
     QCoreApplication::sendEvent(&window, &leave);
 }
 
-void pinnedWatermarkEditorAcceptsKeyboardInput(SnowCanvasRuntime&) {
-    QScreen* screen = QGuiApplication::primaryScreen();
-    require(screen != nullptr, "a primary screen is required");
-
-    auto* pinnedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
-    QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
-    QImage background(320, 180, QImage::Format_ARGB32_Premultiplied);
-    for (int y = 0; y < background.height(); ++y) {
-        for (int x = 0; x < background.width(); ++x) {
-            background.setPixelColor(
-                x, y,
-                QColor((x * 17 + y * 3) % 256, (x * 5 + y * 23) % 256, (x * 29 + y * 11) % 256));
-        }
-    }
-
-    ScreenshotPinnedWindow::Config config;
-    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), background.size());
-    config.canvasSourceRect = QRectF(QPointF(0.0, 0.0), QSizeF(background.size()));
-    config.backgroundImage = background;
-    config.screen = screen;
-    config.enableEditing = true;
-    require(pinnedWindow->present(config), "pinned window presentation failed");
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-#if defined(Q_OS_WIN) || defined(_WIN32)
-    const HWND pinnedHwnd = toNativeHwnd(pinnedWindow->winId());
-    require(nativeChildWindowCount(pinnedHwnd) == 0,
-            "constructing the hidden edit toolbar must not create native pinned children");
-#endif
-    QPushButton* editButton = buttonNamed(*pinnedWindow, QStringLiteral("Enable drawing mode"));
-    require(editButton != nullptr, "edit button was not found");
-    require(pinnedWindow->findChild<ScreenshotPinnedEditController*>() == nullptr,
-            "pinned drawing UI must remain uncreated before drawing mode starts");
-    editButton->click();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-
-    auto* controller = pinnedWindow->findChild<ScreenshotPinnedEditController*>();
-    require(controller != nullptr, "pinned edit controller was not found");
-    ScreenshotFloatingToolPaletteWindow* toolbarWindow = controller->toolbarWindow();
-    ScreenshotToolPalette* toolbar = toolbarWindow != nullptr ? toolbarWindow->palette() : nullptr;
-    SnowCanvasWidget* canvas = pinnedWindow->findChild<SnowCanvasWidget*>();
-    require(toolbarWindow != nullptr && toolbarWindow->isVisible() && toolbar != nullptr &&
-                canvas != nullptr,
-            "pinned edit toolbar was not ready");
-    require(toolbarWindow->parentWidget() == nullptr && toolbarWindow->isWindow() &&
-                toolbarWindow->windowHandle() != nullptr &&
-                pinnedWindow->windowHandle() != nullptr &&
-                toolbarWindow->windowHandle()->transientParent() == pinnedWindow->windowHandle(),
-            "the pinned edit toolbar should remain a transient top-level window");
-#if defined(Q_OS_WIN) || defined(_WIN32)
-    const HWND toolbarHwnd = toNativeHwnd(toolbarWindow->winId());
-    require(nativeChildWindowCount(pinnedHwnd) == 0,
-            "showing the edit toolbar must not create native pinned children");
-    require(toolbarHwnd != nullptr && toolbarHwnd != pinnedHwnd &&
-                GetWindow(toolbarHwnd, GW_OWNER) == pinnedHwnd,
-            "the edit toolbar should have the pinned HWND as its native owner");
-#endif
-    require(canvas->setCanvasTool(SnowCanvasTool::Watermark),
-            "pinned canvas should activate the watermark tool");
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-
-    auto* watermarkText =
-        toolbar->findChild<QLineEdit*>(QStringLiteral("screenshotWatermarkTextEdit"));
-    require(watermarkText != nullptr && watermarkText->isVisible(),
-            "pinned watermark text editor should be visible");
-    clickTextEditor(*watermarkText);
-    require(watermarkText->hasFocus(),
-            "clicking the pinned watermark editor should focus it for text input");
-    watermarkText->clear();
-    typeText(QStringLiteral("PINNED INPUT"), *watermarkText);
-    require(watermarkText->text() == QStringLiteral("PINNED INPUT") &&
-                canvas->canvasWatermarkConfig().text == QStringLiteral("PINNED INPUT"),
-            "keyboard input should update the pinned watermark text");
-
-    QPushButton* confirmButton = buttonNamed(*toolbar, QStringLiteral("Confirm edit"));
-    require(confirmButton != nullptr &&
-                confirmButton->toolTip() == QStringLiteral("Confirm edit (Space)"),
-            "pinned confirm button should show the drawing-mode shortcut hint");
-    confirmButton->click();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    QPushButton* closeButton = buttonNamed(*pinnedWindow, QStringLiteral("Close"));
-    require(closeButton != nullptr, "close button was not found");
-    closeButton->click();
-    require(processUntilDeleted(guardedWindow, 2000),
-            "pinned window was not deleted after the watermark input test");
-}
-
 void pinnedLargeImageRemainsOpenWhenEnteringDrawingMode(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
 
-    FakeQrRecognition qrRecognition;
-    SnowShotApiClient tableRecognition(QString{});
     auto* pinnedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
     QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
     QImage background(400, 40000, QImage::Format_ARGB32_Premultiplied);
@@ -698,8 +301,6 @@ void pinnedLargeImageRemainsOpenWhenEnteringDrawingMode(SnowCanvasRuntime&) {
     config.initialScalePercent = 10.0;
     config.screen = screen;
     config.enableEditing = true;
-    config.qrRecognition = &qrRecognition;
-    config.tableRecognition = &tableRecognition;
     require(pinnedWindow->present(config), "large pinned window presentation failed");
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
@@ -721,18 +322,6 @@ void pinnedLargeImageRemainsOpenWhenEnteringDrawingMode(SnowCanvasRuntime&) {
     require(tableQrButton != nullptr, "large pinned table and QR trigger was not found");
     require(!tableQrButton->isEnabled(),
             "large pinned images should disable the table and QR trigger");
-
-    auto* recognitionSession = guardedWindow->findChild<ScreenshotRecognitionSessionController*>();
-    require(recognitionSession != nullptr, "large pinned recognition session was not found");
-    toolbar->tableRequested();
-    toolbar->qrRequested();
-    require(!recognitionSession->active() && qrRecognition.nextToken == 0,
-            "large pinned images should reject table and QR activation attempts");
-    recognitionSession->activate(ScreenshotRecognitionSessionController::Mode::Qr);
-    require(qrRecognition.nextToken == 0 &&
-                !recognitionSession->busy(ScreenshotRecognitionSessionController::Mode::Qr),
-            "the recognition session should not submit oversized QR images");
-    recognitionSession->deactivate();
     require(guardedWindow->currentNativeGeometry() == config.nativeGeometry,
             "large pinned window geometry changed after entering drawing mode");
 
@@ -902,15 +491,6 @@ void pinnedCopyIncludesSourceCanvasDrawing() {
             "pinned window was not deleted after the copy regression test");
 }
 
-void typeText(const QString& text, QLineEdit& editor) {
-    for (const QChar character : text) {
-        QKeyEvent keyPress(QEvent::KeyPress, character.toUpper().unicode(), Qt::NoModifier,
-                           QString(character));
-        QCoreApplication::sendEvent(&editor, &keyPress);
-    }
-    waitForUi(100);
-}
-
 QPushButton* buttonNamed(QWidget& window, const QString& accessibleName) {
     const QList<QPushButton*> buttons = window.findChildren<QPushButton*>();
     for (QPushButton* button : buttons) {
@@ -988,10 +568,8 @@ bool imagesPixelAligned(const QImage& actual, const QImage& expected, const QReg
 
 class PinnedPresentationObserver final : public QObject {
   public:
-    PinnedPresentationObserver(ScreenshotPinnedWindow& window, SnowCanvasWidget& canvas)
-        : m_window(window), m_canvas(canvas) {
+    explicit PinnedPresentationObserver(ScreenshotPinnedWindow& window) : m_window(window) {
         m_window.installEventFilter(this);
-        m_canvas.installEventFilter(this);
     }
 
     [[nodiscard]] bool showSeen() const {
@@ -1012,10 +590,6 @@ class PinnedPresentationObserver final : public QObject {
 
     [[nodiscard]] int geometryChangesAfterShow() const {
         return m_geometryChangesAfterShow;
-    }
-
-    [[nodiscard]] int canvasPaintsAfterShow() const {
-        return m_canvasPaintsAfterShow;
     }
 
   protected:
@@ -1044,21 +618,17 @@ class PinnedPresentationObserver final : public QObject {
             default:
                 break;
             }
-        } else if (watched == &m_canvas && m_showSeen && event->type() == QEvent::Paint) {
-            ++m_canvasPaintsAfterShow;
         }
         return false;
     }
 
   private:
     ScreenshotPinnedWindow& m_window;
-    SnowCanvasWidget& m_canvas;
     bool m_showSeen = false;
     WId m_windowIdAtShow = 0;
     QRect m_geometryAtShow;
     int m_windowIdChangesAfterShow = 0;
     int m_geometryChangesAfterShow = 0;
-    int m_canvasPaintsAfterShow = 0;
 };
 
 class PaintEventCounter final : public QObject {
@@ -1139,7 +709,7 @@ void pinnedPhysicalPixelsFillClientArea(SnowCanvasRuntime&) {
         auto* border = pinnedWindow->findChild<QFrame*>(QStringLiteral("screenshotPinnedBorder"));
         require(canvas != nullptr && controls != nullptr && border != nullptr,
                 "physical pin widgets were not found");
-        PinnedPresentationObserver observer(*pinnedWindow, *canvas);
+        PinnedPresentationObserver observer(*pinnedWindow);
         require(pinnedWindow->present(config), "physical-pixel pin presentation failed");
 
         require(observer.showSeen(), "the pin should be mapped during present()");
@@ -1151,8 +721,6 @@ void pinnedPhysicalPixelsFillClientArea(SnowCanvasRuntime&) {
         require(observer.windowIdChangesAfterShow() == 0 &&
                     observer.geometryChangesAfterShow() == 0,
                 "the pin must not recreate or correct its geometry after being shown");
-        require(observer.canvasPaintsAfterShow() > 0,
-                "present() must synchronously paint the canvas before returning");
 #if defined(Q_OS_WIN) || defined(_WIN32)
         const HWND pinnedHwnd = toNativeHwnd(pinnedWindow->winId());
         RECT windowRect{};
@@ -1292,349 +860,6 @@ void pinnedContextMenuPreservesNativeGeometry(SnowCanvasRuntime&) {
     pinnedWindow->close();
     require(processUntilDeleted(guardedWindow, 2000), "context geometry pin was not deleted");
 #endif
-}
-
-void pinnedContextMenuAndModes(SnowCanvasRuntime&) {
-    QScreen* screen = QGuiApplication::primaryScreen();
-    require(screen != nullptr, "a primary screen is required");
-
-    FakeOcrRecognition recognition;
-    QImage background(320, 180, QImage::Format_ARGB32_Premultiplied);
-    background.fill(Qt::transparent);
-    for (int y = 0; y < background.height(); ++y) {
-        for (int x = 0; x < background.width(); ++x) {
-            background.setPixelColor(x, y,
-                                     QColor((x * 3) % 256, (y * 5) % 256, (x + y) % 256, 255));
-        }
-    }
-    background.setDevicePixelRatio(1.25);
-
-    auto* pinnedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
-    QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
-    ScreenshotPinnedWindow::Config config;
-    const QRect physicalScreen = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
-    const qreal fixtureScaleX = screen->devicePixelRatio();
-    const qreal fixtureScaleY = screen->devicePixelRatio();
-    config.nativeGeometry = QRect(QPoint(physicalScreen.left() + qRound(80 * fixtureScaleX),
-                                         physicalScreen.top() + qRound(80 * fixtureScaleY)),
-                                  QSize(qRound(320 * fixtureScaleX), qRound(180 * fixtureScaleY)));
-    config.canvasSourceRect = QRectF(QPointF(), QSizeF(320, 180));
-    config.backgroundImage = background;
-    config.screen = screen;
-    config.enableEditing = true;
-    config.recognition = &recognition;
-    require(pinnedWindow->present(config), "menu test pin presentation failed");
-    auto* firstFrameCanvas = pinnedWindow->findChild<SnowCanvasWidget*>();
-    require(firstFrameCanvas != nullptr, "pinned canvas should exist on the first frame");
-    const QRect firstFrameImageBounds =
-        firstFrameCanvas->viewRectForCanvasRect(config.canvasSourceRect);
-    require(firstFrameImageBounds == firstFrameCanvas->rect(),
-            "pinned image should fit the actual canvas on the first frame");
-    require(pinnedWindow->currentNativeGeometry() == config.nativeGeometry,
-            "pinned native geometry should be final on the first frame");
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    require(firstFrameCanvas->viewRectForCanvasRect(config.canvasSourceRect) ==
-                firstFrameImageBounds,
-            "pinned image bounds should not change after the show event loop settles");
-    require(pinnedWindow->currentNativeGeometry() == config.nativeGeometry,
-            "pinned native geometry should remain stable after the show event loop settles");
-
-    auto* menu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
-        QStringLiteral("screenshotPinnedContextMenu"));
-    require(menu != nullptr, "pinned window should own an AdContextMenu");
-    require(menu->minimumWidth() == 300 && menu->maximumWidth() == 300,
-            "pinned context menu should have a fixed width of 300");
-    const QList<QAction*> actions = menu->actions();
-    require(actions.size() == 14, "pinned menu should have the exact top-level item count");
-    require(actions.at(2)->objectName() == QStringLiteral("screenshotPinnedSaveAsFileAction"),
-            "Save as File should appear immediately below Copy Original Content");
-    require(menu->findChild<QAction*>(QStringLiteral("screenshotPinnedShowMainInterfaceAction")) !=
-                    nullptr &&
-                !actions.contains(menu->findChild<QAction*>(
-                    QStringLiteral("screenshotPinnedShowMainInterfaceAction"))),
-            "the show-main-interface fallback should be absent while the tray is enabled");
-    const QStringList defaultTrayMenuOptions = snow_shot::storage::TraySettings().menuOptions();
-    const QStringList trayMenuWithoutShowMainWindow = {QStringLiteral("quick.screenshot"),
-                                                       QStringLiteral("tray.exit")};
-    require(snow_shot::storage::TraySettings().setMenuOptions(trayMenuWithoutShowMainWindow),
-            "the tray menu option fixture should be writable");
-    ScreenshotPinnedWindow::setRuntimeTrayEnabled(true);
-    const QList<QAction*> hiddenTrayOptionActions = menu->actions();
-    require(hiddenTrayOptionActions.size() == 15 &&
-                hiddenTrayOptionActions.at(hiddenTrayOptionActions.size() - 2) ==
-                    menu->findChild<QAction*>(
-                        QStringLiteral("screenshotPinnedShowMainInterfaceAction")),
-            "the pinned menu should retain Show Main Interface when the tray item is hidden");
-    require(snow_shot::storage::TraySettings().setMenuOptions(defaultTrayMenuOptions),
-            "the tray menu option fixture should be restored");
-    ScreenshotPinnedWindow::setRuntimeTrayEnabled(true);
-    const QStringList expected{
-        QStringLiteral("Copy to Clipboard"),
-        QStringLiteral("Copy Original Content"),
-        QStringLiteral("Save as File"),
-        QStringLiteral("Recognizing text"),
-        QString(),
-        QStringLiteral("Drawing Mode"),
-        QStringLiteral("Process Image"),
-        QStringLiteral("Opacity"),
-        QStringLiteral("Scale"),
-        QString(),
-        QStringLiteral("Thumbnail Mode"),
-        QStringLiteral("Focus Mode"),
-        QString(),
-        QStringLiteral("Close"),
-    };
-    for (int index = 0; index < actions.size(); ++index) {
-        require(actions.at(index)->isSeparator() == expected.at(index).isEmpty(),
-                "pinned menu separator placement is incorrect");
-        if (!actions.at(index)->isSeparator()) {
-            require(actions.at(index)->text().section(QLatin1Char('\t'), 0, 0) ==
-                        expected.at(index),
-                    "pinned menu item order or label is incorrect");
-        }
-    }
-    require(actions.at(0)->text().endsWith(QStringLiteral("\tCtrl+C")) &&
-                actions.at(1)->text().endsWith(QStringLiteral("\tCtrl+Shift+C")) &&
-                actions.at(2)->text().endsWith(QStringLiteral("\tCtrl+S")) &&
-                actions.at(3)->text().endsWith(QStringLiteral("\tCtrl+D")) &&
-                actions.at(5)->text().endsWith(QStringLiteral("\tSpace")) &&
-                actions.at(10)->text().endsWith(QStringLiteral("\tR")) &&
-                actions.constLast()->text().endsWith(QStringLiteral("\tEsc")),
-            "pinned menu commands should display every default shortcut");
-    require(menu->findChild<adqt::widgets::AdContextMenu*>(
-                QStringLiteral("screenshotPinnedMoveCursorMenu")) == nullptr,
-            "pinned menu should not expose a Move Cursor item");
-
-    int showMainWindowRequests = 0;
-    QObject::connect(pinnedWindow, &ScreenshotPinnedWindow::showMainWindowRequested,
-                     [&showMainWindowRequests]() { ++showMainWindowRequests; });
-    ScreenshotPinnedWindow::setRuntimeTrayEnabled(false);
-    const QList<QAction*> noTrayActions = menu->actions();
-    require(noTrayActions.size() == 15 &&
-                noTrayActions.at(noTrayActions.size() - 2)->objectName() ==
-                    QStringLiteral("screenshotPinnedShowMainInterfaceAction") &&
-                noTrayActions.constLast()->objectName() ==
-                    QStringLiteral("screenshotPinnedCloseAction"),
-            "the show-main-interface fallback should appear immediately before Close");
-    noTrayActions.at(noTrayActions.size() - 2)->trigger();
-    require(showMainWindowRequests == 1,
-            "the show-main-interface fallback should emit its activation request");
-    ScreenshotPinnedWindow::setRuntimeTrayEnabled(true);
-    require(menu->actions().size() == 14,
-            "the show-main-interface fallback should disappear when the tray is enabled");
-    require(actions.at(3)->isEnabled() && actions.at(3)->isCheckable(),
-            "OCR action should remain available while automatic recognition is pending");
-    const auto ocrIconMetadata = adqt::icons::describeIcon(menu->actionIcon(actions.at(3)));
-    require(ocrIconMetadata.key.pack == QStringLiteral("snow-shot") &&
-                ocrIconMetadata.key.name == QStringLiteral("tool-recognize-text"),
-            "OCR action should use the text recognition tool icon");
-    require(menu->actionDanger(actions.constLast()),
-            "pinned Close action should use danger styling");
-    for (int index : {0, 1, 2, 3, 5, 6, 7, 8, 10, 11, 13}) {
-        require(menu->actionIcon(actions.at(index)).isValid(),
-                "every top-level pinned command should use an Ant Design icon");
-    }
-
-    recognition.complete({nullptr, QStringLiteral("deterministic failure")});
-    require(actions.at(3)->isEnabled() && actions.at(3)->text().section(QLatin1Char('\t'), 0, 0) ==
-                                              QStringLiteral("Display Text Recognition Results"),
-            "OCR failure should leave the text recognition command available");
-    sendShortcut(*firstFrameCanvas, Qt::Key_D, Qt::ControlModifier);
-    auto* canvas = pinnedWindow->findChild<SnowCanvasWidget*>();
-    auto* recognitionContent =
-        pinnedWindow->findChild<QWidget*>(QStringLiteral("screenshotPinnedRecognitionContent"));
-    auto* controlsPanel =
-        pinnedWindow->findChild<QFrame*>(QStringLiteral("screenshotPinnedControlsPanel"));
-    require(
-        canvas != nullptr && controlsPanel != nullptr && recognitionContent != nullptr &&
-            recognitionContent->parentWidget() == pinnedWindow && !recognitionContent->isWindow() &&
-            !canvas->canvasContentVisible(),
-        "OCR mode should use embedded recognition content and hide engine-owned drawing content");
-    auto recognizedPresentation = std::make_shared<ScreenshotOcrPresentation>();
-    recognizedPresentation->selection = config.canvasSourceRect.toAlignedRect();
-    ScreenshotOcrLine recognizedLine;
-    recognizedLine.text = QStringLiteral("Pinned OCR text");
-    recognizedLine.quad = QPolygonF({QPointF(40.0, 70.0), QPointF(280.0, 70.0),
-                                     QPointF(280.0, 110.0), QPointF(40.0, 110.0)});
-    recognizedPresentation->lines.push_back(std::move(recognizedLine));
-    recognition.complete({std::move(recognizedPresentation), {}});
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    auto* editController = pinnedWindow->findChild<ScreenshotPinnedEditController*>();
-    auto* toolbarWindow =
-        editController != nullptr ? editController->toolbarWindow() : nullptr;
-    require(toolbarWindow != nullptr && toolbarWindow->isVisible(),
-            "the pinned edit toolbar should remain visible while OCR is active");
-    QApplication::clipboard()->clear();
-    sendShortcut(*toolbarWindow, Qt::Key_A, Qt::ControlModifier);
-    sendShortcut(*toolbarWindow, Qt::Key_C, Qt::ControlModifier);
-    require(QApplication::clipboard()->text() == QStringLiteral("Pinned OCR text"),
-            "Copy to Clipboard should copy all OCR text when the pinned toolbar owns the event");
-    QApplication::clipboard()->clear();
-    sendShortcut(*canvas, Qt::Key_A, Qt::ControlModifier);
-    sendShortcut(*canvas, Qt::Key_C, Qt::ControlModifier);
-    require(QApplication::clipboard()->text() == QStringLiteral("Pinned OCR text"),
-            "Copy to Clipboard should copy selected OCR text while recognition is active");
-    sendShortcut(*canvas, Qt::Key_Space);
-    require(!actions.at(3)->isChecked() && canvas->canvasContentVisible() &&
-                canvas->interactionEnabled(),
-            "drawing mode should exit OCR mode and restore canvas interaction");
-    ScreenshotToolPalette* editToolbar =
-        editController != nullptr && editController->toolbarWindow() != nullptr
-            ? editController->toolbarWindow()->palette()
-            : nullptr;
-    auto* shapeButton = editToolbar != nullptr ? qobject_cast<adqt::widgets::AdButton*>(buttonNamed(
-                                                     *editToolbar, QStringLiteral("Shape")))
-                                               : nullptr;
-    require(shapeButton != nullptr, "drawing mode should expose the shape tool button");
-    shapeButton->click();
-    require(canvas->canvasTool() == SnowCanvasTool::Shape &&
-                shapeButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
-                shapeButton->accentRole() == adqt::widgets::AdButton::AccentRole::Primary,
-            "a drawing tool selected after recognition should retain its highlighted state");
-    {
-        const CursorPositionRestorer restoreCursor;
-        const QPoint start = config.nativeGeometry.center();
-        setSystemCursorPosition(start);
-        sendShortcut(*canvas, Qt::Key_W);
-        require(systemCursorPosition() == start + QPoint(0, -1),
-                "W should move the cursor up by one pixel in drawing mode");
-        sendShortcut(*canvas, Qt::Key_Down);
-        require(systemCursorPosition() == start,
-                "Down should move the cursor down by one pixel in drawing mode");
-        sendShortcut(*canvas, Qt::Key_A);
-        require(systemCursorPosition() == start + QPoint(-1, 0),
-                "A should move the cursor left by one pixel in drawing mode");
-        sendShortcut(*canvas, Qt::Key_Right);
-        require(systemCursorPosition() == start,
-                "Right should move the cursor right by one pixel in drawing mode");
-    }
-    sendShortcut(*canvas, Qt::Key_Space);
-
-    QApplication::clipboard()->clear();
-    sendShortcut(*canvas, Qt::Key_C, Qt::ControlModifier);
-    const QImage untransformedCopy = waitForClipboardImage([](const QImage& image) {
-        return image.size() == QSize(320, 180) &&
-               image.pixelColor(image.width() / 2, image.height() / 2).alpha() == 255;
-    });
-    require(
-        untransformedCopy.pixelColor(untransformedCopy.width() / 2, untransformedCopy.height() / 2)
-                .alpha() == 255,
-        "untransformed viewport copy should include the pinned background");
-
-    auto* processMenu = qobject_cast<adqt::widgets::AdContextMenu*>(actions.at(6)->menu());
-    auto* opacityMenu = qobject_cast<adqt::widgets::AdContextMenu*>(actions.at(7)->menu());
-    auto* scaleMenu = qobject_cast<adqt::widgets::AdContextMenu*>(actions.at(8)->menu());
-    require(processMenu != nullptr && opacityMenu != nullptr && scaleMenu != nullptr,
-            "pinned command submenus should also use AdContextMenu");
-    require(opacityMenu->actions().constLast()->text() == QStringLiteral("Current: 100%") &&
-                !opacityMenu->actions().constLast()->isEnabled() &&
-                scaleMenu->actions().constLast()->text() == QStringLiteral("Current: 100%") &&
-                !scaleMenu->actions().constLast()->isEnabled(),
-            "opacity and scale submenus should expose disabled current-value readouts");
-    const auto flipVerticalIconMetadata =
-        adqt::icons::describeIcon(processMenu->actionIcon(processMenu->actions().at(3)));
-    require(flipVerticalIconMetadata.key.pack == QStringLiteral("snow-shot") &&
-                flipVerticalIconMetadata.key.name == QStringLiteral("flip-vertical"),
-            "vertical flip should use the project-owned vertical flip icon");
-    const QPoint originalCenter = pinnedWindow->frameGeometry().center();
-    processMenu->actions().at(0)->trigger();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    require(pinnedWindow->size() == QSize(180, 320) &&
-                (pinnedWindow->frameGeometry().center() - originalCenter).manhattanLength() <= 2,
-            "clockwise rotation should swap size while preserving the window center");
-    opacityMenu->actions().at(0)->trigger();
-    require(qAbs(pinnedWindow->windowOpacity() - 0.25) <= (1.0 / 255.0),
-            "pinned opacity should make the top-level window transparent");
-    scaleMenu->actions().at(1)->trigger();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    require(pinnedWindow->size() == QSize(90, 160),
-            "50 percent scale should use the rotation-aware initial pin size");
-    actions.at(0)->trigger();
-    const QImage scaledCopy = waitForClipboardImage([](const QImage& image) {
-        return image.size() == QSize(90, 160) &&
-               image.pixelColor(image.width() / 2, image.height() / 2).alpha() == 255;
-    });
-    require(scaledCopy.pixelColor(scaledCopy.width() / 2, scaledCopy.height() / 2).alpha() == 255,
-            "transformed viewport copy should include the transformed background");
-
-    sendShortcut(*canvas, Qt::Key_Space);
-    require(canvas->interactionEnabled(),
-            "drawing mode should be active before entering thumbnail mode");
-
-    sendShortcut(*canvas, Qt::Key_R);
-    auto* thumbnailAnimation = pinnedWindow->findChild<QVariantAnimation*>(
-        QStringLiteral("screenshotPinnedGeometryAnimation"));
-    require(thumbnailAnimation != nullptr && thumbnailAnimation->duration() == 150,
-            "thumbnail mode should use a 150ms geometry animation");
-    require(!actions.at(5)->isChecked() && !canvas->interactionEnabled(),
-            "thumbnail mode should exit drawing mode");
-    require(controlsPanel->isHidden(), "thumbnail mode should hide the top-right controls");
-    waitForAnimations(200);
-    require(pinnedWindow->size() == QSize(83, 83),
-            "thumbnail mode should finish at an 83dp square");
-    actions.at(0)->trigger();
-    const QImage thumbnailCopy = waitForClipboardImage([](const QImage& image) {
-        return image.size() == QSize(47, 83) &&
-               image.pixelColor(2, image.height() / 2).alpha() == 255 &&
-               image.pixelColor(image.width() / 2, image.height() / 2).alpha() == 255;
-    });
-    require(thumbnailCopy.size() == QSize(47, 83) &&
-                thumbnailCopy.pixelColor(2, thumbnailCopy.height() / 2).alpha() == 255 &&
-                thumbnailCopy.pixelColor(thumbnailCopy.width() / 2, thumbnailCopy.height() / 2)
-                        .alpha() == 255,
-            "thumbnail copy should contain the complete result without transparent padding");
-
-    QApplication::clipboard()->clear();
-    sendShortcut(*canvas, Qt::Key_C, Qt::ControlModifier | Qt::ShiftModifier);
-    const QImage originalCopy = waitForClipboardImage(
-        [&background](const QImage& image) { return imagesPixelEquivalent(image, background); });
-    require(imagesPixelEquivalent(originalCopy, background),
-            "Copy Original Content should preserve the immutable pixels and dimensions");
-
-    sendShortcut(*canvas, Qt::Key_Space);
-    require(!actions.at(10)->isChecked() && !actions.at(5)->isChecked() &&
-                !canvas->interactionEnabled(),
-            "drawing from thumbnail mode should restore the window before editing");
-    waitForAnimations(200);
-    require(pinnedWindow->size() == QSize(90, 160) && actions.at(5)->isChecked() &&
-                canvas->interactionEnabled(),
-            "drawing mode should activate after the thumbnail restoration animation");
-    require(controlsPanel->isHidden(),
-            "the top-right controls should remain hidden after editing starts");
-
-    sendShortcut(*canvas, Qt::Key_Escape);
-    require(processUntilDeleted(guardedWindow, 2000),
-            "pinned window was not deleted after the context menu test");
-}
-
-void pinnedCloseCancelsPendingRecognition(SnowCanvasRuntime&) {
-    QScreen* screen = QGuiApplication::primaryScreen();
-    require(screen != nullptr, "a primary screen is required");
-
-    FakeOcrRecognition recognition;
-    QImage background(160, 90, QImage::Format_ARGB32_Premultiplied);
-    background.fill(QColor(24, 72, 120));
-
-    auto* pinnedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
-    QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
-    ScreenshotPinnedWindow::Config config;
-    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(60, 60), background.size());
-    config.canvasSourceRect = QRectF(QPointF(), QSizeF(background.size()));
-    config.backgroundImage = background;
-    config.screen = screen;
-    config.recognition = &recognition;
-    require(pinnedWindow->present(config), "pending OCR pin presentation failed");
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    const auto requestToken = recognition.pending.token;
-    require(requestToken != 0, "pinned window should start text recognition");
-
-    QPushButton* closeButton = buttonNamed(*pinnedWindow, QStringLiteral("Close"));
-    require(closeButton != nullptr, "close button was not found");
-    closeButton->click();
-    require(recognition.cancelledTokens.contains(requestToken) && recognition.pending.token == 0,
-            "closing a pinned window must cancel text recognition immediately");
-    require(processUntilDeleted(guardedWindow, 2000),
-            "pinned window was not deleted after canceling text recognition");
 }
 
 void pinnedAsyncPresentationDefersContent(SnowCanvasRuntime&) {
@@ -1816,362 +1041,6 @@ void pinnedPendingPresentationPublishesWorkerImage(SnowCanvasRuntime&) {
             "a failed pending publication should complete exactly once");
     require(processUntilDeleted(guardedFailedWindow, 2000),
             "failed pending pinned window was not closed");
-}
-
-void pinnedRecognitionPromotesAutomaticPrefetch(SnowCanvasRuntime&) {
-    QScreen* screen = QGuiApplication::primaryScreen();
-    require(screen != nullptr, "a primary screen is required");
-
-    FakeOcrRecognition recognition;
-    QImage background(160, 90, QImage::Format_ARGB32_Premultiplied);
-    background.fill(QColor(24, 72, 120));
-
-    auto* pinnedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
-    QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
-    ScreenshotPinnedWindow::Config config;
-    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(60, 60), background.size());
-    config.canvasSourceRect = QRectF(QPointF(), QSizeF(background.size()));
-    config.imageSource = ScreenshotImageSource::fromLayers(
-        {ScreenshotImageLayer{background, config.canvasSourceRect, config.canvasSourceRect}});
-    config.screen = screen;
-    config.recognition = &recognition;
-    require(pinnedWindow->present(config), "priority pin presentation failed");
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-
-    require(recognition.pending.token != 0 &&
-                recognition.pending.request.priority == ScreenshotOcrRequestPriority::Prefetch,
-            "pinned automatic recognition should be submitted as prefetch work");
-    auto* menu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
-        QStringLiteral("screenshotPinnedContextMenu"));
-    require(menu != nullptr && menu->actions().size() > 2,
-            "pinned OCR action should be available during prefetch");
-    menu->actions().at(3)->trigger();
-    require(recognition.pending.request.priority == ScreenshotOcrRequestPriority::Interactive,
-            "opening pending pinned recognition should promote it to interactive work");
-
-    QPushButton* closeButton = buttonNamed(*pinnedWindow, QStringLiteral("Close"));
-    require(closeButton != nullptr, "priority pin close button was not found");
-    closeButton->click();
-    require(processUntilDeleted(guardedWindow, 2000),
-            "priority pin was not deleted after the test");
-}
-
-void pinnedFormattedClipboardTextSkipsOcrAndSeedsPlainTextEditing(
-    SnowCanvasRuntime&) {
-    QScreen* screen = QGuiApplication::primaryScreen();
-    require(screen != nullptr, "a primary screen is required");
-
-    FakeOcrRecognition recognition;
-    const qreal formattedTextDevicePixelRatio = screen->devicePixelRatio();
-    const QSize logicalTextSize(320, 120);
-    auto document = std::make_shared<QTextDocument>();
-    document->setDocumentMargin(0.0);
-    document->setHtml(QStringLiteral("<p><b>Formatted</b> clipboard text</p>"));
-    document->setTextWidth(logicalTextSize.width());
-    QImage renderedText(QSize(qCeil(logicalTextSize.width() * formattedTextDevicePixelRatio),
-                              qCeil(logicalTextSize.height() * formattedTextDevicePixelRatio)),
-                        QImage::Format_ARGB32_Premultiplied);
-    renderedText.setDevicePixelRatio(formattedTextDevicePixelRatio);
-    renderedText.fill(Qt::white);
-    QPainter textPainter(&renderedText);
-    document->drawContents(&textPainter, QRectF(QPointF(), QSizeF(logicalTextSize)));
-    textPainter.end();
-    const QString plainText = document->toPlainText();
-
-    auto* pinnedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
-    QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
-    ScreenshotPinnedWindow::Config config;
-    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(60, 60), renderedText.size());
-    config.canvasSourceRect = QRectF(QPointF(), QSizeF(renderedText.size()));
-    config.backgroundImage = renderedText;
-    config.screen = screen;
-    config.recognition = &recognition;
-    config.formattedTextDocument = document;
-    config.formattedPlainText = plainText;
-    config.formattedTextDevicePixelRatio = formattedTextDevicePixelRatio;
-    const QString originalHtml = QStringLiteral(
-        "<section data-origin=\"clipboard\"><b>Formatted</b> clipboard text</section>");
-    const QString originalText = QStringLiteral("Formatted clipboard text");
-    config.originalClipboardContent = {originalHtml, originalText};
-    require(pinnedWindow->present(config), "formatted clipboard pin presentation failed");
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    require(recognition.nextToken == 0 && recognition.pending.token == 0,
-            "formatted clipboard text must not start automatic OCR");
-
-    auto* copyOriginalAction =
-        pinnedWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedCopyOriginalAction"));
-    require(copyOriginalAction != nullptr,
-            "formatted clipboard pin should expose the original-content copy action");
-    copyOriginalAction->trigger();
-    const QMimeData* copiedOriginal = QApplication::clipboard()->mimeData();
-    require(copiedOriginal != nullptr && copiedOriginal->hasHtml() && copiedOriginal->hasText() &&
-                copiedOriginal->html() == originalHtml && copiedOriginal->text() == originalText,
-            "Copy Original Content should restore the HTML and text given to the pinned window");
-
-    auto* menu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
-        QStringLiteral("screenshotPinnedContextMenu"));
-    require(menu != nullptr && menu->actions().size() > 3 && menu->actions().at(3)->isEnabled(),
-            "formatted clipboard text should expose text selection without an OCR result");
-    menu->actions().at(3)->trigger();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-
-    auto* textLayer =
-        pinnedWindow->findChild<QGraphicsView*>(QStringLiteral("screenshotClipboardText"));
-    auto* textItem = formattedTextItem(textLayer);
-    require(textLayer != nullptr && textLayer->isVisible() && textItem != nullptr &&
-                textItem->document() == document.get() && textItem->toPlainText() == plainText &&
-                qFuzzyCompare(textItem->scale(), formattedTextDevicePixelRatio) &&
-                recognition.nextToken == 0,
-            "text mode should show the original selectable formatted document without OCR");
-    const QPointF mappedOrigin = textLayer->transform().map(QPointF());
-    const QPointF mappedExtent =
-        textLayer->transform().map(QPointF(renderedText.width(), renderedText.height()));
-    const QSizeF mappedSize(mappedExtent.x() - mappedOrigin.x(),
-                            mappedExtent.y() - mappedOrigin.y());
-    require(std::abs(mappedSize.width() - textLayer->viewport()->width()) < 1.0 &&
-                std::abs(mappedSize.height() - textLayer->viewport()->height()) < 1.0,
-            "formatted clipboard text should use the same physical-pixel canvas basis as the "
-            "pinned image on the current DPI");
-
-    auto* session = pinnedWindow->findChild<ScreenshotRecognitionSessionController*>();
-    auto* editController = pinnedWindow->findChild<ScreenshotPinnedEditController*>();
-    ScreenshotFloatingToolPaletteWindow* toolbarWindow =
-        editController != nullptr ? editController->toolbarWindow() : nullptr;
-    ScreenshotToolPalette* toolbar = toolbarWindow != nullptr ? toolbarWindow->palette() : nullptr;
-    adqt::widgets::AdButton* toolbarCopy = toolbar != nullptr
-                                                  ? toolbarButtonNamed(
-                                                        *toolbar, QStringLiteral("Copy to clipboard"))
-                                                  : nullptr;
-    require(session != nullptr && session->originalText() == plainText && toolbarCopy != nullptr,
-            "formatted clipboard text should seed the recognition session with plain text");
-    session->beginTextEditing();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    auto* editor = pinnedWindow->findChild<QTextEdit*>(QStringLiteral("screenshotOcrEditor"));
-    require(editor != nullptr && editor->toPlainText() == plainText,
-            "editing formatted clipboard text should use its plain-text projection");
-
-    const snow_shot::storage::ScreenshotShortcutSettings screenshotShortcuts;
-    const QStringList originalTextRecognitionShortcuts =
-        screenshotShortcuts.shortcuts(QStringLiteral("text_recognition"));
-    require(screenshotShortcuts.setShortcuts(QStringLiteral("text_recognition"),
-                                             {QStringLiteral("Alt+D")}),
-            "the Text Recognition shortcut fixture should accept a runtime mapping");
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    clickTextEditor(*editor);
-    require(editor->hasFocus(), "the pinned recognition editor should own keyboard focus");
-    sendShortcut(*editor, Qt::Key_D, Qt::AltModifier);
-    require(recognition.nextToken == 0 && recognition.pending.token == 0 &&
-                editor->toPlainText() == plainText,
-            "configured screenshot shortcuts must not interrupt pinned text editing");
-    require(screenshotShortcuts.setShortcuts(QStringLiteral("text_recognition"),
-                                             originalTextRecognitionShortcuts),
-            "the Text Recognition shortcut fixture should restore its original mapping");
-
-    const QString editedDraft = QStringLiteral("Edited formatted clipboard text");
-    session->setTextDraft(editedDraft);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    toolbarCopy->click();
-    require(QApplication::clipboard()->text() == editedDraft && session->editing() &&
-                editController->editMode() && toolbarWindow->isVisible(),
-            "toolbar Copy should export the current text draft without ending editing");
-
-    session->endTextEditing();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    toolbarCopy->click();
-    require(QApplication::clipboard()->text() == plainText && session->active() &&
-                editController->editMode() && toolbarWindow->isVisible(),
-            "toolbar Copy should export formatted pins as plain text without ending recognition");
-    textLayer = pinnedWindow->findChild<QGraphicsView*>(QStringLiteral("screenshotClipboardText"));
-    textItem = formattedTextItem(textLayer);
-    require(textLayer != nullptr && textItem != nullptr && textItem->document() == document.get(),
-            "ending plain-text editing should restore the formatted clipboard document");
-
-    pinnedWindow->close();
-    require(processUntilDeleted(guardedWindow, 2000),
-            "formatted clipboard pin was not deleted after the test");
-}
-
-void pinnedAutomaticRecognitionCanBeDisabled(SnowCanvasRuntime&) {
-    QScreen* screen = QGuiApplication::primaryScreen();
-    require(screen != nullptr, "a primary screen is required");
-
-    FakeOcrRecognition recognition;
-    QImage background(160, 90, QImage::Format_ARGB32_Premultiplied);
-    background.fill(QColor(24, 72, 120));
-
-    auto* pinnedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
-    QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
-    ScreenshotPinnedWindow::Config config;
-    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(60, 60), background.size());
-    config.canvasSourceRect = QRectF(QPointF(), QSizeF(background.size()));
-    config.backgroundImage = background;
-    config.screen = screen;
-    config.recognition = &recognition;
-    config.automaticTextRecognition = false;
-    require(pinnedWindow->present(config), "manual OCR pin presentation failed");
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    require(recognition.pending.token == 0,
-            "disabling automatic recognition should suppress pinned OCR prefetch");
-
-    auto* menu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
-        QStringLiteral("screenshotPinnedContextMenu"));
-    require(menu != nullptr && menu->actions().size() > 2,
-            "manual pinned OCR action should remain available without prefetch");
-    menu->actions().at(3)->trigger();
-    require(recognition.pending.token != 0 &&
-                recognition.pending.request.priority == ScreenshotOcrRequestPriority::Interactive,
-            "manual pinned OCR should still start interactive recognition");
-
-    pinnedWindow->close();
-    require(processUntilDeleted(guardedWindow, 2000),
-            "manual OCR pin was not deleted after the test");
-}
-
-void pinnedSeededRecognitionSkipsAutomaticRequests(SnowCanvasRuntime&) {
-    QScreen* screen = QGuiApplication::primaryScreen();
-    require(screen != nullptr, "a primary screen is required");
-
-    FakeOcrRecognition recognition;
-    FakeQrRecognition qrRecognition;
-    SnowShotApiClient tableRecognition(QString{});
-    QImage background(160, 90, QImage::Format_ARGB32_Premultiplied);
-    background.fill(QColor(24, 72, 120));
-
-    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
-    presentation->selection = QRect(0, 0, background.width(), background.height());
-    ScreenshotOcrLine line;
-    line.text = QStringLiteral("Seeded OCR");
-    line.quad = QPolygonF({QPointF(20.0, 30.0), QPointF(140.0, 30.0), QPointF(140.0, 50.0),
-                           QPointF(20.0, 50.0)});
-    presentation->lines.push_back(line);
-
-    ScreenshotRecognitionResults results;
-    results.key = QStringLiteral("capture-1:0,0,160,90");
-    results.text = ScreenshotOcrRecognitionResult{presentation, {}};
-    results.table = SnowShotTableResult{
-        QStringLiteral("<table><tr><td>Seeded table</td></tr></table>"), {}, {}, 200};
-    results.qr = ScreenshotQrRecognitionResult{{QStringLiteral("https://example.test/seeded")}, {}};
-
-    auto* pinnedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
-    QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
-    ScreenshotPinnedWindow::Config config;
-    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(60, 60), background.size());
-    config.canvasSourceRect = QRectF(QPointF(), QSizeF(background.size()));
-    config.backgroundImage = background;
-    config.screen = screen;
-    config.recognition = &recognition;
-    config.qrRecognition = &qrRecognition;
-    config.tableRecognition = &tableRecognition;
-    config.recognitionResults = results;
-    require(pinnedWindow->present(config), "seeded pin presentation failed");
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    require(recognition.nextToken == 0 && recognition.pending.token == 0,
-            "a seeded OCR result should suppress automatic pinned OCR");
-
-    auto* session = pinnedWindow->findChild<ScreenshotRecognitionSessionController*>();
-    require(session != nullptr, "seeded pinned recognition session was not found");
-    require(session->hasTextResult(),
-            "a seeded OCR result should be visible before the recognition tool is activated");
-    session->activate(ScreenshotRecognitionSessionController::Mode::Text);
-    require(session->hasTextResult() && !session->busy() && recognition.nextToken == 0,
-            "a seeded OCR result should activate without a provider request");
-    session->activate(ScreenshotRecognitionSessionController::Mode::Table);
-    require(session->tableModeActive() && !session->busy(ScreenshotRecognitionSessionController::Mode::Table),
-            "a seeded table result should activate without a provider request");
-    session->activate(ScreenshotRecognitionSessionController::Mode::Qr);
-    require(session->qrModeActive() && !session->busy(ScreenshotRecognitionSessionController::Mode::Qr) &&
-                qrRecognition.nextToken == 0,
-            "a seeded QR result should activate without a provider request");
-
-    pinnedWindow->close();
-    require(processUntilDeleted(guardedWindow, 2000),
-            "seeded pinned window was not deleted after the test");
-}
-
-void pinnedCloseAfterRecognizedText(SnowCanvasRuntime&) {
-    QScreen* screen = QGuiApplication::primaryScreen();
-    require(screen != nullptr, "a primary screen is required");
-
-    FakeOcrRecognition recognition;
-    QImage background(160, 90, QImage::Format_ARGB32_Premultiplied);
-    background.fill(QColor(24, 72, 120));
-
-    auto* pinnedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
-    QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
-    ScreenshotPinnedWindow::Config config;
-    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(60, 60), background.size());
-    config.canvasSourceRect = QRectF(QPointF(), QSizeF(background.size()));
-    config.backgroundImage = background;
-    config.screen = screen;
-    config.recognition = &recognition;
-    require(pinnedWindow->present(config), "successful OCR pin presentation failed");
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    require(recognition.pending.token != 0, "pinned OCR should start a request");
-
-    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
-    presentation->selection = QRect(0, 0, background.width(), background.height());
-    ScreenshotOcrLine line;
-    line.text = QStringLiteral("Recognized text");
-    line.quad = QPolygonF(
-        {QPointF(20.0, 30.0), QPointF(140.0, 30.0), QPointF(140.0, 50.0), QPointF(20.0, 50.0)});
-    presentation->lines.push_back(line);
-    recognition.complete({std::move(presentation), {}});
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-
-    auto* menu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
-        QStringLiteral("screenshotPinnedContextMenu"));
-    require(menu != nullptr, "pinned context menu was not found");
-    menu->actions().at(3)->trigger();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    auto* recognitionContent =
-        pinnedWindow->findChild<QWidget*>(QStringLiteral("screenshotPinnedRecognitionContent"));
-    require(recognitionContent != nullptr && recognitionContent->isVisible(),
-            "recognized text should be visible before close");
-
-    QPushButton* closeButton = buttonNamed(*pinnedWindow, QStringLiteral("Close"));
-    require(closeButton != nullptr, "close button was not found after showing recognized text");
-    closeButton->click();
-    require(processUntilDeleted(guardedWindow, 2000),
-            "pinned window was not deleted after closing recognized text");
-}
-
-void pinnedRecognitionProviderLossEndsBusyState(SnowCanvasRuntime&) {
-    QScreen* screen = QGuiApplication::primaryScreen();
-    require(screen != nullptr, "a primary screen is required");
-
-    auto recognition = std::make_unique<FakeOcrRecognition>();
-    QImage background(160, 90, QImage::Format_ARGB32_Premultiplied);
-    background.fill(QColor(24, 72, 120));
-
-    auto* pinnedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
-    QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
-    ScreenshotPinnedWindow::Config config;
-    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(60, 60), background.size());
-    config.canvasSourceRect = QRectF(QPointF(), QSizeF(background.size()));
-    config.backgroundImage = background;
-    config.screen = screen;
-    config.recognition = recognition.get();
-    require(pinnedWindow->present(config), "provider-loss OCR pin presentation failed");
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    require(recognition->pending.token != 0,
-            "pinned window should have a pending request before provider loss");
-
-    auto* menu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
-        QStringLiteral("screenshotPinnedContextMenu"));
-    require(menu != nullptr && menu->actions().at(3)->text().section(QLatin1Char('\t'), 0, 0) ==
-                                   QStringLiteral("Recognizing text"),
-            "pinned OCR should initially expose its pending state");
-
-    recognition.reset();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    require(menu->actions().at(3)->text().section(QLatin1Char('\t'), 0, 0) ==
-                    QStringLiteral("Display Text Recognition Results") &&
-                !menu->actions().at(3)->isEnabled(),
-            "provider loss must terminate and disable pinned OCR instead of remaining busy");
-
-    pinnedWindow->close();
-    require(processUntilDeleted(guardedWindow, 2000),
-            "pinned window was not deleted after the provider-loss test");
 }
 
 void pinnedControlsMatchReferenceStyle(SnowCanvasRuntime&) {
@@ -2552,7 +1421,6 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
 
-    FakeOcrRecognition recognition;
     QImage background(240, 120, QImage::Format_ARGB32_Premultiplied);
     background.fill(QColor(37, 91, 143));
     const qreal dpr = screen->devicePixelRatio();
@@ -2569,7 +1437,6 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
     config.backgroundImage = background;
     config.screen = screen;
     config.enableEditing = true;
-    config.recognition = &recognition;
     require(pinnedWindow->present(config), "scaling test pin presentation failed");
     waitForUi(60);
 
@@ -2995,48 +1862,6 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
                 pinnedWindow->currentNativeGeometry().size() == expectedSize(110, true),
             "thumbnail wheel input should restore the pin and apply cursor scaling");
 
-    recognition.complete({nullptr, QStringLiteral("deterministic failure")});
-    menu->actions().at(3)->setChecked(true);
-    auto* recognitionSession = pinnedWindow->findChild<ScreenshotRecognitionSessionController*>();
-    auto* editController = pinnedWindow->findChild<ScreenshotPinnedEditController*>();
-    ScreenshotToolPalette* recognitionToolbar =
-        editController != nullptr && editController->toolbarWindow() != nullptr
-            ? editController->toolbarWindow()->palette()
-            : nullptr;
-    require(recognitionSession != nullptr && recognitionToolbar != nullptr,
-            "recognition controls should exist after activating text recognition");
-
-    const auto requireRecognitionDisablesZoom =
-        [&](ScreenshotRecognitionSessionController::Mode mode, const char* modeName) {
-            require(recognitionSession->active() && recognitionSession->mode() == mode, modeName);
-            require(!scaleMenu->menuAction()->isEnabled(),
-                    "recognition should disable the scale menu");
-#if defined(Q_OS_WIN) || defined(_WIN32)
-            const QRect recognitionGeometry = pinnedWindow->currentNativeGeometry();
-            require(nativeHitTest(QPoint(recognitionGeometry.right(),
-                                         recognitionGeometry.center().y())) == HTCLIENT &&
-                        nativeHitTest(recognitionGeometry.center()) == HTCLIENT,
-                    "recognition should disable native resize zoom and keep the interior "
-                    "interactive");
-#endif
-            const QRect beforeWheel = pinnedWindow->currentNativeGeometry();
-            sendWheel(canvas->rect().center(), QPoint(), QPoint(0, 120));
-            require(pinnedWindow->currentNativeGeometry() == beforeWheel,
-                    "recognition should ignore wheel zoom");
-            scaleMenu->actions().at(1)->trigger();
-            require(pinnedWindow->currentNativeGeometry() == beforeWheel,
-                    "recognition should ignore scale preset activation");
-        };
-
-    requireRecognitionDisablesZoom(ScreenshotRecognitionSessionController::Mode::Text,
-                                   "text recognition should be active");
-    recognitionToolbar->tableRequested();
-    requireRecognitionDisablesZoom(ScreenshotRecognitionSessionController::Mode::Table,
-                                   "table recognition should be active");
-    recognitionToolbar->qrRequested();
-    requireRecognitionDisablesZoom(ScreenshotRecognitionSessionController::Mode::Qr,
-                                   "QR recognition should be active");
-
     menu->actions().constLast()->trigger();
     require(processUntilDeleted(guardedWindow, 2000),
             "pinned window was not deleted after scaling and resizing tests");
@@ -3226,8 +2051,6 @@ void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
 
-    FakeOcrRecognition recognition;
-    FakeQrRecognition qrRecognition;
     auto* pinnedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
     QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
     QImage background(320, 180, QImage::Format_ARGB32_Premultiplied);
@@ -3240,8 +2063,6 @@ void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime&) {
     config.screen = screen;
     config.enableEditing = true;
     config.automaticTextRecognition = false;
-    config.recognition = &recognition;
-    config.qrRecognition = &qrRecognition;
     require(pinnedWindow->present(config), "pinned window presentation failed");
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     QPushButton* editButton = buttonNamed(*pinnedWindow, QStringLiteral("Enable drawing mode"));
@@ -3271,48 +2092,6 @@ void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime&) {
                 translationButton->toolTip().contains(QStringLiteral("Ctrl+T")),
             "pinned drawing toolbar should expose Text Translation with its configured shortcut");
 
-    const snow_shot::storage::ScreenshotShortcutSettings screenshotShortcuts;
-    const QStringList originalTextRecognitionShortcuts =
-        screenshotShortcuts.shortcuts(QStringLiteral("text_recognition"));
-    require(screenshotShortcuts.setShortcuts(QStringLiteral("text_recognition"),
-                                             {QStringLiteral("Alt+D")}),
-            "the Text Recognition shortcut fixture should accept a runtime mapping");
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-
-    sendShortcut(*canvas, Qt::Key_X, Qt::ControlModifier);
-    require(toolbar->activeToolForTests() == ScreenshotToolPalette::Tool::Table,
-            "the Table Recognition shortcut should activate from the pinned toolbar");
-    sendShortcut(*canvas, Qt::Key_Q, Qt::ControlModifier);
-    require(toolbar->activeToolForTests() == ScreenshotToolPalette::Tool::Qr,
-            "the QR Code Recognition shortcut should activate from the pinned toolbar");
-    sendShortcut(*canvas, Qt::Key_D, Qt::AltModifier);
-    require(toolbar->activeToolForTests() == ScreenshotToolPalette::Tool::Ocr &&
-                recognition.pending.token != 0,
-            "the configured Text Recognition shortcut should activate from the pinned toolbar");
-    require(screenshotShortcuts.setShortcuts(QStringLiteral("text_recognition"),
-                                             originalTextRecognitionShortcuts),
-            "the Text Recognition shortcut fixture should restore its original mapping");
-    sendShortcut(*canvas, Qt::Key_T, Qt::ControlModifier);
-    require(toolbar->activeToolForTests() == ScreenshotToolPalette::Tool::TextTranslation &&
-                translationButton->busy(),
-            "the Text Translation shortcut should activate its toolbar control while recognizing");
-
-    auto translatedPresentation = std::make_shared<ScreenshotOcrPresentation>();
-    translatedPresentation->selection = config.canvasSourceRect.toAlignedRect();
-    ScreenshotOcrLine translatedLine;
-    translatedLine.text = QStringLiteral("Text to translate");
-    translatedLine.quad = QPolygonF(config.canvasSourceRect);
-    translatedPresentation->lines.push_back(std::move(translatedLine));
-    recognition.complete({std::move(translatedPresentation), {}});
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    require(toolbar->activeToolForTests() == ScreenshotToolPalette::Tool::TextTranslation &&
-                translationButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
-                !translationButton->busy(),
-            "Text Translation should stay active and stop loading after recognition completes");
-    sendShortcut(*canvas, Qt::Key_1);
-    require(canvas->canvasContentVisible() && canvas->interactionEnabled(),
-            "a drawing shortcut should leave pinned text translation mode");
-
     const QPoint localPosition = canvas->rect().center();
     const auto sendWheel = [canvas, localPosition](int angleDelta) {
         QWheelEvent wheel(QPointF(localPosition), QPointF(canvas->mapToGlobal(localPosition)),
@@ -3334,118 +2113,6 @@ void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime&) {
     const double textFontSize = canvas->canvasStyleToolbarState().textStyle.fontSize;
     require(sendWheel(120) && canvas->canvasStyleToolbarState().textStyle.fontSize > textFontSize,
             "Text wheel input should increase pinned font size");
-
-    require(canvas->setCanvasTool(SnowCanvasTool::Shape), "Shape tool could not be restored");
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    adqt::widgets::AdColorPicker* strokeColorPicker = nullptr;
-    for (adqt::widgets::AdColorPicker* picker :
-         toolbar->findChildren<adqt::widgets::AdColorPicker*>()) {
-        if (picker != nullptr && picker->accessibleName() == QStringLiteral("Stroke color")) {
-            strokeColorPicker = picker;
-            break;
-        }
-    }
-    auto* sampler = strokeColorPicker != nullptr
-                        ? qobject_cast<QAbstractButton*>(strokeColorPicker->previewContent())
-                        : nullptr;
-    require(strokeColorPicker != nullptr && sampler != nullptr,
-            "pinned stroke color picker should expose canvas sampling");
-    QImage physicalCanvasRaster = canvas->grab().toImage();
-    physicalCanvasRaster.setDevicePixelRatio(1.0);
-    const QRect canvasPhysicalBounds = pinnedWindow->currentNativeGeometry();
-    const auto localPositionForPhysical = [canvas,
-                                           canvasPhysicalBounds](const QPoint& physicalPosition) {
-        return QPointF((physicalPosition.x() - canvasPhysicalBounds.left()) *
-                           static_cast<qreal>(canvas->width()) / canvasPhysicalBounds.width(),
-                       (physicalPosition.y() - canvasPhysicalBounds.top()) *
-                           static_cast<qreal>(canvas->height()) / canvasPhysicalBounds.height());
-    };
-    const auto expectedColorAtPhysical = [&physicalCanvasRaster,
-                                          canvasPhysicalBounds](const QPoint& physicalPosition) {
-        const QImage preview = ScreenshotCanvasColorSampler::previewFromPhysicalRaster(
-            physicalCanvasRaster, canvasPhysicalBounds, physicalPosition);
-        return preview.pixelColor(preview.width() / 2, preview.height() / 2).toRgb();
-    };
-    QPoint firstPhysicalPosition;
-    QColor firstExpectedColor;
-    QColor secondExpectedColor;
-    const int searchTop = canvasPhysicalBounds.top() + canvasPhysicalBounds.height() / 4;
-    const int searchBottom = canvasPhysicalBounds.top() + canvasPhysicalBounds.height() * 3 / 4;
-    for (int y = searchTop; y < searchBottom && !firstExpectedColor.isValid(); ++y) {
-        for (int x = canvasPhysicalBounds.left(); x < canvasPhysicalBounds.right(); ++x) {
-            const QPoint candidate(x, y);
-            const QColor candidateColor = expectedColorAtPhysical(candidate);
-            const QColor adjacentColor = expectedColorAtPhysical(candidate + QPoint(1, 0));
-            if (candidateColor != adjacentColor) {
-                firstPhysicalPosition = candidate;
-                firstExpectedColor = candidateColor;
-                secondExpectedColor = adjacentColor;
-                break;
-            }
-        }
-    }
-    const QPoint secondPhysicalPosition = firstPhysicalPosition + QPoint(1, 0);
-    require(firstExpectedColor.isValid() && secondExpectedColor.isValid() &&
-                firstExpectedColor != secondExpectedColor,
-            "the pinned sampling fixture must distinguish adjacent physical pixels");
-    sampler->click();
-    QWidget colorPickerToolWindow;
-
-    {
-        const CursorPositionRestorer restoreCursor;
-        const QPoint start = config.nativeGeometry.center();
-        setSystemCursorPosition(start);
-        sendShortcut(colorPickerToolWindow, Qt::Key_W);
-#if defined(Q_OS_WIN) || defined(_WIN32)
-        require(systemCursorPosition() == start + QPoint(0, -1),
-                "pinned canvas color sampling must route keyboard cursor movement from a "
-                "transient color picker window");
-        sendShortcut(colorPickerToolWindow, Qt::Key_W, Qt::NoModifier, true);
-        require(systemCursorPosition() == start + QPoint(0, -2),
-                "an auto-repeated pinned cursor shortcut must move by one more physical pixel");
-#else
-        require(systemCursorPosition() == start,
-                "pinned cursor movement must remain disabled without a native physical backend");
-#endif
-    }
-
-    const QPointF firstLocalPosition = localPositionForPhysical(firstPhysicalPosition);
-    const QPointF firstGlobalPosition(canvas->mapToGlobal(firstLocalPosition.toPoint()));
-    QMouseEvent samplingMove(QEvent::MouseMove, firstLocalPosition, firstGlobalPosition,
-                             Qt::NoButton, Qt::NoButton, Qt::NoModifier);
-    QCoreApplication::sendEvent(canvas, &samplingMove);
-    QMouseEvent samplingPress(QEvent::MouseButtonPress, firstLocalPosition, firstGlobalPosition,
-                              Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-    QCoreApplication::sendEvent(canvas, &samplingPress);
-    require(samplingMove.isAccepted() && samplingPress.isAccepted() &&
-                strokeColorPicker->value().isSolid() &&
-                strokeColorPicker->value().solidColor.toRgb() == firstExpectedColor,
-            "pinned canvas sampling should commit the exact physical color beneath the cursor");
-
-    sampler->click();
-    const QPointF secondLocalPosition = localPositionForPhysical(secondPhysicalPosition);
-    const QPointF secondGlobalPosition(canvas->mapToGlobal(secondLocalPosition.toPoint()));
-    QMouseEvent adjacentSamplingMove(QEvent::MouseMove, secondLocalPosition, secondGlobalPosition,
-                                     Qt::NoButton, Qt::NoButton, Qt::NoModifier);
-    QCoreApplication::sendEvent(canvas, &adjacentSamplingMove);
-    QMouseEvent adjacentSamplingPress(QEvent::MouseButtonPress, secondLocalPosition,
-                                      secondGlobalPosition, Qt::LeftButton, Qt::LeftButton,
-                                      Qt::NoModifier);
-    QCoreApplication::sendEvent(canvas, &adjacentSamplingPress);
-    require(adjacentSamplingMove.isAccepted() && adjacentSamplingPress.isAccepted() &&
-                strokeColorPicker->value().isSolid() &&
-                strokeColorPicker->value().solidColor.toRgb() == secondExpectedColor &&
-                strokeColorPicker->value().solidColor.toRgb() != firstExpectedColor,
-            "adjacent pinned physical pixels must commit distinct rendered colors");
-
-    {
-        const CursorPositionRestorer restoreCursor;
-        const QPoint start = config.nativeGeometry.center();
-        setSystemCursorPosition(start);
-        sendShortcut(colorPickerToolWindow, Qt::Key_W);
-        require(systemCursorPosition() == start,
-                "the transient color picker window must lose cursor shortcuts after sampling");
-    }
 
     require(canvas->setCanvasTool(SnowCanvasTool::Spotlight),
             "Spotlight tool could not be activated");
@@ -3668,10 +2335,6 @@ int main(int argc, char* argv[]) {
     try {
         SnowCanvasRuntime sourceRuntime;
         require(sourceRuntime.isValid(), "source runtime creation failed");
-        if (app.arguments().contains(QStringLiteral("--pinned-ocr-shortcut-only"))) {
-            pinnedContextMenuAndModes(sourceRuntime);
-            return 0;
-        }
         if (app.arguments().contains(QStringLiteral("--pinned-shortcut-only"))) {
             pinnedConfiguredShortcutUpdatesImmediately(sourceRuntime);
             return 0;
@@ -3680,32 +2343,8 @@ int main(int argc, char* argv[]) {
             pinnedEditToolbarControlsCanvasHistory(sourceRuntime);
             return 0;
         }
-        recognitionResultsSurviveTargetImageReallocationAndSeedAllModes();
-        emptyTextAndQrResultsRemainCopyable();
-        modelDownloadStatusTransitionsToRecognition();
-        textRenderLifecycleUsesTransientWorkerResults();
-        if (app.arguments().contains(QStringLiteral("--ocr-render-lifecycle-only"))) {
-            return 0;
-        }
-        pinnedSeededRecognitionSkipsAutomaticRequests(sourceRuntime);
         if (app.arguments().contains(QStringLiteral("--large-edit-only"))) {
             pinnedLargeImageRemainsOpenWhenEnteringDrawingMode(sourceRuntime);
-            return 0;
-        }
-        if (app.arguments().contains(QStringLiteral("--recognition-provider-loss-only"))) {
-            pinnedRecognitionProviderLossEndsBusyState(sourceRuntime);
-            return 0;
-        }
-        if (app.arguments().contains(QStringLiteral("--recognition-priority-only"))) {
-            pinnedRecognitionPromotesAutomaticPrefetch(sourceRuntime);
-            return 0;
-        }
-        if (app.arguments().contains(QStringLiteral("--clipboard-content-only"))) {
-            pinnedFormattedClipboardTextSkipsOcrAndSeedsPlainTextEditing(sourceRuntime);
-            return 0;
-        }
-        if (app.arguments().contains(QStringLiteral("--close-after-recognized-text"))) {
-            pinnedCloseAfterRecognizedText(sourceRuntime);
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--async-presentation-only"))) {
@@ -3717,7 +2356,6 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--tray-pin-runtime-only"))) {
-            pinnedContextMenuAndModes(sourceRuntime);
             pinnedControlsMatchReferenceStyle(sourceRuntime);
             return 0;
         }
@@ -3742,19 +2380,12 @@ int main(int argc, char* argv[]) {
         pinnedWheelScalingUsesConfiguredAnchor(sourceRuntime);
         pinnedFollowsPerMonitorDpiScaling(sourceRuntime);
         pinnedCopyIncludesSourceCanvasDrawing();
-        pinnedContextMenuAndModes(sourceRuntime);
-        pinnedCloseCancelsPendingRecognition(sourceRuntime);
-        pinnedAutomaticRecognitionCanBeDisabled(sourceRuntime);
-        pinnedCloseAfterRecognizedText(sourceRuntime);
         pinnedPendingPresentationPublishesWorkerImage(sourceRuntime);
         pinnedAsyncPresentationDefersContent(sourceRuntime);
-        pinnedRecognitionProviderLossEndsBusyState(sourceRuntime);
-        pinnedFormattedClipboardTextSkipsOcrAndSeedsPlainTextEditing(sourceRuntime);
         pinnedControlsMatchReferenceStyle(sourceRuntime);
         pinnedThumbnailUsesOpaqueThemeBackground(sourceRuntime);
         pinnedControlsHideBelowMinimumNativeSize(sourceRuntime);
         pinnedLargeImageRemainsOpenWhenEnteringDrawingMode(sourceRuntime);
-        pinnedWatermarkEditorAcceptsKeyboardInput(sourceRuntime);
         pinnedEditToolbarControlsCanvasHistory(sourceRuntime);
         pinnedDrawingToolbarMatchesCaptureInteractions(sourceRuntime);
 

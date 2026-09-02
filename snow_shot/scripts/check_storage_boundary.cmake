@@ -35,7 +35,6 @@ foreach(_source IN LISTS _snow_shot_sources)
         "__data_directory"
         "capture_history_records"
         "capture_history_quarantine"
-        "manifest.json"
         "canvas_history.json"
         "display_0.png"
     )

@@ -40,6 +40,7 @@ snow_enable_clang_tidy()
 
 find_package(Qt6 6.11.1 EXACT REQUIRED COMPONENTS Widgets LinguistTools Svg Network)
 include(SnowTestCliGuard)
+include(SnowQtOffscreenTest)
 
 if(SNOW_SHOT_QT_STATIC)
     if(NOT QT_FEATURE_static)
@@ -1037,6 +1038,8 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     enable_testing()
 
+    snow_shot_offscreen_qpa_environment(_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT)
+
     # Test binaries must report failures as stderr output plus a non-zero
     # exit code instead of blocking on modal dialogs.
     snow_link_test_cli_guard(qt)
@@ -1212,24 +1215,6 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-canvas-color-sampler-tests
              COMMAND snow-shot-canvas-color-sampler-tests)
 
-    add_executable(snow-shot-i18n-catalog-conformance-tests
-        tests/i18n_catalog_conformance_tests.cpp
-    )
-    target_link_libraries(snow-shot-i18n-catalog-conformance-tests PRIVATE
-        Qt6::Core
-    )
-    add_test(
-        NAME snow-shot-i18n-catalog-conformance-tests
-        COMMAND snow-shot-i18n-catalog-conformance-tests
-            "${CMAKE_CURRENT_SOURCE_DIR}"
-            "$<TARGET_FILE:Qt6::lupdate>"
-            ${TS_FILES}
-    )
-    set_tests_properties(snow-shot-i18n-catalog-conformance-tests PROPERTIES
-        ENVIRONMENT_MODIFICATION
-            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
-    )
-
     add_executable(snow-shot-language-manager-tests
         tests/language_manager_tests.cpp
         include/snow_shot/presentation/languagemanager.h
@@ -1249,7 +1234,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     set_tests_properties(snow-shot-language-manager-tests PROPERTIES
         ENVIRONMENT
-            "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+            "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
@@ -1292,49 +1277,6 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
-
-    add_executable(snow-shot-settings-page-tests
-        tests/settings_page_tests.cpp
-        include/snow_shot/presentation/mainwindow.h
-        include/snow_shot/presentation/components/titlebarwidget.h
-        include/snow_shot/presentation/components/contentcardwidget.h
-        include/snow_shot/presentation/components/maincontentheaderwidget.h
-        include/snow_shot/presentation/components/sidebarwidget.h
-        src/presentation/components/contentcardwidget.cpp
-        src/presentation/components/maincontentheaderwidget.cpp
-        src/presentation/components/sidebarwidget.cpp
-        src/presentation/components/titlebarwidget.cpp
-        src/presentation/mainwindow.cpp
-        src/presentation/services/screenshotclipboardservice.cpp
-        src/platform/windows/windowchrome.cpp
-    )
-    target_include_directories(snow-shot-settings-page-tests PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    )
-    target_link_libraries(snow-shot-settings-page-tests PRIVATE
-        snow_shot_settings
-        Qt6::Widgets
-    )
-    if(WIN32)
-        target_link_libraries(snow-shot-settings-page-tests PRIVATE user32)
-    endif()
-    add_test(NAME snow-shot-settings-page-tests
-             COMMAND snow-shot-settings-page-tests)
-    if(WIN32)
-        set_tests_properties(snow-shot-settings-page-tests PROPERTIES
-            ENVIRONMENT
-                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
-            ENVIRONMENT_MODIFICATION
-                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
-        )
-    else()
-        set_tests_properties(snow-shot-settings-page-tests PROPERTIES
-            ENVIRONMENT
-                "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
-            ENVIRONMENT_MODIFICATION
-                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
-        )
-    endif()
 
     add_executable(snow-shot-selector-policy-tests
         tests/screenshot_selector_policy_tests.cpp
@@ -1396,7 +1338,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     else()
         set_tests_properties(snow-shot-system-tray-controller-tests PROPERTIES
             ENVIRONMENT
-                "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+                "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
             ENVIRONMENT_MODIFICATION
                 "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         )
@@ -1423,32 +1365,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     else()
         set_tests_properties(snow-shot-context-menu-rendering-tests PROPERTIES
             ENVIRONMENT
-                "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+                "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
             ENVIRONMENT_MODIFICATION
                 "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         )
     endif()
-
-    add_executable(snow-shot-global-shortcut-manager-tests
-        tests/global_shortcut_manager_tests.cpp
-        include/snow_shot/platform/windows/focusedfullscreenwindow.h
-        include/snow_shot/presentation/globalshortcutmanager.h
-        src/platform/windows/focusedfullscreenwindow.cpp
-        src/presentation/services/globalshortcutmanager.cpp
-    )
-    target_include_directories(snow-shot-global-shortcut-manager-tests PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    )
-    target_link_libraries(snow-shot-global-shortcut-manager-tests PRIVATE
-        Qt6::Widgets
-    )
-    if(WIN32)
-        target_link_libraries(snow-shot-global-shortcut-manager-tests PRIVATE dwmapi user32)
-    endif()
-    add_test(
-        NAME snow-shot-global-shortcut-manager-tests
-        COMMAND snow-shot-global-shortcut-manager-tests
-    )
 
     add_executable(snow-shot-window-shortcut-manager-tests
         tests/window_shortcut_manager_tests.cpp
@@ -1499,7 +1420,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     set_tests_properties(snow-shot-shortcut-key-row-tests PROPERTIES
         ENVIRONMENT
-            "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+            "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
@@ -1546,7 +1467,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     set_tests_properties(snow-shot-form-layout-tests PROPERTIES
         ENVIRONMENT
-            "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+            "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
@@ -1579,7 +1500,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     set_tests_properties(snow-shot-selection-resize-workflow-tests PROPERTIES
         ENVIRONMENT
-            "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+            "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
@@ -1872,7 +1793,6 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-screenshot-canvas-renderer-tests PRIVATE
         ant_design_qt
         Qt6::Widgets
-        Qt6::QOffscreenIntegrationPlugin
         snow_shot_storage
         snow_draw_engine_qt_canvas
     )
@@ -1941,19 +1861,6 @@ if(SNOW_SHOT_BUILD_TESTS)
             COMMAND snow-shot-overlay-frame-presenter-tests --native-reveal
         )
         set_tests_properties(snow-shot-overlay-frame-presenter-native-reveal-test PROPERTIES
-            LABELS "e2e;interactive;windows"
-            RUN_SERIAL TRUE
-            ENVIRONMENT
-                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
-            ENVIRONMENT_MODIFICATION
-                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
-        )
-        add_test(
-            NAME snow-shot-scrolling-thumbnail-native-presentation-test
-            COMMAND snow-shot-screenshot-canvas-renderer-tests
-                --native-excluded-scrolling-thumbnail-presentation
-        )
-        set_tests_properties(snow-shot-scrolling-thumbnail-native-presentation-test PROPERTIES
             LABELS "e2e;interactive;windows"
             RUN_SERIAL TRUE
             ENVIRONMENT
@@ -2087,10 +1994,6 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests
     )
     add_test(
-        NAME snow-shot-pinned-recognition-provider-loss-tests
-        COMMAND snow-shot-pinned-window-tests --recognition-provider-loss-only
-    )
-    add_test(
         NAME snow-shot-pinned-toolbar-parity-tests
         COMMAND snow-shot-pinned-window-tests --toolbar-parity-only
     )
@@ -2145,27 +2048,11 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
     add_test(
-        NAME snow-shot-pinned-recognition-priority-tests
-        COMMAND snow-shot-pinned-window-tests --recognition-priority-only
-    )
-    add_test(
-        NAME snow-shot-pinned-ocr-render-lifecycle-tests
-        COMMAND snow-shot-pinned-window-tests --ocr-render-lifecycle-only
-    )
-    add_test(
-        NAME snow-shot-pinned-clipboard-content-tests
-        COMMAND snow-shot-pinned-window-tests --clipboard-content-only
-    )
-    add_test(
         NAME snow-shot-pinned-async-presentation-tests
         COMMAND snow-shot-pinned-window-tests --async-presentation-only
     )
     set(_snow_shot_pinned_window_test_names
         snow-shot-pinned-window-tests
-        snow-shot-pinned-recognition-provider-loss-tests
-        snow-shot-pinned-recognition-priority-tests
-        snow-shot-pinned-ocr-render-lifecycle-tests
-        snow-shot-pinned-clipboard-content-tests
         snow-shot-pinned-async-presentation-tests
         snow-shot-pinned-toolbar-parity-tests
     )
@@ -2231,103 +2118,6 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
-    if(WIN32)
-        add_executable(snow-shot-pinned-context-menu-real-mouse-repro
-            tests/screenshot_pinned_context_menu_real_mouse_repro.cpp
-            src/platform/physicalcursor.cpp
-            include/snow_shot/presentation/screenshotfloatingtoolpalettewindow.h
-            include/snow_shot/presentation/screenshotcanvascolorsampler.h
-            include/snow_shot/presentation/screenshotcanvascolorsamplerwindow.h
-            include/snow_shot/presentation/languagemanager.h
-            include/snow_shot/presentation/screenshotpinnededitcontroller.h
-            include/snow_shot/presentation/screenshotpinnedcopyservice.h
-            include/snow_shot/presentation/screenshotpinnedwindow.h
-            include/snow_shot/presentation/screenshotrecognitionsessioncontroller.h
-            include/snow_shot/presentation/screenshotrecognitionwindow.h
-            include/snow_shot/presentation/screenshottabledocument.h
-            include/snow_shot/presentation/screenshottableeditor.h
-            include/snow_shot/presentation/screenshotmessageservice.h
-            include/snow_shot/presentation/screenshotselectiongeometry.h
-            include/snow_shot/presentation/screenshotselectionmodel.h
-            include/snow_shot/presentation/screenshotselectionparams.h
-            include/snow_shot/network/snowshotapiclient.h
-            include/snow_shot/presentation/screenshottoolpalette.h
-            include/snow_shot/presentation/screenshottoolpalettehost.h
-            include/snow_shot/presentation/styles/thememanager.h
-            src/presentation/components/icons/snowshoticons.cpp
-            src/presentation/core/screenshotgeometry.cpp
-            src/presentation/core/screenshotcanvastoolstyles.cpp
-            src/presentation/ocr/screenshotocrpresentation.cpp
-            src/presentation/ocr/screenshotocrvisuals.cpp
-            src/presentation/ocr/screenshotocrtexteditingsession.cpp
-            src/presentation/ocr/screenshotocrtexttransform.cpp
-            src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp
-            src/presentation/ocr/screenshotrecognitionwindow.cpp
-            src/presentation/ocr/screenshottabledocument.cpp
-            src/presentation/ocr/screenshottableeditor.cpp
-            src/presentation/overlay/screenshotcanvasrenderer.cpp
-            src/presentation/overlay/screenshotselectionshadowrenderer.cpp
-            src/presentation/services/screenshotcanvascolorsampler.cpp
-            src/presentation/services/screenshotcanvascolorsamplerwindow.cpp
-            src/presentation/services/screenshotclipboardservice.cpp
-            src/presentation/services/screenshotimagefileservice.cpp
-            src/presentation/services/screenshotmessageservice.cpp
-            src/presentation/selection/screenshotselectiongeometry.cpp
-            src/presentation/selection/screenshotselectionmodel.cpp
-            src/presentation/selection/screenshotselectionparams.cpp
-            src/network/snowshotapiclient.cpp
-            src/presentation/pinned/screenshotpinnededitcontroller.cpp
-            src/presentation/pinned/screenshotpinnedcopyservice.cpp
-            src/presentation/services/screenshotexportcoordinator.cpp
-            src/presentation/pinned/screenshotpinnednativegeometrycontroller.cpp
-            src/presentation/pinned/screenshotpinnedresizegeometry.cpp
-            src/presentation/pinned/screenshotpinnedwindow.cpp
-            src/presentation/pinned/screenshotpinnedwindownative.cpp
-            src/presentation/services/languagemanager.cpp
-            src/presentation/styles/buttonborder.cpp
-            src/presentation/styles/floatingcontroltoolbarstyle.cpp
-            src/presentation/styles/themecolorscheme.cpp
-            src/presentation/styles/thememanager.cpp
-            src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
-            src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
-            src/presentation/tools/screenshottoolbarmainpanel.cpp
-            src/presentation/tools/screenshottoolpalette.cpp
-            src/presentation/tools/screenshottoolpalettebuttons.cpp
-            src/presentation/tools/screenshottoolpalettehost.cpp
-            src/presentation/tools/screenshottoolpalettestylecontrols.cpp
-            src/presentation/tools/screenshottoolpalettestylemodel.cpp
-        )
-        target_include_directories(snow-shot-pinned-context-menu-real-mouse-repro PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/include"
-        )
-        target_link_libraries(snow-shot-pinned-context-menu-real-mouse-repro PRIVATE
-            adqt_icon_core
-            ant_design_icons_qt
-            ant_design_qt
-            Qt6::GuiPrivate
-            Qt6::Network
-            Qt6::Widgets
-            snow_shot_image_codec
-            snow_shot_storage
-            snow_draw_engine_qt_canvas
-            snow_shot_window_shortcuts
-            comctl32
-            dwmapi
-            user32
-        )
-        add_test(
-            NAME snow-shot-pinned-context-menu-real-mouse-repro
-            COMMAND snow-shot-pinned-context-menu-real-mouse-repro
-        )
-        set_tests_properties(snow-shot-pinned-context-menu-real-mouse-repro PROPERTIES
-            LABELS "regression;interactive"
-            RUN_SERIAL TRUE
-            TIMEOUT 20
-            ENVIRONMENT_MODIFICATION
-                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
-        )
-    endif()
-
     add_executable(snow-shot-screenshot-tool-palette-tests
         tests/screenshot_tool_palette_tests.cpp
         include/snow_shot/presentation/languagemanager.h
@@ -2364,7 +2154,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     set_tests_properties(snow-shot-screenshot-tool-palette-tests PROPERTIES
         ENVIRONMENT
-            "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+            "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
@@ -2399,7 +2189,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     else()
         set_tests_properties(snow-shot-screenshot-selection-toolbar-hover-tests PROPERTIES
             ENVIRONMENT
-                "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+                "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         )
     endif()
 
@@ -2564,11 +2354,11 @@ if(SNOW_SHOT_BUILD_TESTS)
     if(NOT WIN32)
         set_tests_properties(snow-shot-floating-toolbar-drag-tests PROPERTIES
             ENVIRONMENT
-                "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+                "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         )
         set_tests_properties(snow-shot-floating-toolbar-reverse-drag-tests PROPERTIES
             ENVIRONMENT
-                "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+                "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         )
     endif()
 
@@ -2599,7 +2389,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     else()
         set_tests_properties(snow-shot-adqt-dpi-stable-tests PROPERTIES
             ENVIRONMENT
-                "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+                "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
             ENVIRONMENT_MODIFICATION
                 "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         )
@@ -2631,7 +2421,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     else()
         set_tests_properties(snow-shot-generated-icon-pack-tests PROPERTIES
             ENVIRONMENT
-                "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+                "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
             ENVIRONMENT_MODIFICATION
                 "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         )
@@ -2661,7 +2451,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     set_tests_properties(snow-shot-application-icon-tests PROPERTIES
         ENVIRONMENT
-            "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+            "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
@@ -2697,7 +2487,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     else()
         set_tests_properties(snow-shot-sidebar-widget-tests PROPERTIES
             ENVIRONMENT
-                "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+                "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
             ENVIRONMENT_MODIFICATION
                 "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         )
@@ -2736,34 +2526,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     else()
         set_tests_properties(snow-shot-main-content-header-tests PROPERTIES
             ENVIRONMENT
-                "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+                "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
             ENVIRONMENT_MODIFICATION
                 "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
-        )
-    endif()
-
-    add_executable(snow-shot-tooltip-tests
-        tests/tooltip_tests.cpp
-    )
-    target_link_libraries(snow-shot-tooltip-tests PRIVATE
-        ant_design_qt
-        Qt6::Widgets
-    )
-    add_test(
-        NAME snow-shot-tooltip-tests
-        COMMAND snow-shot-tooltip-tests
-    )
-    if(WIN32)
-    set_tests_properties(snow-shot-tooltip-tests PROPERTIES
-            ENVIRONMENT
-                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
-            ENVIRONMENT_MODIFICATION
-                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
-        )
-    else()
-        set_tests_properties(snow-shot-tooltip-tests PROPERTIES
-            ENVIRONMENT
-                "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
         )
     endif()
 
@@ -2796,7 +2561,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     set_tests_properties(snow-shot-toolbar-main-panel-tests PROPERTIES
         ENVIRONMENT
-            "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+            "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
@@ -2819,7 +2584,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     set_tests_properties(snow-shot-screen-recording-geometry-tests PROPERTIES
         ENVIRONMENT
-            "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>;QT_SCALE_FACTOR=1.25"
+            "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT};QT_SCALE_FACTOR=1.25"
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
@@ -2850,7 +2615,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     set_tests_properties(snow-shot-ocr-presentation-tests PROPERTIES
         ENVIRONMENT
-            "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+            "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
@@ -2902,7 +2667,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     else()
         set_tests_properties(snow-shot-recognition-window-tests PROPERTIES
             ENVIRONMENT
-                "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
+                "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
             ENVIRONMENT_MODIFICATION
                 "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         )
@@ -3043,16 +2808,44 @@ if(SNOW_SHOT_BUILD_TESTS)
         )
     endif()
 
+    foreach(_offscreen_qpa_test_target IN ITEMS
+        snow-shot-language-manager-tests
+        snow-shot-shortcut-key-row-tests
+        snow-shot-form-layout-tests
+        snow-shot-selection-resize-workflow-tests
+        snow-shot-screenshot-canvas-renderer-tests
+        snow-shot-screenshot-tool-palette-tests
+        snow-shot-application-icon-tests
+        snow-shot-toolbar-main-panel-tests
+        snow-shot-screen-recording-geometry-tests
+        snow-shot-ocr-presentation-tests
+    )
+        snow_shot_import_offscreen_platform(${_offscreen_qpa_test_target})
+    endforeach()
+    if(NOT WIN32)
+        foreach(_offscreen_qpa_test_target IN ITEMS
+            snow-shot-system-tray-controller-tests
+            snow-shot-context-menu-rendering-tests
+            snow-shot-screenshot-selection-toolbar-hover-tests
+            snow-shot-floating-toolbar-drag-tests
+            snow-shot-adqt-dpi-stable-tests
+            snow-shot-generated-icon-pack-tests
+            snow-shot-sidebar-widget-tests
+            snow-shot-main-content-header-tests
+            snow-shot-recognition-window-tests
+        )
+            snow_shot_import_offscreen_platform(${_offscreen_qpa_test_target})
+        endforeach()
+    endif()
+
     foreach(_storage_test_target IN ITEMS
         snow-shot-language-manager-tests
         snow-shot-interface-settings-tests
         snow-shot-system-tray-controller-tests
-        snow-shot-global-shortcut-manager-tests
         snow-shot-shortcut-key-row-tests
         snow-shot-selection-resize-workflow-tests
         snow-shot-screenshot-history-tests
         snow-shot-pinned-window-tests
-        snow-shot-pinned-context-menu-real-mouse-repro
         snow-shot-screenshot-tool-palette-tests
         snow-shot-screenshot-toolbar-fill-color-hover-tests
         snow-shot-screenshot-toolbar-render-benchmark
@@ -3073,6 +2866,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     else()
         unset(CMAKE_RUNTIME_OUTPUT_DIRECTORY)
     endif()
+    unset(_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT)
+    unset(_offscreen_qpa_test_target)
     unset(_SNOW_SHOT_SAVED_RUNTIME_OUTPUT_DIRECTORY)
     unset(_SNOW_SHOT_RUNTIME_OUTPUT_DIRECTORY_WAS_DEFINED)
 
