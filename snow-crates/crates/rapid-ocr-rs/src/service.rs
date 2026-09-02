@@ -116,7 +116,7 @@ impl OcrService {
             .or(config.rec.runtime.thread_budget)
             .or(config.cls.runtime.thread_budget);
         Self::new_with_engine_factory(worker_limit, worker_thread_budget, move || {
-            RapidOcr::new_with_sources(config.clone(), sources.clone())
+            RapidOcr::new_with_sources(config.clone(), sources)
                 .map(|engine| Box::new(engine) as Box<dyn WorkerEngine>)
         })
     }

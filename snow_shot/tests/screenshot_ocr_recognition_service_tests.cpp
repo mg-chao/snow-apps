@@ -1,19 +1,21 @@
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 
-#include "snow_ocr_c.h"
-
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QEventLoop>
 #include <QFile>
 #include <QImage>
+#include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTemporaryDir>
 #include <QTimer>
 
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
 #include <cstdlib>
 #include <functional>
 #include <iostream>
@@ -35,14 +37,6 @@ QImage whiteImage(int edge = 64) {
     QImage image(edge, edge, QImage::Format_RGBA8888);
     image.fill(Qt::white);
     return image;
-}
-
-SnowOcrResourceCounts resourceCounts() {
-    SnowOcrResourceCounts counts{};
-    counts.struct_size = static_cast<std::uint32_t>(sizeof(SnowOcrResourceCounts));
-    require(snow_ocr_resource_counts(&counts) != 0,
-            "OCR resource counts should be available");
-    return counts;
 }
 
 bool waitUntil(const std::function<bool()>& condition, int timeoutMs) {
@@ -72,25 +66,27 @@ void processEventsFor(int durationMs) {
     loop.exec();
 }
 
-void modelStoreReadinessTracksRequiredFiles() {
+void explicitAssetsControlReadiness() {
     QTemporaryDir directory;
-    require(directory.isValid(), "temporary OCR model directory should be available");
+    require(directory.isValid(), "temporary OCR asset directory should be available");
 
     ScreenshotOcrRecognitionService::Options options;
-    options.modelStoreDirectory = directory.path();
+    options.processPath = QDir(directory.path()).filePath(QStringLiteral("snow-ocr-process.exe"));
+    options.detectorModelPath = QDir(directory.path()).filePath(QStringLiteral("det.onnx"));
+    options.recognizerModelPath = QDir(directory.path()).filePath(QStringLiteral("rec.onnx"));
+    options.dictionaryPath = QDir(directory.path()).filePath(QStringLiteral("dict.txt"));
     ScreenshotOcrRecognitionService service(options);
     require(!service.modelFilesReady(),
-            "an empty OCR model directory must report that models are unavailable");
+            "missing explicit OCR assets must report that components are unavailable");
 
-    for (const QString& name : {QStringLiteral("PP-OCRv6_det_small.onnx"),
-                                QStringLiteral("PP-OCRv6_rec_small.onnx"),
-                                QStringLiteral("ppocrv6_dict.txt")}) {
-        QFile file(QDir(directory.path()).filePath(name));
-        require(file.open(QIODevice::WriteOnly), "OCR readiness fixture file should be writable");
+    for (const QString& path : {options.processPath, options.detectorModelPath,
+                                options.recognizerModelPath, options.dictionaryPath}) {
+        QFile file(path);
+        require(file.open(QIODevice::WriteOnly), "OCR asset fixture file should be writable");
         file.write("fixture");
     }
     require(service.modelFilesReady(),
-            "an OCR model directory with all required files must report ready");
+            "a complete explicit OCR asset set must report ready");
 }
 
 void diskBackedEngineCompletesThroughTheQtWorker(bool directMlEnabled) {
@@ -147,8 +143,6 @@ std::shared_ptr<ScreenshotOcrPresentation> filterPresentation(const QRect& selec
 }
 
 void renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine() {
-    require(resourceCounts().engines == 0,
-            "render-only OCR work should start without a live recognition engine");
     ScreenshotOcrRecognitionService service;
     QObject receiver;
     QImage image(96, 64, QImage::Format_RGBA8888);
@@ -183,8 +177,6 @@ void renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine() {
                 std::abs(output.filteredImage.height() -
                          output.filteredImageCanvasRect.height() * renderScale) <= 1.0,
             "the filtered image should be sized to match its canvas rect at source resolution");
-    require(resourceCounts().engines == 0,
-            "render-only OCR work must not initialize a recognition engine");
     require(waitUntil([&]() { return service.liveWorkerCount() == 0; }, 1'000),
             "the render-only OCR worker should retire after its queue drains");
 }
@@ -300,12 +292,7 @@ void concurrentRequestsCompleteExactlyOnce() {
     require(waitUntil([&]() { return service.liveWorkerCount() == 0; }, 1'000),
             "OCR workers should exit once a concurrent burst is drained");
 
-    SnowOcrResourceCounts counts = resourceCounts();
-    require(counts.engines == 0,
-            "draining a concurrent burst should destroy every OCR engine");
-    require(counts.results == 0, "FFI results should be released before Qt delivery");
     outputs.clear();
-    counts = resourceCounts();
 }
 
 void interactiveRequestsPrecedeQueuedPrefetch() {
@@ -351,8 +338,6 @@ void interactiveRequestsPrecedeQueuedPrefetch() {
 }
 
 void workerRecyclesImmediatelyAndCanBeRecreated() {
-    require(resourceCounts().engines == 0,
-            "the previous OCR service should destroy its engines during shutdown");
     ScreenshotOcrRecognitionService service;
     require(service.liveWorkerCount() == 0,
             "OCR service construction must not create worker threads eagerly");
@@ -378,14 +363,9 @@ void workerRecyclesImmediatelyAndCanBeRecreated() {
     loop.exec();
     require(!timedOut && output.presentation != nullptr && output.error.isEmpty(),
             "the OCR request should complete successfully");
-    require(waitUntil([]() { return resourceCounts().engines == 0; }, 1'000),
-            "an OCR worker should destroy its engine as soon as its queue is empty");
     require(waitUntil([&]() { return service.liveWorkerCount() == 0; }, 1'000),
             "an OCR worker thread should exit as soon as its queue is empty");
     output.presentation.reset();
-    const SnowOcrResourceCounts counts = resourceCounts();
-    require(counts.results == 0,
-            "immediate recycling should leave no live OCR result resources");
 
     bool recreated = false;
     const auto secondToken = service.recognize(
@@ -396,8 +376,6 @@ void workerRecyclesImmediatelyAndCanBeRecreated() {
     require(secondToken != 0, "a request after immediate recycling should be accepted");
     require(waitUntil([&]() { return recreated; }, kRecognitionTimeoutMs),
             "a request after immediate recycling should recreate the OCR engine");
-    require(waitUntil([]() { return resourceCounts().engines == 0; }, 1'000),
-            "the recreated OCR worker should destroy its engine after completing the request");
     require(waitUntil([&]() { return service.liveWorkerCount() == 0; }, 1'000),
             "the recreated OCR worker should exit after completing the request");
 }
@@ -469,23 +447,149 @@ void serviceDestructionJoinsWorkersAndSuppressesLateDelivery() {
         require(token != 0, "requests queued before service shutdown should be accepted");
     }
 
-    require(waitUntil([]() { return resourceCounts().engines > 0; }, kRecognitionTimeoutMs),
+    require(waitUntil([&]() { return service->liveWorkerCount() > 0; }, kRecognitionTimeoutMs),
             "at least one OCR worker should initialize before shutdown");
     const int completionsBeforeDestruction = completions;
     service.reset();
     processEventsFor(250);
     require(completions == completionsBeforeDestruction,
             "destroyed OCR services must not deliver queued completions");
-    const SnowOcrResourceCounts counts = resourceCounts();
-    require(counts.engines == 0 && counts.results == 0,
-            "service destruction should synchronously join workers and release FFI resources");
+}
+
+QJsonObject assetFile(const QString& name, const QByteArray& contents,
+                      const QString& url = {}) {
+    QJsonObject result{{QStringLiteral("name"), name},
+                       {QStringLiteral("size"), contents.size()},
+                       {QStringLiteral("sha256"),
+                        QString::fromLatin1(QCryptographicHash::hash(
+                                                contents, QCryptographicHash::Sha256)
+                                                .toHex())}};
+    if (!url.isEmpty()) result.insert(QStringLiteral("url"), url);
+    return result;
+}
+
+void writeFixture(const QString& path, const QByteArray& contents) {
+    require(QDir().mkpath(QFileInfo(path).dir().absolutePath()),
+            "OCR asset fixture directory should be writable");
+    QFile file(path);
+    require(file.open(QIODevice::WriteOnly | QIODevice::Truncate),
+            "OCR asset fixture should be writable");
+    require(file.write(contents) == contents.size(), "OCR asset fixture write should complete");
+}
+
+void writeAssetManifest(const QString& root, bool completePayload) {
+    const QByteArray process("process");
+    const QByteArray directMl("directml");
+    const QByteArray runtimeManifest("runtime");
+    const QByteArray detector("detector");
+    const QByteArray recognizer("recognizer");
+    const QByteArray dictionary("dictionary");
+    const QString runtimeDirectory = QDir(root).filePath(QStringLiteral("runtimes/1.0.0/windows-x64"));
+    const QString modelDirectory = QDir(root).filePath(QStringLiteral("models/ppocrv6-small-463ea9f"));
+    if (completePayload) {
+        writeFixture(QDir(runtimeDirectory).filePath(
+                         QStringLiteral("snow-ocr-process-1.0.0-windows-x64.exe")), process);
+        writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral("DirectML.dll")), directMl);
+        writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral("runtime-manifest.json")),
+                     runtimeManifest);
+        writeFixture(QDir(modelDirectory).filePath(QStringLiteral("PP-OCRv6_det_small.onnx")),
+                     detector);
+        writeFixture(QDir(modelDirectory).filePath(QStringLiteral("PP-OCRv6_rec_small.onnx")),
+                     recognizer);
+        writeFixture(QDir(modelDirectory).filePath(QStringLiteral("ppocrv6_dict.txt")), dictionary);
+        writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral(".complete.json")),
+                     R"({"schema":1,"component":"1.0.0"})");
+        writeFixture(QDir(modelDirectory).filePath(QStringLiteral(".complete.json")),
+                     R"({"schema":1,"component":"ppocrv6-small-463ea9f"})");
+    }
+    const QJsonArray runtimeFiles{
+        assetFile(QStringLiteral("snow-ocr-process-1.0.0-windows-x64.exe"), process),
+        assetFile(QStringLiteral("DirectML.dll"), directMl),
+        assetFile(QStringLiteral("runtime-manifest.json"), runtimeManifest)};
+    const QJsonArray modelFiles{
+        assetFile(QStringLiteral("PP-OCRv6_det_small.onnx"), detector,
+                  QStringLiteral("https://example.invalid/det")),
+        assetFile(QStringLiteral("PP-OCRv6_rec_small.onnx"), recognizer,
+                  QStringLiteral("https://example.invalid/rec")),
+        assetFile(QStringLiteral("ppocrv6_dict.txt"), dictionary,
+                  QStringLiteral("https://example.invalid/dict"))};
+    const QByteArray archive("archive");
+    const QJsonObject manifest{
+        {QStringLiteral("schema"), 1},
+        {QStringLiteral("runtime"),
+         QJsonObject{{QStringLiteral("version"), QStringLiteral("1.0.0")},
+                     {QStringLiteral("platform"), QStringLiteral("windows-x64")},
+                     {QStringLiteral("archive"),
+                      assetFile(QStringLiteral("snow-ocr-runtime-1.0.0-windows-x64.zip"),
+                                archive, QStringLiteral("https://example.invalid/runtime"))},
+                     {QStringLiteral("files"), runtimeFiles}}},
+        {QStringLiteral("model"),
+         QJsonObject{{QStringLiteral("id"), QStringLiteral("ppocrv6-small-463ea9f")},
+                     {QStringLiteral("files"), modelFiles}}}};
+    writeFixture(QDir(root).filePath(QStringLiteral("asset-manifest.json")),
+                 QJsonDocument(manifest).toJson(QJsonDocument::Compact));
+}
+
+void validOfflineAssetsAreSelectedWithoutNetwork() {
+    QTemporaryDir offline;
+    QTemporaryDir cache;
+    require(offline.isValid() && cache.isValid(), "temporary OCR asset roots should be available");
+    writeAssetManifest(offline.path(), true);
+    int downloads = 0;
+    bool ready = false;
+    bool failed = false;
+    ScreenshotOcrAssets::Options options;
+    options.offlineRoot = offline.path();
+    options.cacheRoot = cache.path();
+    options.downloadOverride = [&](const QString&, const QString&, QString*) {
+        ++downloads;
+        return false;
+    };
+    ScreenshotOcrAssets assets(options);
+    QObject::connect(&assets, &ScreenshotOcrAssets::ready, &assets,
+                     [&](const ScreenshotOcrResolvedAssets& result) {
+                         ready = result.offline && result.valid();
+                     });
+    QObject::connect(&assets, &ScreenshotOcrAssets::failed, &assets,
+                     [&](const QString&) { failed = true; });
+    assets.prepare();
+    require(waitUntil([&]() { return ready || failed; }, 5'000),
+            "offline OCR asset validation should complete");
+    require(ready && !failed, "a complete hash-valid offline payload should be selected");
+    require(downloads == 0, "valid offline OCR assets must not use the network");
+}
+
+void incompleteOfflineAssetsFallBackToOnlineAcquisition() {
+    QTemporaryDir offline;
+    QTemporaryDir cache;
+    require(offline.isValid() && cache.isValid(), "temporary OCR fallback roots should be available");
+    writeAssetManifest(offline.path(), false);
+    int downloads = 0;
+    bool finished = false;
+    ScreenshotOcrAssets::Options options;
+    options.offlineRoot = offline.path();
+    options.cacheRoot = cache.path();
+    options.downloadOverride = [&](const QString&, const QString&, QString* error) {
+        ++downloads;
+        *error = QStringLiteral("fixture download stopped");
+        return false;
+    };
+    ScreenshotOcrAssets assets(options);
+    QObject::connect(&assets, &ScreenshotOcrAssets::failed, &assets,
+                     [&](const QString&) { finished = true; });
+    assets.prepare();
+    require(waitUntil([&]() { return finished; }, 5'000),
+            "invalid offline OCR assets should attempt online acquisition");
+    require(downloads == 1, "incomplete offline assets must enter online acquisition once");
 }
 } // namespace
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     const bool directMlRequested = application.arguments().contains(QStringLiteral("--directml"));
-    modelStoreReadinessTracksRequiredFiles();
+    validOfflineAssetsAreSelectedWithoutNetwork();
+    incompleteOfflineAssetsFallBackToOnlineAcquisition();
+    explicitAssetsControlReadiness();
     renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine();
     diskBackedEngineCompletesThroughTheQtWorker(directMlRequested);
     if (!directMlRequested) {

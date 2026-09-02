@@ -1015,7 +1015,7 @@ QVector<SettingsItemDefinition> screenshotOtherShortcutItems() {
             []() { return custom_outlined_icons::TableRecognition(); }),
         localShortcutItem(
             SettingsLocalShortcutScope::Screenshot, QStringLiteral("qr_code_recognition"),
-            QT_TRANSLATE_NOOP("SettingsCatalog", "QR Code Recognition"),
+            QT_TRANSLATE_NOOP("SettingsCatalog", "Barcode Recognition"),
             []() { return custom_outlined_icons::ScanQrcode(); }),
         localShortcutItem(
             SettingsLocalShortcutScope::Screenshot, QStringLiteral("text_recognition"),

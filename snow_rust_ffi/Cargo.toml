@@ -10,7 +10,6 @@ crate-type = ["staticlib"]
 [dependencies]
 snow-capture-c = { path = "../snow-crates/crates/snow-capture-c" }
 snow-draw-engine-c = { path = "../snow_draw_engine_qt/crates/snow-draw-engine-c" }
-snow-ocr-c = { path = "../snow-crates/crates/snow-ocr-c" }
 snow-stitch-images-c = { path = "../snow-crates/crates/snow-stitch-images-c" }
 snow-ui-selector-c = { path = "../snow-crates/crates/snow-ui-selector-c" }
 

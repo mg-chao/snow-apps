@@ -296,23 +296,6 @@ fn align_width(width: usize, alignment: usize) -> Result<usize> {
         .ok_or_else(|| RapidOcrError::InvalidInput("recognition width overflow".to_string()))
 }
 
-#[cfg(test)]
-mod width_alignment_tests {
-    use super::align_width;
-
-    #[test]
-    fn dynamic_width_rounds_up_to_configured_multiple() {
-        assert_eq!(align_width(320, 32).expect("aligned width"), 320);
-        assert_eq!(align_width(321, 32).expect("rounded width"), 352);
-        assert_eq!(align_width(321, 1).expect("disabled alignment"), 321);
-    }
-
-    #[test]
-    fn zero_width_alignment_is_rejected() {
-        assert!(align_width(320, 0).is_err());
-    }
-}
-
 fn resolve_model_path(
     config: &RecognizerConfig,
     resolved: &ResolvedRecModel,
@@ -494,5 +477,22 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod width_alignment_tests {
+    use super::align_width;
+
+    #[test]
+    fn dynamic_width_rounds_up_to_configured_multiple() {
+        assert_eq!(align_width(320, 32).expect("aligned width"), 320);
+        assert_eq!(align_width(321, 32).expect("rounded width"), 352);
+        assert_eq!(align_width(321, 1).expect("disabled alignment"), 321);
+    }
+
+    #[test]
+    fn zero_width_alignment_is_rejected() {
+        assert!(align_width(320, 0).is_err());
     }
 }

@@ -966,7 +966,7 @@ void tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode() {
                 content->objectName() == QStringLiteral("screenshotTableQrPopoverContent"),
             "the Table and QR popover should expose stable testable content");
     adqt::widgets::AdButton* tableOption = popoverButtonWithTooltip(popover, "Table recognition");
-    adqt::widgets::AdButton* qrOption = popoverButtonWithTooltip(popover, "QR code recognition");
+    adqt::widgets::AdButton* qrOption = popoverButtonWithTooltip(popover, "Barcode recognition");
     require(tableOption != nullptr && qrOption != nullptr &&
                 content->layout()->indexOf(tableOption) < content->layout()->indexOf(qrOption),
             "the shared popover should list Table recognition before QR recognition");
@@ -988,7 +988,7 @@ void tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode() {
     qrOption->click();
     require(qrRequests == 1 && tableRequests == 1 &&
                 palette.activeToolForTests() == ScreenshotToolPalette::Tool::Qr &&
-                trigger->accessibleName() == QStringLiteral("QR code recognition") &&
+                trigger->accessibleName() == QStringLiteral("Barcode recognition") &&
                 adqt::icons::describeIcon(trigger->iconRef()).key.name ==
                     adqt::icons::describeIcon(
                         snow_shot::presentation::icons::custom::outlined::ScanQrcode())
@@ -5689,7 +5689,7 @@ void tableQrEntrySelectionPersistsAcrossPaletteInstances() {
             palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotTableQrButton"));
         materializeLazyPopover(tableQrTrigger);
         auto* qrOption =
-            popoverButtonWithTooltip(popoverForTrigger(tableQrTrigger), "QR code recognition");
+            popoverButtonWithTooltip(popoverForTrigger(tableQrTrigger), "Barcode recognition");
         require(qrOption != nullptr, "persisted recognition test should expose the QR option");
         qrOption->click();
     }
@@ -5698,7 +5698,7 @@ void tableQrEntrySelectionPersistsAcrossPaletteInstances() {
     auto* restoredTableQr =
         restored.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotTableQrButton"));
     require(restoredTableQr != nullptr &&
-                restoredTableQr->accessibleName() == QStringLiteral("QR code recognition"),
+                restoredTableQr->accessibleName() == QStringLiteral("Barcode recognition"),
             "new toolbar instances should restore the persisted recognition entry");
     require(snow_shot::storage::ApplicationStorage::instance().flushNow().success,
             "toolbar entry preferences should flush to the configuration file");

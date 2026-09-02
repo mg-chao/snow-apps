@@ -10,10 +10,6 @@ pub mod draw_engine {
     pub use snow_draw_engine_c::*;
 }
 
-pub mod ocr {
-    pub use snow_ocr_c::*;
-}
-
 pub mod stitch_images {
     pub use snow_stitch_images_c::*;
 }

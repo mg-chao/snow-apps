@@ -1266,7 +1266,7 @@ void ScreenshotRecognitionSessionController::startQrRecognition() {
     if (!hasTarget() || m_qrRecognition == nullptr || m_qrRequestToken != 0 ||
         !screenshotOcrImageWithinPixelLimit(m_target.image.size())) {
         if (m_qrRecognition == nullptr) {
-            showStatus(tr("QR code recognition is unavailable"), true);
+            showStatus(tr("Barcode recognition is unavailable"), true);
         }
         return;
     }
@@ -1288,7 +1288,7 @@ void ScreenshotRecognitionSessionController::startQrRecognition() {
     }
     updateBusyState();
     if (m_qrRequestToken == 0 && !*callbackCompleted) {
-        showStatus(tr("QR code recognition request could not be prepared"), true);
+        showStatus(tr("Barcode recognition request could not be prepared"), true);
         hideRecognitionMessage();
     }
 }
@@ -1394,7 +1394,7 @@ void ScreenshotRecognitionSessionController::handleQrOutput(
             applyQrContents(result.contents);
         }
         if (m_active && m_mode == Mode::Qr) {
-            showStatus(tr("No QR code was recognized"), false);
+            showStatus(tr("No barcode was recognized"), false);
         }
         hideRecognitionMessage();
         updateBusyState();
@@ -1508,6 +1508,7 @@ void ScreenshotRecognitionSessionController::pollTextModelDownload(quint64 gener
         }
         return;
     }
+    showModelDownloadMessage();
     QTimer::singleShot(100, this,
                        [this, generation]() { pollTextModelDownload(generation); });
 }
@@ -1604,7 +1605,15 @@ void ScreenshotRecognitionSessionController::updateTableState(
 }
 
 void ScreenshotRecognitionSessionController::showModelDownloadMessage() const {
-    const QString message = tr("Downloading OCR model files");
+    QString message = tr("Preparing text recognition components");
+    if (m_recognition != nullptr) {
+        const ScreenshotOcrAssetStatus status = m_recognition->assetStatus();
+        if (status.phase == ScreenshotOcrAssetPhase::Downloading && status.totalBytes > 0) {
+            const int percent = static_cast<int>(
+                std::clamp<qint64>(status.receivedBytes * 100 / status.totalBytes, 0, 100));
+            message = tr("Preparing text recognition components (%1%)").arg(percent);
+        }
+    }
     if (m_actions.showModelDownload) {
         m_actions.showModelDownload(message);
     } else if (m_actions.showLoading) {
@@ -1624,7 +1633,7 @@ void ScreenshotRecognitionSessionController::hideModelDownloadMessage() const {
 
 void ScreenshotRecognitionSessionController::showRecognitionMessage() const {
     const QString message = m_mode == Mode::Table ? tr("Recognizing table")
-                        : m_mode == Mode::Qr ? tr("Recognizing QR code")
+                        : m_mode == Mode::Qr ? tr("Recognizing barcode")
                                              : tr("Recognizing text");
     if (m_actions.showRecognition) {
         m_actions.showRecognition(message);
@@ -1745,7 +1754,7 @@ void ScreenshotRecognitionSessionController::handleRecognitionProviderDestroyed(
         const QString message = translationWasPending ? tr("Translation failed")
                                 : mode == Mode::Text   ? tr("Text recognition failed")
                                 : mode == Mode::Table  ? tr("Table recognition failed")
-                                                       : tr("QR code recognition failed");
+                                                       : tr("Barcode recognition failed");
         showStatus(message, true);
     }
 }

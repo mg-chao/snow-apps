@@ -9,7 +9,7 @@ members = [
     "crates/snow-ui-selector-c",
     "crates/snow-stitch-images",
     "crates/snow-stitch-images-c",
-    "crates/snow-ocr-c",
+    "crates/snow-ocr-process",
     "crates/snow-audio-recorder",
     "crates/rapid-ocr-rs",
     "crates/snow-recording-model",

@@ -90,8 +90,13 @@ jobs:
             throw "Unexpected release tag: $env:GITHUB_REF_NAME"
           }
           $packages = @(Get-ChildItem build\snow-shot-msvc-release -File |
-            Where-Object { $_.Name -match '^snow-shot-.+\.exe$' -or $_.Name -match '^snow-shot-.+\.exe\.sha256$' -or $_.Name -match '^snow-shot-.+\.manifest\.json$' })
-          if ($packages.Count -lt 3) { throw "The package, SHA-256 checksum, and release manifest were not produced." }
+            Where-Object {
+              $_.Name -match '^snow-shot-.+-windows-x64-(?:online|offline)\.exe(?:\.sha256)?$' -or
+              $_.Name -match '^snow-shot-.+-windows-x64-(?:online|offline)\.manifest\.json$' -or
+              $_.Name -match '^snow-ocr-runtime-.+-windows-x64\.zip(?:\.sha256)?$' -or
+              $_.Name -match '^snow-ocr-runtime-.+-windows-x64\.manifest\.json$'
+            })
+          if ($packages.Count -lt 9) { throw "Both installers and the OCR runtime upload artifacts were not produced." }
           $assets = ($packages | ForEach-Object { $_.FullName }) -join "`n"
           "assets<<SNOW_ASSETS" | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append
           $assets | Out-File $env:GITHUB_OUTPUT -Encoding utf8 -Append

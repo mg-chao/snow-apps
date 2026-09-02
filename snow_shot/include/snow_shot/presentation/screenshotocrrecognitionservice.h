@@ -8,6 +8,8 @@
 #include <QSize>
 #include <QString>
 
+#include "snow_shot/presentation/screenshotocrassets.h"
+
 #include <functional>
 #include <memory>
 
@@ -57,7 +59,7 @@ class ScreenshotOcrRecognitionPort : public QObject {
                                    Completion completion) = 0;
     // Optional render-only operation. The default keeps lightweight test and
     // alternate implementations source-compatible; the production service
-    // executes it on the same bounded worker pool as recognition.
+    // performs this Qt-side image work off the caller thread.
     virtual RequestToken render(ScreenshotOcrRequest request, QObject* receiver,
                                 Completion completion) {
         Q_UNUSED(request);
@@ -78,9 +80,12 @@ class ScreenshotOcrRecognitionPort : public QObject {
     }
     virtual void cancel(RequestToken token) = 0;
     virtual bool reprioritize(RequestToken token, ScreenshotOcrRequestPriority priority) = 0;
-    // Implementations that manage disk-backed models report whether the
-    // required files are already available before a request is queued.
+    // Implementations that manage disk-backed components report whether the
+    // complete runtime and model set is ready before a request is queued.
     virtual bool modelFilesReady() const { return true; }
+    virtual ScreenshotOcrAssetStatus assetStatus() const {
+        return {ScreenshotOcrAssetPhase::ReadyCached};
+    }
 };
 
 class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPort {
@@ -88,9 +93,19 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
 
   public:
     struct Options {
-        // Maximum concurrent workers; the pool grows only while queued demand requires it.
+        // Maximum concurrent workers in the OCR child process.
         int workerCount = 2;
-        QString modelStoreDirectory;
+        // Packaged descriptor/offline payload and writable online component cache.
+        QString offlineRoot;
+        QString cacheRoot;
+        // Resolved HTTP(S) proxy URL for component downloads. Empty means direct access.
+        QString proxyUrl;
+        // Explicit local assets, primarily for tests and development builds.
+        QString processPath;
+        QString detectorModelPath;
+        QString recognizerModelPath;
+        QString dictionaryPath;
+        QString stateDirectory;
     };
 
     explicit ScreenshotOcrRecognitionService(QObject* parent = nullptr);
@@ -111,13 +126,18 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
     void cancel(RequestToken token) override;
     bool reprioritize(RequestToken token, ScreenshotOcrRequestPriority priority) override;
     [[nodiscard]] bool modelFilesReady() const override;
+    [[nodiscard]] ScreenshotOcrAssetStatus assetStatus() const override;
     void setBackendPreference(ScreenshotOcrBackendPreference preference);
+    void setProxyUrl(const QString& proxyUrl);
     [[nodiscard]] int liveWorkerCount() const;
 
   private:
     class Impl;
     std::unique_ptr<Impl> m_impl;
     RequestToken m_nextToken = 0;
+
+  signals:
+    void assetStatusChanged(const ScreenshotOcrAssetStatus& status);
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTOCRRECOGNITIONSERVICE_H

@@ -71,6 +71,9 @@
 #include <QUrl>
 #include <QLineEdit>
 #include <QMimeData>
+#include <QNetworkProxy>
+#include <QNetworkProxyFactory>
+#include <QNetworkProxyQuery>
 #include <QPlainTextEdit>
 #include <QTextEdit>
 #include <QTextBrowser>
@@ -120,6 +123,33 @@ template <typename Function> class ScopeExit final {
 
 template <typename Function> ScopeExit<Function> makeScopeExit(Function function) {
     return ScopeExit<Function>(std::move(function));
+}
+
+QString resolvedOcrProxyUrl(const QString& proxyMode) {
+    if (proxyMode != QStringLiteral("system")) {
+        return {};
+    }
+    const QNetworkProxyQuery query(QUrl(QStringLiteral("https://www.modelscope.cn/")));
+    const QList<QNetworkProxy> proxies = QNetworkProxyFactory::systemProxyForQuery(query);
+    for (const QNetworkProxy& proxy : proxies) {
+        if (proxy.type() != QNetworkProxy::HttpProxy &&
+            proxy.type() != QNetworkProxy::Socks5Proxy) {
+            continue;
+        }
+        QUrl url;
+        url.setScheme(proxy.type() == QNetworkProxy::Socks5Proxy ? QStringLiteral("socks5")
+                                                                  : QStringLiteral("http"));
+        url.setHost(proxy.hostName());
+        url.setPort(proxy.port());
+        if (!proxy.user().isEmpty()) {
+            url.setUserName(proxy.user());
+        }
+        if (!proxy.password().isEmpty()) {
+            url.setPassword(proxy.password());
+        }
+        return url.toString(QUrl::FullyEncoded);
+    }
+    return {};
 }
 
 struct ScrollingPinMaterializationState final {
@@ -525,10 +555,14 @@ ScreenshotController::Impl::Impl(ScreenshotController& controller)
                         value.toBool() ? ScreenshotOcrBackendPreference::DirectMl
                                        : ScreenshotOcrBackendPreference::Cpu;
                     m_ocrRecognition->setBackendPreference(preference);
-                } else if (key == QStringLiteral("network/proxy") &&
-                           m_tableRecognition != nullptr) {
-                    m_tableRecognition->setUseSystemProxy(
-                        value.toString() == QStringLiteral("system"));
+                } else if (key == QStringLiteral("network/proxy")) {
+                    if (m_tableRecognition != nullptr) {
+                        m_tableRecognition->setUseSystemProxy(
+                            value.toString() == QStringLiteral("system"));
+                    }
+                    if (m_ocrRecognition != nullptr) {
+                        m_ocrRecognition->setProxyUrl(resolvedOcrProxyUrl(value.toString()));
+                    }
                 }
             });
     }
@@ -862,10 +896,16 @@ bool ScreenshotController::Impl::ensureRecognitionFeature() {
             ? ScreenshotOcrBackendPreference::DirectMl
             : ScreenshotOcrBackendPreference::Cpu;
     ScreenshotOcrRecognitionService::Options ocrOptions;
+    ocrOptions.offlineRoot = QDir(QCoreApplication::applicationDirPath())
+                                 .filePath(QStringLiteral("assets/ocr"));
     if (applicationStorage.isInitialized() &&
         !applicationStorage.configurationDirectory().trimmed().isEmpty()) {
-        ocrOptions.modelStoreDirectory = QDir(applicationStorage.configurationDirectory())
-                                             .filePath(QStringLiteral("assets/ocr"));
+        ocrOptions.cacheRoot = QDir(applicationStorage.configurationDirectory())
+                                   .filePath(QStringLiteral("assets/ocr"));
+    }
+    if (applicationStorage.isInitialized()) {
+        ocrOptions.proxyUrl = resolvedOcrProxyUrl(
+            applicationStorage.configuration().value(QStringLiteral("network/proxy")).toString());
     }
     m_ocrRecognition = std::make_unique<ScreenshotOcrRecognitionService>(
         ocrOptions, backendPreference, &owner);

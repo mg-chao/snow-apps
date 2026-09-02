@@ -58,7 +58,7 @@ fn acquire_download_guard(save_dir: &Path) -> Result<DownloadGuard> {
                 "waiting for OCR model download mutex failed".to_string(),
             ));
         }
-        return Ok(DownloadGuard { handle });
+        Ok(DownloadGuard { handle })
     }
 
     #[cfg(not(target_os = "windows"))]

@@ -92,7 +92,7 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pin to screen"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Text recognition"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Table recognition"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "QR code recognition"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Barcode recognition"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Edit"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Text Translation"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Translation settings"),
@@ -1326,10 +1326,10 @@ void ScreenshotToolPalette::refreshTableQrTrigger() {
     }
     const bool table = m_tableQrEntryTool == Tool::Table;
     configureScreenshotToolPaletteTooltip(m_tableButton,
-                                          table ? "Table recognition" : "QR code recognition");
+                                          table ? "Table recognition" : "Barcode recognition");
     applyScreenshotShortcutTooltip(
         m_tableButton,
-        table ? QStringLiteral("Table recognition") : QStringLiteral("QR code recognition"),
+        table ? QStringLiteral("Table recognition") : QStringLiteral("Barcode recognition"),
         table ? QStringLiteral("table_recognition") : QStringLiteral("qr_code_recognition"));
     setScreenshotToolPaletteToolButtonIcon(m_tableButton,
                                            table ? custom_outlined_icons::TableRecognition()
@@ -3079,7 +3079,7 @@ void ScreenshotToolPalette::ensureTableQrPopover() {
     config.options = {
         {static_cast<int>(Tool::Table), QStringLiteral("Table recognition"),
          custom_outlined_icons::TableRecognition()},
-        {static_cast<int>(Tool::Qr), QStringLiteral("QR code recognition"),
+        {static_cast<int>(Tool::Qr), QStringLiteral("Barcode recognition"),
          custom_outlined_icons::ScanQrcode()}};
     const auto editor = materializeScreenshotToolPaletteOptionPopoverEditor(
         m_tableQrPopover, this, config,
@@ -3100,7 +3100,7 @@ void ScreenshotToolPalette::ensureTableQrPopover() {
         m_qrButton->setObjectName(QStringLiteral("screenshotQrRecognitionOptionButton"));
         m_qrButton->setBusyIndicatorPresentation(
             adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
-        applyScreenshotShortcutTooltip(m_qrButton, QStringLiteral("QR code recognition"),
+        applyScreenshotShortcutTooltip(m_qrButton, QStringLiteral("Barcode recognition"),
                                        QStringLiteral("qr_code_recognition"));
     }
     updateTableQrBusy();
@@ -3550,8 +3550,8 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
                 [this]() { activateTableQrTool(Tool::Table); });
     } else if (options.showQrTool) {
         m_tableQrEntryTool = Tool::Qr;
-        m_tableButton = addToolButton("QR code recognition", custom_outlined_icons::ScanQrcode());
-        applyScreenshotShortcutTooltip(m_tableButton, QStringLiteral("QR code recognition"),
+        m_tableButton = addToolButton("Barcode recognition", custom_outlined_icons::ScanQrcode());
+        applyScreenshotShortcutTooltip(m_tableButton, QStringLiteral("Barcode recognition"),
                                        QStringLiteral("qr_code_recognition"));
         m_tableButton->setBusyIndicatorPresentation(
             adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
