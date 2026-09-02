@@ -193,6 +193,7 @@ void ScreenshotOverlayCoordinator::hideOverlayWindows(
         m_canvasPresenter.clearOverlayCanvas(overlay);
         overlay->releaseNativeSurface();
     });
+    m_uiHost.releaseToolbarNativeSurface();
     m_overlayMaintenancePending = false;
 }
 
@@ -206,6 +207,7 @@ void ScreenshotOverlayCoordinator::flushDeferredOverlayMaintenance(
         overlay->releaseNativeSurface();
     });
     m_uiHost.resetToolbarForNewCapture();
+    m_uiHost.releaseToolbarNativeSurface();
     m_overlayMaintenancePending = false;
 }
 
@@ -547,7 +549,9 @@ ScreenshotOverlayCoordinator::excludedHwnds(const ScreenshotDisplaySession& disp
         if (widget == nullptr) {
             return;
         }
-        const WId id = widget->winId();
+        // Exclusion discovery must not rematerialize a toolbar or overlay whose
+        // native surface was deliberately retired at the end of a capture.
+        const WId id = widget->internalWinId();
         if (id != 0) {
             hwnds.push_back(static_cast<std::uintptr_t>(id));
         }

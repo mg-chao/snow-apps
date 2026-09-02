@@ -89,6 +89,9 @@ class ScreenshotToolPaletteStyleControls final : private ScreenshotToolPaletteSt
                                  const ScreenshotToolPaletteButtonMetrics& metrics);
 
     void reset();
+    // Drop widget/editor bindings while retaining the persistent style model.
+    // The next materialization recreates controls from the retained values.
+    void releaseControlBindings();
     [[nodiscard]] bool stepStrokeWidth(int direction);
     void setLineControlsActive(bool active);
     void setFreeDrawControlsActive(bool active);

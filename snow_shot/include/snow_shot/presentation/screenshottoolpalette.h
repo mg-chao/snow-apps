@@ -326,6 +326,8 @@ class ScreenshotToolPalette final : public QWidget {
     void createStyleFamily(Tool tool);
     void registerStyleFamily(QWidget* controls, std::initializer_list<Tool> tools);
     void replayMaterializedState(Tool tool);
+    void clearSecondaryResourceBindings();
+    bool evictSecondaryToolbarContents();
     bool addMainToolButtons(const Options& options, QBoxLayout* layout);
     bool addMainHistoryButtons(const Options& options, QBoxLayout* layout);
     bool addMainSecondaryButtons(const Options& options, QBoxLayout* layout);
@@ -610,6 +612,7 @@ class ScreenshotToolPalette final : public QWidget {
     QString m_textPunctuationSelection;
     qint64 m_recordingDurationMilliseconds = 0;
     bool m_replayingMaterializedState = false;
+    bool m_releasingSecondaryResources = false;
     QHash<int, MaterializationState> m_actionFamilyStates;
     QHash<int, MaterializationState> m_styleFamilyStates;
     SnowCanvasHistoryState m_canvasHistoryState;

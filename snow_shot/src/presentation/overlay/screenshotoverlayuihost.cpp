@@ -384,6 +384,7 @@ ScreenshotToolbarWindow* ScreenshotOverlayUiHost::ensureToolbar() {
         m_ownedWidgets.add(toolbar);
         m_toolbar = toolbar;
     }
+    m_toolbar->restoreNativeSurface();
     return trackedWidget(m_toolbar);
 }
 
@@ -695,6 +696,12 @@ void ScreenshotOverlayUiHost::hideToolbar() {
         m_toolbar->hide();
     }
     hideSelectionToolbar();
+}
+
+void ScreenshotOverlayUiHost::releaseToolbarNativeSurface() {
+    if (m_toolbar != nullptr) {
+        m_toolbar->releaseNativeSurface();
+    }
 }
 
 void ScreenshotOverlayUiHost::showToolbar() {

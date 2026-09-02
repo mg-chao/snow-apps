@@ -622,6 +622,8 @@ void pinnedWatermarkEditorAcceptsKeyboardInput(SnowCanvasRuntime&) {
 #endif
     QPushButton* editButton = buttonNamed(*pinnedWindow, QStringLiteral("Enable drawing mode"));
     require(editButton != nullptr, "edit button was not found");
+    require(pinnedWindow->findChild<ScreenshotPinnedEditController*>() == nullptr,
+            "pinned drawing UI must remain uncreated before drawing mode starts");
     editButton->click();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
@@ -3491,6 +3493,7 @@ void pinnedEditToolbarControlsCanvasHistory(SnowCanvasRuntime&) {
     auto* controller = pinnedWindow->findChild<ScreenshotPinnedEditController*>();
     require(controller != nullptr, "pinned edit controller was not found");
     ScreenshotFloatingToolPaletteWindow* toolbarWindow = controller->toolbarWindow();
+    QPointer<ScreenshotFloatingToolPaletteWindow> guardedToolbar(toolbarWindow);
     require(toolbarWindow != nullptr && toolbarWindow->isVisible(),
             "pinned edit toolbar should be visible in edit mode");
     require(toolbarWindow->testAttribute(Qt::WA_AlwaysShowToolTips),
@@ -3598,7 +3601,8 @@ void pinnedEditToolbarControlsCanvasHistory(SnowCanvasRuntime&) {
     confirmButton->click();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     require(controlsPanel->isVisible(), "pinned controls should return after confirming the edit");
-    require(toolbarWindow->isHidden(), "pinned edit toolbar should hide after confirming the edit");
+    require(guardedToolbar == nullptr && controller->toolbarWindow() == nullptr,
+            "pinned edit toolbar should be destroyed after confirming the edit");
     require(canvas->canvasTool() == SnowCanvasTool::Select,
             "confirming a pinned edit should restore the select tool");
     require(canvas->canvasStyleToolbarState().source ==
@@ -3607,8 +3611,6 @@ void pinnedEditToolbarControlsCanvasHistory(SnowCanvasRuntime&) {
 
     const QPoint nativeMoveDelta(24, 18);
     const QRect nativeGeometryBeforeMove = pinnedWindow->currentNativeGeometry();
-    const QPoint pinnedPositionBeforeMove = pinnedWindow->pos();
-    const QPoint toolbarPositionBeforeMove = toolbarWindow->contentPosition();
 #if defined(Q_OS_WIN) || defined(_WIN32)
     const HWND moveHwnd = toNativeHwnd(pinnedWindow->winId());
     RECT movingProposal = nativeRectForQRect(nativeGeometryBeforeMove.translated(nativeMoveDelta));
@@ -3620,14 +3622,36 @@ void pinnedEditToolbarControlsCanvasHistory(SnowCanvasRuntime&) {
                  SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     SendMessage(moveHwnd, WM_EXITSIZEMOVE, 0, 0);
 #else
+    const QPoint pinnedPositionBeforeMove = pinnedWindow->pos();
     pinnedWindow->move(pinnedPositionBeforeMove + nativeMoveDelta);
 #endif
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    const QPoint logicalMoveDelta = pinnedWindow->pos() - pinnedPositionBeforeMove;
     require(pinnedWindow->currentNativeGeometry().topLeft() ==
-                    nativeGeometryBeforeMove.topLeft() + nativeMoveDelta &&
-                toolbarWindow->contentPosition() == toolbarPositionBeforeMove + logicalMoveDelta,
-            "a manually placed toolbar should follow every committed native pin move");
+                nativeGeometryBeforeMove.topLeft() + nativeMoveDelta,
+            "a pin should remain movable after its drawing toolbar is destroyed");
+
+    editButton->click();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    ScreenshotFloatingToolPaletteWindow* recreatedToolbar = controller->toolbarWindow();
+    QPointer<ScreenshotFloatingToolPaletteWindow> guardedRecreatedToolbar(recreatedToolbar);
+    require(recreatedToolbar != nullptr && recreatedToolbar->isVisible(),
+            "re-entering drawing mode should create and show a fresh toolbar");
+    require(recreatedToolbar->windowHandle() != nullptr && pinnedWindow->windowHandle() != nullptr &&
+                recreatedToolbar->windowHandle()->transientParent() == pinnedWindow->windowHandle(),
+            "a recreated drawing toolbar should restore pinned-window ownership");
+    ScreenshotToolPalette* recreatedPalette = recreatedToolbar->palette();
+    require(recreatedPalette != nullptr &&
+                recreatedPalette->findChild<adqt::widgets::AdButton*>(
+                    QStringLiteral("screenshotUndoButton")) != nullptr,
+            "a recreated drawing toolbar should restore its command controls");
+
+    auto* thumbnailAction = pinnedWindow->findChild<QAction*>(
+        QStringLiteral("screenshotPinnedThumbnailAction"));
+    require(thumbnailAction != nullptr, "pinned thumbnail action was not found");
+    thumbnailAction->setChecked(true);
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    require(guardedRecreatedToolbar == nullptr && controller->toolbarWindow() == nullptr,
+            "leaving drawing mode for thumbnail mode should destroy the toolbar immediately");
 
     QPushButton* closeButton = buttonNamed(*pinnedWindow, QStringLiteral("Close"));
     require(closeButton != nullptr, "close button was not found");
@@ -3650,6 +3674,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--pinned-shortcut-only"))) {
             pinnedConfiguredShortcutUpdatesImmediately(sourceRuntime);
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--toolbar-lifecycle-only"))) {
+            pinnedEditToolbarControlsCanvasHistory(sourceRuntime);
             return 0;
         }
         recognitionResultsSurviveTargetImageReallocationAndSeedAllModes();

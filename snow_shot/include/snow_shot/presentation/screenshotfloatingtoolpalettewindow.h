@@ -42,6 +42,12 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
                              const QRect& physicalBounds = QRect());
     void setStyleToolbarAboveMain(bool above);
     void prepareForDisplay();
+    // Retire the platform window and backing store while keeping the reusable
+    // widget and palette graph alive.
+    void releaseNativeSurface();
+    // Recreate a surface retired by releaseNativeSurface(). The toolbar remains
+    // hidden until its owner explicitly shows it.
+    void restoreNativeSurface();
     void resetPhysicalSizeInvariant();
     void moveContentTo(const QPoint& position);
     QPoint contentPosition() const;
