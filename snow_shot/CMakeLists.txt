@@ -2924,6 +2924,60 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         user32
     )
 
+    # This executable deliberately is not registered with CTest. It creates
+    # real always-on-top toolbar windows and measures real DWM presentation
+    # for explicit Release benchmarking sessions. It compiles instrumented
+    # copies of the toolbar sources; production builds compile the perf
+    # scopes to no-ops because SNOW_SHOT_TOOLBAR_PERF_INSTRUMENTATION is not
+    # defined for them.
+    add_executable(snow-shot-screenshot-toolbar-display-benchmark
+        tests/screenshot_toolbar_display_benchmark.cpp
+        include/snow_shot/presentation/screenshotfloatingtoolpalettewindow.h
+        include/snow_shot/presentation/screenshottoolbarwindow.h
+        include/snow_shot/presentation/screenshottoolpalette.h
+        include/snow_shot/presentation/screenshottoolpalettehost.h
+        include/snow_shot/presentation/styles/thememanager.h
+        src/presentation/components/icons/snowshoticons.cpp
+        src/presentation/core/screenshotgeometry.cpp
+        src/presentation/core/screenshotcanvastoolstyles.cpp
+        src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
+        src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
+        src/presentation/tools/screenshottoolbarmainpanel.cpp
+        src/presentation/tools/screenshottoolpalettebuttons.cpp
+        src/presentation/tools/screenshottoolpalettehost.cpp
+        src/presentation/tools/screenshottoolpalettestylecontrols.cpp
+        src/presentation/tools/screenshottoolpalettestylemodel.cpp
+        src/presentation/tools/screenshottoolpalette.cpp
+        src/presentation/tools/screenshottoolbarperfinstrumentation.h
+        src/presentation/toolbar/screenshottoolbarwindow.cpp
+        src/presentation/styles/thememanager.cpp
+        src/presentation/styles/themecolorscheme.cpp
+    )
+    target_compile_definitions(
+        snow-shot-screenshot-toolbar-display-benchmark
+        PRIVATE
+            NOMINMAX
+            SNOW_SHOT_TOOLBAR_PERF_INSTRUMENTATION=1
+    )
+    target_include_directories(
+        snow-shot-screenshot-toolbar-display-benchmark
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+    target_link_libraries(
+        snow-shot-screenshot-toolbar-display-benchmark
+        PRIVATE
+            adqt_icon_core
+            ant_design_icons_qt
+            ant_design_qt
+            Qt6::Widgets
+            snow_draw_engine_qt_canvas
+            snow_shot_storage
+            comctl32
+            dwmapi
+            user32
+    )
+
     add_executable(snow-shot-history-performance-benchmark
         tests/screenshot_history_performance_benchmark.cpp
         include/snow_shot/presentation/components/contentcardwidget.h
@@ -3178,6 +3232,18 @@ if(WIN32)
             PkgConfig::SNOW_SHOT_FFMPEG
         )
     endif()
+    # The toolbar benchmarks link the canvas engine, which pulls the Rust FFI
+    # bundle and with it the FFmpeg import libraries.
+    foreach(_snow_shot_ffmpeg_toolbar_benchmark IN ITEMS
+            snow-shot-screenshot-toolbar-render-benchmark
+            snow-shot-screenshot-toolbar-display-benchmark)
+        if(TARGET ${_snow_shot_ffmpeg_toolbar_benchmark})
+            target_link_libraries(${_snow_shot_ffmpeg_toolbar_benchmark} PRIVATE
+                PkgConfig::SNOW_SHOT_FFMPEG
+            )
+        endif()
+    endforeach()
+    unset(_snow_shot_ffmpeg_toolbar_benchmark)
     if(EXISTS "${SNOW_SHOT_FFMPEG_BIN_DIR}" AND NOT SNOW_SHOT_RELEASE_STATIC)
         set(SNOW_SHOT_FFMPEG_DLL_PATTERNS
             "avcodec-*.dll"

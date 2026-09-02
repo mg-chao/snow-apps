@@ -47,12 +47,16 @@ constexpr QSize kToolbarWindowPresetSize(1042, 142);
 ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
     const ScreenshotToolPalette::Options& options, QWidget* parent)
     : QWidget(parent, native::windowFlags()) {
+    SNOW_SHOT_TOOLBAR_PERF_SCOPE("window.base_ctor");
     applyWindowAttributes();
 
     // The native window is deliberately larger than the currently visible rows. Keep the
     // palette host as the only child at the frame origin and right-align the visible palette
     // inside that frame so the toolbar's content coordinate system is deterministic.
-    m_paletteHost = new ScreenshotToolPaletteHost(options, this);
+    {
+        SNOW_SHOT_TOOLBAR_PERF_SCOPE("window.base_ctor.host_and_palette");
+        m_paletteHost = new ScreenshotToolPaletteHost(options, this);
+    }
 
     refreshGeometryForVisibleContent(false);
     const QList<adqt::widgets::AdButton*> buttons =

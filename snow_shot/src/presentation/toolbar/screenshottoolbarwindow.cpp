@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
 
+#include "../tools/screenshottoolbarperfinstrumentation.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
@@ -82,6 +83,7 @@ void ScreenshotToolbarWindow::enterEvent(QEnterEvent* event) {
 }
 
 void ScreenshotToolbarWindow::initializePalette() {
+    SNOW_SHOT_TOOLBAR_PERF_SCOPE("window.initialize_palette");
     ScreenshotToolPalette* toolPalette = palette();
     ScreenshotToolPaletteHost* host = paletteHost();
     if (toolPalette == nullptr || host == nullptr) {
@@ -326,6 +328,7 @@ void ScreenshotToolbarWindow::connectScrollingScreenshotCommands(
 }
 
 void ScreenshotToolbarWindow::resetForNewCapture() {
+    SNOW_SHOT_TOOLBAR_PERF_SCOPE("window.reset_for_new_capture");
     cancelDrag();
     m_manuallyDragged = false;
     resetPhysicalSizeInvariant();

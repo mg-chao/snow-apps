@@ -653,7 +653,9 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    m_styleControls = std::make_unique<ScreenshotToolPaletteStyleControls>(
+    {
+        SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.ctor.style_controls");
+        m_styleControls = std::make_unique<ScreenshotToolPaletteStyleControls>(
         ScreenshotToolPaletteStyleControlCallbacks{
             [this](const SnowCanvasShapeStyle& style, quint32 properties,
                    SnowCanvasShapeKind kind) { emit shapeStyleChanged(style, properties, kind); },
@@ -681,13 +683,21 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
             },
         },
         m_styleDefaults);
+    }
 
-    createMainToolbar(options);
+    {
+        SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.ctor.main_toolbar");
+        createMainToolbar(options);
+    }
     if (options.enableStyleToolbar) {
+        SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.ctor.secondary_shell");
         createSecondaryToolbarShell();
     }
-    updateToolbarGeometry();
-    resetStyleState();
+    {
+        SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.ctor.initial_layout");
+        updateToolbarGeometry();
+        resetStyleState();
+    }
     installWheelFilters(this);
 
     const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
@@ -984,6 +994,7 @@ bool ScreenshotToolPalette::actionToolbarVisible() const {
 
 bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisible,
                                                           bool styleToolbarVisible) {
+    SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.set_secondary_visibility");
     if (m_selectActionPanel == nullptr || m_rectangleStylePanel == nullptr) {
         return false;
     }
@@ -4057,6 +4068,7 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
 }
 
 bool ScreenshotToolPalette::evictSecondaryToolbarContents() {
+    SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.evict_secondary_contents");
     if (m_releasingSecondaryResources ||
         (m_selectActionPanel == nullptr && m_rectangleStylePanel == nullptr)) {
         return false;
@@ -4408,7 +4420,10 @@ bool ScreenshotToolPalette::ensureStyleFamily(Tool tool) {
     for (Tool member : constructing) {
         m_styleFamilyStates.insert(static_cast<int>(member), MaterializationState::Constructing);
     }
-    createStyleFamily(tool);
+    {
+        SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family");
+        createStyleFamily(tool);
+    }
     const bool ready = styleControlsForTool(tool) != nullptr;
     for (Tool member : constructing) {
         m_styleFamilyStates.insert(static_cast<int>(member),
@@ -4418,7 +4433,10 @@ bool ScreenshotToolPalette::ensureStyleFamily(Tool tool) {
     if (!ready) {
         return false;
     }
-    replayMaterializedState(tool);
+    {
+        SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.replay_materialized_state");
+        replayMaterializedState(tool);
+    }
     SNOW_SHOT_TOOLBAR_PERF_COUNTER("hydrate.style_family");
     return true;
 }
@@ -4882,6 +4900,7 @@ QWidget* ScreenshotToolPalette::styleControlsForTool(Tool tool) const {
 }
 
 bool ScreenshotToolPalette::setStyleControlsActive(Tool tool) {
+    SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.set_style_controls_active");
     synchronizeFilterModeGroups(tool);
     if (tool == Tool::RectangleHighlight || tool == Tool::PenHighlight) {
         for (adqt::widgets::AdRadioButtonGroup* group : m_highlightModeGroups) {
