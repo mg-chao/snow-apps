@@ -63,6 +63,7 @@ class SnowShotApiClient;
 class ScreenshotRecognitionWindow;
 class ScreenshotRecognitionSessionController;
 class ScreenshotPinnedEditController;
+class ScreenshotFloatingToolPaletteWindow;
 class ScreenshotPinnedCopyService;
 class ScreenshotPinnedNativeGeometryController;
 class QTextDocument;
@@ -177,6 +178,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void finishPresentation(bool succeeded, QImage image = {});
     void commitClipboardPayload(ScreenshotClipboardPayload payload);
     void ensureEditController();
+    void configureEditToolbar(ScreenshotFloatingToolPaletteWindow* toolbarWindow);
     void setEditMode(bool enabled);
     void setOcrMode(bool enabled);
     void stopRecognition();

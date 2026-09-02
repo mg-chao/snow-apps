@@ -1265,6 +1265,48 @@ void captureResetRestoresTheNormalFrameAnchor() {
             "capture reset should leave the main toolbar flush with the frame's normal anchor");
 }
 
+void toolbarNativeSurfaceCanBeRetiredAndRestored() {
+    NoOpToolbarCommands commands;
+    QWidget owner;
+    owner.setWindowFlags(Qt::FramelessWindowHint | Qt::Tool);
+    owner.resize(640, 360);
+    owner.show();
+    settleQueuedRefreshes();
+
+    ScreenshotToolbarWindow window(commands);
+    window.setOwnerWindow(&owner);
+    window.prepareForDisplay();
+    window.show();
+    settleQueuedRefreshes();
+    require(window.internalWinId() != 0 && window.testAttribute(Qt::WA_WState_Created),
+            "toolbar lifecycle test must begin with a live native surface");
+
+    ScreenshotToolPalette* const palette = window.palette();
+    window.releaseNativeSurface();
+    require(window.palette() == palette,
+            "retiring a toolbar surface must retain the palette object graph");
+    require(window.internalWinId() == 0 && !window.testAttribute(Qt::WA_WState_Created),
+            "retiring a toolbar must synchronously release its native surface");
+    window.releaseNativeSurface();
+    require(window.internalWinId() == 0,
+            "retiring an already retired toolbar must be idempotent");
+
+    window.restoreNativeSurface();
+    window.restoreNativeSurface();
+    require(window.internalWinId() != 0 && window.testAttribute(Qt::WA_WState_Created) &&
+                !window.isVisible(),
+            "restoring a toolbar must recreate a hidden native surface");
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    require(GetWindow(toNativeHwnd(window.internalWinId()), GW_OWNER) ==
+                toNativeHwnd(owner.internalWinId()),
+            "restoring a toolbar must restore its native owner");
+#endif
+    window.show();
+    settleQueuedRefreshes();
+    require(window.isVisible() && window.palette() == palette,
+            "a restored toolbar must show with its retained palette");
+}
+
 void translateButtonRoutesEveryClickThroughTheToggleCommand() {
     NoOpToolbarCommands commands;
     ScreenshotToolbarWindow window(commands);
@@ -1327,6 +1369,10 @@ int main(int argc, char* argv[]) {
             screenshotToolbarSizeMultiplierSurvivesCaptureReset();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--native-surface-lifecycle-only"))) {
+            toolbarNativeSurfaceCanBeRetiredAndRestored();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--reverse-hardware-drag-only"))) {
             physicalDragFromDestinationMonitorAndBackKeepsPhysicalGeometryStable();
             return 0;
@@ -1363,6 +1409,7 @@ int main(int argc, char* argv[]) {
         floatingToolbarsUseTheFixedWindowPreset();
         firstDisplayUsesThePreparedToolbarGeometry();
         captureResetRestoresTheNormalFrameAnchor();
+        toolbarNativeSurfaceCanBeRetiredAndRestored();
         translateButtonRoutesEveryClickThroughTheToggleCommand();
         mainTextTranslationButtonUsesTranslationPresentation();
         return 0;

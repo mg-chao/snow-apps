@@ -47,10 +47,9 @@ class ScreenshotPinnedEditController final : public QObject {
     void updateAfterPinnedWindowMove(const QPoint& logicalDelta);
     void updateCanvasColorSamplingAfterCursorMove(const QPoint& physicalPosition);
     void raiseToolbar();
-    void hideToolbar();
-    void destroyToolbar();
 
   signals:
+    void toolbarCreated(ScreenshotFloatingToolPaletteWindow* toolbarWindow);
     void editModeChanged(bool enabled);
     void textRecognitionRequested();
     void tableRecognitionRequested();
@@ -59,6 +58,8 @@ class ScreenshotPinnedEditController final : public QObject {
 
   private:
     bool eventFilter(QObject* watched, QEvent* event) override;
+    void ensureToolbar();
+    void destroyToolbar();
     void registerDrawingShortcuts();
     void reloadDrawingShortcuts();
     void registerRecognitionShortcuts();
