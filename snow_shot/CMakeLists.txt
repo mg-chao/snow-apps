@@ -159,24 +159,10 @@ if(NOT TARGET snow_capture_c)
     )
 endif()
 
-if(DEFINED OpenCV_DIR)
-    get_filename_component(_SNOW_SHOT_OPENCV_INSTALL_PREFIX
-        "${OpenCV_DIR}/../.."
-        ABSOLUTE
-    )
-    if(EXISTS "${_SNOW_SHOT_OPENCV_INSTALL_PREFIX}/include/opencv4" AND
-       EXISTS "${_SNOW_SHOT_OPENCV_INSTALL_PREFIX}/share")
-        list(PREPEND CMAKE_PREFIX_PATH "${_SNOW_SHOT_OPENCV_INSTALL_PREFIX}")
-    endif()
-endif()
-if(SNOW_SHOT_RELEASE_STATIC)
-    # OpenCV's Windows package dispatcher uses this variable to select the
-    # x64/<runtime>/staticlib target files instead of the shared-library set.
-    set(OpenCV_STATIC ON)
-endif()
-# OpenCV backs the in-process QR-code recognition service (objdetect);
-# text recognition lives in the standalone OCR process.
-find_package(OpenCV CONFIG REQUIRED COMPONENTS core objdetect)
+# zxing-cpp backs the in-process barcode recognition service (QR, DataMatrix,
+# Aztec, PDF417 and 1D symbologies); text recognition lives in the standalone
+# OCR process.
+find_package(ZXing CONFIG REQUIRED)
 # ONNX Runtime backs the standalone OCR process: static release builds link
 # its closure into snow-ocr-process.exe, dynamic builds stage its DLL.
 find_package(onnxruntime CONFIG REQUIRED)
@@ -2978,7 +2964,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
     target_link_libraries(snow-shot-qr-recognition-service-tests PRIVATE
-        opencv_objdetect
+        ZXing::ZXing
         Qt6::Core
         Qt6::Gui
     )
@@ -2988,7 +2974,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     set_tests_properties(snow-shot-qr-recognition-service-tests PROPERTIES
         ENVIRONMENT_MODIFICATION
-            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;PATH=path_list_prepend:$<TARGET_FILE_DIR:opencv_objdetect>"
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
     add_executable(snow-shot-api-client-tests
@@ -3205,7 +3191,7 @@ target_link_libraries(
         snow_capture_c
         snow_ui_selector_c
         snow_stitch_images_c
-        opencv_objdetect
+        ZXing::ZXing
         Qt6::Widgets
         Qt6::Svg
         Qt6::Network
@@ -3580,29 +3566,6 @@ if(WIN32)
 endif()
 
 if(WIN32 AND NOT SNOW_SHOT_RELEASE_STATIC)
-    get_filename_component(_SNOW_SHOT_OPENCV_PREFIX
-        "${OpenCV_DIR}/../.."
-        ABSOLUTE
-    )
-    file(GLOB _SNOW_SHOT_OPENCV_RELEASE_RUNTIME_FILES
-        "${_SNOW_SHOT_OPENCV_PREFIX}/bin/*.dll"
-    )
-    file(GLOB _SNOW_SHOT_OPENCV_DEBUG_RUNTIME_FILES
-        "${_SNOW_SHOT_OPENCV_PREFIX}/debug/bin/*.dll"
-    )
-    if(_SNOW_SHOT_OPENCV_RELEASE_RUNTIME_FILES)
-        install(FILES ${_SNOW_SHOT_OPENCV_RELEASE_RUNTIME_FILES}
-            DESTINATION ${CMAKE_INSTALL_BINDIR}
-            CONFIGURATIONS Release RelWithDebInfo MinSizeRel
-        )
-    endif()
-    if(_SNOW_SHOT_OPENCV_DEBUG_RUNTIME_FILES)
-        install(FILES ${_SNOW_SHOT_OPENCV_DEBUG_RUNTIME_FILES}
-            DESTINATION ${CMAKE_INSTALL_BINDIR}
-            CONFIGURATIONS Debug
-        )
-    endif()
-
     if(SNOW_SHOT_FFMPEG_RUNTIME_FILES)
         install(FILES ${SNOW_SHOT_FFMPEG_RUNTIME_FILES}
             DESTINATION ${CMAKE_INSTALL_BINDIR}

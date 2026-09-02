@@ -130,7 +130,7 @@ function Set-SnowQtEnvironment {
     $env:QTDIR = [System.IO.Path]::GetFullPath((Join-Path $qtDir "..\..\.."))
     # Qt installations commonly add their MinGW toolchain to PATH. That
     # compiler is incompatible with this project's MSVC-only triplets and
-    # causes CMake to select gcc for OpenCV's MASM/GNU assembly sources.
+    # would make CMake pick gcc for native dependency builds.
     $env:Path = @($env:Path -split ';' | Where-Object {
         $_ -and $_ -notmatch '(?i)[\\/]Qt[\\/]Tools[\\/]mingw[^\\/]*([\\/]bin)?$'
     }) -join ';'

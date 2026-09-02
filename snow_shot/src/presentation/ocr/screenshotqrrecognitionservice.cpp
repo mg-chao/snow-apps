@@ -1,7 +1,6 @@
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 
-#include <opencv2/core.hpp>
-#include <opencv2/objdetect.hpp>
+#include <ZXing/ReadBarcode.h>
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -24,7 +23,7 @@ constexpr qint64 kMaximumDetectorPixels = 1920LL * 1080LL;
 constexpr int kMaximumDetectorEdge = 2560;
 
 QString recognitionFailedMessage() {
-    return QCoreApplication::translate("ScreenshotOcrController", "QR code recognition failed");
+    return QCoreApplication::translate("ScreenshotOcrController", "Barcode recognition failed");
 }
 
 QSize boundedDetectorSize(const QSize& sourceSize) {
@@ -62,27 +61,36 @@ ScreenshotQrRecognitionResult recognizeImage(QImage source,
             return {};
         }
 
-        cv::QRCodeDetector detector;
-        cv::Mat input(source.height(), source.width(), CV_8UC1, source.bits(),
-                      static_cast<std::size_t>(source.bytesPerLine()));
-        std::vector<std::string> decoded;
-        static_cast<void>(detector.detectAndDecodeMulti(input, decoded));
+        const ZXing::ImageView view(
+            reinterpret_cast<const std::uint8_t*>(source.constBits()), source.width(),
+            source.height(), ZXing::ImageFormat::Lum,
+            static_cast<int>(source.bytesPerLine()));
+        // Reader defaults (tryHarder, tryInvert, tryDownscale) target accuracy
+        // across every supported symbology; rotation is only attempted on a
+        // second pass because screenshots are usually upright and the extra
+        // scan directions would slow the common case.
+        ZXing::ReaderOptions options;
+        options.setTryRotate(false);
+        ZXing::Barcodes codes = ZXing::ReadBarcodes(view, options);
+        if (codes.empty() && !cancellation.load(std::memory_order_relaxed)) {
+            options.setTryRotate(true);
+            codes = ZXing::ReadBarcodes(view, options);
+        }
 
         ScreenshotQrRecognitionResult result;
-        result.contents.reserve(static_cast<qsizetype>(decoded.size()));
-        for (const std::string& value : decoded) {
+        result.contents.reserve(static_cast<qsizetype>(codes.size()));
+        for (const ZXing::Barcode& code : codes) {
+            const std::string value = code.text();
             if (!value.empty()) {
                 result.contents.push_back(
                     QString::fromUtf8(value.data(), static_cast<qsizetype>(value.size())));
             }
         }
         return result;
-    } catch (const cv::Exception& exception) {
-        qWarning() << "QR code recognition failed:" << exception.what();
     } catch (const std::exception& exception) {
-        qWarning() << "QR code recognition failed:" << exception.what();
+        qWarning() << "Barcode recognition failed:" << exception.what();
     } catch (...) {
-        qWarning() << "QR code recognition failed with an unknown error";
+        qWarning() << "Barcode recognition failed with an unknown error";
     }
     return {{}, recognitionFailedMessage()};
 }

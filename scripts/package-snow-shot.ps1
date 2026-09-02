@@ -171,27 +171,6 @@ function Assert-SnowShotStaticDependencies {
     }
 
     $libraryDirectory = Join-Path $Prefix "lib"
-    $opencvLibraries = @(Get-ChildItem -LiteralPath $libraryDirectory -File |
-        Where-Object { $_.Name -match '(?i)opencv_.+\.(?:a|lib)$' })
-    foreach ($component in @("core", "imgproc", "objdetect")) {
-        if (-not ($opencvLibraries.Name -match "(?i)opencv_$component\d*\.(?:a|lib)$")) {
-            throw "The Snow Shot static prefix is missing the OpenCV $component library."
-        }
-    }
-    $forbiddenOpenCvLibraries = @($opencvLibraries |
-        Where-Object { $_.Name -match '(?i)opencv_(?:dnn|wechat_qrcode)\d*\.(?:a|lib)$' })
-    if ($forbiddenOpenCvLibraries.Count -gt 0) {
-        throw "The Snow Shot static prefix contains forbidden OpenCV modules: $($forbiddenOpenCvLibraries.Name -join ', ')"
-    }
-
-    $opencvTargetFiles = @(Get-ChildItem -LiteralPath (Join-Path $Prefix "share\opencv4") `
-        -Recurse -File -Filter "OpenCVModules.cmake")
-    if ($opencvTargetFiles.Count -ne 1) {
-        throw "Expected one installed OpenCV target export, found $($opencvTargetFiles.Count)."
-    }
-    if ((Get-Content -LiteralPath $opencvTargetFiles[0].FullName -Raw) -match '(?i)pthread') {
-        throw "The MSVC OpenCV target export contains a forbidden pthread dependency."
-    }
 
     $libheifConfig = Join-Path $Prefix "share\libheif\libheif-config.cmake"
     if (-not (Test-Path -LiteralPath $libheifConfig -PathType Leaf) -or
@@ -226,7 +205,7 @@ function Assert-SnowShotStaticDependencies {
         throw "The Release-only static prefix contains Debug artifacts: $($debugDependencyArtifacts.FullName -join ', ')"
     }
 
-    Write-Output "Static dependency audit: $($enabledFfmpegComponents.Count) FFmpeg components and $($opencvLibraries.Count) OpenCV libraries checked"
+    Write-Output "Static dependency audit: $($enabledFfmpegComponents.Count) FFmpeg components checked"
 }
 
 $buildDirectory = Resolve-RepoPath $BuildDirectory

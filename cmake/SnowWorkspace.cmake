@@ -30,7 +30,7 @@ function(snow_workspace_configure_paths)
     set(SNOW_VCPKG_INSTALLED_DIR "${_vcpkg_installed_default}" CACHE PATH
         "vcpkg installed tree used by the active build preset.")
     set(SNOW_FFMPEG_ROOT "${SNOW_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}" CACHE PATH
-        "vcpkg installation prefix containing FFmpeg and OpenCV.")
+        "vcpkg installation prefix containing FFmpeg.")
 
     foreach(_required_dir IN ITEMS
         SNOW_ANT_DESIGN_SOURCE_DIR

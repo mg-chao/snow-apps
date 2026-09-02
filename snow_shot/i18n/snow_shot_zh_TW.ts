@@ -690,8 +690,8 @@
     </message>
     <message>
         <location filename="../src/presentation/ocr/screenshotqrrecognitionservice.cpp" line="27"/>
-        <source>QR code recognition failed</source>
-        <translation>QR 碼辨識失敗</translation>
+        <source>Barcode recognition failed</source>
+        <translation>條碼辨識失敗</translation>
     </message>
 </context>
 <context>
@@ -1034,13 +1034,13 @@
     </message>
     <message>
         <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="985"/>
-        <source>QR code recognition is unavailable</source>
-        <translation>QR 碼辨識無法使用</translation>
+        <source>Barcode recognition is unavailable</source>
+        <translation>條碼辨識無法使用</translation>
     </message>
     <message>
         <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1007"/>
-        <source>QR code recognition request could not be prepared</source>
-        <translation>無法準備 QR 碼辨識請求</translation>
+        <source>Barcode recognition request could not be prepared</source>
+        <translation>無法準備條碼辨識請求</translation>
     </message>
     <message>
         <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1019"/>
@@ -1061,8 +1061,8 @@
     </message>
     <message>
         <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1093"/>
-        <source>No QR code was recognized</source>
-        <translation>未辨識到 QR 碼</translation>
+        <source>No barcode was recognized</source>
+        <translation>未辨識到條碼</translation>
     </message>
     <message>
         <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1263"/>
@@ -1071,8 +1071,8 @@
     </message>
     <message>
         <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1264"/>
-        <source>Recognizing QR code</source>
-        <translation>正在辨識 QR 碼</translation>
+        <source>Recognizing barcode</source>
+        <translation>正在辨識條碼</translation>
     </message>
     <message>
         <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1265"/>
@@ -1086,8 +1086,8 @@
     </message>
     <message>
         <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="1363"/>
-        <source>QR code recognition failed</source>
-        <translation>QR 碼辨識失敗</translation>
+        <source>Barcode recognition failed</source>
+        <translation>條碼辨識失敗</translation>
     </message>
 </context>
 <context>
@@ -1506,8 +1506,8 @@
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="95"/>
-        <source>QR code recognition</source>
-        <translation>QR 碼辨識</translation>
+        <source>Barcode recognition</source>
+        <translation>條碼辨識</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="96"/>
@@ -2350,8 +2350,8 @@
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1018"/>
-        <source>QR Code Recognition</source>
-        <translation>QR 碼辨識</translation>
+        <source>Barcode Recognition</source>
+        <translation>條碼辨識</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="989"/>

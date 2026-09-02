@@ -11,10 +11,13 @@
 #include <cstring>
 #include <iostream>
 #include <memory>
+#include <string>
+#include <string_view>
 #include <utility>
 
 namespace {
 constexpr auto kPayload = "https://snowshot.example/qr-test";
+constexpr auto kEanPayload = "4006381333931";
 constexpr std::array<const char*, 29> kQrModules{
     "11111110001101001111001111111", "10000010110000111111001000001",
     "10111010010011101010101011101", "10111010001111110011101011101",
@@ -80,6 +83,61 @@ QImage largeQrFixture() {
     return image;
 }
 
+QImage eanFixture() {
+    // EAN-13 4006381333931 rendered from the standard GS1 tables: guards, an
+    // L/G-coded left half whose parity is selected by the leading digit, and
+    // a complement-coded right half. 95 modules in total.
+    static constexpr std::string_view kLeftCodes[10] = {
+        "0001101", "0011001", "0010011", "0111101", "0100011",
+        "0110001", "0101111", "0111011", "0110111", "0001011",
+    };
+    static constexpr std::string_view kRightCodes[10] = {
+        "1110010", "1100110", "1101100", "1000010", "1011100",
+        "1001110", "1010000", "1000100", "1001000", "1110100",
+    };
+    static constexpr std::string_view kParityPatterns[10] = {
+        "LLLLLL", "LLGLGG", "LLGGLG", "LLGGGL", "LGLLGG",
+        "LGGLLG", "LGGGLL", "LGLGLG", "LGLGGL", "LGGLGL",
+    };
+    constexpr int kModulePixels = 10;
+    constexpr int kQuietZoneModules = 10;
+    constexpr int kBarHeightPixels = 300;
+    constexpr std::string_view kDigits = "4006381333931";
+
+    std::string modules = "101";
+    const std::string_view parity = kParityPatterns[kDigits[0] - '0'];
+    for (int index = 1; index <= 6; ++index) {
+        const std::string_view code = kLeftCodes[kDigits[index] - '0'];
+        if (parity[static_cast<std::size_t>(index - 1)] == 'L') {
+            modules.append(code.begin(), code.end());
+        } else {
+            // The G code for a digit is the reverse of its right-half code.
+            const std::string_view mirrored = kRightCodes[kDigits[index] - '0'];
+            modules.append(mirrored.rbegin(), mirrored.rend());
+        }
+    }
+    modules += "01010";
+    for (int index = 7; index <= 12; ++index) {
+        modules.append(kRightCodes[kDigits[index] - '0'].begin(),
+                       kRightCodes[kDigits[index] - '0'].end());
+    }
+    modules += "101";
+
+    QImage image((kQuietZoneModules * 2 + static_cast<int>(modules.size())) * kModulePixels,
+                 kBarHeightPixels, QImage::Format_Grayscale8);
+    image.fill(255);
+    for (std::size_t module = 0; module < modules.size(); ++module) {
+        if (modules[module] != '1') {
+            continue;
+        }
+        const int pixelX = static_cast<int>(module + kQuietZoneModules) * kModulePixels;
+        for (int y = 0; y < kBarHeightPixels; ++y) {
+            std::memset(image.scanLine(y) + pixelX, 0, static_cast<std::size_t>(kModulePixels));
+        }
+    }
+    return image;
+}
+
 ScreenshotQrRecognitionResult recognize(ScreenshotQrRecognitionService& service,
                                         const QImage& image, const char* timeoutMessage) {
     require(service.findChildren<QThread*>().isEmpty(),
@@ -129,6 +187,16 @@ void oversizedScreenshotIsBoundedAndStillDecoded() {
     require(output.error.isEmpty(), "large QR recognition should not report an error");
     require(output.contents == QStringList{QString::fromLatin1(kPayload)},
             "the QR detector should decode a QR code from an oversized screenshot");
+}
+
+void oneDimensionalBarcodeDecodesTheSelectedImage() {
+    ScreenshotQrRecognitionService service;
+    const ScreenshotQrRecognitionResult output =
+        recognize(service, eanFixture(),
+                  "EAN recognition should complete within the test timeout");
+    require(output.error.isEmpty(), "EAN recognition should not report an error");
+    require(output.contents == QStringList{QString::fromLatin1(kEanPayload)},
+            "the detector should decode the embedded EAN-13 payload");
 }
 
 void queuedRequestsReuseNoPersistentWorker() {
@@ -191,6 +259,7 @@ void destroyingReceiverCancelsQueuedCompletion() {
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     defaultDetectorDecodesTheSelectedImage();
+    oneDimensionalBarcodeDecodesTheSelectedImage();
     oversizedScreenshotIsBoundedAndStillDecoded();
     queuedRequestsReuseNoPersistentWorker();
     destroyingReceiverCancelsQueuedCompletion();
