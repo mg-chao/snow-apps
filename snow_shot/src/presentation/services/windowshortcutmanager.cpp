@@ -92,6 +92,76 @@ struct WindowShortcutManager::Impl {
 
     explicit Impl(WindowShortcutManager& manager) : q(manager) {}
 
+    // Physical keys whose press was observed through this filter without a
+    // matching release, and keys that were still held when keyboard input last
+    // became unreachable for the scope windows. When the capture UI closes
+    // while a completion key is still held, the key release is delivered to
+    // whichever window regains the foreground and never reaches this process;
+    // Qt's Windows key mapper then keeps the key recorded as pressed and labels
+    // the NEXT physical press of it as an auto-repeat. Tracking the observed
+    // press state lets the manager recognize such mislabeled presses and
+    // dispatch them as the fresh presses they physically are.
+    [[nodiscard]] bool isStaleAutoRepeat(const QKeyEvent& event) const {
+        return event.isAutoRepeat() && event.key() != Qt::Key_unknown &&
+               !m_heldKeys.contains(event.key()) && m_unreleasedKeys.contains(event.key());
+    }
+
+    void noteKeyPress(const QKeyEvent& event) {
+        if (event.key() == Qt::Key_unknown) {
+            return;
+        }
+        m_heldKeys.insert(event.key());
+        m_unreleasedKeys.remove(event.key());
+    }
+
+    void noteKeyRelease(const QKeyEvent& event) {
+        // Auto-repeat sequences include synthetic repeat releases that must not
+        // end the held state; only a real release clears the records.
+        if (!event.isAutoRepeat() && event.key() != Qt::Key_unknown) {
+            m_heldKeys.remove(event.key());
+            m_unreleasedKeys.remove(event.key());
+        }
+    }
+
+    // While no scope window can receive keyboard input, releases of keys the
+    // user is still holding are routed to other applications and never reach
+    // this process. From that point on the release state of every held key is
+    // unknown: move it to the unreleased set so a later auto-repeat-labeled
+    // press of the same key is recognized as a fresh press.
+    void noteScopeInputUnreachable(QObject* object, QEvent::Type type) {
+        if (m_heldKeys.isEmpty()) {
+            return;
+        }
+        auto* widget = qobject_cast<QWidget*>(object);
+        if (widget == nullptr) {
+            return;
+        }
+        QWidget* eventWindow = widget->window();
+        const bool isScopeWindow =
+            std::any_of(m_scopeWindows.cbegin(), m_scopeWindows.cend(),
+                        [eventWindow](const QPointer<QWidget>& scopeWindow) {
+                            return scopeWindow == eventWindow;
+                        });
+        if (!isScopeWindow) {
+            return;
+        }
+        if (type == QEvent::Hide) {
+            for (const QPointer<QWidget>& scopeWindow : m_scopeWindows) {
+                if (scopeWindow != nullptr && scopeWindow->isVisible()) {
+                    return;
+                }
+            }
+        } else {
+            for (const QPointer<QWidget>& scopeWindow : m_scopeWindows) {
+                if (scopeWindow != nullptr && scopeWindow->isActiveWindow()) {
+                    return;
+                }
+            }
+        }
+        m_unreleasedKeys.unite(m_heldKeys);
+        m_heldKeys.clear();
+    }
+
     [[nodiscard]] QWidget* scopeForReceiver(QObject* receiver) {
         m_scopeWindows.erase(
             std::remove_if(m_scopeWindows.begin(), m_scopeWindows.end(),
@@ -168,9 +238,11 @@ struct WindowShortcutManager::Impl {
 
     [[nodiscard]] QVector<Candidate> candidates(const QKeyEvent& event) {
         QVector<Candidate> result;
+        const bool staleAutoRepeat = isStaleAutoRepeat(event);
         for (RegisteredBinding& registered : m_bindings) {
             if (registered.owner == nullptr ||
-                (event.isAutoRepeat() && !registered.binding.autoRepeat)) {
+                (event.isAutoRepeat() && !staleAutoRepeat &&
+                 !registered.binding.autoRepeat)) {
                 continue;
             }
             const auto match = std::find_if(
@@ -229,6 +301,8 @@ struct WindowShortcutManager::Impl {
     WindowShortcutManager& q;
     QList<QPointer<QWidget>> m_scopeWindows;
     QVector<RegisteredBinding> m_bindings;
+    QSet<int> m_heldKeys;
+    QSet<int> m_unreleasedKeys;
     BindingHandle m_nextHandle = 1;
     quint64 m_nextOrder = 1;
     InputSuspensionHandle m_nextSuspensionHandle = 1;
@@ -282,6 +356,11 @@ WindowShortcutManager::InputSuspensionHandle WindowShortcutManager::suspendInput
     const InputSuspensionHandle handle = m_impl->m_nextSuspensionHandle++;
     m_impl->m_inputSuspensions.insert(handle);
     m_impl->clearHeldBindings();
+    // Modal interactions (for example the native save dialog) move keyboard
+    // input outside the manager's visibility, so the release state of every
+    // held key can no longer be tracked reliably.
+    m_impl->m_unreleasedKeys.unite(m_impl->m_heldKeys);
+    m_impl->m_heldKeys.clear();
     return handle;
 }
 
@@ -351,14 +430,25 @@ WindowShortcutManager::keyCombinationsFromPortableText(const QStringList& shortc
 }
 
 bool WindowShortcutManager::eventFilter(QObject* watched, QEvent* event) {
-    if (event == nullptr ||
-        (event->type() != QEvent::ShortcutOverride && event->type() != QEvent::KeyPress &&
-         event->type() != QEvent::KeyRelease)) {
+    if (event == nullptr) {
+        return QObject::eventFilter(watched, event);
+    }
+    if (event->type() == QEvent::Hide || event->type() == QEvent::WindowDeactivate) {
+        m_impl->noteScopeInputUnreachable(watched, event->type());
+        return QObject::eventFilter(watched, event);
+    }
+    if (event->type() != QEvent::ShortcutOverride && event->type() != QEvent::KeyPress &&
+        event->type() != QEvent::KeyRelease) {
         return QObject::eventFilter(watched, event);
     }
 
     auto* keyEvent = static_cast<QKeyEvent*>(event);
     const bool keyRelease = event->type() == QEvent::KeyRelease;
+    if (keyRelease) {
+        m_impl->noteKeyRelease(*keyEvent);
+    } else if (event->type() == QEvent::KeyPress && !keyEvent->isAutoRepeat()) {
+        m_impl->noteKeyPress(*keyEvent);
+    }
     const QVector<Impl::Candidate> candidates =
         keyRelease ? m_impl->releaseCandidates(*keyEvent) : m_impl->candidates(*keyEvent);
     if (m_impl->inputSuspended()) {
@@ -455,7 +545,16 @@ bool WindowShortcutManager::eventFilter(QObject* watched, QEvent* event) {
             continue;
         }
         const auto activate = registered->binding.activate;
-        if (activate && activate(context)) {
+        if (activate && keyEvent->isAutoRepeat()) {
+            // A stale repeat that is about to dispatch is a fresh physical
+            // press. Mark the key held before the action runs (the action may
+            // hide the scope windows, which moves the record to the unreleased
+            // set again) so the hardware repeats of this hold are treated as
+            // repeats.
+            m_impl->noteKeyPress(*keyEvent);
+        }
+        const bool activated = activate && activate(context);
+        if (activated) {
             registered = m_impl->findBinding(candidate.handle);
             if (registered != nullptr && registered->owner != nullptr &&
                 registered->binding.release &&
