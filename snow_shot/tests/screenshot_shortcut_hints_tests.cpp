@@ -179,10 +179,10 @@ void configuredShortcutRowsUseActualValues() {
                 rows.at(6).shortcut == QStringLiteral("P") &&
                 rows.at(7).shortcut == QStringLiteral("Alt+C"),
             "selection action hints must use configured shortcuts");
-    require(rows.at(8).label == QStringLiteral("Switch Color Format") &&
+    require(rows.at(8).label == QStringLiteral("Switch color format") &&
                 rows.at(8).shortcut == QStringLiteral("Shift"),
             "the fixed color-format shortcut must remain visible");
-    require(rows.at(9).label == QStringLiteral("Switch Screenshot History") &&
+    require(rows.at(9).label == QStringLiteral("Switch screenshot history") &&
                 rows.at(9).shortcut == QStringLiteral("PgUp / [ / PgDown / ]") &&
                 rows.at(9).shortcutChips == QStringList{QStringLiteral("PgUp / ["),
                                                        QStringLiteral("PgDown / ]")},
@@ -193,7 +193,7 @@ void defaultHistoryShortcutUsesSeparateChips() {
     const QVector<ScreenshotShortcutHintRow> rows =
         screenshotShortcutHintRows(ScreenshotShortcutHintMode::Selection);
     const ScreenshotShortcutHintRow& historyRow = rows.constLast();
-    require(historyRow.label == QStringLiteral("Switch Screenshot History") &&
+    require(historyRow.label == QStringLiteral("Switch screenshot history") &&
                 historyRow.shortcut == QStringLiteral(", / .") &&
                 historyRow.shortcutChips ==
                     QStringList{QStringLiteral(","), QStringLiteral(".")},
@@ -281,8 +281,8 @@ void disabledSmartSelectionHidesTheTargetSwitchHint() {
 
     const QStringList lines = screenshotShortcutHintLines(context);
     require(lines.contains(QStringLiteral("Switch element level: mouse wheel")) &&
-                !lines.contains(QStringLiteral("Select Window/Window Sub-element: Tab")),
-            "disabled Smart Selection must hide only the Tab target-switch hint");
+                !lines.contains(QStringLiteral("Select window/window sub-element: Tab")),
+            "disabled Smart selection must hide only the Tab target-switch hint");
 }
 
 void emptyContextsUseHiddenMode() {

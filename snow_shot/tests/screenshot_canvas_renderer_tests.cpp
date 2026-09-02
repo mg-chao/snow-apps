@@ -629,21 +629,21 @@ void shortcutHintStagesUseTheExactRequiredLines() {
         QStringLiteral("Move cursor right: D / Right"),
     };
     const QStringList commonLines{
-        QStringLiteral("Select Previously Selected Area: R"),
-        QStringLiteral("Copy Color: C"),
-        QStringLiteral("Switch Color Format: Shift"),
-        QStringLiteral("Switch Screenshot History: , / ."),
+        QStringLiteral("Select previously selected area: R"),
+        QStringLiteral("Copy color: C"),
+        QStringLiteral("Switch color format: Shift"),
+        QStringLiteral("Switch screenshot history: , / ."),
     };
     QStringList selectionLines = cursorLines;
     selectionLines.append({
-        QStringLiteral("Move Entire Selection: Space"),
-        QStringLiteral("Keep Selection Width and Height Consistent: Shift"),
+        QStringLiteral("Move entire selection: Space"),
+        QStringLiteral("Keep selection width and height consistent: Shift"),
     });
     selectionLines.append(commonLines);
     QStringList smartLines = cursorLines;
     smartLines.append({
         QStringLiteral("Switch element level: mouse wheel"),
-        QStringLiteral("Select Window/Window Sub-element: Tab"),
+        QStringLiteral("Select window/window sub-element: Tab"),
     });
     smartLines.append(commonLines);
 

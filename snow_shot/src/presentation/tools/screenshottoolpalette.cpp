@@ -54,14 +54,14 @@ namespace {
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Rectangle filter"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Filter type"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mosaic"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Gaussian Blur"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Gaussian blur"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Grayscale"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Inversion"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Filter intensity"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Adjust filter intensity"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Opacity"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Adjust opacity"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Rectangle Highlighter Tool"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Rectangle highlight"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Vertical scrolling"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Horizontal scrolling"),
 };
@@ -78,8 +78,8 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Arrow"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Line"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Highlighter Tool"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen Highlighter Tool"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Highlight"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Pen highlight"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Spotlight"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Text"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Serial number"),
@@ -94,7 +94,7 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Table recognition"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Barcode recognition"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Edit"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Text Translation"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Text translation"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Translation settings"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Merge cells"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Split cells"),
@@ -487,8 +487,8 @@ QString drawingShortcutToolIdForTooltipSource(const QString& source) {
     if (source == QStringLiteral("Pen")) {
         return QStringLiteral("brush");
     }
-    if (source == QStringLiteral("Highlighter Tool") ||
-        source == QStringLiteral("Pen Highlighter Tool")) {
+    if (source == QStringLiteral("Highlight") ||
+        source == QStringLiteral("Pen highlight")) {
         return QStringLiteral("highlight");
     }
     if (source == QStringLiteral("Text")) {
@@ -3372,7 +3372,7 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
     if (options.showHighlightTool || options.showRectangleHighlightTool ||
         options.showPenHighlightTool) {
         m_highlighterButton =
-            addToolButton("Highlighter Tool", custom_outlined_icons::ToolHighlight());
+            addToolButton("Highlight", custom_outlined_icons::ToolHighlight());
         m_highlighterButton->setObjectName(QStringLiteral("screenshotHighlighterButton"));
         addButton(m_highlighterButton);
         connect(m_highlighterButton, &adqt::widgets::AdButton::clicked, this, [this]() {
@@ -3593,8 +3593,8 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
 
     if (options.showTextTranslationTool) {
         m_textTranslationButton =
-            addToolButton("Text Translation", custom_outlined_icons::OcrTranslate());
-        applyScreenshotShortcutTooltip(m_textTranslationButton, QStringLiteral("Text Translation"),
+            addToolButton("Text translation", custom_outlined_icons::OcrTranslate());
+        applyScreenshotShortcutTooltip(m_textTranslationButton, QStringLiteral("Text translation"),
                                        QStringLiteral("text_translation"));
         m_textTranslationButton->setObjectName(QStringLiteral("screenshotTextTranslationButton"));
         m_textTranslationButton->setBusyIndicatorPresentation(
@@ -3868,7 +3868,7 @@ ScreenshotToolPalette::createFilterEditor(const FilterEditorConfig& config) {
         typeModel->appendRow(item);
     };
     appendFilterType("Mosaic", 0);
-    appendFilterType("Gaussian Blur", 1);
+    appendFilterType("Gaussian blur", 1);
     appendFilterType("Grayscale", 2);
     appendFilterType("Inversion", 3);
     editor.typeSelect->setModel(typeModel);
@@ -4259,7 +4259,7 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
     m_textEditButton = addButton("Edit", outlined_icons::Edit(),
                                  QStringLiteral("screenshotOcrTextEditButton"));
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
-    m_textTranslateButton = addButton("Text Translation", custom_outlined_icons::OcrTranslate(),
+    m_textTranslateButton = addButton("Text translation", custom_outlined_icons::OcrTranslate(),
                                       QStringLiteral("screenshotOcrTextTranslateButton"));
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
     m_textFormattingSelect = new adqt::widgets::AdSelect(m_selectActionPanel);
@@ -4489,8 +4489,8 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
     if ((tool == Tool::RectangleHighlight || tool == Tool::PenHighlight) &&
         m_highlightStyleControlsWidget == nullptr) {
         const QVector<StyleModeOption> modes{
-            {QStringLiteral("Pen Highlighter Tool"), outlined_icons::Highlight(), Tool::PenHighlight},
-            {QStringLiteral("Rectangle Highlighter Tool"), custom_outlined_icons::ShapeRectangle(),
+            {QStringLiteral("Pen highlight"), outlined_icons::Highlight(), Tool::PenHighlight},
+            {QStringLiteral("Rectangle highlight"), custom_outlined_icons::ShapeRectangle(),
              Tool::RectangleHighlight}};
         m_highlightStyleControlsWidget = new QWidget(m_rectangleStylePanel);
         m_highlightStyleControlsWidget->setObjectName(

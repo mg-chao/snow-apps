@@ -728,16 +728,16 @@ class HistoryEntryWidget final : public QFrame {
     void retranslateUi() {
         switch (m_record.source) {
         case storage::CaptureHistorySource::CopiedToClipboard:
-            m_sourceLabel->setText(HistoryEntryWidget::tr("Copy to Clipboard"));
+            m_sourceLabel->setText(HistoryEntryWidget::tr("Copy to clipboard"));
             break;
         case storage::CaptureHistorySource::PinnedToScreen:
-            m_sourceLabel->setText(HistoryEntryWidget::tr("Pin to Screen"));
+            m_sourceLabel->setText(HistoryEntryWidget::tr("Pin to screen"));
             break;
         case storage::CaptureHistorySource::CurrentMonitor:
-            m_sourceLabel->setText(HistoryEntryWidget::tr("Current Monitor"));
+            m_sourceLabel->setText(HistoryEntryWidget::tr("Current monitor"));
             break;
         case storage::CaptureHistorySource::FocusedWindow:
-            m_sourceLabel->setText(HistoryEntryWidget::tr("Focused Window"));
+            m_sourceLabel->setText(HistoryEntryWidget::tr("Focused window"));
             break;
         }
         m_editButton->setText(HistoryEntryWidget::tr("Edit"));
@@ -1323,25 +1323,25 @@ void ScreenshotHistoryPageWidget::removeEntry(const QString& entryId) {
 }
 
 void ScreenshotHistoryPageWidget::retranslateUi() {
-    m_titleLabel->setText(tr("Screenshot History"));
+    m_titleLabel->setText(tr("Screenshot history"));
     m_sourceFilter->setPlaceholder(tr("All sources"));
     const QVariantList selectedSources = m_sourceFilter->currentValues();
     m_sourceFilter->setOptions(
-        {sourceOption(QStringLiteral("clipboard"), tr("Copy to Clipboard")),
-         sourceOption(QStringLiteral("pinned"), tr("Pin to Screen")),
-         sourceOption(QStringLiteral("current-monitor"), tr("Current Monitor")),
-         sourceOption(QStringLiteral("focused-window"), tr("Focused Window"))});
+        {sourceOption(QStringLiteral("clipboard"), tr("Copy to clipboard")),
+         sourceOption(QStringLiteral("pinned"), tr("Pin to screen")),
+         sourceOption(QStringLiteral("current-monitor"), tr("Current monitor")),
+         sourceOption(QStringLiteral("focused-window"), tr("Focused window"))});
     m_sourceFilter->setCurrentValues(selectedSources);
     m_dateRangeFilter->setRangePlaceholders(tr("Start date"), tr("End date"));
-    m_deleteAllButton->setToolTip(tr("Delete All History"));
-    m_deleteAllButton->setAccessibleName(tr("Delete All History"));
+    m_deleteAllButton->setToolTip(tr("Delete all history"));
+    m_deleteAllButton->setAccessibleName(tr("Delete all history"));
     m_refreshButton->setToolTip(tr("Refresh history"));
     m_refreshButton->setAccessibleName(tr("Refresh history"));
     m_deleteAllConfirmation->setText(tr("Delete all screenshot history?"));
     m_deleteAllConfirmation->setInformativeText(
         tr("This permanently removes every saved screenshot history entry"));
     m_deleteAllConfirmation->setButtonText(adqt::widgets::AdPopconfirm::StandardButton::Ok,
-                                           tr("Delete All"));
+                                           tr("Delete all"));
     m_deleteAllConfirmation->setButtonText(adqt::widgets::AdPopconfirm::StandardButton::Cancel,
                                            tr("Cancel"));
     if (m_emptyTitle != nullptr) {

@@ -493,7 +493,7 @@ void adjustableDelayUsesWheelAndClampsRange() {
     int changeSignals = 0;
     bool acceptWrites = true;
     ShortcutKeyRowConfig config;
-    config.title = QStringLiteral("Delay %1s to Execute");
+    config.title = QStringLiteral("Delay %1s to execute");
     config.adjustableDelay = true;
     config.delaySeconds = 3;
     config.delaySetter = [&persistedDelay, &setterCalls, &acceptWrites](int seconds) {
@@ -519,7 +519,7 @@ void adjustableDelayUsesWheelAndClampsRange() {
     auto* delayTitleWrap = delayTitleLabel != nullptr ? delayTitleLabel->parentWidget() : nullptr;
     bool titleShowsDefaultDelay = false;
     for (const QLabel* label : row.findChildren<QLabel*>()) {
-        if (label->text() == QStringLiteral("Delay 3s to Execute")) {
+        if (label->text() == QStringLiteral("Delay 3s to execute")) {
             titleShowsDefaultDelay = true;
             break;
         }

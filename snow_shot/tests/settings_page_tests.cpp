@@ -706,7 +706,7 @@ class PageTranslator final : public QTranslator {
             return QStringLiteral("Localized Theme");
         }
         if (QString::fromLatin1(context) == QStringLiteral("SettingsCatalog") &&
-            QString::fromUtf8(sourceText) == QStringLiteral("Follow System")) {
+            QString::fromUtf8(sourceText) == QStringLiteral("Follow system")) {
             return QStringLiteral("Localized System Theme");
         }
         return {};
@@ -1359,7 +1359,7 @@ settings::SettingsCatalog expandedCatalog() {
     QVector<settings::SettingsPageDefinition> pages = builtIn.pages();
     settings::SettingsSelectDefinition select;
     select.options = {
-        {QStringLiteral("system"), text("Follow System")},
+        {QStringLiteral("system"), text("Follow system")},
         {QStringLiteral("light"), text("Light")},
         {QStringLiteral("dark"), text("Dark")},
     };
@@ -1518,7 +1518,7 @@ void generatedPagesRenderEveryItemTypeAndResynchronize() {
                             }) &&
                 std::all_of(trayMenuCheckboxes.cbegin(), trayMenuCheckboxes.cend(),
                             [](const auto* checkbox) { return checkbox != nullptr; }),
-            "tray Menu Options must render fourteen generated checkboxes in four groups");
+            "tray Menu options must render fourteen generated checkboxes in four groups");
     require(interfacePage.findChild<adqt::widgets::AdMultiSelect*>(
                  QStringLiteral("settings-control-drawing-quick-selection-disabled-tools")) ==
                 nullptr &&
@@ -1527,7 +1527,7 @@ void generatedPagesRenderEveryItemTypeAndResynchronize() {
                 nullptr &&
                 interfacePage.findChild<adqt::widgets::AdSelect*>(
                     QStringLiteral("settings-control-tray-left-click-action")) == nullptr,
-            "moved controls must no longer render on Interface Settings");
+            "moved controls must no longer render on Interface settings");
 
     ocrAction->setCurrentValue(QStringLiteral("copy_text"));
     screenRecordingFrameRate->setCurrentValue(83);
@@ -1594,7 +1594,7 @@ void generatedPagesRenderEveryItemTypeAndResynchronize() {
                                         : nullptr;
                                 return status != nullptr && status->isHidden();
                             }),
-            "Hotkey Settings must render every generated shortcut category without global "
+            "Hotkey settings must render every generated shortcut category without global "
             "status");
     const auto settingMetrics =
         snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme().metricAlias;
@@ -1812,7 +1812,7 @@ void generatedPagesRenderEveryItemTypeAndResynchronize() {
                 videoDirectory->text() == QStringLiteral("C:/Videos/SnowShot") &&
                 videoFilename->text() ==
                     QStringLiteral("SnowShot_Video_{YYYY-MM-DD_HH-mm-ss}"),
-            "Storage and Privacy must render all screenshot and recording output controls");
+            "Storage and privacy must render all screenshot and recording output controls");
 
     imageDirectory->setText(QStringLiteral("D:/Captures"));
     require(QMetaObject::invokeMethod(imageDirectory, "editingFinished",
@@ -1854,7 +1854,7 @@ void generatedPagesRenderEveryItemTypeAndResynchronize() {
     auto* smartSelection = functionPage.findChild<adqt::widgets::AdSwitch*>(
         QStringLiteral("settings-control-screenshot-smart-selection"));
     require(smartSelection != nullptr && smartSelection->isChecked(),
-            "Smart Selection must render as an enabled switch by default");
+            "Smart selection must render as an enabled switch by default");
     require(retention->minimum() == 1 && retention->maximum() == 365 && entries->minimum() == 1 &&
                 entries->maximum() == 1000 && disk->minimum() == 128 && disk->maximum() == 10240,
             "integer constraints must come from ConfigurationSchema metadata");
@@ -1904,7 +1904,7 @@ void generatedPagesRenderEveryItemTypeAndResynchronize() {
                 QMetaObject::invokeMethod(functionHeader, "resetRequested", Qt::DirectConnection) &&
                 bindings.resetRequested == settings::SettingsSectionReset::ScreenshotSettings &&
                 smartSelection->isChecked(),
-            "Screenshot settings reset must restore Smart Selection to enabled");
+            "Screenshot settings reset must restore Smart selection to enabled");
 
     auto* screenshotShortcutHeader = hotkeyPage.findChild<SectionHeaderWidget*>(
         QStringLiteral("settings-section-hotkey-settings-screenshot-shortcuts"));
@@ -1987,7 +1987,7 @@ void generatedPagesRenderEveryItemTypeAndResynchronize() {
                                           Qt::DirectConnection) &&
                 bindings.resetRequested == settings::SettingsSectionReset::PinToScreenShortcuts &&
                 pinToScreenShortcutDefaultsAreRestored(),
-            "Pin to Screen shortcut reset must restore every pinned-window shortcut default");
+            "Pin to screen shortcut reset must restore every pinned-window shortcut default");
 
     bindings.setStorageState(false, true);
     flushEvents();
@@ -2033,7 +2033,7 @@ void generatedPagesRenderEveryItemTypeAndResynchronize() {
                 diskUsage->text() == QStringLiteral("2.00 KiB") && entriesLabel != nullptr &&
                 entryCount->font().pixelSize() == descriptionFontSize &&
                 entryCount->font().pixelSize() == entriesLabel->font().pixelSize(),
-            "custom Storage Status rendering must use the Descriptions content typography");
+            "custom Storage status rendering must use the Descriptions content typography");
 
     clear->click();
     flushEvents();
@@ -2061,7 +2061,7 @@ void generatedPagesRenderEveryItemTypeAndResynchronize() {
     bool delayTitleIsRendered = false;
     if (screenshotDelay != nullptr) {
         for (const QLabel* label : screenshotDelay->findChildren<QLabel*>()) {
-            if (label->text() == QStringLiteral("Delay 3s to Execute")) {
+            if (label->text() == QStringLiteral("Delay 3s to execute")) {
                 delayTitleIsRendered = true;
                 break;
             }
@@ -2092,7 +2092,7 @@ void generatedPagesRenderEveryItemTypeAndResynchronize() {
     require(screenshotDelay->delaySeconds() == 4 &&
                 bindings.integerValue(settings::SettingsIntegerBinding::ScreenshotDelaySeconds) ==
                     4 &&
-                trayScreenshotDelay->text() == QStringLiteral("Delay 4s to Execute"),
+                trayScreenshotDelay->text() == QStringLiteral("Delay 4s to execute"),
             "delay changes must update both shortcut and tray-option titles");
     settings::SettingsCommand command;
     bool commandEmitted = false;
@@ -2173,7 +2173,7 @@ void quickActionCommandsDispatchThroughContentCard() {
 
     require(content.findChild<ShortcutKeyRow*>(
                 QStringLiteral("settings-item-quick-open-interface-settings")) == nullptr,
-            "Open Interface Settings must not render in Quick Functions");
+            "Open Interface settings must not render in Quick functions");
     content.showInterfaceSettings();
     require(content.currentLocation() ==
                     settings::SettingsLocation{
@@ -2443,13 +2443,13 @@ void pinToScreenShortcutSettingsRenderAndReset() {
     require(shortcutRows.size() == 11 && shortcutGrid != nullptr &&
                 shortcutGrid->count() == 11 && shortcutGrid->columnCount() == 2 &&
                 shortcutGrid->rowCount() == 6,
-            "Pin to Screen shortcut settings must render eleven actions in a two-column grid");
+            "Pin to screen shortcut settings must render eleven actions in a two-column grid");
 
     for (auto it = pinToScreenShortcutDefaults().cbegin();
          it != pinToScreenShortcutDefaults().cend(); ++it) {
         require(bindings.applyLocalShortcuts(settings::SettingsLocalShortcutScope::PinToScreen,
                                              it.key(), {QStringLiteral("Alt+Q")}),
-                "Pin to Screen shortcut fixtures must be mutable");
+                "Pin to screen shortcut fixtures must be mutable");
     }
     auto* shortcutHeader = hotkeyPage.findChild<SectionHeaderWidget*>(
         QStringLiteral("settings-section-hotkey-settings-pin-to-screen-shortcuts"));
@@ -2457,12 +2457,12 @@ void pinToScreenShortcutSettingsRenderAndReset() {
                 QMetaObject::invokeMethod(shortcutHeader, "resetRequested",
                                           Qt::DirectConnection) &&
                 bindings.resetRequested == settings::SettingsSectionReset::PinToScreenShortcuts,
-            "Pin to Screen shortcut settings must expose their own reset action");
+            "Pin to screen shortcut settings must expose their own reset action");
     for (auto it = pinToScreenShortcutDefaults().cbegin();
          it != pinToScreenShortcutDefaults().cend(); ++it) {
         require(bindings.localShortcuts(settings::SettingsLocalShortcutScope::PinToScreen,
                                         it.key()) == it.value(),
-                "Pin to Screen shortcut reset must restore every default");
+                "Pin to screen shortcut reset must restore every default");
     }
 }
 
@@ -2626,7 +2626,7 @@ void generatedSettingsRowsUseTheirWidthAwareNaturalHeight() {
     const auto& catalog = registry.catalog();
     const auto* definition = catalog.page(QStringLiteral("storage-and-privacy"));
     require(definition != nullptr,
-            "width-aware row geometry test requires the Storage and Privacy page");
+            "width-aware row geometry test requires the Storage and privacy page");
 
     FakeSettingsBackend bindings;
     settings::SettingsRuntimeSession session(registry, bindings);
@@ -2793,7 +2793,7 @@ void drawingToolbarEditorPersistsDropsAndRetainsRejectedChanges() {
                     QStringLiteral("settings-drawing-toolbar-item-rectangle-highlight")) == nullptr &&
                 editor.findChildren<adqt::widgets::AdPopover*>().isEmpty(),
             "drawing toolbar settings should use themed hidden-title typography and expose one "
-            "generic Highlighter Tool among eleven direct tools");
+            "generic Highlight among eleven direct tools");
 
     const auto drop = [](QWidget* target, const QString& itemId, const QPointF& position) {
         QMimeData mimeData;

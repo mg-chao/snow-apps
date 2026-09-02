@@ -60,7 +60,7 @@ bool ScreenshotSelectionResizeWorkflow::open(QObject* modalParent,
     modal->setOwnerWindow(request.ownerWindow);
     modal->setMode(adqt::widgets::AdModal::Mode::Window);
     modal->setWindowModality(Qt::ApplicationModal);
-    modal->setWindowTitle(tr("Resize Selection"));
+    modal->setWindowTitle(tr("Resize selection"));
     modal->setCentered(true);
     modal->setPreferredWidth(500);
     modal->setMaskVisible(false);
@@ -77,7 +77,7 @@ bool ScreenshotSelectionResizeWorkflow::open(QObject* modalParent,
                      &snow_shot::presentation::LanguageManager::languageChanged, modal,
                      [modal, content](const QString&, const QLocale&) {
                          modal->setWindowTitle(QCoreApplication::translate(
-                             "ScreenshotSelectionResizeWorkflow", "Resize Selection"));
+                             "ScreenshotSelectionResizeWorkflow", "Resize selection"));
                          modal->setAcceptText(QCoreApplication::translate(
                              "ScreenshotSelectionResizeWorkflow", "OK"));
                          modal->setRejectText(QCoreApplication::translate(

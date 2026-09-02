@@ -51,7 +51,7 @@ const QVector<TranslationLanguage> kTranslationLanguages{
 
 QString languageName(const QString& code) {
     if (code == QStringLiteral("auto")) {
-        return ScreenshotRecognitionSessionController::tr("auto-detect language");
+        return ScreenshotRecognitionSessionController::tr("Auto-detect language");
     }
     for (const TranslationLanguage& language : kTranslationLanguages) {
         if (code == QLatin1StringView(language.code)) {
@@ -826,7 +826,7 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
     auto* target = new adqt::widgets::AdSelect(form);
     auto* service = new adqt::widgets::AdSelect(form);
     QVector<adqt::widgets::AdSelect::Option> sourceOptions{
-        {QStringLiteral("auto"), tr("auto-detect language")}};
+        {QStringLiteral("auto"), tr("Auto-detect language")}};
     QVector<adqt::widgets::AdSelect::Option> targetOptions;
     for (const TranslationLanguage& language : kTranslationLanguages) {
         const adqt::widgets::AdSelect::Option option{QString::fromLatin1(language.code),

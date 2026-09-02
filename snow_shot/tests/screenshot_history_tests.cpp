@@ -1515,7 +1515,7 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
                 intelligent.currentSelection() == windowSelection &&
                 selection.normalizedSelection() == windowSelection &&
                 selectorHitTestRequests == 5,
-            "disabled Smart Selection must reject Tab and remain in window mode");
+            "disabled Smart selection must reject Tab and remain in window mode");
     if (targetSwitchOnly) {
         require(shortcutSettings.setAllShortcutsAtomic(originalShortcuts),
                 "failed to restore selection shortcuts after target-switch test");

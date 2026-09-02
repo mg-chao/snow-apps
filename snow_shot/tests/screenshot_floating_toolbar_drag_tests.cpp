@@ -1337,16 +1337,16 @@ void mainTextTranslationButtonUsesTranslationPresentation() {
         QStringLiteral("screenshotTextTranslationButton"));
     auto* recognition = window.findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotTextRecognitionButton"));
-    require(translation != nullptr, "the main Text Translation control should be present");
+    require(translation != nullptr, "the main Text translation control should be present");
 
     translation->click();
     require(commands.textTranslationToolCount == 1 &&
                 window.palette()->activeToolForTests() ==
                     ScreenshotToolPalette::Tool::TextTranslation,
-            "the main Text Translation control should activate the translation presentation");
+            "the main Text translation control should activate the translation presentation");
     window.setOcrBusy(true);
     require(translation->busy() && (recognition == nullptr || !recognition->busy()),
-            "recognition for Text Translation should load on the translation control");
+            "recognition for Text translation should load on the translation control");
     window.setOcrBusy(false);
     window.setTextTranslationState(true, true, true);
     require(translation->busy(),

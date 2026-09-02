@@ -1479,7 +1479,7 @@ void ShortcutKeyRow::openShortcutConfigDialog() {
     const QPointer<ShortcutKeyConfigContent> contentGuard(content);
 
     modal->setOwnerWindow(hostWindow);
-    modal->setWindowTitle(tr("Key Configuration for \"%1\"")
+    modal->setWindowTitle(tr("Key configuration for \"%1\"")
                               .arg(m_titleLabel != nullptr ? m_titleLabel->text() : QString()));
     modal->setCentered(true);
     modal->setPreferredWidth(SHORTCUT_CONFIG_MODAL_WIDTH);

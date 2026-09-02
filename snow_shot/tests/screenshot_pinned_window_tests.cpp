@@ -1347,7 +1347,7 @@ void pinnedContextMenuAndModes(SnowCanvasRuntime&) {
     const QList<QAction*> actions = menu->actions();
     require(actions.size() == 14, "pinned menu should have the exact top-level item count");
     require(actions.at(2)->objectName() == QStringLiteral("screenshotPinnedSaveAsFileAction"),
-            "Save as File should appear immediately below Copy Original Content");
+            "Save as file should appear immediately below Copy original content");
     require(menu->findChild<QAction*>(QStringLiteral("screenshotPinnedShowMainInterfaceAction")) !=
                     nullptr &&
                 !actions.contains(menu->findChild<QAction*>(
@@ -1364,23 +1364,23 @@ void pinnedContextMenuAndModes(SnowCanvasRuntime&) {
                 hiddenTrayOptionActions.at(hiddenTrayOptionActions.size() - 2) ==
                     menu->findChild<QAction*>(
                         QStringLiteral("screenshotPinnedShowMainInterfaceAction")),
-            "the pinned menu should retain Show Main Interface when the tray item is hidden");
+            "the pinned menu should retain Show main interface when the tray item is hidden");
     require(snow_shot::storage::TraySettings().setMenuOptions(defaultTrayMenuOptions),
             "the tray menu option fixture should be restored");
     ScreenshotPinnedWindow::setRuntimeTrayEnabled(true);
     const QStringList expected{
-        QStringLiteral("Copy to Clipboard"),
-        QStringLiteral("Copy Original Content"),
-        QStringLiteral("Save as File"),
+        QStringLiteral("Copy to clipboard"),
+        QStringLiteral("Copy original content"),
+        QStringLiteral("Save as file"),
         QStringLiteral("Recognizing text"),
         QString(),
-        QStringLiteral("Drawing Mode"),
-        QStringLiteral("Process Image"),
+        QStringLiteral("Drawing mode"),
+        QStringLiteral("Process image"),
         QStringLiteral("Opacity"),
         QStringLiteral("Scale"),
         QString(),
-        QStringLiteral("Thumbnail Mode"),
-        QStringLiteral("Focus Mode"),
+        QStringLiteral("Thumbnail mode"),
+        QStringLiteral("Focus mode"),
         QString(),
         QStringLiteral("Close"),
     };
@@ -1437,7 +1437,7 @@ void pinnedContextMenuAndModes(SnowCanvasRuntime&) {
 
     recognition.complete({nullptr, QStringLiteral("deterministic failure")});
     require(actions.at(3)->isEnabled() && actions.at(3)->text().section(QLatin1Char('\t'), 0, 0) ==
-                                              QStringLiteral("Display Text Recognition Results"),
+                                              QStringLiteral("Display text recognition results"),
             "OCR failure should leave the text recognition command available");
     sendShortcut(*firstFrameCanvas, Qt::Key_D, Qt::ControlModifier);
     auto* canvas = pinnedWindow->findChild<SnowCanvasWidget*>();
@@ -1468,12 +1468,12 @@ void pinnedContextMenuAndModes(SnowCanvasRuntime&) {
     sendShortcut(*toolbarWindow, Qt::Key_A, Qt::ControlModifier);
     sendShortcut(*toolbarWindow, Qt::Key_C, Qt::ControlModifier);
     require(QApplication::clipboard()->text() == QStringLiteral("Pinned OCR text"),
-            "Copy to Clipboard should copy all OCR text when the pinned toolbar owns the event");
+            "Copy to clipboard should copy all OCR text when the pinned toolbar owns the event");
     QApplication::clipboard()->clear();
     sendShortcut(*canvas, Qt::Key_A, Qt::ControlModifier);
     sendShortcut(*canvas, Qt::Key_C, Qt::ControlModifier);
     require(QApplication::clipboard()->text() == QStringLiteral("Pinned OCR text"),
-            "Copy to Clipboard should copy selected OCR text while recognition is active");
+            "Copy to clipboard should copy selected OCR text while recognition is active");
     sendShortcut(*canvas, Qt::Key_Space);
     require(!actions.at(3)->isChecked() && canvas->canvasContentVisible() &&
                 canvas->interactionEnabled(),
@@ -1589,7 +1589,7 @@ void pinnedContextMenuAndModes(SnowCanvasRuntime&) {
     const QImage originalCopy = waitForClipboardImage(
         [&background](const QImage& image) { return imagesPixelEquivalent(image, background); });
     require(imagesPixelEquivalent(originalCopy, background),
-            "Copy Original Content should preserve the immutable pixels and dimensions");
+            "Copy original content should preserve the immutable pixels and dimensions");
 
     sendShortcut(*canvas, Qt::Key_Space);
     require(!actions.at(10)->isChecked() && !actions.at(5)->isChecked() &&
@@ -1906,7 +1906,7 @@ void pinnedFormattedClipboardTextSkipsOcrAndSeedsPlainTextEditing(
     const QMimeData* copiedOriginal = QApplication::clipboard()->mimeData();
     require(copiedOriginal != nullptr && copiedOriginal->hasHtml() && copiedOriginal->hasText() &&
                 copiedOriginal->html() == originalHtml && copiedOriginal->text() == originalText,
-            "Copy Original Content should restore the HTML and text given to the pinned window");
+            "Copy original content should restore the HTML and text given to the pinned window");
 
     auto* menu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedContextMenu"));
@@ -1955,7 +1955,7 @@ void pinnedFormattedClipboardTextSkipsOcrAndSeedsPlainTextEditing(
         screenshotShortcuts.shortcuts(QStringLiteral("text_recognition"));
     require(screenshotShortcuts.setShortcuts(QStringLiteral("text_recognition"),
                                              {QStringLiteral("Alt+D")}),
-            "the Text Recognition shortcut fixture should accept a runtime mapping");
+            "the Text recognition shortcut fixture should accept a runtime mapping");
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     clickTextEditor(*editor);
     require(editor->hasFocus(), "the pinned recognition editor should own keyboard focus");
@@ -1965,7 +1965,7 @@ void pinnedFormattedClipboardTextSkipsOcrAndSeedsPlainTextEditing(
             "configured screenshot shortcuts must not interrupt pinned text editing");
     require(screenshotShortcuts.setShortcuts(QStringLiteral("text_recognition"),
                                              originalTextRecognitionShortcuts),
-            "the Text Recognition shortcut fixture should restore its original mapping");
+            "the Text recognition shortcut fixture should restore its original mapping");
 
     const QString editedDraft = QStringLiteral("Edited formatted clipboard text");
     session->setTextDraft(editedDraft);
@@ -2165,7 +2165,7 @@ void pinnedRecognitionProviderLossEndsBusyState(SnowCanvasRuntime&) {
     recognition.reset();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     require(menu->actions().at(3)->text().section(QLatin1Char('\t'), 0, 0) ==
-                    QStringLiteral("Display Text Recognition Results") &&
+                    QStringLiteral("Display text recognition results") &&
                 !menu->actions().at(3)->isEnabled(),
             "provider loss must terminate and disable pinned OCR instead of remaining busy");
 
@@ -3267,35 +3267,35 @@ void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime&) {
     auto* translationButton = toolbar->findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotTextTranslationButton"));
     require(translationButton != nullptr &&
-                translationButton->toolTip().contains(QStringLiteral("Text Translation")) &&
+                translationButton->toolTip().contains(QStringLiteral("Text translation")) &&
                 translationButton->toolTip().contains(QStringLiteral("Ctrl+T")),
-            "pinned drawing toolbar should expose Text Translation with its configured shortcut");
+            "pinned drawing toolbar should expose Text translation with its configured shortcut");
 
     const snow_shot::storage::ScreenshotShortcutSettings screenshotShortcuts;
     const QStringList originalTextRecognitionShortcuts =
         screenshotShortcuts.shortcuts(QStringLiteral("text_recognition"));
     require(screenshotShortcuts.setShortcuts(QStringLiteral("text_recognition"),
                                              {QStringLiteral("Alt+D")}),
-            "the Text Recognition shortcut fixture should accept a runtime mapping");
+            "the Text recognition shortcut fixture should accept a runtime mapping");
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
     sendShortcut(*canvas, Qt::Key_X, Qt::ControlModifier);
     require(toolbar->activeToolForTests() == ScreenshotToolPalette::Tool::Table,
-            "the Table Recognition shortcut should activate from the pinned toolbar");
+            "the Table recognition shortcut should activate from the pinned toolbar");
     sendShortcut(*canvas, Qt::Key_Q, Qt::ControlModifier);
     require(toolbar->activeToolForTests() == ScreenshotToolPalette::Tool::Qr,
             "the QR Code Recognition shortcut should activate from the pinned toolbar");
     sendShortcut(*canvas, Qt::Key_D, Qt::AltModifier);
     require(toolbar->activeToolForTests() == ScreenshotToolPalette::Tool::Ocr &&
                 recognition.pending.token != 0,
-            "the configured Text Recognition shortcut should activate from the pinned toolbar");
+            "the configured Text recognition shortcut should activate from the pinned toolbar");
     require(screenshotShortcuts.setShortcuts(QStringLiteral("text_recognition"),
                                              originalTextRecognitionShortcuts),
-            "the Text Recognition shortcut fixture should restore its original mapping");
+            "the Text recognition shortcut fixture should restore its original mapping");
     sendShortcut(*canvas, Qt::Key_T, Qt::ControlModifier);
     require(toolbar->activeToolForTests() == ScreenshotToolPalette::Tool::TextTranslation &&
                 translationButton->busy(),
-            "the Text Translation shortcut should activate its toolbar control while recognizing");
+            "the Text translation shortcut should activate its toolbar control while recognizing");
 
     auto translatedPresentation = std::make_shared<ScreenshotOcrPresentation>();
     translatedPresentation->selection = config.canvasSourceRect.toAlignedRect();
@@ -3308,7 +3308,7 @@ void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime&) {
     require(toolbar->activeToolForTests() == ScreenshotToolPalette::Tool::TextTranslation &&
                 translationButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
                 !translationButton->busy(),
-            "Text Translation should stay active and stop loading after recognition completes");
+            "Text translation should stay active and stop loading after recognition completes");
     sendShortcut(*canvas, Qt::Key_1);
     require(canvas->canvasContentVisible() && canvas->interactionEnabled(),
             "a drawing shortcut should leave pinned text translation mode");

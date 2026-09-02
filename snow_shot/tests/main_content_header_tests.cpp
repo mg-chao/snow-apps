@@ -91,7 +91,7 @@ void headerPlacesSearchAboveAntDesignTabs() {
     const QString descriptionRole = QStringLiteral("__role_%1").arg(Qt::UserRole + 101);
     const QString categoryRole = QStringLiteral("__role_%1").arg(Qt::UserRole + 102);
     require(searchOptions.constFirst().metadata.value(descriptionRole).toString() ==
-                QStringLiteral("Quick Functions page") &&
+                QStringLiteral("Quick functions page") &&
                 searchOptions.constFirst().metadata.value(categoryRole).toString() ==
                     QStringLiteral("Pages"),
             "search rows should expose their description and right-aligned category context");
@@ -107,7 +107,7 @@ void headerPlacesSearchAboveAntDesignTabs() {
                 filteredOptions.constFirst().value.toString() ==
                     QStringLiteral("item:interface.theme") &&
                 filteredOptions.constFirst().metadata.value(categoryRole).toString() ==
-                    QStringLiteral("Interface Settings / General"),
+                    QStringLiteral("Interface settings / General"),
             "typed searches should still include matching section and item entries");
     select->setSearchText(QString());
     flushEvents();
@@ -122,7 +122,7 @@ void headerPlacesSearchAboveAntDesignTabs() {
     require(!delayOptions.isEmpty() &&
                 delayOptions.constFirst().value.toString() ==
                     QStringLiteral("item:quick.screenshot-delay") &&
-                delayOptions.constFirst().label == QStringLiteral("Delay 7s to Execute") &&
+                delayOptions.constFirst().label == QStringLiteral("Delay 7s to execute") &&
                 !delayOptions.constFirst().label.contains(QStringLiteral("%1")),
             "global search should render the current delayed screenshot value without placeholders");
     require(snow_shot::storage::ScreenshotSettings().setDelaySeconds(4),
@@ -131,7 +131,7 @@ void headerPlacesSearchAboveAntDesignTabs() {
     flushEvents();
     const auto updatedDelayOptions = select->options();
     require(!updatedDelayOptions.isEmpty() &&
-                updatedDelayOptions.constFirst().label == QStringLiteral("Delay 4s to Execute"),
+                updatedDelayOptions.constFirst().label == QStringLiteral("Delay 4s to execute"),
             "global search should refresh delayed screenshot text when the setting changes");
     select->setSearchText(QString());
     flushEvents();
@@ -184,7 +184,7 @@ void headerPlacesSearchAboveAntDesignTabs() {
                          activatedLocation = location;
                      });
     select->selected(QStringLiteral("page:storage-and-privacy"),
-                     QStringLiteral("Storage and Privacy"));
+                     QStringLiteral("Storage and privacy"));
     require(activatedLocation.pageId == QStringLiteral("storage-and-privacy") &&
                 activatedLocation.sectionId.isEmpty() && activatedLocation.itemId.isEmpty(),
             "global search should activate a structured storage page location");
@@ -248,11 +248,11 @@ void tabsRequestCategoriesWithoutChangingPages() {
         catalog().sectionSummaries(QStringLiteral("interface-settings"));
     header.setSections(interfaceSections);
     require(tabs->count() == interfaceSections.size(),
-            "Interface Settings tabs should cover every registry section");
+            "Interface settings tabs should cover every registry section");
     for (int index = 0; index < interfaceSections.size(); ++index) {
         require(tabs->tabKey(index) == interfaceSections.at(index).id &&
                     tabs->tabText(index) == interfaceSections.at(index).label,
-                "Interface Settings tabs should preserve registry IDs, order, and labels");
+                "Interface settings tabs should preserve registry IDs, order, and labels");
     }
     require(!interfaceSections.isEmpty() &&
                 header.currentSection() == interfaceSections.constFirst().id &&
