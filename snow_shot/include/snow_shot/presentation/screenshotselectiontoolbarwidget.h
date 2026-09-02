@@ -33,8 +33,6 @@ class ScreenshotSelectionToolbarWidget final : public QWidget {
     void setSelectionState(const QRect& selection, bool aspectRatioLocked, int cornerRadius,
                            int shadowWidth, DisplayMode displayMode = DisplayMode::Full);
     QSize contentSizeHint() const;
-    QRect visualContentRect() const;
-    QPoint contentPosition() const;
     bool containsInteractiveGlobalPoint(const QPoint& globalPosition) const;
     void moveContentTo(const QPoint& position);
 

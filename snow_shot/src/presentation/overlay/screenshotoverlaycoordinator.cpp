@@ -3,7 +3,6 @@
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
-#include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenshotoverlayeventsink.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
@@ -328,11 +327,6 @@ bool ScreenshotOverlayCoordinator::tryCurrentRectangleStyle(
     return m_canvasPresenter.tryCurrentRectangleStyle(displaySession, outStyle);
 }
 
-bool ScreenshotOverlayCoordinator::tryCurrentStyleToolbarState(
-    const ScreenshotDisplaySession& displaySession, SnowCanvasStyleToolbarState* outState) const {
-    return m_canvasPresenter.tryCurrentStyleToolbarState(displaySession, outState);
-}
-
 SnowCanvasShapeStyle ScreenshotOverlayCoordinator::currentRectangleStyle(
     const ScreenshotDisplaySession& displaySession) const {
     return m_canvasPresenter.currentRectangleStyle(displaySession);
@@ -430,10 +424,6 @@ void ScreenshotOverlayCoordinator::redoCanvasEdit() {
     m_uiHost.redoCanvasEdit();
 }
 
-ScreenshotColorPickerWidget* ScreenshotOverlayCoordinator::ensureColorPicker() {
-    return m_uiHost.ensureColorPicker();
-}
-
 ScreenshotColorPickerWidget* ScreenshotOverlayCoordinator::colorPicker() const {
     return m_uiHost.colorPicker();
 }
@@ -454,21 +444,10 @@ void ScreenshotOverlayCoordinator::setColorPickerCenterGuideLineColor(const QCol
 }
 
 void ScreenshotOverlayCoordinator::updateShortcutHints(ScreenshotOverlayWindow* overlay,
-                                                       ScreenshotShortcutHintMode mode,
-                                                       qreal opacity,
-                                                       const QRectF& selectionGlobal) {
-    m_uiHost.updateShortcutHints(overlay, mode, opacity, selectionGlobal);
-}
-
-void ScreenshotOverlayCoordinator::updateShortcutHints(ScreenshotOverlayWindow* overlay,
                                                        const ScreenshotShortcutHintContext& context,
                                                        qreal opacity,
                                                        const QRectF& selectionGlobal) {
     m_uiHost.updateShortcutHints(overlay, context, opacity, selectionGlobal);
-}
-
-void ScreenshotOverlayCoordinator::hideShortcutHints() {
-    m_uiHost.hideShortcutHints();
 }
 
 bool ScreenshotOverlayCoordinator::screenshotUiContainsGlobalCursor() const {
@@ -518,10 +497,6 @@ void ScreenshotOverlayCoordinator::hideToolbar() {
 
 void ScreenshotOverlayCoordinator::showToolbar() {
     m_uiHost.showToolbar();
-}
-
-void ScreenshotOverlayCoordinator::raiseToolbar() {
-    m_uiHost.raiseToolbar();
 }
 
 void ScreenshotOverlayCoordinator::hideSelectionToolbar() {

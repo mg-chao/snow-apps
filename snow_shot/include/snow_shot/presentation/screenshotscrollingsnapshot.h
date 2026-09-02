@@ -15,7 +15,6 @@ class ScreenshotScrollingSnapshot final {
 
     [[nodiscard]] static ScreenshotScrollingSnapshot adoptNative(void* snapshot, QSize size);
     [[nodiscard]] bool isValid() const;
-    [[nodiscard]] QSize size() const;
     [[nodiscard]] ScreenshotImageRowSource
     rowSource(std::function<bool()> cancellationRequested = {}) const;
     [[nodiscard]] QImage materialize() const;

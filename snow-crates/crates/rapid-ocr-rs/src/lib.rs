@@ -1,6 +1,7 @@
 mod cls;
 mod config;
 mod det;
+mod diagnostics;
 mod error;
 mod input;
 mod model_registry;
@@ -18,6 +19,7 @@ pub use config::{
     ColorOrder, LangCls, LangDet, LangRec, ModelConfig, ModelType, OcrVersion, ProviderPreference,
     RecImage, RecognizeOptions, RecognizerConfig, RuntimeBackend, RuntimeConfig, VisionBackend,
 };
+pub use diagnostics::{set_stage_timing_enabled, stage_timing_enabled};
 pub use error::{RapidOcrError, Result};
 pub use input::image_loader::{LoadImage, OcrInput};
 pub use model_source::{DictionarySource, ModelSource, PipelineSources};
@@ -37,18 +39,25 @@ pub use types::{LineResult, RecognizeOutput, WordBox, WordInfo, WordType};
 pub type Quad = [[f32; 2]; 4];
 
 pub fn initialize_onnx_runtime() -> Result<()> {
-    // Keep managed ONNX diagnostics on stderr; the host protocol reader also
-    // resynchronizes on the frame magic for native runtime builds that emit
-    // unavoidable cpuinfo diagnostics on stdout.
+    // Keep managed ONNX diagnostics on stderr, filtered to warnings and above
+    // so info-level runtime chatter stays out of production logs; the host
+    // protocol reader also resynchronizes on the frame magic for native
+    // runtime builds that emit unavoidable cpuinfo diagnostics on stdout.
     let _ = ort::init()
         .with_telemetry(false)
         .with_logger(std::sync::Arc::new(
-            |_level: ort::logging::LogLevel,
+            |level: ort::logging::LogLevel,
              _category: &str,
              _id: &str,
              _location: &str,
              message: &str| {
-                eprintln!("ONNX Runtime: {message}");
+                use ort::logging::LogLevel;
+                match level {
+                    LogLevel::Warning | LogLevel::Error | LogLevel::Fatal => {
+                        eprintln!("ONNX Runtime [{level:?}]: {message}");
+                    }
+                    LogLevel::Verbose | LogLevel::Info => {}
+                }
             },
         ))
         .commit();

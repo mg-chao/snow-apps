@@ -1486,22 +1486,6 @@ void ScreenshotCanvasRenderer::setPinnedBackgroundColor(const QColor& color) {
     m_canvas.update();
 }
 
-void ScreenshotCanvasRenderer::clearImage() {
-    if (!m_imageSource.isValid() && m_imageViewportPhysicalSize.isEmpty() &&
-        m_ocrFilteredImage.isNull() && !m_pinnedBackgroundColor.isValid()) {
-        return;
-    }
-    m_imageSource = {};
-    m_imageViewportPhysicalSize = QSize();
-    m_pinnedContentCanvasRect = {};
-    m_pinnedSurfaceCanvasRect = {};
-    m_pinnedResultStyle = {};
-    clearOcrFilteredImage();
-    m_pinnedBackgroundColor = {};
-    invalidateCachedContent();
-    m_canvas.update();
-}
-
 void ScreenshotCanvasRenderer::setMaskVisible(bool visible) {
     if (m_maskVisible == visible) {
         return;

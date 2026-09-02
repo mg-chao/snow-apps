@@ -107,9 +107,6 @@ class ScreenshotClipboardContentReader final {
     [[nodiscard]] static std::optional<ScreenshotClipboardContent>
     decode(ScreenshotClipboardContentSnapshot snapshot, CancellationCheck cancelled = {});
 
-    // Compatibility helpers perform both phases synchronously.
-    [[nodiscard]] static std::optional<ScreenshotClipboardContent> read(QClipboard* clipboard,
-                                                                        qreal devicePixelRatio);
     [[nodiscard]] static std::optional<ScreenshotClipboardContent>
     readMimeData(const QMimeData* mimeData, qreal devicePixelRatio);
 };

@@ -17,17 +17,14 @@ enum class ScreenshotExportFailureStage {
     Cancelled,
     Source,
     Render,
-    Encode,
     File,
     Clipboard,
-    Presentation,
     Internal,
 };
 
 struct ScreenshotExportTaskResult final {
     ScreenshotExportFailureStage failureStage = ScreenshotExportFailureStage::None;
     QString error;
-    QString warning;
     QImage image;
     QString savedPath;
     std::shared_ptr<ScreenshotClipboardPayload> clipboardPayload;

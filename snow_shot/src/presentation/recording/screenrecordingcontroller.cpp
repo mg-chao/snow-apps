@@ -21,7 +21,6 @@
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QMimeData>
-#include <QPointer>
 #include <QStandardPaths>
 #include <QTimer>
 #include <QUrl>

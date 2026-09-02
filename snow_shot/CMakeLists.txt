@@ -803,13 +803,11 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshottoolbarwindow.h
     include/snow_shot/presentation/screenshottypes.h
     include/snow_shot/presentation/screenshotuipreferences.h
-    include/snow_shot/presentation/screenshotwindowcapture.h
     include/snow_shot/presentation/screenrecordingareawindow.h
     include/snow_shot/presentation/screenrecordingcontroller.h
     include/snow_shot/presentation/screenrecordingtoolbarwindow.h
     include/snow_shot/presentation/styles/mainwindowcomponenttoken.h
     include/snow_shot/presentation/styles/buttonborder.h
-    include/snow_shot/presentation/styles/floatingcontroltoolbarstyle.h
     include/snow_shot/presentation/styles/themecolorscheme.h
     include/snow_shot/presentation/systemtraycontroller.h
 )
@@ -830,7 +828,6 @@ set(PROJECT_CXX_SOURCES
     src/presentation/capture/screenshotcaptureruntimeadapter.cpp
     src/presentation/capture/screenshotcaptureworker.cpp
     src/presentation/capture/screenshotcaptureperfinstrumentation.cpp
-    src/presentation/capture/screenshotwindowcapture.cpp
     src/presentation/capture/screenshotcaptureworkflow.cpp
     src/presentation/capture/adaptivescrollingcapturecadence.h
     src/presentation/capture/latestbridgemailbox.h
@@ -923,7 +920,6 @@ set(PROJECT_CXX_SOURCES
     src/presentation/recording/screenrecordingcontroller.cpp
     src/presentation/recording/screenrecordinggeometry.cpp
     src/presentation/recording/screenrecordingtoolbarwindow.cpp
-    src/presentation/styles/floatingcontroltoolbarstyle.cpp
 )
 
 if(MSVC)
@@ -1953,7 +1949,6 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/pinned/screenshotpinnedwindownative.cpp
         src/presentation/services/languagemanager.cpp
         src/presentation/styles/buttonborder.cpp
-        src/presentation/styles/floatingcontroltoolbarstyle.cpp
         src/presentation/styles/themecolorscheme.cpp
         src/presentation/styles/thememanager.cpp
         src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
@@ -2863,7 +2858,6 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     foreach(_storage_test_target IN ITEMS
         snow-shot-language-manager-tests
-        snow-shot-interface-settings-tests
         snow-shot-system-tray-controller-tests
         snow-shot-shortcut-key-row-tests
         snow-shot-selection-resize-workflow-tests

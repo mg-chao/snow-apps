@@ -115,16 +115,6 @@ ScreenshotToolbarPlacementSnapshot ScreenshotToolPaletteHost::placementSnapshot(
     return snapshot;
 }
 
-QRect ScreenshotToolPaletteHost::occupiedHostRect() const {
-    if (m_palette == nullptr) {
-        return QRect(QPoint(0, 0), size());
-    }
-
-    return expandedForShadow(m_palette->occupiedContentRect().translated(contentOffset()),
-                             currentShadowMargins())
-        .intersected(QRect(QPoint(0, 0), size()));
-}
-
 QRegion ScreenshotToolPaletteHost::interactiveHostRegion() const {
     if (m_palette == nullptr) {
         return QRegion(QRect(QPoint(0, 0), size()));
@@ -154,23 +144,6 @@ QPoint ScreenshotToolPaletteHost::contentOffset() const {
     return m_palette != nullptr ? m_palette->pos() + m_palette->contentOffset() : QPoint();
 }
 
-QPoint ScreenshotToolPaletteHost::contentPosition() const {
-    return pos() + contentOffset();
-}
-
-void ScreenshotToolPaletteHost::moveContentTo(const QPoint& position) {
-    // Once the host has been assigned the native frame, it is the full-frame
-    // surface and must remain at the origin. The outer floating window owns
-    // movement in that mode; retain the old behavior for standalone hosts.
-    if (m_frameSize.isValid() && !m_frameSize.isEmpty()) {
-        if (pos() != QPoint(0, 0)) {
-            move(0, 0);
-        }
-        return;
-    }
-    move(position - contentOffset());
-}
-
 void ScreenshotToolPaletteHost::prepareForDisplay() {
     applyHostSize();
 }
@@ -186,11 +159,6 @@ void ScreenshotToolPaletteHost::setCreationStyleDefaults(
     if (m_palette != nullptr) {
         m_palette->setCreationStyleDefaults(defaults);
     }
-}
-
-SnowCanvasStyleDefaults ScreenshotToolPaletteHost::creationStyleDefaults() const {
-    return m_palette != nullptr ? m_palette->creationStyleDefaults()
-                                : snow_shot::presentation::screenshotCanvasStyleDefaults();
 }
 
 bool ScreenshotToolPaletteHost::stepStrokeWidth(int direction) {
@@ -438,10 +406,6 @@ void ScreenshotToolPaletteHost::syncPalettePosition() {
     if (m_palette->pos() != palettePosition) {
         m_palette->move(palettePosition);
     }
-}
-
-quint64 ScreenshotToolPaletteHost::layoutRevision() const {
-    return m_palette != nullptr ? m_palette->layoutRevision() : 0;
 }
 
 QMargins ScreenshotToolPaletteHost::currentShadowMargins() const {

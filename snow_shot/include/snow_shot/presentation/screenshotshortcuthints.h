@@ -263,7 +263,7 @@ screenshotShortcutHintRows(const ScreenshotShortcutHintContext& context) {
     }
 
     // Selection-stage hints are independent of the currently selected canvas
-    // tool. Keep these stages mapped to the legacy modes so intelligent and
+    // tool. Keep these stages mapped to the dedicated selection modes so intelligent and
     // manual selection retain their context-specific shortcuts.
     const ScreenshotShortcutHintMode selectionMode =
         screenshotShortcutHintSelectionModeForContext(context);

@@ -461,10 +461,6 @@ void ScreenshotTableEditor::clearSession() {
     refreshCommandState();
 }
 
-std::shared_ptr<ScreenshotTableEditingSession> ScreenshotTableEditor::session() const {
-    return m_session;
-}
-
 ScreenshotTableCommandState ScreenshotTableEditor::commandState() const {
     return m_commandState;
 }

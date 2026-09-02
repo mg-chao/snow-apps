@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::Instant};
+use std::path::PathBuf;
 
 use ndarray::{ArrayView4, Axis, s};
 use serde::{Deserialize, Serialize};
@@ -70,7 +70,9 @@ impl Default for DetectorConfig {
 pub struct DetOutput {
     pub boxes: Vec<Quad>,
     pub scores: Vec<f32>,
-    pub elapsed_ms: f32,
+    /// Wall-clock detection duration; `None` unless stage timing was enabled
+    /// via `set_stage_timing_enabled`.
+    pub elapsed_ms: Option<f32>,
     pub breakdown: Option<DetTimingBreakdown>,
 }
 
@@ -148,7 +150,7 @@ impl Detector {
     }
 
     pub fn detect(&mut self, img: &RecImage) -> Result<DetOutput> {
-        let start = Instant::now();
+        let timing = crate::diagnostics::timing_start();
         // `DBPostProcess` expects destination size in the detector input image space
         // (before detector-side resize), matching RapidOCR Python behavior.
         let det_limit_side_len = resolve_limit_side_len_like_python(
@@ -156,44 +158,44 @@ impl Detector {
             self.pre.limit_side_len,
             img.width().max(img.height()),
         );
-        let pre_start = Instant::now();
+        let pre_timing = crate::diagnostics::timing_start();
         let (resized_h, resized_w) = self.pre.run_into_buffer_with_scratch(
             img,
             &mut self.batch_scratch,
             &mut self.preprocess_scratch,
             Some(det_limit_side_len),
         )?;
-        let preprocess_ms = pre_start.elapsed().as_secs_f32() * 1000.0;
+        let preprocess_ms = crate::diagnostics::timing_ms(pre_timing);
         let batch_view = ArrayView4::from_shape(
             (1, 3, resized_h, resized_w),
             &self.batch_scratch[..3 * resized_h * resized_w],
         )
         .map_err(|e| RapidOcrError::InvalidInput(format!("invalid det batch shape: {e}")))?;
         let post = &self.post;
-        let infer_start = Instant::now();
+        let infer_timing = crate::diagnostics::timing_start();
         let mut postprocess_ms = 0.0_f32;
         let (boxes, scores) = self.session.run_array4_view_with(batch_view, |preds| {
             if preds.len_of(Axis(0)) == 0 || preds.len_of(Axis(1)) == 0 {
                 return Ok((Vec::new(), Vec::new()));
             }
-            let post_start = Instant::now();
+            let post_timing = crate::diagnostics::timing_start();
             let map = preds.slice(s![0, 0, .., ..]);
             let out = post.run_view(map, img.width(), img.height());
-            postprocess_ms = post_start.elapsed().as_secs_f32() * 1000.0;
+            postprocess_ms = crate::diagnostics::timing_ms(post_timing).unwrap_or(0.0);
             Ok(out)
         })?;
-        let infer_total_ms = infer_start.elapsed().as_secs_f32() * 1000.0;
-        let infer_ms = (infer_total_ms - postprocess_ms).max(0.0);
+        let breakdown =
+            crate::diagnostics::timing_ms(infer_timing).map(|infer_total_ms| DetTimingBreakdown {
+                preprocess_ms: preprocess_ms.unwrap_or(0.0),
+                infer_ms: (infer_total_ms - postprocess_ms).max(0.0),
+                postprocess_ms,
+            });
 
         Ok(DetOutput {
             boxes,
             scores,
-            elapsed_ms: start.elapsed().as_secs_f32() * 1000.0,
-            breakdown: Some(DetTimingBreakdown {
-                preprocess_ms,
-                infer_ms,
-                postprocess_ms,
-            }),
+            elapsed_ms: crate::diagnostics::timing_ms(timing),
+            breakdown,
         })
     }
 

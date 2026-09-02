@@ -2,8 +2,6 @@
 
 #include "snow_shot/storage/configurationschema.h"
 
-#include <QCoreApplication>
-
 #include <type_traits>
 #include <utility>
 
@@ -145,10 +143,6 @@ SettingsRegistry::SettingsRegistry(SettingsCatalog catalog, QVector<QString> pag
     compile(m_pageProviderIds, {});
 }
 
-SettingsRegistry::SettingsRegistry(const QVector<const SettingsProvider*>& providers) {
-    *this = fromProviders(providers);
-}
-
 SettingsRegistry::SettingsRegistry(const SettingsRegistry& other)
     : m_catalog(other.m_catalog),
       m_providerValidationErrors(other.m_providerValidationErrors),
@@ -262,7 +256,6 @@ void SettingsRegistry::compile(const QVector<QString>& pageProviderIds,
 
         SettingsPagePlan plan;
         plan.id = page.id;
-        plan.route = page.route;
         plan.providerId = providerId;
         plan.pageIndex = pageIndex;
         if (m_pagePlanIndexById.contains(plan.id)) {

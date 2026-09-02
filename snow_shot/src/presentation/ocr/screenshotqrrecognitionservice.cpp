@@ -16,7 +16,6 @@
 #include <deque>
 #include <exception>
 #include <utility>
-#include <vector>
 
 namespace {
 constexpr qint64 kMaximumDetectorPixels = 1920LL * 1080LL;

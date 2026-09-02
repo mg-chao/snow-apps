@@ -147,12 +147,6 @@ void recordStrategy(ScreenshotOverlayRevealStrategy strategy) {
         SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.window.strategy.native_invalidate_suppressed",
                                        1);
         break;
-    case ScreenshotOverlayRevealStrategy::Legacy:
-        SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.window.strategy.legacy", 1);
-        break;
-    case ScreenshotOverlayRevealStrategy::ShowOnly:
-        SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.window.strategy.show_only", 1);
-        break;
     }
 }
 } // namespace
@@ -201,9 +195,12 @@ void ScreenshotOverlayFramePresenter::presentPreparedFrame() {
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.opacity_restored");
 }
 
-ScreenshotOverlayRevealStrategy ScreenshotOverlayFramePresenter::strategy() const {
-    return m_strategy;
+#if defined(SNOW_SHOT_BENCH_INTERNALS)
+void ScreenshotOverlayFramePresenter::setStrategyForTesting(
+    ScreenshotOverlayRevealStrategy strategy) {
+    m_strategy = strategy;
 }
+#endif
 
 ScreenshotOverlayRevealStrategy
 ScreenshotOverlayFramePresenter::strategyForName(const QByteArray& name,
@@ -230,35 +227,7 @@ ScreenshotOverlayFramePresenter::strategyForName(const QByteArray& name,
         normalized == QByteArrayLiteral("native_invalidate_suppressed")) {
         return ScreenshotOverlayRevealStrategy::NativeInvalidateSuppressed;
     }
-    if (normalized == QByteArrayLiteral("legacy")) {
-        return ScreenshotOverlayRevealStrategy::Legacy;
-    }
-    if (normalized == QByteArrayLiteral("show-only") ||
-        normalized == QByteArrayLiteral("show_only")) {
-        return ScreenshotOverlayRevealStrategy::ShowOnly;
-    }
     return fallback;
-}
-
-const char*
-ScreenshotOverlayFramePresenter::strategyName(ScreenshotOverlayRevealStrategy strategy) {
-    switch (strategy) {
-    case ScreenshotOverlayRevealStrategy::SingleRepaint:
-        return "single-repaint";
-    case ScreenshotOverlayRevealStrategy::PostedUpdate:
-        return "posted-update";
-    case ScreenshotOverlayRevealStrategy::NativeUpdate:
-        return "native-update";
-    case ScreenshotOverlayRevealStrategy::NativeInvalidate:
-        return "native-invalidate";
-    case ScreenshotOverlayRevealStrategy::NativeInvalidateSuppressed:
-        return "native-invalidate-suppressed";
-    case ScreenshotOverlayRevealStrategy::Legacy:
-        return "legacy";
-    case ScreenshotOverlayRevealStrategy::ShowOnly:
-        return "show-only";
-    }
-    return "single-repaint";
 }
 
 ScreenshotOverlayRevealPlan
@@ -281,23 +250,9 @@ ScreenshotOverlayFramePresenter::planFor(ScreenshotOverlayRevealStrategy strateg
         plan.suppressShowPaint = true;
         plan.nativeInvalidate = true;
         break;
-    case ScreenshotOverlayRevealStrategy::Legacy:
-        plan.repaint = true;
-        plan.sendPostedUpdate = true;
-        plan.nativeInvalidate = true;
-        break;
-    case ScreenshotOverlayRevealStrategy::ShowOnly:
-        break;
     }
     return plan;
 }
-
-#if defined(SNOW_SHOT_BENCH_INTERNALS)
-void ScreenshotOverlayFramePresenter::setStrategyForTesting(
-    ScreenshotOverlayRevealStrategy strategy) {
-    m_strategy = strategy;
-}
-#endif
 
 void ScreenshotOverlayFramePresenter::commitPreparedSurface(
     const ScreenshotOverlayRevealPlan& plan) {

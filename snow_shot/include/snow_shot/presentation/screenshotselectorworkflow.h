@@ -52,9 +52,7 @@ class ScreenshotSelectorWorkflow final {
     void handleHitTestFinished(bool ok, const QVector<QRectF>& hitRects);
 
     void applyHitPath(const QVector<QRectF>& hitRects);
-    void setSelectionIndex(int index);
     void clearSelection();
-    [[nodiscard]] QRectF currentSelection() const;
     [[nodiscard]] bool returnToSelection(const QPoint& physicalPoint);
 
   private:

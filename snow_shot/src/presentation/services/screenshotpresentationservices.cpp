@@ -197,16 +197,6 @@ void ScreenshotPresentationServices::updateOverlayCursors() const {
                                                       m_context.interaction.dragging());
 }
 
-bool ScreenshotPresentationServices::hasActiveDisplays() const {
-    return m_context.displaySession.hasActiveDisplays();
-}
-
-QPoint
-ScreenshotPresentationServices::physicalPositionForLogicalPoint(const QPointF& logicalPoint) const {
-    return m_context.geometry.physicalPositionForLogicalPoint(m_context.displaySession,
-                                                              logicalPoint);
-}
-
 ScreenshotColorPickerContext ScreenshotPresentationServices::colorPickerContext() const {
     ScreenshotColorPickerContext context;
     context.active = !m_context.interaction.inactive() &&

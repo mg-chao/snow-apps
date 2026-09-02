@@ -281,7 +281,7 @@ void navigationSharesCanvasCreationStyles(const QString& root) {
     history.drainPendingWrites();
 }
 
-void legacyFullSessionEntriesRemainReadable(const QString& root) {
+void fullSessionEntriesRemainReadable(const QString& root) {
     ScreenshotDisplaySession displays;
     displays.appendDisplay(display(QStringLiteral("only"), QStringLiteral("Only"),
                                    QRect(0, 0, 32, 32),
@@ -298,32 +298,32 @@ void legacyFullSessionEntriesRemainReadable(const QString& root) {
                                      root);
 
     require(canvas.setCanvasTool(SnowCanvasTool::Shape),
-            "failed to activate shape for the legacy session");
-    SnowCanvasShapeStyle legacyStyle = canvas.canvasStyleToolbarState().shapeStyle;
-    legacyStyle.strokeWidth = 13.0;
-    require(canvas.setCanvasShapeStylePatch(legacyStyle, SnowCanvasShapeStylePropertyStrokeWidth,
+            "failed to activate shape for the full-session entry");
+    SnowCanvasShapeStyle fullSessionStyle = canvas.canvasStyleToolbarState().shapeStyle;
+    fullSessionStyle.strokeWidth = 13.0;
+    require(canvas.setCanvasShapeStylePatch(fullSessionStyle, SnowCanvasShapeStylePropertyStrokeWidth,
                                             SnowCanvasShapeKind::Rectangle),
-            "failed to configure the legacy session style");
+            "failed to configure the full-session style");
     auto entry =
-        takeSnapshot(history.snapshotCurrent(true), "failed to snapshot the legacy history entry");
+        takeSnapshot(history.snapshotCurrent(true), "failed to snapshot the full-session history entry");
     entry.canvasHistory = runtime.serializeDocumentSession();
-    require(!entry.canvasHistory.isEmpty(), "failed to create a legacy canvas payload");
+    require(!entry.canvasHistory.isEmpty(), "failed to create a full-session canvas payload");
     history.commit(std::move(entry));
 
-    SnowCanvasShapeStyle sharedStyle = legacyStyle;
+    SnowCanvasShapeStyle sharedStyle = fullSessionStyle;
     sharedStyle.strokeWidth = 7.0;
     require(canvas.setCanvasShapeStylePatch(sharedStyle, SnowCanvasShapeStylePropertyStrokeWidth,
                                             SnowCanvasShapeKind::Rectangle),
-            "failed to configure the shared style after the legacy snapshot");
+            "failed to configure the shared style after the full-session snapshot");
     displays.displayAt(0).image = solidImage(QSize(32, 32), qRgba(200, 210, 220, 255));
-    require(history.navigatePrevious(), "legacy history navigation failed");
-    waitForNavigation(history, "legacy history navigation timed out");
+    require(history.navigatePrevious(), "full-session history navigation failed");
+    waitForNavigation(history, "full-session history navigation timed out");
     require(displays.displayAt(0).image.pixel(0, 0) == storedPixel,
-            "legacy full-session canvas payload was not restored");
+            "the full-session canvas payload was not restored");
     require(canvas.setCanvasTool(SnowCanvasTool::Shape),
-            "failed to reactivate shape after restoring the legacy session");
+            "failed to reactivate shape after restoring the full-session entry");
     require(canvas.canvasStyleToolbarState().shapeStyle.strokeWidth == sharedStyle.strokeWidth,
-            "legacy full-session navigation restored its screenshot-local creation style");
+            "full-session navigation restored its screenshot-local creation style");
     history.drainPendingWrites();
 }
 
@@ -1935,8 +1935,8 @@ int main(int argc, char** argv) {
         QDir(temporary.path()).filePath(QStringLiteral("navigation")));
     navigationSharesCanvasCreationStyles(
         QDir(temporary.path()).filePath(QStringLiteral("creation-styles")));
-    legacyFullSessionEntriesRemainReadable(
-        QDir(temporary.path()).filePath(QStringLiteral("legacy-payload")));
+    fullSessionEntriesRemainReadable(
+        QDir(temporary.path()).filePath(QStringLiteral("full-session-payload")));
     persistenceAndExactRetentionCutoff(
         QDir(temporary.path()).filePath(QStringLiteral("retention")));
     corruptLazyEntryDoesNotBlockOlderEntries(

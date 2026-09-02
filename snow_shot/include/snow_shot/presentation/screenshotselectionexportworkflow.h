@@ -42,7 +42,6 @@ class ScreenshotSelectionExportWorkflow final {
   private:
     [[nodiscard]] ScreenshotSelectionParams currentSelectionParams() const;
     [[nodiscard]] QRect selectionBounds() const;
-    void persistCurrentSelectionParams();
     void persistSelectionParams(const ScreenshotSelectionParams& params);
 
     ScreenshotSelectionExportWorkflowContext m_context;

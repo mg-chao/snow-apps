@@ -7,8 +7,8 @@ param(
     [int]$SettleMilliseconds = 500,
     [int]$TimeoutMilliseconds = 30000,
     [switch]$SkipBuild,
-    [ValidateSet("single-repaint", "posted-update", "native-update", "native-invalidate", "native-invalidate-suppressed", "legacy", "show-only")]
-    [string[]]$Strategies = @("legacy", "native-update", "native-invalidate", "native-invalidate-suppressed")
+    [ValidateSet("single-repaint", "posted-update", "native-update", "native-invalidate", "native-invalidate-suppressed")]
+    [string[]]$Strategies = @("native-update", "native-invalidate", "native-invalidate-suppressed")
 )
 
 $ErrorActionPreference = "Stop"

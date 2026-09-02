@@ -60,7 +60,6 @@ class ScreenshotTableEditor final : public QTableView {
 
     void setSession(std::shared_ptr<ScreenshotTableEditingSession> session);
     void clearSession();
-    [[nodiscard]] std::shared_ptr<ScreenshotTableEditingSession> session() const;
     [[nodiscard]] ScreenshotTableCommandState commandState() const;
     [[nodiscard]] ScreenshotTableRange selectedRange() const;
     [[nodiscard]] bool isEditingCell() const;

@@ -136,10 +136,6 @@ int ScreenshotToolbarMainPanel::buttonSize() const {
     return scaledMetric(kButtonSize, m_physicalScale);
 }
 
-qreal ScreenshotToolbarMainPanel::physicalScale() const {
-    return m_physicalScale;
-}
-
 QSize ScreenshotToolbarMainPanel::sizeHint() const {
     const QSize intrinsicHint = QFrame::sizeHint();
     if (qFuzzyCompare(m_physicalScale + 1.0, 2.0)) {

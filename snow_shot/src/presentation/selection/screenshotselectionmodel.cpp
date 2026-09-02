@@ -49,14 +49,6 @@ void ScreenshotSelectionModel::setSelectionStartEnd(const QPointF& start, const 
     m_end = end;
 }
 
-void ScreenshotSelectionModel::setSelectionStart(const QPointF& start) {
-    m_start = start;
-}
-
-void ScreenshotSelectionModel::setSelectionEnd(const QPointF& end) {
-    m_end = end;
-}
-
 void ScreenshotSelectionModel::beginMoveDrag(const QPointF& startPosition) {
     m_moveStart = startPosition;
     m_moveOriginalSelection = normalizedSelection();
@@ -68,10 +60,6 @@ void ScreenshotSelectionModel::rebaseMoveDrag(const QPointF& startPosition) {
 
 QRectF ScreenshotSelectionModel::moveOriginalSelection() const {
     return m_moveOriginalSelection;
-}
-
-QPointF ScreenshotSelectionModel::moveStart() const {
-    return m_moveStart;
 }
 
 QRectF ScreenshotSelectionModel::selectionRectForDrag(ScreenshotSelectionDragMode dragMode,

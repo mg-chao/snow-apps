@@ -365,9 +365,7 @@ WindowShortcutManager::InputSuspensionHandle WindowShortcutManager::suspendInput
 }
 
 void WindowShortcutManager::resumeInput(InputSuspensionHandle handle) {
-    if (handle == 0 || !m_impl->m_inputSuspensions.remove(handle)) {
-        return;
-    }
+    static_cast<void>(m_impl->m_inputSuspensions.remove(handle));
 }
 
 WindowShortcutManager::BindingHandle WindowShortcutManager::addBinding(QObject* owner,

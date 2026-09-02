@@ -13,7 +13,6 @@
 #include <QMetaObject>
 #include <QStandardPaths>
 #include <QTemporaryFile>
-#include <QThread>
 
 #include <chrono>
 
@@ -157,15 +156,12 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     m_status.readAvailable = !effectiveDirectory.isEmpty();
     m_status.writeAvailable = !effectiveDirectory.isEmpty();
     m_status.effectiveMode = effectiveDirectory.isEmpty() ? StorageMode::Degraded : requestedMode;
-    m_configurationFile = effectiveDirectory.isEmpty()
-                              ? QString()
-                              : QDir(effectiveDirectory).filePath(QStringLiteral("config.json"));
-    m_captureHistoryDirectory =
-        effectiveDirectory.isEmpty()
-            ? QString()
-            : QDir(effectiveDirectory).filePath(QStringLiteral("capture_history_records"));
+    const QString configurationFile = effectiveDirectory.isEmpty()
+                                          ? QString()
+                                          : QDir(effectiveDirectory).filePath(
+                                              QStringLiteral("config.json"));
     m_configuration = std::make_unique<ConfigurationStore>(
-        m_configurationFile, m_status.readAvailable, m_status.writeAvailable,
+        configurationFile, m_status.readAvailable, m_status.writeAvailable,
         options.debounceMilliseconds, this);
     m_status.configurationCompatibility = m_configuration->compatibility();
     m_status.lastConfigurationError = m_configuration->lastError();
@@ -267,11 +263,6 @@ ConfigurationStore& ApplicationStorage::configuration() {
     return *m_configuration;
 }
 
-const ConfigurationStore& ApplicationStorage::configuration() const {
-    Q_ASSERT(m_configuration != nullptr);
-    return *m_configuration;
-}
-
 CaptureHistoryRepository& ApplicationStorage::captureHistory() {
     Q_ASSERT(m_captureHistory != nullptr);
     return *m_captureHistory;
@@ -296,14 +287,6 @@ CaptureHistoryPolicy ApplicationStorage::captureHistoryPolicy() const {
 
 QString ApplicationStorage::configurationDirectory() const {
     return m_status.effectiveDirectory;
-}
-
-QString ApplicationStorage::configurationFilePath() const {
-    return m_configurationFile;
-}
-
-QString ApplicationStorage::captureHistoryDirectory() const {
-    return m_captureHistoryDirectory;
 }
 
 bool ApplicationStorage::smartSelectionEnabled() const {
@@ -387,10 +370,6 @@ std::shared_future<StorageResult> ApplicationStorage::requestCaptureHistoryClear
     return result;
 }
 
-void ApplicationStorage::setLastHistoryError(const QString& error) {
-    updateHistoryError(error);
-}
-
 void ApplicationStorage::updateConfigurationError(const QString& error) {
     if (m_status.lastConfigurationError == error) {
         return;
@@ -412,7 +391,6 @@ void ApplicationStorage::updateHistoryUsage(const CaptureHistoryUsage& usage) {
         return;
     }
     m_status.historyUsage = usage;
-    emit captureHistoryUsageChanged(usage);
     emitStatusChanged();
 }
 
@@ -424,7 +402,6 @@ void ApplicationStorage::finishHistoryClear(bool success, const QString& error) 
     }
     emit captureHistoryClearFinished(success, error);
     emit captureHistoryChanged();
-    emit captureHistoryUsageChanged(m_status.historyUsage);
     emitStatusChanged();
 }
 

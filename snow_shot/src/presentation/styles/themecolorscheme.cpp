@@ -3,7 +3,6 @@
 
 #include "theme/theme_types.h"
 
-#include <QPalette>
 #include <QtGlobal>
 
 #include <algorithm>
@@ -191,34 +190,7 @@ ThemeStyleConfig toThemeStyleConfig(const adqt::theme::ResolvedTheme& resolvedTh
     config.sizeStep = roundMetric(resolvedTheme.config.sizeStep);
     config.controlHeight = roundMetric(resolvedTheme.config.controlHeight);
     config.motionUnit = resolvedTheme.config.motion ? 0.1 : 0.0;
-    config.motionBase = 0.0;
     return config;
-}
-
-ThemeSeedToken buildSeedToken(const ThemeStyleConfig& config,
-                              const adqt::theme::ResolvedTheme& resolvedTheme) {
-    ThemeSeedToken seed;
-    seed.preset = config.preset;
-    seed.colorPrimary = resolvedTheme.config.primary;
-    seed.colorSuccess = resolvedTheme.config.success;
-    seed.colorWarning = resolvedTheme.config.warning;
-    seed.colorError = resolvedTheme.config.error;
-    seed.colorInfo = resolvedTheme.config.info;
-    seed.colorLink = resolvedTheme.config.link;
-    seed.colorTextBase = resolvedTheme.values.colorTextBase;
-    seed.colorBgBase = resolvedTheme.values.colorBgBase;
-    seed.presetColors =
-        buildPresetColorMap(static_cast<const adqt::theme::ThemeAccents&>(resolvedTheme.values));
-
-    seed.fontSize = roundMetric(resolvedTheme.config.fontSize);
-    seed.lineWidth = roundLineWidth(resolvedTheme.config.lineWidth);
-    seed.borderRadius = roundMetric(resolvedTheme.config.borderRadius);
-    seed.sizeUnit = roundMetric(resolvedTheme.config.sizeUnit);
-    seed.sizeStep = roundMetric(resolvedTheme.config.sizeStep);
-    seed.controlHeight = roundMetric(resolvedTheme.config.controlHeight);
-    seed.motionUnit = config.motionUnit;
-    seed.motionBase = config.motionBase;
-    return seed;
 }
 
 ThemeMapColorToken buildColorMapToken(const adqt::theme::ResolvedTheme& resolvedTheme) {
@@ -309,7 +281,6 @@ ThemeMapColorToken buildColorMapToken(const adqt::theme::ResolvedTheme& resolved
     mapToken.colorLinkActive = values.colorLinkActive;
     mapToken.presetColorHover =
         buildPresetColorMap(static_cast<const adqt::theme::ThemeAccents&>(resolvedTheme.values));
-    mapToken.presetColorActive = mapToken.presetColorHover;
     mapToken.colorBgMask = values.colorBgMask;
     mapToken.colorWhite = values.colorWhite;
     return mapToken;
@@ -397,8 +368,6 @@ ThemeAliasColorToken buildAliasColorToken(const ThemeMapColorToken& mapToken) {
     alias.accentContainerBg = mapToken.colorPrimaryBg;
     alias.accentSoftBorder = mapToken.colorPrimaryBorderHover;
     alias.accentSoftBg = mapToken.colorPrimaryBgHover;
-    alias.scrollHandle = mapToken.colorTextQuaternary;
-    alias.scrollHandleHover = mapToken.colorTextTertiary;
     alias.success = mapToken.colorSuccess;
     alias.warning = mapToken.colorWarning;
     alias.error = mapToken.colorError;
@@ -474,34 +443,6 @@ ThemeAliasMetricToken buildAliasMetricToken(const ThemeMetricMapToken& metricMap
 }
 } // namespace
 
-ThemeStyleConfig defaultThemeStyleConfig() {
-    return toThemeStyleConfig(adqt::theme::makeResolvedTheme(adqt::theme::defaultThemeConfig()));
-}
-
-ThemeStyleConfig themeStyleConfig() {
-    return ThemeManager::instance().themeStyleConfig();
-}
-
-ThemePreset themePreset() {
-    return ThemeManager::instance().themePreset();
-}
-
-ThemeAppearance themeAppearance() {
-    return ThemeManager::instance().themeAppearance();
-}
-
-void setThemeStyleConfig(const ThemeStyleConfig& config) {
-    ThemeManager::instance().setThemeStyleConfig(config);
-}
-
-void setThemePreset(ThemePreset preset) {
-    ThemeManager::instance().setThemePreset(preset);
-}
-
-void setThemeAppearance(ThemeAppearance appearance) {
-    ThemeManager::instance().setThemeAppearance(appearance);
-}
-
 ThemeColorScheme generateThemeColorScheme(const ThemeStyleConfig& config) {
     const adqt::theme::ResolvedTheme resolvedTheme =
         adqt::theme::makeResolvedTheme(toAdqtThemeConfig(config));
@@ -509,7 +450,6 @@ ThemeColorScheme generateThemeColorScheme(const ThemeStyleConfig& config) {
 
     ThemeColorScheme scheme;
     scheme.appearance = normalizedConfig.appearance;
-    scheme.seed = buildSeedToken(normalizedConfig, resolvedTheme);
     scheme.map = buildColorMapToken(resolvedTheme);
     scheme.metricMap = buildMetricMapToken(resolvedTheme);
     scheme.alias = buildAliasColorToken(scheme.map);
@@ -519,15 +459,5 @@ ThemeColorScheme generateThemeColorScheme(const ThemeStyleConfig& config) {
 
 ThemeColorScheme generateThemeColorScheme() {
     return ThemeManager::instance().themeColorScheme();
-}
-
-ThemeColorScheme generateThemeColorScheme(const QPalette& palette, const ThemeStyleConfig& config) {
-    (void)palette;
-    return generateThemeColorScheme(config);
-}
-
-ThemeColorScheme generateThemeColorScheme(const QPalette& palette) {
-    (void)palette;
-    return generateThemeColorScheme();
 }
 } // namespace snow_shot::presentation::styles

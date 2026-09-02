@@ -6,8 +6,8 @@ use protocol::{
 };
 use rapid_ocr_rs::{
     DictionarySource, EngineConfig, LangDet, LangRec, ModelSource, ModelType, OcrCallOptions,
-    OcrInput, OcrResult, PipelineSources, ProviderPreference, RapidOcr,
-    ResolvedExecutionProvider, directml_is_available, initialize_onnx_runtime,
+    OcrInput, OcrResult, PipelineSources, ProviderPreference, RapidOcr, ResolvedExecutionProvider,
+    directml_is_available, initialize_onnx_runtime,
 };
 use serde::{Deserialize, Serialize};
 use std::{

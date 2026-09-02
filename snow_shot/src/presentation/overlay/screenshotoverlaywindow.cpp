@@ -102,12 +102,6 @@ void ScreenshotOverlayWindow::setScreenshotImage(QImage image, const QRectF& can
     }
 }
 
-void ScreenshotOverlayWindow::clearScreenshotImage() {
-    if (m_screenshotRenderer != nullptr) {
-        m_screenshotRenderer->clearImage();
-    }
-}
-
 void ScreenshotOverlayWindow::setScreenshotMaskVisible(bool visible) {
     if (m_screenshotRenderer != nullptr) {
         m_screenshotRenderer->setMaskVisible(visible);

@@ -68,9 +68,6 @@ QString translationSystemPrompt(const SnowShotTranslationRequest& request) {
 } // namespace
 
 struct SnowShotApiClient::Request {
-    enum class Kind { Table, ChatModels, Translation };
-
-    Kind kind = Kind::Table;
     QPointer<QObject> receiver;
     Completion completion;
     ChatModelsCompletion chatModelsCompletion;
@@ -91,10 +88,6 @@ SnowShotApiClient::~SnowShotApiClient() {
     for (const RequestToken token : tokens) {
         cancel(token);
     }
-}
-
-const QString& SnowShotApiClient::baseUrl() const {
-    return m_baseUrl;
 }
 
 bool SnowShotApiClient::usesSystemProxy() const {
@@ -266,7 +259,6 @@ SnowShotApiClient::RequestToken SnowShotApiClient::fetchChatModels(
     auto* manager = networkAccessManager();
     const RequestToken token = ++m_nextToken;
     auto* state = new Request;
-    state->kind = Request::Kind::ChatModels;
     state->receiver = receiver;
     state->chatModelsCompletion = std::move(completion);
     m_requests.insert(token, state);
@@ -332,7 +324,6 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamTranslation(
     auto* manager = networkAccessManager();
     const RequestToken token = ++m_nextToken;
     auto* state = new Request;
-    state->kind = Request::Kind::Translation;
     state->receiver = receiver;
     state->translationDelta = std::move(delta);
     state->translationCompletion = std::move(completion);

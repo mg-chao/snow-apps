@@ -26,8 +26,6 @@ class MainContentHeaderWidget final : public QFrame {
         QWidget* parent = nullptr);
 
     [[nodiscard]] QString currentSection() const;
-    [[nodiscard]] QVector<snow_shot::presentation::settings::SettingsSectionSummary>
-    sections() const;
     void setSections(
         const QVector<snow_shot::presentation::settings::SettingsSectionSummary>& sections);
     void setCurrentSection(const QString& sectionId);

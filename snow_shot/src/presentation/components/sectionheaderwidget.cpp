@@ -52,10 +52,6 @@ SectionHeaderWidget::SectionHeaderWidget(
     applyTheme(themeManager.themeColorScheme());
 }
 
-QString SectionHeaderWidget::title() const {
-    return m_title;
-}
-
 void SectionHeaderWidget::setTitle(const QString& title) {
     m_title = title;
     if (m_titleLabel != nullptr) {

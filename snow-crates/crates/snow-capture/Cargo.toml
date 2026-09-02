@@ -54,7 +54,9 @@ windows = { workspace = true, features = ["Win32_UI_HiDpi"] }
 #
 # When enabled, capture backends record a per-stage timing breakdown onto
 # frame metadata (`CaptureOptions::record_stage_timings` activates it per
-# session) and the screenshot_benchmark example / stage-timing tests build.
+# session), frames carry a `capture_duration`, cursor-attach diagnostics
+# are aggregated into stream stats, and the benchmark examples /
+# stage-timing tests build.
 # When disabled (the default, used by all production/release builds) every
 # instrumentation marker compiles to nothing: no API surface, no fields,
 # no clock reads, no code.
@@ -66,12 +68,14 @@ harness = false
 
 [[example]]
 name = "capture"
+required-features = ["stage-timing"]
 
 [[example]]
 name = "benchmark"
 
 [[example]]
 name = "action_benchmark"
+required-features = ["stage-timing"]
 
 [[example]]
 name = "screenshot_benchmark"
@@ -86,6 +90,7 @@ name = "snapshot_policy_benchmark"
 
 [[example]]
 name = "stream"
+required-features = ["stage-timing"]
 
 [[example]]
 name = "window_capture"

@@ -435,9 +435,7 @@ int run(const QCommandLineParser& parser) {
                                                 QStringLiteral("posted-update"),
                                                 QStringLiteral("native-update"),
                                                 QStringLiteral("native-invalidate"),
-                                                QStringLiteral("native-invalidate-suppressed"),
-                                                QStringLiteral("legacy"),
-                                                QStringLiteral("show-only")};
+                                                QStringLiteral("native-invalidate-suppressed")};
     require(revealStrategy.isEmpty() || supportedRevealStrategies.contains(revealStrategy),
             "unsupported reveal strategy");
     const QVector<RECT> displayList = monitors();

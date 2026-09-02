@@ -11,6 +11,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTimer>
 
@@ -90,7 +91,16 @@ void explicitAssetsControlReadiness() {
 }
 
 void diskBackedEngineCompletesThroughTheQtWorker(bool directMlEnabled) {
+    // Real-engine integration run: models are acquired through the managed
+    // asset pipeline into a per-machine temp cache (or a packaged offline
+    // payload next to the test binary), so the run needs either cache,
+    // packaged assets, or network access.
+    ScreenshotOcrRecognitionService::Options options;
+    options.cacheRoot =
+        QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+            .filePath(QStringLiteral("snow-shot-ocr-test-assets"));
     ScreenshotOcrRecognitionService service(
+        options,
         directMlEnabled ? ScreenshotOcrBackendPreference::DirectMl
                         : ScreenshotOcrBackendPreference::Cpu);
     require(service.liveWorkerCount() == 0,

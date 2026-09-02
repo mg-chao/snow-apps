@@ -449,12 +449,11 @@ void screenshotUiSchemaRepairsStructuredValues() {
                         QStringLiteral("unknown"), QStringLiteral("watermark")},
              QJsonArray{QStringLiteral("line"), QStringLiteral("shape")},
              QStringLiteral("not-a-position"),
-             QJsonArray{QStringLiteral("rectangle-highlight"),
-                        QStringLiteral("pen-highlight")},
+             QJsonArray{QStringLiteral("unknown-highlight"), QStringLiteral("unknown-pen")},
          }},
         {QStringLiteral("hidden"),
          QJsonArray{QStringLiteral("shape"), QStringLiteral("arrow"),
-                    QStringLiteral("free-draw"), QStringLiteral("pen-highlight"),
+                    QStringLiteral("free-draw"), QStringLiteral("unknown-highlight"),
                     QStringLiteral("arrow")}},
     };
     const auto normalized = storage::ConfigurationSchema::normalize(
@@ -467,8 +466,7 @@ void screenshotUiSchemaRepairsStructuredValues() {
                 QJsonArray{
                     QJsonArray{QStringLiteral("watermark"), QStringLiteral("shape")},
                     QJsonArray{QStringLiteral("line")},
-                    QJsonArray{QStringLiteral("highlighter")},
-                    QJsonArray{QStringLiteral("spotlight")},
+                    QJsonArray{QStringLiteral("spotlight"), QStringLiteral("highlighter")},
                     QJsonArray{QStringLiteral("text")},
                     QJsonArray{QStringLiteral("serial-number")},
                     QJsonArray{QStringLiteral("filter")},
@@ -477,36 +475,6 @@ void screenshotUiSchemaRepairsStructuredValues() {
             layout.value(QStringLiteral("hidden")).toArray() ==
                 QJsonArray{QStringLiteral("arrow"), QStringLiteral("free-draw")},
         "toolbar layout normalization did not preserve hidden nested membership");
-
-    const QJsonObject legacyLayout{
-        {QStringLiteral("order"),
-         QJsonArray{QStringLiteral("move"), QStringLiteral("highlight"), QStringLiteral("shape"),
-                    QStringLiteral("arrow-line"), QStringLiteral("watermark"),
-                    QStringLiteral("highlight")}},
-        {QStringLiteral("hidden"),
-         QJsonArray{QStringLiteral("highlight"), QStringLiteral("arrow-line"),
-                    QStringLiteral("watermark"), QStringLiteral("free-draw")}},
-    };
-    const auto migrated = storage::ConfigurationSchema::normalize(
-        QStringLiteral("screenshot_toolbar/layout"), legacyLayout);
-    require(migrated.valid && migrated.changed &&
-                migrated.value.toObject() ==
-                    QJsonObject{
-                        {QStringLiteral("positions"),
-                         QJsonArray{
-                             QJsonArray{QStringLiteral("shape")},
-                             QJsonArray{QStringLiteral("text")},
-                             QJsonArray{QStringLiteral("serial-number")},
-                             QJsonArray{QStringLiteral("filter")},
-                             QJsonArray{QStringLiteral("eraser")},
-                         }},
-                        {QStringLiteral("hidden"),
-                         QJsonArray{QStringLiteral("spotlight"),
-                                    QStringLiteral("highlighter"),
-                                    QStringLiteral("line"), QStringLiteral("arrow"),
-                                    QStringLiteral("watermark"),
-                                    QStringLiteral("free-draw")}}},
-            "legacy hidden toolbar groups were not migrated into hidden drawing entries");
 }
 
 void screenshotUiAdaptersRoundTripTypedValues() {
@@ -540,8 +508,7 @@ void screenshotUiAdaptersRoundTripTypedValues() {
     const QVector<QStringList> expectedPositions{
         {QStringLiteral("watermark"), QStringLiteral("shape")},
         {QStringLiteral("line")},
-        {QStringLiteral("highlighter")},
-        {QStringLiteral("spotlight")},
+        {QStringLiteral("spotlight"), QStringLiteral("highlighter")},
         {QStringLiteral("text")},
         {QStringLiteral("serial-number")},
         {QStringLiteral("filter")},
@@ -938,101 +905,6 @@ void unknownFieldsArePreserved() {
             "schema-v1 unknown fields were erased");
 }
 
-void legacyRecordingKeysMigrateToScreenRecording() {
-    QTemporaryDir temporary;
-    require(temporary.isValid(), "failed to create screen-recording migration directory");
-    const QString config = QDir(temporary.path()).filePath(QStringLiteral("config.json"));
-    writeBytes(config,
-               QByteArrayLiteral("{\n"
-                                 "  \"storage\": {\"schema_version\": 1},\n"
-                                 "  \"global_shortcuts\": {\n"
-                                 "    \"video_record\": [\"Ctrl+Alt+8\"],\n"
-                                 "    \"video_record_copy\": [\"Ctrl+Alt+9\"]\n"
-                                 "  },\n"
-                                 "  \"video_recording\": {\n"
-                                 "    \"video_clarity\": \"2k\",\n"
-                                 "    \"frame_rate\": 60,\n"
-                                 "    \"enable_microphone\": true\n"
-                                 "  }\n"
-                                 "}\n"));
-
-    storage::ConfigurationStore store(config, true, true, 60000);
-    require(store.value(QStringLiteral("global_shortcuts/screen_record")).toArray() ==
-                    QJsonArray{QStringLiteral("Ctrl+Alt+8")} &&
-                store.value(QStringLiteral("global_shortcuts/screen_record_copy")).toArray() ==
-                    QJsonArray{QStringLiteral("Ctrl+Alt+9")} &&
-                store.value(QStringLiteral("screen_recording/clarity")).toString() ==
-                    QStringLiteral("2k") &&
-                store.value(QStringLiteral("screen_recording/frame_rate")).toInt() == 60 &&
-                store.value(QStringLiteral("screen_recording/enable_microphone")).toBool(),
-            "legacy recording settings were not exposed through screen-recording keys");
-    require(store.flushNow().success, "failed to flush migrated screen-recording settings");
-
-    const QJsonObject root = readObject(config);
-    const QJsonObject shortcuts = root.value(QStringLiteral("global_shortcuts")).toObject();
-    const QJsonObject screenRecording = root.value(QStringLiteral("screen_recording")).toObject();
-    const QJsonObject legacyRecording = root.value(QStringLiteral("video_recording")).toObject();
-    require(shortcuts.value(QStringLiteral("screen_record")).toArray() ==
-                    QJsonArray{QStringLiteral("Ctrl+Alt+8")} &&
-                shortcuts.value(QStringLiteral("screen_record_copy")).toArray() ==
-                    QJsonArray{QStringLiteral("Ctrl+Alt+9")} &&
-                !shortcuts.contains(QStringLiteral("video_record")) &&
-                !shortcuts.contains(QStringLiteral("video_record_copy")) &&
-                screenRecording.value(QStringLiteral("clarity")).toString() ==
-                    QStringLiteral("2k") &&
-                screenRecording.value(QStringLiteral("frame_rate")).toInt() == 60 &&
-                screenRecording.value(QStringLiteral("enable_microphone")).toBool() &&
-                legacyRecording.isEmpty(),
-            "legacy recording keys were not rewritten canonically");
-}
-
-void legacyDrawingAliasesMigrateToScreenshotShortcuts() {
-    QTemporaryDir temporary;
-    require(temporary.isValid(), "failed to create drawing-shortcut migration directory");
-    const QString config = QDir(temporary.path()).filePath(QStringLiteral("config.json"));
-    writeBytes(config,
-               QByteArrayLiteral("{\n"
-                                 "  \"storage\": {\"schema_version\": 1},\n"
-                                 "  \"drawing_shortcuts\": {\n"
-                                 "    \"shape\": [\"Ctrl+K\", \"S\"],\n"
-                                 "    \"arrow\": [\"2\", \"a\"],\n"
-                                 "    \"brush\": [\"3\", \"P\"],\n"
-                                 "    \"watermark\": [\"w\", \"Alt+9\"]\n"
-                                 "  }\n"
-                                 "}\n"));
-
-    storage::ConfigurationStore store(config, true, true, 60000);
-    require(store.value(QStringLiteral("drawing_shortcuts/shape")).toArray() ==
-                    QJsonArray{QStringLiteral("Ctrl+K")} &&
-                store.value(QStringLiteral("drawing_shortcuts/arrow")).toArray() ==
-                    QJsonArray{QStringLiteral("2")} &&
-                store.value(QStringLiteral("drawing_shortcuts/brush")).toArray() ==
-                    QJsonArray{QStringLiteral("3"), QStringLiteral("P")} &&
-                store.value(QStringLiteral("drawing_shortcuts/watermark")).toArray() ==
-                    QJsonArray{QStringLiteral("Alt+9")} &&
-                store.value(QStringLiteral("screenshot_shortcuts/move_cursor_up")).toArray() ==
-                    QJsonArray{QStringLiteral("W"), QStringLiteral("Up")} &&
-                store.value(QStringLiteral("screenshot_shortcuts/move_cursor_down")).toArray() ==
-                    QJsonArray{QStringLiteral("S"), QStringLiteral("Down")} &&
-                store.value(QStringLiteral("screenshot_shortcuts/move_cursor_left")).toArray() ==
-                    QJsonArray{QStringLiteral("A"), QStringLiteral("Left")},
-            "legacy drawing aliases were not moved to screenshot shortcuts");
-    require(store.flushNow().success, "failed to flush migrated drawing shortcuts");
-
-    const QJsonObject root = readObject(config);
-    const QJsonObject drawing = root.value(QStringLiteral("drawing_shortcuts")).toObject();
-    const QJsonObject screenshot = root.value(QStringLiteral("screenshot_shortcuts")).toObject();
-    require(drawing.value(QStringLiteral("shape")).toArray() ==
-                    QJsonArray{QStringLiteral("Ctrl+K")} &&
-                drawing.value(QStringLiteral("arrow")).toArray() ==
-                    QJsonArray{QStringLiteral("2")} &&
-                drawing.value(QStringLiteral("watermark")).toArray() ==
-                    QJsonArray{QStringLiteral("Alt+9")} &&
-                screenshot.value(QStringLiteral("move_tool")).toArray() ==
-                    QJsonArray{QStringLiteral("M")},
-            "drawing shortcut migration was not persisted canonically");
-}
-
 void malformedConfigurationIsCopiedAndReplaced() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "failed to create malformed directory");
@@ -1230,8 +1102,6 @@ int main(int argc, char** argv) {
     newSettingsAdaptersRoundTripAndRejectInvalidValues();
     smartSelectionAccessorAndSignal();
     unknownFieldsArePreserved();
-    legacyRecordingKeysMigrateToScreenRecording();
-    legacyDrawingAliasesMigrateToScreenshotShortcuts();
     malformedConfigurationIsCopiedAndReplaced();
     futureVersionIsReadOnly();
     failedWriteCanBeRetried();

@@ -51,8 +51,6 @@ class ScreenshotOverlayCanvasPresenter final {
     [[nodiscard]] bool resetEditingState(const ScreenshotDisplaySession& displaySession) const;
     [[nodiscard]] bool tryCurrentRectangleStyle(const ScreenshotDisplaySession& displaySession,
                                                 SnowCanvasShapeStyle* outStyle) const;
-    [[nodiscard]] bool tryCurrentStyleToolbarState(const ScreenshotDisplaySession& displaySession,
-                                                   SnowCanvasStyleToolbarState* outState) const;
     [[nodiscard]] SnowCanvasShapeStyle
     currentRectangleStyle(const ScreenshotDisplaySession& displaySession) const;
     void setShapeStylePatch(const ScreenshotDisplaySession& displaySession,

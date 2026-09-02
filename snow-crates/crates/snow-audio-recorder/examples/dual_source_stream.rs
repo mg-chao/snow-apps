@@ -76,11 +76,8 @@ fn main() -> Result<()> {
 
     let snapshot = stats.snapshot();
     println!(
-        "captured={} dropped={} restarts={} packet_rate={:.1}/s",
-        snapshot.packets_captured,
-        snapshot.packets_dropped,
-        snapshot.source_restarts,
-        snapshot.current_packet_rate,
+        "captured={} dropped={} restarts={}",
+        snapshot.packets_captured, snapshot.packets_dropped, snapshot.source_restarts,
     );
 
     Ok(())

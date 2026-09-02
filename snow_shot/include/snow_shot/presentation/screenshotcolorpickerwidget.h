@@ -21,10 +21,8 @@ class ScreenshotColorPickerWidget final : public QWidget {
                       qreal opacity);
     void hidePicker();
     void setCenterGuideLineColor(const QColor& color);
-    [[nodiscard]] QColor centerGuideLineColor() const;
     void cycleColorFormat();
     QString currentColorText() const;
-    QColor currentColor() const;
     bool hasCurrentColor() const;
 
     QSize sizeHint() const override;

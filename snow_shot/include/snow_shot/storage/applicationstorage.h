@@ -56,13 +56,10 @@ class ApplicationStorage final : public QObject {
     void shutdown();
 
     [[nodiscard]] ConfigurationStore& configuration();
-    [[nodiscard]] const ConfigurationStore& configuration() const;
     [[nodiscard]] CaptureHistoryRepository& captureHistory();
     [[nodiscard]] StorageStatus status() const;
     [[nodiscard]] CaptureHistoryPolicy captureHistoryPolicy() const;
     [[nodiscard]] QString configurationDirectory() const;
-    [[nodiscard]] QString configurationFilePath() const;
-    [[nodiscard]] QString captureHistoryDirectory() const;
     [[nodiscard]] bool smartSelectionEnabled() const;
 
     bool requestCaptureHistoryPolicy(const CaptureHistoryPolicy& policy);
@@ -72,11 +69,9 @@ class ApplicationStorage final : public QObject {
     [[nodiscard]] std::shared_future<StorageResult> requestSmartSelectionAsync(bool enabled);
     bool requestCaptureHistoryClear();
     [[nodiscard]] std::shared_future<StorageResult> requestCaptureHistoryClearAsync();
-    void setLastHistoryError(const QString& error);
 
   signals:
     void captureHistoryChanged();
-    void captureHistoryUsageChanged(const snow_shot::storage::CaptureHistoryUsage& usage);
     void storageStatusChanged(const snow_shot::storage::StorageStatus& status);
     void smartSelectionChanged(bool enabled);
     void captureHistoryClearFinished(bool success, const QString& error);
@@ -91,8 +86,6 @@ class ApplicationStorage final : public QObject {
     void emitStatusChanged();
 
     StorageStatus m_status;
-    QString m_configurationFile;
-    QString m_captureHistoryDirectory;
     std::unique_ptr<ConfigurationStore> m_configuration;
     std::unique_ptr<CaptureHistoryRepository> m_captureHistory;
     bool m_initialized = false;

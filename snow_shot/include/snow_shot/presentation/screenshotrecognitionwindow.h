@@ -86,7 +86,6 @@ class ScreenshotRecognitionWindow final : public QWidget {
     [[nodiscard]] bool present(const Config& config);
     [[nodiscard]] bool updateSelectionGeometry(const QRect& geometry,
                                                const QRectF& canvasSelection);
-    [[nodiscard]] PresentationMode presentationMode() const;
 
     void setOcrPresentation(std::shared_ptr<ScreenshotOcrPresentation> presentation);
     void clearOcrPresentation();

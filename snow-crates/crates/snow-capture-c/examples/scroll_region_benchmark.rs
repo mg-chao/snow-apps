@@ -225,11 +225,13 @@ fn primary_bounds(session: *mut SnowCaptureDesktopSessionImpl) -> Result<(i32, i
     if snapshot.is_null() {
         bail!("desktop capture failed");
     }
-    let result = (0..snow_capture_screenshot_result_display_count(snapshot)).find_map(|index| {
-        let mut info = empty_desktop_info();
-        let ok = unsafe { snow_capture_screenshot_result_display_info(snapshot, index, &mut info) };
-        (ok != 0 && info.is_primary != 0).then_some((info.x, info.y, info.width, info.height))
-    });
+    let result =
+        (0..unsafe { snow_capture_screenshot_result_display_count(snapshot) }).find_map(|index| {
+            let mut info = empty_desktop_info();
+            let ok =
+                unsafe { snow_capture_screenshot_result_display_info(snapshot, index, &mut info) };
+            (ok != 0 && info.is_primary != 0).then_some((info.x, info.y, info.width, info.height))
+        });
     unsafe { snow_capture_screenshot_result_destroy(snapshot) };
     result.context("no primary monitor frame")
 }
@@ -245,7 +247,7 @@ fn capture_desktop_crop(
     }
     destination.fill(0);
     let mut copied_pixels = 0u64;
-    for index in 0..snow_capture_screenshot_result_display_count(snapshot) {
+    for index in 0..unsafe { snow_capture_screenshot_result_display_count(snapshot) } {
         let mut info = empty_desktop_info();
         if unsafe { snow_capture_screenshot_result_display_info(snapshot, index, &mut info) } == 0 {
             continue;
@@ -416,7 +418,7 @@ fn receive_stream_frame(
                 let valid = info.width == region.2
                     && info.height == region.3
                     && info.stride_bytes == region.2 * 4
-                    && info.rgba_bytes != ptr::null()
+                    && !info.rgba_bytes.is_null()
                     && info.rgba_len >= expected_len;
                 if !valid {
                     unsafe { snow_capture_stream_frame_release(event.frame) };

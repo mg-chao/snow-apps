@@ -34,7 +34,6 @@ class ScreenshotOverlayWindow final : public QWidget {
 
     SnowCanvasWidget* canvas() const;
     void setScreenshotImage(QImage image, const QRectF& canvasRect);
-    void clearScreenshotImage();
     void setScreenshotMaskVisible(bool visible);
     void setScreenshotMaskColor(const QColor& color);
     void setScreenshotGuideLines(const QPointF& cursorPosition, const QColor& cursorColor,

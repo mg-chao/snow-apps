@@ -56,10 +56,6 @@ void ScreenshotColorPickerController::setDisplayMode(ScreenshotColorPickerDispla
     }
 }
 
-ScreenshotColorPickerDisplayMode ScreenshotColorPickerController::displayMode() const {
-    return m_displayMode;
-}
-
 void ScreenshotColorPickerController::updateForOverlay(
     ScreenshotOverlayWindow* overlay, const QPointF& localPosition,
     const ScreenshotColorPickerContext& context) {

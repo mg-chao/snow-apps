@@ -1,9 +1,10 @@
 #include "snow_shot/presentation/screenshotcapturedisplaymodelreconciler.h"
 
+#include <QScreen>
+
 #include "snow_shot/presentation/screenshotdisplaysession.h"
 
 #include <QHash>
-#include <QScreen>
 
 #include <algorithm>
 

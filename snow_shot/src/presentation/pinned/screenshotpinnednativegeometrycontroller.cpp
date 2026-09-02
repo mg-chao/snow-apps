@@ -235,11 +235,9 @@ ScreenshotPinnedNativeGeometryController::commitTarget(bool transactionFinished)
 
     change.previousGeometry = m_committedGeometry;
     change.geometry = m_targetGeometry;
-    change.origin = m_origin;
     change.positionChanged = change.previousGeometry.topLeft() != change.geometry.topLeft();
     change.sizeChanged = change.previousGeometry.size() != change.geometry.size();
     change.dpiChanged = m_dpiChanged;
-    change.transactionFinished = transactionFinished;
     m_committedGeometry = m_targetGeometry;
 
     if (transactionFinished) {

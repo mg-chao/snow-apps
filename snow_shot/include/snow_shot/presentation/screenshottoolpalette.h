@@ -133,7 +133,6 @@ class ScreenshotToolPalette final : public QWidget {
         bool enableStyleToolbar = true;
         bool separatorAfterSelect = false;
         bool separatorBeforeShape = false;
-        bool separatorAfterArrow = false;
         bool separatorBeforeConfirm = false;
         bool showDrawingModeShortcutOnConfirm = false;
         Actions actions = NoActions;
@@ -160,7 +159,6 @@ class ScreenshotToolPalette final : public QWidget {
     QRect mainToolbarContentRect() const;
     ScreenshotToolbarPlacementSnapshot placementSnapshot() const;
     QPoint contentOffset() const;
-    quint64 layoutRevision() const;
     void prepareForDisplay();
     void resetStyleState();
     void setCreationStyleDefaults(const SnowCanvasStyleDefaults& defaults);
@@ -197,7 +195,6 @@ class ScreenshotToolPalette final : public QWidget {
     void installWheelFilters(QObject* receiver, QWidget* scope = nullptr);
     bool handleToolbarWheel(QWheelEvent* event);
     void setRecordingState(RecordingState state);
-    RecordingState recordingState() const;
     void setRecordingDuration(qint64 durationMilliseconds);
     void setRecordingMicrophoneEnabled(bool enabled);
     void setRecordingSystemAudioEnabled(bool enabled);
@@ -216,7 +213,6 @@ class ScreenshotToolPalette final : public QWidget {
                                  bool canUndo = false, bool canRedo = false,
                                  bool canReset = false);
     void setTextTransformSelections(const QString& formatting, const QString& punctuation);
-    void clearTextTransformSelections();
     [[nodiscard]] bool ensureActionFamily(ActionFamily family);
     [[nodiscard]] bool ensureStyleFamily(Tool tool);
 
@@ -370,7 +366,6 @@ class ScreenshotToolPalette final : public QWidget {
     void refreshThemeDependentIcons();
     void synchronizeFilterModeGroups(Tool tool);
     void updatePenFilterStrokeWidthControls();
-    void updateSerialNumberControls();
     void updateRecordingControls();
     void updateRecordingControlMetrics();
     QSize styleToolbarSizeHint();
@@ -378,7 +373,6 @@ class ScreenshotToolPalette final : public QWidget {
     QSize contentSizeForVisibleRows() const;
     QSize fullContentSize() const;
     QRect panelContentRect(const QWidget* panel) const;
-    QRect panelVisualRect(const QWidget* panel) const;
     ScreenshotToolbarPlacementSnapshot buildPlacementSnapshot() const;
     int scaledMetric(int value) const;
     qreal scaledMetric(qreal value) const;
@@ -632,7 +626,6 @@ class ScreenshotToolPalette final : public QWidget {
         QRect occupiedContentRect;
         QRect fullContentRect;
         QRect mainToolbarContentRect;
-        quint64 revision = 0;
     };
 
     mutable LayoutResult m_layoutResult;

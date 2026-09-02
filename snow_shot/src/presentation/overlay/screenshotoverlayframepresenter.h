@@ -11,8 +11,6 @@ enum class ScreenshotOverlayRevealStrategy {
     NativeUpdate,
     NativeInvalidate,
     NativeInvalidateSuppressed,
-    Legacy,
-    ShowOnly,
 };
 
 struct ScreenshotOverlayRevealPlan {
@@ -29,10 +27,8 @@ class ScreenshotOverlayFramePresenter final {
 
     void presentPreparedFrame();
 
-    [[nodiscard]] ScreenshotOverlayRevealStrategy strategy() const;
     [[nodiscard]] static ScreenshotOverlayRevealStrategy
     strategyForName(const QByteArray& name, ScreenshotOverlayRevealStrategy fallback);
-    [[nodiscard]] static const char* strategyName(ScreenshotOverlayRevealStrategy strategy);
     [[nodiscard]] static ScreenshotOverlayRevealPlan
     planFor(ScreenshotOverlayRevealStrategy strategy);
 

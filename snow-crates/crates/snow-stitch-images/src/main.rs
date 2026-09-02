@@ -185,12 +185,12 @@ fn run() -> Result<()> {
         StitchOptions {
             axis: cli.axis,
             estimator: cli.estimator,
-            collect_trace: cli.trace.is_some(),
+            record_decisions: cli.trace.is_some(),
         },
     )?;
     result.image.encode(&cli.output)?;
     if let Some(trace_path) = cli.trace {
-        let json = serde_json::to_vec_pretty(&result.trace)?;
+        let json = serde_json::to_vec_pretty(&result.decisions)?;
         fs::write(&trace_path, json)
             .with_context(|| format!("could not write trace JSON {}", trace_path.display()))?;
     }

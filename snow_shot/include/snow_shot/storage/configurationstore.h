@@ -29,12 +29,10 @@ class ConfigurationStore final : public QObject {
 
     [[nodiscard]] QJsonValue value(const QString& key) const;
     [[nodiscard]] QMap<QString, QJsonValue> snapshot() const;
-    [[nodiscard]] QJsonObject documentSnapshot() const;
     [[nodiscard]] bool isDirty() const;
     [[nodiscard]] bool isWritable() const;
     [[nodiscard]] QString lastError() const;
     [[nodiscard]] ConfigurationCompatibility compatibility() const;
-    [[nodiscard]] int schemaVersion() const;
 
     bool setValue(const QString& key, const QJsonValue& value);
     bool setValues(const QMap<QString, QJsonValue>& values);
@@ -60,7 +58,6 @@ class ConfigurationStore final : public QObject {
     QJsonObject m_document;
     QString m_lastError;
     ConfigurationCompatibility m_compatibility = ConfigurationCompatibility::Current;
-    int m_schemaVersion = 1;
     quint64 m_revision = 0;
     bool m_dirty = false;
     QTimer m_flushTimer;

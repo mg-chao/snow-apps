@@ -174,10 +174,6 @@ void ScreenshotToolPaletteRectangleStyleModel::setRectangleStyle(
     m_shape = style.shape;
 }
 
-SnowCanvasHighlightShape ScreenshotToolPaletteRectangleStyleModel::highlightShape() const {
-    return m_highlightShape;
-}
-
 SnowCanvasRectangleShape ScreenshotToolPaletteRectangleStyleModel::shape() const {
     return m_shape;
 }
@@ -187,14 +183,6 @@ bool ScreenshotToolPaletteRectangleStyleModel::setShape(SnowCanvasRectangleShape
         return false;
     }
     m_shape = shape;
-    return true;
-}
-
-bool ScreenshotToolPaletteRectangleStyleModel::setHighlightShape(SnowCanvasHighlightShape shape) {
-    if (m_highlightShape == shape) {
-        return false;
-    }
-    m_highlightShape = shape;
     return true;
 }
 
@@ -220,10 +208,6 @@ SnowCanvasFillStyle ScreenshotToolPaletteRectangleStyleModel::fillStyle() const 
 
 int ScreenshotToolPaletteRectangleStyleModel::cornerRadius() const {
     return static_cast<int>(std::lround(m_cornerRadii.topLeft));
-}
-
-double ScreenshotToolPaletteRectangleStyleModel::opacity() const {
-    return m_opacity;
 }
 
 const QVector<double>& ScreenshotToolPaletteRectangleStyleModel::strokeWidthValues() const {
@@ -286,15 +270,6 @@ bool ScreenshotToolPaletteRectangleStyleModel::setStrokeColor(const QColor& colo
     return true;
 }
 
-bool ScreenshotToolPaletteRectangleStyleModel::cycleStrokeColor() {
-    if (m_strokeColorValues.isEmpty()) {
-        return false;
-    }
-
-    const int currentIndex = indexOfValue(m_strokeColorValues, m_strokeColor);
-    return setStrokeColor(m_strokeColorValues.at((currentIndex + 1) % m_strokeColorValues.size()));
-}
-
 bool ScreenshotToolPaletteRectangleStyleModel::setStrokeStyle(
     SnowCanvasStrokeStyle strokeStyle) {
     if (m_strokeStyle == strokeStyle) {
@@ -343,15 +318,6 @@ bool ScreenshotToolPaletteRectangleStyleModel::setCornerRadius(int cornerRadius)
         clampedRadius,
         clampedRadius,
     };
-    return true;
-}
-
-bool ScreenshotToolPaletteRectangleStyleModel::setOpacity(double opacity) {
-    opacity = std::clamp(opacity, 0.0, 1.0);
-    if (qFuzzyCompare(m_opacity + 1.0, opacity + 1.0)) {
-        return false;
-    }
-    m_opacity = opacity;
     return true;
 }
 

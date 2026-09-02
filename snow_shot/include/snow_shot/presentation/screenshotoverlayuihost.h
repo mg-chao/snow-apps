@@ -48,9 +48,6 @@ class ScreenshotOverlayUiHost final {
     [[nodiscard]] bool colorPickerBelongsToOverlay(const ScreenshotOverlayWindow* overlay) const;
     [[nodiscard]] bool screenshotUiContainsGlobalCursor() const;
     void updateShortcutHints(ScreenshotOverlayWindow* overlay,
-                             ScreenshotShortcutHintMode mode, qreal opacity,
-                             const QRectF& selectionGlobal = {});
-    void updateShortcutHints(ScreenshotOverlayWindow* overlay,
                              const ScreenshotShortcutHintContext& context, qreal opacity,
                              const QRectF& selectionGlobal = {});
     void hideShortcutHints();
@@ -64,7 +61,6 @@ class ScreenshotOverlayUiHost final {
     void hideToolbar();
     void releaseToolbarNativeSurface();
     void showToolbar();
-    void raiseToolbar();
     void hideSelectionToolbar();
     void showSelectionToolbar();
     void raiseSelectionToolbar();

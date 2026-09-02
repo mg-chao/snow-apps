@@ -14,7 +14,6 @@
 #include "widgets/radio_button_group.h"
 
 #include <QBoxLayout>
-#include <QButtonGroup>
 #include <QCoreApplication>
 #include <QFont>
 #include <QFontDatabase>
@@ -22,7 +21,6 @@
 #include <QHBoxLayout>
 #include <QLayout>
 #include <QLabel>
-#include <QListView>
 #include <QObject>
 #include <QScopedValueRollback>
 #include <QSignalBlocker>
@@ -1367,9 +1365,6 @@ void ScreenshotToolPaletteStyleControls::addShapeControls(
         createScreenshotToolPaletteRadioEditor(parent, config, metrics);
     m_shapeControlsContainer = editor.container;
     m_shapeButtonGroup = editor.group;
-    m_rectangleShapeButton = editor.buttons.value(0);
-    m_ellipseShapeButton = editor.buttons.value(1);
-    m_diamondShapeButton = editor.buttons.value(2);
     QObject::connect(m_shapeButtonGroup, &adqt::widgets::AdRadioButtonGroup::checkedIdChanged,
                      receiver, [this](int id) {
                          setShape(id == 1   ? SnowCanvasRectangleShape::Ellipse
@@ -2053,9 +2048,6 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_highlightColorEditor = {};
     m_spotlightColorEditor = {};
     m_shapeButtonGroup = nullptr;
-    m_rectangleShapeButton = nullptr;
-    m_ellipseShapeButton = nullptr;
-    m_diamondShapeButton = nullptr;
     m_highlightStrokeEditor = {};
     m_penHighlightColorEditor = {};
     m_penHighlightStrokeWidthEditor = {};
@@ -2394,10 +2386,6 @@ SnowCanvasShapeStyle ScreenshotToolPaletteStyleControls::rectangleStyle() const 
     return m_rectangleStyle.rectangleStyle();
 }
 
-SnowCanvasArrowStyle ScreenshotToolPaletteStyleControls::arrowStyle() const {
-    return m_arrowStyle;
-}
-
 ScreenshotToolPaletteRectangleStyleModel& ScreenshotToolPaletteStyleControls::activeShapeStyle() {
     return m_highlightControlsActive  ? m_highlightStyle
            : m_freeDrawControlsActive ? m_freeDrawStyle
@@ -2426,10 +2414,6 @@ SnowCanvasShapeKind ScreenshotToolPaletteStyleControls::activeShapeKind() const 
            : m_freeDrawControlsActive ? SnowCanvasShapeKind::FreeDraw
            : m_lineControlsActive     ? SnowCanvasShapeKind::Line
                                       : SnowCanvasShapeKind::Rectangle;
-}
-
-SnowCanvasTextStyle ScreenshotToolPaletteStyleControls::textStyle() const {
-    return m_textStyle.textStyle();
 }
 
 SnowCanvasStyleDefaults ScreenshotToolPaletteStyleControls::creationStyleDefaults() const {
@@ -2778,10 +2762,6 @@ void ScreenshotToolPaletteStyleControls::setStyleToolbarState(
         m_selectedStyleMixed = 0;
     }
     updateRectangleStyleControls(groups);
-}
-
-void ScreenshotToolPaletteStyleControls::setSerialNumberControlsVisible(bool visible) {
-    Q_UNUSED(visible);
 }
 
 void ScreenshotToolPaletteStyleControls::refreshToolbarMetrics(

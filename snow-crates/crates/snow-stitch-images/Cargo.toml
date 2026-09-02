@@ -13,6 +13,10 @@ path = "src/lib.rs"
 
 [features]
 default = ["full-image-io"]
+# Gates the developer-facing batch-stitch CLI so plain `cargo build` only
+# produces the library consumed by the FFI wrapper. Build the CLI with:
+# `cargo build --features cli --bin snow-stitch-images`
+cli = []
 full-image-io = [
     "image/avif",
     "image/bmp",
@@ -41,6 +45,11 @@ thiserror.workspace = true
 [dev-dependencies]
 proptest = "1.11.0"
 tempfile.workspace = true
+
+[[bin]]
+name = "snow-stitch-images"
+path = "src/main.rs"
+required-features = ["cli"]
 
 [[example]]
 name = "scroll_4_benchmark"

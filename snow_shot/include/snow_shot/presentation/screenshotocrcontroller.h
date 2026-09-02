@@ -26,7 +26,6 @@ class ScreenshotTableEditingSession;
 class ScreenshotOverlayCoordinator;
 class ScreenshotOverlayWindow;
 class ScreenshotSelectionModel;
-class SnowCanvasRuntime;
 class SnowCanvasWidget;
 class QWidget;
 class QUrl;
@@ -81,19 +80,15 @@ class ScreenshotOcrController final : public QObject {
     // Invalidates the capture session and cancels all recognition work.
     void invalidateSession();
     [[nodiscard]] bool active() const;
-    [[nodiscard]] bool busy() const;
-    [[nodiscard]] bool busy(Mode mode) const;
     [[nodiscard]] Mode mode() const;
     [[nodiscard]] bool tableModeActive() const;
     [[nodiscard]] bool qrModeActive() const;
-    void setMode(Mode mode);
     [[nodiscard]] bool copyRecognitionToClipboard(bool endCapture = true);
     void mergeTableSelection();
     void splitTableSelection();
     void resetTable();
     void undoTableEdit();
     void redoTableEdit();
-    [[nodiscard]] ScreenshotTableCommandState tableCommandState() const;
     void undoTextEdit();
     void redoTextEdit();
 
@@ -108,8 +103,6 @@ class ScreenshotOcrController final : public QObject {
     [[nodiscard]] bool translating() const;
     [[nodiscard]] bool hasTextResult() const;
     [[nodiscard]] ScreenshotRecognitionResults cachedRecognitionResults() const;
-    [[nodiscard]] QString textDraft() const;
-    [[nodiscard]] QString originalText() const;
     void setTextDraft(const QString& text);
 
   signals:

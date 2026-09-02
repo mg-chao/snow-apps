@@ -147,9 +147,5 @@ QWidget* ScreenshotSelectionEditWorkflow::ownerWindowForSelectionResizeModal() c
     if (display == nullptr) {
         display = m_context.geometry.displayForCanvasRect(m_context.displaySession, selection);
     }
-    ScreenshotOverlayWindow* overlay = m_context.displaySession.overlayForDisplay(display);
-    if (overlay != nullptr) {
-        return overlay;
-    }
-    return nullptr;
+    return m_context.displaySession.overlayForDisplay(display);
 }

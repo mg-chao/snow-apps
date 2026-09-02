@@ -25,7 +25,6 @@ struct ScreenshotToolCommandActions {
     std::function<void(bool enabled)> setCanvasInteractionEnabled;
     std::function<void(SnowCanvasTool tool)> setCanvasTool;
     std::function<bool(SnowCanvasShapeStyle* outStyle)> tryCurrentRectangleStyle;
-    std::function<bool(SnowCanvasStyleToolbarState* outState)> tryCurrentStyleToolbarState;
     std::function<void(const SnowCanvasShapeStyle& style, quint32 properties,
                        SnowCanvasShapeKind kind)>
         setShapeStylePatch;

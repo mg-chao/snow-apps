@@ -102,27 +102,6 @@ void ScreenshotMessageService::loadingFor(QWidget* owner, const QString& key,
     showMessage(MessageKind::Loading, std::move(request), owner);
 }
 
-void ScreenshotMessageService::warningFor(QWidget* owner, const QString& key,
-                                          const QString& message) {
-    if (owner == nullptr || message.isEmpty()) {
-        return;
-    }
-    adqt::widgets::AdMessage::Request request;
-    request.key = key;
-    request.content = message;
-    showMessage(MessageKind::Warning, std::move(request), owner);
-}
-
-void ScreenshotMessageService::errorFor(QWidget* owner, const QString& key,
-                                        const QString& message) {
-    if (owner == nullptr || message.isEmpty()) {
-        return;
-    }
-    adqt::widgets::AdMessage::Request request;
-    request.key = key;
-    request.content = message;
-    showMessage(MessageKind::Error, std::move(request), owner);
-}
 
 void ScreenshotMessageService::destroyFor(QWidget* owner, const QString& key) {
     if (owner != nullptr) {

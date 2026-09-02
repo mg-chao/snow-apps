@@ -18,7 +18,6 @@ class InfoTooltipIcon final : public QLabel {
     [[nodiscard]] QString tooltipText() const;
     void setTooltipText(const QString& text);
 
-    [[nodiscard]] QColor iconColor() const;
     void setIconColor(const QColor& color);
 
     [[nodiscard]] adqt::widgets::AdTooltip* tooltipHost() const;

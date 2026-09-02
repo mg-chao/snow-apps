@@ -515,35 +515,6 @@ bool ScreenshotOverlayCanvasPresenter::tryCurrentRectangleStyle(
     return tryCurrentRectangleStyleForDisplaySession(displaySession, outStyle);
 }
 
-bool ScreenshotOverlayCanvasPresenter::tryCurrentStyleToolbarState(
-    const ScreenshotDisplaySession& displaySession, SnowCanvasStyleToolbarState* outState) const {
-    if (outState == nullptr) {
-        return false;
-    }
-
-    bool found = false;
-    displaySession.forEachActiveOverlay([outState, &found](qsizetype, const CapturedDisplayModel&,
-                                                           ScreenshotOverlayWindow* overlay) {
-        if (found || overlay == nullptr || overlay->canvas() == nullptr) {
-            return;
-        }
-        *outState = overlay->canvas()->canvasStyleToolbarState();
-        found = true;
-    });
-    if (found) {
-        return true;
-    }
-
-    displaySession.forEachOverlay([outState, &found](qsizetype, ScreenshotOverlayWindow* overlay) {
-        if (found || overlay == nullptr || overlay->canvas() == nullptr) {
-            return;
-        }
-        *outState = overlay->canvas()->canvasStyleToolbarState();
-        found = true;
-    });
-    return found;
-}
-
 namespace {
 SnowCanvasShapeStyle
 currentRectangleStyleForDisplaySession(const ScreenshotDisplaySession& displaySession) {

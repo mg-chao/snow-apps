@@ -94,10 +94,6 @@ struct Descriptor {
     return nullptr;
 }
 
-[[nodiscard]] inline QString id(Item item) {
-    return QString::fromLatin1(descriptor(item).id);
-}
-
 [[nodiscard]] inline QStringList defaultOrder() {
     QStringList result;
     result.reserve(descriptors().size());
@@ -129,12 +125,7 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input) {
     storage::ScreenshotToolbarLayout result;
     for (const QStringList& inputPosition : input.positions) {
         QStringList position;
-        for (const QString& storedItemId : inputPosition) {
-            const QString itemId =
-                storedItemId == QStringLiteral("rectangle-highlight") ||
-                        storedItemId == QStringLiteral("pen-highlight")
-                    ? QStringLiteral("highlighter")
-                    : storedItemId;
+        for (const QString& itemId : inputPosition) {
             if (known.contains(itemId) && !positioned.contains(itemId)) {
                 position.push_back(itemId);
                 positioned.insert(itemId);
@@ -146,12 +137,7 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input) {
     }
 
     QSet<QString> hidden;
-    for (const QString& storedItemId : input.hidden) {
-        const QString itemId =
-            storedItemId == QStringLiteral("rectangle-highlight") ||
-                    storedItemId == QStringLiteral("pen-highlight")
-                ? QStringLiteral("highlighter")
-                : storedItemId;
+    for (const QString& itemId : input.hidden) {
         if (known.contains(itemId) && !positioned.contains(itemId) && !hidden.contains(itemId)) {
             result.hidden.push_back(itemId);
             hidden.insert(itemId);

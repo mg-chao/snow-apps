@@ -1550,12 +1550,6 @@ bool ScreenshotPinnedWindow::presentInternal(
                 }
                 return m_recognitionContent;
             },
-            [this]() {
-                if (m_recognitionContent != nullptr) {
-                    delete m_recognitionContent;
-                    m_recognitionContent = nullptr;
-                }
-            },
             [this](std::shared_ptr<ScreenshotOcrPresentation> presentation) {
                 m_ocrReady = presentation != nullptr;
                 m_originalOcrPresentation = std::move(presentation);
@@ -1663,10 +1657,6 @@ bool ScreenshotPinnedWindow::presentInternal(
                 }
                 refreshContextMenu();
             },
-            [this](const QString& message) {
-                ScreenshotMessageService::loadingFor(
-                    this, QString::fromLatin1(kRecognitionMessageKey), message);
-            },
             [this]() {
                 ScreenshotMessageService::destroyFor(
                     this, QString::fromLatin1(kRecognitionMessageKey));
@@ -1676,11 +1666,6 @@ bool ScreenshotPinnedWindow::presentInternal(
                     showPinnedRecognitionMessage(this, message, true);
                 } else {
                     showPinnedRecognitionMessage(this, message, false);
-                }
-            },
-            [this](const QUrl& url) {
-                if (url.isValid()) {
-                    QDesktopServices::openUrl(url);
                 }
             },
             [this]() -> QWidget* { return this; },
@@ -2456,10 +2441,6 @@ void ScreenshotPinnedWindow::setRuntimeBorderColor(const QColor& color) {
     }
 }
 
-QColor ScreenshotPinnedWindow::runtimeBorderColor() {
-    return configuredPinnedBorderColor();
-}
-
 void ScreenshotPinnedWindow::setRuntimeTrayEnabled(bool enabled) {
     configuredTrayEnabled() = enabled;
     const auto windows = livePinnedWindows();
@@ -2468,10 +2449,6 @@ void ScreenshotPinnedWindow::setRuntimeTrayEnabled(bool enabled) {
             window->updateShowMainInterfaceAction();
         }
     }
-}
-
-bool ScreenshotPinnedWindow::runtimeTrayEnabled() {
-    return configuredTrayEnabled();
 }
 
 void ScreenshotPinnedWindow::showContextMenu(const QPoint& globalPosition) {
@@ -3005,16 +2982,6 @@ void ScreenshotPinnedWindow::setEditMode(bool enabled) {
     }
 }
 
-void ScreenshotPinnedWindow::setOcrMode(bool enabled) {
-    if (enabled) {
-        setEditMode(true);
-        activateRecognitionMode(
-            static_cast<int>(ScreenshotRecognitionSessionController::Mode::Text));
-    } else {
-        deactivateRecognition();
-    }
-}
-
 void ScreenshotPinnedWindow::updateRecognitionContentGeometry() {
     if (m_recognitionContent == nullptr || m_canvas == nullptr) {
         return;
@@ -3244,24 +3211,6 @@ QPointF ScreenshotPinnedWindow::canvasPositionForViewPosition(const QPointF& pos
     }
     return m_viewportCenter + QPointF((position.x() - m_canvas->width() / 2.0) / m_viewportZoom,
                                       (position.y() - m_canvas->height() / 2.0) / m_viewportZoom);
-}
-
-QRectF ScreenshotPinnedWindow::visibleCanvasRect() const {
-    if (m_canvas == nullptr || m_viewportZoom <= 0.0) {
-        return m_backgroundCanvasRect;
-    }
-    const QRect nativeGeometry = currentNativeGeometry();
-    const qreal devicePixelRatio =
-        m_canvas->devicePixelRatioF() > 0.0 ? m_canvas->devicePixelRatioF() : 1.0;
-    const QSizeF physicalViewport =
-        nativeGeometry.isValid() && !nativeGeometry.isEmpty()
-            ? QSizeF(nativeGeometry.size())
-            : QSizeF(m_canvas->width() * devicePixelRatio, m_canvas->height() * devicePixelRatio);
-    const QSizeF visibleSize(physicalViewport.width() / (devicePixelRatio * m_viewportZoom),
-                             physicalViewport.height() / (devicePixelRatio * m_viewportZoom));
-    const QPointF topLeft = m_viewportCenter - QPointF(m_canvas->width() / (2.0 * m_viewportZoom),
-                                                       m_canvas->height() / (2.0 * m_viewportZoom));
-    return QRectF(topLeft, visibleSize);
 }
 
 void ScreenshotPinnedWindow::copyEditToolbarContent() {
@@ -3922,7 +3871,6 @@ void ScreenshotPinnedWindow::setThumbnailMode(bool enabled, bool animate) {
                                         bounds.bottom() - nativeTarget.height() + 1));
         }
         m_thumbnailMode = true;
-        m_thumbnailAnimationTarget = true;
         if (m_screenshotRenderer != nullptr) {
             m_screenshotRenderer->setPinnedBackgroundColor(opaquePinnedBackground(this));
         }
@@ -3934,7 +3882,6 @@ void ScreenshotPinnedWindow::setThumbnailMode(bool enabled, bool animate) {
         }
     } else {
         m_thumbnailMode = false;
-        m_thumbnailAnimationTarget = false;
         if (m_screenshotRenderer != nullptr) {
             m_screenshotRenderer->setPinnedBackgroundColor({});
         }
@@ -3959,7 +3906,6 @@ void ScreenshotPinnedWindow::restoreFromThumbnailImmediately() {
     }
     m_geometryAnimating = false;
     m_thumbnailMode = false;
-    m_thumbnailAnimationTarget = false;
     if (m_screenshotRenderer != nullptr) {
         m_screenshotRenderer->setPinnedBackgroundColor({});
     }

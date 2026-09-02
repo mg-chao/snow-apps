@@ -22,11 +22,6 @@ struct ScreenshotOcrAssetStatus {
     qint64 receivedBytes = 0;
     qint64 totalBytes = 0;
     QString error;
-
-    [[nodiscard]] bool ready() const {
-        return phase == ScreenshotOcrAssetPhase::ReadyOffline ||
-               phase == ScreenshotOcrAssetPhase::ReadyCached;
-    }
 };
 
 struct ScreenshotOcrResolvedAssets {
@@ -65,8 +60,6 @@ class ScreenshotOcrAssets final : public QObject {
 
     void prepare();
     void setProxyUrl(const QString& proxyUrl);
-    [[nodiscard]] ScreenshotOcrAssetStatus status() const;
-    [[nodiscard]] ScreenshotOcrResolvedAssets resolvedAssets() const;
 
   signals:
     void statusChanged(const ScreenshotOcrAssetStatus& status);

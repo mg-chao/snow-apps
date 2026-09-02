@@ -1,4 +1,5 @@
 use std::sync::Arc;
+#[cfg(feature = "stage-timing")]
 use std::time::{Duration, Instant};
 
 use rustc_hash::FxHashMap;
@@ -15,9 +16,9 @@ use crate::region::{CaptureRegion, MonitorLayout};
 use crate::system::CaptureOptions;
 use crate::window::{WindowId, WindowKey};
 use snow_core::timestamp::TickFormat;
-use snow_cursor::{
-    CursorProjector, CursorSampler, CursorShapeState, CursorSnapshot, CursorTargetInfo,
-};
+#[cfg(feature = "stage-timing")]
+use snow_cursor::CursorShapeState;
+use snow_cursor::{CursorProjector, CursorSampler, CursorSnapshot, CursorTargetInfo};
 
 #[derive(Clone, Debug)]
 struct RegionPlanEntry {
@@ -262,17 +263,25 @@ pub struct CaptureTargetInfo {
     pub height: u32,
 }
 
+/// Cursor-attach diagnostics for one frame. Only populated in builds
+/// with the `stage-timing` feature; all fields disappear otherwise.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct CursorAttachStats {
+    #[cfg(feature = "stage-timing")]
     pub used_native: bool,
+    #[cfg(feature = "stage-timing")]
     pub used_fallback: bool,
+    #[cfg(feature = "stage-timing")]
     pub shape_cache_hit: bool,
+    #[cfg(feature = "stage-timing")]
     pub shape_cache_miss: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct CursorAttachOutcome {
+    #[cfg(feature = "stage-timing")]
     pub stats: CursorAttachStats,
+    #[cfg(feature = "stage-timing")]
     pub elapsed: Duration,
 }
 
@@ -285,6 +294,22 @@ fn cursor_target_info(target_info: &CaptureTargetInfo) -> CursorTargetInfo {
     }
 }
 
+/// Stamps a successfully captured frame with its sequence number and, in
+/// stage-timing builds, the wall-clock duration of the capture call.
+#[cfg(feature = "stage-timing")]
+fn stamp_captured_frame(frame: &mut Frame, seq: u64, capture_duration: Duration) {
+    frame.metadata.sequence = seq;
+    if frame.metadata.capture_duration.is_none() {
+        frame.metadata.capture_duration = Some(capture_duration);
+    }
+}
+
+#[cfg(not(feature = "stage-timing"))]
+fn stamp_captured_frame(frame: &mut Frame, seq: u64) {
+    frame.metadata.sequence = seq;
+}
+
+#[cfg(feature = "stage-timing")]
 fn observe_projected_cursor(
     stats: &mut CursorAttachStats,
     sample: &snow_cursor::AttachedCursorSample,
@@ -930,13 +955,22 @@ impl CaptureSession {
         reuse: Option<Frame>,
     ) -> CaptureResult<(Frame, Option<CursorAttachOutcome>)> {
         let mut frame = self.capture_frame(reuse)?;
-        let cursor_outcome = self.target_info().ok().map(|target_info| {
-            let start = Instant::now();
-            let stats = self.attach_cursor_to_frame(&target_info, &mut frame);
-            CursorAttachOutcome {
-                stats,
-                elapsed: start.elapsed(),
-            }
+        let cursor_outcome = self.target_info().ok().and_then(|target_info| {
+            #[cfg(feature = "stage-timing")]
+            let outcome = {
+                let start = Instant::now();
+                let stats = self.attach_cursor_to_frame(&target_info, &mut frame);
+                Some(CursorAttachOutcome {
+                    stats,
+                    elapsed: start.elapsed(),
+                })
+            };
+            #[cfg(not(feature = "stage-timing"))]
+            let outcome = {
+                self.attach_cursor_to_frame(&target_info, &mut frame);
+                None
+            };
+            outcome
         });
         Ok((frame, cursor_outcome))
     }
@@ -981,10 +1015,16 @@ impl CaptureSession {
             _ => *target_info,
         };
 
+        #[cfg(feature = "stage-timing")]
         let mut stats = CursorAttachStats::default();
+        #[cfg(not(feature = "stage-timing"))]
+        let stats = CursorAttachStats::default();
         let target = cursor_target_info(&effective_target_info);
         let mut snapshot = self.sample_native_cursor().ok().flatten();
-        stats.used_native = snapshot.is_some();
+        #[cfg(feature = "stage-timing")]
+        {
+            stats.used_native = snapshot.is_some();
+        }
 
         let native_has_shape = snapshot
             .as_ref()
@@ -1005,11 +1045,17 @@ impl CaptureSession {
                 None => (fallback, true),
             };
             snapshot = Some(resolved);
-            stats.used_fallback = used_fallback;
+            #[cfg(feature = "stage-timing")]
+            {
+                stats.used_fallback = used_fallback;
+            }
+            #[cfg(not(feature = "stage-timing"))]
+            let _ = used_fallback;
         }
 
         if let Some(snapshot) = snapshot {
             let sample = self.cursor_projector.project(&target, snapshot);
+            #[cfg(feature = "stage-timing")]
             observe_projected_cursor(&mut stats, &sample);
             frame.metadata.cursor = Some(sample);
         }
@@ -1175,13 +1221,8 @@ impl CaptureSession {
 
         self.sequence = self.sequence.wrapping_add(1);
         let seq = self.sequence;
-        let stamp_frame = |frame: &mut Frame, capture_duration: std::time::Duration| {
-            frame.metadata.sequence = seq;
-            if frame.metadata.capture_duration.is_none() {
-                frame.metadata.capture_duration = Some(capture_duration);
-            }
-        };
 
+        #[cfg(feature = "stage-timing")]
         let cap_start = std::time::Instant::now();
         let first_result = {
             let capturer = get_capturer(self)?;
@@ -1192,10 +1233,14 @@ impl CaptureSession {
                 frame
             })
         };
+        #[cfg(feature = "stage-timing")]
         let cap_dur = cap_start.elapsed();
         match first_result {
             Ok(mut frame) => {
-                stamp_frame(&mut frame, cap_dur);
+                #[cfg(feature = "stage-timing")]
+                stamp_captured_frame(&mut frame, seq, cap_dur);
+                #[cfg(not(feature = "stage-timing"))]
+                stamp_captured_frame(&mut frame, seq);
                 return Ok((frame, seq));
             }
             Err(error) if error.requires_worker_reset() && max_retries > 0 => {
@@ -1205,6 +1250,7 @@ impl CaptureSession {
         }
 
         for attempt in 0..max_retries {
+            #[cfg(feature = "stage-timing")]
             let retry_start = std::time::Instant::now();
             let result = {
                 let capturer = get_capturer(self)?;
@@ -1215,10 +1261,14 @@ impl CaptureSession {
                     frame
                 })
             };
+            #[cfg(feature = "stage-timing")]
             let retry_dur = retry_start.elapsed();
             match result {
                 Ok(mut frame) => {
-                    stamp_frame(&mut frame, retry_dur);
+                    #[cfg(feature = "stage-timing")]
+                    stamp_captured_frame(&mut frame, seq, retry_dur);
+                    #[cfg(not(feature = "stage-timing"))]
+                    stamp_captured_frame(&mut frame, seq);
                     return Ok((frame, seq));
                 }
                 Err(error) if error.requires_worker_reset() && attempt + 1 < max_retries => {

@@ -119,9 +119,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool prewarm(QScreen* screen = nullptr);
     QRect currentNativeGeometry() const;
     static void setRuntimeBorderColor(const QColor& color);
-    [[nodiscard]] static QColor runtimeBorderColor();
     static void setRuntimeTrayEnabled(bool enabled);
-    [[nodiscard]] static bool runtimeTrayEnabled();
 
   signals:
     void showMainWindowRequested();
@@ -180,7 +178,6 @@ class ScreenshotPinnedWindow final : public QWidget {
     void ensureEditController();
     void configureEditToolbar(ScreenshotFloatingToolPaletteWindow* toolbarWindow);
     void setEditMode(bool enabled);
-    void setOcrMode(bool enabled);
     void stopRecognition();
     void updateOcrPresentation();
     void updateRecognitionContentGeometry();
@@ -227,7 +224,6 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool reconcilePassiveNativeGeometry();
     bool restoreCommittedNativeGeometry();
     QRect nativeRectForLogicalRect(const QRect& logical, QScreen* screen) const;
-    QRectF visibleCanvasRect() const;
     void showAllPinnedWindows();
     void hideOtherPinnedWindows();
     void closeOtherPinnedWindows();
@@ -332,7 +328,6 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_automaticTextRecognition = true;
     bool m_editingEnabled = true;
     bool m_thumbnailMode = false;
-    bool m_thumbnailAnimationTarget = false;
     bool m_geometryAnimating = false;
     bool m_preserveScaleForSettledGeometry = false;
     bool m_presented = false;

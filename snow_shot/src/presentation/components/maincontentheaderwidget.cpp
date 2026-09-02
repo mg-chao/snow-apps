@@ -69,11 +69,6 @@ QString MainContentHeaderWidget::currentSection() const {
     return m_tabs != nullptr ? m_tabs->currentKey() : QString();
 }
 
-QVector<snow_shot::presentation::settings::SettingsSectionSummary>
-MainContentHeaderWidget::sections() const {
-    return m_sections;
-}
-
 void MainContentHeaderWidget::setSections(
     const QVector<snow_shot::presentation::settings::SettingsSectionSummary>& sections) {
     if (m_tabs == nullptr) {

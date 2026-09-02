@@ -50,10 +50,6 @@ void InfoTooltipIcon::setTooltipText(const QString& text) {
     }
 }
 
-QColor InfoTooltipIcon::iconColor() const {
-    return m_iconColor;
-}
-
 void InfoTooltipIcon::setIconColor(const QColor& color) {
     if (m_iconColor == color) {
         return;

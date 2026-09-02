@@ -62,3 +62,16 @@ opencv-backend = ["dep:opencv"]
 cuda-provider = ["ort/cuda"]
 directml-provider = ["ort/directml"]
 cann-provider = ["ort/cann"]
+# Gates the warm end-to-end benchmark harness so plain `cargo build` only
+# produces the functional `rapidocr` CLI. Run the harness with:
+# `cargo run --features bench-internals --bin bench_warm_e2e -- ...`
+bench-internals = []
+
+[[bin]]
+name = "rapidocr"
+path = "src/bin/rapidocr.rs"
+
+[[bin]]
+name = "bench_warm_e2e"
+path = "src/bin/bench_warm_e2e.rs"
+required-features = ["bench-internals"]

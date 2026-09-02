@@ -27,9 +27,6 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     [[nodiscard]] bool captureWorkerCreated() const override {
         return true;
     }
-    [[nodiscard]] bool hasCaptureWorker() const override {
-        return true;
-    }
     void ensureCaptureWorker() override {}
     void prepareAsync(quint64) override {
         ++prepareAsyncCalls;

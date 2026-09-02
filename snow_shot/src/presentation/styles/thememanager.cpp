@@ -202,7 +202,6 @@ ThemeStyleConfig toThemeStyleConfig(const adqt::theme::ResolvedTheme& resolvedTh
     config.sizeStep = qRound(resolvedTheme.config.sizeStep);
     config.controlHeight = qRound(resolvedTheme.config.controlHeight);
     config.motionUnit = resolvedTheme.config.motion ? 0.1 : 0.0;
-    config.motionBase = 0.0;
     return config;
 }
 } // namespace
@@ -242,20 +241,8 @@ ThemeManager& ThemeManager::instance() {
     return manager;
 }
 
-ThemeStyleConfig ThemeManager::themeStyleConfig() const {
-    return m_config;
-}
-
 ThemeMode ThemeManager::themeMode() const {
     return m_mode;
-}
-
-ThemeAppearance ThemeManager::themeAppearance() const {
-    return m_config.appearance;
-}
-
-ThemePreset ThemeManager::themePreset() const {
-    return m_config.preset;
 }
 
 ThemeColorScheme ThemeManager::themeColorScheme() const {

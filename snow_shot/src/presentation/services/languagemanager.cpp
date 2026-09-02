@@ -10,7 +10,6 @@
 #include <QString>
 #include <QStringList>
 #include <QTranslator>
-#include <QVariant>
 #include <QDebug>
 
 #include <algorithm>

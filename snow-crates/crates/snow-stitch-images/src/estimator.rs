@@ -367,6 +367,9 @@ fn detect_balanced_rust(
         .collect()
 }
 
+// The estimator hands this its full state (frames, tiling, regions, tuning);
+// grouping them into a struct would churn every call site for no clarity.
+#[allow(clippy::too_many_arguments)]
 fn pure_rust_feature_evidence(
     reference: &Frame,
     incoming: &Frame,

@@ -9,7 +9,6 @@
 #include "icons/widget_icons.h"
 #include "widgets/select.h"
 
-#include <QAbstractItemDelegate>
 #include <QEvent>
 #include <QFontMetrics>
 #include <QHBoxLayout>
@@ -328,18 +327,6 @@ void ApplicationSearchWidget::setPlaceholderText(const QString& text) {
 
 QString ApplicationSearchWidget::query() const {
     return m_select != nullptr ? m_select->searchText() : QString();
-}
-
-void ApplicationSearchWidget::clearQuery() {
-    if (m_select == nullptr) {
-        return;
-    }
-
-    const QScopedValueRollback<bool> clearingGuard(m_clearingSelection, true);
-    m_select->setSearchText(QString());
-    m_select->setCurrentValue(QVariant());
-    m_select->hidePopup();
-    populateResults(QString());
 }
 
 void ApplicationSearchWidget::applyTheme(

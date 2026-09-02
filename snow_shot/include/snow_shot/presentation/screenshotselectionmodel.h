@@ -21,8 +21,6 @@ class ScreenshotSelectionModel final {
     void clearSelection();
     void setSelectionRect(const QRectF& selection);
     void setSelectionStartEnd(const QPointF& start, const QPointF& end);
-    void setSelectionStart(const QPointF& start);
-    void setSelectionEnd(const QPointF& end);
 
     void beginMoveDrag(const QPointF& startPosition);
     // Rebase a move/resize gesture without changing the visible selection.
@@ -30,7 +28,6 @@ class ScreenshotSelectionModel final {
     // moving the whole selection, avoiding a cursor jump.
     void rebaseMoveDrag(const QPointF& startPosition);
     [[nodiscard]] QRectF moveOriginalSelection() const;
-    [[nodiscard]] QPointF moveStart() const;
     [[nodiscard]] QRectF selectionRectForDrag(ScreenshotSelectionDragMode dragMode,
                                               const QPointF& position, const QRectF& bounds,
                                               qreal minimumSelectionSize,

@@ -231,16 +231,11 @@ ScreenshotHalfOpenRect ScreenshotHalfOpenRect::united(const ScreenshotHalfOpenRe
                      std::max(right, other.right), std::max(bottom, other.bottom));
 }
 
-ScreenshotHalfOpenRect ScreenshotHalfOpenRect::translated(const QPointF& delta) const {
-    return fromEdges(left + delta.x(), top + delta.y(), right + delta.x(), bottom + delta.y());
-}
-
 namespace {
 void rebuildDisplayGeometry(ScreenshotDisplaySession& displaySession, QPoint& canvasOrigin,
-                            QRectF& canvasBounds, QRectF& physicalBounds) {
+                            QRectF& canvasBounds) {
     canvasOrigin = QPoint();
     canvasBounds = QRectF();
-    physicalBounds = QRectF();
 
     int minLeft = std::numeric_limits<int>::max();
     int minTop = std::numeric_limits<int>::max();
@@ -257,7 +252,6 @@ void rebuildDisplayGeometry(ScreenshotDisplaySession& displaySession, QPoint& ca
 
     canvasOrigin = QPoint(minLeft, minTop);
     ScreenshotHalfOpenRect computedCanvasBounds;
-    ScreenshotHalfOpenRect computedPhysicalBounds;
     displaySession.forEachMutableActiveDisplay([&](qsizetype, CapturedDisplayModel& display) {
         if (display.physicalRect.isNull()) {
             return;
@@ -271,10 +265,7 @@ void rebuildDisplayGeometry(ScreenshotDisplaySession& displaySession, QPoint& ca
 
         const ScreenshotHalfOpenRect canvasRect =
             ScreenshotHalfOpenRect::fromRect(display.canvasRect);
-        const ScreenshotHalfOpenRect physicalRect =
-            ScreenshotHalfOpenRect::fromRect(display.physicalRect);
         computedCanvasBounds = computedCanvasBounds.united(canvasRect);
-        computedPhysicalBounds = computedPhysicalBounds.united(physicalRect);
 
         const double scaleX =
             scaleOrFallbackValue(static_cast<double>(display.logicalRect.width()),
@@ -306,18 +297,16 @@ void rebuildDisplayGeometry(ScreenshotDisplaySession& displaySession, QPoint& ca
     });
 
     canvasBounds = computedCanvasBounds.toRectF();
-    physicalBounds = computedPhysicalBounds.toRectF();
 }
 } // namespace
 
 void ScreenshotGeometryMapper::rebuild(ScreenshotDisplaySession& displaySession) {
-    rebuildDisplayGeometry(displaySession, m_canvasOrigin, m_canvasBounds, m_physicalBounds);
+    rebuildDisplayGeometry(displaySession, m_canvasOrigin, m_canvasBounds);
 }
 
 void ScreenshotGeometryMapper::clear() {
     m_canvasOrigin = QPoint();
     m_canvasBounds = QRectF();
-    m_physicalBounds = QRectF();
 }
 
 bool ScreenshotGeometryMapper::isEmpty() const {
@@ -330,10 +319,6 @@ QPoint ScreenshotGeometryMapper::canvasOrigin() const {
 
 QRectF ScreenshotGeometryMapper::canvasBounds() const {
     return m_canvasBounds;
-}
-
-QRectF ScreenshotGeometryMapper::physicalBounds() const {
-    return m_physicalBounds;
 }
 
 namespace {
@@ -598,16 +583,6 @@ physicalPositionForLogicalPointInDisplaySession(const ScreenshotGeometryMapper& 
 QPoint ScreenshotGeometryMapper::physicalPositionForLogicalPoint(
     const ScreenshotDisplaySession& displaySession, const QPointF& point) const {
     return physicalPositionForLogicalPointInDisplaySession(*this, displaySession, point);
-}
-
-QPoint ScreenshotGeometryMapper::clampPhysicalPointToDesktop(const QPoint& point) const {
-    if (m_physicalBounds.isNull() || m_physicalBounds.isEmpty()) {
-        return point;
-    }
-    return QPoint(std::clamp(point.x(), floorToInt(m_physicalBounds.left()),
-                             ceilToInt(m_physicalBounds.right()) - 1),
-                  std::clamp(point.y(), floorToInt(m_physicalBounds.top()),
-                             ceilToInt(m_physicalBounds.bottom()) - 1));
 }
 
 QPoint ScreenshotGeometryMapper::clampPhysicalPointToDisplay(const CapturedDisplayModel& display,
@@ -978,75 +953,6 @@ ScreenshotAnchoredToolbarPlacement ScreenshotGeometryMapper::anchoredToolbarPlac
         clampContentPositionToRect(selectedPosition, selectedOccupied, bounds),
         useTopRightPlacement,
     };
-}
-
-QPointF
-ScreenshotGeometryMapper::nativePositionForLogicalPlacementPoint(const QPointF& logicalPosition,
-                                                                 const QRect& ownerLogicalBounds,
-                                                                 const QRect& ownerPhysicalBounds) {
-    if (!ownerLogicalBounds.isValid() || ownerLogicalBounds.isEmpty() ||
-        !ownerPhysicalBounds.isValid() || ownerPhysicalBounds.isEmpty()) {
-        return logicalPosition;
-    }
-
-    return mapPointBetweenRects(logicalPosition, ownerLogicalBounds, ownerPhysicalBounds);
-}
-
-QPointF
-ScreenshotGeometryMapper::physicalPositionForLogicalDragPoint(const QPointF& logicalPosition,
-                                                              const QRect& ownerLogicalBounds,
-                                                              const QRect& ownerPhysicalBounds) {
-    if (ownerLogicalBounds.isValid() && !ownerLogicalBounds.isEmpty() &&
-        ownerPhysicalBounds.isValid() && !ownerPhysicalBounds.isEmpty() &&
-        ScreenshotHalfOpenRect::fromRect(ownerLogicalBounds).contains(logicalPosition)) {
-        return mapPointBetweenRects(logicalPosition, ownerLogicalBounds, ownerPhysicalBounds);
-    }
-
-    for (QScreen* screen : QGuiApplication::screens()) {
-        if (screen == nullptr) {
-            continue;
-        }
-        const QRect logicalBounds = screen->geometry();
-        if (ScreenshotHalfOpenRect::fromRect(logicalBounds).contains(logicalPosition)) {
-            return mapPointBetweenRects(logicalPosition, logicalBounds,
-                                        physicalRectForScreen(*screen));
-        }
-    }
-
-    return logicalPosition;
-}
-
-QPointF
-ScreenshotGeometryMapper::logicalPositionForPhysicalDragPoint(const QPointF& physicalPosition,
-                                                              const QRect& ownerLogicalBounds,
-                                                              const QRect& ownerPhysicalBounds) {
-    if (ownerPhysicalBounds.isValid() && !ownerPhysicalBounds.isEmpty() &&
-        ownerLogicalBounds.isValid() && !ownerLogicalBounds.isEmpty() &&
-        ScreenshotHalfOpenRect::fromRect(ownerPhysicalBounds).contains(physicalPosition)) {
-        return mapPointBetweenRects(physicalPosition, ownerPhysicalBounds, ownerLogicalBounds);
-    }
-
-    for (QScreen* screen : QGuiApplication::screens()) {
-        if (screen == nullptr) {
-            continue;
-        }
-        const QRect physicalBounds = physicalRectForScreen(*screen);
-        if (ScreenshotHalfOpenRect::fromRect(physicalBounds).contains(physicalPosition)) {
-            return mapPointBetweenRects(physicalPosition, physicalBounds, screen->geometry());
-        }
-    }
-
-    return physicalPosition;
-}
-
-QPointF ScreenshotGeometryMapper::logicalPositionForPhysicalPointInBounds(
-    const QPointF& physicalPosition, const QRect& logicalBounds, const QRect& physicalBounds) {
-    if (!logicalBounds.isValid() || logicalBounds.isEmpty() || !physicalBounds.isValid() ||
-        physicalBounds.isEmpty()) {
-        return physicalPosition;
-    }
-
-    return mapPointBetweenRects(physicalPosition, physicalBounds, logicalBounds);
 }
 
 QPointF ScreenshotGeometryMapper::logicalDragPositionForPhysicalPoint(

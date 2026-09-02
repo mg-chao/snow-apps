@@ -24,8 +24,6 @@
 #include <QEvent>
 #include <QFontMetrics>
 #include <QFontMetricsF>
-#include <QFrame>
-#include <QHash>
 #include <QHBoxLayout>
 #include <QKeyCombination>
 #include <QKeyEvent>
@@ -156,8 +154,6 @@ QColor registrationStatusColor(snow_shot::presentation::GlobalShortcutStatus sta
 }
 
 constexpr int SHORTCUT_CONFIG_MODAL_WIDTH = 520;
-constexpr int SHORTCUT_CONFIG_INPUT_MIN_WIDTH = 248;
-constexpr int SHORTCUT_CONFIG_APPLY_BUTTON_WIDTH = 76;
 constexpr int SHORTCUT_KEY_TEXT_MAX_WIDTH = 200;
 constexpr int COMPACT_SHORTCUT_KEY_TEXT_MAX_WIDTH = 100;
 
@@ -585,10 +581,6 @@ class ShortcutKeyConfigContent final : public QWidget {
         return recordKeysList;
     }
 
-    bool hasSelectedShortcut() const {
-        return !selectedShortcuts().isEmpty();
-    }
-
     bool canAcceptDialog() const {
         return m_recordingConfigIndex < 0 || !m_pendingShortcut.trimmed().isEmpty();
     }
@@ -604,7 +596,6 @@ class ShortcutKeyConfigContent final : public QWidget {
         ensureKeyboardGrabbed();
     }
 
-    std::function<void(bool)> selectedShortcutAvailabilityChanged;
     std::function<void(bool)> acceptanceAvailabilityChanged;
 
   protected:
@@ -849,9 +840,6 @@ class ShortcutKeyConfigContent final : public QWidget {
     }
 
     void notifyShortcutAvailabilityChanged() {
-        if (selectedShortcutAvailabilityChanged) {
-            selectedShortcutAvailabilityChanged(hasSelectedShortcut());
-        }
         if (acceptanceAvailabilityChanged) {
             acceptanceAvailabilityChanged(canAcceptDialog());
         }

@@ -35,7 +35,6 @@ class SingleInstanceCoordinator final : public QObject {
     [[nodiscard]] SingleInstanceResult acquireOrForward(const QStringList& arguments);
     [[nodiscard]] bool isPrimary() const;
     [[nodiscard]] QString lockFilePath() const;
-    [[nodiscard]] QString serverName() const;
     void setLaunchRequestHandler(std::function<void(const QStringList&)> handler);
 
   signals:

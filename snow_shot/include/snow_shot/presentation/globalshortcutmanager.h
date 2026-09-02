@@ -35,13 +35,10 @@ class GlobalShortcutManager final : public QObject {
     ~GlobalShortcutManager() override;
 
     void initialize();
-    [[nodiscard]] bool isInitialized() const;
     [[nodiscard]] GlobalShortcutRegistrationState state(GlobalShortcutAction action) const;
     [[nodiscard]] GlobalShortcutValidationResult validateShortcut(const QString& shortcut) const;
     void setShortcuts(GlobalShortcutAction action, const QStringList& shortcuts);
     void setShortcutFunctionsEnabled(bool enabled);
-    [[nodiscard]] bool shortcutFunctionsEnabled() const;
-    void retryRegistrations();
 
   signals:
     void activated(snow_shot::presentation::GlobalShortcutAction action);

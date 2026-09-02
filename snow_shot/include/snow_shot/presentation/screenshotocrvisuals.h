@@ -35,8 +35,4 @@ class ScreenshotOcrPresentation;
     qreal devicePixelRatio = 1.0, QRect* filteredPixels = nullptr,
     SnowCanvasRegionFilterScratch* scratch = nullptr);
 
-[[nodiscard]] QImage renderScreenshotOcrFilteredSource(
-    const ScreenshotImageSource& source, const QRectF& canvasRect, const QSize& pixelSize,
-    const ScreenshotOcrPresentation& presentation, const QColor& backgroundColor);
-
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTOCRVISUALS_H

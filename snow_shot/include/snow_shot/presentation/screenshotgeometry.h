@@ -37,7 +37,6 @@ struct ScreenshotHalfOpenRect {
     [[nodiscard]] bool intersects(const ScreenshotHalfOpenRect& other) const;
     [[nodiscard]] ScreenshotHalfOpenRect intersected(const ScreenshotHalfOpenRect& other) const;
     [[nodiscard]] ScreenshotHalfOpenRect united(const ScreenshotHalfOpenRect& other) const;
-    [[nodiscard]] ScreenshotHalfOpenRect translated(const QPointF& delta) const;
 };
 
 struct ScreenshotPinnedImageGeometry {
@@ -105,7 +104,6 @@ class ScreenshotGeometryMapper final {
     [[nodiscard]] bool isEmpty() const;
     [[nodiscard]] QPoint canvasOrigin() const;
     [[nodiscard]] QRectF canvasBounds() const;
-    [[nodiscard]] QRectF physicalBounds() const;
 
     [[nodiscard]] const CapturedDisplayModel*
     displayForOverlay(const ScreenshotDisplaySession& displaySession,
@@ -139,7 +137,6 @@ class ScreenshotGeometryMapper final {
     physicalPositionForLogicalPoint(const ScreenshotDisplaySession& displaySession,
                                     const QPointF& point) const;
 
-    [[nodiscard]] QPoint clampPhysicalPointToDesktop(const QPoint& point) const;
     [[nodiscard]] QPoint clampPhysicalPointToDisplay(const CapturedDisplayModel& display,
                                                      const QPoint& point) const;
 
@@ -176,20 +173,6 @@ class ScreenshotGeometryMapper final {
                              const ScreenshotToolbarPlacementGeometry& bottomPlacement,
                              const ScreenshotToolbarPlacementGeometry& topPlacement,
                              const QRect& bounds, int gap);
-    [[nodiscard]] static QPointF
-    nativePositionForLogicalPlacementPoint(const QPointF& logicalPosition,
-                                           const QRect& ownerLogicalBounds,
-                                           const QRect& ownerPhysicalBounds);
-    [[nodiscard]] static QPointF
-    physicalPositionForLogicalDragPoint(const QPointF& logicalPosition,
-                                        const QRect& ownerLogicalBounds,
-                                        const QRect& ownerPhysicalBounds);
-    [[nodiscard]] static QPointF
-    logicalPositionForPhysicalDragPoint(const QPointF& physicalPosition,
-                                        const QRect& ownerLogicalBounds,
-                                        const QRect& ownerPhysicalBounds);
-    [[nodiscard]] static QPointF logicalPositionForPhysicalPointInBounds(
-        const QPointF& physicalPosition, const QRect& logicalBounds, const QRect& physicalBounds);
     [[nodiscard]] static QPointF logicalDragPositionForPhysicalPoint(
         const QPointF& globalLogicalPosition, const QPointF& physicalPosition,
         const QRect& ownerLogicalBounds, const QRect& ownerPhysicalBounds);
@@ -206,7 +189,6 @@ class ScreenshotGeometryMapper final {
   private:
     QPoint m_canvasOrigin;
     QRectF m_canvasBounds;
-    QRectF m_physicalBounds;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTGEOMETRY_H

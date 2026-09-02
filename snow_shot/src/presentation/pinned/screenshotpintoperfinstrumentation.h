@@ -16,7 +16,6 @@ class Sink {
     virtual void finish(bool success) = 0;
 };
 
-void setSink(Sink* sink);
 void configureTrace(const QString& path);
 void beginSample(const char* scenario, qint64 width, qint64 height);
 void setSampleDescriptor(const char* scenario, qint64 width, qint64 height);

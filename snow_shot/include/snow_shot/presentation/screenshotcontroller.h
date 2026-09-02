@@ -6,17 +6,12 @@
 
 #include <memory>
 
-#include "snow_draw_engine_qt/snow_canvas_types.h"
-#include "snow_shot/presentation/screenshotuipreferences.h"
-
 class ScreenshotController : public QObject {
     Q_OBJECT
 
   public:
     explicit ScreenshotController(QObject* parent = nullptr);
     ~ScreenshotController() override;
-
-    void setUiPreferences(const ScreenshotUiPreferences& preferences);
 
   public slots:
     void prewarmResources();
@@ -31,44 +26,7 @@ class ScreenshotController : public QObject {
     void captureAndStartScreenRecording();
     void startOrStopScreenRecordingAndCopy();
     void editHistoryRecord(const QString& recordId);
-    void cancelCapture();
-    void copySelectionToClipboard();
-    void pinSelectionToScreen();
     void pinClipboardContentToScreen();
-    void startScreenRecording();
-    void setMoveTool();
-    void setSelectTool();
-    void setShapeTool();
-    void setArrowTool();
-    void setLineTool();
-    void setFreeDrawTool();
-    void setHighlightTool();
-    void setPenHighlightTool();
-    void setSpotlightTool();
-    void setEraserTool();
-    void setFilterTool();
-    void setRectangleFilterTool();
-    void setPenFilterTool();
-    void setWatermarkTool();
-    void setWatermarkConfigFromToolbar(const SnowCanvasWatermarkConfig& config);
-    void setSpotlightConfigFromToolbar(const SnowCanvasSpotlightConfig& config);
-    void setTextTool();
-    void setSerialNumberTool();
-    void decrementSelectedSerialNumbers();
-    void incrementSelectedSerialNumbers();
-    void createTextForSelectedSerialNumber();
-    SnowCanvasShapeStyle currentRectangleStyle() const;
-    void setShapeStyleFromToolbar(const SnowCanvasShapeStyle& style, quint32 properties,
-                                  SnowCanvasShapeKind kind);
-    void setTextStyleFromToolbar(const SnowCanvasTextStyle& style);
-    void setSerialNumberStyleFromToolbar(const SnowCanvasSerialNumberStyle& style);
-    void adjustSelectionFromToolbar(int minDx, int minDy, int maxDx, int maxDy);
-    void setSelectionCornerRadiusFromToolbar(int radius);
-    void setSelectionShadowWidthFromToolbar(int shadowWidth);
-    void toggleSelectionAspectRatioLockFromToolbar();
-    void openSelectionResizeModalFromToolbar();
-    void repositionToolbarForContentChange();
-    void hideColorPickersForScreenshotUi();
 
   signals:
     void showMainWindowRequested();

@@ -1,5 +1,4 @@
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
-#include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotpinnededitcontroller.h"
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
@@ -89,99 +88,6 @@ QRect qRectForNativeRect(const RECT& rect) {
 }
 
 #endif
-
-class FakeOcrRecognition final : public ScreenshotOcrRecognitionPort {
-  public:
-    struct Pending {
-        RequestToken token = 0;
-        ScreenshotOcrRequest request;
-        QPointer<QObject> receiver;
-        Completion completion;
-    };
-
-    RequestToken recognize(ScreenshotOcrRequest request, QObject* receiver,
-                           Completion completion) override {
-        pending = Pending{
-            ++nextToken,
-            std::move(request),
-            receiver,
-            std::move(completion),
-        };
-        return pending.token;
-    }
-
-    RequestToken render(ScreenshotOcrRequest request, QObject* receiver,
-                        Completion completion) override {
-        if (!supportsRender) {
-            return 0;
-        }
-        renderPending = Pending{
-            ++nextToken,
-            std::move(request),
-            receiver,
-            std::move(completion),
-        };
-        return renderPending.token;
-    }
-
-    bool setRenderFilteredImage(RequestToken token, bool enabled,
-                                const QColor& backgroundColor = {}) override {
-        if (pending.token != token) {
-            return false;
-        }
-        pending.request.renderFilteredImage = enabled;
-        pending.request.backgroundColor = enabled ? backgroundColor : QColor();
-        renderIntentUpdates.push_back(enabled);
-        return true;
-    }
-
-    void cancel(RequestToken token) override {
-        cancelledTokens.push_back(token);
-        if (pending.token == token) {
-            pending = {};
-        }
-        if (renderPending.token == token) {
-            renderPending = {};
-        }
-    }
-
-    bool reprioritize(RequestToken token, ScreenshotOcrRequestPriority priority) override {
-        if (pending.token != token) {
-            return false;
-        }
-        pending.request.priority = priority;
-        return true;
-    }
-
-    bool modelFilesReady() const override {
-        return modelsReady;
-    }
-
-    void complete(ScreenshotOcrRecognitionResult result) {
-        Pending request = std::move(pending);
-        pending = {};
-        if (request.receiver != nullptr && request.completion) {
-            request.completion(std::move(result));
-        }
-    }
-
-    void completeRender(QImage filteredImage, QRectF filteredImageCanvasRect = {}) {
-        Pending request = std::move(renderPending);
-        renderPending = {};
-        if (request.receiver != nullptr && request.completion) {
-            request.completion(ScreenshotOcrRecognitionResult{
-                nullptr, {}, std::move(filteredImage), filteredImageCanvasRect});
-        }
-    }
-
-    RequestToken nextToken = 0;
-    Pending pending;
-    Pending renderPending;
-    QVector<RequestToken> cancelledTokens;
-    QVector<bool> renderIntentUpdates;
-    bool modelsReady = true;
-    bool supportsRender = false;
-};
 
 void require(bool condition, const char* message) {
     if (!condition) {
@@ -529,20 +435,6 @@ void requireColorNear(const QColor& actual, const QColor& expected, int toleranc
             message);
 }
 
-bool imagesPixelEquivalent(const QImage& first, const QImage& second) {
-    if (first.size() != second.size()) {
-        return false;
-    }
-    for (int y = 0; y < first.height(); ++y) {
-        for (int x = 0; x < first.width(); ++x) {
-            if (first.pixelColor(x, y) != second.pixelColor(x, y)) {
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
 bool imagesPixelAligned(const QImage& actual, const QImage& expected, const QRegion& excluded,
                         int channelTolerance) {
     if (actual.size() != expected.size()) {
@@ -659,15 +551,6 @@ class PaintEventCounter final : public QObject {
     QPointer<QWidget> m_widget;
     int m_count = 0;
 };
-
-void waitForAnimations(int milliseconds) {
-    QElapsedTimer elapsed;
-    elapsed.start();
-    while (elapsed.elapsed() < milliseconds) {
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
-        QThread::msleep(1);
-    }
-}
 
 void pinnedPhysicalPixelsFillClientArea(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();

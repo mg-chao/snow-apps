@@ -21,6 +21,7 @@ fn main() {
 
 fn run_main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse_from(env::args_os());
+    rapid_ocr_rs::set_stage_timing_enabled(true);
     match cli.command {
         Commands::Run(args) => run_cmd(args),
         Commands::Config(args) => config_cmd(args),

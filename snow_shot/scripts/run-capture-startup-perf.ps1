@@ -6,7 +6,7 @@ param(
     [int]$Captures = 12,
     [int]$SettleMilliseconds = 500,
     [int]$TimeoutMilliseconds = 30000,
-    [ValidateSet("", "single-repaint", "posted-update", "native-update", "native-invalidate", "native-invalidate-suppressed", "legacy", "show-only")]
+    [ValidateSet("", "single-repaint", "posted-update", "native-update", "native-invalidate", "native-invalidate-suppressed")]
     [string]$RevealStrategy = "",
     [switch]$SkipBuild,
     [switch]$SelfTest

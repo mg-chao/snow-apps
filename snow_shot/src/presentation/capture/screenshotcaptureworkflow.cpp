@@ -9,7 +9,6 @@
 #include "snow_shot/presentation/screenshotintelligentselectionmodel.h"
 #include "snow_shot/presentation/screenshotinteractionstate.h"
 #include "snow_shot/presentation/screenshotselectionmodel.h"
-#include "snow_shot/presentation/screenshottoolcommandworkflowports.h"
 
 #include <QCursor>
 #include <QDebug>

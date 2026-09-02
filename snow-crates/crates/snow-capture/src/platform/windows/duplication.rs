@@ -2976,7 +2976,10 @@ impl OutputCapturer {
                             .stream_timestamp
                             .as_ref()
                             .and_then(|timestamp| timestamp.raw_os_ticks);
-                        frame.metadata.capture_duration = None;
+                        #[cfg(feature = "stage-timing")]
+                        {
+                            frame.metadata.capture_duration = None;
+                        }
                         frame.metadata.is_duplicate = true;
                         frame.metadata.dirty_rects.clear();
                         frame.metadata.cursor = None;

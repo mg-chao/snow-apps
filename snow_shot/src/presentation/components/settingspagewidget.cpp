@@ -72,11 +72,9 @@ class SettingsPageWidget::Impl {
         adqt::widgets::AdMultiSelect* multiSelect = nullptr;
         adqt::widgets::AdSwitch* switchControl = nullptr;
         adqt::widgets::AdInputNumber* integerControl = nullptr;
-        QWidget* sliderContainer = nullptr;
         adqt::widgets::AdSlider* sliderControl = nullptr;
         QLabel* sliderValue = nullptr;
         adqt::widgets::AdColorPicker* colorControl = nullptr;
-        QWidget* radioContainer = nullptr;
         adqt::widgets::AdRadioButtonGroup* radioGroup = nullptr;
         QVector<adqt::widgets::AdRadio*> radioButtons;
         QVector<QVariant> radioValues;
@@ -361,7 +359,6 @@ class SettingsPageWidget::Impl {
                     layout->addWidget(valueLabel);
                     container->setFixedWidth(
                         settings_ui::settingsControlWidth(colorScheme.metricAlias));
-                    runtime.sliderContainer = container;
                     runtime.sliderControl = control;
                     runtime.sliderValue = valueLabel;
                     runtime.focusTarget = control;
@@ -448,7 +445,6 @@ class SettingsPageWidget::Impl {
                     layout->addWidget(radioList, 0, Qt::AlignRight);
                     container->setFixedWidth(
                         settings_ui::settingsControlWidth(colorScheme.metricAlias));
-                    runtime.radioContainer = container;
                     runtime.radioGroup = group;
                     runtime.focusTarget = runtime.radioButtons.isEmpty()
                                               ? static_cast<QWidget*>(container)

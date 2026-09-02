@@ -47,7 +47,6 @@ class CaptureHistoryRepository {
     [[nodiscard]] virtual std::shared_future<StorageResult> remove(const QString& id) = 0;
     [[nodiscard]] virtual std::shared_future<StorageResult>
     updatePolicy(CaptureHistoryPolicy policy) = 0;
-    [[nodiscard]] virtual std::shared_future<StorageResult> requestPrune() = 0;
     [[nodiscard]] virtual std::shared_future<StorageResult> requestClear() = 0;
     virtual void drain() = 0;
     [[nodiscard]] virtual QString lastError() const = 0;
@@ -56,10 +55,6 @@ class CaptureHistoryRepository {
 [[nodiscard]] std::unique_ptr<CaptureHistoryRepository>
 makeCaptureHistoryRepository(QString configurationDirectory,
                              CaptureHistoryRepositoryOptions options = {});
-
-[[nodiscard]] std::unique_ptr<CaptureHistoryRepository>
-makeCaptureHistoryRepository(QString configurationDirectory, bool writeAvailable,
-                             std::function<QDateTime()> clock = {});
 } // namespace snow_shot::storage
 
 #endif // SNOW_SHOT_STORAGE_CAPTUREHISTORYREPOSITORY_H

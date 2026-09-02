@@ -27,27 +27,6 @@ const QStringList kDrawingToolbarItemIds = {
     QStringLiteral("watermark"),
 };
 
-const QStringList kLegacyScreenshotToolbarItemIds = {
-    QStringLiteral("move"),
-    QStringLiteral("select"),
-    QStringLiteral("shape"),
-    QStringLiteral("arrow-line"),
-    QStringLiteral("free-draw"),
-    QStringLiteral("highlight"),
-    QStringLiteral("text"),
-    QStringLiteral("serial-number"),
-    QStringLiteral("filter"),
-    QStringLiteral("eraser"),
-    QStringLiteral("watermark"),
-    QStringLiteral("history"),
-    QStringLiteral("table-qr"),
-    QStringLiteral("video-record"),
-    QStringLiteral("screen-record"),
-    QStringLiteral("pin"),
-    QStringLiteral("ocr"),
-    QStringLiteral("scrolling-screenshot"),
-};
-
 QJsonArray jsonArray(const QStringList& values) {
     QJsonArray result;
     for (const QString& value : values) {
@@ -822,16 +801,10 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value) {
     QSet<QString> positioned;
     QStringList hidden;
     QSet<QString> hiddenSet;
-    const auto canonicalItemId = [](const QString& id) {
-        return id == QStringLiteral("rectangle-highlight") || id == QStringLiteral("pen-highlight")
-                   ? QStringLiteral("highlighter")
-                   : id;
-    };
     const auto appendPosition = [&positions, &positioned, &hiddenSet,
-                                 &known, &canonicalItemId](const QStringList& ids) {
+                                 &known](const QStringList& ids) {
         QStringList position;
-        for (const QString& storedId : ids) {
-            const QString id = canonicalItemId(storedId);
+        for (const QString& id : ids) {
             if (known.contains(id) && !positioned.contains(id) && !hiddenSet.contains(id)) {
                 position.push_back(id);
                 positioned.insert(id);
@@ -841,10 +814,8 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value) {
             positions.push_back(position);
         }
     };
-    const auto appendHidden = [&hidden, &hiddenSet, &positioned,
-                               &known, &canonicalItemId](const QStringList& ids) {
-        for (const QString& storedId : ids) {
-            const QString id = canonicalItemId(storedId);
+    const auto appendHidden = [&hidden, &hiddenSet, &positioned, &known](const QStringList& ids) {
+        for (const QString& id : ids) {
             if (known.contains(id) && !positioned.contains(id) && !hiddenSet.contains(id)) {
                 hidden.push_back(id);
                 hiddenSet.insert(id);
@@ -874,46 +845,6 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value) {
                 }
             }
             appendHidden(hiddenIds);
-        }
-    } else if (object.value(QStringLiteral("order")).isArray()) {
-        const QSet<QString> legacyKnown(kLegacyScreenshotToolbarItemIds.cbegin(),
-                                        kLegacyScreenshotToolbarItemIds.cend());
-        QSet<QString> legacyHidden;
-        if (object.value(QStringLiteral("hidden")).isArray()) {
-            for (const QJsonValue& item : object.value(QStringLiteral("hidden")).toArray()) {
-                if (item.isString() && legacyKnown.contains(item.toString())) {
-                    legacyHidden.insert(item.toString());
-                }
-            }
-        }
-        const auto mappedLegacyIds = [](const QString& id) {
-            if (id == QStringLiteral("arrow-line")) {
-                return QStringList{QStringLiteral("line"), QStringLiteral("arrow")};
-            }
-            if (id == QStringLiteral("highlight")) {
-                return QStringList{QStringLiteral("spotlight"),
-                                   QStringLiteral("highlighter")};
-            }
-            return QStringList{id};
-        };
-        for (const QJsonValue& item : object.value(QStringLiteral("hidden")).toArray()) {
-            if (item.isString() && legacyHidden.contains(item.toString())) {
-                appendHidden(mappedLegacyIds(item.toString()));
-            }
-        }
-        QSet<QString> migratedGroups;
-        for (const QJsonValue& item : object.value(QStringLiteral("order")).toArray()) {
-            if (!item.isString()) {
-                continue;
-            }
-            const QString id = item.toString();
-            if (!legacyKnown.contains(id) || migratedGroups.contains(id)) {
-                continue;
-            }
-            migratedGroups.insert(id);
-            if (!legacyHidden.contains(id)) {
-                appendPosition(mappedLegacyIds(id));
-            }
         }
     } else {
         return {};

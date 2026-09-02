@@ -15,7 +15,6 @@
 #include "icon_renderer.h"
 
 #include <QEvent>
-#include <QGuiApplication>
 #include <QHideEvent>
 #include <QJsonValue>
 #include <QLineEdit>
@@ -306,8 +305,7 @@ void ScreenshotFloatingToolPaletteWindow::moveContentTo(const QPoint& position) 
         syncPalettePhysicalScale();
         updatePaletteGeometryForVisibleContent();
     }
-    const QPoint targetPosition =
-        m_movementClampingEnabled ? constrainedContentPosition(position) : position;
+    const QPoint targetPosition = position;
     const QSize targetSize = fixedWindowSizeHint();
     if (!targetSize.isValid() || targetSize.isEmpty()) {
         return;
@@ -423,14 +421,6 @@ bool ScreenshotFloatingToolPaletteWindow::stepWatermarkFontSize(int direction) {
     return m_paletteHost != nullptr && m_paletteHost->stepWatermarkFontSize(direction);
 }
 
-void ScreenshotFloatingToolPaletteWindow::setMovementClampingEnabled(bool enabled) {
-    m_movementClampingEnabled = enabled;
-}
-
-bool ScreenshotFloatingToolPaletteWindow::movementClampingEnabled() const {
-    return m_movementClampingEnabled;
-}
-
 void ScreenshotFloatingToolPaletteWindow::cancelDrag() {
     finishPaletteDrag(false);
 }
@@ -532,34 +522,6 @@ void ScreenshotFloatingToolPaletteWindow::wheelEvent(QWheelEvent* event) {
     }
 
     QWidget::wheelEvent(event);
-}
-
-QPoint
-ScreenshotFloatingToolPaletteWindow::constrainedContentPosition(const QPoint& position) const {
-    return constrainedContentPosition(QPointF(position)).toPoint();
-}
-
-QPointF
-ScreenshotFloatingToolPaletteWindow::constrainedContentPosition(const QPointF& position) const {
-    if (!m_movementLogicalBounds.isValid()) {
-        return position;
-    }
-
-    const QRect paletteRect = occupiedContentRect();
-    if (paletteRect.isEmpty()) {
-        return position;
-    }
-
-    QPointF constrained = position;
-    const double minX = static_cast<double>(m_movementLogicalBounds.left() - paletteRect.left());
-    const double minY = static_cast<double>(m_movementLogicalBounds.top() - paletteRect.top());
-    const double maxX =
-        std::max(minX, static_cast<double>(m_movementLogicalBounds.right() - paletteRect.right()));
-    const double maxY = std::max(
-        minY, static_cast<double>(m_movementLogicalBounds.bottom() - paletteRect.bottom()));
-    constrained.setX(std::clamp(constrained.x(), minX, maxX));
-    constrained.setY(std::clamp(constrained.y(), minY, maxY));
-    return constrained;
 }
 
 void ScreenshotFloatingToolPaletteWindow::updatePaletteGeometryForVisibleContent() {
@@ -940,8 +902,7 @@ void ScreenshotFloatingToolPaletteWindow::beginPaletteDragAtPhysicalPosition(
         m_dragPhysicalAnchorValid = true;
         m_stablePhysicalWindowSize = m_dpiController->stablePhysicalFrameSize();
         m_dragPhysicalCursorToWindowOffset = m_dpiController->physicalDragAnchor();
-        m_lastPhysicalDragCursorPosition = physicalPosition;
-        m_dragContentPosition = QPointF(contentPosition());
+            m_dragContentPosition = QPointF(contentPosition());
         raise();
         return;
     }
@@ -952,7 +913,6 @@ void ScreenshotFloatingToolPaletteWindow::beginPaletteDragAtPhysicalPosition(
         m_dragPhysicalCursorToWindowOffset =
             QPointF(physicalPosition.x() - nativeWindowGeometry.left(),
                     physicalPosition.y() - nativeWindowGeometry.top());
-        m_lastPhysicalDragCursorPosition = physicalPosition;
     }
     m_dragContentPosition = QPointF(contentPosition());
     raise();
@@ -977,22 +937,46 @@ void ScreenshotFloatingToolPaletteWindow::updatePaletteDrag(const QPoint& global
     }
 
     m_dragContentPosition += delta;
-    if (m_movementClampingEnabled) {
-        m_dragContentPosition = constrainedContentPosition(m_dragContentPosition);
-    }
     moveContentDuringDrag(m_dragContentPosition.toPoint());
+}
+
+QPoint
+ScreenshotFloatingToolPaletteWindow::constrainedContentPosition(const QPoint& position) const {
+    return constrainedContentPosition(QPointF(position)).toPoint();
+}
+
+QPointF
+ScreenshotFloatingToolPaletteWindow::constrainedContentPosition(const QPointF& position) const {
+    if (!m_movementLogicalBounds.isValid()) {
+        return position;
+    }
+
+    const QRect paletteRect = occupiedContentRect();
+    if (paletteRect.isEmpty()) {
+        return position;
+    }
+
+    QPointF constrained = position;
+    const double minX = static_cast<double>(m_movementLogicalBounds.left() - paletteRect.left());
+    const double minY = static_cast<double>(m_movementLogicalBounds.top() - paletteRect.top());
+    const double maxX =
+        std::max(minX, static_cast<double>(m_movementLogicalBounds.right() - paletteRect.right()));
+    const double maxY = std::max(
+        minY, static_cast<double>(m_movementLogicalBounds.bottom() - paletteRect.bottom()));
+    constrained.setX(std::clamp(constrained.x(), minX, maxX));
+    constrained.setY(std::clamp(constrained.y(), minY, maxY));
+    return constrained;
 }
 
 bool ScreenshotFloatingToolPaletteWindow::updatePaletteDragAtPhysicalPosition(
     const QPoint& globalPosition, const QPointF& physicalPosition) {
-    if (!m_draggingPalette || !m_dragPhysicalAnchorValid || m_movementClampingEnabled) {
+    if (!m_draggingPalette || !m_dragPhysicalAnchorValid) {
         return false;
     }
 
     const QPointF dragPosition = dragPositionForEvent(globalPosition, physicalPosition);
     m_dragContentPosition += dragPosition - m_lastDragPosition;
     m_lastDragPosition = dragPosition;
-    m_lastPhysicalDragCursorPosition = physicalPosition;
     bool moved = m_dpiController != nullptr &&
                  m_dpiController->moveForPhysicalCursor(physicalPosition);
     if (!moved) {
@@ -1014,8 +998,7 @@ bool ScreenshotFloatingToolPaletteWindow::updatePaletteDragAtPhysicalPosition(
 
 void ScreenshotFloatingToolPaletteWindow::moveContentDuringDrag(const QPoint& position) {
     SNOW_SHOT_TOOLBAR_PERF_SCOPE("window.drag_move");
-    const QPoint targetPosition =
-        m_movementClampingEnabled ? constrainedContentPosition(position) : position;
+    const QPoint targetPosition = position;
     m_lastRequestedContentPosition = targetPosition;
     m_lastRequestedContentPositionValid = true;
 

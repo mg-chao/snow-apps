@@ -9,7 +9,7 @@ use std::{
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use snow_stitch_images::{
-    Frame, Geometry, MotionStage, StitchOptions, StitchTraceEvent, Stitcher, stitch_files,
+    Frame, Geometry, MotionStage, StitchDecision, StitchOptions, Stitcher, stitch_files,
 };
 
 const DEFAULT_SAMPLES: usize = 1;
@@ -87,7 +87,7 @@ struct FrameDiagnostic {
     decode_us: u64,
     stitch_us: u64,
     total_us: u64,
-    trace: Option<StitchTraceEvent>,
+    decision: Option<StitchDecision>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -298,17 +298,17 @@ where
 
 fn branch_label(frame: &FrameDiagnostic) -> String {
     frame
-        .trace
+        .decision
         .as_ref()
-        .map(|trace| format!("{:?}", trace.branch))
+        .map(|decision| format!("{:?}", decision.branch))
         .unwrap_or_else(|| "Initial".to_owned())
 }
 
 fn motion_stage_label(frame: &FrameDiagnostic) -> String {
     frame
-        .trace
+        .decision
         .as_ref()
-        .and_then(|trace| trace.motion_diagnostics.as_ref())
+        .and_then(|decision| decision.motion_diagnostics.as_ref())
         .map(|diagnostics| match diagnostics.stage {
             MotionStage::InputTooSmall => "InputTooSmall".to_owned(),
             MotionStage::IdenticalInterior => "IdenticalInterior".to_owned(),
@@ -325,16 +325,16 @@ fn motion_stage_label(frame: &FrameDiagnostic) -> String {
 
 fn reference_mode_label(frame: &FrameDiagnostic) -> String {
     frame
-        .trace
+        .decision
         .as_ref()
-        .map(|trace| format!("{:?}", trace.reference_mode))
+        .map(|decision| format!("{:?}", decision.reference_mode))
         .unwrap_or_else(|| "Initial".to_owned())
 }
 
 fn run_diagnostics(paths: &[PathBuf]) -> Result<DiagnosticRun> {
     let run_started = Instant::now();
     let options = StitchOptions {
-        collect_trace: true,
+        record_decisions: true,
         ..StitchOptions::default()
     };
     let mut stitcher = Stitcher::new(options)?;
@@ -352,7 +352,7 @@ fn run_diagnostics(paths: &[PathBuf]) -> Result<DiagnosticRun> {
         let geometry = frame.geometry();
         let decoded_bytes = frame_bytes(geometry);
         let stitch_started = Instant::now();
-        let trace = stitcher
+        let decision = stitcher
             .push(frame)
             .with_context(|| format!("could not stitch benchmark input {}", path.display()))?;
         let stitch_us = elapsed_us(stitch_started);
@@ -370,17 +370,17 @@ fn run_diagnostics(paths: &[PathBuf]) -> Result<DiagnosticRun> {
             decode_us,
             stitch_us,
             total_us: elapsed_us(frame_started),
-            trace,
+            decision,
         });
     }
 
     let finish_started = Instant::now();
     let result = stitcher.finish()?;
     let finish_us = elapsed_us(finish_started);
-    if result.trace.len() != frames.len().saturating_sub(1) {
+    if result.decisions.len() != frames.len().saturating_sub(1) {
         bail!(
-            "diagnostic trace contains {} events for {} input frames",
-            result.trace.len(),
+            "decision log contains {} records for {} input frames",
+            result.decisions.len(),
             frames.len()
         );
     }
@@ -429,30 +429,30 @@ fn write_csv(path: &Path, frames: &[FrameDiagnostic]) -> Result<()> {
         "input_index,file_name,compressed_bytes,width,height,pixel_format,decoded_bytes,decode_us,stitch_us,total_us,branch,motion_stage,confidence,accepted_offset,growth,canvas_height,reference_mode,reference_keypoints,incoming_keypoints,mutual_matches,candidate_count\n",
     );
     for frame in frames {
-        let trace = frame.trace.as_ref();
-        let branch = trace
+        let decision = frame.decision.as_ref();
+        let branch = decision
             .map(|event| format!("{:?}", event.branch))
             .unwrap_or_else(|| "Initial".to_owned());
-        let motion_stage = trace
+        let motion_stage = decision
             .and_then(|event| event.motion_diagnostics.as_ref())
             .map(|diagnostics| format!("{:?}", diagnostics.stage))
             .unwrap_or_else(|| "None".to_owned());
-        let confidence = trace
+        let confidence = decision
             .and_then(|event| event.confidence)
             .map(|value| value.to_string())
             .unwrap_or_default();
-        let accepted_offset = trace
+        let accepted_offset = decision
             .and_then(|event| event.accepted_offset)
             .map(|value| value.to_string())
             .unwrap_or_default();
-        let growth = trace.map(|event| event.growth).unwrap_or(0);
-        let canvas_height = trace
+        let growth = decision.map(|event| event.growth).unwrap_or(0);
+        let canvas_height = decision
             .map(|event| event.after.canvas_height)
             .unwrap_or(frame.geometry.height);
-        let reference_mode = trace
+        let reference_mode = decision
             .map(|event| format!("{:?}", event.reference_mode))
             .unwrap_or_else(|| "Initial".to_owned());
-        let diagnostics = trace.and_then(|event| event.motion_diagnostics.as_ref());
+        let diagnostics = decision.and_then(|event| event.motion_diagnostics.as_ref());
         let reference_keypoints = diagnostics
             .map(|diagnostics| diagnostics.reference_keypoints)
             .unwrap_or(0);

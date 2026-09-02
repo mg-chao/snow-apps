@@ -51,7 +51,6 @@ struct SettingsSectionPlan {
 
 struct SettingsPagePlan {
     QString id;
-    QString route;
     QString providerId;
     int pageIndex = -1;
     QVector<SettingsSectionPlan> sectionPlans;
@@ -112,7 +111,6 @@ class SettingsRegistry final {
   public:
     SettingsRegistry() = default;
     explicit SettingsRegistry(SettingsCatalog catalog, QString providerId = {});
-    explicit SettingsRegistry(const QVector<const SettingsProvider*>& providers);
     SettingsRegistry(const SettingsRegistry& other);
     SettingsRegistry& operator=(const SettingsRegistry& other);
     SettingsRegistry(SettingsRegistry&& other);

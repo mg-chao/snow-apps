@@ -26,10 +26,6 @@ QTextDocument* ScreenshotOcrTextEditingSession::document() {
     return &m_document;
 }
 
-const QTextDocument* ScreenshotOcrTextEditingSession::document() const {
-    return &m_document;
-}
-
 bool ScreenshotOcrTextEditingSession::replaceText(const QString& text) {
     if (text == this->text()) {
         return false;

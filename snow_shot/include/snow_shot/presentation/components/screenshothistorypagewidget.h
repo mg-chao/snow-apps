@@ -81,9 +81,6 @@ class ScreenshotHistoryPageWidget final : public QWidget {
     ScreenshotHistoryPageWidget(ScreenshotHistoryPageDataSource* dataSource, QWidget* parent);
     ~ScreenshotHistoryPageWidget() override;
 
-    [[nodiscard]] int totalCount() const;
-    [[nodiscard]] int filteredCount() const;
-    [[nodiscard]] int currentPage() const;
     void refresh();
     void setActive(bool active);
     [[nodiscard]] bool isActive() const;
