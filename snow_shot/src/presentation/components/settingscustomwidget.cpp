@@ -12,7 +12,6 @@
 #include "widgets/divider.h"
 
 #include <QApplication>
-#include <QBoxLayout>
 #include <QDrag>
 #include <QDragEnterEvent>
 #include <QDragLeaveEvent>
@@ -31,7 +30,6 @@
 #include <QPalette>
 #include <QSet>
 #include <QSignalBlocker>
-#include <QStyle>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -1043,7 +1041,6 @@ struct DrawingToolbarEditorSettingsWidget::Private {
         const QColor activeBorder = scheme.map.colorPrimary.isValid()
                                         ? scheme.map.colorPrimary
                                         : QColor(QStringLiteral("#1677FF"));
-        Q_UNUSED(border);
         toolbarSurface->applyTheme(surface, activeBorder);
         const QColor hiddenBackground = scheme.map.colorFillSecondary.isValid()
                                             ? scheme.map.colorFillSecondary

@@ -28,7 +28,6 @@ class ScreenshotCaptureRuntimeAdapter final : public ScreenshotCaptureRuntimePor
 
     void setEventSink(ScreenshotCaptureWorkerEventSink* sink) override;
     [[nodiscard]] bool captureWorkerCreated() const override;
-    [[nodiscard]] bool hasCaptureWorker() const override;
     void ensureCaptureWorker() override;
     void prepareAsync(quint64 requestId) override;
     void refreshLayoutAsync(quint64 requestId) override;

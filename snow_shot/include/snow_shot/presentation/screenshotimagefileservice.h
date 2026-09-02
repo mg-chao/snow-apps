@@ -41,7 +41,6 @@ class ScreenshotImageFileService final {
                       const QDateTime& timestamp = QDateTime::currentDateTime());
     [[nodiscard]] static QString dialogFilter(ScreenshotImageFileFormat format);
     [[nodiscard]] static QString saveDialogFilter();
-    [[nodiscard]] static QString automaticDirectory();
     [[nodiscard]] static QStringList automaticDirectories();
     [[nodiscard]] static QStringList automaticDirectories(const QString& configuredDirectory);
     [[nodiscard]] static QString saveDialogDirectory(const QString& lastDirectory,
@@ -61,7 +60,6 @@ class ScreenshotImageFileService final {
     [[nodiscard]] static ScreenshotImageFileSaveResult write(const ScreenshotImageRowSource& source,
                                                              const QString& path,
                                                              ScreenshotImageFileFormat format);
-    [[nodiscard]] static ScreenshotImageFileSaveResult saveAutomatically(const QImage& image);
     [[nodiscard]] static ScreenshotImageFileSaveResult
     saveAutomatically(const QImage& image, const QStringList& candidateDirectories,
                       const QDateTime& timestamp);

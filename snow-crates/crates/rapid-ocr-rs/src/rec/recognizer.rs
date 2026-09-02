@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::Instant};
+use std::path::PathBuf;
 
 use ndarray::ArrayView4;
 use rayon::prelude::*;
@@ -129,7 +129,7 @@ impl Recognizer {
         images: &[RecImage],
         options: RecognizeOptions,
     ) -> Result<RecognizeOutput> {
-        let start = Instant::now();
+        let timing = crate::diagnostics::timing_start();
 
         if images.is_empty() {
             return Ok(RecognizeOutput::default());
@@ -272,7 +272,7 @@ impl Recognizer {
 
         Ok(RecognizeOutput {
             lines,
-            elapsed: start.elapsed(),
+            elapsed: timing.map(|start| start.elapsed()),
         })
     }
 

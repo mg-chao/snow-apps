@@ -43,7 +43,6 @@ class ScreenshotColorPickerController final {
     void hide() const;
     void setSuppressed(bool suppressed);
     void setDisplayMode(ScreenshotColorPickerDisplayMode mode);
-    [[nodiscard]] ScreenshotColorPickerDisplayMode displayMode() const;
     void updateForOverlay(ScreenshotOverlayWindow* overlay, const QPointF& localPosition,
                           const ScreenshotColorPickerContext& context);
     void updateAtPhysicalPoint(const QPoint& physicalPoint,

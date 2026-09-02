@@ -8,7 +8,6 @@
 #include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/storage/settingsadapters.h"
 
-#include <QCursor>
 #include <QJsonValue>
 #include <QScreen>
 #include <QSignalBlocker>
@@ -434,10 +433,6 @@ void ScreenshotToolbarWindow::setQrBusy(bool busy) {
     }
 }
 
-void ScreenshotToolbarWindow::clearTextTransformSelections() {
-    setTextTransformSelections({}, {});
-}
-
 void ScreenshotToolbarWindow::setOcrEnabled(bool enabled) {
     if (ScreenshotToolPalette* toolPalette = palette()) {
         toolPalette->setOcrEnabled(enabled);
@@ -462,10 +457,6 @@ void ScreenshotToolbarWindow::setPlacementContext(QScreen* screen, const QRect& 
     m_movementLogicalBounds = logicalBounds;
     m_movementPhysicalBounds = physicalBounds;
     ScreenshotFloatingToolPaletteWindow::setPlacementContext(screen, logicalBounds, physicalBounds);
-}
-
-void ScreenshotToolbarWindow::setPlacementScreen(QScreen* screen) {
-    setPlacementContext(screen, m_movementLogicalBounds, m_movementPhysicalBounds);
 }
 
 void ScreenshotToolbarWindow::setMovementBounds(const QRect& logicalBounds,

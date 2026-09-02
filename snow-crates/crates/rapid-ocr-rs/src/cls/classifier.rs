@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::Instant};
+use std::path::PathBuf;
 
 use ndarray::ArrayView4;
 use rayon::prelude::*;
@@ -55,7 +55,9 @@ impl Default for ClassifierConfig {
 #[derive(Debug, Clone, Default)]
 pub struct ClsInPlaceOutput {
     pub cls_res: Vec<(String, f32)>,
-    pub elapsed_ms: f32,
+    /// Wall-clock classification duration; `None` unless stage timing was
+    /// enabled via `set_stage_timing_enabled`.
+    pub elapsed_ms: Option<f32>,
 }
 
 #[derive(Debug)]
@@ -117,7 +119,7 @@ impl Classifier {
     }
 
     pub fn classify_in_place(&mut self, images: &mut [RecImage]) -> Result<ClsInPlaceOutput> {
-        let start = Instant::now();
+        let timing = crate::diagnostics::timing_start();
         if images.is_empty() {
             return Ok(ClsInPlaceOutput::default());
         }
@@ -203,7 +205,7 @@ impl Classifier {
 
         Ok(ClsInPlaceOutput {
             cls_res,
-            elapsed_ms: start.elapsed().as_secs_f32() * 1000.0,
+            elapsed_ms: crate::diagnostics::timing_ms(timing),
         })
     }
 

@@ -988,18 +988,6 @@ ScreenshotHistoryPageWidget::~ScreenshotHistoryPageWidget() {
     }
 }
 
-int ScreenshotHistoryPageWidget::totalCount() const {
-    return m_records.size();
-}
-
-int ScreenshotHistoryPageWidget::filteredCount() const {
-    return m_filteredRecords.size();
-}
-
-int ScreenshotHistoryPageWidget::currentPage() const {
-    return m_pagination != nullptr ? m_pagination->currentPage() : 1;
-}
-
 void ScreenshotHistoryPageWidget::refresh() {
     if (m_dataSource != nullptr) {
         m_dataSource->cancelPending();

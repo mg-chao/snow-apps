@@ -12,7 +12,6 @@
 
 #include <QObject>
 
-#include <utility>
 
 ScreenshotCaptureRuntimeAdapter::ScreenshotCaptureRuntimeAdapter(
     ScreenshotCaptureRuntimeAdapterContext context)
@@ -54,10 +53,6 @@ void ScreenshotCaptureRuntimeAdapter::setEventSink(ScreenshotCaptureWorkerEventS
 }
 
 bool ScreenshotCaptureRuntimeAdapter::captureWorkerCreated() const {
-    return hasCaptureWorker();
-}
-
-bool ScreenshotCaptureRuntimeAdapter::hasCaptureWorker() const {
     return m_captureCoordinator != nullptr && m_captureCoordinator->hasWorker();
 }
 

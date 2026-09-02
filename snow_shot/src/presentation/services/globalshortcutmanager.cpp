@@ -162,9 +162,7 @@ QString ownerKey(GlobalShortcutAction action, const QString& shortcut) {
 
 class UnsupportedGlobalShortcutBackend final : public GlobalShortcutBackend {
   public:
-    void setActivationHandler(ActivationHandler handler) override {
-        m_handler = std::move(handler);
-    }
+    void setActivationHandler(ActivationHandler) override {}
 
     GlobalShortcutValidationResult
     validateShortcut(const QString& portableShortcut) const override {
@@ -184,9 +182,6 @@ class UnsupportedGlobalShortcutBackend final : public GlobalShortcutBackend {
     }
 
     void unregisterShortcut(int) override {}
-
-  private:
-    ActivationHandler m_handler;
 };
 
 #ifdef Q_OS_WIN
@@ -812,10 +807,6 @@ void GlobalShortcutManager::initialize() {
     m_impl->initialize();
 }
 
-bool GlobalShortcutManager::isInitialized() const {
-    return m_impl->m_initialized;
-}
-
 GlobalShortcutRegistrationState GlobalShortcutManager::state(GlobalShortcutAction action) const {
     return m_impl->state(action);
 }
@@ -834,15 +825,4 @@ void GlobalShortcutManager::setShortcutFunctionsEnabled(bool enabled) {
     m_impl->m_shortcutFunctionsEnabled = enabled;
 }
 
-bool GlobalShortcutManager::shortcutFunctionsEnabled() const {
-    return m_impl->m_shortcutFunctionsEnabled;
-}
-
-void GlobalShortcutManager::retryRegistrations() {
-    if (!m_impl->m_initialized) {
-        m_impl->initialize();
-        return;
-    }
-    m_impl->reconcile();
-}
 } // namespace snow_shot::presentation

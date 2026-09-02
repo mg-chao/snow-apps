@@ -30,7 +30,6 @@
 #include <QWheelEvent>
 #include <QWindow>
 
-#include <algorithm>
 
 namespace {
 constexpr int kToolbarGap = 4;

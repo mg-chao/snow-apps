@@ -256,14 +256,3 @@ QImage renderScreenshotOcrFilteredImage(const QImage& source, const QRectF& canv
     return filtered;
 }
 
-QImage renderScreenshotOcrFilteredSource(const ScreenshotImageSource& source,
-                                         const QRectF& canvasRect, const QSize& pixelSize,
-                                         const ScreenshotOcrPresentation& presentation,
-                                         const QColor& backgroundColor) {
-    if (!canvasRect.isValid() || canvasRect.isEmpty()) {
-        return {};
-    }
-    const QImage materialized = materializeScreenshotImageSource(source, canvasRect, pixelSize);
-    return renderScreenshotOcrFilteredImage(materialized, canvasRect, presentation, backgroundColor,
-                                            pixelSize.width() / canvasRect.width());
-}

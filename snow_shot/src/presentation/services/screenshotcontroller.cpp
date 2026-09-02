@@ -34,6 +34,7 @@
 #include "snow_shot/presentation/screenshotselectionmodel.h"
 #include "snow_shot/presentation/screenshotselectionresizeworkflow.h"
 #include "snow_shot/presentation/screenshotselectionsettingsstore.h"
+#include "snow_shot/presentation/screenshotuipreferences.h"
 #include "snow_shot/presentation/screenshotscrollingcapturecontroller.h"
 #include "snow_shot/presentation/screenshotoverlaycoordinator.h"
 #include "snow_shot/presentation/screenshotoverlayinteractionadapter.h"
@@ -78,7 +79,6 @@
 #include <QTextEdit>
 #include <QTextBrowser>
 #include <QTimer>
-#include <QPainter>
 #include <QWindow>
 
 #include <algorithm>
@@ -114,8 +114,6 @@ template <typename Function> class ScopeExit final {
             m_function();
         }
     }
-    void dismiss() { m_active = false; }
-
   private:
     Function m_function;
     bool m_active = true;
@@ -486,7 +484,6 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     bool m_canvasColorSamplingCursorOverridden = false;
     QString m_pendingHistoryEditRecordId;
     quint64 m_imageExportGeneration = 0;
-    bool m_imageExportInFlight = false;
     QSet<quint64> m_activeImageExports;
     QHash<quint64, quint64> m_imageExportCaptureEpochs;
     quint64 m_captureEpoch = 0;
@@ -1149,10 +1146,6 @@ void ScreenshotController::Impl::createToolCommandWorkflow() {
                 [this](SnowCanvasShapeStyle* outStyle) {
                     return m_overlayCoordinator->tryCurrentRectangleStyle(m_displaySession,
                                                                           outStyle);
-                },
-                [this](SnowCanvasStyleToolbarState* outState) {
-                    return m_overlayCoordinator->tryCurrentStyleToolbarState(m_displaySession,
-                                                                             outState);
                 },
                 [this](const SnowCanvasShapeStyle& style, quint32 properties,
                        SnowCanvasShapeKind kind) {
@@ -1953,7 +1946,6 @@ std::optional<quint64> ScreenshotController::Impl::beginImageExport() {
     const quint64 generation = ++m_imageExportGeneration;
     m_activeImageExports.insert(generation);
     m_imageExportCaptureEpochs.insert(generation, m_captureEpoch);
-    m_imageExportInFlight = true;
     return generation;
 }
 
@@ -1962,7 +1954,6 @@ bool ScreenshotController::Impl::finishImageExport(quint64 generation) {
         return false;
     }
     m_imageExportCaptureEpochs.remove(generation);
-    m_imageExportInFlight = !m_activeImageExports.isEmpty();
     return true;
 }
 
@@ -4006,7 +3997,6 @@ void ScreenshotController::Impl::shutdown() {
     m_clipboardPinJob = {};
     ++m_clipboardPinGeneration;
     ++m_imageExportGeneration;
-    m_imageExportInFlight = false;
     m_activeImageExports.clear();
     m_imageExportCaptureEpochs.clear();
     resetPendingCaptureRequest();
@@ -4054,10 +4044,6 @@ ScreenshotController::ScreenshotController(QObject* parent)
     : QObject(parent), m_impl(std::make_unique<Impl>(*this)) {}
 
 ScreenshotController::~ScreenshotController() = default;
-
-void ScreenshotController::setUiPreferences(const ScreenshotUiPreferences& preferences) {
-    m_impl->applyUiPreferences(preferences);
-}
 
 void ScreenshotController::prewarmResources() {
     QTimer::singleShot(0, this, [this]() { m_impl->m_captureWorkflow->prewarmResources(); });
@@ -4162,56 +4148,8 @@ void ScreenshotController::editHistoryRecord(const QString& recordId) {
     m_impl->startHistoryEdit(recordId);
 }
 
-void ScreenshotController::cancelCapture() {
-    m_impl->cancelCapture();
-}
-
-void ScreenshotController::copySelectionToClipboard() {
-    m_impl->copySelectionToClipboard();
-}
-
-void ScreenshotController::pinSelectionToScreen() {
-    m_impl->pinSelectionToScreen();
-}
-
 void ScreenshotController::pinClipboardContentToScreen() {
     m_impl->pinClipboardContentToScreen();
-}
-
-void ScreenshotController::startScreenRecording() {
-    m_impl->startScreenRecording();
-}
-
-void ScreenshotController::setMoveTool() {
-    m_impl->setMoveTool();
-}
-
-void ScreenshotController::setSelectTool() {
-    m_impl->setSelectTool();
-}
-
-void ScreenshotController::setShapeTool() {
-    m_impl->setShapeTool();
-}
-
-void ScreenshotController::setArrowTool() {
-    m_impl->setArrowTool();
-}
-
-void ScreenshotController::setLineTool() {
-    m_impl->setLineTool();
-}
-
-void ScreenshotController::setFreeDrawTool() {
-    m_impl->setFreeDrawTool();
-}
-
-void ScreenshotController::setHighlightTool() {
-    m_impl->setHighlightTool();
-}
-
-void ScreenshotController::setPenHighlightTool() {
-    m_impl->setPenHighlightTool();
 }
 
 void ScreenshotController::Impl::setSelectionToolbarHovered(bool hovered) {
@@ -4219,68 +4157,6 @@ void ScreenshotController::Impl::setSelectionToolbarHovered(bool hovered) {
         m_presentationServices->setSelectionToolbarHovered(hovered);
     }
 }
-
-void ScreenshotController::setSpotlightTool() {
-    m_impl->setSpotlightTool();
-}
-
-void ScreenshotController::setEraserTool() {
-    m_impl->setEraserTool();
-}
-
-void ScreenshotController::setFilterTool() {
-    m_impl->setFilterTool();
-}
-
-void ScreenshotController::setRectangleFilterTool() {
-    m_impl->setRectangleFilterTool();
-}
-
-void ScreenshotController::setPenFilterTool() {
-    m_impl->setPenFilterTool();
-}
-
-void ScreenshotController::setWatermarkTool() {
-    m_impl->setWatermarkTool();
-}
-
-void ScreenshotController::setWatermarkConfigFromToolbar(const SnowCanvasWatermarkConfig& config) {
-    m_impl->setWatermarkConfigFromToolbar(config);
-}
-
-void ScreenshotController::setSpotlightConfigFromToolbar(const SnowCanvasSpotlightConfig& config) {
-    m_impl->setSpotlightConfigFromToolbar(config);
-}
-
-void ScreenshotController::setTextTool() {
-    m_impl->setTextTool();
-}
-
-void ScreenshotController::setSerialNumberTool() {
-    m_impl->setSerialNumberTool();
-}
-
-void ScreenshotController::decrementSelectedSerialNumbers() {
-    m_impl->decrementSelectedSerialNumbers();
-}
-
-void ScreenshotController::incrementSelectedSerialNumbers() {
-    m_impl->incrementSelectedSerialNumbers();
-}
-
-void ScreenshotController::createTextForSelectedSerialNumber() {
-    m_impl->createTextForSelectedSerialNumber();
-}
-
-SnowCanvasShapeStyle ScreenshotController::currentRectangleStyle() const {
-    return m_impl->m_toolCommandWorkflow->currentRectangleStyle();
-}
-
-void ScreenshotController::setShapeStyleFromToolbar(const SnowCanvasShapeStyle& style,
-                                                    quint32 properties, SnowCanvasShapeKind kind) {
-    m_impl->setShapeStyleFromToolbar(style, properties, kind);
-}
-
 void ScreenshotController::Impl::reorderSelectedElements(SnowCanvasSelectionOrder order) {
     m_overlayCoordinator->reorderSelectedElements(m_displaySession, order);
 }
@@ -4297,39 +4173,3 @@ void ScreenshotController::Impl::deleteSelectedElements() {
     m_overlayCoordinator->deleteSelectedElements(m_displaySession);
 }
 
-void ScreenshotController::setTextStyleFromToolbar(const SnowCanvasTextStyle& style) {
-    m_impl->setTextStyleFromToolbar(style);
-}
-
-void ScreenshotController::setSerialNumberStyleFromToolbar(
-    const SnowCanvasSerialNumberStyle& style) {
-    m_impl->setSerialNumberStyleFromToolbar(style);
-}
-
-void ScreenshotController::adjustSelectionFromToolbar(int minDx, int minDy, int maxDx, int maxDy) {
-    m_impl->adjustSelectionFromToolbar(minDx, minDy, maxDx, maxDy);
-}
-
-void ScreenshotController::setSelectionCornerRadiusFromToolbar(int radius) {
-    m_impl->setSelectionCornerRadiusFromToolbar(radius);
-}
-
-void ScreenshotController::setSelectionShadowWidthFromToolbar(int shadowWidth) {
-    m_impl->setSelectionShadowWidthFromToolbar(shadowWidth);
-}
-
-void ScreenshotController::toggleSelectionAspectRatioLockFromToolbar() {
-    m_impl->toggleSelectionAspectRatioLockFromToolbar();
-}
-
-void ScreenshotController::openSelectionResizeModalFromToolbar() {
-    m_impl->openSelectionResizeModalFromToolbar();
-}
-
-void ScreenshotController::repositionToolbarForContentChange() {
-    m_impl->repositionToolbarForContentChange();
-}
-
-void ScreenshotController::hideColorPickersForScreenshotUi() {
-    m_impl->hideColorPickersForScreenshotUi();
-}

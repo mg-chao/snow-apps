@@ -99,26 +99,6 @@ SettingsFieldState SettingsRuntimeSession::state(const QString& fieldId) const {
     return result;
 }
 
-bool SettingsRuntimeSession::hasState(const QString& fieldId) const {
-    return m_states.contains(fieldId);
-}
-
-SettingsOptions SettingsRuntimeSession::options(const QString& fieldId) const {
-    const auto cached = m_optionsCache.constFind(fieldId);
-    if (cached != m_optionsCache.cend()) {
-        return cached.value();
-    }
-    const auto* descriptor = descriptorFor(fieldId);
-    if (descriptor == nullptr || descriptor->definition == nullptr) {
-        SettingsOptions result;
-        result.error = QStringLiteral("Unknown settings field");
-        return result;
-    }
-    const SettingsOptions result = buildOptions(*descriptor);
-    const_cast<SettingsRuntimeSession*>(this)->m_optionsCache.insert(fieldId, result);
-    return result;
-}
-
 bool SettingsRuntimeSession::hasDirtyFields() const {
     for (auto it = m_states.cbegin(); it != m_states.cend(); ++it) {
         if (it.value().dirty) {
@@ -404,16 +384,6 @@ bool SettingsRuntimeSession::reset(SettingsSectionReset resetGroup) {
     }
     refreshCommandStates();
     return accepted;
-}
-
-bool SettingsRuntimeSession::invoke(const SettingsCommand& command) {
-    if (command.kind != SettingsCommandKind::Navigate &&
-        command.kind != SettingsCommandKind::CaptureScreenshot &&
-        command.kind != SettingsCommandKind::ExecuteQuickAction) {
-        return false;
-    }
-    emit commandRequested(command);
-    return true;
 }
 
 void SettingsRuntimeSession::refreshField(const QString& fieldId) {

@@ -109,8 +109,6 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
     };
 
     explicit ScreenshotOcrRecognitionService(QObject* parent = nullptr);
-    explicit ScreenshotOcrRecognitionService(ScreenshotOcrBackendPreference backendPreference,
-                                             QObject* parent = nullptr);
     explicit ScreenshotOcrRecognitionService(const Options& options,
                                              ScreenshotOcrBackendPreference backendPreference =
                                                  ScreenshotOcrBackendPreference::Cpu,
@@ -137,7 +135,6 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
     RequestToken m_nextToken = 0;
 
   signals:
-    void assetStatusChanged(const ScreenshotOcrAssetStatus& status);
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTOCRRECOGNITIONSERVICE_H

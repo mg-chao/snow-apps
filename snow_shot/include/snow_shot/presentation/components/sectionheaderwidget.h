@@ -24,7 +24,6 @@ class SectionHeaderWidget : public QFrame {
     explicit SectionHeaderWidget(
         const QString& title, const snow_shot::presentation::styles::ThemeAliasMetricToken& metric,
         QWidget* parent = nullptr);
-    [[nodiscard]] QString title() const;
     void setTitle(const QString& title);
     void setResetVisible(bool visible);
     void setResetEnabled(bool enabled);

@@ -234,15 +234,6 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
 
     void notify() { emit synchronized(); }
 
-    void setFieldError(const QString& fieldId, const QString& error) {
-        if (error.isEmpty()) {
-            m_fieldErrors.remove(fieldId);
-        } else {
-            m_fieldErrors.insert(fieldId, error);
-        }
-        emit synchronized();
-    }
-
     void setExternal(const QString& fieldId, const QVariant& value) {
         setFieldValue(fieldId, value);
         emit synchronized();

@@ -26,7 +26,6 @@ class ScreenshotScrollingThumbnailWidget final : public QWidget {
 
     void reset();
     void setRecognitionMode(ScreenshotScrollingRecognitionMode mode);
-    [[nodiscard]] ScreenshotScrollingRecognitionMode recognitionMode() const;
     void setMaximumPreviewHeight(int height);
     void setMaximumPreviewExtent(int extent);
     void setStitchedImage(const QImage& previewImage, const QSize& sourceSize,
@@ -34,7 +33,6 @@ class ScreenshotScrollingThumbnailWidget final : public QWidget {
                           bool replacePreview = false, int replacedPreviewRows = 0);
     [[nodiscard]] int trimTop() const;
     [[nodiscard]] int trimBottom() const;
-    void setTrimRows(int top, int bottom);
 #if defined(SNOW_SHOT_BENCH_INTERNALS)
     [[nodiscard]] QImage previewImageForTesting() const;
     [[nodiscard]] qsizetype previewLogicalBytesForTesting() const;

@@ -9,7 +9,6 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QKeySequence>
-#include <QLocale>
 #include <QSet>
 
 namespace snow_shot::storage {
@@ -468,16 +467,8 @@ QStringList ScreenshotShortcutSettings::moveCursorDown() const {
     return shortcuts(QStringLiteral("move_cursor_down"));
 }
 
-bool ScreenshotShortcutSettings::setMoveCursorDown(const QStringList& value) const {
-    return setShortcuts(QStringLiteral("move_cursor_down"), value);
-}
-
 QStringList ScreenshotShortcutSettings::moveCursorLeft() const {
     return shortcuts(QStringLiteral("move_cursor_left"));
-}
-
-bool ScreenshotShortcutSettings::setMoveCursorLeft(const QStringList& value) const {
-    return setShortcuts(QStringLiteral("move_cursor_left"), value);
 }
 
 QStringList ScreenshotShortcutSettings::moveCursorRight() const {
@@ -490,10 +481,6 @@ bool ScreenshotShortcutSettings::setMoveCursorRight(const QStringList& value) co
 
 QStringList ScreenshotShortcutSettings::moveEntireSelection() const {
     return shortcuts(QStringLiteral("move_entire_selection"));
-}
-
-bool ScreenshotShortcutSettings::setMoveEntireSelection(const QStringList& value) const {
-    return setShortcuts(QStringLiteral("move_entire_selection"), value);
 }
 
 QStringList ScreenshotShortcutSettings::keepSelectionWidthAndHeightConsistent() const {
@@ -510,42 +497,20 @@ QStringList ScreenshotShortcutSettings::switchSelectionBetweenWindowAndWindowSub
         QStringLiteral("switch_selection_between_window_and_window_sub_element"));
 }
 
-bool ScreenshotShortcutSettings::setSwitchSelectionBetweenWindowAndWindowSubElement(
-    const QStringList& value) const {
-    return setShortcuts(
-        QStringLiteral("switch_selection_between_window_and_window_sub_element"), value);
-}
-
 QStringList ScreenshotShortcutSettings::previousScreenshotHistory() const {
     return shortcuts(QStringLiteral("previous_screenshot_history"));
-}
-
-bool ScreenshotShortcutSettings::setPreviousScreenshotHistory(const QStringList& value) const {
-    return setShortcuts(QStringLiteral("previous_screenshot_history"), value);
 }
 
 QStringList ScreenshotShortcutSettings::nextScreenshotHistory() const {
     return shortcuts(QStringLiteral("next_screenshot_history"));
 }
 
-bool ScreenshotShortcutSettings::setNextScreenshotHistory(const QStringList& value) const {
-    return setShortcuts(QStringLiteral("next_screenshot_history"), value);
-}
-
 QStringList ScreenshotShortcutSettings::selectPreviouslySelectedArea() const {
     return shortcuts(QStringLiteral("select_previously_selected_area"));
 }
 
-bool ScreenshotShortcutSettings::setSelectPreviouslySelectedArea(const QStringList& value) const {
-    return setShortcuts(QStringLiteral("select_previously_selected_area"), value);
-}
-
 QStringList ScreenshotShortcutSettings::copyColor() const {
     return shortcuts(QStringLiteral("copy_color"));
-}
-
-bool ScreenshotShortcutSettings::setCopyColor(const QStringList& value) const {
-    return setShortcuts(QStringLiteral("copy_color"), value);
 }
 
 bool ScreenshotShortcutSettings::isReservedShortcut(const QString& shortcut) {
@@ -659,54 +624,6 @@ QStringList DrawingShortcutSettings::arrow() const {
 
 bool DrawingShortcutSettings::setArrow(const QStringList& value) const {
     return setShortcuts(QStringLiteral("arrow"), value);
-}
-
-QStringList DrawingShortcutSettings::brush() const {
-    return shortcuts(QStringLiteral("brush"));
-}
-
-bool DrawingShortcutSettings::setBrush(const QStringList& value) const {
-    return setShortcuts(QStringLiteral("brush"), value);
-}
-
-QStringList DrawingShortcutSettings::highlight() const {
-    return shortcuts(QStringLiteral("highlight"));
-}
-
-bool DrawingShortcutSettings::setHighlight(const QStringList& value) const {
-    return setShortcuts(QStringLiteral("highlight"), value);
-}
-
-QStringList DrawingShortcutSettings::text() const {
-    return shortcuts(QStringLiteral("text"));
-}
-
-bool DrawingShortcutSettings::setText(const QStringList& value) const {
-    return setShortcuts(QStringLiteral("text"), value);
-}
-
-QStringList DrawingShortcutSettings::serialNumber() const {
-    return shortcuts(QStringLiteral("serial_number"));
-}
-
-bool DrawingShortcutSettings::setSerialNumber(const QStringList& value) const {
-    return setShortcuts(QStringLiteral("serial_number"), value);
-}
-
-QStringList DrawingShortcutSettings::filter() const {
-    return shortcuts(QStringLiteral("filter"));
-}
-
-bool DrawingShortcutSettings::setFilter(const QStringList& value) const {
-    return setShortcuts(QStringLiteral("filter"), value);
-}
-
-QStringList DrawingShortcutSettings::eraser() const {
-    return shortcuts(QStringLiteral("eraser"));
-}
-
-bool DrawingShortcutSettings::setEraser(const QStringList& value) const {
-    return setShortcuts(QStringLiteral("eraser"), value);
 }
 
 QStringList DrawingShortcutSettings::watermark() const {
@@ -992,22 +909,6 @@ bool RecordingSettings::setVideoFilenameFormat(const QString& format) const {
     return cache().setValue(QStringLiteral("screen_recording/video_filename_format"), format);
 }
 
-QString ScreenshotToolbarSettings::arrowLineTool() const {
-    return cache().value(QStringLiteral("screenshot_toolbar/arrow_line_tool")).toString();
-}
-
-bool ScreenshotToolbarSettings::setArrowLineTool(const QString& tool) const {
-    return cache().setValue(QStringLiteral("screenshot_toolbar/arrow_line_tool"), tool);
-}
-
-QString ScreenshotToolbarSettings::highlightTool() const {
-    return cache().value(QStringLiteral("screenshot_toolbar/highlight_tool")).toString();
-}
-
-bool ScreenshotToolbarSettings::setHighlightTool(const QString& tool) const {
-    return cache().setValue(QStringLiteral("screenshot_toolbar/highlight_tool"), tool);
-}
-
 QString ScreenshotToolbarSettings::tableQrTool() const {
     return cache().value(QStringLiteral("screenshot_toolbar/table_qr_tool")).toString();
 }
@@ -1133,40 +1034,4 @@ bool NetworkSettings::setProxy(const QString& proxy) const {
     return cache().setValue(QStringLiteral("network/proxy"), proxy);
 }
 
-CaptureHistoryPolicy HistorySettings::policy() const {
-    return captureHistoryPolicyFromConfiguration(cache());
-}
-
-std::shared_future<StorageResult>
-HistorySettings::setPolicy(const CaptureHistoryPolicy& policy) const {
-    auto& storage = ApplicationStorage::instance();
-    if (!storage.isInitialized()) {
-        static_cast<void>(storage.initialize());
-    }
-    return storage.requestCaptureHistoryPolicyAsync(policy);
-}
-
-std::shared_future<StorageResult> HistorySettings::setEnabled(bool enabled) const {
-    CaptureHistoryPolicy next = policy();
-    next.enabled = enabled;
-    return setPolicy(next);
-}
-
-std::shared_future<StorageResult> HistorySettings::setRetentionDays(int days) const {
-    CaptureHistoryPolicy next = policy();
-    next.retentionDays = days;
-    return setPolicy(next);
-}
-
-std::shared_future<StorageResult> HistorySettings::setMaxEntries(int entries) const {
-    CaptureHistoryPolicy next = policy();
-    next.maxEntries = entries;
-    return setPolicy(next);
-}
-
-std::shared_future<StorageResult> HistorySettings::setMaxDiskMiB(int mebibytes) const {
-    CaptureHistoryPolicy next = policy();
-    next.maxDiskMiB = mebibytes;
-    return setPolicy(next);
-}
 } // namespace snow_shot::storage

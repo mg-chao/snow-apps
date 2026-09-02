@@ -17,10 +17,7 @@ class ThemeManager : public QObject {
 
     void initialize(QApplication& application);
 
-    [[nodiscard]] ThemeStyleConfig themeStyleConfig() const;
     [[nodiscard]] ThemeMode themeMode() const;
-    [[nodiscard]] ThemeAppearance themeAppearance() const;
-    [[nodiscard]] ThemePreset themePreset() const;
     [[nodiscard]] ThemeColorScheme themeColorScheme() const;
 
   public slots:

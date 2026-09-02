@@ -12,8 +12,8 @@ use std::sync::mpsc::{Receiver, SyncSender, TryRecvError, sync_channel};
 use std::thread::{self, JoinHandle};
 
 use snow_stitch_images::{
-    Frame, MotionDiagnostics, MotionStage, PixelFormat, StitchAxis, StitchBranch, StitchError,
-    StitchOptions, StitchTraceEvent, Stitcher, TiledCanvasSnapshot,
+    Frame, MotionDiagnostics, MotionStage, PixelFormat, StitchAxis, StitchBranch, StitchDecision,
+    StitchError, StitchOptions, Stitcher, TiledCanvasSnapshot,
 };
 
 const DEFAULT_MAX_OUTPUT_HEIGHT: u32 = 2_160 * 32;
@@ -363,7 +363,7 @@ impl StitchSession {
             config,
             stitcher: Stitcher::new(StitchOptions {
                 axis,
-                collect_trace: true,
+                record_decisions: true,
                 ..StitchOptions::default()
             })?,
         })
@@ -379,7 +379,7 @@ impl StitchSession {
     ) -> Result<FrameOutcome, StitchError> {
         let frame = frame?;
         let initial = self.stitcher.input_count() == 0;
-        let trace = self.stitcher.push(frame)?;
+        let decision = self.stitcher.push(frame)?;
         let (width, height) = self
             .stitcher
             .image_dimensions()
@@ -409,13 +409,13 @@ impl StitchSession {
                 delta_extent: output_extent,
             });
         }
-        let outcome = trace
+        let outcome = decision
             .as_ref()
             .map(|event| frame_outcome(event, dimensions, self.config.axis))
             .ok_or_else(|| StitchError::InvalidFrame {
-                message: "incremental stitcher did not emit a trace event".to_owned(),
+                message: "incremental stitcher did not emit a decision record".to_owned(),
             })?;
-        self.stitcher.clear_trace();
+        self.stitcher.clear_decisions();
         Ok(outcome)
     }
 
@@ -488,7 +488,7 @@ impl StitchSession {
 }
 
 fn frame_outcome(
-    event: &StitchTraceEvent,
+    event: &StitchDecision,
     dimensions: FrameDimensions,
     axis: StitchAxis,
 ) -> FrameOutcome {

@@ -32,7 +32,6 @@ class ApplicationSearchWidget final : public QWidget {
 
     void setPlaceholderText(const QString& text);
     [[nodiscard]] QString query() const;
-    void clearQuery();
     void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme);
     void rebuildIndex();
 

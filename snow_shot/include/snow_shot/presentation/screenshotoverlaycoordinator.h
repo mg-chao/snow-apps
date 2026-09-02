@@ -83,8 +83,6 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     [[nodiscard]] bool resetEditingState(const ScreenshotDisplaySession& displaySession) const;
     [[nodiscard]] bool tryCurrentRectangleStyle(const ScreenshotDisplaySession& displaySession,
                                                 SnowCanvasShapeStyle* outStyle) const;
-    [[nodiscard]] bool tryCurrentStyleToolbarState(const ScreenshotDisplaySession& displaySession,
-                                                   SnowCanvasStyleToolbarState* outState) const;
     SnowCanvasShapeStyle
     currentRectangleStyle(const ScreenshotDisplaySession& displaySession) const;
     void setShapeStylePatch(const ScreenshotDisplaySession& displaySession,
@@ -119,7 +117,6 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     void redoCanvasEdit();
     ScreenshotSelectionToolbarWidget* selectionToolbar() const;
     void attachSelectionToolbarToOverlay(ScreenshotOverlayWindow* overlay);
-    ScreenshotColorPickerWidget* ensureColorPicker();
     ScreenshotColorPickerWidget* colorPicker() const;
     void updateColorPicker(ScreenshotOverlayWindow* overlay, const QImage& image,
                            const QRect& physicalRect, const QPoint& physicalPoint,
@@ -127,12 +124,8 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     void hideColorPicker();
     void setColorPickerCenterGuideLineColor(const QColor& color);
     void updateShortcutHints(ScreenshotOverlayWindow* overlay,
-                             ScreenshotShortcutHintMode mode, qreal opacity,
-                             const QRectF& selectionGlobal = {});
-    void updateShortcutHints(ScreenshotOverlayWindow* overlay,
                              const ScreenshotShortcutHintContext& context, qreal opacity,
                              const QRectF& selectionGlobal = {});
-    void hideShortcutHints();
     [[nodiscard]] bool screenshotUiContainsGlobalCursor() const;
     [[nodiscard]] bool stepToolbarStrokeWidth(int direction);
     [[nodiscard]] bool stepToolbarSelectionOpacity(int direction);
@@ -143,7 +136,6 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     void resetToolbarForNewCapture();
     void hideToolbar();
     void showToolbar();
-    void raiseToolbar();
     void hideSelectionToolbar();
     void showSelectionToolbar();
     void raiseSelectionToolbar();

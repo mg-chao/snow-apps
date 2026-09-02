@@ -14,11 +14,8 @@
 #include <QMetaObject>
 #include <QObject>
 #include <QPointer>
-#include <QScreen>
 #include <QThread>
 
-#include <algorithm>
-#include <cmath>
 #include <optional>
 #include <utility>
 

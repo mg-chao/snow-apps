@@ -119,22 +119,9 @@ void ScreenshotSelectorWorkflow::applyHitPath(const QVector<QRectF>& hitRects) {
     m_context.selection.setSelectionRect(currentSelection);
 }
 
-void ScreenshotSelectorWorkflow::setSelectionIndex(int index) {
-    if (!m_context.intelligentSelection.setIndex(index)) {
-        clearSelection();
-        return;
-    }
-
-    m_context.selection.setSelectionRect(m_context.intelligentSelection.currentSelection());
-}
-
 void ScreenshotSelectorWorkflow::clearSelection() {
     m_context.intelligentSelection.clearTransientState();
     m_context.selection.clearSelection();
-}
-
-QRectF ScreenshotSelectorWorkflow::currentSelection() const {
-    return m_context.intelligentSelection.currentSelection();
 }
 
 bool ScreenshotSelectorWorkflow::returnToSelection(const QPoint& physicalPoint) {

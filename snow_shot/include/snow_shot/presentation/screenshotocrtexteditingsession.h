@@ -12,7 +12,6 @@ class ScreenshotOcrTextEditingSession final {
     [[nodiscard]] const QString& originalText() const;
     [[nodiscard]] QString text() const;
     [[nodiscard]] QTextDocument* document();
-    [[nodiscard]] const QTextDocument* document() const;
 
     // Replaces the complete draft as one text-history step.
     bool replaceText(const QString& text);

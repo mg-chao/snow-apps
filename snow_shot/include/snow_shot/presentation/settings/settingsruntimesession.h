@@ -70,8 +70,6 @@ class SettingsRuntimeSession final : public QObject {
 
     [[nodiscard]] const SettingsRegistry& registry() const;
     [[nodiscard]] SettingsFieldState state(const QString& fieldId) const;
-    [[nodiscard]] bool hasState(const QString& fieldId) const;
-    [[nodiscard]] SettingsOptions options(const QString& fieldId) const;
     [[nodiscard]] bool hasDirtyFields() const;
     [[nodiscard]] bool hasPendingWrites() const;
     [[nodiscard]] QStringList dirtyFieldIds() const;
@@ -82,7 +80,6 @@ class SettingsRuntimeSession final : public QObject {
     bool retry(const QString& fieldId);
     bool discard(const QString& fieldId);
     bool reset(SettingsSectionReset reset);
-    bool invoke(const SettingsCommand& command);
     void refreshField(const QString& fieldId);
     void refreshAll();
 
@@ -158,8 +155,6 @@ class SettingsRuntimeSession final : public QObject {
     void auxiliaryIntegerChanged(
         snow_shot::presentation::settings::SettingsIntegerBinding binding, int value);
     void refreshed();
-    void commandRequested(
-        const snow_shot::presentation::settings::SettingsCommand& command);
 
   private:
     struct PendingWrite {

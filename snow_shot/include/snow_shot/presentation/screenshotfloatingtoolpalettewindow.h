@@ -67,8 +67,6 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     bool stepFilterIntensity(int direction);
     bool stepPenFilterStrokeWidth(int direction);
     bool stepWatermarkFontSize(int direction);
-    void setMovementClampingEnabled(bool enabled);
-    bool movementClampingEnabled() const;
     void cancelDrag();
     bool physicalDragActive() const;
     adqt::widgets::AdDpiStableWindowDiagnostics dpiTransitionDiagnostics() const;
@@ -77,6 +75,10 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     void visibleContentChanged();
     void dragFinished();
     void dpiScaleCommitCompleted();
+
+  public:
+    QPoint constrainedContentPosition(const QPoint& position) const;
+    QPointF constrainedContentPosition(const QPointF& position) const;
 
   protected:
     bool event(QEvent* event) override;
@@ -87,8 +89,6 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     void showEvent(QShowEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
 
-    QPoint constrainedContentPosition(const QPoint& position) const;
-    QPointF constrainedContentPosition(const QPointF& position) const;
     void beginKeyboardFocusInteraction(QWidget* editor);
     void endKeyboardFocusInteraction(QWidget* editor = nullptr);
     void setPaletteScaleMultiplier(qreal multiplier);
@@ -140,7 +140,6 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     QPointF m_lastDragPosition;
     QPointF m_dragContentPosition;
     QPointF m_dragPhysicalCursorToWindowOffset;
-    QPointF m_lastPhysicalDragCursorPosition;
     QPoint m_lastMainToolbarGlobalTopLeft;
     QPointer<QScreen> m_placementScreen;
     QPointer<QWidget> m_transientOwnerWindow;
@@ -162,7 +161,6 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     bool m_dragPhysicalAnchorValid = false;
     bool m_lastRequestedContentPositionValid = false;
     bool m_lastMainToolbarGlobalTopLeftValid = false;
-    bool m_movementClampingEnabled = false;
     bool m_processingNativeDpiChange = false;
     bool m_keyboardFocusInteractionActive = false;
     bool m_geometryCommitActive = false;

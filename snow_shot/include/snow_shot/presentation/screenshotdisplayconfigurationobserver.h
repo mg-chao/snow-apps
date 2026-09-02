@@ -24,7 +24,6 @@ class ScreenshotDisplayConfigurationObserver final : public QObject {
     void observeScreens(const QList<QScreen*>& screens);
     void observeScreen(QScreen* screen);
 
-    [[nodiscard]] int observedScreenCount() const;
 
     void handleScreenAdded(QScreen* screen);
     void handleScreenRemoved(QScreen* screen);

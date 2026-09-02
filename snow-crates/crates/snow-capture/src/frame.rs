@@ -59,6 +59,8 @@ pub struct FrameMetadata {
     /// Wall-clock time spent inside the capture call (GPU readback,
     /// staging copy, pixel conversion). Lets recorders detect when the
     /// capture pipeline itself is the bottleneck vs. the encoder.
+    /// Only present in builds with the `stage-timing` feature.
+    #[cfg(feature = "stage-timing")]
     pub(crate) capture_duration: Option<Duration>,
     /// Whether this frame's content is identical to the previous frame.
     /// `true` means no new desktop present occurred - a recorder can skip
@@ -95,6 +97,9 @@ impl FrameMetadata {
         self.backend_kind
     }
 
+    /// Wall-clock time spent inside the capture call. Only present in
+    /// builds with the `stage-timing` feature.
+    #[cfg(feature = "stage-timing")]
     pub fn capture_duration(&self) -> Option<Duration> {
         self.capture_duration
     }
@@ -531,7 +536,10 @@ impl Frame {
     /// a reused frame leaking into the new result.
     pub(crate) fn reset_metadata(&mut self) {
         self.metadata.stream_timestamp = None;
-        self.metadata.capture_duration = None;
+        #[cfg(feature = "stage-timing")]
+        {
+            self.metadata.capture_duration = None;
+        }
         self.metadata.is_duplicate = false;
         self.metadata.dirty_rects.clear();
         self.metadata.color_space = ColorSpace::default();

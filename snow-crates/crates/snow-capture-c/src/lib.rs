@@ -323,8 +323,7 @@ enum WorkerCommand {
 }
 
 pub const SCREENSHOT_REQUEST_VERSION: u32 = 1;
-const SCREENSHOT_REQUEST_V1_SIZE: u32 =
-    std::mem::size_of::<SnowCaptureScreenshotRequest>() as u32;
+const SCREENSHOT_REQUEST_V1_SIZE: u32 = std::mem::size_of::<SnowCaptureScreenshotRequest>() as u32;
 const SCREENSHOT_REQUEST_REFRESH_LAYOUT: u32 = 1 << 0;
 pub const WINDOW_FRAME_INFO_VERSION: u32 = 1;
 const WINDOW_FRAME_INFO_SIZE: u32 = std::mem::size_of::<SnowCaptureWindowFrameInfo>() as u32;
@@ -493,6 +492,9 @@ pub const RECORDING_EXPORT_CONFIG_VERSION: u32 = 1;
 const RECORDING_EXPORT_CONFIG_SIZE: u32 =
     std::mem::size_of::<SnowCaptureRecordingExportConfig>() as u32;
 
+// The struct update stays load-bearing when snow-capture is built with its
+// optional `stage-timing` feature, which adds a field this literal omits.
+#[allow(clippy::needless_update)]
 fn default_options(
     config: *const SnowCaptureDesktopSessionConfig,
 ) -> Result<(CaptureOptions, CaptureBackendKind), String> {
@@ -530,6 +532,7 @@ fn default_options(
     ))
 }
 
+#[allow(clippy::needless_update)] // needed when snow-capture enables its `stage-timing` feature
 fn snapshot_options(
     capture_retry_count: usize,
     wgc_update_mode: u8,
@@ -1638,6 +1641,7 @@ fn write_stream_frame_info(
 }
 
 #[unsafe(no_mangle)]
+#[allow(clippy::needless_update)] // needed when snow-capture enables its `stage-timing` feature
 pub unsafe extern "C" fn snow_capture_stream_create_region(
     config: *const SnowCaptureStreamConfig,
 ) -> *mut SnowCaptureStreamImpl {
@@ -2098,7 +2102,7 @@ pub unsafe extern "C" fn snow_capture_window_session_release_frame(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn snow_capture_screenshot_result_display_count(
+pub unsafe extern "C" fn snow_capture_screenshot_result_display_count(
     result: *const SnowCaptureScreenshotResultImpl,
 ) -> usize {
     if result.is_null() {
@@ -2136,7 +2140,7 @@ pub unsafe extern "C" fn snow_capture_screenshot_result_display_info(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn snow_capture_screenshot_result_display_retain(
+pub unsafe extern "C" fn snow_capture_screenshot_result_display_retain(
     result: *const SnowCaptureScreenshotResultImpl,
     index: usize,
 ) -> *mut SnowCaptureFrameLeaseImpl {
@@ -2180,7 +2184,7 @@ pub unsafe extern "C" fn snow_capture_screenshot_result_focused_window_info(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn snow_capture_screenshot_result_focused_window_retain(
+pub unsafe extern "C" fn snow_capture_screenshot_result_focused_window_retain(
     result: *const SnowCaptureScreenshotResultImpl,
 ) -> *mut SnowCaptureFrameLeaseImpl {
     if result.is_null() {
@@ -2643,7 +2647,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn immediate_gif_export_includes_recorded_cursor_motion() {
         let output_path = PathBuf::from("recording.gif");
@@ -2813,7 +2816,7 @@ mod tests {
     #[test]
     fn frame_lease_survives_result_destroy() {
         let snapshot = test_result();
-        let lease = snow_capture_screenshot_result_display_retain(snapshot, 0);
+        let lease = unsafe { snow_capture_screenshot_result_display_retain(snapshot, 0) };
         assert!(!lease.is_null());
         unsafe { snow_capture_screenshot_result_destroy(snapshot) };
 

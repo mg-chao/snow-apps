@@ -4,7 +4,6 @@
 #include "snow_shot/presentation/screenshotcaptureworkflowports.h"
 #include "snow_shot/presentation/screenshottypes.h"
 
-#include <QVector>
 
 #include <cstdint>
 #include <functional>

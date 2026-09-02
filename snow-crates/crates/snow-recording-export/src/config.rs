@@ -257,11 +257,17 @@ mod tests {
 
     #[test]
     fn export_request_requires_complete_resolution_caps() {
-        let mut request = ExportRequest::default();
-        request.maximum_width = Some(1920);
+        let request = ExportRequest {
+            maximum_width: Some(1920),
+            ..ExportRequest::default()
+        };
         assert!(request.validate().is_err());
 
-        request.maximum_height = Some(1080);
+        let request = ExportRequest {
+            maximum_width: Some(1920),
+            maximum_height: Some(1080),
+            ..ExportRequest::default()
+        };
         assert!(request.validate().is_ok());
     }
 

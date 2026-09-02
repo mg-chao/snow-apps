@@ -76,7 +76,6 @@ class FileSink final : public Sink {
 FileSink fileSink;
 } // namespace
 
-void setSink(Sink* sink) { QMutexLocker lock(&mutex); activeSink = sink; }
 void configureTrace(const QString& path) {
     QMutexLocker lock(&mutex);
     if (traceFile.isOpen()) traceFile.close();
@@ -104,7 +103,6 @@ void finish(bool success) { QMutexLocker lock(&mutex); if (activeSink && state.a
 } // namespace snow_shot::presentation::capture_perf
 #else
 namespace snow_shot::presentation::capture_perf {
-void setSink(Sink*) {}
 void configureTrace(const QString&) {}
 void beginSample(const char*, qint64, qint64) {}
 void milestone(const char*) {}

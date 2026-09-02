@@ -73,29 +73,6 @@ class ScreenshotFloatingToolPaletteWindowTestAccess {
         return window.m_committedGeometryPassCount;
     }
 
-    static quint64
-    coalescedGeometryRequestCount(const ScreenshotFloatingToolPaletteWindow& window) {
-        return window.m_coalescedGeometryRequestCount;
-    }
-
-    static QRect nativeGeometryForPhysicalDrag(const QPointF& physicalCursorPosition,
-                                               const QPointF& physicalCursorToWindowOffset,
-                                               const QSize& stablePhysicalWindowSize) {
-        return ScreenshotFloatingToolPaletteWindow::nativeWindowGeometryForPhysicalDrag(
-            physicalCursorPosition, physicalCursorToWindowOffset, stablePhysicalWindowSize);
-    }
-};
-
-namespace {
-std::atomic_bool nativeGeometryWarningEmitted{false};
-QtMessageHandler previousMessageHandler = nullptr;
-
-void captureNativeGeometryWarning(QtMsgType type, const QMessageLogContext& context,
-                                  const QString& message) {
-    if (type == QtWarningMsg && message.contains(QStringLiteral("QWindowsWindow::setGeometry"))) {
-        nativeGeometryWarningEmitted.store(true, std::memory_order_relaxed);
-    }
-
     if (previousMessageHandler != nullptr) {
         previousMessageHandler(type, context, message);
     } else {
@@ -954,7 +931,6 @@ void styleToolChangesKeepThePresetWindowSize() {
     options.showScrollingScreenshotTool = true;
     options.showScreenRecordButton = true;
     options.separatorBeforeShape = true;
-    options.separatorAfterArrow = true;
     options.actions = ScreenshotToolPalette::PinAction | ScreenshotToolPalette::CancelAction |
                       ScreenshotToolPalette::CopyAction;
     ScreenshotFloatingToolPaletteWindow window(options);

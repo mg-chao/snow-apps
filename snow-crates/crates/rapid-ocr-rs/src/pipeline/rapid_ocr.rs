@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use std::thread;
-use std::time::Instant;
 
 use crate::{
     cls::classifier::{Classifier, ClassifierConfig},
@@ -124,14 +123,14 @@ impl RapidOcr {
     }
 
     fn run_inner(&mut self, input: OcrInput, opts: OcrCallOptions) -> Result<OcrOutput> {
-        let e2e_start = Instant::now();
+        let e2e_timing = crate::diagnostics::timing_start();
         let mut output = OcrOutput::default();
         let switches = self.resolve_run_switches(&opts);
         let mut prepared = self.prepare_image(input, switches.use_det)?;
         let mut buffers = RunBuffers::default();
 
         if !self.run_detection_stage(&opts, switches, &mut prepared, &mut buffers, &mut output)? {
-            output.e2e_ms = Some(e2e_start.elapsed().as_secs_f32() * 1000.0);
+            output.e2e_ms = crate::diagnostics::timing_ms(e2e_timing);
             return Ok(output);
         }
 
@@ -140,7 +139,7 @@ impl RapidOcr {
         self.finalize_detection_outputs(switches, &prepared, &mut buffers, &mut output)?;
         self.finalize_recognition_outputs(switches, &buffers.lines, &mut output);
 
-        output.e2e_ms = Some(e2e_start.elapsed().as_secs_f32() * 1000.0);
+        output.e2e_ms = crate::diagnostics::timing_ms(e2e_timing);
         Ok(output)
     }
 
@@ -220,7 +219,7 @@ impl RapidOcr {
                 return Ok(false);
             }
 
-            output.elapsed_ms[0] = Some(det_out.elapsed_ms);
+            output.elapsed_ms[0] = det_out.elapsed_ms;
             output.det_breakdown_ms = det_out.breakdown;
             buffers.det_boxes = det_out.boxes;
             buffers.det_scores = det_out.scores;
@@ -253,7 +252,7 @@ impl RapidOcr {
             })?;
             let cls_result = classifier.classify_in_place(&mut buffers.stage_images)?;
             output.cls_res = Some(cls_result.cls_res);
-            output.elapsed_ms[1] = Some(cls_result.elapsed_ms);
+            output.elapsed_ms[1] = cls_result.elapsed_ms;
         }
         Ok(())
     }
@@ -280,7 +279,7 @@ impl RapidOcr {
                 return_single_char_box: switches.return_single_char_box,
             },
         )?;
-        output.elapsed_ms[2] = Some(rec.elapsed.as_secs_f32() * 1000.0);
+        output.elapsed_ms[2] = rec.elapsed.map(|elapsed| elapsed.as_secs_f32() * 1000.0);
         buffers.lines = rec.lines;
         Ok(())
     }

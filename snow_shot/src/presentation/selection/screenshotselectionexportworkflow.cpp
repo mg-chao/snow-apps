@@ -142,10 +142,6 @@ QRect ScreenshotSelectionExportWorkflow::selectionBounds() const {
     return ScreenshotHalfOpenRect::fromRectF(bounds).toAlignedQRect();
 }
 
-void ScreenshotSelectionExportWorkflow::persistCurrentSelectionParams() {
-    persistSelectionParams(currentSelectionParams());
-}
-
 void ScreenshotSelectionExportWorkflow::persistSelectionParams(
     const ScreenshotSelectionParams& params) {
     const QRect bounds = selectionBounds();

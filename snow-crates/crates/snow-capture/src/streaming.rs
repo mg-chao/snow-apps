@@ -88,14 +88,24 @@ pub struct CaptureStreamStats {
     pub capture_latency_avg_ns: AtomicU64,
     /// Exponentially-weighted moving average of per-frame cursor attach
     /// latency in nanoseconds. Stored as `f64` bits.
+    /// Only present in builds with the `stage-timing` feature.
+    #[cfg(feature = "stage-timing")]
     pub cursor_latency_avg_ns: AtomicU64,
     /// Frames that attached cursor data via a backend-native path.
+    /// Only present in builds with the `stage-timing` feature.
+    #[cfg(feature = "stage-timing")]
     pub cursor_native_frames: AtomicU64,
     /// Frames that attached cursor data via the GDI fallback path.
+    /// Only present in builds with the `stage-timing` feature.
+    #[cfg(feature = "stage-timing")]
     pub cursor_fallback_frames: AtomicU64,
     /// Frames that reused a cached cursor shape.
+    /// Only present in builds with the `stage-timing` feature.
+    #[cfg(feature = "stage-timing")]
     pub cursor_shape_cache_hits: AtomicU64,
     /// Frames that emitted a new cursor shape payload.
+    /// Only present in builds with the `stage-timing` feature.
+    #[cfg(feature = "stage-timing")]
     pub cursor_shape_cache_misses: AtomicU64,
     /// Current externally requested target FPS. Zero means uncapped.
     pub target_fps: AtomicU64,
@@ -110,10 +120,15 @@ impl Default for CaptureStreamStats {
             current_fps: AtomicU64::new(0),
             buffer_fill: AtomicU64::new(0),
             capture_latency_avg_ns: AtomicU64::new(0),
+            #[cfg(feature = "stage-timing")]
             cursor_latency_avg_ns: AtomicU64::new(0),
+            #[cfg(feature = "stage-timing")]
             cursor_native_frames: AtomicU64::new(0),
+            #[cfg(feature = "stage-timing")]
             cursor_fallback_frames: AtomicU64::new(0),
+            #[cfg(feature = "stage-timing")]
             cursor_shape_cache_hits: AtomicU64::new(0),
+            #[cfg(feature = "stage-timing")]
             cursor_shape_cache_misses: AtomicU64::new(0),
             target_fps: AtomicU64::new(0),
         }
@@ -132,12 +147,17 @@ impl CaptureStreamStats {
             capture_latency_avg: Duration::from_nanos(f64::from_bits(
                 self.capture_latency_avg_ns.load(Ordering::Relaxed),
             ) as u64),
+            #[cfg(feature = "stage-timing")]
             cursor_latency_avg: Duration::from_nanos(f64::from_bits(
                 self.cursor_latency_avg_ns.load(Ordering::Relaxed),
             ) as u64),
+            #[cfg(feature = "stage-timing")]
             cursor_native_frames: self.cursor_native_frames.load(Ordering::Relaxed),
+            #[cfg(feature = "stage-timing")]
             cursor_fallback_frames: self.cursor_fallback_frames.load(Ordering::Relaxed),
+            #[cfg(feature = "stage-timing")]
             cursor_shape_cache_hits: self.cursor_shape_cache_hits.load(Ordering::Relaxed),
+            #[cfg(feature = "stage-timing")]
             cursor_shape_cache_misses: self.cursor_shape_cache_misses.load(Ordering::Relaxed),
             target_fps: self.target_fps.load(Ordering::Relaxed) as u32,
         }
@@ -156,10 +176,20 @@ pub struct CaptureStreamStatsSnapshot {
     /// Exponentially-weighted moving average of per-frame capture latency.
     pub capture_latency_avg: Duration,
     /// Exponentially-weighted moving average of per-frame cursor attach latency.
+    /// Only present in builds with the `stage-timing` feature.
+    #[cfg(feature = "stage-timing")]
     pub cursor_latency_avg: Duration,
+    /// Only present in builds with the `stage-timing` feature.
+    #[cfg(feature = "stage-timing")]
     pub cursor_native_frames: u64,
+    /// Only present in builds with the `stage-timing` feature.
+    #[cfg(feature = "stage-timing")]
     pub cursor_fallback_frames: u64,
+    /// Only present in builds with the `stage-timing` feature.
+    #[cfg(feature = "stage-timing")]
     pub cursor_shape_cache_hits: u64,
+    /// Only present in builds with the `stage-timing` feature.
+    #[cfg(feature = "stage-timing")]
     pub cursor_shape_cache_misses: u64,
     pub target_fps: u32,
 }
@@ -459,6 +489,7 @@ fn stream_loop(
 
     let mut latency_avg_ns: f64 = 0.0;
     const LATENCY_ALPHA: f64 = 0.1;
+    #[cfg(feature = "stage-timing")]
     let mut cursor_latency_avg_ns: f64 = 0.0;
 
     let mut fps_counter: u64 = 0;
@@ -510,9 +541,12 @@ fn stream_loop(
         let capture_elapsed = frame_start.elapsed();
 
         match capture_result {
-            Ok((mut frame, cursor_outcome)) => {
+            Ok((frame, cursor_outcome)) => {
                 consecutive_errors = 0;
 
+                #[cfg(feature = "stage-timing")]
+                let mut frame = frame;
+                #[cfg(feature = "stage-timing")]
                 if let Some(cursor_outcome) = cursor_outcome {
                     let cursor_stats = cursor_outcome.stats;
                     let cursor_elapsed_ns = cursor_outcome.elapsed.as_nanos() as f64;
@@ -538,8 +572,13 @@ fn stream_loop(
                             .fetch_add(1, Ordering::Relaxed);
                     }
                 }
+                #[cfg(not(feature = "stage-timing"))]
+                let _ = cursor_outcome;
 
-                frame.metadata.capture_duration = Some(capture_elapsed);
+                #[cfg(feature = "stage-timing")]
+                {
+                    frame.metadata.capture_duration = Some(capture_elapsed);
+                }
 
                 let sample_ns = capture_elapsed.as_nanos() as f64;
                 latency_avg_ns = LATENCY_ALPHA * sample_ns + (1.0 - LATENCY_ALPHA) * latency_avg_ns;

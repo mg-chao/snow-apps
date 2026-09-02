@@ -57,8 +57,6 @@ class ScreenshotPresentationServices final {
     void updateOverlayState();
     void updateOverlayCursors() const;
 
-    [[nodiscard]] bool hasActiveDisplays() const;
-    [[nodiscard]] QPoint physicalPositionForLogicalPoint(const QPointF& logicalPoint) const;
     [[nodiscard]] ScreenshotColorPickerContext colorPickerContext() const;
 
   private:

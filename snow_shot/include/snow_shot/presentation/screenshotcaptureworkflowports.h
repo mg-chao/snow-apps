@@ -4,7 +4,6 @@
 #include "snow_shot/presentation/screenshottypes.h"
 
 #include <QPoint>
-#include <QVector>
 
 #include <cstdint>
 
@@ -25,7 +24,6 @@ class ScreenshotCaptureRuntimePort {
 
     virtual void setEventSink(ScreenshotCaptureWorkerEventSink* sink) = 0;
     [[nodiscard]] virtual bool captureWorkerCreated() const = 0;
-    [[nodiscard]] virtual bool hasCaptureWorker() const = 0;
     virtual void ensureCaptureWorker() = 0;
     virtual void prepareAsync(quint64 requestId) = 0;
     virtual void refreshLayoutAsync(quint64 requestId) = 0;

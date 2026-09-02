@@ -96,7 +96,6 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
                                 const QRectF& surfaceCanvasRect,
                                 const ScreenshotResultStyle& style);
     void setPinnedBackgroundColor(const QColor& color);
-    void clearImage();
     void setMaskVisible(bool visible);
     void setMaskColor(const QColor& color);
     void setGuideLines(const QPointF& cursorPosition, const QColor& cursorColor,

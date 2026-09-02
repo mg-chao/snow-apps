@@ -5,7 +5,6 @@
 #include "snow_shot/presentation/screenshotoverlaycoordinator.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
-#include "snow_shot/presentation/screenshotclipboardservice.h"
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #include "snow_shot/platform/windows/windowchrome.h"
@@ -557,34 +556,6 @@ class ScreenshotScrollingCaptureWorker final : public QObject {
         return result;
     }
 
-    QImage trimmedOutput(int trimTop, int trimBottom) const {
-        if (m_stitchSession == nullptr || m_lastOutputSize.isEmpty())
-            return {};
-        const int sourceExtent = m_mode == ScreenshotScrollingRecognitionMode::Horizontal
-                                     ? m_lastOutputSize.width()
-                                     : m_lastOutputSize.height();
-        const int top = std::clamp(trimTop, 0, sourceExtent - 1);
-        const int bottom = std::clamp(trimBottom, top + 1, sourceExtent);
-        SnowStitchOwnedImage* image = snow_stitch_session_materialize_axis(
-            m_stitchSession, static_cast<std::uint32_t>(top), static_cast<std::uint32_t>(bottom));
-        if (image == nullptr) {
-            return {};
-        }
-        SnowStitchImageInfo info{};
-        if (snow_stitch_owned_image_info(image, &info) == 0 || info.rgba_bytes == nullptr ||
-            info.width == 0 || info.height == 0 || info.stride_bytes != info.width * 4) {
-            snow_stitch_owned_image_destroy(image);
-            return {};
-        }
-        QImage output(info.rgba_bytes, static_cast<int>(info.width), static_cast<int>(info.height),
-                      static_cast<int>(info.stride_bytes), QImage::Format_RGBA8888,
-                      &releaseStitchOwnedImage, image);
-        if (output.isNull()) {
-            snow_stitch_owned_image_destroy(image);
-        }
-        return output;
-    }
-
     ScreenshotScrollingSnapshot trimmedSnapshot(int trimTop, int trimBottom) const {
         if (m_stitchSession == nullptr || m_lastOutputSize.isEmpty()) {
             return {};
@@ -750,10 +721,6 @@ ScreenshotScrollingSnapshot ScreenshotScrollingSnapshot::adoptNative(void* snaps
 
 bool ScreenshotScrollingSnapshot::isValid() const {
     return m_snapshot != nullptr && m_size.isValid() && !m_size.isEmpty();
-}
-
-QSize ScreenshotScrollingSnapshot::size() const {
-    return isValid() ? m_size : QSize{};
 }
 
 ScreenshotImageRowSource
@@ -1244,124 +1211,6 @@ struct ScreenshotScrollingCaptureController::Impl {
                    : QSize(latestOutputSize.width(), bottom - top);
     }
 
-    bool requestTrimmedImage(ScreenshotScrollingCaptureController::ImageResultCallback callback) {
-        if (!active || worker == nullptr || thumbnailHost == nullptr ||
-            latestOutputSize.isEmpty() || !callback || pendingResultRequestId.has_value()) {
-            return false;
-        }
-        const ScreenshotScrollingTrimRange trim = thumbnailHost->scrollingThumbnailTrim();
-        if (!trim.isValid()) {
-            return false;
-        }
-        const quint64 requestGeneration = generation;
-        const quint64 requestId = ++nextResultRequestId;
-        pendingResultRequestId = requestId;
-        const QPointer<ScreenshotScrollingCaptureWorker> target(worker);
-        const QPointer<ScreenshotScrollingCaptureController> receiver(&owner);
-        const bool invoked = QMetaObject::invokeMethod(
-            worker,
-            [target, receiver, requestId, requestGeneration, trim,
-             callback = std::move(callback)]() mutable {
-                QImage result;
-                if (!target.isNull()) {
-                    result = target->trimmedOutput(trim.top, trim.bottom);
-                }
-                if (receiver.isNull()) {
-                    return;
-                }
-                static_cast<void>(QMetaObject::invokeMethod(
-                    receiver,
-                    [receiver, requestId, requestGeneration, result = std::move(result),
-                     callback = std::move(callback)]() mutable {
-                        if (receiver.isNull() || receiver->m_impl == nullptr ||
-                            (receiver->m_impl->pendingResultRequestId != requestId &&
-                             !receiver->m_impl->detachedResultRequestIds.contains(requestId))) {
-                            return;
-                        }
-                        const bool detached =
-                            receiver->m_impl->detachedResultRequestIds.contains(requestId);
-                        if (detached) {
-                            receiver->m_impl->detachedResultRequestIds.remove(requestId);
-                        } else {
-                            receiver->m_impl->pendingResultRequestId.reset();
-                        }
-                        if (!detached && (!receiver->m_impl->active ||
-                                          receiver->m_impl->generation != requestGeneration)) {
-                            return;
-                        }
-                        callback(std::move(result));
-                    },
-                    Qt::QueuedConnection));
-            },
-            Qt::QueuedConnection);
-        if (!invoked) {
-            if (pendingResultRequestId == requestId) {
-                pendingResultRequestId.reset();
-            }
-        }
-        return invoked;
-    }
-
-    bool requestTrimmedClipboardPayload(
-        ScreenshotScrollingCaptureController::ClipboardResultCallback callback) {
-        if (!active || worker == nullptr || thumbnailHost == nullptr ||
-            latestOutputSize.isEmpty() || !callback || pendingResultRequestId.has_value()) {
-            return false;
-        }
-        const ScreenshotScrollingTrimRange trim = thumbnailHost->scrollingThumbnailTrim();
-        if (!trim.isValid()) {
-            return false;
-        }
-        const quint64 requestGeneration = generation;
-        const quint64 requestId = ++nextResultRequestId;
-        pendingResultRequestId = requestId;
-        const QPointer<ScreenshotScrollingCaptureWorker> target(worker);
-        const QPointer<ScreenshotScrollingCaptureController> receiver(&owner);
-        const bool invoked = QMetaObject::invokeMethod(
-            worker,
-            [target, receiver, requestId, requestGeneration, trim,
-             callback = std::move(callback)]() mutable {
-                auto payload = std::make_shared<ScreenshotClipboardPayload>();
-                if (!target.isNull()) {
-                    *payload = ScreenshotClipboardService::prepare(
-                        ScreenshotClipboardPixelSource(
-                            target->trimmedOutput(trim.top, trim.bottom)),
-                        ScreenshotClipboardFormatMode::CompatibleDib);
-                }
-                if (receiver.isNull()) {
-                    return;
-                }
-                static_cast<void>(QMetaObject::invokeMethod(
-                    receiver,
-                    [receiver, requestId, requestGeneration, payload,
-                     callback = std::move(callback)]() mutable {
-                        if (receiver.isNull() || receiver->m_impl == nullptr ||
-                            (receiver->m_impl->pendingResultRequestId != requestId &&
-                             !receiver->m_impl->detachedResultRequestIds.contains(requestId))) {
-                            return;
-                        }
-                        const bool detached =
-                            receiver->m_impl->detachedResultRequestIds.contains(requestId);
-                        if (detached) {
-                            receiver->m_impl->detachedResultRequestIds.remove(requestId);
-                        } else {
-                            receiver->m_impl->pendingResultRequestId.reset();
-                        }
-                        if (!detached && (!receiver->m_impl->active ||
-                                          receiver->m_impl->generation != requestGeneration)) {
-                            return;
-                        }
-                        callback(std::move(*payload));
-                    },
-                    Qt::QueuedConnection));
-            },
-            Qt::QueuedConnection);
-        if (!invoked && pendingResultRequestId == requestId) {
-            pendingResultRequestId.reset();
-        }
-        return invoked;
-    }
-
     bool
     requestTrimmedSnapshot(ScreenshotScrollingCaptureController::SnapshotResultCallback callback) {
         if (!active || worker == nullptr || thumbnailHost == nullptr ||
@@ -1498,22 +1347,8 @@ bool ScreenshotScrollingCaptureController::active() const {
     return m_impl->active;
 }
 
-bool ScreenshotScrollingCaptureController::hasResult() const {
-    return !m_impl->latestOutputSize.isEmpty() && m_impl->thumbnailHost != nullptr &&
-           m_impl->thumbnailHost->scrollingThumbnailTrim().isValid();
-}
-
 QSize ScreenshotScrollingCaptureController::trimmedSize() const {
     return m_impl->trimmedSize();
-}
-
-bool ScreenshotScrollingCaptureController::requestTrimmedImage(ImageResultCallback callback) {
-    return m_impl->requestTrimmedImage(std::move(callback));
-}
-
-bool ScreenshotScrollingCaptureController::requestTrimmedClipboardPayload(
-    ClipboardResultCallback callback) {
-    return m_impl->requestTrimmedClipboardPayload(std::move(callback));
 }
 
 bool ScreenshotScrollingCaptureController::requestTrimmedSnapshot(SnapshotResultCallback callback) {

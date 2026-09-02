@@ -34,7 +34,6 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
                                         ClipboardCompletion completion,
                                         quint64 publicationId) override;
     void cancelClipboardPublication();
-    void setClipboardImage(const QImage& image);
     // Prepares an off-screen pinned shell for content whose dimensions are not
     // available until decoding or rendering completes.
     void prewarmPinnedWindow(QScreen* screen = nullptr);

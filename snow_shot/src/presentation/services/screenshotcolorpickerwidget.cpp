@@ -250,10 +250,6 @@ void ScreenshotColorPickerWidget::setCenterGuideLineColor(const QColor& color) {
     update();
 }
 
-QColor ScreenshotColorPickerWidget::centerGuideLineColor() const {
-    return m_centerGuideLineColor;
-}
-
 void ScreenshotColorPickerWidget::cycleColorFormat() {
     switch (m_colorFormat) {
     case ColorFormat::Hex:
@@ -272,10 +268,6 @@ void ScreenshotColorPickerWidget::cycleColorFormat() {
 
 QString ScreenshotColorPickerWidget::currentColorText() const {
     return m_hasCurrentColor ? formatColor(m_currentColor) : QString();
-}
-
-QColor ScreenshotColorPickerWidget::currentColor() const {
-    return m_currentColor;
 }
 
 bool ScreenshotColorPickerWidget::hasCurrentColor() const {

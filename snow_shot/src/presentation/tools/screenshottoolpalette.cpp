@@ -844,14 +844,12 @@ void ScreenshotToolPalette::resetStyleState() {
     setSpotlightConfig(m_styleDefaults.spotlight);
     m_selectionOpacityAvailable = false;
     updateSelectionActionAvailability(false);
-    updateSerialNumberControls();
 }
 
 void ScreenshotToolPalette::setCreationStyleDefaults(const SnowCanvasStyleDefaults& defaults) {
     m_styleControls->setCreationStyleDefaults(defaults);
     refreshFilterEditorState(m_filterEditor, false);
     refreshFilterEditorState(m_penFilterEditor, true);
-    updateSerialNumberControls();
 }
 
 SnowCanvasStyleDefaults ScreenshotToolPalette::creationStyleDefaults() const {
@@ -1297,7 +1295,6 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
         update();
         emit visibleContentChanged();
     }
-    updateSerialNumberControls();
 }
 
 void ScreenshotToolPalette::activateTableQrTool(Tool tool, bool toggleVisibleButton) {
@@ -1405,7 +1402,6 @@ void ScreenshotToolPalette::clearActiveTool() {
         update();
         emit visibleContentChanged();
     }
-    updateSerialNumberControls();
 }
 
 void ScreenshotToolPalette::setScrollingScreenshotMode(bool enabled) {
@@ -1432,10 +1428,6 @@ void ScreenshotToolPalette::setRecordingState(RecordingState state) {
     }
     m_recordingState = state;
     updateRecordingControls();
-}
-
-ScreenshotToolPalette::RecordingState ScreenshotToolPalette::recordingState() const {
-    return m_recordingState;
 }
 
 void ScreenshotToolPalette::setRecordingDuration(qint64 durationMilliseconds) {
@@ -1651,10 +1643,6 @@ void ScreenshotToolPalette::setTextTransformSelections(const QString& formatting
         m_textPunctuationSelect->setCurrentValue(punctuation.isEmpty() ? QVariant{}
                                                                        : QVariant{punctuation});
     }
-}
-
-void ScreenshotToolPalette::clearTextTransformSelections() {
-    setTextTransformSelections({}, {});
 }
 
 bool ScreenshotToolPalette::scrollingScreenshotMode() const {
@@ -1938,7 +1926,6 @@ void ScreenshotToolPalette::ensureLayoutApplied() const {
         cachedOccupied = cachedOccupied.united(self->panelContentRect(self->m_rectangleStylePanel));
     }
     self->m_layoutResult.occupiedContentRect = cachedOccupied;
-    ++self->m_layoutResult.revision;
     SNOW_SHOT_TOOLBAR_PERF_COUNTER("layout.commit");
 #if defined(SNOW_SHOT_TEST_HOOKS)
     ++self->m_layoutCommitCount;
@@ -4960,11 +4947,6 @@ bool ScreenshotToolPalette::activeToolUsesStyleToolbar() const {
     return m_activeTool.has_value() && toolUsesStyleToolbar(*m_activeTool);
 }
 
-void ScreenshotToolPalette::updateSerialNumberControls() {
-    const bool visible = m_activeTool == Tool::SerialNumber;
-    Q_UNUSED(visible);
-}
-
 void ScreenshotToolPalette::updateRecordingControls() {
     const bool idle = m_recordingState == RecordingState::Idle;
     const bool recording = m_recordingState == RecordingState::Recording;
@@ -5101,11 +5083,6 @@ QPoint ScreenshotToolPalette::contentOffset() const {
     return QPoint(m_shadowMargins.left(), m_shadowMargins.top());
 }
 
-quint64 ScreenshotToolPalette::layoutRevision() const {
-    ensureLayoutApplied();
-    return m_layoutResult.revision;
-}
-
 QSize ScreenshotToolPalette::contentSizeForVisibleRows() const {
     int width = 0;
     int height = 0;
@@ -5172,10 +5149,6 @@ QRect ScreenshotToolPalette::panelContentRect(const QWidget* panel) const {
         return QRect();
     }
     return panel->geometry().translated(-contentOffset());
-}
-
-QRect ScreenshotToolPalette::panelVisualRect(const QWidget* panel) const {
-    return panelContentRect(panel);
 }
 
 ScreenshotToolbarPlacementSnapshot ScreenshotToolPalette::buildPlacementSnapshot() const {

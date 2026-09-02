@@ -29,8 +29,10 @@ pub struct LineResult {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RecognizeOutput {
     pub lines: Vec<LineResult>,
+    /// Wall-clock recognition duration; `None` unless stage timing was
+    /// enabled via `set_stage_timing_enabled`.
     #[serde(skip)]
-    pub elapsed: Duration,
+    pub elapsed: Option<Duration>,
 }
 
 impl RecognizeOutput {

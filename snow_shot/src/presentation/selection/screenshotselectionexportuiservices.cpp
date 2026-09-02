@@ -207,15 +207,6 @@ void ScreenshotSelectionExportUiServices::cancelClipboardPublication() {
     m_clipboardCommits.clear();
 }
 
-void ScreenshotSelectionExportUiServices::setClipboardImage(const QImage& image) {
-    if (m_windowPool == nullptr) {
-        m_windowPool = std::make_unique<ScreenshotPinnedWindowPool>();
-    }
-    static_cast<void>(ScreenshotClipboardService::commit(
-        QApplication::clipboard(), m_windowPool.get(),
-        ScreenshotClipboardService::prepareImage(image), [](ScreenshotClipboardCommitResult) {}));
-}
-
 void ScreenshotSelectionExportUiServices::prewarmPinnedWindow(QScreen* screen) {
     if (m_windowPool == nullptr) {
         m_windowPool = std::make_unique<ScreenshotPinnedWindowPool>();

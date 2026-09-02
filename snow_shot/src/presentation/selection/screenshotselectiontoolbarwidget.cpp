@@ -359,23 +359,6 @@ QSize ScreenshotSelectionToolbarWidget::contentSizeHint() const {
     return m_panel != nullptr ? m_panel->size() : size();
 }
 
-QRect ScreenshotSelectionToolbarWidget::visualContentRect() const {
-    if (m_panel == nullptr) {
-        return QRect(QPoint(-toolbar_widgets::ShadowMargin, -toolbar_widgets::ShadowMargin),
-                     contentSizeHint() + QSize(toolbar_widgets::ShadowMargin * 2,
-                                               toolbar_widgets::ShadowMargin * 2));
-    }
-
-    return m_panel->geometry()
-        .translated(-contentOffset())
-        .adjusted(-toolbar_widgets::ShadowMargin, -toolbar_widgets::ShadowMargin,
-                  toolbar_widgets::ShadowMargin, toolbar_widgets::ShadowMargin);
-}
-
-QPoint ScreenshotSelectionToolbarWidget::contentPosition() const {
-    return pos() + contentOffset();
-}
-
 bool ScreenshotSelectionToolbarWidget::containsInteractiveGlobalPoint(
     const QPoint& globalPosition) const {
     return isPointInInteractiveContent(mapFromGlobal(globalPosition));

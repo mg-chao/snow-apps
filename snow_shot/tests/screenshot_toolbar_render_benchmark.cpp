@@ -2145,7 +2145,7 @@ QJsonObject coverageJson(const QVector<Scenario>& scenarios) {
         QStringLiteral("resetForNewCapture"),  QStringLiteral("setScrollingScreenshotMode"),
         QStringLiteral("setActiveTool"),       QStringLiteral("setStyleToolbarState"),
         QStringLiteral("setWatermarkConfig"),
-        QStringLiteral("setPlacementContext"), QStringLiteral("setPlacementScreen"),
+        QStringLiteral("setPlacementContext"),
         QStringLiteral("setMovementBounds"),   QStringLiteral("setStyleToolbarAboveMain"),
         QStringLiteral("prepareForDisplay"),   QStringLiteral("moveContentTo"),
         QStringLiteral("show/hide"),           QStringLiteral("native hover/press/drag/wheel"),

@@ -17,7 +17,6 @@
 #include <QAbstractButton>
 #include <QCoreApplication>
 #include <QEvent>
-#include <QIcon>
 #include <QListView>
 #include <QMouseEvent>
 #include <QPainter>
@@ -769,9 +768,7 @@ void ScreenshotSelectionResizeModalContent::openCreatePresetModal() {
     modal->setInitialFocusWidget(nameInput);
 
     m_createPresetModal = modal;
-    m_createPresetForm = form;
     m_createPresetNameItem = nameItem;
-    m_createPresetNameInput = nameInput;
 
     const QPointer<adqt::widgets::AdForm> formGuard(form);
     const QPointer<adqt::widgets::AdLineEdit> nameGuard(nameInput);
@@ -796,9 +793,7 @@ void ScreenshotSelectionResizeModalContent::openCreatePresetModal() {
             [this, modal](adqt::widgets::AdModal::DialogCode) {
                 if (m_createPresetModal == modal) {
                     m_createPresetModal = nullptr;
-                    m_createPresetForm = nullptr;
                     m_createPresetNameItem = nullptr;
-                    m_createPresetNameInput = nullptr;
                 }
                 modal->deleteLater();
             });

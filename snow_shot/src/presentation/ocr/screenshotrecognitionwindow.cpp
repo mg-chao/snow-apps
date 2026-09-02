@@ -339,11 +339,6 @@ bool ScreenshotRecognitionWindow::updateSelectionGeometry(const QRect& geometry,
     return true;
 }
 
-ScreenshotRecognitionWindow::PresentationMode ScreenshotRecognitionWindow::presentationMode()
-    const {
-    return m_presentationMode;
-}
-
 void ScreenshotRecognitionWindow::setOcrPresentation(
     std::shared_ptr<ScreenshotOcrPresentation> presentation) {
     hideTextEditor();

@@ -147,13 +147,6 @@ class ScreenshotDisplaySession final {
         return m_slots[index].presentation.overlay;
     }
 
-    void setOverlayAt(qsizetype index, ScreenshotOverlayWindow* overlay) {
-        if (index < 0 || index >= m_slots.size()) {
-            return;
-        }
-        m_slots[index].presentation.overlay = overlay;
-    }
-
     [[nodiscard]] ScreenshotOverlayWindow* takeOverlayAt(qsizetype index) {
         if (index < 0 || index >= m_slots.size()) {
             return nullptr;

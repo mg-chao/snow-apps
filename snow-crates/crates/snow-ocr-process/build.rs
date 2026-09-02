@@ -22,10 +22,7 @@ fn main() {
             .set("FileVersion", "1.0.0.0")
             .set("InternalName", "snow-ocr-process")
             .set("LegalCopyright", "Copyright (C) 2025-2026 mg-chao")
-            .set(
-                "OriginalFilename",
-                "snow-ocr-process-1.0.0-windows-x64.exe",
-            )
+            .set("OriginalFilename", "snow-ocr-process-1.0.0-windows-x64.exe")
             .set("ProductName", "Snow Shot OCR Runtime")
             .set("ProductVersion", "1.0.0")
             .set_version_info(winres::VersionInfo::FILEVERSION, 0x0001_0000_0000_0000)

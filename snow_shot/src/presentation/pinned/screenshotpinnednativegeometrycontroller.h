@@ -38,11 +38,9 @@ class ScreenshotPinnedNativeGeometryController final {
     struct GeometryChange {
         QRect previousGeometry;
         QRect geometry;
-        Origin origin = Origin::InitialPlacement;
         bool positionChanged = false;
         bool sizeChanged = false;
         bool dpiChanged = false;
-        bool transactionFinished = false;
 
         [[nodiscard]] bool isValid() const {
             return geometry.isValid() && !geometry.isEmpty();

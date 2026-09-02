@@ -2,7 +2,6 @@
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
-#include <QDataStream>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFileInfo>
@@ -135,10 +134,6 @@ bool SingleInstanceCoordinator::isPrimary() const {
 
 QString SingleInstanceCoordinator::lockFilePath() const {
     return m_lockFilePath;
-}
-
-QString SingleInstanceCoordinator::serverName() const {
-    return m_serverName;
 }
 
 void SingleInstanceCoordinator::setLaunchRequestHandler(

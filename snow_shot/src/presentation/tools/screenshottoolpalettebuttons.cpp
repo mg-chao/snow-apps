@@ -692,15 +692,6 @@ void NumericValuePreviewButton::setMixed(bool mixed) {
     update();
 }
 
-void NumericValuePreviewButton::setIntegerDisplay(bool integerDisplay) {
-    if (m_integerDisplay == integerDisplay) {
-        return;
-    }
-    m_integerDisplay = integerDisplay;
-    updateAccessibleValue();
-    update();
-}
-
 void NumericValuePreviewButton::setStrokeWidthPreviewEnabled(bool enabled) {
     if (m_strokeWidthPreviewEnabled == enabled) {
         return;
@@ -1127,10 +1118,6 @@ void FillStylePreviewButton::paintEvent(QPaintEvent* event) {
 IconNumericValuePreviewButton::IconNumericValuePreviewButton(QWidget* parent)
     : adqt::widgets::AdButton(parent), m_baseFont(font()) {}
 
-int IconNumericValuePreviewButton::value() const {
-    return m_value;
-}
-
 void IconNumericValuePreviewButton::setValue(int value) {
     if (m_value == value) {
         return;
@@ -1536,16 +1523,6 @@ ScreenshotToolPaletteOptionPopoverEditor materializeScreenshotToolPaletteOptionP
     configureScreenshotToolPaletteOptionPopoverEditor(popover, editor.buttons,
                                                        config.optionSpacing, metrics);
     return editor;
-}
-
-ScreenshotToolPaletteOptionPopoverEditor createScreenshotToolPaletteOptionPopoverEditor(
-    adqt::widgets::AdButton* trigger, QObject* receiver,
-    const ScreenshotToolPaletteOptionPopoverEditorConfig& config,
-    const std::function<void(int)>& activateValue,
-    const ScreenshotToolPaletteButtonMetrics& metrics) {
-    return materializeScreenshotToolPaletteOptionPopoverEditor(
-        createScreenshotToolPaletteOptionPopoverShell(trigger), receiver, config, activateValue,
-        metrics);
 }
 
 void configureScreenshotToolPaletteOptionPopoverEditor(

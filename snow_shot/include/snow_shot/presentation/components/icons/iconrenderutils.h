@@ -30,25 +30,6 @@ namespace snow_shot::presentation::icons {
     return adqt::icons::renderIconPixmap(withPrimaryColor(iconRef, color),
                                          {logicalSize, devicePixelRatio, mode, state});
 }
-
-[[nodiscard]] inline QIcon buildTintedIcon(const adqt::icons::IconRef& iconRef, const QColor& color,
-                                           int logicalSize, qreal devicePixelRatio,
-                                           QIcon::Mode mode = QIcon::Normal,
-                                           QIcon::State state = QIcon::Off) {
-    if (logicalSize <= 0) {
-        return {};
-    }
-
-    const QPixmap pixmap = renderTintedIconPixmap(iconRef, QSize(logicalSize, logicalSize),
-                                                  devicePixelRatio, color, mode, state);
-    if (pixmap.isNull()) {
-        return {};
-    }
-
-    QIcon icon;
-    icon.addPixmap(pixmap, mode, state);
-    return icon;
-}
 } // namespace snow_shot::presentation::icons
 
 #endif // SNOW_SHOT_PRESENTATION_COMPONENTS_ICONS_ICONRENDERUTILS_H

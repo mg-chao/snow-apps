@@ -72,17 +72,6 @@ inline QWidget* createSettingItemRow(QWidget* parent,
     return row;
 }
 
-inline void applyCategoryTitleTheme(QLabel* label, const styles::ThemeColorScheme& scheme) {
-    QPalette palette = label->palette();
-    palette.setColor(QPalette::WindowText, scheme.map.colorText);
-    label->setPalette(palette);
-
-    QFont font = label->font();
-    font.setPixelSize(scheme.metricAlias.fontSizeXL);
-    font.setWeight(QFont::DemiBold);
-    label->setFont(font);
-}
-
 inline void applySettingItemTheme(QLabel* title, QLabel* description,
                                   const styles::ThemeColorScheme& scheme) {
     QPalette titlePalette = title->palette();

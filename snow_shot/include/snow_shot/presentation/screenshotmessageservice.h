@@ -29,8 +29,6 @@ class ScreenshotMessageService final {
     void destroy(const QString& key) const;
 
     static void loadingFor(QWidget* owner, const QString& key, const QString& message);
-    static void warningFor(QWidget* owner, const QString& key, const QString& message);
-    static void errorFor(QWidget* owner, const QString& key, const QString& message);
     static void destroyFor(QWidget* owner, const QString& key);
 
   private:

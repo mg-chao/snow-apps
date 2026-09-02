@@ -477,11 +477,6 @@ bool encodeToDevice(const QImage& image, QIODevice* device, snow::image::Format 
     return encodeToDevice(source, device, format, options, error, bytesWritten);
 }
 
-QByteArray encode(const QImage& image, snow::image::Format format,
-                  const snow::image::EncodeOptions& options, QString* error) {
-    return encodeImage(image, format, options, error);
-}
-
 QByteArray encodePng(const QImage& image) {
     snow::image::EncodeOptions options;
     options.compression_level = 1;
@@ -499,22 +494,12 @@ QImage decode(const QByteArray& encoded, snow::image::Format expectedFormat,
     return decodeBytes(encoded, expectedFormat);
 }
 
-QImage decodeBgra(const QByteArray& encoded, snow::image::Format expectedFormat,
-                 const char* /*nameHint*/) {
-    return decodeBgraBytes(encoded, expectedFormat);
-}
-
 QImage decodeFile(const QString& path, snow::image::Format expectedFormat) {
     return decodeBytes(readFile(path), expectedFormat);
 }
 
 QImage decodeFileBgra(const QString& path, snow::image::Format expectedFormat) {
     return decodeBgraBytes(readFile(path), expectedFormat);
-}
-
-bool inspect(const QByteArray& encoded, snow::image::Format expectedFormat,
-             const QSize& expectedSize, const char* /*nameHint*/) {
-    return inspectBytes(encoded, expectedFormat, expectedSize);
 }
 
 bool inspectFile(const QString& path, snow::image::Format expectedFormat,

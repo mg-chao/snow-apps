@@ -22,8 +22,6 @@ class ScreenshotToolPaletteRectangleStyleModel final {
     [[nodiscard]] const QColor& fillColor() const;
     [[nodiscard]] SnowCanvasFillStyle fillStyle() const;
     [[nodiscard]] int cornerRadius() const;
-    [[nodiscard]] double opacity() const;
-    [[nodiscard]] SnowCanvasHighlightShape highlightShape() const;
     [[nodiscard]] SnowCanvasRectangleShape shape() const;
     [[nodiscard]] const QVector<double>& strokeWidthValues() const;
     [[nodiscard]] const QVector<QColor>& strokeColorValues() const;
@@ -33,14 +31,11 @@ class ScreenshotToolPaletteRectangleStyleModel final {
     [[nodiscard]] bool setStrokeWidth(double strokeWidth);
     [[nodiscard]] bool cycleStrokeWidth();
     [[nodiscard]] bool setStrokeColor(const QColor& color);
-    [[nodiscard]] bool cycleStrokeColor();
     [[nodiscard]] bool setStrokeStyle(SnowCanvasStrokeStyle strokeStyle);
     [[nodiscard]] bool setFillColor(const QColor& color);
     [[nodiscard]] bool setFillStyle(SnowCanvasFillStyle fillStyle);
     [[nodiscard]] bool stepCornerRadius(int direction);
     [[nodiscard]] bool setCornerRadius(int cornerRadius);
-    [[nodiscard]] bool setOpacity(double opacity);
-    [[nodiscard]] bool setHighlightShape(SnowCanvasHighlightShape shape);
     [[nodiscard]] bool setShape(SnowCanvasRectangleShape shape);
 
   private:

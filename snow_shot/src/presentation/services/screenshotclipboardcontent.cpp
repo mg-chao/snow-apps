@@ -25,7 +25,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <cstring>
 #include <limits>
 #include <thread>
 #include <vector>
@@ -627,12 +626,6 @@ QImage decodeNativeDib(const ScreenshotClipboardNativeDib& native) {
 }
 #endif
 } // namespace
-
-std::optional<ScreenshotClipboardContent>
-ScreenshotClipboardContentReader::read(QClipboard* clipboard, qreal devicePixelRatio) {
-    auto captured = snapshot(clipboard, devicePixelRatio);
-    return captured.has_value() ? decode(std::move(*captured)) : std::nullopt;
-}
 
 std::optional<ScreenshotClipboardContent>
 ScreenshotClipboardContentReader::readMimeData(const QMimeData* mimeData, qreal devicePixelRatio) {

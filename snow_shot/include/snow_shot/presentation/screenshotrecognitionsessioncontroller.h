@@ -51,7 +51,6 @@ struct ScreenshotRecognitionTarget {
 
 struct ScreenshotRecognitionSessionActions {
     std::function<ScreenshotRecognitionWindow*()> ensureContent;
-    std::function<void()> destroyContent;
     std::function<void(std::shared_ptr<ScreenshotOcrPresentation>)> applyOcrPresentation;
     std::function<void(std::shared_ptr<ScreenshotOcrPresentation>)> applyOcrBackground;
     std::function<void(std::shared_ptr<QTextDocument>)> applyFormattedText;
@@ -62,14 +61,12 @@ struct ScreenshotRecognitionSessionActions {
     std::function<void(bool, bool, bool, bool, bool, bool)> setTextTranslationState;
     std::function<void(bool, bool, bool, bool, bool, bool)> setTableEditingState;
     std::function<void(bool, bool, bool)> setBusyState;
-    std::function<void(const QString&)> showLoading;
     std::function<void()> hideLoading;
     std::function<void(const QString&, bool)> showStatus;
-    std::function<void(const QUrl&)> handleQrLink;
     std::function<QWidget*()> translationSettingsOwner;
     std::function<void(const QString&, const QString&)> setTextTransformState;
-    // Optional split loading callbacks. The legacy showLoading callback remains a fallback for
-    // lightweight clients and tests that do not need separate message keys.
+    // Split loading callbacks keep the model-download and recognition messages
+    // addressable by separate keys.
     std::function<void(const QString&)> showModelDownload;
     std::function<void(const QString&)> showRecognition;
     std::function<void()> hideModelDownload;
@@ -77,7 +74,7 @@ struct ScreenshotRecognitionSessionActions {
     std::function<void(ScreenshotOcrRequest&)> prepareOcrRenderRequest;
     std::function<bool()> renderRecognitionInWorker;
     // The filtered image is a crop; filteredImageCanvasRect is the canvas-space
-    // rect it covers and may be invalid for legacy full-size results.
+    // rect it covers and is invalid when the filtered region is empty.
     std::function<void(std::shared_ptr<ScreenshotOcrPresentation>, QImage, QRectF)>
         applyOcrBackgroundImage;
 };
@@ -137,8 +134,6 @@ class ScreenshotRecognitionSessionController final : public QObject {
     [[nodiscard]] QString originalText() const;
     [[nodiscard]] std::unique_ptr<QMimeData> recognitionClipboardMimeData(
         const ScreenshotOcrPresentation* displayedPresentation = nullptr) const;
-    [[nodiscard]] std::shared_ptr<ScreenshotTableEditingSession> tableSession() const;
-    [[nodiscard]] QStringList qrContents() const;
     void setTextDraft(const QString& text);
     void handleTableCommandState(const ScreenshotTableCommandState& state);
 
@@ -156,7 +151,6 @@ class ScreenshotRecognitionSessionController final : public QObject {
         bool formatted = false;
         std::shared_ptr<ScreenshotOcrTextEditingSession> editingSession;
         std::shared_ptr<ScreenshotOcrTextEditingSession> translationSession;
-        snow_shot::storage::ScreenshotTranslationConfiguration translationSettings;
         QString translationText;
         QString successfulTranslation;
         TranslationStatus translationStatus = TranslationStatus::Absent;
@@ -193,7 +187,6 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void updateTextState() const;
     void updateTableState(const ScreenshotTableCommandState& state) const;
     void clearTextEditingState();
-    void ensureTextEditingSession(const QString& key, TextCacheEntry& entry);
     [[nodiscard]] bool shouldRenderRecognitionInWorker() const;
     void setPendingTextRecognitionRendering(bool enabled);
     void pollTextModelDownload(quint64 generation);

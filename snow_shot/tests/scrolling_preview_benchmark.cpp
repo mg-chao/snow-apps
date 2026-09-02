@@ -38,7 +38,7 @@ std::uint64_t checksum(const QImage& image) {
     return value;
 }
 
-QImage legacyContiguousPreview(const std::vector<QImage>& strips) {
+QImage referenceContiguousPreview(const std::vector<QImage>& strips) {
     QImage preview;
     for (const QImage& strip : strips) {
         if (preview.isNull()) {
@@ -47,7 +47,7 @@ QImage legacyContiguousPreview(const std::vector<QImage>& strips) {
         }
         QImage next(kPreviewWidth, preview.height() + strip.height(), QImage::Format_RGBA8888);
         if (next.isNull()) {
-            fail("legacy preview allocation failed");
+            fail("reference preview allocation failed");
         }
         QPainter painter(&next);
         painter.drawImage(QPoint(0, 0), preview);
@@ -94,10 +94,10 @@ int main(int argc, char** argv) {
         edgePatches.push_back(std::move(patch));
     }
 
-    QElapsedTimer legacyTimer;
-    legacyTimer.start();
-    const QImage legacy = legacyContiguousPreview(strips);
-    const double legacyMilliseconds = static_cast<double>(legacyTimer.nsecsElapsed()) / 1'000'000.0;
+    QElapsedTimer referenceTimer;
+    referenceTimer.start();
+    const QImage reference = referenceContiguousPreview(strips);
+    const double referenceMilliseconds = static_cast<double>(referenceTimer.nsecsElapsed()) / 1'000'000.0;
 
     QWidget parent;
     ScreenshotScrollingThumbnailWidget thumbnail(parent);
@@ -114,18 +114,18 @@ int main(int argc, char** argv) {
     const double tiledMilliseconds = static_cast<double>(tiledTimer.nsecsElapsed()) / 1'000'000.0;
     const QImage tiled = thumbnail.previewImageForTesting();
 
-    const std::uint64_t legacyChecksum = checksum(legacy);
+    const std::uint64_t referenceChecksum = checksum(reference);
     const std::uint64_t tiledChecksum = checksum(tiled);
-    const bool checksumMatches = legacyChecksum == tiledChecksum && legacy.size() == tiled.size();
+    const bool checksumMatches = referenceChecksum == tiledChecksum && reference.size() == tiled.size();
     const qsizetype logicalBytes = thumbnail.previewLogicalBytesForTesting();
     const qsizetype allocatedBytes = thumbnail.previewAllocatedBytesForTesting();
     constexpr qsizetype tileBytes = kPreviewWidth * kTileHeight * 4;
     const bool storageBounded = allocatedBytes <= logicalBytes + tileBytes;
-    const double improvementPercent = (1.0 - tiledMilliseconds / legacyMilliseconds) * 100.0;
+    const double improvementPercent = (1.0 - tiledMilliseconds / referenceMilliseconds) * 100.0;
 
     const QJsonObject artifact{
         {QStringLiteral("updates"), kUpdates},
-        {QStringLiteral("legacy_contiguous_ms"), legacyMilliseconds},
+        {QStringLiteral("reference_contiguous_ms"), referenceMilliseconds},
         {QStringLiteral("tiled_ms"), tiledMilliseconds},
         {QStringLiteral("improvement_percent"), improvementPercent},
         {QStringLiteral("logical_bytes"), static_cast<double>(logicalBytes)},
@@ -133,7 +133,7 @@ int main(int argc, char** argv) {
         {QStringLiteral("tile_bytes"), static_cast<double>(tileBytes)},
         {QStringLiteral("storage_bounded"), storageBounded},
         {QStringLiteral("checksum_matches"), checksumMatches},
-        {QStringLiteral("checksum"), QString::number(legacyChecksum)},
+        {QStringLiteral("checksum"), QString::number(referenceChecksum)},
     };
     writeArtifact(artifact);
     std::cout << QJsonDocument(artifact).toJson(QJsonDocument::Compact).constData() << '\n';

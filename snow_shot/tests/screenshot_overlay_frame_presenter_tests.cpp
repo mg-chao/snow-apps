@@ -28,7 +28,7 @@ void require(bool condition, const char* message) {
 }
 
 void revealStrategiesHaveExplicitCommitPlans() {
-    const auto fallback = ScreenshotOverlayRevealStrategy::Legacy;
+    const auto fallback = ScreenshotOverlayRevealStrategy::NativeUpdate;
     require(
         ScreenshotOverlayFramePresenter::strategyForName(QByteArrayLiteral("repaint"), fallback) ==
             ScreenshotOverlayRevealStrategy::SingleRepaint,
@@ -57,11 +57,12 @@ void revealStrategiesHaveExplicitCommitPlans() {
                 suppressedNativeInvalidate.nativeInvalidate,
             "the redraw-suppressed native reveal should suppress show and commit once");
 
-    const ScreenshotOverlayRevealPlan legacy =
-        ScreenshotOverlayFramePresenter::planFor(ScreenshotOverlayRevealStrategy::Legacy);
-    require(!legacy.suppressShowPaint && legacy.repaint && legacy.sendPostedUpdate &&
-                !legacy.nativeUpdate && legacy.nativeInvalidate,
-            "the legacy ablation should preserve every previous reveal operation");
+    const ScreenshotOverlayRevealPlan nativeUpdate =
+        ScreenshotOverlayFramePresenter::planFor(ScreenshotOverlayRevealStrategy::NativeUpdate);
+    require(!nativeUpdate.suppressShowPaint && !nativeUpdate.repaint &&
+                !nativeUpdate.sendPostedUpdate && nativeUpdate.nativeUpdate &&
+                !nativeUpdate.nativeInvalidate,
+            "the native-update reveal should issue exactly one explicit commit request");
 }
 
 #if defined(Q_OS_WIN)

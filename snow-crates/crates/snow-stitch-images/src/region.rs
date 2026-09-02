@@ -304,7 +304,7 @@ unsafe fn blur_3x3_avx2(source: &[f32], width: usize, height: usize) -> Vec<f32>
             let four = _mm256_set1_ps(4.0);
             let divisor = _mm256_set1_ps(16.0);
             let mut x = 1;
-            while x + 8 <= width - 1 {
+            while x + 8 < width {
                 let load = |source_row: usize, offset: isize| unsafe {
                     _mm256_loadu_ps(source.as_ptr().add(source_row + x).offset(offset))
                 };
@@ -393,7 +393,7 @@ unsafe fn sobel_magnitude_avx2(source: &[f32], width: usize, height: usize) -> V
             let two = _mm256_set1_ps(2.0);
             let maximum = _mm256_set1_ps(255.0);
             let mut x = 1;
-            while x + 8 <= width - 1 {
+            while x + 8 < width {
                 let load = |source_row: usize, offset: isize| unsafe {
                     _mm256_loadu_ps(source.as_ptr().add(source_row + x).offset(offset))
                 };

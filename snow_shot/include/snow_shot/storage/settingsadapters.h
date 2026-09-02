@@ -1,8 +1,6 @@
 #ifndef SNOW_SHOT_STORAGE_SETTINGSADAPTERS_H
 #define SNOW_SHOT_STORAGE_SETTINGSADAPTERS_H
 
-#include "snow_shot/storage/capturehistorytypes.h"
-
 #include <QColor>
 #include <QMap>
 #include <QString>
@@ -10,7 +8,6 @@
 #include <QVector>
 #include <QMetaType>
 
-#include <future>
 
 namespace snow_shot::storage {
 struct ScreenshotToolbarLayout {
@@ -119,25 +116,17 @@ class ScreenshotShortcutSettings final {
     [[nodiscard]] QStringList moveCursorUp() const;
     bool setMoveCursorUp(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList moveCursorDown() const;
-    bool setMoveCursorDown(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList moveCursorLeft() const;
-    bool setMoveCursorLeft(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList moveCursorRight() const;
     bool setMoveCursorRight(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList moveEntireSelection() const;
-    bool setMoveEntireSelection(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList keepSelectionWidthAndHeightConsistent() const;
     bool setKeepSelectionWidthAndHeightConsistent(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList switchSelectionBetweenWindowAndWindowSubElement() const;
-    bool setSwitchSelectionBetweenWindowAndWindowSubElement(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList previousScreenshotHistory() const;
-    bool setPreviousScreenshotHistory(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList nextScreenshotHistory() const;
-    bool setNextScreenshotHistory(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList selectPreviouslySelectedArea() const;
-    bool setSelectPreviouslySelectedArea(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList copyColor() const;
-    bool setCopyColor(const QStringList& shortcuts) const;
 
     [[nodiscard]] QStringList shortcuts(const QString& actionId) const;
     bool setShortcuts(const QString& actionId, const QStringList& shortcuts) const;
@@ -155,18 +144,6 @@ class DrawingShortcutSettings final {
     bool setShape(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList arrow() const;
     bool setArrow(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList brush() const;
-    bool setBrush(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList highlight() const;
-    bool setHighlight(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList text() const;
-    bool setText(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList serialNumber() const;
-    bool setSerialNumber(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList filter() const;
-    bool setFilter(const QStringList& shortcuts) const;
-    [[nodiscard]] QStringList eraser() const;
-    bool setEraser(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList watermark() const;
     bool setWatermark(const QStringList& shortcuts) const;
 
@@ -249,10 +226,6 @@ class RecordingSettings final {
 
 class ScreenshotToolbarSettings final {
   public:
-    [[nodiscard]] QString arrowLineTool() const;
-    bool setArrowLineTool(const QString& tool) const;
-    [[nodiscard]] QString highlightTool() const;
-    bool setHighlightTool(const QString& tool) const;
     [[nodiscard]] QString tableQrTool() const;
     bool setTableQrTool(const QString& tool) const;
     [[nodiscard]] ScreenshotToolbarLayout layout() const;
@@ -295,17 +268,6 @@ class NetworkSettings final {
   public:
     [[nodiscard]] QString proxy() const;
     bool setProxy(const QString& proxy) const;
-};
-
-class HistorySettings final {
-  public:
-    [[nodiscard]] CaptureHistoryPolicy policy() const;
-    [[nodiscard]] std::shared_future<StorageResult>
-    setPolicy(const CaptureHistoryPolicy& policy) const;
-    [[nodiscard]] std::shared_future<StorageResult> setEnabled(bool enabled) const;
-    [[nodiscard]] std::shared_future<StorageResult> setRetentionDays(int days) const;
-    [[nodiscard]] std::shared_future<StorageResult> setMaxEntries(int entries) const;
-    [[nodiscard]] std::shared_future<StorageResult> setMaxDiskMiB(int mebibytes) const;
 };
 } // namespace snow_shot::storage
 

@@ -17,7 +17,6 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
-#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -126,17 +125,6 @@ QByteArray makeFrame(quint16 kind, quint64 requestId, const QByteArray& payload 
     return frame;
 }
 
-QString developmentProcessPath() {
-#ifdef Q_OS_WIN
-    const QString suffix = QStringLiteral(".exe");
-#else
-    const QString suffix;
-#endif
-    const QString sibling = QDir(QCoreApplication::applicationDirPath())
-                                .filePath(QStringLiteral("snow-ocr-process") + suffix);
-    return QFileInfo::exists(sibling) ? sibling : QString{};
-}
-
 QPolygonF quadFromValues(const float* points, const QRectF& canvasRect, const QSize& imageSize) {
     const qreal scaleX = imageSize.width() > 0 ? canvasRect.width() / imageSize.width() : 1.0;
     const qreal scaleY = imageSize.height() > 0 ? canvasRect.height() / imageSize.height() : 1.0;
@@ -203,34 +191,6 @@ class ScreenshotOcrRecognitionService::Impl final {
             m_assets.dictionaryPath = options.dictionaryPath;
             m_assets.stateDirectory = options.stateDirectory;
             m_assetStatus = {ScreenshotOcrAssetPhase::ReadyCached, QStringLiteral("assets")};
-#ifndef NDEBUG
-        } else if (!developmentProcessPath().isEmpty() &&
-                   QFileInfo(QDir(qEnvironmentVariable("LOCALAPPDATA"))
-                                 .filePath(QStringLiteral(
-                                     "rapid-ocr-rs/models/PP-OCRv6_det_small.onnx")))
-                       .isFile() &&
-                   QFileInfo(QDir(qEnvironmentVariable("LOCALAPPDATA"))
-                                 .filePath(QStringLiteral(
-                                     "rapid-ocr-rs/models/PP-OCRv6_rec_small.onnx")))
-                       .isFile() &&
-                   QFileInfo(QDir(qEnvironmentVariable("LOCALAPPDATA"))
-                                 .filePath(QStringLiteral("rapid-ocr-rs/models/ppocrv6_dict.txt")))
-                       .isFile()) {
-            const QString models = QDir(qEnvironmentVariable("LOCALAPPDATA"))
-                                       .filePath(QStringLiteral("rapid-ocr-rs/models"));
-            m_assets.runtimeVersion = QString::fromLatin1(kRuntimeVersion);
-            m_assets.processPath = developmentProcessPath();
-            m_assets.runtimeDirectory = QFileInfo(m_assets.processPath).absolutePath();
-            m_assets.detectorModelPath = QDir(models).filePath(
-                QStringLiteral("PP-OCRv6_det_small.onnx"));
-            m_assets.recognizerModelPath = QDir(models).filePath(
-                QStringLiteral("PP-OCRv6_rec_small.onnx"));
-            m_assets.dictionaryPath = QDir(models).filePath(QStringLiteral("ppocrv6_dict.txt"));
-            m_assets.stateDirectory = QDir::temp().filePath(QStringLiteral("snow-shot-ocr-state"));
-            m_assetStatus = {m_assets.valid() ? ScreenshotOcrAssetPhase::ReadyCached
-                                              : ScreenshotOcrAssetPhase::Unchecked,
-                             QStringLiteral("assets")};
-#endif
         } else {
             const QString offlineRoot = options.offlineRoot.trimmed().isEmpty()
                                             ? QDir(QCoreApplication::applicationDirPath())
@@ -242,7 +202,6 @@ class ScreenshotOcrRecognitionService::Impl final {
             connect(m_assetManager.get(), &ScreenshotOcrAssets::statusChanged, owner,
                     [this](const ScreenshotOcrAssetStatus& status) {
                         m_assetStatus = status;
-                        emit m_owner->assetStatusChanged(status);
                     });
             connect(m_assetManager.get(), &ScreenshotOcrAssets::ready, owner,
                     [this](const ScreenshotOcrResolvedAssets& assets) {
@@ -790,8 +749,6 @@ class ScreenshotOcrRecognitionService::Impl final {
 
 ScreenshotOcrRecognitionService::ScreenshotOcrRecognitionService(QObject* parent)
     : ScreenshotOcrRecognitionService(Options{}, ScreenshotOcrBackendPreference::Cpu, parent) {}
-ScreenshotOcrRecognitionService::ScreenshotOcrRecognitionService(ScreenshotOcrBackendPreference preference, QObject* parent)
-    : ScreenshotOcrRecognitionService(Options{}, preference, parent) {}
 ScreenshotOcrRecognitionService::ScreenshotOcrRecognitionService(const Options& options, ScreenshotOcrBackendPreference preference, QObject* parent)
     : ScreenshotOcrRecognitionPort(parent), m_impl(std::make_unique<Impl>(this, options, preference)) {}
 ScreenshotOcrRecognitionService::~ScreenshotOcrRecognitionService() = default;

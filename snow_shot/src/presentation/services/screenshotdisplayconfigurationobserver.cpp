@@ -54,10 +54,6 @@ void ScreenshotDisplayConfigurationObserver::observeScreen(QScreen* screen) {
                      [this](qreal) { handleObservedScreenChanged(); });
 }
 
-int ScreenshotDisplayConfigurationObserver::observedScreenCount() const {
-    return static_cast<int>(m_observedScreens.size());
-}
-
 void ScreenshotDisplayConfigurationObserver::handleScreenAdded(QScreen* screen) {
     notifyChanged();
     observeScreen(screen);

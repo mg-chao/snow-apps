@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::{MotionDiagnostics, MotionOutcome, ReferenceMode, StitchBranch};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TraceState {
+pub struct StitchProgressState {
     pub viewport_position: i64,
     pub max_viewport_position: i64,
     pub canvas_height: u32,
@@ -12,7 +12,7 @@ pub struct TraceState {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct StitchTraceEvent {
+pub struct StitchDecision {
     pub input_index: usize,
     pub previous_raw_index: usize,
     pub exact_duplicate: bool,
@@ -21,8 +21,8 @@ pub struct StitchTraceEvent {
     pub confidence: Option<f32>,
     pub accepted_offset: Option<i32>,
     pub branch: StitchBranch,
-    pub before: TraceState,
-    pub after: TraceState,
+    pub before: StitchProgressState,
+    pub after: StitchProgressState,
     pub growth: u32,
     pub canvas_band_height: Option<u32>,
     pub synthetic_reference_band_height: Option<u32>,

@@ -14,14 +14,12 @@ class ScreenRecordingAreaWindow final : public QWidget {
     explicit ScreenRecordingAreaWindow(QWidget* parent = nullptr);
 
     void setPhysicalRegion(const QRect& region);
-    QRect physicalRegion() const;
     void setRecordingState(ScreenshotToolPalette::RecordingState state);
 
   protected:
     void paintEvent(QPaintEvent* event) override;
 
   private:
-    QRect m_physicalRegion;
     QRectF m_frameRect;
     QRectF m_selectionRect;
     ScreenshotToolPalette::RecordingState m_state = ScreenshotToolPalette::RecordingState::Idle;

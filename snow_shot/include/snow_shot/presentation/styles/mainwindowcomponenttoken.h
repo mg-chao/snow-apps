@@ -6,10 +6,6 @@
 namespace snow_shot::presentation::styles {
 struct MainWindowComponentMetricToken {
     int cardRadius = 10;
-    int tabGap = 20;
-    int windowControlMinWidth = 26;
-    int windowControlMinHeight = 22;
-    int shortcutKeyMinWidth = 148;
 };
 
 MainWindowComponentMetricToken

@@ -5,7 +5,6 @@
 #include <QHash>
 #include <QString>
 
-class QPalette;
 
 namespace snow_shot::presentation::styles {
 using ThemePresetColorMap = QHash<QString, QColor>;
@@ -49,32 +48,6 @@ struct ThemeStyleConfig {
     int controlHeight = 32;
 
     double motionUnit = 0.1;
-    double motionBase = 0.0;
-};
-
-struct ThemeSeedToken {
-    ThemePreset preset = ThemePreset::Default;
-
-    QColor colorPrimary;
-    QColor colorSuccess;
-    QColor colorWarning;
-    QColor colorError;
-    QColor colorInfo;
-    QColor colorLink;
-    QColor colorTextBase;
-    QColor colorBgBase;
-    ThemePresetColorMap presetColors;
-
-    int fontSize = 14;
-    int lineWidth = 1;
-    int borderRadius = 6;
-
-    int sizeUnit = 4;
-    int sizeStep = 4;
-    int controlHeight = 32;
-
-    double motionUnit = 0.1;
-    double motionBase = 0.0;
 };
 
 struct ThemeMapColorToken {
@@ -167,7 +140,6 @@ struct ThemeMapColorToken {
     QColor colorLink;
     QColor colorLinkActive;
     ThemePresetColorMap presetColorHover;
-    ThemePresetColorMap presetColorActive;
 
     QColor colorBgMask;
     QColor colorWhite;
@@ -260,8 +232,6 @@ struct ThemeAliasColorToken {
     QColor accentContainerBg;
     QColor accentSoftBorder;
     QColor accentSoftBg;
-    QColor scrollHandle;
-    QColor scrollHandleHover;
 
     QColor success;
     QColor warning;
@@ -334,25 +304,14 @@ struct ThemeAliasMetricToken {
 
 struct ThemeColorScheme {
     ThemeAppearance appearance = ThemeAppearance::Light;
-    ThemeSeedToken seed;
     ThemeMapColorToken map;
     ThemeMetricMapToken metricMap;
     ThemeAliasColorToken alias;
     ThemeAliasMetricToken metricAlias;
 };
 
-ThemeStyleConfig defaultThemeStyleConfig();
-ThemeStyleConfig themeStyleConfig();
-void setThemeStyleConfig(const ThemeStyleConfig& config);
-ThemeAppearance themeAppearance();
-void setThemeAppearance(ThemeAppearance appearance);
-ThemePreset themePreset();
-void setThemePreset(ThemePreset preset);
-
 ThemeColorScheme generateThemeColorScheme(const ThemeStyleConfig& config);
 ThemeColorScheme generateThemeColorScheme();
-ThemeColorScheme generateThemeColorScheme(const QPalette& palette, const ThemeStyleConfig& config);
-ThemeColorScheme generateThemeColorScheme(const QPalette& palette);
 } // namespace snow_shot::presentation::styles
 
 #endif // SNOW_SHOT_PRESENTATION_STYLES_THEMECOLORSCHEME_H

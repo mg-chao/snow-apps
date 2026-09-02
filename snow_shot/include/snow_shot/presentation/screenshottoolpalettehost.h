@@ -33,16 +33,11 @@ class ScreenshotToolPaletteHost final : public QWidget {
     QRect topRightMainToolbarContentRect() const;
     QRect mainToolbarContentRect() const;
     ScreenshotToolbarPlacementSnapshot placementSnapshot() const;
-    QRect occupiedHostRect() const;
     QRegion interactiveHostRegion() const;
     QPoint contentOffset() const;
-    quint64 layoutRevision() const;
-    QPoint contentPosition() const;
-    void moveContentTo(const QPoint& position);
     void prepareForDisplay();
     void resetStyleState();
     void setCreationStyleDefaults(const SnowCanvasStyleDefaults& defaults);
-    [[nodiscard]] SnowCanvasStyleDefaults creationStyleDefaults() const;
     bool stepStrokeWidth(int direction);
     bool stepSelectionOpacity(int direction);
     bool stepSpotlightOpacity(int direction);

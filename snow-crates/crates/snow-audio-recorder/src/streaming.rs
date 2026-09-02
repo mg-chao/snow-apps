@@ -17,7 +17,6 @@ pub struct AudioStreamStats {
     pub frames_dropped: AtomicU64,
     pub source_restarts: AtomicU64,
     pub errors_recovered: AtomicU64,
-    pub current_packet_rate: AtomicU64,
     pub buffer_fill: AtomicU64,
 }
 
@@ -30,7 +29,6 @@ impl Default for AudioStreamStats {
             frames_dropped: AtomicU64::new(0),
             source_restarts: AtomicU64::new(0),
             errors_recovered: AtomicU64::new(0),
-            current_packet_rate: AtomicU64::new(0),
             buffer_fill: AtomicU64::new(0),
         }
     }
@@ -44,7 +42,6 @@ pub struct AudioStreamStatsSnapshot {
     pub frames_dropped: u64,
     pub source_restarts: u64,
     pub errors_recovered: u64,
-    pub current_packet_rate: f64,
     pub buffer_fill: u64,
 }
 
@@ -57,7 +54,6 @@ impl AudioStreamStats {
             frames_dropped: self.frames_dropped.load(Ordering::Relaxed),
             source_restarts: self.source_restarts.load(Ordering::Relaxed),
             errors_recovered: self.errors_recovered.load(Ordering::Relaxed),
-            current_packet_rate: f64::from_bits(self.current_packet_rate.load(Ordering::Relaxed)),
             buffer_fill: self.buffer_fill.load(Ordering::Relaxed),
         }
     }
@@ -261,9 +257,6 @@ fn stream_loop(
     let mut was_paused = false;
     let mut pause_started: Option<Instant> = None;
 
-    let mut packet_counter: u64 = 0;
-    let mut packet_epoch = Instant::now();
-
     loop {
         if stop.load(Ordering::Acquire) {
             break;
@@ -277,8 +270,6 @@ fn stream_loop(
                 was_paused = true;
             }
             std::thread::sleep(Duration::from_millis(25));
-            packet_counter = 0;
-            packet_epoch = Instant::now();
             continue;
         }
 
@@ -299,7 +290,6 @@ fn stream_loop(
                 for event in events {
                     match &event {
                         AudioEvent::Packet(packet) => {
-                            packet_counter = packet_counter.wrapping_add(1);
                             stats.packets_captured.fetch_add(1, Ordering::Relaxed);
                             stats
                                 .frames_captured
@@ -327,17 +317,6 @@ fn stream_loop(
                 emit_terminal_error(queue, stats, &err);
                 break;
             }
-        }
-
-        let elapsed = packet_epoch.elapsed();
-        if elapsed >= Duration::from_secs(1) {
-            let elapsed = elapsed.as_secs_f64().max(0.000_001);
-            let rate = packet_counter as f64 / elapsed;
-            stats
-                .current_packet_rate
-                .store(rate.to_bits(), Ordering::Relaxed);
-            packet_counter = 0;
-            packet_epoch = Instant::now();
         }
     }
 

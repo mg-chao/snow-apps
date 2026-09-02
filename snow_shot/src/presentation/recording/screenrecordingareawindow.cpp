@@ -28,7 +28,6 @@ void ScreenRecordingAreaWindow::setPhysicalRegion(const QRect& region) {
     if (!region.isValid() || region.isEmpty()) {
         return;
     }
-    m_physicalRegion = region;
     QScreen* screen = ScreenshotGeometryMapper::screenForPhysicalRect(region);
     const QRectF logicalRegion =
         ScreenshotGeometryMapper::logicalRectFForPhysicalRect(region, screen);
@@ -39,10 +38,6 @@ void ScreenRecordingAreaWindow::setPhysicalRegion(const QRect& region) {
     m_selectionRect = frameGeometry.selectionRect;
     setGeometry(frameGeometry.windowGeometry);
     update();
-}
-
-QRect ScreenRecordingAreaWindow::physicalRegion() const {
-    return m_physicalRegion;
 }
 
 void ScreenRecordingAreaWindow::setRecordingState(ScreenshotToolPalette::RecordingState state) {

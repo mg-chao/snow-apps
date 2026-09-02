@@ -8,14 +8,11 @@
 #include "snow_shot/presentation/screenshottabledocument.h"
 #include "snow_shot/presentation/screenshottableeditor.h"
 
-#include <QDesktopServices>
 #include <QCoreApplication>
 #include <QLocale>
 #include <QMimeData>
-#include <QPushButton>
 #include <QTextDocument>
 #include <QTimer>
-#include <QUrl>
 #include <QVBoxLayout>
 
 #include "widgets/alert.h"
@@ -411,7 +408,6 @@ void ScreenshotRecognitionSessionController::resetTargetState() {
             it->editingSession->establishHistory(it->editingSession->originalText());
         }
         it->translationSession.reset();
-        it->translationSettings = {};
         it->translationText.clear();
         it->successfulTranslation.clear();
         it->translationStatus = TextCacheEntry::TranslationStatus::Absent;
@@ -704,7 +700,6 @@ void ScreenshotRecognitionSessionController::startTranslationWithModels(
     if (selected == models.cend()) {
         settings.modelId = models.first().id;
     }
-    it->translationSettings = settings;
     it->translationText.clear();
     it->translationSession->replaceTextWithoutHistory(QString());
     it->translationStatus = TextCacheEntry::TranslationStatus::Streaming;
@@ -1094,15 +1089,6 @@ ScreenshotRecognitionSessionController::recognitionClipboardMimeData(
     return mimeData;
 }
 
-std::shared_ptr<ScreenshotTableEditingSession>
-ScreenshotRecognitionSessionController::tableSession() const {
-    return m_tableSession;
-}
-
-QStringList ScreenshotRecognitionSessionController::qrContents() const {
-    return m_qrContents;
-}
-
 void ScreenshotRecognitionSessionController::setTextDraft(const QString& text) {
     const QString key = m_editingKey.isEmpty() ? m_textCacheKey : m_editingKey;
     auto it = m_textCache.find(key);
@@ -1392,8 +1378,6 @@ void ScreenshotRecognitionSessionController::handleQrOutput(
         if (m_active && m_mode == Mode::Qr) {
             m_qrCacheKey = key;
             applyQrContents(result.contents);
-        }
-        if (m_active && m_mode == Mode::Qr) {
             showStatus(tr("No barcode was recognized"), false);
         }
         hideRecognitionMessage();
@@ -1616,8 +1600,6 @@ void ScreenshotRecognitionSessionController::showModelDownloadMessage() const {
     }
     if (m_actions.showModelDownload) {
         m_actions.showModelDownload(message);
-    } else if (m_actions.showLoading) {
-        m_actions.showLoading(message);
     } else if (m_actions.showStatus) {
         m_actions.showStatus(message, false);
     }
@@ -1637,8 +1619,6 @@ void ScreenshotRecognitionSessionController::showRecognitionMessage() const {
                                              : tr("Recognizing text");
     if (m_actions.showRecognition) {
         m_actions.showRecognition(message);
-    } else if (m_actions.showLoading) {
-        m_actions.showLoading(message);
     } else if (m_actions.showStatus) {
         m_actions.showStatus(message, false);
     }

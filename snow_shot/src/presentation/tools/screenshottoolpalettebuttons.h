@@ -131,13 +131,6 @@ materializeScreenshotToolPaletteOptionPopoverEditor(
     const std::function<void(int)>& activateValue,
     const ScreenshotToolPaletteButtonMetrics& metrics);
 
-[[nodiscard]] ScreenshotToolPaletteOptionPopoverEditor
-createScreenshotToolPaletteOptionPopoverEditor(
-    adqt::widgets::AdButton* trigger, QObject* receiver,
-    const ScreenshotToolPaletteOptionPopoverEditorConfig& config,
-    const std::function<void(int)>& activateValue,
-    const ScreenshotToolPaletteButtonMetrics& metrics);
-
 void configureScreenshotToolPaletteOptionPopoverEditor(
     adqt::widgets::AdPopover* popover, const QVector<adqt::widgets::AdButton*>& buttons,
     int optionSpacing, const ScreenshotToolPaletteButtonMetrics& metrics);
@@ -209,7 +202,6 @@ class NumericValuePreviewButton final : public StylePreviewButton {
     void setValue(double value);
     void setSuffix(const QString& suffix);
     void setMixed(bool mixed);
-    void setIntegerDisplay(bool integerDisplay);
     void setStrokeWidthPreviewEnabled(bool enabled);
     void setPhysicalScale(qreal scale);
     void commitControlScale(const adqt::widgets::AdControlScaleContext& context) override;
@@ -358,7 +350,6 @@ class IconNumericValuePreviewButton final : public adqt::widgets::AdButton {
   public:
     explicit IconNumericValuePreviewButton(QWidget* parent = nullptr);
 
-    [[nodiscard]] int value() const;
     void setValue(int value);
     void setCornerRadius(int cornerRadius);
     void setMixed(bool mixed);

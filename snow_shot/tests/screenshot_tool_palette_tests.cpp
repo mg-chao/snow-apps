@@ -609,7 +609,6 @@ void screenshotToolbarUsesCanonicalOrderAndSectionSeparators() {
     options.showScrollingScreenshotTool = true;
     options.separatorAfterSelect = true;
     options.separatorBeforeShape = true;
-    options.separatorAfterArrow = true;
     options.enableStyleToolbar = false;
     options.actions = ScreenshotToolPalette::PinAction | ScreenshotToolPalette::CancelAction |
                       ScreenshotToolPalette::CopyAction;
@@ -2592,7 +2591,7 @@ void watermarkToolExposesSharedStyleControls() {
             palette.findChild<QSlider*>(QStringLiteral("screenshotWatermarkAngleSlider")) ==
                 nullptr &&
             palette.findChild<QSlider*>(QStringLiteral("screenshotWatermarkGapSlider")) == nullptr,
-        "Watermark should remove all legacy widgets");
+        "Watermark should remove all pre-existing widgets");
 
     QList<QFrame*> separators =
         controls->findChildren<QFrame*>(QString(), Qt::FindDirectChildrenOnly);

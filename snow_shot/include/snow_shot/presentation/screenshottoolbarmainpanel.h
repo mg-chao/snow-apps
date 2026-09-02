@@ -30,7 +30,6 @@ class ScreenshotToolbarMainPanel final : public QFrame {
     [[nodiscard]] QWidget* dragHandle() const;
     [[nodiscard]] QWidget* trailingDragHandle() const;
     [[nodiscard]] int buttonSize() const;
-    [[nodiscard]] qreal physicalScale() const;
     [[nodiscard]] QSize sizeHint() const override;
 
     static QMargins shadowMargins();

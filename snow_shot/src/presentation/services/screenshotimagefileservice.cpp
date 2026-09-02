@@ -98,11 +98,6 @@ QString ScreenshotImageFileService::saveDialogFilter() {
         .join(QStringLiteral(";;"));
 }
 
-QString ScreenshotImageFileService::automaticDirectory() {
-    const QStringList directories = automaticDirectories();
-    return directories.isEmpty() ? QString() : directories.constFirst();
-}
-
 QStringList ScreenshotImageFileService::automaticDirectories() {
     QStringList directories;
     for (QStandardPaths::StandardLocation location :
@@ -313,10 +308,6 @@ ScreenshotImageFileService::write(const ScreenshotImageRowSource& source, const 
         return snow_shot::image_codec::encodeToDevice(source, device, snowImageFormat(format),
                                                       encodeOptions(format), error);
     });
-}
-
-ScreenshotImageFileSaveResult ScreenshotImageFileService::saveAutomatically(const QImage& image) {
-    return saveAutomatically(image, automaticDirectories(), QDateTime::currentDateTime());
 }
 
 ScreenshotImageFileSaveResult ScreenshotImageFileService::saveAutomatically(

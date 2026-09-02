@@ -72,7 +72,6 @@ class SnowShotApiClient final : public QObject {
     explicit SnowShotApiClient(QString baseUrl, QObject* parent = nullptr);
     ~SnowShotApiClient() override;
 
-    [[nodiscard]] const QString& baseUrl() const;
     [[nodiscard]] bool usesSystemProxy() const;
     void setUseSystemProxy(bool enabled);
     [[nodiscard]] const QVector<SnowShotChatModel>& cachedChatModels() const;

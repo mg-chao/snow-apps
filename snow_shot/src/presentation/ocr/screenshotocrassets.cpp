@@ -282,26 +282,6 @@ bool writeCompletionMarker(const QString& directory, const QString& component,
     return true;
 }
 
-bool copyVerifiedFiles(const QString& source, const QString& staging,
-                       const QList<FileDescriptor>& files, QString* error) {
-    if (!QDir().mkpath(staging)) {
-        if (error != nullptr) *error = QStringLiteral("could not create OCR staging directory");
-        return false;
-    }
-    for (const FileDescriptor& descriptor : files) {
-        const QString sourcePath = QDir(source).filePath(descriptor.name);
-        if (!verifyFile(sourcePath, descriptor, error)) return false;
-        const QString targetPath = QDir(staging).filePath(descriptor.name);
-        if (!QFile::copy(sourcePath, targetPath) || !verifyFile(targetPath, descriptor, error)) {
-            if (error != nullptr && error->isEmpty()) {
-                *error = QStringLiteral("could not migrate %1").arg(descriptor.name);
-            }
-            return false;
-        }
-    }
-    return true;
-}
-
 bool promoteDirectory(const QString& staging, const QString& destination, QString* error) {
     const QFileInfo destinationInfo(destination);
     QDir parent(destinationInfo.dir());
@@ -568,7 +548,6 @@ class ScreenshotOcrAssets::Impl final {
             QMetaObject::invokeMethod(owner, [this, owner, success, assets, error]() {
                 if (owner == nullptr) return;
                 if (success) {
-                    m_assets = assets;
                     setStatus({assets.offline ? ScreenshotOcrAssetPhase::ReadyOffline
                                               : ScreenshotOcrAssetPhase::ReadyCached,
                                QStringLiteral("assets")});
@@ -590,11 +569,6 @@ class ScreenshotOcrAssets::Impl final {
     }
 
     void setProxyUrl(const QString& value) { m_options.proxyUrl = value; }
-    ScreenshotOcrAssetStatus status() const {
-        std::lock_guard lock(m_statusMutex);
-        return m_status;
-    }
-    ScreenshotOcrResolvedAssets assets() const { return m_assets; }
 
   private:
     void setStatus(ScreenshotOcrAssetStatus status) {
@@ -675,33 +649,24 @@ class ScreenshotOcrAssets::Impl final {
         const QString staging = QDir(stagingRoot).filePath(
             QStringLiteral("model-%1").arg(QUuid::createUuid().toString(QUuid::Id128)));
         QDir().mkpath(staging);
-        // Migrate the pre-versioned model store only when all hashes match.
-        if (validateComponent(options.cacheRoot, descriptor.modelFiles, descriptor.modelId, false,
-                              nullptr)) {
-            if (!copyVerifiedFiles(options.cacheRoot, staging, descriptor.modelFiles, error)) {
+        QNetworkAccessManager manager;
+        if (!configureProxy(&manager, options.proxyUrl, error)) return false;
+        for (const FileDescriptor& file : descriptor.modelFiles) {
+            progress(QStringLiteral("models"), 0, file.size);
+            const QString destinationPath = QDir(staging).filePath(file.name);
+            const bool acquired = options.downloadOverride
+                                      ? options.downloadOverride(file.url.toString(),
+                                                                 destinationPath, error) &&
+                                            verifyFile(destinationPath, file, error)
+                                      : download(&manager, file, destinationPath,
+                                                 [this](qint64 received, qint64 total) {
+                                                     progress(QStringLiteral("models"), received,
+                                                              total);
+                                                 },
+                                                 error);
+            if (!acquired) {
                 QDir(staging).removeRecursively();
                 return false;
-            }
-        } else {
-            QNetworkAccessManager manager;
-            if (!configureProxy(&manager, options.proxyUrl, error)) return false;
-            for (const FileDescriptor& file : descriptor.modelFiles) {
-                progress(QStringLiteral("models"), 0, file.size);
-                const QString destinationPath = QDir(staging).filePath(file.name);
-                const bool acquired = options.downloadOverride
-                                          ? options.downloadOverride(file.url.toString(),
-                                                                     destinationPath, error) &&
-                                                verifyFile(destinationPath, file, error)
-                                          : download(&manager, file, destinationPath,
-                                                     [this](qint64 received, qint64 total) {
-                                                         progress(QStringLiteral("models"), received,
-                                                                  total);
-                                                     },
-                                                     error);
-                if (!acquired) {
-                    QDir(staging).removeRecursively();
-                    return false;
-                }
             }
         }
         if (!writeCompletionMarker(staging, descriptor.modelId, error) ||
@@ -769,7 +734,6 @@ class ScreenshotOcrAssets::Impl final {
     Options m_options;
     mutable std::mutex m_statusMutex;
     ScreenshotOcrAssetStatus m_status;
-    ScreenshotOcrResolvedAssets m_assets;
     QThread* m_thread = nullptr;
 };
 
@@ -780,5 +744,3 @@ ScreenshotOcrAssets::~ScreenshotOcrAssets() = default;
 
 void ScreenshotOcrAssets::prepare() { m_impl->prepare(); }
 void ScreenshotOcrAssets::setProxyUrl(const QString& proxyUrl) { m_impl->setProxyUrl(proxyUrl); }
-ScreenshotOcrAssetStatus ScreenshotOcrAssets::status() const { return m_impl->status(); }
-ScreenshotOcrResolvedAssets ScreenshotOcrAssets::resolvedAssets() const { return m_impl->assets(); }

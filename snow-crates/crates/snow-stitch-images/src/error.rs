@@ -52,8 +52,8 @@ pub enum StitchError {
         source: image::ImageError,
     },
 
-    #[error("could not serialize trace JSON: {0}")]
-    TraceSerialization(#[from] serde_json::Error),
+    #[error("could not serialize decision-log JSON: {0}")]
+    DecisionSerialization(#[from] serde_json::Error),
 
     #[error("I/O failure for {path}: {source}")]
     Io {

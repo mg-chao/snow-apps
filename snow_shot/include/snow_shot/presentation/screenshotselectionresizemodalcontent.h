@@ -95,9 +95,7 @@ class ScreenshotSelectionResizeModalContent final : public QWidget {
     adqt::widgets::AdButton* m_lockAspectRatioButton = nullptr;
 
     QPointer<adqt::widgets::AdModal> m_createPresetModal;
-    QPointer<adqt::widgets::AdForm> m_createPresetForm;
     QPointer<adqt::widgets::AdFormItem> m_createPresetNameItem;
-    QPointer<adqt::widgets::AdLineEdit> m_createPresetNameInput;
     QPointer<adqt::widgets::AdModal> m_deletePresetModal;
     QString m_deletePresetName;
 };

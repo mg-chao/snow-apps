@@ -62,12 +62,6 @@ bool ScreenshotSmartSelectionTransition::update(const QRectF& selection, bool sm
     return true;
 }
 
-void ScreenshotSmartSelectionTransition::reset() {
-    m_animation.stop();
-    m_displayedSelection = {};
-    m_targetSelection = {};
-    m_hasPresentedSmartSelection = false;
-}
 
 bool ScreenshotSmartSelectionTransition::isRunning() const {
     return m_animation.state() == QAbstractAnimation::Running;

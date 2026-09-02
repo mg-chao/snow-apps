@@ -108,14 +108,11 @@ class ScreenshotToolPaletteStyleControls final : private ScreenshotToolPaletteSt
     [[nodiscard]] bool handleWatermarkWheel(const QPoint& globalPosition, int direction);
     [[nodiscard]] bool stepWatermarkFontSize(int direction);
     [[nodiscard]] SnowCanvasShapeStyle rectangleStyle() const;
-    [[nodiscard]] SnowCanvasArrowStyle arrowStyle() const;
-    [[nodiscard]] SnowCanvasTextStyle textStyle() const;
     [[nodiscard]] SnowCanvasStyleDefaults creationStyleDefaults() const;
     void setCreationStyleDefaults(const SnowCanvasStyleDefaults& defaults);
     void setRectangleStyle(const SnowCanvasShapeStyle& style);
     void setWatermarkConfig(const SnowCanvasWatermarkConfig& config);
     void setStyleToolbarState(const SnowCanvasStyleToolbarState& state);
-    void setSerialNumberControlsVisible(bool visible);
 
     // Popup content owns its window DPR and is intentionally excluded.
     void refreshToolbarMetrics(const ScreenshotToolPaletteButtonMetrics& metrics);
@@ -485,9 +482,6 @@ class ScreenshotToolPaletteStyleControls final : private ScreenshotToolPaletteSt
     ColorEditor m_highlightColorEditor;
     ColorEditor m_spotlightColorEditor;
     adqt::widgets::AdRadioButtonGroup* m_shapeButtonGroup = nullptr;
-    adqt::widgets::AdRadio* m_rectangleShapeButton = nullptr;
-    adqt::widgets::AdRadio* m_ellipseShapeButton = nullptr;
-    adqt::widgets::AdRadio* m_diamondShapeButton = nullptr;
     WidthColorEditor m_highlightStrokeEditor;
     ColorEditor m_penHighlightColorEditor;
     NumericPresetEditor m_penHighlightStrokeWidthEditor;

@@ -580,34 +580,6 @@ bool ScreenshotOverlayUiHost::screenshotUiContainsGlobalCursor() const {
     return false;
 }
 
-void ScreenshotOverlayUiHost::updateShortcutHints(ScreenshotOverlayWindow* overlay,
-                                                  ScreenshotShortcutHintMode mode, qreal opacity,
-                                                  const QRectF& selectionGlobal) {
-    auto* hints = static_cast<ScreenshotShortcutHintsWidget*>(m_shortcutHints.data());
-    if (overlay == nullptr || hints == nullptr || mode == ScreenshotShortcutHintMode::Hidden ||
-        opacity <= 0.0) {
-        hideShortcutHints();
-        return;
-    }
-
-    if (hints->parentWidget() != overlay) {
-        hints->hide();
-        hints->setParent(overlay);
-        hints->setWindowFlags(Qt::Widget);
-    }
-    hints->setPresentation(mode, opacity);
-    if (!hints->hasVisiblePresentation()) {
-        hints->hide();
-        return;
-    }
-
-    const int y = std::max(kShortcutHintsMargin,
-                           overlay->height() - hints->height() - kShortcutHintsMargin);
-    hints->move(kShortcutHintsMargin, y);
-    hints->setObscuringSelection(selectionGlobal);
-    hints->refreshVisibility(QCursor::pos());
-}
-
 void ScreenshotOverlayUiHost::updateShortcutHints(
     ScreenshotOverlayWindow* overlay, const ScreenshotShortcutHintContext& context, qreal opacity,
     const QRectF& selectionGlobal) {
@@ -712,13 +684,6 @@ void ScreenshotOverlayUiHost::showToolbar() {
     toolbarWindow->prepareForDisplay();
     showPreparedWidget(toolbarWindow);
     toolbarWindow->raise();
-}
-
-void ScreenshotOverlayUiHost::raiseToolbar() {
-    if (m_toolbar != nullptr) {
-        m_toolbar->raise();
-    }
-    raiseSelectionToolbar();
 }
 
 void ScreenshotOverlayUiHost::hideSelectionToolbar() {

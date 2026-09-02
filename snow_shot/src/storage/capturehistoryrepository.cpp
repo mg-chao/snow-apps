@@ -712,7 +712,7 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
         }
         reconcile();
         if (m_writeAvailable && m_policy.enabled) {
-            static_cast<void>(pruneNow(QString(), false, nullptr));
+            static_cast<void>(pruneNow(QString(), false));
         }
         refreshUsage(true);
         m_worker = std::thread([this]() { workerLoop(); });
@@ -988,19 +988,6 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
         return future;
     }
 
-    std::shared_future<StorageResult> requestPrune() override {
-        auto promise = std::make_shared<std::promise<StorageResult>>();
-        std::shared_future<StorageResult> future = promise->get_future().share();
-        Command command;
-        command.kind = CommandKind::Prune;
-        command.storagePromise = promise;
-        if (!enqueue(std::move(command))) {
-            promise->set_value(
-                StorageResult::failure(QStringLiteral("Capture-history storage is shutting down")));
-        }
-        return future;
-    }
-
     std::shared_future<StorageResult> requestClear() override {
         auto promise = std::make_shared<std::promise<StorageResult>>();
         std::shared_future<StorageResult> future = promise->get_future().share();
@@ -1044,10 +1031,10 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
     }
 
   private:
-    enum class CommandKind { Publish, Remove, Policy, Prune, Clear, Quarantine };
+    enum class CommandKind { Publish, Remove, Policy, Clear, Quarantine };
 
     struct Command {
-        CommandKind kind = CommandKind::Prune;
+        CommandKind kind = CommandKind::Publish;
         CaptureHistoryDraft draft;
         CaptureHistoryPolicy policy;
         QString id;
@@ -1109,11 +1096,6 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
                     if (m_callbacks.policyFinished) {
                         m_callbacks.policyFinished(result.success, result.error);
                     }
-                }
-                break;
-            case CommandKind::Prune:
-                if (command.storagePromise != nullptr) {
-                    command.storagePromise->set_value(pruneNow(QString(), true, nullptr));
                 }
                 break;
             case CommandKind::Clear: {
@@ -1213,7 +1195,7 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
             rebuildRecordIndexLocked();
         }
 
-        const StorageResult pruneResult = pruneNow(encoded.record.id, false, nullptr);
+        const StorageResult pruneResult = pruneNow(encoded.record.id, false);
         if (!pruneResult.success) {
             qCWarning(storageLog) << "Capture-history pruning failed after publication:"
                                   << pruneResult.error;
@@ -1238,13 +1220,13 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
             m_policy = policy;
         }
         if (policy.enabled) {
-            return pruneNow(QString(), true, nullptr);
+            return pruneNow(QString(), true);
         }
         setError({});
         return StorageResult::ok();
     }
 
-    StorageResult pruneNow(const QString& protectedId, bool finalize, bool* changedOut) {
+    StorageResult pruneNow(const QString& protectedId, bool finalize) {
         CaptureHistoryPolicy currentPolicy;
         {
             std::lock_guard<std::mutex> lock(m_stateMutex);
@@ -1300,9 +1282,6 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
                     changed = true;
                 }
             }
-        }
-        if (changedOut != nullptr) {
-            *changedOut = changed;
         }
         if (changed && finalize) {
             notifyRecordsChanged();
@@ -1633,14 +1612,5 @@ makeCaptureHistoryRepository(QString configurationDirectory,
                              CaptureHistoryRepositoryOptions options) {
     return std::make_unique<CaptureHistoryRepositoryImpl>(std::move(configurationDirectory),
                                                           std::move(options));
-}
-
-std::unique_ptr<CaptureHistoryRepository>
-makeCaptureHistoryRepository(QString configurationDirectory, bool writeAvailable,
-                             std::function<QDateTime()> clock) {
-    CaptureHistoryRepositoryOptions options;
-    options.writeAvailable = writeAvailable;
-    options.clock = std::move(clock);
-    return makeCaptureHistoryRepository(std::move(configurationDirectory), std::move(options));
 }
 } // namespace snow_shot::storage

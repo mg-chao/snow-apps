@@ -5,8 +5,8 @@ use crate::compositor::{
     synthesize_prepend_in_place,
 };
 use crate::{
-    Frame, MotionEstimate, MotionOutcome, ReferenceMode, StitchAxis, StitchBranch, StitchError,
-    StitchOptions, StitchTraceEvent, TiledCanvas, TraceState, VerticalMotionEstimator,
+    Frame, MotionEstimate, MotionOutcome, ReferenceMode, StitchAxis, StitchBranch, StitchDecision,
+    StitchError, StitchOptions, StitchProgressState, TiledCanvas, VerticalMotionEstimator,
     ViewportState, band_height, estimator::validate_estimator_options, synthesize_append,
     synthesize_prepend,
 };
@@ -14,7 +14,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq)]
 pub struct StitchResult {
     pub image: Frame,
-    pub trace: Vec<StitchTraceEvent>,
+    pub decisions: Vec<StitchDecision>,
 }
 
 pub struct Stitcher {
@@ -46,7 +46,7 @@ impl Stitcher {
         })
     }
 
-    pub fn push(&mut self, frame: Frame) -> Result<Option<StitchTraceEvent>, StitchError> {
+    pub fn push(&mut self, frame: Frame) -> Result<Option<StitchDecision>, StitchError> {
         if self.accumulator.is_none() {
             validate_first(&frame, self.options)?;
             self.estimator = Some(VerticalMotionEstimator::new_for_axis(
@@ -67,7 +67,7 @@ impl Stitcher {
             .estimator
             .as_mut()
             .expect("initialized stitcher has an estimator");
-        let trace_start = accumulator.trace.len();
+        let decisions_start = accumulator.decisions.len();
         accumulator.process(
             self.next_index,
             frame,
@@ -81,7 +81,7 @@ impl Stitcher {
             .ok_or(StitchError::Arithmetic {
                 operation: "incrementing input-frame index",
             })?;
-        Ok(accumulator.trace.get(trace_start).cloned())
+        Ok(accumulator.decisions.get(decisions_start).cloned())
     }
 
     pub fn image(&self) -> Option<Frame> {
@@ -184,15 +184,15 @@ impl Stitcher {
             .snapshot_axis(start, end)
     }
 
-    pub fn trace(&self) -> &[StitchTraceEvent] {
+    pub fn decisions(&self) -> &[StitchDecision] {
         self.accumulator
             .as_ref()
-            .map_or(&[], |accumulator| accumulator.trace.as_slice())
+            .map_or(&[], |accumulator| accumulator.decisions.as_slice())
     }
 
-    pub fn clear_trace(&mut self) {
+    pub fn clear_decisions(&mut self) {
         if let Some(accumulator) = self.accumulator.as_mut() {
-            accumulator.trace.clear();
+            accumulator.decisions.clear();
         }
     }
 
@@ -224,7 +224,7 @@ struct StitchAccumulator {
     state: ViewportState,
     processed_count: usize,
     accepted_count: usize,
-    trace: Vec<StitchTraceEvent>,
+    decisions: Vec<StitchDecision>,
     options: StitchOptions,
 }
 
@@ -257,13 +257,13 @@ impl StitchAccumulator {
             state: ViewportState::default(),
             processed_count: 0,
             accepted_count: 0,
-            trace: Vec::new(),
+            decisions: Vec::new(),
             options,
         })
     }
 
-    fn snapshot(&self) -> Result<TraceState, StitchError> {
-        Ok(TraceState {
+    fn snapshot(&self) -> Result<StitchProgressState, StitchError> {
+        Ok(StitchProgressState {
             viewport_position: self.state.position,
             max_viewport_position: self.state.max_position,
             canvas_height: self.state.canvas_height(self.viewport_extent)?,
@@ -314,8 +314,8 @@ impl StitchAccumulator {
         let previous_raw_index = self.previous_raw_index;
         let comparison_mode = self.reference_mode;
         if self.previous_raw.visible_pixels_equal(&incoming) {
-            if self.options.collect_trace {
-                self.trace.push(StitchTraceEvent {
+            if self.options.record_decisions {
+                self.decisions.push(StitchDecision {
                     input_index: index,
                     previous_raw_index,
                     exact_duplicate: true,
@@ -364,8 +364,8 @@ impl StitchAccumulator {
             self.previous_raw = incoming;
             self.previous_raw_index = index;
             let after = self.snapshot()?;
-            if self.options.collect_trace {
-                self.trace.push(StitchTraceEvent {
+            if self.options.record_decisions {
+                self.decisions.push(StitchDecision {
                     input_index: index,
                     previous_raw_index,
                     exact_duplicate: false,
@@ -467,8 +467,8 @@ impl StitchAccumulator {
         self.state = transition.next;
         self.assert_invariants()?;
         let after = self.snapshot()?;
-        if self.options.collect_trace {
-            self.trace.push(StitchTraceEvent {
+        if self.options.record_decisions {
+            self.decisions.push(StitchDecision {
                 input_index: index,
                 previous_raw_index,
                 exact_duplicate: false,
@@ -521,7 +521,7 @@ impl StitchAccumulator {
                 .canvas
                 .materialize()
                 .expect("valid tiled canvas materializes"),
-            trace: self.trace,
+            decisions: self.decisions,
         }
     }
 }
@@ -629,7 +629,7 @@ mod tests {
             frames.iter().cloned().map(Ok),
             StitchOptions {
                 axis,
-                collect_trace: true,
+                record_decisions: true,
                 ..StitchOptions::default()
             },
             |_, _, _| Ok(estimate(outcomes.pop_front().unwrap())),
@@ -647,7 +647,7 @@ mod tests {
         let first = solid(1, 5, 8);
         let result = stitch(std::slice::from_ref(&first), StitchOptions::default()).unwrap();
         assert_eq!(result.image, first);
-        assert!(result.trace.is_empty());
+        assert!(result.decisions.is_empty());
     }
 
     #[test]
@@ -662,7 +662,7 @@ mod tests {
     fn incremental_stitcher_matches_batch_stitching() {
         let frames = vec![solid(1, 5, 8), solid(1, 5, 8)];
         let options = StitchOptions {
-            collect_trace: true,
+            record_decisions: true,
             ..StitchOptions::default()
         };
         let batch = stitch(&frames, options).unwrap();
@@ -670,7 +670,7 @@ mod tests {
         assert_eq!(incremental.push(frames[0].clone()).unwrap(), None);
         assert_eq!(
             incremental.push(frames[1].clone()).unwrap(),
-            batch.trace.first().cloned()
+            batch.decisions.first().cloned()
         );
         assert_eq!(incremental.finish().unwrap(), batch);
     }
@@ -707,7 +707,7 @@ mod tests {
         let result = stitch_owned_with_estimator(
             frames.into_iter().map(Ok),
             StitchOptions {
-                collect_trace: true,
+                record_decisions: true,
                 ..StitchOptions::default()
             },
             |_, _, _| {
@@ -717,16 +717,16 @@ mod tests {
         )
         .unwrap();
         assert_eq!(calls.get(), 0);
-        assert_eq!(result.trace.len(), 2);
+        assert_eq!(result.decisions.len(), 2);
         assert!(
             result
-                .trace
+                .decisions
                 .iter()
                 .all(|event| event.branch == StitchBranch::Skip)
         );
         assert!(
             result
-                .trace
+                .decisions
                 .iter()
                 .all(|event| event.previous_raw_index == 0)
         );
@@ -739,7 +739,7 @@ mod tests {
         let result = stitch_owned_with_estimator(
             frames.into_iter().map(Ok),
             StitchOptions {
-                collect_trace: true,
+                record_decisions: true,
                 ..StitchOptions::default()
             },
             |_, _, _| {
@@ -749,11 +749,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(calls.get(), 1);
-        assert_eq!(result.trace[0].branch, StitchBranch::NoMovement);
-        assert_eq!(result.trace[1].branch, StitchBranch::Skip);
-        assert_eq!(result.trace[1].previous_raw_index, 1);
-        assert_eq!(result.trace[1].before.processed_count, 1);
-        assert_eq!(result.trace[1].after.processed_count, 1);
+        assert_eq!(result.decisions[0].branch, StitchBranch::NoMovement);
+        assert_eq!(result.decisions[1].branch, StitchBranch::Skip);
+        assert_eq!(result.decisions[1].previous_raw_index, 1);
+        assert_eq!(result.decisions[1].before.processed_count, 1);
+        assert_eq!(result.decisions[1].after.processed_count, 1);
     }
 
     #[test]
@@ -775,7 +775,7 @@ mod tests {
         assert_eq!(result.image.height(), 13);
         assert_eq!(
             result
-                .trace
+                .decisions
                 .iter()
                 .map(|event| event.branch)
                 .collect::<Vec<_>>(),
@@ -786,13 +786,16 @@ mod tests {
             ]
         );
         assert_eq!(
-            result.trace[1].before.canvas_height,
-            result.trace[1].after.canvas_height
+            result.decisions[1].before.canvas_height,
+            result.decisions[1].after.canvas_height
         );
-        assert_eq!(result.trace[2].reference_mode, ReferenceMode::CanvasWindow);
-        assert_eq!(result.trace[2].growth, 2);
-        assert_eq!(result.trace[2].canvas_band_height, Some(4));
-        assert_eq!(result.trace[2].synthetic_reference_band_height, Some(5));
+        assert_eq!(
+            result.decisions[2].reference_mode,
+            ReferenceMode::CanvasWindow
+        );
+        assert_eq!(result.decisions[2].growth, 2);
+        assert_eq!(result.decisions[2].canvas_band_height, Some(4));
+        assert_eq!(result.decisions[2].synthetic_reference_band_height, Some(5));
     }
 
     #[test]
@@ -817,7 +820,7 @@ mod tests {
         );
         assert_eq!(
             result
-                .trace
+                .decisions
                 .iter()
                 .map(|event| event.branch)
                 .collect::<Vec<_>>(),
@@ -832,13 +835,13 @@ mod tests {
             &[solid(1, 5, height), solid(2, 5, height)],
             &[MotionOutcome::Motion { offset: -6 }],
         );
-        assert_eq!(accepted.trace[0].branch, StitchBranch::Append);
+        assert_eq!(accepted.decisions[0].branch, StitchBranch::Append);
         let rejected = run_outcomes(
             &[solid(1, 5, height), solid(2, 5, height)],
             &[MotionOutcome::Motion { offset: -7 }],
         );
-        assert_eq!(rejected.trace[0].branch, StitchBranch::NoMovement);
-        assert_eq!(rejected.trace[0].accepted_offset, None);
+        assert_eq!(rejected.decisions[0].branch, StitchBranch::NoMovement);
+        assert_eq!(rejected.decisions[0].accepted_offset, None);
     }
 
     #[test]
@@ -859,27 +862,33 @@ mod tests {
                 MotionOutcome::Indeterminate,
             ],
         );
-        assert_eq!(result.trace[1].branch, StitchBranch::Contained);
-        assert_eq!(result.trace[2].branch, StitchBranch::NoMovement);
-        assert_eq!(result.trace[3].branch, StitchBranch::NoMovement);
-        assert_eq!(result.trace[2].reference_mode, ReferenceMode::CanvasWindow);
-        assert_eq!(result.trace[3].reference_mode, ReferenceMode::CanvasWindow);
-        for event in &result.trace[2..] {
+        assert_eq!(result.decisions[1].branch, StitchBranch::Contained);
+        assert_eq!(result.decisions[2].branch, StitchBranch::NoMovement);
+        assert_eq!(result.decisions[3].branch, StitchBranch::NoMovement);
+        assert_eq!(
+            result.decisions[2].reference_mode,
+            ReferenceMode::CanvasWindow
+        );
+        assert_eq!(
+            result.decisions[3].reference_mode,
+            ReferenceMode::CanvasWindow
+        );
+        for event in &result.decisions[2..] {
             assert_eq!(
                 event.after.viewport_position,
-                result.trace[1].after.viewport_position
+                result.decisions[1].after.viewport_position
             );
             assert_eq!(
                 event.after.max_viewport_position,
-                result.trace[1].after.max_viewport_position
+                result.decisions[1].after.max_viewport_position
             );
             assert_eq!(
                 event.after.canvas_height,
-                result.trace[1].after.canvas_height
+                result.decisions[1].after.canvas_height
             );
             assert_eq!(
                 event.after.accepted_count,
-                result.trace[1].after.accepted_count
+                result.decisions[1].after.accepted_count
             );
         }
     }
@@ -902,7 +911,7 @@ mod tests {
                 StitchOptions {
                     axis: StitchAxis::Vertical,
                     estimator,
-                    collect_trace: false,
+                    record_decisions: false,
                 },
             )
             .unwrap_err();

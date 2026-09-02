@@ -99,7 +99,6 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
             [this]() -> ScreenshotRecognitionWindow* {
                 return ensureRecognitionWindow() ? m_recognitionWindow.data() : nullptr;
             },
-            [this]() { destroyRecognitionWindow(); },
             [this](std::shared_ptr<ScreenshotOcrPresentation> presentation) {
                 if (m_recognitionWindow != nullptr) {
                     m_recognitionWindow->setOcrPresentation(std::move(presentation));
@@ -154,15 +153,10 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                     toolbar->setQrBusy(qrBusy);
                 }
             },
-            [this](const QString& message) {
-                m_messages->loading(QString::fromLatin1(kRecognitionMessageKey), message, {},
-                                    m_recognitionWindow.data());
-            },
             [this]() {
                 m_messages->destroy(QString::fromLatin1(kRecognitionMessageKey));
             },
             [this](const QString& message, bool error) { showStatus(message, error); },
-            [this](const QUrl& url) { handleQrLinkActivated(url); },
             [this]() -> QWidget* {
                 const QRectF selection = m_context.selection.normalizedSelection();
                 const CapturedDisplayModel* display = m_context.geometry.displayForCanvasPoint(
@@ -223,14 +217,6 @@ bool ScreenshotOcrController::active() const {
     return m_active;
 }
 
-bool ScreenshotOcrController::busy() const {
-    return m_session->busy();
-}
-
-bool ScreenshotOcrController::busy(Mode mode) const {
-    return m_session->busy(static_cast<ScreenshotRecognitionSessionController::Mode>(mode));
-}
-
 ScreenshotOcrController::Mode ScreenshotOcrController::mode() const {
     return m_mode;
 }
@@ -253,10 +239,6 @@ void ScreenshotOcrController::activateTable() {
 
 void ScreenshotOcrController::activateQr() {
     activateMode(Mode::Qr);
-}
-
-void ScreenshotOcrController::setMode(Mode mode) {
-    activateMode(mode);
 }
 
 QString ScreenshotOcrController::currentCacheKey() const {
@@ -390,12 +372,6 @@ void ScreenshotOcrController::redoTableEdit() {
     m_session->redoTableEdit();
 }
 
-ScreenshotTableCommandState ScreenshotOcrController::tableCommandState() const {
-    return tableModeActive() && m_recognitionWindow != nullptr
-               ? m_recognitionWindow->tableCommandState()
-               : ScreenshotTableCommandState{};
-}
-
 void ScreenshotOcrController::undoTextEdit() {
     m_session->undoTextEdit();
 }
@@ -446,14 +422,6 @@ bool ScreenshotOcrController::hasTextResult() const {
 
 ScreenshotRecognitionResults ScreenshotOcrController::cachedRecognitionResults() const {
     return m_session->cachedRecognitionResults();
-}
-
-QString ScreenshotOcrController::textDraft() const {
-    return m_session->textDraft();
-}
-
-QString ScreenshotOcrController::originalText() const {
-    return m_session->originalText();
 }
 
 void ScreenshotOcrController::setTextDraft(const QString& text) {

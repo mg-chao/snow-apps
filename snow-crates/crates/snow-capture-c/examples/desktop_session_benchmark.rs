@@ -4,10 +4,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use snow_capture_c::{
-    SCREENSHOT_REQUEST_VERSION, SnowCaptureScreenshotRequest,
-    snow_capture_desktop_session_capture, snow_capture_desktop_session_create,
-    snow_capture_desktop_session_destroy, snow_capture_desktop_session_prepare,
-    snow_capture_desktop_session_refresh_layout,
+    SCREENSHOT_REQUEST_VERSION, SnowCaptureScreenshotRequest, snow_capture_desktop_session_capture,
+    snow_capture_desktop_session_create, snow_capture_desktop_session_destroy,
+    snow_capture_desktop_session_prepare, snow_capture_desktop_session_refresh_layout,
     snow_capture_desktop_session_release_idle_resources, snow_capture_screenshot_result_destroy,
     snow_capture_screenshot_result_display_count,
 };
@@ -120,7 +119,7 @@ impl DesktopSession {
             bail!("snow_capture_desktop_session_capture failed");
         }
 
-        let frame_count = snow_capture_screenshot_result_display_count(result);
+        let frame_count = unsafe { snow_capture_screenshot_result_display_count(result) };
         unsafe {
             snow_capture_screenshot_result_destroy(result);
         }

@@ -21,6 +21,7 @@ fn main() {
 
 fn run_main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
+    rapid_ocr_rs::set_stage_timing_enabled(true);
     let image_paths = collect_images(&cli.images_dir)?;
     if image_paths.is_empty() {
         return Err(format!("no images found under {}", cli.images_dir.display()).into());

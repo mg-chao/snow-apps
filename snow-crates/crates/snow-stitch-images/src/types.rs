@@ -191,5 +191,5 @@ impl Default for MotionEstimatorOptions {
 pub struct StitchOptions {
     pub axis: StitchAxis,
     pub estimator: MotionEstimatorOptions,
-    pub collect_trace: bool,
+    pub record_decisions: bool,
 }

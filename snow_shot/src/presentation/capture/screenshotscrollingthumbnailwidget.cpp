@@ -109,10 +109,6 @@ void ScreenshotScrollingThumbnailWidget::setRecognitionMode(
     updateWidgetMetrics();
 }
 
-ScreenshotScrollingRecognitionMode ScreenshotScrollingThumbnailWidget::recognitionMode() const {
-    return m_mode;
-}
-
 void ScreenshotScrollingThumbnailWidget::setMaximumPreviewHeight(int height) {
     setMaximumPreviewExtent(height);
 }
@@ -431,16 +427,6 @@ int ScreenshotScrollingThumbnailWidget::trimTop() const {
 
 int ScreenshotScrollingThumbnailWidget::trimBottom() const {
     return m_trimBottom;
-}
-
-void ScreenshotScrollingThumbnailWidget::setTrimRows(int top, int bottom) {
-    if (!hasPreview()) {
-        return;
-    }
-    const int extent = sourceExtent();
-    m_trimTop = std::clamp(top, 0, std::max(0, extent - 1));
-    m_trimBottom = std::clamp(bottom, std::min(extent, m_trimTop + 1), extent);
-    update();
 }
 
 QRect ScreenshotScrollingThumbnailWidget::previewRect() const {
