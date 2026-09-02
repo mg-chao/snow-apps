@@ -4,6 +4,7 @@
 #include "snow_canvas_filter_render.h"
 #include "snow_canvas_fill_render.h"
 #include "snow_canvas_pen_mask_atlas.h"
+#include "snow_canvas_render_diagnostics.h"
 #include "snow_canvas_render_geometry.h"
 #include "snow_canvas_text.h"
 #include "snow_canvas_text_layout.h"
@@ -12,7 +13,6 @@
 #include "snow_draw_engine_qt/snow_canvas_custom_renderer.h"
 
 #include <QBrush>
-#include <QDebug>
 #include <QFont>
 #include <QFontMetricsF>
 #include <QFontInfo>
@@ -27,7 +27,6 @@
 
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <iterator>
@@ -39,6 +38,7 @@
 
 namespace snow_canvas_renderer {
 namespace text_layout = snow_canvas_text_layout;
+using snow_canvas_render_diagnostics::StageTimer;
 namespace {
 
 constexpr double kRadiansToDegrees = 180.0 / 3.14159265358979323846;
@@ -1896,13 +1896,9 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
         if (displayCache != nullptr) {
             cached.logicalBounds = item.viewBounds;
         } else {
-            const auto pathStart = std::chrono::steady_clock::now();
+            const StageTimer pathTimer{g_filterDiagnostics.pathConstructionNanoseconds};
             cached.clipPath = filterClipPath(displayInfo, item);
             cached.pathReady = true;
-            g_filterDiagnostics.pathConstructionNanoseconds +=
-                static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                               std::chrono::steady_clock::now() - pathStart)
-                                               .count());
             cached.logicalBounds = cached.clipPath.boundingRect();
         }
         cached.axisAlignedRect = item.is_free_draw == 0 && std::abs(item.rotation) <= 1e-12;
@@ -1926,13 +1922,9 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
         CachedFilterFrameInfo& cached =
             cachedFilters[static_cast<std::size_t>(cachedFilterSlots[index])];
         if (!cached.pathReady) {
-            const auto pathStart = std::chrono::steady_clock::now();
+            const StageTimer pathTimer{g_filterDiagnostics.pathConstructionNanoseconds};
             cached.clipPath = filterClipPath(displayInfo, sceneItems[index]);
             cached.pathReady = true;
-            g_filterDiagnostics.pathConstructionNanoseconds +=
-                static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                               std::chrono::steady_clock::now() - pathStart)
-                                               .count());
         }
         return cached.clipPath;
     };
@@ -2198,7 +2190,7 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                     break;
                 }
             }
-            const auto backgroundReplayStart = std::chrono::steady_clock::now();
+            const StageTimer backgroundReplayTimer{g_filterDiagnostics.sceneReplayNanoseconds};
             if (!reusedPreLayer && !copiedBackgroundRows && backgroundImage != nullptr &&
                 !backgroundImage->isNull()) {
                 scenePainter.drawImage(viewportRect, *backgroundImage);
@@ -2213,10 +2205,6 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                 backgroundRenderer->renderBeforeCanvas(scenePainter, samplingContext);
                 scenePainter.restore();
             }
-            g_filterDiagnostics.sceneReplayNanoseconds += static_cast<std::uint64_t>(
-                std::chrono::duration_cast<std::chrono::nanoseconds>(
-                    std::chrono::steady_clock::now() - backgroundReplayStart)
-                    .count());
             bool renderedContent = reusedPreLayer || hasBackgroundContent;
             for (std::size_t position = replayStartPosition; position < expandedStream.size();) {
                 const std::uint32_t index = expandedStream[position];
@@ -2226,12 +2214,8 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                 }
                 const SnowCanvasSceneItem& item = sceneItems[index];
                 if (item.kind != SNOW_SCENE_DISPLAY_ITEM_FILTER) {
-                    const auto replayStart = std::chrono::steady_clock::now();
+                    const StageTimer replayTimer{g_filterDiagnostics.sceneReplayNanoseconds};
                     drawSceneItem(scenePainter, displayInfo, item);
-                    g_filterDiagnostics.sceneReplayNanoseconds += static_cast<std::uint64_t>(
-                        std::chrono::duration_cast<std::chrono::nanoseconds>(
-                            std::chrono::steady_clock::now() - replayStart)
-                            .count());
                     ++g_filterDiagnostics.replayedItemCount;
                     renderedContent = true;
                     ++position;
@@ -2524,7 +2508,8 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                         } else {
                             QImage* generatedMask = nullptr;
                             SparseMaskScan generatedScan;
-                            const auto maskStart = std::chrono::steady_clock::now();
+                            const StageTimer maskTimer{
+                                g_filterDiagnostics.maskConstructionNanoseconds};
                             QImage& mask =
                                 workspace.alphaScratch(maskPixels.size(), devicePixelRatio);
                             if (mask.isNull()) {
@@ -2561,28 +2546,19 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                                     continue;
                                 }
                             }
-                            g_filterDiagnostics.maskConstructionNanoseconds +=
-                                static_cast<std::uint64_t>(
-                                    std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                        std::chrono::steady_clock::now() - maskStart)
-                                        .count());
                             const std::size_t effectPixels =
                                 static_cast<std::size_t>(maskPixels.width()) *
                                 static_cast<std::size_t>(maskPixels.height());
                             bool scanSucceeded = true;
                             if (!onlyPenFilters) {
-                                const auto scanStart = std::chrono::steady_clock::now();
+                                const StageTimer scanTimer{
+                                    g_filterDiagnostics.maskScanNanoseconds};
                                 try {
                                     generatedScan =
                                         scanSparseMask(*generatedMask, maskPixels.topLeft());
                                 } catch (const std::bad_alloc&) {
                                     scanSucceeded = false;
                                 }
-                                g_filterDiagnostics.maskScanNanoseconds +=
-                                    static_cast<std::uint64_t>(
-                                        std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                            std::chrono::steady_clock::now() - scanStart)
-                                            .count());
                             }
                             const QImage& maskImage = *generatedMask;
                             const auto& spans = generatedScan.spans;
@@ -2634,15 +2610,11 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                 scenePainter.translate(-surfaceGeometry.logicalOrigin);
             }
             scenePainter.end();
-            const auto presentationStart = std::chrono::steady_clock::now();
+            const StageTimer presentationTimer{g_filterDiagnostics.presentationNanoseconds};
             painter.save();
             painter.setClipRegion(exposedRegion.intersected(QRegion(surfaceBounds)));
             painter.drawImage(surfaceGeometry.logicalOrigin, scene);
             painter.restore();
-            g_filterDiagnostics.presentationNanoseconds +=
-                static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                               std::chrono::steady_clock::now() - presentationStart)
-                                               .count());
         }
         workspace.finishFrame();
         const auto& kernelDiagnostics = workspace.diagnostics();

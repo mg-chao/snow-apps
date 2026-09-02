@@ -2019,7 +2019,6 @@ bool SnowCanvasWidget::Impl::paint(QPainter& painter, const QRegion& exposedRegi
             sceneCacheContentKey(sceneInfo, installedCustomRenderer, canvasClearBackgroundEnabled,
                                  painterDevicePixelRatio(painter, widget), widget.size());
 
-        snow_canvas_renderer::resetFilterRenderDiagnosticsForCurrentThread();
         const SnowCanvasRenderContext tileContext = renderContext(painter, exposedRegion);
         const bool filterVisible = hasFilter(frame.sceneItems, frame.sceneItemCount);
         if (!filterVisible) {

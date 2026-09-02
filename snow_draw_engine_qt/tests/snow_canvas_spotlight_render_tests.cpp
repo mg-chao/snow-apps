@@ -1,5 +1,6 @@
 #include "snow_canvas_display_item.h"
 #include "snow_canvas_ffi_handles.h"
+#include "snow_canvas_render_diagnostics.h"
 #include "snow_canvas_spotlight_renderer.h"
 #include "snow_canvas_viewport.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
@@ -323,6 +324,7 @@ void spotlightPreviewCoalescesAndCommitCancelsQueuedValue() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    snow_canvas_render_diagnostics::setEnabled(true);
     defaultMaskHasExactOpacityAndTransparentHole();
     overlappingAndRotatedCutoutsUseAPathUnion();
     renderAreaAndExposureLimitMaskWork();

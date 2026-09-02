@@ -62,6 +62,8 @@ set(SNOW_CANVAS_QT_SOURCES
     src/rendering/snow_canvas_filter_avx2.h
     src/rendering/snow_canvas_fill_render.cpp
     src/rendering/snow_canvas_fill_render.h
+    src/rendering/snow_canvas_render_diagnostics.cpp
+    src/rendering/snow_canvas_render_diagnostics.h
     src/rendering/snow_canvas_render_geometry.cpp
     src/rendering/snow_canvas_render_geometry.h
     src/rendering/snow_canvas_renderer.cpp

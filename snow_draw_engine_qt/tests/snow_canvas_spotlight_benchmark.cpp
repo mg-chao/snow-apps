@@ -1,3 +1,4 @@
+#include "snow_canvas_render_diagnostics.h"
 #include "snow_canvas_spotlight_renderer.h"
 
 #include <QApplication>
@@ -425,6 +426,7 @@ bool writeCsv(const std::string& path, const std::vector<Result>& results, int s
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    snow_canvas_render_diagnostics::setEnabled(true);
     std::string error;
     const auto options = parseOptions(argc, argv, &error);
     if (!options) {
