@@ -468,6 +468,55 @@ void transientToolWindowOwnershipKeepsScope() {
     require(count == 1, "unrelated top-level window escaped the screenshot scope");
 }
 
+// A completion shortcut hides the capture UI while the user is still holding
+// the key; the release is then routed to whichever window regains the
+// foreground and never reaches this process. The platform's pressed-key
+// bookkeeping keeps the key recorded, so the next physical press arrives
+// flagged as an auto-repeat. The manager must dispatch that press as the fresh
+// press it physically is instead of dropping it.
+void lostKeyReleaseDoesNotSwallowTheNextPress() {
+    QWidget window;
+    QWidget child(&window);
+    WindowShortcutManager manager;
+    manager.addScopeWindow(&window);
+
+    int count = 0;
+    require(manager.addBinding(&window,
+                               binding(QStringLiteral("completion"), Qt::Key_C, 100, [&]() {
+                                   ++count;
+                                   return true;
+                               })) != 0,
+            "completion binding registration failed");
+
+    require(sendKey(&child, QEvent::KeyPress, Qt::Key_C) && count == 1,
+            "the first press must dispatch");
+
+    // The capture UI hides while the key is held: the release goes to another
+    // application and is never observed here.
+    QEvent hide(QEvent::Hide);
+    QCoreApplication::sendEvent(&window, &hide);
+
+    // The next physical press arrives mislabeled as an auto-repeat.
+    require(sendKey(&child, QEvent::ShortcutOverride, Qt::Key_C, Qt::NoModifier, true),
+            "a stale auto-repeat must accept the shortcut override");
+    require(sendKey(&child, QEvent::KeyPress, Qt::Key_C, Qt::NoModifier, true) && count == 2,
+            "a press whose release was lost must dispatch as a fresh press");
+
+    // Subsequent hardware repeats of the still-held key must not re-fire.
+    sendKey(&child, QEvent::KeyPress, Qt::Key_C, Qt::NoModifier, true);
+    require(count == 2, "hardware repeats of a held key must not re-fire one-shot bindings");
+
+    // Once the release is observed, the next press is fresh again.
+    sendKey(&child, QEvent::KeyRelease, Qt::Key_C);
+    require(sendKey(&child, QEvent::KeyPress, Qt::Key_C) && count == 3,
+            "a press after an observed release must dispatch");
+
+    // An auto-repeat for a key whose press was never observed is a genuine
+    // repeat and stays ignored.
+    sendKey(&child, QEvent::KeyPress, Qt::Key_V, Qt::NoModifier, true);
+    require(count == 3, "auto-repeat without an observed press must be ignored");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -485,5 +534,6 @@ int main(int argc, char** argv) {
     inputSuspensionBlocksDispatchAndClearsHeldState();
     childWindowOwnershipFallbackKeepsToolbarScope();
     transientToolWindowOwnershipKeepsScope();
+    lostKeyReleaseDoesNotSwallowTheNextPress();
     return 0;
 }

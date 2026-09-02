@@ -24,14 +24,16 @@ using namespace std::chrono_literals;
 
 // This driver starts snow_shot in the background (the main window is never
 // shown; its presence skews the scenario) and drives the capture for several
-// consecutive rounds through the global F1 screenshot hotkey.  Each round
+// consecutive rounds through a global screenshot hotkey.  Each round
 // drags out a rectangle and injects Ctrl+C.  The shortcut is considered
 // recognized only when the capture ends and the clipboard receives a valid
 // image.  The scenario repeats because the regression this guards against
 // only drops the hotkey-triggered capture on a later attempt.
 //
-// The F1 binding is seeded into the isolated e2e storage instance before the
-// application starts: <APPDATA>/SnowShot/snow_shot-e2e-<pid>/config.json.
+// The hotkey binding is seeded into the isolated e2e storage instance before
+// the application starts: <APPDATA>/SnowShot/snow_shot-e2e-<pid>/config.json.
+// F24 is used so the seeded binding cannot collide with the hotkeys of a
+// real snow_shot instance running on the same machine.
 
 constexpr wchar_t kMainWindowName[] = L"SnowShot";
 constexpr wchar_t kToolbarButtonAutomationIdSuffix[] = L".screenshotScrollingScreenshotButton";
@@ -187,7 +189,7 @@ void require(bool condition, const char* message) {
 }
 
 // The e2e instance id isolates the application's storage under
-// %APPDATA%/SnowShot/snow_shot-e2e-<test pid>/, so the F1 binding can be
+// %APPDATA%/SnowShot/snow_shot-e2e-<test pid>/, so the hotkey binding can be
 // seeded without touching the user's real configuration.
 [[nodiscard]] std::wstring e2eStorageDirectory() {
     wchar_t appData[MAX_PATH]{};
@@ -215,7 +217,7 @@ void writeSeededConfiguration(const std::wstring& storageDirectory) {
     // storage/schema_version is mandatory; without it the store discards the
     // seeded document as an invalid schema.
     static constexpr char kSeededDocument[] =
-        R"({"storage":{"schema_version":1},"global_shortcuts":{"screenshot":["F1"]}})";
+        R"({"storage":{"schema_version":1},"global_shortcuts":{"screenshot":["F24"]}})";
     DWORD written = 0;
     const BOOL writeResult =
         WriteFile(file, kSeededDocument, static_cast<DWORD>(sizeof(kSeededDocument) - 1), &written,
@@ -435,7 +437,7 @@ BOOL CALLBACK overlaySearchCallback(HWND window, LPARAM param) {
     return TRUE;
 }
 
-// The F1 hotkey starts the capture regardless of which window held the
+// The hotkey starts the capture regardless of which window held the
 // foreground, so find the overlay as the process's visible top-level window
 // covering the selection region instead of relying on foreground changes.
 [[nodiscard]] HWND waitForOverlayWindow(DWORD processId) {
@@ -554,33 +556,40 @@ void dragSelect500By500() {
     require(SendInput(1, &up, sizeof(up)) == 1, "could not release the left mouse button");
 }
 
-void sendCtrlC() {
-    INPUT input[4]{};
+void sendCtrlCDown() {
+    INPUT input[2]{};
     input[0].type = INPUT_KEYBOARD;
     input[0].ki.wVk = VK_CONTROL;
     input[1].type = INPUT_KEYBOARD;
     input[1].ki.wVk = 'C';
-    input[2].type = INPUT_KEYBOARD;
-    input[2].ki.wVk = 'C';
-    input[2].ki.dwFlags = KEYEVENTF_KEYUP;
-    input[3].type = INPUT_KEYBOARD;
-    input[3].ki.wVk = VK_CONTROL;
-    input[3].ki.dwFlags = KEYEVENTF_KEYUP;
     require(SendInput(static_cast<UINT>(std::size(input)), input, sizeof(INPUT)) ==
                 std::size(input),
-            "could not inject Ctrl+C");
+            "could not inject the Ctrl+C press");
 }
 
-void sendHotkeyF1() {
+void sendCtrlCUp() {
     INPUT input[2]{};
     input[0].type = INPUT_KEYBOARD;
-    input[0].ki.wVk = VK_F1;
+    input[0].ki.wVk = 'C';
+    input[0].ki.dwFlags = KEYEVENTF_KEYUP;
     input[1].type = INPUT_KEYBOARD;
-    input[1].ki.wVk = VK_F1;
+    input[1].ki.wVk = VK_CONTROL;
     input[1].ki.dwFlags = KEYEVENTF_KEYUP;
     require(SendInput(static_cast<UINT>(std::size(input)), input, sizeof(INPUT)) ==
                 std::size(input),
-            "could not inject the F1 screenshot hotkey");
+            "could not inject the Ctrl+C release");
+}
+
+void sendHotkey() {
+    INPUT input[2]{};
+    input[0].type = INPUT_KEYBOARD;
+    input[0].ki.wVk = VK_F24;
+    input[1].type = INPUT_KEYBOARD;
+    input[1].ki.wVk = VK_F24;
+    input[1].ki.dwFlags = KEYEVENTF_KEYUP;
+    require(SendInput(static_cast<UINT>(std::size(input)), input, sizeof(INPUT)) ==
+                std::size(input),
+            "could not inject the screenshot hotkey");
 }
 
 class ScopedClipboard final {
@@ -696,7 +705,11 @@ void requireRound(bool condition, int round, const char* text) {
 }
 
 void runCtrlCRound(IUIAutomation& automation, const ScopedProcess& application, int round) {
-    sendHotkeyF1();
+    // Remember the foreground window before the capture starts; the Ctrl+C
+    // release below is deliberately routed away from the application (see the
+    // release site for why).
+    const HWND foregroundBeforeCapture = GetForegroundWindow();
+    sendHotkey();
     // The injected hotkey does not always hand the application the foreground
     // rights a physical keypress would; lend it the driver's rights (best
     // effort) so its own overlay activation behaves like real usage.
@@ -704,7 +717,7 @@ void runCtrlCRound(IUIAutomation& automation, const ScopedProcess& application, 
 
     const HWND overlay = waitForOverlayWindow(application.processId());
     requireRound(overlay != nullptr, round,
-                 "the F1 hotkey did not show the screenshot capture overlay");
+                 "the screenshot hotkey did not show the capture overlay");
     if (!waitUntil([&]() { return GetForegroundWindow() == overlay; }, 1500ms)) {
         std::cout << "round " << round + 1
                   << ": the capture overlay did not take the foreground on its own; "
@@ -743,12 +756,37 @@ void runCtrlCRound(IUIAutomation& automation, const ScopedProcess& application, 
     }
 
     clearClipboard();
-    sendCtrlC();
+    // Hold the chord until the capture has fully ended, then release it. This
+    // matches physical usage, where the release lands after the capture UI is
+    // already gone and is therefore delivered to whatever regained the
+    // foreground. Sending the press and release as one batch would hide the
+    // lost-release regression this test guards against.
+    sendCtrlCDown();
 
     // The export runs asynchronously; an unrecognized shortcut never lands an
     // image on the clipboard, which is what fails this round.
     const bool copied = waitUntil(clipboardContainsValidImage, 10s);
-    requireRound(copied, round, "Ctrl+C did not complete the screenshot copy to the clipboard");
+    if (!copied) {
+        // Diagnose the failure before failing the round. The guarded
+        // regression swallows the first press only: releasing the chord onto
+        // the still-open overlay lets the platform drop its stale pressed-key
+        // record, so an immediate retry succeeds. Confirming that signature
+        // keeps this failure specific to the lost key release instead of an
+        // unrelated export/clipboard problem.
+        sendCtrlCUp();
+        sendCtrlCDown();
+        const bool recovered = waitUntil(clipboardContainsValidImage, 10s);
+        sendCtrlCUp();
+        if (recovered) {
+            throw std::runtime_error(
+                roundMessage(round,
+                             "the first Ctrl+C press was swallowed and only the retry copied: "
+                             "the previous capture's key release never reached the app, so the "
+                             "press arrived mislabeled as an auto-repeat"));
+        }
+        throw std::runtime_error(
+            roundMessage(round, "Ctrl+C did not complete the screenshot copy to the clipboard"));
+    }
 
     const bool captureEnded =
         waitUntil([&]() { return !IsWindowVisible(overlay) || GetForegroundWindow() != overlay; },
@@ -756,10 +794,40 @@ void runCtrlCRound(IUIAutomation& automation, const ScopedProcess& application, 
     requireRound(captureEnded, round,
                  "the screenshot did not end after Ctrl+C with a selected area");
 
+    // Match physical usage: the user releases the chord only once the capture
+    // UI is gone, so the release is routed to whatever window owns the
+    // foreground then.  Windows does not reassign the foreground immediately
+    // when the foreground window hides, so without help the release could
+    // still land on the hidden overlay, reach the application, and mask the
+    // lost-release regression.  Force the foreground to a window that does
+    // not belong to the application and wait for the switch before releasing;
+    // if that cannot be achieved the round must fail loudly rather than
+    // silently skip the regression scenario.
+    HWND releaseTarget = foregroundBeforeCapture;
+    if (releaseTarget == nullptr || IsWindow(releaseTarget) == FALSE ||
+        windowBelongsToProcess(releaseTarget, application.processId())) {
+        releaseTarget = GetShellWindow();
+    }
+    const HWND foregroundAfterCapture = GetForegroundWindow();
+    if (foregroundAfterCapture == nullptr ||
+        windowBelongsToProcess(foregroundAfterCapture, application.processId())) {
+        requireRound(waitUntil([&]() { return tryActivateWindow(releaseTarget); }, 5s), round,
+                     "could not hand the foreground back to a non-snow_shot window");
+    }
+    requireRound(waitUntil(
+                     [&]() {
+                         const HWND foreground = GetForegroundWindow();
+                         return foreground != nullptr &&
+                                !windowBelongsToProcess(foreground, application.processId());
+                     },
+                     5s),
+                 round, "the foreground did not leave snow_shot before the Ctrl+C release");
+    sendCtrlCUp();
+
     requireRound(application.isRunning(), round, "snow_shot exited after the Ctrl+C scenario");
     requireRound(findVisibleWindowByTitle(application.processId(), kMainWindowName) == nullptr,
                  round, "the main window unexpectedly appeared");
-    std::cout << "round " << round + 1 << ": F1+Ctrl+C recognized\n";
+    std::cout << "round " << round + 1 << ": hotkey+Ctrl+C recognized\n";
 }
 } // namespace
 
@@ -792,7 +860,7 @@ int main(int argc, char* argv[]) {
             require(findVisibleWindowByTitle(application.processId(), kMainWindowName) == nullptr,
                     "the main window unexpectedly appeared at startup");
             std::cout << "starting " << kRoundCount
-                      << " F1 hotkey rounds without showing the main window\n";
+                      << " hotkey rounds without showing the main window\n";
             for (int round = 0; round < kRoundCount; ++round) {
                 runCtrlCRound(*automation.get(), application, round);
                 if (round + 1 < kRoundCount) {
