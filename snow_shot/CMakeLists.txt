@@ -3041,6 +3041,29 @@ if(SNOW_SHOT_BUILD_TESTS)
             RUN_SERIAL TRUE
             WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
         )
+
+        # This UIA end-to-end driver is Qt-free; give it the Qt-free dialog
+        # guard so the guard does not add a Qt runtime dependency.
+        set_property(DIRECTORY PROPERTY LINK_LIBRARIES snow_test_cli_guard_native)
+        add_executable(snow-shot-screenshot-ctrl-c-uia-e2e-test
+            tests/screenshot_ctrl_c_uia_e2e_test.cpp
+        )
+        set_property(DIRECTORY PROPERTY LINK_LIBRARIES snow_test_cli_guard_qt)
+        target_link_libraries(snow-shot-screenshot-ctrl-c-uia-e2e-test PRIVATE
+            Ole32
+            Uiautomationcore
+            User32
+        )
+        add_dependencies(snow-shot-screenshot-ctrl-c-uia-e2e-test snow_shot)
+        add_test(
+            NAME snow-shot-screenshot-ctrl-c-uia-e2e-test
+            COMMAND snow-shot-screenshot-ctrl-c-uia-e2e-test $<TARGET_FILE:snow_shot>
+        )
+        set_tests_properties(snow-shot-screenshot-ctrl-c-uia-e2e-test PROPERTIES
+            LABELS "e2e;uia;interactive"
+            RUN_SERIAL TRUE
+            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+        )
     endif()
 
     foreach(_storage_test_target IN ITEMS
