@@ -163,6 +163,9 @@ void configureScreenshotToolPaletteSliderEditor(ScreenshotToolPaletteSliderEdito
 screenshotToolPaletteMetricsApplyTo(const ScreenshotToolPaletteButtonMetrics& metrics,
                                     const QWidget* widget);
 
+void stampScreenshotToolbarReferenceWidth(QWidget* widget, int referenceWidth);
+[[nodiscard]] int screenshotToolbarReferenceWidth(const QWidget* widget);
+
 class StylePreviewButton : public adqt::widgets::AdButton {
   public:
     explicit StylePreviewButton(QWidget* parent = nullptr);
@@ -351,6 +354,7 @@ class IconNumericValuePreviewButton final : public adqt::widgets::AdButton {
     explicit IconNumericValuePreviewButton(QWidget* parent = nullptr);
 
     void setValue(int value);
+    [[nodiscard]] int value() const;
     void setCornerRadius(int cornerRadius);
     void setMixed(bool mixed);
     void setIconRef(const adqt::icons::IconRef& iconRef);

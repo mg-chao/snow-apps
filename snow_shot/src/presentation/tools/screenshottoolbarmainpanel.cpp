@@ -325,9 +325,6 @@ void ScreenshotToolbarMainPanel::applyMetrics() {
                     break;
                 }
             }
-        } else if (layoutItem != nullptr) {
-            referenceWidth = qMax(
-                0, qRound(static_cast<qreal>(layoutItem->sizeHint().width()) / m_physicalScale));
         }
         referenceWidths.append(referenceWidth);
     }

@@ -50,6 +50,7 @@ constexpr int kColorPickerOptionSpacing = 4;
 constexpr int kCornerRadiusLeadingSpacing = 4;
 constexpr int kTextStrokeColorTrailingSpacing = 4;
 constexpr int kSerialNumberTrailingSpacing = 4;
+constexpr int kWatermarkTextWidth = 135;
 constexpr int kOpacitySliderWidth = 96;
 constexpr double kMinWatermarkFontSize = 6.0;
 constexpr double kMaxWatermarkFontSize = 512.0;
@@ -335,6 +336,7 @@ void configureColorPickerMetrics(adqt::widgets::AdColorPicker* picker,
 
     const int buttonSize = qMax(1, qRound(metrics.buttonSize * metrics.physicalScale));
     picker->setFixedSize(buttonSize, buttonSize);
+    stampScreenshotToolbarReferenceWidth(picker, metrics.buttonSize);
     activateWidgetLayoutTree(picker);
 }
 
@@ -1858,8 +1860,10 @@ void ScreenshotToolPaletteStyleControls::addWatermarkControls(
     m_watermarkTextEdit->setAccessibleName(watermarkTextLabel);
     m_watermarkTextEdit->setControlSize(adqt::widgets::AdLineEdit::ControlSize::Small);
     m_watermarkTextEdit->setVariant(adqt::widgets::AdLineEdit::Variant::Borderless);
-    m_watermarkTextEdit->setFixedSize(qMax(1, qRound(135.0 * metrics.physicalScale)),
+    m_watermarkTextEdit->setFixedSize(qMax(1, qRound(static_cast<qreal>(kWatermarkTextWidth) *
+                                                     metrics.physicalScale)),
                                       qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
+    stampScreenshotToolbarReferenceWidth(m_watermarkTextEdit, kWatermarkTextWidth);
     m_watermarkTextEdit->setText(config.text);
     layout->addWidget(m_watermarkTextEdit);
     QObject::connect(m_watermarkTextEdit, &QLineEdit::textChanged, receiver,
@@ -2076,6 +2080,18 @@ void ScreenshotToolPaletteStyleControls::releaseControlBindings() {
     m_watermarkGapEditor = nullptr;
     m_watermarkOpacityEditor = {};
     m_toolbarSpacingItems.clear();
+}
+
+int ScreenshotToolPaletteStyleControls::spacerReferenceWidth(const QSpacerItem* spacer) const {
+    if (spacer == nullptr) {
+        return 0;
+    }
+    for (const ToolbarSpacingItem& item : m_toolbarSpacingItems) {
+        if (item.item == spacer) {
+            return item.baseSpacing;
+        }
+    }
+    return 0;
 }
 
 void ScreenshotToolPaletteStyleControls::setCreationStyleDefaults(
@@ -2805,8 +2821,9 @@ void ScreenshotToolPaletteStyleControls::refreshToolbarMetrics(
     refreshColorEditorMetrics(m_watermarkColorEditor, metrics);
     if (applies(m_watermarkTextEdit)) {
         m_watermarkTextEdit->setFixedSize(
-            qMax(1, qRound(135.0 * metrics.physicalScale)),
+            qMax(1, qRound(static_cast<qreal>(kWatermarkTextWidth) * metrics.physicalScale)),
             qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
+        stampScreenshotToolbarReferenceWidth(m_watermarkTextEdit, kWatermarkTextWidth);
     }
     refreshFontEditorMetrics(m_watermarkFontEditor, metrics);
     configureScreenshotToolPaletteIconNumericValueButton(m_watermarkAngleEditor, metrics);

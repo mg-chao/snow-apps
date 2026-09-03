@@ -116,6 +116,7 @@ class ScreenshotToolPaletteStyleControls final : private ScreenshotToolPaletteSt
 
     // Popup content owns its window DPR and is intentionally excluded.
     void refreshToolbarMetrics(const ScreenshotToolPaletteButtonMetrics& metrics);
+    [[nodiscard]] int spacerReferenceWidth(const QSpacerItem* spacer) const;
     void addSpotlightColorControls(QBoxLayout* layout, QWidget* parent, QObject* receiver,
                                    const QColor& initialColor, const QVector<QColor>& presetValues,
                                    const std::function<void(const QColor&)>& commitColor,
