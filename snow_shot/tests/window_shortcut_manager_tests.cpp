@@ -3,6 +3,9 @@
 #include <QApplication>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QPlainTextEdit>
+#include <QTextBrowser>
+#include <QTextEdit>
 #include <QWidget>
 #include <QWindow>
 
@@ -205,6 +208,43 @@ void textGuardsLeaveInputUntouched() {
     sendKey(&editor, QEvent::ShortcutOverride, Qt::Key_A);
     sendKey(&editor, QEvent::KeyPress, Qt::Key_A);
     require(count == 0, "text guard must prevent shortcut activation");
+}
+
+void readOnlyTextSurfacesRemainCommandRoutable() {
+    QWidget window;
+    QLineEdit lineEdit(&window);
+    QTextEdit textEdit(&window);
+    QWidget textEditChild(&textEdit);
+    QPlainTextEdit plainTextEdit(&window);
+    QTextBrowser browser(&window);
+    QWidget browserChild(&browser);
+
+    require(WindowShortcutManager::focusAcceptsTextInput(&lineEdit),
+            "an editable line edit must suppress window shortcuts");
+    lineEdit.setReadOnly(true);
+    require(!WindowShortcutManager::focusAcceptsTextInput(&lineEdit),
+            "a read-only line edit must remain eligible for window shortcuts");
+
+    require(WindowShortcutManager::focusAcceptsTextInput(&textEdit),
+            "an editable text edit must suppress window shortcuts");
+    require(WindowShortcutManager::focusAcceptsTextInput(&textEditChild),
+            "a child inside an editable text edit must suppress window shortcuts");
+    textEdit.setReadOnly(true);
+    require(!WindowShortcutManager::focusAcceptsTextInput(&textEdit),
+            "a read-only text edit must remain eligible for window shortcuts");
+    require(!WindowShortcutManager::focusAcceptsTextInput(&textEditChild),
+            "a child inside a read-only text edit must remain command-routable");
+
+    require(WindowShortcutManager::focusAcceptsTextInput(&plainTextEdit),
+            "an editable plain text edit must suppress window shortcuts");
+    plainTextEdit.setReadOnly(true);
+    require(!WindowShortcutManager::focusAcceptsTextInput(&plainTextEdit),
+            "a read-only plain text edit must remain eligible for window shortcuts");
+
+    require(!WindowShortcutManager::focusAcceptsTextInput(&browser),
+            "a read-only text browser must remain eligible for window shortcuts");
+    require(!WindowShortcutManager::focusAcceptsTextInput(&browserChild),
+            "focus inside a read-only result surface must remain command-routable");
 }
 
 void dispatchSurvivesBindingRemovalFromCallbacks() {
@@ -528,6 +568,7 @@ int main(int argc, char** argv) {
     scopeRepeatUpdatesAndLifetimeAreEnforced();
     bindingsCanExplicitlyHandleTransientToolWindows();
     textGuardsLeaveInputUntouched();
+    readOnlyTextSurfacesRemainCommandRoutable();
     dispatchSurvivesBindingRemovalFromCallbacks();
     heldBindingsReleaseByTriggerKey();
     heldModifierParsingAndAdditionalModifiersAreScoped();

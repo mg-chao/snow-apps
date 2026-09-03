@@ -70,14 +70,10 @@
 #include <QScopedValueRollback>
 #include <QSet>
 #include <QUrl>
-#include <QLineEdit>
 #include <QMimeData>
 #include <QNetworkProxy>
 #include <QNetworkProxyFactory>
 #include <QNetworkProxyQuery>
-#include <QPlainTextEdit>
-#include <QTextEdit>
-#include <QTextBrowser>
 #include <QTimer>
 #include <QWindow>
 
@@ -1320,24 +1316,7 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
         },
         [this]() {
             QWidget* focus = QApplication::focusWidget();
-            // A QR result is a read-only selection surface. It derives from
-            // QTextEdit, but must not suppress screenshot commands such as
-            // save, pin, drawing, cancel, or image copy.
-            const auto isQrResultSurface = [](QWidget* widget) {
-                for (QWidget* current = widget; current != nullptr;
-                     current = current->parentWidget()) {
-                    const auto* browser = qobject_cast<const QTextBrowser*>(current);
-                    if (browser != nullptr &&
-                        browser->objectName() == QStringLiteral("screenshotQrContents")) {
-                        return true;
-                    }
-                }
-                return false;
-            };
-            if (!isQrResultSurface(focus) &&
-                (qobject_cast<QLineEdit*>(focus) != nullptr ||
-                 qobject_cast<QTextEdit*>(focus) != nullptr ||
-                 qobject_cast<QPlainTextEdit*>(focus) != nullptr)) {
+            if (snow_shot::presentation::WindowShortcutManager::focusAcceptsTextInput(focus)) {
                 return false;
             }
             bool allowed = true;

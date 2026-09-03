@@ -20,13 +20,10 @@
 #include <QApplication>
 #include <QEvent>
 #include <QKeyEvent>
-#include <QLineEdit>
 #include <QMouseEvent>
 #include <QPointer>
-#include <QPlainTextEdit>
 #include <QScreen>
 #include <QTimer>
-#include <QTextEdit>
 #include <QWheelEvent>
 #include <QWindow>
 
@@ -79,11 +76,6 @@ bool wheelAdjustsStrokeWidth(SnowCanvasTool tool) {
     }
 }
 
-bool focusAcceptsTextInput(QWidget* focusWidget) {
-    return qobject_cast<QLineEdit*>(focusWidget) != nullptr ||
-           qobject_cast<QTextEdit*>(focusWidget) != nullptr ||
-           qobject_cast<QPlainTextEdit*>(focusWidget) != nullptr;
-}
 } // namespace
 
 ScreenshotPinnedEditController::ScreenshotPinnedEditController(
@@ -241,7 +233,9 @@ void ScreenshotPinnedEditController::registerDrawingShortcuts() {
         binding.priority =
             snow_shot::presentation::WindowShortcutManager::StandardPriority::DrawingShortcut;
         binding.canActivate = [this](const auto& context) {
-            return m_editMode && !focusAcceptsTextInput(context.focusWidget) &&
+            return m_editMode &&
+                   !snow_shot::presentation::WindowShortcutManager::focusAcceptsTextInput(
+                       context.focusWidget) &&
                    !m_canvas.hasActiveTextEditing() && m_toolbarWindow != nullptr &&
                    m_toolbarWindow->palette() != nullptr;
         };
@@ -279,7 +273,9 @@ void ScreenshotPinnedEditController::registerRecognitionShortcuts() {
         binding.priority =
             snow_shot::presentation::WindowShortcutManager::StandardPriority::ScreenshotShortcut;
         binding.canActivate = [this](const auto& context) {
-            return m_editMode && !focusAcceptsTextInput(context.focusWidget) &&
+            return m_editMode &&
+                   !snow_shot::presentation::WindowShortcutManager::focusAcceptsTextInput(
+                       context.focusWidget) &&
                    !m_canvas.hasActiveTextEditing() && m_toolbarWindow != nullptr &&
                    m_toolbarWindow->palette() != nullptr;
         };

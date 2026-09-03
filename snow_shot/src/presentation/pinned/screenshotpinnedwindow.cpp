@@ -53,7 +53,6 @@
 #include <QHBoxLayout>
 #include <QKeySequence>
 #include <QLabel>
-#include <QLineEdit>
 #include <QMouseEvent>
 #include <QMimeData>
 #include <QMoveEvent>
@@ -65,9 +64,8 @@
 #include <QShowEvent>
 #include <QSizePolicy>
 #include <QTimer>
+#include <QTextBrowser>
 #include <QTextDocument>
-#include <QTextEdit>
-#include <QPlainTextEdit>
 #include <QVariantAnimation>
 #include <QVBoxLayout>
 #include <QWheelEvent>
@@ -349,10 +347,13 @@ void setActionShortcutDisplay(QAction* action, const QString& shortcut) {
     setActionDisplayText(action, label);
 }
 
-bool focusAcceptsTextInput(QWidget* focusWidget) {
-    return qobject_cast<QLineEdit*>(focusWidget) != nullptr ||
-           qobject_cast<QTextEdit*>(focusWidget) != nullptr ||
-           qobject_cast<QPlainTextEdit*>(focusWidget) != nullptr;
+QTextBrowser* readOnlyRecognitionBrowserForFocus(QWidget* focusWidget) {
+    for (QWidget* current = focusWidget; current != nullptr; current = current->parentWidget()) {
+        if (auto* browser = qobject_cast<QTextBrowser*>(current)) {
+            return browser->isReadOnly() ? browser : nullptr;
+        }
+    }
+    return nullptr;
 }
 
 bool trayMenuShowsMainInterface() {
@@ -543,15 +544,17 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
     using ShortcutManager = snow_shot::presentation::WindowShortcutManager;
 
     const auto localCommandsAllowed = [this](const ShortcutManager::ActivationContext& context) {
-        return !m_closing && !focusAcceptsTextInput(context.focusWidget) &&
+        return !m_closing && !ShortcutManager::focusAcceptsTextInput(context.focusWidget) &&
                (m_canvas == nullptr || !m_canvas->hasActiveTextEditing());
     };
     const auto ocrCommandsAllowed = [this](const ShortcutManager::ActivationContext& context) {
         // OCR replaces the canvas interaction surface. Let its read-only result layer handle
         // Select All/Copy even if the hidden canvas still has an unfinished drawing edit, while
         // preserving native shortcuts for an actual text input that owns keyboard focus.
-        return !m_closing && m_ocrMode && m_displayOcrPresentation != nullptr &&
-               !focusAcceptsTextInput(context.focusWidget);
+        return !m_closing && m_ocrMode &&
+               (m_displayOcrPresentation != nullptr ||
+                readOnlyRecognitionBrowserForFocus(context.focusWidget) != nullptr) &&
+               !ShortcutManager::focusAcceptsTextInput(context.focusWidget);
     };
 
     ShortcutManager::Binding copyCurrent;
@@ -676,7 +679,14 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
     };
     selectAll.priority = ShortcutManager::StandardPriority::WindowCommand;
     selectAll.canActivate = ocrCommandsAllowed;
-    selectAll.activate = [this](const auto&) {
+    selectAll.activate = [this](const auto& context) {
+        if (QTextBrowser* browser = readOnlyRecognitionBrowserForFocus(context.focusWidget)) {
+            browser->selectAll();
+            return true;
+        }
+        if (m_displayOcrPresentation == nullptr) {
+            return false;
+        }
         m_displayOcrPresentation->selectAll();
         m_screenshotRenderer->updateOcrSelection();
         return true;

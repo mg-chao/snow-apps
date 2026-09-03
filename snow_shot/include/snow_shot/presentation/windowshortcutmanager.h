@@ -75,6 +75,10 @@ class WindowShortcutManager final : public QObject {
     [[nodiscard]] static QList<QKeyCombination>
     keyCombinationsFromPortableText(const QStringList& shortcuts);
 
+    // Returns whether keyboard focus belongs to an editable text control.
+    // Read-only text surfaces remain eligible for window command shortcuts.
+    [[nodiscard]] static bool focusAcceptsTextInput(QWidget* focusWidget);
+
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
