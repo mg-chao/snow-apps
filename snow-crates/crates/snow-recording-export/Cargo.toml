@@ -19,3 +19,4 @@ zstd.workspace = true
 
 [dev-dependencies]
 proptest = "1.11.0"
+symphonia = { version = "0.5.4", default-features = false, features = ["aac", "isomp4"] }
