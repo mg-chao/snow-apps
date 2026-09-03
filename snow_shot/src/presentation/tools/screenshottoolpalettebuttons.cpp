@@ -26,6 +26,8 @@
 #include <QSizePolicy>
 #include <QStandardItemModel>
 #include <QVariant>
+#include <QWidget>
+#include <QVariant>
 
 #include <algorithm>
 #include <cmath>
@@ -117,6 +119,7 @@ constexpr double MIN_RECTANGLE_STROKE_WIDTH = 1.0;
 constexpr double MAX_RECTANGLE_STROKE_WIDTH = 72.0;
 constexpr const char* STYLE_RADIO_BASE_SIZE_PROPERTY = "snowShotStyleRadioBaseSize";
 constexpr const char* STYLE_RADIO_BASE_ICON_SIZE_PROPERTY = "snowShotStyleRadioBaseIconSize";
+constexpr const char* TOOLBAR_REFERENCE_WIDTH_PROPERTY = "snowShotToolbarReferenceWidth";
 
 adqt::icons::IconStatePalette styleRadioIconPalette(const adqt::widgets::AdRadio* radio,
                                                     const adqt::icons::IconRef& iconRef) {
@@ -1126,6 +1129,10 @@ void IconNumericValuePreviewButton::setValue(int value) {
     update();
 }
 
+int IconNumericValuePreviewButton::value() const {
+    return m_value;
+}
+
 void IconNumericValuePreviewButton::setCornerRadius(int cornerRadius) {
     setValue(std::max(0, cornerRadius));
 }
@@ -1360,6 +1367,21 @@ bool screenshotToolPaletteMetricsApplyTo(const ScreenshotToolPaletteButtonMetric
                                  metrics.scope->isAncestorOf(widget));
 }
 
+void stampScreenshotToolbarReferenceWidth(QWidget* widget, int referenceWidth) {
+    if (widget == nullptr || referenceWidth <= 0) {
+        return;
+    }
+    widget->setProperty(TOOLBAR_REFERENCE_WIDTH_PROPERTY, referenceWidth);
+}
+
+int screenshotToolbarReferenceWidth(const QWidget* widget) {
+    if (widget == nullptr) {
+        return 0;
+    }
+    const QVariant value = widget->property(TOOLBAR_REFERENCE_WIDTH_PROPERTY);
+    return value.isValid() ? std::max(0, value.toInt()) : 0;
+}
+
 ScreenshotToolPaletteSliderEditor
 createScreenshotToolPaletteSliderEditor(QBoxLayout* layout, QWidget* parent,
                                         const ScreenshotToolPaletteSliderEditorConfig& config,
@@ -1566,6 +1588,7 @@ void configureScreenshotToolPaletteSelectEditor(ScreenshotToolPaletteSelectEdito
     }
     editor.select->setFixedSize(qMax(1, qRound(editor.baseWidth * metrics.physicalScale)),
                                 qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
+    stampScreenshotToolbarReferenceWidth(editor.select, editor.baseWidth);
 }
 
 void configureScreenshotToolPaletteSliderEditor(ScreenshotToolPaletteSliderEditor& editor,
@@ -1574,6 +1597,7 @@ void configureScreenshotToolPaletteSliderEditor(ScreenshotToolPaletteSliderEdito
         const int controlSize = qMax(1, qRound(metrics.buttonSize * metrics.physicalScale));
         const int iconSize = qMax(1, qRound(editor.baseIconSize * metrics.physicalScale));
         editor.icon->setFixedSize(controlSize, controlSize);
+        stampScreenshotToolbarReferenceWidth(editor.icon, metrics.buttonSize);
         editor.icon->setPixmap(snow_shot::presentation::icons::renderTintedIconPixmap(
             editor.iconRef, QSize(iconSize, iconSize), editor.icon->devicePixelRatioF(),
             snow_shot::presentation::styles::generateThemeColorScheme().map.colorText));
@@ -1581,6 +1605,7 @@ void configureScreenshotToolPaletteSliderEditor(ScreenshotToolPaletteSliderEdito
     if (editor.slider != nullptr && screenshotToolPaletteMetricsApplyTo(metrics, editor.slider)) {
         editor.slider->setFixedSize(qMax(1, qRound(editor.baseSliderWidth * metrics.physicalScale)),
                                     qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
+        stampScreenshotToolbarReferenceWidth(editor.slider, editor.baseSliderWidth);
     }
 }
 
@@ -1596,6 +1621,7 @@ void configureScreenshotToolPaletteBaseButton(adqt::widgets::AdButton* button, c
                               scaledMetric(metrics.iconSize, metrics.physicalScale)));
     button->setFixedSize(scaledMetric(metrics.buttonSize, metrics.physicalScale),
                          scaledMetric(metrics.buttonSize, metrics.physicalScale));
+    stampScreenshotToolbarReferenceWidth(button, metrics.buttonSize);
 }
 
 void configureScreenshotToolPaletteStyleButton(adqt::widgets::AdButton* button, const char* tooltip,
@@ -1610,6 +1636,7 @@ void configureScreenshotToolPaletteStyleButton(adqt::widgets::AdButton* button, 
                               scaledMetric(metrics.iconSize, metrics.physicalScale)));
     button->setFixedSize(scaledMetric(metrics.buttonSize, metrics.physicalScale),
                          scaledMetric(metrics.buttonSize, metrics.physicalScale));
+    stampScreenshotToolbarReferenceWidth(button, metrics.buttonSize);
 }
 
 void configureScreenshotToolPaletteStyleRadioButtonGroup(
@@ -1645,10 +1672,18 @@ void configureScreenshotToolPaletteStyleRadioButtonGroup(
                                  scaledMetric(baseIconSize.height(), metrics.physicalScale)));
         radio->setFixedSize(scaledMetric(baseSize.width(), metrics.physicalScale),
                             scaledMetric(baseSize.height(), metrics.physicalScale));
+        stampScreenshotToolbarReferenceWidth(radio, baseSize.width());
     }
 
-    if (applied) {
-        if (QBoxLayout* layout = group->managedLayout()) {
+    if (QBoxLayout* layout = group->managedLayout()) {
+        int referenceWidth = 0;
+        for (QAbstractButton* button : group->buttons()) {
+            if (auto* radio = qobject_cast<adqt::widgets::AdRadio*>(button)) {
+                referenceWidth += screenshotToolbarReferenceWidth(radio);
+            }
+        }
+        stampScreenshotToolbarReferenceWidth(layout->parentWidget(), referenceWidth);
+        if (applied) {
             layout->invalidate();
         }
     }
@@ -1887,6 +1922,7 @@ void configureScreenshotToolPaletteCornerRadiusEditor(
     }
     configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
     button->setFixedWidth(scaledMetric(CORNER_RADIUS_EDITOR_WIDTH, metrics.physicalScale));
+    stampScreenshotToolbarReferenceWidth(button, CORNER_RADIUS_EDITOR_WIDTH);
     button->setPhysicalScale(metrics.physicalScale);
 }
 
@@ -1912,6 +1948,7 @@ void configureScreenshotToolPaletteIconNumericValueButton(
     }
     configureScreenshotToolPaletteStyleButton(button, nullptr, metrics);
     button->setFixedWidth(scaledMetric(WATERMARK_NUMERIC_EDITOR_WIDTH, metrics.physicalScale));
+    stampScreenshotToolbarReferenceWidth(button, WATERMARK_NUMERIC_EDITOR_WIDTH);
     button->setPhysicalScale(metrics.physicalScale);
 }
 

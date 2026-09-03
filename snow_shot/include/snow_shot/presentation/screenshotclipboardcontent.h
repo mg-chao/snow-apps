@@ -25,9 +25,12 @@ enum class ScreenshotClipboardContentKind {
 struct ScreenshotClipboardOriginalContent final {
     QString html;
     QString text;
+    // Set when the clipboard supplied a local image URL. A pin persists a
+    // private copy and rewrites this path to that copy on restore.
+    QString localFilePath;
 
     [[nodiscard]] bool isEmpty() const {
-        return html.isEmpty() && text.isEmpty();
+        return html.isEmpty() && text.isEmpty() && localFilePath.isEmpty();
     }
 };
 
@@ -109,6 +112,13 @@ class ScreenshotClipboardContentReader final {
 
     [[nodiscard]] static std::optional<ScreenshotClipboardContent>
     readMimeData(const QMimeData* mimeData, qreal devicePixelRatio);
+
+    // Rebuilds the formatted raster from the original clipboard text at an
+    // explicit DPI. This is intentionally separate from decode(), whose DPI
+    // is the current display DPI.
+    [[nodiscard]] static std::optional<ScreenshotClipboardContent>
+    renderOriginalText(const ScreenshotClipboardOriginalContent& original, qreal devicePixelRatio,
+                       const QColor& baseColor = {});
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTCLIPBOARDCONTENT_H

@@ -412,7 +412,6 @@ class ScreenshotToolPalette final : public QWidget {
         QVector<StyleLayoutSegment> segments;
         QVector<QSpacerItem*> automaticGaps;
         int referenceAutomaticSpacing = 0;
-        int referenceWidthAdjustment = 0;
     };
 
     struct FilterEditor {

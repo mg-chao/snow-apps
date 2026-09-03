@@ -5285,6 +5285,73 @@ void crossTypeSelectionRecalculatesStyleToolbarSize() {
             "cross-type selection should notify the toolbar host to resize");
 }
 
+void familiesHydratedAfterScaleKeepTheSamePhysicalSize() {
+    ScreenshotToolPalette::Options options;
+    options.showSelectTool = true;
+    options.showShapeTool = true;
+    options.showTextTool = true;
+    options.showWatermarkTool = true;
+
+    const auto flush = [](ScreenshotToolPalette& palette) {
+        static_cast<void>(palette.contentSizeHint());
+        QCoreApplication::processEvents();
+    };
+    const auto activate = [&flush](ScreenshotToolPalette& palette,
+                                   ScreenshotToolPalette::Tool tool) {
+        palette.setActiveTool(tool);
+        flush(palette);
+    };
+    const auto secondarySize = [](const ScreenshotToolPalette& palette) {
+        if (palette.actionToolbarVisible() && palette.actionPanel() != nullptr) {
+            return palette.actionPanel()->size();
+        }
+        if (palette.styleToolbarVisible() && palette.stylePanel() != nullptr) {
+            return palette.stylePanel()->size();
+        }
+        return QSize();
+    };
+
+    constexpr qreal scales[] = {0.75, 1.25};
+    constexpr ScreenshotToolPalette::Tool tools[] = {
+        ScreenshotToolPalette::Tool::Shape,
+        ScreenshotToolPalette::Tool::Text,
+        ScreenshotToolPalette::Tool::Watermark,
+        ScreenshotToolPalette::Tool::Select,
+    };
+    for (const qreal scale : scales) {
+        for (const ScreenshotToolPalette::Tool tool : tools) {
+            ScreenshotToolPalette scaledFromReference(options);
+            activate(scaledFromReference, tool);
+            require(scaledFromReference.setPhysicalScale(scale),
+                    "reference palette should accept the destination physical scale");
+            flush(scaledFromReference);
+            const QSize expected = secondarySize(scaledFromReference);
+            require(!expected.isEmpty(),
+                    "the visible secondary toolbar should expose a size at the destination scale");
+
+            ScreenshotToolPalette hydratedAtScale(options);
+            require(hydratedAtScale.setPhysicalScale(scale),
+                    "destination palette should accept the physical scale before hydration");
+            activate(hydratedAtScale, tool);
+            require(secondarySize(hydratedAtScale) == expected,
+                    "hydrating a family after a DPI scale change must keep the same physical size "
+                    "as scaling a family that was created at reference scale");
+        }
+
+        ScreenshotToolPalette rematerialized(options);
+        activate(rematerialized, ScreenshotToolPalette::Tool::Shape);
+        require(rematerialized.setPhysicalScale(scale),
+                "eviction rematerialization test should change the physical scale");
+        flush(rematerialized);
+        const QSize expectedShape = secondarySize(rematerialized);
+        activate(rematerialized, ScreenshotToolPalette::Tool::Select);
+        activate(rematerialized, ScreenshotToolPalette::Tool::Shape);
+        require(secondarySize(rematerialized) == expectedShape,
+                "rebuilding the shape family after a tool eviction must keep the destination "
+                "physical size");
+    }
+}
+
 void physicalScaleDefersHiddenStyleGroupGeometry() {
     ScreenshotToolPalette::Options options;
     options.showShapeTool = true;
@@ -5861,6 +5928,7 @@ int main(int argc, char** argv) {
     secondaryToolbarsStartHiddenUntilTheirToolIsSelected();
     selectToolRemainsTheSoleOwnerOfItsSecondaryToolbar();
     crossTypeSelectionRecalculatesStyleToolbarSize();
+    familiesHydratedAfterScaleKeepTheSamePhysicalSize();
     physicalScaleDefersHiddenStyleGroupGeometry();
     activeFilterAndWatermarkToolsExposeCanvasWheelSteps();
     screenshotProductStyleProfileIsComplete();

@@ -13,6 +13,7 @@
 
 namespace snow_shot::storage {
 class CaptureHistoryRepository;
+class PinnedWindowRepository;
 
 struct StorageInitializationOptions {
     QString executableDirectory;
@@ -57,6 +58,7 @@ class ApplicationStorage final : public QObject {
 
     [[nodiscard]] ConfigurationStore& configuration();
     [[nodiscard]] CaptureHistoryRepository& captureHistory();
+    [[nodiscard]] PinnedWindowRepository& pinnedWindows();
     [[nodiscard]] StorageStatus status() const;
     [[nodiscard]] CaptureHistoryPolicy captureHistoryPolicy() const;
     [[nodiscard]] QString configurationDirectory() const;
@@ -88,6 +90,7 @@ class ApplicationStorage final : public QObject {
     StorageStatus m_status;
     std::unique_ptr<ConfigurationStore> m_configuration;
     std::unique_ptr<CaptureHistoryRepository> m_captureHistory;
+    std::unique_ptr<PinnedWindowRepository> m_pinnedWindows;
     bool m_initialized = false;
 };
 } // namespace snow_shot::storage

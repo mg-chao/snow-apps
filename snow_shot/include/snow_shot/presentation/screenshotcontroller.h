@@ -15,6 +15,7 @@ class ScreenshotController : public QObject {
 
   public slots:
     void prewarmResources();
+    void restorePinnedWindows();
     void startCapture();
     void startDelayedCapture(int delaySeconds);
     void captureAndPinSelection();

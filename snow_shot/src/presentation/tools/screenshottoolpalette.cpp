@@ -137,6 +137,7 @@ constexpr int STYLE_ITEM_SPACING = 4;
 constexpr int STYLE_GROUP_SPACING = 8;
 constexpr int COMPACT_SLIDER_ICON_SIZE = 16;
 constexpr int COMPACT_SLIDER_WIDTH = 96;
+constexpr int TEXT_TRANSFORM_SELECT_WIDTH = 132;
 constexpr int TOOLBAR_PANEL_RADIUS = 8;
 constexpr qreal TOOLBAR_SHADOW_BLUR_RADIUS = 18.0;
 constexpr qreal TOOLBAR_SHADOW_OFFSET_X = 0.0;
@@ -2163,6 +2164,7 @@ QFrame* ScreenshotToolPalette::createStyleToolbarSeparator(QWidget* parent) {
     separator->setFrameShape(QFrame::NoFrame);
     separator->setFixedSize(scaledMetric(TOOLBAR_SEPARATOR_WIDTH),
                             scaledMetric(TOOLBAR_SEPARATOR_HEIGHT));
+    stampScreenshotToolbarReferenceWidth(separator, TOOLBAR_SEPARATOR_WIDTH);
     separator->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     separator->setStyleSheet(styleToolbarSeparatorStyleSheet());
     m_styleSeparatorFrames.push_back(separator);
@@ -2348,16 +2350,10 @@ void ScreenshotToolPalette::initializeStyleLayoutProfiles() {
         }
 
         layout->activate();
-        const QMargins margins = layout->contentsMargins();
-        const qreal referenceScale = std::max<qreal>(0.01, m_physicalScale);
-        const int originalReferenceWidth = qMax(
-            0, qRound(static_cast<qreal>(
-                          layout->sizeHint().width() - margins.left() - margins.right()) /
-                      referenceScale));
         const int originalSpacing =
             existingProfile != m_styleLayoutProfiles.end()
                 ? existingProfile->referenceAutomaticSpacing
-                : qMax(0, qRound(static_cast<qreal>(layout->spacing()) / referenceScale));
+                : (layout->spacing() > 0 ? STYLE_ITEM_SPACING : 0);
         const QVector<StyleLayoutSegment> previousSegments =
             existingProfile != m_styleLayoutProfiles.end()
                 ? existingProfile->segments
@@ -2408,25 +2404,19 @@ void ScreenshotToolPalette::initializeStyleLayoutProfiles() {
                     [&segment](const SpacingItem& candidate) {
                         return candidate.item == segment.spacer;
                     });
-                segment.referenceWidth =
-                    spacing != m_styleSpacingItems.cend()
-                        ? spacing->baseSpacing
-                        : qMax(0, qRound(static_cast<qreal>(item->sizeHint().width()) /
-                                         referenceScale));
+                if (spacing != m_styleSpacingItems.cend()) {
+                    segment.referenceWidth = spacing->baseSpacing;
+                } else if (m_styleControls != nullptr) {
+                    segment.referenceWidth =
+                        m_styleControls->spacerReferenceWidth(segment.spacer);
+                }
             } else if (m_styleSeparatorFrames.contains(
                            qobject_cast<QFrame*>(segment.widget))) {
                 segment.referenceWidth = TOOLBAR_SEPARATOR_WIDTH;
-            } else {
-                segment.referenceWidth = qMax(
-                    0, qRound(static_cast<qreal>(item->sizeHint().width()) / referenceScale));
-            }
-            if (segment.referenceWidth == 0 && segment.widget != nullptr) {
-                const QSize widgetHint = segment.widget->sizeHint()
-                                             .expandedTo(segment.widget->minimumSizeHint())
-                                             .boundedTo(segment.widget->maximumSize())
-                                             .expandedTo(segment.widget->minimumSize());
-                segment.referenceWidth = qMax(
-                    0, qRound(static_cast<qreal>(widgetHint.width()) / referenceScale));
+            } else if (segment.widget != nullptr) {
+                // Reference widths are stamped from the same constants used to size
+                // controls.  Never recover them from already-rounded sizeHint values.
+                segment.referenceWidth = screenshotToolbarReferenceWidth(segment.widget);
             }
             profile.segments.append(segment);
             layout->addItem(item);
@@ -2438,30 +2428,6 @@ void ScreenshotToolPalette::initializeStyleLayoutProfiles() {
                 profile.automaticGaps.append(gap);
             }
         }
-        int representedReferenceWidth = 0;
-        bool hasActiveWidget = false;
-        for (const StyleLayoutSegment& segment : std::as_const(profile.segments)) {
-            bool active = segment.widget == nullptr || !segment.widget->isHidden();
-            if (segment.spacer != nullptr) {
-                const auto spacing = std::find_if(
-                    m_styleSpacingItems.cbegin(), m_styleSpacingItems.cend(),
-                    [&segment](const SpacingItem& candidate) {
-                        return candidate.item == segment.spacer;
-                    });
-                active = spacing == m_styleSpacingItems.cend() || spacing->visible;
-            }
-            if (!active || segment.referenceWidth <= 0) {
-                continue;
-            }
-            if (segment.widget != nullptr) {
-                if (hasActiveWidget) {
-                    representedReferenceWidth += profile.referenceAutomaticSpacing;
-                }
-                hasActiveWidget = true;
-            }
-            representedReferenceWidth += segment.referenceWidth;
-        }
-        profile.referenceWidthAdjustment = originalReferenceWidth - representedReferenceWidth;
         m_styleLayoutProfiles.append(std::move(profile));
     }
 }
@@ -2511,8 +2477,7 @@ void ScreenshotToolPalette::applyCumulativeStyleLayoutMetrics(QWidget* scope) {
         }
 
         const int activeReferenceWidth =
-            std::accumulate(referenceWidths.cbegin(), referenceWidths.cend(), 0) +
-            profile.referenceWidthAdjustment;
+            std::accumulate(referenceWidths.cbegin(), referenceWidths.cend(), 0);
         const int targetWidth =
             qMax(0, qRound(std::max(0, activeReferenceWidth) * m_physicalScale));
         const QVector<int> edges = adqt::widgets::scaleCumulativeWidths(
@@ -4168,9 +4133,10 @@ bool ScreenshotToolPalette::ensureActionFamily(ActionFamily family) {
         createScrollingRecognitionActionFamily();
         break;
     }
+    initializeStyleLayoutProfiles();
+    applyScaledToolbarMetrics();
     markLayoutDirty(false);
     m_actionFamilyStates.insert(key, MaterializationState::Ready);
-    initializeStyleLayoutProfiles();
     installWheelFilters(this, m_selectActionPanel);
     emit materializedScope(m_selectActionPanel);
     SNOW_SHOT_TOOLBAR_PERF_COUNTER("hydrate.action_family");
@@ -4270,7 +4236,8 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
     m_textFormattingSelect->setAllowClear(true);
     m_textFormattingSelect->setVariant(adqt::widgets::AdSelect::Variant::Borderless);
     m_textFormattingSelect->setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
-    m_textFormattingSelect->setFixedWidth(132);
+    m_textFormattingSelect->setFixedWidth(scaledMetric(TEXT_TRANSFORM_SELECT_WIDTH));
+    stampScreenshotToolbarReferenceWidth(m_textFormattingSelect, TEXT_TRANSFORM_SELECT_WIDTH);
     m_selectActionLayout->addWidget(m_textFormattingSelect);
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
     m_textPunctuationSelect = new adqt::widgets::AdSelect(m_selectActionPanel);
@@ -4282,7 +4249,8 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
     m_textPunctuationSelect->setAllowClear(true);
     m_textPunctuationSelect->setVariant(adqt::widgets::AdSelect::Variant::Borderless);
     m_textPunctuationSelect->setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
-    m_textPunctuationSelect->setFixedWidth(132);
+    m_textPunctuationSelect->setFixedWidth(scaledMetric(TEXT_TRANSFORM_SELECT_WIDTH));
+    stampScreenshotToolbarReferenceWidth(m_textPunctuationSelect, TEXT_TRANSFORM_SELECT_WIDTH);
     m_selectActionLayout->addWidget(m_textPunctuationSelect);
     m_textActionSpacers.push_back(addStyleToolbarSpacing(m_selectActionLayout, STYLE_ITEM_SPACING));
     m_textResetButton = addButton("Reset", outlined_icons::Reload(),
@@ -4369,6 +4337,9 @@ void ScreenshotToolPalette::createScrollingRecognitionActionFamily() {
     layout->addWidget(m_scrollingVerticalButton);
     layout->addWidget(m_scrollingHorizontalButton);
     m_selectActionLayout->addWidget(m_scrollingRecognitionControls);
+    stampScreenshotToolbarReferenceWidth(
+        m_scrollingRecognitionControls,
+        actionButtonMetrics(1.0).buttonSize * 2 + STYLE_ITEM_SPACING);
     connect(m_scrollingVerticalButton, &adqt::widgets::AdButton::clicked, this,
             [this]() {
                 setScrollingRecognitionMode(ScreenshotScrollingRecognitionMode::Vertical);
@@ -4411,6 +4382,8 @@ bool ScreenshotToolPalette::ensureStyleFamily(Tool tool) {
         SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family");
         createStyleFamily(tool);
     }
+    initializeStyleLayoutProfiles();
+    applyScaledToolbarMetrics();
     const bool ready = styleControlsForTool(tool) != nullptr;
     for (Tool member : constructing) {
         m_styleFamilyStates.insert(static_cast<int>(member),

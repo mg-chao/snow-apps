@@ -398,6 +398,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void setScrollingScreenshotRecognitionMode(ScreenshotScrollingRecognitionMode mode) override;
     void pinSelectionToScreen() override;
     void pinClipboardContentToScreen();
+    void restorePinnedWindows();
     void saveSelectionToFile() override;
     void saveImageToFile(QImage image, const QString& outputPath, ScreenshotImageFileFormat format,
                          quint64 generation);
@@ -4026,6 +4027,14 @@ ScreenshotController::~ScreenshotController() = default;
 
 void ScreenshotController::prewarmResources() {
     QTimer::singleShot(0, this, [this]() { m_impl->m_captureWorkflow->prewarmResources(); });
+}
+
+void ScreenshotController::restorePinnedWindows() {
+    QTimer::singleShot(0, this, [this]() {
+        if (m_impl->ensureExportFeature() && m_impl->m_selectionExportUiServices != nullptr) {
+            m_impl->m_selectionExportUiServices->restorePersistedWindows();
+        }
+    });
 }
 
 void ScreenshotController::startCapture() {

@@ -4,7 +4,11 @@
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
+#include "snow_shot/presentation/screenshotselectionexportuiservices.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/pinnedwindowrepository.h"
+#include "snow_shot/storage/pinnedwindowtypes.h"
 #include "snow_shot/storage/settingsadapters.h"
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
@@ -20,6 +24,7 @@
 #include <QClipboard>
 #include <QCoreApplication>
 #include <QCursor>
+#include <QDir>
 #include <QElapsedTimer>
 #include <QEnterEvent>
 #include <QEvent>
@@ -33,9 +38,11 @@
 #include <QPushButton>
 #include <QRegion>
 #include <QScreen>
+#include <QTemporaryDir>
 #include <QThread>
 #include <QTimer>
 #include <QTextBrowser>
+#include <QUuid>
 #include <QVariantAnimation>
 #include <QWheelEvent>
 #include <QWindow>
@@ -2156,6 +2163,218 @@ void pinnedFollowsPerMonitorDpiScaling(SnowCanvasRuntime&) {
 #endif
 }
 
+// Isolated storage keeps seeded records out of the developer's real
+// configuration and out of the other tests in this binary.
+class IsolatedPinnedStorage final {
+  public:
+    IsolatedPinnedStorage() {
+        require(m_temporary.isValid(), "temporary directory unavailable");
+        auto& storage = snow_shot::storage::ApplicationStorage::instance();
+        storage.shutdown();
+        const snow_shot::storage::StorageInitializationOptions options{
+            QDir(m_temporary.path()).filePath(QStringLiteral("bin")),
+            QDir(m_temporary.path()).filePath(QStringLiteral("settings")),
+            0,
+        };
+        require(storage.initialize(options).success,
+                "failed to initialize isolated pinned window storage");
+    }
+
+    ~IsolatedPinnedStorage() { snow_shot::storage::ApplicationStorage::instance().shutdown(); }
+
+    IsolatedPinnedStorage(const IsolatedPinnedStorage&) = delete;
+    IsolatedPinnedStorage& operator=(const IsolatedPinnedStorage&) = delete;
+
+  private:
+    QTemporaryDir m_temporary;
+};
+
+// Describes a pinned window that was saved on a monitor running at
+// `savedDpiFactor` times the current DPI. `scalePercent` is the exact percent
+// the window had; the native geometry is what that percent produced in the
+// saved monitor's pixels, so a restore has to translate both consistently.
+snow_shot::storage::PinnedWindowRecord savedPinnedRecord(QScreen& screen, qreal savedDpiFactor,
+                                                        const QSize& basis, double scalePercent,
+                                                        const QPoint& savedOffset) {
+    const QRect physical = ScreenshotGeometryMapper::physicalRectForScreen(screen);
+    const qreal dpr = screen.devicePixelRatio() > 0.0 ? screen.devicePixelRatio() : 1.0;
+    snow_shot::storage::PinnedWindowRecord record;
+    record.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    record.image = QImage(basis, QImage::Format_ARGB32_Premultiplied);
+    record.image.fill(QColor(54, 105, 157));
+    record.canvasSourceRect = QRectF(QPointF(), QSizeF(basis));
+    record.contentCanvasRect = record.canvasSourceRect;
+    record.surfaceCanvasRect = record.canvasSourceRect;
+    record.initialPhysicalSize = basis;
+    record.scalePercent = scalePercent;
+    record.screenName = screen.name();
+    record.screenDpi = savedDpiFactor * dpr;
+    record.screenPhysicalGeometry =
+        QRect(physical.topLeft(), QSize(qRound(physical.width() * savedDpiFactor),
+                                        qRound(physical.height() * savedDpiFactor)));
+    record.nativeGeometry = QRect(physical.topLeft() + savedOffset,
+                                  QSize(qRound(basis.width() * scalePercent / 100.0),
+                                        qRound(basis.height() * scalePercent / 100.0)));
+    return record;
+}
+
+ScreenshotPinnedWindow* restoreSeededPinnedWindow(ScreenshotSelectionExportUiServices& services,
+                                                  const snow_shot::storage::PinnedWindowRecord& record) {
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    const snow_shot::storage::StorageResult seeded = storage.pinnedWindows().upsert(record);
+    require(seeded.success, qPrintable(seeded.error));
+
+    services.restorePersistedWindows();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+
+    ScreenshotPinnedWindow* restoredWindow = nullptr;
+    for (QWidget* widget : QApplication::topLevelWidgets()) {
+        if (auto* window = qobject_cast<ScreenshotPinnedWindow*>(widget)) {
+            require(restoredWindow == nullptr, "restore should have created exactly one window");
+            restoredWindow = window;
+        }
+    }
+    require(restoredWindow != nullptr, "restore should have created the seeded pinned window");
+    return restoredWindow;
+}
+
+// Reads the "Current: N%" entry the way a user sees it: opening the context
+// menu is what refreshes the readout from the window state.
+QString scaleMenuReadout(ScreenshotPinnedWindow& window) {
+    auto* contextMenu = window.findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedContextMenu"));
+    auto* scaleMenu = window.findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedScaleMenu"));
+    require(contextMenu != nullptr && scaleMenu != nullptr,
+            "restored pinned scale menu was not found");
+    contextMenu->aboutToShow();
+    return scaleMenu->actions().constLast()->text();
+}
+
+void closeRestoredPinnedWindow(ScreenshotPinnedWindow* window, const QString& recordId) {
+    static_cast<void>(
+        snow_shot::storage::ApplicationStorage::instance().pinnedWindows().remove(recordId));
+    QPointer<ScreenshotPinnedWindow> guardedWindow(window);
+    window->close();
+    require(processUntilDeleted(guardedWindow, 2000), "restored pinned window was not deleted");
+}
+
+void restoredPinnedWindowScaleMenuFollowsMonitorDpiChange(SnowCanvasRuntime&) {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+    const QRect physical = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
+
+    IsolatedPinnedStorage storage;
+    // Saved at 50% on a monitor with twice the current DPI: the window comes
+    // back at half its saved pixels, which is 25% of the unchanged basis.
+    const snow_shot::storage::PinnedWindowRecord record =
+        savedPinnedRecord(*screen, 2.0, QSize(800, 400), 50.0, QPoint(200, 120));
+
+    ScreenshotSelectionExportUiServices services;
+    ScreenshotPinnedWindow* restoredWindow = restoreSeededPinnedWindow(services, record);
+    const QRect expectedGeometry(physical.topLeft() + QPoint(100, 60), QSize(200, 100));
+    require(restoredWindow->currentNativeGeometry() == expectedGeometry,
+            "restored pinned window should present at the DPI-reconciled geometry");
+    require(scaleMenuReadout(*restoredWindow) == QStringLiteral("Current: 25%"),
+            "restored pinned scale menu should reflect the DPI-reconciled geometry");
+
+    closeRestoredPinnedWindow(restoredWindow, record.id);
+}
+
+void restoredThumbnailScaleMenuStaysConsistentThroughExit(SnowCanvasRuntime&) {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+    const QRect physical = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
+
+    IsolatedPinnedStorage storage;
+    // The record describes a window saved in thumbnail mode on a monitor that
+    // ran at twice the current DPI, so every persisted physical geometry must
+    // shrink to half when it is restored onto the current screen.
+    snow_shot::storage::PinnedWindowRecord record =
+        savedPinnedRecord(*screen, 2.0, QSize(800, 400), 50.0, QPoint(200, 120));
+    record.thumbnailMode = true;
+    record.preThumbnailNativeGeometry = record.nativeGeometry;
+    record.nativeGeometry = QRect(physical.topLeft() + QPoint(40, 30), QSize(120, 120));
+
+    ScreenshotSelectionExportUiServices services;
+    ScreenshotPinnedWindow* restoredWindow = restoreSeededPinnedWindow(services, record);
+
+    auto* thumbnailAction =
+        restoredWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
+    require(thumbnailAction != nullptr, "pinned thumbnail action was not found");
+    const QRect expectedThumbnailGeometry(physical.topLeft() + QPoint(20, 15), QSize(60, 60));
+    require(restoredWindow->currentNativeGeometry() == expectedThumbnailGeometry,
+            "restored thumbnail pinned window should present at the DPI-reconciled geometry");
+    // The scale menu is reachable while the thumbnail is showing, and it
+    // describes the geometry the window will return to.
+    require(scaleMenuReadout(*restoredWindow) == QStringLiteral("Current: 25%"),
+            "the scale menu should already describe the DPI-reconciled scale in thumbnail mode");
+
+    // The thumbnail action mirrors its checked state when the context menu
+    // opens, so synchronize it before unchecking to leave thumbnail mode the
+    // same way a user does.
+    thumbnailAction->setChecked(true);
+    thumbnailAction->setChecked(false);
+
+    const QRect expectedGeometry(physical.topLeft() + QPoint(100, 60), QSize(200, 100));
+    QElapsedTimer settled;
+    settled.start();
+    while (restoredWindow->currentNativeGeometry() != expectedGeometry &&
+           settled.elapsed() < 2000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    }
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+
+    require(restoredWindow->currentNativeGeometry() == expectedGeometry,
+            "leaving thumbnail mode should apply the DPI-reconciled pre-thumbnail geometry");
+    require(scaleMenuReadout(*restoredWindow) == QStringLiteral("Current: 25%"),
+            "the scale menu should still describe the DPI-reconciled scale after leaving thumbnail mode");
+
+    closeRestoredPinnedWindow(restoredWindow, record.id);
+}
+
+void restoredPinnedWindowKeepsExactWheelLevelAtSameDpi(SnowCanvasRuntime&) {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+
+    IsolatedPinnedStorage storage;
+    // 110% of a 993 px basis is stored as 1092 px, which derives back to
+    // 109.97%. A restore on the same DPI must keep the exact 110%, otherwise
+    // the wheel notch that targets 110% turns into a no-op (see
+    // pinnedSettledWheelScalingAdvancesPastRoundedLevel for the live case).
+    const QSize basis(993, 497);
+    const snow_shot::storage::PinnedWindowRecord record =
+        savedPinnedRecord(*screen, 1.0, basis, 110.0, QPoint(160, 140));
+
+    ScreenshotSelectionExportUiServices services;
+    ScreenshotPinnedWindow* restoredWindow = restoreSeededPinnedWindow(services, record);
+    require(restoredWindow->currentNativeGeometry().size() == QSize(1092, 547),
+            "same-DPI restore should present at the saved geometry");
+    require(scaleMenuReadout(*restoredWindow) == QStringLiteral("Current: 110%"),
+            "same-DPI restore should report the saved scale");
+
+    auto* canvas = restoredWindow->findChild<SnowCanvasWidget*>();
+    auto* scaleLabel =
+        restoredWindow->findChild<QLabel*>(QStringLiteral("screenshotPinnedScaleLabel"));
+    require(canvas != nullptr && scaleLabel != nullptr,
+            "restored pinned wheel controls were not found");
+    const QPoint position = canvas->rect().center();
+    QWheelEvent wheel(QPointF(position), QPointF(canvas->mapToGlobal(position)), QPoint(),
+                      QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+    QCoreApplication::sendEvent(canvas, &wheel);
+    require(wheel.isAccepted(), "restored pinned wheel notch should be consumed");
+    waitForUi(50);
+
+    const QSize expectedSize(qRound(basis.width() * 1.2), qRound(basis.height() * 1.2));
+    const QSize actualSize = restoredWindow->currentNativeGeometry().size();
+    require(qAbs(actualSize.width() - expectedSize.width()) <= 1 &&
+                qAbs(actualSize.height() - expectedSize.height()) <= 1 &&
+                scaleLabel->text() == QStringLiteral("Scale: 120%"),
+            "one wheel notch after a same-DPI restore should advance from 110% to 120%");
+
+    closeRestoredPinnedWindow(restoredWindow, record.id);
+}
+
 void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -2472,6 +2691,12 @@ int main(int argc, char* argv[]) {
             pinnedPendingPresentationPublishesWorkerImage(sourceRuntime);
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--restore-wiring-only"))) {
+            restoredPinnedWindowScaleMenuFollowsMonitorDpiChange(sourceRuntime);
+            restoredThumbnailScaleMenuStaysConsistentThroughExit(sourceRuntime);
+            restoredPinnedWindowKeepsExactWheelLevelAtSameDpi(sourceRuntime);
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--tray-pin-runtime-only"))) {
             pinnedControlsMatchReferenceStyle(sourceRuntime);
             return 0;
@@ -2496,6 +2721,9 @@ int main(int argc, char* argv[]) {
         pinnedSettledWheelScalingAdvancesPastRoundedLevel(sourceRuntime);
         pinnedWheelScalingUsesConfiguredAnchor(sourceRuntime);
         pinnedFollowsPerMonitorDpiScaling(sourceRuntime);
+        restoredPinnedWindowScaleMenuFollowsMonitorDpiChange(sourceRuntime);
+        restoredThumbnailScaleMenuStaysConsistentThroughExit(sourceRuntime);
+        restoredPinnedWindowKeepsExactWheelLevelAtSameDpi(sourceRuntime);
         pinnedCopyIncludesSourceCanvasDrawing();
         pinnedQrResultCopiesWithKeyboardShortcut();
         pinnedRecognitionAvailableThroughLazyProvider();

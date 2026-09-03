@@ -712,6 +712,7 @@ ScreenshotClipboardContentReader::decode(ScreenshotClipboardContentSnapshot snap
     if (snapshot.localImage.has_value()) {
         SNOW_SHOT_PIN_PERF_SCOPE("clipboard.decode_file_image");
         if (auto result = readFileImage(*snapshot.localImage, cancelled); result.has_value()) {
+            result->originalContent.localFilePath = snapshot.localImage->absolutePath;
             return result;
         }
     }
@@ -760,4 +761,28 @@ ScreenshotClipboardContentReader::decode(ScreenshotClipboardContentSnapshot snap
         }
     }
     return std::nullopt;
+}
+
+std::optional<ScreenshotClipboardContent> ScreenshotClipboardContentReader::renderOriginalText(
+    const ScreenshotClipboardOriginalContent& original, qreal devicePixelRatio,
+    const QColor& baseColor) {
+    if (original.html.isEmpty() && original.text.isEmpty()) {
+        return std::nullopt;
+    }
+    QString plainText;
+    std::shared_ptr<QTextDocument> document;
+    if (!original.html.isEmpty()) {
+        document = makeDocument(original.html, true, &plainText);
+    }
+    if (document == nullptr && !original.text.isEmpty()) {
+        document = makeDocument(original.text, false, &plainText);
+    }
+    if (document == nullptr) {
+        return std::nullopt;
+    }
+    auto result = renderTextDocument(document, plainText, devicePixelRatio, baseColor, {});
+    if (result.has_value()) {
+        result->originalContent = original;
+    }
+    return result;
 }

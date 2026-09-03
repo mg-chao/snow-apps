@@ -5,8 +5,11 @@
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/pinnedwindowrepository.h"
 #include "snow_shot/network/snowshotapiclient.h"
 #include "snow_shot/presentation/screenshotclipboardservice.h"
+#include "../pinned/screenshotpinnedrestoregeometry.h"
 #include "../pinned/screenshotpintoperfinstrumentation.h"
 
 #include <QApplication>
@@ -15,8 +18,10 @@
 #include <QPointer>
 #include <QScreen>
 #include <QTimer>
+#include <QDataStream>
 
 #include <algorithm>
+#include <limits>
 
 namespace {
 ScreenshotRecognitionResults recognitionResultsForPinnedImage(
@@ -61,6 +66,118 @@ void applyPinRuntimeSettings(ScreenshotPinnedWindow::Config* config) {
     config->mouseWheelZoomMode = settings.mouseWheelZoomMode();
     config->automaticTextRecognition =
         config->formattedTextDocument == nullptr && settings.automaticTextRecognition();
+}
+
+void applyPersistence(ScreenshotPinnedWindow::Config* config, const QString& id = {}) {
+    if (config == nullptr) {
+        return;
+    }
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    if (!storage.isInitialized()) {
+        return;
+    }
+    config->persistenceId = id;
+    config->persistenceWriter = [](const snow_shot::storage::PinnedWindowRecord& record) {
+        auto& storage = snow_shot::storage::ApplicationStorage::instance();
+        if (!storage.configurationDirectory().isEmpty()) {
+            static_cast<void>(storage.pinnedWindows().upsert(record));
+        }
+    };
+    config->persistenceRemover = [](const QString& recordId) {
+        auto& storage = snow_shot::storage::ApplicationStorage::instance();
+        if (!storage.configurationDirectory().isEmpty()) {
+            static_cast<void>(storage.pinnedWindows().remove(recordId));
+        }
+    };
+}
+
+ScreenshotResultStyle decodeResultStyle(const QByteArray& bytes) {
+    ScreenshotResultStyle style;
+    if (!bytes.isEmpty()) {
+        QDataStream stream(bytes);
+        stream >> style.cornerRadius >> style.shadowWidth >> style.shadowColor;
+    }
+    return style;
+}
+
+QRect availablePhysicalRect(QScreen* screen) {
+    if (screen == nullptr) {
+        return {};
+    }
+    const QRect logicalBounds = screen->geometry();
+    const QRect logicalAvailable = screen->availableGeometry();
+    const QRect physicalBounds = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
+    const qreal scale = screen->devicePixelRatio() > 0.0 ? screen->devicePixelRatio() : 1.0;
+    return QRect(physicalBounds.left() + qRound((logicalAvailable.left() - logicalBounds.left()) * scale),
+                 physicalBounds.top() + qRound((logicalAvailable.top() - logicalBounds.top()) * scale),
+                 std::max(1, qRound(logicalAvailable.width() * scale)),
+                 std::max(1, qRound(logicalAvailable.height() * scale)));
+}
+
+screenshot_pinned_restore_geometry::ScreenGeometry restoreScreenGeometry(QScreen* screen) {
+    screenshot_pinned_restore_geometry::ScreenGeometry geometry;
+    geometry.physicalBounds = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
+    geometry.availableBounds = availablePhysicalRect(screen);
+    geometry.devicePixelRatio = screen->devicePixelRatio();
+    return geometry;
+}
+
+// Translates the DPI-dependent part of a record from the saved session's
+// monitor to `target` (never null) in one step, so the restored geometry,
+// pre-thumbnail geometry and scale percent always describe the same window.
+screenshot_pinned_restore_geometry::RestoredState reconcileRestoreState(
+    const snow_shot::storage::PinnedWindowRecord& record, QScreen& target) {
+    screenshot_pinned_restore_geometry::SavedState saved;
+    saved.nativeGeometry = record.nativeGeometry;
+    saved.preThumbnailNativeGeometry = record.preThumbnailNativeGeometry;
+    saved.scalePercent = record.scalePercent;
+    saved.screenPhysicalBounds = record.screenPhysicalGeometry;
+    saved.screenDevicePixelRatio = record.screenDpi;
+    QList<screenshot_pinned_restore_geometry::ScreenGeometry> screens;
+    for (QScreen* screen : QGuiApplication::screens()) {
+        if (screen != nullptr) {
+            screens.push_back(restoreScreenGeometry(screen));
+        }
+    }
+    return screenshot_pinned_restore_geometry::reconcileSavedState(
+        saved, restoreScreenGeometry(&target), screens);
+}
+
+QScreen* restoreScreen(const snow_shot::storage::PinnedWindowRecord& record) {
+    const QList<QScreen*> screens = QGuiApplication::screens();
+    for (QScreen* screen : screens) {
+        if (screen != nullptr && !record.screenSerial.isEmpty() &&
+            screen->serialNumber() == record.screenSerial) {
+            return screen;
+        }
+    }
+    for (QScreen* screen : screens) {
+        if (screen != nullptr && !record.screenName.isEmpty() && screen->name() == record.screenName) {
+            return screen;
+        }
+    }
+    if (screens.isEmpty()) {
+        return nullptr;
+    }
+    const QPoint savedCenter = record.nativeGeometry.center();
+    QScreen* nearest = screens.front();
+    qint64 nearestDistance = std::numeric_limits<qint64>::max();
+    for (QScreen* screen : screens) {
+        if (screen == nullptr) {
+            continue;
+        }
+        const QRect bounds = availablePhysicalRect(screen);
+        const QPoint clamped(qBound(bounds.left(), savedCenter.x(), bounds.right()),
+                             qBound(bounds.top(), savedCenter.y(), bounds.bottom()));
+        const qint64 dx = static_cast<qint64>(savedCenter.x()) - clamped.x();
+        const qint64 dy = static_cast<qint64>(savedCenter.y()) - clamped.y();
+        const qint64 distance = dx * dx + dy * dy;
+        if (distance < nearestDistance) {
+            nearestDistance = distance;
+            nearest = screen;
+        }
+    }
+    return nearest;
 }
 } // namespace
 
@@ -254,6 +371,7 @@ bool ScreenshotSelectionExportUiServices::presentPinnedSelection(
     config.formattedTextDocument.reset();
     config.formattedPlainText.clear();
     applyPinRuntimeSettings(&config);
+    applyPersistence(&config);
     const bool presented = presentPinnedWindowAndSynchronize(
         pinnedWindow, config, m_showMainWindowRequested, std::move(completion), true);
     if (!presented) {
@@ -337,6 +455,90 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     config.tableRecognition = m_tableRecognition;
     config.recognitionProvider = m_recognitionProvider;
     applyPinRuntimeSettings(&config);
+    applyPersistence(&config);
     return presentPinnedWindowAndSynchronize(pinnedWindow, config, m_showMainWindowRequested,
                                              std::move(completion));
+}
+
+void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
+    auto& applicationStorage = snow_shot::storage::ApplicationStorage::instance();
+    if (!applicationStorage.isInitialized() || m_windowPool == nullptr) {
+        if (m_windowPool == nullptr) {
+            m_windowPool = std::make_unique<ScreenshotPinnedWindowPool>();
+        }
+    }
+    const QVector<snow_shot::storage::PinnedWindowRecord> records =
+        applicationStorage.isInitialized() ? applicationStorage.pinnedWindows().records()
+                                           : QVector<snow_shot::storage::PinnedWindowRecord>{};
+    for (const auto& record : records) {
+        QScreen* targetScreen = restoreScreen(record);
+        if (targetScreen == nullptr || record.nativeGeometry.isEmpty()) {
+            continue;
+        }
+        const screenshot_pinned_restore_geometry::RestoredState restored =
+            reconcileRestoreState(record, *targetScreen);
+        ScreenshotPinnedWindow::Config config;
+        config.nativeGeometry = restored.nativeGeometry;
+        config.canvasSourceRect = record.canvasSourceRect;
+        // The persisted content/surface rects describe the post-transform
+        // frame. Presentation starts from the immutable source canvas and
+        // reapplies the transform below, so use the source rect for the
+        // containment contract during setup.
+        config.contentCanvasRect = record.canvasSourceRect;
+        config.surfaceCanvasRect = record.canvasSourceRect;
+        config.fullResolutionScaleBasis = record.initialPhysicalSize;
+        config.initialScalePercent = restored.scalePercent;
+        config.screen = targetScreen;
+        config.enableEditing = true;
+        config.resultStyle = decodeResultStyle(record.resultStyle);
+        config.persistenceId = record.id;
+        config.restorePersistentState = true;
+        config.persistedOpacityPercent = record.opacityPercent;
+        config.persistedImageTransform = record.imageTransform;
+        config.persistedQuarterTurns = record.quarterTurns;
+        config.persistedThumbnailMode = record.thumbnailMode;
+        config.persistedPreThumbnailNativeGeometry = restored.preThumbnailNativeGeometry;
+        config.persistedFirstCreationTextDpi = record.firstCreationTextDpi;
+        config.persistedCanvasSession = record.canvasSession;
+        config.persistedRecognitionResults = record.recognitionResults;
+        config.recognition = m_recognition;
+        config.qrRecognition = m_qrRecognition;
+        config.tableRecognition = m_tableRecognition;
+        config.recognitionProvider = m_recognitionProvider;
+        applyPersistence(&config, record.id);
+
+        std::shared_ptr<QTextDocument> formattedDocument;
+        if (record.sourceKind == snow_shot::storage::PinnedWindowSourceKind::ClipboardText) {
+            ScreenshotClipboardOriginalContent original;
+            original.html = record.originalHtml;
+            original.text = record.originalText;
+            const auto rendered = ScreenshotClipboardContentReader::renderOriginalText(
+                original, record.firstCreationTextDpi);
+            if (!rendered.has_value() || !rendered->isValid()) {
+                continue;
+            }
+            config.imageSource = ScreenshotImageSource::fromImage(rendered->image,
+                                                                    record.canvasSourceRect);
+            config.formattedTextDocument = rendered->formattedDocument;
+            config.formattedPlainText = rendered->plainText;
+            config.formattedTextDevicePixelRatio = record.firstCreationTextDpi;
+            config.originalClipboardContent = std::move(original);
+        } else {
+            if (record.image.isNull()) {
+                continue;
+            }
+            config.imageSource = ScreenshotImageSource::fromImage(record.image,
+                                                                    record.canvasSourceRect);
+            if (record.sourceKind == snow_shot::storage::PinnedWindowSourceKind::ClipboardImageFile) {
+                config.originalClipboardContent.localFilePath = record.originalFilePath;
+            }
+        }
+        auto* window = m_windowPool->acquire(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
+        if (window == nullptr ||
+            !presentPinnedWindowAndSynchronize(window, config, m_showMainWindowRequested, {}, false)) {
+            if (window != nullptr) {
+                window->deleteLater();
+            }
+        }
+    }
 }

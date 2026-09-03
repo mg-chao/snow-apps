@@ -530,6 +530,8 @@ set(SNOW_SHOT_STORAGE_SOURCES
     include/snow_shot/storage/configurationstore.h
     include/snow_shot/storage/configurationschema.h
     include/snow_shot/storage/persistedselectioncodec.h
+    include/snow_shot/storage/pinnedwindowrepository.h
+    include/snow_shot/storage/pinnedwindowtypes.h
     include/snow_shot/storage/settingsadapters.h
     include/snow_shot/storage/storagelogging.h
     include/snow_shot/storage/storageresult.h
@@ -539,6 +541,7 @@ set(SNOW_SHOT_STORAGE_SOURCES
     src/storage/configurationstore.cpp
     src/storage/configurationschema.cpp
     src/storage/persistedselectioncodec.cpp
+    src/storage/pinnedwindowrepository.cpp
     src/storage/settingsadapters.cpp
     src/storage/storagelogging.cpp
 )
@@ -873,6 +876,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/pinned/screenshotpinnedwindownative.cpp
     src/presentation/pinned/screenshotpinnededitcontroller.cpp
     src/presentation/pinned/screenshotpinnedresizegeometry.cpp
+    src/presentation/pinned/screenshotpinnedrestoregeometry.cpp
     src/presentation/pinned/screenshotpinnedwindow.cpp
     src/presentation/pinned/screenshotpintoperfinstrumentation.cpp
     src/presentation/services/screenshotpresentationservices.cpp
@@ -1897,6 +1901,21 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-native-geometry-controller-tests
     )
 
+    add_executable(snow-shot-pinned-restore-geometry-tests
+        tests/screenshot_pinned_restore_geometry_tests.cpp
+        src/presentation/pinned/screenshotpinnedrestoregeometry.cpp
+    )
+    target_include_directories(snow-shot-pinned-restore-geometry-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/pinned"
+    )
+    target_link_libraries(snow-shot-pinned-restore-geometry-tests PRIVATE
+        Qt6::Core
+    )
+    add_test(
+        NAME snow-shot-pinned-restore-geometry-tests
+        COMMAND snow-shot-pinned-restore-geometry-tests
+    )
+
     add_executable(snow-shot-pinned-window-tests
         tests/screenshot_pinned_window_tests.cpp
         src/platform/physicalcursor.cpp
@@ -1933,6 +1952,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/overlay/screenshotselectionshadowrenderer.cpp
         src/presentation/services/screenshotcanvascolorsampler.cpp
         src/presentation/services/screenshotcanvascolorsamplerwindow.cpp
+        src/presentation/services/screenshotclipboardcontent.cpp
+        src/presentation/services/screenshotclipboarddibdecoder_avx2.cpp
         src/presentation/services/screenshotclipboardservice.cpp
         src/presentation/services/screenshotimagefileservice.cpp
         src/presentation/services/screenshotmessageservice.cpp
@@ -1943,8 +1964,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/pinned/screenshotpinnededitcontroller.cpp
         src/presentation/pinned/screenshotpinnedcopyservice.cpp
         src/presentation/services/screenshotexportcoordinator.cpp
+        src/presentation/selection/screenshotselectionexportuiservices.cpp
         src/presentation/pinned/screenshotpinnednativegeometrycontroller.cpp
         src/presentation/pinned/screenshotpinnedresizegeometry.cpp
+        src/presentation/pinned/screenshotpinnedrestoregeometry.cpp
         src/presentation/pinned/screenshotpinnedwindow.cpp
         src/presentation/pinned/screenshotpinnedwindownative.cpp
         src/presentation/services/languagemanager.cpp
@@ -1974,6 +1997,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         Qt6::Widgets
         snow_draw_engine_qt_canvas
         snow_shot_image_codec
+        snow_shot_storage
         snow_shot_window_shortcuts
     )
     if(WIN32)
@@ -2046,9 +2070,14 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-pinned-async-presentation-tests
         COMMAND snow-shot-pinned-window-tests --async-presentation-only
     )
+    add_test(
+        NAME snow-shot-pinned-restore-wiring-tests
+        COMMAND snow-shot-pinned-window-tests --restore-wiring-only
+    )
     set(_snow_shot_pinned_window_test_names
         snow-shot-pinned-window-tests
         snow-shot-pinned-async-presentation-tests
+        snow-shot-pinned-restore-wiring-tests
         snow-shot-pinned-toolbar-parity-tests
     )
     if(WIN32)
@@ -2342,11 +2371,19 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-floating-toolbar-reverse-drag-tests
         COMMAND snow-shot-floating-toolbar-drag-tests --reverse-hardware-drag-only
     )
+    add_test(
+        NAME snow-shot-floating-toolbar-seam-straddle-drag-tests
+        COMMAND snow-shot-floating-toolbar-drag-tests --seam-straddle-drag-only
+    )
     set_tests_properties(snow-shot-floating-toolbar-drag-tests PROPERTIES
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
     set_tests_properties(snow-shot-floating-toolbar-reverse-drag-tests PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+    set_tests_properties(snow-shot-floating-toolbar-seam-straddle-drag-tests PROPERTIES
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
@@ -2356,6 +2393,10 @@ if(SNOW_SHOT_BUILD_TESTS)
                 "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         )
         set_tests_properties(snow-shot-floating-toolbar-reverse-drag-tests PROPERTIES
+            ENVIRONMENT
+                "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        )
+        set_tests_properties(snow-shot-floating-toolbar-seam-straddle-drag-tests PROPERTIES
             ENVIRONMENT
                 "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         )
