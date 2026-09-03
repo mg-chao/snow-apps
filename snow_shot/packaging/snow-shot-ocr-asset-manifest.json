@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "runtime": {
+    "version": "1.0.0",
+    "platform": "windows-x64",
+    "archive": {
+      "name": "snow-ocr-runtime-1.0.0-windows-x64.zip",
+      "size": 17315000,
+      "sha256": "3315046a53e1aa959cf78665a9daffb950cea19879093594fcd89861ec1fff04",
+      "url": "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/runtime/1.0.0/windows-x64/snow-ocr-runtime-1.0.0-windows-x64.zip"
+    },
+    "files": [
+      {
+        "name": "snow-ocr-process-1.0.0-windows-x64.exe",
+        "size": 19245056,
+        "sha256": "e185896c22f7f3660992bffdd1a51595632e42df4830545fd3a9909c387e7127"
+      },
+      {
+        "name": "DirectML.dll",
+        "size": 18527776,
+        "sha256": "9c9e6d822561c6c41b90e6994b3e8857cf1d66dbfb1e0c4c799c7c89b4e92da1"
+      },
+      {
+        "name": "runtime-manifest.json",
+        "size": 447,
+        "sha256": "6962f7af0c4faf9b29e0a9cd15ae4c8964326bc20ae4b77d1caafab350f7fe9e"
+      }
+    ]
+  },
+  "model": {
+    "id": "ppocrv6-small-463ea9f",
+    "files": [
+      {
+        "name": "PP-OCRv6_det_small.onnx",
+        "size": 9929594,
+        "sha256": "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f",
+        "url": "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/PP-OCRv6/small/PP-OCRv6_det_small.onnx"
+      },
+      {
+        "name": "PP-OCRv6_rec_small.onnx",
+        "size": 21234383,
+        "sha256": "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884",
+        "url": "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/PP-OCRv6/small/PP-OCRv6_rec_small.onnx"
+      },
+      {
+        "name": "ppocrv6_dict.txt",
+        "size": 74947,
+        "sha256": "b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d",
+        "url": "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/PP-OCRv6/small/ppocrv6_dict.txt"
+      }
+    ]
+  }
+}

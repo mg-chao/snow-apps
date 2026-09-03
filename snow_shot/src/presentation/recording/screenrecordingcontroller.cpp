@@ -37,6 +37,7 @@ struct RecordingExportSettings {
     SnowCaptureRecordingExportFormat format = SNOW_CAPTURE_RECORDING_EXPORT_FORMAT_MP4;
     SnowCaptureVideoCodec codec = SNOW_CAPTURE_VIDEO_CODEC_H264;
     SnowCaptureVideoEncodingPreset preset = SNOW_CAPTURE_VIDEO_ENCODING_PRESET_VERYFAST;
+    bool useHardwareEncoder = false;
     QSize maximumSize{1920, 1080};
     uint32_t targetFps = 30;
     QString extension = QStringLiteral("mp4");
@@ -74,8 +75,10 @@ SnowCaptureVideoEncodingPreset videoEncodingPreset(const QString& preset) {
 RecordingExportSettings recordingExportSettings(bool animatedImage, const QSize& captureSize) {
     const snow_shot::storage::RecordingSettings settings;
     RecordingExportSettings result;
-    result.codec = videoCodec(settings.encoder());
+    const QString encoder = settings.encoder();
+    result.codec = videoCodec(encoder);
     result.preset = videoEncodingPreset(settings.encodingPreset());
+    result.useHardwareEncoder = encoder == QStringLiteral("h264_hw");
 
     if (!animatedImage) {
         result.maximumSize =
@@ -450,6 +453,9 @@ struct ScreenRecordingController::Impl {
                 exportSettings.targetFps,
                 static_cast<uint32_t>(exportSettings.codec),
                 static_cast<uint32_t>(exportSettings.preset),
+                static_cast<uint32_t>(exportSettings.useHardwareEncoder
+                                          ? SNOW_CAPTURE_ENCODER_PREFERENCE_H264_HARDWARE
+                                          : SNOW_CAPTURE_ENCODER_PREFERENCE_SOFTWARE),
                 {},
             };
             const bool ok = snow_capture_recording_session_stop_and_export(session, &config) != 0;

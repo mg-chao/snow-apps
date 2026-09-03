@@ -478,6 +478,7 @@ pub struct SnowCaptureRecordingExportConfig {
     target_fps: u32,
     codec: u32,
     preset: u32,
+    encoder_preference: u32,
     reserved: [u8; 32],
 }
 
@@ -488,7 +489,7 @@ struct SnowCaptureRecordingExportConfigHeader {
     struct_size: u32,
 }
 
-pub const RECORDING_EXPORT_CONFIG_VERSION: u32 = 1;
+pub const RECORDING_EXPORT_CONFIG_VERSION: u32 = 2;
 const RECORDING_EXPORT_CONFIG_SIZE: u32 =
     std::mem::size_of::<SnowCaptureRecordingExportConfig>() as u32;
 
@@ -2458,6 +2459,7 @@ struct RecordingExportOptions {
     target_fps: Option<u32>,
     codec: VideoCodec,
     preset: VideoEncodingSpeed,
+    prefer_hardware_h264: bool,
 }
 
 fn parse_recording_export_config(
@@ -2500,6 +2502,11 @@ fn parse_recording_export_config(
         4 => VideoEncodingSpeed::Placebo,
         value => return Err(format!("invalid recording encoding preset: {value}")),
     };
+    let prefer_hardware_h264 = match config.encoder_preference {
+        0 => false,
+        1 => true,
+        value => return Err(format!("invalid recording encoder preference: {value}")),
+    };
 
     Ok(RecordingExportOptions {
         output_path,
@@ -2509,6 +2516,7 @@ fn parse_recording_export_config(
         target_fps: (config.target_fps != 0).then_some(config.target_fps),
         codec,
         preset,
+        prefer_hardware_h264,
     })
 }
 
@@ -2549,6 +2557,7 @@ fn configure_recording_export_request(
     request.target_fps = options.target_fps;
     request.codec = options.codec;
     request.video.speed = options.preset;
+    request.prefer_hardware_h264 = options.prefer_hardware_h264;
     request.mouse.visible = true;
     for track in &mut request.audio_tracks {
         track.enabled = true;
@@ -2660,6 +2669,7 @@ mod tests {
                 target_fps: None,
                 codec: VideoCodec::H264,
                 preset: VideoEncodingSpeed::UltraFast,
+                prefer_hardware_h264: false,
             },
         );
 
@@ -2681,6 +2691,7 @@ mod tests {
             target_fps: 24,
             codec: 1,
             preset: 4,
+            encoder_preference: 1,
             reserved: [0; 32],
         };
         let options = parse_recording_export_config(&config).unwrap();
@@ -2693,6 +2704,27 @@ mod tests {
         assert_eq!(request.target_fps, Some(24));
         assert_eq!(request.codec, VideoCodec::H265);
         assert_eq!(request.video.speed, VideoEncodingSpeed::Placebo);
+        assert!(request.prefer_hardware_h264);
+    }
+
+    #[test]
+    fn versioned_export_config_rejects_unknown_encoder_preference() {
+        let output = CString::new("recording.mp4").unwrap();
+        let config = SnowCaptureRecordingExportConfig {
+            version: RECORDING_EXPORT_CONFIG_VERSION,
+            struct_size: std::mem::size_of::<SnowCaptureRecordingExportConfig>() as u32,
+            output_file_utf8: output.as_ptr(),
+            format: 0,
+            maximum_width: 0,
+            maximum_height: 0,
+            target_fps: 30,
+            codec: 0,
+            preset: 1,
+            encoder_preference: 2,
+            reserved: [0; 32],
+        };
+
+        assert!(parse_recording_export_config(&config).is_err());
     }
 
     #[test]
@@ -2708,6 +2740,7 @@ mod tests {
             target_fps: 30,
             codec: 0,
             preset: 1,
+            encoder_preference: 0,
             reserved: [0; 32],
         };
 
@@ -2727,6 +2760,7 @@ mod tests {
             target_fps: 30,
             codec: 0,
             preset: 1,
+            encoder_preference: 0,
             reserved: [0; 32],
         };
         assert!(parse_recording_export_config(&config).is_err());

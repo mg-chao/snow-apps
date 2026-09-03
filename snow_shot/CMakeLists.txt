@@ -3158,6 +3158,22 @@ foreach(_ocr_process_host_target IN ITEMS snow_shot snow-shot-ocr-recognition-se
             COMMENT "Staging standalone OCR process for ${_ocr_process_host_target}"
             VERBATIM
         )
+        # Packaged installers ship the verified OCR payload (or, for the online
+        # variant, its trusted manifest) next to the executable. Development
+        # builds must stage the same payload explicitly, otherwise the managed
+        # asset pipeline finds no manifest and rejects every OCR request with
+        # "Text recognition components could not be prepared".
+        if(WIN32)
+            add_custom_command(TARGET ${_ocr_process_host_target} POST_BUILD
+                COMMAND "${CMAKE_COMMAND}"
+                    -D "SNOW_OCR_ASSET_MANIFEST=${CMAKE_CURRENT_SOURCE_DIR}/packaging/snow-shot-ocr-asset-manifest.json"
+                    -D "SNOW_OCR_ARTIFACTS_DIR=${CMAKE_CURRENT_SOURCE_DIR}/../artifacts"
+                    -D "SNOW_OCR_DESTINATION=$<TARGET_FILE_DIR:${_ocr_process_host_target}>/assets/ocr"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/StageSnowShotOcrAssets.cmake"
+                COMMENT "Staging verified OCR assets for ${_ocr_process_host_target}"
+                VERBATIM
+            )
+        endif()
     endif()
 endforeach()
 unset(_ocr_process_host_target)

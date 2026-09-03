@@ -839,7 +839,9 @@ QVector<SettingsItemDefinition> screenRecordingItems() {
             QT_TRANSLATE_NOOP("SettingsCatalog", "Encoder"),
             QT_TRANSLATE_NOOP("SettingsCatalog", "Choose the video encoder"),
             QStringLiteral("screen_recording/encoder"), SettingsSelectBinding::ScreenRecordingEncoder,
-            {{QStringLiteral("h264"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "H.264"))},
+            {{QStringLiteral("h264_hw"),
+              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "H.264 (Hardware)"))},
+             {QStringLiteral("h264"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "H.264"))},
              {QStringLiteral("h265"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "H.265"))}}),
         fixedSelectItem(
             QStringLiteral("screen-recording.encoding-preset"),

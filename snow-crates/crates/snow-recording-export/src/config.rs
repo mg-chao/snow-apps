@@ -163,6 +163,8 @@ pub struct ExportRequest {
     pub video: VideoEncodeConfig,
     #[serde(default)]
     pub codec: VideoCodec,
+    #[serde(default)]
+    pub prefer_hardware_h264: bool,
     pub performance: ExportPerformanceConfig,
     #[serde(default)]
     pub maximum_width: Option<u32>,
@@ -183,6 +185,7 @@ impl Default for ExportRequest {
             output_path: PathBuf::from("output.mp4"),
             video: VideoEncodeConfig::default(),
             codec: VideoCodec::H264,
+            prefer_hardware_h264: false,
             performance: ExportPerformanceConfig::default(),
             maximum_width: None,
             maximum_height: None,

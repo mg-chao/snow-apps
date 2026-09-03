@@ -3547,6 +3547,11 @@
         <translation>选择视频编码器</translation>
     </message>
     <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="843" />
+        <source>H.264 (Hardware)</source>
+        <translation>H.264（硬件）</translation>
+    </message>
+    <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="842" />
         <source>H.264</source>
         <translation>H.264</translation>

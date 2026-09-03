@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
     [string]$BuildDirectory = "build\snow-shot-msvc-release",
     [string]$InstallDirectory = "artifacts\snow-shot",
@@ -787,6 +787,76 @@ $assetManifest = [ordered]@{
 }
 $assetManifestSource = Join-Path $artifactRoot "snow-shot-ocr-asset-manifest.json"
 $assetManifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $assetManifestSource -Encoding utf8
+
+# Development builds stage their OCR payload from a checked-in copy of this
+# manifest (see cmake/StageSnowShotOcrAssets.cmake). It must describe exactly
+# the payload this script produces and publishes, so reject drift here instead
+# of letting development trees stage assets the release no longer matches.
+$checkedInManifestPath = Join-Path $repoRoot "snow_shot\packaging\snow-shot-ocr-asset-manifest.json"
+if (-not (Test-Path -LiteralPath $checkedInManifestPath -PathType Leaf)) {
+    throw "The checked-in OCR asset manifest is missing: $checkedInManifestPath"
+}
+$checkedInManifest = Get-Content -LiteralPath $checkedInManifestPath -Raw | ConvertFrom-Json
+
+function Compare-OcrAssetFileList {
+    param(
+        [Parameter(Mandatory = $true)]$CheckedIn,
+        [Parameter(Mandatory = $true)]$Generated,
+        [Parameter(Mandatory = $true)][string]$Component,
+        [Parameter(Mandatory = $true)][bool]$RequireUrl
+    )
+    if ($CheckedIn.Count -ne $Generated.Count) {
+        return "$Component file count drifted ($($CheckedIn.Count) checked in, $($Generated.Count) generated)"
+    }
+    for ($index = 0; $index -lt $CheckedIn.Count; $index++) {
+        foreach ($field in "name", "size", "sha256") {
+            if ("$($CheckedIn[$index].$field)" -ne "$($Generated[$index].$field)") {
+                return "$Component file '$($CheckedIn[$index].name)' $field drifted " +
+                       "('$($CheckedIn[$index].$field)' checked in, '$($Generated[$index].$field)' generated)"
+            }
+        }
+        if ($RequireUrl -and "$($CheckedIn[$index].url)" -ne "$($Generated[$index].url)") {
+            return "$Component file '$($CheckedIn[$index].name)' url drifted"
+        }
+    }
+    return $null
+}
+
+$manifestDrift = $null
+if ($checkedInManifest.schema -ne $assetManifest.schema) {
+    $manifestDrift = "schema drifted"
+}
+elseif ($checkedInManifest.runtime.version -ne $assetManifest.runtime.version -or
+        $checkedInManifest.runtime.platform -ne $assetManifest.runtime.platform) {
+    $manifestDrift = "runtime version/platform drifted"
+}
+else {
+    foreach ($field in "name", "size", "sha256", "url") {
+        if ("$($checkedInManifest.runtime.archive.$field)" -ne "$($assetManifest.runtime.archive.$field)") {
+            $manifestDrift = "runtime archive $field drifted"
+            break
+        }
+    }
+}
+if (-not $manifestDrift) {
+    $manifestDrift = Compare-OcrAssetFileList `
+        -CheckedIn $checkedInManifest.runtime.files -Generated $assetManifest.runtime.files `
+        -Component "runtime" -RequireUrl $false
+}
+if (-not $manifestDrift -and $checkedInManifest.model.id -ne $assetManifest.model.id) {
+    $manifestDrift = "model id drifted"
+}
+if (-not $manifestDrift) {
+    $manifestDrift = Compare-OcrAssetFileList `
+        -CheckedIn $checkedInManifest.model.files -Generated $assetManifest.model.files `
+        -Component "model" -RequireUrl $true
+}
+if ($manifestDrift) {
+    throw "The checked-in OCR asset manifest ($checkedInManifestPath) no longer matches the " +
+          "packaged payload: $manifestDrift. If the OCR runtime or models changed intentionally, " +
+          "bump the OCR runtime version, publish the new payload, and update the checked-in manifest " +
+          "in the same change."
+}
 
 $variantStages = [ordered]@{
     online = Join-Path $artifactRoot "snow-shot-$packageVersion-online-stage"

@@ -590,6 +590,7 @@ void ScreenshotRecognitionSessionController::endTextEditing() {
         applyFormattedText(entry.formattedDocument);
     } else {
         applyPresentation(m_presentation);
+        startTextRender();
     }
     emit textEditingChanged(false);
     updateTextState();

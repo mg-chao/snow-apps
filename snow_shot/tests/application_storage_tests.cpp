@@ -182,6 +182,12 @@ void newSettingsSchemaDefaultsAndValidationAreComplete() {
     require(defaultValue("system/auto_start_at_boot").toBool() &&
                 defaultValue("network/proxy").toString() == QStringLiteral("none") &&
                 !defaultValue("global_shortcuts/disable_on_focused_fullscreen_window").toBool() &&
+                defaultValue("global_shortcuts/screenshot").toArray() ==
+                    QJsonArray{QStringLiteral("F1")} &&
+                defaultValue("global_shortcuts/screenshot_copy").toArray() ==
+                    QJsonArray{QStringLiteral("Ctrl+F1")} &&
+                defaultValue("global_shortcuts/pin_clipboard_content").toArray() ==
+                    QJsonArray{QStringLiteral("F3")} &&
                 defaultValue("screenshot/auto_execute_after_text_recognition").toString() ==
                     QStringLiteral("no_action") &&
                 defaultValue("screenshot/double_click_action").toString() ==
@@ -214,7 +220,7 @@ void newSettingsSchemaDefaultsAndValidationAreComplete() {
                 defaultValue("screen_recording/animated_image_format").toString() ==
                     QStringLiteral("gif") &&
                 defaultValue("screen_recording/encoder").toString() ==
-                    QStringLiteral("h264") &&
+                    QStringLiteral("h264_hw") &&
                 defaultValue("screen_recording/encoding_preset").toString() ==
                     QStringLiteral("veryfast") &&
                 defaultValue("screen_recording/hide_toolbar_in_recording").toBool() &&
@@ -409,7 +415,7 @@ void newSettingsSchemaDefaultsAndValidationAreComplete() {
         {QStringLiteral("screen_recording/animated_image_format"),
          {QStringLiteral("gif"), QStringLiteral("apng"), QStringLiteral("webp")}},
         {QStringLiteral("screen_recording/encoder"),
-         {QStringLiteral("h264"), QStringLiteral("h265")}},
+         {QStringLiteral("h264_hw"), QStringLiteral("h264"), QStringLiteral("h265")}},
         {QStringLiteral("screen_recording/encoding_preset"),
          {QStringLiteral("ultrafast"), QStringLiteral("veryfast"),
           QStringLiteral("medium"), QStringLiteral("veryslow"), QStringLiteral("placebo")}},
@@ -674,7 +680,7 @@ void newSettingsAdaptersRoundTripAndRejectInvalidValues() {
                 recording.animatedImageClarity() == QStringLiteral("1080p") &&
                 recording.animatedImageFrameRate() == 10 &&
                 recording.animatedImageFormat() == QStringLiteral("gif") &&
-                recording.encoder() == QStringLiteral("h264") &&
+                recording.encoder() == QStringLiteral("h264_hw") &&
                 recording.encodingPreset() == QStringLiteral("veryfast") &&
                 recording.hideToolbarInRecording() &&
                 QDir::fromNativeSeparators(recording.videoSaveDirectory())
@@ -702,11 +708,18 @@ void newSettingsAdaptersRoundTripAndRejectInvalidValues() {
                 recording.videoSaveDirectory() == QStringLiteral("D:/Recordings") &&
                 recording.videoFilenameFormat() == QStringLiteral("Recording_{yyyyMMdd}"),
             "recording adapters must round-trip every requested option");
+    require(recording.setEncoder(QStringLiteral("h264_hw")) &&
+                recording.encoder() == QStringLiteral("h264_hw") &&
+                recording.setEncoder(QStringLiteral("h264")) &&
+                recording.encoder() == QStringLiteral("h264"),
+            "recording adapters must round-trip every advertised encoder");
     require(!recording.setFrameRate(25) && !recording.setAnimatedImageFrameRate(30) &&
                 !recording.setScreenRecordingClarity(QStringLiteral("8k")) &&
+                !recording.setEncoder(QStringLiteral("vp9")) &&
                 !recording.setVideoFilenameFormat(QStringLiteral("invalid/name")) &&
                 recording.frameRate() == 83 && recording.animatedImageFrameRate() == 24 &&
-                recording.screenRecordingClarity() == QStringLiteral("2k"),
+                recording.screenRecordingClarity() == QStringLiteral("2k") &&
+                recording.encoder() == QStringLiteral("h264"),
             "recording adapters must reject unadvertised values atomically");
 
     const storage::TraySettings tray;

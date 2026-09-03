@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/screenshotocrvisuals.h"
 
 #include <QCoreApplication>
+#include <QDebug>
 #include <QDir>
 #include <QFileInfo>
 #include <QMetaObject>
@@ -209,7 +210,14 @@ class ScreenshotOcrRecognitionService::Impl final {
                         if (ensureProcess()) flushPending();
                     });
             connect(m_assetManager.get(), &ScreenshotOcrAssets::failed, owner,
-                    [this](const QString&) { failPendingForAssetError(); });
+                    [this](const QString& error) {
+                        // The UI only surfaces a generic message; keep the
+                        // actionable detail (missing manifest, hash mismatch,
+                        // network failure, ...) in the application log.
+                        qWarning().noquote()
+                            << "OCR asset preparation failed:" << error;
+                        failPendingForAssetError();
+                    });
         }
     }
 
@@ -394,7 +402,14 @@ class ScreenshotOcrRecognitionService::Impl final {
         m_process = std::make_unique<QProcess>(m_owner);
         connect(m_process.get(), &QProcess::readyReadStandardOutput, m_owner, [this]() { readProcessOutput(); });
         connect(m_process.get(), &QProcess::readyReadStandardError, m_owner,
-                [this]() { if (m_process != nullptr) m_process->readAllStandardError(); });
+                [this]() {
+                    if (m_process == nullptr) return;
+                    // The child reports engine/ONNX Runtime failures only on
+                    // stderr; relay them instead of discarding them silently.
+                    const QString output =
+                        QString::fromUtf8(m_process->readAllStandardError()).trimmed();
+                    if (!output.isEmpty()) qWarning().noquote() << "snow-ocr-process:" << output;
+                });
         connect(m_process.get(), qOverload<int, QProcess::ExitStatus>(&QProcess::finished), m_owner,
                 [this](int, QProcess::ExitStatus) {
                     bool shuttingDown = false;

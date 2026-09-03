@@ -90,6 +90,7 @@ impl EditingSession {
                 speed: VideoEncodingSpeed::UltraFast,
             },
             codec: VideoCodec::H264,
+            prefer_hardware_h264: false,
             performance: crate::config::ExportPerformanceConfig::default(),
             maximum_width: None,
             maximum_height: None,
@@ -297,7 +298,7 @@ impl EditingSession {
             export_fps,
             needs_overlay,
             needs_resize,
-            request.codec == VideoCodec::H264,
+            request.codec == VideoCodec::H264 && !request.prefer_hardware_h264,
         ) {
             match export_video_packet_copy_with_generated_audio(
                 &self.artifact.local_paths.video_intermediate_path,
@@ -342,6 +343,7 @@ impl EditingSession {
                 export_fps,
                 request.format,
                 request.codec,
+                request.prefer_hardware_h264,
                 mixed_audio.as_ref(),
                 request.audio_output.bitrate_kbps.max(8),
                 &request.video,
@@ -378,6 +380,7 @@ impl EditingSession {
             export_fps,
             request.format,
             request.codec,
+            request.prefer_hardware_h264,
             mixed_audio.as_ref(),
             request.audio_output.bitrate_kbps.max(8),
             &request.video,
@@ -446,6 +449,7 @@ impl EditingSession {
             export_fps,
             request.format,
             request.codec,
+            request.prefer_hardware_h264,
             mixed_audio.as_ref(),
             request.audio_output.bitrate_kbps.max(8),
             &request.video,
@@ -5718,6 +5722,7 @@ fn export_video_generated<F>(
     export_fps: u32,
     format: ExportFormat,
     requested_codec: VideoCodec,
+    prefer_hardware_h264: bool,
     mixed_audio: Option<&AudioMixPlan>,
     audio_bitrate_kbps: u16,
     video_config: &VideoEncodeConfig,
@@ -5749,6 +5754,7 @@ where
         output_path,
         format,
         requested_codec,
+        prefer_hardware_h264,
         perf_config.mode,
         perf_config.software_h264_priority,
     )?;
@@ -5804,6 +5810,7 @@ where
                     output_path,
                     format,
                     requested_codec,
+                    false,
                     ExportExecutionMode::SoftwareOnly,
                     perf_config.software_h264_priority,
                 )?;
@@ -6124,6 +6131,7 @@ fn export_video_generated_from_source(
     export_fps: u32,
     format: ExportFormat,
     requested_codec: VideoCodec,
+    prefer_hardware_h264: bool,
     mixed_audio: Option<&AudioMixPlan>,
     audio_bitrate_kbps: u16,
     video_config: &VideoEncodeConfig,
@@ -6183,6 +6191,7 @@ fn export_video_generated_from_source(
         output_path,
         format,
         requested_codec,
+        prefer_hardware_h264,
         perf_config.mode,
         perf_config.software_h264_priority,
     )?;
@@ -6241,6 +6250,7 @@ fn export_video_generated_from_source(
                     output_path,
                     format,
                     requested_codec,
+                    false,
                     ExportExecutionMode::SoftwareOnly,
                     perf_config.software_h264_priority,
                 )?;
@@ -6685,6 +6695,7 @@ fn export_video_generated_from_source_with_overlay(
     export_fps: u32,
     format: ExportFormat,
     requested_codec: VideoCodec,
+    prefer_hardware_h264: bool,
     mixed_audio: Option<&AudioMixPlan>,
     audio_bitrate_kbps: u16,
     video_config: &VideoEncodeConfig,
@@ -6746,6 +6757,7 @@ fn export_video_generated_from_source_with_overlay(
         output_path,
         format,
         requested_codec,
+        prefer_hardware_h264,
         perf_config.mode,
         perf_config.software_h264_priority,
     )?;
@@ -6799,6 +6811,7 @@ fn export_video_generated_from_source_with_overlay(
                     output_path,
                     format,
                     requested_codec,
+                    false,
                     ExportExecutionMode::SoftwareOnly,
                     perf_config.software_h264_priority,
                 )?;
@@ -7938,6 +7951,7 @@ fn select_video_codec(
     output_path: &Path,
     format: ExportFormat,
     requested_codec: VideoCodec,
+    prefer_hardware_h264: bool,
     mode: ExportExecutionMode,
     software_h264_priority: SoftwareH264Priority,
 ) -> Result<ffmpeg::Codec> {
@@ -7953,6 +7967,13 @@ fn select_video_codec(
     }
 
     if matches!(format, ExportFormat::Mp4) {
+        if prefer_hardware_h264
+            && matches!(requested_codec, VideoCodec::H264)
+            && hardware_video_encode_allowed(mode)
+            && let Some(hardware_codec) = select_hardware_h264_codec()
+        {
+            return Ok(hardware_codec);
+        }
         let (encoder_name, codec_name) = exact_mp4_encoder(requested_codec);
         if matches!(mode, ExportExecutionMode::HardwareOnly) {
             return Err(ScreenRecorderError::Export(format!(
@@ -8051,6 +8072,14 @@ fn select_software_h264_codec(priority: SoftwareH264Priority) -> Option<ffmpeg::
         SoftwareH264Priority::X264First => ["libx264", "libopenh264"],
     };
     preferred
+        .into_iter()
+        .find_map(ffmpeg::encoder::find_by_name)
+}
+
+fn select_hardware_h264_codec() -> Option<ffmpeg::Codec> {
+    // Only h264_mf is part of the shipped FFmpeg build; the remaining entries
+    // cover FFmpeg builds that also enable the vendor-specific encoders.
+    ["h264_mf", "h264_nvenc", "h264_qsv", "h264_amf"]
         .into_iter()
         .find_map(ffmpeg::encoder::find_by_name)
 }
@@ -8876,6 +8905,7 @@ mod tests {
                 10,
                 format,
                 codec,
+                false,
                 None,
                 8,
                 &VideoEncodeConfig::default(),
@@ -8932,6 +8962,56 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn mp4_hardware_preference_falls_back_to_software_encoder() {
+        let directory = tempdir().expect("temporary output directory should be available");
+        let cancel_flag = Arc::new(AtomicBool::new(false));
+        let output_path = directory.path().join("h264-hardware-test.mp4");
+        // Use a realistic frame size: Media Foundation rejects tiny outputs.
+        let result = export_video_generated(
+            &output_path,
+            640,
+            360,
+            2,
+            10,
+            ExportFormat::Mp4,
+            VideoCodec::H264,
+            true,
+            None,
+            8,
+            &VideoEncodeConfig::default(),
+            &ExportPerformanceConfig::default(),
+            &cancel_flag,
+            &None,
+            |index, rgba| {
+                for pixel in rgba.chunks_exact_mut(4) {
+                    pixel[0] = if index == 0 { 0x20 } else { 0xE0 };
+                    pixel[1] = 0x80;
+                    pixel[2] = 0x80;
+                    pixel[3] = 0xFF;
+                }
+                Ok(())
+            },
+        )
+        .unwrap_or_else(|error| panic!("hardware-preferred export should encode: {error}"));
+
+        // h264_mf when a Media Foundation H.264 encoder is available, otherwise
+        // the software fallback must have produced the file instead.
+        assert!(
+            matches!(
+                result.video_encoder.as_deref(),
+                Some("h264_mf") | Some("libx264") | Some("libopenh264")
+            ),
+            "unexpected encoder for hardware-preferred export: {:?}",
+            result.video_encoder
+        );
+        let bytes = fs::read(&output_path).expect("hardware-preferred output should be readable");
+        assert!(
+            bytes.len() > 16 && &bytes[4..8] == b"ftyp",
+            "hardware-preferred output should be a valid MP4"
+        );
     }
 
     #[test]
