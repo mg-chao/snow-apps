@@ -2338,11 +2338,19 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-floating-toolbar-reverse-drag-tests
         COMMAND snow-shot-floating-toolbar-drag-tests --reverse-hardware-drag-only
     )
+    add_test(
+        NAME snow-shot-floating-toolbar-seam-straddle-drag-tests
+        COMMAND snow-shot-floating-toolbar-drag-tests --seam-straddle-drag-only
+    )
     set_tests_properties(snow-shot-floating-toolbar-drag-tests PROPERTIES
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
     set_tests_properties(snow-shot-floating-toolbar-reverse-drag-tests PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+    set_tests_properties(snow-shot-floating-toolbar-seam-straddle-drag-tests PROPERTIES
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
@@ -2352,6 +2360,10 @@ if(SNOW_SHOT_BUILD_TESTS)
                 "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         )
         set_tests_properties(snow-shot-floating-toolbar-reverse-drag-tests PROPERTIES
+            ENVIRONMENT
+                "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        )
+        set_tests_properties(snow-shot-floating-toolbar-seam-straddle-drag-tests PROPERTIES
             ENVIRONMENT
                 "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         )

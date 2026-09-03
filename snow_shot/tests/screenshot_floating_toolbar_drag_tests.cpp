@@ -72,6 +72,17 @@ class ScreenshotFloatingToolPaletteWindowTestAccess {
     static quint64 committedGeometryPassCount(const ScreenshotFloatingToolPaletteWindow& window) {
         return window.m_committedGeometryPassCount;
     }
+};
+
+namespace {
+std::atomic_bool nativeGeometryWarningEmitted{false};
+QtMessageHandler previousMessageHandler = nullptr;
+
+void captureNativeGeometryWarning(QtMsgType type, const QMessageLogContext& context,
+                                  const QString& message) {
+    if (type == QtWarningMsg && message.contains(QStringLiteral("QWindowsWindow::setGeometry"))) {
+        nativeGeometryWarningEmitted.store(true, std::memory_order_relaxed);
+    }
 
     if (previousMessageHandler != nullptr) {
         previousMessageHandler(type, context, message);
@@ -861,6 +872,226 @@ void physicalDragFromDestinationMonitorAndBackKeepsPhysicalGeometryStable() {
     physicalDragAcrossHardwareMonitorsKeepsPhysicalGeometryStable(true);
 }
 
+// Regression scenario for a toolbar captured on the 150% monitor A whose frame is dragged
+// across the seam shared with the 100% monitor B and back. The toolbar stays straddling the
+// seam the whole time, so the majority of its frame - and with it the window DPI - flips on
+// every crossing while the capture display remains the palette's scale reference. After the
+// round trip the content must still render once at 150%, not at 150% * 150%.
+void slowSeamStraddlingDragKeepsToolbarContentUnmagnified() {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    const NativeGeometryWarningScope geometryWarningScope;
+    std::vector<HardwareMonitor> monitors;
+    require(EnumDisplayMonitors(nullptr, nullptr, collectHardwareMonitor,
+                                reinterpret_cast<LPARAM>(&monitors)) != FALSE,
+            "failed to enumerate the hardware monitors");
+    require(monitors.size() >= 2, "hardware test requires at least two active monitors");
+    require(populateMonitorDpi(&monitors), "hardware test could not read effective monitor DPI");
+
+    constexpr UINT kMonitorADpi = 144;
+    constexpr UINT kMonitorBDpi = 96;
+    const HardwareMonitor* monitorA = nullptr;
+    const HardwareMonitor* monitorB = nullptr;
+    for (const HardwareMonitor& candidateA : monitors) {
+        if (candidateA.dpi != kMonitorADpi) {
+            continue;
+        }
+        for (const HardwareMonitor& candidateB : monitors) {
+            const bool verticallyOverlaps =
+                candidateB.bounds.top < candidateA.bounds.bottom &&
+                candidateB.bounds.bottom > candidateA.bounds.top;
+            if (candidateB.dpi == kMonitorBDpi &&
+                candidateB.bounds.right == candidateA.bounds.left && verticallyOverlaps) {
+                monitorA = &candidateA;
+                monitorB = &candidateB;
+                break;
+            }
+        }
+        if (monitorA != nullptr) {
+            break;
+        }
+    }
+    require(monitorA != nullptr && monitorB != nullptr,
+            "hardware test requires 150% monitor A immediately right of 100% monitor B");
+
+    const int seamX = monitorA->bounds.left;
+    const int seamTop = qMax(monitorA->bounds.top, monitorB->bounds.top);
+    const int seamBottom = qMin(monitorA->bounds.bottom, monitorB->bounds.bottom);
+    require(seamBottom > seamTop, "hardware test requires the mixed-DPI monitors to overlap");
+    const int seamY = seamTop + (seamBottom - seamTop) / 2;
+
+    POINT originalCursor{};
+    require(GetCursorPos(&originalCursor) != FALSE, "failed to save cursor position");
+    const CursorPositionRestorer restoreCursor(originalCursor);
+
+    QScreen* screenA = qtScreenForMonitor(*monitorA);
+    require(screenA != nullptr, "could not map the capture display monitor to QScreen");
+
+    QWidget overlayOwner;
+    overlayOwner.setWindowFlags(Qt::FramelessWindowHint | Qt::Tool);
+    overlayOwner.setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    overlayOwner.setWindowOpacity(0.0);
+    overlayOwner.winId();
+    require(overlayOwner.windowHandle() != nullptr, "test overlay did not create a native window");
+    overlayOwner.windowHandle()->setScreen(screenA);
+    overlayOwner.setGeometry(screenA->geometry());
+    overlayOwner.show();
+    settleQueuedRefreshes();
+
+    NoOpToolbarCommands commands;
+    ScreenshotToolbarWindow window(commands);
+    window.resetForNewCapture();
+    window.setPlacementContext(screenA, screenA->geometry(), monitorPhysicalBounds(*monitorA));
+    window.setOwnerWindow(&overlayOwner);
+    window.prepareForDisplay();
+    window.show();
+    settleQueuedRefreshes();
+    window.resetForNewCapture();
+    settleQueuedRefreshes();
+    const HWND nativeWindow = toNativeHwnd(window.winId());
+    require(IsWindow(nativeWindow) != FALSE, "toolbar did not create a native HWND");
+
+    const QSize stablePhysicalSize = nativeWindowSize(nativeWindow);
+    require(stablePhysicalSize.isValid() && !stablePhysicalSize.isEmpty(),
+            "failed to measure the prepared toolbar HWND");
+    require(GetDpiForWindow(nativeWindow) == kMonitorADpi,
+            "seam test must start with the toolbar on the 150% monitor");
+    require(qFuzzyCompare(window.paletteHost()->physicalScale() + 1.0, 2.0),
+            "seam test must start with the toolbar at unit physical scale");
+    const ToolbarSizeSnapshot initialSizes =
+        captureToolbarSizeSnapshot(window, nullptr, kMonitorADpi);
+
+    // Park the toolbar with its midpoint 20 physical pixels right of the monitor seam.
+    const QPoint seamStraddleCursor(seamX + 20, seamY);
+    require(SetCursorPos(seamStraddleCursor.x(), seamStraddleCursor.y()) != FALSE,
+            "failed to park the cursor at the seam");
+    require(SetWindowPos(nativeWindow, nullptr,
+                         seamStraddleCursor.x() - stablePhysicalSize.width() / 2,
+                         seamStraddleCursor.y() - stablePhysicalSize.height() / 2,
+                         stablePhysicalSize.width(), stablePhysicalSize.height(),
+                         SWP_NOACTIVATE | SWP_NOZORDER) != FALSE,
+            "failed to park the toolbar across the seam");
+    settleQueuedRefreshes();
+    require(MonitorFromWindow(nativeWindow, MONITOR_DEFAULTTONULL) == monitorA->handle,
+            "a seam-straddling toolbar should keep its majority on the 150% monitor");
+
+    std::vector<std::string> failures;
+    const auto slowlyDragCursorTo = [&](const QPoint& physicalTarget) {
+        POINT current{};
+        if (GetCursorPos(&current) == FALSE) {
+            failures.push_back("failed to read the physical cursor during the seam drag");
+            return;
+        }
+        const QPoint start(current.x, current.y);
+        const int steps = qMax(1, qAbs(physicalTarget.x() - start.x()) / 2);
+        for (int step = 1; step <= steps; ++step) {
+            const QPoint cursor(
+                start.x() + qRound(static_cast<qreal>(physicalTarget.x() - start.x()) * step / steps),
+                start.y() +
+                    qRound(static_cast<qreal>(physicalTarget.y() - start.y()) * step / steps));
+            if (SetCursorPos(cursor.x(), cursor.y()) == FALSE) {
+                failures.push_back("failed to move the hardware cursor across the seam");
+                return;
+            }
+            ScreenshotFloatingToolPaletteWindowTestAccess::updateDrag(window, QCursor::pos());
+            settleQueuedRefreshes();
+        }
+    };
+
+    // Slowly drag the toolbar midpoint to the left of the seam (onto the 100% monitor).
+    ScreenshotFloatingToolPaletteWindowTestAccess::beginPhysicalDrag(window, QCursor::pos());
+    require(ScreenshotFloatingToolPaletteWindowTestAccess::hasPhysicalDragAnchor(window),
+            "toolbar did not start a native physical drag at the seam");
+    slowlyDragCursorTo(QPoint(seamX - 40, seamY));
+    ScreenshotFloatingToolPaletteWindowTestAccess::finishDrag(window);
+    settleQueuedRefreshes();
+
+    // Left of the seam the toolbar must keep the 150% capture display as its scale
+    // reference: its content stretches by 150% in logical coordinates, keeping the
+    // physical content size unchanged.
+    if (GetDpiForWindow(nativeWindow) != kMonitorBDpi) {
+        failures.push_back("toolbar did not adopt the 100% monitor DPI after crossing the seam");
+    }
+    if (!qFuzzyCompare(window.paletteHost()->physicalScale() + 1.0, 2.5)) {
+        std::ostringstream message;
+        message << "toolbar lost the 150% capture display as its scale reference left of the seam"
+                << " (physical scale " << window.paletteHost()->physicalScale() << ", expected 1.5)";
+        failures.push_back(message.str());
+    }
+
+    // Slowly drag the toolbar midpoint back to the right of the seam (onto the 150% monitor).
+    ScreenshotFloatingToolPaletteWindowTestAccess::beginPhysicalDrag(window, QCursor::pos());
+    if (!ScreenshotFloatingToolPaletteWindowTestAccess::hasPhysicalDragAnchor(window)) {
+        failures.push_back("toolbar did not restart a native physical drag left of the seam");
+    }
+    slowlyDragCursorTo(seamStraddleCursor);
+    ScreenshotFloatingToolPaletteWindowTestAccess::finishDrag(window);
+    for (int iteration = 0; iteration < 8; ++iteration) {
+        QCoreApplication::processEvents();
+        QThread::msleep(10);
+    }
+
+    if (MonitorFromWindow(nativeWindow, MONITOR_DEFAULTTONULL) != monitorA->handle) {
+        failures.push_back("toolbar did not return its majority to the 150% monitor");
+    }
+    const UINT monitorAWindowDpi = GetDpiForWindow(nativeWindow);
+    if (monitorAWindowDpi != kMonitorADpi) {
+        failures.push_back("toolbar window did not readopt the 150% monitor DPI after returning");
+    }
+    if (nativeWindowSize(nativeWindow) != stablePhysicalSize) {
+        const QSize finalSize = nativeWindowSize(nativeWindow);
+        std::ostringstream message;
+        message << "toolbar physical frame size changed from " << stablePhysicalSize.width() << "x"
+                << stablePhysicalSize.height() << " to " << finalSize.width() << "x"
+                << finalSize.height() << " across the seam round trip";
+        failures.push_back(message.str());
+    }
+
+    // The reported defect: after the round trip the toolbar content renders at another 150%
+    // on top of the 150% monitor scale and gets clipped by the fixed toolbar frame.
+    const qreal finalPhysicalScale = window.paletteHost()->physicalScale();
+    if (!qFuzzyCompare(finalPhysicalScale + 1.0, 2.0)) {
+        std::ostringstream message;
+        message << "toolbar content was magnified across the seam round trip: physical scale "
+                << finalPhysicalScale << " instead of 1.0 (an extra 150% is still applied)";
+        failures.push_back(message.str());
+    }
+    if (window.windowSizeHint() != window.size()) {
+        std::ostringstream message;
+        message << "toolbar frame no longer matches its fixed preset: committed window is "
+                << window.size().width() << "x" << window.size().height() << " instead of "
+                << window.windowSizeHint().width() << "x" << window.windowSizeHint().height();
+        failures.push_back(message.str());
+    }
+    if (!window.rect().contains(QRect(QPoint(0, 0), window.paletteHost()->size()))) {
+        std::ostringstream message;
+        message << "toolbar content is clipped: palette host is "
+                << window.paletteHost()->size().width() << "x"
+                << window.paletteHost()->size().height() << " inside a "
+                << window.rect().width() << "x" << window.rect().height() << " frame";
+        failures.push_back(message.str());
+    }
+    const ToolbarSizeSnapshot finalSizes =
+        captureToolbarSizeSnapshot(window, nullptr, monitorAWindowDpi);
+    appendToolbarSizeFailures(initialSizes, finalSizes, "Seam round trip toolbar", &failures);
+    if (geometryWarningScope.emitted()) {
+        failures.push_back("seam drag emitted QWindowsWindow::setGeometry warning");
+    }
+    window.hide();
+    settleQueuedRefreshes();
+
+    if (!failures.empty()) {
+        std::ostringstream message;
+        for (int index = 0; index < static_cast<int>(failures.size()); ++index) {
+            if (index != 0) {
+                message << "\n";
+            }
+            message << failures.at(index);
+        }
+        throw std::runtime_error(message.str());
+    }
+#endif
+}
+
 void dpiScaledSizeMessagePreservesThePhysicalWindowSize() {
 #if defined(Q_OS_WIN) || defined(_WIN32)
     ScreenshotFloatingToolPaletteWindow window(testToolbarOptions());
@@ -1353,6 +1584,10 @@ int main(int argc, char* argv[]) {
             physicalDragFromDestinationMonitorAndBackKeepsPhysicalGeometryStable();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--seam-straddle-drag-only"))) {
+            slowSeamStraddlingDragKeepsToolbarContentUnmagnified();
+            return 0;
+        }
         logicalDragMovesWithoutRefreshingGeometry();
         physicalDragMovesWithoutRefreshingGeometry();
         std::vector<std::string> hardwareDragFailures;
@@ -1364,6 +1599,11 @@ int main(int argc, char* argv[]) {
                     std::string(reverseDirection ? "B-to-A-to-B: " : "A-to-B-to-A: ") +
                     error.what());
             }
+        }
+        try {
+            slowSeamStraddlingDragKeepsToolbarContentUnmagnified();
+        } catch (const std::exception& error) {
+            hardwareDragFailures.push_back(std::string("seam straddle: ") + error.what());
         }
         if (!hardwareDragFailures.empty()) {
             std::ostringstream message;
