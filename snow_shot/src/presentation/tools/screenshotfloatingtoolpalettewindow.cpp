@@ -705,9 +705,19 @@ bool ScreenshotFloatingToolPaletteWindow::commitGeometryUpdate(bool preserveCont
     const QPoint contentAnchor =
         m_lastRequestedContentPositionValid ? m_lastRequestedContentPosition : contentPosition();
 
-    syncPalettePhysicalScale();
-    updatePaletteGeometryForVisibleContent();
-    const QSize windowSize = fixedWindowSizeHint();
+    {
+        SNOW_SHOT_TOOLBAR_PERF_SCOPE("window.refresh_geometry.sync_scale");
+        syncPalettePhysicalScale();
+    }
+    {
+        SNOW_SHOT_TOOLBAR_PERF_SCOPE("window.refresh_geometry.palette_geometry");
+        updatePaletteGeometryForVisibleContent();
+    }
+    QSize windowSize;
+    {
+        SNOW_SHOT_TOOLBAR_PERF_SCOPE("window.refresh_geometry.size_hint");
+        windowSize = fixedWindowSizeHint();
+    }
     if (!windowSize.isValid() || windowSize.isEmpty()) {
         return false;
     }
@@ -732,12 +742,15 @@ bool ScreenshotFloatingToolPaletteWindow::commitGeometryUpdate(bool preserveCont
     ++m_committedGeometryPassCount;
 #endif
 
-    if (hasContentAnchor && !m_processingNativeDpiChange) {
-        m_lastRequestedContentPosition = contentAnchor;
-        m_lastRequestedContentPositionValid = true;
-        setGeometry(QRect(contentAnchor - contentOffset(), windowSize));
-    } else if (!m_processingNativeDpiChange) {
-        resize(windowSize);
+    {
+        SNOW_SHOT_TOOLBAR_PERF_SCOPE("window.refresh_geometry.apply_geometry");
+        if (hasContentAnchor && !m_processingNativeDpiChange) {
+            m_lastRequestedContentPosition = contentAnchor;
+            m_lastRequestedContentPositionValid = true;
+            setGeometry(QRect(contentAnchor - contentOffset(), windowSize));
+        } else if (!m_processingNativeDpiChange) {
+            resize(windowSize);
+        }
     }
     if (m_processingNativeDpiChange) {
         m_lastRequestedContentPosition =
@@ -759,6 +772,7 @@ bool ScreenshotFloatingToolPaletteWindow::commitGeometryUpdate(bool preserveCont
     ++m_windowResizeOrReanchorCount;
 #endif
     if (!m_processingNativeDpiChange) {
+        SNOW_SHOT_TOOLBAR_PERF_SCOPE("window.refresh_geometry.stable_physical_size");
         refreshStablePhysicalWindowSize();
     }
     return true;

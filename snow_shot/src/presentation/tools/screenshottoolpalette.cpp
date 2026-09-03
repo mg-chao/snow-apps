@@ -2193,6 +2193,7 @@ void ScreenshotToolPalette::updatePanelStyle(QFrame* panel) {
 }
 
 void ScreenshotToolPalette::applyScaledToolbarMetrics() {
+    SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.apply_scaled_toolbar_metrics");
     m_shadowMargins = scaledMargins(m_baseShadowMargins.left(), m_baseShadowMargins.top(),
                                     m_baseShadowMargins.right(), m_baseShadowMargins.bottom());
 
@@ -2332,6 +2333,7 @@ void ScreenshotToolPalette::applyStyleMetricsForScope(QWidget* scope) {
 }
 
 void ScreenshotToolPalette::initializeStyleLayoutProfiles() {
+    SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.initialize_style_layout_profiles");
     for (QBoxLayout* layout : std::as_const(m_styleControlLayouts)) {
         if (layout == nullptr) {
             continue;
@@ -4420,6 +4422,7 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
 
     if ((tool == Tool::Shape || tool == Tool::Line || tool == Tool::FreeDraw) &&
         m_rectangleStyleControlsWidget == nullptr) {
+        SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family.shape");
         m_rectangleStyleControlsWidget = new QWidget(m_rectangleStylePanel);
         m_rectangleStyleControlsWidget->setObjectName(
             QStringLiteral("screenshotRectangleStyleControls"));
@@ -4450,6 +4453,7 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
         return;
     }
     if (tool == Tool::Arrow && m_arrowStyleControlsWidget == nullptr) {
+        SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family.arrow");
         m_arrowStyleControlsWidget = new QWidget(m_rectangleStylePanel);
         m_arrowStyleControlsWidget->setObjectName(QStringLiteral("screenshotArrowStyleControls"));
         auto* layout = createLayout(m_arrowStyleControlsWidget);
@@ -4466,6 +4470,7 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
     }
     if ((tool == Tool::RectangleHighlight || tool == Tool::PenHighlight) &&
         m_highlightStyleControlsWidget == nullptr) {
+        SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family.highlight");
         const QVector<StyleModeOption> modes{
             {QStringLiteral("Pen highlight"), outlined_icons::Highlight(), Tool::PenHighlight},
             {QStringLiteral("Rectangle highlight"), custom_outlined_icons::ShapeRectangle(),
@@ -4510,6 +4515,7 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
         return;
     }
     if (tool == Tool::Spotlight && m_spotlightStyleControlsWidget == nullptr) {
+        SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family.spotlight");
         m_spotlightStyleControlsWidget = new QWidget(m_rectangleStylePanel);
         m_spotlightStyleControlsWidget->setObjectName(
             QStringLiteral("screenshotSpotlightStyleControls"));
@@ -4559,6 +4565,7 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
         return;
     }
     if (tool == Tool::Text && m_textStyleControlsWidget == nullptr) {
+        SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family.text");
         m_textStyleControlsWidget = new QWidget(m_rectangleStylePanel);
         m_textStyleControlsWidget->setObjectName(QStringLiteral("screenshotTextStyleControls"));
         auto* layout = createLayout(m_textStyleControlsWidget);
@@ -4574,6 +4581,7 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
         return;
     }
     if (tool == Tool::SerialNumber && m_serialNumberStyleControlsWidget == nullptr) {
+        SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family.serial_number");
         m_serialNumberStyleControlsWidget = new QWidget(m_rectangleStylePanel);
         m_serialNumberStyleControlsWidget->setObjectName(
             QStringLiteral("screenshotSerialNumberStyleControls"));
@@ -4591,6 +4599,7 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
     }
     if ((tool == Tool::RectangleFilter || tool == Tool::PenFilter) &&
         m_filterStyleControlsWidget == nullptr) {
+        SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family.filter");
         m_filterEditor = createFilterEditor({Tool::RectangleFilter,
             QStringLiteral("screenshotFilterStyleControls"),
             QStringLiteral("screenshotFilterTypeSelect"),
@@ -4610,6 +4619,7 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
         return;
     }
     if (tool == Tool::Watermark && m_watermarkStyleControlsWidget == nullptr) {
+        SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family.watermark");
         m_watermarkStyleControlsWidget = new QWidget(m_rectangleStylePanel);
         m_watermarkStyleControlsWidget->setObjectName(
             QStringLiteral("screenshotWatermarkStyleControls"));

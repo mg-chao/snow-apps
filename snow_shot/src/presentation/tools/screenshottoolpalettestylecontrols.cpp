@@ -413,6 +413,7 @@ ScreenshotToolPaletteStyleControls::FontEditor ScreenshotToolPaletteStyleControl
     const std::function<void(double)>& setSize,
     const std::function<void(const QString&)>& setFamily,
     const ScreenshotToolPaletteButtonMetrics& metrics) {
+    SNOW_SHOT_TOOLBAR_PERF_SCOPE("style.add_font_editor");
     FontEditor editor;
     if (layout == nullptr || parent == nullptr || receiver == nullptr) {
         return editor;
@@ -689,6 +690,7 @@ ScreenshotToolPaletteStyleControls::addIconOptionEditor(
     QBoxLayout* layout, QWidget* parent, QObject* receiver, const IconOptionEditorConfig& config,
     int initialValue, const std::function<void(int)>& setValue,
     const ScreenshotToolPaletteButtonMetrics& metrics) {
+    SNOW_SHOT_TOOLBAR_PERF_SCOPE("style.add_icon_option_editor");
     IconOptionEditor editor;
     if (layout == nullptr || parent == nullptr || receiver == nullptr || config.options.isEmpty()) {
         return editor;
@@ -787,6 +789,7 @@ ScreenshotToolPaletteStyleControls::ColorEditor ScreenshotToolPaletteStyleContro
     const std::function<void(const QColor&)>& commitColor,
     const std::function<void(const QColor&)>& previewColor,
     const ScreenshotToolPaletteButtonMetrics& metrics) {
+    SNOW_SHOT_TOOLBAR_PERF_SCOPE("style.add_color_editor");
     ColorEditor editor;
     if (layout == nullptr || parent == nullptr || receiver == nullptr) {
         return editor;
@@ -896,6 +899,7 @@ ScreenshotToolPaletteStyleControls::FillEditor ScreenshotToolPaletteStyleControl
     const std::function<void(const QColor&)>& setColor,
     const std::function<void(SnowCanvasFillStyle)>& setStyle,
     const ScreenshotToolPaletteButtonMetrics& metrics) {
+    SNOW_SHOT_TOOLBAR_PERF_SCOPE("style.add_fill_editor");
     FillEditor editor;
     if (layout == nullptr || parent == nullptr || receiver == nullptr) {
         return editor;
@@ -1007,6 +1011,7 @@ ScreenshotToolPaletteStyleControls::addStrokeEditor(
     const std::function<void(const QColor&)>& setColor,
     const std::function<void(SnowCanvasStrokeStyle)>& setStyle,
     const ScreenshotToolPaletteButtonMetrics& metrics) {
+    SNOW_SHOT_TOOLBAR_PERF_SCOPE("style.add_stroke_editor");
     StrokeEditor editor;
     if (layout == nullptr || parent == nullptr || receiver == nullptr) {
         return editor;
@@ -1120,6 +1125,7 @@ ScreenshotToolPaletteStyleControls::addNumericPresetEditor(
     double initialValue, const std::function<void()>& cycleValue,
     const std::function<void(double)>& setValue,
     const ScreenshotToolPaletteButtonMetrics& metrics) {
+    SNOW_SHOT_TOOLBAR_PERF_SCOPE("style.add_numeric_preset_editor");
     NumericPresetEditor editor;
     if (layout == nullptr || parent == nullptr || receiver == nullptr) {
         return editor;
@@ -1254,6 +1260,7 @@ ScreenshotToolPaletteStyleControls::addWidthColorEditor(
     double initialWidth, const QColor& initialColor, bool* handlingChange,
     const std::function<void(double)>& setWidth, const std::function<void(const QColor&)>& setColor,
     const ScreenshotToolPaletteButtonMetrics& metrics) {
+    SNOW_SHOT_TOOLBAR_PERF_SCOPE("style.add_width_color_editor");
     WidthColorEditor editor;
     if (layout == nullptr || parent == nullptr || receiver == nullptr) {
         return editor;
