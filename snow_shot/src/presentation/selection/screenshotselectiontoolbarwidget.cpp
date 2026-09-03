@@ -4,21 +4,18 @@
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/screenshotselectionlimits.h"
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
-#include "snow_shot/presentation/screenshotoverlaywindow.h"
-#include "snow_draw_engine_qt/snow_canvas_widget.h"
 
-#include <QApplication>
 #include <QCoreApplication>
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QHideEvent>
-#include <QHoverEvent>
 #include <QLabel>
 #include <QMargins>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPixmap>
 #include <QPoint>
+#include <QRegion>
 #include <QSizePolicy>
 #include <QShowEvent>
 #include <QTimer>
@@ -118,44 +115,6 @@ void setMouseTransparentForWidget(QWidget* widget, bool transparent) {
         return;
     }
     widget->setAttribute(Qt::WA_TransparentForMouseEvents, !interactionEnabled);
-}
-
-QPointF globalPositionForPointerEvent(const QObject* watched, const QEvent* event) {
-    if (event == nullptr) {
-        return {};
-    }
-
-    switch (event->type()) {
-    case QEvent::MouseButtonPress:
-    case QEvent::MouseMove:
-    case QEvent::MouseButtonRelease:
-        return static_cast<const QMouseEvent*>(event)->globalPosition();
-    case QEvent::Wheel:
-        return static_cast<const QWheelEvent*>(event)->globalPosition();
-    case QEvent::Enter:
-        return static_cast<const QEnterEvent*>(event)->globalPosition();
-    case QEvent::HoverEnter:
-    case QEvent::HoverMove: {
-        const auto* widget = qobject_cast<const QWidget*>(watched);
-        const auto* hoverEvent = static_cast<const QHoverEvent*>(event);
-        return widget != nullptr ? QPointF(widget->mapToGlobal(hoverEvent->position().toPoint()))
-                                 : QPointF();
-    }
-    default:
-        return {};
-    }
-}
-
-ScreenshotOverlayWindow* overlayParentForObject(const QObject* object) {
-    for (const QObject* parent = object != nullptr ? object->parent() : nullptr; parent != nullptr;
-         parent = parent->parent()) {
-        auto* overlay = qobject_cast<ScreenshotOverlayWindow*>(const_cast<QObject*>(parent));
-        if (overlay != nullptr) {
-            return overlay;
-        }
-    }
-
-    return nullptr;
 }
 } // namespace
 
@@ -406,17 +365,6 @@ bool ScreenshotSelectionToolbarWidget::eventFilter(QObject* watched, QEvent* eve
     return QWidget::eventFilter(watched, event);
 }
 
-bool ScreenshotSelectionToolbarWidget::event(QEvent* event) {
-    // Only the transparent shadow margin belongs to the toolbar surface. Child controls must
-    // receive their normal Qt enter/leave events so they can maintain their own hover visuals.
-    if (shouldForwardPointerEventToOverlayCanvas(this, event) &&
-        forwardPointerEventToOverlayCanvas(event)) {
-        return true;
-    }
-
-    return QWidget::event(event);
-}
-
 void ScreenshotSelectionToolbarWidget::changeEvent(QEvent* event) {
     if (event != nullptr && event->type() == QEvent::LanguageChange) {
         retranslateUi();
@@ -534,6 +482,7 @@ void ScreenshotSelectionToolbarWidget::setToolbarHovered(bool hovered) {
     }
 
     m_toolbarHovered = hovered;
+    updateInputRegion();
     m_commands.setSelectionToolbarHovered(hovered);
     refreshHoverVisuals();
     if (hovered) {
@@ -604,86 +553,6 @@ void ScreenshotSelectionToolbarWidget::handleFieldWheel(Field field, int deltaY)
     }
 }
 
-bool ScreenshotSelectionToolbarWidget::shouldForwardPointerEventToOverlayCanvas(
-    QObject* watched, const QEvent* event) const {
-    if (event == nullptr) {
-        return false;
-    }
-
-    const QEvent::Type eventType = event->type();
-    const bool mouseEvent = eventType == QEvent::MouseButtonPress ||
-                            eventType == QEvent::MouseMove ||
-                            eventType == QEvent::MouseButtonRelease;
-    const bool rootHoverEvent =
-        watched == this && (eventType == QEvent::Enter || eventType == QEvent::HoverEnter ||
-                            eventType == QEvent::HoverMove);
-    const bool pointerEvent = mouseEvent || rootHoverEvent || eventType == QEvent::Wheel;
-    if (!pointerEvent) {
-        return false;
-    }
-    if (m_displayMode == DisplayMode::SizeOnly) {
-        return true;
-    }
-    if (m_displayMode != DisplayMode::Full) {
-        return false;
-    }
-
-    const QPoint localPosition =
-        mapFromGlobal(globalPositionForPointerEvent(watched, event).toPoint());
-    return !isPointInInteractiveContent(localPosition);
-}
-
-bool ScreenshotSelectionToolbarWidget::forwardPointerEventToOverlayCanvas(QEvent* event) const {
-    if (event == nullptr) {
-        return false;
-    }
-
-    const QEvent::Type eventType = event->type();
-    const bool mouseEvent = eventType == QEvent::MouseButtonPress ||
-                            eventType == QEvent::MouseMove ||
-                            eventType == QEvent::MouseButtonRelease;
-    const bool hoverEvent = eventType == QEvent::Enter || eventType == QEvent::HoverEnter ||
-                            eventType == QEvent::HoverMove;
-    const bool wheelEvent = eventType == QEvent::Wheel;
-    if (!mouseEvent && !hoverEvent && !wheelEvent) {
-        return false;
-    }
-
-    ScreenshotOverlayWindow* overlay = overlayParentForObject(this);
-    QWidget* canvas = overlay != nullptr ? static_cast<QWidget*>(overlay->canvas()) : nullptr;
-    if (canvas == nullptr) {
-        return false;
-    }
-
-    const QPointF globalPosition = globalPositionForPointerEvent(this, event);
-    const QPointF canvasPosition = QPointF(canvas->mapFromGlobal(globalPosition.toPoint()));
-
-    if (mouseEvent) {
-        const auto* mouseEventData = static_cast<const QMouseEvent*>(event);
-        QMouseEvent forwardedEvent(eventType, canvasPosition, canvasPosition, globalPosition,
-                                   mouseEventData->button(), mouseEventData->buttons(),
-                                   mouseEventData->modifiers());
-        QCoreApplication::sendEvent(canvas, &forwardedEvent);
-        return true;
-    }
-
-    if (hoverEvent) {
-        QMouseEvent forwardedEvent(QEvent::MouseMove, canvasPosition, canvasPosition,
-                                   globalPosition, Qt::NoButton, QApplication::mouseButtons(),
-                                   QApplication::keyboardModifiers());
-        QCoreApplication::sendEvent(canvas, &forwardedEvent);
-        return true;
-    }
-
-    const auto* wheelEventData = static_cast<const QWheelEvent*>(event);
-    QWheelEvent forwardedEvent(canvasPosition, globalPosition, wheelEventData->pixelDelta(),
-                               wheelEventData->angleDelta(), wheelEventData->buttons(),
-                               wheelEventData->modifiers(), wheelEventData->phase(),
-                               wheelEventData->inverted());
-    QCoreApplication::sendEvent(canvas, &forwardedEvent);
-    return true;
-}
-
 bool ScreenshotSelectionToolbarWidget::isPointInInteractiveContent(
     const QPoint& localPosition) const {
     if (!rect().contains(localPosition)) {
@@ -694,6 +563,22 @@ bool ScreenshotSelectionToolbarWidget::isPointInInteractiveContent(
     }
 
     return m_panel->geometry().contains(localPosition);
+}
+
+void ScreenshotSelectionToolbarWidget::updateInputRegion() {
+    // The margin around the panel exists only to paint the hover glow. Align the native
+    // input surface with the interactive panel (plus the visible glow while hovered) so
+    // pointer events over the margin fall through to the overlay canvas below. That keeps
+    // the selection border running under the toolbar directly grabbable with native hover
+    // cursors, real grabs, and double-clicks instead of synthesized forwarded events.
+    if (m_panel == nullptr) {
+        setMask(QRegion());
+        return;
+    }
+    if (layout() != nullptr) {
+        layout()->activate();
+    }
+    setMask(toolbar_widgets::interactiveInputRegion(m_panel->geometry(), m_toolbarHovered));
 }
 
 bool ScreenshotSelectionToolbarWidget::updateLabels(bool refreshGeometry) {
@@ -743,6 +628,7 @@ void ScreenshotSelectionToolbarWidget::updateIconPixmaps() {
 void ScreenshotSelectionToolbarWidget::updateDisplayMode() {
     const bool fullMode = m_displayMode == DisplayMode::Full;
     updateMouseEventTransparency();
+    updateInputRegion();
     if (!fullMode) {
         setToolbarHovered(false);
     }
@@ -774,6 +660,16 @@ void ScreenshotSelectionToolbarWidget::updateDisplayMode() {
 
 void ScreenshotSelectionToolbarWidget::updateMouseEventTransparency() {
     const bool transparent = m_displayMode == DisplayMode::SizeOnly;
+    if (transparent) {
+        // WA_TransparentForMouseEvents and the input mask only redirect Qt-internal
+        // hit testing for alien widgets. A native child HWND always wins OS-level
+        // hit testing, which would leave an arrow cursor over the toolbar and starve
+        // the overlay canvas of the mouse moves that drive the color picker. Siblings
+        // can be forced native at any time (Qt nativizes every sibling of an embedded
+        // native window-type child, e.g. the floating tool palette), so shed that
+        // surface whenever the click-through display mode is applied.
+        releaseNativeInputSurface();
+    }
     setMouseTransparentForWidget(this, transparent);
     setMouseTransparentForWidget(m_panel, transparent);
 
@@ -783,6 +679,22 @@ void ScreenshotSelectionToolbarWidget::updateMouseEventTransparency() {
             continue;
         }
         setMouseTransparentForWidget(child, transparent);
+    }
+}
+
+void ScreenshotSelectionToolbarWidget::releaseNativeInputSurface() {
+    if (!testAttribute(Qt::WA_NativeWindow) && internalWinId() == 0) {
+        return;
+    }
+
+    const bool wasVisible = isVisible();
+    if (wasVisible) {
+        hide();
+    }
+    setAttribute(Qt::WA_NativeWindow, false);
+    destroy(true, false);
+    if (wasVisible) {
+        show();
     }
 }
 
@@ -801,6 +713,7 @@ void ScreenshotSelectionToolbarWidget::updateWindowSize() {
     m_panel->setFixedSize(panelSize);
     setFixedSize(panelSize +
                  QSize(toolbar_widgets::ShadowMargin * 2, toolbar_widgets::ShadowMargin * 2));
+    updateInputRegion();
 }
 
 QPoint ScreenshotSelectionToolbarWidget::contentOffset() const {

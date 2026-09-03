@@ -5,8 +5,11 @@
 #include <QEvent>
 #include <QKeyEvent>
 #include <QKeySequence>
+#include <QLineEdit>
+#include <QPlainTextEdit>
 #include <QPointer>
 #include <QSet>
+#include <QTextEdit>
 #include <QWidget>
 #include <QWindow>
 
@@ -425,6 +428,21 @@ WindowShortcutManager::keyCombinationsFromPortableText(const QStringList& shortc
         }
     }
     return normalizedCombinations(combinations);
+}
+
+bool WindowShortcutManager::focusAcceptsTextInput(QWidget* focusWidget) {
+    for (QWidget* current = focusWidget; current != nullptr; current = current->parentWidget()) {
+        if (auto* lineEdit = qobject_cast<QLineEdit*>(current)) {
+            return !lineEdit->isReadOnly();
+        }
+        if (auto* textEdit = qobject_cast<QTextEdit*>(current)) {
+            return !textEdit->isReadOnly();
+        }
+        if (auto* plainTextEdit = qobject_cast<QPlainTextEdit*>(current)) {
+            return !plainTextEdit->isReadOnly();
+        }
+    }
+    return false;
 }
 
 bool WindowShortcutManager::eventFilter(QObject* watched, QEvent* event) {

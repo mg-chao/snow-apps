@@ -97,6 +97,36 @@ class NoopOverlayEventSink final : public ScreenshotOverlayEventSink {
     void raiseToolbarForCanvasInteraction() override {}
 };
 
+// QWidget::setCursor()/unsetCursor() each emit CursorChange and, once the
+// widget lives in a shown native window, each changed-shape transition is
+// forwarded to the native cursor sprite. Counting these events makes cursor
+// churn observable without a real window.
+class CursorChangeCounter final : public QObject {
+  public:
+    explicit CursorChangeCounter(QWidget* widget) : m_widget(widget) {
+        m_widget->installEventFilter(this);
+    }
+
+    ~CursorChangeCounter() override {
+        if (m_widget != nullptr) {
+            m_widget->removeEventFilter(this);
+        }
+    }
+
+    int count = 0;
+
+  protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (watched == m_widget && event->type() == QEvent::CursorChange) {
+            ++count;
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+  private:
+    QPointer<QWidget> m_widget;
+};
+
 class WheelTestCanvas final : public SnowCanvasWidget {
   public:
     void dispatchWheel(QWheelEvent* event) {
@@ -2930,6 +2960,48 @@ void canvasCursorLayersKeepToolCursorAfterScreenshotSelection() {
             "clearing the screenshot cursor should reveal the latest canvas tool cursor");
 }
 
+void overlaySelectionCursorUpdatesAreIdempotentWhileSelecting() {
+    NoopOverlayEventSink eventSink;
+    auto* canvas = new SnowCanvasWidget;
+    ScreenshotOverlayWindow overlay(eventSink, canvas);
+    auto* inactiveCanvas = new SnowCanvasWidget;
+    ScreenshotOverlayWindow inactiveOverlay(eventSink, inactiveCanvas);
+
+    CapturedDisplayModel display;
+    display.active = true;
+    CapturedDisplayModel inactiveDisplay;
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(display, &overlay);
+    displays.appendDisplay(inactiveDisplay, &inactiveOverlay);
+    ScreenshotOverlayCanvasPresenter presenter({});
+
+    presenter.updateOverlayCursors(displays, true, false);
+    require(canvas->cursor().shape() == Qt::CrossCursor,
+            "the selection crosshair should be applied when selecting begins");
+    require(inactiveCanvas->cursor().shape() == Qt::ArrowCursor,
+            "inactive displays must not receive the selection crosshair");
+
+    CursorChangeCounter activeChanges(canvas);
+    CursorChangeCounter inactiveChanges(inactiveCanvas);
+    // Smart selection streams overlay-state updates at hit-test and selection
+    // transition animation cadence while the pointer moves.
+    for (int update = 0; update < 4; ++update) {
+        presenter.updateOverlayCursors(displays, true, false);
+    }
+    require(activeChanges.count == 0,
+            "selection cursor updates must not re-apply an unchanged cursor: every widget "
+            "cursor transition flashes the native cursor sprite on Windows");
+    require(inactiveChanges.count == 0,
+            "overlays without a selection cursor must not receive cursor transitions while "
+            "selecting");
+    require(canvas->cursor().shape() == Qt::CrossCursor,
+            "the selection crosshair must survive streamed selection updates");
+
+    presenter.updateOverlayCursors(displays, false, false);
+    require(activeChanges.count == 1 && canvas->cursor().shape() == Qt::ArrowCursor,
+            "leaving the selection stage should transition the cursor exactly once");
+}
+
 void overlayPresenterRespectsSelectionHandleVisibility() {
     NoopOverlayEventSink eventSink;
     auto* canvas = new SnowCanvasWidget;
@@ -3015,6 +3087,7 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--cursor-layer-priority"))) {
         canvasCursorLayersKeepToolCursorAfterScreenshotSelection();
+        overlaySelectionCursorUpdatesAreIdempotentWhileSelecting();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--screenshot-ui-preferences"))) {
@@ -3099,6 +3172,7 @@ int main(int argc, char** argv) {
     overlayNativeSurfaceIsReleasedBeforeDeferredObjectDeletion();
     overlayNativeSurfaceRetirementPreservesReusableRenderState();
     canvasCursorLayersKeepToolCursorAfterScreenshotSelection();
+    overlaySelectionCursorUpdatesAreIdempotentWhileSelecting();
     overlayPresenterRespectsSelectionHandleVisibility();
     resettingDisplaySessionEditingStateResetsEveryCanvas();
     screenshotUiPreferencesNormalizeAndApplyPickerVisibilityPolicies();

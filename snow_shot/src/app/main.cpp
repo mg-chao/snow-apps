@@ -43,6 +43,13 @@ int main(int argc, char* argv[]) {
     }
     QCoreApplication::setApplicationName(applicationName);
 
+    // Capture overlays embed native window-type children (the floating tool
+    // palette) alongside alien, click-through children (selection toolbar,
+    // shortcut hints). Qt would otherwise force every sibling of an embedded
+    // native child native, which silently turns those click-through surfaces
+    // into OS-level input interceptors.
+    QCoreApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
+
     QApplication app(argc, argv);
 #if defined(SNOW_SHOT_PIN_PERF_INSTRUMENTATION)
     snow_shot::presentation::pin_perf::configureTrace(

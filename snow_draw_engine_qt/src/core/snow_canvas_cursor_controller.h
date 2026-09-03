@@ -18,6 +18,7 @@ class SnowCanvasCursorController final {
   private:
     std::optional<QCursor>& cursorForLayer(SnowCanvasCursorLayer layer);
     void applyResolvedCursor();
+    void applyResolvedCursorToWidget(const QCursor& cursor);
 
     QWidget& m_widget;
     std::optional<QCursor> m_canvasToolCursor;

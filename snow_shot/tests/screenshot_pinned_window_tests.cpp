@@ -2,6 +2,8 @@
 #include "snow_shot/presentation/screenshotpinnededitcontroller.h"
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
+#include "snow_shot/presentation/screenshotocrrecognitionservice.h"
+#include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
 #include "snow_shot/storage/settingsadapters.h"
 
@@ -33,6 +35,7 @@
 #include <QScreen>
 #include <QThread>
 #include <QTimer>
+#include <QTextBrowser>
 #include <QVariantAnimation>
 #include <QWheelEvent>
 #include <QWindow>
@@ -151,6 +154,94 @@ class CursorPositionRestorer final {
 
 QPushButton* buttonNamed(QWidget& window, const QString& accessibleName);
 bool processUntilDeleted(QPointer<ScreenshotPinnedWindow>& window, int timeoutMs);
+adqt::widgets::AdButton* toolbarButtonNamed(ScreenshotToolPalette& toolbar,
+                                             const QString& tooltip);
+
+class ImmediateQrRecognition final : public ScreenshotQrRecognitionPort {
+  public:
+    explicit ImmediateQrRecognition(QStringList contents) : m_contents(std::move(contents)) {}
+
+    RequestToken recognize(QImage, QObject*, Completion completion) override {
+        if (completion) {
+            completion(ScreenshotQrRecognitionResult{m_contents, {}});
+        }
+        return 1;
+    }
+
+    void cancel(RequestToken) override {}
+
+  private:
+    QStringList m_contents;
+};
+
+void pinnedQrResultCopiesWithKeyboardShortcut() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+
+    ImmediateQrRecognition qrRecognition(
+        {QStringLiteral("https://example.com/pinned-qr"), QStringLiteral("second payload")});
+    QImage background(320, 180, QImage::Format_ARGB32_Premultiplied);
+    background.fill(QColor(42, 84, 126, 255));
+    auto* pinnedWindow =
+        new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
+    QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), background.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(background.size()));
+    config.backgroundImage = background;
+    config.screen = screen;
+    config.enableEditing = true;
+    config.automaticTextRecognition = false;
+    config.qrRecognition = &qrRecognition;
+    require(pinnedWindow->present(config), "pinned QR copy presentation failed");
+    waitForUi(50);
+
+    auto* editButton = pinnedWindow->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotPinnedEditButton"));
+    require(editButton != nullptr, "pinned QR copy edit button was not found");
+    editButton->click();
+    waitForUi(50);
+
+    auto* editController = pinnedWindow->findChild<ScreenshotPinnedEditController*>();
+    auto* toolbarWindow = editController != nullptr ? editController->toolbarWindow() : nullptr;
+    auto* toolbar = toolbarWindow != nullptr ? toolbarWindow->palette() : nullptr;
+    require(toolbar != nullptr, "pinned QR copy toolbar was not created");
+    toolbar->setQrEnabled(true);
+    require(QMetaObject::invokeMethod(toolbar, "qrRequested", Qt::DirectConnection),
+            "pinned QR copy should activate barcode recognition");
+    QElapsedTimer qrReady;
+    qrReady.start();
+    QTextBrowser* browser = nullptr;
+    while (qrReady.elapsed() < 10000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        browser = pinnedWindow->findChild<QTextBrowser*>(QStringLiteral("screenshotQrContents"));
+        if (browser != nullptr && browser->isVisible()) {
+            break;
+        }
+        QThread::msleep(1);
+    }
+
+    require(browser != nullptr && browser->isVisible(),
+            "pinned QR recognition should create a visible result surface");
+    browser->setFocus(Qt::OtherFocusReason);
+    const QString expected = QStringLiteral("https://example.com/pinned-qr\nsecond payload");
+    require(browser->toPlainText() == expected,
+            "pinned QR recognition should render all decoded payloads");
+
+    QApplication::clipboard()->setText(QStringLiteral("stale clipboard text"));
+    QKeyEvent copy(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
+    QApplication::sendEvent(browser, &copy);
+    require(copy.isAccepted() && QApplication::clipboard()->text() == expected,
+            "Ctrl+C should copy all pinned QR result text");
+
+    QKeyEvent selectAll(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
+    QApplication::sendEvent(browser, &selectAll);
+    require(selectAll.isAccepted() && browser->textCursor().hasSelection(),
+            "Ctrl+A should select the pinned QR result text");
+
+    pinnedWindow->close();
+    require(processUntilDeleted(guardedWindow, 2000), "pinned QR copy window was not deleted");
+}
 
 adqt::widgets::AdButton* toolbarButtonNamed(ScreenshotToolPalette& toolbar,
                                              const QString& tooltip) {
@@ -160,6 +251,141 @@ adqt::widgets::AdButton* toolbarButtonNamed(ScreenshotToolPalette& toolbar,
         }
     }
     return nullptr;
+}
+
+class IdleOcrRecognition final : public ScreenshotOcrRecognitionPort {
+  public:
+    RequestToken recognize(ScreenshotOcrRequest, QObject*, Completion) override {
+        ++requests;
+        return 1;
+    }
+
+    void cancel(RequestToken) override {}
+
+    bool reprioritize(RequestToken, ScreenshotOcrRequestPriority) override { return false; }
+
+    int requests = 0;
+};
+
+QAction* pinnedMenuActionNamed(ScreenshotPinnedWindow& window, const QString& name) {
+    auto* menu = window.findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedContextMenu"));
+    if (menu == nullptr) {
+        return nullptr;
+    }
+    for (QAction* action : menu->actions()) {
+        if (action != nullptr && action->objectName() == name) {
+            return action;
+        }
+    }
+    return nullptr;
+}
+
+// A pin that is presented while the capture-side recognition feature has never
+// been activated only carries the lazy recognition provider. Resolving it must
+// not depend on the recognition actions already being usable.
+void pinnedRecognitionAvailableThroughLazyProvider() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+
+    IdleOcrRecognition ocrRecognition;
+    ImmediateQrRecognition qrRecognition({QStringLiteral("https://example.com/lazy-provider")});
+    int providerConsultations = 0;
+    ScreenshotPinnedWindow::Config config;
+    auto provider = [&]() {
+        ++providerConsultations;
+        ScreenshotPinnedRecognitionProviders providers;
+        providers.recognition = &ocrRecognition;
+        providers.qrRecognition = &qrRecognition;
+        return providers;
+    };
+
+    QImage background(320, 180, QImage::Format_ARGB32_Premultiplied);
+    background.fill(QColor(42, 84, 126, 255));
+    auto* pinnedWindow =
+        new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
+    QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), background.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(background.size()));
+    config.backgroundImage = background;
+    config.screen = screen;
+    config.enableEditing = true;
+    config.automaticTextRecognition = false;
+    config.recognitionProvider = provider;
+    require(pinnedWindow->present(config), "lazy provider pin presentation failed");
+    waitForUi(50);
+
+    require(providerConsultations > 0,
+            "presenting a pin must resolve its recognition provider");
+    QAction* ocrAction = pinnedMenuActionNamed(*pinnedWindow,
+                                               QStringLiteral("screenshotPinnedOcrAction"));
+    require(ocrAction != nullptr, "lazy provider pin should expose its recognition action");
+    require(ocrAction->isEnabled(),
+            "pinned text recognition must be usable without prior capture-toolbar recognition");
+
+    auto* editButton = pinnedWindow->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotPinnedEditButton"));
+    require(editButton != nullptr, "lazy provider edit button was not found");
+    editButton->click();
+    waitForUi(50);
+    auto* editController = pinnedWindow->findChild<ScreenshotPinnedEditController*>();
+    auto* toolbarWindow = editController != nullptr ? editController->toolbarWindow() : nullptr;
+    auto* toolbar = toolbarWindow != nullptr ? toolbarWindow->palette() : nullptr;
+    require(toolbar != nullptr, "lazy provider toolbar was not created");
+    adqt::widgets::AdButton* ocrButton =
+        toolbarButtonNamed(*toolbar, QStringLiteral("Text recognition"));
+    require(ocrButton != nullptr, "lazy provider toolbar should expose a recognition button");
+    require(ocrButton->isEnabled(),
+            "pinned toolbar text recognition must be usable without prior capture-toolbar "
+            "recognition");
+    require(ocrRecognition.requests == 0,
+            "a pin without automatic recognition must not recognize on its own");
+    require(QMetaObject::invokeMethod(toolbar, "ocrRequested", Qt::DirectConnection),
+            "pinned text recognition should activate from the toolbar trigger");
+    QElapsedTimer manualRecognitionWait;
+    manualRecognitionWait.start();
+    while (ocrRecognition.requests == 0 && manualRecognitionWait.elapsed() < 5000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(1);
+    }
+    require(ocrRecognition.requests == 1,
+            "manually triggered text recognition must start through the lazy provider");
+
+    pinnedWindow->close();
+    require(processUntilDeleted(guardedWindow, 2000), "lazy provider pin was not deleted");
+
+    // Automatic text recognition on pin derives from the same lazily resolved
+    // pointers and must prefetch without prior user activation.
+    int automaticProviderConsultations = 0;
+    auto automaticProvider = [&]() {
+        ++automaticProviderConsultations;
+        ScreenshotPinnedRecognitionProviders providers;
+        providers.recognition = &ocrRecognition;
+        return providers;
+    };
+    auto* automaticWindow =
+        new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
+    QPointer<ScreenshotPinnedWindow> guardedAutomaticWindow(automaticWindow);
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(80, 80), background.size());
+    config.automaticTextRecognition = true;
+    config.recognitionProvider = automaticProvider;
+    require(automaticWindow->present(config), "automatic recognition pin presentation failed");
+    const int requestsBeforeAutomaticRecognition = ocrRecognition.requests;
+    QElapsedTimer prefetchWait;
+    prefetchWait.start();
+    while (ocrRecognition.requests == requestsBeforeAutomaticRecognition &&
+           prefetchWait.elapsed() < 5000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        QThread::msleep(1);
+    }
+    require(automaticProviderConsultations > 0,
+            "an automatically recognizing pin must resolve its recognition provider");
+    require(ocrRecognition.requests > requestsBeforeAutomaticRecognition,
+            "automatic text recognition must prefetch through the lazy provider");
+
+    automaticWindow->close();
+    require(processUntilDeleted(guardedAutomaticWindow, 2000),
+            "automatic recognition pin was not deleted");
 }
 
 QImage waitForClipboardImage(const std::function<bool(const QImage&)>& predicate,
@@ -2234,6 +2460,14 @@ int main(int argc, char* argv[]) {
             pinnedAsyncPresentationDefersContent(sourceRuntime);
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--qr-copy-only"))) {
+            pinnedQrResultCopiesWithKeyboardShortcut();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--lazy-recognition-only"))) {
+            pinnedRecognitionAvailableThroughLazyProvider();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--pending-presentation-only"))) {
             pinnedPendingPresentationPublishesWorkerImage(sourceRuntime);
             return 0;
@@ -2263,6 +2497,8 @@ int main(int argc, char* argv[]) {
         pinnedWheelScalingUsesConfiguredAnchor(sourceRuntime);
         pinnedFollowsPerMonitorDpiScaling(sourceRuntime);
         pinnedCopyIncludesSourceCanvasDrawing();
+        pinnedQrResultCopiesWithKeyboardShortcut();
+        pinnedRecognitionAvailableThroughLazyProvider();
         pinnedPendingPresentationPublishesWorkerImage(sourceRuntime);
         pinnedAsyncPresentationDefersContent(sourceRuntime);
         pinnedControlsMatchReferenceStyle(sourceRuntime);

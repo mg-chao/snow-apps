@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QPixmap>
 #include <QRectF>
+#include <QRegion>
 #include <QWidget>
 
 class QEnterEvent;
@@ -29,6 +30,7 @@ inline constexpr int ShadowMargin = 8;
 [[nodiscard]] QColor panelTextColor();
 [[nodiscard]] QColor panelPrimaryColor();
 void paintToolbarShadow(QPainter* painter, const QRectF& panelRect, bool hovered);
+[[nodiscard]] QRegion interactiveInputRegion(const QRect& panelRect, bool glowVisible);
 [[nodiscard]] QPixmap renderToolbarIcon(QWidget* widget, const adqt::icons::IconRef& iconRef,
                                         QColor color);
 } // namespace screenshot_selection_toolbar

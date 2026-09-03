@@ -190,8 +190,9 @@ class ScreenshotRecognitionSessionController final : public QObject {
     [[nodiscard]] bool shouldRenderRecognitionInWorker() const;
     void setPendingTextRecognitionRendering(bool enabled);
     void pollTextModelDownload(quint64 generation);
-    void showModelDownloadMessage() const;
-    void hideModelDownloadMessage() const;
+    [[nodiscard]] bool textModelDownloading() const;
+    void showModelDownloadMessage();
+    void hideModelDownloadMessage();
     void showRecognitionMessage() const;
     void hideRecognitionMessage() const;
     void showStatus(const QString& message, bool error) const;
@@ -234,6 +235,9 @@ class ScreenshotRecognitionSessionController final : public QObject {
     quint64 m_translationGeneration = 0;
     Mode m_mode = Mode::Text;
     bool m_active = false;
+    // "Shown" tracks the visible download prompt; "in progress" tracks that
+    // asset acquisition is still pending for the in-flight text request, even
+    // while only cache verification or helper start-up is running.
     bool m_textModelDownloadShown = false;
     bool m_textModelDownloadInProgress = false;
     bool m_editing = false;
