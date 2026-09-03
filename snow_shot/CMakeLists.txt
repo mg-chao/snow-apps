@@ -2719,6 +2719,58 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_dependencies(snow-shot-ocr-recognition-service-tests snow_ocr_process)
 
+    add_executable(snow-shot-recognition-session-controller-tests
+        tests/screenshot_recognition_session_controller_tests.cpp
+        include/snow_shot/network/snowshotapiclient.h
+        include/snow_shot/presentation/languagemanager.h
+        include/snow_shot/presentation/screenshotocrpresentation.h
+        include/snow_shot/presentation/screenshotrecognitionsessioncontroller.h
+        include/snow_shot/presentation/screenshotrecognitionwindow.h
+        include/snow_shot/presentation/screenshottabledocument.h
+        include/snow_shot/presentation/screenshottableeditor.h
+        src/network/snowshotapiclient.cpp
+        src/presentation/core/screenshotgeometry.cpp
+        src/presentation/ocr/screenshotocrpresentation.cpp
+        src/presentation/ocr/screenshotocrtexteditingsession.cpp
+        src/presentation/ocr/screenshotocrtexttransform.cpp
+        src/presentation/ocr/screenshotocrvisuals.cpp
+        src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp
+        src/presentation/ocr/screenshotrecognitionwindow.cpp
+        src/presentation/ocr/screenshottabledocument.cpp
+        src/presentation/ocr/screenshottableeditor.cpp
+        src/presentation/overlay/screenshotcanvasrenderer.cpp
+        src/presentation/overlay/screenshotselectionshadowrenderer.cpp
+        src/presentation/services/languagemanager.cpp
+        src/presentation/styles/buttonborder.cpp
+    )
+    target_include_directories(snow-shot-recognition-session-controller-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${SNOW_DRAW_ENGINE_SOURCE_DIR}/include"
+    )
+    target_link_libraries(snow-shot-recognition-session-controller-tests PRIVATE
+        ant_design_qt
+        Qt6::Network
+        Qt6::Widgets
+        snow_draw_engine_qt_canvas
+        snow_shot_image_codec
+        snow_shot_storage
+        snow_shot_window_shortcuts
+    )
+    if(WIN32)
+        target_link_libraries(snow-shot-recognition-session-controller-tests PRIVATE
+            user32
+        )
+    endif()
+    add_test(
+        NAME snow-shot-recognition-session-controller-tests
+        COMMAND snow-shot-recognition-session-controller-tests
+    )
+    set_tests_properties(snow-shot-recognition-session-controller-tests PROPERTIES
+        TIMEOUT 120
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
     add_executable(snow-shot-qr-recognition-service-tests
         tests/screenshot_qr_recognition_service_tests.cpp
         include/snow_shot/presentation/screenshotqrrecognitionservice.h

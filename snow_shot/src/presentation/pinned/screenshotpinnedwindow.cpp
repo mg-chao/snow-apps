@@ -1749,6 +1749,11 @@ bool ScreenshotPinnedWindow::presentInternal(
             });
     SNOW_SHOT_PIN_PERF_MILESTONE("window.recognition_session_ready");
     SNOW_SHOT_PIN_PERF_MILESTONE("window.pinned_toolbar_deferred");
+    // Recognition availability is derived from the recognition pointers, and the
+    // lazily constructed feature is only reachable through the provider, so it
+    // must be resolved here — before anything can ask whether recognition is
+    // possible, not only once a recognition action has been triggered.
+    ensureRecognitionProviders();
 
     SNOW_SHOT_PIN_PERF_MILESTONE("window.before_show");
     show();
