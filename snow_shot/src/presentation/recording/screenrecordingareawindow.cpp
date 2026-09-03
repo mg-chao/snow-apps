@@ -36,6 +36,7 @@ void ScreenRecordingAreaWindow::setPhysicalRegion(const QRect& region) {
         snow_shot::presentation::recording::screenRecordingAreaFrameGeometry(logicalRegion, scale);
     m_frameRect = frameGeometry.frameRect;
     m_selectionRect = frameGeometry.selectionRect;
+    m_paddingWidth = frameGeometry.paddingWidth;
     setGeometry(frameGeometry.windowGeometry);
     update();
 }
@@ -62,21 +63,10 @@ void ScreenRecordingAreaWindow::paintEvent(QPaintEvent* event) {
     painter.fillRect(rect(), Qt::transparent);
     painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
     painter.setRenderHint(QPainter::Antialiasing, false);
-    const qreal selectionRight = m_selectionRect.left() + m_selectionRect.width();
-    const qreal selectionBottom = m_selectionRect.top() + m_selectionRect.height();
-    const qreal frameRight = m_frameRect.left() + m_frameRect.width();
-    const qreal frameBottom = m_frameRect.top() + m_frameRect.height();
-
-    painter.fillRect(QRectF(m_frameRect.left(), m_frameRect.top(), m_frameRect.width(),
-                            m_selectionRect.top() - m_frameRect.top()),
-                     color);
-    painter.fillRect(QRectF(m_frameRect.left(), selectionBottom, m_frameRect.width(),
-                            frameBottom - selectionBottom),
-                     color);
-    painter.fillRect(QRectF(m_frameRect.left(), m_selectionRect.top(),
-                            m_selectionRect.left() - m_frameRect.left(), m_selectionRect.height()),
-                     color);
-    painter.fillRect(QRectF(selectionRight, m_selectionRect.top(), frameRight - selectionRight,
-                            m_selectionRect.height()),
-                     color);
+    const auto border = snow_shot::presentation::recording::screenRecordingAreaBorderGeometry(
+        m_frameRect, m_selectionRect, m_paddingWidth);
+    painter.fillRect(border.top, color);
+    painter.fillRect(border.bottom, color);
+    painter.fillRect(border.left, color);
+    painter.fillRect(border.right, color);
 }

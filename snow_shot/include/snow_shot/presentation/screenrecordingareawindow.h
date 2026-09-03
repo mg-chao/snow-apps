@@ -22,6 +22,7 @@ class ScreenRecordingAreaWindow final : public QWidget {
   private:
     QRectF m_frameRect;
     QRectF m_selectionRect;
+    qreal m_paddingWidth = 0.0;
     ScreenshotToolPalette::RecordingState m_state = ScreenshotToolPalette::RecordingState::Idle;
 };
 

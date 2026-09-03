@@ -4,6 +4,9 @@
 
 namespace {
 constexpr int kPhysicalBorderWidth = 2;
+// The encoder may expand an odd-sized capture by one physical pixel. Keep
+// that expansion in a transparent gap instead of on the visible frame.
+constexpr int kPhysicalBorderPadding = 1;
 
 qreal validScale(qreal scale) {
     return std::isfinite(scale) && scale > 0.0 ? scale : 1.0;
@@ -20,18 +23,47 @@ ScreenRecordingAreaFrameGeometry screenRecordingAreaFrameGeometry(const QRectF& 
 
     const qreal scale = validScale(physicalScale);
     const qreal borderWidth = static_cast<qreal>(kPhysicalBorderWidth) / scale;
+    const qreal paddingWidth = static_cast<qreal>(kPhysicalBorderPadding) / scale;
+    const qreal frameInset = borderWidth + paddingWidth;
     const QRectF frameGeometry =
-        logicalRegion.adjusted(-borderWidth, -borderWidth, borderWidth, borderWidth);
+        logicalRegion.adjusted(-frameInset, -frameInset, frameInset, frameInset);
     const QRect windowGeometry = frameGeometry.toAlignedRect();
     const QRectF selectionRect = logicalRegion.translated(-windowGeometry.topLeft());
     const QRectF frameRect =
-        selectionRect.adjusted(-borderWidth, -borderWidth, borderWidth, borderWidth);
+        selectionRect.adjusted(-frameInset, -frameInset, frameInset, frameInset);
 
     return ScreenRecordingAreaFrameGeometry{
         windowGeometry,
         frameRect,
         selectionRect,
         borderWidth,
+        paddingWidth,
+    };
+}
+
+ScreenRecordingAreaBorderGeometry screenRecordingAreaBorderGeometry(const QRectF& frameRect,
+                                                                    const QRectF& selectionRect,
+                                                                    qreal paddingWidth) {
+    const qreal selectionRight = selectionRect.left() + selectionRect.width();
+    const qreal selectionBottom = selectionRect.top() + selectionRect.height();
+    const qreal borderInnerLeft = selectionRect.left() - paddingWidth;
+    const qreal borderInnerTop = selectionRect.top() - paddingWidth;
+    const qreal borderInnerRight = selectionRight + paddingWidth;
+    const qreal borderInnerBottom = selectionBottom + paddingWidth;
+    const qreal frameRight = frameRect.left() + frameRect.width();
+    const qreal frameBottom = frameRect.top() + frameRect.height();
+
+    // Extend the vertical strips through the frame corners so the padded gap
+    // cannot leave a transparent seam between adjacent sides.
+    return ScreenRecordingAreaBorderGeometry{
+        QRectF(frameRect.left(), frameRect.top(), frameRect.width(),
+               borderInnerTop - frameRect.top()),
+        QRectF(frameRect.left(), borderInnerBottom, frameRect.width(),
+               frameBottom - borderInnerBottom),
+        QRectF(frameRect.left(), frameRect.top(), borderInnerLeft - frameRect.left(),
+               frameRect.height()),
+        QRectF(borderInnerRight, frameRect.top(), frameRight - borderInnerRight,
+               frameRect.height()),
     };
 }
 

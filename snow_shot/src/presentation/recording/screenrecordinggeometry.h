@@ -12,10 +12,23 @@ struct ScreenRecordingAreaFrameGeometry {
     QRectF frameRect;
     QRectF selectionRect;
     qreal borderWidth = 1.0;
+    // Transparent gap between the selected pixels and the visible frame.
+    qreal paddingWidth = 0.0;
+};
+
+struct ScreenRecordingAreaBorderGeometry {
+    QRectF top;
+    QRectF bottom;
+    QRectF left;
+    QRectF right;
 };
 
 [[nodiscard]] ScreenRecordingAreaFrameGeometry
 screenRecordingAreaFrameGeometry(const QRectF& logicalRegion, qreal physicalScale);
+
+[[nodiscard]] ScreenRecordingAreaBorderGeometry
+screenRecordingAreaBorderGeometry(const QRectF& frameRect, const QRectF& selectionRect,
+                                  qreal paddingWidth);
 
 [[nodiscard]] QRect screenRecordingCompatibleCaptureRegion(const QRect& selectedPhysicalRegion,
                                                           const QRect& physicalBounds);
