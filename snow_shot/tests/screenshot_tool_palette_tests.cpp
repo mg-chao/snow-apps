@@ -616,7 +616,7 @@ void screenshotToolbarUsesCanonicalOrderAndSectionSeparators() {
     ScreenshotToolPalette palette(options);
     const QList<adqt::widgets::AdButton*> buttons = mainToolbarButtons(palette);
     const QStringList expected{
-        QStringLiteral("Edit selection"),
+        QStringLiteral("Edit selection (M, Ctrl+E)"),
         QStringLiteral("Select elements (V)"),
         QStringLiteral("Shape (1)"),
         QStringLiteral("Arrow (2)"),

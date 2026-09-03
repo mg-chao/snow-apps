@@ -3281,6 +3281,8 @@ bool ScreenshotToolPalette::addMainToolButtons(const Options& options, QBoxLayou
 
     if (options.showMoveTool) {
         m_moveButton = addToolButton("Edit selection", custom_outlined_icons::ToolMove());
+        applyScreenshotShortcutTooltip(m_moveButton, QStringLiteral("Edit selection"),
+                                       QStringLiteral("move_tool"));
         addButton(m_moveButton);
         connect(m_moveButton, &adqt::widgets::AdButton::clicked, this, [this]() {
             activateToolFromToolbar(Tool::Move);

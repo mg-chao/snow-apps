@@ -1960,10 +1960,23 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
     menu->actions().at(5)->setChecked(false);
 
     menu->actions().at(10)->setChecked(true);
-    waitForUi(200);
-    const QRect thumbnailGeometry = pinnedWindow->currentNativeGeometry();
-    require(nativeHitTest(QPoint(thumbnailGeometry.right(), thumbnailGeometry.center().y())) ==
-                HTCAPTION,
+    // Entering thumbnail mode runs a geometry animation whose shrinking frames
+    // re-render with linear filtering; wait for the window to settle instead of
+    // assuming a fixed budget shorter than the animation can take.
+    QRect thumbnailGeometry;
+    bool thumbnailBorderDraggable = false;
+    QElapsedTimer thumbnailSettle;
+    thumbnailSettle.start();
+    while (thumbnailSettle.elapsed() < 2000) {
+        waitForUi(50);
+        thumbnailGeometry = pinnedWindow->currentNativeGeometry();
+        if (nativeHitTest(QPoint(thumbnailGeometry.right(), thumbnailGeometry.center().y())) ==
+            HTCAPTION) {
+            thumbnailBorderDraggable = true;
+            break;
+        }
+    }
+    require(thumbnailBorderDraggable,
             "thumbnail mode should keep the native border draggable without resizing");
     QRect disabledThumbnailProposal = thumbnailGeometry;
     disabledThumbnailProposal.setBottom(disabledThumbnailProposal.bottom() + 24);

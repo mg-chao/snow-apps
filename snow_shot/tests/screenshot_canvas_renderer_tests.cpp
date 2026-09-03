@@ -296,6 +296,80 @@ void physicalViewportRenderingPreservesEveryPixelAtFractionalDprs() {
     }
 }
 
+QImage renderPinnedResult(const QImage& source, const QTransform& canvasToView,
+                          qreal devicePixelRatio) {
+    SnowCanvasWidget canvas;
+    ScreenshotCanvasRenderer renderer(canvas);
+    const QRectF canvasRect(QPointF(), QSizeF(source.size()));
+    renderer.setImage(source, canvasRect);
+    renderer.setPinnedResultSurface(canvasRect, canvasRect, {});
+
+    const QRectF targetRect = canvasToView.mapRect(canvasRect);
+    const QSize deviceSize(qCeil(targetRect.width() * devicePixelRatio),
+                           qCeil(targetRect.height() * devicePixelRatio));
+    QImage output(deviceSize, QImage::Format_RGBA8888);
+    output.setDevicePixelRatio(devicePixelRatio);
+    output.fill(Qt::transparent);
+    QPainter painter(&output);
+    const QRect logicalViewport(
+        QPoint(), QSize(qCeil(targetRect.width()), qCeil(targetRect.height())));
+    const SnowCanvasRenderContext context{
+        logicalViewport,
+        QRegion(logicalViewport),
+        canvasToView,
+        devicePixelRatio,
+    };
+    renderer.renderBeforeCanvas(painter, context);
+    painter.end();
+    return output;
+}
+
+QImage checkerboardFixture(const QSize& size) {
+    QImage checker(size, QImage::Format_RGBA8888);
+    for (int y = 0; y < checker.height(); ++y) {
+        for (int x = 0; x < checker.width(); ++x) {
+            checker.setPixelColor(x, y,
+                                  (x + y) % 2 == 0 ? QColor(Qt::white) : QColor(Qt::black));
+        }
+    }
+    return checker;
+}
+
+void pinnedResultDownscaleUsesLinearFiltering() {
+    const QImage checker = checkerboardFixture(QSize(16, 16));
+
+    const QImage downscaled = renderPinnedResult(checker, QTransform::fromScale(0.5, 0.5), 1.0);
+    require(downscaled.size() == QSize(8, 8),
+            "the shrunken pinned result should render at half size");
+    for (int y = 0; y < downscaled.height(); ++y) {
+        for (int x = 0; x < downscaled.width(); ++x) {
+            const int lightness = downscaled.pixelColor(x, y).lightness();
+            require(lightness >= 112 && lightness <= 143,
+                    "a 2:1 shrink should average the checkerboard instead of dropping pixels");
+        }
+    }
+
+    const QImage upscaled = renderPinnedResult(checker, QTransform::fromScale(2.0, 2.0), 1.0);
+    require(upscaled.size() == QSize(32, 32),
+            "the zoomed-in pinned result should render at double size");
+    for (int y = 0; y < upscaled.height(); ++y) {
+        for (int x = 0; x < upscaled.width(); ++x) {
+            require(upscaled.pixel(x, y) == checker.pixel(x / 2, y / 2),
+                    "a 2:1 zoom should replicate source pixels instead of blurring them");
+        }
+    }
+
+    const QImage exact = renderPinnedResult(checker, QTransform(), 1.0);
+    require(exact == checker,
+            "a full-size pinned result should stay pixel-exact without filtering");
+
+    const QImage fractionalDpi =
+        renderPinnedResult(checker, QTransform::fromScale(0.8, 0.8), 1.25);
+    require(fractionalDpi == checker,
+            "a full-size pinned result at fractional DPI maps 1:1 in device pixels and should "
+            "stay pixel-exact");
+}
+
 QImage renderMaterializedImage(const QImage& source, const QSize& targetSize,
                                const QRegion& exposedRegion, const QColor& background,
                                bool smooth = false) {
@@ -3118,6 +3192,7 @@ int main(int argc, char** argv) {
     screenshotImageMaskAndSelectionRenderInTheirOwnedPasses();
     layeredImageSourceMatchesMaterializedOutput();
     physicalViewportRenderingPreservesEveryPixelAtFractionalDprs();
+    pinnedResultDownscaleUsesLinearFiltering();
     largeRasterSourceExtentsRenderWithoutFixedPointWrap();
     smoothLargeImageChunkBoundariesRemainPixelEquivalent();
     extremeImageDownscaleUsesSafePreprocessing();

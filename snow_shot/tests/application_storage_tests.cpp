@@ -274,7 +274,8 @@ void newSettingsSchemaDefaultsAndValidationAreComplete() {
     }
 
     const QMap<QString, QJsonArray> screenshotShortcutDefaults{
-        {QStringLiteral("move_tool"), QJsonArray{QStringLiteral("M")}},
+        {QStringLiteral("move_tool"),
+         QJsonArray{QStringLiteral("M"), QStringLiteral("Ctrl+E")}},
         {QStringLiteral("move_cursor_up"),
          QJsonArray{QStringLiteral("W"), QStringLiteral("Up")}},
         {QStringLiteral("move_cursor_down"),
@@ -751,7 +752,8 @@ void newSettingsAdaptersRoundTripAndRejectInvalidValues() {
     const storage::ScreenshotShortcutSettings screenshotShortcuts;
     const QMap<QString, QStringList> screenshotDefaults = screenshotShortcuts.allShortcuts();
     require(screenshotDefaults.size() == 24 &&
-                screenshotShortcuts.moveTool() == QStringList{QStringLiteral("M")} &&
+                screenshotShortcuts.moveTool() ==
+                    QStringList{QStringLiteral("M"), QStringLiteral("Ctrl+E")} &&
                 screenshotShortcuts.moveCursorUp() ==
                     QStringList{QStringLiteral("W"), QStringLiteral("Up")} &&
                 screenshotShortcuts.moveCursorDown() ==
