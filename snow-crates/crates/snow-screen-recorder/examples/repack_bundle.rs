@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .map(|track| {
             (
                 track.asset_id.clone(),
-                source_path.join(format!("audio-{}.wav", track.track_id)),
+                source_path.join(format!("audio-{}.pcm", track.track_id)),
             )
         })
         .filter(|(_, path)| path.is_file())

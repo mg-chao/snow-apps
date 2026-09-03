@@ -1,5 +1,5 @@
 use std::fs::{File, create_dir_all};
-use std::io::{BufWriter, Seek, SeekFrom, Write};
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -384,6 +384,13 @@ impl RecordingTrackWriters {
     }
 }
 
+/// Writes one recorded track as raw interleaved PCM.
+///
+/// The track file carries no container header: its layout is fully described
+/// by the `AudioTrackManifest` (`sample_format`, `sample_rate_hz`, `channels`,
+/// `duration_frames`) that is embedded in the recording bundle next to it.
+/// Keeping the manifest as the single source of format metadata means the
+/// bundle reader never has to parse or reconcile a second copy.
 struct RecordedTrackWriter {
     manifest: AudioTrackManifest,
     path: PathBuf,
@@ -438,11 +445,10 @@ impl RecordedTrackWriter {
         started_at: std::time::Instant,
         format: AudioFormat,
     ) -> AudioResult<Self> {
-        let asset_id = format!("audio/{}.wav", config.track_id);
-        let path = output_dir.join(format!("audio-{}.wav", sanitize_track_id(&config.track_id)));
+        let asset_id = format!("audio/{}.pcm", config.track_id);
+        let path = output_dir.join(format!("audio-{}.pcm", sanitize_track_id(&config.track_id)));
         let file = File::create(&path).map_err(AudioError::platform)?;
-        let mut writer = BufWriter::with_capacity(128 * 1024, file);
-        write_wav_header(&mut writer, format, 0)?;
+        let writer = BufWriter::with_capacity(128 * 1024, file);
         let silence_chunk = vec![0u8; 4096 * usize::from(format.channels) * 2];
         Ok(Self {
             manifest: AudioTrackManifest {
@@ -542,14 +548,6 @@ impl RecordedTrackWriter {
 
     fn finish(mut self) -> AudioResult<RecordedAudioTrack> {
         self.writer.flush().map_err(AudioError::platform)?;
-        let mut file = self
-            .writer
-            .into_inner()
-            .map_err(|err| AudioError::platform(anyhow::anyhow!(err.to_string())))?;
-        file.seek(SeekFrom::Start(0))
-            .map_err(AudioError::platform)?;
-        write_wav_header(&mut file, self.format, self.written_frames)?;
-        file.flush().map_err(AudioError::platform)?;
         Ok(RecordedAudioTrack {
             manifest: self.manifest,
             path: self.path,
@@ -600,53 +598,6 @@ fn write_i16_le(writer: &mut impl Write, samples: &[i16]) -> AudioResult<()> {
         }
     }
 
-    Ok(())
-}
-
-fn write_wav_header(
-    mut writer: impl Write,
-    format: AudioFormat,
-    frame_count: u64,
-) -> AudioResult<()> {
-    let bytes_per_sample = std::mem::size_of::<i16>() as u16;
-    let block_align = format.channels.saturating_mul(bytes_per_sample);
-    let byte_rate = format.sample_rate.saturating_mul(u32::from(block_align));
-    let data_size = frame_count
-        .saturating_mul(u64::from(block_align))
-        .min(u32::MAX as u64) as u32;
-    let riff_size = 36u32.saturating_add(data_size);
-
-    writer.write_all(b"RIFF").map_err(AudioError::platform)?;
-    writer
-        .write_all(&riff_size.to_le_bytes())
-        .map_err(AudioError::platform)?;
-    writer.write_all(b"WAVE").map_err(AudioError::platform)?;
-    writer.write_all(b"fmt ").map_err(AudioError::platform)?;
-    writer
-        .write_all(&16u32.to_le_bytes())
-        .map_err(AudioError::platform)?;
-    writer
-        .write_all(&1u16.to_le_bytes())
-        .map_err(AudioError::platform)?;
-    writer
-        .write_all(&format.channels.to_le_bytes())
-        .map_err(AudioError::platform)?;
-    writer
-        .write_all(&format.sample_rate.to_le_bytes())
-        .map_err(AudioError::platform)?;
-    writer
-        .write_all(&byte_rate.to_le_bytes())
-        .map_err(AudioError::platform)?;
-    writer
-        .write_all(&block_align.to_le_bytes())
-        .map_err(AudioError::platform)?;
-    writer
-        .write_all(&16u16.to_le_bytes())
-        .map_err(AudioError::platform)?;
-    writer.write_all(b"data").map_err(AudioError::platform)?;
-    writer
-        .write_all(&data_size.to_le_bytes())
-        .map_err(AudioError::platform)?;
     Ok(())
 }
 

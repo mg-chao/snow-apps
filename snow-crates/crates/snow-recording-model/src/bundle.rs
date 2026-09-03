@@ -10,10 +10,20 @@ use crate::error::{RecordingModelError, Result};
 const BUNDLE_FOOTER_MAGIC: &[u8; 16] = b"SNOWREC_BUNDLE\0\0";
 const BUNDLE_COPY_BUFFER_BYTES: usize = 256 * 1024;
 
+/// Kind of an auxiliary asset stored after the video payload of a bundle.
+///
+/// Every asset is a raw byte range described by its `BundleAssetRecord`; the
+/// bundle itself never wraps assets in an additional container.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum BundleAssetKind {
+    /// Frame index for the video payload.
     VideoIndex,
+    /// Raw interleaved PCM samples of one audio track.  The encoding, channel
+    /// count and sample rate come exclusively from the matching
+    /// `AudioTrackManifest` (looked up by `asset_id`); the asset carries no
+    /// header, so `len / AudioTrackManifest::frame_bytes()` is the frame count.
     AudioTrack,
+    /// Serialized mouse/cursor event store.
     MouseStore,
 }
 
@@ -261,7 +271,7 @@ mod tests {
             audio_tracks: vec![AudioTrackManifest {
                 track_id: "system".to_string(),
                 role: AudioTrackRole::SystemOutput,
-                asset_id: "audio/system.wav".to_string(),
+                asset_id: "audio/system.pcm".to_string(),
                 sample_rate_hz: 48_000,
                 channels: 2,
                 sample_format: AudioSampleFormat::PcmS16Le,

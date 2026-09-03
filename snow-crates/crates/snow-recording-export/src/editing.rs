@@ -16,8 +16,8 @@ use ffmpeg_next as ffmpeg;
 use rayon::prelude::*;
 use snow_audio_recorder::duration_to_frames_round;
 use snow_recording_model::{
-    BundleAssetKind, CursorShapeCompositionMode, CursorShapeRecord, MouseStore, RecordingArtifact,
-    RecordingBundleFooter, SessionManifest, StoredFrame, decode_mouse_records,
+    AudioSampleFormat, BundleAssetKind, CursorShapeCompositionMode, CursorShapeRecord, MouseStore,
+    RecordingArtifact, RecordingBundleFooter, SessionManifest, StoredFrame, decode_mouse_records,
     read_recording_bundle_footer,
 };
 
@@ -4439,27 +4439,30 @@ fn build_audio_track_plan(
     if asset.len == 0 {
         return Ok(None);
     }
-    if asset.len % 2 != 0 {
+
+    // The asset is raw interleaved PCM laid out exactly as the track manifest
+    // describes; the manifest is the only source of format metadata.  The
+    // renderer decodes i16 samples, so a new sample format must be handled
+    // here explicitly rather than misread.
+    match track_manifest.sample_format {
+        AudioSampleFormat::PcmS16Le => {}
+    }
+    let frame_bytes = track_manifest.frame_bytes();
+    if asset.len % frame_bytes != 0 {
         return Err(ScreenRecorderError::Decode(format!(
-            "bundle asset {} in {} has odd byte length",
+            "bundle asset {} in {} is not aligned to {}-byte frames",
             bundle_asset_label(kind),
-            bundle_path.display()
+            bundle_path.display(),
+            frame_bytes
         )));
     }
-
-    let sample_count = usize::try_from(asset.len / 2).map_err(|_| {
+    let frame_count = usize::try_from(asset.len / frame_bytes).map_err(|_| {
         ScreenRecorderError::Decode(format!(
             "bundle asset {} in {} exceeds addressable memory",
             bundle_asset_label(kind),
             bundle_path.display()
         ))
     })?;
-    let channels_usize = usize::from(track_manifest.channels.max(1));
-    let aligned_sample_count = (sample_count / channels_usize) * channels_usize;
-    let frame_count = aligned_sample_count / channels_usize;
-    if frame_count == 0 {
-        return Ok(None);
-    }
 
     Ok(Some(AudioTrackPlan {
         asset_offset: asset.offset,
@@ -8679,7 +8682,7 @@ mod tests {
         AudioTrackManifest {
             track_id: track_id.to_string(),
             role,
-            asset_id: format!("audio/{track_id}.wav"),
+            asset_id: format!("audio/{track_id}.pcm"),
             sample_rate_hz,
             channels,
             sample_format: AudioSampleFormat::PcmS16Le,
@@ -8739,7 +8742,7 @@ mod tests {
         if system {
             assets.push(BundleAssetRecord {
                 kind: BundleAssetKind::AudioTrack,
-                asset_id: Some("audio/system.wav".to_string()),
+                asset_id: Some("audio/system.pcm".to_string()),
                 offset: 0,
                 len: 0,
             });
@@ -8747,7 +8750,7 @@ mod tests {
         if microphone {
             assets.push(BundleAssetRecord {
                 kind: BundleAssetKind::AudioTrack,
-                asset_id: Some("audio/microphone.wav".to_string()),
+                asset_id: Some("audio/microphone.pcm".to_string()),
                 offset: 0,
                 len: 0,
             });
@@ -9297,6 +9300,77 @@ mod tests {
         let truncated =
             align_i16_interleaved_to_duration(vec![1; 40], 10, 2, Duration::from_millis(1_500));
         assert_eq!(truncated.len(), 30);
+    }
+
+    fn audio_track_footer(
+        manifest: &AudioTrackManifest,
+        offset: u64,
+        len: u64,
+    ) -> RecordingBundleFooter {
+        RecordingBundleFooter {
+            manifest: SessionManifest {
+                audio_tracks: vec![manifest.clone()],
+                ..test_editing_session(false, false).manifest
+            },
+            video_payload_len: 0,
+            assets: vec![BundleAssetRecord {
+                kind: BundleAssetKind::AudioTrack,
+                asset_id: Some(manifest.asset_id.clone()),
+                offset,
+                len,
+            }],
+        }
+    }
+
+    #[test]
+    fn audio_track_plan_reads_raw_pcm_described_by_the_manifest() {
+        let temp = tempdir().expect("temporary directory should be created");
+        let path = temp.path().join("track.bundle");
+        // Leading bytes stand in for the video payload; the asset starts after them.
+        let video_payload = [0xAAu8; 7];
+        let samples = [100i16, -200, 300, -400];
+        let mut file = fs::File::create(&path).expect("bundle should be created");
+        file.write_all(&video_payload).unwrap();
+        write_pcm_i16_le(&mut file, &samples);
+        file.flush().unwrap();
+
+        let manifest = test_track("system", AudioTrackRole::SystemOutput, true, 48_000, 2);
+        let asset_offset = video_payload.len() as u64;
+        let asset_len = (samples.len() * std::mem::size_of::<i16>()) as u64;
+        let footer = audio_track_footer(&manifest, asset_offset, asset_len);
+
+        let plan = build_audio_track_plan(&path, &footer, &manifest, 1.0)
+            .expect("track plan should build")
+            .expect("track should be present");
+        assert_eq!(plan.asset_offset, asset_offset);
+        assert_eq!(plan.frame_count, 2);
+
+        let mut reader = AudioTrackReader::open(&path, plan, 2).unwrap();
+        reader.ensure_cached_range(0, 2).unwrap();
+        assert_eq!(reader.sample_at(0, 0), samples[0]);
+        assert_eq!(reader.sample_at(0, 1), samples[1]);
+        assert_eq!(reader.sample_at(1, 0), samples[2]);
+        assert_eq!(reader.sample_at(1, 1), samples[3]);
+    }
+
+    #[test]
+    fn audio_track_plan_rejects_assets_that_are_not_frame_aligned() {
+        let temp = tempdir().expect("temporary directory should be created");
+        let path = temp.path().join("track.bundle");
+        let mut file = fs::File::create(&path).expect("bundle should be created");
+        // Three i16 samples cannot form whole stereo frames.
+        write_pcm_i16_le(&mut file, &[1i16, 2, 3]);
+        file.flush().unwrap();
+
+        let manifest = test_track("system", AudioTrackRole::SystemOutput, true, 48_000, 2);
+        let footer = audio_track_footer(&manifest, 0, 6);
+
+        let error = build_audio_track_plan(&path, &footer, &manifest, 1.0)
+            .expect_err("partial frames must be rejected");
+        assert!(
+            error.to_string().contains("not aligned to 4-byte frames"),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]
