@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/screenshotshortcuthints.h"
 
 #include <QCoreApplication>
+#include <QKeySequence>
 #include <QStringList>
 
 #include <initializer_list>
@@ -219,6 +220,51 @@ void unassignedConfiguredShortcutIsNotHinted() {
             "an unassigned shortcut action must not leave a stale default hint");
 }
 
+void unconfiguredRowsFallBackToSchemaDefaults() {
+    const QStringList hintActionIds{
+        QStringLiteral("move_cursor_up"),
+        QStringLiteral("move_cursor_down"),
+        QStringLiteral("move_cursor_left"),
+        QStringLiteral("move_cursor_right"),
+        QStringLiteral("move_entire_selection"),
+        QStringLiteral("keep_selection_width_and_height_consistent"),
+        QStringLiteral("switch_selection_between_window_and_window_sub_element"),
+        QStringLiteral("previous_screenshot_history"),
+        QStringLiteral("next_screenshot_history"),
+        QStringLiteral("select_previously_selected_area"),
+        QStringLiteral("copy_color"),
+    };
+
+    QMap<QString, QStringList> schemaDefaults;
+    for (const QString& actionId : hintActionIds) {
+        const QStringList defaults = screenshotShortcutSchemaDefaultKeys(actionId);
+        require(!defaults.isEmpty(), "every hinted action must declare a schema default");
+        for (const QString& shortcut : defaults) {
+            require(!QKeySequence::fromString(shortcut, QKeySequence::PortableText).isEmpty(),
+                    "every schema default must parse as a portable key sequence");
+        }
+        schemaDefaults.insert(actionId, defaults);
+    }
+
+    require(screenshotShortcutHintRows(ScreenshotShortcutHintMode::Selection, std::nullopt,
+                                       true) ==
+                screenshotShortcutHintRows(ScreenshotShortcutHintMode::Selection,
+                                           schemaDefaults, true),
+            "unconfigured selection rows must render the schema defaults");
+    require(screenshotShortcutHintRows(ScreenshotShortcutHintMode::SmartSelection, std::nullopt,
+                                       true) ==
+                screenshotShortcutHintRows(ScreenshotShortcutHintMode::SmartSelection,
+                                           schemaDefaults, true),
+            "unconfigured smart-selection rows must render the schema defaults");
+
+    QMap<QString, QStringList> partialMap = schemaDefaults;
+    partialMap.remove(QStringLiteral("copy_color"));
+    require(screenshotShortcutHintRows(ScreenshotShortcutHintMode::Selection, partialMap, true) ==
+                screenshotShortcutHintRows(ScreenshotShortcutHintMode::Selection,
+                                           schemaDefaults, true),
+            "an action missing from the configured snapshot must fall back to the schema default");
+}
+
 void scrollingHintsUseMouseWheelLabels() {
     ScreenshotShortcutHintContext context;
     context.activeTool = ScreenshotActiveTool::Move;
@@ -325,6 +371,7 @@ int main(int argc, char** argv) {
     configuredShortcutRowsUseActualValues();
     defaultHistoryShortcutUsesSeparateChips();
     unassignedConfiguredShortcutIsNotHinted();
+    unconfiguredRowsFallBackToSchemaDefaults();
     scrollingHintsUseMouseWheelLabels();
     selectionStageContextsRetainShortcutHints();
     disabledSmartSelectionHidesTheTargetSwitchHint();

@@ -3,8 +3,10 @@
 
 #include "snow_draw_engine_qt/snow_canvas_types.h"
 #include "snow_shot/presentation/screenshotinteractionstate.h"
+#include "snow_shot/storage/configurationschema.h"
 
 #include <QCoreApplication>
+#include <QJsonArray>
 #include <QMap>
 #include <QPointF>
 #include <QRectF>
@@ -124,18 +126,39 @@ struct ScreenshotShortcutHintContext {
     return {text.left(separator), text.mid(separator + 1).trimmed(), input};
 }
 
+[[nodiscard]] inline QStringList screenshotShortcutSchemaDefaultKeys(const QString& actionId) {
+    const QJsonValue defaultValue = snow_shot::storage::ConfigurationSchema::defaultValue(
+        QStringLiteral("screenshot_shortcuts/") + actionId);
+    QStringList defaults;
+    if (!defaultValue.isArray()) {
+        return defaults;
+    }
+    for (const QJsonValue& item : defaultValue.toArray()) {
+        if (item.isString()) {
+            defaults.push_back(item.toString());
+        }
+    }
+    return defaults;
+}
+
 [[nodiscard]] inline QStringList screenshotConfiguredShortcutHintKeys(
     const std::optional<QMap<QString, QStringList>>& configuredShortcuts,
-    const QString& actionId, const QStringList& defaults) {
-    return configuredShortcuts.has_value() ? configuredShortcuts->value(actionId) : defaults;
+    const QString& actionId) {
+    if (configuredShortcuts.has_value()) {
+        const auto configured = configuredShortcuts->find(actionId);
+        if (configured != configuredShortcuts->cend()) {
+            return *configured;
+        }
+    }
+    return screenshotShortcutSchemaDefaultKeys(actionId);
 }
 
 [[nodiscard]] inline ScreenshotShortcutHintRow screenshotConfiguredShortcutHintRow(
     const std::optional<QMap<QString, QStringList>>& configuredShortcuts,
-    const QString& actionId, const char* label, const QStringList& defaults) {
+    const QString& actionId, const char* label) {
     return {
         QCoreApplication::translate("SettingsCatalog", label),
-        screenshotConfiguredShortcutHintKeys(configuredShortcuts, actionId, defaults)
+        screenshotConfiguredShortcutHintKeys(configuredShortcuts, actionId)
             .join(QStringLiteral(" / ")),
         ScreenshotShortcutHintInput::Keyboard,
     };
@@ -144,9 +167,9 @@ struct ScreenshotShortcutHintContext {
 inline void appendScreenshotConfiguredShortcutHintRow(
     QVector<ScreenshotShortcutHintRow>& rows,
     const std::optional<QMap<QString, QStringList>>& configuredShortcuts,
-    const QString& actionId, const char* label, const QStringList& defaults) {
+    const QString& actionId, const char* label) {
     ScreenshotShortcutHintRow row =
-        screenshotConfiguredShortcutHintRow(configuredShortcuts, actionId, label, defaults);
+        screenshotConfiguredShortcutHintRow(configuredShortcuts, actionId, label);
     if (!row.shortcut.isEmpty()) {
         rows.push_back(std::move(row));
     }
@@ -155,18 +178,18 @@ inline void appendScreenshotConfiguredShortcutHintRow(
 inline void appendScreenshotCursorMovementShortcutHintRows(
     QVector<ScreenshotShortcutHintRow>& rows,
     const std::optional<QMap<QString, QStringList>>& configuredShortcuts) {
-    appendScreenshotConfiguredShortcutHintRow(
-        rows, configuredShortcuts, QStringLiteral("move_cursor_up"), "Move cursor up",
-        {QStringLiteral("W"), QStringLiteral("Up")});
-    appendScreenshotConfiguredShortcutHintRow(
-        rows, configuredShortcuts, QStringLiteral("move_cursor_down"), "Move cursor down",
-        {QStringLiteral("S"), QStringLiteral("Down")});
-    appendScreenshotConfiguredShortcutHintRow(
-        rows, configuredShortcuts, QStringLiteral("move_cursor_left"), "Move cursor left",
-        {QStringLiteral("A"), QStringLiteral("Left")});
-    appendScreenshotConfiguredShortcutHintRow(
-        rows, configuredShortcuts, QStringLiteral("move_cursor_right"), "Move cursor right",
-        {QStringLiteral("D"), QStringLiteral("Right")});
+    appendScreenshotConfiguredShortcutHintRow(rows, configuredShortcuts,
+                                              QStringLiteral("move_cursor_up"),
+                                              "Move cursor up");
+    appendScreenshotConfiguredShortcutHintRow(rows, configuredShortcuts,
+                                              QStringLiteral("move_cursor_down"),
+                                              "Move cursor down");
+    appendScreenshotConfiguredShortcutHintRow(rows, configuredShortcuts,
+                                              QStringLiteral("move_cursor_left"),
+                                              "Move cursor left");
+    appendScreenshotConfiguredShortcutHintRow(rows, configuredShortcuts,
+                                              QStringLiteral("move_cursor_right"),
+                                              "Move cursor right");
 }
 
 [[nodiscard]] inline QVector<ScreenshotShortcutHintRow> screenshotShortcutHintRows(
@@ -195,29 +218,28 @@ inline void appendScreenshotCursorMovementShortcutHintRows(
             appendScreenshotConfiguredShortcutHintRow(
                 rows, configuredShortcuts,
                 QStringLiteral("switch_selection_between_window_and_window_sub_element"),
-                "Select window/window sub-element", {QStringLiteral("Tab")});
+                "Select window/window sub-element");
         }
     } else {
         appendScreenshotConfiguredShortcutHintRow(
             rows, configuredShortcuts, QStringLiteral("move_entire_selection"),
-            "Move entire selection", {QStringLiteral("Space")});
+            "Move entire selection");
         appendScreenshotConfiguredShortcutHintRow(
             rows, configuredShortcuts,
             QStringLiteral("keep_selection_width_and_height_consistent"),
-            "Keep selection width and height consistent", {QStringLiteral("Shift")});
+            "Keep selection width and height consistent");
     }
     appendScreenshotConfiguredShortcutHintRow(
         rows, configuredShortcuts, QStringLiteral("select_previously_selected_area"),
-        "Select previously selected area", {QStringLiteral("R")});
+        "Select previously selected area");
     appendScreenshotConfiguredShortcutHintRow(rows, configuredShortcuts,
-                                              QStringLiteral("copy_color"), "Copy color",
-                                              {QStringLiteral("C")});
+                                              QStringLiteral("copy_color"), "Copy color");
     rows.push_back(screenshotFixedShortcutHintRow("Switch color format: Shift"));
 
     const QStringList previousHistoryShortcuts = screenshotConfiguredShortcutHintKeys(
-        configuredShortcuts, QStringLiteral("previous_screenshot_history"), {QStringLiteral(",")});
+        configuredShortcuts, QStringLiteral("previous_screenshot_history"));
     const QStringList nextHistoryShortcuts = screenshotConfiguredShortcutHintKeys(
-        configuredShortcuts, QStringLiteral("next_screenshot_history"), {QStringLiteral(".")});
+        configuredShortcuts, QStringLiteral("next_screenshot_history"));
     QStringList historyShortcuts = previousHistoryShortcuts;
     historyShortcuts.append(nextHistoryShortcuts);
     if (!historyShortcuts.isEmpty()) {

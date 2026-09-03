@@ -616,7 +616,7 @@ void screenshotToolbarUsesCanonicalOrderAndSectionSeparators() {
     ScreenshotToolPalette palette(options);
     const QList<adqt::widgets::AdButton*> buttons = mainToolbarButtons(palette);
     const QStringList expected{
-        QStringLiteral("Edit selection"),
+        QStringLiteral("Edit selection (M, Ctrl+E)"),
         QStringLiteral("Select elements (V)"),
         QStringLiteral("Shape (1)"),
         QStringLiteral("Arrow (2)"),
@@ -726,6 +726,45 @@ void screenshotActionTooltipsUseConfiguredShortcuts() {
     require(shortcutSettings.setAllShortcutsAtomic(originalShortcuts),
             "pin shortcut fixture must restore the original mapping");
     QCoreApplication::sendEvent(&palette, &languageChange);
+}
+
+void screenshotActionTooltipsFollowStorageChangesWithoutRetranslation() {
+    ScreenshotToolPalette::Options options;
+    options.showShapeTool = true;
+    options.showHistoryActions = true;
+    options.showSelectTool = false;
+    options.enableStyleToolbar = false;
+    options.actions = ScreenshotToolPalette::PinAction | ScreenshotToolPalette::CancelAction |
+                      ScreenshotToolPalette::CopyAction;
+    ScreenshotToolPalette palette(options);
+
+    auto* pin =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotPinToScreenButton"));
+    auto* shape = qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Shape"));
+    require(pin != nullptr && shape != nullptr &&
+                pin->toolTip() == QStringLiteral("Pin to screen (Ctrl+F)") &&
+                shape->toolTip() == QStringLiteral("Shape (1)"),
+            "toolbar shortcuts should start from the configured defaults");
+
+    const snow_shot::storage::ScreenshotShortcutSettings shortcutSettings;
+    const snow_shot::storage::DrawingShortcutSettings drawingSettings;
+    const QMap<QString, QStringList> originalShortcuts = shortcutSettings.allShortcuts();
+    const QMap<QString, QStringList> originalDrawingShortcuts = drawingSettings.allShortcuts();
+    require(shortcutSettings.setShortcuts(QStringLiteral("pin_to_screen"),
+                                          {QStringLiteral("Alt+F")}),
+            "pin shortcut fixture must support a non-default mapping");
+    require(drawingSettings.setShortcuts(QStringLiteral("shape"), {QStringLiteral("Ctrl+2")}),
+            "shape shortcut fixture must support a non-default mapping");
+    require(pin->toolTip() == QStringLiteral("Pin to screen (Alt+F)") &&
+                shape->toolTip() == QStringLiteral("Shape (Ctrl+2)"),
+            "toolbar tooltips must follow storage changes without a retranslation event");
+    require(shortcutSettings.setShortcuts(QStringLiteral("pin_to_screen"), {}),
+            "pin shortcut fixture must support clearing the mapping");
+    require(pin->toolTip() == QStringLiteral("Pin to screen"),
+            "clearing a shortcut must drop the tooltip hint instead of leaving it stale");
+    require(shortcutSettings.setAllShortcutsAtomic(originalShortcuts) &&
+                drawingSettings.setAllShortcutsAtomic(originalDrawingShortcuts),
+            "shortcut fixtures must restore the original mappings");
 }
 
 void configurableToolbarLayoutSupportsArbitraryPopoverGroups() {
@@ -5845,11 +5884,13 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--screenshot-actions-tooltips-only"))) {
         screenshotActionTooltipsUseConfiguredShortcuts();
+        screenshotActionTooltipsFollowStorageChangesWithoutRetranslation();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--shortcut-tooltips-only"))) {
         screenshotActionTooltipsUseConfiguredShortcuts();
+        screenshotActionTooltipsFollowStorageChangesWithoutRetranslation();
         ocrToolReplacesSelectionActionToolbarContents();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
@@ -5877,6 +5918,7 @@ int main(int argc, char** argv) {
     recognitionToolsKeepDrawingToolsAvailable();
     scrollingScreenshotExposesAxisRecognitionModes();
     screenshotToolbarUsesCanonicalOrderAndSectionSeparators();
+    screenshotActionTooltipsFollowStorageChangesWithoutRetranslation();
     configurableToolbarLayoutSupportsArbitraryPopoverGroups();
     ocrControlReflectsLoadingState();
     ocrToolReplacesSelectionActionToolbarContents();

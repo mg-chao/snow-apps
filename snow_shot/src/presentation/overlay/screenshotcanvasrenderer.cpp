@@ -1000,6 +1000,21 @@ void paintImageLayer(QPainter& painter, const ScreenshotImageLayer& layer,
         painter.drawImage(targetRect, layer.image, sourcePixels);
     }
 }
+
+// A pinned result drawn 1:1 in device pixels must stay pixel-exact. Minification resamples with
+// linear filtering because the raster engine's default nearest-neighbour sampling drops pixels and
+// aliases badly; magnification keeps nearest-neighbour sampling so zoomed-in pixels stay crisp
+// instead of blurring.
+bool pinnedResultUsesLinearFiltering(const SnowCanvasRenderContext& context,
+                                     const QRectF& targetRect, const QSize& sourceSize) {
+    if (context.devicePixelRatio <= 0.0) {
+        return false;
+    }
+    const QSize deviceSize(qRound(targetRect.width() * context.devicePixelRatio),
+                           qRound(targetRect.height() * context.devicePixelRatio));
+    return deviceSize.width() < sourceSize.width() ||
+           deviceSize.height() < sourceSize.height();
+}
 } // namespace
 
 void ScreenshotOcrGraphicsTextItem::configure(const QString& text, const QFont& font,
@@ -1903,9 +1918,17 @@ void ScreenshotCanvasRenderer::renderBeforeCanvas(QPainter& painter,
                           m_imageSource.materializedCanvasRect),
                       context.devicePixelRatio);
         if (context.exposedRegion.intersects(targetRect.toAlignedRect())) {
+            painter.save();
+            if (m_renderMode == RenderMode::PinnedResult) {
+                painter.setRenderHint(QPainter::SmoothPixmapTransform,
+                                      pinnedResultUsesLinearFiltering(
+                                          context, targetRect,
+                                          m_imageSource.materializedImage.size()));
+            }
             paintExposedImageSlice(painter, targetRect, m_imageSource.materializedImage,
                                    QRectF(m_imageSource.materializedImage.rect()),
                                    context.exposedRegion);
+            painter.restore();
         }
     } else {
         for (const ScreenshotImageLayer& layer : m_imageSource.layers) {
@@ -1926,6 +1949,11 @@ void ScreenshotCanvasRenderer::renderBeforeCanvas(QPainter& painter,
         if (!canvasRect.isEmpty() && targetRect.isValid() && !targetRect.isEmpty() &&
             context.exposedRegion.intersects(targetRect.toAlignedRect())) {
             painter.save();
+            if (m_renderMode == RenderMode::PinnedResult) {
+                painter.setRenderHint(QPainter::SmoothPixmapTransform,
+                                      pinnedResultUsesLinearFiltering(
+                                          context, targetRect, m_ocrFilteredImage.size()));
+            }
             painter.setClipRegion(context.exposedRegion, Qt::IntersectClip);
             painter.setClipRect(targetRect, Qt::IntersectClip);
             painter.drawImage(targetRect, m_ocrFilteredImage);

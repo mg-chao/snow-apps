@@ -108,9 +108,6 @@ ScreenshotPinnedEditController::ScreenshotPinnedEditController(
                         reloadDrawingShortcuts();
                     } else if (key.startsWith(QStringLiteral("screenshot_shortcuts/"))) {
                         reloadRecognitionShortcuts();
-                    } else if (key.startsWith(QStringLiteral("pin_to_screen_shortcuts/")) &&
-                               m_toolbarWindow != nullptr && m_toolbarWindow->palette() != nullptr) {
-                        m_toolbarWindow->palette()->refreshConfirmShortcutHint();
                     }
                 });
     }
