@@ -198,6 +198,7 @@ void ScreenshotRecognitionSessionController::seedRecognitionResults(
     }
     updateBusyState();
     updateTextState();
+    emit recognitionResultsChanged();
 }
 
 ScreenshotRecognitionResults
@@ -1216,6 +1217,7 @@ void ScreenshotRecognitionSessionController::startTextRender() {
         m_textRenderRequestToken = 0;
     }
     updateBusyState();
+    emit recognitionResultsChanged();
 }
 
 void ScreenshotRecognitionSessionController::startTableRecognition() {
@@ -1324,6 +1326,7 @@ void ScreenshotRecognitionSessionController::handleTextOutput(
     hideRecognitionMessage();
     updateBusyState();
     updateTextState();
+    emit recognitionResultsChanged();
 }
 
 void ScreenshotRecognitionSessionController::handleTableOutput(
@@ -1358,6 +1361,7 @@ void ScreenshotRecognitionSessionController::handleTableOutput(
     }
     hideRecognitionMessage();
     updateBusyState();
+    emit recognitionResultsChanged();
 }
 
 void ScreenshotRecognitionSessionController::handleQrOutput(
@@ -1383,6 +1387,7 @@ void ScreenshotRecognitionSessionController::handleQrOutput(
         }
         hideRecognitionMessage();
         updateBusyState();
+        emit recognitionResultsChanged();
         return;
     }
     m_qrCache.insert(key, result.contents);
@@ -1393,6 +1398,7 @@ void ScreenshotRecognitionSessionController::handleQrOutput(
     }
     hideRecognitionMessage();
     updateBusyState();
+    emit recognitionResultsChanged();
 }
 
 void ScreenshotRecognitionSessionController::ensureContent() {

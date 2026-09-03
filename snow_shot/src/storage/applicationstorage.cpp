@@ -1,6 +1,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 
 #include "snow_shot/storage/capturehistoryrepository.h"
+#include "snow_shot/storage/pinnedwindowrepository.h"
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/storage/storagelogging.h"
 
@@ -105,6 +106,7 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
         shutdown();
     }
     m_captureHistory.reset();
+    m_pinnedWindows.reset();
     m_configuration.reset();
 
     const QString executableDirectory = QDir::cleanPath(options.executableDirectory.isEmpty()
@@ -196,6 +198,8 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
             Qt::QueuedConnection);
     };
     m_captureHistory = makeCaptureHistoryRepository(effectiveDirectory, std::move(historyOptions));
+    m_pinnedWindows = std::make_unique<PinnedWindowRepository>(effectiveDirectory,
+                                                                m_status.writeAvailable);
     m_status.historyUsage = m_captureHistory->usage();
     m_status.lastHistoryError = m_captureHistory->lastError();
     m_initialized = true;
@@ -237,6 +241,9 @@ StorageResult ApplicationStorage::flushNow() {
         updateHistoryError(m_captureHistory->lastError());
         updateHistoryUsage(m_captureHistory->usage());
     }
+    if (m_pinnedWindows != nullptr) {
+        static_cast<void>(m_pinnedWindows->flush());
+    }
     const StorageResult result = m_configuration->flushNow();
     updateConfigurationError(m_configuration->lastError());
     return result;
@@ -255,6 +262,9 @@ void ApplicationStorage::shutdown() {
         static_cast<void>(m_configuration->flushNow());
         m_status.lastConfigurationError = m_configuration->lastError();
     }
+    if (m_pinnedWindows != nullptr) {
+        static_cast<void>(m_pinnedWindows->flush());
+    }
     m_initialized = false;
 }
 
@@ -266,6 +276,11 @@ ConfigurationStore& ApplicationStorage::configuration() {
 CaptureHistoryRepository& ApplicationStorage::captureHistory() {
     Q_ASSERT(m_captureHistory != nullptr);
     return *m_captureHistory;
+}
+
+PinnedWindowRepository& ApplicationStorage::pinnedWindows() {
+    Q_ASSERT(m_pinnedWindows != nullptr);
+    return *m_pinnedWindows;
 }
 
 StorageStatus ApplicationStorage::status() const {

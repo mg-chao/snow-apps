@@ -52,6 +52,7 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     presentPinnedSelection(const ScreenshotPinnedSelectionRequest& request,
                            ScreenshotPinnedSelectionResultHandle result,
                            PinnedCompletion completion) override;
+    void restorePersistedWindows();
 
   private:
     ScreenshotOcrRecognitionPort* m_recognition = nullptr;

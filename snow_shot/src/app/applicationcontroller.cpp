@@ -117,6 +117,7 @@ class ApplicationController::Impl {
                 controller->prewarmResources();
             }
         });
+        QTimer::singleShot(0, &q, [this]() { restorePinnedWindows(); });
     }
 
     ScreenshotController* ensureScreenshotController() {
@@ -267,6 +268,12 @@ class ApplicationController::Impl {
         ensureMainWindow().showAndActivate();
     }
 
+    void restorePinnedWindows() {
+        if (ScreenshotController* controller = ensureScreenshotController()) {
+            controller->restorePinnedWindows();
+        }
+    }
+
     void showInterfaceSettings() {
         ensureMainWindow().showInterfaceSettings();
     }
@@ -305,5 +312,9 @@ void ApplicationController::handleLaunchRequest(const QStringList& arguments) {
         return;
     }
     m_impl->showMainWindow();
+}
+
+void ApplicationController::restorePinnedWindows() {
+    m_impl->restorePinnedWindows();
 }
 } // namespace snow_shot::app

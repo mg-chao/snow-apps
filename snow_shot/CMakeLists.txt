@@ -530,6 +530,8 @@ set(SNOW_SHOT_STORAGE_SOURCES
     include/snow_shot/storage/configurationstore.h
     include/snow_shot/storage/configurationschema.h
     include/snow_shot/storage/persistedselectioncodec.h
+    include/snow_shot/storage/pinnedwindowrepository.h
+    include/snow_shot/storage/pinnedwindowtypes.h
     include/snow_shot/storage/settingsadapters.h
     include/snow_shot/storage/storagelogging.h
     include/snow_shot/storage/storageresult.h
@@ -539,6 +541,7 @@ set(SNOW_SHOT_STORAGE_SOURCES
     src/storage/configurationstore.cpp
     src/storage/configurationschema.cpp
     src/storage/persistedselectioncodec.cpp
+    src/storage/pinnedwindowrepository.cpp
     src/storage/settingsadapters.cpp
     src/storage/storagelogging.cpp
 )

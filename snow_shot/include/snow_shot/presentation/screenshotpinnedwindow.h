@@ -8,6 +8,7 @@
 #include "snow_shot/presentation/screenshotimagesource.h"
 #include "snow_shot/presentation/screenshotrecognitionresults.h"
 #include "snow_shot/presentation/screenshotresultcompositor.h"
+#include "snow_shot/storage/pinnedwindowtypes.h"
 
 #include <QByteArray>
 #include <QColor>
@@ -107,6 +108,19 @@ class ScreenshotPinnedWindow final : public QWidget {
         SnowShotApiClient* tableRecognition = nullptr;
         std::function<ScreenshotPinnedRecognitionProviders()> recognitionProvider;
         ScreenshotRecognitionResults recognitionResults;
+        QString persistenceId;
+        bool restorePersistentState = false;
+        double persistedScalePercent = 100.0;
+        double persistedFirstCreationTextDpi = 1.0;
+        int persistedOpacityPercent = 100;
+        QTransform persistedImageTransform;
+        int persistedQuarterTurns = 0;
+        bool persistedThumbnailMode = false;
+        QRect persistedPreThumbnailNativeGeometry;
+        QByteArray persistedCanvasSession;
+        QByteArray persistedRecognitionResults;
+        std::function<void(const snow_shot::storage::PinnedWindowRecord&)> persistenceWriter;
+        std::function<void(const QString&)> persistenceRemover;
     };
 
     explicit ScreenshotPinnedWindow(RuntimeMode mode, QWidget* parent = nullptr);
@@ -118,6 +132,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool publishMaterializedImage(QImage image);
     bool prewarm(QScreen* screen = nullptr);
     QRect currentNativeGeometry() const;
+    void setPersistenceId(const QString& id);
+    [[nodiscard]] QString persistenceId() const { return m_persistenceId; }
     static void setRuntimeBorderColor(const QColor& color);
     static void setRuntimeTrayEnabled(bool enabled);
 
@@ -216,6 +232,11 @@ class ScreenshotPinnedWindow final : public QWidget {
     void scheduleNativeScaleAdoption();
     void adoptSettledNativeScale();
     void setOpacityPercent(int percent);
+    void schedulePersistence();
+    void persistNow();
+    void removePersistence();
+    [[nodiscard]] snow_shot::storage::PinnedWindowRecord persistenceRecord() const;
+    void restorePersistentState(const Config& config);
     void setThumbnailMode(bool enabled, bool animate = true);
     void restoreFromThumbnailImmediately();
     void animateGeometryTo(const QRect& nativeTarget);
@@ -228,6 +249,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void hideOtherPinnedWindows();
     void closeOtherPinnedWindows();
     void closeAllPinnedWindows();
+    void requestUserClose();
     [[nodiscard]] std::optional<QPoint> physicalCursorPosition() const;
     bool cursorMovementEnabled() const;
     bool moveCursorOnePixel(snow_shot::platform::PhysicalCursorDirection direction);
@@ -311,6 +333,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     QSize m_originalPixelSize;
     QRect m_preThumbnailNativeGeometry;
     std::unique_ptr<ScreenshotPinnedNativeGeometryController> m_nativeGeometryController;
+    std::function<void(const snow_shot::storage::PinnedWindowRecord&)> m_persistenceWriter;
+    std::function<void(const QString&)> m_persistenceRemover;
     std::unique_ptr<ScreenshotRecognitionSessionController> m_recognitionSession;
     double m_viewportZoom = 1.0;
     QPointF m_viewportCenter;
@@ -332,6 +356,11 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_preserveScaleForSettledGeometry = false;
     bool m_presented = false;
     bool m_closing = false;
+    QString m_persistenceId;
+    bool m_persistenceEnabled = true;
+    bool m_persistenceRemovalRequested = false;
+    qreal m_firstCreationTextDpi = 1.0;
+    QTimer* m_persistenceTimer = nullptr;
     bool m_systemSizingActive = false;
     bool m_windowDragActive = false;
     bool m_windowDragCursorSet = false;
