@@ -23,6 +23,9 @@ constexpr int SeparatorRightMargin = 8;
 constexpr int ShadowHoverBlurRadius = 4;
 constexpr int ShadowHoverAlpha = 84;
 constexpr double ShadowHoverFalloffPower = 2.4;
+// The outermost glow stroke is centered ShadowHoverBlurRadius pixels outside the panel and is
+// one pixel wide, so the input halo grown while hovering must cover half a pixel more.
+constexpr int ShadowGlowOutset = ShadowHoverBlurRadius + 1;
 const QColor PanelBackground(0, 0, 0, 115);
 const QColor PanelTextColor(255, 255, 255);
 const QColor PanelHoverColor(22, 119, 255, 107);
@@ -63,6 +66,18 @@ void screenshot_selection_toolbar::paintToolbarShadow(QPainter* painter, const Q
         painter->drawRoundedRect(shadowRect, screenshot_selection_toolbar::PanelRadius + outset,
                                  screenshot_selection_toolbar::PanelRadius + outset);
     }
+}
+
+QRegion screenshot_selection_toolbar::interactiveInputRegion(const QRect& panelRect,
+                                                             bool glowVisible) {
+    if (panelRect.isEmpty()) {
+        return QRegion();
+    }
+    if (!glowVisible) {
+        return QRegion(panelRect);
+    }
+    return QRegion(panelRect.adjusted(-ShadowGlowOutset, -ShadowGlowOutset, ShadowGlowOutset,
+                                      ShadowGlowOutset));
 }
 
 QPixmap screenshot_selection_toolbar::renderToolbarIcon(QWidget* widget,

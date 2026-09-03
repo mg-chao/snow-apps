@@ -1,4 +1,6 @@
 #include "screenshotselectiontoolbarwidgets.h"
+#include "snow_shot/presentation/screenshotselectiontoolbarwidget.h"
+#include "snow_shot/presentation/screenshottoolbarcommands.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -16,6 +18,19 @@
 #include <vector>
 
 namespace {
+class NoOpSelectionToolbarCommands final : public ScreenshotSelectionToolbarCommandSink {
+  public:
+    void toggleSelectionAspectRatioLockFromToolbar() override { ++interactionCount; }
+    void openSelectionResizeModalFromToolbar() override { ++interactionCount; }
+    void hideColorPickersForScreenshotUi() override { ++interactionCount; }
+    void adjustSelectionFromToolbar(int, int, int, int) override { ++interactionCount; }
+    void setSelectionCornerRadiusFromToolbar(int) override { ++interactionCount; }
+    void setSelectionShadowWidthFromToolbar(int) override { ++interactionCount; }
+    void setSelectionToolbarHovered(bool) override { ++interactionCount; }
+
+    int interactionCount = 0;
+};
+
 void require(bool condition, const char* message) {
     if (!condition) {
         std::cerr << message << '\n';
@@ -140,11 +155,124 @@ void valueLabelPaintsFromItsOwnEnterLeaveState() {
     require(renderWidget(&label) == idleImage,
             "value-label leave events should restore the idle visual");
 }
+
+void selectionToolbarInputSurfaceMatchesInteractivePanel() {
+    NoOpSelectionToolbarCommands commands;
+    QWidget host;
+    host.resize(640, 360);
+
+    QWidget canvas(&host);
+    canvas.setGeometry(host.rect());
+    canvas.setCursor(Qt::CrossCursor);
+
+    ScreenshotSelectionToolbarWidget toolbar(commands, &host);
+    toolbar.setSelectionState(QRect(80, 120, 320, 180), false, 0, 0,
+                              ScreenshotSelectionToolbarWidget::DisplayMode::Full);
+    toolbar.move(120, 60);
+    host.show();
+    toolbar.show();
+    toolbar.raise();
+    QCoreApplication::processEvents();
+
+    QWidget* panel = toolbar.findChild<QWidget*>(QStringLiteral("screenshotSelectionToolbarPanel"));
+    require(panel != nullptr, "selection toolbar panel should be findable");
+    const QRect panelRect(panel->mapTo(&host, QPoint(0, 0)), panel->size());
+
+    QWidget* panelHit = host.childAt(panelRect.center());
+    require(panelHit != nullptr && toolbar.isAncestorOf(panelHit) && panelHit != &toolbar,
+            "points over the panel should hit the interactive toolbar content");
+    require(commands.interactionCount == 0,
+            "hit testing alone must not trigger selection toolbar commands");
+
+    const QPoint belowPanel(panelRect.center().x(), toolbar.y() + toolbar.height() - 2);
+    const QPoint leftOfPanel(toolbar.x() + 2, panelRect.center().y());
+    const QPoint abovePanel(panelRect.center().x(), toolbar.y() + 2);
+    const QPoint cornerMargin(toolbar.x() + 2, toolbar.y() + toolbar.height() - 2);
+    for (const QPoint& marginPoint : {belowPanel, leftOfPanel, abovePanel, cornerMargin}) {
+        QWidget* hit = host.childAt(marginPoint);
+        require(hit == &canvas,
+                "idle toolbar margin points must fall through to the underlying canvas");
+        require(hit->cursor().shape() == Qt::CrossCursor,
+                "toolbar margin hit testing must preserve the canvas cursor");
+    }
+
+    sendEnter(panel);
+    QWidget* glowHit = host.childAt(QPoint(panelRect.center().x(), panelRect.bottom() + 2));
+    require(glowHit == &toolbar,
+            "hovering should route the visible glow halo through the toolbar surface");
+    QWidget* beyondGlowHit = host.childAt(QPoint(panelRect.center().x(), panelRect.bottom() + 7));
+    require(beyondGlowHit == &canvas,
+            "margin pixels beyond the glow outset must keep falling through while hovered");
+    sendLeave(panel);
+    require(host.childAt(QPoint(panelRect.center().x(), panelRect.bottom() + 2)) == &canvas,
+            "leaving the toolbar must shrink the input surface back to the panel");
+}
+
+void smartSelectionToolbarIsClickThroughAcrossCaptureLifecycles() {
+    NoOpSelectionToolbarCommands commands;
+    QWidget host;
+    host.resize(640, 360);
+
+    QWidget canvas(&host);
+    canvas.setGeometry(host.rect());
+    canvas.setCursor(Qt::CrossCursor);
+
+    ScreenshotSelectionToolbarWidget toolbar(commands, &host);
+    toolbar.setSelectionState(QRect(80, 70, 320, 180), false, 0, 0,
+                              ScreenshotSelectionToolbarWidget::DisplayMode::Full);
+    toolbar.move(120, 120);
+    host.show();
+    toolbar.show();
+    toolbar.raise();
+    QCoreApplication::processEvents();
+
+    require(!toolbar.testAttribute(Qt::WA_TransparentForMouseEvents),
+            "full selection toolbar should remain interactive");
+
+    toolbar.setSelectionState(QRect(80, 70, 320, 180), false, 0, 0,
+                              ScreenshotSelectionToolbarWidget::DisplayMode::SizeOnly);
+    QCoreApplication::processEvents();
+
+    require(toolbar.testAttribute(Qt::WA_TransparentForMouseEvents),
+            "smart-selection toolbar root must be transparent for mouse events");
+    for (QWidget* child : toolbar.findChildren<QWidget*>()) {
+        require(child->testAttribute(Qt::WA_TransparentForMouseEvents),
+                "smart-selection toolbar descendants must be transparent for mouse events");
+    }
+
+    const QPoint toolbarCenter = toolbar.pos() + QPoint(toolbar.width() / 2, toolbar.height() / 2);
+    QWidget* hitWidget = host.childAt(toolbarCenter);
+    require(hitWidget == &canvas,
+            "smart-selection toolbar must leave the underlying canvas as the hit target");
+    require(hitWidget->cursor().shape() == Qt::CrossCursor,
+            "smart-selection hit testing must preserve the canvas crosshair cursor");
+    require(commands.interactionCount == 0,
+            "smart-selection toolbar must not trigger commands while click-through");
+
+    toolbar.hide();
+    toolbar.resetForNewCapture();
+    require(!toolbar.testAttribute(Qt::WA_TransparentForMouseEvents),
+            "resetting a pooled toolbar must restore its canonical interactive state");
+
+    toolbar.setSelectionState(QRect(80, 70, 320, 180), false, 0, 0,
+                              ScreenshotSelectionToolbarWidget::DisplayMode::SizeOnly);
+    toolbar.show();
+    toolbar.raise();
+    QCoreApplication::processEvents();
+    require(toolbar.testAttribute(Qt::WA_TransparentForMouseEvents),
+            "a subsequent smart-selection capture must reapply click-through state");
+    require(host.childAt(toolbarCenter) == &canvas,
+            "a subsequent smart-selection capture must not retain toolbar hit testing");
+    require(commands.interactionCount == 0,
+            "a subsequent smart-selection capture must not trigger stale toolbar commands");
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
     QApplication application(argc, argv);
     panelBoundaryExclusivelyOwnsToolbarHoverState();
     valueLabelPaintsFromItsOwnEnterLeaveState();
+    selectionToolbarInputSurfaceMatchesInteractivePanel();
+    smartSelectionToolbarIsClickThroughAcrossCaptureLifecycles();
     return 0;
 }

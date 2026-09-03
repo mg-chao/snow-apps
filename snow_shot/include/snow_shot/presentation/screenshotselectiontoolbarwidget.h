@@ -47,7 +47,6 @@ class ScreenshotSelectionToolbarWidget final : public QWidget {
     };
 
     bool eventFilter(QObject* watched, QEvent* event) override;
-    bool event(QEvent* event) override;
     void changeEvent(QEvent* event) override;
     void hideEvent(QHideEvent* event) override;
     void showEvent(QShowEvent* event) override;
@@ -64,9 +63,8 @@ class ScreenshotSelectionToolbarWidget final : public QWidget {
     void refreshHoverVisuals();
     bool fieldForObject(QObject* object, Field* outField) const;
     void handleFieldWheel(Field field, int deltaY);
-    bool shouldForwardPointerEventToOverlayCanvas(QObject* watched, const QEvent* event) const;
-    bool forwardPointerEventToOverlayCanvas(QEvent* event) const;
     bool isPointInInteractiveContent(const QPoint& localPosition) const;
+    void updateInputRegion();
     bool updateLabels(bool refreshGeometry = false);
     void retranslateUi();
     void updateLockIconPixmap();

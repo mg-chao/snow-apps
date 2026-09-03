@@ -689,6 +689,9 @@ void ScreenshotOverlayUiHost::showToolbar() {
 void ScreenshotOverlayUiHost::hideSelectionToolbar() {
     if (m_selectionToolbar != nullptr) {
         m_selectionToolbar->hide();
+        // Keep the pooled widget in its canonical idle state so every subsequent
+        // attach/show cycle starts from the known Full display mode and input region.
+        m_selectionToolbar->resetForNewCapture();
     }
 }
 

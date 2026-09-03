@@ -2156,6 +2156,9 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-screenshot-selection-toolbar-hover-tests
         tests/screenshot_selection_toolbar_hover_tests.cpp
+        include/snow_shot/presentation/screenshotselectiontoolbarwidget.h
+        src/presentation/components/icons/snowshoticons.cpp
+        src/presentation/selection/screenshotselectiontoolbarwidget.cpp
         src/presentation/selection/screenshotselectiontoolbarwidgets.h
         src/presentation/selection/screenshotselectiontoolbarwidgets.cpp
     )
@@ -2167,6 +2170,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         adqt_icon_core
         ant_design_icons_qt
         Qt6::Widgets
+        snow_draw_engine_qt_canvas
     )
     add_test(
         NAME snow-shot-screenshot-selection-toolbar-hover-tests
