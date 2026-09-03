@@ -956,8 +956,9 @@ void ScreenshotPinnedWindow::restorePersistentState(const Config& config) {
     if (!config.restorePersistentState) {
         return;
     }
-    m_scalePercent = config.persistedScalePercent > 0.0 ? config.persistedScalePercent
-                                                         : m_scalePercent;
+    // The scale percent arrives through Config::initialScalePercent like every
+    // other presentation, already translated to the current monitor DPI by the
+    // restore path together with the geometry it describes.
     m_opacityPercent = qBound(1, config.persistedOpacityPercent, 100);
     setWindowOpacity(m_opacityPercent / 100.0);
     m_imageTransform = config.persistedImageTransform;
@@ -4181,6 +4182,11 @@ void ScreenshotPinnedWindow::animateGeometryTo(const QRect& nativeTarget) {
     connect(m_geometryAnimation, &QVariantAnimation::finished, this, [this, nativeTarget]() {
         m_geometryAnimating = false;
         static_cast<void>(applyWindowGeometry(nativeTarget, GeometryMutation::Animation));
+        // Intermediate animation frames re-arm the settle timer while
+        // m_geometryAnimating still guards adoption out, and the final commit
+        // sees no size delta against the last frame. Re-arm explicitly so the
+        // scale state is re-derived from the settled geometry.
+        scheduleNativeScaleAdoption();
         updateCanvasViewport();
         updateControlsGeometry();
         if (m_editController != nullptr) {

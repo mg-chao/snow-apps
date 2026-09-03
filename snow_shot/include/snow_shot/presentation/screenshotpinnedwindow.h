@@ -90,6 +90,12 @@ class ScreenshotPinnedWindow final : public QWidget {
         QRectF surfaceCanvasRect;
         ScreenshotResultStyle resultStyle;
         QSize fullResolutionScaleBasis;
+        // The exact percent `nativeGeometry` encodes relative to
+        // fullResolutionScaleBasis. Integer geometry cannot always express a
+        // percent exactly, so callers that know the intended level (a saved
+        // record, a wheel step) pass it here instead of letting the window
+        // re-derive a rounded value. Restores must translate it together with
+        // nativeGeometry when the monitor DPI changed.
         double initialScalePercent = 100.0;
         QString mouseWheelZoomMode = QStringLiteral("mouse_position");
         ScreenshotImageSource imageSource;
@@ -110,7 +116,6 @@ class ScreenshotPinnedWindow final : public QWidget {
         ScreenshotRecognitionResults recognitionResults;
         QString persistenceId;
         bool restorePersistentState = false;
-        double persistedScalePercent = 100.0;
         double persistedFirstCreationTextDpi = 1.0;
         int persistedOpacityPercent = 100;
         QTransform persistedImageTransform;

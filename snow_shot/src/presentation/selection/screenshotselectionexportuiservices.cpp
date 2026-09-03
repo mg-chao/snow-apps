@@ -9,6 +9,7 @@
 #include "snow_shot/storage/pinnedwindowrepository.h"
 #include "snow_shot/network/snowshotapiclient.h"
 #include "snow_shot/presentation/screenshotclipboardservice.h"
+#include "../pinned/screenshotpinnedrestoregeometry.h"
 #include "../pinned/screenshotpintoperfinstrumentation.h"
 
 #include <QApplication>
@@ -113,6 +114,35 @@ QRect availablePhysicalRect(QScreen* screen) {
                  std::max(1, qRound(logicalAvailable.height() * scale)));
 }
 
+screenshot_pinned_restore_geometry::ScreenGeometry restoreScreenGeometry(QScreen* screen) {
+    screenshot_pinned_restore_geometry::ScreenGeometry geometry;
+    geometry.physicalBounds = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
+    geometry.availableBounds = availablePhysicalRect(screen);
+    geometry.devicePixelRatio = screen->devicePixelRatio();
+    return geometry;
+}
+
+// Translates the DPI-dependent part of a record from the saved session's
+// monitor to `target` (never null) in one step, so the restored geometry,
+// pre-thumbnail geometry and scale percent always describe the same window.
+screenshot_pinned_restore_geometry::RestoredState reconcileRestoreState(
+    const snow_shot::storage::PinnedWindowRecord& record, QScreen& target) {
+    screenshot_pinned_restore_geometry::SavedState saved;
+    saved.nativeGeometry = record.nativeGeometry;
+    saved.preThumbnailNativeGeometry = record.preThumbnailNativeGeometry;
+    saved.scalePercent = record.scalePercent;
+    saved.screenPhysicalBounds = record.screenPhysicalGeometry;
+    saved.screenDevicePixelRatio = record.screenDpi;
+    QList<screenshot_pinned_restore_geometry::ScreenGeometry> screens;
+    for (QScreen* screen : QGuiApplication::screens()) {
+        if (screen != nullptr) {
+            screens.push_back(restoreScreenGeometry(screen));
+        }
+    }
+    return screenshot_pinned_restore_geometry::reconcileSavedState(
+        saved, restoreScreenGeometry(&target), screens);
+}
+
 QScreen* restoreScreen(const snow_shot::storage::PinnedWindowRecord& record) {
     const QList<QScreen*> screens = QGuiApplication::screens();
     for (QScreen* screen : screens) {
@@ -148,45 +178,6 @@ QScreen* restoreScreen(const snow_shot::storage::PinnedWindowRecord& record) {
         }
     }
     return nearest;
-}
-
-QRect reconcileRestoreGeometry(const snow_shot::storage::PinnedWindowRecord& record,
-                               QScreen* target) {
-    if (target == nullptr) {
-        return record.nativeGeometry;
-    }
-    const QRect targetBounds = ScreenshotGeometryMapper::physicalRectForScreen(*target);
-    const QRect available = availablePhysicalRect(target);
-    const qreal oldDpi = record.screenDpi > 0.0 ? record.screenDpi : 1.0;
-    const qreal newDpi = target->devicePixelRatio() > 0.0 ? target->devicePixelRatio() : 1.0;
-    QRect geometry = record.nativeGeometry;
-    if (!record.screenPhysicalGeometry.isEmpty()) {
-        const QPoint relative = geometry.topLeft() - record.screenPhysicalGeometry.topLeft();
-        geometry.moveTopLeft(targetBounds.topLeft() + QPoint(qRound(relative.x() * newDpi / oldDpi),
-                                                             qRound(relative.y() * newDpi / oldDpi)));
-        geometry.setSize(QSize(std::max(1, qRound(geometry.width() * newDpi / oldDpi)),
-                               std::max(1, qRound(geometry.height() * newDpi / oldDpi))));
-    }
-    bool visible = false;
-    for (QScreen* screen : QGuiApplication::screens()) {
-        if (screen != nullptr && availablePhysicalRect(screen).intersects(geometry)) {
-            visible = true;
-            break;
-        }
-    }
-    if (!visible) {
-        const int left = geometry.width() >= available.width()
-                             ? available.left()
-                             : qBound(available.left(), geometry.left(),
-                                      available.right() - geometry.width() + 1);
-        const int top = geometry.height() >= available.height()
-                            ? available.top()
-                            : qBound(available.top(), geometry.top(),
-                                     available.bottom() - geometry.height() + 1);
-        geometry.moveLeft(left);
-        geometry.moveTop(top);
-    }
-    return geometry;
 }
 } // namespace
 
@@ -484,8 +475,10 @@ void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
         if (targetScreen == nullptr || record.nativeGeometry.isEmpty()) {
             continue;
         }
+        const screenshot_pinned_restore_geometry::RestoredState restored =
+            reconcileRestoreState(record, *targetScreen);
         ScreenshotPinnedWindow::Config config;
-        config.nativeGeometry = reconcileRestoreGeometry(record, targetScreen);
+        config.nativeGeometry = restored.nativeGeometry;
         config.canvasSourceRect = record.canvasSourceRect;
         // The persisted content/surface rects describe the post-transform
         // frame. Presentation starts from the immutable source canvas and
@@ -494,18 +487,17 @@ void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
         config.contentCanvasRect = record.canvasSourceRect;
         config.surfaceCanvasRect = record.canvasSourceRect;
         config.fullResolutionScaleBasis = record.initialPhysicalSize;
-        config.initialScalePercent = record.scalePercent;
+        config.initialScalePercent = restored.scalePercent;
         config.screen = targetScreen;
         config.enableEditing = true;
         config.resultStyle = decodeResultStyle(record.resultStyle);
         config.persistenceId = record.id;
         config.restorePersistentState = true;
-        config.persistedScalePercent = record.scalePercent;
         config.persistedOpacityPercent = record.opacityPercent;
         config.persistedImageTransform = record.imageTransform;
         config.persistedQuarterTurns = record.quarterTurns;
         config.persistedThumbnailMode = record.thumbnailMode;
-        config.persistedPreThumbnailNativeGeometry = record.preThumbnailNativeGeometry;
+        config.persistedPreThumbnailNativeGeometry = restored.preThumbnailNativeGeometry;
         config.persistedFirstCreationTextDpi = record.firstCreationTextDpi;
         config.persistedCanvasSession = record.canvasSession;
         config.persistedRecognitionResults = record.recognitionResults;
