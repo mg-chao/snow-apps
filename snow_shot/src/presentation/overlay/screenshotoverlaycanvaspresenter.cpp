@@ -296,25 +296,21 @@ void ScreenshotOverlayCanvasPresenter::updateOverlayState(
 namespace {
 void updateOverlayCursorsForDisplaySession(const ScreenshotDisplaySession& displaySession,
                                            bool selecting, bool dragging) {
-    if (!dragging) {
-        displaySession.forEachOverlay(
-            [](qsizetype, ScreenshotOverlayWindow* overlay) {
-                if (overlay != nullptr && overlay->canvas() != nullptr) {
-                    overlay->canvas()->clearCursorForLayer(SnowCanvasCursorLayer::Host);
-                }
-            });
-    }
-
-    if (!selecting) {
-        return;
-    }
-
-    displaySession.forEachActiveOverlay(
-        [](qsizetype, const CapturedDisplayModel&, ScreenshotOverlayWindow* overlay) {
-            SnowCanvasWidget* canvas = overlay->canvas();
-            if (canvas != nullptr) {
+    // Apply each overlay's final cursor directly. Clearing a canvas only to
+    // reapply the crosshair on the next loop resolves the cursor to the arrow
+    // in between, and Windows applies every cursor-shape change to the native
+    // sprite, so the streamed selection updates made the cursor flicker.
+    displaySession.forEachDisplayWithOverlay(
+        [&](qsizetype, const CapturedDisplayModel& display, ScreenshotOverlayWindow* overlay) {
+            SnowCanvasWidget* canvas = overlay == nullptr ? nullptr : overlay->canvas();
+            if (canvas == nullptr) {
+                return;
+            }
+            if (selecting && display.active) {
                 canvas->setCursorForLayer(SnowCanvasCursorLayer::Host,
                                           QCursor(Qt::CrossCursor));
+            } else if (!dragging) {
+                canvas->clearCursorForLayer(SnowCanvasCursorLayer::Host);
             }
         });
 }

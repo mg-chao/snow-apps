@@ -26,12 +26,25 @@ std::optional<QCursor>& SnowCanvasCursorController::cursorForLayer(SnowCanvasCur
 
 void SnowCanvasCursorController::applyResolvedCursor() {
     if (m_hostCursor.has_value()) {
-        m_widget.setCursor(*m_hostCursor);
+        applyResolvedCursorToWidget(*m_hostCursor);
         return;
     }
     if (m_canvasToolCursor.has_value()) {
-        m_widget.setCursor(*m_canvasToolCursor);
+        applyResolvedCursorToWidget(*m_canvasToolCursor);
         return;
     }
-    m_widget.unsetCursor();
+    if (m_widget.testAttribute(Qt::WA_SetCursor)) {
+        m_widget.unsetCursor();
+    }
+}
+
+void SnowCanvasCursorController::applyResolvedCursorToWidget(const QCursor& cursor) {
+    // QWidget forwards every cursor change to the platform window, and on
+    // Windows each changed-shape transition reaches the native sprite
+    // immediately. Re-applying the cursor a widget already shows would flash
+    // it, so layered updates must resolve to a no-op here.
+    if (m_widget.testAttribute(Qt::WA_SetCursor) && m_widget.cursor() == cursor) {
+        return;
+    }
+    m_widget.setCursor(cursor);
 }
