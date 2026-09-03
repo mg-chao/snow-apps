@@ -4,23 +4,24 @@
 //! [`AudioRecordingSession`] capture path, and verify the captured track
 //! contains no buzzing distortion.
 //!
-//! Known failure (expected test result: FAIL until fixed): the capture
-//! timeline intermittently slips by a few samples, displacing the recorded
-//! waveform and producing a faint buzzing/crackling distortion during
-//! playback. Measured on a real recording on 2026-09-03: ten bursts of 20 ms
-//! residual between -16 and -25 dBFS (baseline: -42 dBFS), plus a ~1 s
-//! time-warp at the start of playback. The bursts correlate with the signal
-//! slope, i.e. local timing displacement, not added noise.
+//! Regression coverage for a capture-timeline defect that intermittently
+//! slipped by a few samples, displacing the recorded waveform and producing a
+//! faint buzzing/crackling distortion during playback. Measured on a real
+//! recording on 2026-09-03: ten bursts of 20 ms residual between -16 and
+//! -25 dBFS (baseline: -42 dBFS), plus a ~1 s time-warp at the start of
+//! playback. The bursts correlate with the signal slope, i.e. local timing
+//! displacement, not added noise.
 //!
 //! The test renders at the endpoint mix format (no engine sample-rate
 //! conversion) and compares the capture against the exact samples that were
 //! written to the endpoint, so the residual isolates the capture path: any
-//! 20 ms window whose residual exceeds -25 dBFS is a timing slip.
+//! 20 ms window whose residual exceeds -25 dBFS, or whose local alignment
+//! jumps by more than two samples, is treated as a timing slip.
 //!
-//! The loopback taps the whole endpoint mix, so the test refuses to measure
-//! while other audio is playing (up to three takes are attempted when the
-//! endpoint is quiet at probe time but becomes busy mid-run); a take whose
-//! baseline residual is polluted is discarded rather than judged.
+//! The loopback taps the whole endpoint mix, so the test requires the endpoint
+//! to be quiet before playback. If another application starts during the take,
+//! the comparison remains a failure: a polluted capture must never be
+//! converted into a passing result by the regression test.
 //!
 //! Requires a working default stereo audio render device (the same one the
 //! loopback capture listens to); keep the system quiet while audio plays.
@@ -68,64 +69,41 @@ fn captured_playback_of_clean_source_is_free_of_crackle() {
     );
     println!("endpoint mix format: {} Hz stereo", mix_rate_hz);
 
-    // The loopback taps the whole endpoint mix: any other audio playing on
-    // the system would pollute the measurement, so a take that fails the
-    // baseline check is retried (up to three full attempts).
-    let mut last_report = None;
-    for attempt in 1..=3 {
-        let mut quiet = false;
-        for probe in 1..=20 {
-            let noise = measure_loopback_noise()
-                .unwrap_or_else(|err| panic!("loopback noise probe failed: {err}"));
-            println!(
-                "attempt {attempt}, loopback pre-check {probe}/20: endpoint peak {noise:.1} dBFS"
-            );
-            if noise <= -60.0 {
-                quiet = true;
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(1500));
+    // The loopback taps the whole endpoint mix. A quiet pre-check is enough
+    // to authorize one measurement; if another application starts playback
+    // during the take, the residual assertion below must fail instead of
+    // silently discarding a real capture regression as "pollution".
+    let mut quiet = false;
+    for probe in 1..=20 {
+        let noise = measure_loopback_noise()
+            .unwrap_or_else(|err| panic!("loopback noise probe failed: {err}"));
+        println!("loopback pre-check {probe}/20: endpoint peak {noise:.1} dBFS");
+        if noise <= -60.0 {
+            quiet = true;
+            break;
         }
-        if !quiet {
-            println!(
-                "SKIPPED: other audio is playing on the system; the loopback would capture it and the measurement would be meaningless. Pause all playback and re-run."
-            );
-            return;
-        }
-
-        let report = measure_once(&source, mix_rate_hz);
-        println!(
-            "crackle report (attempt {attempt}): playback onset {:.3}s, capture gain {:.3}, median 20ms-block residual {:.1} dBFS, worst block {:.1} dBFS",
-            report.playback_onset_s,
-            report.capture_gain,
-            report.median_block_dbfs,
-            report.worst_block_dbfs
-        );
-        println!("crackle bursts: {:?}", report.bursts);
-
-        if report.median_block_dbfs > -38.0 {
-            println!(
-                "attempt {attempt} polluted: baseline residual {:.1} dBFS is far above the clean floor (-50 dBFS or lower), so other audio played during the run.",
-                report.median_block_dbfs
-            );
-            last_report = Some(report);
-            continue;
-        }
-        last_report = Some(report);
-        break;
+        std::thread::sleep(Duration::from_millis(1500));
     }
-
-    let report = last_report.expect("at least one measurement attempt should have run");
-    if report.median_block_dbfs > -38.0 {
+    if !quiet {
         println!(
-            "SKIPPED: every attempt had a polluted baseline (other audio was playing throughout). Re-run on a quiet system."
+            "SKIPPED: other audio is playing on the system; the loopback would capture it and the measurement would be meaningless. Pause all playback and re-run."
         );
         return;
     }
 
+    let report = measure_once(&source, mix_rate_hz);
+    println!(
+        "crackle report: playback onset {:.3}s, capture gain {:.3}, median 20ms-block residual {:.1} dBFS, worst block {:.1} dBFS",
+        report.playback_onset_s,
+        report.capture_gain,
+        report.median_block_dbfs,
+        report.worst_block_dbfs
+    );
+    println!("crackle bursts: {:?}", report.bursts);
+
     assert!(
         report.bursts.is_empty(),
-        "captured audio contains buzzing distortion: {} crackle burst(s) caused by capture timing slips, worst {:.1} dBFS at {:.2}s into the playback (bursts at {:?}); expected: no bursts. This documents the known capture timing-slip defect.",
+        "captured audio contains buzzing distortion: {} crackle burst(s) caused by capture timing slips, worst {:.1} dBFS at {:.2}s into the playback (bursts at {:?}); expected: no bursts.",
         report.bursts.len(),
         report.worst_burst_dbfs.unwrap_or(f64::NAN),
         report.worst_burst_time.unwrap_or(f64::NAN),
@@ -269,11 +247,21 @@ fn detect_crackle(rendered: &[f32], recorded: &[i16], rate_hz: u32) -> CrackleRe
     // Sample-level refinement of the envelope estimate with a 1 s excerpt
     // (the true peak dominates the periodic aliases at this length).
     let excerpt_start = (reference.len() / 3).min(5 * rate_hz as usize);
-    let excerpt_len = rate_hz as usize;
+    let excerpt_len = (rate_hz as usize)
+        .min(reference.len().saturating_sub(excerpt_start))
+        .min(
+            captured
+                .len()
+                .saturating_sub(excerpt_start.saturating_add(coarse.max(0) as usize)),
+        );
+    assert!(
+        excerpt_len > 0,
+        "capture is too short for alignment refinement"
+    );
     let coarse = best_lag(
         &captured,
         &reference,
-        onset + excerpt_start,
+        excerpt_start,
         excerpt_start,
         excerpt_len,
         coarse - 300,
@@ -290,6 +278,7 @@ fn detect_crackle(rendered: &[f32], recorded: &[i16], rate_hz: u32) -> CrackleRe
     let mut lag = coarse;
     let mut times = Vec::new();
     let mut blocks = Vec::new();
+    let mut lag_jumps = Vec::new();
     let mut a = onset.saturating_sub(block / 2);
     while a + block < captured.len() {
         if a < lag as usize || a - lag as usize + block >= reference.len() {
@@ -299,7 +288,11 @@ fn detect_crackle(rendered: &[f32], recorded: &[i16], rate_hz: u32) -> CrackleRe
         let r = &captured[a..a + block];
         let mut best = lag;
         let mut best_v = f64::NEG_INFINITY;
-        for c in (lag - 64).max(0)..=(lag + 64) {
+        // The endpoint clock cannot move by more than a few samples over one
+        // 20 ms block. A wider search admits periodic waveform aliases from
+        // this fixture and turns a clean, globally aligned capture into a
+        // false local "slip".
+        for c in (lag - 4).max(0)..=(lag + 4) {
             if a < c as usize || a - c as usize + block >= reference.len() {
                 continue;
             }
@@ -311,6 +304,8 @@ fn detect_crackle(rendered: &[f32], recorded: &[i16], rate_hz: u32) -> CrackleRe
             }
         }
         let s = &reference[a - best as usize..a - best as usize + block];
+        let lag_jump = (best - lag).unsigned_abs() > 2;
+        lag_jumps.push(lag_jump);
         let mut acc_r = 0.0;
         let mut acc_rr = 0.0;
         for i in 0..block {
@@ -348,15 +343,19 @@ fn detect_crackle(rendered: &[f32], recorded: &[i16], rate_hz: u32) -> CrackleRe
 
     let mut bursts = Vec::new();
     let mut idx = 0;
+    // The first endpoint buffer can straddle the render start. Ignore one
+    // analysis block of startup settling, while keeping the rest of the
+    // recording eligible so startup timing slips cannot be hidden.
+    let settle_until_s = onset as f64 / rate + block as f64 / rate;
     while idx < times.len() {
-        if levels[idx] > BURST_BLOCK_DBFS {
+        if times[idx] >= settle_until_s && (levels[idx] > BURST_BLOCK_DBFS || lag_jumps[idx]) {
             let start = idx;
             // Extend the cluster only across blocks that are themselves
             // bursts; quiet stretches end it.
             let mut end = start;
             while end + 1 < times.len()
                 && times[end + 1] - times[end] <= 0.06
-                && levels[end + 1] > BURST_BLOCK_DBFS
+                && (levels[end + 1] > BURST_BLOCK_DBFS || lag_jumps[end + 1])
             {
                 end += 1;
             }
@@ -423,36 +422,6 @@ fn playback_onset(
         i += win;
     }
     None
-}
-
-#[allow(clippy::too_many_arguments)]
-fn best_lag(
-    rec: &[f64],
-    src: &[f64],
-    rec_start: usize,
-    src_start: usize,
-    len: usize,
-    lag_lo: i64,
-    lag_hi: i64,
-    step: i64,
-) -> i64 {
-    let mut best = lag_lo;
-    let mut best_v = f64::NEG_INFINITY;
-    for lag in (lag_lo..=lag_hi).step_by(step.max(1) as usize) {
-        let a = rec_start;
-        let s = src_start as i64 - lag;
-        if s < 0 || (a + len) > rec.len() || (s as usize + len) > src.len() {
-            continue;
-        }
-        let r = &rec[a..a + len];
-        let ss = &src[s as usize..s as usize + len];
-        let v = dot(r, ss);
-        if v > best_v {
-            best_v = v;
-            best = lag;
-        }
-    }
-    best
 }
 
 fn dot(a: &[f64], b: &[f64]) -> f64 {
@@ -772,6 +741,45 @@ fn play_samples_via_wasapi(source: &WavInput, mix_rate_hz: u32) -> Result<Vec<f3
     }
 }
 
+/// Find the capture-to-reference offset in samples.
+///
+/// A positive lag means `rec[base + lag]` corresponds to `src[base]`.
+#[allow(clippy::too_many_arguments)]
+fn best_lag(
+    rec: &[f64],
+    src: &[f64],
+    rec_base: usize,
+    src_base: usize,
+    len: usize,
+    lag_lo: i64,
+    lag_hi: i64,
+    step: i64,
+) -> i64 {
+    let mut best = lag_lo;
+    let mut best_v = f64::NEG_INFINITY;
+    for lag in (lag_lo..=lag_hi).step_by(step.max(1) as usize) {
+        let rec_start = if lag >= 0 {
+            rec_base.checked_add(lag as usize)
+        } else {
+            rec_base.checked_sub(lag.unsigned_abs() as usize)
+        };
+        let Some(rec_start) = rec_start else { continue };
+        if rec_start + len > rec.len() || src_base + len > src.len() {
+            continue;
+        }
+        let rec_window = &rec[rec_start..rec_start + len];
+        let src_window = &src[src_base..src_base + len];
+        let rec_energy = dot(rec_window, rec_window);
+        let src_energy = dot(src_window, src_window);
+        let v = dot(rec_window, src_window) / (rec_energy.sqrt() * src_energy.sqrt() + 1e-12);
+        if v > best_v {
+            best_v = v;
+            best = lag;
+        }
+    }
+    best
+}
+
 /// Catmull-Rom cubic interpolation, adequate as an alignment reference.
 fn resample_cubic(x: &[f64], from_rate: u32, to_rate: u32) -> Vec<f64> {
     if from_rate == to_rate {
@@ -798,4 +806,125 @@ fn resample_cubic(x: &[f64], from_rate: u32, to_rate: u32) -> Vec<f64> {
         out.push(v);
     }
     out
+}
+
+#[cfg(test)]
+mod analysis_tests {
+    use super::*;
+
+    const RATE: u32 = 48_000;
+    const LEAD_FRAMES: usize = 2_400;
+    const SIGNAL_FRAMES: usize = 48_000;
+
+    fn reference_signal() -> Vec<f32> {
+        // A deterministic broadband sequence gives the lag search a single
+        // sharp correlation peak. Periodic tones can make a clean capture
+        // look like a local timing slip at one of their aliases.
+        (0..SIGNAL_FRAMES)
+            .map(|n| {
+                let mut hash = n as u32 + 0x9e37_79b9;
+                hash = (hash ^ (hash >> 16)).wrapping_mul(0x85eb_ca6b);
+                hash = (hash ^ (hash >> 13)).wrapping_mul(0xc2b2_ae35);
+                hash ^= hash >> 16;
+                let noise = f64::from(hash) / f64::from(u32::MAX) * 2.0 - 1.0;
+                (noise * 0.45) as f32
+            })
+            .collect()
+    }
+
+    fn stereo(signal: &[f32]) -> Vec<f32> {
+        signal.iter().flat_map(|&sample| [sample, sample]).collect()
+    }
+
+    fn recorded_with_lead(signal: &[f32]) -> Vec<i16> {
+        let mut mono = vec![0.0f32; LEAD_FRAMES];
+        mono.extend_from_slice(signal);
+        mono.into_iter()
+            .flat_map(|sample| {
+                let quantized = (sample.clamp(-1.0, 1.0) * 32767.0) as i16;
+                [quantized, quantized]
+            })
+            .collect()
+    }
+
+    fn report(signal: &[f32], recorded: &[i16]) -> CrackleReport {
+        detect_crackle(&stereo(signal), recorded, RATE)
+    }
+
+    #[test]
+    fn clean_delayed_capture_passes_analysis() {
+        let signal = reference_signal();
+        let result = report(&signal, &recorded_with_lead(&signal));
+        assert!(result.bursts.is_empty(), "clean signal produced {result:?}");
+        assert!(
+            result.median_block_dbfs < -50.0,
+            "clean signal residual should be below the pollution floor: {result:?}"
+        );
+    }
+
+    #[test]
+    fn local_timing_slip_is_reported_as_a_burst() {
+        let signal = reference_signal();
+        let mut captured = recorded_with_lead(&signal);
+        let slip_frame = LEAD_FRAMES + SIGNAL_FRAMES / 2;
+        let slip_sample = slip_frame * 2;
+        const SLIP_FRAMES: usize = 4;
+        // Duplicate a short stereo-frame run, then remove that run much later.
+        // The intervening span is displaced by a few samples, matching a
+        // capture timeline that inserts frames and eventually catches up.
+        let duplicated = captured[slip_sample..slip_sample + SLIP_FRAMES * 2].to_vec();
+        let mut inserted = duplicated.clone();
+        inserted.extend_from_slice(&duplicated);
+        captured.splice(slip_sample..slip_sample + SLIP_FRAMES * 2, inserted);
+        let catch_up_sample = slip_sample + (SIGNAL_FRAMES / 4) * 2;
+        captured.drain(catch_up_sample..catch_up_sample + SLIP_FRAMES * 2);
+
+        let result = report(&signal, &captured);
+        assert!(
+            !result.bursts.is_empty(),
+            "local timing slip was not detected: {result:?}"
+        );
+    }
+
+    #[test]
+    fn startup_timing_slip_is_not_discarded_by_settling_filter() {
+        let signal = reference_signal();
+        let mut captured = recorded_with_lead(&signal);
+        const SLIP_FRAMES: usize = 4;
+        let slip_sample = (LEAD_FRAMES + 100) * 2;
+        let duplicated = captured[slip_sample..slip_sample + SLIP_FRAMES * 2].to_vec();
+        let mut inserted = duplicated.clone();
+        inserted.extend_from_slice(&duplicated);
+        captured.splice(slip_sample..slip_sample + SLIP_FRAMES * 2, inserted);
+        let catch_up_sample = slip_sample + (SIGNAL_FRAMES / 4) * 2;
+        captured.drain(catch_up_sample..catch_up_sample + SLIP_FRAMES * 2);
+
+        let result = report(&signal, &captured);
+        assert!(
+            !result.bursts.is_empty(),
+            "startup timing slip was hidden by settling handling: {result:?}"
+        );
+    }
+
+    #[test]
+    fn persistent_unrelated_noise_is_not_silently_classified_as_pollution() {
+        let signal = reference_signal();
+        let mut captured = recorded_with_lead(&signal);
+        for frame in LEAD_FRAMES..LEAD_FRAMES + SIGNAL_FRAMES {
+            let sample = frame * 2;
+            let noise = if frame % 2 == 0 { 16_000 } else { -16_000 };
+            captured[sample] = captured[sample].saturating_add(noise);
+            captured[sample + 1] = captured[sample + 1].saturating_add(noise);
+        }
+
+        let result = report(&signal, &captured);
+        assert!(
+            result.median_block_dbfs > -50.0,
+            "persistent noise should remain visible to the assertion: {result:?}"
+        );
+        assert!(
+            !result.bursts.is_empty(),
+            "persistent noise must not be silently accepted as a clean capture: {result:?}"
+        );
+    }
 }

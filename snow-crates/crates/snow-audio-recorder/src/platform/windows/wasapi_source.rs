@@ -45,6 +45,11 @@ pub(crate) struct PendingMetadata {
     capture_time: Option<Instant>,
     qpc_position_100ns: Option<i64>,
     device_position_frames: Option<u64>,
+    /// Native source-frame span represented by the buffered output chunk.
+    /// These fields are used only while slicing a resampled chunk; they are
+    /// intentionally not exposed on `AudioPacketMetadata`.
+    native_frames: Option<u32>,
+    native_sample_rate: Option<u32>,
     discontinuity: bool,
     is_silent: bool,
 }
@@ -113,10 +118,26 @@ impl BufferedChunk {
             return Err(AudioError::BufferOverflow);
         }
 
-        let tail_frames = self.frames.saturating_sub(slice_end_frame);
-        let tail_duration = frames_to_duration(tail_frames, sample_rate);
-        let tail_100ns = frames_to_100ns(tail_frames, sample_rate);
-        let tail_frames_u64 = u64::from(tail_frames);
+        let output_tail_frames = self.frames.saturating_sub(slice_end_frame);
+        let (tail_duration, tail_100ns, tail_device_frames) = match (
+            self.metadata.native_frames,
+            self.metadata.native_sample_rate,
+        ) {
+            (Some(native_frames), Some(native_sample_rate)) if self.frames > 0 => {
+                let native_tail_frames =
+                    scale_output_frames_to_native(output_tail_frames, self.frames, native_frames);
+                (
+                    frames_to_duration(native_tail_frames, native_sample_rate),
+                    frames_to_100ns(native_tail_frames, native_sample_rate),
+                    u64::from(native_tail_frames),
+                )
+            }
+            _ => (
+                frames_to_duration(output_tail_frames, sample_rate),
+                frames_to_100ns(output_tail_frames, sample_rate),
+                u64::from(output_tail_frames),
+            ),
+        };
 
         Ok(PendingMetadata {
             capture_time: self
@@ -130,13 +151,29 @@ impl BufferedChunk {
             device_position_frames: self
                 .metadata
                 .device_position_frames
-                .map(|end| end.saturating_sub(tail_frames_u64)),
+                .map(|end| end.saturating_sub(tail_device_frames)),
             // WASAPI discontinuity marks the first sample after a gap, so it
             // only applies to the first slice emitted from this chunk.
             discontinuity: self.metadata.discontinuity && self.consumed_frames == 0,
             is_silent: self.metadata.is_silent,
+            native_frames: None,
+            native_sample_rate: None,
         })
     }
+}
+
+fn scale_output_frames_to_native(
+    output_frames: u32,
+    output_total_frames: u32,
+    native_total_frames: u32,
+) -> u32 {
+    if output_total_frames == 0 {
+        return 0;
+    }
+    let numerator = u128::from(output_frames).saturating_mul(u128::from(native_total_frames));
+    let rounded = numerator.saturating_add(u128::from(output_total_frames / 2))
+        / u128::from(output_total_frames);
+    rounded.min(u128::from(u32::MAX)) as u32
 }
 
 pub(crate) struct PacketAccumulator {
@@ -186,10 +223,17 @@ impl PacketAccumulator {
             return Err(AudioError::BufferOverflow);
         }
 
+        let mut output = Vec::new();
+        if meta.discontinuity && self.buffered_frames > 0 {
+            // A discontinuity describes the first frame of this chunk. Flush
+            // any older partial packet before enqueueing it so the writer can
+            // align the post-gap packet as a whole.
+            output.push(self.build_packet(self.buffered_frames, sequence)?);
+        }
+
         if self.buffered_frames == 0 && self.chunks.is_empty() && frames == self.target_frames {
-            return Ok(vec![
-                self.build_packet_from_samples(data, frames, meta, sequence),
-            ]);
+            output.push(self.build_packet_from_samples(data, frames, meta, sequence));
+            return Ok(output);
         }
 
         self.chunks.push_back(BufferedChunk {
@@ -203,9 +247,8 @@ impl PacketAccumulator {
             .checked_add(frames)
             .ok_or(AudioError::BufferOverflow)?;
 
-        let mut output = Vec::new();
         while self.buffered_frames >= self.target_frames {
-            output.push(self.build_packet(sequence)?);
+            output.push(self.build_packet(self.target_frames, sequence)?);
         }
 
         Ok(output)
@@ -239,12 +282,12 @@ impl PacketAccumulator {
         }
     }
 
-    fn build_packet(&mut self, sequence: &mut u64) -> AudioResult<AudioPacket> {
-        let packet_sample_count = self.format.samples_for_frames(self.target_frames)?;
+    fn build_packet(&mut self, packet_frames: u32, sequence: &mut u64) -> AudioResult<AudioPacket> {
+        let packet_sample_count = self.format.samples_for_frames(packet_frames)?;
 
         let mut data = Vec::with_capacity(packet_sample_count);
         let mut packet_meta: Option<PendingMetadata> = None;
-        let mut remaining_frames = self.target_frames;
+        let mut remaining_frames = packet_frames;
 
         while remaining_frames > 0 {
             let drop_chunk = {
@@ -276,7 +319,7 @@ impl PacketAccumulator {
 
         self.buffered_frames = self
             .buffered_frames
-            .checked_sub(self.target_frames)
+            .checked_sub(packet_frames)
             .ok_or(AudioError::BufferOverflow)?;
         *sequence = sequence.wrapping_add(1);
 
@@ -285,7 +328,7 @@ impl PacketAccumulator {
             ..Default::default()
         });
 
-        Ok(self.build_packet_from_samples(data, self.target_frames, pending, sequence))
+        Ok(self.build_packet_from_samples(data, packet_frames, pending, sequence))
     }
 }
 
@@ -333,6 +376,41 @@ pub(crate) struct WasapiSource {
     accumulator: PacketAccumulator,
     sequence: u64,
     silence_scratch: Vec<u8>,
+}
+
+/// WASAPI reports device and QPC positions for the first frame in a packet,
+/// while [`AudioPacketMetadata`] records positions at the packet end. Normalize
+/// the boundary once, before the chunk enters the accumulator, so slicing a
+/// chunk into multiple output packets cannot apply a variable offset.
+fn pending_metadata_for_wasapi_chunk(
+    capture_time: Instant,
+    qpc_position_100ns: u64,
+    device_position_frames: u64,
+    native_frames: u32,
+    native_sample_rate: u32,
+    discontinuity: bool,
+    is_silent: bool,
+) -> PendingMetadata {
+    let qpc_position_100ns = if qpc_position_100ns == 0 {
+        None
+    } else {
+        Some(
+            (qpc_position_100ns as i64)
+                .saturating_add(frames_to_100ns(native_frames, native_sample_rate)),
+        )
+    };
+
+    PendingMetadata {
+        capture_time: Some(capture_time),
+        qpc_position_100ns,
+        device_position_frames: Some(
+            device_position_frames.saturating_add(u64::from(native_frames)),
+        ),
+        native_frames: Some(native_frames),
+        native_sample_rate: Some(native_sample_rate),
+        discontinuity,
+        is_silent,
+    }
 }
 
 impl WasapiSource {
@@ -435,13 +513,15 @@ impl WasapiSource {
                 self.accumulator.push_chunk(
                     converted,
                     out_frames,
-                    PendingMetadata {
-                        capture_time: Some(Instant::now()),
-                        qpc_position_100ns: Some(qpc_position as i64),
-                        device_position_frames: Some(device_position),
+                    pending_metadata_for_wasapi_chunk(
+                        Instant::now(),
+                        qpc_position,
+                        device_position,
+                        frames,
+                        self.runtime.native_format.sample_rate,
                         discontinuity,
                         is_silent,
-                    },
+                    ),
                     &mut self.sequence,
                 )
             })();
@@ -748,4 +828,142 @@ fn parse_native_format(ptr: *const WAVEFORMATEX) -> AudioResult<NativeAudioForma
         channels,
         sample_format,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn packet_timestamp_describes_last_frame_when_wasapi_chunks_are_split() {
+        let format = AudioFormat::new(1_000, 1);
+        let mut accumulator = PacketAccumulator::new(
+            AudioSourceKind::System,
+            format,
+            std::time::Duration::from_millis(4),
+        )
+        .expect("test format should be valid");
+        let mut sequence = 0;
+
+        // WASAPI reports the position of the first frame in each chunk. The
+        // source normalizes those positions to chunk ends before buffering.
+        let first = accumulator
+            .push_chunk(
+                vec![1, 2, 3],
+                3,
+                pending_metadata_for_wasapi_chunk(
+                    Instant::now(),
+                    100_000,
+                    10,
+                    3,
+                    1_000,
+                    false,
+                    false,
+                ),
+                &mut sequence,
+            )
+            .expect("first chunk should be accepted");
+        assert!(first.is_empty());
+
+        let packets = accumulator
+            .push_chunk(
+                vec![4, 5, 6],
+                3,
+                pending_metadata_for_wasapi_chunk(
+                    Instant::now(),
+                    130_000,
+                    13,
+                    3,
+                    1_000,
+                    false,
+                    false,
+                ),
+                &mut sequence,
+            )
+            .expect("second chunk should complete a packet");
+        assert_eq!(packets.len(), 1);
+        assert_eq!(packets[0].end_qpc_position_100ns(), Some(140_000));
+        assert_eq!(packets[0].metadata.device_position_frames, Some(14));
+    }
+
+    #[test]
+    fn discontinuity_is_never_hidden_inside_a_target_packet() {
+        let format = AudioFormat::new(1_000, 1);
+        let mut accumulator = PacketAccumulator::new(
+            AudioSourceKind::System,
+            format,
+            std::time::Duration::from_millis(4),
+        )
+        .expect("test format should be valid");
+        let mut sequence = 0;
+
+        let first = accumulator
+            .push_chunk(
+                vec![1, 1],
+                2,
+                PendingMetadata {
+                    is_silent: false,
+                    ..Default::default()
+                },
+                &mut sequence,
+            )
+            .expect("first half should be buffered");
+        assert!(first.is_empty());
+
+        let packets = accumulator
+            .push_chunk(
+                vec![2, 2],
+                2,
+                PendingMetadata {
+                    discontinuity: true,
+                    is_silent: false,
+                    ..Default::default()
+                },
+                &mut sequence,
+            )
+            .expect("discontinuity should flush the preceding partial packet");
+
+        assert_eq!(packets.len(), 1);
+        assert_eq!(packets[0].frames, 2);
+        assert_eq!(packets[0].data, vec![1, 1]);
+        assert!(!packets[0].metadata.discontinuity);
+    }
+
+    #[test]
+    fn resampled_chunk_slices_device_position_in_native_frames() {
+        let format = AudioFormat::new(1_500, 1);
+        let mut accumulator = PacketAccumulator::new(
+            AudioSourceKind::System,
+            format,
+            std::time::Duration::from_millis(3 + 1),
+        )
+        .expect("test format should be valid");
+        let mut sequence = 0;
+
+        // Ten native frames at 1 kHz become fifteen output frames at 1.5 kHz.
+        // The first six output frames end 4 native frames into the chunk, so
+        // the native device position must advance by four, not six output
+        // frames.
+        let packets = accumulator
+            .push_chunk(
+                vec![0; 15],
+                15,
+                pending_metadata_for_wasapi_chunk(
+                    Instant::now(),
+                    100_000,
+                    20,
+                    10,
+                    1_000,
+                    false,
+                    false,
+                ),
+                &mut sequence,
+            )
+            .expect("resampled chunk should produce a packet");
+
+        assert_eq!(packets.len(), 2);
+        assert_eq!(packets[0].frames, 6);
+        assert_eq!(packets[0].metadata.device_position_frames, Some(24));
+        assert_eq!(packets[0].end_qpc_position_100ns(), Some(140_000));
+    }
 }

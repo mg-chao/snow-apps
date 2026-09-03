@@ -18,7 +18,7 @@ use crate::format::AudioFormat;
 use crate::packet::{AudioEvent, AudioPacket, AudioSourceKind};
 use crate::session::{AudioSession, AudioStreamConfig, SourceConfig};
 use crate::timeline::{
-    AudioPacketTimestamp, AudioTimestampAnchorExt, align_packet_frames,
+    AudioPacketAlignment, AudioPacketTimestamp, AudioTimestampAnchorExt, align_packet_frames,
     audio_anchor_from_first_packet,
 };
 
@@ -156,6 +156,7 @@ pub struct AudioRecordingArtifact {
 
 pub struct AudioRecordingSession {
     stop_flag: Arc<AtomicBool>,
+    pause_flag: Arc<AtomicBool>,
     join_handle: Option<JoinHandle<AudioResult<AudioRecordingArtifact>>>,
 }
 
@@ -168,11 +169,15 @@ impl AudioRecordingSession {
         let stream_config = build_stream_config(&config);
         let stream = session.start_streaming(stream_config)?;
         let stop_flag = Arc::new(AtomicBool::new(false));
+        let pause_flag = Arc::new(AtomicBool::new(false));
         let worker_stop = Arc::clone(&stop_flag);
+        let worker_pause = Arc::clone(&pause_flag);
 
         let join_handle = std::thread::Builder::new()
             .name("snow-audio-recording".to_string())
-            .spawn(move || run_audio_recording_worker(stream, config, clock, worker_stop))
+            .spawn(move || {
+                run_audio_recording_worker(stream, config, clock, worker_stop, worker_pause)
+            })
             .map_err(|err| {
                 AudioError::platform(anyhow::anyhow!(
                     "failed to spawn audio recording worker: {err}"
@@ -181,8 +186,20 @@ impl AudioRecordingSession {
 
         Ok(Self {
             stop_flag,
+            pause_flag,
             join_handle: Some(join_handle),
         })
+    }
+
+    /// Pause delivery from the audio stream while keeping the recording
+    /// worker alive. The worker emits a control event that causes the writer
+    /// to re-anchor the next packet on resume.
+    pub fn pause(&self) {
+        self.pause_flag.store(true, Ordering::Release);
+    }
+
+    pub fn resume(&self) {
+        self.pause_flag.store(false, Ordering::Release);
     }
 
     pub fn finish(mut self) -> AudioResult<AudioRecordingArtifact> {
@@ -249,6 +266,7 @@ fn run_audio_recording_worker(
     config: AudioRecordingConfig,
     clock: RecordingClock,
     stop_flag: Arc<AtomicBool>,
+    pause_flag: Arc<AtomicBool>,
 ) -> AudioResult<AudioRecordingArtifact> {
     let started_at = clock.started_at();
     let format = AudioFormat::new(config.sample_rate_hz, config.channels);
@@ -262,6 +280,14 @@ fn run_audio_recording_worker(
                 process_audio_events(&mut writers, &clock, drained)?;
             }
             break;
+        }
+
+        if let Some(handle) = stream.as_ref() {
+            if pause_flag.load(Ordering::Acquire) {
+                handle.pause();
+            } else {
+                handle.resume();
+            }
         }
 
         let Some(handle) = stream.as_ref() else {
@@ -311,10 +337,13 @@ fn process_audio_event(
             writers.write_silence(source, dropped_frames)?;
         }
         AudioEvent::Error(err) => return Err(err),
-        AudioEvent::StreamEnded
-        | AudioEvent::Paused { .. }
-        | AudioEvent::Resumed { .. }
-        | AudioEvent::SourceRestarted { .. } => {}
+        AudioEvent::StreamEnded => {}
+        AudioEvent::Paused { .. } | AudioEvent::Resumed { .. } => {
+            writers.mark_alignment_pending(None);
+        }
+        AudioEvent::SourceRestarted { source, .. } => {
+            writers.mark_alignment_pending(Some(source));
+        }
         AudioEvent::Packet(_) => {}
     }
     Ok(())
@@ -372,6 +401,19 @@ impl RecordingTrackWriters {
         Ok(())
     }
 
+    fn mark_alignment_pending(&mut self, source: Option<AudioSourceKind>) {
+        if source.is_none_or(|kind| matches!(kind, AudioSourceKind::System))
+            && let Some(writer) = self.system_writer.as_mut()
+        {
+            writer.timeline_alignment_pending = true;
+        }
+        if source.is_none_or(|kind| matches!(kind, AudioSourceKind::Microphone))
+            && let Some(writer) = self.microphone_writer.as_mut()
+        {
+            writer.timeline_alignment_pending = true;
+        }
+    }
+
     fn finish(self) -> AudioResult<AudioRecordingArtifact> {
         let mut tracks = Vec::new();
         if let Some(writer) = self.system_writer {
@@ -398,6 +440,7 @@ struct RecordedTrackWriter {
     written_frames: u64,
     format: AudioFormat,
     timeline: StableAudioTimeline,
+    timeline_alignment_pending: bool,
     silence_chunk: Vec<u8>,
 }
 
@@ -466,6 +509,7 @@ impl RecordedTrackWriter {
             written_frames: 0,
             format,
             timeline: StableAudioTimeline::new(started_at),
+            timeline_alignment_pending: true,
             silence_chunk,
         })
     }
@@ -477,21 +521,29 @@ impl RecordedTrackWriter {
         }
 
         let packet_ts = self.timeline.packet_timestamp(packet);
-        let aligned = align_packet_frames(
-            self.written_frames,
-            self.format.sample_rate,
-            AudioPacketTimestamp {
-                start: clock.active_elapsed_from_stream_offset(packet_ts.start),
-                end: clock.active_elapsed_from_stream_offset(packet_ts.end),
-            },
-            packet_frames,
-        );
+        let aligned = if !self.timeline_alignment_pending && !packet.metadata.discontinuity {
+            AudioPacketAlignment {
+                write_packet_frames: packet_frames,
+                ..Default::default()
+            }
+        } else {
+            align_packet_frames(
+                self.written_frames,
+                self.format.sample_rate,
+                AudioPacketTimestamp {
+                    start: clock.active_elapsed_from_stream_offset(packet_ts.start),
+                    end: clock.active_elapsed_from_stream_offset(packet_ts.end),
+                },
+                packet_frames,
+            )
+        };
 
         if aligned.silence_prefix_frames > 0 {
             self.append_silence_frames(aligned.silence_prefix_frames)?;
         }
 
         if aligned.write_packet_frames == 0 {
+            self.timeline_alignment_pending = false;
             return Ok(());
         }
 
@@ -507,7 +559,11 @@ impl RecordedTrackWriter {
         let end = skip_samples
             .checked_add(write_samples)
             .ok_or(AudioError::BufferOverflow)?;
-        self.append_i16_samples(&packet.as_i16_slice()[skip_samples..end])
+        let result = self.append_i16_samples(&packet.as_i16_slice()[skip_samples..end]);
+        if result.is_ok() {
+            self.timeline_alignment_pending = false;
+        }
+        result
     }
 
     fn append_silence_frames(&mut self, frames: u64) -> AudioResult<()> {
@@ -664,5 +720,61 @@ mod tests {
         assert_eq!(first_ts.end, Duration::from_millis(50));
         assert_eq!(second_ts.start, Duration::from_millis(50));
         assert_eq!(second_ts.end, Duration::from_millis(70));
+    }
+
+    #[test]
+    fn contiguous_device_packets_ignore_subframe_qpc_jitter() {
+        let started_at = std::time::Instant::now();
+        let output_dir = std::env::temp_dir().join(format!(
+            "snow-audio-recorder-timing-{}",
+            started_at.elapsed().as_nanos()
+        ));
+        std::fs::create_dir_all(&output_dir).expect("temporary output directory should be created");
+        let track = AudioTrackConfig::microphone_default("timing");
+        let format = AudioFormat::new(48_000, 2);
+        let mut writer = RecordedTrackWriter::new(&track, &output_dir, started_at, format)
+            .expect("temporary track should be created");
+        let clock = RecordingClock::new(started_at);
+
+        let make_packet = |end: std::time::Instant, qpc_100ns: i64, device_end: u64, value: i16| {
+            let frames = 960;
+            let mut metadata = crate::packet::AudioPacketMetadata {
+                device_position_frames: Some(device_end),
+                ..Default::default()
+            };
+            metadata.set_timing(Some(end), Some(qpc_100ns));
+            AudioPacket {
+                source: AudioSourceKind::Microphone,
+                format,
+                frames,
+                data: vec![value; format.samples_for_frames(frames).unwrap()],
+                metadata,
+            }
+        };
+
+        writer
+            .write_packet(
+                &make_packet(started_at + Duration::from_millis(20), 1_000_000, 960, 1),
+                &clock,
+            )
+            .expect("first packet should be written");
+        writer
+            .write_packet(
+                &make_packet(started_at + Duration::from_millis(40), 1_200_300, 1_920, 2),
+                &clock,
+            )
+            .expect("second packet should be written");
+
+        let recorded = writer.finish().expect("track should finish");
+        let bytes = std::fs::read(&recorded.path).expect("recorded samples should be readable");
+        let samples: Vec<i16> = bytes
+            .chunks_exact(2)
+            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect();
+        assert_eq!(samples.len(), 1_920 * 2);
+        assert_eq!(&samples[0..2], &[1, 1]);
+        assert_eq!(&samples[1_920..1_922], &[2, 2]);
+
+        std::fs::remove_dir_all(output_dir).expect("temporary output directory should be removed");
     }
 }

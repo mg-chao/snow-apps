@@ -910,6 +910,19 @@ fn new_recording_worker(
     loop {
         while let Ok(cmd) = control_rx.try_recv() {
             let _ = multiplexer.send_command(mux_command_from_control(&cmd));
+            match cmd {
+                ControlCommand::Pause => {
+                    if let Some(audio) = audio_recording.as_ref() {
+                        audio.pause();
+                    }
+                }
+                ControlCommand::Resume => {
+                    if let Some(audio) = audio_recording.as_ref() {
+                        audio.resume();
+                    }
+                }
+                ControlCommand::Stop => {}
+            }
             if matches!(cmd, ControlCommand::Stop) {
                 control_stop = true;
             }
