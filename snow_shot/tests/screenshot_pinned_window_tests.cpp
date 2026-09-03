@@ -2163,24 +2163,55 @@ void pinnedFollowsPerMonitorDpiScaling(SnowCanvasRuntime&) {
 #endif
 }
 
+// Process-lifetime fallback storage handed back to when a scoped
+// IsolatedPinnedStorage guard shuts down, so the remaining sections never
+// run without isolated storage.
+QTemporaryDir& hermeticPinnedStorageDir() {
+    static QTemporaryDir directory;
+    return directory;
+}
+
+void initializeIsolatedPinnedStorage(const QString& root) {
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    storage.shutdown();
+    const snow_shot::storage::StorageInitializationOptions options{
+        QDir(root).filePath(QStringLiteral("bin")),
+        QDir(root).filePath(QStringLiteral("settings")),
+        0,
+    };
+    require(storage.initialize(options).success,
+            "failed to initialize isolated pinned window storage");
+}
+
 // Isolated storage keeps seeded records out of the developer's real
 // configuration and out of the other tests in this binary.
 class IsolatedPinnedStorage final {
   public:
     IsolatedPinnedStorage() {
         require(m_temporary.isValid(), "temporary directory unavailable");
-        auto& storage = snow_shot::storage::ApplicationStorage::instance();
-        storage.shutdown();
-        const snow_shot::storage::StorageInitializationOptions options{
-            QDir(m_temporary.path()).filePath(QStringLiteral("bin")),
-            QDir(m_temporary.path()).filePath(QStringLiteral("settings")),
-            0,
-        };
-        require(storage.initialize(options).success,
-                "failed to initialize isolated pinned window storage");
+        initializeIsolatedPinnedStorage(m_temporary.path());
     }
 
-    ~IsolatedPinnedStorage() { snow_shot::storage::ApplicationStorage::instance().shutdown(); }
+    // Product code lazily opens the developer's real AppData configuration
+    // whenever it finds storage uninitialized, and the drawing toolbar
+    // persists its wheel-driven style steps through that store. Leaving
+    // storage shut down here would let that happen for the remaining
+    // sections, leaking one stroke-width bump per run until the wheel tests
+    // saturate at their clamp, so hand back to hermetic storage instead.
+    ~IsolatedPinnedStorage() {
+        auto& storage = snow_shot::storage::ApplicationStorage::instance();
+        storage.shutdown();
+        QTemporaryDir& hermetic = hermeticPinnedStorageDir();
+        if (!hermetic.isValid()) {
+            return;
+        }
+        const snow_shot::storage::StorageInitializationOptions options{
+            QDir(hermetic.path()).filePath(QStringLiteral("bin")),
+            QDir(hermetic.path()).filePath(QStringLiteral("settings")),
+            0,
+        };
+        static_cast<void>(storage.initialize(options));
+    }
 
     IsolatedPinnedStorage(const IsolatedPinnedStorage&) = delete;
     IsolatedPinnedStorage& operator=(const IsolatedPinnedStorage&) = delete;
@@ -2661,6 +2692,10 @@ int main(int argc, char* argv[]) {
     QApplication::setQuitOnLastWindowClosed(false);
 
     try {
+        // Keep the whole binary hermetic from the first product call:
+        // without this, lazily initialized storage lands in the developer's
+        // real AppData (see IsolatedPinnedStorage).
+        IsolatedPinnedStorage processStorage;
         SnowCanvasRuntime sourceRuntime;
         require(sourceRuntime.isValid(), "source runtime creation failed");
         if (app.arguments().contains(QStringLiteral("--pinned-shortcut-only"))) {
