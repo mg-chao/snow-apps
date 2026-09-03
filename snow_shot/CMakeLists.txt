@@ -1434,6 +1434,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     target_link_libraries(snow-shot-screenshot-shortcut-hints-tests PRIVATE
         snow_draw_engine_qt_canvas
+        snow_shot_storage
         Qt6::Core
     )
     add_test(

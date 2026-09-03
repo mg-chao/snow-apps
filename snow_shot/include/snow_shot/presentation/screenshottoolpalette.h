@@ -179,6 +179,7 @@ class ScreenshotToolPalette final : public QWidget {
     bool actionToolbarVisible() const;
     void setActiveTool(Tool tool);
     void refreshConfirmShortcutHint();
+    void refreshShortcutTooltips();
     [[nodiscard]] bool activateDrawingShortcut(const QString& toolId);
     void clearActiveTool();
     void setHistoryState(const SnowCanvasHistoryState& state);

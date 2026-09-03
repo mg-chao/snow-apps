@@ -10,6 +10,8 @@
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 #include "snow_shot/presentation/styles/thememanager.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/storage/settingsadapters.h"
 
 #include "antd_icons.h"
@@ -609,14 +611,12 @@ void applyDrawingShortcutTooltip(QWidget* widget, const QString& source,
             displayShortcuts.push_back(displayShortcut);
         }
     }
-    if (displayShortcuts.isEmpty()) {
-        return;
-    }
 
     const QString title = ScreenshotToolPaletteTranslationText(source).translated();
-    const QString tooltip = QStringLiteral("%1 (%2)")
-                                .arg(title, displayShortcuts.join(QStringLiteral(", ")));
-    widget->setToolTip(tooltip);
+    widget->setToolTip(displayShortcuts.isEmpty()
+                           ? title
+                           : QStringLiteral("%1 (%2)")
+                                 .arg(title, displayShortcuts.join(QStringLiteral(", "))));
     widget->setAccessibleName(title);
 }
 
@@ -722,6 +722,19 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
                 configureScreenshotToolPaletteSliderEditor(spotlightEditor,
                                                            styleButtonMetrics(m_physicalScale));
             });
+
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    if (storage.isInitialized()) {
+        connect(&storage.configuration(),
+                &snow_shot::storage::ConfigurationStore::valueChanged, this,
+                [this](const QString& key, const QJsonValue&) {
+                    if (key.startsWith(QStringLiteral("screenshot_shortcuts/")) ||
+                        key.startsWith(QStringLiteral("drawing_shortcuts/")) ||
+                        key.startsWith(QStringLiteral("pin_to_screen_shortcuts/"))) {
+                        refreshShortcutTooltips();
+                    }
+                });
+    }
 }
 
 ScreenshotToolPalette::~ScreenshotToolPalette() {
@@ -2648,6 +2661,21 @@ void ScreenshotToolPalette::retranslateUi() {
     retranslateScreenshotToolPalette(this);
     if (m_mainPanel != nullptr) {
         retranslateScreenshotToolPalette(m_mainPanel);
+    }
+    if (m_selectionOpacitySlider != nullptr) {
+        m_selectionOpacitySlider->setAccessibleDescription(
+            m_selectionOpacityMixed
+                ? tr("Mixed")
+                : QStringLiteral("%1%").arg(qRound(m_selectionOpacity * 100.0)));
+    }
+    if (m_recordDurationLabel != nullptr) {
+        m_recordDurationLabel->setAccessibleName(tr("Recording duration"));
+    }
+    refreshShortcutTooltips();
+}
+
+void ScreenshotToolPalette::refreshShortcutTooltips() {
+    if (m_mainPanel != nullptr) {
         for (adqt::widgets::AdButton* button :
              m_mainPanel->findChildren<adqt::widgets::AdButton*>()) {
             if (button == nullptr) {
@@ -2657,8 +2685,7 @@ void ScreenshotToolPalette::retranslateUi() {
                 button->property("snowShotDrawingShortcutTooltipSource").toString();
             if (!source.isEmpty()) {
                 applyDrawingShortcutTooltip(
-                    button, source,
-                    button->property("screenshotToolbarItemId").toString());
+                    button, source, button->property("screenshotToolbarItemId").toString());
             }
             const QString screenshotSource =
                 button->property("snowShotScreenshotShortcutTooltipSource").toString();
@@ -2674,15 +2701,6 @@ void ScreenshotToolPalette::retranslateUi() {
     }
     if (m_tableButton != nullptr) {
         refreshTableQrTrigger();
-    }
-    if (m_selectionOpacitySlider != nullptr) {
-        m_selectionOpacitySlider->setAccessibleDescription(
-            m_selectionOpacityMixed
-                ? tr("Mixed")
-                : QStringLiteral("%1%").arg(qRound(m_selectionOpacity * 100.0)));
-    }
-    if (m_recordDurationLabel != nullptr) {
-        m_recordDurationLabel->setAccessibleName(tr("Recording duration"));
     }
     refreshConfirmShortcutHint();
 }
