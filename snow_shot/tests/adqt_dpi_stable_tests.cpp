@@ -13,6 +13,9 @@
 #include <QIconEngine>
 #include <QImage>
 #include <QPainter>
+#include <QScreen>
+#include <QWindow>
+#include <QtMath>
 
 #include <cmath>
 #include <atomic>
@@ -33,13 +36,16 @@ class AdFloatingSurfaceTestAccess {
 
 class AdDpiStableWindowControllerTestAccess {
   public:
-    static void queueScaleCommit(AdDpiStableWindowController& controller, qreal dpr,
-                                 const QRect& geometry) {
-        controller.queueScaleCommit(dpr, geometry);
+    static void queueScaleCommit(AdDpiStableWindowController& controller) {
+        controller.queueScaleCommit();
     }
 
     static void commitPendingScale(AdDpiStableWindowController& controller) {
         controller.commitPendingScale();
+    }
+
+    static QPoint stableNativeTopLeft(const QPoint& nativeTopLeft, const QSize& nativeFrameSize) {
+        return AdDpiStableWindowController::stableNativeTopLeft(nativeTopLeft, nativeFrameSize);
     }
 
     static void setNativeTransitionActive(AdDpiStableWindowController& controller, bool active) {
@@ -253,19 +259,58 @@ void controllerCoalescesToTheLatestPendingScale() {
                          committedDpr = context.currentDpr;
                      });
 
-    const QRect firstGeometry(10, 20, 320, 80);
-    const QRect latestGeometry(30, 40, 320, 80);
-    adqt::widgets::AdDpiStableWindowControllerTestAccess::queueScaleCommit(controller, 1.25,
-                                                                           firstGeometry);
-    adqt::widgets::AdDpiStableWindowControllerTestAccess::queueScaleCommit(controller, 1.75,
-                                                                           latestGeometry);
+    adqt::widgets::AdDpiStableWindowControllerTestAccess::queueScaleCommit(controller);
+    adqt::widgets::AdDpiStableWindowControllerTestAccess::queueScaleCommit(controller);
+    // The frame moves after the commits were queued: the commit must describe the window as
+    // it is when it runs, not as it was when the native transition was observed.
+    window.move(window.pos() + QPoint(20, 20));
     QApplication::processEvents();
 
     const auto diagnostics = controller.diagnostics();
-    require(commitCount == 1 && qFuzzyCompare(committedDpr, 1.75),
-            "pending DPI messages did not produce one latest-state commit");
-    require(diagnostics.coalescedCount == 1 && diagnostics.finalPhysicalGeometry == latestGeometry,
-            "coalesced DPI diagnostics did not retain the latest geometry");
+    require(commitCount == 1 &&
+                qFuzzyCompare(committedDpr + 1.0, window.windowHandle()->devicePixelRatio() + 1.0),
+            "pending DPI messages did not produce one commit at the window's actual DPI");
+    require(diagnostics.coalescedCount == 1,
+            "queued DPI messages were not coalesced into one commit");
+    require(diagnostics.finalPhysicalGeometry == controller.nativeFrameGeometry() &&
+                controller.nativeFrameGeometry().size() == controller.stablePhysicalFrameSize(),
+            "coalesced DPI diagnostics did not report the frame's current native geometry");
+    require(controller.beginPhysicalDrag(QPointF(controller.nativeFrameGeometry().center())),
+            "physical drag could not be started on the committed frame");
+    require(controller.nativeFrameGeometry() == diagnostics.finalPhysicalGeometry,
+            "the committed native geometry disagrees with the frame measured at drag start");
+    controller.endPhysicalDrag();
+}
+
+void stableNativeTopLeftIsAFixedPointOfQtsLogicalGrid() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "fixed-point test needs a primary screen");
+    const qreal dpr = screen->devicePixelRatio();
+    const QPoint origin = screen->geometry().topLeft();
+    const QSize frame(120, 40);
+    // Mirrors QHighDpi::fromNativeWindowGeometry/toNativeWindowGeometry for a top-level window.
+    const auto qtRoundTrip = [&](const QPoint& native) {
+        const QPoint logical = (native - origin) * (qreal(1) / dpr) + origin;
+        return (logical - origin) * dpr + origin;
+    };
+    const int maxShift = qCeil(dpr / 2.0);
+    for (int offset = 0; offset < 24; ++offset) {
+        const QPoint candidate = origin + QPoint(40 + offset, 40 + offset);
+        const QPoint snapped =
+            adqt::widgets::AdDpiStableWindowControllerTestAccess::stableNativeTopLeft(candidate,
+                                                                                      frame);
+        require(qtRoundTrip(snapped) == snapped,
+                "snapped native origin is not a fixed point of Qt's logical mapping");
+        require(qAbs(snapped.x() - candidate.x()) <= maxShift &&
+                    qAbs(snapped.y() - candidate.y()) <= maxShift,
+                "snapping moved the frame further than one logical rounding unit");
+        require(adqt::widgets::AdDpiStableWindowControllerTestAccess::stableNativeTopLeft(
+                    snapped, frame) == snapped,
+                "snapping a stable native origin must be idempotent");
+        if (qFuzzyCompare(dpr, 1.0)) {
+            require(snapped == candidate, "snapping must be the identity on a 100% screen");
+        }
+    }
 }
 
 void controllerCanKeepReferenceDpiSeparateFromWindowDpi() {
@@ -297,15 +342,13 @@ void staleQueuedScaleIsRejectedAfterBaselineChanges() {
     int commitCount = 0;
     QObject::connect(&controller, &adqt::widgets::AdDpiStableWindowController::scaleCommitCompleted,
                      [&commitCount]() { ++commitCount; });
-    adqt::widgets::AdDpiStableWindowControllerTestAccess::queueScaleCommit(
-        controller, 1.5, QRect(10, 20, 320, 80));
+    adqt::widgets::AdDpiStableWindowControllerTestAccess::queueScaleCommit(controller);
     require(controller.captureBaseline(), "replacement baseline capture failed");
     adqt::widgets::AdDpiStableWindowControllerTestAccess::commitPendingScale(controller);
     require(commitCount == 0,
             "queued scale commit from an older baseline generation was not rejected");
 
-    adqt::widgets::AdDpiStableWindowControllerTestAccess::queueScaleCommit(
-        controller, 1.75, QRect(30, 40, 320, 80));
+    adqt::widgets::AdDpiStableWindowControllerTestAccess::queueScaleCommit(controller);
     controller.resetBaseline();
     adqt::widgets::AdDpiStableWindowControllerTestAccess::commitPendingScale(controller);
     require(commitCount == 0, "baseline reset did not discard its queued scale commit");
@@ -640,6 +683,7 @@ int main(int argc, char** argv) {
         contentScaleComposesWithDpiAndParticipatesInEquivalence();
         currentScaleCanBeAppliedToANewSubtree();
         controllerCoalescesToTheLatestPendingScale();
+        stableNativeTopLeftIsAFixedPointOfQtsLogicalGrid();
         controllerCanKeepReferenceDpiSeparateFromWindowDpi();
         staleQueuedScaleIsRejectedAfterBaselineChanges();
         baselineCaptureIsBlockedDuringNativeTransition();

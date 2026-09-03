@@ -38,6 +38,44 @@ bool usesWindowsNativeWindows() {
          0;
 }
 
+// The logical pixel grid Qt uses for top-level windows hosted on one screen: positions are
+// scaled relative to the screen's native origin (QHighDpi::fromNativeWindowGeometry).
+struct NativeScreenGrid {
+  HMONITOR monitor = nullptr;
+  QPoint origin;
+  qreal factor = 1.0;
+};
+
+std::optional<NativeScreenGrid> nativeScreenGridForFrame(const QPoint& topLeft,
+                                                         const QSize& size) {
+  RECT rect{topLeft.x(), topLeft.y(), topLeft.x() + size.width(), topLeft.y() + size.height()};
+  // Same lookup Qt performs when it picks the screen for a window rectangle.
+  const HMONITOR monitor = MonitorFromRect(&rect, MONITOR_DEFAULTTONULL);
+  if (!monitor) return std::nullopt;
+  MONITORINFO info{};
+  info.cbSize = sizeof(info);
+  if (!GetMonitorInfoW(monitor, &info)) return std::nullopt;
+  NativeScreenGrid grid;
+  grid.monitor = monitor;
+  grid.origin = QPoint(info.rcMonitor.left, info.rcMonitor.top);
+  // Qt keeps a screen's origin identical in logical and native coordinates, so the QScreen
+  // can be identified without platform-private handles.
+  const auto screens = QGuiApplication::screens();
+  const auto match = std::find_if(screens.cbegin(), screens.cend(), [&](const QScreen* screen) {
+    return screen && screen->geometry().topLeft() == grid.origin;
+  });
+  if (match == screens.cend() || (*match)->devicePixelRatio() <= 0.0) return std::nullopt;
+  grid.factor = (*match)->devicePixelRatio();
+  return grid;
+}
+
+QPoint snapToScreenGrid(const QPoint& nativeTopLeft, const NativeScreenGrid& grid) {
+  // Mirrors QHighDpi::fromNativeWindowGeometry followed by toNativeWindowGeometry, including
+  // QPoint's qRound() based scaling, so the result is exactly where Qt will place the frame.
+  const QPoint logical = (nativeTopLeft - grid.origin) * (qreal(1) / grid.factor) + grid.origin;
+  return (logical - grid.origin) * grid.factor + grid.origin;
+}
+
 LRESULT CALLBACK dpiStableSubclassProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam,
                                        UINT_PTR, DWORD_PTR refData) {
   auto* controller = nativePointerFromInteger<AdDpiStableWindowController*>(refData);
@@ -185,8 +223,7 @@ bool AdDpiStableWindowController::moveForPhysicalCursor(const QPointF& cursor) {
     return false;
   }
   dragSession_->lastCursor = cursor;
-  const QPoint topLeft(qRound(cursor.x() - dragSession_->cursorToFrameOffset.x()),
-                       qRound(cursor.y() - dragSession_->cursorToFrameOffset.y()));
+  const QPoint topLeft = dragFrameTopLeft();
   const QPoint physicalDelta = topLeft - baseline_.frameGeometry.topLeft();
 #if defined(Q_OS_WIN) || defined(_WIN32)
   if (usesWindowsNativeWindows()) {
@@ -201,11 +238,42 @@ bool AdDpiStableWindowController::moveForPhysicalCursor(const QPointF& cursor) {
     window_->move(topLeft);
   }
   baseline_.frameGeometry.moveTopLeft(topLeft);
-  if (pendingCommit_.queued && pendingCommit_.baselineGeneration == baseline_.generation) {
-    pendingCommit_.physicalGeometry.moveTopLeft(topLeft);
-  }
   syncAuxiliarySurfaces(physicalDelta);
   return true;
+}
+
+QPoint AdDpiStableWindowController::dragFrameTopLeft() const {
+  const QPointF origin = dragSession_->lastCursor - dragSession_->cursorToFrameOffset;
+  return stableNativeTopLeft(QPoint(qRound(origin.x()), qRound(origin.y())), baseline_.frameSize);
+}
+
+QPoint AdDpiStableWindowController::stableNativeTopLeft(const QPoint& nativeTopLeft,
+                                                        const QSize& nativeFrameSize) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+  if (!usesWindowsNativeWindows() || !nativeFrameSize.isValid() || nativeFrameSize.isEmpty()) {
+    return nativeTopLeft;
+  }
+  // A native origin that is not on the hosting screen's logical grid gets moved by Qt the
+  // next time it flushes the window (UpdateLayeredWindow uses the logical geometry mapped
+  // back to native pixels). At a seam between screens with different DPI that one pixel
+  // shift changes the majority monitor and restarts the DPI transition, so every origin
+  // committed here must survive Qt's round trip unchanged. Snapping itself can move the
+  // frame across the seam, hence the position is re-evaluated against the screen it ends
+  // up on until both agree.
+  QPoint candidate = nativeTopLeft;
+  for (int attempt = 0; attempt < 4; ++attempt) {
+    const auto grid = nativeScreenGridForFrame(candidate, nativeFrameSize);
+    if (!grid) return candidate;
+    const QPoint snapped = snapToScreenGrid(candidate, *grid);
+    const auto hostGrid = nativeScreenGridForFrame(snapped, nativeFrameSize);
+    if (!hostGrid || hostGrid->monitor == grid->monitor) return snapped;
+    candidate = snapped;
+  }
+  return candidate;
+#else
+  Q_UNUSED(nativeFrameSize)
+  return nativeTopLeft;
+#endif
 }
 
 void AdDpiStableWindowController::endPhysicalDrag() { dragSession_.reset(); }
@@ -284,7 +352,7 @@ bool AdDpiStableWindowController::eventFilter(QObject* watched, QEvent* event) {
     }
 #if !defined(Q_OS_WIN) && !defined(_WIN32)
     if (event->type() == QEvent::DevicePixelRatioChange) {
-      queueScaleCommit(currentDpr(), QRect(window_->pos(), window_->size()));
+      queueScaleCommit();
     }
 #endif
   }
@@ -335,9 +403,7 @@ qreal AdDpiStableWindowController::currentDpr() const {
   return window_ && window_->devicePixelRatioF() > 0.0 ? window_->devicePixelRatioF() : 1.0;
 }
 
-void AdDpiStableWindowController::queueScaleCommit(qreal dpr, const QRect& geometry) {
-  pendingCommit_.dpr = AdControlScaleContext::normalizeDpr(dpr);
-  pendingCommit_.physicalGeometry = geometry;
+void AdDpiStableWindowController::queueScaleCommit() {
   pendingCommit_.baselineGeneration = baseline_.generation;
   if (pendingCommit_.queued) {
     ++diagnostics_.coalescedCount;
@@ -345,6 +411,21 @@ void AdDpiStableWindowController::queueScaleCommit(qreal dpr, const QRect& geome
   }
   pendingCommit_.queued = true;
   QCoreApplication::postEvent(this, new QEvent(kScaleCommitEvent), Qt::HighEventPriority);
+}
+
+QRect AdDpiStableWindowController::currentNativeFrameGeometry() const {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+  if (usesWindowsNativeWindows()) {
+    const HWND hwnd = nativePointerFromInteger<HWND>(subclassWinId_);
+    RECT frame{};
+    if (hwnd && GetWindowRect(hwnd, &frame)) {
+      return QRect(frame.left, frame.top, std::max(1L, frame.right - frame.left),
+                   std::max(1L, frame.bottom - frame.top));
+    }
+    return baseline_.frameGeometry;
+  }
+#endif
+  return window_ ? QRect(window_->pos(), baseline_.frameSize) : baseline_.frameGeometry;
 }
 
 void AdDpiStableWindowController::commitPendingScale() {
@@ -357,17 +438,18 @@ void AdDpiStableWindowController::commitPendingScale() {
     finishNativeTransition();
     return;
   }
-  const qreal dpr = commit.dpr;
-  const QSize logicalExtent(
-      hasBaseline() ? QSize(std::max(1, qRound(baseline_.clientSize.width() / dpr)),
-                            std::max(1, qRound(baseline_.clientSize.height() / dpr)))
-                    : QSize());
+  // The commit publishes the DPR the window actually renders with right now. Native
+  // transitions can chain (nested WM_DPICHANGED, screen changes Qt applies on its own),
+  // so the state observed when the commit was queued may already be stale.
+  const qreal dpr = AdControlScaleContext::normalizeDpr(currentDpr());
+  const QSize logicalExtent(std::max(1, qRound(baseline_.clientSize.width() / dpr)),
+                            std::max(1, qRound(baseline_.clientSize.height() / dpr)));
   AdControlScaleContext context =
       AdControlScaleContext::fromDprs(baseline_.referenceDpr, dpr,
                                       diagnostics_.transitionCount + 1);
   if (scaleScope_) scaleScope_->publishScale(context, logicalExtent);
   lastCommittedDpr_ = dpr;
-  baseline_.frameGeometry = commit.physicalGeometry;
+  baseline_.frameGeometry = currentNativeFrameGeometry();
   diagnostics_.newDpr = dpr;
   diagnostics_.finalPhysicalGeometry = baseline_.frameGeometry;
   emit scaleCommitCompleted(context, logicalExtent);
@@ -429,31 +511,37 @@ bool AdDpiStableWindowController::handleNativeMessage(void* message, qintptr* re
   QElapsedTimer timer;
   timer.start();
   auto* rect = nativePointerFromInteger<RECT*>(msg->lParam);
-  QPoint topLeft(rect->left, rect->top);
-  if (dragSession_.has_value()) {
-    topLeft =
-        QPoint(qRound(dragSession_->lastCursor.x() - dragSession_->cursorToFrameOffset.x()),
-               qRound(dragSession_->lastCursor.y() - dragSession_->cursorToFrameOffset.y()));
-  }
+  // Qt derives the window's new screen from this rectangle and re-applies it through
+  // SetWindowPos, so it has to be a fixed point of Qt's logical mapping like every other
+  // native position this controller commits.
+  const QPoint topLeft =
+      dragSession_.has_value()
+          ? dragFrameTopLeft()
+          : stableNativeTopLeft(QPoint(rect->left, rect->top), baseline_.frameSize);
   rect->left = topLeft.x();
   rect->top = topLeft.y();
   rect->right = rect->left + baseline_.frameSize.width();
   rect->bottom = rect->top + baseline_.frameSize.height();
-  const qreal newDpr = std::max<qreal>(1.0 / 96.0, HIWORD(msg->wParam) / 96.0);
   diagnostics_.oldDpr = lastCommittedDpr_;
-  diagnostics_.newDpr = newDpr;
+  diagnostics_.newDpr = std::max<qreal>(1.0 / 96.0, HIWORD(msg->wParam) / 96.0);
   if (window_ && !nativeTransitionActive_) {
     windowUpdatesWereEnabled_ = window_->updatesEnabled();
     if (windowUpdatesWereEnabled_) window_->setUpdatesEnabled(false);
   }
   nativeTransitionActive_ = true;
+  // Qt's handler may re-enter this function: its SetWindowPos() can flip the window's
+  // majority monitor again and deliver a nested WM_DPICHANGED before it returns. The
+  // message payload therefore only describes an intermediate state; the commit reads
+  // the window's final DPR and geometry once the message chain has unwound.
   DefSubclassProc(msg->hwnd, msg->message, msg->wParam, msg->lParam);
-  const QRect geometry(rect->left, rect->top, baseline_.frameSize.width(),
-                       baseline_.frameSize.height());
   if (!dragSession_.has_value()) {
-    syncAuxiliarySurfaces(geometry.topLeft() - baseline_.frameGeometry.topLeft());
+    // Outside a drag the frame position is owned by the native transition itself; track it
+    // immediately so a nested transition measures its delta from the frame it actually moved.
+    const QPoint movedTopLeft = currentNativeFrameGeometry().topLeft();
+    syncAuxiliarySurfaces(movedTopLeft - baseline_.frameGeometry.topLeft());
+    baseline_.frameGeometry.moveTopLeft(movedTopLeft);
   }
-  queueScaleCommit(newDpr, geometry);
+  queueScaleCommit();
   diagnostics_.nativeHandlerNanoseconds = timer.nsecsElapsed();
   if (result) *result = 0;
   return true;

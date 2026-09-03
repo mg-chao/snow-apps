@@ -102,8 +102,6 @@ class AdDpiStableWindowController final : public QObject {
   };
 
   struct PendingScaleCommit {
-    qreal dpr = 1.0;
-    QRect physicalGeometry;
     quint64 baselineGeneration = 0;
     bool queued = false;
   };
@@ -111,7 +109,13 @@ class AdDpiStableWindowController final : public QObject {
   void installForCurrentWinId();
   void removeSubclass();
   qreal currentDpr() const;
-  void queueScaleCommit(qreal dpr, const QRect& physicalGeometry);
+  QRect currentNativeFrameGeometry() const;
+  // Native frame origin for the active drag session; requires dragSession_ to be engaged.
+  QPoint dragFrameTopLeft() const;
+  // Snaps a native frame origin onto the logical pixel grid of the screen that will host
+  // the frame, so Qt's logical<->native round trip reproduces it exactly.
+  static QPoint stableNativeTopLeft(const QPoint& nativeTopLeft, const QSize& nativeFrameSize);
+  void queueScaleCommit();
   void commitPendingScale();
   void finishNativeTransition();
   void syncAuxiliarySurfaces(const QPoint& physicalDelta = QPoint());
