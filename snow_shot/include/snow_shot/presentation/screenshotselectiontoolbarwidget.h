@@ -65,6 +65,7 @@ class ScreenshotSelectionToolbarWidget final : public QWidget {
     void handleFieldWheel(Field field, int deltaY);
     bool isPointInInteractiveContent(const QPoint& localPosition) const;
     void updateInputRegion();
+    void releaseNativeInputSurface();
     bool updateLabels(bool refreshGeometry = false);
     void retranslateUi();
     void updateLockIconPixmap();

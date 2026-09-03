@@ -266,6 +266,93 @@ void smartSelectionToolbarIsClickThroughAcrossCaptureLifecycles() {
     require(commands.interactionCount == 0,
             "a subsequent smart-selection capture must not trigger stale toolbar commands");
 }
+
+void smartSelectionToolbarShedsNativeWindowForcedByNativeSiblingEmbed() {
+    NoOpSelectionToolbarCommands commands;
+    QWidget host;
+    host.resize(640, 360);
+
+    QWidget canvas(&host);
+    canvas.setGeometry(host.rect());
+    canvas.setCursor(Qt::CrossCursor);
+
+    ScreenshotSelectionToolbarWidget toolbar(commands, &host);
+    toolbar.setSelectionState(QRect(80, 70, 320, 180), false, 0, 0,
+                              ScreenshotSelectionToolbarWidget::DisplayMode::Full);
+    toolbar.move(120, 120);
+    host.show();
+    toolbar.show();
+    toolbar.raise();
+    QCoreApplication::processEvents();
+
+    // Replicate ScreenshotFloatingToolPaletteWindow::setOwnerWindow(): a native,
+    // window-type child is reparented into the overlay. Qt's native-sibling rule
+    // (enforceNativeChildren) then force-nativizes every alien sibling of the
+    // overlay, including the selection toolbar.
+    QWidget palette(nullptr, Qt::Tool | Qt::FramelessWindowHint);
+    static_cast<void>(palette.winId());
+    palette.setParent(&host, Qt::Tool | Qt::FramelessWindowHint);
+    palette.move(10, 300);
+    palette.resize(120, 32);
+    palette.show();
+    QCoreApplication::processEvents();
+
+    require(toolbar.testAttribute(Qt::WA_NativeWindow) || toolbar.internalWinId() != 0,
+            "embedding a native window-type sibling should nativize the selection toolbar "
+            "(the causal chain this test guards against)");
+
+    // Even after that external nativization, entering the smart-selection
+    // click-through phase must release the native window: a native child HWND
+    // intercepts OS-level hit testing, which WA_TransparentForMouseEvents cannot
+    // redirect, leaving an arrow cursor and freezing the overlay color picker.
+    toolbar.setSelectionState(QRect(80, 70, 320, 180), false, 0, 0,
+                              ScreenshotSelectionToolbarWidget::DisplayMode::SizeOnly);
+    QCoreApplication::processEvents();
+
+    require(toolbar.testAttribute(Qt::WA_TransparentForMouseEvents),
+            "smart-selection toolbar must apply click-through after a native embed");
+    require(!toolbar.testAttribute(Qt::WA_NativeWindow),
+            "smart-selection toolbar must not stay flagged native while click-through");
+    require(toolbar.internalWinId() == 0,
+            "smart-selection toolbar must release its native window handle so OS hit "
+            "testing falls through to the overlay canvas");
+    require(toolbar.isVisible(), "shedding the native surface must keep the toolbar visible");
+
+    const QPoint toolbarCenter = toolbar.pos() + QPoint(toolbar.width() / 2, toolbar.height() / 2);
+    require(host.childAt(toolbarCenter) == &canvas,
+            "post-embed smart-selection toolbar must leave the canvas as the hit target");
+    require(commands.interactionCount == 0,
+            "post-embed smart-selection toolbar must not trigger commands");
+
+    // The pooled widget must keep shedding the native surface on later cycles:
+    // the palette remains embedded and re-asserts nativization on every attach.
+    toolbar.hide();
+    toolbar.resetForNewCapture();
+    toolbar.setParent(nullptr);
+    palette.setParent(nullptr);
+    QCoreApplication::processEvents();
+
+    toolbar.setParent(&host, Qt::Widget);
+    toolbar.move(120, 120);
+    QWidget paletteAgain(&host, Qt::Tool | Qt::FramelessWindowHint);
+    static_cast<void>(paletteAgain.winId());
+    paletteAgain.show();
+    QCoreApplication::processEvents();
+    require(toolbar.testAttribute(Qt::WA_NativeWindow) || toolbar.internalWinId() != 0,
+            "a pooled re-attach under a native sibling should nativize the toolbar again");
+
+    toolbar.setSelectionState(QRect(80, 70, 320, 180), false, 0, 0,
+                              ScreenshotSelectionToolbarWidget::DisplayMode::SizeOnly);
+    toolbar.show();
+    toolbar.raise();
+    QCoreApplication::processEvents();
+    require(toolbar.internalWinId() == 0,
+            "a subsequent capture must shed the native surface again before smart selection");
+    require(host.childAt(toolbarCenter) == &canvas,
+            "a subsequent capture must keep the canvas as the hit target after shedding");
+    require(toolbar.isVisible(),
+            "shedding the native surface on a later cycle must keep the toolbar visible");
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -274,5 +361,6 @@ int main(int argc, char* argv[]) {
     valueLabelPaintsFromItsOwnEnterLeaveState();
     selectionToolbarInputSurfaceMatchesInteractivePanel();
     smartSelectionToolbarIsClickThroughAcrossCaptureLifecycles();
+    smartSelectionToolbarShedsNativeWindowForcedByNativeSiblingEmbed();
     return 0;
 }

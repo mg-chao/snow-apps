@@ -660,6 +660,16 @@ void ScreenshotSelectionToolbarWidget::updateDisplayMode() {
 
 void ScreenshotSelectionToolbarWidget::updateMouseEventTransparency() {
     const bool transparent = m_displayMode == DisplayMode::SizeOnly;
+    if (transparent) {
+        // WA_TransparentForMouseEvents and the input mask only redirect Qt-internal
+        // hit testing for alien widgets. A native child HWND always wins OS-level
+        // hit testing, which would leave an arrow cursor over the toolbar and starve
+        // the overlay canvas of the mouse moves that drive the color picker. Siblings
+        // can be forced native at any time (Qt nativizes every sibling of an embedded
+        // native window-type child, e.g. the floating tool palette), so shed that
+        // surface whenever the click-through display mode is applied.
+        releaseNativeInputSurface();
+    }
     setMouseTransparentForWidget(this, transparent);
     setMouseTransparentForWidget(m_panel, transparent);
 
@@ -669,6 +679,22 @@ void ScreenshotSelectionToolbarWidget::updateMouseEventTransparency() {
             continue;
         }
         setMouseTransparentForWidget(child, transparent);
+    }
+}
+
+void ScreenshotSelectionToolbarWidget::releaseNativeInputSurface() {
+    if (!testAttribute(Qt::WA_NativeWindow) && internalWinId() == 0) {
+        return;
+    }
+
+    const bool wasVisible = isVisible();
+    if (wasVisible) {
+        hide();
+    }
+    setAttribute(Qt::WA_NativeWindow, false);
+    destroy(true, false);
+    if (wasVisible) {
+        show();
     }
 }
 
