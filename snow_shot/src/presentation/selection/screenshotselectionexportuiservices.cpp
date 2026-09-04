@@ -15,6 +15,7 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QCursor>
 #include <QElapsedTimer>
 #include <QHash>
 #include <QPointer>
@@ -196,13 +197,22 @@ class ScreenshotPinnedWindowPool final : public QObject {
         }
     }
 
-    ScreenshotPinnedWindow* acquire(ScreenshotPinnedWindow::RuntimeMode mode) {
-        ScreenshotPinnedWindow* window = m_spare;
-        bool usedSpare = window != nullptr;
-        if (usedSpare) {
-            m_spare = nullptr;
+    ScreenshotPinnedWindow* acquire(ScreenshotPinnedWindow::RuntimeMode mode, QScreen* screen) {
+        if (screen != nullptr) {
+            m_targetScreen = screen;
         }
 
+        ScreenshotPinnedWindow* window = m_spare;
+        bool usedSpare = false;
+        if (window != nullptr) {
+            m_spare = nullptr;
+            if (window->prewarm(resolvedTargetScreen())) {
+                usedSpare = true;
+            } else {
+                window->deleteLater();
+                window = nullptr;
+            }
+        }
         if (window == nullptr) {
             const QElapsedTimer timer = [&]() {
                 QElapsedTimer value;
@@ -210,18 +220,33 @@ class ScreenshotPinnedWindowPool final : public QObject {
                 return value;
             }();
             window = new ScreenshotPinnedWindow(mode);
-            if (window != nullptr) {
+            if (window != nullptr && window->prewarm(resolvedTargetScreen())) {
                 SNOW_SHOT_PIN_PERF_COUNTER("shell.construction_ns", timer.nsecsElapsed());
+            } else {
+                if (window != nullptr) {
+                    window->deleteLater();
+                    window = nullptr;
+                }
             }
         }
 
         SNOW_SHOT_PIN_PERF_COUNTER(usedSpare ? "shell.hit" : "shell.miss", 1);
+        if (window == nullptr) {
+            schedulePrewarm(screen);
+        }
         return window;
     }
 
     void prewarm(QScreen* screen) {
+        if (screen != nullptr) {
+            m_targetScreen = screen;
+        }
+        QScreen* targetScreen = resolvedTargetScreen();
+        if (targetScreen == nullptr) {
+            return;
+        }
         if (m_spare != nullptr) {
-            if (m_spare->prewarm(screen)) {
+            if (m_spare->prewarm(targetScreen)) {
                 return;
             }
             m_spare->deleteLater();
@@ -229,7 +254,7 @@ class ScreenshotPinnedWindowPool final : public QObject {
         }
 
         auto* spare = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
-        if (spare == nullptr || !spare->prewarm(screen)) {
+        if (spare == nullptr || !spare->prewarm(targetScreen)) {
             if (spare != nullptr) {
                 spare->deleteLater();
             }
@@ -238,8 +263,39 @@ class ScreenshotPinnedWindowPool final : public QObject {
         m_spare = spare;
     }
 
+    void schedulePrewarm(QScreen* screen) {
+        if (m_spare != nullptr) {
+            return;
+        }
+        if (screen != nullptr) {
+            m_targetScreen = screen;
+        }
+        if (m_prewarmScheduled) {
+            return;
+        }
+        m_prewarmScheduled = true;
+        QTimer::singleShot(0, this, [this]() {
+            m_prewarmScheduled = false;
+            if (m_spare == nullptr) {
+                prewarm(m_targetScreen.data());
+            }
+        });
+    }
+
   private:
+    QScreen* resolvedTargetScreen() const {
+        if (m_targetScreen != nullptr) {
+            return m_targetScreen.data();
+        }
+        if (QScreen* cursorScreen = QGuiApplication::screenAt(QCursor::pos())) {
+            return cursorScreen;
+        }
+        return QGuiApplication::primaryScreen();
+    }
+
     QPointer<ScreenshotPinnedWindow> m_spare;
+    QPointer<QScreen> m_targetScreen;
+    bool m_prewarmScheduled = false;
 };
 
 class ScreenshotPendingPinCoordinator final : public QObject {
@@ -409,7 +465,8 @@ class ScreenshotPendingPinCoordinator final : public QObject {
 };
 
 namespace {
-bool presentPinnedWindowAndSynchronize(ScreenshotPinnedWindow* window,
+bool presentPinnedWindowAndSynchronize(ScreenshotPinnedWindowPool* pool,
+                                       ScreenshotPinnedWindow* window,
                                        const ScreenshotPinnedWindow::Config& config,
                                        const std::function<void()>& showMainWindowRequested,
                                        std::function<void(bool, QImage)> completion = {},
@@ -423,10 +480,25 @@ bool presentPinnedWindowAndSynchronize(ScreenshotPinnedWindow* window,
                          showMainWindowRequested);
     }
     SNOW_SHOT_PIN_PERF_MILESTONE("ui.pinned_window_constructed");
-    const bool presented = pending ? window->presentPending(config, std::move(completion))
-                                   : window->present(config, std::move(completion));
+    const QPointer<ScreenshotPinnedWindowPool> guardedPool(pool);
+    const QPointer<QScreen> guardedScreen(config.screen);
+    auto synchronizedCompletion = [guardedPool, guardedScreen, completion = std::move(completion)](
+                                      bool succeeded, QImage image) mutable {
+        if (completion) {
+            completion(succeeded, std::move(image));
+        }
+        if (guardedPool != nullptr) {
+            guardedPool->schedulePrewarm(guardedScreen.data());
+        }
+    };
+    const bool presented = pending
+                               ? window->presentPending(config, std::move(synchronizedCompletion))
+                               : window->present(config, std::move(synchronizedCompletion));
     if (!presented) {
         window->deleteLater();
+        if (guardedPool != nullptr) {
+            guardedPool->schedulePrewarm(guardedScreen.data());
+        }
         return false;
     }
     SNOW_SHOT_PIN_PERF_COUNTER("window.visible", window->isVisible() ? 1 : 0);
@@ -438,17 +510,16 @@ bool presentPinnedWindowAndSynchronize(ScreenshotPinnedWindow* window,
 } // namespace
 
 ScreenshotSelectionExportUiServices::ScreenshotSelectionExportUiServices(
-    ScreenshotOcrRecognitionPort* recognition,
-    ScreenshotQrRecognitionPort* qrRecognition, SnowShotApiClient* tableRecognition,
-    std::function<void()> showMainWindowRequested,
+    ScreenshotOcrRecognitionPort* recognition, ScreenshotQrRecognitionPort* qrRecognition,
+    SnowShotApiClient* tableRecognition, std::function<void()> showMainWindowRequested,
     std::function<ScreenshotPinnedRecognitionProviders()> recognitionProvider,
     snow_shot::presentation::PinnedWindowGroupManager* groupManager)
     : m_recognition(recognition), m_qrRecognition(qrRecognition),
       m_tableRecognition(tableRecognition),
       m_showMainWindowRequested(std::move(showMainWindowRequested)),
       m_recognitionProvider(std::move(recognitionProvider)), m_groupManager(groupManager),
-      m_pendingPinCoordinator(std::make_unique<ScreenshotPendingPinCoordinator>()) {
-}
+      m_windowPool(std::make_unique<ScreenshotPinnedWindowPool>()),
+      m_pendingPinCoordinator(std::make_unique<ScreenshotPendingPinCoordinator>()) {}
 
 ScreenshotSelectionExportUiServices::~ScreenshotSelectionExportUiServices() {
     cancelClipboardPublication();
@@ -498,10 +569,9 @@ void ScreenshotSelectionExportUiServices::cancelClipboardPublication() {
 }
 
 void ScreenshotSelectionExportUiServices::prewarmPinnedWindow(QScreen* screen) {
-    if (m_windowPool == nullptr) {
-        m_windowPool = std::make_unique<ScreenshotPinnedWindowPool>();
+    if (m_windowPool != nullptr) {
+        m_windowPool->prewarm(screen);
     }
-    m_windowPool->prewarm(screen);
 }
 
 bool ScreenshotSelectionExportUiServices::presentPinnedSelection(
@@ -512,17 +582,10 @@ bool ScreenshotSelectionExportUiServices::presentPinnedSelection(
         return false;
     }
 
-    if (m_windowPool == nullptr) {
-        m_windowPool = std::make_unique<ScreenshotPinnedWindowPool>();
-    }
-
     auto* pinnedWindow =
         m_windowPool != nullptr
-            ? m_windowPool->acquire(ScreenshotPinnedWindow::RuntimeMode::NoDocument)
+            ? m_windowPool->acquire(ScreenshotPinnedWindow::RuntimeMode::NoDocument, request.screen)
             : nullptr;
-    if (pinnedWindow == nullptr) {
-        pinnedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
-    }
     ScreenshotPinnedWindow::Config config;
     config.nativeGeometry = request.geometry.nativeGeometry;
     config.canvasSourceRect = request.surfaceCanvasRect;
@@ -538,18 +601,19 @@ bool ScreenshotSelectionExportUiServices::presentPinnedSelection(
     config.qrRecognition = m_qrRecognition;
     config.tableRecognition = m_tableRecognition;
     config.recognitionProvider = m_recognitionProvider;
-    config.recognitionResults = recognitionResultsForPinnedImage(
-        request.recognitionResults, request.selection, request.resultStyle,
-        request.fullResolutionScaleBasis);
+    config.recognitionResults =
+        recognitionResultsForPinnedImage(request.recognitionResults, request.selection,
+                                         request.resultStyle, request.fullResolutionScaleBasis);
     config.formattedTextDocument.reset();
     config.formattedPlainText.clear();
     applyPinRuntimeSettings(&config);
     config.groupManager = m_groupManager;
-    config.groupId = m_groupManager != nullptr ? m_groupManager->activeGroupId()
-                                                : QStringLiteral("default");
+    config.groupId =
+        m_groupManager != nullptr ? m_groupManager->activeGroupId() : QStringLiteral("default");
     applyPersistence(&config);
-    const bool presented = presentPinnedWindowAndSynchronize(
-        pinnedWindow, config, m_showMainWindowRequested, std::move(completion), true);
+    const bool presented =
+        presentPinnedWindowAndSynchronize(m_windowPool.get(), pinnedWindow, config,
+                                          m_showMainWindowRequested, std::move(completion), true);
     if (!presented) {
         result.cancel();
         return false;
@@ -587,16 +651,11 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     ScreenshotClipboardOriginalContent originalContent, ScreenshotImageLoader imageLoader,
     PinnedCompletion completion) {
     SNOW_SHOT_PIN_PERF_SCOPE("ui.present_pinned_image");
-    const QSize imageSize = !image.isNull() && !image.size().isEmpty()
-                                ? image.size()
-                                : fullResolutionScaleBasis;
+    const QSize imageSize =
+        !image.isNull() && !image.size().isEmpty() ? image.size() : fullResolutionScaleBasis;
     if (imageSize.isEmpty() || (!imageLoader && image.isNull()) || screen == nullptr ||
         nativeGeometry.isEmpty()) {
         return false;
-    }
-
-    if (m_windowPool == nullptr) {
-        m_windowPool = std::make_unique<ScreenshotPinnedWindowPool>();
     }
 
     if (!image.isNull()) {
@@ -606,11 +665,8 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
 
     auto* pinnedWindow =
         m_windowPool != nullptr
-            ? m_windowPool->acquire(ScreenshotPinnedWindow::RuntimeMode::NoDocument)
+            ? m_windowPool->acquire(ScreenshotPinnedWindow::RuntimeMode::NoDocument, screen)
             : nullptr;
-    if (pinnedWindow == nullptr) {
-        pinnedWindow = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
-    }
     ScreenshotPinnedWindow::Config config;
     config.nativeGeometry = nativeGeometry;
     config.canvasSourceRect = QRectF(QPointF(0.0, 0.0), QSizeF(imageSize));
@@ -634,18 +690,18 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     config.recognitionProvider = m_recognitionProvider;
     applyPinRuntimeSettings(&config);
     config.groupManager = m_groupManager;
-    config.groupId = m_groupManager != nullptr ? m_groupManager->activeGroupId()
-                                                : QStringLiteral("default");
+    config.groupId =
+        m_groupManager != nullptr ? m_groupManager->activeGroupId() : QStringLiteral("default");
     applyPersistence(&config);
     const bool pending = static_cast<bool>(config.imageLoader);
     if (pending) {
         m_pendingPinCoordinator->reserve(pinnedWindow, config.persistenceId, config.groupId,
                                          m_groupManager);
-        config.imageLoader = m_pendingPinCoordinator->wrapLoader(
-            config.persistenceId, std::move(config.imageLoader));
+        config.imageLoader = m_pendingPinCoordinator->wrapLoader(config.persistenceId,
+                                                                 std::move(config.imageLoader));
     }
     const bool presented = presentPinnedWindowAndSynchronize(
-        pinnedWindow, config, m_showMainWindowRequested, std::move(completion));
+        m_windowPool.get(), pinnedWindow, config, m_showMainWindowRequested, std::move(completion));
     if (!presented) {
         if (pending) {
             m_pendingPinCoordinator->cancel(config.persistenceId);
@@ -661,11 +717,6 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
 
 void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
     auto& applicationStorage = snow_shot::storage::ApplicationStorage::instance();
-    if (!applicationStorage.isInitialized() || m_windowPool == nullptr) {
-        if (m_windowPool == nullptr) {
-            m_windowPool = std::make_unique<ScreenshotPinnedWindowPool>();
-        }
-    }
     const QVector<snow_shot::storage::PinnedWindowSummary> summaries =
         applicationStorage.isInitialized() ? applicationStorage.pinnedWindows().summaries()
                                            : QVector<snow_shot::storage::PinnedWindowSummary>{};
@@ -729,8 +780,8 @@ void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
             if (!rendered.has_value() || !rendered->isValid()) {
                 continue;
             }
-            config.imageSource = ScreenshotImageSource::fromImage(rendered->image,
-                                                                    record.canvasSourceRect);
+            config.imageSource =
+                ScreenshotImageSource::fromImage(rendered->image, record.canvasSourceRect);
             config.formattedTextDocument = rendered->formattedDocument;
             config.formattedPlainText = rendered->plainText;
             config.formattedTextDevicePixelRatio = record.firstCreationTextDpi;
@@ -739,15 +790,20 @@ void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
             if (record.image.isNull()) {
                 continue;
             }
-            config.imageSource = ScreenshotImageSource::fromImage(record.image,
-                                                                    record.canvasSourceRect);
-            if (record.sourceKind == snow_shot::storage::PinnedWindowSourceKind::ClipboardImageFile) {
+            config.imageSource =
+                ScreenshotImageSource::fromImage(record.image, record.canvasSourceRect);
+            if (record.sourceKind ==
+                snow_shot::storage::PinnedWindowSourceKind::ClipboardImageFile) {
                 config.originalClipboardContent.localFilePath = record.originalFilePath;
             }
         }
-        auto* window = m_windowPool->acquire(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
+        auto* window = m_windowPool != nullptr
+                           ? m_windowPool->acquire(ScreenshotPinnedWindow::RuntimeMode::NoDocument,
+                                                   targetScreen)
+                           : nullptr;
         if (window == nullptr ||
-            !presentPinnedWindowAndSynchronize(window, config, m_showMainWindowRequested, {}, false)) {
+            !presentPinnedWindowAndSynchronize(m_windowPool.get(), window, config,
+                                               m_showMainWindowRequested, {}, false)) {
             if (window != nullptr) {
                 window->deleteLater();
             }

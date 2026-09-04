@@ -40,8 +40,7 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
                                         ClipboardCompletion completion,
                                         quint64 publicationId) override;
     void cancelClipboardPublication();
-    // Prepares an off-screen pinned shell for content whose dimensions are not
-    // available until decoding or rendering completes.
+    // Prepares one hidden native shell for the next Pin to Screen presentation.
     void prewarmPinnedWindow(QScreen* screen = nullptr);
     // A null image is accepted when imageLoader is provided and
     // fullResolutionScaleBasis supplies the known canvas dimensions.

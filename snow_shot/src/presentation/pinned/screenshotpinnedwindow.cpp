@@ -4496,7 +4496,7 @@ QRect ScreenshotPinnedWindow::nativeRectForLogicalRect(const QRect& logical,
 void ScreenshotPinnedWindow::showAllPinnedWindows() {
     const auto windows = livePinnedWindows();
     for (const QPointer<ScreenshotPinnedWindow>& window : windows) {
-        if (window != nullptr &&
+        if (window != nullptr && window->m_presented && !window->m_closing &&
             (window->m_groupManager == nullptr ||
              window->groupId() == window->m_groupManager->activeGroupId())) {
             window->show();
@@ -4508,7 +4508,7 @@ void ScreenshotPinnedWindow::showAllPinnedWindows() {
 void ScreenshotPinnedWindow::hideOtherPinnedWindows() {
     const auto windows = livePinnedWindows();
     for (const QPointer<ScreenshotPinnedWindow>& window : windows) {
-        if (window != nullptr && window != this &&
+        if (window != nullptr && window != this && window->m_presented && !window->m_closing &&
             (window->m_groupManager == nullptr ||
              window->groupId() == window->m_groupManager->activeGroupId())) {
             window->hide();
@@ -4521,7 +4521,7 @@ void ScreenshotPinnedWindow::hideOtherPinnedWindows() {
 void ScreenshotPinnedWindow::closeOtherPinnedWindows() {
     const auto windows = livePinnedWindows();
     for (const QPointer<ScreenshotPinnedWindow>& window : windows) {
-        if (window != nullptr && window != this &&
+        if (window != nullptr && window != this && window->m_presented && !window->m_closing &&
             (window->m_groupManager == nullptr ||
              window->groupId() == window->m_groupManager->activeGroupId())) {
             window->requestUserClose();
@@ -4532,7 +4532,7 @@ void ScreenshotPinnedWindow::closeOtherPinnedWindows() {
 void ScreenshotPinnedWindow::closeAllPinnedWindows() {
     const auto windows = livePinnedWindows();
     for (const QPointer<ScreenshotPinnedWindow>& window : windows) {
-        if (window != nullptr &&
+        if (window != nullptr && window->m_presented && !window->m_closing &&
             (window->m_groupManager == nullptr ||
              window->groupId() == window->m_groupManager->activeGroupId())) {
             window->requestUserClose();

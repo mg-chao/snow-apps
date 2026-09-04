@@ -50,6 +50,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <initializer_list>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -400,6 +401,147 @@ QAction* pinnedMenuActionNamed(ScreenshotPinnedWindow& window, const QString& na
         }
     }
     return nullptr;
+}
+
+QVector<ScreenshotPinnedWindow*> topLevelPinnedWindows() {
+    QVector<ScreenshotPinnedWindow*> windows;
+    for (QWidget* widget : QApplication::topLevelWidgets()) {
+        if (auto* window = qobject_cast<ScreenshotPinnedWindow*>(widget)) {
+            windows.push_back(window);
+        }
+    }
+    return windows;
+}
+
+ScreenshotPinnedWindow*
+hiddenPinnedWindowExcept(std::initializer_list<ScreenshotPinnedWindow*> excluded) {
+    const QVector<ScreenshotPinnedWindow*> windows = topLevelPinnedWindows();
+    for (ScreenshotPinnedWindow* window : windows) {
+        if (window != nullptr && !window->isVisible() &&
+            std::find(excluded.begin(), excluded.end(), window) == excluded.end()) {
+            return window;
+        }
+    }
+    return nullptr;
+}
+
+void pinnedWindowPoolReusesAndReplenishesPreparedShell() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+    require(topLevelPinnedWindows().isEmpty(),
+            "the pooling test must start without pinned windows");
+
+    ScreenshotSelectionExportUiServices services;
+    services.prewarmPinnedWindow(screen);
+    QVector<ScreenshotPinnedWindow*> windows = topLevelPinnedWindows();
+    require(windows.size() == 1 && !windows.front()->isVisible() && windows.front()->winId() != 0,
+            "prewarming should create one hidden native pinned shell");
+    QPointer<ScreenshotPinnedWindow> firstPrepared(windows.front());
+
+    services.prewarmPinnedWindow(screen);
+    windows = topLevelPinnedWindows();
+    require(windows.size() == 1 && windows.front() == firstPrepared,
+            "repeated prewarming should preserve the single prepared shell");
+
+    QImage firstImage(QSize(160, 96), QImage::Format_ARGB32_Premultiplied);
+    firstImage.fill(QColor(36, 132, 204));
+    const QRect firstGeometry = physicalPinGeometry(*screen, QPoint(60, 60), firstImage.size());
+    int firstCompletionCount = 0;
+    bool firstCompletionSucceeded = false;
+    require(services.presentPinnedImage(
+                firstImage, screen, firstGeometry, firstImage.size(), {}, {}, 1.0, {}, {},
+                [&firstCompletionCount, &firstCompletionSucceeded](bool succeeded, QImage image) {
+                    ++firstCompletionCount;
+                    firstCompletionSucceeded = succeeded && !image.isNull();
+                }),
+            "the first pooled pinned image could not be presented");
+    require(firstPrepared != nullptr && firstPrepared->isVisible() &&
+                firstPrepared->currentNativeGeometry() == firstGeometry,
+            "the first presentation should consume the prepared shell");
+    waitForUi(100);
+    require(firstCompletionCount == 1 && firstCompletionSucceeded,
+            "the first pooled presentation should complete exactly once");
+
+    QPointer<ScreenshotPinnedWindow> secondPrepared(hiddenPinnedWindowExcept({firstPrepared}));
+    require(secondPrepared != nullptr && secondPrepared->winId() != 0 &&
+                topLevelPinnedWindows().size() == 2,
+            "the pool should replenish one hidden native shell after the first frame");
+    services.prewarmPinnedWindow(screen);
+    require(hiddenPinnedWindowExcept({firstPrepared}) == secondPrepared &&
+                topLevelPinnedWindows().size() == 2,
+            "prewarming a replenished pool should not exceed one spare");
+
+    auto* firstFocusMenu = firstPrepared->findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedFocusMenu"));
+    require(firstFocusMenu != nullptr && firstFocusMenu->actions().size() == 4,
+            "the first pinned focus menu was not found");
+    firstFocusMenu->actions().front()->trigger();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    require(secondPrepared != nullptr && !secondPrepared->isVisible(),
+            "showing all pinned windows must ignore the hidden pool spare");
+
+    QImage secondImage(QSize(120, 80), QImage::Format_ARGB32_Premultiplied);
+    secondImage.fill(QColor(84, 168, 112));
+    const QRect secondGeometry = physicalPinGeometry(*screen, QPoint(260, 60), secondImage.size());
+    int secondCompletionCount = 0;
+    require(services.presentPinnedImage(secondImage, screen, secondGeometry, secondImage.size(), {},
+                                        {}, 1.0, {}, {},
+                                        [&secondCompletionCount](bool succeeded, QImage image) {
+                                            if (succeeded && !image.isNull()) {
+                                                ++secondCompletionCount;
+                                            }
+                                        }),
+            "the second pooled pinned image could not be presented");
+    require(secondPrepared != nullptr && secondPrepared->isVisible() &&
+                secondPrepared->currentNativeGeometry() == secondGeometry,
+            "the second presentation should consume the replenished shell");
+    waitForUi(100);
+    require(secondCompletionCount == 1,
+            "the second pooled presentation should complete exactly once");
+
+    QPointer<ScreenshotPinnedWindow> finalPrepared(
+        hiddenPinnedWindowExcept({firstPrepared, secondPrepared}));
+    require(finalPrepared != nullptr && topLevelPinnedWindows().size() == 3,
+            "the pool should replenish after every successful presentation");
+    auto* secondFocusMenu = secondPrepared->findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedFocusMenu"));
+    require(secondFocusMenu != nullptr && secondFocusMenu->actions().size() == 4,
+            "the second pinned focus menu was not found");
+    secondFocusMenu->actions().back()->trigger();
+    require(processUntilDeleted(firstPrepared, 2000) && processUntilDeleted(secondPrepared, 2000),
+            "closing all presented pins should delete both visible windows");
+    require(finalPrepared != nullptr && !finalPrepared->isVisible(),
+            "closing all presented pins must preserve the hidden pool spare");
+
+    ScreenshotImageLoadCallback failedLoad;
+    const ScreenshotImageLoader failingLoader =
+        [&failedLoad](QObject*, ScreenshotImageLoadCallback callback) {
+            failedLoad = std::move(callback);
+        };
+    int failureCompletionCount = 0;
+    bool failureCompletionSucceeded = true;
+    const QSize failedImageSize(96, 64);
+    const QRect failedGeometry = physicalPinGeometry(*screen, QPoint(60, 200), failedImageSize);
+    require(services.presentPinnedImage(
+                {}, screen, failedGeometry, failedImageSize, {}, {}, 1.0, {}, failingLoader,
+                [&failureCompletionCount, &failureCompletionSucceeded](bool succeeded, QImage) {
+                    ++failureCompletionCount;
+                    failureCompletionSucceeded = succeeded;
+                }),
+            "the failing pooled pinned image could not create its shell");
+    QPointer<ScreenshotPinnedWindow> failedWindow(finalPrepared);
+    require(failedWindow != nullptr && failedWindow->isVisible() && static_cast<bool>(failedLoad),
+            "the failing presentation should consume the final prepared shell");
+    failedLoad({});
+    require(processUntilDeleted(failedWindow, 2000),
+            "a failed pooled presentation should close its consumed shell");
+    waitForUi(100);
+    require(failureCompletionCount == 1 && !failureCompletionSucceeded,
+            "a failed pooled presentation should complete exactly once");
+    ScreenshotPinnedWindow* recoveredSpare = hiddenPinnedWindowExcept({});
+    require(recoveredSpare != nullptr && topLevelPinnedWindows().size() == 1 &&
+                recoveredSpare->winId() != 0,
+            "the pool should recover one prepared shell after presentation failure");
 }
 
 // A pin that is presented while the capture-side recognition feature has never
@@ -2655,13 +2797,21 @@ ScreenshotPinnedWindow* restoreSeededPinnedWindow(ScreenshotSelectionExportUiSer
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
     ScreenshotPinnedWindow* restoredWindow = nullptr;
-    for (QWidget* widget : QApplication::topLevelWidgets()) {
-        if (auto* window = qobject_cast<ScreenshotPinnedWindow*>(widget)) {
-            require(restoredWindow == nullptr, "restore should have created exactly one window");
+    ScreenshotPinnedWindow* preparedWindow = nullptr;
+    for (ScreenshotPinnedWindow* window : topLevelPinnedWindows()) {
+        if (window->isVisible()) {
+            require(restoredWindow == nullptr,
+                    "restore should have created exactly one presented window");
             restoredWindow = window;
+        } else {
+            require(preparedWindow == nullptr,
+                    "restore should have replenished exactly one hidden shell");
+            preparedWindow = window;
         }
     }
     require(restoredWindow != nullptr, "restore should have created the seeded pinned window");
+    require(preparedWindow != nullptr && preparedWindow->winId() != 0,
+            "restore should have replenished one hidden native shell");
     return restoredWindow;
 }
 
@@ -3143,6 +3293,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--async-presentation-only"))) {
             pinnedAsyncPresentationDefersContent(sourceRuntime);
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--pooling-only"))) {
+            pinnedWindowPoolReusesAndReplenishesPreparedShell();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--qr-copy-only"))) {

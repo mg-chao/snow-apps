@@ -1266,6 +1266,13 @@ void ScreenshotController::Impl::startHistoryEdit(const QString& recordId) {
 }
 
 void ScreenshotController::Impl::handleCapturePresented() {
+    if (ensureExportFeature() && m_selectionExportUiServices != nullptr) {
+        QScreen* screen = QGuiApplication::screenAt(QCursor::pos());
+        if (screen == nullptr) {
+            screen = QGuiApplication::primaryScreen();
+        }
+        m_selectionExportUiServices->prewarmPinnedWindow(screen);
+    }
     if (!m_pendingHistoryEditRecordId.isEmpty()) {
         const QString recordId = std::exchange(m_pendingHistoryEditRecordId, QString());
         if (m_historyService != nullptr) {
@@ -2374,14 +2381,17 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
 
     SNOW_SHOT_PIN_PERF_BEGIN("clipboard-input", 0, 0);
     SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.input_started");
+    if (m_selectionExportUiServices != nullptr) {
+        m_selectionExportUiServices->prewarmPinnedWindow(screen);
+    }
+    SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.prewarmed");
     const auto perfReaderStarted = std::chrono::steady_clock::now();
     SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.snapshot_started");
     auto snapshot = ScreenshotClipboardContentReader::snapshot(QApplication::clipboard(),
                                                                screen->devicePixelRatio());
-    const qint64 perfReaderNanoseconds =
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::steady_clock::now() - perfReaderStarted)
-            .count();
+    const qint64 perfReaderNanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                             std::chrono::steady_clock::now() - perfReaderStarted)
+                                             .count();
     SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.snapshot_finished");
     if (!snapshot.has_value()) {
         SNOW_SHOT_PIN_PERF_FINISH(false);
@@ -2521,14 +2531,6 @@ void ScreenshotController::Impl::pinClipboardContentToScreen() {
         }
         return;
     }
-
-    // Encoded images, local files, and text do not expose their final pixel size
-    // until the export worker decodes or renders them. Prepare the native pinned
-    // shell now, but leave it hidden until the decoded size is available.
-    if (m_selectionExportUiServices != nullptr) {
-        m_selectionExportUiServices->prewarmPinnedWindow(screen);
-    }
-    SNOW_SHOT_PIN_PERF_MILESTONE("clipboard.prewarmed");
 
     auto content = std::make_shared<std::optional<ScreenshotClipboardContent>>();
     const QPointer<ScreenshotController> receiver(&owner);
@@ -4034,7 +4036,17 @@ ScreenshotController::ScreenshotController(
 ScreenshotController::~ScreenshotController() = default;
 
 void ScreenshotController::prewarmResources() {
-    QTimer::singleShot(0, this, [this]() { m_impl->m_captureWorkflow->prewarmResources(); });
+    QTimer::singleShot(0, this, [this]() {
+        m_impl->m_captureWorkflow->prewarmResources();
+        if (!m_impl->ensureExportFeature() || m_impl->m_selectionExportUiServices == nullptr) {
+            return;
+        }
+        QScreen* screen = QGuiApplication::screenAt(QCursor::pos());
+        if (screen == nullptr) {
+            screen = QGuiApplication::primaryScreen();
+        }
+        m_impl->m_selectionExportUiServices->prewarmPinnedWindow(screen);
+    });
 }
 
 void ScreenshotController::restorePinnedWindows() {
