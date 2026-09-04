@@ -11,6 +11,7 @@
 - `scripts/bootstrap.ps1` – installs vcpkg deps and validates Qt/MSVC once per machine.
 - `scripts/build.ps1 -Preset windows-msvc-debug [-Target snow_shot] [-Clean]` – configure + build (`snow-all` by default). Presets: `windows-msvc-debug`, `windows-msvc-performance`, `snow-shot-msvc-release`, `snow-shot-msvc-fast`.
 - `ctest --preset test-windows-msvc-debug -R <regex>` – run only matching tests after a change. Do not run unfiltered `ctest --preset …` (full suite) unless the user explicitly asks.
+- Performance benchmarks: build **Release** with `windows-msvc-performance` (e.g. `cmake --build --preset build-windows-msvc-performance --target <benchmark>`, or an existing `**/scripts/run-*-perf.ps1`). Do not use Debug, `snow-shot-msvc-release`, or `snow-shot-msvc-fast` (`SNOW_APPS_BUILD_BENCHMARKS=OFF`).
 - `scripts/run-snow-shot.ps1` / `scripts/run-snow-image-viewer.ps1` – launch from the build tree.
 - `scripts/check-cpp-format.ps1 [-Fix]`, `scripts/check-rust.ps1 [-Fix]` – format and lint (also CMake targets `snow-format`, `snow-lint`).
 - `scripts/package-snow-shot.ps1` – NSIS installer (`snow-shot-msvc-release`).
@@ -26,6 +27,7 @@
 - Tests are plain executables using a `require(condition, message)` helper (no external framework). snow_shot registers them as `add_test(NAME snow-shot-<feature>-tests …)` in `snow_shot/CMakeLists.txt`; other projects use their own prefixes (`adqt-*`, `snow-canvas-*`, `snow_image_viewer_*`).
 - Name files `<feature>_tests.cpp`; benchmarks `<feature>_performance_benchmark.cpp` or `<feature>_benchmark.cpp`; UI Automation runs `<feature>_uia_e2e_test.cpp`.
 - CTest labels: `unit` (default), `interactive`/`e2e`, `benchmark`, `windows`. Default presets exclude interactive, e2e, and benchmark labels.
+- When running performance benchmarks, compile with **Release** via `windows-msvc-performance`. Debug and packaging presets do not build benchmark targets. Still run only the related benchmark, not the full performance suite.
 - Rust tests are mostly inline `#[cfg(test)]` modules (a few crates also have `tests/` integration tests). After a crate change, run `cargo test -p <crate>` (optionally `-- <test_name>`) inside `snow-crates/`. Do not run `cargo test --workspace` unless the user explicitly asks.
 - Cover every behavioral change with a deterministic, offscreen-capable test.
 
