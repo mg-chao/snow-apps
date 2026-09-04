@@ -416,6 +416,24 @@ void ScreenshotOverlayCoordinator::attachToolbarToOverlay(ScreenshotOverlayWindo
     m_uiHost.attachToolbarToOverlay(overlay);
 }
 
+void ScreenshotOverlayCoordinator::prewarmToolbarSurface(
+    const ScreenshotDisplaySession& displaySession) {
+    ScreenshotOverlayWindow* ownerOverlay = displaySession.firstActiveOverlay();
+    if (ownerOverlay == nullptr || m_uiHost.ensureToolbar() == nullptr) {
+        return;
+    }
+
+    // The editing toolbar is first needed when a region is confirmed, but its
+    // widget graph, native surface, and layout are expensive on that reveal.
+    // Build them against a pooled overlay while the capture worker is still
+    // acquiring the frame; the toolbar stays hidden until the presenter shows
+    // it, and moveToolbar re-attaches it to the selection's overlay later.
+    m_uiHost.attachToolbarToOverlay(ownerOverlay);
+    if (ScreenshotToolbarWindow* toolbar = m_uiHost.toolbar()) {
+        toolbar->prepareForDisplay();
+    }
+}
+
 void ScreenshotOverlayCoordinator::undoCanvasEdit() {
     m_uiHost.undoCanvasEdit();
 }

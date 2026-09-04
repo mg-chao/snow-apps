@@ -61,7 +61,6 @@ class ScreenshotShortcutHintsWidget final : public QWidget {
         setAttribute(Qt::WA_TransparentForMouseEvents, true);
         setFocusPolicy(Qt::NoFocus);
         QFont hintFont = font();
-        hintFont.setFamily(QStringLiteral("Open Sans"));
         hintFont.setPixelSize(kShortcutHintsFontSize);
         hintFont.setWeight(QFont::Normal);
         setFont(hintFont);

@@ -341,6 +341,10 @@ void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
         // Build the selector snapshot for this capture after overlay exclusions
         // are known, so the frame and initial smart selection use the same layout.
         m_context.runtime.startWorkflowRefresh();
+        // Prewarm the hidden editing-toolbar surface only after the capture has
+        // been dispatched so its construction overlaps the worker's frame
+        // acquisition instead of delaying the capture or the editing reveal.
+        m_context.runtime.prewarmToolbarSurface(m_context.displaySession);
     }
     const bool presentationBegun = preCapturePrepared && beginCapturePresentation(sessionId);
     if (presentationBegun) {

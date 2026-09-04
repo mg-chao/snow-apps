@@ -922,7 +922,9 @@ set(PROJECT_CXX_SOURCES
     src/presentation/tools/screenshottoolbarmainpanel.cpp
     src/presentation/tools/screenshottoolpalettebuttons.cpp
     src/presentation/tools/screenshottoolpalettestylecontrols.cpp
+    src/presentation/tools/screenshottoolpalettestylecomponents.cpp
     src/presentation/tools/screenshottoolpalettestylemodel.cpp
+    src/presentation/tools/screenshottoolpalettestylepresets.cpp
     src/presentation/tools/screenshottoolpalette.cpp
     src/presentation/tools/screenshottoolpalettehost.cpp
     src/presentation/toolbar/screenshottoolbarwindow.cpp
@@ -2074,7 +2076,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolpalettebuttons.cpp
         src/presentation/tools/screenshottoolpalettehost.cpp
         src/presentation/tools/screenshottoolpalettestylecontrols.cpp
+        src/presentation/tools/screenshottoolpalettestylecomponents.cpp
         src/presentation/tools/screenshottoolpalettestylemodel.cpp
+        src/presentation/tools/screenshottoolpalettestylepresets.cpp
     )
     target_include_directories(snow-shot-pinned-window-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
@@ -2256,7 +2260,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolbarmainpanel.cpp
         src/presentation/tools/screenshottoolpalettebuttons.cpp
         src/presentation/tools/screenshottoolpalettestylecontrols.cpp
+        src/presentation/tools/screenshottoolpalettestylecomponents.cpp
         src/presentation/tools/screenshottoolpalettestylemodel.cpp
+        src/presentation/tools/screenshottoolpalettestylepresets.cpp
         src/presentation/tools/screenshottoolpalette.cpp
         src/presentation/styles/thememanager.cpp
         src/presentation/styles/themecolorscheme.cpp
@@ -2341,7 +2347,9 @@ if(SNOW_SHOT_BUILD_TESTS)
             src/presentation/tools/screenshottoolpalettebuttons.cpp
             src/presentation/tools/screenshottoolpalettehost.cpp
             src/presentation/tools/screenshottoolpalettestylecontrols.cpp
+            src/presentation/tools/screenshottoolpalettestylecomponents.cpp
             src/presentation/tools/screenshottoolpalettestylemodel.cpp
+            src/presentation/tools/screenshottoolpalettestylepresets.cpp
             src/presentation/tools/screenshottoolpalette.cpp
             src/presentation/toolbar/screenshottoolbarwindow.cpp
             src/presentation/styles/thememanager.cpp
@@ -2402,7 +2410,9 @@ if(SNOW_SHOT_BUILD_TESTS)
             src/presentation/tools/screenshottoolpalettebuttons.cpp
             src/presentation/tools/screenshottoolpalettehost.cpp
             src/presentation/tools/screenshottoolpalettestylecontrols.cpp
+            src/presentation/tools/screenshottoolpalettestylecomponents.cpp
             src/presentation/tools/screenshottoolpalettestylemodel.cpp
+            src/presentation/tools/screenshottoolpalettestylepresets.cpp
             src/presentation/tools/screenshottoolpalette.cpp
             src/presentation/tools/screenshottoolbarperfinstrumentation.h
             src/presentation/toolbar/screenshottoolbarwindow.cpp
@@ -2452,7 +2462,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolpalettebuttons.cpp
         src/presentation/tools/screenshottoolpalettehost.cpp
         src/presentation/tools/screenshottoolpalettestylecontrols.cpp
+        src/presentation/tools/screenshottoolpalettestylecomponents.cpp
         src/presentation/tools/screenshottoolpalettestylemodel.cpp
+        src/presentation/tools/screenshottoolpalettestylepresets.cpp
         src/presentation/tools/screenshottoolpalette.cpp
         src/presentation/toolbar/screenshottoolbarwindow.cpp
     )
@@ -2705,7 +2717,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/tools/screenshottoolbarmainpanel.cpp
         src/presentation/tools/screenshottoolpalettebuttons.cpp
         src/presentation/tools/screenshottoolpalettestylecontrols.cpp
+        src/presentation/tools/screenshottoolpalettestylecomponents.cpp
         src/presentation/tools/screenshottoolpalettestylemodel.cpp
+        src/presentation/tools/screenshottoolpalettestylepresets.cpp
         src/presentation/tools/screenshottoolpalette.cpp
     )
     target_include_directories(snow-shot-toolbar-main-panel-tests PRIVATE
@@ -3161,7 +3175,9 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         src/presentation/tools/screenshottoolpalettebuttons.cpp
         src/presentation/tools/screenshottoolpalettehost.cpp
         src/presentation/tools/screenshottoolpalettestylecontrols.cpp
+        src/presentation/tools/screenshottoolpalettestylecomponents.cpp
         src/presentation/tools/screenshottoolpalettestylemodel.cpp
+        src/presentation/tools/screenshottoolpalettestylepresets.cpp
         src/presentation/tools/screenshottoolpalette.cpp
         src/presentation/tools/screenshottoolbarperfinstrumentation.h
         src/presentation/toolbar/screenshottoolbarwindow.cpp

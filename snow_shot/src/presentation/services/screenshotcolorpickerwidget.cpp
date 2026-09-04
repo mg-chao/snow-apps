@@ -328,7 +328,6 @@ void ScreenshotColorPickerWidget::paintEvent(QPaintEvent* event) {
     painter.drawRoundedRect(centerRect.adjusted(0.5, 0.5, -0.5, -0.5), 2.0, 2.0);
 
     QFont textFont = font();
-    textFont.setFamily(QStringLiteral("Open Sans"));
     textFont.setPixelSize(13);
     painter.setFont(textFont);
     painter.setPen(m_panelTextColor);

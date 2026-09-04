@@ -7,6 +7,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "../src/presentation/tools/screenshottoolpalettebuttons.h"
+#include "../src/presentation/tools/screenshottoolpalettestylecomponents.h"
 
 #include "antd_icons.h"
 #include "widgets/select.h"
@@ -21,6 +22,7 @@
 #include <QComboBox>
 #include <QFrame>
 #include <QFont>
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QGridLayout>
 #include <QImage>
@@ -284,6 +286,103 @@ void textAndHighlightStrokeWidthTriggersUseSharedPreviewButton() {
     require(pickers.size() == 2 && pickers.at(0)->size() == pickers.at(1)->size() &&
                 pickers.at(0)->triggerContent()->size() == pickers.at(1)->triggerContent()->size(),
             "configured width-color editors should share picker and trigger metrics");
+}
+
+void shapeAndArrowStrokeEditorsShareThePresetCatalog() {
+    ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
+    require(palette.ensureStyleFamily(ScreenshotToolPalette::Tool::Shape),
+            "shape style family should materialize on demand");
+    require(palette.ensureStyleFamily(ScreenshotToolPalette::Tool::Arrow),
+            "arrow style family should materialize on demand");
+
+    const auto rowPresetColorNames = [&palette](const QString& rowObjectName,
+                                                const QString& tooltipPrefix) {
+        QStringList colorNames;
+        QWidget* row = palette.findChild<QWidget*>(rowObjectName);
+        require(row != nullptr, "style row should exist");
+        for (adqt::widgets::AdButton* button : row->findChildren<adqt::widgets::AdButton*>()) {
+            auto* swatch = dynamic_cast<ColorSwatchButton*>(button);
+            if (swatch == nullptr || swatch->parentWidget() != row) {
+                continue;
+            }
+            const QString tooltip = swatch->toolTip();
+            require(tooltip.startsWith(tooltipPrefix),
+                    "stroke preset tooltip should use the tool-specific pattern");
+            colorNames.append(tooltip.mid(tooltipPrefix.length()));
+        }
+        return colorNames;
+    };
+    const QStringList shapeColors = rowPresetColorNames(
+        QStringLiteral("screenshotRectangleStyleControls"), QStringLiteral("Stroke color "));
+    const QStringList arrowColors = rowPresetColorNames(
+        QStringLiteral("screenshotArrowStyleControls"), QStringLiteral("Arrow stroke color "));
+    require(shapeColors.size() == 5 && arrowColors == shapeColors,
+            "shape and arrow stroke editors should render the shared stroke color catalog");
+
+    const auto strokeStyleButtonCount = [&palette](const QString& accessibleName) {
+        for (adqt::widgets::AdColorPicker* picker :
+             palette.findChildren<adqt::widgets::AdColorPicker*>()) {
+            if (picker != nullptr && picker->accessibleName() == accessibleName &&
+                picker->popupContent() != nullptr) {
+                int count = 0;
+                for (adqt::widgets::AdButton* button :
+                     picker->popupContent()->findChildren<adqt::widgets::AdButton*>()) {
+                    if (dynamic_cast<StrokeStylePreviewButton*>(button) != nullptr) {
+                        ++count;
+                    }
+                }
+                return count;
+            }
+        }
+        return 0;
+    };
+    require(strokeStyleButtonCount(QStringLiteral("Stroke color")) == 3 &&
+                strokeStyleButtonCount(QStringLiteral("Arrow stroke color")) == 3,
+            "both stroke editors should expose the shared solid/dashed/dotted styles");
+}
+
+void sizePresetEditorsShareTheSizeCatalog() {
+    ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
+    require(palette.ensureStyleFamily(ScreenshotToolPalette::Tool::PenHighlight),
+            "pen highlight style family should materialize on demand");
+    require(palette.ensureStyleFamily(ScreenshotToolPalette::Tool::PenFilter),
+            "pen filter style family should materialize on demand");
+    require(palette.ensureStyleFamily(ScreenshotToolPalette::Tool::Text),
+            "text style family should materialize on demand");
+
+    const QStringList expectedLabels{QStringLiteral("S"), QStringLiteral("M"),
+                                     QStringLiteral("L"), QStringLiteral("XL")};
+    const QList<double> expectedValues{24.0, 30.0, 42.0, 54.0};
+    const auto presetTooltips = [&palette](const QString& prefix) {
+        QStringList matched;
+        const QList<QWidget*> controls = palette.findChildren<QWidget*>();
+        for (QWidget* control : controls) {
+            if (control != nullptr && control->toolTip().startsWith(prefix)) {
+                matched.append(control->toolTip());
+            }
+        }
+        return matched;
+    };
+
+    for (const QString& prefix : {QStringLiteral("Pen highlight stroke width "),
+                                  QStringLiteral("Pen filter stroke width "),
+                                  QStringLiteral("Text font size ")}) {
+        const QStringList tooltips = presetTooltips(prefix);
+        require(tooltips.size() == 4, "size preset editors should render the S/M/L/XL quartet");
+        for (int index = 0; index < 4; ++index) {
+            const QString expected = prefix + expectedLabels.at(index) + QStringLiteral(" (") +
+                                     QString::number(expectedValues.at(index)) +
+                                     QStringLiteral("px)");
+            require(tooltips.contains(expected),
+                    "size preset editors should share the S/M/L/XL value catalog");
+        }
+    }
+
+    for (double value : expectedValues) {
+        require(palette.findChild<QWidget*>(QStringLiteral("screenshotPenFilterStrokeWidth%1")
+                                                .arg(qRound(value))) != nullptr,
+                "pen filter width presets should keep their value-stamped object names");
+    }
 }
 
 bool tooltipMatches(const QString& actual, const QString& expected) {
@@ -2601,7 +2700,9 @@ void watermarkToolExposesSharedStyleControls() {
                 family->variant() == adqt::widgets::AdSelect::Variant::Borderless &&
                 family->controlSize() == adqt::widgets::AdSelect::ControlSize::Small &&
                 family->popupLayerMode() == adqt::widgets::AdSelect::PopupLayerMode::QtTool &&
-                family->model() != nullptr && family->model()->rowCount() >= 2 &&
+                family->model() != nullptr &&
+                family->model()->rowCount() ==
+                    snow_shot::presentation::screenshotToolPaletteFontFamilies().size() + 2 &&
                 family->model()->index(0, 0).data(adqt::widgets::AdSelect::DefaultLabelRole) ==
                     QStringLiteral("Default"),
             "Watermark font family should reuse the searchable text selector");
@@ -3571,7 +3672,9 @@ void textStyleControlsExposeAndEmitAllRequestedProperties() {
             "text font-family select should be borderless");
     require(fontSelect->popupLayerMode() == adqt::widgets::AdSelect::PopupLayerMode::QtTool,
             "text font-family select should use QtTool");
-    require(fontSelect->model() != nullptr && fontSelect->model()->rowCount() >= 2,
+    require(fontSelect->model() != nullptr &&
+                fontSelect->model()->rowCount() ==
+                    snow_shot::presentation::screenshotToolPaletteFontFamilies().size() + 2,
             "text font-family select should include Default and installed fonts");
     require(fontSelect->model()->index(0, 0).data(adqt::widgets::AdSelect::DefaultLabelRole) ==
                     QStringLiteral("Default") &&
@@ -5849,6 +5952,27 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
                 !configuration.contains(QStringLiteral("drawing/spotlight_style")),
             "watermark and spotlight styles must not be added to persistent tool configuration");
 }
+
+void fontFamilyListIsCachedForEditorBuilds() {
+    const QStringList& first = snow_shot::presentation::screenshotToolPaletteFontFamilies();
+    const QStringList& second = snow_shot::presentation::screenshotToolPaletteFontFamilies();
+    require(&first == &second, "font family enumeration should be cached across editor builds");
+    require(first.contains(QStringLiteral("Segoe UI")),
+            "font family cache should expose the registered application font");
+
+    QStringList expected;
+    const QStringList systemFamilies = QFontDatabase::families();
+    expected.reserve(systemFamilies.size());
+    for (const QString& family : systemFamilies) {
+        const QString trimmed = family.trimmed();
+        if (!trimmed.isEmpty()) {
+            expected.append(trimmed);
+        }
+    }
+    expected.removeDuplicates();
+    expected.sort(Qt::CaseInsensitive);
+    require(first == expected, "font family cache should match the normalized system families");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -5863,6 +5987,12 @@ int main(int argc, char** argv) {
                 .initialize({executableDirectory, storageDirectory.path(), 60000})
                 .success,
             "failed to initialize isolated toolbar test storage");
+#if defined(Q_OS_WIN)
+    // The offscreen platform plugin exposes no system fonts; register one so
+    // the font family editors and their shared cache have real content.
+    require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
+            "the font editor tests require a system TrueType font");
+#endif
     if (application.arguments().contains(QStringLiteral("--canvas-style-persistence-only"))) {
         canvasToolStylesPersistIndependentlyWithoutGlobalStyles();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
@@ -5875,6 +6005,7 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--stroke-editor-only"))) {
         textAndHighlightStrokeWidthTriggersUseSharedPreviewButton();
+        shapeAndArrowStrokeEditorsShareThePresetCatalog();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -5914,6 +6045,9 @@ int main(int argc, char** argv) {
     numericStrokeWidthPreviewUsesLineWithinPreviewBounds();
     secondaryControlsMaterializeOnlyForTheRequestedFamily();
     textAndHighlightStrokeWidthTriggersUseSharedPreviewButton();
+    shapeAndArrowStrokeEditorsShareThePresetCatalog();
+    sizePresetEditorsShareTheSizeCatalog();
+    fontFamilyListIsCachedForEditorBuilds();
     scrollingScreenshotKeepsDrawingToolsAvailable();
     recognitionToolsKeepDrawingToolsAvailable();
     scrollingScreenshotExposesAxisRecognitionModes();
