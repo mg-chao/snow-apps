@@ -1135,7 +1135,7 @@ bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* mess
                 writeNativeRect(m_nativeGeometryController->targetGeometry(), suggestedRect);
             } else if (suggestedRect != nullptr &&
                        m_nativeGeometryController->adoptDpiTarget(
-                           qRectFromNativeRect(*suggestedRect))) {
+                           qRectFromNativeRect(*suggestedRect), physicalCursorPosition())) {
                 // The adopted target equals the system suggestion verbatim;
                 // writing it back is how the proposed geometry gets applied.
                 writeNativeRect(m_nativeGeometryController->targetGeometry(), suggestedRect);
@@ -1609,19 +1609,16 @@ bool ScreenshotPinnedWindow::presentInternal(
             ? config.fullResolutionScaleBasis
             : config.nativeGeometry.size();
     restorePersistentState(config);
-    // The scale value is a pure function of physical pixels: the current
-    // native width over the oriented creation basis, snapped to the whole
-    // percent the UI displays. Wheel stepping floors the raw value, so a
-    // derived 109.97% had to stay 110% or the notch targeting 110% becomes a
-    // no-op. A window restored in thumbnail mode reports the scale of the
-    // geometry it will return to, which the thumbnail rectangle itself does
-    // not encode.
+    // The scale value is the exact ratio encoded by physical pixels. Whole
+    // percent rounding belongs only to UI display and wheel-level navigation.
+    // A window restored in thumbnail mode reports the scale of the geometry it
+    // will return to, which the thumbnail rectangle itself does not encode.
     const QSize scaleBaseline = orientedInitialPhysicalSize();
     const int scaleEncodingWidth = m_thumbnailMode && m_preThumbnailNativeGeometry.isValid() &&
                                            !m_preThumbnailNativeGeometry.isEmpty()
                                        ? m_preThumbnailNativeGeometry.width()
                                        : config.nativeGeometry.width();
-    m_scalePercent = qRound(100.0 * scaleEncodingWidth / std::max(1, scaleBaseline.width()));
+    m_scalePercent = 100.0 * scaleEncodingWidth / std::max(1, scaleBaseline.width());
     SNOW_SHOT_PIN_PERF_MILESTONE("window.state_initialized");
     if (m_nativeGeometryController == nullptr ||
         !m_nativeGeometryController->initialize(config.nativeGeometry)) {
@@ -3977,12 +3974,13 @@ bool ScreenshotPinnedWindow::handleScaleWheel(QObject* watched, QWheelEvent* eve
     // Wheel scaling moves between fixed ten-percent levels. Keep arbitrary
     // values produced by native resizing, but use the next level in the
     // direction of travel instead of adding ten to the current value.
-    const double level = steps > 0 ? std::floor(m_scalePercent / kWheelScaleStep)
-                                   : std::ceil(m_scalePercent / kWheelScaleStep);
+    const int displayedScalePercent = qRound(m_scalePercent);
+    const double level = steps > 0 ? std::floor(displayedScalePercent / kWheelScaleStep)
+                                   : std::ceil(displayedScalePercent / kWheelScaleStep);
     const int targetPercent =
         qBound(kMinimumScalePercent, qRound(level * kWheelScaleStep + steps * kWheelScaleStep),
                kMaximumScalePercent);
-    if (targetPercent != qRound(m_scalePercent)) {
+    if (targetPercent != displayedScalePercent) {
         applyWheelScale(targetPercent, nativeCursor);
     }
     return true;
@@ -4501,7 +4499,8 @@ bool ScreenshotPinnedWindow::updateWindowMove(const QPoint& nativeCursorPosition
     const bool nativeDpiResize = actual.isValid() && !actual.isEmpty() &&
                                  qAbs(positionDelta.x()) <= 2 &&
                                  qAbs(positionDelta.y()) <= 2 && actual.size() != target.size();
-    if (nativeDpiResize && m_nativeGeometryController->adoptDpiTarget(actual)) {
+    if (nativeDpiResize &&
+        m_nativeGeometryController->adoptDpiTarget(actual, nativeCursorPosition)) {
         m_preserveScaleForSettledGeometry = false;
         scheduleNativeScaleAdoption();
         return true;

@@ -2505,6 +2505,36 @@ void restoredThumbnailScaleMenuStaysConsistentThroughExit(SnowCanvasRuntime&) {
     closeRestoredPinnedWindow(restoredWindow, record.id);
 }
 
+void restoredFractionalScaleCopiesTheDisplayedViewport(SnowCanvasRuntime&) {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+
+    IsolatedPinnedStorage storage;
+    const QSize basis(250, 125);
+    const snow_shot::storage::PinnedWindowRecord record =
+        savedPinnedRecord(*screen, 1.0, basis, 56.8, QPoint(160, 140));
+
+    ScreenshotSelectionExportUiServices services;
+    ScreenshotPinnedWindow* restoredWindow = restoreSeededPinnedWindow(services, record);
+    const QSize displayedSize = record.nativeGeometry.size();
+    require(restoredWindow->currentNativeGeometry().size() == displayedSize,
+            "fractional-scale restore should present at the saved physical size");
+    require(scaleMenuReadout(*restoredWindow) == QStringLiteral("Current: 57%"),
+            "fractional scale should only round in the user-facing readout");
+
+    QAction* copyAction =
+        pinnedMenuActionNamed(*restoredWindow, QStringLiteral("screenshotPinnedCopyAction"));
+    require(copyAction != nullptr, "restored pinned copy action was not found");
+    QApplication::clipboard()->clear();
+    copyAction->trigger();
+    const QImage copied =
+        waitForClipboardImage([](const QImage& image) { return !image.isNull(); });
+    require(copied.size() == displayedSize,
+            "copying a fractional-scale pin must preserve its displayed physical size");
+
+    closeRestoredPinnedWindow(restoredWindow, record.id);
+}
+
 void restoredPinnedWindowKeepsExactWheelLevelAtSameDpi(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -2871,6 +2901,7 @@ int main(int argc, char* argv[]) {
         if (app.arguments().contains(QStringLiteral("--restore-wiring-only"))) {
             restoredPinnedWindowIgnoresMonitorDpiChange(sourceRuntime);
             restoredThumbnailScaleMenuStaysConsistentThroughExit(sourceRuntime);
+            restoredFractionalScaleCopiesTheDisplayedViewport(sourceRuntime);
             restoredPinnedWindowKeepsExactWheelLevelAtSameDpi(sourceRuntime);
             return 0;
         }
@@ -2904,6 +2935,7 @@ int main(int argc, char* argv[]) {
         pinnedFollowsPerMonitorDpiScaling(sourceRuntime);
         restoredPinnedWindowIgnoresMonitorDpiChange(sourceRuntime);
         restoredThumbnailScaleMenuStaysConsistentThroughExit(sourceRuntime);
+        restoredFractionalScaleCopiesTheDisplayedViewport(sourceRuntime);
         restoredPinnedWindowKeepsExactWheelLevelAtSameDpi(sourceRuntime);
         pinnedCopyIncludesSourceCanvasDrawing();
         pinnedQrResultCopiesWithKeyboardShortcut();

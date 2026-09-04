@@ -93,7 +93,7 @@ void dpiAndProgrammaticTargetsAreExplicitTransactions() {
     // The system owns the geometry of a monitor transition: the suggested
     // rect is adopted verbatim, position included.
     const QRect dpiTarget(1200, 900, 1623, 921);
-    require(controller.adoptDpiTarget(dpiTarget), "DPI target was rejected");
+    require(controller.adoptDpiTarget(dpiTarget, std::nullopt), "DPI target was rejected");
     require(controller.constrainWindowPos(QRect(1201, 901, 1624, 922), true, true) == dpiTarget,
             "DPI transaction target must reject later rounded proposals");
     const auto dpiChange = controller.commitTarget();
@@ -118,7 +118,8 @@ void midDragDpiTargetKeepsTheSystemGeometry() {
     require(controller.updateMove(moved, QPoint(1749, 1268)) == moved,
             "move transaction did not track the cursor");
     const QRect dpiTarget(1120, 920, 1623, 921);
-    require(controller.adoptDpiTarget(dpiTarget), "mid-drag DPI target was rejected");
+    require(controller.adoptDpiTarget(dpiTarget, QPoint(1749, 1268)),
+            "mid-drag DPI target was rejected");
     require(controller.targetGeometry() == dpiTarget,
             "a mid-drag DPI transition must adopt the system geometry verbatim");
     require(controller.finishInteractiveTarget() == dpiTarget,
@@ -126,6 +127,44 @@ void midDragDpiTargetKeepsTheSystemGeometry() {
     const auto change = controller.commitTarget();
     require(change.dpiChanged && change.sizeChanged && change.geometry == dpiTarget,
             "the system DPI geometry must commit as a size-changing transaction");
+}
+
+void shortcutMovementAfterDpiUsesTheAdoptedTargetAsItsAnchor() {
+    {
+        auto pendingController = initializedController();
+        const QPoint cursor(1664, 1173);
+        require(pendingController.beginMove(cursor), "pending move transaction did not begin");
+        const QRect dpiTarget(1035, 825, 1623, 921);
+        require(!pendingController.adoptDpiTarget(dpiTarget, std::nullopt),
+                "move-phase DPI adoption must require a cursor reference");
+        require(pendingController.adoptDpiTarget(dpiTarget, cursor),
+                "pending move DPI target was rejected");
+        require(pendingController.updateMove({}, cursor + QPoint(1, 0)) ==
+                    dpiTarget.translated(1, 0),
+                "pending cursor movement must continue from the adopted DPI target");
+    }
+
+    auto controller = initializedController();
+    const QPoint dragStartCursor(1664, 1173);
+    const QPoint dpiCursor(1749, 1268);
+    require(controller.beginMove(dragStartCursor), "move transaction did not begin");
+    require(controller.updateMove(QRect(1100, 900, 1298, 737), dpiCursor) ==
+                QRect(1100, 900, 1298, 737),
+            "move transaction did not track the cursor before the DPI transition");
+
+    const QRect dpiTarget(1120, 920, 1623, 921);
+    require(controller.adoptDpiTarget(dpiTarget, dpiCursor),
+            "mid-drag DPI target was rejected");
+    QRect expected = dpiTarget;
+    expected.translate(1, 0);
+    require(controller.updateMove({}, dpiCursor + QPoint(1, 0)) == expected,
+            "cursor-derived movement must continue from the adopted DPI target");
+
+    controller.prepareRollback();
+    require(controller.targetGeometry() == QRect(1015, 805, 1298, 737),
+            "rebasing movement must not replace the transaction rollback geometry");
+    require(controller.finishRollback().geometry == QRect(1015, 805, 1298, 737),
+            "a rebased move must still roll back to the original committed geometry");
 }
 
 void failedTransactionsRollBackDeterministically() {
@@ -154,6 +193,7 @@ int main() {
         resizingUsesTheTransactionStartAsItsFixedReference();
         dpiAndProgrammaticTargetsAreExplicitTransactions();
         midDragDpiTargetKeepsTheSystemGeometry();
+        shortcutMovementAfterDpiUsesTheAdoptedTargetAsItsAnchor();
         failedTransactionsRollBackDeterministically();
     } catch (const std::exception& error) {
         std::cerr << "screenshot pinned native geometry controller test failure: " << error.what()
