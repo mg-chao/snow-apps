@@ -113,6 +113,7 @@ class ScreenshotOverlayCoordinator final : public ScreenshotOverlayExclusionPort
     ScreenshotToolbarWindow* ensureToolbar();
     ScreenshotToolbarWindow* toolbar() const;
     void attachToolbarToOverlay(ScreenshotOverlayWindow* overlay);
+    void prewarmToolbarSurface(const ScreenshotDisplaySession& displaySession);
     void undoCanvasEdit();
     void redoCanvasEdit();
     ScreenshotSelectionToolbarWidget* selectionToolbar() const;

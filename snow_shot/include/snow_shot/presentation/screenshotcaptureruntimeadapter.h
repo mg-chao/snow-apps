@@ -59,6 +59,7 @@ class ScreenshotCaptureRuntimeAdapter final : public ScreenshotCaptureRuntimePor
     void hideOverlayWindowsImmediately(
         const ScreenshotDisplaySession& displaySession) override;
     void hideOverlayWindows(const ScreenshotDisplaySession& displaySession) override;
+    void prewarmToolbarSurface(const ScreenshotDisplaySession& displaySession) override;
 
     [[nodiscard]] bool clearDocumentPreservingViewports() override;
     [[nodiscard]] bool resetCanvasRuntime() override;

@@ -132,6 +132,15 @@ class ScreenshotDisplaySession final {
         }
     }
 
+    [[nodiscard]] ScreenshotOverlayWindow* firstActiveOverlay() const {
+        for (const ScreenshotDisplaySlot& slot : m_slots) {
+            if (slot.display.active && slot.presentation.overlay != nullptr) {
+                return slot.presentation.overlay;
+            }
+        }
+        return nullptr;
+    }
+
     [[nodiscard]] CapturedDisplayModel& displayAt(qsizetype index) {
         return m_slots[index].display;
     }

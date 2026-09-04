@@ -179,6 +179,11 @@ void ScreenshotCaptureRuntimeAdapter::hideOverlayWindows(
     m_context.overlayCoordinator.hideOverlayWindows(displaySession);
 }
 
+void ScreenshotCaptureRuntimeAdapter::prewarmToolbarSurface(
+    const ScreenshotDisplaySession& displaySession) {
+    m_context.overlayCoordinator.prewarmToolbarSurface(displaySession);
+}
+
 bool ScreenshotCaptureRuntimeAdapter::clearDocumentPreservingViewports() {
     return m_context.canvasRuntime.clearDocumentPreservingViewports();
 }

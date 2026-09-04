@@ -107,6 +107,10 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     void hideOverlayWindows(const ScreenshotDisplaySession&) override {
         ++hideOverlayCalls;
     }
+    void prewarmToolbarSurface(const ScreenshotDisplaySession&) override {
+        ++prewarmToolbarSurfaceCalls;
+        prewarmToolbarSawDispatchedCapture = captureAllAsyncCalls > 0;
+    }
 
     [[nodiscard]] bool clearDocumentPreservingViewports() override {
         ++clearDocumentCalls;
@@ -132,6 +136,8 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     int preparePreCaptureOverlayCalls = 0;
     int hideOverlayCalls = 0;
     int hideOverlayImmediatelyCalls = 0;
+    int prewarmToolbarSurfaceCalls = 0;
+    bool prewarmToolbarSawDispatchedCapture = false;
     int resetForNewCaptureCalls = 0;
     int clearDocumentCalls = 0;
     int prewarmDisplayPoolCalls = 0;
@@ -190,6 +196,8 @@ void idlePrewarmDoesNotInitializeSelector() {
             "idle prewarm must leave the workflow prepared");
     require(runtime.startWorkflowRefreshCalls == 0 && !runtime.selectorRefreshActive,
             "idle prewarm must not initialize the selector cache");
+    require(runtime.prewarmToolbarSurfaceCalls == 0,
+            "idle prewarm must not create the editing toolbar surface");
 
     workflow.startCapture();
     workflow.prewarmResources();
@@ -423,6 +431,29 @@ void capturePresentedRunsAfterCapturedOverlayIsShown() {
             "capture-presented callback must run once after the captured overlay is shown");
 }
 
+void overlayCapturePrewarmsToolbarSurfaceAfterCaptureDispatch() {
+    ScreenshotCaptureState state;
+    state.sessionState = ScreenshotSessionState::IdlePrepared;
+    ScreenshotDisplaySession displaySession;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligentSelection;
+    CaptureRuntime runtime;
+    auto workflow = makeWorkflow(state, displaySession, geometry, interaction, selection,
+                                 intelligentSelection, runtime);
+
+    workflow.startCapture();
+    require(runtime.prewarmToolbarSurfaceCalls == 1 && runtime.prewarmToolbarSawDispatchedCapture,
+            "an overlay capture must prewarm the hidden toolbar surface after the capture is "
+            "dispatched");
+
+    workflow.startCapture();
+    require(runtime.prewarmToolbarSurfaceCalls == 2,
+            "every capture session must prewarm the toolbar surface again once the previous "
+            "session retired it");
+}
+
 void silentCaptureNeverPreparesOrShowsOverlays() {
     ScreenshotCaptureState state;
     state.sessionState = ScreenshotSessionState::IdlePrepared;
@@ -466,6 +497,8 @@ void silentCaptureNeverPreparesOrShowsOverlays() {
             "silent capture must not bind or show screenshot windows");
     require(runtime.startWorkflowRefreshCalls == 0,
             "silent capture must not initialize smart selection");
+    require(runtime.prewarmToolbarSurfaceCalls == 0,
+            "silent capture must not prewarm the editing toolbar");
     require(capturePresentedCalls == 1,
             "silent capture must notify the controller when pixels are ready");
 }
@@ -726,6 +759,7 @@ int main() {
     synchronousCaptureFailureDoesNotRestartSelectorRefresh();
     restartingCaptureReleasesPreviousSelectorCache();
     capturePresentedRunsAfterCapturedOverlayIsShown();
+    overlayCapturePrewarmsToolbarSurfaceAfterCaptureDispatch();
     silentCaptureNeverPreparesOrShowsOverlays();
     displayChangesRefreshWithoutCancelingIdleOrActiveCapture();
     focusedWindowCaptureUsesOneCompoundWorkerTransaction();

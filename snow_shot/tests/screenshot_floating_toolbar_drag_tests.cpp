@@ -1514,6 +1514,37 @@ void toolbarNativeSurfaceCanBeRetiredAndRestored() {
             "a restored toolbar must show with its retained palette");
 }
 
+void prewarmedToolbarSurfaceStaysHiddenUntilShown() {
+    NoOpToolbarCommands commands;
+    QWidget owner;
+    owner.setWindowFlags(Qt::FramelessWindowHint | Qt::Tool);
+    owner.resize(640, 360);
+    settleQueuedRefreshes();
+
+    ScreenshotToolbarWindow window(commands);
+    window.restoreNativeSurface();
+    window.setOwnerWindow(&owner);
+    window.prepareForDisplay();
+    settleQueuedRefreshes();
+
+    require(window.internalWinId() != 0 && window.testAttribute(Qt::WA_WState_Created),
+            "a prewarmed toolbar must hold a live native surface");
+    require(!window.isVisible(),
+            "attaching and preparing a hidden toolbar must keep it hidden until it is shown");
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    require(GetWindow(toNativeHwnd(window.internalWinId()), GW_OWNER) ==
+                toNativeHwnd(owner.internalWinId()),
+            "a prewarmed toolbar must be natively owned by its overlay while hidden");
+#endif
+
+    owner.show();
+    settleQueuedRefreshes();
+    window.show();
+    settleQueuedRefreshes();
+    require(window.isVisible(),
+            "a prewarmed toolbar must still show normally when the presenter reveals it");
+}
+
 void translateButtonRoutesEveryClickThroughTheToggleCommand() {
     NoOpToolbarCommands commands;
     ScreenshotToolbarWindow window(commands);
@@ -1580,6 +1611,10 @@ int main(int argc, char* argv[]) {
             toolbarNativeSurfaceCanBeRetiredAndRestored();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--prewarm-lifecycle-only"))) {
+            prewarmedToolbarSurfaceStaysHiddenUntilShown();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--reverse-hardware-drag-only"))) {
             physicalDragFromDestinationMonitorAndBackKeepsPhysicalGeometryStable();
             return 0;
@@ -1626,6 +1661,7 @@ int main(int argc, char* argv[]) {
         firstDisplayUsesThePreparedToolbarGeometry();
         captureResetRestoresTheNormalFrameAnchor();
         toolbarNativeSurfaceCanBeRetiredAndRestored();
+        prewarmedToolbarSurfaceStaysHiddenUntilShown();
         translateButtonRoutesEveryClickThroughTheToggleCommand();
         mainTextTranslationButtonUsesTranslationPresentation();
         return 0;
