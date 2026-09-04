@@ -205,6 +205,10 @@ void ScreenshotCaptureWorkflow::finishCaptureSession(bool deferExportCleanup) {
             SNOW_SHOT_PIN_PERF_SCOPE("cleanup.reset_runtime");
             m_context.runtime.resetForNewCapture(m_context.displaySession);
         }
+        {
+            SNOW_SHOT_PIN_PERF_SCOPE("cleanup.prewarm_overlay_pool");
+            prewarmOverlayPool();
+        }
         m_deferredExportCleanup = false;
     }
     if (deferExportCleanup) {
@@ -237,6 +241,10 @@ void ScreenshotCaptureWorkflow::completeDeferredExportCleanup() {
     if (m_context.presentation.hideToolbar) {
         SNOW_SHOT_PIN_PERF_SCOPE("cleanup.hide_toolbar");
         m_context.presentation.hideToolbar();
+    }
+    {
+        SNOW_SHOT_PIN_PERF_SCOPE("cleanup.prewarm_overlay_pool");
+        prewarmOverlayPool();
     }
     m_deferredExportCleanup = false;
     m_state.sessionState = ScreenshotSessionState::IdlePrepared;
@@ -538,7 +546,6 @@ void ScreenshotCaptureWorkflow::prewarmOverlayPool() {
 void ScreenshotCaptureWorkflow::initializeIdleResources(quint64 requestId) {
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("idle.kernel_prepare_started");
     m_context.runtime.prepareAsync(requestId);
-    prewarmOverlayPool();
     if (!m_captureModelsClean) {
         resetCaptureModels();
     }
@@ -549,6 +556,7 @@ void ScreenshotCaptureWorkflow::initializeIdleResources(quint64 requestId) {
     if (m_context.presentation.hideToolbar) {
         m_context.presentation.hideToolbar();
     }
+    prewarmOverlayPool();
     m_state.sessionState = ScreenshotSessionState::IdlePrepared;
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("idle.kernel_prepared");
 }

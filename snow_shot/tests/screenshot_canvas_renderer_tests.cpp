@@ -9,10 +9,12 @@
 #include "snow_shot/presentation/screenshotselectionshadowrenderer.h"
 #include "snow_shot/presentation/screenshotoverlaycanvaspresenter.h"
 #include "snow_shot/presentation/screenshotoverlayeventsink.h"
+#include "snow_shot/presentation/screenshotoverlaypool.h"
 #include "snow_shot/presentation/screenshotoverlaywindow.h"
 #include "snow_shot/presentation/screenshotscrollingthumbnailwidget.h"
 #include "snow_shot/presentation/screenshotshortcuthints.h"
 #include "snow_shot/presentation/screenshotuipreferences.h"
+#include "snow_shot/presentation/windowshortcutmanager.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "widgets/message.h"
@@ -3001,6 +3003,40 @@ void overlayNativeSurfaceRetirementPreservesReusableRenderState() {
             "native-surface restoration must not mutate the retained export state");
 }
 
+void overlayPoolPrewarmRestoresRetainedNativeSurfaces() {
+    NoopOverlayEventSink eventSink;
+    SnowCanvasRuntime canvasRuntime;
+    snow_shot::presentation::WindowShortcutManager shortcutManager;
+    ScreenshotOverlayPool pool(eventSink, canvasRuntime, shortcutManager, {});
+    ScreenshotDisplaySession displaySession;
+
+    pool.prewarmDisplayPool(displaySession, 2);
+    ScreenshotOverlayWindow* const first = displaySession.overlayAt(0);
+    ScreenshotOverlayWindow* const second = displaySession.overlayAt(1);
+    require(first != nullptr && second != nullptr,
+            "prewarming the display pool must create every requested overlay");
+    require(first->internalWinId() != 0 && second->internalWinId() != 0,
+            "newly prewarmed overlays must own native surfaces");
+
+    first->releaseNativeSurface();
+    second->releaseNativeSurface();
+    require(first->internalWinId() == 0 && second->internalWinId() == 0,
+            "the pool test must begin its second prewarm with retired native surfaces");
+
+    pool.prewarmDisplayPool(displaySession, 2);
+
+    require(displaySession.overlayAt(0) == first && displaySession.overlayAt(1) == second,
+            "re-prewarming must retain the pooled overlay object graph");
+    require(first->internalWinId() != 0 && second->internalWinId() != 0,
+            "re-prewarming must restore native surfaces for retained overlays");
+    require(!first->isVisible() && !second->isVisible() && first->updatesEnabled() &&
+                second->updatesEnabled(),
+            "re-prewarmed overlays must remain hidden and update-ready");
+
+    pool.destroyDisplayPool(displaySession);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+}
+
 void canvasCursorLayersKeepToolCursorAfterScreenshotSelection() {
     SnowCanvasWidget toolCanvas;
     require(toolCanvas.setCanvasTool(SnowCanvasTool::Shape),
@@ -3138,6 +3174,10 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--overlay-native-surface-retirement"))) {
         overlayNativeSurfaceIsReleasedBeforeDeferredObjectDeletion();
         overlayNativeSurfaceRetirementPreservesReusableRenderState();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--overlay-pool-prewarm"))) {
+        overlayPoolPrewarmRestoresRetainedNativeSurfaces();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--large-image-slice-rendering"))) {
