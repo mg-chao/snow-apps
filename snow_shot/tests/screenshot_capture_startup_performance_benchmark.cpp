@@ -15,6 +15,7 @@
 
 #include <Windows.h>
 #include <UIAutomation.h>
+#include <dwmapi.h>
 #include <objbase.h>
 #include <psapi.h>
 
@@ -184,13 +185,29 @@ ComPtr<IUIAutomationElement> findByAutomationIdSuffix(IUIAutomation& automation,
     return {};
 }
 
+// Drains this thread's message queue while sleeping. The reveal probe fixture
+// window is owned by this thread; Windows flags it unresponsive and DWM drops
+// it from composition unless its queue keeps draining.
+void pumpMessagesFor(int milliseconds) {
+    const auto deadline =
+        std::chrono::steady_clock::now() + std::chrono::milliseconds(milliseconds);
+    MSG message{};
+    while (std::chrono::steady_clock::now() < deadline) {
+        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        std::this_thread::sleep_for(1ms);
+    }
+}
+
 template <typename Finder> ComPtr<IUIAutomationElement> waitFor(Finder finder, int timeoutMs) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
     while (std::chrono::steady_clock::now() < deadline) {
         auto result = finder();
         if (result.get() != nullptr)
             return result;
-        std::this_thread::sleep_for(25ms);
+        pumpMessagesFor(25);
     }
     return {};
 }
@@ -226,6 +243,108 @@ void rightClickAt(int x, int y) {
     sendMouse(x, y, MOUSEEVENTF_RIGHTDOWN);
     sendMouse(x, y, MOUSEEVENTF_RIGHTUP);
 }
+
+bool probeColorNear(COLORREF actual, COLORREF expected, int tolerance = 24) {
+    return std::abs(static_cast<int>(GetRValue(actual)) - static_cast<int>(GetRValue(expected))) <=
+               tolerance &&
+           std::abs(static_cast<int>(GetGValue(actual)) - static_cast<int>(GetGValue(expected))) <=
+               tolerance &&
+           std::abs(static_cast<int>(GetBValue(actual)) - static_cast<int>(GetBValue(expected))) <=
+               tolerance;
+}
+
+QString probeColorName(COLORREF color) {
+    return QStringLiteral("rgb(%1,%2,%3)")
+        .arg(static_cast<int>(GetRValue(color)))
+        .arg(static_cast<int>(GetGValue(color)))
+        .arg(static_cast<int>(GetBValue(color)));
+}
+
+// Solid-color topmost window used as capture content that the revealed overlay
+// must show. Recoloring it after the reveal discriminates a fresh overlay frame
+// (shows the capture-time color) from a blank or stale overlay (shows the live
+// desktop or an older capture).
+class RevealProbeFixture final {
+  public:
+    explicit RevealProbeFixture(const RECT& workArea) {
+        constexpr int kWidth = 128;
+        constexpr int kHeight = 96;
+        const int x = workArea.left + std::max<LONG>(64, (workArea.right - workArea.left) / 5);
+        const int y = workArea.top + std::max<LONG>(64, (workArea.bottom - workArea.top) / 5);
+        WNDCLASSEXW windowClass{};
+        windowClass.cbSize = sizeof(windowClass);
+        windowClass.lpfnWndProc = DefWindowProcW;
+        windowClass.hInstance = GetModuleHandleW(nullptr);
+        windowClass.hbrBackground = CreateSolidBrush(kCaptureColors[0]);
+        windowClass.lpszClassName = L"SnowShotRevealProbeFixture";
+        require(RegisterClassExW(&windowClass) != 0,
+                "could not register the reveal probe fixture class");
+        m_window = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, windowClass.lpszClassName,
+                                   L"Snow Shot reveal probe", WS_POPUP, x, y, kWidth, kHeight,
+                                   nullptr, nullptr, windowClass.hInstance, nullptr);
+        require(m_window != nullptr, "could not create the reveal probe fixture window");
+        ShowWindow(m_window, SW_SHOWNOACTIVATE);
+        applyColor(kCaptureColors[0]);
+        if (!probeColorNear(centerPixel(), kCaptureColors[0])) {
+            std::cerr << "reveal probe fixture did not composite; reads "
+                      << probeColorName(centerPixel()).toStdString() << '\n';
+        }
+    }
+
+    ~RevealProbeFixture() {
+        if (m_window != nullptr) {
+            DestroyWindow(m_window);
+        }
+    }
+
+    RevealProbeFixture(const RevealProbeFixture&) = delete;
+    RevealProbeFixture& operator=(const RevealProbeFixture&) = delete;
+
+    void setColor(COLORREF color) {
+        applyColor(color);
+    }
+
+    [[nodiscard]] COLORREF captureColorAt(int captureIndex) const {
+        return kCaptureColors[(captureIndex - 1) % static_cast<int>(kCaptureColorCount)];
+    }
+
+    [[nodiscard]] COLORREF centerPixel() const {
+        require(SUCCEEDED(DwmFlush()), "reveal probe could not flush composition");
+        RECT client{};
+        require(GetClientRect(m_window, &client) != FALSE,
+                "reveal probe could not query its client rect");
+        POINT center{client.right / 2, client.bottom / 2};
+        require(ClientToScreen(m_window, &center) != FALSE,
+                "reveal probe could not map its center to the desktop");
+        HDC screen = GetDC(nullptr);
+        require(screen != nullptr, "reveal probe could not access the desktop DC");
+        const COLORREF pixel = GetPixel(screen, center.x, center.y);
+        ReleaseDC(nullptr, screen);
+        require(pixel != CLR_INVALID, "reveal probe could not read the desktop pixel");
+        return pixel;
+    }
+
+    static constexpr COLORREF kPostCaptureColor = RGB(47, 91, 213);
+
+  private:
+    static constexpr COLORREF kCaptureColors[] = {RGB(20, 173, 109), RGB(194, 33, 71)};
+    static constexpr std::size_t kCaptureColorCount = 2;
+
+    void applyColor(COLORREF color) {
+        HBRUSH brush = CreateSolidBrush(color);
+        require(brush != nullptr, "reveal probe could not create a color brush");
+        const LONG_PTR previous =
+            SetClassLongPtrW(m_window, GCLP_HBRBACKGROUND, reinterpret_cast<LONG_PTR>(brush));
+        if (previous != 0) {
+            DeleteObject(reinterpret_cast<HBRUSH>(previous));
+        }
+        InvalidateRect(m_window, nullptr, TRUE);
+        pumpMessagesFor(15);
+        RedrawWindow(m_window, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ERASE);
+    }
+
+    HWND m_window = nullptr;
+};
 
 QVector<RECT> monitors() {
     QVector<RECT> result;
@@ -431,11 +550,10 @@ int run(const QCommandLineParser& parser) {
     const QString revealStrategy = parser.value(QStringLiteral("reveal-strategy")).trimmed();
     require(!appPath.isEmpty() && captures >= 2 && settleMs >= 0 && timeout > 0,
             "invalid benchmark arguments");
-    const QStringList supportedRevealStrategies{QStringLiteral("single-repaint"),
-                                                QStringLiteral("posted-update"),
-                                                QStringLiteral("native-update"),
-                                                QStringLiteral("native-invalidate"),
-                                                QStringLiteral("native-invalidate-suppressed")};
+    const QStringList supportedRevealStrategies{
+        QStringLiteral("single-repaint"), QStringLiteral("posted-update"),
+        QStringLiteral("native-update"), QStringLiteral("native-invalidate"),
+        QStringLiteral("native-invalidate-suppressed")};
     require(revealStrategy.isEmpty() || supportedRevealStrategies.contains(revealStrategy),
             "unsupported reveal strategy");
     const QVector<RECT> displayList = monitors();
@@ -464,11 +582,14 @@ int run(const QCommandLineParser& parser) {
             "settings quick screenshot item did not appear");
 
     QVector<QJsonObject> records;
+    RevealProbeFixture revealProbe(screen);
     int line = 0;
     for (int capture = 1; capture <= captures; ++capture) {
         // Park the cursor deterministically so every initial smart-selection
         // hit test targets the same screen content.
         sendMouse(cursorX, cursorY, MOUSEEVENTF_MOVE);
+        const COLORREF captureColor = revealProbe.captureColorAt(capture);
+        revealProbe.setColor(captureColor);
         auto screenshot = waitFor(quickScreenshotItem, timeout);
         require(screenshot.get() != nullptr && invoke(*screenshot.get()),
                 "could not invoke screenshot capture");
@@ -478,7 +599,7 @@ int run(const QCommandLineParser& parser) {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout);
         while (traceLineCount(tracePath) < targetLine && child.alive() &&
                std::chrono::steady_clock::now() < deadline) {
-            std::this_thread::sleep_for(10ms);
+            pumpMessagesFor(10);
         }
         require(traceLineCount(tracePath) >= targetLine, "capture sample timed out");
         line = targetLine;
@@ -489,6 +610,28 @@ int run(const QCommandLineParser& parser) {
         QJsonObject record = readTraceLine(tracePath, line);
         require(record.value(QStringLiteral("success")).toBool(),
                 "capture sample was not presented successfully");
+
+        // First-frame correctness probe. The trace line is flushed right after
+        // the app's composited milestone, so recolor the fixture immediately:
+        // a fresh overlay keeps showing the capture-time color while a blank or
+        // stale overlay shows the new fixture color or older content. The
+        // settled reading (after deferred presentation work has drained) is the
+        // per-capture ground truth, which keeps the comparison independent of
+        // any dimming the overlay applies over the captured screen.
+        revealProbe.setColor(RevealProbeFixture::kPostCaptureColor);
+        const COLORREF pixelAtComposited = revealProbe.centerPixel();
+        pumpMessagesFor(300);
+        const COLORREF pixelSettled = revealProbe.centerPixel();
+        const bool settledShowsOverlay =
+            !probeColorNear(pixelSettled, RevealProbeFixture::kPostCaptureColor);
+        const bool firstFrameFresh =
+            settledShowsOverlay && probeColorNear(pixelAtComposited, pixelSettled, 12);
+        record.insert(QStringLiteral("reveal_first_frame_ok"), firstFrameFresh);
+        record.insert(QStringLiteral("reveal_settled_ok"), settledShowsOverlay);
+        record.insert(QStringLiteral("reveal_pixel_at_composited"),
+                      probeColorName(pixelAtComposited));
+        record.insert(QStringLiteral("reveal_pixel_settled"), probeColorName(pixelSettled));
+
         record.insert(QStringLiteral("capture_index"), capture);
         record.insert(QStringLiteral("group"), capture == 1   ? QStringLiteral("first")
                                                : capture == 2 ? QStringLiteral("second")
@@ -501,7 +644,7 @@ int run(const QCommandLineParser& parser) {
         // Dismiss the selection overlay so the app returns to idle before the
         // next capture. A right-click while intelligent-selecting cancels.
         rightClickAt(cursorX, cursorY);
-        std::this_thread::sleep_for(std::chrono::milliseconds(settleMs));
+        pumpMessagesFor(settleMs);
     }
     child.stop();
 
@@ -539,15 +682,25 @@ int run(const QCommandLineParser& parser) {
         }
         QVector<double> invokeToLine;
         QVector<double> workingSet;
+        QVector<double> firstFrameOk;
+        QVector<double> settledOk;
         for (const QJsonObject& record : groupRecords) {
             invokeToLine.push_back(
                 record.value(QStringLiteral("invoke_to_trace_line_ms")).toDouble());
             workingSet.push_back(record.value(QStringLiteral("working_set_bytes")).toDouble() /
                                  (1024.0 * 1024.0));
+            firstFrameOk.push_back(
+                record.value(QStringLiteral("reveal_first_frame_ok")).toBool() ? 1.0 : 0.0);
+            settledOk.push_back(record.value(QStringLiteral("reveal_settled_ok")).toBool() ? 1.0
+                                                                                           : 0.0);
         }
         metricsReport.insert(QStringLiteral("invoke_to_trace_line"), statistics(invokeToLine));
         metricsReport.insert(QStringLiteral("working_set"),
                              statistics(workingSet, QStringLiteral("mb")));
+        metricsReport.insert(QStringLiteral("reveal_first_frame_ok"),
+                             statistics(firstFrameOk, QStringLiteral("ratio")));
+        metricsReport.insert(QStringLiteral("reveal_settled_ok"),
+                             statistics(settledOk, QStringLiteral("ratio")));
 
         QJsonObject milestonesReport;
         for (const QString& key : collectKeys(groupRecords, "milestones_ns")) {
@@ -605,6 +758,10 @@ int run(const QCommandLineParser& parser) {
 } // namespace
 
 int main(int argc, char** argv) {
+    // Physical coordinates everywhere: the probe fixture position, GetPixel
+    // reads, and the app's captured frames must all share one coordinate space
+    // for the first-frame pixel verification to be meaningful.
+    static_cast<void>(SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2));
     QCoreApplication application(argc, argv);
     QCoreApplication::setApplicationName(
         QStringLiteral("snow-shot-capture-startup-performance-benchmark"));

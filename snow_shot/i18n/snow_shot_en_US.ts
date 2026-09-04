@@ -138,6 +138,10 @@
         <translation>Copy to clipboard</translation>
     </message>
     <message>
+        <source>Save as file</source>
+        <translation>Save as file</translation>
+    </message>
+    <message>
         <location filename="../src/presentation/components/screenshothistorypagewidget.cpp" line="730"/>
         <source>Pin to screen</source>
         <translation>Pin to screen</translation>
@@ -541,6 +545,10 @@
         <location filename="../src/presentation/components/screenshothistorypagewidget.cpp" line="1314"/>
         <source>Copy to clipboard</source>
         <translation>Copy to clipboard</translation>
+    </message>
+    <message>
+        <source>Save as file</source>
+        <translation>Save as file</translation>
     </message>
     <message>
         <location filename="../src/presentation/components/screenshothistorypagewidget.cpp" line="1315"/>

@@ -167,6 +167,8 @@ QString sourceKey(storage::CaptureHistorySource source) {
     switch (source) {
     case storage::CaptureHistorySource::CopiedToClipboard:
         return QStringLiteral("clipboard");
+    case storage::CaptureHistorySource::SavedToFile:
+        return QStringLiteral("file");
     case storage::CaptureHistorySource::PinnedToScreen:
         return QStringLiteral("pinned");
     case storage::CaptureHistorySource::CurrentMonitor:
@@ -767,6 +769,9 @@ class HistoryEntryWidget final : public QFrame {
         case storage::CaptureHistorySource::CopiedToClipboard:
             m_sourceLabel->setText(HistoryEntryWidget::tr("Copy to clipboard"));
             break;
+        case storage::CaptureHistorySource::SavedToFile:
+            m_sourceLabel->setText(HistoryEntryWidget::tr("Save as file"));
+            break;
         case storage::CaptureHistorySource::PinnedToScreen:
             m_sourceLabel->setText(HistoryEntryWidget::tr("Pin to screen"));
             break;
@@ -1129,10 +1134,6 @@ void ScreenshotHistoryPageWidget::rebuildFilteredRecords(bool resetPage) {
 }
 
 void ScreenshotHistoryPageWidget::rebuildEntries() {
-    m_emptyIcon->hide();
-    m_emptyTitle->hide();
-    m_emptyDescription->hide();
-
     const int pageSize = m_pagination->pageSize();
     const int firstIndex = std::max(0, (m_pagination->currentPage() - 1) * pageSize);
     const int lastIndex =
@@ -1184,6 +1185,10 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
     }
 
     if (firstIndex >= lastIndex) {
+        m_emptyIcon->show();
+        m_emptyTitle->show();
+        m_emptyDescription->show();
+        updateEmptyStateText();
         if (!layoutNeedsRebuild && m_entriesLayout->count() > 0) {
             requestUnresolvedAssets();
             return;
@@ -1192,11 +1197,8 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
         m_entryLayoutIds.clear();
         m_entriesLayout->addSpacing(48);
         m_entriesLayout->addStretch(1);
-        m_emptyIcon->show();
         m_entriesLayout->addWidget(m_emptyIcon, 0, Qt::AlignHCenter);
         m_entriesLayout->addSpacing(18);
-        m_emptyTitle->show();
-        m_emptyDescription->show();
         m_entriesLayout->addWidget(m_emptyTitle);
         m_entriesLayout->addSpacing(8);
         m_entriesLayout->addWidget(m_emptyDescription);
@@ -1206,6 +1208,10 @@ void ScreenshotHistoryPageWidget::rebuildEntries() {
         applyTheme(m_colorScheme);
         return;
     }
+
+    m_emptyIcon->hide();
+    m_emptyTitle->hide();
+    m_emptyDescription->hide();
 
     if (!layoutNeedsRebuild) {
         const int responsiveEntryMinimumHeight =
@@ -1304,6 +1310,18 @@ void ScreenshotHistoryPageWidget::handleResultImageReady(
     }
 }
 
+void ScreenshotHistoryPageWidget::updateEmptyStateText() {
+    if (m_emptyTitle != nullptr) {
+        m_emptyTitle->setText(m_records.isEmpty() ? tr("No screenshot history")
+                                                   : tr("No matching screenshots"));
+    }
+    if (m_emptyDescription != nullptr) {
+        m_emptyDescription->setText(
+            m_records.isEmpty() ? tr("Copied and pinned screenshots will appear here")
+                                : tr("Change the source or date range to see more history"));
+    }
+}
+
 void ScreenshotHistoryPageWidget::updateEmptyStateMinimumHeight() {
     if (m_emptyIcon == nullptr || !m_emptyIcon->isVisible() || m_entriesLayout == nullptr ||
         m_entriesHost == nullptr) {
@@ -1353,6 +1371,7 @@ void ScreenshotHistoryPageWidget::retranslateUi() {
     const QVariantList selectedSources = m_sourceFilter->currentValues();
     m_sourceFilter->setOptions(
         {sourceOption(QStringLiteral("clipboard"), tr("Copy to clipboard")),
+         sourceOption(QStringLiteral("file"), tr("Save as file")),
          sourceOption(QStringLiteral("pinned"), tr("Pin to screen")),
          sourceOption(QStringLiteral("current-monitor"), tr("Current monitor")),
          sourceOption(QStringLiteral("focused-window"), tr("Focused window"))});
@@ -1369,15 +1388,7 @@ void ScreenshotHistoryPageWidget::retranslateUi() {
                                            tr("Delete all"));
     m_deleteAllConfirmation->setButtonText(adqt::widgets::AdPopconfirm::StandardButton::Cancel,
                                            tr("Cancel"));
-    if (m_emptyTitle != nullptr) {
-        m_emptyTitle->setText(m_records.isEmpty() ? tr("No screenshot history")
-                                                  : tr("No matching screenshots"));
-    }
-    if (m_emptyDescription != nullptr) {
-        m_emptyDescription->setText(
-            m_records.isEmpty() ? tr("Copied and pinned screenshots will appear here")
-                                : tr("Change the source or date range to see more history"));
-    }
+    updateEmptyStateText();
     updateEmptyStateMinimumHeight();
     updateHeader();
 }

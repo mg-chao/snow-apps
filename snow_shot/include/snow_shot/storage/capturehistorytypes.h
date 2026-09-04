@@ -17,6 +17,7 @@
 namespace snow_shot::storage {
 enum class CaptureHistorySource {
     CopiedToClipboard,
+    SavedToFile,
     PinnedToScreen,
     CurrentMonitor,
     FocusedWindow,

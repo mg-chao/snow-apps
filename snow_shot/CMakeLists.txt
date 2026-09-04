@@ -1157,6 +1157,30 @@ if(SNOW_SHOT_BUILD_TESTS)
         )
     endif()
 
+    add_executable(snow-shot-screenshot-history-page-tests
+        tests/screenshot_history_page_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+    )
+    target_include_directories(snow-shot-screenshot-history-page-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+    target_link_libraries(snow-shot-screenshot-history-page-tests PRIVATE
+        snow_shot_settings
+        ant_design_qt
+        Qt6::Widgets
+    )
+    add_test(
+        NAME snow-shot-screenshot-history-page-tests
+        COMMAND snow-shot-screenshot-history-page-tests
+    )
+    set_tests_properties(snow-shot-screenshot-history-page-tests PROPERTIES
+        ENVIRONMENT
+            "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+    snow_shot_import_offscreen_platform(snow-shot-screenshot-history-page-tests)
+
     add_executable(snow-shot-single-instance-coordinator-tests
         tests/single_instance_coordinator_tests.cpp
         include/snow_shot/app/singleinstancecoordinator.h

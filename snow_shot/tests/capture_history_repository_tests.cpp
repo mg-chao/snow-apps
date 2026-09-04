@@ -181,6 +181,7 @@ void quickCaptureSourcesRoundTrip() {
                 "quick-capture source was not recovered from its manifest");
     };
 
+    verifySource(storage::CaptureHistorySource::SavedToFile, QStringLiteral("saved_to_file"));
     verifySource(storage::CaptureHistorySource::CurrentMonitor, QStringLiteral("current_monitor"));
     verifySource(storage::CaptureHistorySource::FocusedWindow, QStringLiteral("focused_window"));
 }

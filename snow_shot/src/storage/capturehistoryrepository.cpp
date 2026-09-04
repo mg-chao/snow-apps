@@ -65,6 +65,8 @@ QString sourceToManifest(CaptureHistorySource source) {
     switch (source) {
     case CaptureHistorySource::CopiedToClipboard:
         return QStringLiteral("copied_to_clipboard");
+    case CaptureHistorySource::SavedToFile:
+        return QStringLiteral("saved_to_file");
     case CaptureHistorySource::PinnedToScreen:
         return QStringLiteral("pinned_to_screen");
     case CaptureHistorySource::CurrentMonitor:
@@ -81,6 +83,10 @@ bool sourceFromManifest(const QString& value, CaptureHistorySource* source) {
     }
     if (value == QStringLiteral("copied_to_clipboard")) {
         *source = CaptureHistorySource::CopiedToClipboard;
+        return true;
+    }
+    if (value == QStringLiteral("saved_to_file")) {
+        *source = CaptureHistorySource::SavedToFile;
         return true;
     }
     if (value == QStringLiteral("pinned_to_screen")) {
