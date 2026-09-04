@@ -730,6 +730,7 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshotcolorpickercontroller.h
     include/snow_shot/presentation/screenshotcolorpickerwidget.h
     include/snow_shot/presentation/screenshotcontroller.h
+    include/snow_shot/presentation/pinnedwindowgroupmanager.h
     include/snow_shot/presentation/globalshortcuttypes.h
     include/snow_shot/presentation/screenshotdefaultstyles.h
     include/snow_shot/presentation/screenshotcanvastoolstyles.h
@@ -880,6 +881,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/pinned/screenshotpinnedwindow.cpp
     src/presentation/pinned/screenshotpintoperfinstrumentation.cpp
     src/presentation/services/screenshotpresentationservices.cpp
+    src/presentation/services/pinnedwindowgroupmanager.cpp
     src/presentation/services/screenshotsourceimagecomposer.cpp
     src/presentation/services/systemtraycontroller.cpp
     src/presentation/selection/screenshotselectioneditworkflow.cpp
@@ -1308,12 +1310,15 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-system-tray-controller-tests
         tests/system_tray_controller_tests.cpp
         include/snow_shot/presentation/languagemanager.h
+        include/snow_shot/presentation/pinnedwindowgroupmanager.h
         include/snow_shot/presentation/systemtraycontroller.h
         src/presentation/services/languagemanager.cpp
+        src/presentation/services/pinnedwindowgroupmanager.cpp
         src/presentation/services/systemtraycontroller.cpp
     )
     target_include_directories(snow-shot-system-tray-controller-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${SNOW_SHOT_DRAW_ENGINE_QT_DIR}/include"
     )
     target_link_libraries(snow-shot-system-tray-controller-tests PRIVATE
         ant_design_qt
@@ -1351,6 +1356,32 @@ if(SNOW_SHOT_BUILD_TESTS)
                 "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         )
     endif()
+
+    add_executable(snow-shot-pinned-window-group-tests
+        tests/pinned_window_group_tests.cpp
+        include/snow_shot/presentation/pinnedwindowgroupmanager.h
+        src/presentation/services/pinnedwindowgroupmanager.cpp
+    )
+    target_include_directories(snow-shot-pinned-window-group-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${SNOW_SHOT_DRAW_ENGINE_QT_DIR}/include"
+    )
+    target_link_libraries(snow-shot-pinned-window-group-tests PRIVATE
+        ant_design_qt
+        snow_shot_storage
+        Qt6::Widgets
+    )
+    snow_shot_add_translations(snow-shot-pinned-window-group-tests)
+    add_test(
+        NAME snow-shot-pinned-window-group-tests
+        COMMAND snow-shot-pinned-window-group-tests
+    )
+    set_tests_properties(snow-shot-pinned-window-group-tests PROPERTIES
+        ENVIRONMENT
+            "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
 
     add_executable(snow-shot-context-menu-rendering-tests
         tests/context_menu_rendering_tests.cpp
@@ -1935,6 +1966,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenshotpinnededitcontroller.h
         include/snow_shot/presentation/screenshotpinnedcopyservice.h
         include/snow_shot/presentation/screenshotpinnedwindow.h
+        include/snow_shot/presentation/pinnedwindowgroupmanager.h
         include/snow_shot/presentation/screenshotrecognitionsessioncontroller.h
         include/snow_shot/presentation/screenshotrecognitionwindow.h
         include/snow_shot/presentation/screenshottableeditor.h
@@ -1978,6 +2010,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/pinned/screenshotpinnedresizegeometry.cpp
         src/presentation/pinned/screenshotpinnedrestoregeometry.cpp
         src/presentation/pinned/screenshotpinnedwindow.cpp
+        src/presentation/services/pinnedwindowgroupmanager.cpp
         src/presentation/pinned/screenshotpinnedwindownative.cpp
         src/presentation/services/languagemanager.cpp
         src/presentation/styles/buttonborder.cpp

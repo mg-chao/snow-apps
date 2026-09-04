@@ -710,6 +710,10 @@
 </context>
 <context>
     <name>ScreenshotPinnedWindow</name>
+    <message><source>Group: %1</source><translation>分组：%1</translation></message>
+    <message><source>Default</source><translation>默认</translation></message>
+    <message><source>New Group</source><translation>新建分组</translation></message>
+    <message><source>Delete Empty Groups</source><translation>删除空分组</translation></message>
     <message>
         <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="138" />
         <source>Enable drawing mode</source>
@@ -4403,5 +4407,23 @@ Change the shortcut and try again</source>
         <source>Close</source>
         <translation>关闭</translation>
     </message>
+</context>
+<context>
+    <name>PinnedWindowGroupManager</name>
+    <message><source>Default</source><translation>默认</translation></message>
+    <message><source>Group %1</source><translation>分组 %1</translation></message>
+    <message><source>Group name</source><translation>分组名称</translation></message>
+    <message><source>Please enter a group name</source><translation>请输入分组名称</translation></message>
+    <message><source>This group name is already in use</source><translation>该分组名称已存在</translation></message>
+    <message><source>New Group</source><translation>新建分组</translation></message>
+    <message><source>Delete Empty Groups</source><translation>删除空分组</translation></message>
+    <message><source>Add</source><translation>添加</translation></message>
+    <message><source>Cancel</source><translation>取消</translation></message>
+</context>
+<context>
+    <name>SystemTrayController</name>
+    <message><source>Window Group: %1</source><translation>窗口分组：%1</translation></message>
+    <message><source>New Group</source><translation>新建分组</translation></message>
+    <message><source>Delete Empty Groups</source><translation>删除空分组</translation></message>
 </context>
 </TS>

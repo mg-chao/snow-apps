@@ -33,6 +33,7 @@ class AdContextMenu;
 } // namespace adqt::widgets
 namespace snow_shot::presentation {
 class WindowShortcutManager;
+class PinnedWindowGroupManager;
 }
 namespace snow_shot::platform {
 class PhysicalCursor;
@@ -126,6 +127,8 @@ class ScreenshotPinnedWindow final : public QWidget {
         QByteArray persistedRecognitionResults;
         std::function<void(const snow_shot::storage::PinnedWindowRecord&)> persistenceWriter;
         std::function<void(const QString&)> persistenceRemover;
+        snow_shot::presentation::PinnedWindowGroupManager* groupManager = nullptr;
+        QString groupId = QStringLiteral("default");
     };
 
     explicit ScreenshotPinnedWindow(RuntimeMode mode, QWidget* parent = nullptr);
@@ -139,6 +142,14 @@ class ScreenshotPinnedWindow final : public QWidget {
     QRect currentNativeGeometry() const;
     void setPersistenceId(const QString& id);
     [[nodiscard]] QString persistenceId() const { return m_persistenceId; }
+    [[nodiscard]] QString groupId() const { return m_groupId; }
+
+  public slots:
+    void setGroupId(const QString& id);
+    void closeForInactiveGroup();
+    void cancelDeferredInactiveGroupClose();
+
+  public:
     static void setRuntimeBorderColor(const QColor& color);
     static void setRuntimeTrayEnabled(bool enabled);
 
@@ -173,6 +184,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     void registerWindowShortcuts();
     void reloadPinnedWindowShortcuts();
     void createContextMenu();
+    void rebuildGroupMenu();
+    void refreshContextMenuForGroup(const QString& groupId);
     void applyRuntimeBorderColor();
     void updateShowMainInterfaceAction();
     void retranslateUi();
@@ -303,6 +316,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     adqt::widgets::AdButton* m_editButton = nullptr;
     adqt::widgets::AdButton* m_closeButton = nullptr;
     adqt::widgets::AdContextMenu* m_contextMenu = nullptr;
+    adqt::widgets::AdContextMenu* m_groupMenu = nullptr;
     QAction* m_ocrAction = nullptr;
     QAction* m_drawingAction = nullptr;
     QAction* m_thumbnailAction = nullptr;
@@ -340,6 +354,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::unique_ptr<ScreenshotPinnedNativeGeometryController> m_nativeGeometryController;
     std::function<void(const snow_shot::storage::PinnedWindowRecord&)> m_persistenceWriter;
     std::function<void(const QString&)> m_persistenceRemover;
+    QPointer<snow_shot::presentation::PinnedWindowGroupManager> m_groupManager;
     std::unique_ptr<ScreenshotRecognitionSessionController> m_recognitionSession;
     double m_viewportZoom = 1.0;
     QPointF m_viewportCenter;
@@ -361,7 +376,9 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_preserveScaleForSettledGeometry = false;
     bool m_presented = false;
     bool m_closing = false;
+    bool m_deferredInactiveGroupClose = false;
     QString m_persistenceId;
+    QString m_groupId = QStringLiteral("default");
     bool m_persistenceEnabled = true;
     bool m_persistenceRemovalRequested = false;
     qreal m_firstCreationTextDpi = 1.0;

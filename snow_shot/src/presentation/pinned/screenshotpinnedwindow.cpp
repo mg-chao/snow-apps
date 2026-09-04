@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/pinnedwindowrepository.h"
 
@@ -854,6 +855,12 @@ bool ScreenshotPinnedWindow::prewarm(QScreen* screen) {
 }
 
 ScreenshotPinnedWindow::~ScreenshotPinnedWindow() {
+    if (m_groupManager != nullptr) {
+        // The manager observes QObject::destroyed to remove runtime tracking.
+        // Disconnect its menu-refresh signals before QWidget/QObject teardown,
+        // while this object is still a valid ScreenshotPinnedWindow receiver.
+        QObject::disconnect(m_groupManager, nullptr, this, nullptr);
+    }
     if (!m_persistenceRemovalRequested && m_presented && !m_closing) {
         if (m_persistenceTimer != nullptr) {
             m_persistenceTimer->stop();
@@ -895,6 +902,35 @@ void ScreenshotPinnedWindow::setPersistenceId(const QString& id) {
     m_persistenceId = id;
 }
 
+void ScreenshotPinnedWindow::setGroupId(const QString& id) {
+    const QString normalized = id.trimmed();
+    if (normalized.isEmpty() ||
+        (m_groupManager != nullptr && !m_groupManager->contains(normalized)) ||
+        normalized == m_groupId) {
+        return;
+    }
+    m_groupId = normalized;
+    persistNow();
+    refreshContextMenu();
+}
+
+void ScreenshotPinnedWindow::closeForInactiveGroup() {
+    if (m_closing) {
+        return;
+    }
+    if (m_originalImage.isNull() || !m_firstContentFramePublished) {
+        m_deferredInactiveGroupClose = true;
+        return;
+    }
+    close();
+}
+
+void ScreenshotPinnedWindow::cancelDeferredInactiveGroupClose() {
+    if (!m_closing) {
+        m_deferredInactiveGroupClose = false;
+    }
+}
+
 void ScreenshotPinnedWindow::schedulePersistence() {
     if (!m_persistenceEnabled || m_persistenceWriter == nullptr || m_persistenceId.isEmpty() ||
         !m_presented || m_closing || m_persistenceTimer == nullptr) {
@@ -905,7 +941,8 @@ void ScreenshotPinnedWindow::schedulePersistence() {
 
 void ScreenshotPinnedWindow::persistNow() {
     if (!m_persistenceEnabled || m_persistenceWriter == nullptr || m_persistenceId.isEmpty() ||
-        !m_presented || m_closing) {
+        !m_presented || m_closing ||
+        (m_originalImage.isNull() && m_originalClipboardContent.isEmpty())) {
         return;
     }
     m_persistenceWriter(persistenceRecord());
@@ -921,6 +958,7 @@ void ScreenshotPinnedWindow::removePersistence() {
 snow_shot::storage::PinnedWindowRecord ScreenshotPinnedWindow::persistenceRecord() const {
     snow_shot::storage::PinnedWindowRecord record;
     record.id = m_persistenceId;
+    record.groupId = m_groupId;
     record.sourceKind = !m_originalClipboardContent.localFilePath.isEmpty()
                             ? snow_shot::storage::PinnedWindowSourceKind::ClipboardImageFile
                             : (!m_originalClipboardContent.isEmpty()
@@ -1526,6 +1564,7 @@ bool ScreenshotPinnedWindow::presentInternal(
     invalidatePendingCopy();
     m_persistenceEnabled = true;
     m_persistenceRemovalRequested = false;
+    m_deferredInactiveGroupClose = false;
     applyRuntimeBorderColor();
     updateShowMainInterfaceAction();
 
@@ -1609,10 +1648,28 @@ bool ScreenshotPinnedWindow::presentInternal(
     }
     m_persistenceWriter = config.persistenceWriter;
     m_persistenceRemover = config.persistenceRemover;
+    m_groupManager = config.groupManager;
+    m_groupId = config.groupId.trimmed();
+    if (m_groupId.isEmpty()) {
+        m_groupId = m_groupManager != nullptr ? m_groupManager->activeGroupId()
+                                               : QStringLiteral("default");
+    }
+    if (m_groupManager != nullptr && !m_groupManager->contains(m_groupId)) {
+        m_groupId = m_groupManager->activeGroupId();
+    }
     if (!config.persistenceId.isEmpty()) {
         m_persistenceId = config.persistenceId;
     } else if (m_persistenceId.isEmpty()) {
         m_persistenceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    }
+    if (m_groupManager != nullptr) {
+        m_groupManager->registerWindow(this, m_groupId);
+        connect(m_groupManager, &snow_shot::presentation::PinnedWindowGroupManager::groupsChanged, this,
+                &ScreenshotPinnedWindow::refreshContextMenu, Qt::UniqueConnection);
+        connect(m_groupManager,
+                &snow_shot::presentation::PinnedWindowGroupManager::activeGroupChanged, this,
+                &ScreenshotPinnedWindow::refreshContextMenuForGroup, Qt::UniqueConnection);
+        rebuildGroupMenu();
     }
     if (m_recognitionResults.text.has_value()) {
         m_recognitionResults.text->filteredImage = {};
@@ -2173,6 +2230,7 @@ void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
         persistNow();
     }
     m_closing = true;
+    m_deferredInactiveGroupClose = false;
     m_pendingImage = false;
     m_firstContentFramePublished = false;
     m_firstFramePaintPending = false;
@@ -2416,6 +2474,14 @@ void ScreenshotPinnedWindow::createContextMenu() {
     m_contextMenu->setObjectName(QStringLiteral("screenshotPinnedContextMenu"));
     m_contextMenu->setFixedWidth(300);
 
+    m_groupMenu = m_contextMenu->addSubMenu(QString(), {});
+    m_groupMenu->setObjectName(QStringLiteral("screenshotPinnedGroupMenu"));
+    m_groupMenu->menuAction()->setObjectName(QStringLiteral("screenshotPinnedGroupAction"));
+    m_groupMenu->setMinimumWidth(300);
+    connect(m_groupMenu, &QMenu::aboutToShow, this, &ScreenshotPinnedWindow::rebuildGroupMenu);
+    m_contextMenu->addSeparator();
+    rebuildGroupMenu();
+
     QAction* copyAction = m_contextMenu->addItem(tr("Copy to clipboard"), outlined_icons::Copy());
     setActionTranslationSource(copyAction, "Copy to clipboard");
     copyAction->setObjectName(QStringLiteral("screenshotPinnedCopyAction"));
@@ -2465,6 +2531,7 @@ void ScreenshotPinnedWindow::createContextMenu() {
     auto* processMenu = m_contextMenu->addSubMenu(tr("Process image"), outlined_icons::Picture());
     setActionTranslationSource(processMenu->menuAction(), "Process image");
     processMenu->setObjectName(QStringLiteral("screenshotPinnedProcessImageMenu"));
+    processMenu->menuAction()->setObjectName(QStringLiteral("screenshotPinnedProcessImageMenu"));
     QAction* rotateClockwise =
         processMenu->addItem(tr("Rotate clockwise"), outlined_icons::RotateRight());
     setActionTranslationSource(rotateClockwise, "Rotate clockwise");
@@ -2624,6 +2691,7 @@ void ScreenshotPinnedWindow::updateShowMainInterfaceAction() {
 }
 
 void ScreenshotPinnedWindow::refreshContextMenu() {
+    rebuildGroupMenu();
     updateShowMainInterfaceAction();
     if (m_ocrAction != nullptr) {
         const bool activeText =
@@ -2670,6 +2738,55 @@ void ScreenshotPinnedWindow::refreshContextMenu() {
     if (m_scaleReadoutAction != nullptr) {
         m_scaleReadoutAction->setText(tr("Current: %1%").arg(qRound(m_scalePercent)));
     }
+}
+
+void ScreenshotPinnedWindow::refreshContextMenuForGroup(const QString& groupId) {
+    Q_UNUSED(groupId);
+    refreshContextMenu();
+}
+
+void ScreenshotPinnedWindow::rebuildGroupMenu() {
+    if (m_groupMenu == nullptr) {
+        return;
+    }
+    m_groupMenu->clear();
+    snow_shot::presentation::PinnedWindowGroupManager* manager = m_groupManager;
+    if (manager == nullptr) {
+        m_groupMenu->menuAction()->setText(tr("Group: Default"));
+        QAction* current = m_groupMenu->addItem(tr("Default"));
+        current->setCheckable(true);
+        current->setChecked(true);
+        return;
+    }
+    m_groupMenu->menuAction()->setText(
+        tr("Group: %1").arg(manager->displayName(m_groupId)));
+    QVector<snow_shot::storage::PinnedWindowGroup> groups = manager->groups();
+    std::sort(groups.begin(), groups.end(), [manager](const auto& first, const auto& second) {
+        const int comparison = QString::localeAwareCompare(manager->displayName(first.id),
+                                                            manager->displayName(second.id));
+        return comparison == 0 ? first.id < second.id : comparison < 0;
+    });
+    for (const auto& group : groups) {
+        QAction* action = m_groupMenu->addItem(
+            QStringLiteral("%1\t%2").arg(manager->displayName(group.id),
+                                         QString::number(manager->windowCount(group.id))));
+        action->setObjectName(QStringLiteral("screenshotPinnedGroupAction-%1").arg(group.id));
+        action->setData(group.id);
+        action->setCheckable(true);
+        action->setChecked(group.id == m_groupId);
+        connect(action, &QAction::triggered, this, [this, manager, groupId = group.id]() {
+            manager->moveWindow(this, groupId);
+        });
+    }
+    m_groupMenu->addSeparator();
+    QAction* newGroup = m_groupMenu->addItem(tr("New Group"));
+    newGroup->setObjectName(QStringLiteral("screenshotPinnedNewGroupAction"));
+    connect(newGroup, &QAction::triggered, this,
+            [this, manager]() { manager->openCreateGroupModal(this, this); });
+    QAction* deleteEmpty = m_groupMenu->addItem(tr("Delete Empty Groups"));
+    deleteEmpty->setObjectName(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
+    connect(deleteEmpty, &QAction::triggered, this,
+            [manager]() { manager->deleteEmptyGroups(); });
 }
 
 void ScreenshotPinnedWindow::setRuntimeBorderColor(const QColor& color) {
@@ -2966,6 +3083,14 @@ void ScreenshotPinnedWindow::handleFirstContentFramePainted() {
     if (m_completePresentationAfterFirstFrame) {
         m_completePresentationAfterFirstFrame = false;
         finishPresentation(true, m_originalImage);
+    }
+    if (m_deferredInactiveGroupClose && !m_closing) {
+        QTimer::singleShot(0, this, [this]() {
+            if (m_deferredInactiveGroupClose && !m_closing) {
+                m_deferredInactiveGroupClose = false;
+                close();
+            }
+        });
     }
 }
 
@@ -4363,7 +4488,9 @@ QRect ScreenshotPinnedWindow::nativeRectForLogicalRect(const QRect& logical,
 void ScreenshotPinnedWindow::showAllPinnedWindows() {
     const auto windows = livePinnedWindows();
     for (const QPointer<ScreenshotPinnedWindow>& window : windows) {
-        if (window != nullptr) {
+        if (window != nullptr &&
+            (window->m_groupManager == nullptr ||
+             window->groupId() == window->m_groupManager->activeGroupId())) {
             window->show();
             window->raise();
         }
@@ -4373,7 +4500,9 @@ void ScreenshotPinnedWindow::showAllPinnedWindows() {
 void ScreenshotPinnedWindow::hideOtherPinnedWindows() {
     const auto windows = livePinnedWindows();
     for (const QPointer<ScreenshotPinnedWindow>& window : windows) {
-        if (window != nullptr && window != this) {
+        if (window != nullptr && window != this &&
+            (window->m_groupManager == nullptr ||
+             window->groupId() == window->m_groupManager->activeGroupId())) {
             window->hide();
         }
     }
@@ -4384,7 +4513,9 @@ void ScreenshotPinnedWindow::hideOtherPinnedWindows() {
 void ScreenshotPinnedWindow::closeOtherPinnedWindows() {
     const auto windows = livePinnedWindows();
     for (const QPointer<ScreenshotPinnedWindow>& window : windows) {
-        if (window != nullptr && window != this) {
+        if (window != nullptr && window != this &&
+            (window->m_groupManager == nullptr ||
+             window->groupId() == window->m_groupManager->activeGroupId())) {
             window->requestUserClose();
         }
     }
@@ -4393,7 +4524,9 @@ void ScreenshotPinnedWindow::closeOtherPinnedWindows() {
 void ScreenshotPinnedWindow::closeAllPinnedWindows() {
     const auto windows = livePinnedWindows();
     for (const QPointer<ScreenshotPinnedWindow>& window : windows) {
-        if (window != nullptr) {
+        if (window != nullptr &&
+            (window->m_groupManager == nullptr ||
+             window->groupId() == window->m_groupManager->activeGroupId())) {
             window->requestUserClose();
         }
     }

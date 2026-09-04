@@ -13,7 +13,19 @@ class PinnedWindowRepository final {
     explicit PinnedWindowRepository(QString configurationDirectory, bool writeAvailable = true);
     ~PinnedWindowRepository();
 
+    [[nodiscard]] static constexpr int maximumGroupCount() {
+        return 128;
+    }
+
     [[nodiscard]] QVector<PinnedWindowRecord> records() const;
+    [[nodiscard]] QVector<PinnedWindowGroup> groups() const;
+    [[nodiscard]] QString activeGroupId() const;
+    [[nodiscard]] StorageResult setActiveGroup(const QString& groupId);
+    [[nodiscard]] StorageResult setGroups(QVector<PinnedWindowGroup> groups,
+                                          const QString& activeGroupId);
+    [[nodiscard]] StorageResult removeEmptyGroups();
+    [[nodiscard]] StorageResult setRecordGroup(const QString& recordId,
+                                                const QString& groupId);
     [[nodiscard]] StorageResult upsert(PinnedWindowRecord record);
     [[nodiscard]] StorageResult remove(const QString& id);
     [[nodiscard]] StorageResult flush();

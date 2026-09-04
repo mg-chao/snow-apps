@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/systemtraycontroller.h"
+#include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/settings/settingscatalog.h"
@@ -204,14 +205,23 @@ QString nativeShortcutText(const QStringList& shortcuts) {
     }
     return nativeShortcuts.join(QStringLiteral(" / "));
 }
+
+QString translateTrayText(const char* source) {
+    return QCoreApplication::translate("SystemTrayController", source);
+}
 } // namespace
 
 class SystemTrayController::Impl {
   public:
-    Impl(SystemTrayController& owner, const settings::TrayCommandManifest& sourceManifest)
+    Impl(SystemTrayController& owner, const settings::TrayCommandManifest& sourceManifest,
+         PinnedWindowGroupManager* groupManager)
         : q(owner), menu(std::make_unique<adqt::widgets::AdContextMenu>()),
           trayIcon(new QSystemTrayIcon(&owner)), manifest(sourceManifest),
-          groups(manifest.groups) {
+          groups(manifest.groups), groupManager(groupManager) {
+        if (this->groupManager == nullptr) {
+            ownedGroupManager = std::make_unique<PinnedWindowGroupManager>();
+            this->groupManager = ownedGroupManager.get();
+        }
         q.setObjectName(QStringLiteral("systemTrayController"));
         menu->setObjectName(QStringLiteral("systemTrayMenu"));
         menu->setMinimumWidth(300);
@@ -236,6 +246,7 @@ class SystemTrayController::Impl {
                          });
         QObject::connect(&LanguageManager::instance(), &LanguageManager::languageChanged, &q,
                          [this](const QString&, const QLocale&) { retranslateUi(); });
+        connectGroupManagerSignals();
     }
 
     ~Impl() {
@@ -288,6 +299,65 @@ class SystemTrayController::Impl {
                 }
             }
         }
+        QAction* showMainWindow = actions.value(QStringLiteral("tray.show-main-window"));
+        groupMenu = new adqt::widgets::AdContextMenu(menu.get());
+        groupMenu->setObjectName(QStringLiteral("systemTrayWindowGroupMenu"));
+        groupMenu->setMinimumWidth(300);
+        groupMenuAction = menu->addMenu(groupMenu);
+        groupMenuAction->setObjectName(QStringLiteral("systemTrayWindowGroupAction"));
+        groupMenuAction->setVisible(true);
+        if (showMainWindow != nullptr) {
+            menu->insertAction(showMainWindow, groupMenuAction);
+        }
+        QObject::connect(groupMenu, &QMenu::aboutToShow, &q,
+                         [this]() { rebuildGroupMenu(); });
+        rebuildGroupMenu();
+    }
+
+    void rebuildGroupMenu() {
+        if (groupMenu == nullptr || groupManager == nullptr) {
+            return;
+        }
+        groupMenu->clear();
+        groupMenuAction->setText(
+            translateTrayText("Window Group: %1").arg(groupManager->displayName(groupManager->activeGroupId())));
+        auto currentGroups = groupManager->groups();
+        std::sort(currentGroups.begin(), currentGroups.end(), [this](const auto& first, const auto& second) {
+            const int comparison = QString::localeAwareCompare(groupManager->displayName(first.id),
+                                                                groupManager->displayName(second.id));
+            return comparison == 0 ? first.id < second.id : comparison < 0;
+        });
+        for (const auto& group : currentGroups) {
+            QAction* action = groupMenu->addItem(
+                QStringLiteral("%1\t%2").arg(groupManager->displayName(group.id),
+                                             QString::number(groupManager->windowCount(group.id))));
+            action->setObjectName(QStringLiteral("systemTrayGroupAction-%1").arg(group.id));
+            action->setData(group.id);
+            action->setCheckable(true);
+            action->setChecked(group.id == groupManager->activeGroupId());
+            QObject::connect(action, &QAction::triggered, &q,
+                             [this, id = group.id]() { groupManager->setActiveGroup(id); });
+        }
+        groupMenu->addSeparator();
+        QAction* newGroup = groupMenu->addItem(translateTrayText("New Group"));
+        newGroup->setObjectName(QStringLiteral("systemTrayNewGroupAction"));
+        QObject::connect(newGroup, &QAction::triggered, &q,
+                         [this]() { groupManager->openCreateGroupModal(nullptr); });
+        QAction* deleteEmpty = groupMenu->addItem(translateTrayText("Delete Empty Groups"));
+        deleteEmpty->setObjectName(QStringLiteral("systemTrayDeleteEmptyGroupsAction"));
+        QObject::connect(deleteEmpty, &QAction::triggered, &q,
+                         [this]() { groupManager->deleteEmptyGroups(); });
+    }
+
+    void connectGroupManagerSignals() {
+        if (groupManager == nullptr) {
+            return;
+        }
+        QObject::disconnect(groupManager, nullptr, &q, nullptr);
+        QObject::connect(groupManager, &PinnedWindowGroupManager::groupsChanged, &q,
+                         [this]() { rebuildGroupMenu(); });
+        QObject::connect(groupManager, &PinnedWindowGroupManager::activeGroupChanged, &q,
+                         [this](const QString&) { rebuildGroupMenu(); });
     }
 
     void retranslateUi() {
@@ -309,6 +379,7 @@ class SystemTrayController::Impl {
                 }
             }
         }
+        rebuildGroupMenu();
     }
 
     void setMenuOptions(const QStringList& options) {
@@ -378,6 +449,10 @@ class SystemTrayController::Impl {
     QSystemTrayIcon* trayIcon = nullptr;
     settings::TrayCommandManifest manifest;
     QVector<settings::SettingsTrayMenuGroupDefinition> groups;
+    std::unique_ptr<PinnedWindowGroupManager> ownedGroupManager;
+    PinnedWindowGroupManager* groupManager = nullptr;
+    adqt::widgets::AdContextMenu* groupMenu = nullptr;
+    QAction* groupMenuAction = nullptr;
     QHash<QString, QAction*> actions;
     QHash<GlobalShortcutAction, QString> shortcutText;
     QVector<QAction*> separatorsBeforeGroup;
@@ -392,13 +467,37 @@ class SystemTrayController::Impl {
 };
 
 SystemTrayController::SystemTrayController(QObject* parent)
-    : SystemTrayController(settings::builtInTrayCommandManifest(), parent) {}
+    : SystemTrayController(settings::builtInTrayCommandManifest(), nullptr, parent) {}
 
 SystemTrayController::SystemTrayController(const settings::TrayCommandManifest& manifest,
-                                           QObject* parent)
-    : QObject(parent), m_impl(std::make_unique<Impl>(*this, manifest)) {}
+                                            QObject* parent)
+    : SystemTrayController(manifest, nullptr, parent) {}
+
+SystemTrayController::SystemTrayController(const settings::TrayCommandManifest& manifest,
+                                           std::nullptr_t)
+    : SystemTrayController(manifest, static_cast<QObject*>(nullptr)) {}
+
+SystemTrayController::SystemTrayController(const settings::TrayCommandManifest& manifest,
+                                           PinnedWindowGroupManager* groupManager, QObject* parent)
+    : QObject(parent), m_impl(std::make_unique<Impl>(*this, manifest, groupManager)) {}
 
 SystemTrayController::~SystemTrayController() = default;
+
+void SystemTrayController::setGroupManager(PinnedWindowGroupManager* groupManager) {
+    if (groupManager == nullptr) {
+        return;
+    }
+    if (m_impl->groupManager == groupManager) {
+        return;
+    }
+    if (m_impl->groupManager != nullptr) {
+        QObject::disconnect(m_impl->groupManager, nullptr, this, nullptr);
+    }
+    m_impl->ownedGroupManager.reset();
+    m_impl->groupManager = groupManager;
+    m_impl->connectGroupManagerSignals();
+    m_impl->rebuildGroupMenu();
+}
 
 void SystemTrayController::show() {
     if (!m_impl->enabled) {

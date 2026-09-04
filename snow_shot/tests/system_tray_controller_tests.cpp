@@ -215,6 +215,14 @@ int main(int argc, char* argv[]) {
         }
         return static_cast<QAction*>(nullptr);
     };
+    const auto actionForObjectName = [menu](const QString& objectName) {
+        for (QAction* action : menu->actions()) {
+            if (action != nullptr && action->objectName() == objectName) {
+                return action;
+            }
+        }
+        return static_cast<QAction*>(nullptr);
+    };
     const auto visibleActions = [menu]() {
         QList<QAction*> result;
         for (QAction* action : menu->actions()) {
@@ -237,7 +245,8 @@ int main(int argc, char* argv[]) {
     auto* showMainWindowMenuAction =
         actionForId(QStringLiteral("tray.show-main-window"));
     auto* exitMenuAction = actionForId(QStringLiteral("tray.exit"));
-    require(controller.menuOptions() == defaultMenuOptions && defaultVisibleActions.size() == 13 &&
+    auto* windowGroupMenuAction = actionForObjectName(QStringLiteral("systemTrayWindowGroupAction"));
+    require(controller.menuOptions() == defaultMenuOptions && defaultVisibleActions.size() == 14 &&
                 screenshotMenuAction != nullptr && screenshotMenuAction->isVisible() &&
                 delayedScreenshotMenuAction != nullptr &&
                 delayedScreenshotMenuAction->isVisible() &&
@@ -249,11 +258,11 @@ int main(int argc, char* argv[]) {
                 showMainWindowMenuAction->isVisible() &&
                 !showMainWindowMenuAction->icon().isNull() && exitMenuAction != nullptr &&
                 exitMenuAction->isVisible() && !exitMenuAction->icon().isNull() &&
-                defaultVisibleActions.at(5)->isSeparator() &&
-                defaultVisibleActions.at(7)->isSeparator() &&
-                defaultVisibleActions.at(9)->isSeparator() &&
-                defaultVisibleActions.at(10) == disableMenuAction &&
-                defaultVisibleActions.at(11) == showMainWindowMenuAction,
+                windowGroupMenuAction != nullptr && windowGroupMenuAction->isVisible() &&
+                defaultVisibleActions.contains(disableMenuAction) &&
+                defaultVisibleActions.contains(showMainWindowMenuAction) &&
+                defaultVisibleActions.indexOf(windowGroupMenuAction) ==
+                    defaultVisibleActions.indexOf(showMainWindowMenuAction) - 1,
             "the tray menu should expose the ten default options in four catalog groups");
     requireActionText(screenshotMenuAction, QStringLiteral("Screenshot"),
                       "Screenshot should use its catalog label");
@@ -348,7 +357,7 @@ int main(int argc, char* argv[]) {
     controller.setMenuOptions({QStringLiteral("quick.screenshot"), QStringLiteral("tray.exit")});
     const QList<QAction*> compactVisibleActions = visibleActions();
     require(!controller.shortcutFunctionsDisabled() && disableChanges == 2 &&
-                !shortcutsDisabled && compactVisibleActions.size() == 3 &&
+                !shortcutsDisabled && compactVisibleActions.size() == 4 &&
                 compactVisibleActions.at(1)->isSeparator(),
             "hiding the disable command should re-enable shortcuts and collapse empty groups");
     controller.setMenuOptions(defaultMenuOptions);

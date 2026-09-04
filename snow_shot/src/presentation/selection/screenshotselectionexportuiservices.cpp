@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/screenshotselectionexportuiservices.h"
 
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
@@ -271,11 +272,13 @@ ScreenshotSelectionExportUiServices::ScreenshotSelectionExportUiServices(
     ScreenshotOcrRecognitionPort* recognition,
     ScreenshotQrRecognitionPort* qrRecognition, SnowShotApiClient* tableRecognition,
     std::function<void()> showMainWindowRequested,
-    std::function<ScreenshotPinnedRecognitionProviders()> recognitionProvider)
+    std::function<ScreenshotPinnedRecognitionProviders()> recognitionProvider,
+    snow_shot::presentation::PinnedWindowGroupManager* groupManager)
     : m_recognition(recognition), m_qrRecognition(qrRecognition),
       m_tableRecognition(tableRecognition),
       m_showMainWindowRequested(std::move(showMainWindowRequested)),
-      m_recognitionProvider(std::move(recognitionProvider)) {}
+      m_recognitionProvider(std::move(recognitionProvider)), m_groupManager(groupManager) {
+}
 
 ScreenshotSelectionExportUiServices::~ScreenshotSelectionExportUiServices() {
     cancelClipboardPublication();
@@ -371,6 +374,9 @@ bool ScreenshotSelectionExportUiServices::presentPinnedSelection(
     config.formattedTextDocument.reset();
     config.formattedPlainText.clear();
     applyPinRuntimeSettings(&config);
+    config.groupManager = m_groupManager;
+    config.groupId = m_groupManager != nullptr ? m_groupManager->activeGroupId()
+                                                : QStringLiteral("default");
     applyPersistence(&config);
     const bool presented = presentPinnedWindowAndSynchronize(
         pinnedWindow, config, m_showMainWindowRequested, std::move(completion), true);
@@ -455,6 +461,9 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     config.tableRecognition = m_tableRecognition;
     config.recognitionProvider = m_recognitionProvider;
     applyPinRuntimeSettings(&config);
+    config.groupManager = m_groupManager;
+    config.groupId = m_groupManager != nullptr ? m_groupManager->activeGroupId()
+                                                : QStringLiteral("default");
     applyPersistence(&config);
     return presentPinnedWindowAndSynchronize(pinnedWindow, config, m_showMainWindowRequested,
                                              std::move(completion));
@@ -471,6 +480,12 @@ void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
         applicationStorage.isInitialized() ? applicationStorage.pinnedWindows().records()
                                            : QVector<snow_shot::storage::PinnedWindowRecord>{};
     for (const auto& record : records) {
+        if (m_groupManager != nullptr && record.groupId != m_groupManager->activeGroupId()) {
+            continue;
+        }
+        if (m_groupManager != nullptr && m_groupManager->hasWindow(record.id)) {
+            continue;
+        }
         QScreen* targetScreen = restoreScreen(record);
         if (targetScreen == nullptr || record.nativeGeometry.isEmpty()) {
             continue;
@@ -501,6 +516,8 @@ void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
         config.persistedFirstCreationTextDpi = record.firstCreationTextDpi;
         config.persistedCanvasSession = record.canvasSession;
         config.persistedRecognitionResults = record.recognitionResults;
+        config.groupManager = m_groupManager;
+        config.groupId = record.groupId;
         config.recognition = m_recognition;
         config.qrRecognition = m_qrRecognition;
         config.tableRecognition = m_tableRecognition;

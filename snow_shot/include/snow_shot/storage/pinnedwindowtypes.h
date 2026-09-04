@@ -12,6 +12,12 @@
 
 namespace snow_shot::storage {
 
+struct PinnedWindowGroup final {
+    QString id;
+    QString name;
+    bool builtIn = false;
+};
+
 enum class PinnedWindowSourceKind {
     ImageData,
     ClipboardText,
@@ -20,6 +26,7 @@ enum class PinnedWindowSourceKind {
 
 struct PinnedWindowRecord final {
     QString id;
+    QString groupId = QStringLiteral("default");
     PinnedWindowSourceKind sourceKind = PinnedWindowSourceKind::ImageData;
     QImage image;
     QString originalFilePath;

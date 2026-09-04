@@ -6,16 +6,23 @@
 
 #include <memory>
 
+namespace snow_shot::presentation {
+class PinnedWindowGroupManager;
+}
+
 class ScreenshotController : public QObject {
     Q_OBJECT
 
   public:
-    explicit ScreenshotController(QObject* parent = nullptr);
+    explicit ScreenshotController(
+        QObject* parent = nullptr,
+        snow_shot::presentation::PinnedWindowGroupManager* groupManager = nullptr);
     ~ScreenshotController() override;
 
   public slots:
     void prewarmResources();
     void restorePinnedWindows();
+    void restoreActivePinnedGroupWindows();
     void startCapture();
     void startDelayedCapture(int delaySeconds);
     void captureAndPinSelection();

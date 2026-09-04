@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotcontroller.h"
+#include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/network/snowshotapiclient.h"
 
 #include "snow_shot/platform/physicalcursor.h"
@@ -280,7 +281,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
         FocusedWindow,
     };
 
-    explicit Impl(ScreenshotController& controller);
+    explicit Impl(ScreenshotController& controller,
+                  snow_shot::presentation::PinnedWindowGroupManager* groupManager);
     ~Impl();
 
     void createPresentationInfrastructure();
@@ -399,6 +401,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void pinSelectionToScreen() override;
     void pinClipboardContentToScreen();
     void restorePinnedWindows();
+    void restoreActivePinnedGroupWindows();
     void saveSelectionToFile() override;
     void saveImageToFile(QImage image, const QString& outputPath, ScreenshotImageFileFormat format,
                          quint64 generation);
@@ -456,6 +459,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     std::unique_ptr<ScreenshotSelectionSettingsStore> m_selectionSettings;
     std::unique_ptr<ScreenshotExportService> m_exportService;
     std::unique_ptr<ScreenshotSelectionExportUiServices> m_selectionExportUiServices;
+    snow_shot::presentation::PinnedWindowGroupManager* m_groupManager = nullptr;
     std::unique_ptr<ScreenshotSelectionExportWorkflow> m_selectionExportWorkflow;
     std::unique_ptr<ScreenshotSelectionEditWorkflow> m_selectionEditWorkflow;
     std::unique_ptr<snow_shot::platform::PhysicalCursor> m_physicalCursor;
@@ -520,8 +524,11 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     bool m_constructingCanvasSamplingUi = false;
 };
 
-ScreenshotController::Impl::Impl(ScreenshotController& controller)
-    : owner(controller), m_canvasRuntime(SnowCanvasRuntimeConfig{
+ScreenshotController::Impl::Impl(
+    ScreenshotController& controller,
+    snow_shot::presentation::PinnedWindowGroupManager* groupManager)
+    : owner(controller), m_groupManager(groupManager),
+      m_canvasRuntime(SnowCanvasRuntimeConfig{
                              snow_shot::presentation::screenshotCanvasStyleDefaults()}) {
     createPresentationInfrastructure();
     reloadUiPreferences();
@@ -1074,7 +1081,7 @@ bool ScreenshotController::Impl::ensureExportFeature() {
             providers.qrRecognition = controller->m_impl->m_qrRecognition.get();
             providers.tableRecognition = controller->m_impl->m_tableRecognition.get();
             return providers;
-        });
+        }, m_groupManager);
     auto exportWorkflow = std::make_unique<ScreenshotSelectionExportWorkflow>(
         ScreenshotSelectionExportWorkflowContext{
             m_captureState,
@@ -4020,8 +4027,9 @@ void ScreenshotController::Impl::shutdown() {
     m_overlayEventAdapter.reset();
 }
 
-ScreenshotController::ScreenshotController(QObject* parent)
-    : QObject(parent), m_impl(std::make_unique<Impl>(*this)) {}
+ScreenshotController::ScreenshotController(
+    QObject* parent, snow_shot::presentation::PinnedWindowGroupManager* groupManager)
+    : QObject(parent), m_impl(std::make_unique<Impl>(*this, groupManager)) {}
 
 ScreenshotController::~ScreenshotController() = default;
 
@@ -4030,6 +4038,14 @@ void ScreenshotController::prewarmResources() {
 }
 
 void ScreenshotController::restorePinnedWindows() {
+    QTimer::singleShot(0, this, [this]() {
+        if (m_impl->ensureExportFeature() && m_impl->m_selectionExportUiServices != nullptr) {
+            m_impl->m_selectionExportUiServices->restorePersistedWindows();
+        }
+    });
+}
+
+void ScreenshotController::restoreActivePinnedGroupWindows() {
     QTimer::singleShot(0, this, [this]() {
         if (m_impl->ensureExportFeature() && m_impl->m_selectionExportUiServices != nullptr) {
             m_impl->m_selectionExportUiServices->restorePersistedWindows();

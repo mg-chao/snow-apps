@@ -712,6 +712,22 @@
 <context>
     <name>ScreenshotPinnedWindow</name>
     <message>
+        <source>Group: %1</source>
+        <translation>Group: %1</translation>
+    </message>
+    <message>
+        <source>Default</source>
+        <translation>Default</translation>
+    </message>
+    <message>
+        <source>New Group</source>
+        <translation>New Group</translation>
+    </message>
+    <message>
+        <source>Delete Empty Groups</source>
+        <translation>Delete Empty Groups</translation>
+    </message>
+    <message>
         <location filename="../src/presentation/pinned/screenshotpinnedwindow.cpp" line="138" />
         <source>Enable drawing mode</source>
         <translation>Enable drawing mode</translation>
@@ -878,6 +894,24 @@
         <source>Close</source>
         <translation>Close</translation>
     </message>
+</context>
+<context>
+    <name>PinnedWindowGroupManager</name>
+    <message><source>Default</source><translation>Default</translation></message>
+    <message><source>Group %1</source><translation>Group %1</translation></message>
+    <message><source>Group name</source><translation>Group name</translation></message>
+    <message><source>Please enter a group name</source><translation>Please enter a group name</translation></message>
+    <message><source>This group name is already in use</source><translation>This group name is already in use</translation></message>
+    <message><source>New Group</source><translation>New Group</translation></message>
+    <message><source>Delete Empty Groups</source><translation>Delete Empty Groups</translation></message>
+    <message><source>Add</source><translation>Add</translation></message>
+    <message><source>Cancel</source><translation>Cancel</translation></message>
+</context>
+<context>
+    <name>SystemTrayController</name>
+    <message><source>Window Group: %1</source><translation>Window Group: %1</translation></message>
+    <message><source>New Group</source><translation>New Group</translation></message>
+    <message><source>Delete Empty Groups</source><translation>Delete Empty Groups</translation></message>
 </context>
 <context>
     <name>ScreenshotRecognitionSessionController</name>

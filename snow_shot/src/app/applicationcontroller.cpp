@@ -2,6 +2,7 @@
 
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/mainwindow.h"
+#include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/systemtraycontroller.h"
@@ -36,11 +37,21 @@ QStringList stringList(const QJsonValue& value) {
     }
     return result;
 }
+
+storage::PinnedWindowRepository* initializedPinnedWindowRepository() {
+    auto& applicationStorage = storage::ApplicationStorage::instance();
+    if (!applicationStorage.isInitialized()) {
+        static_cast<void>(applicationStorage.initialize());
+    }
+    return applicationStorage.isInitialized() ? &applicationStorage.pinnedWindows() : nullptr;
+}
 } // namespace
 
 class ApplicationController::Impl {
   public:
-    Impl(ApplicationController& owner, QApplication& application) : q(owner), app(application) {
+    Impl(ApplicationController& owner, QApplication& application)
+        : q(owner), app(application), groupManager(initializedPinnedWindowRepository()),
+          systemTray(presentation::settings::builtInTrayCommandManifest(), &groupManager) {
         QObject::connect(&systemTray, &presentation::SystemTrayController::screenshotRequested, &q,
                          [this]() {
                              if (ScreenshotController* controller = ensureScreenshotController()) {
@@ -65,6 +76,13 @@ class ApplicationController::Impl {
             [this](bool disabled) {
                 globalShortcutManager.setShortcutFunctionsEnabled(!disabled);
             });
+        QObject::connect(&groupManager,
+                         &presentation::PinnedWindowGroupManager::restoreActiveGroupWindowsRequested,
+                         &q, [this]() {
+                             if (ScreenshotController* controller = ensureScreenshotController()) {
+                                 controller->restoreActivePinnedGroupWindows();
+                             }
+                         });
         QObject::connect(&globalShortcutManager, &presentation::GlobalShortcutManager::activated,
                          &q, [this](presentation::GlobalShortcutAction action) {
                              dispatchQuickAction(action);
@@ -122,7 +140,7 @@ class ApplicationController::Impl {
 
     ScreenshotController* ensureScreenshotController() {
         if (screenshotController == nullptr) {
-            screenshotController = std::make_unique<ScreenshotController>();
+            screenshotController = std::make_unique<ScreenshotController>(&q, &groupManager);
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::showMainWindowRequested, &q,
                              [this]() { showMainWindow(); });
@@ -281,6 +299,7 @@ class ApplicationController::Impl {
     ApplicationController& q;
     QApplication& app;
     // These services outlive the disposable configuration window.
+    presentation::PinnedWindowGroupManager groupManager;
     presentation::SystemTrayController systemTray;
     presentation::GlobalShortcutManager globalShortcutManager;
     // Settings are intentionally constructed on first window access.  The

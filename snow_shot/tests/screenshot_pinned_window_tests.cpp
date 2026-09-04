@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/screenshotpinnededitcontroller.h"
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
@@ -248,6 +249,36 @@ void pinnedQrResultCopiesWithKeyboardShortcut() {
 
     pinnedWindow->close();
     require(processUntilDeleted(guardedWindow, 2000), "pinned QR copy window was not deleted");
+}
+
+void groupedPinnedWindowSignalConnectionsDoNotAssert() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+
+    snow_shot::presentation::PinnedWindowGroupManager groupManager;
+    QImage image(120, 80, QImage::Format_ARGB32_Premultiplied);
+    image.fill(QColor(42, 84, 126, 255));
+    auto* pinnedWindow =
+        new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
+    QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), image.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(image.size()));
+    config.backgroundImage = image;
+    config.screen = screen;
+    config.enableEditing = true;
+    config.automaticTextRecognition = false;
+    config.groupManager = &groupManager;
+    config.groupId = groupManager.activeGroupId();
+    require(pinnedWindow->present(config),
+            "a grouped pinned window should present without a Qt connection assertion");
+
+    require(groupManager.createGroup(QStringLiteral("Signal test")).has_value(),
+            "group creation should still work after grouped presentation");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    pinnedWindow->close();
+    require(processUntilDeleted(guardedWindow, 2000),
+            "the grouped pinned window should close after the connection test");
 }
 
 adqt::widgets::AdButton* toolbarButtonNamed(ScreenshotToolPalette& toolbar,
@@ -1159,6 +1190,91 @@ void pinnedPendingPresentationPublishesWorkerImage(SnowCanvasRuntime&) {
             "failed pending pinned window was not closed");
 }
 
+void pinnedPendingPresentationSurvivesGroupSwitch(SnowCanvasRuntime&) {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+
+    QTemporaryDir directory;
+    require(directory.isValid(), "temporary storage directory is unavailable");
+    snow_shot::storage::PinnedWindowRepository repository(directory.path());
+    snow_shot::presentation::PinnedWindowGroupManager groupManager(&repository);
+    const auto inactiveGroup = groupManager.createGroup(QStringLiteral("Inactive"));
+    require(inactiveGroup.has_value(), "the inactive test group should be created");
+
+    const QString persistenceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    QImage materializedImage(QSize(160, 96), QImage::Format_ARGB32_Premultiplied);
+    materializedImage.fill(QColor(84, 168, 112));
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(60, 60), materializedImage.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(materializedImage.size()));
+    config.contentCanvasRect = config.canvasSourceRect;
+    config.surfaceCanvasRect = config.canvasSourceRect;
+    config.fullResolutionScaleBasis = materializedImage.size();
+    config.screen = screen;
+    config.enableEditing = true;
+    config.groupManager = &groupManager;
+    config.groupId = groupManager.activeGroupId();
+    config.persistenceId = persistenceId;
+    config.persistenceWriter = [&repository](const snow_shot::storage::PinnedWindowRecord& record) {
+        static_cast<void>(repository.upsert(record));
+    };
+    config.persistenceRemover = [&repository](const QString& id) {
+        static_cast<void>(repository.remove(id));
+    };
+
+    auto* window = new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
+    QPointer<ScreenshotPinnedWindow> guardedWindow(window);
+    require(window->presentPending(config),
+            "pending pinned presentation failed to create its shell");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+
+    require(groupManager.setActiveGroup(*inactiveGroup),
+            "switching away from a pending pinned window should succeed");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    require(guardedWindow != nullptr,
+            "switching groups must retain a pending pinned window until its image is materialized");
+    require(repository.records().isEmpty(),
+            "a pending pinned window must not be persisted with a null image");
+
+    require(groupManager.setActiveGroup(QStringLiteral("default")),
+            "switching back to the pending pinned window's group should succeed");
+    require(guardedWindow != nullptr,
+            "switching back should cancel a deferred inactive-group close");
+    require(window->publishMaterializedImage(materializedImage),
+            "the pending pinned window should still accept its materialized image");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    const auto records = repository.records();
+    require(records.size() == 1 && records.front().id == persistenceId &&
+                !records.front().image.isNull(),
+            "materializing a retained pending pin should persist its image");
+
+    window->close();
+    require(processUntilDeleted(guardedWindow, 2000),
+            "the retained pending pinned window was not deleted after the test");
+
+    const QString inactivePersistenceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    config.persistenceId = inactivePersistenceId;
+    auto* inactiveWindow =
+        new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
+    QPointer<ScreenshotPinnedWindow> guardedInactiveWindow(inactiveWindow);
+    require(inactiveWindow->presentPending(config),
+            "the inactive pending pinned presentation failed to create its shell");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    require(groupManager.setActiveGroup(*inactiveGroup),
+            "switching away from the second pending pinned window should succeed");
+    require(inactiveWindow->publishMaterializedImage(materializedImage),
+            "the inactive pending pinned window should accept its materialized image");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    require(processUntilDeleted(guardedInactiveWindow, 2000),
+            "an inactive pending pinned window should close after materialization");
+    const auto inactiveRecords = repository.records();
+    require(std::any_of(inactiveRecords.cbegin(), inactiveRecords.cend(),
+                        [&inactivePersistenceId](const auto& record) {
+                            return record.id == inactivePersistenceId && !record.image.isNull();
+                        }),
+            "an inactive pending pinned window should persist after materialization");
+}
+
 void pinnedControlsMatchReferenceStyle(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -1674,7 +1790,10 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
     waitForUi(1100);
     require(scaleLabel->isHidden(), "the scale readout should hide after one second");
     const QRect beforeRotation = pinnedWindow->currentNativeGeometry();
-    auto* processMenu = qobject_cast<adqt::widgets::AdContextMenu*>(menu->actions().at(6)->menu());
+    auto* processAction = pinnedMenuActionNamed(
+        *pinnedWindow, QStringLiteral("screenshotPinnedProcessImageMenu"));
+    auto* processMenu = qobject_cast<adqt::widgets::AdContextMenu*>(
+        processAction != nullptr ? processAction->menu() : nullptr);
     require(processMenu != nullptr, "the process-image menu was not found");
     processMenu->actions().at(0)->trigger();
     waitForUi(40);
@@ -1944,7 +2063,10 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
 
     scaleMenu->actions().at(3)->trigger();
     waitForUi(20);
-    menu->actions().at(5)->setChecked(true);
+    auto* drawingAction = pinnedMenuActionNamed(
+        *pinnedWindow, QStringLiteral("screenshotPinnedDrawingAction"));
+    require(drawingAction != nullptr, "pinned drawing action was not found");
+    drawingAction->setChecked(true);
     waitForUi(30);
     const QRect editModeGeometry = pinnedWindow->currentNativeGeometry();
     require(nativeHitTest(QPoint(editModeGeometry.right(), editModeGeometry.center().y())) ==
@@ -1957,9 +2079,12 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
                 reinterpret_cast<LPARAM>(&disabledDrawingNative));
     require(qRectForNativeRect(disabledDrawingNative) == disabledDrawingProposal,
             "drawing mode should leave WM_SIZING proposals unchanged");
-    menu->actions().at(5)->setChecked(false);
+    drawingAction->setChecked(false);
 
-    menu->actions().at(10)->setChecked(true);
+    auto* thumbnailAction = pinnedMenuActionNamed(
+        *pinnedWindow, QStringLiteral("screenshotPinnedThumbnailAction"));
+    require(thumbnailAction != nullptr, "pinned thumbnail action was not found");
+    thumbnailAction->setChecked(true);
     // Entering thumbnail mode runs a geometry animation whose shrinking frames
     // re-render with linear filtering; wait for the window to settle instead of
     // assuming a fixed budget shorter than the animation can take.
@@ -1987,7 +2112,7 @@ void pinnedScalingAndAspectLockedResizing(SnowCanvasRuntime&) {
             "thumbnail mode should leave WM_SIZING proposals unchanged");
 #endif
     sendWheel(canvas->rect().center(), QPoint(), QPoint(0, 120));
-    require(!menu->actions().at(10)->isChecked() &&
+    require(!thumbnailAction->isChecked() &&
                 pinnedWindow->currentNativeGeometry().size() == expectedSize(110, true),
             "thumbnail wheel input should restore the pin and apply cursor scaling");
 
@@ -2550,8 +2675,10 @@ void pinnedEditToolbarControlsCanvasHistory(SnowCanvasRuntime&) {
     auto* contextMenu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
         QStringLiteral("screenshotPinnedContextMenu"));
     require(contextMenu != nullptr, "pinned context menu was not found");
-    auto* processMenu =
-        qobject_cast<adqt::widgets::AdContextMenu*>(contextMenu->actions().at(6)->menu());
+    auto* processAction = pinnedMenuActionNamed(
+        *pinnedWindow, QStringLiteral("screenshotPinnedProcessImageMenu"));
+    auto* processMenu = qobject_cast<adqt::widgets::AdContextMenu*>(
+        processAction != nullptr ? processAction->menu() : nullptr);
     require(processMenu != nullptr, "pinned process-image menu was not found");
     processMenu->actions().at(0)->trigger();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
@@ -2739,6 +2866,10 @@ int main(int argc, char* argv[]) {
             pinnedPendingPresentationPublishesWorkerImage(sourceRuntime);
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--pending-group-switch-only"))) {
+            pinnedPendingPresentationSurvivesGroupSwitch(sourceRuntime);
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--restore-wiring-only"))) {
             restoredPinnedWindowScaleMenuFollowsMonitorDpiChange(sourceRuntime);
             restoredThumbnailScaleMenuStaysConsistentThroughExit(sourceRuntime);
@@ -2774,8 +2905,10 @@ int main(int argc, char* argv[]) {
         restoredPinnedWindowKeepsExactWheelLevelAtSameDpi(sourceRuntime);
         pinnedCopyIncludesSourceCanvasDrawing();
         pinnedQrResultCopiesWithKeyboardShortcut();
+        groupedPinnedWindowSignalConnectionsDoNotAssert();
         pinnedRecognitionAvailableThroughLazyProvider();
         pinnedPendingPresentationPublishesWorkerImage(sourceRuntime);
+        pinnedPendingPresentationSurvivesGroupSwitch(sourceRuntime);
         pinnedAsyncPresentationDefersContent(sourceRuntime);
         pinnedControlsMatchReferenceStyle(sourceRuntime);
         pinnedThumbnailUsesOpaqueThemeBackground(sourceRuntime);

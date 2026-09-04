@@ -5,6 +5,7 @@
 #include <QString>
 #include <QStringList>
 
+#include <cstddef>
 #include <memory>
 
 #include "snow_shot/presentation/globalshortcuttypes.h"
@@ -14,6 +15,7 @@ struct TrayCommandManifest;
 }
 
 namespace snow_shot::presentation {
+class PinnedWindowGroupManager;
 class SystemTrayController final : public QObject {
     Q_OBJECT
 
@@ -21,6 +23,13 @@ class SystemTrayController final : public QObject {
     explicit SystemTrayController(QObject* parent = nullptr);
     SystemTrayController(const settings::TrayCommandManifest& manifest,
                          QObject* parent = nullptr);
+    // Keep the historical `(manifest, nullptr)` construction unambiguous now
+    // that the manager-injection overload also accepts a nullable pointer.
+    SystemTrayController(const settings::TrayCommandManifest& manifest,
+                         std::nullptr_t parent);
+    SystemTrayController(const settings::TrayCommandManifest& manifest,
+                         PinnedWindowGroupManager* groupManager, QObject* parent = nullptr);
+    void setGroupManager(PinnedWindowGroupManager* groupManager);
     ~SystemTrayController() override;
 
     void show();

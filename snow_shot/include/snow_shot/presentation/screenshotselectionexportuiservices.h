@@ -18,6 +18,10 @@ class ScreenshotPinnedWindowPool;
 class QTextDocument;
 struct ScreenshotPinnedRecognitionProviders;
 
+namespace snow_shot::presentation {
+class PinnedWindowGroupManager;
+}
+
 class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExportDestinationPort {
   public:
     explicit ScreenshotSelectionExportUiServices(
@@ -25,7 +29,8 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
         ScreenshotQrRecognitionPort* qrRecognition = nullptr,
         SnowShotApiClient* tableRecognition = nullptr,
         std::function<void()> showMainWindowRequested = {},
-        std::function<ScreenshotPinnedRecognitionProviders()> recognitionProvider = {});
+        std::function<ScreenshotPinnedRecognitionProviders()> recognitionProvider = {},
+        snow_shot::presentation::PinnedWindowGroupManager* groupManager = nullptr);
     ~ScreenshotSelectionExportUiServices() override;
 
     [[nodiscard]] bool publishClipboard(QObject* receiver, ScreenshotClipboardPayload payload,
@@ -60,6 +65,7 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     SnowShotApiClient* m_tableRecognition = nullptr;
     std::function<void()> m_showMainWindowRequested;
     std::function<ScreenshotPinnedRecognitionProviders()> m_recognitionProvider;
+    snow_shot::presentation::PinnedWindowGroupManager* m_groupManager = nullptr;
     std::unique_ptr<ScreenshotPinnedWindowPool> m_windowPool;
     std::vector<ScreenshotClipboardCommitHandle> m_clipboardCommits;
     std::vector<std::shared_ptr<std::atomic_bool>> m_clipboardCompletionEnabled;
