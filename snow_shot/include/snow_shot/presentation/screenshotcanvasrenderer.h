@@ -9,6 +9,7 @@
 #include <QImage>
 #include <QPoint>
 #include <QPointer>
+#include <QRect>
 #include <QRectF>
 #include <QRegion>
 #include <QSize>
@@ -130,6 +131,9 @@ class ScreenshotCanvasRenderer final : public SnowCanvasCustomRenderer {
     [[nodiscard]] bool selectionToolbarHovered() const;
     [[nodiscard]] bool selectionBorderVisible() const;
     [[nodiscard]] QRectF selection() const;
+    // True when the next paint will Source-fill or blit screenshot content over
+    // every pixel of widgetRect, so a parent translucent clear is redundant.
+    [[nodiscard]] bool coversWidgetRect(const QRect& widgetRect) const;
 #if defined(SNOW_SHOT_BENCH_INTERNALS)
     [[nodiscard]] quint64 ocrGeometrySynchronizationCountForTesting() const;
 #endif

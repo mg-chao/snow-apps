@@ -360,6 +360,10 @@ quint64 ScreenshotOverlayWindow::windowMaskApplicationCountForTesting() const {
     return m_windowMaskApplicationCount;
 }
 
+quint64 ScreenshotOverlayWindow::transparentClearCountForTesting() const {
+    return m_transparentClearCount;
+}
+
 ScreenshotCanvasRenderer* ScreenshotOverlayWindow::screenshotRendererForTesting() const {
     return m_screenshotRenderer.get();
 }
@@ -498,10 +502,18 @@ void ScreenshotOverlayWindow::paintEvent(QPaintEvent* event) {
 #endif
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.paint_begin");
     const QRect targetRect = paintRegion.boundingRect();
-    if (testAttribute(Qt::WA_TranslucentBackground) && !targetRect.isEmpty()) {
+    const bool rendererCoversTarget =
+        m_canvas != nullptr && m_screenshotRenderer != nullptr && m_canvas->isVisible() &&
+        !targetRect.isEmpty() && m_canvas->geometry().contains(targetRect) &&
+        m_screenshotRenderer->coversWidgetRect(targetRect.translated(-m_canvas->pos()));
+    if (testAttribute(Qt::WA_TranslucentBackground) && !targetRect.isEmpty() &&
+        !rendererCoversTarget) {
         QPainter painter(this);
         painter.setCompositionMode(QPainter::CompositionMode_Source);
         painter.fillRect(targetRect, Qt::transparent);
+#if defined(SNOW_SHOT_BENCH_INTERNALS)
+        ++m_transparentClearCount;
+#endif
     }
 
     QWidget::paintEvent(event);

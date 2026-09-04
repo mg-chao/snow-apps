@@ -1078,6 +1078,76 @@ void guideLinesInitializeFromGlobalCursorPosition() {
             "initial guide synchronization should clear guides outside captured displays");
 }
 
+void rendererCoversTheWidgetRectOnceAScreenshotFillsTheViewport() {
+    SnowCanvasWidget canvas;
+    canvas.resize(96, 72);
+    canvas.show();
+    QApplication::processEvents();
+    require(canvas.setViewportCamera(0.0, 0.0, 1.0),
+            "coverage test should initialize a 1:1 screenshot camera");
+
+    ScreenshotCanvasRenderer renderer(canvas);
+    require(!renderer.coversWidgetRect(canvas.rect()),
+            "an empty renderer must not claim to cover the viewport");
+
+    QImage screenshot(96, 72, QImage::Format_RGBA8888);
+    screenshot.fill(QColor(12, 34, 56));
+    renderer.setImage(screenshot, QRectF(-48.0, -36.0, 96.0, 72.0));
+    require(renderer.coversWidgetRect(canvas.rect()),
+            "a 1:1 screenshot must cover every canvas pixel");
+    require(!renderer.coversWidgetRect(QRect(-4, 0, 12, 12)),
+            "coverage must not extend outside the canvas widget");
+
+    renderer.setImage(screenshot, QRectF(-20.0, -10.0, 40.0, 20.0));
+    require(!renderer.coversWidgetRect(canvas.rect()),
+            "a screenshot that does not fill the viewport must not claim coverage");
+
+    renderer.setImage(screenshot, QRectF(-48.0, -36.0, 96.0, 72.0));
+    renderer.setRenderMode(ScreenshotCanvasRenderer::RenderMode::PinnedResult);
+    require(renderer.coversWidgetRect(canvas.rect()),
+            "pinned-result mode Source-fills the viewport before the image blit");
+
+    renderer.reset();
+    require(!renderer.coversWidgetRect(canvas.rect()),
+            "resetting the renderer must drop coverage");
+}
+
+void overlayPaintSkipsRedundantTransparentClearWhenRendererCoversTheRect() {
+    NoopOverlayEventSink eventSink;
+    auto* canvas = new SnowCanvasWidget;
+    ScreenshotOverlayWindow overlay(eventSink, canvas);
+    overlay.resize(96, 72);
+    overlay.show();
+    QApplication::processEvents();
+    require(canvas->setViewportCamera(0.0, 0.0, 1.0),
+            "the overlay coverage test should initialize a 1:1 screenshot camera");
+
+    QImage screenshot(96, 72, QImage::Format_RGBA8888);
+    screenshot.fill(QColor(12, 34, 56));
+    overlay.setScreenshotImage(screenshot, QRectF(-48.0, -36.0, 96.0, 72.0));
+    overlay.setScreenshotMaskVisible(true);
+
+    const quint64 coveredClearsBefore = overlay.transparentClearCountForTesting();
+    overlay.repaint();
+    require(overlay.transparentClearCountForTesting() == coveredClearsBefore,
+            "a covering screenshot blit must not Source-clear the translucent overlay first");
+
+    QImage rendered(overlay.size(), QImage::Format_ARGB32_Premultiplied);
+    rendered.fill(QColor(255, 0, 255));
+    {
+        QPainter painter(&rendered);
+        overlay.render(&painter);
+    }
+    require(rendered.pixelColor(8, 8) != QColor(255, 0, 255),
+            "skipping the parent clear must still let the canvas cover the overlay");
+
+    overlay.resetScreenshotRendering();
+    const quint64 uncoveredClearsBefore = overlay.transparentClearCountForTesting();
+    overlay.repaint();
+    require(overlay.transparentClearCountForTesting() > uncoveredClearsBefore,
+            "an empty translucent overlay must still Source-clear its backing store");
+}
+
 void screenshotImageMaskAndSelectionRenderInTheirOwnedPasses() {
     SnowCanvasWidget canvas;
     canvas.resize(80, 80);
@@ -3230,6 +3300,8 @@ int main(int argc, char** argv) {
         return 0;
     }
     screenshotImageMaskAndSelectionRenderInTheirOwnedPasses();
+    rendererCoversTheWidgetRectOnceAScreenshotFillsTheViewport();
+    overlayPaintSkipsRedundantTransparentClearWhenRendererCoversTheRect();
     layeredImageSourceMatchesMaterializedOutput();
     physicalViewportRenderingPreservesEveryPixelAtFractionalDprs();
     pinnedResultDownscaleUsesLinearFiltering();

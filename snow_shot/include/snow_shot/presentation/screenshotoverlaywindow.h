@@ -68,6 +68,7 @@ class ScreenshotOverlayWindow final : public QWidget {
     [[nodiscard]] ScreenshotScrollingTrimRange scrollingThumbnailTrim() const;
 #if defined(SNOW_SHOT_BENCH_INTERNALS)
     [[nodiscard]] quint64 windowMaskApplicationCountForTesting() const;
+    [[nodiscard]] quint64 transparentClearCountForTesting() const;
     [[nodiscard]] ScreenshotCanvasRenderer* screenshotRendererForTesting() const;
 #endif
     void showPreparedFrame();
@@ -113,6 +114,7 @@ class ScreenshotOverlayWindow final : public QWidget {
     bool m_windowMaskInitialized = false;
 #if defined(SNOW_SHOT_BENCH_INTERNALS)
     quint64 m_windowMaskApplicationCount = 0;
+    quint64 m_transparentClearCount = 0;
 #endif
 };
 
