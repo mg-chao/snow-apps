@@ -52,6 +52,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <utility>
 
 namespace {
@@ -366,6 +367,58 @@ class HistoryThumbnailReply final : public adqt::widgets::AdImageReply {
     std::function<void(QImage)> onSuccess_;
 };
 
+constexpr qint64 kMaximumThumbnailCacheBytes = 256LL * 1024LL * 1024LL;
+
+qint64 thumbnailCacheBytes(const QDir& cache) {
+    const QFileInfoList entries =
+        cache.entryInfoList({QStringLiteral("*.png")}, QDir::Files, QDir::Time | QDir::Reversed);
+    qint64 totalBytes = 0;
+    for (const QFileInfo& entry : entries) {
+        totalBytes += entry.size();
+    }
+    return totalBytes;
+}
+
+// Byte estimate of the thumbnail cache, shared with persistence jobs so they
+// can outlive the loader instance that submitted them.
+struct ThumbnailCacheCapacity {
+    std::mutex mutex;
+    // -1 until the first write reconciles the estimate with the directory.
+    qint64 bytes = -1;
+};
+
+// Keeps the 256 MiB cache cap with an incrementally maintained byte estimate
+// instead of listing the whole cache directory after every write; the estimate
+// is re-checked against disk only when a write crosses the cap (a concurrent
+// cache clear shows up there as a lower true total).
+void maintainThumbnailCacheCapacity(const std::shared_ptr<ThumbnailCacheCapacity>& capacity,
+                                    const QString& directory, qint64 writtenBytes) {
+    const QDir cache(directory);
+    std::lock_guard<std::mutex> lock(capacity->mutex);
+    if (capacity->bytes < 0) {
+        capacity->bytes = thumbnailCacheBytes(cache);
+    } else {
+        capacity->bytes += writtenBytes;
+    }
+    if (capacity->bytes <= kMaximumThumbnailCacheBytes) {
+        return;
+    }
+    capacity->bytes = thumbnailCacheBytes(cache);
+    if (capacity->bytes <= kMaximumThumbnailCacheBytes) {
+        return;
+    }
+    const QFileInfoList entries =
+        cache.entryInfoList({QStringLiteral("*.png")}, QDir::Files, QDir::Time | QDir::Reversed);
+    for (const QFileInfo& entry : entries) {
+        if (capacity->bytes <= kMaximumThumbnailCacheBytes) {
+            break;
+        }
+        if (QFile::remove(entry.absoluteFilePath())) {
+            capacity->bytes -= entry.size();
+        }
+    }
+}
+
 class HistoryThumbnailLoader final : public adqt::widgets::AdImageLoader {
   public:
     explicit HistoryThumbnailLoader(QObject* parent = nullptr)
@@ -429,38 +482,26 @@ class HistoryThumbnailLoader final : public adqt::widgets::AdImageLoader {
 
     void persist(const QString& path, QImage image) const {
         const QString directory = QFileInfo(path).absolutePath();
+        auto capacity = m_capacity;
         // Accepted cache writes remain queued until completion; image buffers can
         // therefore retain memory proportional to the pending persistence queue.
-        historyTaskExecutor().submit([directory, path, image = std::move(image)]() mutable {
-            if (!QDir().mkpath(directory)) {
-                return;
-            }
-            QSaveFile file(path);
-            const QByteArray png = snow_shot::image_codec::encodePng(image);
-            image = QImage();
-            if (!file.open(QIODevice::WriteOnly) || png.isEmpty() || file.write(png) != png.size() ||
-                !file.commit()) {
-                return;
-            }
-
-            QDir cache(directory);
-            QFileInfoList entries =
-                cache.entryInfoList({QStringLiteral("*.png")}, QDir::Files, QDir::Time | QDir::Reversed);
-            qint64 totalBytes = 0;
-            for (const QFileInfo& entry : entries) {
-                totalBytes += entry.size();
-            }
-            constexpr qint64 kMaximumCacheBytes = 256LL * 1024LL * 1024LL;
-            for (const QFileInfo& entry : entries) {
-                if (totalBytes <= kMaximumCacheBytes) {
-                    break;
+        historyTaskExecutor().submit(
+            [capacity, directory, path, image = std::move(image)]() mutable {
+                if (!QDir().mkpath(directory)) {
+                    return;
                 }
-                if (QFile::remove(entry.absoluteFilePath())) {
-                    totalBytes -= entry.size();
+                QSaveFile file(path);
+                const QByteArray png = snow_shot::image_codec::encodePng(image);
+                image = QImage();
+                if (!file.open(QIODevice::WriteOnly) || png.isEmpty() ||
+                    file.write(png) != png.size() || !file.commit()) {
+                    return;
                 }
-            }
-        }, true);
+                maintainThumbnailCacheCapacity(capacity, directory, png.size());
+            }, true);
     }
+
+    std::shared_ptr<ThumbnailCacheCapacity> m_capacity = std::make_shared<ThumbnailCacheCapacity>();
 
     QString m_cacheDirectory;
 };

@@ -109,6 +109,9 @@ class SettingsBackend : public QObject {
     [[nodiscard]] virtual bool triggerAction(SettingsActionBinding binding) = 0;
     [[nodiscard]] virtual storage::StorageStatus storageStatus() const = 0;
     virtual void refreshStorageStatus() {}
+    // Show-event path; backends may throttle repeated refreshes.  Defaults to
+    // the unthrottled refresh so simple backends only need that override.
+    virtual void refreshStorageStatusIfStale() { refreshStorageStatus(); }
     [[nodiscard]] virtual bool resetSection(SettingsSectionReset reset) = 0;
     [[nodiscard]] virtual QString fieldError(const QString& fieldId) const {
         Q_UNUSED(fieldId);
@@ -187,6 +190,7 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     [[nodiscard]] bool triggerAction(SettingsActionBinding binding) override;
     [[nodiscard]] storage::StorageStatus storageStatus() const override;
     void refreshStorageStatus() override;
+    void refreshStorageStatusIfStale() override;
     [[nodiscard]] bool resetSection(SettingsSectionReset reset) override;
 
   private:

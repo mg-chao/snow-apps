@@ -1150,7 +1150,12 @@ void appUsageScanAndCacheCleanup() {
     require(applicationStorage.flushNow().success, "post-scan flush must succeed");
     const storage::StorageStatus scanned = applicationStorage.status();
     require(!scanned.appUsage.scanning, "a refreshed storage must not report scanning");
-    require(scanned.appUsage.historyBytes == 200, "history bytes must match the test payload");
+    // History bytes must come from the repository's incrementally maintained
+    // usage, so the dummy record materialized behind its back stays uncounted.
+    require(scanned.appUsage.historyBytes == scanned.historyUsage.totalBytes,
+            "history bytes must mirror the capture-history repository usage");
+    require(scanned.appUsage.historyBytes == 0,
+            "records written behind the repository must not be counted until reconcile");
     require(scanned.appUsage.pinnedWindowBytes == 30,
             "pinned window bytes must match the test payload");
     require(scanned.appUsage.ocrAssetBytes == 150, "ocr asset bytes must match the test payload");
@@ -1161,7 +1166,7 @@ void appUsageScanAndCacheCleanup() {
     require(scanned.appUsage.otherBytes > 0,
             "other bytes must cover the materialized configuration");
     require(scanned.appUsage.totalBytes() ==
-                200 + 30 + 150 + 64 + 80 + scanned.appUsage.otherBytes,
+                scanned.appUsage.historyBytes + 30 + 150 + 64 + 80 + scanned.appUsage.otherBytes,
             "total app usage must be the sum of all categories");
 
     const auto thumbnailClear = applicationStorage.requestThumbnailCacheClearAsync();

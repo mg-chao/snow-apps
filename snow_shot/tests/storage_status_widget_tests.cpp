@@ -162,12 +162,19 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     void refreshStorageStatus() override {
         ++m_refreshCount;
     }
+    void refreshStorageStatusIfStale() override {
+        ++m_staleRefreshCount;
+    }
     bool resetSection(settings::SettingsSectionReset) override {
         return false;
     }
 
     int refreshCount() const {
         return m_refreshCount;
+    }
+
+    int staleRefreshCount() const {
+        return m_staleRefreshCount;
     }
 
     void publish(storage::StorageStatus status) {
@@ -182,6 +189,7 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
   private:
     storage::StorageStatus m_status;
     int m_refreshCount = 0;
+    int m_staleRefreshCount = 0;
 };
 
 settings::SettingsRegistry storageStatusRegistry() {
@@ -306,8 +314,10 @@ void widgetShowsScanningStateAndForwardsRefresh() {
     StorageStatusSettingsWidget widget(session);
     widget.show();
     flushEvents();
-    require(backend.refreshCount() >= 1,
-            "showing the widget must request a storage status refresh");
+    require(backend.staleRefreshCount() >= 1,
+            "showing the widget must request a staleness-aware storage status refresh");
+    require(backend.refreshCount() == 0,
+            "showing the widget must not force an unconditional rescan");
 
     QLabel* total = widget.findChild<QLabel*>(QStringLiteral("settings-status-value-total"));
     QAbstractButton* refresh =

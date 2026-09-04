@@ -1355,7 +1355,9 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
             std::lock_guard<std::mutex> lock(m_stateMutex);
             const auto index = m_recordIndex.constFind(id);
             if (index != m_recordIndex.cend() && *index < m_records.size()) {
+                // The directory moved into quarantine, so its bytes move with it.
                 m_recordBytes -= m_records.at(*index).record.totalBytes;
+                m_quarantineBytes += m_records.at(*index).record.totalBytes;
                 m_records.removeAt(*index);
                 rebuildRecordIndexLocked();
             }

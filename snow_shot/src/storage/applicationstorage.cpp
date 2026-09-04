@@ -20,6 +20,10 @@
 
 namespace snow_shot::storage {
 namespace {
+// A completed usage scan stays authoritative for this long, so settings-page
+// show events inside the window reuse the cached snapshot instead of rescanning.
+constexpr std::chrono::seconds kUsageRefreshStaleAfter{10};
+
 template <typename Result> std::shared_future<Result> readyFuture(Result result) {
     auto promise = std::make_shared<std::promise<Result>>();
     auto future = promise->get_future().share();
@@ -107,10 +111,12 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     if (m_initialized) {
         shutdown();
     }
+    // The usage tracker's history provider reads the capture-history repository,
+    // so the tracker worker must be joined before the repository is destroyed.
+    m_usageTracker.reset();
     m_captureHistory.reset();
     m_pinnedWindows.reset();
     m_configuration.reset();
-    m_usageTracker.reset();
 
     const QString executableDirectory = QDir::cleanPath(options.executableDirectory.isEmpty()
                                                             ? QCoreApplication::applicationDirPath()
@@ -212,6 +218,9 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     usageOptions.thumbnailCacheDirectory = StorageUsageTracker::defaultThumbnailCacheDirectory();
     usageOptions.recordingTempDirectory = StorageUsageTracker::defaultRecordingTempDirectory();
     usageOptions.activeFileCutoff = QDateTime::currentDateTime();
+    usageOptions.historyBytesProvider = [this]() {
+        return m_captureHistory != nullptr ? m_captureHistory->usage().totalBytes : 0;
+    };
     usageOptions.callbacks.usageChanged = [this](const AppStorageUsage& usage) {
         QMetaObject::invokeMethod(
             this, [this, usage]() { updateAppUsage(usage); }, Qt::QueuedConnection);
@@ -422,6 +431,12 @@ std::shared_future<StorageResult> ApplicationStorage::requestCaptureHistoryClear
 void ApplicationStorage::requestStorageUsageRefresh() {
     if (m_usageTracker != nullptr) {
         m_usageTracker->requestRefresh();
+    }
+}
+
+void ApplicationStorage::requestStorageUsageRefreshIfStale() {
+    if (m_usageTracker != nullptr) {
+        m_usageTracker->requestRefreshIfStale(kUsageRefreshStaleAfter);
     }
 }
 

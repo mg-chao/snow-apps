@@ -712,6 +712,10 @@ void BuiltInSettingsBackend::refreshStorageStatus() {
     storage::ApplicationStorage::instance().requestStorageUsageRefresh();
 }
 
+void BuiltInSettingsBackend::refreshStorageStatusIfStale() {
+    storage::ApplicationStorage::instance().requestStorageUsageRefreshIfStale();
+}
+
 bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
     switch (reset) {
     case SettingsSectionReset::ScreenshotShortcuts: {

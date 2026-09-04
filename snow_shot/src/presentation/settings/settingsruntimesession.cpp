@@ -1297,4 +1297,8 @@ void SettingsRuntimeSession::refreshStorageStatus() {
     m_backend.refreshStorageStatus();
 }
 
+void SettingsRuntimeSession::refreshStorageStatusIfStale() {
+    m_backend.refreshStorageStatusIfStale();
+}
+
 } // namespace snow_shot::presentation::settings

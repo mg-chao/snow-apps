@@ -428,6 +428,10 @@ void storageUsagePropagation() {
     require(backend.refreshCount() == 1,
             "a storage status refresh must be forwarded to the backend");
 
+    session.refreshStorageStatusIfStale();
+    require(backend.refreshCount() == 2,
+            "a staleness-aware refresh must fall back to the backend refresh by default");
+
     int statusChanges = 0;
     storage::StorageStatus latest;
     QObject::connect(&session, &settings::SettingsRuntimeSession::storageStateChanged, &session,

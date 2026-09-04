@@ -77,6 +77,10 @@ class ApplicationStorage final : public QObject {
     [[nodiscard]] std::shared_future<StorageResult> requestCaptureHistoryClearAsync();
 
     void requestStorageUsageRefresh();
+    // Rescans only when the cached usage snapshot is older than the freshness
+    // window; the settings page uses this on show events, while the explicit
+    // refresh button always rescans through requestStorageUsageRefresh().
+    void requestStorageUsageRefreshIfStale();
     bool requestThumbnailCacheClear();
     [[nodiscard]] std::shared_future<StorageResult> requestThumbnailCacheClearAsync();
     bool requestRecordingTempClear();

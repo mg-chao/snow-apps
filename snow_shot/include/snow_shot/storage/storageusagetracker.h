@@ -8,6 +8,7 @@
 #include <QString>
 
 #include <condition_variable>
+#include <chrono>
 #include <deque>
 #include <functional>
 #include <future>
@@ -24,6 +25,10 @@ struct StorageUsageTrackerOptions {
     // Entries in the recording-temp directory modified at or after this
     // timestamp belong to the currently running session and are never deleted.
     QDateTime activeFileCutoff;
+    // When set, supplies the screenshot-history byte total (records, quarantine,
+    // and temporary directories) maintained incrementally by the capture-history
+    // repository; scanNow() then skips its recursive walk of those directories.
+    std::function<qint64()> historyBytesProvider;
     struct Callbacks {
         std::function<void(const AppStorageUsage&)> usageChanged;
         std::function<void(StorageCacheKind kind, const StorageResult& result)> clearFinished;
@@ -46,6 +51,10 @@ class StorageUsageTracker final {
 
     [[nodiscard]] AppStorageUsage usage() const;
     void requestRefresh();
+    // Skips the rescan when a completed scan is newer than maxAge; UI show
+    // events use this so repeated visits reuse the cached snapshot while the
+    // explicit refresh button keeps forcing a scan through requestRefresh().
+    void requestRefreshIfStale(std::chrono::milliseconds maxAge);
     [[nodiscard]] std::shared_future<StorageResult> requestClear(StorageCacheKind kind);
     void drain();
 
@@ -70,6 +79,7 @@ class StorageUsageTracker final {
     QString m_thumbnailCacheDirectory;
     QString m_recordingTempDirectory;
     QDateTime m_activeFileCutoff;
+    std::function<qint64()> m_historyBytesProvider;
     StorageUsageTrackerOptions::Callbacks m_callbacks;
 
     mutable std::mutex m_stateMutex;
@@ -79,6 +89,9 @@ class StorageUsageTracker final {
     bool m_refreshPending = false;
     bool m_stopping = false;
     bool m_workerLive = false;
+    // Guarded by m_queueMutex.  A default-constructed time_point means no scan
+    // has completed yet, so requestRefreshIfStale() never skips the first scan.
+    std::chrono::steady_clock::time_point m_lastScanFinished;
     std::mutex m_queueMutex;
     std::condition_variable m_drainCondition;
     std::thread m_worker;

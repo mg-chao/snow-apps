@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <QStandardPaths>
 
+#include <algorithm>
 #include <utility>
 
 #include "storagedirectoryutils_p.h"
@@ -33,7 +34,9 @@ StorageUsageTracker::StorageUsageTracker(StorageUsageTrackerOptions options)
     : m_appDataDirectory(QDir::cleanPath(options.appDataDirectory)),
       m_thumbnailCacheDirectory(QDir::cleanPath(options.thumbnailCacheDirectory)),
       m_recordingTempDirectory(QDir::cleanPath(options.recordingTempDirectory)),
-      m_activeFileCutoff(options.activeFileCutoff), m_callbacks(std::move(options.callbacks)) {}
+      m_activeFileCutoff(options.activeFileCutoff),
+      m_historyBytesProvider(std::move(options.historyBytesProvider)),
+      m_callbacks(std::move(options.callbacks)) {}
 
 StorageUsageTracker::~StorageUsageTracker() {
     drain();
@@ -54,6 +57,18 @@ AppStorageUsage StorageUsageTracker::usage() const {
 void StorageUsageTracker::requestRefresh() {
     {
         std::lock_guard<std::mutex> lock(m_queueMutex);
+        m_refreshPending = true;
+        ensureWorkerLocked();
+    }
+}
+
+void StorageUsageTracker::requestRefreshIfStale(std::chrono::milliseconds maxAge) {
+    {
+        std::lock_guard<std::mutex> lock(m_queueMutex);
+        if (m_lastScanFinished != std::chrono::steady_clock::time_point{} &&
+            std::chrono::steady_clock::now() - m_lastScanFinished < maxAge) {
+            return;
+        }
         m_refreshPending = true;
         ensureWorkerLocked();
     }
@@ -154,6 +169,13 @@ AppStorageUsage StorageUsageTracker::scanNow() {
     }
 
     AppStorageUsage scanned;
+    // The capture-history repository maintains its byte total incrementally, so
+    // walking its directories again would duplicate a scan on every refresh.
+    const bool historyProvided = m_historyBytesProvider != nullptr;
+    qint64 providedHistoryBytes = 0;
+    if (historyProvided) {
+        providedHistoryBytes = std::max<qint64>(0, m_historyBytesProvider());
+    }
     const QFileInfoList entries =
         QDir(m_appDataDirectory)
             .entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden |
@@ -167,7 +189,9 @@ AppStorageUsage StorageUsageTracker::scanNow() {
         const QString name = entry.fileName();
         if (name == QLatin1String(kHistoryDirectoryName) ||
             name == QLatin1String(kQuarantineDirectoryName)) {
-            scanned.historyBytes += bytes;
+            if (!historyProvided) {
+                scanned.historyBytes += bytes;
+            }
         } else if (name == QLatin1String(kPinnedWindowDirectoryName)) {
             scanned.pinnedWindowBytes += bytes;
         } else if (name == QLatin1String(kAssetDirectoryName)) {
@@ -176,12 +200,19 @@ AppStorageUsage StorageUsageTracker::scanNow() {
             scanned.otherBytes += bytes;
         }
     }
+    if (historyProvided) {
+        scanned.historyBytes = providedHistoryBytes;
+    }
     scanned.thumbnailCacheBytes = directoryBytes(m_thumbnailCacheDirectory);
     scanned.recordingTempBytes = directoryBytes(m_recordingTempDirectory);
 
     {
         std::lock_guard<std::mutex> lock(m_stateMutex);
         m_usage = scanned;
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_queueMutex);
+        m_lastScanFinished = std::chrono::steady_clock::now();
     }
     if (m_callbacks.usageChanged) {
         m_callbacks.usageChanged(scanned);

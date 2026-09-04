@@ -205,6 +205,72 @@ void refreshRequestsAreCoalesced() {
             "burst refreshes must coalesce into a single rescan of the changed state");
 }
 
+void historyBytesProviderReplacesDirectoryWalk() {
+    TrackerDirs dirs;
+    writeBytes(
+        QDir(dirs.appData).filePath(QStringLiteral("capture_history_records/rec1/manifest.json")),
+        100);
+    writeBytes(
+        QDir(dirs.appData).filePath(QStringLiteral("capture_history_quarantine/q1/payload.bin")),
+        50);
+    writeBytes(QDir(dirs.appData).filePath(QStringLiteral("config.json")), 10);
+
+    std::atomic<int> providerCalls{0};
+    storage::StorageUsageTrackerOptions options = trackerOptions(dirs, {});
+    options.historyBytesProvider = [&providerCalls]() {
+        ++providerCalls;
+        return static_cast<qint64>(777);
+    };
+    UsageRecorder recorder;
+    options.callbacks = recorder.callbacks();
+    storage::StorageUsageTracker tracker(options);
+    tracker.requestRefresh();
+    tracker.drain();
+
+    const storage::AppStorageUsage usage = tracker.usage();
+    require(usage.historyBytes == 777,
+            "a history provider must replace the recursive history directory walk");
+    require(usage.otherBytes == 10, "other bytes must still come from the disk walk");
+    require(usage.totalBytes() == 787, "total bytes must combine the provider with the walk");
+    require(providerCalls.load() >= 1, "the history provider must be consulted on each scan");
+}
+
+void staleRefreshReusesRecentScan() {
+    TrackerDirs dirs;
+    writeBytes(QDir(dirs.appData).filePath(QStringLiteral("config.json")), 10);
+    UsageRecorder recorder;
+    storage::StorageUsageTracker tracker(trackerOptions(dirs, recorder.callbacks()));
+    tracker.requestRefresh();
+    tracker.drain();
+    std::size_t scansAfterFirst = 0;
+    {
+        std::lock_guard<std::mutex> lock(recorder.mutex);
+        scansAfterFirst = recorder.usages.size();
+        require(scansAfterFirst >= 2, "the first refresh must publish scanning and final usage");
+    }
+
+    // A completed scan is authoritative inside the staleness window, even when
+    // files changed on disk in the meantime.
+    writeBytes(QDir(dirs.appData).filePath(QStringLiteral("extra.bin")), 20);
+    tracker.requestRefreshIfStale(std::chrono::hours(1));
+    tracker.drain();
+    {
+        std::lock_guard<std::mutex> lock(recorder.mutex);
+        require(recorder.usages.size() == scansAfterFirst,
+                "a refresh inside the staleness window must reuse the cached snapshot");
+    }
+    require(tracker.usage().otherBytes == 10,
+            "a skipped refresh must leave the cached usage untouched");
+
+    // A zero window and an explicit request must both rescan.
+    tracker.requestRefreshIfStale(std::chrono::milliseconds(0));
+    tracker.drain();
+    require(tracker.usage().otherBytes == 30, "a zero staleness window must force a rescan");
+    tracker.requestRefresh();
+    tracker.drain();
+    require(tracker.usage().otherBytes == 30, "requestRefresh must bypass the staleness window");
+}
+
 void thumbnailClearRemovesOnlyThumbnailFiles() {
     TrackerDirs dirs;
     const QString kept = QDir(dirs.thumbnails).filePath(QStringLiteral("index.txt"));
@@ -277,6 +343,8 @@ int main(int argc, char** argv) {
     workerRestartsAfterGoingIdle();
     missingLocationsReportZeroUsage();
     refreshRequestsAreCoalesced();
+    historyBytesProviderReplacesDirectoryWalk();
+    staleRefreshReusesRecentScan();
     thumbnailClearRemovesOnlyThumbnailFiles();
     recordingTempClearHonorsActiveCutoff();
     return 0;

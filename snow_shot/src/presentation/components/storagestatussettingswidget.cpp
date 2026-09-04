@@ -197,7 +197,9 @@ void StorageStatusSettingsWidget::changeEvent(QEvent* event) {
 
 void StorageStatusSettingsWidget::showEvent(QShowEvent* event) {
     SettingsCustomWidget::showEvent(event);
-    m_runtimeSession.refreshStorageStatus();
+    // Repeated show events (flipping between settings pages) reuse the cached
+    // usage snapshot; the refresh button performs an unconditional rescan.
+    m_runtimeSession.refreshStorageStatusIfStale();
 }
 
 void StorageStatusSettingsWidget::syncStatus(
