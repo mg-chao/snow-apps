@@ -10,6 +10,7 @@
 #include <QVector>
 
 #include <optional>
+#include <limits>
 
 class QWidget;
 class ScreenshotPinnedWindow;
@@ -42,6 +43,8 @@ class PinnedWindowGroupManager final : public QObject {
 
     void registerWindow(::ScreenshotPinnedWindow* window, const QString& groupId);
     void unregisterWindow(::ScreenshotPinnedWindow* window);
+    void registerPendingPin(const QString& persistenceId, const QString& groupId);
+    void completePendingPin(const QString& persistenceId);
     void openCreateGroupModal(QWidget* owner,
                               ::ScreenshotPinnedWindow* currentWindow = nullptr);
 
@@ -55,12 +58,18 @@ class PinnedWindowGroupManager final : public QObject {
     [[nodiscard]] QString windowKey(::ScreenshotPinnedWindow* window) const;
     [[nodiscard]] bool persist();
     [[nodiscard]] QString uniqueGeneratedName() const;
+    void scheduleGroupsChanged();
 
     storage::PinnedWindowRepository* m_repository = nullptr;
     QVector<storage::PinnedWindowGroup> m_groups;
     QString m_activeGroupId;
     QHash<QString, QPointer<::ScreenshotPinnedWindow>> m_windows;
     QSet<QString> m_inactiveClosing;
+    QHash<QString, QString> m_pendingGroups;
+    mutable quint64 m_countsRevision = (std::numeric_limits<quint64>::max)();
+    mutable QHash<QString, int> m_persistedCounts;
+    mutable QHash<QString, QSet<QString>> m_persistedIdsByGroup;
+    bool m_groupsChangedScheduled = false;
 };
 } // namespace snow_shot::presentation
 

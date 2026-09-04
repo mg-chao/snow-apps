@@ -1275,6 +1275,55 @@ void pinnedPendingPresentationSurvivesGroupSwitch(SnowCanvasRuntime&) {
             "an inactive pending pinned window should persist after materialization");
 }
 
+void pendingPinUserCloseCancelsLateMaterialization() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+
+    QImage deliveredImage(QSize(160, 96), QImage::Format_ARGB32_Premultiplied);
+    deliveredImage.fill(QColor(84, 168, 112));
+    ScreenshotImageLoadCallback deferredLoad;
+    ScreenshotImageLoader loader = [&deferredLoad](QObject*, ScreenshotImageLoadCallback callback) {
+        deferredLoad = std::move(callback);
+    };
+
+    ScreenshotSelectionExportUiServices services;
+    const QRect geometry = physicalPinGeometry(*screen, QPoint(60, 60), deliveredImage.size());
+    require(services.presentPinnedImage({}, screen, geometry, deliveredImage.size(), {}, {}, 1.0,
+                                        {}, std::move(loader)),
+            "a loader-backed pinned presentation failed to create its shell");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    require(static_cast<bool>(deferredLoad), "the pending pinned loader was not started");
+
+    ScreenshotPinnedWindow* window = nullptr;
+    for (QWidget* widget : QApplication::topLevelWidgets()) {
+        auto* candidate = qobject_cast<ScreenshotPinnedWindow*>(widget);
+        if (candidate != nullptr &&
+            candidate->findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction")) != nullptr) {
+            require(window == nullptr, "the pending close test found multiple pinned windows");
+            window = candidate;
+        }
+    }
+    require(window != nullptr, "the pending pinned shell was not discoverable");
+    const QString persistenceId = window->persistenceId();
+    QPointer<ScreenshotPinnedWindow> guardedWindow(window);
+    auto* closeAction = window->findChild<QAction*>(QStringLiteral("screenshotPinnedCloseAction"));
+    require(closeAction != nullptr, "the pending pinned close action was not found");
+    closeAction->trigger();
+    require(processUntilDeleted(guardedWindow, 2000),
+            "the user-closed pending pinned shell was not deleted");
+
+    deferredLoad(std::move(deliveredImage));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    const auto summaries = snow_shot::storage::ApplicationStorage::instance()
+                               .pinnedWindows()
+                               .summaries();
+    require(std::none_of(summaries.cbegin(), summaries.cend(),
+                         [&persistenceId](const auto& summary) {
+                             return summary.id == persistenceId;
+                         }),
+            "a late materialization callback must not resurrect a user-closed pin");
+}
+
 void pinnedControlsMatchReferenceStyle(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -2870,6 +2919,10 @@ int main(int argc, char* argv[]) {
             pinnedPendingPresentationSurvivesGroupSwitch(sourceRuntime);
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--pending-user-close-only"))) {
+            pendingPinUserCloseCancelsLateMaterialization();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--restore-wiring-only"))) {
             restoredPinnedWindowScaleMenuFollowsMonitorDpiChange(sourceRuntime);
             restoredThumbnailScaleMenuStaysConsistentThroughExit(sourceRuntime);
@@ -2909,6 +2962,7 @@ int main(int argc, char* argv[]) {
         pinnedRecognitionAvailableThroughLazyProvider();
         pinnedPendingPresentationPublishesWorkerImage(sourceRuntime);
         pinnedPendingPresentationSurvivesGroupSwitch(sourceRuntime);
+        pendingPinUserCloseCancelsLateMaterialization();
         pinnedAsyncPresentationDefersContent(sourceRuntime);
         pinnedControlsMatchReferenceStyle(sourceRuntime);
         pinnedThumbnailUsesOpaqueThemeBackground(sourceRuntime);

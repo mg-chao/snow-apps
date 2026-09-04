@@ -140,6 +140,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool publishMaterializedImage(QImage image);
     bool prewarm(QScreen* screen = nullptr);
     QRect currentNativeGeometry() const;
+    [[nodiscard]] snow_shot::storage::PinnedWindowRecord persistenceSnapshot() const;
     void setPersistenceId(const QString& id);
     [[nodiscard]] QString persistenceId() const { return m_persistenceId; }
     [[nodiscard]] QString groupId() const { return m_groupId; }
@@ -155,6 +156,8 @@ class ScreenshotPinnedWindow final : public QWidget {
 
   signals:
     void showMainWindowRequested();
+    void closingForPersistence(const snow_shot::storage::PinnedWindowRecord& snapshot,
+                               bool removalRequested);
 
   private:
     friend class ScreenshotPinnedEditController;
@@ -377,6 +380,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_presented = false;
     bool m_closing = false;
     bool m_deferredInactiveGroupClose = false;
+    bool m_inactiveGroupClosing = false;
     QString m_persistenceId;
     QString m_groupId = QStringLiteral("default");
     bool m_persistenceEnabled = true;

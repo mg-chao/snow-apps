@@ -15,6 +15,7 @@ class ScreenshotOcrRecognitionPort;
 class ScreenshotQrRecognitionPort;
 class SnowShotApiClient;
 class ScreenshotPinnedWindowPool;
+class ScreenshotPendingPinCoordinator;
 class QTextDocument;
 struct ScreenshotPinnedRecognitionProviders;
 
@@ -67,6 +68,7 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
     std::function<ScreenshotPinnedRecognitionProviders()> m_recognitionProvider;
     snow_shot::presentation::PinnedWindowGroupManager* m_groupManager = nullptr;
     std::unique_ptr<ScreenshotPinnedWindowPool> m_windowPool;
+    std::unique_ptr<ScreenshotPendingPinCoordinator> m_pendingPinCoordinator;
     std::vector<ScreenshotClipboardCommitHandle> m_clipboardCommits;
     std::vector<std::shared_ptr<std::atomic_bool>> m_clipboardCompletionEnabled;
 };

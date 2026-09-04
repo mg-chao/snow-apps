@@ -199,7 +199,8 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     };
     m_captureHistory = makeCaptureHistoryRepository(effectiveDirectory, std::move(historyOptions));
     m_pinnedWindows = std::make_unique<PinnedWindowRepository>(effectiveDirectory,
-                                                                m_status.writeAvailable);
+                                                                m_status.writeAvailable,
+                                                                options.debounceMilliseconds);
     m_status.historyUsage = m_captureHistory->usage();
     m_status.lastHistoryError = m_captureHistory->lastError();
     m_initialized = true;

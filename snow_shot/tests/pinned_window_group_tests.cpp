@@ -44,7 +44,7 @@ storage::PinnedWindowRecord record(const QString& id) {
 }
 
 QString manifestPath(const QTemporaryDir& directory) {
-    return QDir(directory.path()).filePath(QStringLiteral("pinned_windows/manifest.json"));
+    return QDir(directory.path()).filePath(QStringLiteral("pinned_windows_v3/index.json"));
 }
 
 QJsonObject readManifest(const QString& path) {
@@ -55,15 +55,7 @@ QJsonObject readManifest(const QString& path) {
     return document.object();
 }
 
-void writeManifest(const QString& path, QJsonObject object) {
-    QFile file(path);
-    require(file.open(QIODevice::WriteOnly | QIODevice::Truncate),
-            "failed to open pinned-window manifest for writing");
-    const QByteArray bytes = QJsonDocument(std::move(object)).toJson(QJsonDocument::Indented);
-    require(file.write(bytes) == bytes.size(), "failed to write pinned-window manifest");
-}
-
-void defaultGroupAndLegacyMigration() {
+void defaultGroupAndFreshSchema() {
     QTemporaryDir directory;
     require(directory.isValid(), "temporary storage directory is unavailable");
 
@@ -74,29 +66,28 @@ void defaultGroupAndLegacyMigration() {
     require(repository.activeGroupId() == "default", "default group should be active initially");
     require(repository.upsert(record(QUuid::createUuid().toString(QUuid::WithoutBraces))).success,
             "failed to seed a pinned-window record");
+    require(repository.flush().success, "failed to flush the v3 pinned-window index");
 
-    QJsonObject legacy = readManifest(manifestPath(directory));
-    legacy[QStringLiteral("format_version")] = 1;
-    legacy.remove(QStringLiteral("groups"));
-    legacy.remove(QStringLiteral("active_group_id"));
-    QJsonArray records = legacy.value(QStringLiteral("records")).toArray();
-    // QJsonValue::toObject() returns a detached object, so write each object
-    // back into the array after removing the new field.
-    for (int index = 0; index < records.size(); ++index) {
-        QJsonObject object = records.at(index).toObject();
-        object.remove(QStringLiteral("group_id"));
-        records[index] = object;
-    }
-    legacy[QStringLiteral("records")] = records;
-    writeManifest(manifestPath(directory), legacy);
+    const QJsonObject manifest = readManifest(manifestPath(directory));
+    require(manifest.value(QStringLiteral("format_version")).toInt() == 3,
+            "the fresh pinned-window index should use the v3 schema");
+    require(manifest.value(QStringLiteral("groups")).toArray().size() == 1 &&
+                manifest.value(QStringLiteral("records")).toArray().size() == 1,
+            "the fresh pinned-window index should contain the default group and seeded record");
 
-    storage::PinnedWindowRepository migrated(directory.path());
-    require(migrated.groups().size() == 1 && migrated.activeGroupId() == "default" &&
-                migrated.records().size() == 1 && migrated.records().front().groupId == "default",
-            "legacy pinned records should migrate into the default group");
-    require(migrated.flush().success, "migrated manifest should be writable");
-    require(readManifest(manifestPath(directory)).value(QStringLiteral("format_version")).toInt() == 2,
-            "flushing a migrated manifest should write the current format");
+    QTemporaryDir legacyDirectory;
+    require(legacyDirectory.isValid(), "legacy fixture directory is unavailable");
+    const QString legacyPath = QDir(legacyDirectory.path()).filePath(
+        QStringLiteral("pinned_windows/manifest.json"));
+    QDir().mkpath(QFileInfo(legacyPath).absolutePath());
+    QFile legacy(legacyPath);
+    require(legacy.open(QIODevice::WriteOnly), "failed to create legacy pinned-window fixture");
+    require(legacy.write(QByteArrayLiteral("{\"format_version\":2,\"records\":[]}")) > 0,
+            "failed to write legacy pinned-window fixture");
+    legacy.close();
+    storage::PinnedWindowRepository fresh(legacyDirectory.path());
+    require(fresh.records().isEmpty() && QFileInfo::exists(legacyPath),
+            "legacy pinned-window data should remain untouched and unimported");
 }
 
 void managerValidationPersistenceAndCounts() {
@@ -177,6 +168,8 @@ void groupCountLimitIsEnforced() {
             "the repository should reject oversized group sets from every caller");
     require(repository.groups().size() == 128,
             "rejecting an oversized group set should preserve the repository state");
+    require(repository.flush().success,
+            "the latest group revision should flush before constructing a new repository");
 
     storage::PinnedWindowRepository restored(directory.path());
     require(restored.groups().size() == 128,
@@ -189,7 +182,7 @@ void groupCountLimitIsEnforced() {
 
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
-    defaultGroupAndLegacyMigration();
+    defaultGroupAndFreshSchema();
     managerValidationPersistenceAndCounts();
     activeGroupFallbackAndEmptyDeletion();
     groupCountLimitIsEnforced();

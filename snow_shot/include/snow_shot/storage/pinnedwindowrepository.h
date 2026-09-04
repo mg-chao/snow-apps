@@ -6,11 +6,23 @@
 
 #include <QVector>
 
+#include <QDateTime>
+
+#include <memory>
+#include <optional>
+
 namespace snow_shot::storage {
+
+struct PinnedWindowSummary final {
+    QString id;
+    QString groupId = QStringLiteral("default");
+    QDateTime updatedUtc;
+};
 
 class PinnedWindowRepository final {
   public:
-    explicit PinnedWindowRepository(QString configurationDirectory, bool writeAvailable = true);
+    explicit PinnedWindowRepository(QString configurationDirectory, bool writeAvailable = true,
+                                    int debounceMilliseconds = 1000);
     ~PinnedWindowRepository();
 
     [[nodiscard]] static constexpr int maximumGroupCount() {
@@ -18,6 +30,9 @@ class PinnedWindowRepository final {
     }
 
     [[nodiscard]] QVector<PinnedWindowRecord> records() const;
+    [[nodiscard]] std::optional<PinnedWindowRecord> loadRecord(const QString& id) const;
+    [[nodiscard]] QVector<PinnedWindowSummary> summaries() const;
+    [[nodiscard]] quint64 revision() const;
     [[nodiscard]] QVector<PinnedWindowGroup> groups() const;
     [[nodiscard]] QString activeGroupId() const;
     [[nodiscard]] StorageResult setActiveGroup(const QString& groupId);

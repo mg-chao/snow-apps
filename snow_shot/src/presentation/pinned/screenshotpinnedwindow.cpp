@@ -910,7 +910,9 @@ void ScreenshotPinnedWindow::setGroupId(const QString& id) {
         return;
     }
     m_groupId = normalized;
-    persistNow();
+    if (!property("snowPinnedWindowGroupManagerMutation").toBool()) {
+        schedulePersistence();
+    }
     refreshContextMenu();
 }
 
@@ -918,6 +920,7 @@ void ScreenshotPinnedWindow::closeForInactiveGroup() {
     if (m_closing) {
         return;
     }
+    m_inactiveGroupClosing = true;
     if (m_originalImage.isNull() || !m_firstContentFramePublished) {
         m_deferredInactiveGroupClose = true;
         return;
@@ -928,6 +931,7 @@ void ScreenshotPinnedWindow::closeForInactiveGroup() {
 void ScreenshotPinnedWindow::cancelDeferredInactiveGroupClose() {
     if (!m_closing) {
         m_deferredInactiveGroupClose = false;
+        m_inactiveGroupClosing = false;
     }
 }
 
@@ -998,6 +1002,10 @@ snow_shot::storage::PinnedWindowRecord ScreenshotPinnedWindow::persistenceRecord
                                     : serializeRecognitionResults(m_recognitionResults);
     record.updatedUtc = QDateTime::currentDateTimeUtc();
     return record;
+}
+
+snow_shot::storage::PinnedWindowRecord ScreenshotPinnedWindow::persistenceSnapshot() const {
+    return persistenceRecord();
 }
 
 void ScreenshotPinnedWindow::restorePersistentState(const Config& config) {
@@ -1565,6 +1573,7 @@ bool ScreenshotPinnedWindow::presentInternal(
     m_persistenceEnabled = true;
     m_persistenceRemovalRequested = false;
     m_deferredInactiveGroupClose = false;
+    m_inactiveGroupClosing = false;
     applyRuntimeBorderColor();
     updateShowMainInterfaceAction();
 
@@ -2222,10 +2231,12 @@ void ScreenshotPinnedWindow::contextMenuEvent(QContextMenuEvent* event) {
 }
 
 void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
+    emit closingForPersistence(persistenceRecord(), m_persistenceRemovalRequested);
     if (m_persistenceRemovalRequested) {
         removePersistence();
     }
-    if (!m_persistenceRemovalRequested && m_presented && m_persistenceTimer != nullptr) {
+    if (!m_persistenceRemovalRequested && !m_inactiveGroupClosing && m_presented &&
+        m_persistenceTimer != nullptr) {
         m_persistenceTimer->stop();
         persistNow();
     }
@@ -3085,6 +3096,10 @@ void ScreenshotPinnedWindow::handleFirstContentFramePainted() {
         finishPresentation(true, m_originalImage);
     }
     if (m_deferredInactiveGroupClose && !m_closing) {
+        // An inactive window is about to be destroyed as a shell. Its
+        // materialized state must still reach the asynchronous store before
+        // the close event tears the view down.
+        persistNow();
         QTimer::singleShot(0, this, [this]() {
             if (m_deferredInactiveGroupClose && !m_closing) {
                 m_deferredInactiveGroupClose = false;
@@ -4537,6 +4552,7 @@ void ScreenshotPinnedWindow::requestUserClose() {
     if (m_closing) {
         return;
     }
+    m_inactiveGroupClosing = false;
     m_persistenceRemovalRequested = true;
     m_closing = true;
     stopRecognition();

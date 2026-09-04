@@ -12,6 +12,7 @@
 #include <QCoreApplication>
 #include <QPointer>
 #include <QSet>
+#include <QTimer>
 #include <QUuid>
 #include <QtGlobal>
 
@@ -22,6 +23,7 @@ namespace {
 constexpr auto kDefaultGroupId = "default";
 constexpr auto kDefaultGroupName = "Default";
 constexpr int kMaximumGroupNameLength = 16;
+constexpr auto kGroupManagerMutationProperty = "snowPinnedWindowGroupManagerMutation";
 
 QString trGroup(const char* source) {
     return QCoreApplication::translate("PinnedWindowGroupManager", source);
@@ -55,9 +57,8 @@ PinnedWindowGroupManager::PinnedWindowGroupManager(storage::PinnedWindowReposito
     if (!contains(m_activeGroupId)) {
         m_activeGroupId = QString::fromLatin1(kDefaultGroupId);
     }
-    if (m_repository != nullptr) {
-        static_cast<void>(persist());
-    }
+    // Loading the in-memory default state must not rewrite the manifest. The
+    // repository owns the first durable write after an actual mutation.
 }
 
 QVector<storage::PinnedWindowGroup> PinnedWindowGroupManager::groups() const {
@@ -87,19 +88,31 @@ bool PinnedWindowGroupManager::contains(const QString& groupId) const {
 }
 
 int PinnedWindowGroupManager::windowCount(const QString& groupId) const {
-    int count = 0;
-    QSet<QString> ids;
+    QSet<QString> persistedIds;
     if (m_repository != nullptr) {
-        for (const auto& record : m_repository->records()) {
-            if (record.groupId == groupId) {
-                ++count;
-                ids.insert(record.id);
+        const quint64 repositoryRevision = m_repository->revision();
+        if (repositoryRevision != m_countsRevision) {
+            m_persistedCounts.clear();
+            m_persistedIdsByGroup.clear();
+            const QVector<storage::PinnedWindowSummary> summaries = m_repository->summaries();
+            for (const storage::PinnedWindowSummary& summary : summaries) {
+                ++m_persistedCounts[summary.groupId];
+                m_persistedIdsByGroup[summary.groupId].insert(summary.id);
             }
+            m_countsRevision = repositoryRevision;
+        }
+        persistedIds = m_persistedIdsByGroup.value(groupId);
+    }
+    int count = m_persistedCounts.value(groupId, 0);
+    for (auto it = m_windows.cbegin(); it != m_windows.cend(); ++it) {
+        if (it.value() != nullptr && !persistedIds.contains(it.key()) &&
+            it.value()->groupId() == groupId) {
+            ++count;
         }
     }
-    for (auto it = m_windows.cbegin(); it != m_windows.cend(); ++it) {
-        if (it.value() != nullptr && !ids.contains(it.key()) &&
-            it.value()->groupId() == groupId) {
+    for (auto it = m_pendingGroups.cbegin(); it != m_pendingGroups.cend(); ++it) {
+        if (it.value() == groupId && !persistedIds.contains(it.key()) &&
+            (m_windows.value(it.key()) == nullptr)) {
             ++count;
         }
     }
@@ -120,12 +133,10 @@ bool PinnedWindowGroupManager::setActiveGroup(const QString& groupId) {
     if (!contains(groupId) || m_activeGroupId == groupId) {
         return contains(groupId);
     }
-    const QString previousGroupId = m_activeGroupId;
-    m_activeGroupId = groupId;
-    if (!persist()) {
-        m_activeGroupId = previousGroupId;
+    if (m_repository != nullptr && !m_repository->setActiveGroup(groupId).success) {
         return false;
     }
+    m_activeGroupId = groupId;
     for (auto it = m_windows.begin(); it != m_windows.end();) {
         if (it.value() == nullptr) {
             it = m_windows.erase(it);
@@ -143,7 +154,6 @@ bool PinnedWindowGroupManager::setActiveGroup(const QString& groupId) {
         ++it;
     }
     emit activeGroupChanged(m_activeGroupId);
-    emit groupsChanged();
     restoreActiveGroupWindows();
     return true;
 }
@@ -169,7 +179,7 @@ PinnedWindowGroupManager::createGroup(const QString& name,
         m_groups.removeLast();
         return std::nullopt;
     }
-    emit groupsChanged();
+    scheduleGroupsChanged();
     if (currentWindow != nullptr) {
         if (!moveWindow(currentWindow, group.id)) {
             m_groups.removeLast();
@@ -178,7 +188,7 @@ PinnedWindowGroupManager::createGroup(const QString& name,
                 // state aligned with the durable state if the compensating flush fails.
                 m_groups.push_back(group);
             }
-            emit groupsChanged();
+            scheduleGroupsChanged();
             return std::nullopt;
         }
     }
@@ -227,7 +237,7 @@ bool PinnedWindowGroupManager::deleteEmptyGroups() {
         m_activeGroupId = previousActiveGroupId;
         return false;
     }
-    emit groupsChanged();
+    scheduleGroupsChanged();
     if (activeRemoved) {
         emit activeGroupChanged(m_activeGroupId);
         restoreActiveGroupWindows();
@@ -244,28 +254,30 @@ bool PinnedWindowGroupManager::moveWindow(::ScreenshotPinnedWindow* window,
     if (window == nullptr || !contains(groupId)) {
         return false;
     }
-    // Keep the manager linkable by lightweight consumers such as the tray
-    // controller: the concrete window implementation is invoked through its
-    // Qt meta-object rather than through a direct non-inline call.
     const QString previousGroupId = window->groupId();
-    if (!QMetaObject::invokeMethod(window, "setGroupId", Qt::DirectConnection,
-                                   Q_ARG(QString, groupId))) {
+    window->setProperty(kGroupManagerMutationProperty, true);
+    const bool groupChanged = QMetaObject::invokeMethod(window, "setGroupId", Qt::DirectConnection,
+                                                        Q_ARG(QString, groupId));
+    window->setProperty(kGroupManagerMutationProperty, false);
+    if (!groupChanged) {
         return false;
     }
     if (m_repository != nullptr && !window->persistenceId().isEmpty()) {
         const QString persistenceId = window->persistenceId();
-        const QVector<storage::PinnedWindowRecord> records = m_repository->records();
+        const QVector<storage::PinnedWindowSummary> summaries = m_repository->summaries();
         const bool hasPersistedRecord = std::any_of(
-            records.cbegin(), records.cend(),
-            [&persistenceId](const auto& record) { return record.id == persistenceId; });
+            summaries.cbegin(), summaries.cend(),
+            [&persistenceId](const auto& summary) { return summary.id == persistenceId; });
         if (hasPersistedRecord && !m_repository->setRecordGroup(persistenceId, groupId).success) {
-            static_cast<void>(QMetaObject::invokeMethod(
-                window, "setGroupId", Qt::DirectConnection, Q_ARG(QString, previousGroupId)));
+            window->setProperty(kGroupManagerMutationProperty, true);
+            static_cast<void>(QMetaObject::invokeMethod(window, "setGroupId", Qt::DirectConnection,
+                                                        Q_ARG(QString, previousGroupId)));
+            window->setProperty(kGroupManagerMutationProperty, false);
             return false;
         }
     }
     registerWindow(window, groupId);
-    emit groupsChanged();
+    scheduleGroupsChanged();
     if (groupId != m_activeGroupId) {
         m_inactiveClosing.insert(windowKey(window));
         QMetaObject::invokeMethod(window, "closeForInactiveGroup", Qt::DirectConnection);
@@ -295,9 +307,9 @@ void PinnedWindowGroupManager::registerWindow(::ScreenshotPinnedWindow* window,
             m_windows.erase(it);
             m_inactiveClosing.remove(key);
         }
-        emit groupsChanged();
+        scheduleGroupsChanged();
     });
-    emit groupsChanged();
+    scheduleGroupsChanged();
 }
 
 void PinnedWindowGroupManager::unregisterWindow(::ScreenshotPinnedWindow* window) {
@@ -307,7 +319,36 @@ void PinnedWindowGroupManager::unregisterWindow(::ScreenshotPinnedWindow* window
     const QString key = windowKey(window);
     m_windows.remove(key);
     m_inactiveClosing.remove(key);
-    emit groupsChanged();
+    scheduleGroupsChanged();
+}
+
+void PinnedWindowGroupManager::registerPendingPin(const QString& persistenceId,
+                                                  const QString& groupId) {
+    if (persistenceId.isEmpty() || !contains(groupId) ||
+        m_pendingGroups.value(persistenceId) == groupId) {
+        return;
+    }
+    m_pendingGroups.insert(persistenceId, groupId);
+    scheduleGroupsChanged();
+}
+
+void PinnedWindowGroupManager::completePendingPin(const QString& persistenceId) {
+    const bool existed = m_pendingGroups.contains(persistenceId);
+    m_pendingGroups.remove(persistenceId);
+    if (existed) {
+        scheduleGroupsChanged();
+    }
+}
+
+void PinnedWindowGroupManager::scheduleGroupsChanged() {
+    if (m_groupsChangedScheduled) {
+        return;
+    }
+    m_groupsChangedScheduled = true;
+    QTimer::singleShot(0, this, [this]() {
+        m_groupsChangedScheduled = false;
+        emit groupsChanged();
+    });
 }
 
 QString PinnedWindowGroupManager::windowKey(::ScreenshotPinnedWindow* window) const {
