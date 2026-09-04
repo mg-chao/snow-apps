@@ -353,6 +353,24 @@ void smartSelectionToolbarShedsNativeWindowForcedByNativeSiblingEmbed() {
     require(toolbar.isVisible(),
             "shedding the native surface on a later cycle must keep the toolbar visible");
 }
+
+void selectionToolbarLabelsFollowApplicationFontFamily() {
+    NoOpSelectionToolbarCommands commands;
+    QWidget host;
+    host.resize(640, 360);
+
+    ScreenshotSelectionToolbarWidget toolbar(commands, &host);
+    toolbar.setSelectionState(QRect(80, 120, 320, 180), false, 0, 0,
+                              ScreenshotSelectionToolbarWidget::DisplayMode::Full);
+    QCoreApplication::processEvents();
+
+    const QList<QLabel*> labels = toolbar.findChildren<QLabel*>();
+    require(!labels.isEmpty(), "selection toolbar should expose its labels for font checks");
+    for (const QLabel* label : labels) {
+        require(label->font().family() == QApplication::font().family(),
+                "selection toolbar labels must follow the application font family");
+    }
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -360,6 +378,7 @@ int main(int argc, char* argv[]) {
     panelBoundaryExclusivelyOwnsToolbarHoverState();
     valueLabelPaintsFromItsOwnEnterLeaveState();
     selectionToolbarInputSurfaceMatchesInteractivePanel();
+    selectionToolbarLabelsFollowApplicationFontFamily();
     smartSelectionToolbarIsClickThroughAcrossCaptureLifecycles();
     smartSelectionToolbarShedsNativeWindowForcedByNativeSiblingEmbed();
     return 0;

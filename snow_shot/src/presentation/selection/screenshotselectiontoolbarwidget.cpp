@@ -429,7 +429,6 @@ QLabel* ScreenshotSelectionToolbarWidget::addValueLabel(const QString& tooltip, 
     label->installEventFilter(this);
 
     QFont valueFont = label->font();
-    valueFont.setFamily(QStringLiteral("Open Sans"));
     valueFont.setPixelSize(14);
     valueFont.setWeight(QFont::Normal);
     label->setFont(valueFont);
@@ -451,7 +450,6 @@ QLabel* ScreenshotSelectionToolbarWidget::addStaticLabel(const QString& text,
         label->setAccessibleName(tooltip);
     }
     QFont textFont = label->font();
-    textFont.setFamily(QStringLiteral("Open Sans"));
     textFont.setPixelSize(14);
     textFont.setWeight(QFont::Normal);
     label->setFont(textFont);

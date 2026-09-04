@@ -7,6 +7,7 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "../src/presentation/tools/screenshottoolpalettebuttons.h"
+#include "../src/presentation/tools/screenshottoolpalettestylecomponents.h"
 
 #include "antd_icons.h"
 #include "widgets/select.h"
@@ -21,6 +22,7 @@
 #include <QComboBox>
 #include <QFrame>
 #include <QFont>
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QGridLayout>
 #include <QImage>
@@ -2698,7 +2700,9 @@ void watermarkToolExposesSharedStyleControls() {
                 family->variant() == adqt::widgets::AdSelect::Variant::Borderless &&
                 family->controlSize() == adqt::widgets::AdSelect::ControlSize::Small &&
                 family->popupLayerMode() == adqt::widgets::AdSelect::PopupLayerMode::QtTool &&
-                family->model() != nullptr && family->model()->rowCount() >= 2 &&
+                family->model() != nullptr &&
+                family->model()->rowCount() ==
+                    snow_shot::presentation::screenshotToolPaletteFontFamilies().size() + 2 &&
                 family->model()->index(0, 0).data(adqt::widgets::AdSelect::DefaultLabelRole) ==
                     QStringLiteral("Default"),
             "Watermark font family should reuse the searchable text selector");
@@ -3668,7 +3672,9 @@ void textStyleControlsExposeAndEmitAllRequestedProperties() {
             "text font-family select should be borderless");
     require(fontSelect->popupLayerMode() == adqt::widgets::AdSelect::PopupLayerMode::QtTool,
             "text font-family select should use QtTool");
-    require(fontSelect->model() != nullptr && fontSelect->model()->rowCount() >= 2,
+    require(fontSelect->model() != nullptr &&
+                fontSelect->model()->rowCount() ==
+                    snow_shot::presentation::screenshotToolPaletteFontFamilies().size() + 2,
             "text font-family select should include Default and installed fonts");
     require(fontSelect->model()->index(0, 0).data(adqt::widgets::AdSelect::DefaultLabelRole) ==
                     QStringLiteral("Default") &&
@@ -5946,6 +5952,27 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
                 !configuration.contains(QStringLiteral("drawing/spotlight_style")),
             "watermark and spotlight styles must not be added to persistent tool configuration");
 }
+
+void fontFamilyListIsCachedForEditorBuilds() {
+    const QStringList& first = snow_shot::presentation::screenshotToolPaletteFontFamilies();
+    const QStringList& second = snow_shot::presentation::screenshotToolPaletteFontFamilies();
+    require(&first == &second, "font family enumeration should be cached across editor builds");
+    require(first.contains(QStringLiteral("Segoe UI")),
+            "font family cache should expose the registered application font");
+
+    QStringList expected;
+    const QStringList systemFamilies = QFontDatabase::families();
+    expected.reserve(systemFamilies.size());
+    for (const QString& family : systemFamilies) {
+        const QString trimmed = family.trimmed();
+        if (!trimmed.isEmpty()) {
+            expected.append(trimmed);
+        }
+    }
+    expected.removeDuplicates();
+    expected.sort(Qt::CaseInsensitive);
+    require(first == expected, "font family cache should match the normalized system families");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -5960,6 +5987,12 @@ int main(int argc, char** argv) {
                 .initialize({executableDirectory, storageDirectory.path(), 60000})
                 .success,
             "failed to initialize isolated toolbar test storage");
+#if defined(Q_OS_WIN)
+    // The offscreen platform plugin exposes no system fonts; register one so
+    // the font family editors and their shared cache have real content.
+    require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
+            "the font editor tests require a system TrueType font");
+#endif
     if (application.arguments().contains(QStringLiteral("--canvas-style-persistence-only"))) {
         canvasToolStylesPersistIndependentlyWithoutGlobalStyles();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
@@ -6014,6 +6047,7 @@ int main(int argc, char** argv) {
     textAndHighlightStrokeWidthTriggersUseSharedPreviewButton();
     shapeAndArrowStrokeEditorsShareThePresetCatalog();
     sizePresetEditorsShareTheSizeCatalog();
+    fontFamilyListIsCachedForEditorBuilds();
     scrollingScreenshotKeepsDrawingToolsAvailable();
     recognitionToolsKeepDrawingToolsAvailable();
     scrollingScreenshotExposesAxisRecognitionModes();

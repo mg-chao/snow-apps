@@ -6,6 +6,7 @@
 
 #include <QColor>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 
 #include <functional>
@@ -329,6 +330,11 @@ class ScreenshotToolPaletteIconOptionEditor final
 screenshotToolPaletteSizePresetEditorConfig(const QString& summaryTooltip,
                                             const QString& summaryObjectName,
                                             const char* presetTooltipPattern);
+
+// System font families offered by the font family editors: trimmed,
+// de-duplicated, sorted. Lazily enumerated once per process; fonts installed
+// while the app is running appear after a restart.
+[[nodiscard]] const QStringList& screenshotToolPaletteFontFamilies();
 
 } // namespace snow_shot::presentation
 
