@@ -7,33 +7,18 @@
 namespace screenshot_pinned_restore_geometry {
 namespace {
 
-// Legacy records without the saving monitor's bounds cannot be positioned
-// relative to it, so they are also left at their saved scale: applying a
-// DPI ratio to only some of the fields is exactly the inconsistency this
-// module exists to prevent.
-qreal dpiRatio(const SavedState& saved, const ScreenGeometry& targetScreen) {
-    if (saved.screenPhysicalBounds.isEmpty()) {
-        return 1.0;
-    }
-    const qreal savedDpi = saved.screenDevicePixelRatio > 0.0 ? saved.screenDevicePixelRatio : 1.0;
-    const qreal targetDpi =
-        targetScreen.devicePixelRatio > 0.0 ? targetScreen.devicePixelRatio : 1.0;
-    return targetDpi / savedDpi;
-}
-
 QRect translateGeometry(const QRect& savedGeometry, const SavedState& saved,
-                        const ScreenGeometry& targetScreen, qreal ratio,
-                        const QList<ScreenGeometry>& screens) {
+                        const ScreenGeometry& targetScreen, const QList<ScreenGeometry>& screens) {
     if (savedGeometry.isEmpty()) {
         return savedGeometry;
     }
     QRect geometry = savedGeometry;
     if (!saved.screenPhysicalBounds.isEmpty()) {
+        // A restored window keeps its saved physical pixel size; only its
+        // anchor onto the monitor layout is re-based when the saving monitor
+        // is gone or moved.
         const QPoint relative = geometry.topLeft() - saved.screenPhysicalBounds.topLeft();
-        geometry.moveTopLeft(targetScreen.physicalBounds.topLeft() +
-                             QPoint(qRound(relative.x() * ratio), qRound(relative.y() * ratio)));
-        geometry.setSize(QSize(std::max(1, qRound(geometry.width() * ratio)),
-                               std::max(1, qRound(geometry.height() * ratio))));
+        geometry.moveTopLeft(targetScreen.physicalBounds.topLeft() + relative);
     }
     bool visible = false;
     for (const ScreenGeometry& screen : screens) {
@@ -62,13 +47,10 @@ QRect translateGeometry(const QRect& savedGeometry, const SavedState& saved,
 
 RestoredState reconcileSavedState(const SavedState& saved, const ScreenGeometry& targetScreen,
                                   const QList<ScreenGeometry>& screens) {
-    const qreal ratio = dpiRatio(saved, targetScreen);
     RestoredState restored;
-    restored.nativeGeometry =
-        translateGeometry(saved.nativeGeometry, saved, targetScreen, ratio, screens);
+    restored.nativeGeometry = translateGeometry(saved.nativeGeometry, saved, targetScreen, screens);
     restored.preThumbnailNativeGeometry =
-        translateGeometry(saved.preThumbnailNativeGeometry, saved, targetScreen, ratio, screens);
-    restored.scalePercent = saved.scalePercent * ratio;
+        translateGeometry(saved.preThumbnailNativeGeometry, saved, targetScreen, screens);
     return restored;
 }
 

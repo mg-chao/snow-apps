@@ -174,32 +174,26 @@ std::optional<QRect> ScreenshotPinnedNativeGeometryController::updateResize(
     return m_targetGeometry;
 }
 
-bool ScreenshotPinnedNativeGeometryController::adoptDpiTarget(const QRect& suggested,
-                                                              const QPoint& nativeCursorPosition) {
+bool ScreenshotPinnedNativeGeometryController::adoptDpiTarget(const QRect& suggested) {
     if (!validGeometry(suggested) || m_phase == Phase::Closing || m_phase == Phase::Uninitialized) {
         return false;
     }
 
-    QRect accepted = suggested;
+    // The system owns the geometry of a DPI transition: the suggested rect is
+    // accepted verbatim, position included, so the window never re-anchors
+    // itself while the monitor change scales it.
     if (m_phase == Phase::Stable) {
         m_transactionStartGeometry = m_committedGeometry;
         m_phase = Phase::DpiChanging;
         m_origin = Origin::DpiTransition;
-        accepted.moveTopLeft(m_committedGeometry.topLeft());
-    } else if (m_phase == Phase::MovePending || m_phase == Phase::Moving) {
-        const QPoint cursorDelta = nativeCursorPosition - m_moveStartCursor;
-        const QPoint cursorDerivedTopLeft = m_transactionStartGeometry.topLeft() + cursorDelta;
-        if (withinRoundTripTolerance(accepted.topLeft() - cursorDerivedTopLeft)) {
-            accepted.moveTopLeft(cursorDerivedTopLeft);
-        }
-        m_acceptedInteractiveGeometry = true;
-    } else if (m_phase != Phase::ResizePending && m_phase != Phase::Resizing) {
+    } else if (m_phase != Phase::MovePending && m_phase != Phase::Moving &&
+               m_phase != Phase::ResizePending && m_phase != Phase::Resizing) {
         return false;
     } else {
         m_acceptedInteractiveGeometry = true;
     }
 
-    m_targetGeometry = accepted;
+    m_targetGeometry = suggested;
     m_dpiChanged = true;
     return true;
 }

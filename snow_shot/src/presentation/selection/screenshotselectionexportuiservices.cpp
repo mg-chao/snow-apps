@@ -118,21 +118,18 @@ screenshot_pinned_restore_geometry::ScreenGeometry restoreScreenGeometry(QScreen
     screenshot_pinned_restore_geometry::ScreenGeometry geometry;
     geometry.physicalBounds = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
     geometry.availableBounds = availablePhysicalRect(screen);
-    geometry.devicePixelRatio = screen->devicePixelRatio();
     return geometry;
 }
 
-// Translates the DPI-dependent part of a record from the saved session's
-// monitor to `target` (never null) in one step, so the restored geometry,
-// pre-thumbnail geometry and scale percent always describe the same window.
+// Re-bases the persisted physical geometries of a record onto `target`
+// (never null) in one step. The saved physical pixel sizes — and with them
+// the scale value — are left untouched; monitor DPI plays no role.
 screenshot_pinned_restore_geometry::RestoredState reconcileRestoreState(
     const snow_shot::storage::PinnedWindowRecord& record, QScreen& target) {
     screenshot_pinned_restore_geometry::SavedState saved;
     saved.nativeGeometry = record.nativeGeometry;
     saved.preThumbnailNativeGeometry = record.preThumbnailNativeGeometry;
-    saved.scalePercent = record.scalePercent;
     saved.screenPhysicalBounds = record.screenPhysicalGeometry;
-    saved.screenDevicePixelRatio = record.screenDpi;
     QList<screenshot_pinned_restore_geometry::ScreenGeometry> screens;
     for (QScreen* screen : QGuiApplication::screens()) {
         if (screen != nullptr) {
@@ -441,8 +438,6 @@ bool ScreenshotSelectionExportUiServices::presentPinnedImage(
     config.surfaceCanvasRect = config.canvasSourceRect;
     config.fullResolutionScaleBasis =
         fullResolutionScaleBasis.isEmpty() ? imageSize : fullResolutionScaleBasis;
-    config.initialScalePercent =
-        100.0 * nativeGeometry.width() / (std::max)(1, config.fullResolutionScaleBasis.width());
     config.screen = screen;
     config.enableEditing = true;
     config.formattedTextDocument = std::move(formattedTextDocument);
@@ -487,7 +482,6 @@ void ScreenshotSelectionExportUiServices::restorePersistedWindows() {
         config.contentCanvasRect = record.canvasSourceRect;
         config.surfaceCanvasRect = record.canvasSourceRect;
         config.fullResolutionScaleBasis = record.initialPhysicalSize;
-        config.initialScalePercent = restored.scalePercent;
         config.screen = targetScreen;
         config.enableEditing = true;
         config.resultStyle = decodeResultStyle(record.resultStyle);

@@ -90,13 +90,6 @@ class ScreenshotPinnedWindow final : public QWidget {
         QRectF surfaceCanvasRect;
         ScreenshotResultStyle resultStyle;
         QSize fullResolutionScaleBasis;
-        // The exact percent `nativeGeometry` encodes relative to
-        // fullResolutionScaleBasis. Integer geometry cannot always express a
-        // percent exactly, so callers that know the intended level (a saved
-        // record, a wheel step) pass it here instead of letting the window
-        // re-derive a rounded value. Restores must translate it together with
-        // nativeGeometry when the monitor DPI changed.
-        double initialScalePercent = 100.0;
         QString mouseWheelZoomMode = QStringLiteral("mouse_position");
         ScreenshotImageSource imageSource;
         ScreenshotImageLoader imageLoader;
@@ -334,6 +327,13 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::function<ScreenshotPinnedRecognitionProviders()> m_recognitionProvider;
     ScreenshotRecognitionResults m_recognitionResults;
     ScreenshotRecognitionWindow* m_recognitionContent = nullptr;
+    // Physical pixels are the only unit of the scaling model: the scale value
+    // is always 100 * current native width / oriented m_initialPhysicalSize
+    // width. Monitor DPI never enters that formula; the system scales the
+    // window across monitors and the window only re-derives the value from the
+    // resulting physical size. Creation-time DPI (m_firstCreationTextDpi and
+    // the formatted-text device pixel ratio) affects text and image rendering
+    // exclusively.
     QSize m_initialPhysicalSize;
     QSize m_originalPixelSize;
     QRect m_preThumbnailNativeGeometry;
@@ -343,6 +343,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::unique_ptr<ScreenshotRecognitionSessionController> m_recognitionSession;
     double m_viewportZoom = 1.0;
     QPointF m_viewportCenter;
+    // Derived value: 100 * current native width / oriented initial physical
+    // width. Never carries an externally computed or DPI-translated percent.
     double m_scalePercent = 100.0;
     QString m_mouseWheelZoomMode = QStringLiteral("mouse_position");
     int m_wheelAngleRemainder = 0;
@@ -372,7 +374,6 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_pointerInside = false;
     bool m_passiveGeometryReconciliationActive = false;
     WId m_synchronizedResizeWindowId = 0;
-    WId m_windowMoveCaptureId = 0;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTPINNEDWINDOW_H

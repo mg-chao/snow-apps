@@ -966,9 +966,8 @@ void ScreenshotPinnedWindow::restorePersistentState(const Config& config) {
     if (!config.restorePersistentState) {
         return;
     }
-    // The scale percent arrives through Config::initialScalePercent like every
-    // other presentation, already translated to the current monitor DPI by the
-    // restore path together with the geometry it describes.
+    // The scale value is not restored state: it derives from the restored
+    // physical geometry alone, so the monitor DPI never influences it.
     m_opacityPercent = qBound(1, config.persistedOpacityPercent, 100);
     setWindowOpacity(m_opacityPercent / 100.0);
     m_imageTransform = config.persistedImageTransform;
@@ -1084,18 +1083,6 @@ bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* mess
         };
         updateNativePointerPresence(nativeMessage->message);
 
-        if (m_windowDragActive &&
-            (nativeMessage->message == WM_MOUSEMOVE || nativeMessage->message == WM_NCMOUSEMOVE)) {
-            POINT cursor{};
-            if (GetCursorPos(&cursor) != FALSE) {
-                static_cast<void>(updateWindowMove(QPoint(cursor.x, cursor.y)));
-            }
-            if (result != nullptr) {
-                *result = 0;
-            }
-            return true;
-        }
-
         if (m_windowDragActive && (nativeMessage->message == WM_CANCELMODE ||
                                    (nativeMessage->message == WM_CAPTURECHANGED &&
                                     reinterpret_cast<HWND>(nativeMessage->lParam) != pinnedHwnd))) {
@@ -1144,13 +1131,13 @@ bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* mess
 
         if (nativeMessage->message == WM_DPICHANGED && m_nativeGeometryController != nullptr) {
             auto* suggestedRect = pointerFromLParam<RECT>(nativeMessage->lParam);
-            POINT cursor{};
-            static_cast<void>(GetCursorPos(&cursor));
             if (suggestedRect != nullptr && !m_presented) {
                 writeNativeRect(m_nativeGeometryController->targetGeometry(), suggestedRect);
             } else if (suggestedRect != nullptr &&
                        m_nativeGeometryController->adoptDpiTarget(
-                           qRectFromNativeRect(*suggestedRect), QPoint(cursor.x, cursor.y))) {
+                           qRectFromNativeRect(*suggestedRect))) {
+                // The adopted target equals the system suggestion verbatim;
+                // writing it back is how the proposed geometry gets applied.
                 writeNativeRect(m_nativeGeometryController->targetGeometry(), suggestedRect);
             }
         }
@@ -1621,11 +1608,20 @@ bool ScreenshotPinnedWindow::presentInternal(
         config.fullResolutionScaleBasis.isValid() && !config.fullResolutionScaleBasis.isEmpty()
             ? config.fullResolutionScaleBasis
             : config.nativeGeometry.size();
-    m_scalePercent =
-        config.initialScalePercent > 0.0
-            ? config.initialScalePercent
-            : 100.0 * config.nativeGeometry.width() / std::max(1, m_initialPhysicalSize.width());
     restorePersistentState(config);
+    // The scale value is a pure function of physical pixels: the current
+    // native width over the oriented creation basis, snapped to the whole
+    // percent the UI displays. Wheel stepping floors the raw value, so a
+    // derived 109.97% had to stay 110% or the notch targeting 110% becomes a
+    // no-op. A window restored in thumbnail mode reports the scale of the
+    // geometry it will return to, which the thumbnail rectangle itself does
+    // not encode.
+    const QSize scaleBaseline = orientedInitialPhysicalSize();
+    const int scaleEncodingWidth = m_thumbnailMode && m_preThumbnailNativeGeometry.isValid() &&
+                                           !m_preThumbnailNativeGeometry.isEmpty()
+                                       ? m_preThumbnailNativeGeometry.width()
+                                       : config.nativeGeometry.width();
+    m_scalePercent = qRound(100.0 * scaleEncodingWidth / std::max(1, scaleBaseline.width()));
     SNOW_SHOT_PIN_PERF_MILESTONE("window.state_initialized");
     if (m_nativeGeometryController == nullptr ||
         !m_nativeGeometryController->initialize(config.nativeGeometry)) {
@@ -2661,7 +2657,9 @@ void ScreenshotPinnedWindow::refreshContextMenu() {
     }
     if (m_scaleActions != nullptr) {
         for (QAction* action : m_scaleActions->actions()) {
-            action->setChecked(qAbs(action->data().toDouble() - m_scalePercent) < 0.001);
+            // The stored percent derives from integer physical widths, so a
+            // displayed level can differ from it by pixel rounding.
+            action->setChecked(qAbs(action->data().toDouble() - m_scalePercent) < 0.5);
         }
     }
     if (m_scaleMenuAction != nullptr) {
@@ -4442,41 +4440,38 @@ bool ScreenshotPinnedWindow::moveCursorOnePixel(
 }
 
 bool ScreenshotPinnedWindow::startWindowMove() {
-    if (!windowDragEnabled() || m_nativeGeometryController == nullptr) {
+    QWindow* handle = windowHandle();
+    if (!windowDragEnabled() || m_nativeGeometryController == nullptr || handle == nullptr) {
         return false;
     }
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    const WId nativeWindowId = winId();
-    m_windowDragActive = true;
-    if (!native::beginWindowMoveCapture(nativeWindowId)) {
-        m_windowDragActive = false;
-        return false;
-    }
-    m_windowMoveCaptureId = nativeWindowId;
-    POINT cursor{};
-    if (GetCursorPos(&cursor) == FALSE ||
-        !m_nativeGeometryController->beginMove(QPoint(cursor.x, cursor.y))) {
-        finishWindowMove();
+    POINT nativeCursor{};
+    if (GetCursorPos(&nativeCursor) == FALSE ||
+        !m_nativeGeometryController->beginMove(QPoint(nativeCursor.x, nativeCursor.y))) {
         return false;
     }
 #else
-    const QPoint globalCursor = QCursor::pos();
-    if (!m_nativeGeometryController->beginMove(globalCursor)) {
+    if (!m_nativeGeometryController->beginMove(QCursor::pos())) {
         return false;
     }
-    m_windowDragActive = true;
 #endif
+    // The system move loop owns the drag. It tracks the pointer itself and,
+    // on a cross-monitor transition, switches the window's DPI at the same
+    // moment and with the same pointer-relative anchoring as every other
+    // top-level window; the WM_DPICHANGED suggestion it produces is adopted
+    // verbatim and the scale value re-derives from the settled physical
+    // size. Driving the move with per-message SetWindowPos calls instead
+    // would make USER32 apply the destination DPI around the requested
+    // top-left once the window body crosses, which native drags never do.
+    static_cast<void>(native::activateWindow(winId()));
+    m_windowDragActive = true;
     setWindowDragCursor(Qt::ClosedHandCursor);
-#if defined(Q_OS_WIN) || defined(_WIN32)
-    return true;
-#else
-    if (windowHandle()->startSystemMove()) {
+    if (handle->startSystemMove()) {
         return true;
     }
     finishWindowMove();
     m_nativeGeometryController->cancelPendingInteraction();
     return false;
-#endif
 }
 
 bool ScreenshotPinnedWindow::updateWindowMove(const QPoint& nativeCursorPosition) {
@@ -4506,8 +4501,7 @@ bool ScreenshotPinnedWindow::updateWindowMove(const QPoint& nativeCursorPosition
     const bool nativeDpiResize = actual.isValid() && !actual.isEmpty() &&
                                  qAbs(positionDelta.x()) <= 2 &&
                                  qAbs(positionDelta.y()) <= 2 && actual.size() != target.size();
-    if (nativeDpiResize &&
-        m_nativeGeometryController->adoptDpiTarget(actual, nativeCursorPosition)) {
+    if (nativeDpiResize && m_nativeGeometryController->adoptDpiTarget(actual)) {
         m_preserveScaleForSettledGeometry = false;
         scheduleNativeScaleAdoption();
         return true;
@@ -4524,10 +4518,6 @@ bool ScreenshotPinnedWindow::updateWindowMove(const QPoint& nativeCursorPosition
 void ScreenshotPinnedWindow::finishWindowMove() {
     const bool wasActive = m_windowDragActive;
     m_windowDragActive = false;
-    if (m_windowMoveCaptureId != 0) {
-        native::endWindowMoveCapture(m_windowMoveCaptureId);
-        m_windowMoveCaptureId = 0;
-    }
     if (wasActive) {
         updateWindowDragCursor(mapFromGlobal(QCursor::pos()));
     }

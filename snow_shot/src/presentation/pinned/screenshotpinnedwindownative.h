@@ -28,8 +28,6 @@ void removeSynchronizedResize(WId windowId);
 [[nodiscard]] bool applyCursor(Qt::CursorShape shape);
 [[nodiscard]] bool synchronizeClientPaint(
     WId windowId, PaintSynchronization synchronization = PaintSynchronization::InvalidateAndUpdate);
-[[nodiscard]] bool beginWindowMoveCapture(WId windowId);
-void endWindowMoveCapture(WId windowId);
 } // namespace screenshot_pinned_window_native
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTPINNEDWINDOWNATIVE_H

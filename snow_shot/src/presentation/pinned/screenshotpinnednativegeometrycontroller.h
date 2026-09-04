@@ -66,8 +66,11 @@ class ScreenshotPinnedNativeGeometryController final {
     [[nodiscard]] std::optional<QRect>
     updateResize(const QRect& proposed, screenshot_pinned_resize_geometry::DragHandle handle,
                  const QSize& baseline, double minimumScale, double maximumScale);
-    [[nodiscard]] bool adoptDpiTarget(const QRect& suggested,
-                                      const QPoint& nativeCursorPosition = {});
+    // Accepts a system-proposed DPI transition geometry verbatim. The window
+    // never overrides the position or size the monitor change produced; it
+    // only records the transition so the settled physical size can re-derive
+    // the scale value.
+    [[nodiscard]] bool adoptDpiTarget(const QRect& suggested);
 
     [[nodiscard]] bool beginProgrammatic(const QRect& target, Origin origin);
     [[nodiscard]] QRect finishInteractiveTarget() const;

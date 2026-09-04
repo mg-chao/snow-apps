@@ -90,16 +90,16 @@ void resizingUsesTheTransactionStartAsItsFixedReference() {
 
 void dpiAndProgrammaticTargetsAreExplicitTransactions() {
     auto controller = initializedController();
+    // The system owns the geometry of a monitor transition: the suggested
+    // rect is adopted verbatim, position included.
     const QRect dpiTarget(1200, 900, 1623, 921);
     require(controller.adoptDpiTarget(dpiTarget), "DPI target was rejected");
-    const QRect acceptedDpiTarget(1015, 805, 1623, 921);
-    require(controller.constrainWindowPos(QRect(1201, 901, 1624, 922), true, true) ==
-                acceptedDpiTarget,
+    require(controller.constrainWindowPos(QRect(1201, 901, 1624, 922), true, true) == dpiTarget,
             "DPI transaction target must reject later rounded proposals");
     const auto dpiChange = controller.commitTarget();
-    require(dpiChange.dpiChanged && dpiChange.sizeChanged &&
-                dpiChange.geometry == acceptedDpiTarget,
-            "DPI target must commit as a size-changing DPI transaction");
+    require(dpiChange.dpiChanged && dpiChange.sizeChanged && dpiChange.positionChanged &&
+                dpiChange.geometry == dpiTarget,
+            "DPI target must commit exactly as the system suggested it");
 
     const QRect scaleTarget(1015, 805, 1298, 737);
     require(controller.beginProgrammatic(scaleTarget,
@@ -109,6 +109,23 @@ void dpiAndProgrammaticTargetsAreExplicitTransactions() {
             "programmatic geometry must remain authoritative during reentrant messages");
     require(controller.commitTarget().geometry == scaleTarget,
             "programmatic geometry did not commit");
+}
+
+void midDragDpiTargetKeepsTheSystemGeometry() {
+    auto controller = initializedController();
+    require(controller.beginMove(QPoint(1664, 1173)), "move transaction did not begin");
+    const QRect moved(1100, 900, 1298, 737);
+    require(controller.updateMove(moved, QPoint(1749, 1268)) == moved,
+            "move transaction did not track the cursor");
+    const QRect dpiTarget(1120, 920, 1623, 921);
+    require(controller.adoptDpiTarget(dpiTarget), "mid-drag DPI target was rejected");
+    require(controller.targetGeometry() == dpiTarget,
+            "a mid-drag DPI transition must adopt the system geometry verbatim");
+    require(controller.finishInteractiveTarget() == dpiTarget,
+            "the drag must finish at the system-provided DPI geometry");
+    const auto change = controller.commitTarget();
+    require(change.dpiChanged && change.sizeChanged && change.geometry == dpiTarget,
+            "the system DPI geometry must commit as a size-changing transaction");
 }
 
 void failedTransactionsRollBackDeterministically() {
@@ -136,6 +153,7 @@ int main() {
         nativeManagedMoveProposalsRemainAvailable();
         resizingUsesTheTransactionStartAsItsFixedReference();
         dpiAndProgrammaticTargetsAreExplicitTransactions();
+        midDragDpiTargetKeepsTheSystemGeometry();
         failedTransactionsRollBackDeterministically();
     } catch (const std::exception& error) {
         std::cerr << "screenshot pinned native geometry controller test failure: " << error.what()
