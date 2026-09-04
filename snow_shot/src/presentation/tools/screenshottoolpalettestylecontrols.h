@@ -7,12 +7,14 @@
 #include "snow_draw_engine_qt/snow_canvas_types.h"
 
 #include <QColor>
+#include <QByteArray>
 #include <QPoint>
 #include <QSet>
 #include <QVector>
 
 #include <functional>
 #include <memory>
+#include <vector>
 
 class QBoxLayout;
 class QFrame;
@@ -151,6 +153,12 @@ struct ScreenshotToolPaletteFilterFamilyConfig {
     double initialStrokeWidth = 0.0;
 };
 
+struct ScreenshotToolPaletteStyleReconcileStats {
+    int retained = 0;
+    int created = 0;
+    int destroyed = 0;
+};
+
 // Owns the drawing style state and builds every sub-toolbar style editor row
 // from the shared editor components. The palette drives family materialization
 // (buildXxxFamily) and tool activation (setXxxControlsActive); inbound canvas
@@ -164,17 +172,29 @@ class ScreenshotToolPaletteStyleControls final {
     [[nodiscard]] ScreenshotToolPaletteStyleState& styleState();
     [[nodiscard]] const ScreenshotToolPaletteStyleState& styleState() const;
 
+    // Stages compatible editor roots from the visible source composition so
+    // the destination builder can adopt them without rebuilding their widget
+    // and popup subtrees.
+    void parkStyleEditors(int tool, QWidget* controls);
+    void restoreStyleEditors(int tool, QWidget* controls);
+    void prepareStyleReconcile(int sourceTool, int destinationTool, QWidget* sourceControls);
+    void stageDestinationStyleEditors(int destinationTool, QWidget* destinationControls);
+    void stageExternalStyleEditorWidget(const char* role, const char* signature, QWidget* widget);
+    void finishStyleReconcile(int destinationTool);
+    void discardBindingsExcept(int destinationTool, QWidget* destinationControls);
+    [[nodiscard]] ScreenshotToolPaletteStyleReconcileStats lastReconcileStats() const;
+
     // Style family row builders. Each creates the family row widget (parented
     // to the palette style panel), wires the shared editor components to the
     // style state and registers them for state-driven refreshes.
     [[nodiscard]] ScreenshotToolPaletteShapeFamilyResult
-    buildShapeFamily(QWidget* panel, const ScreenshotToolPaletteStyleFamilyHost& host,
+    buildShapeFamily(int tool, QWidget* panel, const ScreenshotToolPaletteStyleFamilyHost& host,
                      const ScreenshotToolPaletteButtonMetrics& metrics);
     [[nodiscard]] QWidget* buildArrowFamily(QWidget* panel,
                                             const ScreenshotToolPaletteStyleFamilyHost& host,
                                             const ScreenshotToolPaletteButtonMetrics& metrics);
     [[nodiscard]] ScreenshotToolPaletteHighlightFamilyResult
-    buildHighlightFamily(QWidget* panel, const ScreenshotToolPaletteStyleFamilyHost& host,
+    buildHighlightFamily(int tool, QWidget* panel, const ScreenshotToolPaletteStyleFamilyHost& host,
                          const ScreenshotToolPaletteButtonMetrics& metrics);
     [[nodiscard]] QWidget*
     buildSpotlightFamily(QWidget* panel, const ScreenshotToolPaletteStyleFamilyHost& host,
@@ -373,11 +393,44 @@ class ScreenshotToolPaletteStyleControls final {
     void endTextStylePopupInteraction(QObject* popup);
     void addToolbarSpacing(QBoxLayout* layout, int baseSpacing,
                            const ScreenshotToolPaletteButtonMetrics& metrics);
+    void tagEditor(ScreenshotToolPaletteStyleEditorComponent* component, const char* role,
+                   const char* signature);
+    [[nodiscard]] std::unique_ptr<ScreenshotToolPaletteStyleEditorComponent>
+    takeReusableEditor(const char* role, const char* signature, QBoxLayout* destinationLayout,
+                       QWidget* destinationParent);
+    [[nodiscard]] QWidget* takeReusableWidget(const char* role, const char* signature,
+                                              QBoxLayout* destinationLayout,
+                                              QWidget* destinationParent);
+    void stageReusableEditor(const char* role, const char* signature,
+                             std::unique_ptr<ScreenshotToolPaletteStyleEditorComponent> editor);
+    void stageReusableWidget(const char* role, const char* signature, QWidget* widget);
+    [[nodiscard]] bool reusableRoleStaged(const char* role) const;
+    [[nodiscard]] QWidget* editorRootForRole(QWidget* controls, const char* role) const;
+    void rebuildRegisteredComponents();
 
     ScreenshotToolPaletteStyleState m_state;
     ScreenshotToolPaletteStyleControlCallbacks m_callbacks;
     const SnowCanvasStyleDefaults m_defaults;
     QSet<QObject*> m_openTextStylePopups;
+
+    struct ReusableEditor {
+        QByteArray role;
+        QByteArray signature;
+        std::unique_ptr<ScreenshotToolPaletteStyleEditorComponent> component;
+        QWidget* widget = nullptr;
+    };
+    std::vector<ReusableEditor> m_reusableEditors;
+    struct ParkedEditor {
+        int tool = -1;
+        QByteArray role;
+        QByteArray signature;
+        std::unique_ptr<ScreenshotToolPaletteStyleEditorComponent> component;
+        QWidget* widget = nullptr;
+    };
+    std::vector<ParkedEditor> m_parkedEditors;
+    ScreenshotToolPaletteStyleReconcileStats m_lastReconcileStats;
+    int m_reconcileSourceTool = -1;
+    int m_reconcileDestinationTool = -1;
 
     // Shared editor components. Owned here, refreshed through the registry
     // entries below; widget lifetimes belong to the family row widgets.

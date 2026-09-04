@@ -10,6 +10,7 @@
 #include <QVector>
 
 #include <functional>
+#include <memory>
 
 class QBoxLayout;
 class QObject;
@@ -42,6 +43,10 @@ class ScreenshotToolPaletteStyleEditorComponent {
   public:
     virtual ~ScreenshotToolPaletteStyleEditorComponent() = default;
 
+    [[nodiscard]] QWidget* rootWidget() const {
+        return m_rootWidget;
+    }
+
     virtual void refreshMetrics(const ScreenshotToolPaletteButtonMetrics& metrics) = 0;
     // Popup content owns its window DPR and is intentionally excluded from
     // toolbar scaling; this pass resets popup buttons after a DPI commit.
@@ -58,6 +63,14 @@ class ScreenshotToolPaletteStyleEditorComponent {
 
   protected:
     ScreenshotToolPaletteStyleEditorComponent() = default;
+
+    [[nodiscard]] QBoxLayout* createRoot(QBoxLayout* layout, QWidget* parent);
+    void finalizeRoot();
+    void refreshRootMetrics(const ScreenshotToolPaletteButtonMetrics& metrics);
+    void releaseRoot();
+
+  private:
+    QWidget* m_rootWidget = nullptr;
 };
 
 struct ScreenshotToolPaletteColorEditorConfig {
@@ -80,6 +93,9 @@ class ScreenshotToolPaletteColorEditor final : public ScreenshotToolPaletteStyle
                const std::function<void(const QColor&)>& previewColor,
                const ScreenshotToolPaletteEditorServices& services,
                const ScreenshotToolPaletteButtonMetrics& metrics);
+    void rebind(const ScreenshotToolPaletteColorEditorConfig& config,
+                const std::function<void(const QColor&)>& commitColor,
+                const std::function<void(const QColor&)>& previewColor);
     void update(const QColor& color, bool mixed);
     void refreshMetrics(const ScreenshotToolPaletteButtonMetrics& metrics) override;
     [[nodiscard]] bool isInteracting() const override {
@@ -93,6 +109,8 @@ class ScreenshotToolPaletteColorEditor final : public ScreenshotToolPaletteStyle
     ColorSwatchButton* m_trigger = nullptr;
     QVector<adqt::widgets::AdButton*> m_presets;
     QVector<QColor> m_presetValues;
+    std::shared_ptr<std::function<void(const QColor&)>> m_commitColor;
+    std::shared_ptr<std::function<void(const QColor&)>> m_previewColor;
     bool m_handlingChange = false;
 };
 
@@ -116,6 +134,9 @@ class ScreenshotToolPaletteStrokeEditor final : public ScreenshotToolPaletteStyl
                const std::function<void(SnowCanvasStrokeStyle)>& setStyle,
                const ScreenshotToolPaletteEditorServices& services,
                const ScreenshotToolPaletteButtonMetrics& metrics);
+    void rebind(const ScreenshotToolPaletteStrokeEditorConfig& config,
+                const std::function<void(const QColor&)>& setColor,
+                const std::function<void(SnowCanvasStrokeStyle)>& setStyle);
     void update(const QColor& color, SnowCanvasStrokeStyle style, bool colorMixed, bool styleMixed);
     void refreshMetrics(const ScreenshotToolPaletteButtonMetrics& metrics) override;
     [[nodiscard]] bool isInteracting() const override {
@@ -131,6 +152,8 @@ class ScreenshotToolPaletteStrokeEditor final : public ScreenshotToolPaletteStyl
     QVector<QColor> m_colorValues;
     QVector<StrokeStylePreviewButton*> m_styleButtons;
     QVector<SnowCanvasStrokeStyle> m_styleValues;
+    std::shared_ptr<std::function<void(const QColor&)>> m_setColor;
+    std::shared_ptr<std::function<void(SnowCanvasStrokeStyle)>> m_setStyle;
     bool m_handlingChange = false;
 };
 
@@ -154,6 +177,9 @@ class ScreenshotToolPaletteFillEditor final : public ScreenshotToolPaletteStyleE
                const std::function<void(SnowCanvasFillStyle)>& setStyle,
                const ScreenshotToolPaletteEditorServices& services,
                const ScreenshotToolPaletteButtonMetrics& metrics);
+    void rebind(const ScreenshotToolPaletteFillEditorConfig& config,
+                const std::function<void(const QColor&)>& setColor,
+                const std::function<void(SnowCanvasFillStyle)>& setStyle);
     void update(const QColor& color, SnowCanvasFillStyle style, bool colorMixed, bool styleMixed);
     void refreshMetrics(const ScreenshotToolPaletteButtonMetrics& metrics) override;
     [[nodiscard]] bool isInteracting() const override {
@@ -169,6 +195,8 @@ class ScreenshotToolPaletteFillEditor final : public ScreenshotToolPaletteStyleE
     QVector<QColor> m_colorValues;
     QVector<FillStylePreviewButton*> m_styleButtons;
     QVector<SnowCanvasFillStyle> m_styleValues;
+    std::shared_ptr<std::function<void(const QColor&)>> m_setColor;
+    std::shared_ptr<std::function<void(SnowCanvasFillStyle)>> m_setStyle;
     bool m_handlingChange = false;
 };
 
@@ -197,6 +225,9 @@ class ScreenshotToolPaletteWidthColorEditor final
                const std::function<void(const QColor&)>& setColor,
                const ScreenshotToolPaletteEditorServices& services,
                const ScreenshotToolPaletteButtonMetrics& metrics);
+    void rebind(const ScreenshotToolPaletteWidthColorEditorConfig& config,
+                const std::function<void(double)>& setWidth,
+                const std::function<void(const QColor&)>& setColor);
     void update(double width, const QColor& color, bool widthMixed, bool colorMixed);
     void refreshMetrics(const ScreenshotToolPaletteButtonMetrics& metrics) override;
     [[nodiscard]] bool isInteracting() const override {
@@ -215,6 +246,8 @@ class ScreenshotToolPaletteWidthColorEditor final
     QVector<double> m_widthValues;
     QVector<adqt::widgets::AdButton*> m_colorButtons;
     QVector<QColor> m_colorValues;
+    std::shared_ptr<std::function<void(double)>> m_setWidth;
+    std::shared_ptr<std::function<void(const QColor&)>> m_setColor;
     bool m_handlingChange = false;
 };
 
@@ -240,6 +273,9 @@ class ScreenshotToolPaletteNumericPresetEditor final
                const ScreenshotToolPaletteNumericPresetEditorConfig& config, double initialValue,
                const std::function<void()>& cycleValue, const std::function<void(double)>& setValue,
                const ScreenshotToolPaletteButtonMetrics& metrics);
+    void rebind(const ScreenshotToolPaletteNumericPresetEditorConfig& config,
+                const std::function<void()>& cycleValue,
+                const std::function<void(double)>& setValue);
     void update(double value, bool mixed);
     void refreshMetrics(const ScreenshotToolPaletteButtonMetrics& metrics) override;
     void release() override;
@@ -248,6 +284,8 @@ class ScreenshotToolPaletteNumericPresetEditor final
     adqt::widgets::AdButton* m_summary = nullptr;
     QVector<adqt::widgets::AdButton*> m_presets;
     QVector<double> m_values;
+    std::shared_ptr<std::function<void()>> m_cycleValue;
+    std::shared_ptr<std::function<void(double)>> m_setValue;
     bool m_strokePreview = false;
 };
 
@@ -271,6 +309,9 @@ class ScreenshotToolPaletteFontEditor final : public ScreenshotToolPaletteStyleE
                const std::function<void(const QString&)>& setFamily,
                const ScreenshotToolPaletteEditorServices& services,
                const ScreenshotToolPaletteButtonMetrics& metrics);
+    void rebind(const ScreenshotToolPaletteFontEditorConfig& config,
+                const std::function<void()>& cycleSize, const std::function<void(double)>& setSize,
+                const std::function<void(const QString&)>& setFamily);
     void update(double size, const QString& family, bool sizeMixed, bool familyMixed,
                 quint32 groups, quint32 sizeGroup, quint32 familyGroup);
     void refreshMetrics(const ScreenshotToolPaletteButtonMetrics& metrics) override;
@@ -287,6 +328,9 @@ class ScreenshotToolPaletteFontEditor final : public ScreenshotToolPaletteStyleE
     QVector<adqt::widgets::AdButton*> m_sizePresets;
     QVector<double> m_sizeValues;
     adqt::widgets::AdSelect* m_familySelect = nullptr;
+    std::shared_ptr<std::function<void()>> m_cycleSize;
+    std::shared_ptr<std::function<void(double)>> m_setSize;
+    std::shared_ptr<std::function<void(const QString&)>> m_setFamily;
 };
 
 struct ScreenshotToolPaletteIconOption {
@@ -312,6 +356,8 @@ class ScreenshotToolPaletteIconOptionEditor final
                const ScreenshotToolPaletteIconOptionEditorConfig& config, int initialValue,
                const std::function<void(int)>& setValue,
                const ScreenshotToolPaletteButtonMetrics& metrics);
+    void rebind(const ScreenshotToolPaletteIconOptionEditorConfig& config,
+                const std::function<void(int)>& setValue);
     void update(int value, bool mixed);
     void refreshMetrics(const ScreenshotToolPaletteButtonMetrics& metrics) override;
     void resetPopupMetrics(const ScreenshotToolPaletteButtonMetrics& metrics) override;
@@ -322,6 +368,7 @@ class ScreenshotToolPaletteIconOptionEditor final
     adqt::widgets::AdPopover* m_popover = nullptr;
     QVector<adqt::widgets::AdButton*> m_buttons;
     QVector<ScreenshotToolPaletteIconOption> m_options;
+    std::shared_ptr<std::function<void(int)>> m_setValue;
 };
 
 // Assembles the shared S/M/L/XL numeric preset config used by the
