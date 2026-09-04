@@ -1858,9 +1858,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenshotocrtextlayer.h
         include/snow_shot/presentation/screenshotmessageservice.h
         include/snow_shot/presentation/screenshotoverlaywindow.h
+        include/snow_shot/presentation/screenshotoverlaypool.h
         include/snow_shot/presentation/screenshotscrollingtypes.h
         include/snow_shot/presentation/screenshotscrollingthumbnailwidget.h
         src/presentation/capture/screenshotscrollingthumbnailwidget.cpp
+        src/presentation/capture/screenshotcapturedisplaymodelreconciler.cpp
         src/presentation/core/screenshotcanvastoolstyles.cpp
         src/presentation/core/screenshotgeometry.cpp
         src/presentation/selection/screenshotselectiongeometry.cpp
@@ -1871,6 +1873,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/overlay/screenshotoverlaycanvaspresenter.cpp
         src/presentation/overlay/screenshotoverlayframepresenter.cpp
         src/presentation/overlay/screenshotoverlayframepresenter.h
+        src/presentation/overlay/screenshotoverlaycanvaswidget.cpp
+        src/presentation/overlay/screenshotoverlaypool.cpp
         src/presentation/overlay/screenshotoverlaywindow.cpp
         src/presentation/services/screenshotmessageservice.cpp
         src/presentation/ocr/screenshotocrpresentation.cpp
@@ -1887,6 +1891,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         ant_design_qt
         Qt6::Widgets
         snow_shot_storage
+        snow_shot_window_shortcuts
         snow_draw_engine_qt_canvas
     )
     add_test(
@@ -1897,7 +1902,14 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-ocr-canvas-renderer-tests
         COMMAND snow-shot-screenshot-canvas-renderer-tests --ocr-presentation
     )
-    set_tests_properties(snow-shot-screenshot-canvas-renderer-tests PROPERTIES
+    add_test(
+        NAME snow-shot-overlay-pool-prewarm-tests
+        COMMAND snow-shot-screenshot-canvas-renderer-tests --overlay-pool-prewarm
+    )
+    set_tests_properties(
+        snow-shot-screenshot-canvas-renderer-tests
+        snow-shot-overlay-pool-prewarm-tests
+        PROPERTIES
         ENVIRONMENT
             "QT_QPA_PLATFORM=offscreen"
         ENVIRONMENT_MODIFICATION

@@ -29,7 +29,14 @@ void ScreenshotOverlayPool::prewarmDisplayPool(ScreenshotDisplaySession& display
 
     displaySession.reserve(std::max(displaySession.size(), targetDisplayCount));
     while (displaySession.size() < targetDisplayCount) {
-        displaySession.appendDisplay({}, ensureOverlay(nullptr));
+        displaySession.appendDisplay();
+    }
+
+    // Retained overlays may have released their native surfaces at the end of
+    // the previous capture. Prewarming must restore both retained and new slots.
+    for (qsizetype index = 0; index < targetDisplayCount; ++index) {
+        static_cast<void>(displaySession.ensureOverlayAt(
+            index, [this](ScreenshotOverlayWindow* overlay) { return ensureOverlay(overlay); }));
     }
 }
 
