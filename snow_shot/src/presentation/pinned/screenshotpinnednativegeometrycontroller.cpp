@@ -73,6 +73,7 @@ bool ScreenshotPinnedNativeGeometryController::beginMove(const QPoint& nativeCur
     if (!beginInteractive(Phase::MovePending, Origin::UserMove)) {
         return false;
     }
+    m_moveReferenceGeometry = m_transactionStartGeometry;
     m_moveStartCursor = nativeCursorPosition;
     return true;
 }
@@ -130,14 +131,12 @@ QRect ScreenshotPinnedNativeGeometryController::updateMove(const QRect& proposed
 
     const QPoint cursorDelta = nativeCursorPosition - m_moveStartCursor;
     if (cursorDelta.isNull()) {
-        m_targetGeometry = m_transactionStartGeometry;
+        m_targetGeometry = m_moveReferenceGeometry;
         return m_targetGeometry;
     }
 
-    const QSize expectedSize = m_dpiChanged && validGeometry(m_targetGeometry)
-                                   ? m_targetGeometry.size()
-                                   : m_transactionStartGeometry.size();
-    QRect cursorDerived(m_transactionStartGeometry.topLeft() + cursorDelta, expectedSize);
+    QRect cursorDerived(m_moveReferenceGeometry.topLeft() + cursorDelta,
+                        m_moveReferenceGeometry.size());
     QRect accepted = validGeometry(proposed) ? proposed : cursorDerived;
     if (accepted.size() == cursorDerived.size() &&
         withinRoundTripTolerance(accepted.topLeft() - cursorDerived.topLeft())) {
@@ -174,32 +173,34 @@ std::optional<QRect> ScreenshotPinnedNativeGeometryController::updateResize(
     return m_targetGeometry;
 }
 
-bool ScreenshotPinnedNativeGeometryController::adoptDpiTarget(const QRect& suggested,
-                                                              const QPoint& nativeCursorPosition) {
+bool ScreenshotPinnedNativeGeometryController::adoptDpiTarget(
+    const QRect& suggested, const std::optional<QPoint>& nativeCursorPosition) {
     if (!validGeometry(suggested) || m_phase == Phase::Closing || m_phase == Phase::Uninitialized) {
         return false;
     }
 
-    QRect accepted = suggested;
+    // The system owns the geometry of a DPI transition: the suggested rect is
+    // accepted verbatim, position included, so the window never re-anchors
+    // itself while the monitor change scales it.
+    const bool moving = m_phase == Phase::MovePending || m_phase == Phase::Moving;
+    if (moving && !nativeCursorPosition.has_value()) {
+        return false;
+    }
     if (m_phase == Phase::Stable) {
         m_transactionStartGeometry = m_committedGeometry;
         m_phase = Phase::DpiChanging;
         m_origin = Origin::DpiTransition;
-        accepted.moveTopLeft(m_committedGeometry.topLeft());
-    } else if (m_phase == Phase::MovePending || m_phase == Phase::Moving) {
-        const QPoint cursorDelta = nativeCursorPosition - m_moveStartCursor;
-        const QPoint cursorDerivedTopLeft = m_transactionStartGeometry.topLeft() + cursorDelta;
-        if (withinRoundTripTolerance(accepted.topLeft() - cursorDerivedTopLeft)) {
-            accepted.moveTopLeft(cursorDerivedTopLeft);
-        }
-        m_acceptedInteractiveGeometry = true;
-    } else if (m_phase != Phase::ResizePending && m_phase != Phase::Resizing) {
+    } else if (!moving && m_phase != Phase::ResizePending && m_phase != Phase::Resizing) {
         return false;
     } else {
         m_acceptedInteractiveGeometry = true;
     }
 
-    m_targetGeometry = accepted;
+    m_targetGeometry = suggested;
+    if (moving) {
+        m_moveReferenceGeometry = suggested;
+        m_moveStartCursor = nativeCursorPosition.value();
+    }
     m_dpiChanged = true;
     return true;
 }
@@ -265,6 +266,7 @@ ScreenshotPinnedNativeGeometryController::finishRollback() {
 void ScreenshotPinnedNativeGeometryController::resetTransaction() {
     m_transactionStartGeometry = {};
     m_targetGeometry = m_committedGeometry;
+    m_moveReferenceGeometry = {};
     m_moveStartCursor = {};
     m_phase = Phase::Stable;
     m_origin = Origin::InitialPlacement;

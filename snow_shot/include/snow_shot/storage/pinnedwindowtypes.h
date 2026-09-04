@@ -43,7 +43,12 @@ struct PinnedWindowRecord final {
     QString screenSerial;
     QRect screenLogicalGeometry;
     QRect screenPhysicalGeometry;
+    // Informational only: the restore path recreates the window at the saved
+    // physical pixel size and derives the scale from those pixels, so the
+    // saving monitor's DPI never influences a restore.
     qreal screenDpi = 1.0;
+    // Informational snapshot of the derived scale value at save time; restore
+    // re-derives it from initialPhysicalSize and nativeGeometry instead.
     double scalePercent = 100.0;
     int opacityPercent = 100;
     QTransform imageTransform;

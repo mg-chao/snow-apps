@@ -551,7 +551,6 @@ void pinnedLargeImageRemainsOpenWhenEnteringDrawingMode(SnowCanvasRuntime&) {
     config.canvasSourceRect = QRectF(QPointF(0.0, 0.0), QSizeF(background.size()));
     config.backgroundImage = background;
     config.fullResolutionScaleBasis = background.size();
-    config.initialScalePercent = 10.0;
     config.screen = screen;
     config.enableEditing = true;
     require(pinnedWindow->present(config), "large pinned window presentation failed");
@@ -1576,6 +1575,16 @@ void pinnedConfiguredShortcutUpdatesImmediately(SnowCanvasRuntime&) {
 }
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
+// Starting a window move posts the system drag command (SC_DRAGMOVE), which
+// would enter USER32's modal move loop as soon as events are pumped. Tests
+// simulate that loop with explicit messages instead, so the posted command is
+// discarded right after the drag begins.
+void discardPostedSystemDrag(HWND hwnd) {
+    MSG message{};
+    while (PeekMessageW(&message, hwnd, WM_SYSCOMMAND, WM_SYSCOMMAND, PM_REMOVE) != 0) {
+    }
+}
+
 void pinnedNativeDragAcceptsCursorMovementShortcuts(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -1610,7 +1619,9 @@ void pinnedNativeDragAcceptsCursorMovementShortcuts(SnowCanvasRuntime&) {
     static_cast<void>(SendMessageW(
         hwnd, WM_NCLBUTTONDOWN, HTCAPTION,
         MAKELPARAM(static_cast<WORD>(startingCursor.x()), static_cast<WORD>(startingCursor.y()))));
-    const bool capturedForMove = GetCapture() == hwnd;
+    discardPostedSystemDrag(hwnd);
+    static_cast<void>(SendMessageW(hwnd, WM_ENTERSIZEMOVE, 0, 0));
+
     const QPoint cursorBeforeShortcut = systemCursorPosition();
     const QPoint windowPositionBeforeShortcut = pinnedWindow->currentNativeGeometry().topLeft();
     sendShortcut(*pinnedWindow, Qt::Key_W);
@@ -1621,14 +1632,24 @@ void pinnedNativeDragAcceptsCursorMovementShortcuts(SnowCanvasRuntime&) {
     const bool cursorShortcutsMoved = shortcutCursorDelta == QPoint(0, -1);
     const bool windowFollowedShortcuts = shortcutWindowDelta == shortcutCursorDelta;
 
+    // A system drag tracks the pointer inside USER32's move loop and hands
+    // the application the proposed rectangle through WM_MOVING; emulate that
+    // proposal for the follow-up pointer movement.
     const QPoint pointerDelta(7, 3);
     const QPoint cursorBeforePointerMove = systemCursorPosition();
     setSystemCursorPosition(cursorAfterShortcuts + pointerDelta);
-    static_cast<void>(SendMessageW(hwnd, WM_MOUSEMOVE, MK_LBUTTON, 0));
+    RECT movingProposal =
+        nativeRectForQRect(pinnedWindow->currentNativeGeometry().translated(pointerDelta));
+    require(SendMessageW(hwnd, WM_MOVING, 0, reinterpret_cast<LPARAM>(&movingProposal)) == TRUE,
+            "the system move proposal was not accepted");
+    const RECT acceptedMove = movingProposal;
+    SetWindowPos(hwnd, nullptr, acceptedMove.left, acceptedMove.top, 0, 0,
+                 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     const QPoint actualPointerDelta = systemCursorPosition() - cursorBeforePointerMove;
     const bool windowFollowedPointer =
         pinnedWindow->currentNativeGeometry().topLeft() - windowPositionAfterShortcuts ==
         actualPointerDelta;
+    static_cast<void>(SendMessageW(hwnd, WM_EXITSIZEMOVE, 0, 0));
     static_cast<void>(SendMessageW(hwnd, WM_LBUTTONUP, 0, 0));
     waitForUi(50);
 
@@ -1636,13 +1657,118 @@ void pinnedNativeDragAcceptsCursorMovementShortcuts(SnowCanvasRuntime&) {
             "the native-drag cursor shortcut fixture could not restore its configuration");
     pinnedWindow->close();
     require(processUntilDeleted(guardedWindow, 2000), "native-drag shortcut pin was not deleted");
-    require(capturedForMove, "a native caption press must start pinned-window pointer capture");
     require(cursorShortcutsMoved,
             "configured cursor shortcuts must remain active throughout a pinned-window drag");
     require(windowFollowedShortcuts,
             "a pinned window must follow cursor shortcuts before its native drag is released");
     require(windowFollowedPointer,
-            "application-managed pinned-window dragging must continue to follow pointer input");
+            "a system-driven pinned-window drag must follow accepted move proposals");
+}
+
+void pinnedNativeDragCrossingDpiBoundaryPreservesDestination(SnowCanvasRuntime&) {
+    const CursorPositionRestorer restoreCursor;
+    QScreen* sourceScreen = nullptr;
+    QScreen* destinationScreen = nullptr;
+    for (QScreen* candidate : QGuiApplication::screens()) {
+        if (candidate == nullptr) {
+            continue;
+        }
+        for (QScreen* other : QGuiApplication::screens()) {
+            if (other != nullptr && other != candidate &&
+                candidate->devicePixelRatio() > other->devicePixelRatio() + 0.01 &&
+                candidate->geometry().left() > other->geometry().left()) {
+                sourceScreen = candidate;
+                destinationScreen = other;
+                break;
+            }
+        }
+        if (sourceScreen != nullptr) {
+            break;
+        }
+    }
+    if (sourceScreen == nullptr || destinationScreen == nullptr) {
+        return;
+    }
+
+    const QSize logicalSize(300, 150);
+    const qreal sourceDpr = sourceScreen->devicePixelRatio();
+    const qreal destinationDpr = destinationScreen->devicePixelRatio();
+    const QRect sourcePhysical = ScreenshotGeometryMapper::physicalRectForScreen(*sourceScreen);
+    const QRect destinationPhysical =
+        ScreenshotGeometryMapper::physicalRectForScreen(*destinationScreen);
+    QImage background(logicalSize, QImage::Format_ARGB32_Premultiplied);
+    background.fill(QColor(54, 105, 157));
+
+    auto* pinnedWindow =
+        new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
+    QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = QRect(
+        sourcePhysical.center() - QPoint(qRound(logicalSize.width() * sourceDpr / 2.0),
+                                         qRound(logicalSize.height() * sourceDpr / 2.0)),
+        QSize(qRound(logicalSize.width() * sourceDpr),
+              qRound(logicalSize.height() * sourceDpr)));
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(background.size()));
+    config.backgroundImage = background;
+    config.screen = sourceScreen;
+    config.enableEditing = false;
+    require(pinnedWindow->present(config), "cross-DPI native drag pin presentation failed");
+    waitForUi(100);
+
+    const HWND hwnd = toNativeHwnd(pinnedWindow->winId());
+    require(hwnd != nullptr, "cross-DPI native drag pin did not expose an HWND");
+    const QRect startingGeometry = pinnedWindow->currentNativeGeometry();
+    const QPoint startingCursor = startingGeometry.center();
+    setSystemCursorPosition(startingCursor);
+    waitForUi(50);
+    static_cast<void>(SendMessageW(
+        hwnd, WM_NCLBUTTONDOWN, HTCAPTION,
+        MAKELPARAM(static_cast<WORD>(startingCursor.x()), static_cast<WORD>(startingCursor.y()))));
+    discardPostedSystemDrag(hwnd);
+    static_cast<void>(SendMessageW(hwnd, WM_ENTERSIZEMOVE, 0, 0));
+
+    // A system drag hands the application its proposed rectangle through
+    // WM_MOVING; applying it moves the window onto the destination monitor,
+    // where Windows performs the native DPI transition and the window adopts
+    // the suggested geometry verbatim.
+    const auto proposeSystemMove = [hwnd, pinnedWindow](const QPoint& cursor) {
+        setSystemCursorPosition(cursor);
+        waitForUi(30);
+        const QRect current = pinnedWindow->currentNativeGeometry();
+        const QPoint target = cursor - QPoint(current.width() / 2, current.height() / 2);
+        RECT movingProposal = nativeRectForQRect(QRect(target, current.size()));
+        require(SendMessageW(hwnd, WM_MOVING, 0, reinterpret_cast<LPARAM>(&movingProposal)) == TRUE,
+                "the cross-screen system move proposal was not accepted");
+        const QRect acceptedMove = qRectForNativeRect(movingProposal);
+        SetWindowPos(hwnd, nullptr, acceptedMove.x(), acceptedMove.y(), 0, 0,
+                     SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        waitForUi(300);
+    };
+
+    proposeSystemMove(destinationPhysical.center());
+    const QPoint continuedCursor = destinationPhysical.center() + QPoint(120, 40);
+    proposeSystemMove(continuedCursor);
+
+    const QRect destinationGeometry = pinnedWindow->currentNativeGeometry();
+    const QSize expectedSize(qRound(startingGeometry.width() * destinationDpr / sourceDpr),
+                             qRound(startingGeometry.height() * destinationDpr / sourceDpr));
+    auto* scaleLabel =
+        pinnedWindow->findChild<QLabel*>(QStringLiteral("screenshotPinnedScaleLabel"));
+    require(destinationGeometry != startingGeometry &&
+                destinationGeometry.contains(continuedCursor) &&
+                qAbs(destinationGeometry.width() - expectedSize.width()) <= 3 &&
+                qAbs(destinationGeometry.height() - expectedSize.height()) <= 3 &&
+                scaleLabel != nullptr && scaleLabel->isVisible() &&
+                scaleLabel->text() ==
+                    QStringLiteral("Scale: %1%").arg(qRound(100.0 * destinationDpr / sourceDpr)),
+            "cross-DPI native dragging must preserve destination position and native DPI size "
+            "while updating the zoom readout");
+
+    static_cast<void>(SendMessageW(hwnd, WM_EXITSIZEMOVE, 0, 0));
+    static_cast<void>(SendMessageW(hwnd, WM_LBUTTONUP, 0, 0));
+    pinnedWindow->close();
+    require(processUntilDeleted(guardedWindow, 2000),
+            "cross-DPI native drag pin was not deleted");
 }
 #endif
 
@@ -2490,10 +2616,10 @@ class IsolatedPinnedStorage final {
     QTemporaryDir m_temporary;
 };
 
-// Describes a pinned window that was saved on a monitor running at
-// `savedDpiFactor` times the current DPI. `scalePercent` is the exact percent
-// the window had; the native geometry is what that percent produced in the
-// saved monitor's pixels, so a restore has to translate both consistently.
+// Describes a pinned window that was saved on a monitor whose recorded DPI
+// is `savedDpiFactor` times the current DPI. The recorded DPI and percent are
+// informational; the native geometry is what that percent produced in the
+// saved monitor's pixels, and a restore recreates exactly those pixels.
 snow_shot::storage::PinnedWindowRecord savedPinnedRecord(QScreen& screen, qreal savedDpiFactor,
                                                         const QSize& basis, double scalePercent,
                                                         const QPoint& savedOffset) {
@@ -2560,24 +2686,25 @@ void closeRestoredPinnedWindow(ScreenshotPinnedWindow* window, const QString& re
     require(processUntilDeleted(guardedWindow, 2000), "restored pinned window was not deleted");
 }
 
-void restoredPinnedWindowScaleMenuFollowsMonitorDpiChange(SnowCanvasRuntime&) {
+void restoredPinnedWindowIgnoresMonitorDpiChange(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
     const QRect physical = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
 
     IsolatedPinnedStorage storage;
-    // Saved at 50% on a monitor with twice the current DPI: the window comes
-    // back at half its saved pixels, which is 25% of the unchanged basis.
+    // Saved at 50% on a monitor whose recorded DPI is twice the current one.
+    // Physical pixels are the only unit, so the window comes back at its
+    // saved pixel size, which is still 50% of the unchanged basis.
     const snow_shot::storage::PinnedWindowRecord record =
         savedPinnedRecord(*screen, 2.0, QSize(800, 400), 50.0, QPoint(200, 120));
 
     ScreenshotSelectionExportUiServices services;
     ScreenshotPinnedWindow* restoredWindow = restoreSeededPinnedWindow(services, record);
-    const QRect expectedGeometry(physical.topLeft() + QPoint(100, 60), QSize(200, 100));
+    const QRect expectedGeometry(physical.topLeft() + QPoint(200, 120), QSize(400, 200));
     require(restoredWindow->currentNativeGeometry() == expectedGeometry,
-            "restored pinned window should present at the DPI-reconciled geometry");
-    require(scaleMenuReadout(*restoredWindow) == QStringLiteral("Current: 25%"),
-            "restored pinned scale menu should reflect the DPI-reconciled geometry");
+            "restored pinned window should present at the saved physical geometry");
+    require(scaleMenuReadout(*restoredWindow) == QStringLiteral("Current: 50%"),
+            "restored pinned scale menu should derive from the saved physical pixels");
 
     closeRestoredPinnedWindow(restoredWindow, record.id);
 }
@@ -2588,9 +2715,10 @@ void restoredThumbnailScaleMenuStaysConsistentThroughExit(SnowCanvasRuntime&) {
     const QRect physical = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
 
     IsolatedPinnedStorage storage;
-    // The record describes a window saved in thumbnail mode on a monitor that
-    // ran at twice the current DPI, so every persisted physical geometry must
-    // shrink to half when it is restored onto the current screen.
+    // The record describes a window saved in thumbnail mode on a monitor whose
+    // recorded DPI is twice the current one. Every persisted physical
+    // geometry comes back at its saved pixels: the thumbnail rectangle, the
+    // pre-thumbnail rectangle and the scale they encode.
     snow_shot::storage::PinnedWindowRecord record =
         savedPinnedRecord(*screen, 2.0, QSize(800, 400), 50.0, QPoint(200, 120));
     record.thumbnailMode = true;
@@ -2603,13 +2731,13 @@ void restoredThumbnailScaleMenuStaysConsistentThroughExit(SnowCanvasRuntime&) {
     auto* thumbnailAction =
         restoredWindow->findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
     require(thumbnailAction != nullptr, "pinned thumbnail action was not found");
-    const QRect expectedThumbnailGeometry(physical.topLeft() + QPoint(20, 15), QSize(60, 60));
+    const QRect expectedThumbnailGeometry(physical.topLeft() + QPoint(40, 30), QSize(120, 120));
     require(restoredWindow->currentNativeGeometry() == expectedThumbnailGeometry,
-            "restored thumbnail pinned window should present at the DPI-reconciled geometry");
+            "restored thumbnail pinned window should present at the saved thumbnail geometry");
     // The scale menu is reachable while the thumbnail is showing, and it
     // describes the geometry the window will return to.
-    require(scaleMenuReadout(*restoredWindow) == QStringLiteral("Current: 25%"),
-            "the scale menu should already describe the DPI-reconciled scale in thumbnail mode");
+    require(scaleMenuReadout(*restoredWindow) == QStringLiteral("Current: 50%"),
+            "the scale menu should describe the saved scale in thumbnail mode");
 
     // The thumbnail action mirrors its checked state when the context menu
     // opens, so synchronize it before unchecking to leave thumbnail mode the
@@ -2617,7 +2745,7 @@ void restoredThumbnailScaleMenuStaysConsistentThroughExit(SnowCanvasRuntime&) {
     thumbnailAction->setChecked(true);
     thumbnailAction->setChecked(false);
 
-    const QRect expectedGeometry(physical.topLeft() + QPoint(100, 60), QSize(200, 100));
+    const QRect expectedGeometry(physical.topLeft() + QPoint(200, 120), QSize(400, 200));
     QElapsedTimer settled;
     settled.start();
     while (restoredWindow->currentNativeGeometry() != expectedGeometry &&
@@ -2627,9 +2755,39 @@ void restoredThumbnailScaleMenuStaysConsistentThroughExit(SnowCanvasRuntime&) {
     QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
 
     require(restoredWindow->currentNativeGeometry() == expectedGeometry,
-            "leaving thumbnail mode should apply the DPI-reconciled pre-thumbnail geometry");
-    require(scaleMenuReadout(*restoredWindow) == QStringLiteral("Current: 25%"),
-            "the scale menu should still describe the DPI-reconciled scale after leaving thumbnail mode");
+            "leaving thumbnail mode should apply the saved pre-thumbnail geometry");
+    require(scaleMenuReadout(*restoredWindow) == QStringLiteral("Current: 50%"),
+            "the scale menu should still describe the saved scale after leaving thumbnail mode");
+
+    closeRestoredPinnedWindow(restoredWindow, record.id);
+}
+
+void restoredFractionalScaleCopiesTheDisplayedViewport(SnowCanvasRuntime&) {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+
+    IsolatedPinnedStorage storage;
+    const QSize basis(250, 125);
+    const snow_shot::storage::PinnedWindowRecord record =
+        savedPinnedRecord(*screen, 1.0, basis, 56.8, QPoint(160, 140));
+
+    ScreenshotSelectionExportUiServices services;
+    ScreenshotPinnedWindow* restoredWindow = restoreSeededPinnedWindow(services, record);
+    const QSize displayedSize = record.nativeGeometry.size();
+    require(restoredWindow->currentNativeGeometry().size() == displayedSize,
+            "fractional-scale restore should present at the saved physical size");
+    require(scaleMenuReadout(*restoredWindow) == QStringLiteral("Current: 57%"),
+            "fractional scale should only round in the user-facing readout");
+
+    QAction* copyAction =
+        pinnedMenuActionNamed(*restoredWindow, QStringLiteral("screenshotPinnedCopyAction"));
+    require(copyAction != nullptr, "restored pinned copy action was not found");
+    QApplication::clipboard()->clear();
+    copyAction->trigger();
+    const QImage copied =
+        waitForClipboardImage([](const QImage& image) { return !image.isNull(); });
+    require(copied.size() == displayedSize,
+            "copying a fractional-scale pin must preserve its displayed physical size");
 
     closeRestoredPinnedWindow(restoredWindow, record.id);
 }
@@ -2640,9 +2798,10 @@ void restoredPinnedWindowKeepsExactWheelLevelAtSameDpi(SnowCanvasRuntime&) {
 
     IsolatedPinnedStorage storage;
     // 110% of a 993 px basis is stored as 1092 px, which derives back to
-    // 109.97%. A restore on the same DPI must keep the exact 110%, otherwise
-    // the wheel notch that targets 110% turns into a no-op (see
-    // pinnedSettledWheelScalingAdvancesPastRoundedLevel for the live case).
+    // 109.97%. The derivation snaps to the displayed whole percent, so the
+    // restored window reports the exact 110% level and the wheel notch that
+    // targets 120% advances (see pinnedSettledWheelScalingAdvancesPastRoundedLevel
+    // for the live case).
     const QSize basis(993, 497);
     const snow_shot::storage::PinnedWindowRecord record =
         savedPinnedRecord(*screen, 1.0, basis, 110.0, QPoint(160, 140));
@@ -3011,8 +3170,9 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--restore-wiring-only"))) {
-            restoredPinnedWindowScaleMenuFollowsMonitorDpiChange(sourceRuntime);
+            restoredPinnedWindowIgnoresMonitorDpiChange(sourceRuntime);
             restoredThumbnailScaleMenuStaysConsistentThroughExit(sourceRuntime);
+            restoredFractionalScaleCopiesTheDisplayedViewport(sourceRuntime);
             restoredPinnedWindowKeepsExactWheelLevelAtSameDpi(sourceRuntime);
             return 0;
         }
@@ -3023,6 +3183,10 @@ int main(int argc, char* argv[]) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
         if (app.arguments().contains(QStringLiteral("--native-drag-shortcut-only"))) {
             pinnedNativeDragAcceptsCursorMovementShortcuts(sourceRuntime);
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--native-drag-dpi-only"))) {
+            pinnedNativeDragCrossingDpiBoundaryPreservesDestination(sourceRuntime);
             return 0;
         }
 #endif
@@ -3040,8 +3204,9 @@ int main(int argc, char* argv[]) {
         pinnedSettledWheelScalingAdvancesPastRoundedLevel(sourceRuntime);
         pinnedWheelScalingUsesConfiguredAnchor(sourceRuntime);
         pinnedFollowsPerMonitorDpiScaling(sourceRuntime);
-        restoredPinnedWindowScaleMenuFollowsMonitorDpiChange(sourceRuntime);
+        restoredPinnedWindowIgnoresMonitorDpiChange(sourceRuntime);
         restoredThumbnailScaleMenuStaysConsistentThroughExit(sourceRuntime);
+        restoredFractionalScaleCopiesTheDisplayedViewport(sourceRuntime);
         restoredPinnedWindowKeepsExactWheelLevelAtSameDpi(sourceRuntime);
         pinnedCopyIncludesSourceCanvasDrawing();
         pinnedQrResultCopiesWithKeyboardShortcut();

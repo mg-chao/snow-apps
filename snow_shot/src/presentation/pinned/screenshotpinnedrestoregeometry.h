@@ -9,38 +9,34 @@ namespace screenshot_pinned_restore_geometry {
 struct ScreenGeometry {
     QRect physicalBounds;
     QRect availableBounds;
-    qreal devicePixelRatio = 1.0;
 };
 
 // The subset of a persisted pinned-window record whose values are expressed
-// in physical pixels of the monitor that saved them. The scale percent is
-// derived from those pixels (window width over the full-resolution basis), so
-// it moves with them: translating one field without the others yields a
-// window whose menu, wheel stepping and geometry disagree.
+// in physical pixels of the monitor that saved them. Physical pixels are the
+// only unit: a restored window is recreated at exactly its saved physical
+// size, and its scale value derives from that size, so the saving monitor's
+// DPI never participates in a restore.
 struct SavedState {
     QRect nativeGeometry;
     // Empty when the window was not in thumbnail mode.
     QRect preThumbnailNativeGeometry;
-    double scalePercent = 100.0;
     // Empty for legacy records that did not capture the saving monitor; such
-    // records are restored without any DPI translation.
+    // records are restored at their saved coordinates without re-basing.
     QRect screenPhysicalBounds;
-    qreal screenDevicePixelRatio = 1.0;
 };
 
 struct RestoredState {
     QRect nativeGeometry;
     QRect preThumbnailNativeGeometry;
-    double scalePercent = 100.0;
 };
 
-// Translates every DPI-dependent field of a saved record from the saving
-// monitor to the target monitor in one step and keeps the geometries
-// reachable on the current screen layout. This is the only entry point on
-// purpose: callers cannot obtain a translated geometry without the matching
-// translated scale percent. Empty geometries stay empty so optional rects
-// round-trip as absent; the percent is scaled by exactly the same ratio as
-// the rects, which leaves it bit-identical when the DPI did not change.
+// Re-bases every persisted geometry from the saving monitor onto the target
+// monitor of the current screen layout while keeping the saved physical pixel
+// sizes, and keeps the geometries reachable on screen. Monitor DPI is
+// deliberately not consulted: the scale value is a function of the physical
+// sizes alone. This is the only entry point on purpose: callers cannot obtain
+// a re-based geometry without its matching pre-thumbnail geometry. Empty
+// geometries stay empty so optional rects round-trip as absent.
 [[nodiscard]] RestoredState reconcileSavedState(const SavedState& saved,
                                                 const ScreenGeometry& targetScreen,
                                                 const QList<ScreenGeometry>& screens);
