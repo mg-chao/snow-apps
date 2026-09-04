@@ -286,6 +286,103 @@ void textAndHighlightStrokeWidthTriggersUseSharedPreviewButton() {
             "configured width-color editors should share picker and trigger metrics");
 }
 
+void shapeAndArrowStrokeEditorsShareThePresetCatalog() {
+    ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
+    require(palette.ensureStyleFamily(ScreenshotToolPalette::Tool::Shape),
+            "shape style family should materialize on demand");
+    require(palette.ensureStyleFamily(ScreenshotToolPalette::Tool::Arrow),
+            "arrow style family should materialize on demand");
+
+    const auto rowPresetColorNames = [&palette](const QString& rowObjectName,
+                                                const QString& tooltipPrefix) {
+        QStringList colorNames;
+        QWidget* row = palette.findChild<QWidget*>(rowObjectName);
+        require(row != nullptr, "style row should exist");
+        for (adqt::widgets::AdButton* button : row->findChildren<adqt::widgets::AdButton*>()) {
+            auto* swatch = dynamic_cast<ColorSwatchButton*>(button);
+            if (swatch == nullptr || swatch->parentWidget() != row) {
+                continue;
+            }
+            const QString tooltip = swatch->toolTip();
+            require(tooltip.startsWith(tooltipPrefix),
+                    "stroke preset tooltip should use the tool-specific pattern");
+            colorNames.append(tooltip.mid(tooltipPrefix.length()));
+        }
+        return colorNames;
+    };
+    const QStringList shapeColors = rowPresetColorNames(
+        QStringLiteral("screenshotRectangleStyleControls"), QStringLiteral("Stroke color "));
+    const QStringList arrowColors = rowPresetColorNames(
+        QStringLiteral("screenshotArrowStyleControls"), QStringLiteral("Arrow stroke color "));
+    require(shapeColors.size() == 5 && arrowColors == shapeColors,
+            "shape and arrow stroke editors should render the shared stroke color catalog");
+
+    const auto strokeStyleButtonCount = [&palette](const QString& accessibleName) {
+        for (adqt::widgets::AdColorPicker* picker :
+             palette.findChildren<adqt::widgets::AdColorPicker*>()) {
+            if (picker != nullptr && picker->accessibleName() == accessibleName &&
+                picker->popupContent() != nullptr) {
+                int count = 0;
+                for (adqt::widgets::AdButton* button :
+                     picker->popupContent()->findChildren<adqt::widgets::AdButton*>()) {
+                    if (dynamic_cast<StrokeStylePreviewButton*>(button) != nullptr) {
+                        ++count;
+                    }
+                }
+                return count;
+            }
+        }
+        return 0;
+    };
+    require(strokeStyleButtonCount(QStringLiteral("Stroke color")) == 3 &&
+                strokeStyleButtonCount(QStringLiteral("Arrow stroke color")) == 3,
+            "both stroke editors should expose the shared solid/dashed/dotted styles");
+}
+
+void sizePresetEditorsShareTheSizeCatalog() {
+    ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
+    require(palette.ensureStyleFamily(ScreenshotToolPalette::Tool::PenHighlight),
+            "pen highlight style family should materialize on demand");
+    require(palette.ensureStyleFamily(ScreenshotToolPalette::Tool::PenFilter),
+            "pen filter style family should materialize on demand");
+    require(palette.ensureStyleFamily(ScreenshotToolPalette::Tool::Text),
+            "text style family should materialize on demand");
+
+    const QStringList expectedLabels{QStringLiteral("S"), QStringLiteral("M"),
+                                     QStringLiteral("L"), QStringLiteral("XL")};
+    const QList<double> expectedValues{24.0, 30.0, 42.0, 54.0};
+    const auto presetTooltips = [&palette](const QString& prefix) {
+        QStringList matched;
+        const QList<QWidget*> controls = palette.findChildren<QWidget*>();
+        for (QWidget* control : controls) {
+            if (control != nullptr && control->toolTip().startsWith(prefix)) {
+                matched.append(control->toolTip());
+            }
+        }
+        return matched;
+    };
+
+    for (const QString& prefix : {QStringLiteral("Pen highlight stroke width "),
+                                  QStringLiteral("Pen filter stroke width "),
+                                  QStringLiteral("Text font size ")}) {
+        const QStringList tooltips = presetTooltips(prefix);
+        require(tooltips.size() == 4, "size preset editors should render the S/M/L/XL quartet");
+        for (int index = 0; index < 4; ++index) {
+            const QString expected = prefix + expectedLabels.at(index) + QStringLiteral(" (") +
+                                     QString::number(expectedValues.at(index)) +
+                                     QStringLiteral("px)");
+            require(tooltips.contains(expected),
+                    "size preset editors should share the S/M/L/XL value catalog");
+        }
+    }
+
+    for (double value : expectedValues) {
+        require(palette.findChild<QWidget*>(QStringLiteral("screenshotPenFilterStrokeWidth%1")
+                                                .arg(qRound(value))) != nullptr,
+                "pen filter width presets should keep their value-stamped object names");
+    }
+}
+
 bool tooltipMatches(const QString& actual, const QString& expected) {
     return actual == expected ||
            (actual.startsWith(expected + QStringLiteral(" (")) && actual.endsWith(')'));
@@ -5875,6 +5972,7 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--stroke-editor-only"))) {
         textAndHighlightStrokeWidthTriggersUseSharedPreviewButton();
+        shapeAndArrowStrokeEditorsShareThePresetCatalog();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -5914,6 +6012,8 @@ int main(int argc, char** argv) {
     numericStrokeWidthPreviewUsesLineWithinPreviewBounds();
     secondaryControlsMaterializeOnlyForTheRequestedFamily();
     textAndHighlightStrokeWidthTriggersUseSharedPreviewButton();
+    shapeAndArrowStrokeEditorsShareThePresetCatalog();
+    sizePresetEditorsShareTheSizeCatalog();
     scrollingScreenshotKeepsDrawingToolsAvailable();
     recognitionToolsKeepDrawingToolsAvailable();
     scrollingScreenshotExposesAxisRecognitionModes();

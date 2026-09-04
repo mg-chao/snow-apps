@@ -183,15 +183,6 @@ void applyMainToolbarToolActiveStyle(adqt::widgets::AdButton* button, bool activ
                                  : adqt::widgets::AdButton::AccentRole::Neutral);
 }
 
-const QVector<QColor>& spotlightColorValues() {
-    static const QVector<QColor> values{
-        QColor(QStringLiteral("#f5222d")), QColor(QStringLiteral("#52c41a")),
-        QColor(QStringLiteral("#1677ff")), QColor(QStringLiteral("#fadb14")),
-        QColor(QStringLiteral("#000000")),
-    };
-    return values;
-}
-
 class ScreenshotToolbarPanel final : public QFrame {
   public:
     explicit ScreenshotToolbarPanel(QWidget* parent)
@@ -3811,135 +3802,103 @@ QWidget* ScreenshotToolPalette::createStyleModeSelector(
 
 ScreenshotToolPalette::FilterEditor
 ScreenshotToolPalette::createFilterEditor(const FilterEditorConfig& config) {
+    const Tool tool = config.tool;
+    ScreenshotToolPaletteFilterCallbacks callbacks;
+    callbacks.setType = [this, tool](int typeValue) {
+        FilterEditor& target = tool == Tool::PenFilter ? m_penFilterEditor : m_filterEditor;
+        SnowCanvasFilterStyle& style = filterStyleForEditor(target);
+        style.type = static_cast<SnowCanvasFilterType>(typeValue);
+        if (tool == Tool::PenFilter) {
+            m_styleControls->styleState().creationPenFilterStyle.type = style.type;
+        } else {
+            m_styleControls->styleState().creationRectangleFilterStyle.type = style.type;
+        }
+        if (target.intensitySlider != nullptr) {
+            target.intensitySlider->setEnabled(filterTypeSupportsIntensity(style.type));
+        }
+        updateFilterIntensityIcon(target);
+        emit filterStyleChanged(style, SnowCanvasFilterStylePropertyType);
+    };
+    callbacks.setStrength = [this, tool](double strength) {
+        FilterEditor& target = tool == Tool::PenFilter ? m_penFilterEditor : m_filterEditor;
+        SnowCanvasFilterStyle& style = filterStyleForEditor(target);
+        style.strength = qBound(0.0, strength, 1.0);
+        if (tool == Tool::PenFilter) {
+            m_styleControls->styleState().creationPenFilterStyle.strength = style.strength;
+        } else {
+            m_styleControls->styleState().creationRectangleFilterStyle.strength = style.strength;
+        }
+        emit filterStyleChanged(style, SnowCanvasFilterStylePropertyStrength);
+    };
+    const auto setPenFilterWidth = [this, tool](double width) {
+        if (tool != Tool::PenFilter) {
+            return;
+        }
+        const double clamped = qBound(1.0, width, 72.0);
+        const bool wasMixed = (m_styleControls->styleState().filterStyleMixed &
+                               SnowCanvasFilterStylePropertyStrokeWidth) != 0;
+        if (qFuzzyCompare(m_styleControls->styleState().penFilterStyle.strokeWidth + 1.0,
+                          clamped + 1.0) &&
+            !wasMixed) {
+            return;
+        }
+        m_styleControls->styleState().penFilterStyle.strokeWidth = clamped;
+        m_styleControls->styleState().creationPenFilterStyle.strokeWidth = clamped;
+        m_styleControls->styleState().filterStyleMixed &= ~SnowCanvasFilterStylePropertyStrokeWidth;
+        updatePenFilterStrokeWidthControls();
+        emit filterStyleChanged(m_styleControls->styleState().penFilterStyle,
+                                SnowCanvasFilterStylePropertyStrokeWidth);
+    };
+    callbacks.setStrokeWidth = setPenFilterWidth;
+    callbacks.cycleStrokeWidth = [this, setPenFilterWidth]() {
+        setPenFilterWidth(m_styleControls->styleState().penFilterStyle.strokeWidth + 1.0);
+    };
+
+    ScreenshotToolPaletteFilterFamilyConfig familyConfig;
+    familyConfig.controlsObjectName = config.controlsObjectName;
+    familyConfig.typeSelectObjectName = config.typeSelectObjectName;
+    familyConfig.intensityIconObjectName = config.intensityIconObjectName;
+    familyConfig.intensitySliderObjectName = config.intensitySliderObjectName;
+    familyConfig.includeStrokeWidth = config.includeStrokeWidth;
+    familyConfig.initialStrokeWidth =
+        config.tool == Tool::PenFilter
+            ? m_styleControls->styleState().penFilterStyle.strokeWidth
+            : m_styleControls->styleState().rectangleFilterStyle.strokeWidth;
+
+    ScreenshotToolPaletteStyleFamilyHost host;
+    host.registerRowLayout = [this](QBoxLayout* layout) {
+        m_styleControlLayouts.push_back(layout);
+    };
+    host.addGroupSeparator = [this](QBoxLayout* layout) {
+        addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
+        layout->addWidget(createStyleToolbarSeparator(layout->parentWidget()));
+        addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
+    };
+    host.addGroupSpacing = [this](QBoxLayout* layout) {
+        return addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
+    };
+    host.createModeSelector =
+        [this, &modeGroups = m_filterModeGroups](
+            QWidget* parent, const QString& objectName, int initialId,
+            const QVector<ScreenshotToolPaletteStyleModeSelectorOption>& options) {
+            QVector<StyleModeOption> modes;
+            modes.reserve(options.size());
+            for (const ScreenshotToolPaletteStyleModeSelectorOption& option : options) {
+                modes.push_back({option.tooltip, option.icon, static_cast<Tool>(option.id)});
+            }
+            return createStyleModeSelector(parent, objectName, modes,
+                                           static_cast<Tool>(initialId), modeGroups);
+        };
+    host.rowItemSpacing = scaledMetric(STYLE_ITEM_SPACING);
+    const ScreenshotToolPaletteFilterFamilyResult familyResult = m_styleControls->buildFilterFamily(
+        familyConfig, callbacks, m_rectangleStylePanel, host, styleButtonMetrics(m_physicalScale));
+
     FilterEditor editor;
     editor.tool = config.tool;
-    editor.controls = new QWidget(m_rectangleStylePanel);
-    editor.controls->setObjectName(config.controlsObjectName);
-
-    auto* layout = new QHBoxLayout(editor.controls);
-    m_styleControlLayouts.push_back(layout);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
-
-    layout->addWidget(createStyleModeSelector(
-        editor.controls, QStringLiteral("screenshotFilterModeSelector"),
-        {
-            {QStringLiteral("Pen filter"), outlined_icons::Highlight(), Tool::PenFilter},
-            {QStringLiteral("Rectangle filter"), custom_outlined_icons::ShapeRectangle(),
-             Tool::RectangleFilter},
-        },
-        Tool::PenFilter, m_filterModeGroups));
-    addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
-
-    ScreenshotToolPaletteSelectEditorConfig typeSelectConfig;
-    typeSelectConfig.objectName = config.typeSelectObjectName;
-    typeSelectConfig.accessibleName = QStringLiteral("Filter type");
-    typeSelectConfig.tooltip = QStringLiteral("Filter type");
-    typeSelectConfig.placeholder = QStringLiteral("Filter type");
-    const ScreenshotToolPaletteSelectEditor typeSelectEditor =
-        createScreenshotToolPaletteSelectEditor(editor.controls, typeSelectConfig,
-                                                styleButtonMetrics(m_physicalScale));
-    editor.typeSelect = typeSelectEditor.select;
-    editor.typeSelect->setSortComparator(
-        [](const adqt::widgets::AdSelect::Option& lhs, const adqt::widgets::AdSelect::Option& rhs) {
-            return lhs.value.toInt() < rhs.value.toInt();
-        });
-    auto* typeModel = new QStandardItemModel(editor.typeSelect);
-    const auto appendFilterType = [typeModel](const char* source, int value) {
-        const ScreenshotToolPaletteTranslationText text(source);
-        auto* item = new QStandardItem(text.translated());
-        setScreenshotToolPaletteItemTranslationSource(item, text);
-        item->setData(value, adqt::widgets::AdSelect::DefaultValueRole);
-        typeModel->appendRow(item);
-    };
-    appendFilterType("Mosaic", 0);
-    appendFilterType("Gaussian blur", 1);
-    appendFilterType("Grayscale", 2);
-    appendFilterType("Inversion", 3);
-    editor.typeSelect->setModel(typeModel);
-    layout->addWidget(editor.typeSelect);
-
-    const auto addGroupSeparator = [this, layout, &editor]() {
-        addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
-        layout->addWidget(createStyleToolbarSeparator(editor.controls));
-        addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
-    };
-    addGroupSeparator();
-
-    if (config.includeStrokeWidth) {
-        const auto setPenFilterWidth = [this](double width) {
-            const double clamped = qBound(1.0, width, 72.0);
-            const bool wasMixed = (m_styleControls->styleState().filterStyleMixed &
-                                   SnowCanvasFilterStylePropertyStrokeWidth) != 0;
-            if (qFuzzyCompare(m_styleControls->styleState().penFilterStyle.strokeWidth + 1.0,
-                              clamped + 1.0) &&
-                !wasMixed) {
-                return;
-            }
-            m_styleControls->styleState().penFilterStyle.strokeWidth = clamped;
-            m_styleControls->styleState().creationPenFilterStyle.strokeWidth = clamped;
-            m_styleControls->styleState().filterStyleMixed &=
-                ~SnowCanvasFilterStylePropertyStrokeWidth;
-            updatePenFilterStrokeWidthControls();
-            emit filterStyleChanged(m_styleControls->styleState().penFilterStyle,
-                                    SnowCanvasFilterStylePropertyStrokeWidth);
-        };
-        m_styleControls->addPenFilterStrokeWidthControls(
-            layout, editor.controls, this, filterStyleForEditor(editor).strokeWidth,
-            [this, setPenFilterWidth]() {
-                setPenFilterWidth(m_styleControls->styleState().penFilterStyle.strokeWidth + 1.0);
-            },
-            setPenFilterWidth, styleButtonMetrics(m_physicalScale));
-        addGroupSeparator();
-    }
-
-    ScreenshotToolPaletteSliderEditorConfig intensityConfig;
-    intensityConfig.iconObjectName = config.intensityIconObjectName;
-    intensityConfig.sliderObjectName = config.intensitySliderObjectName;
-    intensityConfig.accessibleName = QStringLiteral("Filter intensity");
-    intensityConfig.sliderTooltip = QStringLiteral("Adjust filter intensity");
-    intensityConfig.iconRef = custom_outlined_icons::Blur();
-    intensityConfig.initialValue = 50;
-    intensityConfig.baseIconSize = COMPACT_SLIDER_ICON_SIZE;
-    intensityConfig.baseSliderWidth = COMPACT_SLIDER_WIDTH;
-    const ScreenshotToolPaletteSliderEditor intensityEditor =
-        createScreenshotToolPaletteSliderEditor(layout, editor.controls, intensityConfig,
-                                                styleButtonMetrics(m_physicalScale));
-    editor.intensityIcon = intensityEditor.icon;
-    editor.intensitySlider = intensityEditor.slider;
-
-    connect(editor.typeSelect, &adqt::widgets::AdSelect::currentValueChanged, this,
-            [this, tool = config.tool](const QVariant& value) {
-                if (!value.canConvert<int>()) {
-                    return;
-                }
-                FilterEditor& target = tool == Tool::PenFilter ? m_penFilterEditor : m_filterEditor;
-                SnowCanvasFilterStyle& style = filterStyleForEditor(target);
-                style.type = static_cast<SnowCanvasFilterType>(value.toInt());
-                if (tool == Tool::PenFilter) {
-                    m_styleControls->styleState().creationPenFilterStyle.type = style.type;
-                } else {
-                    m_styleControls->styleState().creationRectangleFilterStyle.type = style.type;
-                }
-                if (target.intensitySlider != nullptr) {
-                    target.intensitySlider->setEnabled(filterTypeSupportsIntensity(style.type));
-                }
-                updateFilterIntensityIcon(target);
-                emit filterStyleChanged(style, SnowCanvasFilterStylePropertyType);
-            });
-    connect(editor.intensitySlider, &adqt::widgets::AdSlider::valueChanged, this,
-            [this, tool = config.tool](double value) {
-                FilterEditor& target = tool == Tool::PenFilter ? m_penFilterEditor : m_filterEditor;
-                SnowCanvasFilterStyle& style = filterStyleForEditor(target);
-                style.strength = qBound(0.0, value / 100.0, 1.0);
-                if (tool == Tool::PenFilter) {
-                    m_styleControls->styleState().creationPenFilterStyle.strength = style.strength;
-                } else {
-                    m_styleControls->styleState().creationRectangleFilterStyle.strength =
-                        style.strength;
-                }
-                emit filterStyleChanged(style, SnowCanvasFilterStylePropertyStrength);
-            });
+    editor.controls = familyResult.controls;
+    editor.typeSelect = familyResult.typeSelect;
+    editor.intensityIcon = familyResult.intensityIcon;
+    editor.intensitySlider = familyResult.intensitySlider;
     refreshFilterEditorMetrics(editor);
     return editor;
 }
@@ -4427,63 +4386,64 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
     if (m_rectangleStylePanel == nullptr || m_rectangleStyleLayout == nullptr) {
         return;
     }
-    const auto createLayout = [this](QWidget* controls) {
-        auto* layout = new QHBoxLayout(controls);
-        m_styleControlLayouts.push_back(layout);
-        layout->setContentsMargins(0, 0, 0, 0);
-        layout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
-        return layout;
-    };
-    const auto addSeparator = [this](QBoxLayout* layout, QWidget* parent) {
-        addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
-        layout->addWidget(createStyleToolbarSeparator(parent));
-        addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
+    const auto makeHost = [this](QVector<adqt::widgets::AdRadioButtonGroup*>& modeGroups) {
+        ScreenshotToolPaletteStyleFamilyHost host;
+        host.registerRowLayout = [this](QBoxLayout* layout) {
+            m_styleControlLayouts.push_back(layout);
+        };
+        host.addGroupSeparator = [this](QBoxLayout* layout) {
+            addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
+            layout->addWidget(createStyleToolbarSeparator(layout->parentWidget()));
+            addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
+        };
+        host.addItemSpacing = [this](QBoxLayout* layout) {
+            addStyleToolbarSpacing(layout, STYLE_ITEM_SPACING);
+        };
+        host.addGroupSpacing = [this](QBoxLayout* layout) {
+            return addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
+        };
+        host.insertGroupSpacing = [this](QBoxLayout* layout, int index) {
+            insertStyleToolbarSpacing(layout, index, STYLE_GROUP_SPACING);
+        };
+        host.createSeparator = [this](QWidget* parent, const QString& objectName) {
+            QFrame* separator = createStyleToolbarSeparator(parent);
+            separator->setObjectName(objectName);
+            return separator;
+        };
+        host.createModeSelector = [this, &modeGroups](
+                                      QWidget* parent, const QString& objectName, int initialId,
+                                      const QVector<ScreenshotToolPaletteStyleModeSelectorOption>&
+                                          options) {
+            QVector<StyleModeOption> modes;
+            modes.reserve(options.size());
+            for (const ScreenshotToolPaletteStyleModeSelectorOption& option : options) {
+                modes.push_back({option.tooltip, option.icon, static_cast<Tool>(option.id)});
+            }
+            return createStyleModeSelector(parent, objectName, modes, static_cast<Tool>(initialId),
+                                           modeGroups);
+        };
+        host.rowItemSpacing = scaledMetric(STYLE_ITEM_SPACING);
+        return host;
     };
 
     if ((tool == Tool::Shape || tool == Tool::Line || tool == Tool::FreeDraw) &&
         m_rectangleStyleControlsWidget == nullptr) {
         SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family.shape");
-        m_rectangleStyleControlsWidget = new QWidget(m_rectangleStylePanel);
-        m_rectangleStyleControlsWidget->setObjectName(
-            QStringLiteral("screenshotRectangleStyleControls"));
-        auto* layout = createLayout(m_rectangleStyleControlsWidget);
-        m_styleControls->addShapeControls(layout, m_rectangleStyleControlsWidget, this,
-                                          styleButtonMetrics(m_physicalScale));
-        m_shapeStyleGroupSeparatorLeadingSpacing =
-            addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
-        m_shapeStyleGroupSeparator = createStyleToolbarSeparator(m_rectangleStyleControlsWidget);
-        m_shapeStyleGroupSeparator->setObjectName(
-            QStringLiteral("screenshotShapeStyleGroupSeparator"));
-        layout->addWidget(m_shapeStyleGroupSeparator);
-        m_shapeStyleGroupSeparatorTrailingSpacing =
-            addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
-        m_styleControls->addStrokeColorControls(layout, m_rectangleStyleControlsWidget, this,
-                                                styleButtonMetrics(m_physicalScale));
-        addSeparator(layout, m_rectangleStyleControlsWidget);
-        m_styleControls->addStrokeWidthControls(layout, m_rectangleStyleControlsWidget, this,
-                                                styleButtonMetrics(m_physicalScale));
-        addSeparator(layout, m_rectangleStyleControlsWidget);
-        m_styleControls->addFillColorControls(layout, m_rectangleStyleControlsWidget, this,
-                                              styleButtonMetrics(m_physicalScale));
-        addStyleToolbarSpacing(layout, STYLE_ITEM_SPACING);
-        m_styleControls->addCornerRadiusControl(layout, m_rectangleStyleControlsWidget,
-                                                styleButtonMetrics(m_physicalScale));
+        const ScreenshotToolPaletteShapeFamilyResult result = m_styleControls->buildShapeFamily(
+            m_rectangleStylePanel, makeHost(m_highlightModeGroups),
+            styleButtonMetrics(m_physicalScale));
+        m_rectangleStyleControlsWidget = result.controls;
+        m_shapeStyleGroupSeparator = result.shapeGroupSeparator;
+        m_shapeStyleGroupSeparatorLeadingSpacing = result.shapeGroupSeparatorLeadingSpacing;
+        m_shapeStyleGroupSeparatorTrailingSpacing = result.shapeGroupSeparatorTrailingSpacing;
         registerStyleFamily(m_rectangleStyleControlsWidget,
                             {Tool::Shape, Tool::Line, Tool::FreeDraw});
         return;
     }
     if (tool == Tool::Arrow && m_arrowStyleControlsWidget == nullptr) {
         SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family.arrow");
-        m_arrowStyleControlsWidget = new QWidget(m_rectangleStylePanel);
-        m_arrowStyleControlsWidget->setObjectName(QStringLiteral("screenshotArrowStyleControls"));
-        auto* layout = createLayout(m_arrowStyleControlsWidget);
-        m_styleControls->addArrowControls(
-            layout, m_arrowStyleControlsWidget, this,
-            [this, layout]() {
-                addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
-                layout->addWidget(createStyleToolbarSeparator(m_arrowStyleControlsWidget));
-                addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
-            },
+        m_arrowStyleControlsWidget = m_styleControls->buildArrowFamily(
+            m_rectangleStylePanel, makeHost(m_highlightModeGroups),
             styleButtonMetrics(m_physicalScale));
         registerStyleFamily(m_arrowStyleControlsWidget, {Tool::Arrow});
         return;
@@ -4491,128 +4451,59 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
     if ((tool == Tool::RectangleHighlight || tool == Tool::PenHighlight) &&
         m_highlightStyleControlsWidget == nullptr) {
         SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family.highlight");
-        const QVector<StyleModeOption> modes{
-            {QStringLiteral("Pen highlight"), outlined_icons::Highlight(), Tool::PenHighlight},
-            {QStringLiteral("Rectangle highlight"), custom_outlined_icons::ShapeRectangle(),
-             Tool::RectangleHighlight}};
-        m_highlightStyleControlsWidget = new QWidget(m_rectangleStylePanel);
-        m_highlightStyleControlsWidget->setObjectName(
-            QStringLiteral("screenshotHighlightStyleControls"));
-        auto* rectangleLayout = createLayout(m_highlightStyleControlsWidget);
-        m_styleControls->addHighlightControls(
-            rectangleLayout, m_highlightStyleControlsWidget, this,
-            [this, rectangleLayout]() {
-                addStyleToolbarSpacing(rectangleLayout, STYLE_GROUP_SPACING);
-                rectangleLayout->addWidget(
-                    createStyleToolbarSeparator(m_highlightStyleControlsWidget));
-                addStyleToolbarSpacing(rectangleLayout, STYLE_GROUP_SPACING);
-            }, styleButtonMetrics(m_physicalScale));
-        rectangleLayout->insertWidget(
-            0, createStyleModeSelector(m_highlightStyleControlsWidget,
-                                       QStringLiteral("screenshotHighlightModeSelector"), modes,
-                                       Tool::PenHighlight, m_highlightModeGroups));
-        insertStyleToolbarSpacing(rectangleLayout, 1, STYLE_GROUP_SPACING);
+        const ScreenshotToolPaletteHighlightFamilyResult result =
+            m_styleControls->buildHighlightFamily(m_rectangleStylePanel,
+                                                  makeHost(m_highlightModeGroups),
+                                                  styleButtonMetrics(m_physicalScale));
+        m_highlightStyleControlsWidget = result.rectangleControls;
+        m_penHighlightStyleControlsWidget = result.penControls;
         registerStyleFamily(m_highlightStyleControlsWidget, {Tool::RectangleHighlight});
-
-        m_penHighlightStyleControlsWidget = new QWidget(m_rectangleStylePanel);
-        m_penHighlightStyleControlsWidget->setObjectName(
-            QStringLiteral("screenshotPenHighlightStyleControls"));
-        auto* penLayout = createLayout(m_penHighlightStyleControlsWidget);
-        m_styleControls->addPenHighlightControls(
-            penLayout, m_penHighlightStyleControlsWidget, this,
-            [this, penLayout]() {
-                addStyleToolbarSpacing(penLayout, STYLE_GROUP_SPACING);
-                penLayout->addWidget(
-                    createStyleToolbarSeparator(m_penHighlightStyleControlsWidget));
-                addStyleToolbarSpacing(penLayout, STYLE_GROUP_SPACING);
-            }, styleButtonMetrics(m_physicalScale));
-        penLayout->insertWidget(
-            0, createStyleModeSelector(m_penHighlightStyleControlsWidget,
-                                       QStringLiteral("screenshotHighlightModeSelector"), modes,
-                                       Tool::PenHighlight, m_highlightModeGroups));
-        insertStyleToolbarSpacing(penLayout, 1, STYLE_GROUP_SPACING);
         registerStyleFamily(m_penHighlightStyleControlsWidget, {Tool::PenHighlight});
         return;
     }
     if (tool == Tool::Spotlight && m_spotlightStyleControlsWidget == nullptr) {
         SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family.spotlight");
-        m_spotlightStyleControlsWidget = new QWidget(m_rectangleStylePanel);
-        m_spotlightStyleControlsWidget->setObjectName(
-            QStringLiteral("screenshotSpotlightStyleControls"));
-        auto* layout = createLayout(m_spotlightStyleControlsWidget);
-        m_styleControls->addSpotlightColorControls(
-            layout, m_spotlightStyleControlsWidget, this,
-            m_styleControls->styleState().spotlightConfig.color, spotlightColorValues(),
-            [this](const QColor& color) {
-                m_styleControls->styleState().spotlightConfig.color = color;
-                m_styleControls->updateSpotlightColorControls(color);
-                if (!m_replayingMaterializedState) {
-                    emit spotlightConfigChanged(m_styleControls->styleState().spotlightConfig);
-                }
-            },
-            [this](const QColor& color) {
-                m_styleControls->styleState().spotlightConfig.color = color;
-                if (!m_replayingMaterializedState) {
-                    emit spotlightPreviewChanged(m_styleControls->styleState().spotlightConfig);
-                }
-            }, styleButtonMetrics(m_physicalScale));
-        addSeparator(layout, m_spotlightStyleControlsWidget);
-        ScreenshotToolPaletteSliderEditorConfig config;
-        config.iconObjectName = QStringLiteral("screenshotSpotlightOpacityIcon");
-        config.sliderObjectName = QStringLiteral("screenshotSpotlightOpacitySlider");
-        config.accessibleName = QStringLiteral("Opacity");
-        config.sliderTooltip = QStringLiteral("Adjust opacity");
-        config.iconRef = custom_outlined_icons::Opacity();
-        config.initialValue = qRound(std::clamp(
-            m_styleControls->styleState().spotlightConfig.opacity, 0.0, 1.0) * 100.0);
-        config.baseIconSize = COMPACT_SLIDER_ICON_SIZE;
-        config.baseSliderWidth = COMPACT_SLIDER_WIDTH;
-        const auto editor = createScreenshotToolPaletteSliderEditor(
-            layout, m_spotlightStyleControlsWidget, config, styleButtonMetrics(m_physicalScale));
-        m_spotlightOpacityIcon = editor.icon;
-        m_spotlightOpacitySlider = editor.slider;
-        connect(m_spotlightOpacitySlider, &adqt::widgets::AdSlider::valueChanged, this,
-                [this](double value) {
-                    m_styleControls->styleState().spotlightConfig.opacity =
-                        std::clamp(value / 100.0, 0.0, 1.0);
-                    m_spotlightOpacitySlider->setAccessibleDescription(
-                        QStringLiteral("%1%").arg(qRound(value)));
-                    if (!m_replayingMaterializedState) {
-                        emit spotlightConfigChanged(m_styleControls->styleState().spotlightConfig);
-                    }
-                });
+        ScreenshotToolPaletteSpotlightCallbacks spotlightCallbacks;
+        spotlightCallbacks.commitColor = [this](const QColor& color) {
+            m_styleControls->styleState().spotlightConfig.color = color;
+            m_styleControls->updateSpotlightColorControls(color);
+            if (!m_replayingMaterializedState) {
+                emit spotlightConfigChanged(m_styleControls->styleState().spotlightConfig);
+            }
+        };
+        spotlightCallbacks.previewColor = [this](const QColor& color) {
+            m_styleControls->styleState().spotlightConfig.color = color;
+            if (!m_replayingMaterializedState) {
+                emit spotlightPreviewChanged(m_styleControls->styleState().spotlightConfig);
+            }
+        };
+        spotlightCallbacks.setOpacity = [this](double opacity) {
+            m_styleControls->styleState().spotlightConfig.opacity =
+                std::clamp(opacity, 0.0, 1.0);
+            if (!m_replayingMaterializedState) {
+                emit spotlightConfigChanged(m_styleControls->styleState().spotlightConfig);
+            }
+        };
+        m_spotlightStyleControlsWidget = m_styleControls->buildSpotlightFamily(
+            m_rectangleStylePanel, makeHost(m_highlightModeGroups), spotlightCallbacks,
+            styleButtonMetrics(m_physicalScale));
+        m_spotlightOpacityIcon = m_styleControls->spotlightOpacityIcon();
+        m_spotlightOpacitySlider = m_styleControls->spotlightOpacitySlider();
         registerStyleFamily(m_spotlightStyleControlsWidget, {Tool::Spotlight});
         return;
     }
     if (tool == Tool::Text && m_textStyleControlsWidget == nullptr) {
         SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family.text");
-        m_textStyleControlsWidget = new QWidget(m_rectangleStylePanel);
-        m_textStyleControlsWidget->setObjectName(QStringLiteral("screenshotTextStyleControls"));
-        auto* layout = createLayout(m_textStyleControlsWidget);
-        m_styleControls->addTextControls(
-            layout, m_textStyleControlsWidget, this,
-            [this, layout]() {
-                addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
-                layout->addWidget(createStyleToolbarSeparator(m_textStyleControlsWidget));
-                addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
-            },
+        m_textStyleControlsWidget = m_styleControls->buildTextFamily(
+            m_rectangleStylePanel, makeHost(m_highlightModeGroups),
             styleButtonMetrics(m_physicalScale));
         registerStyleFamily(m_textStyleControlsWidget, {Tool::Text});
         return;
     }
     if (tool == Tool::SerialNumber && m_serialNumberStyleControlsWidget == nullptr) {
         SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family.serial_number");
-        m_serialNumberStyleControlsWidget = new QWidget(m_rectangleStylePanel);
-        m_serialNumberStyleControlsWidget->setObjectName(
-            QStringLiteral("screenshotSerialNumberStyleControls"));
-        auto* layout = createLayout(m_serialNumberStyleControlsWidget);
-        m_styleControls->addSerialNumberControls(
-            layout, m_serialNumberStyleControlsWidget, this,
-            [this, layout]() {
-                addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
-                layout->addWidget(createStyleToolbarSeparator(m_serialNumberStyleControlsWidget));
-                addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
-            },
+        m_serialNumberStyleControlsWidget = m_styleControls->buildSerialNumberFamily(
+            m_rectangleStylePanel, makeHost(m_highlightModeGroups),
             styleButtonMetrics(m_physicalScale));
         registerStyleFamily(m_serialNumberStyleControlsWidget, {Tool::SerialNumber});
         return;
@@ -4640,17 +4531,8 @@ void ScreenshotToolPalette::createStyleFamily(Tool tool) {
     }
     if (tool == Tool::Watermark && m_watermarkStyleControlsWidget == nullptr) {
         SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.create_style_family.watermark");
-        m_watermarkStyleControlsWidget = new QWidget(m_rectangleStylePanel);
-        m_watermarkStyleControlsWidget->setObjectName(
-            QStringLiteral("screenshotWatermarkStyleControls"));
-        auto* layout = createLayout(m_watermarkStyleControlsWidget);
-        m_styleControls->addWatermarkControls(
-            layout, m_watermarkStyleControlsWidget, this,
-            [this, layout]() {
-                addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
-                layout->addWidget(createStyleToolbarSeparator(m_watermarkStyleControlsWidget));
-                addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
-            },
+        m_watermarkStyleControlsWidget = m_styleControls->buildWatermarkFamily(
+            m_rectangleStylePanel, makeHost(m_highlightModeGroups),
             styleButtonMetrics(m_physicalScale));
         registerStyleFamily(m_watermarkStyleControlsWidget, {Tool::Watermark});
     }

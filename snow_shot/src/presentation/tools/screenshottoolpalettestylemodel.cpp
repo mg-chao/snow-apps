@@ -1,9 +1,13 @@
 #include "screenshottoolpalettestylemodel.h"
 
+#include "screenshottoolpalettestylepresets.h"
+
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 
 #include <algorithm>
 #include <cmath>
+
+namespace style_presets = snow_shot::presentation::style_presets;
 
 ScreenshotToolPaletteStyleState::ScreenshotToolPaletteStyleState(
     const SnowCanvasStyleDefaults& defaults) {
@@ -106,25 +110,9 @@ SnowCanvasTextStyle defaultTextStyle() {
 ScreenshotToolPaletteRectangleStyleModel::ScreenshotToolPaletteRectangleStyleModel(
     double minimumStrokeWidth
 )
-    : m_strokeWidthValues{
-          snow_shot::presentation::screenshotCanvasStyleDefaults().rectangle.strokeWidth,
-          4.0,
-          8.0,
-      }
-    , m_strokeColorValues{
-          snow_shot::presentation::screenshotCanvasStyleDefaults().rectangle.stroke,
-          QColor(QStringLiteral("#52c41a")),
-          QColor(QStringLiteral("#1677ff")),
-          QColor(QStringLiteral("#fadb14")),
-          QColor(QStringLiteral("#000000")),
-      }
-    , m_fillColorValues{
-          snow_shot::presentation::screenshotCanvasStyleDefaults().rectangle.fill,
-          QColor(QStringLiteral("#ffccc7")),
-          QColor(QStringLiteral("#d9f7be")),
-          QColor(QStringLiteral("#bae0ff")),
-          QColor(QStringLiteral("#fff1b8")),
-      }
+    : m_strokeWidthValues{style_presets::shapeStrokeWidths()}
+    , m_strokeColorValues{style_presets::strokeColors()}
+    , m_fillColorValues{style_presets::shapeFillColors()}
     , m_minimumStrokeWidth(std::clamp(
           minimumStrokeWidth,
           0.0,
@@ -336,19 +324,10 @@ double ScreenshotToolPaletteRectangleStyleModel::clampedCornerRadius(double corn
 }
 
 ScreenshotToolPaletteTextStyleModel::ScreenshotToolPaletteTextStyleModel()
-    : m_fontSizeValues{24.0, 30.0, 42.0, 54.0}, m_strokeWidthValues{2.0, 4.0, 8.0},
-      m_colorValues{
-          QColor(QStringLiteral("#f5222d")), QColor(QStringLiteral("#52c41a")),
-          QColor(QStringLiteral("#1677ff")), QColor(QStringLiteral("#fadb14")),
-          QColor(QStringLiteral("#000000")),
-      },
-      m_fillColorValues{
-          QColor(0, 0, 0, 0),
-          QColor(QStringLiteral("#ffccc7")),
-          QColor(QStringLiteral("#d9f7be")),
-          QColor(QStringLiteral("#bae0ff")),
-          QColor(QStringLiteral("#fff1b8")),
-      } {
+    : m_fontSizeValues{style_presets::fontSizes()}
+    , m_strokeWidthValues{style_presets::strokePresetWidths()}
+    , m_colorValues{style_presets::textColors()}
+    , m_fillColorValues{style_presets::textFillColors()} {
     reset();
 }
 
