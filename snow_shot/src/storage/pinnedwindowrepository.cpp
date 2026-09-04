@@ -7,6 +7,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -214,15 +215,42 @@ void preserveInvalidIndex(const QString& path) {
     }
 }
 
-bool samePayload(const PinnedWindowRecord& first, const PinnedWindowRecord& second) {
-    const bool sameImage = first.image.cacheKey() == second.image.cacheKey() &&
-                           first.image.size() == second.image.size();
-    return first.sourceKind == second.sourceKind && sameImage &&
-           first.originalFilePath == second.originalFilePath &&
-           first.originalFileName == second.originalFileName &&
-           first.originalHtml == second.originalHtml && first.originalText == second.originalText &&
-           first.resultStyle == second.resultStyle && first.canvasSession == second.canvasSession &&
-           first.recognitionResults == second.recognitionResults;
+// Fingerprint of the payload-backed fields of a record. Payload identity has
+// to survive the demotion that clears those fields from memory once the
+// writer has committed them, so the fields cannot be compared directly.
+struct PayloadSignature final {
+    qint64 imageCacheKey = 0;
+    QSize imageSize;
+    size_t originalHtmlHash = 0;
+    size_t originalTextHash = 0;
+    size_t resultStyleHash = 0;
+    size_t canvasSessionHash = 0;
+    size_t recognitionResultsHash = 0;
+};
+
+bool operator==(const PayloadSignature& first, const PayloadSignature& second) {
+    return first.imageCacheKey == second.imageCacheKey && first.imageSize == second.imageSize &&
+           first.originalHtmlHash == second.originalHtmlHash &&
+           first.originalTextHash == second.originalTextHash &&
+           first.resultStyleHash == second.resultStyleHash &&
+           first.canvasSessionHash == second.canvasSessionHash &&
+           first.recognitionResultsHash == second.recognitionResultsHash;
+}
+
+size_t payloadHash(const QByteArray& bytes) {
+    return bytes.isEmpty() ? 0 : qHashBits(bytes.constData(), bytes.size());
+}
+
+PayloadSignature payloadSignature(const PinnedWindowRecord& record) {
+    PayloadSignature signature;
+    signature.imageCacheKey = record.image.cacheKey();
+    signature.imageSize = record.image.size();
+    signature.originalHtmlHash = qHash(record.originalHtml);
+    signature.originalTextHash = qHash(record.originalText);
+    signature.resultStyleHash = payloadHash(record.resultStyle);
+    signature.canvasSessionHash = payloadHash(record.canvasSession);
+    signature.recognitionResultsHash = payloadHash(record.recognitionResults);
+    return signature;
 }
 
 PinnedWindowGroup defaultGroup() {
@@ -273,8 +301,19 @@ QImage decodeImage(const QString& path, const QString& suffix = QStringLiteral("
 struct StoredRecord final {
     PinnedWindowRecord record;
     quint64 payloadRevision = 1;
+    // Reload descriptor for the on-disk payload; empty while the payload is
+    // only resident in `record`.
     QJsonObject payloads;
+    PayloadSignature signature;
 };
+
+bool samePayload(const StoredRecord& stored, const PinnedWindowRecord& incoming,
+                 const PayloadSignature& incomingSignature) {
+    return stored.signature == incomingSignature &&
+           stored.record.sourceKind == incoming.sourceKind &&
+           stored.record.originalFilePath == incoming.originalFilePath &&
+           stored.record.originalFileName == incoming.originalFileName;
+}
 
 struct Snapshot final {
     QVector<PinnedWindowGroup> groups;
@@ -287,7 +326,7 @@ QString payloadDirectory(const QString& root, const QString& id) {
     return QDir(root).filePath(QStringLiteral("pins/%1").arg(id));
 }
 
-QJsonObject recordToJson(const PinnedWindowRecord& record) {
+QJsonObject payloadsToJson(const PinnedWindowRecord& record) {
     QJsonObject payloads{{QStringLiteral("directory"), record.id}};
     if (record.sourceKind == PinnedWindowSourceKind::ImageData) {
         payloads.insert(QStringLiteral("image"), QStringLiteral("source.png"));
@@ -310,6 +349,10 @@ QJsonObject recordToJson(const PinnedWindowRecord& record) {
         payloads.insert(QStringLiteral("recognition_results"),
                         QStringLiteral("recognition_results.bin"));
     }
+    return payloads;
+}
+
+QJsonObject recordToJson(const PinnedWindowRecord& record, const QJsonObject& payloads) {
     return QJsonObject{
         {QStringLiteral("id"), record.id},
         {QStringLiteral("group_id"), record.groupId},
@@ -335,6 +378,29 @@ QJsonObject recordToJson(const PinnedWindowRecord& record) {
         {QStringLiteral("updated_utc"), record.updatedUtc.toUTC().toString(Qt::ISODateWithMs)},
         {QStringLiteral("payloads"), payloads},
     };
+}
+
+// The descriptor that reloads a record's payload from disk: the stored one
+// once the record has been demoted, otherwise one derived from the resident
+// payload fields.
+QJsonObject payloadsDescriptor(const StoredRecord& stored) {
+    return stored.payloads.isEmpty() ? payloadsToJson(stored.record) : stored.payloads;
+}
+
+void clearResidentPayload(PinnedWindowRecord* record) {
+    record->image = {};
+    record->originalHtml.clear();
+    record->originalText.clear();
+    record->resultStyle.clear();
+    record->canvasSession.clear();
+    record->recognitionResults.clear();
+}
+
+// Demotes a committed record to its lazy form: the on-disk descriptor and the
+// payload signature replace the resident payload data.
+void demoteCommittedRecord(StoredRecord& stored) {
+    stored.payloads = payloadsDescriptor(stored);
+    clearResidentPayload(&stored.record);
 }
 
 QByteArray jsonBytes(const QJsonObject& object) {
@@ -613,7 +679,7 @@ bool snapshotToDisk(const QString& root, const Snapshot& snapshot,
     }
     QJsonArray records;
     for (const auto& stored : snapshot.records) {
-        records.push_back(recordToJson(stored.record));
+        records.push_back(recordToJson(stored.record, payloadsDescriptor(stored)));
     }
     const QByteArray bytes = jsonBytes(QJsonObject{
         {QStringLiteral("format_version"), kFormatVersion},
@@ -750,7 +816,9 @@ PinnedWindowRepository::PinnedWindowRepository(QString configurationDirectory, b
                         continue;
                     }
                     const QString id = record.id;
-                    m_impl->records.insert(id, StoredRecord{std::move(record), 1, std::move(payloads)});
+                    const PayloadSignature signature = payloadSignature(record);
+                    m_impl->records.insert(
+                        id, StoredRecord{std::move(record), 1, std::move(payloads), signature});
                     m_impl->committedPayloadRevisions.insert(id, 1);
                 }
             }
@@ -791,6 +859,16 @@ PinnedWindowRepository::PinnedWindowRepository(QString configurationDirectory, b
                 if (success) {
                     retryMilliseconds = 0;
                     impl->error.clear();
+                    // The payloads are on disk now, so the records that were
+                    // part of this commit release their resident copies; a
+                    // record upserted with a newer payload keeps its data
+                    // until that payload is committed.
+                    for (auto it = impl->records.begin(); it != impl->records.end(); ++it) {
+                        if (impl->committedPayloadRevisions.value(it.key(), 0) ==
+                            it->payloadRevision) {
+                            demoteCommittedRecord(*it);
+                        }
+                    }
                     if (impl->revision == snapshot.revision) {
                         impl->dirty = false;
                         impl->flushRequested = false;
@@ -1084,11 +1162,21 @@ StorageResult PinnedWindowRepository::upsert(PinnedWindowRecord record) {
     if (isNew && m_impl->records.size() >= kMaximumRecords) {
         return StorageResult::failure(QStringLiteral("Pinned-window record limit reached"));
     }
-    const bool payloadChanged = isNew || !samePayload(existing->record, record);
+    const PayloadSignature signature = payloadSignature(record);
+    const bool payloadChanged = isNew || !samePayload(*existing, record, signature);
     const quint64 payloadRevision = payloadChanged ? ++m_impl->nextPayloadRevision
                                                    : existing->payloadRevision;
     const QString id = record.id;
-    m_impl->records.insert(id, StoredRecord{std::move(record), payloadRevision});
+    if (!payloadChanged && !existing->payloads.isEmpty()) {
+        // The stored descriptor already describes this exact committed
+        // payload, so the update keeps the lazy form instead of holding a
+        // fresh resident copy until the writer runs.
+        StoredRecord stored{std::move(record), payloadRevision, existing->payloads, signature};
+        clearResidentPayload(&stored.record);
+        m_impl->records.insert(id, std::move(stored));
+    } else {
+        m_impl->records.insert(id, StoredRecord{std::move(record), payloadRevision, {}, signature});
+    }
     m_impl->markDirtyLocked();
     return StorageResult::ok();
 }
