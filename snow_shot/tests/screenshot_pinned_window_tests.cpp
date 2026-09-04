@@ -279,13 +279,24 @@ void groupedPinnedWindowSignalConnectionsDoNotAssert() {
     pinnedWindow->close();
     require(processUntilDeleted(guardedWindow, 2000),
             "the grouped pinned window should close after the connection test");
+    // The manager is bound to the process-wide storage in the full run; the
+    // group must not survive into sections that assert on initial group state.
+    require(groupManager.deleteEmptyGroups(),
+            "the signal-test group should not leak into later sections");
 }
 
 void groupMenuActionsExposeIconsAndCleanupState() {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
 
-    snow_shot::presentation::PinnedWindowGroupManager groupManager;
+    // The menu's startup state is only "just the built-in group" when this
+    // section owns its repository: a bare manager binds to the process-wide
+    // ApplicationStorage, which earlier sections of the full run have already
+    // extended with their own groups.
+    QTemporaryDir directory;
+    require(directory.isValid(), "temporary storage directory is unavailable");
+    snow_shot::storage::PinnedWindowRepository repository(directory.path());
+    snow_shot::presentation::PinnedWindowGroupManager groupManager(&repository);
     QImage image(120, 80, QImage::Format_ARGB32_Premultiplied);
     image.fill(QColor(42, 84, 126, 255));
     auto* pinnedWindow =

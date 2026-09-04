@@ -1096,6 +1096,21 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_executable(snow-shot-pinned-window-repository-tests
+        tests/pinned_window_repository_tests.cpp
+    )
+    target_link_libraries(snow-shot-pinned-window-repository-tests PRIVATE
+        snow_shot_storage
+        Qt6::Core
+        Qt6::Gui
+    )
+    add_test(NAME snow-shot-pinned-window-repository-tests
+             COMMAND snow-shot-pinned-window-repository-tests)
+    set_tests_properties(snow-shot-pinned-window-repository-tests PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
     add_executable(snow-shot-storage-usage-tracker-tests
         tests/storage_usage_tracker_tests.cpp
     )
