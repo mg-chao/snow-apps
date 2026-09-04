@@ -328,6 +328,16 @@ void groupMenuActionsExposeIconsAndCleanupState() {
                 !groupHeader->icon().isNull(),
             "the group submenu header should carry an icon");
 
+    auto* contextMenu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedContextMenu"));
+    require(contextMenu != nullptr, "the pinned window should own its context menu");
+    const QList<QAction*> contextActions = contextMenu->actions();
+    const int groupIndex = contextActions.indexOf(groupHeader);
+    require(groupIndex >= 0 && groupIndex + 1 < contextActions.size() &&
+                contextActions.at(groupIndex + 1)->objectName() ==
+                    QStringLiteral("screenshotPinnedThumbnailAction"),
+            "the group submenu should sit directly above Thumbnail mode");
+
     QAction* newGroup = groupMenuActionNamed(QStringLiteral("screenshotPinnedNewGroupAction"));
     require(newGroup != nullptr && !newGroup->icon().isNull() && newGroup->isEnabled(),
             "New Group should expose an icon and stay actionable");

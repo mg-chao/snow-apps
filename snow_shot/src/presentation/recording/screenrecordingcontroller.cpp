@@ -7,6 +7,7 @@
 #include "snow_shot/presentation/screenrecordingtoolbarwindow.h"
 #include "screenrecordinggeometry.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/storage/storageusagetracker.h"
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #include "snow_shot/platform/windows/windowchrome.h"
@@ -172,11 +173,7 @@ QString recordingFilePath(const QString& extension) {
 }
 
 QString recordingWorkingDirectory() {
-    QString root = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
-    if (root.isEmpty()) {
-        root = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    }
-    return QDir(root).filePath(QStringLiteral("recordings"));
+    return snow_shot::storage::StorageUsageTracker::defaultRecordingTempDirectory();
 }
 
 QString captureError() {

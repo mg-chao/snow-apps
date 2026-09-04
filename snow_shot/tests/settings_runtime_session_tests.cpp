@@ -194,6 +194,15 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
 
     storage::StorageStatus storageStatus() const override { return m_status; }
 
+    void refreshStorageStatus() override { ++m_refreshCount; }
+
+    int refreshCount() const { return m_refreshCount; }
+
+    void setAppUsage(const storage::AppStorageUsage& usage) {
+        m_status.appUsage = usage;
+        emit synchronized();
+    }
+
     bool resetSection(settings::SettingsSectionReset) override {
         if (!m_resetAccepted) {
             m_status.lastConfigurationError = QStringLiteral("reset rejected");
@@ -314,6 +323,7 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     QHash<QString, QVector<QVariant>> m_pending;
     bool m_resetAccepted = true;
     bool m_resetHistoryPending = false;
+    int m_refreshCount = 0;
 };
 
 settings::SettingsRegistry testRegistry(
@@ -407,6 +417,40 @@ void initialStateAndNoOp() {
     require(!unknown.enabled && !unknown.visible && unknown.acceptedValue.isNull() &&
                 unknown.draftValue.isNull(),
             "unknown fields must be disabled and invisible");
+}
+
+void storageUsagePropagation() {
+    const settings::SettingsRegistry registry = testRegistry();
+    FakeSettingsBackend backend;
+    settings::SettingsRuntimeSession session(registry, backend);
+
+    session.refreshStorageStatus();
+    require(backend.refreshCount() == 1,
+            "a storage status refresh must be forwarded to the backend");
+
+    int statusChanges = 0;
+    storage::StorageStatus latest;
+    QObject::connect(&session, &settings::SettingsRuntimeSession::storageStateChanged, &session,
+                     [&statusChanges, &latest](const storage::StorageStatus& status) {
+                         ++statusChanges;
+                         latest = status;
+                     });
+
+    storage::AppStorageUsage usage;
+    usage.thumbnailCacheBytes = 2048;
+    usage.recordingTempBytes = 4096;
+    backend.setAppUsage(usage);
+    flushEvents();
+    require(statusChanges >= 1,
+            "an app usage change must emit storageStateChanged");
+    require(latest.appUsage.thumbnailCacheBytes == 2048 &&
+                latest.appUsage.recordingTempBytes == 4096 &&
+                latest.appUsage.totalBytes() == 6144,
+            "the emitted status must carry the updated app usage");
+
+    backend.notify();
+    flushEvents();
+    require(statusChanges == 1, "an unchanged app usage must not re-emit storageStateChanged");
 }
 
 void synchronousWriteAndFieldSignals() {
@@ -863,6 +907,7 @@ void auxiliaryIntegerValuesRemainReactiveWithoutSyntheticFields() {
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     initialStateAndNoOp();
+    storageUsagePropagation();
     synchronousWriteAndFieldSignals();
     rejectedWriteRetainsDraftAndCanRetry();
     mutatedRejectedWriteDoesNotSelfHeal();

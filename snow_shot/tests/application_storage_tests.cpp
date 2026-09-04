@@ -3,6 +3,7 @@
 #include "snow_shot/storage/configurationstore.h"
 #include "snow_shot/storage/persistedselectioncodec.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/storage/storageusagetracker.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
@@ -15,8 +16,11 @@
 #include <QTemporaryDir>
 
 #include <atomic>
+#include <chrono>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
+#include <system_error>
 #include <thread>
 
 namespace storage = snow_shot::storage;
@@ -30,9 +34,20 @@ void require(bool condition, const char* message) {
 }
 
 void writeBytes(const QString& path, const QByteArray& bytes) {
+    require(QDir().mkpath(QFileInfo(path).absolutePath()), "failed to create test directory");
     QFile file(path);
     require(file.open(QIODevice::WriteOnly | QIODevice::Truncate), "failed to open test file");
     require(file.write(bytes) == bytes.size(), "failed to write test file");
+}
+
+void setLastModified(const QString& path, const QDateTime& when) {
+    namespace fs = std::filesystem;
+    const auto moment = std::chrono::clock_cast<fs::file_time_type::clock>(
+        std::chrono::system_clock::time_point{
+            std::chrono::milliseconds(when.toMSecsSinceEpoch())});
+    std::error_code error;
+    fs::last_write_time(fs::path(path.toStdWString()), moment, error);
+    require(!error, "failed to set test file timestamp");
 }
 
 QByteArray readBytes(const QString& path) {
@@ -1098,6 +1113,79 @@ void asynchronousMutationResultsAreObservable() {
     require(!applicationStorage.status().historyClearing,
             "history clear remained busy after completion");
 }
+
+void appUsageScanAndCacheCleanup() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "failed to create app usage directory");
+    const QString executable = QDir(temporary.path()).filePath(QStringLiteral("bin"));
+    const QString root = QDir(temporary.path()).filePath(QStringLiteral("root"));
+    auto& applicationStorage = initialize(executable, root, 60000);
+    require(applicationStorage.flushNow().success, "initial flush must succeed");
+    require(!applicationStorage.status().appUsage.scanning,
+            "a flushed storage must not report scanning");
+
+    // The cache locations come from QStandardPaths; the test process uses a
+    // dedicated organization and application name, so they belong to this run.
+    const QString thumbnailCache =
+        storage::StorageUsageTracker::defaultThumbnailCacheDirectory();
+    const QString recordingTemp =
+        storage::StorageUsageTracker::defaultRecordingTempDirectory();
+    QDir(thumbnailCache).removeRecursively();
+    QDir(recordingTemp).removeRecursively();
+    const QString thumbnail = QDir(thumbnailCache).filePath(QStringLiteral("probe.png"));
+    const QString staleRecording = QDir(recordingTemp).filePath(QStringLiteral("stale.pcm"));
+    const QString activeRecording = QDir(recordingTemp).filePath(QStringLiteral("active.pcm"));
+    writeBytes(thumbnail, QByteArray(64, 'x'));
+    writeBytes(staleRecording, QByteArray(32, 'x'));
+    writeBytes(activeRecording, QByteArray(48, 'x'));
+    setLastModified(staleRecording, QDateTime::currentDateTime().addSecs(-7200));
+    setLastModified(activeRecording, QDateTime::currentDateTime().addSecs(3600));
+    writeBytes(QDir(root).filePath(QStringLiteral("capture_history_records/dummy/manifest.json")),
+               QByteArray(200, 'x'));
+    writeBytes(QDir(root).filePath(QStringLiteral("pinned_windows_v3/index.json")),
+               QByteArray(30, 'x'));
+    writeBytes(QDir(root).filePath(QStringLiteral("assets/ocr/model.bin")), QByteArray(150, 'x'));
+
+    applicationStorage.requestStorageUsageRefresh();
+    require(applicationStorage.flushNow().success, "post-scan flush must succeed");
+    const storage::StorageStatus scanned = applicationStorage.status();
+    require(!scanned.appUsage.scanning, "a refreshed storage must not report scanning");
+    require(scanned.appUsage.historyBytes == 200, "history bytes must match the test payload");
+    require(scanned.appUsage.pinnedWindowBytes == 30,
+            "pinned window bytes must match the test payload");
+    require(scanned.appUsage.ocrAssetBytes == 150, "ocr asset bytes must match the test payload");
+    require(scanned.appUsage.thumbnailCacheBytes == 64,
+            "thumbnail cache bytes must match the test payload");
+    require(scanned.appUsage.recordingTempBytes == 80,
+            "recording temp bytes must match the test payloads");
+    require(scanned.appUsage.otherBytes > 0,
+            "other bytes must cover the materialized configuration");
+    require(scanned.appUsage.totalBytes() ==
+                200 + 30 + 150 + 64 + 80 + scanned.appUsage.otherBytes,
+            "total app usage must be the sum of all categories");
+
+    const auto thumbnailClear = applicationStorage.requestThumbnailCacheClearAsync();
+    require(thumbnailClear.valid() && thumbnailClear.get().success,
+            "thumbnail cache clear did not complete successfully");
+    require(applicationStorage.flushNow().success, "post-clear flush must succeed");
+    QCoreApplication::processEvents();
+    require(!applicationStorage.status().cacheClearing,
+            "cache clear remained busy after completion");
+    require(!QFile::exists(thumbnail), "thumbnail cache clear left files behind");
+    require(applicationStorage.status().appUsage.thumbnailCacheBytes == 0,
+            "thumbnail cache bytes must be zero after the clear");
+
+    const auto recordingClear = applicationStorage.requestRecordingTempClearAsync();
+    require(recordingClear.valid() && recordingClear.get().success,
+            "recording temp clear did not complete successfully");
+    require(applicationStorage.flushNow().success, "post-recording-clear flush must succeed");
+    QCoreApplication::processEvents();
+    require(!QFile::exists(staleRecording), "recording temp clear left stale files behind");
+    require(QFile::exists(activeRecording),
+            "recording temp clear must keep active-session files");
+    require(applicationStorage.status().appUsage.recordingTempBytes == 48,
+            "recording temp bytes must only cover the active session after the clear");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1125,6 +1213,7 @@ int main(int argc, char** argv) {
     concurrentFlushKeepsLatestRevision();
     persistedSelectionCodecIsCanonicalAndStrict();
     asynchronousMutationResultsAreObservable();
+    appUsageScanAndCacheCleanup();
     storage::ApplicationStorage::instance().shutdown();
     return 0;
 }

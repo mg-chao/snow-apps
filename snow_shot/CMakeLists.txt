@@ -525,6 +525,7 @@ endif()
 
 set(SNOW_SHOT_STORAGE_SOURCES
     include/snow_shot/storage/applicationstorage.h
+    include/snow_shot/storage/appstorageusage.h
     include/snow_shot/storage/capturehistoryrepository.h
     include/snow_shot/storage/capturehistorytypes.h
     include/snow_shot/storage/configurationstore.h
@@ -535,6 +536,7 @@ set(SNOW_SHOT_STORAGE_SOURCES
     include/snow_shot/storage/settingsadapters.h
     include/snow_shot/storage/storagelogging.h
     include/snow_shot/storage/storageresult.h
+    include/snow_shot/storage/storageusagetracker.h
     src/storage/applicationstorage.cpp
     src/storage/capturehistorypolicy_p.h
     src/storage/capturehistoryrepository.cpp
@@ -543,7 +545,9 @@ set(SNOW_SHOT_STORAGE_SOURCES
     src/storage/persistedselectioncodec.cpp
     src/storage/pinnedwindowrepository.cpp
     src/storage/settingsadapters.cpp
+    src/storage/storagedirectoryutils_p.h
     src/storage/storagelogging.cpp
+    src/storage/storageusagetracker.cpp
 )
 add_library(snow_shot_storage STATIC ${SNOW_SHOT_STORAGE_SOURCES})
 snow_enable_unity_build(snow_shot_storage)
@@ -1077,6 +1081,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-capture-history-repository-tests
         tests/capture_history_repository_tests.cpp
     )
+
     target_link_libraries(snow-shot-capture-history-repository-tests PRIVATE
         snow_shot_storage
         Qt6::Core
@@ -1088,6 +1093,52 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+
+    add_executable(snow-shot-storage-usage-tracker-tests
+        tests/storage_usage_tracker_tests.cpp
+    )
+    target_link_libraries(snow-shot-storage-usage-tracker-tests PRIVATE
+        snow_shot_storage
+        Qt6::Core
+    )
+    add_test(NAME snow-shot-storage-usage-tracker-tests
+             COMMAND snow-shot-storage-usage-tracker-tests)
+    set_tests_properties(snow-shot-storage-usage-tracker-tests PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
+    add_executable(snow-shot-storage-status-widget-tests
+        tests/storage_status_widget_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+    )
+    target_include_directories(snow-shot-storage-status-widget-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+    target_link_libraries(snow-shot-storage-status-widget-tests PRIVATE
+        snow_shot_settings
+        ant_design_qt
+        Qt6::Widgets
+    )
+    add_test(
+        NAME snow-shot-storage-status-widget-tests
+        COMMAND snow-shot-storage-status-widget-tests
+    )
+    if(WIN32)
+        set_tests_properties(snow-shot-storage-status-widget-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    else()
+        set_tests_properties(snow-shot-storage-status-widget-tests PROPERTIES
+            ENVIRONMENT
+                "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    endif()
 
     add_executable(snow-shot-single-instance-coordinator-tests
         tests/single_instance_coordinator_tests.cpp
@@ -3015,6 +3066,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             snow-shot-sidebar-widget-tests
             snow-shot-main-content-header-tests
             snow-shot-recognition-window-tests
+            snow-shot-storage-status-widget-tests
         )
             snow_shot_import_offscreen_platform(${_offscreen_qpa_test_target})
         endforeach()

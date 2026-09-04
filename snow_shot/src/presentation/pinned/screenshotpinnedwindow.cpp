@@ -2485,14 +2485,6 @@ void ScreenshotPinnedWindow::createContextMenu() {
     m_contextMenu->setObjectName(QStringLiteral("screenshotPinnedContextMenu"));
     m_contextMenu->setFixedWidth(300);
 
-    m_groupMenu = m_contextMenu->addSubMenu(QString(), custom_outlined_icons::Group());
-    m_groupMenu->setObjectName(QStringLiteral("screenshotPinnedGroupMenu"));
-    m_groupMenu->menuAction()->setObjectName(QStringLiteral("screenshotPinnedGroupAction"));
-    m_groupMenu->setMinimumWidth(300);
-    connect(m_groupMenu, &QMenu::aboutToShow, this, &ScreenshotPinnedWindow::rebuildGroupMenu);
-    m_contextMenu->addSeparator();
-    rebuildGroupMenu();
-
     QAction* copyAction = m_contextMenu->addItem(tr("Copy to clipboard"), outlined_icons::Copy());
     setActionTranslationSource(copyAction, "Copy to clipboard");
     copyAction->setObjectName(QStringLiteral("screenshotPinnedCopyAction"));
@@ -2624,6 +2616,13 @@ void ScreenshotPinnedWindow::createContextMenu() {
     m_scaleReadoutAction->setEnabled(false);
 
     m_contextMenu->addSeparator();
+
+    m_groupMenu = m_contextMenu->addSubMenu(QString(), custom_outlined_icons::Group());
+    m_groupMenu->setObjectName(QStringLiteral("screenshotPinnedGroupMenu"));
+    m_groupMenu->menuAction()->setObjectName(QStringLiteral("screenshotPinnedGroupAction"));
+    m_groupMenu->setMinimumWidth(300);
+    connect(m_groupMenu, &QMenu::aboutToShow, this, &ScreenshotPinnedWindow::rebuildGroupMenu);
+    rebuildGroupMenu();
 
     m_thumbnailAction = m_contextMenu->addItem(tr("Thumbnail mode"), outlined_icons::Compress());
     setActionTranslationSource(m_thumbnailAction, "Thumbnail mode");

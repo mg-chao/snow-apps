@@ -6,8 +6,10 @@
 
 class QEvent;
 class QLabel;
+class QVBoxLayout;
 
 namespace adqt::widgets {
+class AdButton;
 class AdDescriptions;
 }
 namespace snow_shot::presentation::settings {
@@ -28,13 +30,21 @@ class StorageStatusSettingsWidget final : public SettingsCustomWidget {
 
   protected:
     void changeEvent(QEvent* event) override;
+    void showEvent(QShowEvent* event) override;
 
   private:
     void syncStatus(const snow_shot::storage::StorageStatus& status);
 
     adqt::widgets::AdDescriptions* m_descriptions = nullptr;
+    adqt::widgets::AdButton* m_refreshButton = nullptr;
+    QLabel* m_totalValue = nullptr;
+    QLabel* m_historyValue = nullptr;
     QLabel* m_entryCountValue = nullptr;
-    QLabel* m_diskUsageValue = nullptr;
+    QLabel* m_pinnedValue = nullptr;
+    QLabel* m_ocrValue = nullptr;
+    QLabel* m_thumbnailsValue = nullptr;
+    QLabel* m_recordingTempValue = nullptr;
+    QLabel* m_otherValue = nullptr;
     QLabel* m_locationValue = nullptr;
     QLabel* m_modeValue = nullptr;
     QLabel* m_errorValue = nullptr;

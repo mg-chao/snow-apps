@@ -25,10 +25,6 @@ constexpr auto kDefaultGroupName = "Default";
 constexpr int kMaximumGroupNameLength = 16;
 constexpr auto kGroupManagerMutationProperty = "snowPinnedWindowGroupManagerMutation";
 
-QString trGroup(const char* source) {
-    return QCoreApplication::translate("PinnedWindowGroupManager", source);
-}
-
 storage::PinnedWindowGroup defaultGroup() {
     return {QString::fromLatin1(kDefaultGroupId), QString::fromLatin1(kDefaultGroupName), true};
 }
@@ -88,15 +84,14 @@ QString PinnedWindowGroupManager::activeGroupId() const {
 }
 
 QString PinnedWindowGroupManager::normalizedDisplayName(const storage::PinnedWindowGroup& group) const {
-    return group.id == QString::fromLatin1(kDefaultGroupId) ? trGroup(kDefaultGroupName)
-                                                            : group.name;
+    return group.id == QString::fromLatin1(kDefaultGroupId) ? tr("Default") : group.name;
 }
 
 QString PinnedWindowGroupManager::displayName(const QString& groupId) const {
     const auto it = std::find_if(m_groups.cbegin(), m_groups.cend(), [&groupId](const auto& group) {
         return group.id == groupId;
     });
-    return it == m_groups.cend() ? trGroup(kDefaultGroupName) : normalizedDisplayName(*it);
+    return it == m_groups.cend() ? tr("Default") : normalizedDisplayName(*it);
 }
 
 bool PinnedWindowGroupManager::contains(const QString& groupId) const {
@@ -216,7 +211,7 @@ PinnedWindowGroupManager::createGroup(const QString& name,
 QString PinnedWindowGroupManager::uniqueGeneratedName() const {
     int index = std::max(1, static_cast<int>(m_groups.size()));
     for (;;) {
-        const QString candidate = trGroup("Group %1").arg(index);
+        const QString candidate = tr("Group %1").arg(index);
         const bool exists = std::any_of(m_groups.cbegin(), m_groups.cend(), [&candidate](const auto& group) {
             return group.name.trimmed().compare(candidate, Qt::CaseInsensitive) == 0;
         });
@@ -399,22 +394,22 @@ void PinnedWindowGroupManager::openCreateGroupModal(QWidget* owner,
     input->setMaxLength(kMaximumGroupNameLength);
     input->setAllowClear(true);
     input->setText(uniqueGeneratedName());
-    auto* item = form->addField(trGroup("Group name"), input, QStringLiteral("groupName"));
+    auto* item = form->addField(tr("Group name"), input, QStringLiteral("groupName"));
     item->setItemLayout(adqt::widgets::AdFormItem::ItemLayout::Vertical);
     item->setRequired(true);
-    item->setRequiredMessage(trGroup("Please enter a group name"));
+    item->setRequiredMessage(tr("Please enter a group name"));
     item->setFormValidator([this](const QVariant& value, adqt::widgets::AdFormItem*) {
         adqt::widgets::AdFormItem::ValidationResult result;
         const QString name = value.toString().trimmed();
         if (name.isEmpty()) {
             result.status = adqt::widgets::AdFormItem::ValidateStatus::Error;
-            result.errors.push_back(trGroup("Please enter a group name"));
+            result.errors.push_back(tr("Please enter a group name"));
         } else if (name.size() > kMaximumGroupNameLength ||
                    std::any_of(m_groups.cbegin(), m_groups.cend(), [&name](const auto& group) {
                        return group.name.trimmed().compare(name, Qt::CaseInsensitive) == 0;
                    })) {
             result.status = adqt::widgets::AdFormItem::ValidateStatus::Error;
-            result.errors.push_back(trGroup("This group name is already in use"));
+            result.errors.push_back(tr("This group name is already in use"));
         }
         return result;
     });
@@ -424,14 +419,14 @@ void PinnedWindowGroupManager::openCreateGroupModal(QWidget* owner,
     modal->setOwnerWindow(owner != nullptr ? owner : QApplication::activeWindow());
     modal->setMode(adqt::widgets::AdModal::Mode::Window);
     modal->setWindowModality(Qt::ApplicationModal);
-    modal->setWindowTitle(trGroup("New Group"));
+    modal->setWindowTitle(tr("New Group"));
     modal->setCentered(true);
     modal->setPreferredWidth(400);
     modal->setMaskVisible(false);
     modal->setCloseOnMaskClick(false);
     modal->setClosePolicy(adqt::widgets::AdModal::ClosePolicy::Manual);
-    modal->setAcceptText(trGroup("Add"));
-    modal->setRejectText(trGroup("Cancel"));
+    modal->setAcceptText(tr("Add"));
+    modal->setRejectText(tr("Cancel"));
     modal->setStandardButtons(adqt::widgets::AdModal::StandardButton::Ok |
                               adqt::widgets::AdModal::StandardButton::Cancel);
     modal->setContentWidget(form);

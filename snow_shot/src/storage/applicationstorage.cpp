@@ -4,6 +4,7 @@
 #include "snow_shot/storage/pinnedwindowrepository.h"
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/storage/storagelogging.h"
+#include "snow_shot/storage/storageusagetracker.h"
 
 #include "capturehistorypolicy_p.h"
 
@@ -89,6 +90,7 @@ QString markerSelection(const QString& executableDirectory, bool* markerPresent,
 
 ApplicationStorage::ApplicationStorage(QObject* parent) : QObject(parent) {
     qRegisterMetaType<CaptureHistoryUsage>();
+    qRegisterMetaType<AppStorageUsage>();
     qRegisterMetaType<StorageStatus>();
 }
 
@@ -108,6 +110,7 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
     m_captureHistory.reset();
     m_pinnedWindows.reset();
     m_configuration.reset();
+    m_usageTracker.reset();
 
     const QString executableDirectory = QDir::cleanPath(options.executableDirectory.isEmpty()
                                                             ? QCoreApplication::applicationDirPath()
@@ -203,6 +206,24 @@ StorageResult ApplicationStorage::initialize(const StorageInitializationOptions&
                                                                 options.debounceMilliseconds);
     m_status.historyUsage = m_captureHistory->usage();
     m_status.lastHistoryError = m_captureHistory->lastError();
+
+    StorageUsageTrackerOptions usageOptions;
+    usageOptions.appDataDirectory = effectiveDirectory;
+    usageOptions.thumbnailCacheDirectory = StorageUsageTracker::defaultThumbnailCacheDirectory();
+    usageOptions.recordingTempDirectory = StorageUsageTracker::defaultRecordingTempDirectory();
+    usageOptions.activeFileCutoff = QDateTime::currentDateTime();
+    usageOptions.callbacks.usageChanged = [this](const AppStorageUsage& usage) {
+        QMetaObject::invokeMethod(
+            this, [this, usage]() { updateAppUsage(usage); }, Qt::QueuedConnection);
+    };
+    usageOptions.callbacks.clearFinished = [this](StorageCacheKind kind,
+                                                  const StorageResult& result) {
+        QMetaObject::invokeMethod(
+            this, [this, kind, result]() { finishCacheClear(kind, result); },
+            Qt::QueuedConnection);
+    };
+    m_usageTracker = std::make_unique<StorageUsageTracker>(std::move(usageOptions));
+    m_status.appUsage = m_usageTracker->usage();
     m_initialized = true;
 
     connect(m_configuration.get(), &ConfigurationStore::errorChanged, this,
@@ -245,6 +266,10 @@ StorageResult ApplicationStorage::flushNow() {
     if (m_pinnedWindows != nullptr) {
         static_cast<void>(m_pinnedWindows->flush());
     }
+    if (m_usageTracker != nullptr) {
+        m_usageTracker->drain();
+        m_status.appUsage = m_usageTracker->usage();
+    }
     const StorageResult result = m_configuration->flushNow();
     updateConfigurationError(m_configuration->lastError());
     return result;
@@ -265,6 +290,11 @@ void ApplicationStorage::shutdown() {
     }
     if (m_pinnedWindows != nullptr) {
         static_cast<void>(m_pinnedWindows->flush());
+    }
+    if (m_usageTracker != nullptr) {
+        m_usageTracker->drain();
+        m_status.appUsage = m_usageTracker->usage();
+        m_usageTracker.reset();
     }
     m_initialized = false;
 }
@@ -292,6 +322,9 @@ StorageStatus ApplicationStorage::status() const {
     if (m_captureHistory != nullptr) {
         current.historyUsage = m_captureHistory->usage();
         current.lastHistoryError = m_captureHistory->lastError();
+    }
+    if (m_usageTracker != nullptr) {
+        current.appUsage = m_usageTracker->usage();
     }
     return current;
 }
@@ -386,6 +419,54 @@ std::shared_future<StorageResult> ApplicationStorage::requestCaptureHistoryClear
     return result;
 }
 
+void ApplicationStorage::requestStorageUsageRefresh() {
+    if (m_usageTracker != nullptr) {
+        m_usageTracker->requestRefresh();
+    }
+}
+
+bool ApplicationStorage::requestThumbnailCacheClear() {
+    const auto result = requestThumbnailCacheClearAsync();
+    return result.valid() && result.get().success;
+}
+
+std::shared_future<StorageResult> ApplicationStorage::requestThumbnailCacheClearAsync() {
+    if (!m_initialized || m_usageTracker == nullptr || m_status.cacheClearing) {
+        return readyFuture(StorageResult::failure(
+            QStringLiteral("A cache cleanup is already running or storage is unavailable")));
+    }
+    m_status.cacheClearing = true;
+    emitStatusChanged();
+    const auto result = m_usageTracker->requestClear(StorageCacheKind::ThumbnailCache);
+    if (result.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready &&
+        !result.get().success) {
+        m_status.cacheClearing = false;
+        emitStatusChanged();
+    }
+    return result;
+}
+
+bool ApplicationStorage::requestRecordingTempClear() {
+    const auto result = requestRecordingTempClearAsync();
+    return result.valid() && result.get().success;
+}
+
+std::shared_future<StorageResult> ApplicationStorage::requestRecordingTempClearAsync() {
+    if (!m_initialized || m_usageTracker == nullptr || m_status.cacheClearing) {
+        return readyFuture(StorageResult::failure(
+            QStringLiteral("A cache cleanup is already running or storage is unavailable")));
+    }
+    m_status.cacheClearing = true;
+    emitStatusChanged();
+    const auto result = m_usageTracker->requestClear(StorageCacheKind::RecordingTemp);
+    if (result.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready &&
+        !result.get().success) {
+        m_status.cacheClearing = false;
+        emitStatusChanged();
+    }
+    return result;
+}
+
 void ApplicationStorage::updateConfigurationError(const QString& error) {
     if (m_status.lastConfigurationError == error) {
         return;
@@ -410,14 +491,35 @@ void ApplicationStorage::updateHistoryUsage(const CaptureHistoryUsage& usage) {
     emitStatusChanged();
 }
 
+void ApplicationStorage::updateAppUsage(const AppStorageUsage& usage) {
+    if (m_status.appUsage == usage) {
+        return;
+    }
+    m_status.appUsage = usage;
+    emitStatusChanged();
+}
+
 void ApplicationStorage::finishHistoryClear(bool success, const QString& error) {
     m_status.historyClearing = false;
     m_status.lastHistoryError = success ? QString() : error;
     if (m_captureHistory != nullptr) {
         m_status.historyUsage = m_captureHistory->usage();
     }
+    if (m_usageTracker != nullptr) {
+        m_usageTracker->requestRefresh();
+    }
     emit captureHistoryClearFinished(success, error);
     emit captureHistoryChanged();
+    emitStatusChanged();
+}
+
+void ApplicationStorage::finishCacheClear(StorageCacheKind kind, const StorageResult& result) {
+    qCInfo(storageLog) << "Cache clear finished, kind:" << static_cast<int>(kind)
+                       << "success:" << result.success;
+    m_status.cacheClearing = false;
+    if (m_usageTracker != nullptr) {
+        m_status.appUsage = m_usageTracker->usage();
+    }
     emitStatusChanged();
 }
 

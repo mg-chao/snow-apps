@@ -94,8 +94,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 27 && itemCount == 109,
-            "catalog must contain the expected twenty-seven sections and one hundred nine items");
+    require(sectionCount == 27 && itemCount == 111,
+            "catalog must contain the expected twenty-seven sections and one hundred eleven items");
     const auto* functionPage = catalog.page(QStringLiteral("function-settings"));
     const auto* smartSelection =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
@@ -755,8 +755,8 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 143 && index.search(QString()).size() == 143,
-            "search must generate all one hundred forty-three catalog nodes in catalog order");
+    require(index.entries().size() == 145 && index.search(QString()).size() == 145,
+            "search must generate all one hundred forty-five catalog nodes in catalog order");
 
     int pages = 0;
     int sections = 0;
@@ -783,7 +783,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 7 && sections == 27 && items == 109,
+    require(pages == 7 && sections == 27 && items == 111,
             "search node counts must match catalog page, section, and item counts");
 
     const auto theme = index.search(QStringLiteral("theme"));
@@ -878,7 +878,7 @@ void addingCatalogNodesAutomaticallyExpandsSearch() {
     const auto registry = settings::SettingsRegistry::fromCatalog(
         expanded, QStringLiteral("search-substring"));
     settings::SettingsSearchIndex index(registry);
-    require(index.entries().size() == 146,
+    require(index.entries().size() == 148,
             "adding one page, section, and item must automatically add three search entries");
     require(index.search(QStringLiteral("extra item")).constFirst().location ==
                 settings::SettingsLocation{QStringLiteral("extra-page"),

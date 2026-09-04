@@ -9,6 +9,7 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/capturehistoryrepository.h"
+#include "snow_shot/storage/storageusagetracker.h"
 
 #include "antd_icons.h"
 #include "icon_renderer.h"
@@ -369,13 +370,8 @@ class HistoryThumbnailLoader final : public adqt::widgets::AdImageLoader {
   public:
     explicit HistoryThumbnailLoader(QObject* parent = nullptr)
         : AdImageLoader(parent),
-          m_cacheDirectory([&]() {
-              const QString cacheRoot =
-                  QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
-              return cacheRoot.isEmpty()
-                         ? QString()
-                         : QDir(cacheRoot).filePath(QStringLiteral("snow-shot/history-thumbnails"));
-          }()) {}
+          m_cacheDirectory(
+              snow_shot::storage::StorageUsageTracker::defaultThumbnailCacheDirectory()) {}
 
     adqt::widgets::AdImageReply* load(const QUrl& source,
                                       const adqt::widgets::AdImageLoadOptions& options,

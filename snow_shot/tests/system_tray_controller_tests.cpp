@@ -450,6 +450,8 @@ int main(int argc, char* argv[]) {
     controller.setMenuOptions(defaultMenuOptions);
     require(windowGroupMenuAction->isVisible(),
             "restoring the defaults should bring the window group submenu back");
+    require(groupManager.setActiveGroup(QStringLiteral("default")),
+            "the default group should be activatable for the localized title check");
 
     require(languageManager.setLanguage(QStringLiteral("zh_CN")),
             "the Simplified Chinese translation should load");
@@ -472,6 +474,27 @@ int main(int argc, char* argv[]) {
                       "Disable shortcut functions should translate to Simplified Chinese");
     requireActionText(exitMenuAction, QStringLiteral("\u9000\u51fa"),
                        "Exit should translate to Simplified Chinese");
+    // The window group submenu title resolves through the SystemTrayController
+    // catalog while the built-in group name comes from the namespaced
+    // PinnedWindowGroupManager tr() context; both must follow the language.
+    requireActionText(windowGroupMenuAction,
+                      QStringLiteral("\u7a97\u53e3\u5206\u7ec4\uff1a\u9ed8\u8ba4"),
+                      "the window group submenu title should translate to Simplified Chinese");
+    requireActionText(groupActionNamed(QStringLiteral("systemTrayGroupAction-default")),
+                      QStringLiteral("\u9ed8\u8ba4\t0"),
+                      "the default group entry should translate to Simplified Chinese");
+    requireActionText(groupActionNamed(QStringLiteral("systemTrayNewGroupAction")),
+                      QStringLiteral("\u65b0\u5efa\u5206\u7ec4"),
+                      "tray New Group should translate to Simplified Chinese");
+    requireActionText(groupActionNamed(QStringLiteral("systemTrayDeleteEmptyGroupsAction")),
+                      QStringLiteral("\u5220\u9664\u7a7a\u5206\u7ec4"),
+                      "tray Delete Empty Groups should translate to Simplified Chinese");
+    require(QString::fromLatin1(groupManager.metaObject()->className()) ==
+                    QStringLiteral("snow_shot::presentation::PinnedWindowGroupManager") &&
+                QCoreApplication::translate("snow_shot::presentation::PinnedWindowGroupManager",
+                                            "Group name") ==
+                    QStringLiteral("\u5206\u7ec4\u540d\u79f0"),
+            "the group manager translation context should resolve its catalog entries");
 
     require(languageManager.setLanguage(QStringLiteral("zh_TW")),
             "the Traditional Chinese translation should load");
@@ -494,6 +517,18 @@ int main(int argc, char* argv[]) {
                       "Disable shortcut functions should translate to Traditional Chinese");
     requireActionText(exitMenuAction, QStringLiteral("\u7d50\u675f"),
                        "Exit should translate to Traditional Chinese");
+    requireActionText(windowGroupMenuAction,
+                      QStringLiteral("\u8996\u7a97\u7fa4\u7d44\uff1a\u9810\u8a2d"),
+                      "the window group submenu title should translate to Traditional Chinese");
+    requireActionText(groupActionNamed(QStringLiteral("systemTrayGroupAction-default")),
+                      QStringLiteral("\u9810\u8a2d\t0"),
+                      "the default group entry should translate to Traditional Chinese");
+    requireActionText(groupActionNamed(QStringLiteral("systemTrayNewGroupAction")),
+                      QStringLiteral("\u65b0\u589e\u7fa4\u7d44"),
+                      "tray New Group should translate to Traditional Chinese");
+    requireActionText(groupActionNamed(QStringLiteral("systemTrayDeleteEmptyGroupsAction")),
+                      QStringLiteral("\u522a\u9664\u7a7a\u7fa4\u7d44"),
+                      "tray Delete Empty Groups should translate to Traditional Chinese");
     controller.setGlobalShortcuts(
         snow_shot::presentation::GlobalShortcutAction::Screenshot, {});
     requireActionText(screenshotMenuAction, QStringLiteral("\u622a\u5716"),

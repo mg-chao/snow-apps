@@ -43,9 +43,10 @@ bool sameStorageStatus(const storage::StorageStatus& first,
            first.configurationCompatibility == second.configurationCompatibility &&
            first.readAvailable == second.readAvailable &&
            first.writeAvailable == second.writeAvailable &&
-           first.historyUsage == second.historyUsage &&
+           first.historyUsage == second.historyUsage && first.appUsage == second.appUsage &&
            first.historyPolicyUpdating == second.historyPolicyUpdating &&
            first.historyClearing == second.historyClearing &&
+           first.cacheClearing == second.cacheClearing &&
            first.lastConfigurationError == second.lastConfigurationError &&
            first.lastHistoryError == second.lastHistoryError;
 }
@@ -1290,6 +1291,10 @@ bool SettingsRuntimeSession::triggerAction(SettingsActionBinding binding) {
 
 storage::StorageStatus SettingsRuntimeSession::storageStatus() const {
     return m_backend.storageStatus();
+}
+
+void SettingsRuntimeSession::refreshStorageStatus() {
+    m_backend.refreshStorageStatus();
 }
 
 } // namespace snow_shot::presentation::settings

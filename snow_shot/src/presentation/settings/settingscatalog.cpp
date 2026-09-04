@@ -1154,7 +1154,7 @@ SettingsItemDefinition historyIntegerItem(const QString& id, TranslatableText ti
 
 SettingsItemDefinition clearHistoryItem() {
     SettingsActionDefinition payload;
-    payload.buttonText = settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Clear history"));
+    payload.buttonText = settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Clear"));
     payload.accent = SettingsActionAccent::Danger;
     payload.iconFactory = []() { return outlined_icons::Rest(); };
     payload.confirmation = {
@@ -1180,13 +1180,64 @@ SettingsItemDefinition storageStatusItem() {
     return {
         QStringLiteral("storage.status"),
         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Storage status")),
-        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
-                                       "Current storage location, mode, usage, and latest errors")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "App-wide storage usage breakdown, location, mode, and latest errors")),
         {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Disk usage")),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Storage location")),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Storage error"))},
         {},
         SettingsCustomDefinition{},
+    };
+}
+
+SettingsItemDefinition clearThumbnailCacheItem() {
+    SettingsActionDefinition payload;
+    payload.binding = SettingsActionBinding::ClearThumbnailCache;
+    payload.buttonText = settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Clear"));
+    payload.iconFactory = []() { return outlined_icons::Clear(); };
+    payload.confirmation = {
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Clear the thumbnail cache?")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Cached history thumbnails will be removed and rebuilt on demand")),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Clear cache")),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Cancel")),
+    };
+    return {
+        QStringLiteral("storage.clear-thumbnails"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Clear thumbnail cache")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog", "Remove cached screenshot-history thumbnails")),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Thumbnail cache"))},
+        {},
+        payload,
+    };
+}
+
+SettingsItemDefinition clearRecordingTempItem() {
+    SettingsActionDefinition payload;
+    payload.binding = SettingsActionBinding::ClearRecordingTemp;
+    payload.buttonText = settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Delete"));
+    payload.iconFactory = []() { return outlined_icons::IconDelete(); };
+    payload.confirmation = {
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                       "Delete temporary recording files?")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Leftover working files from finished or interrupted recordings will be removed")),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Delete files")),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Cancel")),
+    };
+    return {
+        QStringLiteral("storage.clear-recording-temp"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Delete temporary recording files")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Remove leftover recording working files that are no longer needed")),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Recording temporary files"))},
+        {},
+        payload,
     };
 }
 
@@ -1469,9 +1520,11 @@ QVector<SettingsPageDefinition> builtInPages() {
                     QStringLiteral("storage-status"),
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Storage status")),
                     settingsText(QT_TRANSLATE_NOOP(
-                        "SettingsCatalog", "Current storage location, mode, usage, and errors")),
+                        "SettingsCatalog",
+                        "App-wide storage usage, location, mode, errors, and cleanup")),
                     SettingsSectionReset::None,
-                    {storageStatusItem()},
+                    {storageStatusItem(), clearThumbnailCacheItem(),
+                     clearRecordingTempItem()},
                 },
             },
         },

@@ -231,6 +231,8 @@ struct SettingsLocalShortcutDefinition {
 
 enum class SettingsActionBinding {
     ClearCaptureHistory,
+    ClearThumbnailCache,
+    ClearRecordingTemp,
 };
 
 enum class SettingsActionAccent {

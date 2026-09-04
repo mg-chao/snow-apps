@@ -139,6 +139,7 @@ class SettingsRuntimeSession final : public QObject {
     actionState(SettingsActionBinding binding) const;
     [[nodiscard]] bool triggerAction(SettingsActionBinding binding);
     [[nodiscard]] storage::StorageStatus storageStatus() const;
+    void refreshStorageStatus();
 
   signals:
     void fieldChanged(const QString& fieldId,

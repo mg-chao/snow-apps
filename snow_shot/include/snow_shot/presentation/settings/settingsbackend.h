@@ -108,6 +108,7 @@ class SettingsBackend : public QObject {
     actionState(SettingsActionBinding binding) const = 0;
     [[nodiscard]] virtual bool triggerAction(SettingsActionBinding binding) = 0;
     [[nodiscard]] virtual storage::StorageStatus storageStatus() const = 0;
+    virtual void refreshStorageStatus() {}
     [[nodiscard]] virtual bool resetSection(SettingsSectionReset reset) = 0;
     [[nodiscard]] virtual QString fieldError(const QString& fieldId) const {
         Q_UNUSED(fieldId);
@@ -185,6 +186,7 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     actionState(SettingsActionBinding binding) const override;
     [[nodiscard]] bool triggerAction(SettingsActionBinding binding) override;
     [[nodiscard]] storage::StorageStatus storageStatus() const override;
+    void refreshStorageStatus() override;
     [[nodiscard]] bool resetSection(SettingsSectionReset reset) override;
 
   private:

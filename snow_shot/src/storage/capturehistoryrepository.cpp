@@ -3,6 +3,7 @@
 #include "snow_shot/storage/persistedselectioncodec.h"
 #include "snow_shot/storage/storagelogging.h"
 #include "snowimageqtcodec.h"
+#include "storagedirectoryutils_p.h"
 
 #include <QDir>
 #include <QFile>
@@ -230,26 +231,6 @@ bool writeFile(const QString& path, const QByteArray& bytes) {
         return false;
     }
     return file.commit();
-}
-
-qint64 directoryBytes(const QString& path) {
-    const QFileInfo root(path);
-    if (!root.exists()) {
-        return 0;
-    }
-    if (root.isFile() && !root.isSymLink()) {
-        return root.size();
-    }
-    qint64 total = 0;
-    const QFileInfoList entries = QDir(path).entryInfoList(
-        QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System);
-    for (const QFileInfo& entry : entries) {
-        if (entry.isSymLink()) {
-            continue;
-        }
-        total += entry.isDir() ? directoryBytes(entry.absoluteFilePath()) : entry.size();
-    }
-    return total;
 }
 
 template <typename Result> std::shared_future<Result> readyFuture(Result result) {

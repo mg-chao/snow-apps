@@ -212,9 +212,6 @@ QString nativeShortcutText(const QStringList& shortcuts) {
     return nativeShortcuts.join(QStringLiteral(" / "));
 }
 
-QString translateTrayText(const char* source) {
-    return QCoreApplication::translate("SystemTrayController", source);
-}
 } // namespace
 
 class SystemTrayController::Impl {
@@ -343,7 +340,8 @@ class SystemTrayController::Impl {
         }
         groupMenu->clear();
         groupMenuAction->setText(
-            translateTrayText("Window Group: %1").arg(groupManager->displayName(groupManager->activeGroupId())));
+            QCoreApplication::translate("SystemTrayController", "Window Group: %1")
+                .arg(groupManager->displayName(groupManager->activeGroupId())));
         const auto currentGroups = groupManager->groupsSortedForDisplay();
         bool hasDeletableEmptyGroups = false;
         for (const auto& group : currentGroups) {
@@ -362,12 +360,14 @@ class SystemTrayController::Impl {
         }
         groupMenu->addSeparator();
         QAction* newGroup =
-            groupMenu->addItem(translateTrayText("New Group"), outlined_icons::FolderAdd());
+            groupMenu->addItem(QCoreApplication::translate("SystemTrayController", "New Group"),
+                               outlined_icons::FolderAdd());
         newGroup->setObjectName(QStringLiteral("systemTrayNewGroupAction"));
         QObject::connect(newGroup, &QAction::triggered, &q,
                          [this]() { groupManager->openCreateGroupModal(nullptr); });
-        QAction* deleteEmpty =
-            groupMenu->addItem(translateTrayText("Delete Empty Groups"), outlined_icons::Clear());
+        QAction* deleteEmpty = groupMenu->addItem(
+            QCoreApplication::translate("SystemTrayController", "Delete Empty Groups"),
+            outlined_icons::Clear());
         deleteEmpty->setObjectName(QStringLiteral("systemTrayDeleteEmptyGroupsAction"));
         deleteEmpty->setEnabled(hasDeletableEmptyGroups);
         QObject::connect(deleteEmpty, &QAction::triggered, &q,

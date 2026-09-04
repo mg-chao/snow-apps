@@ -680,6 +680,14 @@ BuiltInSettingsBackend::actionState(SettingsActionBinding binding) const {
                 (status.historyUsage.entryCount > 0 || status.historyUsage.totalBytes > 0),
             status.historyClearing,
         };
+    case SettingsActionBinding::ClearThumbnailCache:
+        return {status.appUsage.thumbnailCacheBytes > 0 && !status.cacheClearing &&
+                    !status.appUsage.scanning,
+                status.cacheClearing || status.appUsage.scanning};
+    case SettingsActionBinding::ClearRecordingTemp:
+        return {status.appUsage.recordingTempBytes > 0 && !status.cacheClearing &&
+                    !status.appUsage.scanning,
+                status.cacheClearing || status.appUsage.scanning};
     }
     return {};
 }
@@ -688,12 +696,20 @@ bool BuiltInSettingsBackend::triggerAction(SettingsActionBinding binding) {
     switch (binding) {
     case SettingsActionBinding::ClearCaptureHistory:
         return storage::ApplicationStorage::instance().requestCaptureHistoryClear();
+    case SettingsActionBinding::ClearThumbnailCache:
+        return storage::ApplicationStorage::instance().requestThumbnailCacheClear();
+    case SettingsActionBinding::ClearRecordingTemp:
+        return storage::ApplicationStorage::instance().requestRecordingTempClear();
     }
     return false;
 }
 
 storage::StorageStatus BuiltInSettingsBackend::storageStatus() const {
     return storage::ApplicationStorage::instance().status();
+}
+
+void BuiltInSettingsBackend::refreshStorageStatus() {
+    storage::ApplicationStorage::instance().requestStorageUsageRefresh();
 }
 
 bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
