@@ -268,6 +268,7 @@ enum class SettingsTrayMenuOptionKind {
     DisableShortcutFunctions,
     ShowMainWindow,
     Exit,
+    WindowGrouping,
 };
 
 struct SettingsTrayMenuOptionDefinition {

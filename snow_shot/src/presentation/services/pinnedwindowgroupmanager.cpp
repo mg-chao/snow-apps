@@ -65,6 +65,24 @@ QVector<storage::PinnedWindowGroup> PinnedWindowGroupManager::groups() const {
     return m_groups;
 }
 
+QVector<storage::PinnedWindowGroup> PinnedWindowGroupManager::groupsSortedForDisplay() const {
+    const QString defaultGroupId = QString::fromLatin1(kDefaultGroupId);
+    QVector<storage::PinnedWindowGroup> sorted = m_groups;
+    std::sort(sorted.begin(), sorted.end(),
+              [this, &defaultGroupId](const auto& first, const auto& second) {
+                  if (first.id == defaultGroupId) {
+                      return second.id != defaultGroupId;
+                  }
+                  if (second.id == defaultGroupId) {
+                      return false;
+                  }
+                  const int comparison = QString::localeAwareCompare(normalizedDisplayName(first),
+                                                                    normalizedDisplayName(second));
+                  return comparison == 0 ? first.id < second.id : comparison < 0;
+              });
+    return sorted;
+}
+
 QString PinnedWindowGroupManager::activeGroupId() const {
     return m_activeGroupId;
 }

@@ -141,6 +141,27 @@ void activeGroupFallbackAndEmptyDeletion() {
             "Default must never be deleted");
 }
 
+void displayOrderKeepsDefaultGroupFirst() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "temporary storage directory is unavailable");
+
+    storage::PinnedWindowRepository repository(directory.path());
+    presentation::PinnedWindowGroupManager manager(&repository);
+    const auto zeroId = manager.createGroup(QStringLiteral("000"));
+    const auto alphaId = manager.createGroup(QStringLiteral("AAA"));
+    const auto zuluId = manager.createGroup(QStringLiteral("Zzz"));
+    require(zeroId.has_value() && alphaId.has_value() && zuluId.has_value(),
+            "failed to seed groups that sort around the default group name");
+
+    const QVector<storage::PinnedWindowGroup> ordered = manager.groupsSortedForDisplay();
+    require(ordered.size() == 4, "the display order should contain every group");
+    require(ordered.front().id == "default",
+            "the default group must stay first in the display order");
+    require(ordered.at(1).id == *zeroId && ordered.at(2).id == *alphaId &&
+                ordered.at(3).id == *zuluId,
+            "custom groups should keep the locale-aware name order after the default group");
+}
+
 void groupCountLimitIsEnforced() {
     QTemporaryDir directory;
     require(directory.isValid(), "temporary storage directory is unavailable");
@@ -185,6 +206,7 @@ int main(int argc, char* argv[]) {
     defaultGroupAndFreshSchema();
     managerValidationPersistenceAndCounts();
     activeGroupFallbackAndEmptyDeletion();
+    displayOrderKeepsDefaultGroupFirst();
     groupCountLimitIsEnforced();
     return 0;
 }

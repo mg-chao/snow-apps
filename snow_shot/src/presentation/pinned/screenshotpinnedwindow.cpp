@@ -2485,7 +2485,7 @@ void ScreenshotPinnedWindow::createContextMenu() {
     m_contextMenu->setObjectName(QStringLiteral("screenshotPinnedContextMenu"));
     m_contextMenu->setFixedWidth(300);
 
-    m_groupMenu = m_contextMenu->addSubMenu(QString(), {});
+    m_groupMenu = m_contextMenu->addSubMenu(QString(), custom_outlined_icons::Group());
     m_groupMenu->setObjectName(QStringLiteral("screenshotPinnedGroupMenu"));
     m_groupMenu->menuAction()->setObjectName(QStringLiteral("screenshotPinnedGroupAction"));
     m_groupMenu->setMinimumWidth(300);
@@ -2771,16 +2771,14 @@ void ScreenshotPinnedWindow::rebuildGroupMenu() {
     }
     m_groupMenu->menuAction()->setText(
         tr("Group: %1").arg(manager->displayName(m_groupId)));
-    QVector<snow_shot::storage::PinnedWindowGroup> groups = manager->groups();
-    std::sort(groups.begin(), groups.end(), [manager](const auto& first, const auto& second) {
-        const int comparison = QString::localeAwareCompare(manager->displayName(first.id),
-                                                            manager->displayName(second.id));
-        return comparison == 0 ? first.id < second.id : comparison < 0;
-    });
+    const QVector<snow_shot::storage::PinnedWindowGroup> groups = manager->groupsSortedForDisplay();
+    bool hasDeletableEmptyGroups = false;
     for (const auto& group : groups) {
+        const int windowCount = manager->windowCount(group.id);
+        hasDeletableEmptyGroups = hasDeletableEmptyGroups || (!group.builtIn && windowCount == 0);
         QAction* action = m_groupMenu->addItem(
             QStringLiteral("%1\t%2").arg(manager->displayName(group.id),
-                                         QString::number(manager->windowCount(group.id))));
+                                         QString::number(windowCount)));
         action->setObjectName(QStringLiteral("screenshotPinnedGroupAction-%1").arg(group.id));
         action->setData(group.id);
         action->setCheckable(true);
@@ -2790,14 +2788,14 @@ void ScreenshotPinnedWindow::rebuildGroupMenu() {
         });
     }
     m_groupMenu->addSeparator();
-    QAction* newGroup = m_groupMenu->addItem(tr("New Group"));
+    QAction* newGroup = m_groupMenu->addItem(tr("New Group"), outlined_icons::FolderAdd());
     newGroup->setObjectName(QStringLiteral("screenshotPinnedNewGroupAction"));
     connect(newGroup, &QAction::triggered, this,
             [this, manager]() { manager->openCreateGroupModal(this, this); });
-    QAction* deleteEmpty = m_groupMenu->addItem(tr("Delete Empty Groups"));
+    QAction* deleteEmpty = m_groupMenu->addItem(tr("Delete Empty Groups"), outlined_icons::Clear());
     deleteEmpty->setObjectName(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
-    connect(deleteEmpty, &QAction::triggered, this,
-            [manager]() { manager->deleteEmptyGroups(); });
+    deleteEmpty->setEnabled(hasDeletableEmptyGroups);
+    connect(deleteEmpty, &QAction::triggered, this, [manager]() { manager->deleteEmptyGroups(); });
 }
 
 void ScreenshotPinnedWindow::setRuntimeBorderColor(const QColor& color) {

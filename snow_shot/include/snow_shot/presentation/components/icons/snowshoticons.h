@@ -47,6 +47,7 @@ namespace outlined {
 [[nodiscard]] adqt::icons::IconRef FontSizeMedium(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef FontSizeSmall(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef FontSizeVeryLarge(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef Group(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Keyboard(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef OcrTranslate(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Opacity(const adqt::icons::IconColors& colors = {});

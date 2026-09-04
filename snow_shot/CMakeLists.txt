@@ -2113,12 +2113,17 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --async-presentation-only
     )
     add_test(
+        NAME snow-shot-pinned-group-menu-tests
+        COMMAND snow-shot-pinned-window-tests --group-menu-only
+    )
+    add_test(
         NAME snow-shot-pinned-restore-wiring-tests
         COMMAND snow-shot-pinned-window-tests --restore-wiring-only
     )
     set(_snow_shot_pinned_window_test_names
         snow-shot-pinned-window-tests
         snow-shot-pinned-async-presentation-tests
+        snow-shot-pinned-group-menu-tests
         snow-shot-pinned-restore-wiring-tests
         snow-shot-pinned-toolbar-parity-tests
     )

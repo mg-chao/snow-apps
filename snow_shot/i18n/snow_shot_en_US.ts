@@ -3790,6 +3790,12 @@
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1834" />
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1940" />
+        <source>Window grouping</source>
+        <translation>Window grouping</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1834" />
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1940" />
         <source>Disable shortcut functions</source>
         <translation>Disable shortcut functions</translation>
     </message>

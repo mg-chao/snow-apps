@@ -281,6 +281,79 @@ void groupedPinnedWindowSignalConnectionsDoNotAssert() {
             "the grouped pinned window should close after the connection test");
 }
 
+void groupMenuActionsExposeIconsAndCleanupState() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+
+    snow_shot::presentation::PinnedWindowGroupManager groupManager;
+    QImage image(120, 80, QImage::Format_ARGB32_Premultiplied);
+    image.fill(QColor(42, 84, 126, 255));
+    auto* pinnedWindow =
+        new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
+    QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), image.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(image.size()));
+    config.backgroundImage = image;
+    config.screen = screen;
+    config.enableEditing = true;
+    config.automaticTextRecognition = false;
+    config.groupManager = &groupManager;
+    config.groupId = groupManager.activeGroupId();
+    require(pinnedWindow->present(config),
+            "a grouped pinned window should present for the group menu checks");
+
+    auto* groupMenu = pinnedWindow->findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedGroupMenu"));
+    require(groupMenu != nullptr, "the pinned context menu should own a group submenu");
+    const auto groupMenuActionNamed = [groupMenu](const QString& name) {
+        for (QAction* action : groupMenu->actions()) {
+            if (action != nullptr && action->objectName() == name) {
+                return action;
+            }
+        }
+        return static_cast<QAction*>(nullptr);
+    };
+    // The submenu clears and recreates its actions on rebuild, so every state
+    // check must resolve its QAction again after the refresh.
+    const auto refreshGroupMenu = [groupMenu, &groupMenuActionNamed](const QString& name) {
+        require(QMetaObject::invokeMethod(groupMenu, "aboutToShow", Qt::DirectConnection),
+                "the group submenu rebuild should be triggerable");
+        return groupMenuActionNamed(name);
+    };
+
+    QAction* groupHeader = groupMenu->menuAction();
+    require(groupHeader != nullptr &&
+                groupHeader->objectName() == QStringLiteral("screenshotPinnedGroupAction") &&
+                !groupHeader->icon().isNull(),
+            "the group submenu header should carry an icon");
+
+    QAction* newGroup = groupMenuActionNamed(QStringLiteral("screenshotPinnedNewGroupAction"));
+    require(newGroup != nullptr && !newGroup->icon().isNull() && newGroup->isEnabled(),
+            "New Group should expose an icon and stay actionable");
+    QAction* deleteEmpty =
+        groupMenuActionNamed(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
+    require(deleteEmpty != nullptr && !deleteEmpty->icon().isNull(),
+            "Delete Empty Groups should expose an icon");
+    require(!deleteEmpty->isEnabled(),
+            "Delete Empty Groups should start disabled while only the built-in group exists");
+
+    require(groupManager.createGroup(QStringLiteral("Cleanup")).has_value(),
+            "an empty custom group should be created for the cleanup state");
+    deleteEmpty = refreshGroupMenu(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
+    require(deleteEmpty != nullptr && deleteEmpty->isEnabled(),
+            "Delete Empty Groups should enable once an empty custom group exists");
+
+    require(groupManager.deleteEmptyGroups(), "the empty custom group should be deleted");
+    deleteEmpty = refreshGroupMenu(QStringLiteral("screenshotPinnedDeleteEmptyGroupsAction"));
+    require(deleteEmpty != nullptr && !deleteEmpty->isEnabled(),
+            "Delete Empty Groups should disable again after the cleanup");
+
+    pinnedWindow->close();
+    require(processUntilDeleted(guardedWindow, 2000),
+            "the group menu pinned window was not deleted after the checks");
+}
+
 adqt::widgets::AdButton* toolbarButtonNamed(ScreenshotToolPalette& toolbar,
                                              const QString& tooltip) {
     for (adqt::widgets::AdButton* button : toolbar.findChildren<adqt::widgets::AdButton*>()) {
@@ -2911,6 +2984,10 @@ int main(int argc, char* argv[]) {
             pinnedRecognitionAvailableThroughLazyProvider();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--group-menu-only"))) {
+            groupMenuActionsExposeIconsAndCleanupState();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--pending-presentation-only"))) {
             pinnedPendingPresentationPublishesWorkerImage(sourceRuntime);
             return 0;
@@ -2959,6 +3036,7 @@ int main(int argc, char* argv[]) {
         pinnedCopyIncludesSourceCanvasDrawing();
         pinnedQrResultCopiesWithKeyboardShortcut();
         groupedPinnedWindowSignalConnectionsDoNotAssert();
+        groupMenuActionsExposeIconsAndCleanupState();
         pinnedRecognitionAvailableThroughLazyProvider();
         pinnedPendingPresentationPublishesWorkerImage(sourceRuntime);
         pinnedPendingPresentationSurvivesGroupSwitch(sourceRuntime);

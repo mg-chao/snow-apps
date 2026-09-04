@@ -239,6 +239,7 @@ void newSettingsSchemaDefaultsAndValidationAreComplete() {
                                QStringLiteral("quick.screenshot-copy"),
                                QStringLiteral("quick.screen-record"),
                                QStringLiteral("quick.pin-clipboard-content"),
+                               QStringLiteral("tray.window-grouping"),
                                QStringLiteral("tray.disable-shortcut-functions"),
                                QStringLiteral("tray.show-main-window"),
                                QStringLiteral("tray.exit")},
@@ -738,8 +739,9 @@ void newSettingsAdaptersRoundTripAndRejectInvalidValues() {
                 !globalShortcuts.disableOnFocusedFullscreenWindow() &&
                 globalShortcuts.setDisableOnFocusedFullscreenWindow(true) &&
                 globalShortcuts.disableOnFocusedFullscreenWindow() &&
-                tray.menuOptions().size() == 10 &&
+                tray.menuOptions().size() == 11 &&
                 tray.menuOptions().contains(QStringLiteral("tray.show-main-window")) &&
+                tray.menuOptions().contains(QStringLiteral("tray.window-grouping")) &&
                 tray.setMenuOptions({QStringLiteral("tray.exit"),
                                      QStringLiteral("quick.screenshot"),
                                      QStringLiteral("quick.screenshot"),

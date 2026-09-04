@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
+#include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
 #include "snow_shot/presentation/systemtraycontroller.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -17,11 +18,14 @@
 #include <QFileInfo>
 #include <QImage>
 #include <QKeySequence>
+#include <QLineEdit>
 #include <QMenu>
+#include <QPushButton>
 #include <QString>
 #include <QSystemTrayIcon>
 #include <QTemporaryDir>
 #include <QUuid>
+#include <QWidget>
 
 #include <cstdlib>
 #include <iostream>
@@ -259,11 +263,12 @@ int main(int argc, char* argv[]) {
                 !showMainWindowMenuAction->icon().isNull() && exitMenuAction != nullptr &&
                 exitMenuAction->isVisible() && !exitMenuAction->icon().isNull() &&
                 windowGroupMenuAction != nullptr && windowGroupMenuAction->isVisible() &&
+                actionForId(QStringLiteral("tray.window-grouping")) == windowGroupMenuAction &&
                 defaultVisibleActions.contains(disableMenuAction) &&
                 defaultVisibleActions.contains(showMainWindowMenuAction) &&
                 defaultVisibleActions.indexOf(windowGroupMenuAction) ==
-                    defaultVisibleActions.indexOf(showMainWindowMenuAction) - 1,
-            "the tray menu should expose the ten default options in four catalog groups");
+                    defaultVisibleActions.indexOf(disableMenuAction) - 1,
+            "the tray menu should expose the eleven default options in four catalog groups");
     requireActionText(screenshotMenuAction, QStringLiteral("Screenshot"),
                       "Screenshot should use its catalog label");
     requireActionText(delayedScreenshotMenuAction, QStringLiteral("Delay 3s to execute"),
@@ -295,6 +300,87 @@ int main(int argc, char* argv[]) {
     requireActionText(showMainWindowMenuAction, QStringLiteral("Show main interface"),
                       "Show main interface should follow Disable shortcut functions");
     requireActionText(exitMenuAction, QStringLiteral("Exit"), "Exit should be last");
+
+    snow_shot::presentation::PinnedWindowGroupManager groupManager;
+    controller.setGroupManager(&groupManager);
+    auto* windowGroupMenu =
+        menu->findChild<adqt::widgets::AdContextMenu*>(QStringLiteral("systemTrayWindowGroupMenu"));
+    require(windowGroupMenu != nullptr, "the tray menu should own a window group submenu");
+    const auto groupActionNamed = [windowGroupMenu](const QString& name) {
+        for (QAction* action : windowGroupMenu->actions()) {
+            if (action != nullptr && action->objectName() == name) {
+                return action;
+            }
+        }
+        return static_cast<QAction*>(nullptr);
+    };
+    require(!windowGroupMenuAction->icon().isNull(),
+            "the window group submenu header should carry an icon");
+    QAction* trayNewGroup = groupActionNamed(QStringLiteral("systemTrayNewGroupAction"));
+    require(trayNewGroup != nullptr && !trayNewGroup->icon().isNull() && trayNewGroup->isEnabled(),
+            "tray New Group should expose an icon and stay actionable");
+    QAction* trayDeleteEmpty =
+        groupActionNamed(QStringLiteral("systemTrayDeleteEmptyGroupsAction"));
+    require(trayDeleteEmpty != nullptr && !trayDeleteEmpty->icon().isNull(),
+            "tray Delete Empty Groups should expose an icon");
+    require(!trayDeleteEmpty->isEnabled(),
+            "tray Delete Empty Groups should start disabled while only the built-in group "
+            "exists");
+
+    require(groupManager.createGroup(QStringLiteral("Tray cleanup")).has_value(),
+            "an empty custom group should be created for the tray cleanup state");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    trayDeleteEmpty = groupActionNamed(QStringLiteral("systemTrayDeleteEmptyGroupsAction"));
+    require(trayDeleteEmpty != nullptr && trayDeleteEmpty->isEnabled(),
+            "tray Delete Empty Groups should enable once an empty custom group exists");
+
+    require(groupManager.deleteEmptyGroups(), "the empty tray cleanup group should be deleted");
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+    trayDeleteEmpty = groupActionNamed(QStringLiteral("systemTrayDeleteEmptyGroupsAction"));
+    require(trayDeleteEmpty != nullptr && !trayDeleteEmpty->isEnabled(),
+            "tray Delete Empty Groups should disable again after the cleanup");
+
+    // The tray New Group action runs while the application has no active or
+    // visible window; its dialog must still open and complete the creation.
+    require(QApplication::activeWindow() == nullptr,
+            "the tray-only state should have no active window");
+    // Re-resolve the action: the group mutations above rebuild the group menu,
+    // so actions captured earlier may have been destroyed.
+    trayNewGroup = groupActionNamed(QStringLiteral("systemTrayNewGroupAction"));
+    require(trayNewGroup != nullptr, "tray New Group should survive the menu rebuild");
+    const auto visibleModalSurface = []() {
+        QWidget* surface = nullptr;
+        for (QWidget* widget : QApplication::allWidgets()) {
+            if (widget != nullptr && widget->isVisible() &&
+                widget->objectName() == QStringLiteral("ad-modal-overlay")) {
+                surface = widget;
+            }
+        }
+        return surface;
+    };
+    trayNewGroup->trigger();
+    QApplication::processEvents();
+    QWidget* createGroupSurface = visibleModalSurface();
+    require(createGroupSurface != nullptr,
+            "tray New Group must show its dialog when no application window is active");
+    auto* groupNameInput =
+        createGroupSurface->findChild<QLineEdit*>(QStringLiteral("pinnedWindowGroupNameInput"));
+    require(groupNameInput != nullptr,
+            "the create-group dialog should contain the group name input");
+    groupNameInput->setText(QStringLiteral("TrayCreated"));
+    const QList<QPushButton*> dialogButtons = createGroupSurface->findChildren<QPushButton*>();
+    require(dialogButtons.size() == 2, "the create-group dialog should show two footer buttons");
+    // The footer adds the reject button before the accept button, so the last
+    // child button is the accept action.
+    dialogButtons.last()->click();
+    QApplication::processEvents();
+    require(visibleModalSurface() == nullptr,
+            "the create-group dialog should close after accepting");
+    bool trayGroupCreated = false;
+    for (const auto& trayGroup : groupManager.groups()) {
+        trayGroupCreated = trayGroupCreated || trayGroup.name == QStringLiteral("TrayCreated");
+    }
+    require(trayGroupCreated, "accepting the tray New Group dialog should create the group");
 
     int screenshotRequests = 0;
     int showMainWindowRequests = 0;
@@ -357,10 +443,13 @@ int main(int argc, char* argv[]) {
     controller.setMenuOptions({QStringLiteral("quick.screenshot"), QStringLiteral("tray.exit")});
     const QList<QAction*> compactVisibleActions = visibleActions();
     require(!controller.shortcutFunctionsDisabled() && disableChanges == 2 &&
-                !shortcutsDisabled && compactVisibleActions.size() == 4 &&
-                compactVisibleActions.at(1)->isSeparator(),
+                !shortcutsDisabled && compactVisibleActions.size() == 3 &&
+                compactVisibleActions.at(1)->isSeparator() &&
+                !windowGroupMenuAction->isVisible(),
             "hiding the disable command should re-enable shortcuts and collapse empty groups");
     controller.setMenuOptions(defaultMenuOptions);
+    require(windowGroupMenuAction->isVisible(),
+            "restoring the defaults should bring the window group submenu back");
 
     require(languageManager.setLanguage(QStringLiteral("zh_CN")),
             "the Simplified Chinese translation should load");

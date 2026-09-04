@@ -248,6 +248,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "Group",
+      "name": "group",
+      "source": "../src/presentation/components/icons/resources/group.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "Keyboard",
       "name": "keyboard",
       "source": "../src/presentation/components/icons/resources/keyboard.svg",

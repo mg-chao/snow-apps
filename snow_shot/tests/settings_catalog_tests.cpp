@@ -515,10 +515,13 @@ void quickFunctionShortcutsHaveStableContracts() {
                 trayGroups.at(2).id == QStringLiteral("other") &&
                 trayGroups.at(2).options.size() == 2 &&
                 trayGroups.at(3).id == QStringLiteral("system") &&
-                trayGroups.at(3).options.size() == 3 && trayOptionIds.size() == 15 &&
-                trayOptionIds.at(12) == QStringLiteral("tray.disable-shortcut-functions") &&
-                trayOptionIds.at(13) == QStringLiteral("tray.show-main-window") &&
-                trayOptionIds.at(14) == QStringLiteral("tray.exit") &&
+                trayGroups.at(3).options.size() == 4 && trayOptionIds.size() == 16 &&
+                trayOptionIds.at(12) == QStringLiteral("tray.window-grouping") &&
+                trayGroups.at(3).options.at(0).kind ==
+                    settings::SettingsTrayMenuOptionKind::WindowGrouping &&
+                trayOptionIds.at(13) == QStringLiteral("tray.disable-shortcut-functions") &&
+                trayOptionIds.at(14) == QStringLiteral("tray.show-main-window") &&
+                trayOptionIds.at(15) == QStringLiteral("tray.exit") &&
                 trayMenuSchema != nullptr &&
                 trayMenuSchema->allowedStringValues == trayOptionIds,
             "tray menu options must derive all quick-function groups and append system commands");

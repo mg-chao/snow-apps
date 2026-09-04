@@ -1832,6 +1832,10 @@ QVector<SettingsTrayMenuGroupDefinition> SettingsCatalog::trayMenuGroups() const
     SettingsTrayMenuGroupDefinition systemGroup;
     systemGroup.id = QStringLiteral("system");
     systemGroup.options = {
+        {QStringLiteral("tray.window-grouping"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Window grouping")),
+         SettingsTrayMenuOptionKind::WindowGrouping, GlobalShortcutAction::Screenshot,
+         []() { return custom_outlined_icons::Group(); }},
         {QStringLiteral("tray.disable-shortcut-functions"),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Disable shortcut functions")),
          SettingsTrayMenuOptionKind::DisableShortcutFunctions, GlobalShortcutAction::Screenshot,
@@ -1938,7 +1942,12 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
                 GlobalShortcutAction::PinClipboardContent,
                 []() { return custom_outlined_icons::PinToScreen(); })}},
         {QStringLiteral("system"),
-         {{QStringLiteral("tray.disable-shortcut-functions"),
+         {{QStringLiteral("tray.window-grouping"),
+           {"SettingsCatalog", QT_TRANSLATE_NOOP("SettingsCatalog", "Window grouping")},
+           SettingsTrayMenuOptionKind::WindowGrouping,
+           GlobalShortcutAction::Screenshot,
+           []() { return custom_outlined_icons::Group(); }},
+          {QStringLiteral("tray.disable-shortcut-functions"),
            {"SettingsCatalog", QT_TRANSLATE_NOOP("SettingsCatalog", "Disable shortcut functions")},
            SettingsTrayMenuOptionKind::DisableShortcutFunctions,
            GlobalShortcutAction::Screenshot,

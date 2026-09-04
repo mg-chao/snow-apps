@@ -4,6 +4,9 @@
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/settings/settingscatalog.h"
 
+#include "snow_shot/presentation/components/icons/snowshoticons.h"
+
+#include "antd_icons.h"
 #include "widgets/context_menu.h"
 
 #include <QAction>
@@ -28,6 +31,9 @@ namespace snow_shot::presentation {
 namespace {
 constexpr auto DEFAULT_TRAY_ICON = "default";
 constexpr auto DEFAULT_LEFT_CLICK_ACTION = "screenshot";
+
+namespace custom_outlined_icons = snow_shot::presentation::icons::custom::outlined;
+namespace outlined_icons = adqt::icons::antd::outlined;
 
 const QHash<QString, QString>& bundledIconResources() {
     static const QHash<QString, QString> resources{
@@ -256,6 +262,7 @@ class SystemTrayController::Impl {
 
     void buildMenu() {
         separatorsBeforeGroup.resize(groups.size());
+        QString windowGroupingOptionId;
         for (int groupIndex = 0; groupIndex < groups.size(); ++groupIndex) {
             const settings::SettingsTrayMenuGroupDefinition& group = groups.at(groupIndex);
             if (groupIndex > 0) {
@@ -265,6 +272,12 @@ class SystemTrayController::Impl {
                 separatorsBeforeGroup[groupIndex] = separator;
             }
             for (const settings::SettingsTrayMenuOptionDefinition& option : group.options) {
+                if (option.kind == settings::SettingsTrayMenuOptionKind::WindowGrouping) {
+                    // The window group submenu created below stands in for this
+                    // option, so it must not spawn a second menu action.
+                    windowGroupingOptionId = option.id;
+                    continue;
+                }
                 const adqt::icons::IconRef icon =
                     option.iconFactory ? option.iconFactory() : adqt::icons::IconRef{};
                 QAction* action = menu->addItem(QString(), icon);
@@ -296,6 +309,8 @@ class SystemTrayController::Impl {
                     QObject::connect(action, &QAction::triggered, &q,
                                      &SystemTrayController::exitRequested);
                     break;
+                case settings::SettingsTrayMenuOptionKind::WindowGrouping:
+                    break;
                 }
             }
         }
@@ -305,8 +320,16 @@ class SystemTrayController::Impl {
         groupMenu->setMinimumWidth(300);
         groupMenuAction = menu->addMenu(groupMenu);
         groupMenuAction->setObjectName(QStringLiteral("systemTrayWindowGroupAction"));
-        groupMenuAction->setVisible(true);
-        if (showMainWindow != nullptr) {
+        menu->setActionIcon(groupMenuAction, custom_outlined_icons::Group());
+        if (!windowGroupingOptionId.isEmpty()) {
+            groupMenuAction->setData(windowGroupingOptionId);
+            actions.insert(windowGroupingOptionId, groupMenuAction);
+        }
+        // Window grouping sits above the disable command so pinned windows can
+        // be re-grouped without scrolling past the quick-function switches.
+        if (disableShortcutFunctionsAction != nullptr) {
+            menu->insertAction(disableShortcutFunctionsAction, groupMenuAction);
+        } else if (showMainWindow != nullptr) {
             menu->insertAction(showMainWindow, groupMenuAction);
         }
         QObject::connect(groupMenu, &QMenu::aboutToShow, &q,
@@ -321,16 +344,15 @@ class SystemTrayController::Impl {
         groupMenu->clear();
         groupMenuAction->setText(
             translateTrayText("Window Group: %1").arg(groupManager->displayName(groupManager->activeGroupId())));
-        auto currentGroups = groupManager->groups();
-        std::sort(currentGroups.begin(), currentGroups.end(), [this](const auto& first, const auto& second) {
-            const int comparison = QString::localeAwareCompare(groupManager->displayName(first.id),
-                                                                groupManager->displayName(second.id));
-            return comparison == 0 ? first.id < second.id : comparison < 0;
-        });
+        const auto currentGroups = groupManager->groupsSortedForDisplay();
+        bool hasDeletableEmptyGroups = false;
         for (const auto& group : currentGroups) {
+            const int windowCount = groupManager->windowCount(group.id);
+            hasDeletableEmptyGroups =
+                hasDeletableEmptyGroups || (!group.builtIn && windowCount == 0);
             QAction* action = groupMenu->addItem(
                 QStringLiteral("%1\t%2").arg(groupManager->displayName(group.id),
-                                             QString::number(groupManager->windowCount(group.id))));
+                                             QString::number(windowCount)));
             action->setObjectName(QStringLiteral("systemTrayGroupAction-%1").arg(group.id));
             action->setData(group.id);
             action->setCheckable(true);
@@ -339,12 +361,15 @@ class SystemTrayController::Impl {
                              [this, id = group.id]() { groupManager->setActiveGroup(id); });
         }
         groupMenu->addSeparator();
-        QAction* newGroup = groupMenu->addItem(translateTrayText("New Group"));
+        QAction* newGroup =
+            groupMenu->addItem(translateTrayText("New Group"), outlined_icons::FolderAdd());
         newGroup->setObjectName(QStringLiteral("systemTrayNewGroupAction"));
         QObject::connect(newGroup, &QAction::triggered, &q,
                          [this]() { groupManager->openCreateGroupModal(nullptr); });
-        QAction* deleteEmpty = groupMenu->addItem(translateTrayText("Delete Empty Groups"));
+        QAction* deleteEmpty =
+            groupMenu->addItem(translateTrayText("Delete Empty Groups"), outlined_icons::Clear());
         deleteEmpty->setObjectName(QStringLiteral("systemTrayDeleteEmptyGroupsAction"));
+        deleteEmpty->setEnabled(hasDeletableEmptyGroups);
         QObject::connect(deleteEmpty, &QAction::triggered, &q,
                          [this]() { groupManager->deleteEmptyGroups(); });
     }

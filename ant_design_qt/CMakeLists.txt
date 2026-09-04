@@ -166,6 +166,21 @@ if(ADQT_BUILD_TESTS)
     add_test(NAME adqt-tabs-tests COMMAND adqt-tabs-tests)
     set_tests_properties(adqt-tabs-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+    add_executable(adqt-modal-window-tests packages/ant_design_qt/tests/tst_modal_window.cpp)
+    set_target_properties(adqt-modal-window-tests PROPERTIES AUTOMOC ON)
+    target_link_libraries(adqt-modal-window-tests PRIVATE adqt::widgets Qt6::Test)
+    add_test(NAME adqt-modal-window-tests COMMAND adqt-modal-window-tests)
+    if(WIN32)
+        set_tests_properties(adqt-modal-window-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        )
+    else()
+        set_tests_properties(adqt-modal-window-tests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    endif()
+
     add_executable(adqt-segmented-tests packages/ant_design_qt/tests/tst_segmented.cpp)
     set_target_properties(adqt-segmented-tests PROPERTIES AUTOMOC ON)
     target_link_libraries(adqt-segmented-tests PRIVATE adqt::widgets Qt6::Test)

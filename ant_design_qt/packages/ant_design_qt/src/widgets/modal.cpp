@@ -1685,7 +1685,13 @@ void AdModal::ensureOverlay() {
   }
 
   QWidget* resolvedOwnerWindow = normalizeOwnerWindow(resolveOwnerWindow());
-  if (!resolvedOwnerWindow && !renderContainer_) {
+  // A window-mode surface is a top-level dialog: the owner window only
+  // anchors it (centering, stacking, transient parenting) and is optional.
+  // Callers such as tray-menu actions open dialogs while the application has
+  // no active or visible window, so requiring an owner here would silently
+  // drop the dialog. Overlay-mode surfaces still require a host: either an
+  // owner window or an explicit render container to cover.
+  if (!resolvedOwnerWindow && !renderContainer_ && !usesWindowSurface()) {
     return;
   }
 
@@ -1718,7 +1724,10 @@ void AdModal::ensureOverlay() {
     overlay->setAttribute(Qt::WA_DeleteOnClose, false);
   } else {
     overlay->setWindowModality(Qt::NonModal);
-    overlay->setGeometry(ownerWindow_->rect());
+    QWidget* geometryHost = renderContainer_ ? renderContainer_.data() : ownerWindow_.data();
+    if (geometryHost != nullptr) {
+      overlay->setGeometry(geometryHost->rect());
+    }
   }
   overlay->hide();
   overlay->installEventFilter(this);

@@ -28,6 +28,7 @@ class PinnedWindowGroupManager final : public QObject {
                                       QObject* parent = nullptr);
 
     [[nodiscard]] QVector<storage::PinnedWindowGroup> groups() const;
+    [[nodiscard]] QVector<storage::PinnedWindowGroup> groupsSortedForDisplay() const;
     [[nodiscard]] QString activeGroupId() const;
     [[nodiscard]] QString displayName(const QString& groupId) const;
     [[nodiscard]] bool contains(const QString& groupId) const;

@@ -3759,6 +3759,12 @@
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1834" />
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1940" />
+        <source>Window grouping</source>
+        <translation>視窗分組</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1834" />
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1940" />
         <source>Disable shortcut functions</source>
         <translation>停用快捷功能</translation>
     </message>
