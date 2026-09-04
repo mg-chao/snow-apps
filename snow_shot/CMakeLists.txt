@@ -2030,6 +2030,10 @@ if(SNOW_SHOT_BUILD_TESTS)
             NAME snow-shot-pinned-native-drag-shortcut-tests
             COMMAND snow-shot-pinned-window-tests --native-drag-shortcut-only
         )
+        add_test(
+            NAME snow-shot-pinned-native-drag-dpi-tests
+            COMMAND snow-shot-pinned-window-tests --native-drag-dpi-only
+        )
     endif()
 
     add_executable(snow-shot-screenshot-image-file-service-tests
@@ -2092,6 +2096,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     if(WIN32)
         list(APPEND _snow_shot_pinned_window_test_names
             snow-shot-pinned-native-drag-shortcut-tests
+            snow-shot-pinned-native-drag-dpi-tests
         )
     endif()
     set_tests_properties(

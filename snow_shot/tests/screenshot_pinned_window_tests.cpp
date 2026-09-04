@@ -1396,6 +1396,98 @@ void pinnedNativeDragAcceptsCursorMovementShortcuts(SnowCanvasRuntime&) {
     require(windowFollowedPointer,
             "application-managed pinned-window dragging must continue to follow pointer input");
 }
+
+void pinnedNativeDragCrossingDpiBoundaryPreservesDestination(SnowCanvasRuntime&) {
+    const CursorPositionRestorer restoreCursor;
+    QScreen* sourceScreen = nullptr;
+    QScreen* destinationScreen = nullptr;
+    for (QScreen* candidate : QGuiApplication::screens()) {
+        if (candidate == nullptr) {
+            continue;
+        }
+        for (QScreen* other : QGuiApplication::screens()) {
+            if (other != nullptr && other != candidate &&
+                candidate->devicePixelRatio() > other->devicePixelRatio() + 0.01 &&
+                candidate->geometry().left() > other->geometry().left()) {
+                sourceScreen = candidate;
+                destinationScreen = other;
+                break;
+            }
+        }
+        if (sourceScreen != nullptr) {
+            break;
+        }
+    }
+    if (sourceScreen == nullptr || destinationScreen == nullptr) {
+        return;
+    }
+
+    const QSize logicalSize(300, 150);
+    const qreal sourceDpr = sourceScreen->devicePixelRatio();
+    const qreal destinationDpr = destinationScreen->devicePixelRatio();
+    const QRect sourcePhysical = ScreenshotGeometryMapper::physicalRectForScreen(*sourceScreen);
+    const QRect destinationPhysical =
+        ScreenshotGeometryMapper::physicalRectForScreen(*destinationScreen);
+    QImage background(logicalSize, QImage::Format_ARGB32_Premultiplied);
+    background.fill(QColor(54, 105, 157));
+
+    auto* pinnedWindow =
+        new ScreenshotPinnedWindow(ScreenshotPinnedWindow::RuntimeMode::NoDocument);
+    QPointer<ScreenshotPinnedWindow> guardedWindow(pinnedWindow);
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = QRect(
+        sourcePhysical.center() - QPoint(qRound(logicalSize.width() * sourceDpr / 2.0),
+                                         qRound(logicalSize.height() * sourceDpr / 2.0)),
+        QSize(qRound(logicalSize.width() * sourceDpr),
+              qRound(logicalSize.height() * sourceDpr)));
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(background.size()));
+    config.backgroundImage = background;
+    config.screen = sourceScreen;
+    config.enableEditing = false;
+    require(pinnedWindow->present(config), "cross-DPI native drag pin presentation failed");
+    waitForUi(100);
+
+    const HWND hwnd = toNativeHwnd(pinnedWindow->winId());
+    require(hwnd != nullptr, "cross-DPI native drag pin did not expose an HWND");
+    const QRect startingGeometry = pinnedWindow->currentNativeGeometry();
+    const QPoint startingCursor = startingGeometry.center();
+    setSystemCursorPosition(startingCursor);
+    waitForUi(50);
+    static_cast<void>(SendMessageW(
+        hwnd, WM_NCLBUTTONDOWN, HTCAPTION,
+        MAKELPARAM(static_cast<WORD>(startingCursor.x()), static_cast<WORD>(startingCursor.y()))));
+    require(GetCapture() == hwnd, "cross-DPI native drag did not capture the pointer");
+
+    const QPoint destinationCursor = destinationPhysical.center();
+    setSystemCursorPosition(destinationCursor);
+    static_cast<void>(SendMessageW(hwnd, WM_MOUSEMOVE, MK_LBUTTON, 0));
+    waitForUi(300);
+
+    const QPoint continuedCursor = destinationCursor + QPoint(120, 40);
+    setSystemCursorPosition(continuedCursor);
+    static_cast<void>(SendMessageW(hwnd, WM_MOUSEMOVE, MK_LBUTTON, 0));
+    waitForUi(100);
+
+    const QRect destinationGeometry = pinnedWindow->currentNativeGeometry();
+    const QSize expectedSize(qRound(startingGeometry.width() * destinationDpr / sourceDpr),
+                             qRound(startingGeometry.height() * destinationDpr / sourceDpr));
+    auto* scaleLabel =
+        pinnedWindow->findChild<QLabel*>(QStringLiteral("screenshotPinnedScaleLabel"));
+    require(destinationGeometry != startingGeometry &&
+                destinationGeometry.contains(continuedCursor) &&
+                qAbs(destinationGeometry.width() - expectedSize.width()) <= 3 &&
+                qAbs(destinationGeometry.height() - expectedSize.height()) <= 3 &&
+                scaleLabel != nullptr && scaleLabel->isVisible() &&
+                scaleLabel->text() ==
+                    QStringLiteral("Scale: %1%").arg(qRound(100.0 * destinationDpr / sourceDpr)),
+            "cross-DPI native dragging must preserve destination position and native DPI size "
+            "while updating the zoom readout");
+
+    static_cast<void>(SendMessageW(hwnd, WM_LBUTTONUP, 0, 0));
+    pinnedWindow->close();
+    require(processUntilDeleted(guardedWindow, 2000),
+            "cross-DPI native drag pin was not deleted");
+}
 #endif
 
 void pinnedThumbnailUsesOpaqueThemeBackground(SnowCanvasRuntime&) {
@@ -2752,6 +2844,10 @@ int main(int argc, char* argv[]) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
         if (app.arguments().contains(QStringLiteral("--native-drag-shortcut-only"))) {
             pinnedNativeDragAcceptsCursorMovementShortcuts(sourceRuntime);
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--native-drag-dpi-only"))) {
+            pinnedNativeDragCrossingDpiBoundaryPreservesDestination(sourceRuntime);
             return 0;
         }
 #endif

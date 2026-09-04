@@ -4495,6 +4495,23 @@ bool ScreenshotPinnedWindow::updateWindowMove(const QPoint& nativeCursorPosition
     if (native::applyClientGeometry(winId(), target)) {
         return true;
     }
+    const QRect actual = native::currentClientGeometry(winId());
+    // USER32 may apply the destination monitor's per-monitor DPI while this
+    // SetWindowPos call is in flight. In that case the native position is the
+    // requested move position, but the client size is already scaled before
+    // applyClientGeometry checks its exact round-trip. Keep that native result
+    // as the active move target instead of treating the expected DPI resize as
+    // a failed move and restoring the drag-start rectangle.
+    const QPoint positionDelta = actual.topLeft() - target.topLeft();
+    const bool nativeDpiResize = actual.isValid() && !actual.isEmpty() &&
+                                 qAbs(positionDelta.x()) <= 2 &&
+                                 qAbs(positionDelta.y()) <= 2 && actual.size() != target.size();
+    if (nativeDpiResize &&
+        m_nativeGeometryController->adoptDpiTarget(actual, nativeCursorPosition)) {
+        m_preserveScaleForSettledGeometry = false;
+        scheduleNativeScaleAdoption();
+        return true;
+    }
     static_cast<void>(restoreCommittedNativeGeometry());
     finishWindowMove();
     return false;
