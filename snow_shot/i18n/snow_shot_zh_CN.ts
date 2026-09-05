@@ -138,6 +138,10 @@
         <translation>复制到剪贴板</translation>
     </message>
     <message>
+        <source>Save as file</source>
+        <translation>保存为文件</translation>
+    </message>
+    <message>
         <location filename="../src/presentation/components/screenshothistorypagewidget.cpp" line="730"/>
         <source>Pin to screen</source>
         <translation>固定到屏幕</translation>
@@ -540,6 +544,10 @@
         <location filename="../src/presentation/components/screenshothistorypagewidget.cpp" line="1314"/>
         <source>Copy to clipboard</source>
         <translation>复制到剪贴板</translation>
+    </message>
+    <message>
+        <source>Save as file</source>
+        <translation>保存为文件</translation>
     </message>
     <message>
         <location filename="../src/presentation/components/screenshothistorypagewidget.cpp" line="1315"/>

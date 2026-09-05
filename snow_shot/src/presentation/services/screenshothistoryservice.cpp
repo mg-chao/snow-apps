@@ -32,9 +32,8 @@ bool restoreCanvasPayload(SnowCanvasRuntime& runtime, const QByteArray& payload)
 
 } // namespace
 
-void initializeHistoryValidationQueue(
-    std::unique_ptr<ScreenshotHistoryValidationQueue>* target,
-    snow_shot::storage::CaptureHistoryRepository& repository);
+void initializeHistoryValidationQueue(std::unique_ptr<ScreenshotHistoryValidationQueue>* target,
+                                      snow_shot::storage::CaptureHistoryRepository& repository);
 
 ScreenshotHistoryService::ScreenshotHistoryService(ScreenshotHistoryServiceContext context,
                                                    QString storageRoot, Clock clock)
@@ -52,8 +51,8 @@ ScreenshotHistoryService::ScreenshotHistoryService(ScreenshotHistoryServiceConte
         snow_shot::storage::CaptureHistoryRepositoryOptions options;
         options.writeAvailable = true;
         options.clock = m_clock;
-        m_ownedRepository = snow_shot::storage::makeCaptureHistoryRepository(
-            std::move(storageRoot), std::move(options));
+        m_ownedRepository = snow_shot::storage::makeCaptureHistoryRepository(std::move(storageRoot),
+                                                                             std::move(options));
         m_repository = m_ownedRepository.get();
     }
     m_entries = m_repository->records();
@@ -77,12 +76,8 @@ bool structurallyValidCanvasPayload(const QByteArray& payload) {
 snow_shot::storage::PersistedSelection
 persistedSelection(const ScreenshotSelectionParams& selection) {
     return {
-        selection.selection,
-        selection.radius,
-        selection.shadowWidth,
-        selection.shadowColor,
-        selection.lockAspectRatio,
-        selection.lockDragAspectRatio,
+        selection.selection,   selection.radius,          selection.shadowWidth,
+        selection.shadowColor, selection.lockAspectRatio, selection.lockDragAspectRatio,
     };
 }
 
@@ -110,6 +105,7 @@ snow_shot::storage::CaptureHistoryDraft storageDraft(const ScreenshotHistoryEntr
         draft.displays.push_back({display.stableId, display.name, display.image});
     }
     draft.resultImage = entry.resultImage;
+    draft.preparedResultImage = entry.preparedResultImage;
     return draft;
 }
 
@@ -122,9 +118,11 @@ placeholderRecord(const snow_shot::storage::CaptureHistoryDraft& draft) {
     record.selection = draft.selection;
     record.source = draft.source;
     record.canvasBytes = draft.canvasHistory.size();
-    if (draft.resultImage.has_value()) {
-        record.result = snow_shot::storage::CaptureHistoryResultRecord{
-            draft.resultImage->size(), 0};
+    if (draft.resultImage.has_value() || draft.preparedResultImage.has_value()) {
+        const QSize resultSize = draft.preparedResultImage.has_value()
+                                     ? draft.preparedResultImage->pixelSize()
+                                     : draft.resultImage->size();
+        record.result = snow_shot::storage::CaptureHistoryResultRecord{resultSize, 0};
     }
     for (const snow_shot::storage::CaptureHistoryDisplayDraft& display : draft.displays) {
         record.displays.push_back({display.stableId, display.name, display.image.size(), 0});
@@ -148,8 +146,7 @@ presentationEntry(const snow_shot::storage::CaptureHistoryRecord& record,
     entry.source = record.source;
     entry.persistent = true;
     for (qsizetype index = 0; index < record.displays.size(); ++index) {
-        entry.displays.push_back({record.displays[index].stableId,
-                                  record.displays[index].name,
+        entry.displays.push_back({record.displays[index].stableId, record.displays[index].name,
                                   payload.displayImages[index]});
     }
     return entry;
@@ -240,9 +237,9 @@ class ScreenshotHistoryValidationQueue final {
                                   QStringLiteral("History publication returned no result")),
                               {}});
             } catch (const std::exception& error) {
-                job.promise->set_value({snow_shot::storage::StorageResult::failure(
-                                            QString::fromUtf8(error.what())),
-                                        {}});
+                job.promise->set_value(
+                    {snow_shot::storage::StorageResult::failure(QString::fromUtf8(error.what())),
+                     {}});
             } catch (...) {
                 job.promise->set_value({snow_shot::storage::StorageResult::failure(
                                             QStringLiteral("History validation failed")),
@@ -259,9 +256,8 @@ class ScreenshotHistoryValidationQueue final {
     std::thread m_thread;
 };
 
-void initializeHistoryValidationQueue(
-    std::unique_ptr<ScreenshotHistoryValidationQueue>* target,
-    snow_shot::storage::CaptureHistoryRepository& repository) {
+void initializeHistoryValidationQueue(std::unique_ptr<ScreenshotHistoryValidationQueue>* target,
+                                      snow_shot::storage::CaptureHistoryRepository& repository) {
     if (target != nullptr) {
         *target = std::make_unique<ScreenshotHistoryValidationQueue>(repository);
     }
@@ -340,11 +336,11 @@ bool ScreenshotHistoryService::navigateToRecord(const QString& recordId) {
         return false;
     }
     reapCompletedWrites();
-    const auto target = std::find_if(
-        m_entries.cbegin(), m_entries.cend(),
-        [&recordId](const snow_shot::storage::CaptureHistoryRecord& record) {
-            return record.id == recordId;
-        });
+    const auto target =
+        std::find_if(m_entries.cbegin(), m_entries.cend(),
+                     [&recordId](const snow_shot::storage::CaptureHistoryRecord& record) {
+                         return record.id == recordId;
+                     });
     if (target == m_entries.cend() || !ensureLiveEndpoint()) {
         return false;
     }
@@ -592,20 +588,18 @@ bool ScreenshotHistoryService::navigationInProgress() const {
 
 void ScreenshotHistoryService::scheduleWrite(ScreenshotHistoryEntry entry) {
     reapCompletedWrites();
-    if (m_validationQueue == nullptr ||
-        !structurallyValidCanvasPayload(entry.canvasHistory)) {
+    if (m_validationQueue == nullptr || !structurallyValidCanvasPayload(entry.canvasHistory)) {
         return;
     }
     snow_shot::storage::CaptureHistoryDraft draft = storageDraft(entry);
     const QString id = draft.id;
     m_entries.prepend(placeholderRecord(draft));
-    m_pendingWrites.push_back(
-        PendingWrite{id, m_validationQueue->submit(std::move(draft))});
+    m_pendingWrites.push_back(PendingWrite{id, m_validationQueue->submit(std::move(draft))});
 }
 
 void ScreenshotHistoryService::reapCompletedWrites() {
-    const auto completed = std::remove_if(
-        m_pendingWrites.begin(), m_pendingWrites.end(), [this](PendingWrite& write) {
+    const auto completed =
+        std::remove_if(m_pendingWrites.begin(), m_pendingWrites.end(), [this](PendingWrite& write) {
             if (write.result.valid() &&
                 write.result.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
                 return false;
@@ -613,10 +607,10 @@ void ScreenshotHistoryService::reapCompletedWrites() {
             const auto result = write.result.valid()
                                     ? write.result.get()
                                     : snow_shot::storage::CaptureHistoryPublishResult{};
-            const auto entry = std::find_if(m_entries.begin(), m_entries.end(),
-                                            [&write](const auto& candidate) {
-                                                return candidate.id == write.entryId;
-                                            });
+            const auto entry =
+                std::find_if(m_entries.begin(), m_entries.end(), [&write](const auto& candidate) {
+                    return candidate.id == write.entryId;
+                });
             if (entry != m_entries.end()) {
                 if (result.storage.success) {
                     *entry = result.record;
@@ -645,12 +639,12 @@ void ScreenshotHistoryService::refreshMetadata() {
     reapCompletedWrites();
     QVector<snow_shot::storage::CaptureHistoryRecord> refreshed = m_repository->records();
     for (const PendingWrite& pending : m_pendingWrites) {
-        const auto existing = std::find_if(
-            m_entries.cbegin(), m_entries.cend(), [&pending](const auto& candidate) {
+        const auto existing =
+            std::find_if(m_entries.cbegin(), m_entries.cend(), [&pending](const auto& candidate) {
                 return candidate.id == pending.entryId;
             });
-        const auto alreadyPersisted = std::find_if(
-            refreshed.cbegin(), refreshed.cend(), [&pending](const auto& candidate) {
+        const auto alreadyPersisted =
+            std::find_if(refreshed.cbegin(), refreshed.cend(), [&pending](const auto& candidate) {
                 return candidate.id == pending.entryId;
             });
         if (existing != m_entries.cend() && alreadyPersisted == refreshed.cend()) {

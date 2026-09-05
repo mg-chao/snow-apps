@@ -1,6 +1,7 @@
 #include "snow_shot/storage/capturehistoryrepository.h"
 
 #include <QCoreApplication>
+#include <QBuffer>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -40,6 +41,14 @@ QJsonObject readObject(const QString& path) {
     require(error.error == QJsonParseError::NoError && document.isObject(),
             "stored JSON is malformed");
     return document.object();
+}
+
+QByteArray pngBytes(const QImage& image, int compression) {
+    QByteArray bytes;
+    QBuffer buffer(&bytes);
+    require(buffer.open(QIODevice::WriteOnly) && image.save(&buffer, "PNG", compression),
+            "failed to encode PNG test data");
+    return bytes;
 }
 
 storage::CaptureHistoryDraft draftAt(const QDateTime& createdUtc,
@@ -96,7 +105,8 @@ void publicationAndRecovery() {
                     QFileInfo(QDir(directory).filePath(QStringLiteral("canvas_history.json")))
                         .isFile() &&
                     QFileInfo(QDir(directory).filePath(QStringLiteral("display_0.png"))).isFile() &&
-                    QFileInfo(QDir(directory).filePath(QStringLiteral("capture_result.png"))).isFile() &&
+                    QFileInfo(QDir(directory).filePath(QStringLiteral("capture_result.png")))
+                        .isFile() &&
                     published.result.has_value() && published.result->imageSize == QSize(20, 12),
                 "published record is not self-describing");
         qint64 physicalBytes =
@@ -147,6 +157,35 @@ void publicationAndRecovery() {
     }
 }
 
+void preparedResultBytesAreCommittedWithoutReplacement() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "failed to create prepared-result directory");
+    const QDateTime now = QDateTime::currentDateTimeUtc();
+    auto repository = storage::makeCaptureHistoryRepository(temporary.path());
+    storage::CaptureHistoryDraft draft = draftAt(now);
+    QImage result(QSize(23, 11), QImage::Format_RGBA8888);
+    result.fill(QColor(17, 91, 203, 197));
+    const auto sharedBytes = std::make_shared<const QByteArray>(pngBytes(result, 7));
+    const auto prepared = storage::PreparedPngImage::fromBytes(result.size(), sharedBytes);
+    require(prepared.has_value() && prepared->sharedBytes().get() == sharedBytes.get(),
+            "prepared PNG validation did not preserve immutable buffer identity");
+    require(!storage::PreparedPngImage::fromBytes(QSize(22, 11), sharedBytes).has_value(),
+            "prepared PNG validation accepted mismatched dimensions");
+    draft.preparedResultImage = prepared;
+
+    const storage::CaptureHistoryPublishResult published = repository->publish(draft).get();
+    require(published.storage.success && published.record.result.has_value() &&
+                published.record.result->imageSize == result.size(),
+            "prepared history result was not published");
+    QFile stored(
+        QDir(onlyRecordDirectory(temporary.path())).filePath(QStringLiteral("capture_result.png")));
+    require(stored.open(QIODevice::ReadOnly) && stored.readAll() == *sharedBytes,
+            "history replaced the prepared PNG bytes during publication");
+    const auto loaded = repository->loadResultImage(published.record);
+    require(loaded.has_value() && loaded->pixelColor(4, 6) == result.pixelColor(4, 6),
+            "prepared history result did not round-trip");
+}
+
 void quickCaptureSourcesRoundTrip() {
     const auto verifySource = [](storage::CaptureHistorySource source,
                                  const QString& manifestSource) {
@@ -181,6 +220,7 @@ void quickCaptureSourcesRoundTrip() {
                 "quick-capture source was not recovered from its manifest");
     };
 
+    verifySource(storage::CaptureHistorySource::SavedToFile, QStringLiteral("saved_to_file"));
     verifySource(storage::CaptureHistorySource::CurrentMonitor, QStringLiteral("current_monitor"));
     verifySource(storage::CaptureHistorySource::FocusedWindow, QStringLiteral("focused_window"));
 }
@@ -369,6 +409,7 @@ void traversalManifestIsRejected() {
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     publicationAndRecovery();
+    preparedResultBytesAreCommittedWithoutReplacement();
     quickCaptureSourcesRoundTrip();
     quarantineTemporaryCleanupAndClear();
     policyBoundariesAndDisabledPreservation();

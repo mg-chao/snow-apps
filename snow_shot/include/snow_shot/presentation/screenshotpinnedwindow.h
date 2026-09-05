@@ -34,7 +34,7 @@ class AdContextMenu;
 namespace snow_shot::presentation {
 class WindowShortcutManager;
 class PinnedWindowGroupManager;
-}
+} // namespace snow_shot::presentation
 namespace snow_shot::platform {
 class PhysicalCursor;
 enum class PhysicalCursorDirection;
@@ -66,7 +66,7 @@ class ScreenshotRecognitionWindow;
 class ScreenshotRecognitionSessionController;
 class ScreenshotPinnedEditController;
 class ScreenshotFloatingToolPaletteWindow;
-class ScreenshotPinnedCopyService;
+class ScreenshotExportArtifact;
 class ScreenshotPinnedNativeGeometryController;
 class QTextDocument;
 
@@ -128,15 +128,18 @@ class ScreenshotPinnedWindow final : public QWidget {
     ~ScreenshotPinnedWindow() override;
 
     bool present(const Config& config, std::function<void(bool, QImage)> completion = {});
-    bool presentPending(const Config& config,
-                        std::function<void(bool, QImage)> completion = {});
+    bool presentPending(const Config& config, std::function<void(bool, QImage)> completion = {});
     bool publishMaterializedImage(QImage image);
     bool prewarm(QScreen* screen = nullptr);
     QRect currentNativeGeometry() const;
     [[nodiscard]] snow_shot::storage::PinnedWindowRecord persistenceSnapshot() const;
     void setPersistenceId(const QString& id);
-    [[nodiscard]] QString persistenceId() const { return m_persistenceId; }
-    [[nodiscard]] QString groupId() const { return m_groupId; }
+    [[nodiscard]] QString persistenceId() const {
+        return m_persistenceId;
+    }
+    [[nodiscard]] QString groupId() const {
+        return m_groupId;
+    }
 
   public slots:
     void setGroupId(const QString& id);
@@ -285,7 +288,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     std::unique_ptr<snow_shot::presentation::WindowShortcutManager> m_shortcutManager;
     std::unique_ptr<snow_shot::platform::PhysicalCursor> m_physicalCursor;
     QMap<QString, quint64> m_pinnedShortcutBindings;
-    std::unique_ptr<ScreenshotPinnedCopyService> m_copyService;
+    std::shared_ptr<ScreenshotExportArtifact> m_exportArtifact;
     ScreenshotExportJobHandle m_materializationJob;
     ScreenshotExportJobHandle m_fileSaveJob;
     ScreenshotClipboardCommitHandle m_clipboardCommit;

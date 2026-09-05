@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTSELECTIONEXPORTUISERVICES_H
 
 #include "snow_shot/presentation/screenshotclipboardcontent.h"
+#include "snow_shot/presentation/screenshotexportartifact.h"
 #include "snow_shot/presentation/screenshotimagesource.h"
 #include "snow_shot/presentation/screenshotselectionexportworkflowports.h"
 
@@ -53,10 +54,16 @@ class ScreenshotSelectionExportUiServices final : public ScreenshotSelectionExpo
                                           ScreenshotClipboardOriginalContent originalContent = {},
                                           ScreenshotImageLoader imageLoader = {},
                                           PinnedCompletion completion = {});
+    [[nodiscard]] bool presentPinnedSelection(const ScreenshotPinnedSelectionRequest& request,
+                                              ScreenshotPinnedSelectionResultHandle result,
+                                              PinnedCompletion completion) override;
+    [[nodiscard]] bool presentPinnedArtifact(const ScreenshotPinnedSelectionRequest& request,
+                                             std::shared_ptr<ScreenshotExportArtifact> artifact,
+                                             PinnedCompletion completion = {});
     [[nodiscard]] bool
-    presentPinnedSelection(const ScreenshotPinnedSelectionRequest& request,
-                           ScreenshotPinnedSelectionResultHandle result,
-                           PinnedCompletion completion) override;
+    presentPinnedImageArtifact(std::shared_ptr<ScreenshotExportArtifact> artifact, QScreen* screen,
+                               const QRect& nativeGeometry, const QSize& fullResolutionScaleBasis,
+                               PinnedCompletion completion = {});
     void restorePersistedWindows();
 
   private:

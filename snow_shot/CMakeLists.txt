@@ -524,6 +524,7 @@ if(NOT TARGET adqt::widgets)
 endif()
 
 set(SNOW_SHOT_STORAGE_SOURCES
+    include/snow_shot/storage/preparedpngimage.h
     include/snow_shot/storage/applicationstorage.h
     include/snow_shot/storage/appstorageusage.h
     include/snow_shot/storage/capturehistoryrepository.h
@@ -544,6 +545,7 @@ set(SNOW_SHOT_STORAGE_SOURCES
     src/storage/configurationschema.cpp
     src/storage/persistedselectioncodec.cpp
     src/storage/pinnedwindowrepository.cpp
+    src/storage/preparedpngimage.cpp
     src/storage/settingsadapters.cpp
     src/storage/storagedirectoryutils_p.h
     src/storage/storagelogging.cpp
@@ -741,6 +743,7 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshotdisplayconfigurationobserver.h
     include/snow_shot/presentation/screenshotdisplaysession.h
     include/snow_shot/presentation/screenshotexportservice.h
+    include/snow_shot/presentation/screenshotexportartifact.h
     include/snow_shot/presentation/screenshotexportcoordinator.h
     include/snow_shot/presentation/screenshotimagefileservice.h
     include/snow_shot/presentation/screenshotimagerowsource.h
@@ -764,19 +767,17 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshotrecognitionwindow.h
     include/snow_shot/presentation/screenshotrecognitionsessioncontroller.h
     include/snow_shot/presentation/screenshotpinnededitcontroller.h
-    include/snow_shot/presentation/screenshotpinnedcopyservice.h
     include/snow_shot/presentation/screenshotpinnedwindow.h
     include/snow_shot/presentation/screenshotpresentationservices.h
     include/snow_shot/presentation/screenshotshortcuthints.h
     include/snow_shot/presentation/screenshotsmartselectiontransition.h
     include/snow_shot/presentation/screenshotselectioneditworkflow.h
     include/snow_shot/presentation/screenshotselectioneditworkflowports.h
-    include/snow_shot/presentation/screenshotselectionexportworkflow.h
-    include/snow_shot/presentation/screenshotselectionexportworkflowports.h
     include/snow_shot/presentation/screenshotselectionexportuiservices.h
     include/snow_shot/presentation/screenshotselectiongeometry.h
     include/snow_shot/presentation/screenshotselectionlimits.h
     include/snow_shot/presentation/screenshotselectionmodel.h
+    include/snow_shot/presentation/screenshotselectionexportworkflowports.h
     include/snow_shot/presentation/screenshotselectionparams.h
     include/snow_shot/presentation/screenshotselectionresizemodalcontent.h
     include/snow_shot/presentation/screenshotselectionresizeworkflow.h
@@ -855,6 +856,9 @@ set(PROJECT_CXX_SOURCES
     src/presentation/services/screenshothistoryservice.cpp
     src/presentation/services/screenshotdisplayconfigurationobserver.cpp
     src/presentation/services/screenshotexportservice.cpp
+    src/presentation/services/screenshotexportartifact.cpp
+    src/presentation/services/screenshotexportpinnedsource.cpp
+    src/presentation/services/screenshotexportscrollingsource.cpp
     src/presentation/services/screenshotimagefileservice.cpp
     src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
     src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
@@ -877,7 +881,6 @@ set(PROJECT_CXX_SOURCES
     src/presentation/ocr/screenshotocrtexteditingsession.cpp
     src/presentation/pinned/screenshotpinnednativegeometrycontroller.cpp
     src/presentation/pinned/screenshotpinnednativegeometrycontroller.h
-    src/presentation/pinned/screenshotpinnedcopyservice.cpp
     src/presentation/pinned/screenshotpinnedwindownative.cpp
     src/presentation/pinned/screenshotpinnededitcontroller.cpp
     src/presentation/pinned/screenshotpinnedresizegeometry.cpp
@@ -889,7 +892,6 @@ set(PROJECT_CXX_SOURCES
     src/presentation/services/screenshotsourceimagecomposer.cpp
     src/presentation/services/systemtraycontroller.cpp
     src/presentation/selection/screenshotselectioneditworkflow.cpp
-    src/presentation/selection/screenshotselectionexportworkflow.cpp
     src/presentation/selection/screenshotselectionexportuiservices.cpp
     src/presentation/selection/screenshotselectiongeometry.cpp
     src/presentation/selection/screenshotselectionmodel.cpp
@@ -1156,6 +1158,30 @@ if(SNOW_SHOT_BUILD_TESTS)
                 "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         )
     endif()
+
+    add_executable(snow-shot-screenshot-history-page-tests
+        tests/screenshot_history_page_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+    )
+    target_include_directories(snow-shot-screenshot-history-page-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+    target_link_libraries(snow-shot-screenshot-history-page-tests PRIVATE
+        snow_shot_settings
+        ant_design_qt
+        Qt6::Widgets
+    )
+    add_test(
+        NAME snow-shot-screenshot-history-page-tests
+        COMMAND snow-shot-screenshot-history-page-tests
+    )
+    set_tests_properties(snow-shot-screenshot-history-page-tests PROPERTIES
+        ENVIRONMENT
+            "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+    snow_shot_import_offscreen_platform(snow-shot-screenshot-history-page-tests)
 
     add_executable(snow-shot-single-instance-coordinator-tests
         tests/single_instance_coordinator_tests.cpp
@@ -2044,7 +2070,6 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenshotcanvascolorsamplerwindow.h
         include/snow_shot/presentation/languagemanager.h
         include/snow_shot/presentation/screenshotpinnededitcontroller.h
-        include/snow_shot/presentation/screenshotpinnedcopyservice.h
         include/snow_shot/presentation/screenshotpinnedwindow.h
         include/snow_shot/presentation/pinnedwindowgroupmanager.h
         include/snow_shot/presentation/screenshotrecognitionsessioncontroller.h
@@ -2083,8 +2108,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/selection/screenshotselectionparams.cpp
         src/network/snowshotapiclient.cpp
         src/presentation/pinned/screenshotpinnededitcontroller.cpp
-        src/presentation/pinned/screenshotpinnedcopyservice.cpp
         src/presentation/services/screenshotexportcoordinator.cpp
+        src/presentation/services/screenshotexportartifact.cpp
+        src/presentation/services/screenshotexportpinnedsource.cpp
         src/presentation/selection/screenshotselectionexportuiservices.cpp
         src/presentation/pinned/screenshotpinnednativegeometrycontroller.cpp
         src/presentation/pinned/screenshotpinnedresizegeometry.cpp
@@ -2233,33 +2259,6 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
-    add_executable(snow-shot-pinned-copyservice-tests
-        tests/screenshot_pinned_copyservice_tests.cpp
-        include/snow_shot/presentation/screenshotclipboardservice.h
-        include/snow_shot/presentation/screenshotpinnedcopyservice.h
-        include/snow_shot/presentation/screenshotresultcompositor.h
-        src/presentation/overlay/screenshotselectionshadowrenderer.cpp
-        src/presentation/services/screenshotclipboardservice.cpp
-        src/presentation/pinned/screenshotpinnedcopyservice.cpp
-        src/presentation/services/screenshotexportcoordinator.cpp
-    )
-    target_include_directories(snow-shot-pinned-copyservice-tests PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    )
-    target_link_libraries(snow-shot-pinned-copyservice-tests PRIVATE
-        Qt6::Widgets
-        snow_draw_engine_qt_canvas
-    )
-    if(WIN32)
-        target_link_libraries(snow-shot-pinned-copyservice-tests PRIVATE user32)
-    endif()
-    add_test(NAME snow-shot-pinned-copyservice-tests
-             COMMAND snow-shot-pinned-copyservice-tests)
-    set_tests_properties(snow-shot-pinned-copyservice-tests PROPERTIES
-        ENVIRONMENT_MODIFICATION
-            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
-    )
-
     add_executable(snow-shot-export-coordinator-tests
         tests/screenshot_export_coordinator_tests.cpp
         include/snow_shot/presentation/screenshotclipboardservice.h
@@ -2277,6 +2276,37 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(NAME snow-shot-export-coordinator-tests
              COMMAND snow-shot-export-coordinator-tests)
     set_tests_properties(snow-shot-export-coordinator-tests PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
+    add_executable(snow-shot-export-artifact-tests
+        tests/screenshot_export_artifact_tests.cpp
+        include/snow_shot/presentation/screenshotclipboardservice.h
+        include/snow_shot/presentation/screenshotexportartifact.h
+        include/snow_shot/presentation/screenshotexportcoordinator.h
+        include/snow_shot/presentation/screenshotresultcompositor.h
+        src/presentation/overlay/screenshotselectionshadowrenderer.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+        src/presentation/services/screenshotexportartifact.cpp
+        src/presentation/services/screenshotexportcoordinator.cpp
+        src/presentation/services/screenshotexportpinnedsource.cpp
+    )
+    target_include_directories(snow-shot-export-artifact-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/image"
+    )
+    target_link_libraries(snow-shot-export-artifact-tests PRIVATE
+        snow_shot_image_codec
+        snow_shot_storage
+        snow_draw_engine_qt_canvas
+        Qt6::Widgets
+    )
+    if(WIN32)
+        target_link_libraries(snow-shot-export-artifact-tests PRIVATE user32)
+    endif()
+    add_test(NAME snow-shot-export-artifact-tests COMMAND snow-shot-export-artifact-tests)
+    set_tests_properties(snow-shot-export-artifact-tests PROPERTIES
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )

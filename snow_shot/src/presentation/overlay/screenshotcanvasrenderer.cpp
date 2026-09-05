@@ -23,6 +23,7 @@
 #include <QPen>
 #include <QPointF>
 #include <QRawFont>
+#include <QRect>
 #include <QRegion>
 #include <QSizeF>
 #include <QStyleOptionGraphicsItem>
@@ -506,6 +507,15 @@ QRectF snappedOutwardToDevicePixels(const QRectF& rect, qreal devicePixelRatio) 
     const qreal right = std::ceil(rect.right() * devicePixelRatio) / devicePixelRatio;
     const qreal bottom = std::ceil(rect.bottom() * devicePixelRatio) / devicePixelRatio;
     return QRectF(QPointF(left, top), QPointF(right, bottom));
+}
+
+bool rectFCovers(const QRectF& outer, const QRect& inner) {
+    if (!inner.isValid() || inner.isEmpty() || !outer.isValid() || outer.isEmpty()) {
+        return false;
+    }
+    const QRectF innerBounds(inner);
+    return outer.left() <= innerBounds.left() && outer.top() <= innerBounds.top() &&
+           outer.right() >= innerBounds.right() && outer.bottom() >= innerBounds.bottom();
 }
 
 void renderSelectionShadow(QPainter& painter, const SnowCanvasRenderContext& context,
@@ -1849,6 +1859,44 @@ bool ScreenshotCanvasRenderer::selectionBorderVisible() const {
 
 QRectF ScreenshotCanvasRenderer::selection() const {
     return m_selectionState.bounds;
+}
+
+bool ScreenshotCanvasRenderer::coversWidgetRect(const QRect& widgetRect) const {
+    if (!widgetRect.isValid() || widgetRect.isEmpty() || !m_canvas.rect().contains(widgetRect)) {
+        return false;
+    }
+
+    if (m_renderMode == RenderMode::ScrollingCapture ||
+        m_renderMode == RenderMode::PinnedResult) {
+        return true;
+    }
+
+    if (!m_imageSource.isMaterialized()) {
+        return false;
+    }
+
+    const QRect canvasRect = m_canvas.rect();
+    const qreal devicePixelRatio = m_canvas.devicePixelRatioF();
+    if (m_imageViewportPhysicalSize.isValid() && !m_imageViewportPhysicalSize.isEmpty() &&
+        devicePixelRatio > 0.0) {
+        const QRectF targetRect(
+            QPointF(canvasRect.topLeft()),
+            QSizeF(m_imageViewportPhysicalSize.width() / devicePixelRatio,
+                   m_imageViewportPhysicalSize.height() / devicePixelRatio));
+        return rectFCovers(targetRect, widgetRect);
+    }
+
+    const QTransform canvasToView = m_canvas.canvasToViewTransform();
+    if (!canvasToView.isInvertible()) {
+        // Overlay paintEvent runs before the child canvas publishes its view
+        // transform. A full-canvas blit of a materialized screenshot still
+        // replaces every parent pixel of that first frame.
+        return widgetRect == canvasRect;
+    }
+
+    const QRectF targetRect = snappedOutwardToDevicePixels(
+        canvasToView.mapRect(m_imageSource.materializedCanvasRect), devicePixelRatio);
+    return rectFCovers(targetRect, widgetRect);
 }
 
 #if defined(SNOW_SHOT_BENCH_INTERNALS)
