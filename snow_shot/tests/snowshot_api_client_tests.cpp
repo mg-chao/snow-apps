@@ -77,7 +77,7 @@ void apiClientUsesModelCatalogAndStreamingChatContracts() {
         });
     require(modelsToken != 0, "model catalog request should be prepared");
     const QByteArray modelsBody = QByteArrayLiteral(
-        R"({"code":0,"message":"ok","data":[{"model":"model-a","name":"Model A","thinking":true,"support_vision":false}]})");
+        R"({"code":0,"message":"ok","data":[{"model":"model-a","name":"Model A","thinking":true,"support_vision":false,"translation":false},{"model":"vision-model","name":"Vision Model","thinking":false,"support_vision":true,"translation":false},{"model":"translation-model","name":"Translation Model","thinking":false,"support_vision":false,"translation":true},{"model":"vision-translation-model","name":"Vision Translation Model","thinking":false,"support_vision":true,"translation":true}]})");
     const QByteArray modelsResponse =
         QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ") +
         QByteArray::number(modelsBody.size()) + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") +
@@ -91,11 +91,42 @@ void apiClientUsesModelCatalogAndStreamingChatContracts() {
                 modelsResult.models.first().id == QStringLiteral("model-a") &&
                 modelsResult.models.first().name == QStringLiteral("Model A") &&
                 modelsResult.models.first().thinking &&
-                !modelsResult.models.first().supportsVision,
-            "model catalog envelope should preserve the public API descriptor fields");
+                !modelsResult.models.first().supportsVision &&
+                !modelsResult.models.first().translation,
+            "model catalog should preserve eligible descriptor fields and filter visual or translation models");
     require(modelsRequest.startsWith("GET /api/v1/chat/models HTTP/1.1") &&
                 modelsRequest.toLower().contains("accept-language: zh-cn"),
             "model catalog request should use the documented endpoint and locale header");
+
+    QTcpServer emptyServer;
+    require(emptyServer.listen(QHostAddress::LocalHost),
+            "all-filtered model test server should listen");
+    SnowShotApiClient emptyClient(
+        QStringLiteral("http://127.0.0.1:%1").arg(emptyServer.serverPort()));
+    SnowShotChatModelsResult emptyResult;
+    bool emptyFinished = false;
+    QEventLoop emptyCompletionLoop;
+    const auto emptyToken = emptyClient.fetchChatModels(
+        QStringLiteral("en-US"), &emptyClient, [&](SnowShotChatModelsResult result) {
+            emptyResult = std::move(result);
+            emptyFinished = true;
+            emptyCompletionLoop.quit();
+        });
+    require(emptyToken != 0, "all-filtered model catalog request should be prepared");
+    const QByteArray emptyBody = QByteArrayLiteral(
+        R"({"code":0,"message":"ok","data":[{"model":"vision-model","name":"Vision Model","thinking":false,"support_vision":true,"translation":false},{"model":"translation-model","name":"Translation Model","thinking":false,"support_vision":false,"translation":true}]})");
+    const QByteArray emptyResponse =
+        QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ") +
+        QByteArray::number(emptyBody.size()) + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") +
+        emptyBody;
+    static_cast<void>(waitForHttpRequest(emptyServer, emptyResponse));
+    if (!emptyFinished) {
+        QTimer::singleShot(5000, &emptyCompletionLoop, &QEventLoop::quit);
+        emptyCompletionLoop.exec();
+    }
+    require(emptyFinished && !emptyResult.succeeded() && emptyResult.models.isEmpty() &&
+                !emptyResult.error.isEmpty(),
+            "a catalog containing only visual or translation models should be unavailable");
     auto* manager = client.findChild<QNetworkAccessManager*>();
     require(manager != nullptr && manager->proxy().type() == QNetworkProxy::NoProxy &&
                 manager->proxyFactory() == nullptr && !client.usesSystemProxy(),

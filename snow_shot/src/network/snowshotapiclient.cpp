@@ -297,8 +297,10 @@ SnowShotApiClient::RequestToken SnowShotApiClient::fetchChatModels(
                 SnowShotChatModel parsed{model.value(QStringLiteral("model")).toString().trimmed(),
                                          model.value(QStringLiteral("name")).toString().trimmed(),
                                          model.value(QStringLiteral("thinking")).toBool(),
-                                         model.value(QStringLiteral("support_vision")).toBool()};
-                if (!parsed.id.isEmpty() && !parsed.name.isEmpty()) {
+                                         model.value(QStringLiteral("support_vision")).toBool(),
+                                         model.value(QStringLiteral("translation")).toBool()};
+                if (!parsed.id.isEmpty() && !parsed.name.isEmpty() && !parsed.supportsVision &&
+                    !parsed.translation) {
                     result.models.push_back(std::move(parsed));
                 }
             }
