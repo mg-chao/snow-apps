@@ -117,7 +117,6 @@ void opaqueRgb32BlitMatchesArgb32() {
               << " rgb32=" << (static_cast<double>(rgb32Nanoseconds) / iterations / 1e6) << '\n';
 }
 
-#if defined(Q_OS_WIN)
 class RevealProbeCanvas final : public QWidget {
   public:
     explicit RevealProbeCanvas(QWidget* parent) : QWidget(parent) {}
@@ -125,6 +124,15 @@ class RevealProbeCanvas final : public QWidget {
     void setFrameColor(const QColor& color) {
         m_color = color;
         update();
+    }
+
+    void setSelection(const QRect& selection) {
+        m_selection = selection;
+        update();
+    }
+
+    [[nodiscard]] QColor paintedPixel(const QPoint& position) const {
+        return m_paintedFrame.pixelColor(position);
     }
 
     void resetPaintCount() {
@@ -138,13 +146,22 @@ class RevealProbeCanvas final : public QWidget {
   protected:
     void paintEvent(QPaintEvent* event) override {
         ++m_paintCount;
+        m_paintedFrame = QImage(size(), QImage::Format_ARGB32_Premultiplied);
+        m_paintedFrame.fill(m_color);
+        QPainter framePainter(&m_paintedFrame);
+        framePainter.setPen(Qt::yellow);
+        framePainter.drawRect(m_selection);
+        framePainter.end();
         QPainter painter(this);
         painter.setCompositionMode(QPainter::CompositionMode_Source);
-        painter.fillRect(event->rect(), m_color);
+        painter.setClipRegion(event->region());
+        painter.drawImage(QPoint(), m_paintedFrame);
     }
 
   private:
     QColor m_color = Qt::transparent;
+    QRect m_selection;
+    QImage m_paintedFrame;
     int m_paintCount = 0;
 };
 
@@ -166,6 +183,14 @@ class RevealProbeWindow final : public QWidget {
         m_canvas->setFrameColor(color);
     }
 
+    void setSelection(const QRect& selection) {
+        m_canvas->setSelection(selection);
+    }
+
+    [[nodiscard]] QColor paintedPixel(const QPoint& position) const {
+        return m_canvas->paintedPixel(position);
+    }
+
     void resetPaintCount() {
         m_canvas->resetPaintCount();
     }
@@ -178,6 +203,35 @@ class RevealProbeWindow final : public QWidget {
     RevealProbeCanvas* m_canvas = nullptr;
 };
 
+void concealedUpdatesPaintImageAndSelectionTogether() {
+    for (const auto strategy : {ScreenshotOverlayRevealStrategy::SingleRepaint,
+                                ScreenshotOverlayRevealStrategy::PostedUpdate}) {
+        RevealProbeWindow window;
+        window.resize(192, 128);
+        window.setWindowOpacity(0.0);
+        window.setFrameColor(Qt::red);
+        window.show();
+        QApplication::processEvents();
+        window.setUpdatesEnabled(false);
+        window.setFrameColor(Qt::green);
+        window.setSelection(QRect(24, 24, 96, 64));
+        window.resetPaintCount();
+
+        ScreenshotOverlayFramePresenter presenter(window);
+        presenter.setStrategyForTesting(strategy);
+        presenter.presentPreparedFrame();
+        require(window.paintCount() == 1,
+                "reveal must synchronously paint the new image and selection once");
+        require(window.paintedPixel(QPoint(8, 8)) == QColor(Qt::green) &&
+                    window.paintedPixel(QPoint(24, 24)) == QColor(Qt::yellow),
+                "the first completed paint must contain both the image and selection box");
+        QApplication::processEvents();
+        require(window.paintCount() == 1,
+                "draining the event loop must not be needed to complete the first frame");
+    }
+}
+
+#if defined(Q_OS_WIN)
 QPoint nativeGlobalPosition(QWidget& window, const QPoint& localPosition) {
     const HWND hwnd = reinterpret_cast<HWND>(window.winId());
     require(hwnd != nullptr, "native reveal test could not access the probe HWND");
@@ -291,7 +345,7 @@ void warmedSurfaceRevealSkipsFirstShowAndRestoresOpacity() {
     static_cast<void>(window.winId());
 
     const QColor preparedColor(20, 173, 109);
-    window.setFrameColor(preparedColor);
+    window.setFrameColor(QColor(194, 33, 71));
     window.resetPaintCount();
 
     ScreenshotOverlayFramePresenter presenter(window);
@@ -311,9 +365,23 @@ void warmedSurfaceRevealSkipsFirstShowAndRestoresOpacity() {
     require(!colorNear(desktopPixel(samplePosition), preparedColor),
             "a warmed overlay must stay visually concealed until reveal");
 
+    // Capture and selector results arrive after warm-up, while updates are disabled.
+    window.setFrameColor(preparedColor);
+    window.setSelection(QRect(24, 24, 96, 64));
     window.resetPaintCount();
     presenter.presentPreparedFrame();
+    require(window.paintCount() == 1,
+            "warmed reveal must finish painting the new image and selection before returning");
+    require(window.paintedPixel(QPoint(8, 8)) == preparedColor &&
+                window.paintedPixel(QPoint(24, 24)) == QColor(Qt::yellow),
+            "warmed reveal must paint the image and selection together");
     require(SUCCEEDED(DwmFlush()), "native warm test could not flush the revealed DWM frame");
+    const QPoint selectionPosition =
+        nativeGlobalPosition(window, QPoint(qRound(24 * window.devicePixelRatioF()),
+                                            qRound(24 * window.devicePixelRatioF())));
+    require(colorNear(desktopPixel(samplePosition), preparedColor) &&
+                colorNear(desktopPixel(selectionPosition), QColor(Qt::yellow)),
+            "the image and selection must reach DWM before deferred Qt events are processed");
     QApplication::processEvents();
     require(SUCCEEDED(DwmFlush()), "native warm test could not flush deferred presentation work");
 
@@ -341,13 +409,16 @@ int main(int argc, char** argv) {
         QApplication application(argc, argv);
         revealStrategiesHaveExplicitCommitPlans();
         opaqueRgb32BlitMatchesArgb32();
-        preparedRevealPublishesExactlyOneFreshFrame();
         warmedSurfaceRevealSkipsFirstShowAndRestoresOpacity();
+        preparedRevealPublishesExactlyOneFreshFrame();
+        concealedUpdatesPaintImageAndSelectionTogether();
         return 0;
     }
 #endif
-    QCoreApplication application(argc, argv);
+    qputenv("QT_QPA_PLATFORM", QByteArrayLiteral("offscreen"));
+    QApplication application(argc, argv);
     revealStrategiesHaveExplicitCommitPlans();
     opaqueRgb32BlitMatchesArgb32();
+    concealedUpdatesPaintImageAndSelectionTogether();
     return 0;
 }

@@ -1992,11 +1992,13 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_link_libraries(snow-shot-overlay-frame-presenter-tests PRIVATE
         Qt6::Widgets
     )
+    snow_shot_import_offscreen_platform(snow-shot-overlay-frame-presenter-tests)
     add_test(
         NAME snow-shot-overlay-frame-presenter-tests
         COMMAND snow-shot-overlay-frame-presenter-tests
     )
     set_tests_properties(snow-shot-overlay-frame-presenter-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
