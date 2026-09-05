@@ -1,6 +1,7 @@
 #include "snow_shot/storage/pinnedwindowrepository.h"
 
 #include <QCoreApplication>
+#include <QBuffer>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -56,6 +57,66 @@ storage::PinnedWindowRecord recordWithId(const QString& id, const QImage& image)
 
 QString payloadFilePath(const QString& root, const QString& id) {
     return QDir(root).filePath(QStringLiteral("pinned_windows_v3/pins/%1/source.png").arg(id));
+}
+
+QByteArray pngBytes(const QImage& image, int compression) {
+    QByteArray bytes;
+    QBuffer buffer(&bytes);
+    require(buffer.open(QIODevice::WriteOnly) && image.save(&buffer, "PNG", compression),
+            "failed to encode PNG test data");
+    return bytes;
+}
+
+QByteArray readBytes(const QString& path) {
+    QFile file(path);
+    require(file.open(QIODevice::ReadOnly), "failed to read committed payload");
+    return file.readAll();
+}
+
+void preparedSourceIsWrittenOnceAndStateUpdatesPreserveIt() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "temporary storage directory is unavailable");
+    const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QImage resident = patternedImage(QSize(29, 13), 3);
+    const QImage persisted = patternedImage(QSize(29, 13), 19);
+    storage::PinnedWindowRecord record = recordWithId(id, resident);
+    record.canvasSession = QByteArrayLiteral("canvas-1");
+    const auto sharedBytes = std::make_shared<const QByteArray>(pngBytes(persisted, 8));
+    const auto prepared = storage::PreparedPngImage::fromBytes(persisted.size(), sharedBytes);
+    require(prepared.has_value(), "prepared pinned PNG was rejected");
+
+    storage::PinnedWindowRepository repository(directory.path(), true, 30000);
+    require(repository.create(record, *prepared).success,
+            "failed to create a pinned source from prepared PNG bytes");
+    require(repository.flush().success, "failed to flush the prepared pinned source");
+    const QString sourcePath = payloadFilePath(directory.path(), id);
+    require(readBytes(sourcePath) == *sharedBytes,
+            "pinned storage replaced the prepared source bytes");
+    const auto loaded = repository.loadRecord(id);
+    require(loaded.has_value() && samePixels(loaded->image, persisted),
+            "pinned storage did not load the prepared source image");
+
+    record.nativeGeometry.moveTo(31, 47);
+    record.canvasSession = QByteArrayLiteral("canvas-2");
+    require(repository.updateState(record).success,
+            "failed to update pinned metadata and session state");
+    require(repository.flush().success, "failed to flush the pinned state update");
+    require(readBytes(sourcePath) == *sharedBytes,
+            "a pinned state update rewrote the immutable source image");
+    const auto updated = repository.loadRecord(id);
+    require(updated.has_value() && updated->nativeGeometry.topLeft() == QPoint(31, 47) &&
+                updated->canvasSession == QByteArrayLiteral("canvas-2") &&
+                samePixels(updated->image, persisted),
+            "pinned state update did not preserve source and update session metadata");
+
+    record.canvasSession.clear();
+    require(repository.updateState(record).success, "failed to clear pinned session state");
+    require(repository.flush().success, "failed to flush the cleared pinned state");
+    storage::PinnedWindowRepository restored(directory.path(), true, 30000);
+    const auto cleared = restored.loadRecord(id);
+    require(cleared.has_value() && cleared->canvasSession.isEmpty() &&
+                samePixels(cleared->image, persisted),
+            "cleared pinned state left a stale payload descriptor");
 }
 
 // Invariant: payload data is available before the writer commits it and is
@@ -184,6 +245,7 @@ void removedRecordsPruneTheirPayloads() {
 int main(int argc, char* argv[]) {
     QCoreApplication application(argc, argv);
     committedPayloadsAreServedFromDisk();
+    preparedSourceIsWrittenOnceAndStateUpdatesPreserveIt();
     metadataOnlyUpdatesDoNotRewriteCommittedPayloads();
     changedPayloadsRecommitAndStayLazy();
     removedRecordsPruneTheirPayloads();

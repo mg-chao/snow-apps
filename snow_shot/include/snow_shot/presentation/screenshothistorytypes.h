@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/screenshotintelligentselectionmodel.h"
 #include "snow_shot/presentation/screenshotselectionparams.h"
 #include "snow_shot/storage/capturehistorytypes.h"
+#include "snow_shot/storage/preparedpngimage.h"
 
 #include <QByteArray>
 #include <QDateTime>
@@ -28,6 +29,7 @@ struct ScreenshotHistoryEntry {
     QByteArray canvasHistory;
     QVector<ScreenshotHistoryDisplay> displays;
     std::optional<QImage> resultImage;
+    std::optional<snow_shot::storage::PreparedPngImage> preparedResultImage;
     snow_shot::storage::CaptureHistorySource source =
         snow_shot::storage::CaptureHistorySource::CopiedToClipboard;
     bool intelligentSelectionMode = false;

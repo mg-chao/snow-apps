@@ -2,6 +2,7 @@
 #define SNOW_SHOT_STORAGE_PINNEDWINDOWREPOSITORY_H
 
 #include "snow_shot/storage/pinnedwindowtypes.h"
+#include "snow_shot/storage/preparedpngimage.h"
 #include "snow_shot/storage/storageresult.h"
 
 #include <QVector>
@@ -39,8 +40,10 @@ class PinnedWindowRepository final {
     [[nodiscard]] StorageResult setGroups(QVector<PinnedWindowGroup> groups,
                                           const QString& activeGroupId);
     [[nodiscard]] StorageResult removeEmptyGroups();
-    [[nodiscard]] StorageResult setRecordGroup(const QString& recordId,
-                                                const QString& groupId);
+    [[nodiscard]] StorageResult setRecordGroup(const QString& recordId, const QString& groupId);
+    [[nodiscard]] StorageResult create(PinnedWindowRecord record, PreparedPngImage sourceImage);
+    [[nodiscard]] StorageResult create(PinnedWindowRecord record);
+    [[nodiscard]] StorageResult updateState(PinnedWindowRecord record);
     [[nodiscard]] StorageResult upsert(PinnedWindowRecord record);
     [[nodiscard]] StorageResult remove(const QString& id);
     [[nodiscard]] StorageResult flush();

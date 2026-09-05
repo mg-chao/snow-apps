@@ -2,6 +2,7 @@
 #define SNOW_SHOT_STORAGE_CAPTUREHISTORYTYPES_H
 
 #include "snow_shot/storage/storageresult.h"
+#include "snow_shot/storage/preparedpngimage.h"
 
 #include <QByteArray>
 #include <QColor>
@@ -75,6 +76,7 @@ struct CaptureHistoryDraft {
     QByteArray canvasHistory;
     QVector<CaptureHistoryDisplayDraft> displays;
     std::optional<QImage> resultImage;
+    std::optional<PreparedPngImage> preparedResultImage;
     CaptureHistorySource source = CaptureHistorySource::CopiedToClipboard;
 };
 
@@ -106,8 +108,8 @@ struct CaptureHistoryRecord {
         return first.id == second.id && first.createdUtc == second.createdUtc &&
                first.canvasBounds == second.canvasBounds && first.selection == second.selection &&
                first.displays == second.displays && first.result == second.result &&
-               first.canvasBytes == second.canvasBytes &&
-               first.totalBytes == second.totalBytes && first.source == second.source;
+               first.canvasBytes == second.canvasBytes && first.totalBytes == second.totalBytes &&
+               first.source == second.source;
     }
 };
 
