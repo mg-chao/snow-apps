@@ -18,7 +18,6 @@
 #include <QCursor>
 #include <QEvent>
 #include <QFontMetrics>
-#include <QGraphicsOpacityEffect>
 #include <QGuiApplication>
 #include <QMouseEvent>
 #include <QPainter>
@@ -64,9 +63,6 @@ class ScreenshotShortcutHintsWidget final : public QWidget {
         hintFont.setPixelSize(kShortcutHintsFontSize);
         hintFont.setWeight(QFont::Normal);
         setFont(hintFont);
-        m_opacityEffect = new QGraphicsOpacityEffect(this);
-        m_opacityEffect->setOpacity(1.0);
-        setGraphicsEffect(m_opacityEffect);
         // The hint is click-through, so observe application mouse moves to hide it on hover.
         if (QCoreApplication::instance() != nullptr) {
             QCoreApplication::instance()->installEventFilter(this);
@@ -79,9 +75,6 @@ class ScreenshotShortcutHintsWidget final : public QWidget {
         m_context.reset();
         m_opacity = std::clamp<qreal>(opacity, 0.0, 1.0);
         updateTranslatedLines();
-        if (m_opacityEffect != nullptr) {
-            m_opacityEffect->setOpacity(m_opacity);
-        }
         if (!hasVisiblePresentation()) {
             hide();
         }
@@ -92,9 +85,6 @@ class ScreenshotShortcutHintsWidget final : public QWidget {
         m_mode = screenshotShortcutHintModeForContext(context);
         m_opacity = std::clamp<qreal>(opacity, 0.0, 1.0);
         updateTranslatedLines();
-        if (m_opacityEffect != nullptr) {
-            m_opacityEffect->setOpacity(m_opacity);
-        }
         if (!hasVisiblePresentation()) {
             hide();
         }
@@ -120,21 +110,6 @@ class ScreenshotShortcutHintsWidget final : public QWidget {
         }
     }
 
-    void prewarm() {
-        // Materialize the smart-selection presentation and paint it once so
-        // translations, fonts, hint icons, and text metrics are warm before
-        // the first capture session.
-        setPresentation(ScreenshotShortcutHintMode::SmartSelection, 1.0);
-        ensurePolished();
-        const qreal dpr = std::max<qreal>(1.0, devicePixelRatioF());
-        QPixmap warmSurface(std::max(1, qCeil(width() * dpr)),
-                            std::max(1, qCeil(height() * dpr)));
-        warmSurface.setDevicePixelRatio(dpr);
-        warmSurface.fill(Qt::transparent);
-        render(&warmSurface);
-        setPresentation(ScreenshotShortcutHintMode::Hidden, 0.0);
-    }
-
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override {
         if (event != nullptr && event->type() == QEvent::MouseMove) {
@@ -155,6 +130,7 @@ class ScreenshotShortcutHintsWidget final : public QWidget {
         Q_UNUSED(event);
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
+        painter.setOpacity(m_opacity);
         painter.setPen(Qt::NoPen);
         painter.setBrush(QColor(0, 0, 0, 163));
         painter.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5),
@@ -275,7 +251,6 @@ class ScreenshotShortcutHintsWidget final : public QWidget {
     std::optional<ScreenshotShortcutHintContext> m_context;
     ScreenshotShortcutHintMode m_mode = ScreenshotShortcutHintMode::Hidden;
     qreal m_opacity = 0.0;
-    QGraphicsOpacityEffect* m_opacityEffect = nullptr;
     QRectF m_selectionGlobal;
     QPointF m_cursorGlobal;
 };
@@ -370,7 +345,6 @@ void ScreenshotOverlayUiHost::setToolbarCommandSinks(
         auto* hints = new ScreenshotShortcutHintsWidget();
         m_ownedWidgets.add(hints);
         m_shortcutHints = hints;
-        hints->prewarm();
     }
 }
 
@@ -592,7 +566,11 @@ void ScreenshotOverlayUiHost::updateShortcutHints(
 
     if (hints->parentWidget() != overlay) {
         hints->hide();
-        hints->setParent(overlay);
+        hints->setParent(overlay, Qt::Widget);
+        hints->setAttribute(Qt::WA_TranslucentBackground, true);
+        hints->setAttribute(Qt::WA_NoSystemBackground, true);
+        hints->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+        hints->setFocusPolicy(Qt::NoFocus);
         hints->setWindowFlags(Qt::Widget);
     }
     hints->setPresentation(context, opacity);
