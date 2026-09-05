@@ -175,12 +175,16 @@ struct CaptureHistoryUsage {
     qint64 recordBytes = 0;
     qint64 quarantineBytes = 0;
     qint64 temporaryBytes = 0;
+    qint64 indexBytes = 0;
+    qint64 pendingDeletionBytes = 0;
     qint64 totalBytes = 0;
 
     friend bool operator==(const CaptureHistoryUsage& first, const CaptureHistoryUsage& second) {
         return first.entryCount == second.entryCount && first.recordBytes == second.recordBytes &&
                first.quarantineBytes == second.quarantineBytes &&
                first.temporaryBytes == second.temporaryBytes &&
+               first.indexBytes == second.indexBytes &&
+               first.pendingDeletionBytes == second.pendingDeletionBytes &&
                first.totalBytes == second.totalBytes;
     }
 };

@@ -25,10 +25,11 @@ struct StorageUsageTrackerOptions {
     // Entries in the recording-temp directory modified at or after this
     // timestamp belong to the currently running session and are never deleted.
     QDateTime activeFileCutoff;
-    // When set, supplies the screenshot-history byte total (records, quarantine,
-    // and temporary directories) maintained incrementally by the capture-history
+    // When set, supplies indexed history bytes (payloads, index, pending deletion)
+    // maintained incrementally by the capture-history
     // repository; scanNow() then skips its recursive walk of those directories.
     std::function<qint64()> historyBytesProvider;
+    std::function<void(const QString&)> directoryScanObserved;
     struct Callbacks {
         std::function<void(const AppStorageUsage&)> usageChanged;
         std::function<void(StorageCacheKind kind, const StorageResult& result)> clearFinished;
@@ -80,6 +81,7 @@ class StorageUsageTracker final {
     QString m_recordingTempDirectory;
     QDateTime m_activeFileCutoff;
     std::function<qint64()> m_historyBytesProvider;
+    std::function<void(const QString&)> m_directoryScanObserved;
     StorageUsageTrackerOptions::Callbacks m_callbacks;
 
     mutable std::mutex m_stateMutex;

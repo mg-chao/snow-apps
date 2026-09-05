@@ -157,7 +157,7 @@ class ScreenshotHistoryValidationQueue final {
   public:
     explicit ScreenshotHistoryValidationQueue(
         snow_shot::storage::CaptureHistoryRepository& repository)
-        : m_repository(repository), m_thread([this]() { run(); }) {}
+        : m_repository(repository) {}
 
     ~ScreenshotHistoryValidationQueue() {
         {
@@ -189,6 +189,16 @@ class ScreenshotHistoryValidationQueue final {
                                         QStringLiteral("History validation queue is full")),
                                     {}});
                 return result;
+            }
+            if (!m_thread.joinable()) {
+                try {
+                    m_thread = std::thread([this]() { run(); });
+                } catch (...) {
+                    promise->set_value({snow_shot::storage::StorageResult::failure(
+                                            QStringLiteral("Unable to start history validation")),
+                                        {}});
+                    return result;
+                }
             }
             m_jobs.push_back(Job{std::move(draft), std::move(promise)});
         }
@@ -436,6 +446,10 @@ bool ScreenshotHistoryService::navigateTo(int index) {
                     const auto payload = m_repository->load(metadata);
                     if (payload.has_value()) {
                         loadedEntry = presentationEntry(metadata, *payload);
+                        if (!loadedEntry.has_value()) {
+                            m_repository->reportReadFailure(
+                                metadata, QStringLiteral("Unable to restore the history canvas"));
+                        }
                     }
                 }
             } catch (...) {
@@ -470,7 +484,6 @@ void ScreenshotHistoryService::finishPersistentNavigation(
         index > 0 && index <= m_entries.size() && m_entries[index - 1].id == entryId;
     if (!entry.has_value()) {
         if (targetStillExists) {
-            static_cast<void>(m_repository->remove(m_entries[index - 1].id));
             m_entries.removeAt(index - 1);
             if (index < m_navigationIndex) {
                 --m_navigationIndex;

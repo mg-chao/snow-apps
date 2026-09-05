@@ -13,6 +13,8 @@
 #include <optional>
 
 namespace snow_shot::storage {
+enum class CaptureHistoryOperation { IndexRead, IndexWrite, PayloadRead, WorkerStarted };
+
 struct CaptureHistoryRepositoryCallbacks {
     std::function<void()> recordsChanged;
     std::function<void(const CaptureHistoryUsage&)> usageChanged;
@@ -27,6 +29,8 @@ struct CaptureHistoryRepositoryOptions {
     std::function<QDateTime()> clock;
     CaptureHistoryRepositoryCallbacks callbacks;
     int maxQueuedPublications = 2;
+    // Optional diagnostics hook; called on the thread performing the operation.
+    std::function<void(CaptureHistoryOperation)> operationObserved;
 };
 
 class CaptureHistoryRepository {
@@ -44,6 +48,7 @@ class CaptureHistoryRepository {
     displayAssets(const CaptureHistoryRecord& record) const = 0;
     [[nodiscard]] virtual std::optional<QImage>
     loadResultImage(const CaptureHistoryRecord& record) const = 0;
+    virtual void reportReadFailure(const CaptureHistoryRecord& record, const QString& reason) = 0;
     [[nodiscard]] virtual std::shared_future<StorageResult> remove(const QString& id) = 0;
     [[nodiscard]] virtual std::shared_future<StorageResult>
     updatePolicy(CaptureHistoryPolicy policy) = 0;

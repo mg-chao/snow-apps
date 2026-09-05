@@ -36,6 +36,7 @@ StorageUsageTracker::StorageUsageTracker(StorageUsageTrackerOptions options)
       m_recordingTempDirectory(QDir::cleanPath(options.recordingTempDirectory)),
       m_activeFileCutoff(options.activeFileCutoff),
       m_historyBytesProvider(std::move(options.historyBytesProvider)),
+      m_directoryScanObserved(std::move(options.directoryScanObserved)),
       m_callbacks(std::move(options.callbacks)) {}
 
 StorageUsageTracker::~StorageUsageTracker() {
@@ -184,11 +185,19 @@ AppStorageUsage StorageUsageTracker::scanNow() {
         if (entry.isSymLink()) {
             continue;
         }
+        const QString name = entry.fileName();
+        const bool history = name == QLatin1String(kHistoryDirectoryName) ||
+                             name == QLatin1String(kQuarantineDirectoryName) ||
+                             name == QStringLiteral("capture_history");
+        if (history && historyProvided) {
+            continue;
+        }
+        if (entry.isDir() && m_directoryScanObserved) {
+            m_directoryScanObserved(entry.absoluteFilePath());
+        }
         const qint64 bytes =
             entry.isDir() ? directoryBytes(entry.absoluteFilePath()) : entry.size();
-        const QString name = entry.fileName();
-        if (name == QLatin1String(kHistoryDirectoryName) ||
-            name == QLatin1String(kQuarantineDirectoryName)) {
+        if (history) {
             if (!historyProvided) {
                 scanned.historyBytes += bytes;
             }

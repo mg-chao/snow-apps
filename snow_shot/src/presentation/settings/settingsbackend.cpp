@@ -676,8 +676,7 @@ BuiltInSettingsBackend::actionState(SettingsActionBinding binding) const {
     switch (binding) {
     case SettingsActionBinding::ClearCaptureHistory:
         return {
-            status.writeAvailable && !status.historyClearing &&
-                (status.historyUsage.entryCount > 0 || status.historyUsage.totalBytes > 0),
+            status.writeAvailable && !status.historyClearing,
             status.historyClearing,
         };
     case SettingsActionBinding::ClearThumbnailCache:
@@ -1055,3 +1054,4 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
 }
 
 } // namespace snow_shot::presentation::settings
+
