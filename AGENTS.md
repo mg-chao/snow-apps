@@ -22,6 +22,11 @@
 - Rust: edition 2024, `rustfmt.toml` (100 columns), `cargo clippy -D warnings` must pass. Crates are kebab-case `snow-*`.
 - `.editorconfig`: UTF-8, LF, final newline; JSON/TOML/YAML use 2 spaces.
 
+## Internationalization
+- Source language is `en_US`. User-visible copy (labels, titles, tooltips, accessible names/descriptions, errors, settings text) must be English wrapped in Qt translation APIs (`tr()`, `QCoreApplication::translate()`, `QT_TRANSLATE_NOOP`, or helpers such as `settingsText` / `TranslatableText`). Do not hardcode zh-CN or zh-TW in C++.
+- Keep IDs, config keys, object names, and protocol values as `QStringLiteral`. Do not wrap those, and do not use translated text as a stable identifier.
+- After adding or changing translatable strings, extract with `snow_shot_update_translations` or `ant_design_qt_update_translations`, then fill **every** catalog for that target. Leave no `type="unfinished"` (`snow_shot` `lrelease` uses `-fail-on-unfinished`). Catalogs: `snow_shot/i18n/snow_shot_{en_US,zh_CN,zh_TW}.ts` (`en_US` is identity); `ant_design_qt/.../i18n/ant_design_qt_{zh_CN,zh_TW}.ts` (English is source; no `en_US.ts`). Use Simplified in `zh_CN` and Traditional in `zh_TW`; preserve `%1` / `%n` placeholders. Widgets that cache strings must retranslate on `QEvent::LanguageChange`.
+
 ## Testing Guidelines
 - After any code change, run **only** the tests that cover those changes. Running the full suite is **strictly prohibited** unless the user explicitly asks.
 - Tests are plain executables using a `require(condition, message)` helper (no external framework). snow_shot registers them as `add_test(NAME snow-shot-<feature>-tests …)` in `snow_shot/CMakeLists.txt`; other projects use their own prefixes (`adqt-*`, `snow-canvas-*`, `snow_image_viewer_*`).
