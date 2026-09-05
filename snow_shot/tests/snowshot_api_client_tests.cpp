@@ -77,7 +77,7 @@ void apiClientUsesModelCatalogAndStreamingChatContracts() {
         });
     require(modelsToken != 0, "model catalog request should be prepared");
     const QByteArray modelsBody = QByteArrayLiteral(
-        R"({"code":0,"message":"ok","data":[{"model":"model-a","name":"Model A","thinking":true,"support_vision":false,"translation":false},{"model":"vision-model","name":"Vision Model","thinking":false,"support_vision":true,"translation":false},{"model":"translation-model","name":"Translation Model","thinking":false,"support_vision":false,"translation":true},{"model":"vision-translation-model","name":"Vision Translation Model","thinking":false,"support_vision":true,"translation":true}]})");
+        R"({"code":0,"message":"ok","data":[{"model":"model-a","name":"Model A","supports_reasoning":true,"translation_mode":"default","supports_vision":false},{"model":"vision-model","name":"Vision Model","supports_reasoning":true,"translation_mode":"default","supports_vision":true},{"model":"translation-model","name":"Translation Model","supports_reasoning":false,"translation_mode":"qwen-mt","supports_vision":false}]})");
     const QByteArray modelsResponse =
         QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ") +
         QByteArray::number(modelsBody.size()) + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") +
@@ -87,14 +87,14 @@ void apiClientUsesModelCatalogAndStreamingChatContracts() {
         QTimer::singleShot(5000, &modelsCompletionLoop, &QEventLoop::quit);
         modelsCompletionLoop.exec();
     }
-    require(modelsFinished && modelsResult.succeeded() && modelsResult.models.size() == 1 &&
+    require(modelsFinished && modelsResult.succeeded() && modelsResult.models.size() == 3 &&
                 modelsResult.models.first().id == QStringLiteral("model-a") &&
                 modelsResult.models.first().name == QStringLiteral("Model A") &&
-                modelsResult.models.first().thinking &&
-                !modelsResult.models.first().supportsVision &&
-                !modelsResult.models.first().translation,
-            "model catalog should preserve eligible descriptor fields and filter visual or translation models");
-    require(modelsRequest.startsWith("GET /api/v1/chat/models HTTP/1.1") &&
+                modelsResult.models.first().supportsReasoning &&
+                modelsResult.models.first().translationMode == QStringLiteral("default") &&
+                !modelsResult.models.first().supportsVision,
+            "model catalog should preserve all v2 descriptor fields");
+    require(modelsRequest.startsWith("GET /api/v2/chat/models HTTP/1.1") &&
                 modelsRequest.toLower().contains("accept-language: zh-cn"),
             "model catalog request should use the documented endpoint and locale header");
 
@@ -114,7 +114,7 @@ void apiClientUsesModelCatalogAndStreamingChatContracts() {
         });
     require(emptyToken != 0, "all-filtered model catalog request should be prepared");
     const QByteArray emptyBody = QByteArrayLiteral(
-        R"({"code":0,"message":"ok","data":[{"model":"vision-model","name":"Vision Model","thinking":false,"support_vision":true,"translation":false},{"model":"translation-model","name":"Translation Model","thinking":false,"support_vision":false,"translation":true}]})");
+        R"({"code":0,"message":"ok","data":[{"model":"vision-model","name":"Vision Model","supports_reasoning":false,"translation_mode":"default","supports_vision":true}]})");
     const QByteArray emptyResponse =
         QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ") +
         QByteArray::number(emptyBody.size()) + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") +
@@ -124,9 +124,9 @@ void apiClientUsesModelCatalogAndStreamingChatContracts() {
         QTimer::singleShot(5000, &emptyCompletionLoop, &QEventLoop::quit);
         emptyCompletionLoop.exec();
     }
-    require(emptyFinished && !emptyResult.succeeded() && emptyResult.models.isEmpty() &&
-                !emptyResult.error.isEmpty(),
-            "a catalog containing only visual or translation models should be unavailable");
+    require(emptyFinished && emptyResult.succeeded() && emptyResult.models.size() == 1 &&
+                emptyResult.models.first().supportsVision,
+            "the network model catalog should retain visual models for presentation filtering");
     auto* manager = client.findChild<QNetworkAccessManager*>();
     require(manager != nullptr && manager->proxy().type() == QNetworkProxy::NoProxy &&
                 manager->proxyFactory() == nullptr && !client.usesSystemProxy(),
@@ -188,7 +188,101 @@ void apiClientUsesModelCatalogAndStreamingChatContracts() {
                     QStringLiteral("Return only the translated text")) &&
                 messages.at(1).toObject().value(QStringLiteral("content")).toString() ==
                     QStringLiteral("Hello\nworld"),
-            "translation request should carry the translation-only system prompt and original text");
+                "translation request should carry the translation-only system prompt and original text");
+
+    QString qwenText;
+    SnowShotTranslationResult qwenResult;
+    bool qwenFinished = false;
+    QEventLoop qwenLoop;
+    const auto qwenToken = client.streamTranslation(
+        SnowShotTranslationRequest{QStringLiteral("translation-model"), QStringLiteral("zh-Hans"),
+                                   QStringLiteral("en"), QStringLiteral("你好"),
+                                   QStringLiteral("qwen-mt")},
+        &client, [&](const QString& delta) { qwenText += delta; },
+        [&](SnowShotTranslationResult result) {
+            qwenResult = std::move(result);
+            qwenFinished = true;
+            qwenLoop.quit();
+        });
+    require(qwenToken != 0, "qwen-mt streaming request should be prepared");
+    const QByteArray qwenBody = QByteArrayLiteral(
+        "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n"
+        "data: [DONE]\n\n");
+    const QByteArray qwenResponse = QByteArrayLiteral(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: ") +
+        QByteArray::number(qwenBody.size()) + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") +
+        qwenBody;
+    const QByteArray qwenRequest = waitForHttpRequest(server, qwenResponse);
+    if (!qwenFinished) {
+        QTimer::singleShot(5000, &qwenLoop, &QEventLoop::quit);
+        qwenLoop.exec();
+    }
+    require(qwenFinished && qwenResult.succeeded() && qwenText == QStringLiteral("hello"),
+            "qwen-mt streaming response should complete successfully");
+    const QJsonObject qwenJson = QJsonDocument::fromJson(
+        qwenRequest.mid(qwenRequest.indexOf("\r\n\r\n") + 4)).object();
+    const QJsonArray qwenMessages = qwenJson.value(QStringLiteral("messages")).toArray();
+    require(qwenMessages.size() == 1 &&
+                qwenMessages.first().toObject().value(QStringLiteral("role")).toString() ==
+                    QStringLiteral("user") &&
+                qwenJson.value(QStringLiteral("translation_options")).toObject()
+                        .value(QStringLiteral("source_lang")).toString() == QStringLiteral("zh") &&
+                qwenJson.value(QStringLiteral("translation_options")).toObject()
+                        .value(QStringLiteral("target_lang")).toString() == QStringLiteral("en") &&
+                qwenJson.value(QStringLiteral("incremental_output")).toBool() &&
+                !qwenJson.contains(QStringLiteral("enable_thinking")),
+            "qwen-mt requests should enable incremental output with native translation options and a single user message");
+
+    QString qwenIdentityText;
+    bool qwenIdentityFinished = false;
+    QEventLoop qwenIdentityLoop;
+    const auto qwenIdentityToken = client.streamTranslation(
+        SnowShotTranslationRequest{QStringLiteral("translation-model"), QStringLiteral(" AUTO "),
+                                   QStringLiteral(" TR "), QStringLiteral("hello"),
+                                   QStringLiteral("qwen-mt")},
+        &client, [&](const QString& delta) { qwenIdentityText += delta; },
+        [&](SnowShotTranslationResult result) {
+            qwenIdentityFinished = result.succeeded();
+            qwenIdentityLoop.quit();
+        });
+    require(qwenIdentityToken != 0, "qwen-mt should accept normalized supported language codes");
+    const QByteArray qwenIdentityBody = QByteArrayLiteral(
+        "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n"
+        "data: [DONE]\n\n");
+    const QByteArray qwenIdentityResponse = QByteArrayLiteral(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: ") +
+        QByteArray::number(qwenIdentityBody.size()) +
+        QByteArrayLiteral("\r\nConnection: close\r\n\r\n") + qwenIdentityBody;
+    const QByteArray qwenIdentityRequest = waitForHttpRequest(server, qwenIdentityResponse);
+    if (!qwenIdentityFinished) {
+        QTimer::singleShot(5000, &qwenIdentityLoop, &QEventLoop::quit);
+        qwenIdentityLoop.exec();
+    }
+    const QJsonObject qwenIdentityJson = QJsonDocument::fromJson(
+        qwenIdentityRequest.mid(qwenIdentityRequest.indexOf("\r\n\r\n") + 4)).object();
+    const QJsonObject qwenIdentityOptions =
+        qwenIdentityJson.value(QStringLiteral("translation_options")).toObject();
+    require(qwenIdentityFinished && qwenIdentityText == QStringLiteral("hello") &&
+                qwenIdentityOptions.value(QStringLiteral("source_lang")).toString() ==
+                    QStringLiteral("auto") &&
+                qwenIdentityOptions.value(QStringLiteral("target_lang")).toString() ==
+                    QStringLiteral("tr"),
+            "qwen-mt should trim and normalize case for supported identity language codes");
+
+    const auto unsupportedQwenToken = client.streamTranslation(
+        SnowShotTranslationRequest{QStringLiteral("translation-model"), QStringLiteral("xx"),
+                                   QStringLiteral("en"), QStringLiteral("hello"),
+                                   QStringLiteral("qwen-mt")},
+        &client, [](const QString&) {}, [](SnowShotTranslationResult) {});
+    require(unsupportedQwenToken == 0,
+            "qwen-mt should reject unsupported source language codes before posting");
+    const auto autoTargetQwenToken = client.streamTranslation(
+        SnowShotTranslationRequest{QStringLiteral("translation-model"), QStringLiteral("en"),
+                                   QStringLiteral("auto"), QStringLiteral("hello"),
+                                   QStringLiteral("qwen-mt")},
+        &client, [](const QString&) {}, [](SnowShotTranslationResult) {});
+    require(autoTargetQwenToken == 0,
+            "qwen-mt should reject auto-detection as a target language");
 
     SnowShotTranslationResult malformedResult;
     bool malformedFinished = false;

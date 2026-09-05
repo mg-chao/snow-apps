@@ -26,9 +26,9 @@ struct SnowShotTableResult {
 struct SnowShotChatModel {
     QString id;
     QString name;
-    bool thinking = false;
+    bool supportsReasoning = false;
+    QString translationMode = QStringLiteral("default");
     bool supportsVision = false;
-    bool translation = false;
 };
 
 struct SnowShotChatModelsResult {
@@ -47,6 +47,7 @@ struct SnowShotTranslationRequest {
     QString sourceLanguage;
     QString targetLanguage;
     QString text;
+    QString translationMode = QStringLiteral("default");
 };
 
 struct SnowShotTranslationResult {

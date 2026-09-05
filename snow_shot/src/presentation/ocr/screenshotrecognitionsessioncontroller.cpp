@@ -695,11 +695,17 @@ void ScreenshotRecognitionSessionController::startTranslationWithModels(
         settings.sourceLanguage = QStringLiteral("auto");
     }
     const auto selected = std::find_if(models.cbegin(), models.cend(), [&settings](const auto& model) {
-        return model.id == settings.modelId;
+        return !model.supportsVision && model.id == settings.modelId;
     });
     if (selected == models.cend()) {
-        settings.modelId = models.first().id;
+        const auto general = std::find_if(models.cbegin(), models.cend(), [](const auto& model) {
+            return !model.supportsVision && model.translationMode == QStringLiteral("default");
+        });
+        settings.modelId = general != models.cend() ? general->id : models.first().id;
     }
+    const auto effectiveModel = std::find_if(models.cbegin(), models.cend(), [&settings](const auto& model) {
+        return model.id == settings.modelId;
+    });
     it->translationText.clear();
     it->translationSession->replaceTextWithoutHistory(QString());
     it->translationStatus = TextCacheEntry::TranslationStatus::Streaming;
@@ -709,12 +715,19 @@ void ScreenshotRecognitionSessionController::startTranslationWithModels(
         content()->setTextEditorStreaming(true);
     }
     updateTextState();
+    const bool usesQwenMt = effectiveModel != models.cend() &&
+                            effectiveModel->translationMode == QStringLiteral("qwen-mt");
     m_translationRequestToken = m_tableRecognition->streamTranslation(
-        SnowShotTranslationRequest{settings.modelId, languageName(settings.sourceLanguage),
-                                   languageName(settings.targetLanguage),
+        SnowShotTranslationRequest{settings.modelId,
+                                   usesQwenMt ? settings.sourceLanguage
+                                              : languageName(settings.sourceLanguage),
+                                   usesQwenMt ? settings.targetLanguage
+                                              : languageName(settings.targetLanguage),
                                    it->editingSession != nullptr
                                        ? it->editingSession->originalText()
-                                       : QString{}},
+                                       : QString{},
+                                   effectiveModel != models.cend() ? effectiveModel->translationMode
+                                                                   : QStringLiteral("default")},
         this,
         [this, generation, key](const QString& delta) {
             handleTranslationDelta(generation, key, delta);
@@ -792,9 +805,14 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
     }
     if (!models.isEmpty() &&
         std::none_of(models.cbegin(), models.cend(), [&current](const auto& model) {
-            return model.id == current.modelId;
+            return !model.supportsVision && model.id == current.modelId;
         })) {
-        current.modelId = models.first().id;
+        const auto general = std::find_if(models.cbegin(), models.cend(), [](const auto& model) {
+            return !model.supportsVision && model.translationMode == QStringLiteral("default");
+        });
+        if (general != models.cend()) {
+            current.modelId = general->id;
+        }
     }
 
     auto* body = new QWidget;
@@ -831,8 +849,13 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
     }
     QVector<adqt::widgets::AdSelect::Option> serviceOptions;
     for (const SnowShotChatModel& model : models) {
-        serviceOptions.push_back(
-            {model.id, model.name, false, tr("General Models")});
+        if (model.supportsVision) {
+            continue;
+        }
+        serviceOptions.push_back({model.id, model.name, false,
+                                  model.translationMode == QStringLiteral("default")
+                                      ? tr("General Models")
+                                      : tr("Translation Models")});
     }
     source->setOptions(sourceOptions);
     target->setOptions(targetOptions);
@@ -903,16 +926,35 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
         QVector<adqt::widgets::AdSelect::Option> options;
         options.reserve(availableModels.size());
         for (const SnowShotChatModel& model : availableModels) {
-            options.push_back({model.id, model.name, false, tr("General Models")});
+            if (model.supportsVision) {
+                continue;
+            }
+            options.push_back({model.id, model.name, false,
+                               model.translationMode == QStringLiteral("default")
+                                   ? tr("General Models")
+                               : tr("Translation Models")});
+        }
+        if (options.isEmpty()) {
+            service->setLoading(false);
+            service->setEnabled(false);
+            form->hide();
+            return;
         }
         service->setOptions(options);
         const bool currentAvailable =
             std::any_of(availableModels.cbegin(), availableModels.cend(),
                         [&current](const SnowShotChatModel& model) {
-                            return model.id == current.modelId;
+                            return !model.supportsVision && model.id == current.modelId;
                         });
-        service->setCurrentValue(currentAvailable ? current.modelId
-                                                   : availableModels.first().id);
+        const auto general = std::find_if(availableModels.cbegin(), availableModels.cend(),
+                                          [](const auto& model) {
+                                              return !model.supportsVision &&
+                                                     model.translationMode == QStringLiteral("default");
+                                          });
+        service->setCurrentValue(currentAvailable
+                                     ? current.modelId
+                                     : (general != availableModels.cend() ? general->id
+                                                                          : options.first().value));
         service->setLoading(false);
         service->setEnabled(true);
         form->show();

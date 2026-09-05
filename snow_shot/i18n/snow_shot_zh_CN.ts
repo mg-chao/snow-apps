@@ -1027,6 +1027,10 @@
         <translation>通用模型</translation>
     </message>
     <message>
+        <source>Translation Models</source>
+        <translation>翻译模型</translation>
+    </message>
+    <message>
         <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="855"/>
         <source>Translation settings</source>
         <translation>翻译设置</translation>

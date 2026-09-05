@@ -16,6 +16,8 @@
 #include <QUuid>
 
 #include <algorithm>
+#include <array>
+#include <optional>
 #include <utility>
 
 namespace {
@@ -64,6 +66,35 @@ QString translationSystemPrompt(const SnowShotTranslationRequest& request) {
                "conversational commentary. Preserve URLs, numbers, and symbols unless translation "
                "requires changing them.")
         .arg(request.sourceLanguage, request.targetLanguage);
+}
+
+std::optional<QString> qwenMtLanguage(const QString& language) {
+    struct Mapping {
+        QLatin1StringView applicationCode;
+        QLatin1StringView providerCode;
+    };
+    static constexpr std::array<Mapping, 13> mappings{{
+        Mapping{QLatin1StringView("auto"), QLatin1StringView("auto")},
+        Mapping{QLatin1StringView("ar"), QLatin1StringView("ar")},
+        Mapping{QLatin1StringView("de"), QLatin1StringView("de")},
+        Mapping{QLatin1StringView("en"), QLatin1StringView("en")},
+        Mapping{QLatin1StringView("es"), QLatin1StringView("es")},
+        Mapping{QLatin1StringView("fr"), QLatin1StringView("fr")},
+        Mapping{QLatin1StringView("it"), QLatin1StringView("it")},
+        Mapping{QLatin1StringView("ja"), QLatin1StringView("ja")},
+        Mapping{QLatin1StringView("pt"), QLatin1StringView("pt")},
+        Mapping{QLatin1StringView("ru"), QLatin1StringView("ru")},
+        Mapping{QLatin1StringView("tr"), QLatin1StringView("tr")},
+        Mapping{QLatin1StringView("zh-Hans"), QLatin1StringView("zh")},
+        Mapping{QLatin1StringView("zh-Hant"), QLatin1StringView("zh_tw")},
+    }};
+    const QString normalized = language.trimmed();
+    for (const Mapping& mapping : mappings) {
+        if (normalized.compare(mapping.applicationCode, Qt::CaseInsensitive) == 0) {
+            return QString(mapping.providerCode);
+        }
+    }
+    return std::nullopt;
 }
 } // namespace
 
@@ -263,7 +294,7 @@ SnowShotApiClient::RequestToken SnowShotApiClient::fetchChatModels(
     state->chatModelsCompletion = std::move(completion);
     m_requests.insert(token, state);
 
-    QNetworkRequest request(QUrl(m_baseUrl + QStringLiteral("/api/v1/chat/models")));
+    QNetworkRequest request(QUrl(m_baseUrl + QStringLiteral("/api/v2/chat/models")));
     request.setRawHeader("X-Request-ID", QUuid::createUuid().toString(QUuid::WithoutBraces).toUtf8());
     if (!locale.trimmed().isEmpty()) {
         request.setRawHeader("Accept-Language", locale.toUtf8());
@@ -296,11 +327,13 @@ SnowShotApiClient::RequestToken SnowShotApiClient::fetchChatModels(
                 const QJsonObject model = value.toObject();
                 SnowShotChatModel parsed{model.value(QStringLiteral("model")).toString().trimmed(),
                                          model.value(QStringLiteral("name")).toString().trimmed(),
-                                         model.value(QStringLiteral("thinking")).toBool(),
-                                         model.value(QStringLiteral("support_vision")).toBool(),
-                                         model.value(QStringLiteral("translation")).toBool()};
-                if (!parsed.id.isEmpty() && !parsed.name.isEmpty() && !parsed.supportsVision &&
-                    !parsed.translation) {
+                                         model.value(QStringLiteral("supports_reasoning")).toBool(),
+                                         model.value(QStringLiteral("translation_mode")).toString().trimmed(),
+                                         model.value(QStringLiteral("supports_vision")).toBool()};
+                if (parsed.translationMode.isEmpty()) {
+                    parsed.translationMode = QStringLiteral("default");
+                }
+                if (!parsed.id.isEmpty() && !parsed.name.isEmpty()) {
                     result.models.push_back(std::move(parsed));
                 }
             }
@@ -323,6 +356,16 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamTranslation(
         input.model.trimmed().isEmpty() || input.text.isEmpty()) {
         return 0;
     }
+    std::optional<QString> qwenSourceLanguage;
+    std::optional<QString> qwenTargetLanguage;
+    if (input.translationMode == QStringLiteral("qwen-mt")) {
+        qwenSourceLanguage = qwenMtLanguage(input.sourceLanguage);
+        qwenTargetLanguage = qwenMtLanguage(input.targetLanguage);
+        if (!qwenSourceLanguage || !qwenTargetLanguage ||
+            *qwenTargetLanguage == QStringLiteral("auto")) {
+            return 0;
+        }
+    }
     auto* manager = networkAccessManager();
     const RequestToken token = ++m_nextToken;
     auto* state = new Request;
@@ -336,17 +379,28 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamTranslation(
     request.setRawHeader("Accept", "text/event-stream");
     request.setRawHeader("X-Request-ID", QUuid::createUuid().toString(QUuid::WithoutBraces).toUtf8());
     request.setTransferTimeout(kTranslationTimeoutMs);
-    const QJsonArray messages{
-        QJsonObject{{QStringLiteral("role"), QStringLiteral("system")},
-                    {QStringLiteral("content"), translationSystemPrompt(input)}},
-        QJsonObject{{QStringLiteral("role"), QStringLiteral("user")},
-                    {QStringLiteral("content"), input.text}},
-    };
-    const QJsonObject body{{QStringLiteral("model"), input.model},
-                           {QStringLiteral("messages"), messages},
-                           {QStringLiteral("enable_thinking"), false},
-                           {QStringLiteral("temperature"), 0},
-                           {QStringLiteral("max_tokens"), 4096}};
+    QJsonObject body{{QStringLiteral("model"), input.model},
+                     {QStringLiteral("temperature"), 0},
+                     {QStringLiteral("max_tokens"), 4096}};
+    if (input.translationMode == QStringLiteral("qwen-mt")) {
+        body.insert(QStringLiteral("messages"), QJsonArray{
+            QJsonObject{{QStringLiteral("role"), QStringLiteral("user")},
+                        {QStringLiteral("content"), input.text}},
+        });
+        body.insert(QStringLiteral("translation_options"), QJsonObject{
+            {QStringLiteral("source_lang"), *qwenSourceLanguage},
+            {QStringLiteral("target_lang"), *qwenTargetLanguage},
+        });
+        body.insert(QStringLiteral("incremental_output"), true);
+    } else {
+        body.insert(QStringLiteral("messages"), QJsonArray{
+            QJsonObject{{QStringLiteral("role"), QStringLiteral("system")},
+                        {QStringLiteral("content"), translationSystemPrompt(input)}},
+            QJsonObject{{QStringLiteral("role"), QStringLiteral("user")},
+                        {QStringLiteral("content"), input.text}},
+        });
+        body.insert(QStringLiteral("enable_thinking"), false);
+    }
     QNetworkReply* reply = manager->post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
     state->reply = reply;
 
