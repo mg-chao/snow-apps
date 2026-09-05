@@ -1,4 +1,5 @@
 #include <QAbstractItemModel>
+#include <QColor>
 #include <QCoreApplication>
 #include <QListView>
 #include <QStringList>
@@ -89,6 +90,26 @@ class SelectTest final : public QObject {
     select.setSortComparator(AdSelect::SortComparator{});
     QCOMPARE(popupLabels(select), QStringList({QStringLiteral("Zulu"), QStringLiteral("Alpha"),
                                                QStringLiteral("Middle")}));
+  }
+
+  void groupedOptionHeadersUseDescriptionColor() {
+    AdSelect select;
+    AdSelect::Option general = makeOption(QStringLiteral("general"), QStringLiteral("General"));
+    general.group = QStringLiteral("General Models");
+    AdSelect::Option translation =
+        makeOption(QStringLiteral("translation"), QStringLiteral("Translation"));
+    translation.group = QStringLiteral("Translation Models");
+    select.setOptions({general, translation});
+
+    const QAbstractItemModel* model = select.view()->model();
+    QVERIFY(model != nullptr);
+    QCOMPARE(model->index(0, 0).data(Qt::DisplayRole).toString(),
+             QStringLiteral("General Models"));
+    const QColor headerColor = model->index(0, 0).data(Qt::ForegroundRole).value<QColor>();
+    const QColor optionColor = model->index(1, 0).data(Qt::ForegroundRole).value<QColor>();
+    QVERIFY(headerColor.isValid());
+    QVERIFY(optionColor.isValid());
+    QVERIFY(headerColor != optionColor);
   }
 
   void centeredPlacementSurvivesPopupGeometryRefreshes() {

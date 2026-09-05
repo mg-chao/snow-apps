@@ -59,6 +59,11 @@ QString languageName(const QString& code) {
     return code;
 }
 
+adqt::widgets::AdSelect::Option translationLanguageOption(const TranslationLanguage& language) {
+    const QString code = QString::fromLatin1(language.code);
+    return {code, languageName(code), false, code.left(1).toUpper()};
+}
+
 QString defaultTargetLanguage() {
     const QLocale locale = snow_shot::presentation::LanguageManager::instance().currentLocale();
     switch (locale.language()) {
@@ -838,12 +843,16 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
     auto* source = new adqt::widgets::AdSelect(form);
     auto* target = new adqt::widgets::AdSelect(form);
     auto* service = new adqt::widgets::AdSelect(form);
+    source->setObjectName(QStringLiteral("screenshotTranslationSourceLanguage"));
+    target->setObjectName(QStringLiteral("screenshotTranslationTargetLanguage"));
+    source->setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
+    target->setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
+    service->setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
     QVector<adqt::widgets::AdSelect::Option> sourceOptions{
         {QStringLiteral("auto"), tr("Auto-detect language")}};
     QVector<adqt::widgets::AdSelect::Option> targetOptions;
     for (const TranslationLanguage& language : kTranslationLanguages) {
-        const adqt::widgets::AdSelect::Option option{QString::fromLatin1(language.code),
-                                                     languageName(QString::fromLatin1(language.code))};
+        const adqt::widgets::AdSelect::Option option = translationLanguageOption(language);
         sourceOptions.push_back(option);
         targetOptions.push_back(option);
     }

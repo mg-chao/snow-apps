@@ -1,6 +1,10 @@
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 
+#include "widgets/modal.h"
+#include "widgets/select.h"
+
+#include <QApplication>
 #include <QCoreApplication>
 #include <QEventLoop>
 #include <QImage>
@@ -186,10 +190,60 @@ void prefetchVerificationStaysSilentWhileDownloadsSurface() {
             "an inactive prefetch must not show the recognition message");
     recognition.completeWithEmptyPresentation();
 }
+
+void translationLanguageSelectsUseCodePrefixGroups() {
+    QApplication::setQuitOnLastWindowClosed(false);
+    QWidget owner;
+    SnowShotApiClient apiClient(QStringLiteral("http://127.0.0.1:1"));
+    ScreenshotRecognitionSessionActions actions;
+    actions.translationSettingsOwner = [&owner]() { return &owner; };
+    auto controller = std::make_unique<ScreenshotRecognitionSessionController>(
+        nullptr, nullptr, &apiClient, std::move(actions));
+
+    controller->openTranslationSettings();
+    auto* modal = controller->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("screenshotTranslationSettingsModal"));
+    require(modal != nullptr, "translation settings should create its modal");
+    QWidget* content = modal->contentWidget();
+    auto* source = content == nullptr
+                       ? nullptr
+                       : content->findChild<adqt::widgets::AdSelect*>(
+                             QStringLiteral("screenshotTranslationSourceLanguage"));
+    auto* target = content == nullptr
+                       ? nullptr
+                       : content->findChild<adqt::widgets::AdSelect*>(
+                             QStringLiteral("screenshotTranslationTargetLanguage"));
+    require(source != nullptr && target != nullptr,
+            "translation settings should expose source and target language selects");
+    require(source->popupLayerMode() == adqt::widgets::AdSelect::PopupLayerMode::QtTool &&
+                target->popupLayerMode() == adqt::widgets::AdSelect::PopupLayerMode::QtTool,
+            "translation language selects should use Qt tool popups");
+
+    const auto sourceOptions = source->options();
+    const auto targetOptions = target->options();
+    require(sourceOptions.size() == 13 && targetOptions.size() == 12,
+            "language selects should contain the expected source and target options");
+    require(sourceOptions.constFirst().value == QStringLiteral("auto") &&
+                sourceOptions.constFirst().group.isEmpty(),
+            "auto-detect should remain outside language groups");
+    require(sourceOptions.at(1).group == QStringLiteral("A") &&
+                sourceOptions.at(2).group == QStringLiteral("D") &&
+                sourceOptions.at(3).group == QStringLiteral("E") &&
+                sourceOptions.at(12).group == QStringLiteral("Z"),
+            "source language options should group by the first character of their code");
+    require(targetOptions.constFirst().group == QStringLiteral("A") &&
+                targetOptions.constLast().group == QStringLiteral("Z"),
+            "target language options should group by the first character of their code");
+
+    modal->reject();
+    QCoreApplication::sendPostedEvents();
+    QCoreApplication::processEvents();
+}
 } // namespace
 
 int main(int argc, char** argv) {
-    QCoreApplication application(argc, argv);
+    QApplication application(argc, argv);
+    translationLanguageSelectsUseCodePrefixGroups();
     cachedVerificationStaysSilent();
     liveDownloadsStillSurfaceThePrompt();
     prefetchVerificationStaysSilentWhileDownloadsSurface();

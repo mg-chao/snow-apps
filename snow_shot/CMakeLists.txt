@@ -3010,6 +3010,17 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+    if(WIN32)
+        set_tests_properties(snow-shot-recognition-session-controller-tests PROPERTIES
+            ENVIRONMENT
+                "QT_QPA_PLATFORM=windows;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QWindowsIntegrationPlugin>"
+        )
+    else()
+        set_tests_properties(snow-shot-recognition-session-controller-tests PROPERTIES
+            ENVIRONMENT
+                "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        )
+    endif()
 
     add_executable(snow-shot-qr-recognition-service-tests
         tests/screenshot_qr_recognition_service_tests.cpp
@@ -3147,6 +3158,7 @@ if(SNOW_SHOT_BUILD_TESTS)
             snow-shot-sidebar-widget-tests
             snow-shot-main-content-header-tests
             snow-shot-recognition-window-tests
+            snow-shot-recognition-session-controller-tests
             snow-shot-storage-status-widget-tests
         )
             snow_shot_import_offscreen_platform(${_offscreen_qpa_test_target})
