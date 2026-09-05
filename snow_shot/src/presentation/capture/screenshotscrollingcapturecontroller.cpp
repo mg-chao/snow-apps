@@ -933,6 +933,11 @@ struct ScreenshotScrollingCaptureController::Impl {
         }
         restoreScrollingWindowsCaptureVisibility();
         thumbnailHost = nullptr;
+
+        // Scrolling workers are session-scoped.  Tear them down after invalidating all
+        // in-flight work so the stitch session and its native resources are released between
+        // captures; the next start() recreates them on demand.
+        shutdownWorker();
     }
 
     void detachPendingResultRequest() {

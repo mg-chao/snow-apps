@@ -7,7 +7,7 @@ use snow_capture_c::{
     SCREENSHOT_REQUEST_VERSION, SnowCaptureScreenshotRequest, snow_capture_desktop_session_capture,
     snow_capture_desktop_session_create, snow_capture_desktop_session_destroy,
     snow_capture_desktop_session_prepare, snow_capture_desktop_session_refresh_layout,
-    snow_capture_desktop_session_release_idle_resources, snow_capture_screenshot_result_destroy,
+    snow_capture_desktop_session_reset_to_prepared, snow_capture_screenshot_result_destroy,
     snow_capture_screenshot_result_display_count,
 };
 use windows::Win32::System::ProcessStatus::{
@@ -97,9 +97,9 @@ impl DesktopSession {
         Ok(())
     }
 
-    fn release_idle_resources(&mut self) -> Result<()> {
-        if snow_capture_desktop_session_release_idle_resources(self.raw) == 0 {
-            bail!("snow_capture_desktop_session_release_idle_resources failed");
+    fn reset_to_prepared(&mut self) -> Result<()> {
+        if snow_capture_desktop_session_reset_to_prepared(self.raw) == 0 {
+            bail!("snow_capture_desktop_session_reset_to_prepared failed");
         }
         Ok(())
     }
@@ -354,7 +354,7 @@ fn main() -> Result<()> {
 
     let before_trim = ProcessMemorySample::capture()?;
     let started = Instant::now();
-    session.release_idle_resources()?;
+    session.reset_to_prepared()?;
     let trim_ms = elapsed_ms(started);
     let after_trim = ProcessMemorySample::capture()?;
     let (trim_ws_delta_mb, trim_private_delta_mb) = memory_deltas_mb(before_trim, after_trim);
@@ -378,7 +378,7 @@ fn main() -> Result<()> {
 
     session.refresh_layout()?;
     rows.push(measure_capture(&mut session, "after_refresh", 0)?);
-    session.release_idle_resources()?;
+    session.reset_to_prepared()?;
 
     if config.idle_ms > 0 {
         std::thread::sleep(Duration::from_millis(config.idle_ms));
