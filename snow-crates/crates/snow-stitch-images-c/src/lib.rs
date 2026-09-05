@@ -225,33 +225,8 @@ impl StitchImageSnapshot {
     }
 
     fn render_scaled(&self, width: u32, height: u32) -> Result<RgbaImage, StitchError> {
-        if width == 0 || height == 0 {
-            return Err(StitchError::InvalidFrame {
-                message: "scaled dimensions must be non-zero".to_owned(),
-            });
-        }
-        let length = (width as usize)
-            .checked_mul(height as usize)
-            .and_then(|pixels| pixels.checked_mul(4))
-            .ok_or(StitchError::Arithmetic {
-                operation: "calculating scaled RGBA length",
-            })?;
-        let mut pixels = vec![0; length];
-        let source_frame = self.canvas.materialize()?;
-        let source_width = self.width() as usize;
-        let source_height = self.height() as usize;
-        for y in 0..height as usize {
-            let source_y = y * source_height / height as usize;
-            for x in 0..width as usize {
-                let source_x = x * source_width / width as usize;
-                let source = (source_y * source_width + source_x) * 4;
-                let target = (y * width as usize + x) * 4;
-                pixels[target..target + 4]
-                    .copy_from_slice(&source_frame.pixels()[source..source + 4]);
-            }
-        }
         Ok(RgbaImage {
-            frame: Frame::new(width, height, PixelFormat::Rgba8, pixels)?,
+            frame: self.canvas.render_scaled(width, height)?,
         })
     }
 }

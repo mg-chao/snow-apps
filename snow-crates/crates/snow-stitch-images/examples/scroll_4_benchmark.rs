@@ -18,6 +18,7 @@ const REPORT_SCHEMA_VERSION: u32 = 1;
 #[derive(Debug)]
 struct Config {
     samples: usize,
+    input_directory: PathBuf,
     output_directory: PathBuf,
     allow_debug: bool,
 }
@@ -168,6 +169,7 @@ fn usage() -> &'static str {
 \n\
 Options:\n\
   --samples <COUNT>    Number of production end-to-end samples after diagnostics (default: 1)\n\
+  --input <PATH>       Directory containing PNG frames (default: test-imgs/scroll-4)\n\
   --output <PATH>      Directory for diagnostics.json and frames.csv\n\
   --allow-debug        Allow a debug build for a smoke run\n\
   -h, --help           Show this help"
@@ -188,6 +190,7 @@ fn parse_arguments() -> Result<Config> {
     let manifest_directory = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut config = Config {
         samples: DEFAULT_SAMPLES,
+        input_directory: manifest_directory.join("test-imgs/scroll-4"),
         output_directory: manifest_directory.join("artifacts/scroll-4-benchmark"),
         allow_debug: false,
     };
@@ -199,6 +202,10 @@ fn parse_arguments() -> Result<Config> {
                 std::process::exit(0);
             }
             "--samples" => config.samples = parse_count(arguments.next(), "--samples")?,
+            "--input" => {
+                config.input_directory =
+                    PathBuf::from(arguments.next().context("--input requires a path")?);
+            }
             "--output" => {
                 let output = arguments.next().context("--output requires a path")?;
                 config.output_directory = PathBuf::from(output);
@@ -207,6 +214,9 @@ fn parse_arguments() -> Result<Config> {
             _ if argument.starts_with("--samples=") => {
                 config.samples =
                     parse_count(Some(argument["--samples=".len()..].to_owned()), "--samples")?;
+            }
+            _ if argument.starts_with("--input=") => {
+                config.input_directory = PathBuf::from(&argument["--input=".len()..]);
             }
             _ if argument.starts_with("--output=") => {
                 config.output_directory = PathBuf::from(&argument["--output=".len()..]);
@@ -222,9 +232,8 @@ fn parse_arguments() -> Result<Config> {
     Ok(config)
 }
 
-fn input_paths() -> Result<Vec<PathBuf>> {
-    let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test-imgs/scroll-4");
-    let mut paths = fs::read_dir(&directory)
+fn input_paths(directory: &Path) -> Result<Vec<PathBuf>> {
+    let mut paths = fs::read_dir(directory)
         .with_context(|| {
             format!(
                 "could not read benchmark input directory {}",
@@ -520,7 +529,7 @@ fn format_duration(duration_us: u64) -> String {
 
 fn run() -> Result<()> {
     let config = parse_arguments()?;
-    let paths = input_paths()?;
+    let paths = input_paths(&config.input_directory)?;
     let dataset = dataset_diagnostics(&paths)?;
     println!(
         "scroll-4: {} frames, {:.2} MiB compressed",

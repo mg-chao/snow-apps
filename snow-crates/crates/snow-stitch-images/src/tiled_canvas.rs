@@ -554,11 +554,20 @@ impl TiledCanvasSnapshot {
                     if copy_start < copy_end {
                         let source_row = (copy_start - tile_start) as usize;
                         let destination_row = (copy_start - global_start) as usize;
-                        for row in 0..(copy_end - copy_start) as usize {
-                            let source = (source_row + row) * row_bytes;
-                            let output = (destination_row + row) * destination_stride;
-                            destination[output..output + row_bytes]
-                                .copy_from_slice(&tile.pixels[source..source + row_bytes]);
+                        let row_count = (copy_end - copy_start) as usize;
+                        if destination_stride == row_bytes {
+                            let source = source_row * row_bytes;
+                            let output = destination_row * destination_stride;
+                            let length = row_count * row_bytes;
+                            destination[output..output + length]
+                                .copy_from_slice(&tile.pixels[source..source + length]);
+                        } else {
+                            for row in 0..row_count {
+                                let source = (source_row + row) * row_bytes;
+                                let output = (destination_row + row) * destination_stride;
+                                destination[output..output + row_bytes]
+                                    .copy_from_slice(&tile.pixels[source..source + row_bytes]);
+                            }
                         }
                     }
                     tile_start = tile_end;
@@ -602,15 +611,40 @@ impl TiledCanvasSnapshot {
                 message: "scaled dimensions must be non-zero".to_owned(),
             });
         }
-        let source = self.materialize()?;
         let channels = self.pixel_format.channels() as usize;
+        let output_extent = self.axis.primary_extent(width, height) as usize;
+        let mut tiles = self.tiles.iter();
+        let mut tile = tiles.next().expect("non-empty snapshot has tiles");
+        let mut tile_start = 0;
+        // Nearest-neighbor coordinates are monotonic, so locate all sampled
+        // rows/columns in one tile walk without assembling the source image.
+        let locations: Vec<_> = (0..output_extent)
+            .map(|position| {
+                let source =
+                    self.start as usize + position * self.axis_extent() as usize / output_extent;
+                while source >= tile_start + tile.span as usize {
+                    tile_start += tile.span as usize;
+                    tile = tiles.next().expect("sample lies inside snapshot");
+                }
+                (tile.as_ref(), source - tile_start)
+            })
+            .collect();
         let mut pixels = vec![0; width as usize * height as usize * 4];
         for y in 0..height as usize {
-            let sy = y * source.height() as usize / height as usize;
-            let src = source.row(sy as u32)?;
+            let sy = y * self.height() as usize / height as usize;
             for x in 0..width as usize {
-                let sx = x * source.width() as usize / width as usize;
-                let source_pixel = &src[sx * channels..sx * channels + channels];
+                let (tile, source_offset) = match self.axis {
+                    StitchAxis::Vertical => {
+                        let (tile, row) = locations[y];
+                        let sx = x * self.width() as usize / width as usize;
+                        (tile, (row * self.cross_extent as usize + sx) * channels)
+                    }
+                    StitchAxis::Horizontal => {
+                        let (tile, column) = locations[x];
+                        (tile, (sy * tile.span as usize + column) * channels)
+                    }
+                };
+                let source_pixel = &tile.pixels[source_offset..source_offset + channels];
                 let target = &mut pixels[(y * width as usize + x) * 4..][..4];
                 match self.pixel_format {
                     PixelFormat::Gray8 => target.copy_from_slice(&[
@@ -743,6 +777,23 @@ mod tests {
     }
 
     #[test]
+    fn vertical_snapshot_copies_packed_rows_across_tiles() {
+        let values: Vec<u8> = (0..=CANVAS_TILE_ROWS)
+            .map(|row| (row % 251) as u8)
+            .collect();
+        let canvas = TiledCanvas::new(rows(&values)).unwrap();
+        let snapshot = canvas.snapshot_axis(1, CANVAS_TILE_ROWS + 1).unwrap();
+        let mut output = vec![0; snapshot.width() as usize * 4 * 3];
+        snapshot
+            .copy_rows(CANVAS_TILE_ROWS - 3, 3, &mut output)
+            .unwrap();
+        for row in 0..3_usize {
+            let expected = values[CANVAS_TILE_ROWS as usize - 2 + row];
+            assert_eq!(&output[row * 4..row * 4 + 4], &[expected, 0, 0, 255]);
+        }
+    }
+
+    #[test]
     fn horizontal_snapshot_copies_selected_rows_across_tiles() {
         let width = CANVAS_TILE_SPAN + 2;
         let mut pixels = Vec::with_capacity(width as usize * 2 * 4);
@@ -772,5 +823,61 @@ mod tests {
             .render_scaled(2, 1)
             .unwrap();
         assert_eq!(scaled.pixels(), &[1, 0, 0, 255, 1, 0, 0, 255]);
+    }
+
+    #[test]
+    fn tiled_scaling_matches_materialized_pixels_for_formats_axes_and_trims() {
+        for format in [PixelFormat::Gray8, PixelFormat::Rgb8, PixelFormat::Rgba8] {
+            for axis in [StitchAxis::Vertical, StitchAxis::Horizontal] {
+                let (width, height) = match axis {
+                    StitchAxis::Vertical => (17, 519),
+                    StitchAxis::Horizontal => (519, 17),
+                };
+                let channels = format.channels() as usize;
+                let pixels = (0..width as usize * height as usize * channels)
+                    .map(|i| (i.wrapping_mul(37) ^ (i >> 7)) as u8)
+                    .collect();
+                let mut canvas = TiledCanvas::new_for_axis(
+                    Frame::new(width, height, format, pixels).unwrap(),
+                    axis,
+                )
+                .unwrap();
+                let snapshot = canvas
+                    .snapshot_axis(1, 518)
+                    .unwrap()
+                    .slice_axis(2, 513)
+                    .unwrap();
+                let reference = snapshot.materialize().unwrap();
+                canvas.truncate_start(260).unwrap();
+                for (out_width, out_height) in [(1, 1), (13, 29), (31, 521), (523, 33)] {
+                    let scaled = snapshot.render_scaled(out_width, out_height).unwrap();
+                    let mut expected = Vec::new();
+                    for y in 0..out_height {
+                        let row = reference.row(y * reference.height() / out_height).unwrap();
+                        for x in 0..out_width {
+                            let offset = (x * reference.width() / out_width) as usize * channels;
+                            let pixel = &row[offset..offset + channels];
+                            match format {
+                                PixelFormat::Gray8 => {
+                                    expected.extend_from_slice(&[pixel[0], pixel[0], pixel[0], 255])
+                                }
+                                PixelFormat::Rgb8 => {
+                                    expected.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 255])
+                                }
+                                PixelFormat::Rgba8 => expected.extend_from_slice(pixel),
+                            }
+                        }
+                    }
+                    assert_eq!(scaled.pixel_format(), PixelFormat::Rgba8);
+                    assert_eq!(
+                        scaled.pixels(),
+                        expected,
+                        "{format:?} {axis:?} {out_width}x{out_height}"
+                    );
+                }
+                assert!(snapshot.render_scaled(0, 1).is_err());
+                assert!(snapshot.render_scaled(1, 0).is_err());
+            }
+        }
     }
 }
