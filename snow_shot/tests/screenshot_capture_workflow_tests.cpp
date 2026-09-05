@@ -76,7 +76,7 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     }
     void clearSelectorSelection() override {}
     [[nodiscard]] bool updateSelectorSelectionAt(const QPoint&) override {
-        return false;
+        return acceptSelectorHitTest;
     }
 
     void prewarmDisplayPool(ScreenshotDisplaySession&, int) override {
@@ -168,6 +168,7 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     bool prewarmDisplayPoolSawRuntimeReset = false;
     bool selectorIsReady = false;
     bool selectorRefreshActive = false;
+    bool acceptSelectorHitTest = false;
     bool captureWasQueuedBeforeSelectorRefresh = false;
     bool failCaptureSynchronously = false;
     bool seedActiveDisplayOnPrepare = false;
@@ -463,6 +464,57 @@ void capturePresentedRunsAfterCapturedOverlayIsShown() {
                 runtime.warmSurfaceShowCalls == 0 && capturePresentedCalls == 1 &&
                 showCallsObservedByCallback == 1,
             "capture-presented callback must run once after the captured overlay is shown");
+}
+
+void capturedOverlayWaitsForImageAndSelectionInEitherOrder() {
+    for (bool selectionFirst : {false, true}) {
+        ScreenshotCaptureState state;
+        state.sessionState = ScreenshotSessionState::IdlePrepared;
+        ScreenshotDisplaySession displaySession;
+        ScreenshotGeometryMapper geometry;
+        ScreenshotInteractionState interaction;
+        ScreenshotSelectionModel selection;
+        ScreenshotIntelligentSelectionModel intelligentSelection;
+        CaptureRuntime runtime;
+        runtime.seedActiveDisplayOnPrepare = true;
+        runtime.acceptSelectorHitTest = true;
+        auto workflow = makeWorkflow(state, displaySession, geometry, interaction, selection,
+                                     intelligentSelection, runtime);
+
+        workflow.startCapture();
+        require(runtime.warmSurfaceShowCalls == 1 && runtime.capturedImageShowCalls == 0,
+                "capture must warm the surface without revealing incomplete content");
+        CapturedDisplayModel snapshot;
+        snapshot.stableId = QStringLiteral("primary");
+        snapshot.physicalRect = QRect(0, 0, 64, 48);
+        snapshot.logicalRect = snapshot.physicalRect;
+        snapshot.image = QImage(snapshot.physicalRect.size(), QImage::Format_RGB32);
+        snapshot.image.fill(Qt::blue);
+        const ScreenshotCaptureResult result = successfulResult(state.sessionId, snapshot);
+
+        if (selectionFirst) {
+            workflow.handleInitialSmartSelectionResolved(state.sessionId);
+        } else {
+            runtime.eventSink->handleCaptureFinished(result);
+        }
+        require(runtime.capturedImageShowCalls == 0,
+                "neither the image nor the selection alone may reveal the overlay");
+        workflow.handleInitialSmartSelectionResolved(state.sessionId + 1);
+        require(runtime.capturedImageShowCalls == 0,
+                "a different session's selection must not release the reveal gate");
+
+        if (selectionFirst) {
+            runtime.eventSink->handleCaptureFinished(result);
+        } else {
+            workflow.handleInitialSmartSelectionResolved(state.sessionId);
+        }
+        require(runtime.capturedImageShowCalls == 1 && runtime.applyDisplayModelsCalls == 1,
+                "image and selection readiness must reveal the prepared overlay once");
+        workflow.handleInitialSmartSelectionResolved(state.sessionId);
+        runtime.eventSink->handleCaptureFinished(result);
+        require(runtime.capturedImageShowCalls == 1,
+                "duplicate readiness callbacks must not reveal or repaint the frame again");
+    }
 }
 
 void overlayCapturePrewarmsToolbarSurfaceAfterCaptureDispatch() {
@@ -847,6 +899,7 @@ int main() {
     synchronousCaptureFailureDoesNotRestartSelectorRefresh();
     restartingCaptureReleasesPreviousSelectorCache();
     capturePresentedRunsAfterCapturedOverlayIsShown();
+    capturedOverlayWaitsForImageAndSelectionInEitherOrder();
     overlayCapturePrewarmsToolbarSurfaceAfterCaptureDispatch();
     overlayCaptureWarmsNativeSurfaceAfterCaptureDispatch();
     silentCaptureNeverPreparesOrShowsOverlays();

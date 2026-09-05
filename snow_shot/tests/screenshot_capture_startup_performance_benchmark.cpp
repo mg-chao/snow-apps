@@ -115,6 +115,12 @@ class ChildProcess final {
     bool alive() const {
         return m_process && WaitForSingleObject(m_process, 0) == WAIT_TIMEOUT;
     }
+    DWORD exitCode() const {
+        DWORD code = 0;
+        if (m_process)
+            GetExitCodeProcess(m_process, &code);
+        return code;
+    }
     qint64 workingSetBytes(bool peak) const {
         PROCESS_MEMORY_COUNTERS_EX counters{};
         counters.cb = sizeof(counters);
@@ -384,6 +390,22 @@ qint64 milestoneNs(const QJsonObject& record, const QString& name) {
     return record.value(QStringLiteral("milestones_ns")).toObject().value(name).toInteger();
 }
 
+bool revealPaintOrderValid(const QJsonObject& record) {
+    const qint64 displaysApplied = milestoneNs(record, QStringLiteral("capture.displays_applied"));
+    const qint64 selectionReady = milestoneNs(record, QStringLiteral("selector.initial_resolved"));
+    const qint64 revealBegin = milestoneNs(record, QStringLiteral("presentation.reveal_begin"));
+    const qint64 paintBegin =
+        milestoneNs(record, QStringLiteral("presentation.window.canvas.paint_begin"));
+    const qint64 paintEnd =
+        milestoneNs(record, QStringLiteral("presentation.window.canvas.paint_end"));
+    const qint64 opacityRestored =
+        milestoneNs(record, QStringLiteral("presentation.window.opacity_restored"));
+    const qint64 composited = milestoneNs(record, QStringLiteral("presentation.composited"));
+    return displaysApplied > 0 && displaysApplied <= revealBegin && selectionReady <= revealBegin &&
+           revealBegin <= paintBegin && paintBegin <= paintEnd && paintEnd <= opacityRestored &&
+           opacityRestored <= composited;
+}
+
 qint64 spanNs(const QJsonObject& record, const QString& name) {
     return record.value(QStringLiteral("spans_ns")).toObject().value(name).toInteger();
 }
@@ -544,7 +566,42 @@ bool runSelfTest() {
             hasMarshalling = metric.valueNs(record) == 3000000;
         }
     }
-    return hasEndToEnd && hasMarshalling;
+    if (!hasEndToEnd || !hasMarshalling || revealPaintOrderValid(record)) {
+        return false;
+    }
+
+    milestones[QStringLiteral("capture.displays_applied")] = 10000000;
+    milestones[QStringLiteral("selector.initial_resolved")] = 11000000;
+    milestones[QStringLiteral("presentation.reveal_begin")] = 12000000;
+    milestones[QStringLiteral("presentation.window.canvas.paint_begin")] = 13000000;
+    milestones[QStringLiteral("presentation.window.canvas.paint_end")] = 14000000;
+    milestones[QStringLiteral("presentation.window.opacity_restored")] = 15000000;
+    milestones[QStringLiteral("presentation.composited")] = 16000000;
+    record.insert(QStringLiteral("milestones_ns"), milestones);
+    if (!revealPaintOrderValid(record)) {
+        return false;
+    }
+    for (const QString& key : milestones.keys()) {
+        QJsonObject missing = milestones;
+        missing.remove(key);
+        record.insert(QStringLiteral("milestones_ns"), missing);
+        const bool optional = key == QStringLiteral("capture.native_returned") ||
+                              key == QStringLiteral("capture.ui_finish_entry") ||
+                              key == QStringLiteral("selector.initial_resolved");
+        if (revealPaintOrderValid(record) != optional) {
+            return false;
+        }
+    }
+    const auto rejects = [&record, &milestones](const QString& key, qint64 value) {
+        QJsonObject invalid = milestones;
+        invalid.insert(key, value);
+        record.insert(QStringLiteral("milestones_ns"), invalid);
+        return !revealPaintOrderValid(record);
+    };
+    return rejects(QStringLiteral("presentation.window.canvas.paint_begin"), 9000000) &&
+           rejects(QStringLiteral("presentation.window.canvas.paint_end"), 17000000) &&
+           rejects(QStringLiteral("selector.initial_resolved"), 13500000) &&
+           rejects(QStringLiteral("presentation.window.opacity_restored"), 13000000);
 }
 
 int run(const QCommandLineParser& parser) {
@@ -582,6 +639,11 @@ int run(const QCommandLineParser& parser) {
     require(child.start(appPath), "could not start snow_shot");
 
     auto quickScreenshotItem = [&]() {
+        if (!child.alive()) {
+            throw std::runtime_error(QStringLiteral("snow_shot exited before capture (code 0x%1)")
+                                         .arg(child.exitCode(), 8, 16, QLatin1Char('0'))
+                                         .toStdString());
+        }
         return findByAutomationIdSuffix(*automation.get(), child.pid(),
                                         L"settings-item-quick-screenshot");
     };
@@ -618,21 +680,20 @@ int run(const QCommandLineParser& parser) {
         require(record.value(QStringLiteral("success")).toBool(),
                 "capture sample was not presented successfully");
 
-        // First-frame correctness probe. The trace line is flushed right after
-        // the app's composited milestone, so recolor the fixture immediately:
-        // a fresh overlay keeps showing the capture-time color while a blank or
-        // stale overlay shows the new fixture color or older content. The
-        // settled reading (after deferred presentation work has drained) is the
-        // per-capture ground truth, which keeps the comparison independent of
-        // any dimming the overlay applies over the captured screen.
+        // The external pixel probe can run after deferred paints. Require the
+        // trace to prove a complete image/selection paint before reveal as well.
+        // Recoloring distinguishes captured content from a transparent overlay;
+        // the settled pixel accounts for the overlay's selection dimming.
         revealProbe.setColor(RevealProbeFixture::kPostCaptureColor);
         const COLORREF pixelAtComposited = revealProbe.centerPixel();
         pumpMessagesFor(300);
         const COLORREF pixelSettled = revealProbe.centerPixel();
         const bool settledShowsOverlay =
             !probeColorNear(pixelSettled, RevealProbeFixture::kPostCaptureColor);
-        const bool firstFrameFresh =
-            settledShowsOverlay && probeColorNear(pixelAtComposited, pixelSettled, 12);
+        const bool paintOrderValid = revealPaintOrderValid(record);
+        const bool firstFrameFresh = paintOrderValid && settledShowsOverlay &&
+                                     probeColorNear(pixelAtComposited, pixelSettled, 12);
+        record.insert(QStringLiteral("reveal_paint_order_ok"), paintOrderValid);
         record.insert(QStringLiteral("reveal_first_frame_ok"), firstFrameFresh);
         record.insert(QStringLiteral("reveal_settled_ok"), settledShowsOverlay);
         record.insert(QStringLiteral("reveal_pixel_at_composited"),
@@ -690,6 +751,7 @@ int run(const QCommandLineParser& parser) {
         QVector<double> invokeToLine;
         QVector<double> workingSet;
         QVector<double> firstFrameOk;
+        QVector<double> paintOrderOk;
         QVector<double> settledOk;
         for (const QJsonObject& record : groupRecords) {
             invokeToLine.push_back(
@@ -698,6 +760,8 @@ int run(const QCommandLineParser& parser) {
                                  (1024.0 * 1024.0));
             firstFrameOk.push_back(
                 record.value(QStringLiteral("reveal_first_frame_ok")).toBool() ? 1.0 : 0.0);
+            paintOrderOk.push_back(
+                record.value(QStringLiteral("reveal_paint_order_ok")).toBool() ? 1.0 : 0.0);
             settledOk.push_back(record.value(QStringLiteral("reveal_settled_ok")).toBool() ? 1.0
                                                                                            : 0.0);
         }
@@ -706,6 +770,8 @@ int run(const QCommandLineParser& parser) {
                              statistics(workingSet, QStringLiteral("mb")));
         metricsReport.insert(QStringLiteral("reveal_first_frame_ok"),
                              statistics(firstFrameOk, QStringLiteral("ratio")));
+        metricsReport.insert(QStringLiteral("reveal_paint_order_ok"),
+                             statistics(paintOrderOk, QStringLiteral("ratio")));
         metricsReport.insert(QStringLiteral("reveal_settled_ok"),
                              statistics(settledOk, QStringLiteral("ratio")));
 
@@ -760,6 +826,11 @@ int run(const QCommandLineParser& parser) {
          "</pre>")
             .toUtf8());
     html.close();
+    require(std::all_of(records.cbegin(), records.cend(),
+                        [](const QJsonObject& record) {
+                            return record.value(QStringLiteral("reveal_first_frame_ok")).toBool();
+                        }),
+            "capture reveal correctness failed; inspect raw.jsonl and report.json");
     return 0;
 }
 } // namespace

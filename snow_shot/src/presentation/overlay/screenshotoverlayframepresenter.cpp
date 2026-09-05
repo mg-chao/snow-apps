@@ -161,13 +161,6 @@ void enableWidgetTreeUpdates(QWidget& window) {
     }
 }
 
-void deliverPostedUpdateRequests(QWidget& window) {
-    QCoreApplication::sendPostedEvents(&window, QEvent::UpdateRequest);
-    const QList<QWidget*> children = window.findChildren<QWidget*>();
-    for (QWidget* child : children) {
-        QCoreApplication::sendPostedEvents(child, QEvent::UpdateRequest);
-    }
-}
 } // namespace
 
 ScreenshotOverlayFramePresenter::ScreenshotOverlayFramePresenter(QWidget& window)
@@ -242,9 +235,13 @@ void ScreenshotOverlayFramePresenter::presentPreparedFrame() {
     {
         SNOW_SHOT_CAPTURE_PERF_SCOPE("presentation.window.surface_commit");
         if (alreadyVisible) {
-            deliverPostedUpdateRequests(m_window);
+            // Re-enabling Qt updates queues the complete image and selection paint.
+            // Commit it before revealing the warmed backing store; native redraw
+            // alone does not deliver the pending Qt UpdateRequest.
+            sendPostedUpdate();
+        } else {
+            commitPreparedSurface(plan);
         }
-        commitPreparedSurface(plan);
     }
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.surface_commit_done");
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.redraw_done");
