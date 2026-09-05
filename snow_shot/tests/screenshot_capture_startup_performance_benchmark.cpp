@@ -438,6 +438,13 @@ QVector<MetricSource> derivedMetrics() {
          interval("capture.native_returned", "presentation.composited")},
         {QStringLiteral("overlay_sync_reveal_total"), span("presentation.window.sync_reveal")},
         {QStringLiteral("overlay_surface_commit"), span("presentation.window.surface_commit")},
+        {QStringLiteral("overlay_show"), span("presentation.window.show")},
+        {QStringLiteral("overlay_surface_warm"), span("presentation.window.surface_warm")},
+        {QStringLiteral("overlay_surface_warmed"), milestone("presentation.window.surface_warmed")},
+        {QStringLiteral("overlay_surface_warm_after_dispatch"),
+         interval("capture.async_dispatched", "presentation.surface_warmed")},
+        {QStringLiteral("overlay_canvas_paint"), span("presentation.window.canvas.paint_event")},
+        {QStringLiteral("overlay_opacity_restore"), span("presentation.window.opacity_restore")},
     };
 }
 

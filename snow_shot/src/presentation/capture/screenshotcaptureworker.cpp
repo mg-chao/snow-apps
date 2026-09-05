@@ -35,8 +35,7 @@ bool validFrameInfo(const SnowCaptureFrameInfo& info) {
     const quint64 expectedStride = static_cast<quint64>(info.width) * 4ULL;
     if (expectedStride > std::numeric_limits<std::uint32_t>::max() ||
         expectedStride > static_cast<quint64>(std::numeric_limits<int>::max()) ||
-        static_cast<quint64>(info.height) >
-            std::numeric_limits<quint64>::max() / expectedStride) {
+        static_cast<quint64>(info.height) > std::numeric_limits<quint64>::max() / expectedStride) {
         return false;
     }
     const quint64 expectedLen = expectedStride * static_cast<quint64>(info.height);
@@ -65,8 +64,7 @@ QImage imageFromFrameLease(SnowCaptureFrameLease* lease, const std::uint8_t* rgb
     }
 
     const quint64 expectedStride = static_cast<quint64>(width) * 4ULL;
-    if (static_cast<quint64>(height) >
-        std::numeric_limits<quint64>::max() / expectedStride) {
+    if (static_cast<quint64>(height) > std::numeric_limits<quint64>::max() / expectedStride) {
         snow_capture_frame_lease_release(lease);
         return {};
     }
@@ -76,9 +74,11 @@ QImage imageFromFrameLease(SnowCaptureFrameLease* lease, const std::uint8_t* rgb
         return {};
     }
 
-    const QImage::Format format =
-        pixelFormat == SNOW_CAPTURE_PIXEL_FORMAT_BGRA8 ? QImage::Format_ARGB32
-                                                       : QImage::Format_RGBA8888;
+    // Desktop BGRA frames are already opaque. Tag them as RGB32 so Qt takes the
+    // non-alpha blit without copying; the little-endian packing is still BGRA.
+    const QImage::Format format = pixelFormat == SNOW_CAPTURE_PIXEL_FORMAT_BGRA8
+                                      ? QImage::Format_RGB32
+                                      : QImage::Format_RGBA8888;
     QImage image(rgbaBytes, static_cast<int>(width), static_cast<int>(height),
                  static_cast<int>(strideBytes), format, &releaseFrameLease, lease);
     if (image.isNull()) {
@@ -123,18 +123,20 @@ void ScreenshotCaptureWorker::refreshLayout(
     quint64 requestId, const QPointer<ScreenshotCaptureCoordinator>& coordinator) {
     const bool ok = ensureSession() && snow_capture_desktop_session_refresh_layout(m_session) != 0;
     if (!coordinator.isNull()) {
-        QMetaObject::invokeMethod(coordinator, [coordinator, requestId, ok]() {
-            if (!coordinator.isNull()) {
-                emit coordinator->layoutRefreshed(requestId, ok);
-            }
-        }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(
+            coordinator,
+            [coordinator, requestId, ok]() {
+                if (!coordinator.isNull()) {
+                    emit coordinator->layoutRefreshed(requestId, ok);
+                }
+            },
+            Qt::QueuedConnection);
     }
 }
 
-void ScreenshotCaptureWorker::capture(
-    const ScreenshotCaptureRequest& request,
-    const QPointer<ScreenshotCaptureCoordinator>& coordinator,
-    SnowCaptureCancellationToken* cancellationToken) {
+void ScreenshotCaptureWorker::capture(const ScreenshotCaptureRequest& request,
+                                      const QPointer<ScreenshotCaptureCoordinator>& coordinator,
+                                      SnowCaptureCancellationToken* cancellationToken) {
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("capture.worker_entry");
     ScreenshotCaptureResult captureResult;
     captureResult.requestId = request.requestId;
@@ -148,7 +150,8 @@ void ScreenshotCaptureWorker::capture(
     SnowCaptureScreenshotRequest nativeRequest{};
     nativeRequest.version = SNOW_CAPTURE_SCREENSHOT_REQUEST_VERSION;
     nativeRequest.struct_size = sizeof(nativeRequest);
-    nativeRequest.flags = request.refreshLayout ? SNOW_CAPTURE_SCREENSHOT_REQUEST_REFRESH_LAYOUT : 0;
+    nativeRequest.flags =
+        request.refreshLayout ? SNOW_CAPTURE_SCREENSHOT_REQUEST_REFRESH_LAYOUT : 0;
     nativeRequest.focused_window = static_cast<intptr_t>(request.focusedWindowHandle);
     nativeRequest.cancellation_token = cancellationToken;
 
@@ -211,8 +214,8 @@ void ScreenshotCaptureWorker::capture(
                                                info.height, info.stride_bytes, info.pixel_format);
             ScreenshotWindowCaptureFrame focused;
             focused.image = std::move(image);
-            focused.physicalRect = QRect(info.x, info.y, static_cast<int>(info.width),
-                                         static_cast<int>(info.height));
+            focused.physicalRect =
+                QRect(info.x, info.y, static_cast<int>(info.width), static_cast<int>(info.height));
             focused.backend = backendFromNative(info.backend_kind);
             if (!focused.isValid()) {
                 valid = false;

@@ -27,3 +27,30 @@ else()
 endif()
 
 add_test(NAME snow_image_core_tests COMMAND snow_image_core_tests)
+
+if(MSVC)
+    # Regression coverage for the test CLI dialog guard (cmake/test-support):
+    # reports raised through the shared dynamic debug CRT instance that
+    # /MD-built dependency DLLs use must land on stderr, never on a modal
+    # dialog. The trigger DLL is deliberately built against the dynamic CRT,
+    # so it must not receive the static-CRT guard objects from this scope.
+    get_directory_property(_SNOW_IMAGE_TEST_GUARD_LIBS LINK_LIBRARIES)
+    set_property(DIRECTORY PROPERTY LINK_LIBRARIES "")
+    add_library(snow_image_test_cli_guard_trigger SHARED test_cli_guard_trigger.cpp)
+    set_target_properties(snow_image_test_cli_guard_trigger PROPERTIES
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+    )
+    set_property(DIRECTORY PROPERTY LINK_LIBRARIES ${_SNOW_IMAGE_TEST_GUARD_LIBS})
+    add_executable(snow_image_test_cli_guard_tests test_cli_guard_tests.cpp)
+    # Linking the trigger DLL makes the executable load the shared dynamic
+    # debug CRT at process start, before the guard's global constructor runs,
+    # mirroring production executables that link /MD-built vcpkg codec DLLs.
+    target_link_libraries(snow_image_test_cli_guard_tests
+        PRIVATE snow_image_test_cli_guard_trigger
+    )
+    target_compile_features(snow_image_test_cli_guard_tests PRIVATE cxx_std_20)
+    target_compile_options(snow_image_test_cli_guard_tests PRIVATE
+        /utf-8 /permissive- /Zc:__cplusplus /W4
+    )
+    add_test(NAME snow_image_test_cli_guard_tests COMMAND snow_image_test_cli_guard_tests)
+endif()

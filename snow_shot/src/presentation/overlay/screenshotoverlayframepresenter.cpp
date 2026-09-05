@@ -5,6 +5,8 @@
 #include <QCoreApplication>
 #include <QEvent>
 #include <QGuiApplication>
+#include <QList>
+#include <QtNumeric>
 #include <QWidget>
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -16,8 +18,9 @@ constexpr auto kRevealStrategyEnvironment = "SNOW_SHOT_CAPTURE_REVEAL_STRATEGY";
 
 class ShowPaintSuppression final : public QObject {
   public:
-    ShowPaintSuppression(QWidget& window, bool enabled) {
-        if (!enabled) {
+    ShowPaintSuppression(QWidget& window, bool suppressNativeRedraw,
+                         bool filterUpdateRequests = false) {
+        if (!suppressNativeRedraw && !filterUpdateRequests) {
             return;
         }
 
@@ -29,7 +32,7 @@ class ShowPaintSuppression final : public QObject {
         m_filteredWindow = &window;
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
-        if (QGuiApplication::platformName() != QStringLiteral("windows")) {
+        if (!suppressNativeRedraw || QGuiApplication::platformName() != QStringLiteral("windows")) {
             return;
         }
 
@@ -149,10 +152,62 @@ void recordStrategy(ScreenshotOverlayRevealStrategy strategy) {
         break;
     }
 }
+
+void enableWidgetTreeUpdates(QWidget& window) {
+    window.setUpdatesEnabled(true);
+    const QList<QWidget*> children = window.findChildren<QWidget*>();
+    for (QWidget* child : children) {
+        child->setUpdatesEnabled(true);
+    }
+}
+
+void deliverPostedUpdateRequests(QWidget& window) {
+    QCoreApplication::sendPostedEvents(&window, QEvent::UpdateRequest);
+    const QList<QWidget*> children = window.findChildren<QWidget*>();
+    for (QWidget* child : children) {
+        QCoreApplication::sendPostedEvents(child, QEvent::UpdateRequest);
+    }
+}
 } // namespace
 
 ScreenshotOverlayFramePresenter::ScreenshotOverlayFramePresenter(QWidget& window)
     : m_window(window), m_strategy(configuredRevealStrategy()) {}
+
+void ScreenshotOverlayFramePresenter::warmPresentationSurface() {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    if (QGuiApplication::platformName() != QStringLiteral("windows") || m_window.isVisible()) {
+        SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.window.surface_warm_skipped", 1);
+        return;
+    }
+
+    SNOW_SHOT_CAPTURE_PERF_SCOPE("presentation.window.surface_warm");
+    SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.window.surface_warm_requests", 1);
+    recordStrategy(m_strategy);
+
+    const ScreenshotOverlayRevealPlan plan = planFor(m_strategy);
+    {
+        SNOW_SHOT_CAPTURE_PERF_SCOPE("presentation.window.surface_warm.opacity_conceal");
+        m_window.setWindowOpacity(0.0);
+    }
+    ShowPaintSuppression paintSuppression(m_window, plan.suppressShowPaint);
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.surface_warm.redraw_suppressed");
+    {
+        SNOW_SHOT_CAPTURE_PERF_SCOPE("presentation.window.surface_warm.show");
+        m_window.show();
+    }
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.surface_warm.show_returned");
+    paintSuppression.restoreNativeRedraw();
+    {
+        SNOW_SHOT_CAPTURE_PERF_SCOPE("presentation.window.surface_warm.commit");
+        commitPreparedSurface(plan);
+    }
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.surface_warm.commit_done");
+    paintSuppression.discardDeferredUpdateRequests();
+    paintSuppression.restore();
+    m_window.setUpdatesEnabled(false);
+    SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.surface_warmed");
+#endif
+}
 
 void ScreenshotOverlayFramePresenter::presentPreparedFrame() {
     SNOW_SHOT_CAPTURE_PERF_SCOPE("presentation.window.sync_reveal");
@@ -160,8 +215,10 @@ void ScreenshotOverlayFramePresenter::presentPreparedFrame() {
     recordStrategy(m_strategy);
 
     const ScreenshotOverlayRevealPlan plan = planFor(m_strategy);
+    const bool alreadyVisible = m_window.isVisible();
     const bool concealFirstPaint = shouldConcealFirstPaint(m_window);
     const qreal previousOpacity = m_window.windowOpacity();
+    const bool restoreWarmedOpacity = alreadyVisible && qFuzzyIsNull(previousOpacity);
     if (concealFirstPaint) {
         SNOW_SHOT_CAPTURE_PERF_SCOPE("presentation.window.opacity_conceal");
         m_window.setWindowOpacity(0.0);
@@ -169,8 +226,12 @@ void ScreenshotOverlayFramePresenter::presentPreparedFrame() {
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.concealed");
 
     ShowPaintSuppression paintSuppression(m_window, concealFirstPaint && plan.suppressShowPaint);
+    if (alreadyVisible) {
+        SNOW_SHOT_CAPTURE_PERF_COUNTER("presentation.window.show_skipped_warmed", 1);
+        enableWidgetTreeUpdates(m_window);
+    }
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.redraw_suppressed");
-    {
+    if (!alreadyVisible) {
         SNOW_SHOT_CAPTURE_PERF_SCOPE("presentation.window.show");
         m_window.show();
     }
@@ -180,6 +241,9 @@ void ScreenshotOverlayFramePresenter::presentPreparedFrame() {
 
     {
         SNOW_SHOT_CAPTURE_PERF_SCOPE("presentation.window.surface_commit");
+        if (alreadyVisible) {
+            deliverPostedUpdateRequests(m_window);
+        }
         commitPreparedSurface(plan);
     }
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.surface_commit_done");
@@ -191,6 +255,9 @@ void ScreenshotOverlayFramePresenter::presentPreparedFrame() {
     if (concealFirstPaint) {
         SNOW_SHOT_CAPTURE_PERF_SCOPE("presentation.window.opacity_restore");
         m_window.setWindowOpacity(previousOpacity);
+    } else if (restoreWarmedOpacity) {
+        SNOW_SHOT_CAPTURE_PERF_SCOPE("presentation.window.opacity_restore");
+        m_window.setWindowOpacity(1.0);
     }
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.window.opacity_restored");
 }

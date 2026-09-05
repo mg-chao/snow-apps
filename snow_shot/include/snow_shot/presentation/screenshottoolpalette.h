@@ -211,13 +211,18 @@ class ScreenshotToolPalette final : public QWidget {
     void setTextEditingState(bool available, bool editing, bool canUndo = false,
                              bool canRedo = false);
     void setTextTranslationState(bool available, bool translating, bool streaming,
-                                 bool canUndo = false, bool canRedo = false,
-                                 bool canReset = false);
+                                 bool canUndo = false, bool canRedo = false, bool canReset = false);
     void setTextTransformSelections(const QString& formatting, const QString& punctuation);
     [[nodiscard]] bool ensureActionFamily(ActionFamily family);
     [[nodiscard]] bool ensureStyleFamily(Tool tool);
 
 #if defined(SNOW_SHOT_TEST_HOOKS)
+    struct StyleReconcileStats {
+        int retained = 0;
+        int created = 0;
+        int destroyed = 0;
+    };
+
     [[nodiscard]] std::optional<Tool> activeToolForTests() const;
     [[nodiscard]] quint64 styleStateNoopCountForTests() const;
     [[nodiscard]] quint64 propertyGroupRefreshCountForTests() const;
@@ -225,6 +230,7 @@ class ScreenshotToolPalette final : public QWidget {
     [[nodiscard]] SnowCanvasStyleDefaults styleStateForTests() const;
     [[nodiscard]] MaterializationState actionFamilyStateForTests(ActionFamily family) const;
     [[nodiscard]] MaterializationState styleFamilyStateForTests(Tool tool) const;
+    [[nodiscard]] StyleReconcileStats lastStyleReconcileStatsForTests() const;
 #endif
 
   signals:
@@ -325,6 +331,10 @@ class ScreenshotToolPalette final : public QWidget {
     void replayMaterializedState(Tool tool);
     void clearSecondaryResourceBindings();
     bool evictSecondaryToolbarContents();
+    bool evictStyleToolbarContentsExcept(QWidget* retainedControls, Tool retainedTool,
+                                         bool finishReconcile = true);
+    bool prepareStyleControlsForActivation(Tool destinationTool);
+    bool finishStyleControlsActivation(Tool destinationTool);
     bool addMainToolButtons(const Options& options, QBoxLayout* layout);
     bool addMainHistoryButtons(const Options& options, QBoxLayout* layout);
     bool addMainSecondaryButtons(const Options& options, QBoxLayout* layout);
@@ -478,6 +488,8 @@ class ScreenshotToolPalette final : public QWidget {
     QBoxLayout* m_selectActionLayout = nullptr;
     QVector<QBoxLayout*> m_styleControlLayouts;
     QWidget* m_rectangleStyleControlsWidget = nullptr;
+    QWidget* m_lineStyleControlsWidget = nullptr;
+    QWidget* m_freeDrawStyleControlsWidget = nullptr;
     QWidget* m_arrowStyleControlsWidget = nullptr;
     QWidget* m_highlightStyleControlsWidget = nullptr;
     QWidget* m_penHighlightStyleControlsWidget = nullptr;
@@ -607,6 +619,8 @@ class ScreenshotToolPalette final : public QWidget {
     qint64 m_recordingDurationMilliseconds = 0;
     bool m_replayingMaterializedState = false;
     bool m_releasingSecondaryResources = false;
+    bool m_styleReconcilePending = false;
+    std::optional<Tool> m_styleReconcileSource;
     QHash<int, MaterializationState> m_actionFamilyStates;
     QHash<int, MaterializationState> m_styleFamilyStates;
     SnowCanvasHistoryState m_canvasHistoryState;

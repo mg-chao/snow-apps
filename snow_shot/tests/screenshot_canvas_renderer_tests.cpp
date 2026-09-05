@@ -61,8 +61,8 @@ QImage testRenderOcrFilteredImage(const QImage& source, const QRectF& canvasRect
                                   const ScreenshotOcrPresentation& presentation,
                                   const QColor& background, QRectF* filteredCanvasRect) {
     QRect filteredPixels;
-    QImage filtered = renderScreenshotOcrFilteredImage(source, canvasRect, presentation,
-                                                       background, 1.0, &filteredPixels);
+    QImage filtered = renderScreenshotOcrFilteredImage(source, canvasRect, presentation, background,
+                                                       1.0, &filteredPixels);
     if (filteredCanvasRect != nullptr) {
         *filteredCanvasRect =
             screenshotOcrFilteredImageCanvasRect(canvasRect, source.size(), filteredPixels);
@@ -313,8 +313,8 @@ QImage renderPinnedResult(const QImage& source, const QTransform& canvasToView,
     output.setDevicePixelRatio(devicePixelRatio);
     output.fill(Qt::transparent);
     QPainter painter(&output);
-    const QRect logicalViewport(
-        QPoint(), QSize(qCeil(targetRect.width()), qCeil(targetRect.height())));
+    const QRect logicalViewport(QPoint(),
+                                QSize(qCeil(targetRect.width()), qCeil(targetRect.height())));
     const SnowCanvasRenderContext context{
         logicalViewport,
         QRegion(logicalViewport),
@@ -330,8 +330,7 @@ QImage checkerboardFixture(const QSize& size) {
     QImage checker(size, QImage::Format_RGBA8888);
     for (int y = 0; y < checker.height(); ++y) {
         for (int x = 0; x < checker.width(); ++x) {
-            checker.setPixelColor(x, y,
-                                  (x + y) % 2 == 0 ? QColor(Qt::white) : QColor(Qt::black));
+            checker.setPixelColor(x, y, (x + y) % 2 == 0 ? QColor(Qt::white) : QColor(Qt::black));
         }
     }
     return checker;
@@ -365,8 +364,7 @@ void pinnedResultDownscaleUsesLinearFiltering() {
     require(exact == checker,
             "a full-size pinned result should stay pixel-exact without filtering");
 
-    const QImage fractionalDpi =
-        renderPinnedResult(checker, QTransform::fromScale(0.8, 0.8), 1.25);
+    const QImage fractionalDpi = renderPinnedResult(checker, QTransform::fromScale(0.8, 0.8), 1.25);
     require(fractionalDpi == checker,
             "a full-size pinned result at fractional DPI maps 1:1 in device pixels and should "
             "stay pixel-exact");
@@ -1303,6 +1301,15 @@ void bgraScreenshotImagesRenderWithCorrectColors() {
     require(rendered.pixelColor(0, 0) == QColor(255, 0, 0, 255) &&
                 rendered.pixelColor(1, 0) == QColor(0, 0, 255, 255),
             "BGRA screenshot pixels should render with their original colors");
+
+    QImage rgb32(source.constBits(), source.width(), source.height(), source.bytesPerLine(),
+                 QImage::Format_RGB32);
+    require(!rgb32.hasAlphaChannel(),
+            "opaque BGRA screenshot frames tagged as RGB32 must not report an alpha channel");
+    const QImage renderedRgb32 =
+        renderMaterializedImage(rgb32, rgb32.size(), QRegion(rgb32.rect()), Qt::transparent);
+    require(renderedRgb32 == rendered,
+            "opaque RGB32 screenshot pixels must blit to the same colors as ARGB32");
 #endif
 }
 
@@ -2015,18 +2022,18 @@ void ocrPresentationRendersWhileCanvasContentIsHidden() {
     renderer.setOcrPresentation(presentation,
                                 ScreenshotCanvasRenderer::OcrPresentationMode::BackgroundOnly);
     QRectF filteredCanvasRect;
-    renderer.setOcrFilteredImage(
-        testRenderOcrFilteredImage(screenshot, screenshotCanvasRect, *presentation,
-                                   QColor(Qt::white), &filteredCanvasRect),
-        filteredCanvasRect);
+    renderer.setOcrFilteredImage(testRenderOcrFilteredImage(screenshot, screenshotCanvasRect,
+                                                            *presentation, QColor(Qt::white),
+                                                            &filteredCanvasRect),
+                                 filteredCanvasRect);
     require(canvas.findChild<QGraphicsView*>(QStringLiteral("snowShotOcrTextLayer")) == nullptr,
             "background-only OCR should not create a text layer on the screenshot canvas");
     renderer.clearOcrPresentation();
     renderer.setOcrPresentation(presentation);
-    renderer.setOcrFilteredImage(
-        testRenderOcrFilteredImage(screenshot, screenshotCanvasRect, *presentation,
-                                   QColor(Qt::white), &filteredCanvasRect),
-        filteredCanvasRect);
+    renderer.setOcrFilteredImage(testRenderOcrFilteredImage(screenshot, screenshotCanvasRect,
+                                                            *presentation, QColor(Qt::white),
+                                                            &filteredCanvasRect),
+                                 filteredCanvasRect);
     require(ocrTextItemCount(canvas) == 1,
             "each OCR line should use one layout-backed graphics item");
     canvas.setCanvasContentVisible(false);
@@ -2129,10 +2136,10 @@ void ocrPresentationRendersWhileCanvasContentIsHidden() {
             "clearing OCR should destroy its graphics text items");
     renderer.setOcrPresentation(presentation,
                                 ScreenshotCanvasRenderer::OcrPresentationMode::BackgroundOnly);
-    renderer.setOcrFilteredImage(
-        testRenderOcrFilteredImage(screenshot, screenshotCanvasRect, *presentation,
-                                   QColor(Qt::white), &filteredCanvasRect),
-        filteredCanvasRect);
+    renderer.setOcrFilteredImage(testRenderOcrFilteredImage(screenshot, screenshotCanvasRect,
+                                                            *presentation, QColor(Qt::white),
+                                                            &filteredCanvasRect),
+                                 filteredCanvasRect);
     const QImage backgroundOnlyOutput = renderCanvas(canvas);
     require(ocrTextItemCount(canvas) == 0 && textLayer->isHidden(),
             "background-only OCR should not create or show text widgets");
@@ -2157,8 +2164,8 @@ void ocrFilteredImageBlendsTowardTheSuppliedThemeBackground() {
     presentation.selection = QRect(0, 0, 20, 20);
     ScreenshotOcrLine line;
     line.text = QStringLiteral("OCR");
-    line.quad = QPolygonF({QPointF(5.0, 5.0), QPointF(15.0, 5.0), QPointF(15.0, 15.0),
-                           QPointF(5.0, 15.0)});
+    line.quad =
+        QPolygonF({QPointF(5.0, 5.0), QPointF(15.0, 5.0), QPointF(15.0, 15.0), QPointF(5.0, 15.0)});
     presentation.lines.push_back(line);
 
     const QRectF canvasRect(0.0, 0.0, 20.0, 20.0);
@@ -2171,8 +2178,8 @@ void ocrFilteredImageBlendsTowardTheSuppliedThemeBackground() {
     const QPoint center(10, 10);
     require(filteredCanvasRect.contains(QPointF(center)),
             "the filtered crop should cover the recognized quad");
-    const QColor blended = filtered.pixelColor(
-        center.x() - qFloor(filteredCanvasRect.left()), center.y() - qFloor(filteredCanvasRect.top()));
+    const QColor blended = filtered.pixelColor(center.x() - qFloor(filteredCanvasRect.left()),
+                                               center.y() - qFloor(filteredCanvasRect.top()));
     require(blended.red() < 30 && blended.green() < 60 && blended.blue() < 160,
             "OCR filtering should blend toward the supplied theme background color");
     require(blended != QColor(127, 167, 247),
@@ -2184,8 +2191,9 @@ void ocrFilteredCropMatchesFullFrameReference() {
     QImage source(260, 200, QImage::Format_ARGB32_Premultiplied);
     for (int y = 0; y < source.height(); ++y) {
         for (int x = 0; x < source.width(); ++x) {
-            source.setPixel(x, y, qRgba((x * 37 + y * 11) % 256, (x * 7 + y * 53) % 256,
-                                        (x * 97 + y * 29) % 256, 255));
+            source.setPixel(x, y,
+                            qRgba((x * 37 + y * 11) % 256, (x * 7 + y * 53) % 256,
+                                  (x * 97 + y * 29) % 256, 255));
         }
     }
 
@@ -2194,9 +2202,9 @@ void ocrFilteredCropMatchesFullFrameReference() {
     auto addLine = [&presentation](const QRectF& quadRect) {
         ScreenshotOcrLine line;
         line.text = QStringLiteral("text");
-        line.quad = QPolygonF({quadRect.topLeft(), QPointF(quadRect.right(), quadRect.top()),
-                               QPointF(quadRect.right(), quadRect.bottom()),
-                               quadRect.bottomLeft()});
+        line.quad =
+            QPolygonF({quadRect.topLeft(), QPointF(quadRect.right(), quadRect.top()),
+                       QPointF(quadRect.right(), quadRect.bottom()), quadRect.bottomLeft()});
         presentation.lines.push_back(line);
     };
     // Two distant lines form independent clusters that share one crop.
@@ -2205,8 +2213,7 @@ void ocrFilteredCropMatchesFullFrameReference() {
 
     // Reference: the pre-crop pipeline — one full-size copy, one region filter
     // over the union, one clipped blend fill.
-    const QRegion region =
-        screenshotOcrFilterRegion(presentation, canvasRect, source.size());
+    const QRegion region = screenshotOcrFilterRegion(presentation, canvasRect, source.size());
     QImage reference = source.copy();
     SnowCanvasRegionFilterParameters parameters;
     parameters.type = SnowCanvasFilterType::GaussianBlur;
@@ -2243,11 +2250,12 @@ void ocrFilteredCropMatchesFullFrameReference() {
             const QPoint cropPosition(x, y);
             const QPoint imagePosition = cropPosition + filteredPixels.topLeft();
             if (filtered.pixel(cropPosition) != reference.pixel(imagePosition)) {
-                std::cerr << "crop mismatch at " << qPrintable(QString("%1,%2 (image %3,%4)")
-                                                                  .arg(x)
-                                                                  .arg(y)
-                                                                  .arg(imagePosition.x())
-                                                                  .arg(imagePosition.y()))
+                std::cerr << "crop mismatch at "
+                          << qPrintable(QString("%1,%2 (image %3,%4)")
+                                            .arg(x)
+                                            .arg(y)
+                                            .arg(imagePosition.x())
+                                            .arg(imagePosition.y()))
                           << ": crop " << filtered.pixel(cropPosition) << " reference "
                           << reference.pixel(imagePosition) << '\n';
                 require(false, "the cropped clustered render must match the full-frame reference");

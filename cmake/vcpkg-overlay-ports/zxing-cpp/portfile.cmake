@@ -3,6 +3,11 @@ if(VCPKG_TARGET_IS_WINDOWS)
     # Snow Shot links the static Qt kit and therefore uses the static CRT even
     # in its debug preset. zxing-cpp is linked into that executable directly.
     set(VCPKG_CRT_LINKAGE static)
+    # zxing-cpp 3.x compiles as C++20 and emits coroutine ABI 2. Qt 6.11.1
+    # msvc2026 static kits are C++17 ABI 1. ZXing does not share coroutine
+    # frames with Qt, so suppress the object-file detect_mismatch.
+    set(VCPKG_C_FLAGS "${VCPKG_C_FLAGS}")
+    set(VCPKG_CXX_FLAGS "/D_ALLOW_COROUTINE_ABI_MISMATCH ${VCPKG_CXX_FLAGS}")
 endif()
 
 # The auto-generated GitHub source archives of this repository are unusable

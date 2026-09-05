@@ -3,11 +3,13 @@
 #include <QApplication>
 #include <QColor>
 #include <QCoreApplication>
+#include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QImage>
 #include <QPaintEvent>
 #include <QPainter>
 #include <QScreen>
+#include <QtNumeric>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -63,6 +65,56 @@ void revealStrategiesHaveExplicitCommitPlans() {
                 !nativeUpdate.sendPostedUpdate && nativeUpdate.nativeUpdate &&
                 !nativeUpdate.nativeInvalidate,
             "the native-update reveal should issue exactly one explicit commit request");
+}
+
+QImage patternedOpaqueBgra(const QSize& size) {
+    QImage image(size, QImage::Format_ARGB32);
+    for (int y = 0; y < image.height(); ++y) {
+        auto* row = reinterpret_cast<QRgb*>(image.scanLine(y));
+        for (int x = 0; x < image.width(); ++x) {
+            row[x] = qRgba((x * 3 + y) & 0xff, (y * 5) & 0xff, (x + y * 7) & 0xff, 255);
+        }
+    }
+    return image;
+}
+
+QImage blitImage(const QImage& source) {
+    QImage destination(source.size(), QImage::Format_ARGB32_Premultiplied);
+    destination.fill(Qt::transparent);
+    QPainter painter(&destination);
+    painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+    painter.drawImage(QPoint(0, 0), source);
+    painter.end();
+    return destination;
+}
+
+void opaqueRgb32BlitMatchesArgb32() {
+    const QImage argb = patternedOpaqueBgra(QSize(960, 540));
+    require(argb.hasAlphaChannel(), "ARGB32 fixtures must report an alpha channel");
+    const QImage rgb32(argb.constBits(), argb.width(), argb.height(), argb.bytesPerLine(),
+                       QImage::Format_RGB32);
+    require(!rgb32.hasAlphaChannel(), "RGB32 must report no alpha channel");
+
+    const QImage fromArgb = blitImage(argb);
+    const QImage fromRgb32 = blitImage(rgb32);
+    require(fromArgb == fromRgb32,
+            "opaque RGB32 and ARGB32 BGRA buffers must blit to the same pixels");
+
+    constexpr int iterations = 4;
+    QElapsedTimer timer;
+    timer.start();
+    for (int iteration = 0; iteration < iterations; ++iteration) {
+        static_cast<void>(blitImage(argb));
+    }
+    const qint64 argbNanoseconds = timer.nsecsElapsed();
+    timer.restart();
+    for (int iteration = 0; iteration < iterations; ++iteration) {
+        static_cast<void>(blitImage(rgb32));
+    }
+    const qint64 rgb32Nanoseconds = timer.nsecsElapsed();
+    std::cerr << "blit-format mean_ms argb32="
+              << (static_cast<double>(argbNanoseconds) / iterations / 1e6)
+              << " rgb32=" << (static_cast<double>(rgb32Nanoseconds) / iterations / 1e6) << '\n';
 }
 
 #if defined(Q_OS_WIN)
@@ -221,6 +273,62 @@ void preparedRevealPublishesExactlyOneFreshFrame() {
             "the first post-reveal update should add exactly one paint event");
     window.hide();
 }
+
+void warmedSurfaceRevealSkipsFirstShowAndRestoresOpacity() {
+    require(QGuiApplication::platformName() == QStringLiteral("windows"),
+            "native reveal test requires the Windows Qt platform");
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "native reveal test requires a primary screen");
+
+    constexpr QSize probeSize(192, 128);
+    const QRect available = screen->availableGeometry();
+    require(available.width() >= probeSize.width() + 64 &&
+                available.height() >= probeSize.height() + 64,
+            "native reveal test requires a 256 by 192 pixel desktop area");
+
+    RevealProbeWindow window;
+    window.setGeometry(QRect(available.topLeft() + QPoint(32, 32), probeSize));
+    static_cast<void>(window.winId());
+
+    const QColor preparedColor(20, 173, 109);
+    window.setFrameColor(preparedColor);
+    window.resetPaintCount();
+
+    ScreenshotOverlayFramePresenter presenter(window);
+    presenter.setStrategyForTesting(ScreenshotOverlayRevealStrategy::NativeInvalidateSuppressed);
+    presenter.warmPresentationSurface();
+    require(SUCCEEDED(DwmFlush()), "native warm test could not flush the concealed DWM surface");
+
+    require(window.isVisible(), "surface warmup left the probe logically hidden");
+    require(IsWindowVisible(reinterpret_cast<HWND>(window.winId())) != FALSE,
+            "surface warmup left the native probe hidden");
+    require(qFuzzyIsNull(window.windowOpacity()),
+            "surface warmup must keep the probe at opacity 0");
+    require(window.paintCount() == 1,
+            "surface warmup must create the layered bitmap with one paint");
+
+    const QPoint samplePosition = nativeGlobalPosition(window, window.rect().center());
+    require(!colorNear(desktopPixel(samplePosition), preparedColor),
+            "a warmed overlay must stay visually concealed until reveal");
+
+    window.resetPaintCount();
+    presenter.presentPreparedFrame();
+    require(SUCCEEDED(DwmFlush()), "native warm test could not flush the revealed DWM frame");
+    QApplication::processEvents();
+    require(SUCCEEDED(DwmFlush()), "native warm test could not flush deferred presentation work");
+
+    require(window.isVisible(), "warmed reveal left the probe logically hidden");
+    require(qAbs(window.windowOpacity() - 1.0) < 0.001,
+            "warmed reveal must restore full window opacity");
+    if (window.paintCount() != 1) {
+        std::cerr << "warmed reveal paint count=" << window.paintCount() << '\n';
+    }
+    require(window.paintCount() == 1,
+            "warmed reveal must publish the prepared frame with exactly one paint event");
+    require(colorNear(desktopPixel(samplePosition), preparedColor),
+            "warmed reveal exposed a stale or concealed composited frame");
+    window.hide();
+}
 #endif
 } // namespace
 
@@ -232,11 +340,14 @@ int main(int argc, char** argv) {
         }
         QApplication application(argc, argv);
         revealStrategiesHaveExplicitCommitPlans();
+        opaqueRgb32BlitMatchesArgb32();
         preparedRevealPublishesExactlyOneFreshFrame();
+        warmedSurfaceRevealSkipsFirstShowAndRestoresOpacity();
         return 0;
     }
 #endif
     QCoreApplication application(argc, argv);
     revealStrategiesHaveExplicitCommitPlans();
+    opaqueRgb32BlitMatchesArgb32();
     return 0;
 }

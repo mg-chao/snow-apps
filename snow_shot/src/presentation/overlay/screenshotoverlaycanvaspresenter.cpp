@@ -182,9 +182,7 @@ qsizetype preferredOverlayEntryIndex(const QVector<ActiveOverlayEntry>& entries,
 }
 
 void showCapturedImageOverlayNow(ScreenshotOverlayWindow& overlay) {
-    if (!overlay.isVisible()) {
-        showOverlayWindow(overlay);
-    }
+    showOverlayWindow(overlay);
     raiseOverlayWindow(overlay);
     scheduleOverlayActivation(&overlay);
 }
@@ -199,9 +197,7 @@ void showCapturedImageOverlayDeferred(ScreenshotOverlayWindow* overlay) {
             return;
         }
 
-        if (!overlay->isVisible()) {
-            showOverlayWindow(*overlay);
-        }
+        showOverlayWindow(*overlay);
         raiseOverlayWindow(*overlay);
         scheduleOverlayActivation(overlay);
     });
@@ -225,6 +221,13 @@ void showCapturedImageOverlaysForDisplaySession(const ScreenshotDisplaySession& 
 
 void showOverlayWindowsForDisplaySession(const ScreenshotDisplaySession& displaySession,
                                          ScreenshotOverlayShowMode mode) {
+    if (mode == ScreenshotOverlayShowMode::WarmSurface) {
+        displaySession.forEachActiveOverlay(
+            [](qsizetype, const CapturedDisplayModel&, ScreenshotOverlayWindow* overlay) {
+                overlay->warmPresentationSurface();
+            });
+        return;
+    }
     if (mode == ScreenshotOverlayShowMode::CapturedImage) {
         showCapturedImageOverlaysForDisplaySession(displaySession);
         return;
@@ -287,10 +290,9 @@ void ScreenshotOverlayCanvasPresenter::updateOverlayState(
     int shadowWidth, const QColor& shadowColor, bool selectionToolbarHovered,
     bool selectionHandlesVisible, bool intelligentSelecting, bool manualSelecting,
     bool dragging) const {
-    updateOverlayStateForDisplaySession(displaySession, selection, cornerRadius, shadowWidth,
-                                        shadowColor, selectionToolbarHovered,
-                                        selectionHandlesVisible, intelligentSelecting,
-                                        manualSelecting, dragging);
+    updateOverlayStateForDisplaySession(
+        displaySession, selection, cornerRadius, shadowWidth, shadowColor, selectionToolbarHovered,
+        selectionHandlesVisible, intelligentSelecting, manualSelecting, dragging);
 }
 
 namespace {
@@ -307,8 +309,7 @@ void updateOverlayCursorsForDisplaySession(const ScreenshotDisplaySession& displ
                 return;
             }
             if (selecting && display.active) {
-                canvas->setCursorForLayer(SnowCanvasCursorLayer::Host,
-                                          QCursor(Qt::CrossCursor));
+                canvas->setCursorForLayer(SnowCanvasCursorLayer::Host, QCursor(Qt::CrossCursor));
             } else if (!dragging) {
                 canvas->clearCursorForLayer(SnowCanvasCursorLayer::Host);
             }
@@ -454,8 +455,7 @@ void ScreenshotOverlayCanvasPresenter::setCanvasTool(const ScreenshotDisplaySess
 }
 
 void ScreenshotOverlayCanvasPresenter::refreshCanvasCreationStyles(
-    const ScreenshotDisplaySession& displaySession,
-    const SnowCanvasStyleDefaults& defaults) const {
+    const ScreenshotDisplaySession& displaySession, const SnowCanvasStyleDefaults& defaults) const {
     displaySession.forEachOverlay([&defaults](qsizetype, ScreenshotOverlayWindow* overlay) {
         if (overlay != nullptr && overlay->canvas() != nullptr) {
             snow_shot::presentation::applyScreenshotCanvasToolStyles(*overlay->canvas(), defaults);

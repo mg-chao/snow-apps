@@ -25,6 +25,10 @@ enum class ScreenshotSessionState {
 enum class ScreenshotOverlayShowMode {
     PreparedPreview,
     CapturedImage,
+    // Creates the native window, backing store, and DWM layered surface at
+    // opacity 0 after capture is dispatched, so first-show cost overlaps frame
+    // acquisition instead of sitting on the reveal path.
+    WarmSurface,
 };
 
 enum class ScreenshotCaptureBackend {

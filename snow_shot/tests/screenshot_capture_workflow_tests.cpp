@@ -7,6 +7,8 @@
 #include "snow_shot/presentation/screenshotinteractionstate.h"
 #include "snow_shot/presentation/screenshotselectionmodel.h"
 
+#include <QVector>
+
 #include <cstdlib>
 #include <iostream>
 
@@ -95,12 +97,30 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     void applyDisplayModels(ScreenshotDisplaySession&) override {
         ++applyDisplayModelsCalls;
     }
-    [[nodiscard]] bool preparePreCaptureOverlayWindows(ScreenshotDisplaySession&) override {
+    [[nodiscard]] bool
+    preparePreCaptureOverlayWindows(ScreenshotDisplaySession& displaySession) override {
         ++preparePreCaptureOverlayCalls;
+        if (seedActiveDisplayOnPrepare) {
+            CapturedDisplayModel display;
+            display.stableId = QStringLiteral("primary");
+            display.name = QStringLiteral("Primary");
+            display.physicalRect = QRect(0, 0, 64, 48);
+            display.logicalRect = display.physicalRect;
+            display.active = true;
+            displaySession.appendDisplay(display);
+        }
         return true;
     }
-    void showOverlayWindows(const ScreenshotDisplaySession&, ScreenshotOverlayShowMode) override {
+    void showOverlayWindows(const ScreenshotDisplaySession&,
+                            ScreenshotOverlayShowMode mode) override {
         ++showOverlayCalls;
+        showOverlayModes.push_back(mode);
+        if (mode == ScreenshotOverlayShowMode::WarmSurface) {
+            ++warmSurfaceShowCalls;
+        }
+        if (mode == ScreenshotOverlayShowMode::CapturedImage) {
+            ++capturedImageShowCalls;
+        }
     }
     void hideOverlayWindowsImmediately(const ScreenshotDisplaySession&) override {
         ++hideOverlayImmediatelyCalls;
@@ -133,6 +153,9 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     mutable int clearOverlayCanvasCalls = 0;
     int clearDisplayCalls = 0;
     int showOverlayCalls = 0;
+    int warmSurfaceShowCalls = 0;
+    int capturedImageShowCalls = 0;
+    QVector<ScreenshotOverlayShowMode> showOverlayModes;
     int applyDisplayModelsCalls = 0;
     int preparePreCaptureOverlayCalls = 0;
     int hideOverlayCalls = 0;
@@ -147,11 +170,11 @@ class CaptureRuntime final : public ScreenshotCaptureRuntimePort {
     bool selectorRefreshActive = false;
     bool captureWasQueuedBeforeSelectorRefresh = false;
     bool failCaptureSynchronously = false;
+    bool seedActiveDisplayOnPrepare = false;
     ScreenshotCaptureRequest lastCaptureRequest;
 };
 
-ScreenshotCaptureResult successfulResult(quint64 requestId,
-                                         const CapturedDisplayModel& snapshot) {
+ScreenshotCaptureResult successfulResult(quint64 requestId, const CapturedDisplayModel& snapshot) {
     ScreenshotCaptureResult result;
     result.requestId = requestId;
     result.displays = {snapshot};
@@ -159,12 +182,13 @@ ScreenshotCaptureResult successfulResult(quint64 requestId,
     return result;
 }
 
-ScreenshotCaptureWorkflow
-makeWorkflow(ScreenshotCaptureState& state, ScreenshotDisplaySession& displaySession,
-             ScreenshotGeometryMapper& geometry, ScreenshotInteractionState& interaction,
-             ScreenshotSelectionModel& selection,
-             ScreenshotIntelligentSelectionModel& intelligentSelection, CaptureRuntime& runtime,
-             bool smartSelectionEnabled = true) {
+ScreenshotCaptureWorkflow makeWorkflow(ScreenshotCaptureState& state,
+                                       ScreenshotDisplaySession& displaySession,
+                                       ScreenshotGeometryMapper& geometry,
+                                       ScreenshotInteractionState& interaction,
+                                       ScreenshotSelectionModel& selection,
+                                       ScreenshotIntelligentSelectionModel& intelligentSelection,
+                                       CaptureRuntime& runtime, bool smartSelectionEnabled = true) {
     return ScreenshotCaptureWorkflow({
         state,
         runtime,
@@ -324,8 +348,7 @@ void captureOverlapsSelectorInitialization() {
         require(runtime.startWorkflowRefreshCalls == 1,
                 "capture must initialize the selector snapshot");
         require(runtime.captureAllAsyncCalls == 1 &&
-                    runtime.captureWasQueuedBeforeSelectorRefresh &&
-                    runtime.selectorRefreshActive,
+                    runtime.captureWasQueuedBeforeSelectorRefresh && runtime.selectorRefreshActive,
                 "desktop capture must overlap selector initialization after overlay exclusion");
     };
 
@@ -436,7 +459,8 @@ void capturePresentedRunsAfterCapturedOverlayIsShown() {
     runtime.eventSink->handleCaptureFinished(result);
     runtime.eventSink->handleCaptureFinished(result);
 
-    require(runtime.showOverlayCalls == 1 && capturePresentedCalls == 1 &&
+    require(runtime.showOverlayCalls == 1 && runtime.capturedImageShowCalls == 1 &&
+                runtime.warmSurfaceShowCalls == 0 && capturePresentedCalls == 1 &&
                 showCallsObservedByCallback == 1,
             "capture-presented callback must run once after the captured overlay is shown");
 }
@@ -462,6 +486,59 @@ void overlayCapturePrewarmsToolbarSurfaceAfterCaptureDispatch() {
     require(runtime.prewarmToolbarSurfaceCalls == 2,
             "every capture session must prewarm the toolbar surface again once the previous "
             "session retired it");
+}
+
+void overlayCaptureWarmsNativeSurfaceAfterCaptureDispatch() {
+    ScreenshotCaptureState state;
+    state.sessionState = ScreenshotSessionState::IdlePrepared;
+    ScreenshotDisplaySession displaySession;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligentSelection;
+    CaptureRuntime runtime;
+    runtime.seedActiveDisplayOnPrepare = true;
+    int capturePresentedCalls = 0;
+    ScreenshotCaptureWorkflow workflow({
+        state,
+        runtime,
+        geometry,
+        displaySession,
+        interaction,
+        selection,
+        intelligentSelection,
+        ScreenshotCapturePresentationCallbacks{
+            {},
+            {},
+            {},
+            [&capturePresentedCalls]() { ++capturePresentedCalls; },
+        },
+    });
+
+    workflow.startCapture();
+    require(runtime.captureAllAsyncCalls == 1 && runtime.warmSurfaceShowCalls == 1 &&
+                runtime.capturedImageShowCalls == 0 && runtime.showOverlayModes.size() == 1 &&
+                runtime.showOverlayModes.constFirst() == ScreenshotOverlayShowMode::WarmSurface,
+            "an overlay capture must warm the native surface after capture is dispatched");
+    require(runtime.prewarmToolbarSawDispatchedCapture,
+            "surface warmup must overlap a capture that is already in flight");
+
+    CapturedDisplayModel snapshot;
+    snapshot.stableId = QStringLiteral("primary");
+    snapshot.name = QStringLiteral("Primary");
+    snapshot.physicalRect = QRect(0, 0, 64, 48);
+    snapshot.logicalRect = snapshot.physicalRect;
+    snapshot.image = QImage(snapshot.physicalRect.size(), QImage::Format_RGB32);
+    snapshot.image.fill(Qt::blue);
+
+    require(runtime.eventSink != nullptr, "capture workflow did not register its event sink");
+    runtime.eventSink->handleCaptureFinished(successfulResult(state.sessionId, snapshot));
+
+    require(runtime.capturedImageShowCalls == 1 && runtime.warmSurfaceShowCalls == 1 &&
+                runtime.showOverlayCalls == 2 && capturePresentedCalls == 1 &&
+                runtime.showOverlayModes.size() == 2 &&
+                runtime.showOverlayModes.constLast() == ScreenshotOverlayShowMode::CapturedImage,
+            "reveal must still present the captured overlay after the surface is warmed");
 }
 
 void silentCaptureNeverPreparesOrShowsOverlays() {
@@ -523,7 +600,7 @@ void displayChangesRefreshWithoutCancelingIdleOrActiveCapture() {
     ScreenshotIntelligentSelectionModel idleSmartSelection;
     CaptureRuntime idleRuntime;
     auto idleWorkflow = makeWorkflow(idleState, idleDisplays, idleGeometry, idleInteraction,
-                                      idleSelection, idleSmartSelection, idleRuntime);
+                                     idleSelection, idleSmartSelection, idleRuntime);
 
     idleWorkflow.handleDisplayConfigurationChanged();
     require(idleState.layoutDirty && idleRuntime.refreshLayoutCalls == 1 &&
@@ -538,8 +615,9 @@ void displayChangesRefreshWithoutCancelingIdleOrActiveCapture() {
     ScreenshotSelectionModel activeSelection;
     ScreenshotIntelligentSelectionModel activeSmartSelection;
     CaptureRuntime activeRuntime;
-    auto activeWorkflow = makeWorkflow(activeState, activeDisplays, activeGeometry, activeInteraction,
-                                       activeSelection, activeSmartSelection, activeRuntime);
+    auto activeWorkflow =
+        makeWorkflow(activeState, activeDisplays, activeGeometry, activeInteraction,
+                     activeSelection, activeSmartSelection, activeRuntime);
     activeWorkflow.startCapture(ScreenshotCapturePresentationMode::Silent);
     activeWorkflow.handleDisplayConfigurationChanged();
     require(activeState.captureInProgress && activeRuntime.refreshLayoutCalls == 0 &&
@@ -551,7 +629,8 @@ void displayChangesRefreshWithoutCancelingIdleOrActiveCapture() {
     snapshot.name = QStringLiteral("Primary");
     snapshot.physicalRect = QRect(0, 0, 64, 48);
     snapshot.image = QImage(snapshot.physicalRect.size(), QImage::Format_RGBA8888);
-    activeRuntime.eventSink->handleCaptureFinished(successfulResult(activeState.sessionId, snapshot));
+    activeRuntime.eventSink->handleCaptureFinished(
+        successfulResult(activeState.sessionId, snapshot));
     require(activeRuntime.refreshLayoutCalls == 1 && activeState.layoutDirty,
             "a display change during capture must refresh after capture completion");
 }
@@ -695,8 +774,7 @@ void intelligentSelectionTargetsPreserveElementPathBehavior() {
             "window mode must lock an element path to its outermost window");
 
     selection.beginCaptureSession(true);
-    require(selection.selectionTarget() ==
-                ScreenshotIntelligentSelectionTarget::WindowSubElement,
+    require(selection.selectionTarget() == ScreenshotIntelligentSelectionTarget::WindowSubElement,
             "a new screenshot must discard the preceding screenshot's Tab target mode");
 
     selection.beginCaptureSession(false);
@@ -726,9 +804,9 @@ void captureSessionsApplyTheCurrentSmartSelectionSetting() {
     ScreenshotSelectionModel enabledSelection;
     ScreenshotIntelligentSelectionModel enabledIntelligentSelection;
     CaptureRuntime enabledRuntime;
-    auto enabledWorkflow = makeWorkflow(
-        enabledState, enabledDisplays, enabledGeometry, enabledInteraction, enabledSelection,
-        enabledIntelligentSelection, enabledRuntime, true);
+    auto enabledWorkflow =
+        makeWorkflow(enabledState, enabledDisplays, enabledGeometry, enabledInteraction,
+                     enabledSelection, enabledIntelligentSelection, enabledRuntime, true);
 
     enabledWorkflow.startCapture();
     require(enabledIntelligentSelection.selectionTarget() ==
@@ -749,13 +827,13 @@ void captureSessionsApplyTheCurrentSmartSelectionSetting() {
     ScreenshotSelectionModel disabledSelection;
     ScreenshotIntelligentSelectionModel disabledIntelligentSelection;
     CaptureRuntime disabledRuntime;
-    auto disabledWorkflow = makeWorkflow(
-        disabledState, disabledDisplays, disabledGeometry, disabledInteraction, disabledSelection,
-        disabledIntelligentSelection, disabledRuntime, false);
+    auto disabledWorkflow =
+        makeWorkflow(disabledState, disabledDisplays, disabledGeometry, disabledInteraction,
+                     disabledSelection, disabledIntelligentSelection, disabledRuntime, false);
 
     disabledWorkflow.startCapture();
     require(disabledIntelligentSelection.selectionTarget() ==
-                ScreenshotIntelligentSelectionTarget::Window &&
+                    ScreenshotIntelligentSelectionTarget::Window &&
                 !disabledIntelligentSelection.toggleSelectionTarget(),
             "a disabled capture session must stay in window mode");
 }
@@ -770,6 +848,7 @@ int main() {
     restartingCaptureReleasesPreviousSelectorCache();
     capturePresentedRunsAfterCapturedOverlayIsShown();
     overlayCapturePrewarmsToolbarSurfaceAfterCaptureDispatch();
+    overlayCaptureWarmsNativeSurfaceAfterCaptureDispatch();
     silentCaptureNeverPreparesOrShowsOverlays();
     displayChangesRefreshWithoutCancelingIdleOrActiveCapture();
     focusedWindowCaptureUsesOneCompoundWorkerTransaction();

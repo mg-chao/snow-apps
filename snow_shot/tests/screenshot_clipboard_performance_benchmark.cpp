@@ -107,8 +107,7 @@ class Collector final : public clipboard_perf::Sink {
         TraceAggregate& aggregate = m_sample->durations[QString::fromLatin1(name)];
         ++aggregate.count;
         aggregate.totalNanoseconds += elapsedNanoseconds;
-        aggregate.maximumNanoseconds =
-            std::max(aggregate.maximumNanoseconds, elapsedNanoseconds);
+        aggregate.maximumNanoseconds = std::max(aggregate.maximumNanoseconds, elapsedNanoseconds);
     }
 
     void recordCounter(const char* name, qint64 value) override {
@@ -123,8 +122,7 @@ class Collector final : public clipboard_perf::Sink {
         TraceAggregate& aggregate = sample.durations[name];
         ++aggregate.count;
         aggregate.totalNanoseconds += elapsedNanoseconds;
-        aggregate.maximumNanoseconds =
-            std::max(aggregate.maximumNanoseconds, elapsedNanoseconds);
+        aggregate.maximumNanoseconds = std::max(aggregate.maximumNanoseconds, elapsedNanoseconds);
     }
 
   private:
@@ -136,36 +134,70 @@ QVector<Scenario> scenarios() {
     return {
         {QStringLiteral("clipboard-1080p-argb32"),
          QStringLiteral("Direct 1920x1080 ARGB32 publication"),
-         ScenarioKind::ClipboardOnly, QSize(1920, 1080), QImage::Format_ARGB32, {}, false},
+         ScenarioKind::ClipboardOnly,
+         QSize(1920, 1080),
+         QImage::Format_ARGB32,
+         {},
+         false},
         {QStringLiteral("clipboard-4k-argb32"),
          QStringLiteral("Direct 3840x2160 ARGB32 publication"),
-         ScenarioKind::ClipboardOnly, QSize(3840, 2160), QImage::Format_ARGB32, {}, false},
+         ScenarioKind::ClipboardOnly,
+         QSize(3840, 2160),
+         QImage::Format_ARGB32,
+         {},
+         false},
         {QStringLiteral("clipboard-4k-premultiplied"),
          QStringLiteral("Direct 3840x2160 premultiplied publication"),
-         ScenarioKind::ClipboardOnly, QSize(3840, 2160),
-         QImage::Format_ARGB32_Premultiplied, {}, false},
+         ScenarioKind::ClipboardOnly,
+         QSize(3840, 2160),
+         QImage::Format_ARGB32_Premultiplied,
+         {},
+         false},
+        {QStringLiteral("clipboard-4k-rgb32"),
+         QStringLiteral("Direct 3840x2160 opaque RGB32 publication"),
+         ScenarioKind::ClipboardOnly,
+         QSize(3840, 2160),
+         QImage::Format_RGB32,
+         {},
+         false},
         {QStringLiteral("clipboard-4k-rgba8888"),
          QStringLiteral("Direct 3840x2160 RGBA8888 publication"),
-         ScenarioKind::ClipboardOnly, QSize(3840, 2160), QImage::Format_RGBA8888, {}, false},
+         ScenarioKind::ClipboardOnly,
+         QSize(3840, 2160),
+         QImage::Format_RGBA8888,
+         {},
+         false},
         {QStringLiteral("export-1080p-plain"),
          QStringLiteral("1920x1080 selection export and publication"),
-         ScenarioKind::SelectionExport, QSize(1920, 1080), QImage::Format_ARGB32, {}, false},
+         ScenarioKind::SelectionExport,
+         QSize(1920, 1080),
+         QImage::Format_ARGB32,
+         {},
+         false},
         {QStringLiteral("export-4k-plain"),
          QStringLiteral("3840x2160 selection export and publication"),
-         ScenarioKind::SelectionExport, QSize(3840, 2160), QImage::Format_ARGB32, {}, false},
+         ScenarioKind::SelectionExport,
+         QSize(3840, 2160),
+         QImage::Format_ARGB32,
+         {},
+         false},
         {QStringLiteral("export-4k-effects"),
          QStringLiteral("3840x2160 selection export with rounded corners and shadow"),
          ScenarioKind::SelectionExport, QSize(3840, 2160), QImage::Format_ARGB32,
          ScreenshotResultStyle{16, 24, QColor(0x33, 0x33, 0x33, 180)}, false},
         {QStringLiteral("export-dual-display-5120x1440"),
          QStringLiteral("5120x1440 selection spanning two captured displays"),
-         ScenarioKind::SelectionExport, QSize(5120, 1440), QImage::Format_ARGB32, {}, true},
+         ScenarioKind::SelectionExport,
+         QSize(5120, 1440),
+         QImage::Format_ARGB32,
+         {},
+         true},
     };
 }
 
 QString scenarioKindName(ScenarioKind kind) {
     return kind == ScenarioKind::ClipboardOnly ? QStringLiteral("clipboard_only")
-                                                : QStringLiteral("selection_export");
+                                               : QStringLiteral("selection_export");
 }
 
 QString imageFormatName(QImage::Format format) {
@@ -174,6 +206,8 @@ QString imageFormatName(QImage::Format format) {
         return QStringLiteral("argb32");
     case QImage::Format_ARGB32_Premultiplied:
         return QStringLiteral("argb32_premultiplied");
+    case QImage::Format_RGB32:
+        return QStringLiteral("rgb32");
     case QImage::Format_RGBA8888:
         return QStringLiteral("rgba8888");
     default:
@@ -187,8 +221,7 @@ QImage patternedImage(const QSize& size, QImage::Format format, int seed) {
         auto* row = reinterpret_cast<QRgb*>(image.scanLine(y));
         for (int x = 0; x < image.width(); ++x) {
             const int alpha = 160 + ((x * 3 + y * 5 + seed) % 96);
-            row[x] = qRgba((x + y + seed * 17) & 0xff,
-                           (x * 3 + y * 7 + seed * 29) & 0xff,
+            row[x] = qRgba((x + y + seed * 17) & 0xff, (x * 3 + y * 7 + seed * 29) & 0xff,
                            (x * 11 + y * 5 + seed * 43) & 0xff, alpha);
         }
     }
@@ -261,20 +294,16 @@ ValidationResult validateClipboard(const QImage& source) {
     const auto* header = static_cast<const BITMAPINFOHEADER*>(memory);
     const quint64 headerBytes = dibV5 ? sizeof(BITMAPV5HEADER) : sizeof(BITMAPINFOHEADER);
     const quint64 requiredBytes = headerBytes + static_cast<quint64>(expectedBytes);
-    bool validHeader = allocationBytes >= requiredBytes &&
-                       header->biWidth == expected.width() &&
+    bool validHeader = allocationBytes >= requiredBytes && header->biWidth == expected.width() &&
                        header->biHeight == (dibV5 ? -expected.height() : expected.height()) &&
-                       header->biPlanes == 1 &&
-                       header->biBitCount == 32 &&
+                       header->biPlanes == 1 && header->biBitCount == 32 &&
                        header->biSizeImage == static_cast<DWORD>(expectedBytes);
     if (dibV5) {
         const auto* v5Header = static_cast<const BITMAPV5HEADER*>(memory);
         validHeader = validHeader && v5Header->bV5Size == sizeof(BITMAPV5HEADER) &&
                       v5Header->bV5Compression == BI_BITFIELDS &&
-                      v5Header->bV5RedMask == 0x00ff0000 &&
-                      v5Header->bV5GreenMask == 0x0000ff00 &&
-                      v5Header->bV5BlueMask == 0x000000ff &&
-                      v5Header->bV5AlphaMask == 0xff000000;
+                      v5Header->bV5RedMask == 0x00ff0000 && v5Header->bV5GreenMask == 0x0000ff00 &&
+                      v5Header->bV5BlueMask == 0x000000ff && v5Header->bV5AlphaMask == 0xff000000;
     } else {
         validHeader = validHeader && header->biSize == sizeof(BITMAPINFOHEADER) &&
                       header->biCompression == BI_RGB;
@@ -312,8 +341,8 @@ ValidationResult validateClipboard(const QImage& source) {
 class ExportFixture final {
   public:
     explicit ExportFixture(const Scenario& scenario)
-        : m_runtime(SnowCanvasRuntimeConfig{
-              snow_shot::presentation::screenshotCanvasStyleDefaults()}) {
+        : m_runtime(
+              SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasStyleDefaults()}) {
         const int sourceCount = scenario.twoSources ? 2 : 1;
         int left = 0;
         for (int index = 0; index < sourceCount; ++index) {
@@ -354,11 +383,10 @@ class ExportFixture final {
 
     [[nodiscard]] QImage expectedImage(const ScreenshotResultStyle& style) {
         QList<CanvasExportSource> sources;
-        m_displays.forEachActiveDisplay(
-            [&sources](qsizetype, const CapturedDisplayModel& display) {
-                sources.push_back({display.image,
-                                   ScreenshotGeometryMapper::displayImageSourceCanvasRect(display)});
-            });
+        m_displays.forEachActiveDisplay([&sources](qsizetype, const CapturedDisplayModel& display) {
+            sources.push_back(
+                {display.image, ScreenshotGeometryMapper::displayImageSourceCanvasRect(display)});
+        });
         return ScreenshotResultCompositor::compose(
             m_runtime.renderToImage(QRectF(m_selection), m_selection.size(), sources), style);
     }
@@ -372,8 +400,8 @@ class ExportFixture final {
 };
 
 qint64 elapsedNanoseconds(const std::chrono::steady_clock::time_point& started) {
-    return std::chrono::duration_cast<std::chrono::nanoseconds>(
-               std::chrono::steady_clock::now() - started)
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() -
+                                                                started)
         .count();
 }
 
@@ -388,8 +416,7 @@ Sample runClipboardSample(const QImage& image, Collector& collector) {
                           elapsedNanoseconds(started));
     const ValidationResult validation = validateClipboard(image);
     sample.privateBytesAfter = privateBytes();
-    sample.success = published &&
-                     sample.counters.value(QStringLiteral("clipboard.success")) == 1 &&
+    sample.success = published && sample.counters.value(QStringLiteral("clipboard.success")) == 1 &&
                      validation.success;
     sample.error = validation.error;
     sample.expectedChecksum = validation.expectedChecksum;
@@ -419,25 +446,25 @@ Sample runExportSample(const Scenario& scenario, ExportFixture& fixture, Collect
     const auto started = std::chrono::steady_clock::now();
     const bool scheduled = fixture.service().requestSelectionClipboard(
         fixture.selection(), scenario.style, &receiver,
-         [&, state, expected](ScreenshotSelectionClipboardResult result) {
+        [&, state, expected](ScreenshotSelectionClipboardResult result) {
             if (state->cancelled) {
                 return;
             }
             if (!result.isValid()) {
-                state->sample.error = QStringLiteral("selection export produced an invalid payload");
+                state->sample.error =
+                    QStringLiteral("selection export produced an invalid payload");
                 collector.addDuration(state->sample, QStringLiteral("benchmark.end_to_end"),
                                       elapsedNanoseconds(started));
                 loop.quit();
                 return;
             }
-            const bool published = ScreenshotClipboardService::publish(
-                QApplication::clipboard(), std::move(result.payload));
+            const bool published = ScreenshotClipboardService::publish(QApplication::clipboard(),
+                                                                       std::move(result.payload));
             collector.addDuration(state->sample, QStringLiteral("benchmark.end_to_end"),
                                   elapsedNanoseconds(started));
             const ValidationResult validation = validateClipboard(expected);
             state->sample.success =
-                published &&
-                state->sample.counters.value(QStringLiteral("export.success")) == 1 &&
+                published && state->sample.counters.value(QStringLiteral("export.success")) == 1 &&
                 state->sample.counters.value(QStringLiteral("clipboard.success")) == 1 &&
                 validation.success;
             state->sample.error = validation.error;
@@ -462,9 +489,9 @@ double percentile(std::vector<double> values, double fraction) {
         return 0.0;
     }
     std::sort(values.begin(), values.end());
-    const size_t index = std::min(
-        values.size() - 1,
-        static_cast<size_t>(std::ceil(fraction * static_cast<double>(values.size()))) - 1);
+    const size_t index =
+        std::min(values.size() - 1,
+                 static_cast<size_t>(std::ceil(fraction * static_cast<double>(values.size()))) - 1);
     return values[index];
 }
 
@@ -497,15 +524,14 @@ QJsonObject durationJson(const Sample& sample) {
     QJsonObject output;
     for (auto iterator = sample.durations.cbegin(); iterator != sample.durations.cend();
          ++iterator) {
-        output.insert(
-            iterator.key(),
-            QJsonObject{
-                {QStringLiteral("count"), iterator->count},
-                {QStringLiteral("total_ms"),
-                 static_cast<double>(iterator->totalNanoseconds) / 1'000'000.0},
-                {QStringLiteral("max_ms"),
-                 static_cast<double>(iterator->maximumNanoseconds) / 1'000'000.0},
-            });
+        output.insert(iterator.key(),
+                      QJsonObject{
+                          {QStringLiteral("count"), iterator->count},
+                          {QStringLiteral("total_ms"),
+                           static_cast<double>(iterator->totalNanoseconds) / 1'000'000.0},
+                          {QStringLiteral("max_ms"),
+                           static_cast<double>(iterator->maximumNanoseconds) / 1'000'000.0},
+                      });
     }
     return output;
 }
@@ -563,8 +589,7 @@ QJsonObject summarizeScenario(const Scenario& scenario, const QVector<Sample>& s
         for (const Sample& sample : samples) {
             const auto found = sample.durations.constFind(name);
             if (found != sample.durations.cend()) {
-                milliseconds.push_back(
-                    static_cast<double>(found->totalNanoseconds) / 1'000'000.0);
+                milliseconds.push_back(static_cast<double>(found->totalNanoseconds) / 1'000'000.0);
             }
         }
         durationDistributions.insert(name, distribution(milliseconds));
@@ -661,8 +686,7 @@ QJsonObject environmentMetadata() {
         {QStringLiteral("os_kernel_type"), QSysInfo::kernelType()},
         {QStringLiteral("os_kernel_version"), QSysInfo::kernelVersion()},
         {QStringLiteral("cpu_architecture"), QSysInfo::currentCpuArchitecture()},
-        {QStringLiteral("cpu_identifier"),
-         QString::fromLocal8Bit(qgetenv("PROCESSOR_IDENTIFIER"))},
+        {QStringLiteral("cpu_identifier"), QString::fromLocal8Bit(qgetenv("PROCESSOR_IDENTIFIER"))},
         {QStringLiteral("logical_cpu_count"), QThread::idealThreadCount()},
         {QStringLiteral("qt_version"), QString::fromLatin1(qVersion())},
         {QStringLiteral("qt_library_path"), QLibraryInfo::path(QLibraryInfo::LibrariesPath)},
@@ -731,6 +755,16 @@ bool runSelfTest(Collector& collector) {
                   << sample.error.toLocal8Bit().constData() << '\n';
         return false;
     }
+
+    const QImage rgb32 = patternedImage(QSize(64, 48), QImage::Format_RGB32, 11);
+    const Sample rgb32Sample = runClipboardSample(rgb32, collector);
+    if (!rgb32Sample.success ||
+        rgb32Sample.counters.value(QStringLiteral("clipboard.conversion_detached")) != 0 ||
+        rgb32Sample.counters.value(QStringLiteral("clipboard.fused_source")) != 1) {
+        std::cerr << "opaque RGB32 clipboard self-test failed: "
+                  << rgb32Sample.error.toLocal8Bit().constData() << '\n';
+        return false;
+    }
     std::cout << "clipboard benchmark self-test passed\n";
     return true;
 }
@@ -758,9 +792,9 @@ int main(int argc, char** argv) {
                       QStringLiteral("Run one scenario; may be specified repeatedly"),
                       QStringLiteral("id")});
     parser.addOption({QStringLiteral("list"), QStringLiteral("List scenarios and exit")});
-    parser.addOption({QStringLiteral("self-test"),
-                      QStringLiteral(
-                          "Validate instrumentation, statistics, and native DIB output")});
+    parser.addOption(
+        {QStringLiteral("self-test"),
+         QStringLiteral("Validate instrumentation, statistics, and native DIB output")});
     parser.process(application);
 
     const QVector<Scenario> availableScenarios = scenarios();
@@ -797,9 +831,9 @@ int main(int argc, char** argv) {
     } else {
         QSet<QString> added;
         for (const QString& id : selectedIds) {
-            const auto found = std::find_if(
-                availableScenarios.cbegin(), availableScenarios.cend(),
-                [&id](const Scenario& scenario) { return scenario.id == id; });
+            const auto found =
+                std::find_if(availableScenarios.cbegin(), availableScenarios.cend(),
+                             [&id](const Scenario& scenario) { return scenario.id == id; });
             if (found == availableScenarios.cend()) {
                 std::cerr << "unknown scenario: " << id.toLocal8Bit().constData() << '\n';
                 clipboard_perf::setSink(nullptr);
@@ -812,8 +846,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    const QString outputDirectory =
-        QDir::cleanPath(parser.value(QStringLiteral("output")));
+    const QString outputDirectory = QDir::cleanPath(parser.value(QStringLiteral("output")));
     if (!QDir().mkpath(outputDirectory)) {
         std::cerr << "could not create output directory\n";
         clipboard_perf::setSink(nullptr);
@@ -832,10 +865,9 @@ int main(int argc, char** argv) {
         std::cout << "running " << scenario.id.toLocal8Bit().constData() << '\n';
         QVector<Sample> measured;
         measured.reserve(sampleCount);
-        const QImage directImage =
-            scenario.kind == ScenarioKind::ClipboardOnly
-                ? patternedImage(scenario.size, scenario.format, 11)
-                : QImage{};
+        const QImage directImage = scenario.kind == ScenarioKind::ClipboardOnly
+                                       ? patternedImage(scenario.size, scenario.format, 11)
+                                       : QImage{};
         std::unique_ptr<ExportFixture> exportFixture;
         if (scenario.kind == ScenarioKind::SelectionExport) {
             exportFixture = std::make_unique<ExportFixture>(scenario);
@@ -861,8 +893,8 @@ int main(int argc, char** argv) {
                 }
                 continue;
             }
-            rawFile.write(QJsonDocument(sampleJson(scenario, index, sample))
-                              .toJson(QJsonDocument::Compact));
+            rawFile.write(
+                QJsonDocument(sampleJson(scenario, index, sample)).toJson(QJsonDocument::Compact));
             rawFile.write("\n");
             measured.push_back(std::move(sample));
             if (measured.back().timedOut) {
@@ -885,13 +917,11 @@ int main(int argc, char** argv) {
              {QStringLiteral("scenario_count"), selectedScenarios.size()},
          }},
         {QStringLiteral("environment"), environmentMetadata()},
-        {QStringLiteral("instrumentation_calibration"),
-         instrumentationCalibration(collector)},
+        {QStringLiteral("instrumentation_calibration"), instrumentationCalibration(collector)},
         {QStringLiteral("scenarios"), scenarioReports},
         {QStringLiteral("all_samples_valid"), allSuccessful},
     };
-    const QString reportPath =
-        QDir(outputDirectory).filePath(QStringLiteral("report.json"));
+    const QString reportPath = QDir(outputDirectory).filePath(QStringLiteral("report.json"));
     QFile reportFile(reportPath);
     if (!writeJson(reportFile, report, QJsonDocument::Indented)) {
         std::cerr << "could not write JSON report\n";

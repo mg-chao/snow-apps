@@ -23,6 +23,12 @@
 //                 samples) to separate family hydration cost from sweep-order
 //                 effects.
 //
+//   tools.reuse_pairs
+//                 Repeated source -> destination switches for the approved
+//                 semantic editor-reuse map. The source is re-established
+//                 before every timed sample; reports include switch latency
+//                 and retained/created/destroyed editor counters.
+//
 // The benchmark links instrumented copies of the toolbar sources
 // (SNOW_SHOT_TOOLBAR_PERF_INSTRUMENTATION=1) and is only built when
 // SNOW_SHOT_BUILD_BENCHMARKS=ON; production builds compile every scope below
@@ -122,8 +128,8 @@ Stats computeStats(QVector<double> values) {
     std::sort(values.begin(), values.end());
     const auto percentile = [&values](double p) {
         const double position = p / 100.0 * static_cast<double>(values.size() - 1);
-        return values[static_cast<int>(std::min(static_cast<double>(values.size() - 1),
-                                                std::ceil(position)))];
+        return values[static_cast<int>(
+            std::min(static_cast<double>(values.size() - 1), std::ceil(position)))];
     };
     stats.p50 = percentile(50.0);
     stats.p90 = percentile(90.0);
@@ -159,14 +165,12 @@ const ToolInfo kDrawingTools[] = {
     {ScreenshotToolPalette::Tool::Shape, "shape", "screenshotRectangleStyleControls", true},
     {ScreenshotToolPalette::Tool::Arrow, "arrow", "screenshotArrowStyleControls", true},
     {ScreenshotToolPalette::Tool::Line, "line", "screenshotLineStyleControls", true},
-    {ScreenshotToolPalette::Tool::FreeDraw, "free-draw", "screenshotFreeDrawStyleControls",
-     true},
+    {ScreenshotToolPalette::Tool::FreeDraw, "free-draw", "screenshotFreeDrawStyleControls", true},
     {ScreenshotToolPalette::Tool::RectangleHighlight, "rect-highlight",
      "screenshotHighlightStyleControls", true},
     {ScreenshotToolPalette::Tool::PenHighlight, "pen-highlight",
      "screenshotPenHighlightStyleControls", true},
-    {ScreenshotToolPalette::Tool::Spotlight, "spotlight", "screenshotSpotlightStyleControls",
-     true},
+    {ScreenshotToolPalette::Tool::Spotlight, "spotlight", "screenshotSpotlightStyleControls", true},
     {ScreenshotToolPalette::Tool::Text, "text", "screenshotTextStyleControls", true},
     {ScreenshotToolPalette::Tool::SerialNumber, "serial-number",
      "screenshotSerialNumberStyleControls", true},
@@ -174,11 +178,43 @@ const ToolInfo kDrawingTools[] = {
      true},
     {ScreenshotToolPalette::Tool::PenFilter, "pen-filter", "screenshotPenFilterStyleControls",
      true},
-    {ScreenshotToolPalette::Tool::Watermark, "watermark", "screenshotWatermarkStyleControls",
-     true},
+    {ScreenshotToolPalette::Tool::Watermark, "watermark", "screenshotWatermarkStyleControls", true},
     {ScreenshotToolPalette::Tool::Eraser, "eraser", nullptr, false},
 };
-constexpr int kDrawingToolCount = static_cast<int>(sizeof(kDrawingTools) / sizeof(kDrawingTools[0]));
+constexpr int kDrawingToolCount =
+    static_cast<int>(sizeof(kDrawingTools) / sizeof(kDrawingTools[0]));
+
+struct ReusePairInfo {
+    ScreenshotToolPalette::Tool source;
+    ScreenshotToolPalette::Tool destination;
+    const char* id;
+};
+
+const ReusePairInfo kReusePairs[] = {
+    {ScreenshotToolPalette::Tool::Shape, ScreenshotToolPalette::Tool::Arrow, "shape-to-arrow"},
+    {ScreenshotToolPalette::Tool::Shape, ScreenshotToolPalette::Tool::Line, "shape-to-line"},
+    {ScreenshotToolPalette::Tool::Line, ScreenshotToolPalette::Tool::FreeDraw, "line-to-free-draw"},
+    {ScreenshotToolPalette::Tool::RectangleHighlight, ScreenshotToolPalette::Tool::PenHighlight,
+     "rect-highlight-to-pen-highlight"},
+    {ScreenshotToolPalette::Tool::RectangleFilter, ScreenshotToolPalette::Tool::PenFilter,
+     "rect-filter-to-pen-filter"},
+    {ScreenshotToolPalette::Tool::Text, ScreenshotToolPalette::Tool::SerialNumber,
+     "text-to-serial-number"},
+    {ScreenshotToolPalette::Tool::PenHighlight, ScreenshotToolPalette::Tool::PenFilter,
+     "pen-highlight-to-pen-filter"},
+    {ScreenshotToolPalette::Tool::Spotlight, ScreenshotToolPalette::Tool::Watermark,
+     "spotlight-to-watermark"},
+    {ScreenshotToolPalette::Tool::Shape, ScreenshotToolPalette::Tool::Text, "shape-to-text"},
+    {ScreenshotToolPalette::Tool::Text, ScreenshotToolPalette::Tool::Watermark,
+     "text-to-watermark"},
+};
+constexpr int kReusePairCount = static_cast<int>(sizeof(kReusePairs) / sizeof(kReusePairs[0]));
+
+const ToolInfo& drawingToolInfo(ScreenshotToolPalette::Tool tool) {
+    const auto found = std::find_if(std::begin(kDrawingTools), std::end(kDrawingTools),
+                                    [tool](const ToolInfo& info) { return info.tool == tool; });
+    return *found;
+}
 
 class NullToolbarCommands final : public ScreenshotToolbarCommandSink {
   public:
@@ -325,19 +361,29 @@ class BenchmarkApplication final : public QApplication {
         return nsToMs(nowNs() - started);
     }
 
-    qint64 armStampNs() const { return m_armNs; }
-    bool firstPaintSeen() const { return m_firstPaintSeen; }
+    qint64 armStampNs() const {
+        return m_armNs;
+    }
+    bool firstPaintSeen() const {
+        return m_firstPaintSeen;
+    }
     double firstPaintMs() const {
         return m_firstPaintSeen ? nsToMs(m_firstPaintNs - m_armNs)
                                 : std::numeric_limits<double>::quiet_NaN();
     }
-    bool firstStylePaintSeen() const { return m_firstStylePaintSeen; }
+    bool firstStylePaintSeen() const {
+        return m_firstStylePaintSeen;
+    }
     double firstStylePaintMs() const {
         return m_firstStylePaintSeen ? nsToMs(m_firstStylePaintNs - m_armNs)
                                      : std::numeric_limits<double>::quiet_NaN();
     }
-    qint64 paintCount() const { return m_paintCount; }
-    qint64 stylePaintCount() const { return m_stylePaintCount; }
+    qint64 paintCount() const {
+        return m_paintCount;
+    }
+    qint64 stylePaintCount() const {
+        return m_stylePaintCount;
+    }
 
   private:
     void recordPaint(QWidget* widget) {
@@ -356,8 +402,8 @@ class BenchmarkApplication final : public QApplication {
             m_stylePanel = m_trackedWindow->findChild<QWidget*>(
                 QStringLiteral("screenshotRectangleStylePanel"));
         }
-        if (m_stylePanel != nullptr && (widget == m_stylePanel.data() ||
-                                        m_stylePanel->isAncestorOf(widget))) {
+        if (m_stylePanel != nullptr &&
+            (widget == m_stylePanel.data() || m_stylePanel->isAncestorOf(widget))) {
             ++m_stylePaintCount;
             if (!m_firstStylePaintSeen) {
                 m_firstStylePaintSeen = true;
@@ -407,14 +453,24 @@ class SinkCollector final : public toolbar_perf::Sink {
         m_currentIndex = m_buckets.size() - 1;
     }
 
-    void end() { m_currentIndex = -1; }
+    void end() {
+        m_currentIndex = -1;
+    }
 
-    const Bucket& bucketAt(int index) const { return m_buckets.at(index); }
-    int bucketCount() const { return m_buckets.size(); }
-    qint64 totalScopeCount() const { return m_totalScopeCount; }
+    const Bucket& bucketAt(int index) const {
+        return m_buckets.at(index);
+    }
+    int bucketCount() const {
+        return m_buckets.size();
+    }
+    qint64 totalScopeCount() const {
+        return m_totalScopeCount;
+    }
 
   private:
-    Bucket& current() { return m_buckets[m_currentIndex]; }
+    Bucket& current() {
+        return m_buckets[m_currentIndex];
+    }
 
     QVector<Bucket> m_buckets;
     int m_currentIndex = -1;
@@ -570,8 +626,8 @@ FirstFrameSample runFirstFrameSample(BenchmarkApplication& app, SinkCollector& c
 
 bool styleControlsMatchTool(const QWidget& toolbarRoot, const ToolInfo& info) {
     if (!info.hasStyleToolbar) {
-        QWidget* panel = toolbarRoot.findChild<QWidget*>(
-            QStringLiteral("screenshotRectangleStylePanel"));
+        QWidget* panel =
+            toolbarRoot.findChild<QWidget*>(QStringLiteral("screenshotRectangleStylePanel"));
         return panel == nullptr || !panel->isVisible();
     }
     QWidget* controls = toolbarRoot.findChild<QWidget*>(QLatin1String(info.styleObjectName));
@@ -612,7 +668,7 @@ void printStatsHeader();
 void printStatsRow(const QString& label, const Stats& stats);
 
 QMap<QString, QVector<double>> bucketScopeValues(const SinkCollector& collector,
-                                                  const QVector<int>& bucketIndices) {
+                                                 const QVector<int>& bucketIndices) {
     QMap<QString, QVector<double>> scopeValues;
     for (int index : bucketIndices) {
         const SinkCollector::Bucket& bucket = collector.bucketAt(index);
@@ -640,13 +696,13 @@ QMap<QString, QVector<double>> bucketCounterValues(const SinkCollector& collecto
 // Aggregates the per-reset buckets (scopes in ms, counters in raw counts) so
 // the report shows what the Move reset itself costs beyond its wall time.
 QJsonObject resetBucketsJson(const SinkCollector& collector, const QVector<int>& bucketIndices) {
-    const QMap<QString, QVector<double>> scopeValues =
-        bucketScopeValues(collector, bucketIndices);
+    const QMap<QString, QVector<double>> scopeValues = bucketScopeValues(collector, bucketIndices);
     const QMap<QString, QVector<double>> counterValues =
         bucketCounterValues(collector, bucketIndices);
     QJsonObject scopesJson;
     for (auto iterator = scopeValues.constBegin(); iterator != scopeValues.constEnd(); ++iterator) {
-        scopesJson.insert(iterator.key(), statsJsonValue(computeStats(iterator.value())).toObject());
+        scopesJson.insert(iterator.key(),
+                          statsJsonValue(computeStats(iterator.value())).toObject());
     }
     QJsonObject countersJson;
     for (auto iterator = counterValues.constBegin(); iterator != counterValues.constEnd();
@@ -665,8 +721,7 @@ void printScopeStats(const QString& title, const QMap<QString, QVector<double>>&
     std::cout << "\n" << title.toStdString() << "\n";
     printStatsHeader();
     QVector<QPair<double, QString>> sorted;
-    for (auto iterator = scopeValues.constBegin(); iterator != scopeValues.constEnd();
-         ++iterator) {
+    for (auto iterator = scopeValues.constBegin(); iterator != scopeValues.constEnd(); ++iterator) {
         const Stats stats = computeStats(iterator.value());
         sorted.append(qMakePair(std::isnan(stats.p50) ? 0.0 : stats.p50, iterator.key()));
     }
@@ -706,33 +761,29 @@ ToolSwitchSample runToolSwitchSample(BenchmarkApplication& app, SinkCollector& c
     sample.hydrated = bucket.counters.contains(QStringLiteral("hydrate.style_family"));
     sample.scopes = bucket.scopes;
     sample.counters = bucket.counters;
-    sample.hydrateMs = nsToMs(scopeSum(bucket.scopes,
-                                       {"palette.create_style_family",
-                                        "palette.replay_materialized_state",
-                                        "palette.initialize_style_layout_profiles",
-                                        "palette.apply_scaled_toolbar_metrics"}));
-    sample.evictMs =
-        nsToMs(scopeSum(bucket.scopes, {"palette.evict_secondary_contents"}));
-    sample.rebindMs = nsToMs(scopeSum(bucket.scopes, {"palette.set_style_controls_active",
-                                                      "palette.set_secondary_visibility"}));
-    sample.layoutMs = nsToMs(scopeSum(bucket.scopes,
-                                      {"palette.update_row_geometry", "palette.ensure_layout_applied",
-                                       "palette.layout_commit", "host.apply_size", "host.sync_size"}));
+    sample.hydrateMs = nsToMs(
+        scopeSum(bucket.scopes, {"palette.create_style_family", "palette.replay_materialized_state",
+                                 "palette.initialize_style_layout_profiles",
+                                 "palette.apply_scaled_toolbar_metrics"}));
+    sample.evictMs = nsToMs(scopeSum(bucket.scopes, {"palette.evict_secondary_contents"}));
+    sample.rebindMs = nsToMs(scopeSum(
+        bucket.scopes, {"palette.set_style_controls_active", "palette.set_secondary_visibility"}));
+    sample.layoutMs = nsToMs(
+        scopeSum(bucket.scopes, {"palette.update_row_geometry", "palette.ensure_layout_applied",
+                                 "palette.layout_commit", "host.apply_size", "host.sync_size"}));
     collector.end();
     return sample;
 }
 
-std::unique_ptr<ScreenshotToolbarWindow> createShownToolbar(BenchmarkApplication& app,
-                                                            NullToolbarCommands& commands,
-                                                            QScreen* screen,
-                                                            const QRect& logicalBounds,
-                                                            const QRect& physicalBounds) {
+std::unique_ptr<ScreenshotToolbarWindow>
+createShownToolbar(BenchmarkApplication& app, NullToolbarCommands& commands, QScreen* screen,
+                   const QRect& logicalBounds, const QRect& physicalBounds) {
     auto toolbar = std::make_unique<ScreenshotToolbarWindow>(commands);
     toolbar->setPlacementContext(screen, logicalBounds, physicalBounds);
     toolbar->prepareForDisplay();
-    toolbar->moveContentTo(logicalBounds.center() -
-                           QPoint(toolbar->contentSizeHint().width() / 2,
-                                  toolbar->contentSizeHint().height() / 2));
+    toolbar->moveContentTo(
+        logicalBounds.center() -
+        QPoint(toolbar->contentSizeHint().width() / 2, toolbar->contentSizeHint().height() / 2));
     toolbar->show();
     toolbar->raise();
     app.processUntilIdle();
@@ -743,9 +794,8 @@ std::unique_ptr<ScreenshotToolbarWindow> createShownToolbar(BenchmarkApplication
 QMap<QString, ToolAggregate> runToolCycle(BenchmarkApplication& app, SinkCollector& collector,
                                           NullToolbarCommands& commands, QWidget& owner,
                                           QScreen* screen, const QRect& logicalBounds,
-                                          const QRect& physicalBounds, int warmupSweeps,
-                                          int sweeps, double& resetMsP50Out,
-                                          QVector<int>& resetBucketsOut) {
+                                          const QRect& physicalBounds, int warmupSweeps, int sweeps,
+                                          double& resetMsP50Out, QVector<int>& resetBucketsOut) {
     QMap<QString, ToolAggregate> aggregates;
     for (int index = 0; index < kDrawingToolCount; ++index) {
         ToolAggregate aggregate;
@@ -762,9 +812,9 @@ QMap<QString, ToolAggregate> runToolCycle(BenchmarkApplication& app, SinkCollect
         resetMs.append(resetToolbarToMove(app, collector, *toolbar, owner));
         for (int index = 0; index < kDrawingToolCount; ++index) {
             const ToolInfo& info = kDrawingTools[index];
-            const ToolSwitchSample sample = runToolSwitchSample(
-                app, collector, *toolbar, info,
-                QStringLiteral("tools.cycle.%1").arg(QLatin1String(info.id)));
+            const ToolSwitchSample sample =
+                runToolSwitchSample(app, collector, *toolbar, info,
+                                    QStringLiteral("tools.cycle.%1").arg(QLatin1String(info.id)));
             if (sweep < warmupSweeps) {
                 continue;
             }
@@ -783,9 +833,8 @@ QMap<QString, ToolAggregate> runToolCycle(BenchmarkApplication& app, SinkCollect
     dwmFlush();
 
     std::sort(resetMs.begin(), resetMs.end());
-    resetMsP50Out = resetMs.isEmpty()
-                        ? std::numeric_limits<double>::quiet_NaN()
-                        : resetMs[resetMs.size() / 2];
+    resetMsP50Out =
+        resetMs.isEmpty() ? std::numeric_limits<double>::quiet_NaN() : resetMs[resetMs.size() / 2];
     return aggregates;
 }
 
@@ -810,9 +859,9 @@ QMap<QString, ToolAggregate> runToolCold(BenchmarkApplication& app, SinkCollecto
             QCursor::setPos(logicalBounds.topLeft() + QPoint(4, 4));
             resetBucketsOut.append(collector.bucketCount());
             resetMs.append(resetToolbarToMove(app, collector, *toolbar, owner));
-            const ToolSwitchSample sample = runToolSwitchSample(
-                app, collector, *toolbar, info,
-                QStringLiteral("tools.cold.%1").arg(QLatin1String(info.id)));
+            const ToolSwitchSample sample =
+                runToolSwitchSample(app, collector, *toolbar, info,
+                                    QStringLiteral("tools.cold.%1").arg(QLatin1String(info.id)));
             if (sampleIndex < warmups) {
                 continue;
             }
@@ -831,14 +880,57 @@ QMap<QString, ToolAggregate> runToolCold(BenchmarkApplication& app, SinkCollecto
     dwmFlush();
 
     std::sort(resetMs.begin(), resetMs.end());
-    resetMsP50Out = resetMs.isEmpty()
-                        ? std::numeric_limits<double>::quiet_NaN()
-                        : resetMs[resetMs.size() / 2];
+    resetMsP50Out =
+        resetMs.isEmpty() ? std::numeric_limits<double>::quiet_NaN() : resetMs[resetMs.size() / 2];
+    return aggregates;
+}
+
+QMap<QString, ToolAggregate> runToolReusePairs(BenchmarkApplication& app, SinkCollector& collector,
+                                               NullToolbarCommands& commands, QScreen* screen,
+                                               const QRect& logicalBounds,
+                                               const QRect& physicalBounds, int warmupSweeps,
+                                               int sweeps) {
+    QMap<QString, ToolAggregate> aggregates;
+    for (const ReusePairInfo& pair : kReusePairs) {
+        ToolAggregate aggregate;
+        aggregate.id = QString::fromLatin1(pair.id);
+        aggregate.totalSweeps = sweeps;
+        aggregates.insert(aggregate.id, aggregate);
+    }
+
+    auto toolbar = createShownToolbar(app, commands, screen, logicalBounds, physicalBounds);
+    for (int sweep = 0; sweep < warmupSweeps + sweeps; ++sweep) {
+        for (const ReusePairInfo& pair : kReusePairs) {
+            toolbar->setActiveTool(pair.source);
+            app.processUntilIdle();
+            dwmFlush();
+
+            const ToolInfo& destination = drawingToolInfo(pair.destination);
+            const ToolSwitchSample sample = runToolSwitchSample(
+                app, collector, *toolbar, destination,
+                QStringLiteral("tools.reuse_pairs.%1").arg(QLatin1String(pair.id)));
+            if (sweep < warmupSweeps) {
+                continue;
+            }
+            ToolAggregate& aggregate = aggregates[QString::fromLatin1(pair.id)];
+            if (sample.styleControlsVisible) {
+                aggregate.samples.append(sample);
+            } else {
+                ++aggregate.invalidCount;
+            }
+        }
+    }
+
+    QToolTip::hideText();
+    toolbar->hide();
+    toolbar.release()->deleteLater();
+    app.processUntilIdle();
+    dwmFlush();
     return aggregates;
 }
 
 QVector<double> extract(const QVector<ToolSwitchSample>& samples,
-                        double ToolSwitchSample::*field) {
+                        double ToolSwitchSample::* field) {
     QVector<double> values;
     values.reserve(samples.size());
     for (const ToolSwitchSample& sample : samples) {
@@ -863,7 +955,7 @@ QJsonValue statsJsonValue(const Stats& stats) {
 }
 
 QJsonObject statsFieldJson(const QVector<ToolSwitchSample>& samples,
-                           double ToolSwitchSample::*field) {
+                           double ToolSwitchSample::* field) {
     return statsJsonValue(computeStats(extract(samples, field))).toObject();
 }
 
@@ -880,20 +972,25 @@ void printStatsRow(const QString& label, const Stats& stats) {
 }
 
 void reportFirstFrame(const QVector<FirstFrameSample>& samples, QJsonObject& reportOut) {
-    std::cout << "\n=== first_frame: toolbar creation -> first displayed frame ("
-              << samples.size() << " samples) ===\n";
+    std::cout << "\n=== first_frame: toolbar creation -> first displayed frame (" << samples.size()
+              << " samples) ===\n";
     printStatsHeader();
     QVector<QString> phaseOrder;
     if (!samples.isEmpty()) {
         // Chronological creation/show order; QMap key order would sort alphabetically.
-        phaseOrder = QVector<QString>{
-            QStringLiteral("ctor_ms"),           QStringLiteral("placement_ms"),
-            QStringLiteral("prepare_ms"),        QStringLiteral("position_ms"),
-            QStringLiteral("conceal_ms"),        QStringLiteral("show_ms"),
-            QStringLiteral("repaint_ms"),        QStringLiteral("posted_events_ms"),
-            QStringLiteral("redraw_window_ms"),  QStringLiteral("reveal_ms"),
-            QStringLiteral("raise_ms"),          QStringLiteral("compositor_flush_ms"),
-            QStringLiteral("settle_after_present_ms")};
+        phaseOrder = QVector<QString>{QStringLiteral("ctor_ms"),
+                                      QStringLiteral("placement_ms"),
+                                      QStringLiteral("prepare_ms"),
+                                      QStringLiteral("position_ms"),
+                                      QStringLiteral("conceal_ms"),
+                                      QStringLiteral("show_ms"),
+                                      QStringLiteral("repaint_ms"),
+                                      QStringLiteral("posted_events_ms"),
+                                      QStringLiteral("redraw_window_ms"),
+                                      QStringLiteral("reveal_ms"),
+                                      QStringLiteral("raise_ms"),
+                                      QStringLiteral("compositor_flush_ms"),
+                                      QStringLiteral("settle_after_present_ms")};
     }
     QJsonObject phasesJson;
     for (const QString& phase : phaseOrder) {
@@ -936,11 +1033,10 @@ void reportFirstFrame(const QVector<FirstFrameSample>& samples, QJsonObject& rep
             afterRedraw.append(static_cast<double>(sample.paintCountAfterRedraw));
             total.append(static_cast<double>(sample.paintCountTotal));
         }
-        std::cout << "\npaint counts (p50): after_show="
-                  << computeStats(afterShow).p50 << " after_repaint="
-                  << computeStats(afterRepaint).p50 << " after_redraw="
-                  << computeStats(afterRedraw).p50 << " total=" << computeStats(total).p50
-                  << '\n';
+        std::cout << "\npaint counts (p50): after_show=" << computeStats(afterShow).p50
+                  << " after_repaint=" << computeStats(afterRepaint).p50
+                  << " after_redraw=" << computeStats(afterRedraw).p50
+                  << " total=" << computeStats(total).p50 << '\n';
         QJsonObject paintsJson;
         paintsJson.insert(QStringLiteral("after_show"), computeStats(afterShow).p50);
         paintsJson.insert(QStringLiteral("after_repaint"), computeStats(afterRepaint).p50);
@@ -960,8 +1056,7 @@ void reportFirstFrame(const QVector<FirstFrameSample>& samples, QJsonObject& rep
         }
     }
     QVector<QPair<double, QString>> sortedScopes;
-    for (auto iterator = scopeValues.constBegin(); iterator != scopeValues.constEnd();
-         ++iterator) {
+    for (auto iterator = scopeValues.constBegin(); iterator != scopeValues.constEnd(); ++iterator) {
         const Stats stats = computeStats(iterator.value());
         sortedScopes.append(qMakePair(std::isnan(stats.p50) ? 0.0 : stats.p50, iterator.key()));
         scopesJson.insert(iterator.key(), statsJsonValue(stats).toObject());
@@ -982,15 +1077,15 @@ void reportFirstFrame(const QVector<FirstFrameSample>& samples, QJsonObject& rep
             widgetCounts.append(static_cast<double>(sample.widgetCount));
         }
         const Stats stats = computeStats(widgetCounts);
-        std::cout << "\nwindow widget count after creation (p50): " << msCell(stats.p50, 0).toStdString()
-                  << '\n';
+        std::cout << "\nwindow widget count after creation (p50): "
+                  << msCell(stats.p50, 0).toStdString() << '\n';
         reportOut.insert(QStringLiteral("widget_count"), statsJsonValue(stats).toObject());
     }
     {
         QMap<QString, QVector<double>> counterValues;
         for (const FirstFrameSample& sample : samples) {
-            for (auto iterator = sample.counters.constBegin(); iterator != sample.counters.constEnd();
-                 ++iterator) {
+            for (auto iterator = sample.counters.constBegin();
+                 iterator != sample.counters.constEnd(); ++iterator) {
                 counterValues[iterator.key()].append(static_cast<double>(iterator.value()));
             }
         }
@@ -1010,8 +1105,9 @@ void reportFirstFrame(const QVector<FirstFrameSample>& samples, QJsonObject& rep
              ++iterator) {
             raw.insert(iterator.key(), iterator.value());
         }
-        raw.insert(QStringLiteral("first_paint_ms"),
-                   std::isnan(sample.firstPaintMs) ? QJsonValue() : QJsonValue(sample.firstPaintMs));
+        raw.insert(QStringLiteral("first_paint_ms"), std::isnan(sample.firstPaintMs)
+                                                         ? QJsonValue()
+                                                         : QJsonValue(sample.firstPaintMs));
         raw.insert(QStringLiteral("total_create_to_present_ms"), sample.totalCreateToPresentMs);
         raw.insert(QStringLiteral("widget_count"), static_cast<double>(sample.widgetCount));
         for (auto iterator = sample.counters.constBegin(); iterator != sample.counters.constEnd();
@@ -1062,10 +1158,10 @@ void reportToolTable(const QString& title, const QMap<QString, ToolAggregate>& a
         std::cout << QString::fromLatin1(info.id).leftJustified(15).toStdString()
                   << QString::number(coldPercent).rightJustified(5).toStdString() << '%'
                   << msCell(switchStats.p50, 10).toStdString()
-                  << msCell(switchStats.p90, 8).toStdString() << msCell(hydrate.p50, 9).toStdString()
-                  << msCell(evict.p50, 9).toStdString() << msCell(rebind.p50, 9).toStdString()
-                  << msCell(layout.p50, 8).toStdString() << msCell(stylePaint.p50, 8).toStdString()
-                  << msCell(settle.p50, 9).toStdString()
+                  << msCell(switchStats.p90, 8).toStdString()
+                  << msCell(hydrate.p50, 9).toStdString() << msCell(evict.p50, 9).toStdString()
+                  << msCell(rebind.p50, 9).toStdString() << msCell(layout.p50, 8).toStdString()
+                  << msCell(stylePaint.p50, 8).toStdString() << msCell(settle.p50, 9).toStdString()
                   << msCell(compositor.p50, 8).toStdString()
                   << msCell(totalStats.p50, 10).toStdString()
                   << msCell(totalStats.p90, 8).toStdString()
@@ -1076,8 +1172,8 @@ void reportToolTable(const QString& title, const QMap<QString, ToolAggregate>& a
         toolJson.insert(QStringLiteral("samples"), samples.size());
         toolJson.insert(QStringLiteral("invalid"), aggregate.invalidCount);
         toolJson.insert(QStringLiteral("cold_percent"), coldPercent);
-        toolJson.insert(QStringLiteral("switch_ms"), statsFieldJson(samples,
-                                                                    &ToolSwitchSample::switchMs));
+        toolJson.insert(QStringLiteral("switch_ms"),
+                        statsFieldJson(samples, &ToolSwitchSample::switchMs));
         toolJson.insert(QStringLiteral("total_to_display_ms"),
                         statsFieldJson(samples, &ToolSwitchSample::totalToDisplayMs));
         toolJson.insert(QStringLiteral("hydrate_ms"),
@@ -1141,13 +1237,12 @@ void reportToolTable(const QString& title, const QMap<QString, ToolAggregate>& a
             raw.insert(QStringLiteral("switch_ms"), sample.switchMs);
             raw.insert(QStringLiteral("settle_ms"), sample.settleMs);
             raw.insert(QStringLiteral("compositor_ms"), sample.compositorMs);
-            raw.insert(QStringLiteral("first_paint_ms"),
-                       std::isnan(sample.firstPaintMs) ? QJsonValue()
-                                                       : QJsonValue(sample.firstPaintMs));
+            raw.insert(QStringLiteral("first_paint_ms"), std::isnan(sample.firstPaintMs)
+                                                             ? QJsonValue()
+                                                             : QJsonValue(sample.firstPaintMs));
             raw.insert(QStringLiteral("first_style_paint_ms"),
-                       std::isnan(sample.firstStylePaintMs)
-                           ? QJsonValue()
-                           : QJsonValue(sample.firstStylePaintMs));
+                       std::isnan(sample.firstStylePaintMs) ? QJsonValue()
+                                                            : QJsonValue(sample.firstStylePaintMs));
             raw.insert(QStringLiteral("total_to_display_ms"), sample.totalToDisplayMs);
             raw.insert(QStringLiteral("hydrate_ms"), sample.hydrateMs);
             raw.insert(QStringLiteral("evict_ms"), sample.evictMs);
@@ -1160,8 +1255,8 @@ void reportToolTable(const QString& title, const QMap<QString, ToolAggregate>& a
                        static_cast<double>(sample.windowWidgetCount));
             raw.insert(QStringLiteral("hydrated"), sample.hydrated);
             raw.insert(QStringLiteral("style_controls_visible"), sample.styleControlsVisible);
-            for (auto iterator = sample.counters.constBegin(); iterator != sample.counters.constEnd();
-                 ++iterator) {
+            for (auto iterator = sample.counters.constBegin();
+                 iterator != sample.counters.constEnd(); ++iterator) {
                 raw.insert(iterator.key(), static_cast<double>(iterator.value()));
             }
             rawSamples.append(raw);
@@ -1183,17 +1278,112 @@ void reportToolTable(const QString& title, const QMap<QString, ToolAggregate>& a
         const auto counterP50 = [&samples](const char* name) {
             QVector<double> values;
             for (const ToolSwitchSample& sample : samples) {
-                values.append(static_cast<double>(
-                    sample.counters.value(QString::fromLatin1(name), 0)));
+                values.append(
+                    static_cast<double>(sample.counters.value(QString::fromLatin1(name), 0)));
             }
             return computeStats(values).p50;
         };
-        std::cout << QString::fromLatin1(info.id).leftJustified(15).toStdString()
-                  << QString::number(counterP50("layout.commit"), 'f', 1).rightJustified(13).toStdString()
-                  << QString::number(counterP50("host.size_sync"), 'f', 1).rightJustified(11).toStdString()
-                  << QString::number(counterP50("style.state_noop"), 'f', 1).rightJustified(11).toStdString()
-                  << '\n';
+        std::cout
+            << QString::fromLatin1(info.id).leftJustified(15).toStdString()
+            << QString::number(counterP50("layout.commit"), 'f', 1).rightJustified(13).toStdString()
+            << QString::number(counterP50("host.size_sync"), 'f', 1)
+                   .rightJustified(11)
+                   .toStdString()
+            << QString::number(counterP50("style.state_noop"), 'f', 1)
+                   .rightJustified(11)
+                   .toStdString()
+            << '\n';
     }
+}
+
+void reportReusePairTable(const QMap<QString, ToolAggregate>& aggregates, QJsonObject& reportOut) {
+    const auto counterStats = [](const QVector<ToolSwitchSample>& samples, const char* name) {
+        QVector<double> values;
+        values.reserve(samples.size());
+        for (const ToolSwitchSample& sample : samples) {
+            values.append(static_cast<double>(sample.counters.value(QString::fromLatin1(name), 0)));
+        }
+        return computeStats(values);
+    };
+    const auto scopeStats = [](const QVector<ToolSwitchSample>& samples, const char* name) {
+        QVector<double> values;
+        values.reserve(samples.size());
+        for (const ToolSwitchSample& sample : samples) {
+            values.append(nsToMs(sample.scopes.value(QString::fromLatin1(name), 0)));
+        }
+        return computeStats(values);
+    };
+
+    std::cout << "\n=== tools.reuse_pairs: semantic editor reuse transitions ===\n";
+    std::cout << "pair                                  switch p50      p90  retained  created  "
+                 "destroyed  reconcile\n";
+    QJsonArray pairsJson;
+    QVector<ToolSwitchSample> allSamples;
+    for (const ReusePairInfo& pair : kReusePairs) {
+        const ToolAggregate& aggregate = aggregates.value(QString::fromLatin1(pair.id));
+        const QVector<ToolSwitchSample>& samples = aggregate.samples;
+        const Stats switchStats = computeStats(extract(samples, &ToolSwitchSample::switchMs));
+        const Stats retained = counterStats(samples, "style.editor_retained");
+        const Stats created = counterStats(samples, "style.editor_created");
+        const Stats destroyed = counterStats(samples, "style.editor_destroyed");
+        const Stats reconcile = scopeStats(samples, "style.reconcile");
+        allSamples += samples;
+
+        std::cout << QString::fromLatin1(pair.id).leftJustified(38).toStdString()
+                  << msCell(switchStats.p50, 10).toStdString()
+                  << msCell(switchStats.p90, 9).toStdString()
+                  << msCell(retained.p50, 10).toStdString() << msCell(created.p50, 9).toStdString()
+                  << msCell(destroyed.p50, 11).toStdString()
+                  << msCell(reconcile.p50, 11).toStdString() << '\n';
+
+        QJsonObject pairJson;
+        pairJson.insert(QStringLiteral("id"), QString::fromLatin1(pair.id));
+        pairJson.insert(QStringLiteral("source"),
+                        QString::fromLatin1(drawingToolInfo(pair.source).id));
+        pairJson.insert(QStringLiteral("destination"),
+                        QString::fromLatin1(drawingToolInfo(pair.destination).id));
+        pairJson.insert(QStringLiteral("samples"), samples.size());
+        pairJson.insert(QStringLiteral("invalid"), aggregate.invalidCount);
+        pairJson.insert(QStringLiteral("switch_ms"), statsJsonValue(switchStats));
+        pairJson.insert(QStringLiteral("reconcile_ms"), statsJsonValue(reconcile));
+        QJsonObject countersJson;
+        countersJson.insert(QStringLiteral("style.editor_retained"), statsJsonValue(retained));
+        countersJson.insert(QStringLiteral("style.editor_created"), statsJsonValue(created));
+        countersJson.insert(QStringLiteral("style.editor_destroyed"), statsJsonValue(destroyed));
+        pairJson.insert(QStringLiteral("counters"), countersJson);
+        QJsonArray rawSamples;
+        for (const ToolSwitchSample& sample : samples) {
+            QJsonObject raw;
+            raw.insert(QStringLiteral("switch_ms"), sample.switchMs);
+            raw.insert(QStringLiteral("style.editor_retained"),
+                       static_cast<double>(
+                           sample.counters.value(QStringLiteral("style.editor_retained"), 0)));
+            raw.insert(QStringLiteral("style.editor_created"),
+                       static_cast<double>(
+                           sample.counters.value(QStringLiteral("style.editor_created"), 0)));
+            raw.insert(QStringLiteral("style.editor_destroyed"),
+                       static_cast<double>(
+                           sample.counters.value(QStringLiteral("style.editor_destroyed"), 0)));
+            rawSamples.append(raw);
+        }
+        pairJson.insert(QStringLiteral("raw_samples"), rawSamples);
+        pairsJson.append(pairJson);
+    }
+
+    QJsonObject aggregateJson;
+    aggregateJson.insert(
+        QStringLiteral("switch_ms"),
+        statsJsonValue(computeStats(extract(allSamples, &ToolSwitchSample::switchMs))));
+    QJsonObject aggregateCounters;
+    aggregateCounters.insert(QStringLiteral("style.editor_retained"),
+                             statsJsonValue(counterStats(allSamples, "style.editor_retained")));
+    aggregateCounters.insert(QStringLiteral("style.editor_created"),
+                             statsJsonValue(counterStats(allSamples, "style.editor_created")));
+    aggregateCounters.insert(QStringLiteral("style.editor_destroyed"),
+                             statsJsonValue(counterStats(allSamples, "style.editor_destroyed")));
+    aggregateJson.insert(QStringLiteral("counters"), aggregateCounters);
+    reportOut.insert(QStringLiteral("pairs"), pairsJson);
+    reportOut.insert(QStringLiteral("aggregate"), aggregateJson);
 }
 
 } // namespace
@@ -1214,29 +1404,32 @@ int main(int argc, char* argv[]) {
         QStringLiteral("Directory for report.json (default build/toolbar-display-perf/<stamp>)."),
         QStringLiteral("directory"));
     parser.addOption(outputOption);
-    const QCommandLineOption samplesOption(
-        {QStringLiteral("s"), QStringLiteral("samples")},
-        QStringLiteral("first_frame samples (default 25)."), QStringLiteral("count"), "25");
+    const QCommandLineOption samplesOption({QStringLiteral("s"), QStringLiteral("samples")},
+                                           QStringLiteral("first_frame samples (default 25)."),
+                                           QStringLiteral("count"), "25");
     parser.addOption(samplesOption);
     const QCommandLineOption warmupsOption(QStringLiteral("warmups"),
                                            QStringLiteral("first_frame warmups (default 6)."),
                                            QStringLiteral("count"), "6");
     parser.addOption(warmupsOption);
     const QCommandLineOption cycleSweepsOption(
-        QStringLiteral("cycle-sweeps"), QStringLiteral("tools.cycle sweeps (default 12)."),
+        QStringLiteral("cycle-sweeps"),
+        QStringLiteral("tools.cycle/tools.reuse_pairs sweeps (default 12)."),
         QStringLiteral("count"), "12");
     parser.addOption(cycleSweepsOption);
     const QCommandLineOption cycleWarmupOption(
-        QStringLiteral("cycle-warmups"), QStringLiteral("tools.cycle warmup sweeps (default 2)."),
+        QStringLiteral("cycle-warmups"),
+        QStringLiteral("tools.cycle/tools.reuse_pairs warmup sweeps (default 2)."),
         QStringLiteral("count"), "2");
     parser.addOption(cycleWarmupOption);
     const QCommandLineOption coldSamplesOption(
-        QStringLiteral("cold-samples"),
-        QStringLiteral("tools.cold samples per tool (default 8)."), QStringLiteral("count"), "8");
+        QStringLiteral("cold-samples"), QStringLiteral("tools.cold samples per tool (default 8)."),
+        QStringLiteral("count"), "8");
     parser.addOption(coldSamplesOption);
     const QCommandLineOption scenarioOption(
         QStringLiteral("scenario"),
-        QStringLiteral("Scenario glob to run (first_frame, tools.cycle, tools.cold; default all)."),
+        QStringLiteral("Scenario glob to run (first_frame, tools.cycle, tools.cold, "
+                       "tools.reuse_pairs; default all)."),
         QStringLiteral("pattern"));
     parser.addOption(scenarioOption);
     const QCommandLineOption listOption(QStringLiteral("list-scenarios"),
@@ -1245,7 +1438,7 @@ int main(int argc, char* argv[]) {
     parser.process(app);
 
     if (parser.isSet(listOption)) {
-        std::cout << "first_frame\ntools.cycle\ntools.cold\n";
+        std::cout << "first_frame\ntools.cycle\ntools.cold\ntools.reuse_pairs\n";
         return 0;
     }
 
@@ -1260,13 +1453,12 @@ int main(int argc, char* argv[]) {
         parser.isSet(scenarioOption) ? parser.value(scenarioOption) : QStringLiteral("*");
     const QRegularExpression scenarioFilter =
         QRegularExpression::fromWildcard(scenarioGlob, Qt::CaseInsensitive);
-    const bool runFirstFrame =
-        scenarioFilter.match(QStringLiteral("first_frame")).hasMatch();
+    const bool runFirstFrame = scenarioFilter.match(QStringLiteral("first_frame")).hasMatch();
     const bool runCycle = scenarioFilter.match(QStringLiteral("tools.cycle")).hasMatch();
     const bool runCold = scenarioFilter.match(QStringLiteral("tools.cold")).hasMatch();
+    const bool runReusePairs = scenarioFilter.match(QStringLiteral("tools.reuse_pairs")).hasMatch();
 
-    const bool windowsPlatform =
-        QGuiApplication::platformName() == QStringLiteral("windows");
+    const bool windowsPlatform = QGuiApplication::platformName() == QStringLiteral("windows");
     if (!windowsPlatform) {
         std::cerr << "warning: QT_QPA_PLATFORM is '"
                   << QGuiApplication::platformName().toStdString()
@@ -1282,10 +1474,10 @@ int main(int argc, char* argv[]) {
     const QRect physicalBounds = nativeScreenPhysicalBounds(screen);
 
     std::cout << "snow-shot toolbar display benchmark\n"
-              << "  qt=" << QT_VERSION_STR << " platform="
-              << QGuiApplication::platformName().toStdString()
-              << " screen=" << screen->name().toStdString()
-              << " dpr=" << screen->devicePixelRatio() << "\n"
+              << "  qt=" << QT_VERSION_STR
+              << " platform=" << QGuiApplication::platformName().toStdString()
+              << " screen=" << screen->name().toStdString() << " dpr=" << screen->devicePixelRatio()
+              << "\n"
               << "  bounds=" << logicalBounds.width() << "x" << logicalBounds.height()
               << " samples=" << firstFrameSamples << " sweeps=" << cycleSweeps
               << " cold_samples=" << coldSamples << "\n";
@@ -1305,8 +1497,7 @@ int main(int argc, char* argv[]) {
     QJsonObject report;
     report.insert(QStringLiteral("schema"), kReportSchemaVersion);
     report.insert(QStringLiteral("benchmark"), QStringLiteral("toolbar-display"));
-    report.insert(QStringLiteral("timestamp"),
-                  QDateTime::currentDateTime().toString(Qt::ISODate));
+    report.insert(QStringLiteral("timestamp"), QDateTime::currentDateTime().toString(Qt::ISODate));
     report.insert(QStringLiteral("qt_version"), QString::fromLatin1(QT_VERSION_STR));
     report.insert(QStringLiteral("platform"), QGuiApplication::platformName());
     {
@@ -1314,13 +1505,11 @@ int main(int argc, char* argv[]) {
         screenJson.insert(QStringLiteral("name"), screen->name());
         screenJson.insert(QStringLiteral("dpr"), screen->devicePixelRatio());
         screenJson.insert(QStringLiteral("refresh_rate_hz"), screen->refreshRate());
-        screenJson.insert(
-            QStringLiteral("geometry"),
-            QStringLiteral("%1,%2 %3x%4")
-                .arg(logicalBounds.x())
-                .arg(logicalBounds.y())
-                .arg(logicalBounds.width())
-                .arg(logicalBounds.height()));
+        screenJson.insert(QStringLiteral("geometry"), QStringLiteral("%1,%2 %3x%4")
+                                                          .arg(logicalBounds.x())
+                                                          .arg(logicalBounds.y())
+                                                          .arg(logicalBounds.width())
+                                                          .arg(logicalBounds.height()));
         report.insert(QStringLiteral("screen"), screenJson);
     }
     {
@@ -1342,6 +1531,8 @@ int main(int argc, char* argv[]) {
         settingsJson.insert(QStringLiteral("cycle_warmups"), cycleWarmups);
         settingsJson.insert(QStringLiteral("cold_samples"), coldSamples);
         settingsJson.insert(QStringLiteral("cold_warmups"), coldWarmups);
+        settingsJson.insert(QStringLiteral("reuse_pair_sweeps"), cycleSweeps);
+        settingsJson.insert(QStringLiteral("reuse_pair_warmups"), cycleWarmups);
         report.insert(QStringLiteral("settings"), settingsJson);
     }
 
@@ -1366,16 +1557,14 @@ int main(int argc, char* argv[]) {
         const Stats compositorStats = computeStats(compositorFloor);
         QJsonObject floorJson;
         floorJson.insert(QStringLiteral("samples"), settleFloor.size());
-        floorJson.insert(QStringLiteral("settle_ms"),
-                         statsJsonValue(settleStats).toObject());
+        floorJson.insert(QStringLiteral("settle_ms"), statsJsonValue(settleStats).toObject());
         floorJson.insert(QStringLiteral("compositor_flush_ms"),
                          statsJsonValue(compositorStats).toObject());
         floorJson.insert(QStringLiteral("cycle_ms"),
                          statsJsonValue(computeStats(cycleFloor)).toObject());
-        floorJson.insert(
-            QStringLiteral("note"),
-            QStringLiteral("no-op settle + DwmFlush floor; subtract from per-sample "
-                           "settle/compositor/total_to_display to isolate real work"));
+        floorJson.insert(QStringLiteral("note"),
+                         QStringLiteral("no-op settle + DwmFlush floor; subtract from per-sample "
+                                        "settle/compositor/total_to_display to isolate real work"));
         report.insert(QStringLiteral("idle_floor"), floorJson);
         std::cout << "idle floor (no-op settle + DwmFlush): settle p50="
                   << msCell(settleStats.p50, 0).toStdString()
@@ -1443,6 +1632,19 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    if (runReusePairs) {
+        const QMap<QString, ToolAggregate> aggregates =
+            runToolReusePairs(app, collector, commands, screen, logicalBounds, physicalBounds,
+                              cycleWarmups, cycleSweeps);
+        QJsonObject reusePairsJson;
+        reportReusePairTable(aggregates, reusePairsJson);
+        report.insert(QStringLiteral("tools_reuse_pairs"), reusePairsJson);
+        for (auto iterator = aggregates.constBegin(); iterator != aggregates.constEnd();
+             ++iterator) {
+            invalidTotal += iterator->invalidCount;
+        }
+    }
+
     toolbar_perf::setSink(nullptr);
 
     if (collector.totalScopeCount() == 0) {
@@ -1454,8 +1656,8 @@ int main(int argc, char* argv[]) {
                                   ? parser.value(outputOption)
                                   : QDir(QDir::currentPath())
                                         .filePath(QStringLiteral("build/toolbar-display-perf/") +
-                                                 QDateTime::currentDateTime().toString(
-                                                     QStringLiteral("yyyyMMdd-HHmmss")));
+                                                  QDateTime::currentDateTime().toString(
+                                                      QStringLiteral("yyyyMMdd-HHmmss")));
     if (!QDir().mkpath(outputDir)) {
         std::cerr << "error: cannot create output directory "
                   << QDir::toNativeSeparators(outputDir).toStdString() << '\n';
@@ -1470,8 +1672,8 @@ int main(int argc, char* argv[]) {
     }
     reportFile.write(QJsonDocument(report).toJson(QJsonDocument::Indented));
     reportFile.close();
-    std::cout << "\nreport written to "
-              << QDir::toNativeSeparators(reportPath).toStdString() << '\n';
+    std::cout << "\nreport written to " << QDir::toNativeSeparators(reportPath).toStdString()
+              << '\n';
 
     if (invalidTotal > 0) {
         std::cerr << "warning: " << invalidTotal
