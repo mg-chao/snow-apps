@@ -81,6 +81,7 @@ struct SelectVisualStyle {
   QColor emptyShadowColor;
   QColor emptyContentColor;
   QColor disabledTextColor;
+  QColor groupTitleColor;
   QColor disabledBg;
   QColor disabledBorderColor;
   SelectMetrics metrics;

@@ -50,8 +50,7 @@ void require(bool condition, const char* message) {
 }
 
 bool dispatchShortcut(QWidget& receiver, Qt::Key key,
-                      Qt::KeyboardModifiers modifiers = Qt::NoModifier,
-                      bool autoRepeat = false) {
+                      Qt::KeyboardModifiers modifiers = Qt::NoModifier, bool autoRepeat = false) {
     QKeyEvent shortcutOverride(QEvent::ShortcutOverride, key, modifiers, QString(), autoRepeat);
     shortcutOverride.setAccepted(false);
     QCoreApplication::sendEvent(&receiver, &shortcutOverride);
@@ -98,7 +97,7 @@ QImage solidImage(const QSize& size, QRgb color) {
 }
 
 QDir historyDirectory(const QString& configurationDirectory) {
-    return QDir(QDir(configurationDirectory).filePath(QStringLiteral("capture_history_records")));
+    return QDir(QDir(configurationDirectory).filePath(QStringLiteral("capture_history/records")));
 }
 
 CapturedDisplayModel display(QString stableId, QString name, QRect canvasRect, QImage image) {
@@ -301,11 +300,12 @@ void fullSessionEntriesRemainReadable(const QString& root) {
             "failed to activate shape for the full-session entry");
     SnowCanvasShapeStyle fullSessionStyle = canvas.canvasStyleToolbarState().shapeStyle;
     fullSessionStyle.strokeWidth = 13.0;
-    require(canvas.setCanvasShapeStylePatch(fullSessionStyle, SnowCanvasShapeStylePropertyStrokeWidth,
+    require(canvas.setCanvasShapeStylePatch(fullSessionStyle,
+                                            SnowCanvasShapeStylePropertyStrokeWidth,
                                             SnowCanvasShapeKind::Rectangle),
             "failed to configure the full-session style");
-    auto entry =
-        takeSnapshot(history.snapshotCurrent(true), "failed to snapshot the full-session history entry");
+    auto entry = takeSnapshot(history.snapshotCurrent(true),
+                              "failed to snapshot the full-session history entry");
     entry.canvasHistory = runtime.serializeDocumentSession();
     require(!entry.canvasHistory.isEmpty(), "failed to create a full-session canvas payload");
     history.commit(std::move(entry));
@@ -386,6 +386,7 @@ void corruptLazyEntryDoesNotBlockOlderEntries(const QString& root) {
     interaction.enterOverlayVisible(false);
     ScreenshotIntelligentSelectionModel intelligent;
 
+    QString newerId;
     {
         ScreenshotHistoryService writer(
             {displays, runtime, selection, interaction, intelligent, {}}, root,
@@ -395,6 +396,7 @@ void corruptLazyEntryDoesNotBlockOlderEntries(const QString& root) {
         clock = clock.addSecs(1);
         displays.displayAt(0).image = solidImage(QSize(64, 64), qRgba(0, 255, 0, 255));
         auto newer = takeSnapshot(writer.snapshotCurrent(true), "failed to snapshot newer entry");
+        newerId = newer.id;
         writer.commit(std::move(newer));
         writer.drainPendingWrites();
     }
@@ -415,7 +417,7 @@ void corruptLazyEntryDoesNotBlockOlderEntries(const QString& root) {
     const QFileInfoList directories =
         historyDirectory(root).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
     require(directories.size() == 2, "history entries were not persisted");
-    QFile corrupt(QDir(directories.constLast().absoluteFilePath())
+    QFile corrupt(QDir(historyDirectory(root).filePath(newerId))
                       .filePath(QStringLiteral("canvas_history.json")));
     require(corrupt.open(QIODevice::WriteOnly | QIODevice::Truncate),
             "failed to open session for corruption");
@@ -571,8 +573,8 @@ void historyKeysOnlyWorkDuringSelectionStates() {
         actions,
     });
 
-    ScreenshotOverlayShortcutController shortcutController(
-        shortcutManager, handler, interaction, intelligent, actions);
+    ScreenshotOverlayShortcutController shortcutController(shortcutManager, handler, interaction,
+                                                           intelligent, actions);
 
     handler.confirmSelection();
     require(selectionConfirmedCount == 0 &&
@@ -616,8 +618,7 @@ void historyKeysOnlyWorkDuringSelectionStates() {
     require(returnToIntelligentCount == 1,
             "historical right-click incorrectly returned to intelligent selection");
 
-    static_cast<void>(
-        interaction.enterSelectionDrag(ScreenshotSelectionDragMode::Marquee));
+    static_cast<void>(interaction.enterSelectionDrag(ScreenshotSelectionDragMode::Marquee));
     require(dispatchShortcut(shortcutWindow, Qt::Key_Comma),
             "comma key was not handled during manual box selection");
     require(previousCount == 2, "comma key did not navigate history during manual box selection");
@@ -654,10 +655,8 @@ void moveToolResizesSelectionFromOutsidePress() {
     int selectionConfirmedCount = 0;
     ScreenshotOverlayInputActions actions;
     actions.updateOverlayState = [&overlayUpdates]() { ++overlayUpdates; };
-    actions.updateGuideLinesForOverlay = [&guideLineUpdates](ScreenshotOverlayWindow*,
-                                                              const QPointF&) {
-        ++guideLineUpdates;
-    };
+    actions.updateGuideLinesForOverlay =
+        [&guideLineUpdates](ScreenshotOverlayWindow*, const QPointF&) { ++guideLineUpdates; };
     actions.selectionConfirmed = [&selectionConfirmedCount]() { ++selectionConfirmedCount; };
     ScreenshotOverlayInputHandler handler({
         captureState,
@@ -683,8 +682,7 @@ void moveToolResizesSelectionFromOutsidePress() {
     require(overlayUpdates == 1, "outside resize did not refresh the overlay");
     require(guideLineUpdates == 1,
             "Move press outside the selection did not update the cursor guide lines");
-    require(selectionConfirmedCount == 0,
-            "outside resize was confirmed before release");
+    require(selectionConfirmedCount == 0, "outside resize was confirmed before release");
 
     handler.handleMouseMove(nullptr, QPointF(60, 70));
     handler.handleMouseRelease(nullptr, QPointF(60, 70));
@@ -732,8 +730,7 @@ void manualSelectionUsesSharedMarqueeTransaction() {
     require(selection.normalizedSelection() == QRectF(50, 50, 0, 0),
             "manual marquee did not reset the selection origin");
     require(overlayUpdates == 1, "manual marquee did not refresh the overlay");
-    require(selectionConfirmedCount == 0,
-            "manual marquee was confirmed before the drag finished");
+    require(selectionConfirmedCount == 0, "manual marquee was confirmed before the drag finished");
 
     handler.handleMouseMove(nullptr, QPointF(70, 80));
     handler.handleMouseRelease(nullptr, QPointF(70, 80));
@@ -774,9 +771,9 @@ void manualSelectionCanMoveExistingSelection() {
     require(interaction.manualSelecting() && interaction.modifyingSelection() &&
                 interaction.dragging() &&
                 interaction.dragMode() == ScreenshotSelectionDragMode::All,
-          "manual selection press inside an existing rectangle did not enter "
-          "whole-selection "
-          "movement");
+            "manual selection press inside an existing rectangle did not enter "
+            "whole-selection "
+            "movement");
     require(selection.normalizedSelection() == QRectF(10, 10, 20, 20),
             "manual whole-selection movement changed the rectangle before the drag moved");
 
@@ -855,16 +852,16 @@ void nonMoveToolPermanentlySwitchesForSelectionResize() {
                                           ScreenshotSelectionDragMode dragMode) {
         cursors.push_back(dragMode);
     };
-    actions.activateToolForSelectionResize =
-        [&interaction, &activatedTools](ScreenshotActiveTool tool) {
-            activatedTools.push_back(tool);
-            if (tool == ScreenshotActiveTool::Move) {
-                interaction.setMoveTool(true, false);
-            } else {
-                interaction.setCanvasTool(tool);
-            }
-            return true;
-        };
+    actions.activateToolForSelectionResize = [&interaction,
+                                              &activatedTools](ScreenshotActiveTool tool) {
+        activatedTools.push_back(tool);
+        if (tool == ScreenshotActiveTool::Move) {
+            interaction.setMoveTool(true, false);
+        } else {
+            interaction.setCanvasTool(tool);
+        }
+        return true;
+    };
     ScreenshotOverlayInputHandler handler({
         captureState,
         interaction,
@@ -897,9 +894,8 @@ void nonMoveToolPermanentlySwitchesForSelectionResize() {
     require(interaction.activeTool() == ScreenshotActiveTool::Shape && interaction.editing() &&
                 !interaction.dragging(),
             "finishing selection resize must restore the previously active tool");
-    require(activatedTools ==
-                QVector<ScreenshotActiveTool>{ScreenshotActiveTool::Move,
-                                              ScreenshotActiveTool::Shape},
+    require(activatedTools == QVector<ScreenshotActiveTool>{ScreenshotActiveTool::Move,
+                                                            ScreenshotActiveTool::Shape},
             "selection resize must permanently reactivate the previous tool after release");
 
     interaction.setCanvasTool(ScreenshotActiveTool::Shape);
@@ -965,8 +961,7 @@ void recognitionAndScrollingToolsResizeSelectionBorder() {
                 "recognition border resize must restore the active recognition tool");
         require(!interaction.selectionHandlesVisible(),
                 "restored recognition tools must keep selection control points hidden");
-        require(activatedTools ==
-                    QVector<ScreenshotActiveTool>{ScreenshotActiveTool::Move, tool},
+        require(activatedTools == QVector<ScreenshotActiveTool>{ScreenshotActiveTool::Move, tool},
                 "recognition resize must use permanent Move and recognition activations");
     }
 
@@ -1054,8 +1049,7 @@ void sharedShiftShortcutChoosesResizeOrColorFormat() {
     const storage::ScreenshotShortcutSettings shortcutSettings;
     const QStringList originalAspectShortcuts =
         shortcutSettings.keepSelectionWidthAndHeightConsistent();
-    require(shortcutSettings.setKeepSelectionWidthAndHeightConsistent(
-                {QStringLiteral("Shift")}),
+    require(shortcutSettings.setKeepSelectionWidthAndHeightConsistent({QStringLiteral("Shift")}),
             "failed to establish the default aspect shortcut");
 
     ScreenshotCaptureState captureState;
@@ -1085,30 +1079,27 @@ void sharedShiftShortcutChoosesResizeOrColorFormat() {
         displays,
         actions,
     });
-    ScreenshotOverlayShortcutController shortcutController(
-        shortcutManager, handler, interaction, intelligent, actions);
+    ScreenshotOverlayShortcutController shortcutController(shortcutManager, handler, interaction,
+                                                           intelligent, actions);
 
     require(dispatchShortcut(shortcutWindow, Qt::Key_Shift),
             "idle Shift press without a modifier flag was not reserved for its contextual action");
     require(colorFormatCycles == 0,
             "default Shift changed color format before its resize intent was known");
-    require(dispatchShortcutRelease(shortcutWindow, Qt::Key_Shift) &&
-                colorFormatCycles == 1,
+    require(dispatchShortcutRelease(shortcutWindow, Qt::Key_Shift) && colorFormatCycles == 1,
             "idle default Shift did not switch color format exactly once on release");
 
     require(dispatchShortcut(shortcutWindow, Qt::Key_Shift, Qt::ShiftModifier),
             "pre-held default Shift did not activate the aspect shortcut");
     handler.handleMousePress(nullptr, QPointF(50, 20));
-    require(interaction.dragging() &&
-                interaction.dragMode() == ScreenshotSelectionDragMode::Right,
+    require(interaction.dragging() && interaction.dragMode() == ScreenshotSelectionDragMode::Right,
             "pre-held Shift did not allow the edge resize to begin");
     handler.handleMouseMove(nullptr, QPointF(90, 20));
     handler.handleMouseRelease(nullptr, QPointF(90, 20));
     const QRectF shiftResized = selection.normalizedSelection();
     require(shiftResized.size() == QSizeF(80, 80),
             "pre-held default Shift did not keep the selection width and height equal");
-    require(dispatchShortcutRelease(shortcutWindow, Qt::Key_Shift) &&
-                colorFormatCycles == 1,
+    require(dispatchShortcutRelease(shortcutWindow, Qt::Key_Shift) && colorFormatCycles == 1,
             "using default Shift for a resize also switched color format");
 
     selection.setSelectionRect(QRectF(10, 10, 40, 20));
@@ -1122,12 +1113,10 @@ void sharedShiftShortcutChoosesResizeOrColorFormat() {
     handler.handleMouseRelease(nullptr, QPointF(25, 15));
     require(dispatchShortcutRelease(shortcutWindow, Qt::Key_Space, Qt::ShiftModifier),
             "Space release did not clear the whole-selection modifier");
-    require(dispatchShortcutRelease(shortcutWindow, Qt::Key_Shift) &&
-                colorFormatCycles == 1,
+    require(dispatchShortcutRelease(shortcutWindow, Qt::Key_Shift) && colorFormatCycles == 1,
             "Shift plus whole-selection movement also switched color format");
 
-    require(shortcutSettings.setKeepSelectionWidthAndHeightConsistent(
-                {QStringLiteral("K")}),
+    require(shortcutSettings.setKeepSelectionWidthAndHeightConsistent({QStringLiteral("K")}),
             "failed to remap the aspect shortcut");
     shortcutController.reloadConfiguredShortcuts();
     require(dispatchShortcut(shortcutWindow, Qt::Key_Shift, Qt::ShiftModifier) &&
@@ -1145,12 +1134,10 @@ void sharedShiftShortcutChoosesResizeOrColorFormat() {
     const QRectF remappedResized = selection.normalizedSelection();
     require(remappedResized.size() == QSizeF(80, 80),
             "pre-held remapped shortcut did not keep the selection width and height equal");
-    require(dispatchShortcutRelease(shortcutWindow, Qt::Key_K) &&
-                colorFormatCycles == 2,
+    require(dispatchShortcutRelease(shortcutWindow, Qt::Key_K) && colorFormatCycles == 2,
             "remapped aspect shortcut unexpectedly switched color format");
 
-    require(shortcutSettings.setKeepSelectionWidthAndHeightConsistent(
-                originalAspectShortcuts),
+    require(shortcutSettings.setKeepSelectionWidthAndHeightConsistent(originalAspectShortcuts),
             "failed to restore the aspect shortcut after contextual input test");
 }
 
@@ -1231,8 +1218,8 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
         displays,
         actions,
     });
-    ScreenshotOverlayShortcutController shortcutController(
-        shortcutManager, handler, interaction, intelligent, actions);
+    ScreenshotOverlayShortcutController shortcutController(shortcutManager, handler, interaction,
+                                                           intelligent, actions);
 
     intelligent.beginPress(QPointF(18, 18), windowSelection);
     require(dispatchShortcut(shortcutWindow, Qt::Key_Tab) &&
@@ -1286,17 +1273,15 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
             "switching back to window mode did not request a fresh hit test");
 
     intelligent.beginCaptureSession(false);
-    require(intelligent.applyCanvasHitPath(
-                {nestedChildSelection, childSelection, windowSelection},
-                QRectF(0, 0, 100, 100), 1.0),
+    require(intelligent.applyCanvasHitPath({nestedChildSelection, childSelection, windowSelection},
+                                           QRectF(0, 0, 100, 100), 1.0),
             "failed to seed disabled intelligent-selection candidates");
     selection.setSelectionRect(intelligent.currentSelection());
     require(!dispatchShortcut(shortcutWindow, Qt::Key_Tab) &&
                 !intelligent.smartSelectionEnabled() &&
                 intelligent.selectionTarget() == ScreenshotIntelligentSelectionTarget::Window &&
                 intelligent.currentSelection() == windowSelection &&
-                selection.normalizedSelection() == windowSelection &&
-                selectorHitTestRequests == 5,
+                selection.normalizedSelection() == windowSelection && selectorHitTestRequests == 5,
             "disabled Smart selection must reject Tab and remain in window mode");
     if (targetSwitchOnly) {
         require(shortcutSettings.setAllShortcutsAtomic(originalShortcuts),
@@ -1320,14 +1305,14 @@ void configuredSelectionShortcutsRouteTabHistoryAndColorActions(bool targetSwitc
 
     interaction.setCanvasTool(ScreenshotActiveTool::Shape);
     require(!dispatchShortcut(shortcutWindow, Qt::Key_R) &&
-                !dispatchShortcut(shortcutWindow, Qt::Key_C) &&
-                previousSelectionCalls == 2 && copyColorCalls == 1,
+                !dispatchShortcut(shortcutWindow, Qt::Key_C) && previousSelectionCalls == 2 &&
+                copyColorCalls == 1,
             "R and C must be inactive while a drawing tool is active");
     interaction.setMoveTool(true, false);
 
     require(dispatchShortcut(shortcutWindow, Qt::Key_Comma) &&
-                dispatchShortcut(shortcutWindow, Qt::Key_Period) &&
-                previousHistoryCalls == 1 && nextHistoryCalls == 1,
+                dispatchShortcut(shortcutWindow, Qt::Key_Period) && previousHistoryCalls == 1 &&
+                nextHistoryCalls == 1,
             "default history shortcuts did not navigate the previous and next entries");
 
     QMap<QString, QStringList> remapped = shortcutSettings.allShortcuts();
@@ -1407,8 +1392,7 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
     const QMap<QString, QStringList> originalShortcuts = shortcutSettings.allShortcuts();
     QMap<QString, QStringList> defaults = originalShortcuts;
     defaults.insert(QStringLiteral("move_tool"), {QStringLiteral("M")});
-    defaults.insert(QStringLiteral("move_cursor_up"),
-                    {QStringLiteral("W"), QStringLiteral("Up")});
+    defaults.insert(QStringLiteral("move_cursor_up"), {QStringLiteral("W"), QStringLiteral("Up")});
     defaults.insert(QStringLiteral("move_cursor_down"),
                     {QStringLiteral("S"), QStringLiteral("Down")});
     defaults.insert(QStringLiteral("move_cursor_left"),
@@ -1493,8 +1477,8 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
         displays,
         actions,
     });
-    ScreenshotOverlayShortcutController shortcutController(
-        shortcutManager, handler, interaction, intelligent, actions);
+    ScreenshotOverlayShortcutController shortcutController(shortcutManager, handler, interaction,
+                                                           intelligent, actions);
 
     interaction.setCanvasTool(ScreenshotActiveTool::Watermark);
     localShortcutInputAllowed = false;
@@ -1513,14 +1497,13 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
 
     interaction.setCanvasTool(ScreenshotActiveTool::Shape);
     require(dispatchShortcut(shortcutWindow, Qt::Key_W),
-          "cursor shortcut was not handled in the drawing tool");
-  require(drawingToolActivations == 0 &&
-              cursorMoves == QVector<PhysicalCursorDirection>{PhysicalCursorDirection::Up},
-          "drawing-tool cursor movement must use the higher-priority "
-          "screenshot shortcut");
+            "cursor shortcut was not handled in the drawing tool");
+    require(drawingToolActivations == 0 &&
+                cursorMoves == QVector<PhysicalCursorDirection>{PhysicalCursorDirection::Up},
+            "drawing-tool cursor movement must use the higher-priority "
+            "screenshot shortcut");
 
-    require(dispatchShortcut(shortcutWindow, Qt::Key_M),
-            "default Move shortcut was not handled");
+    require(dispatchShortcut(shortcutWindow, Qt::Key_M), "default Move shortcut was not handled");
     require(moveToolActivations == 1 && interaction.moveToolActive(),
             "default Move shortcut must activate the Move tool");
 
@@ -1536,30 +1519,28 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
     require(dispatchShortcut(shortcutWindow, Qt::Key_W) &&
                 dispatchShortcut(shortcutWindow, Qt::Key_Up),
             "default cursor-up shortcuts were not handled");
-  require(cursorMoves == QVector<PhysicalCursorDirection>{PhysicalCursorDirection::Up,
-                                                          PhysicalCursorDirection::Up,
-                                                          PhysicalCursorDirection::Up},
+    require(cursorMoves == QVector<PhysicalCursorDirection>{PhysicalCursorDirection::Up,
+                                                            PhysicalCursorDirection::Up,
+                                                            PhysicalCursorDirection::Up},
             "W and Up must move the cursor up by one pixel");
-  require(drawingToolActivations == 0,
-          "higher-priority screenshot shortcut must win a cross-category "
-          "collision in Move mode");
+    require(drawingToolActivations == 0,
+            "higher-priority screenshot shortcut must win a cross-category "
+            "collision in Move mode");
 
-  cursorMoveHandles = false;
-  require(dispatchShortcut(shortcutWindow, Qt::Key_W) &&
-              drawingToolActivations == 1 && cursorMoves.size() == 3,
-          "declining screenshot shortcut must fall through to the drawing "
-          "shortcut");
+    cursorMoveHandles = false;
+    require(dispatchShortcut(shortcutWindow, Qt::Key_W) && drawingToolActivations == 1 &&
+                cursorMoves.size() == 3,
+            "declining screenshot shortcut must fall through to the drawing "
+            "shortcut");
     cursorMoveHandles = true;
 
     require(shortcutSettings.setMoveCursorUp({QStringLiteral("Ctrl+Alt+K")}),
             "failed to customize the cursor-up shortcut");
     dispatchShortcut(shortcutWindow, Qt::Key_W);
-  require(drawingToolActivations == 2 && cursorMoves.size() == 3,
-          "removed screenshot shortcut must fall through to the colliding "
-          "drawing shortcut");
-  require(
-      dispatchShortcut(shortcutWindow, Qt::Key_K,
-                             Qt::ControlModifier | Qt::AltModifier) &&
+    require(drawingToolActivations == 2 && cursorMoves.size() == 3,
+            "removed screenshot shortcut must fall through to the colliding "
+            "drawing shortcut");
+    require(dispatchShortcut(shortcutWindow, Qt::Key_K, Qt::ControlModifier | Qt::AltModifier) &&
                 cursorMoves.constLast() == PhysicalCursorDirection::Up,
             "customized cursor shortcut must take effect without restarting capture");
 
@@ -1567,11 +1548,11 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
             "failed to customize the Move shortcut");
     interaction.setCanvasTool(ScreenshotActiveTool::Shape);
     dispatchShortcut(shortcutWindow, Qt::Key_M);
-    require(moveToolActivations == 1 &&
-                dispatchShortcut(shortcutWindow, Qt::Key_M,
-                                 Qt::ControlModifier | Qt::AltModifier) &&
-                moveToolActivations == 2 && interaction.moveToolActive(),
-            "customized Move shortcut must replace the default key immediately");
+    require(
+        moveToolActivations == 1 &&
+            dispatchShortcut(shortcutWindow, Qt::Key_M, Qt::ControlModifier | Qt::AltModifier) &&
+            moveToolActivations == 2 && interaction.moveToolActive(),
+        "customized Move shortcut must replace the default key immediately");
 
     QMap<QString, QStringList> remappedCommands = shortcutSettings.allShortcuts();
     remappedCommands.insert(QStringLiteral("pin_to_screen"), {QStringLiteral("Alt+F")});
@@ -1607,8 +1588,7 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
     recognitionWindow.winId();
     shortcutWindow.show();
     shortcutWindow.winId();
-    if (recognitionWindow.windowHandle() != nullptr &&
-        shortcutWindow.windowHandle() != nullptr) {
+    if (recognitionWindow.windowHandle() != nullptr && shortcutWindow.windowHandle() != nullptr) {
         recognitionWindow.windowHandle()->setTransientParent(shortcutWindow.windowHandle());
     }
     shortcutManager.addScopeWindow(&recognitionWindow);
@@ -1661,8 +1641,8 @@ void intelligentSelectionSupportsCursorMovementShortcuts() {
         displays,
         actions,
     });
-    ScreenshotOverlayShortcutController shortcutController(
-        shortcutManager, handler, interaction, intelligent, actions);
+    ScreenshotOverlayShortcutController shortcutController(shortcutManager, handler, interaction,
+                                                           intelligent, actions);
 
     require(dispatchShortcut(shortcutWindow, Qt::Key_W) &&
                 dispatchShortcut(shortcutWindow, Qt::Key_Up) &&
@@ -1790,8 +1770,8 @@ void hiddenToolbarDisablesToolSwitchShortcutsDuringSelectionResize() {
         displays,
         actions,
     });
-    ScreenshotOverlayShortcutController shortcutController(
-        shortcutManager, handler, interaction, intelligent, actions);
+    ScreenshotOverlayShortcutController shortcutController(shortcutManager, handler, interaction,
+                                                           intelligent, actions);
 
     handler.handleMousePress(nullptr, QPointF(30, 20));
     require(interaction.modifyingSelection() && interaction.dragging() && !mainToolbarVisible,
@@ -1806,8 +1786,8 @@ void hiddenToolbarDisablesToolSwitchShortcutsDuringSelectionResize() {
     handler.handleMouseMove(nullptr, QPointF(40, 20));
     handler.handleMouseRelease(nullptr, QPointF(40, 20));
     require(selection.normalizedSelection() == QRectF(10, 10, 30, 20) &&
-                interaction.movingSelection() && !interaction.dragging() &&
-                mainToolbarVisible && showToolbarCount == 1,
+                interaction.movingSelection() && !interaction.dragging() && mainToolbarVisible &&
+                showToolbarCount == 1,
             "selection resize did not finish and restore the main toolbar");
     require(dispatchShortcut(shortcutWindow, Qt::Key_H) && drawingToolActivations == 1 &&
                 interaction.activeTool() == ScreenshotActiveTool::Shape,
@@ -1854,8 +1834,7 @@ void canvasColorSamplingConsumesOneCanvasClick() {
     require(handler.shouldHandleMouseEvent(nullptr, QPointF(12, 16), false),
             "an armed canvas sampler must handle the next canvas click");
     handler.handleMouseMove(nullptr, QPointF(12, 16));
-    require(previewCount == 1,
-            "an armed canvas sampler must preview the color under the cursor");
+    require(previewCount == 1, "an armed canvas sampler must preview the color under the cursor");
     handler.handleMousePress(nullptr, QPointF(12, 16));
     require(sampleCount == 1 && !interaction.dragging(),
             "canvas sampling must consume its click before selection or drawing begins");
@@ -1884,8 +1863,7 @@ int main(int argc, char** argv) {
         canvasColorSamplingConsumesOneCanvasClick();
         return 0;
     }
-    if (QCoreApplication::arguments().contains(
-            QStringLiteral("--selection-border-resize-only"))) {
+    if (QCoreApplication::arguments().contains(QStringLiteral("--selection-border-resize-only"))) {
         nonMoveToolPermanentlySwitchesForSelectionResize();
         recognitionAndScrollingToolsResizeSelectionBorder();
         return 0;

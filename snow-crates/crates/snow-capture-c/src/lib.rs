@@ -317,7 +317,6 @@ enum WorkerCommand {
     Prepare(mpsc::Sender<Result<(), String>>),
     Capture(mpsc::Sender<Result<Frame, String>>),
     ResetToPrepared(mpsc::Sender<Result<(), String>>),
-    ReleaseIdleResources(mpsc::Sender<Result<(), String>>),
     ActiveCaptureAccessCount(mpsc::Sender<Result<usize, String>>),
     Stop,
 }
@@ -627,16 +626,6 @@ impl MonitorWorker {
                             };
                             let _ = reply.send(result);
                         }
-                        WorkerCommand::ReleaseIdleResources(reply) => {
-                            let result = match session.as_mut() {
-                                Ok(capture_session) => {
-                                    capture_session.release_idle_resources();
-                                    Ok(())
-                                }
-                                Err(error) => Err(error.clone()),
-                            };
-                            let _ = reply.send(result);
-                        }
                         WorkerCommand::ActiveCaptureAccessCount(reply) => {
                             let result = match session.as_ref() {
                                 Ok(capture_session) => {
@@ -678,14 +667,6 @@ impl MonitorWorker {
         let (tx, rx) = mpsc::channel();
         self.tx
             .send(WorkerCommand::Capture(tx))
-            .map_err(|_| "capture worker is not running".to_owned())?;
-        Ok(rx)
-    }
-
-    fn request_release_idle_resources(&self) -> Result<mpsc::Receiver<Result<(), String>>, String> {
-        let (tx, rx) = mpsc::channel();
-        self.tx
-            .send(WorkerCommand::ReleaseIdleResources(tx))
             .map_err(|_| "capture worker is not running".to_owned())?;
         Ok(rx)
     }
@@ -1249,46 +1230,6 @@ pub extern "C" fn snow_capture_desktop_session_refresh_layout(
             0
         }
     }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn snow_capture_desktop_session_release_idle_resources(
-    session: *mut SnowCaptureDesktopSessionImpl,
-) -> u8 {
-    let Some(session) = session_mut(session) else {
-        return 0;
-    };
-
-    let receivers = match session
-        .workers
-        .iter()
-        .map(MonitorWorker::request_release_idle_resources)
-        .collect::<Result<Vec<_>, _>>()
-    {
-        Ok(receivers) => receivers,
-        Err(error) => {
-            set_last_error(error);
-            return 0;
-        }
-    };
-
-    for receiver in receivers {
-        match receiver.recv() {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => {
-                set_last_error(error);
-                return 0;
-            }
-            Err(_) => {
-                set_last_error("capture worker stopped before idle release completed");
-                return 0;
-            }
-        }
-    }
-
-    clear_last_error();
-    session.prepared = false;
-    1
 }
 
 #[unsafe(no_mangle)]
@@ -2869,13 +2810,6 @@ mod tests {
     }
 
     #[test]
-    fn release_idle_resources_null_session_fails() {
-        let ok = snow_capture_desktop_session_release_idle_resources(ptr::null_mut());
-        assert_eq!(ok, 0);
-        assert!(!snow_capture_last_error_message().is_null());
-    }
-
-    #[test]
     fn reset_to_prepared_null_session_fails() {
         let ok = snow_capture_desktop_session_reset_to_prepared(ptr::null_mut());
         assert_eq!(ok, 0);
@@ -2993,22 +2927,6 @@ mod tests {
             error.to_str().expect("recording error should be UTF-8"),
             "recording region width and height must be even"
         );
-    }
-
-    #[test]
-    fn release_idle_resources_empty_session_succeeds() {
-        let system = CaptureSystem::builder()
-            .build()
-            .expect("capture system should initialize");
-        let mut session = SnowCaptureDesktopSessionImpl {
-            system,
-            options: CaptureOptions::default(),
-            workers: Vec::new(),
-            prepared: false,
-        };
-
-        let ok = snow_capture_desktop_session_release_idle_resources(&mut session);
-        assert_eq!(ok, 1);
     }
 
     #[test]

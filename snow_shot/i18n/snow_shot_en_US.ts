@@ -1028,6 +1028,10 @@
         <translation>General Models</translation>
     </message>
     <message>
+        <source>Translation Models</source>
+        <translation>Translation Models</translation>
+    </message>
+    <message>
         <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="855"/>
         <source>Translation settings</source>
         <translation>Translation settings</translation>

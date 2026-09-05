@@ -41,6 +41,7 @@ class AdDateRangePicker;
 class AdPagination;
 class AdPopconfirm;
 class AdScrollArea;
+class AdImageLoader;
 class AdSelect;
 } // namespace adqt::widgets
 
@@ -58,11 +59,15 @@ class ScreenshotHistoryPageDataSource : public QObject {
     [[nodiscard]] virtual QVector<snow_shot::storage::CaptureHistoryRecord> records() const = 0;
     [[nodiscard]] virtual std::optional<snow_shot::storage::CaptureHistoryAssetSet>
     displayAssets(const snow_shot::storage::CaptureHistoryRecord& record) const = 0;
-    virtual bool supportsAsyncDisplayAssets() const { return false; }
+    virtual bool supportsAsyncDisplayAssets() const {
+        return false;
+    }
     virtual void requestDisplayAssets(const QVector<snow_shot::storage::CaptureHistoryRecord>&,
                                       quint64) {}
     virtual void requestResultImage(const snow_shot::storage::CaptureHistoryRecord&, quint64) {}
     virtual void remove(const QString& id) = 0;
+    virtual void reportReadFailure(const snow_shot::storage::CaptureHistoryRecord&,
+                                   const QString&) {}
     [[nodiscard]] virtual bool requestClear() = 0;
 
   signals:
@@ -103,8 +108,8 @@ class ScreenshotHistoryPageWidget final : public QWidget {
     void requestDeleteAll();
     void removeEntry(const QString& entryId);
     void handleHistoryChanged();
-    void handleDisplayAssetsReady(
-        quint64 generation, const QVector<ScreenshotHistoryAssetResolution>& resolutions);
+    void handleDisplayAssetsReady(quint64 generation,
+                                  const QVector<ScreenshotHistoryAssetResolution>& resolutions);
     void handleResultImageReady(quint64 generation,
                                 const ScreenshotHistoryResultResolution& resolution);
     void copyEntry(const snow_shot::storage::CaptureHistoryRecord& record);
@@ -151,6 +156,11 @@ class ScreenshotHistoryPageWidget final : public QWidget {
 [[nodiscard]] int screenshotHistoryQueuedPersistenceJobCount();
 [[nodiscard]] quint64 screenshotHistorySubmittedPersistenceJobCount();
 [[nodiscard]] quint64 screenshotHistoryCompletedPersistenceJobCount();
+[[nodiscard]] quint64 screenshotHistorySkippedPersistenceJobCount();
+[[nodiscard]] qint64 screenshotHistoryRetainedPersistenceBytes();
+[[nodiscard]] adqt::widgets::AdImageLoader*
+createScreenshotHistoryImageLoader(const snow_shot::storage::CaptureHistoryRecord& record,
+                                   ScreenshotHistoryPageDataSource* dataSource, QObject* parent);
 [[nodiscard]] int screenshotHistoryWorkerCount();
 [[nodiscard]] int screenshotHistoryWorkerExpiryTimeout();
 

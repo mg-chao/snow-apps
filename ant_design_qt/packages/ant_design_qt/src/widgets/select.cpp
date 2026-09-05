@@ -943,7 +943,7 @@ class AdSelect::OptionListModel final : public QAbstractListModel {
         return font;
       }
       if (role == Qt::ForegroundRole) {
-        return style.prefixColor;
+        return style.groupTitleColor;
       }
       if (role == Qt::TextAlignmentRole) {
         return static_cast<int>(Qt::AlignVCenter | Qt::AlignLeft);

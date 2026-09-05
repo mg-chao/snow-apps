@@ -214,9 +214,13 @@ void historyBytesProviderReplacesDirectoryWalk() {
         QDir(dirs.appData).filePath(QStringLiteral("capture_history_quarantine/q1/payload.bin")),
         50);
     writeBytes(QDir(dirs.appData).filePath(QStringLiteral("config.json")), 10);
+    writeBytes(
+        QDir(dirs.appData).filePath(QStringLiteral("capture_history/records/id/display.png")), 80);
 
     std::atomic<int> providerCalls{0};
     storage::StorageUsageTrackerOptions options = trackerOptions(dirs, {});
+    std::atomic_int scans{0};
+    options.directoryScanObserved = [&](const QString&) { ++scans; };
     options.historyBytesProvider = [&providerCalls]() {
         ++providerCalls;
         return static_cast<qint64>(777);
@@ -233,6 +237,7 @@ void historyBytesProviderReplacesDirectoryWalk() {
     require(usage.otherBytes == 10, "other bytes must still come from the disk walk");
     require(usage.totalBytes() == 787, "total bytes must combine the provider with the walk");
     require(providerCalls.load() >= 1, "the history provider must be consulted on each scan");
+    require(scans == 0, "history provider still performed a recursive directory scan");
 }
 
 void staleRefreshReusesRecentScan() {

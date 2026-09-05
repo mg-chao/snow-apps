@@ -140,6 +140,8 @@ SelectVisualStyle resolveSelectVisualStyle(const SelectStyleInput& input,
   style.clearHoverColor = toColor(map.colorTextTertiary, QColor("#8c8c8c"));
   style.clearBg = style.selectorBg;
   style.prefixColor = style.selectorTextColor;
+  // Ant Design's group-title token maps to the secondary description text color.
+  style.groupTitleColor = toColor(map.colorTextTertiary, QColor("#8c8c8c"));
   style.suffixColor = toColor(map.colorTextQuaternary, QColor("#bfbfbf"));
   style.emptyTextColor = toColor(map.colorTextTertiary, QColor("#8c8c8c"));
   style.emptyBorderColor = toColor(map.colorFill, QColor("#d9d9d9"));

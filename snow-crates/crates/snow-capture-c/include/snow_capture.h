@@ -277,7 +277,6 @@ uint8_t snow_capture_desktop_session_state(
     SnowCaptureDesktopSessionState* out_state);
 uint8_t snow_capture_desktop_session_refresh_layout(SnowCaptureDesktopSession* session);
 uint8_t snow_capture_desktop_session_reset_to_prepared(SnowCaptureDesktopSession* session);
-uint8_t snow_capture_desktop_session_release_idle_resources(SnowCaptureDesktopSession* session);
 /* Captures every display and, when focused_window is nonzero, the requested
  * window as one all-or-nothing transaction. The returned result owns its
  * frame buffers and must be destroyed by the caller. */
