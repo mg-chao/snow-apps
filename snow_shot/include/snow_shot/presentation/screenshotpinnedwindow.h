@@ -297,6 +297,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     bool m_firstContentFramePublished = false;
     bool m_firstFramePaintPending = false;
     bool m_firstFramePaintSucceeded = true;
+    bool m_deferFirstFrameNativeFlush = false;
     bool m_completePresentationAfterFirstFrame = false;
     bool m_recognitionTargetReady = false;
     bool m_deferredPresentationSetupScheduled = false;

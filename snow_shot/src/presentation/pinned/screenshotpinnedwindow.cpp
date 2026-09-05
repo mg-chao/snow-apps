@@ -208,15 +208,23 @@ enum class PinPaintMode {
 
 PinPaintMode configuredPinPaintMode() {
 #if defined(SNOW_SHOT_PIN_PERF_INSTRUMENTATION)
-    const QString mode = qEnvironmentVariable("SNOW_SHOT_PIN_PERF_PAINT_MODE");
-    static const bool single = mode.compare(QStringLiteral("single"), Qt::CaseInsensitive) == 0 ||
-                               mode.compare(QStringLiteral("single-paint"),
-                                            Qt::CaseInsensitive) == 0;
-    return single ? PinPaintMode::Single : PinPaintMode::Control;
+    static const PinPaintMode mode = [] {
+        const QString configured = qEnvironmentVariable("SNOW_SHOT_PIN_PERF_PAINT_MODE");
+        if (configured.compare(QStringLiteral("control"), Qt::CaseInsensitive) == 0) {
+            return PinPaintMode::Control;
+        }
+        return PinPaintMode::Single;
+    }();
+    return mode;
 #else
-    return PinPaintMode::Control;
+    return PinPaintMode::Single;
 #endif
 }
+
+bool paintFirstFrameSynchronously() {
+    return configuredPinPaintMode() == PinPaintMode::Single;
+}
+
 [[maybe_unused]] constexpr const char* kPinnedTranslations[] = {
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Enable drawing mode"),
     QT_TRANSLATE_NOOP("ScreenshotPinnedWindow", "Close"),
@@ -1596,6 +1604,7 @@ bool ScreenshotPinnedWindow::presentInternal(
     m_firstContentFramePublished = false;
     m_firstFramePaintPending = false;
     m_firstFramePaintSucceeded = true;
+    m_deferFirstFrameNativeFlush = false;
     m_completePresentationAfterFirstFrame = false;
     setAttribute(Qt::WA_TransparentForMouseEvents, m_pendingImage);
     // A materialized source may only be a geometry placeholder when a loader
@@ -2239,6 +2248,7 @@ void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
     m_firstContentFramePublished = false;
     m_firstFramePaintPending = false;
     m_firstFramePaintSucceeded = false;
+    m_deferFirstFrameNativeFlush = false;
     m_completePresentationAfterFirstFrame = false;
     setAttribute(Qt::WA_TransparentForMouseEvents, false);
     invalidatePendingCopy();
@@ -3048,10 +3058,42 @@ void ScreenshotPinnedWindow::requestFirstContentFramePaint() {
     }
     m_firstFramePaintPending = true;
     m_firstFramePaintSucceeded = true;
-    SNOW_SHOT_PIN_PERF_COUNTER(
-        configuredPinPaintMode() == PinPaintMode::Control ? "paint.mode.control"
-                                                           : "paint.mode.single",
-        1);
+    const bool synchronous = paintFirstFrameSynchronously();
+    SNOW_SHOT_PIN_PERF_COUNTER(synchronous ? "paint.mode.single" : "paint.mode.control", 1);
+    if (synchronous) {
+        SNOW_SHOT_PIN_PERF_MILESTONE("window.first_frame.repaint");
+        SNOW_SHOT_PIN_PERF_COUNTER("paint.repaint_calls", 1);
+        {
+            SNOW_SHOT_PIN_PERF_SCOPE("window.first_frame.repaint");
+            // Alien child widgets on a layered top-level only dirty the backing
+            // store; paintEvent waits for the next native expose. Show just
+            // returned without flushing that expose, so paint the native window
+            // itself. Skip the in-paint RedrawWindow flush and do it after
+            // paintEvent returns to avoid re-entering WM_PAINT.
+            m_canvas->update();
+            m_deferFirstFrameNativeFlush = true;
+            repaint();
+            m_deferFirstFrameNativeFlush = false;
+#if defined(Q_OS_WIN) || defined(_WIN32)
+            if (!m_firstContentFramePublished) {
+                m_deferFirstFrameNativeFlush = true;
+                static_cast<void>(native::synchronizeClientPaint(
+                    winId(), native::PaintSynchronization::InvalidateAndUpdate));
+                m_deferFirstFrameNativeFlush = false;
+            }
+            if (m_firstContentFramePublished) {
+                SNOW_SHOT_PIN_PERF_SCOPE("window.first_frame.native_sync");
+                SNOW_SHOT_PIN_PERF_COUNTER("paint.native_sync_calls", 1);
+                if (!native::synchronizeClientPaint(
+                        winId(), native::PaintSynchronization::FlushAlreadyPainted)) {
+                    m_firstFramePaintSucceeded = false;
+                }
+            }
+#endif
+        }
+        SNOW_SHOT_PIN_PERF_MILESTONE("window.first_frame.repaint_finished");
+        return;
+    }
     SNOW_SHOT_PIN_PERF_MILESTONE("window.first_frame.update");
     SNOW_SHOT_PIN_PERF_COUNTER("paint.update_calls", 1);
     m_canvas->update();
@@ -3065,10 +3107,13 @@ void ScreenshotPinnedWindow::handleFirstContentFramePainted() {
     m_firstFramePaintPending = false;
     SNOW_SHOT_PIN_PERF_MILESTONE("paint.first_frame.accepted");
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    SNOW_SHOT_PIN_PERF_SCOPE("window.first_frame.native_sync");
-    SNOW_SHOT_PIN_PERF_COUNTER("paint.native_sync_calls", 1);
-    if (!native::synchronizeClientPaint(winId(), native::PaintSynchronization::FlushAlreadyPainted)) {
-        m_firstFramePaintSucceeded = false;
+    if (!m_deferFirstFrameNativeFlush) {
+        SNOW_SHOT_PIN_PERF_SCOPE("window.first_frame.native_sync");
+        SNOW_SHOT_PIN_PERF_COUNTER("paint.native_sync_calls", 1);
+        if (!native::synchronizeClientPaint(winId(),
+                                            native::PaintSynchronization::FlushAlreadyPainted)) {
+            m_firstFramePaintSucceeded = false;
+        }
     }
 #endif
     if (!m_firstFramePaintSucceeded) {

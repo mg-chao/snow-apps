@@ -1389,6 +1389,8 @@ void pinnedPendingPresentationPublishesWorkerImage(SnowCanvasRuntime&) {
 
     require(window->publishMaterializedImage(materializedImage),
             "pending pinned presentation rejected the worker image");
+    require(completionCount == 1 && completionSuccess,
+            "publishing a pending image should paint the first frame before returning");
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
     require(canvas->canvasContentVisible(),
             "publishing a pending image should reveal the pinned canvas content");
