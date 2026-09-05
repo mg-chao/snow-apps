@@ -6,6 +6,7 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QMetaObject>
 #include <QProcess>
@@ -38,6 +39,9 @@ constexpr quint16 kShutdownAck = 7;
 constexpr qsizetype kSlotHeaderBytes = 32;
 constexpr qsizetype kMaximumImageBytes = 3840LL * 2160LL * 4LL;
 constexpr qsizetype kMaximumFrameBytes = 1024LL * 1024LL;
+constexpr qsizetype kMaximumOutstandingRequests = 32;
+constexpr qsizetype kMaximumOutstandingRequestsPerReceiver = 8;
+constexpr qint64 kPrefetchAgingMilliseconds = 500;
 constexpr qsizetype kSlotSequenceOffset = 0;
 constexpr qsizetype kSlotStateOffset = 8;
 constexpr qsizetype kSlotWidthOffset = 12;
@@ -178,6 +182,7 @@ class ScreenshotOcrRecognitionService::Impl final {
           m_workerLimit(std::clamp(options.workerCount, 1, 2)),
           m_proxyUrl(options.proxyUrl),
           m_backendPreference(preference) {
+        m_queueClock.start();
         m_slots.resize(std::max(4, m_workerLimit + 2));
         m_localPool.setMaxThreadCount(m_workerLimit);
         if (!options.processPath.trimmed().isEmpty() &&
@@ -229,6 +234,21 @@ class ScreenshotOcrRecognitionService::Impl final {
         {
             std::lock_guard lock(m_mutex);
             if (m_stopping) { QObject::disconnect(job->receiverDestroyed); return 0; }
+            if (m_jobs.size() >= kMaximumOutstandingRequests) {
+                QObject::disconnect(job->receiverDestroyed);
+                return 0;
+            }
+            qsizetype receiverRequests = 0;
+            for (auto it = m_jobs.cbegin(); it != m_jobs.cend(); ++it) {
+                if (it.value()->receiver == receiver) {
+                    ++receiverRequests;
+                }
+            }
+            if (receiverRequests >= kMaximumOutstandingRequestsPerReceiver) {
+                QObject::disconnect(job->receiverDestroyed);
+                return 0;
+            }
+            job->queuedAtMilliseconds = m_queueClock.elapsed();
             m_jobs.insert(token, job);
             m_pending.push_back(job);
         }
@@ -255,6 +275,20 @@ class ScreenshotOcrRecognitionService::Impl final {
         {
             std::lock_guard lock(m_mutex);
             if (m_stopping) { QObject::disconnect(job->receiverDestroyed); return 0; }
+            if (m_jobs.size() >= kMaximumOutstandingRequests) {
+                QObject::disconnect(job->receiverDestroyed);
+                return 0;
+            }
+            qsizetype receiverRequests = 0;
+            for (auto it = m_jobs.cbegin(); it != m_jobs.cend(); ++it) {
+                if (it.value()->receiver == receiver) {
+                    ++receiverRequests;
+                }
+            }
+            if (receiverRequests >= kMaximumOutstandingRequestsPerReceiver) {
+                QObject::disconnect(job->receiverDestroyed);
+                return 0;
+            }
             m_jobs.insert(token, job);
             job->running = true;
             job->localRendering = true;
@@ -286,6 +320,7 @@ class ScreenshotOcrRecognitionService::Impl final {
 
     void cancel(RequestToken token) {
         std::shared_ptr<Job> job;
+        bool abortProcess = false;
         {
             std::lock_guard lock(m_mutex);
             auto it = m_jobs.find(token);
@@ -296,9 +331,17 @@ class ScreenshotOcrRecognitionService::Impl final {
                 m_pending.erase(std::remove(m_pending.begin(), m_pending.end(), job), m_pending.end());
                 m_jobs.erase(it);
             }
+            // The child cannot reliably interrupt an ONNX call. If this was
+            // the final process-bound task, tear down the child instead of
+            // retaining it until the canceled inference returns.
+            abortProcess = job->running && job->processSubmitted && m_runningCount == 1 &&
+                           m_pending.empty() && m_process != nullptr;
         }
         if (job->running && job->processSubmitted) sendFrame(makeFrame(kCancel, token));
         if (!job->localRendering) QObject::disconnect(job->receiverDestroyed);
+        if (abortProcess && m_process != nullptr && m_process->state() != QProcess::NotRunning) {
+            m_process->kill();
+        }
         maybeShutdownProcess();
     }
 
@@ -358,6 +401,7 @@ class ScreenshotOcrRecognitionService::Impl final {
         bool running = false;
         bool processSubmitted = false;
         bool localRendering = false;
+        qint64 queuedAtMilliseconds = 0;
         int slot = -1;
     };
 
@@ -458,6 +502,25 @@ class ScreenshotOcrRecognitionService::Impl final {
     }
 
     std::shared_ptr<Job> nextPending() {
+        const qint64 now = m_queueClock.elapsed();
+        auto aged = std::min_element(
+            m_pending.begin(), m_pending.end(), [now](const auto& first, const auto& second) {
+                const bool firstAged =
+                    first->request.priority == ScreenshotOcrRequestPriority::Prefetch &&
+                    now - first->queuedAtMilliseconds >= kPrefetchAgingMilliseconds;
+                const bool secondAged =
+                    second->request.priority == ScreenshotOcrRequestPriority::Prefetch &&
+                    now - second->queuedAtMilliseconds >= kPrefetchAgingMilliseconds;
+                if (firstAged != secondAged) return firstAged;
+                return first->queuedAtMilliseconds < second->queuedAtMilliseconds;
+            });
+        if (aged != m_pending.end() &&
+            (*aged)->request.priority == ScreenshotOcrRequestPriority::Prefetch &&
+            now - (*aged)->queuedAtMilliseconds >= kPrefetchAgingMilliseconds) {
+            auto job = *aged;
+            m_pending.erase(aged);
+            return job;
+        }
         auto choose = [&](ScreenshotOcrRequestPriority priority) {
             auto it = std::find_if(m_pending.begin(), m_pending.end(), [priority](const auto& job) {
                 return job->request.priority == priority && !job->cancelled.load();
@@ -707,7 +770,7 @@ class ScreenshotOcrRecognitionService::Impl final {
     void maybeShutdownProcess() {
         std::lock_guard lock(m_mutex);
         if (m_process == nullptr || !m_ready || m_shuttingDown || m_runningCount != 0 ||
-            m_localRenderingCount != 0 || (!m_pending.empty() && !m_configurationDirty)) {
+            (!m_pending.empty() && !m_configurationDirty)) {
             return;
         }
         m_shuttingDown = true;
@@ -748,6 +811,7 @@ class ScreenshotOcrRecognitionService::Impl final {
     QHash<RequestToken, std::shared_ptr<Job>> m_jobs;
     std::vector<std::shared_ptr<Job>> m_pending, m_slots;
     QThreadPool m_localPool;
+    QElapsedTimer m_queueClock;
     std::shared_ptr<std::atomic_bool> m_alive = std::make_shared<std::atomic_bool>(true);
     std::vector<quint64> m_slotSequences;
     std::unique_ptr<QProcess> m_process;

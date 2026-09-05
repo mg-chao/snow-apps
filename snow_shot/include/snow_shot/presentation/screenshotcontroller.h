@@ -9,6 +9,7 @@
 namespace snow_shot::presentation {
 class PinnedWindowGroupManager;
 }
+class ScreenshotOcrRecognitionService;
 
 class ScreenshotController : public QObject {
     Q_OBJECT
@@ -16,7 +17,8 @@ class ScreenshotController : public QObject {
   public:
     explicit ScreenshotController(
         QObject* parent = nullptr,
-        snow_shot::presentation::PinnedWindowGroupManager* groupManager = nullptr);
+        snow_shot::presentation::PinnedWindowGroupManager* groupManager = nullptr,
+        ScreenshotOcrRecognitionService* sharedOcrRecognition = nullptr);
     ~ScreenshotController() override;
 
   public slots:

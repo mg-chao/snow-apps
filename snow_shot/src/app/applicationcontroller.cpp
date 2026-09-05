@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/mainwindow.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
+#include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/systemtraycontroller.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
@@ -13,6 +14,7 @@
 #include "snow_shot/storage/settingsadapters.h"
 
 #include <QApplication>
+#include <QDir>
 #include <QJsonArray>
 #include <QJsonValue>
 #include <QPointer>
@@ -99,6 +101,25 @@ class ApplicationController::Impl {
         if (!applicationStorage.isInitialized()) {
             static_cast<void>(applicationStorage.initialize());
         }
+        // OCR process ownership is application-scoped. ScreenshotController
+        // instances receive a consumer of this service instead of creating a
+        // second child process for each controller.
+        ScreenshotOcrRecognitionService::Options ocrOptions;
+        ocrOptions.offlineRoot =
+            QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("assets/ocr"));
+        if (applicationStorage.isInitialized() &&
+            !applicationStorage.configurationDirectory().trimmed().isEmpty()) {
+            ocrOptions.cacheRoot = QDir(applicationStorage.configurationDirectory())
+                                       .filePath(QStringLiteral("assets/ocr"));
+        }
+        const auto backendPreference =
+            applicationStorage.configuration()
+                    .value(QStringLiteral("text_recognition/direct_ml_acceleration"))
+                    .toBool()
+                ? ScreenshotOcrBackendPreference::DirectMl
+                : ScreenshotOcrBackendPreference::Cpu;
+        ocrRecognition = std::make_unique<ScreenshotOcrRecognitionService>(
+            ocrOptions, backendPreference, &q);
         auto& configuration = applicationStorage.configuration();
         applyRuntimeConfiguration(configuration.value(kPinBorderColorKey), kPinBorderColorKey);
         applyRuntimeConfiguration(configuration.value(kTrayEnabledKey), kTrayEnabledKey);
@@ -140,7 +161,8 @@ class ApplicationController::Impl {
 
     ScreenshotController* ensureScreenshotController() {
         if (screenshotController == nullptr) {
-            screenshotController = std::make_unique<ScreenshotController>(&q, &groupManager);
+            screenshotController =
+                std::make_unique<ScreenshotController>(&q, &groupManager, ocrRecognition.get());
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::showMainWindowRequested, &q,
                              [this]() { showMainWindow(); });
@@ -308,6 +330,7 @@ class ApplicationController::Impl {
     std::unique_ptr<presentation::settings::BuiltInSettingsBackend>
         settingsBackend;
     std::unique_ptr<presentation::settings::SettingsRuntimeSession> runtimeSession;
+    std::unique_ptr<ScreenshotOcrRecognitionService> ocrRecognition;
     std::unique_ptr<ScreenshotController> screenshotController;
     QPointer<MainWindow> mainWindow;
     bool started = false;

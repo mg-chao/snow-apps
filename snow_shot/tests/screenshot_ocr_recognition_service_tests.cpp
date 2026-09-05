@@ -429,6 +429,8 @@ void cancellationSuppressesCompletion() {
     service.cancel(token);
     processEventsFor(250);
     require(!completed, "an immediately cancelled OCR request must not invoke its completion");
+    require(waitUntil([&]() { return service.liveWorkerCount() == 0; }, 1'000),
+            "canceling the only OCR request must retire the child process");
 }
 
 void receiverDestructionSuppressesCompletion() {

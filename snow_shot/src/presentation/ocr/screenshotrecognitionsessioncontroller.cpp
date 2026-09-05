@@ -355,9 +355,13 @@ void ScreenshotRecognitionSessionController::deactivate() {
     m_textRenderRequestToken = 0;
     ++m_textRenderGeneration;
     if (m_recognition != nullptr && m_textRequestToken != 0) {
+        // A deactivated OCR consumer no longer needs queued or running work.
+        // Completed entries remain cached, but outstanding requests are
+        // canceled so the shared OCR process can retire immediately.
+        m_recognition->cancel(m_textRequestToken);
+        m_textRequestToken = 0;
+        ++m_textGeneration;
         setPendingTextRecognitionRendering(false);
-        static_cast<void>(m_recognition->reprioritize(m_textRequestToken,
-                                                      ScreenshotOcrRequestPriority::Prefetch));
     }
     m_presentation.reset();
     m_tableSession.reset();

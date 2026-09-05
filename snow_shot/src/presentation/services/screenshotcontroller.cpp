@@ -272,7 +272,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     };
 
     explicit Impl(ScreenshotController& controller,
-                  snow_shot::presentation::PinnedWindowGroupManager* groupManager);
+                  snow_shot::presentation::PinnedWindowGroupManager* groupManager,
+                  ScreenshotOcrRecognitionService* sharedOcrRecognition);
     ~Impl();
 
     void createPresentationInfrastructure();
@@ -476,7 +477,8 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     ScreenshotCanvasColorSampler m_canvasColorSampler;
     std::unique_ptr<ScreenshotToolbarPresenter> m_toolbarPresenter;
     std::unique_ptr<ScreenshotToolCommandWorkflow> m_toolCommandWorkflow;
-    std::unique_ptr<ScreenshotOcrRecognitionService> m_ocrRecognition;
+    ScreenshotOcrRecognitionService* m_ocrRecognition = nullptr;
+    std::unique_ptr<ScreenshotOcrRecognitionService> m_ownedOcrRecognition;
     std::unique_ptr<ScreenshotQrRecognitionService> m_qrRecognition;
     std::unique_ptr<ScreenshotMessageService> m_messages;
     std::unique_ptr<SnowShotApiClient> m_tableRecognition;
@@ -533,8 +535,9 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
 };
 
 ScreenshotController::Impl::Impl(ScreenshotController& controller,
-                                 snow_shot::presentation::PinnedWindowGroupManager* groupManager)
-    : owner(controller), m_groupManager(groupManager),
+                                 snow_shot::presentation::PinnedWindowGroupManager* groupManager,
+                                 ScreenshotOcrRecognitionService* sharedOcrRecognition)
+    : owner(controller), m_groupManager(groupManager), m_ocrRecognition(sharedOcrRecognition),
       m_canvasRuntime(
           SnowCanvasRuntimeConfig{snow_shot::presentation::screenshotCanvasStyleDefaults()}) {
     createPresentationInfrastructure();
@@ -911,8 +914,11 @@ bool ScreenshotController::Impl::ensureRecognitionFeature() {
         ocrOptions.proxyUrl = resolvedOcrProxyUrl(
             applicationStorage.configuration().value(QStringLiteral("network/proxy")).toString());
     }
-    m_ocrRecognition =
-        std::make_unique<ScreenshotOcrRecognitionService>(ocrOptions, backendPreference, &owner);
+    if (m_ocrRecognition == nullptr) {
+        m_ownedOcrRecognition =
+            std::make_unique<ScreenshotOcrRecognitionService>(ocrOptions, backendPreference, &owner);
+        m_ocrRecognition = m_ownedOcrRecognition.get();
+    }
     m_qrRecognition = std::make_unique<ScreenshotQrRecognitionService>(&owner);
     QString tableApiUrl = QStringLiteral(SNOW_SHOT_API_BASE_URL);
     const QString runtimeTableApiUrl =
@@ -1067,7 +1073,7 @@ bool ScreenshotController::Impl::ensureExportFeature() {
         m_geometry,
     });
     auto exportUiServices = std::make_unique<ScreenshotSelectionExportUiServices>(
-        m_ocrRecognition.get(), m_qrRecognition.get(), m_tableRecognition.get(),
+        m_ocrRecognition, m_qrRecognition.get(), m_tableRecognition.get(),
         [controller = QPointer<ScreenshotController>(&owner)]() {
             if (controller != nullptr) {
                 emit controller->showMainWindowRequested();
@@ -1079,7 +1085,7 @@ bool ScreenshotController::Impl::ensureExportFeature() {
                 !controller->m_impl->ensureRecognitionFeature()) {
                 return providers;
             }
-            providers.recognition = controller->m_impl->m_ocrRecognition.get();
+            providers.recognition = controller->m_impl->m_ocrRecognition;
             providers.qrRecognition = controller->m_impl->m_qrRecognition.get();
             providers.tableRecognition = controller->m_impl->m_tableRecognition.get();
             return providers;
@@ -4074,8 +4080,10 @@ void ScreenshotController::Impl::shutdown() {
 }
 
 ScreenshotController::ScreenshotController(
-    QObject* parent, snow_shot::presentation::PinnedWindowGroupManager* groupManager)
-    : QObject(parent), m_impl(std::make_unique<Impl>(*this, groupManager)) {}
+    QObject* parent, snow_shot::presentation::PinnedWindowGroupManager* groupManager,
+    ScreenshotOcrRecognitionService* sharedOcrRecognition)
+    : QObject(parent),
+      m_impl(std::make_unique<Impl>(*this, groupManager, sharedOcrRecognition)) {}
 
 ScreenshotController::~ScreenshotController() = default;
 

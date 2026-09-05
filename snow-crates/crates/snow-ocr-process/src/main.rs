@@ -37,7 +37,7 @@ const SLOT_MAGIC_VALUE: u32 = 0x544f4c53;
 
 #[derive(Clone)]
 struct Config {
-    workers: usize,
+    worker_budgets: Vec<usize>,
     directml: bool,
     directml_enabled: Arc<AtomicBool>,
     directml_cache: Arc<DirectMlCapabilityCache>,
@@ -326,7 +326,7 @@ impl Scheduler {
         let (completion_tx, completion_rx) = mpsc::channel();
         let mut workers = Vec::new();
         let factory_config = config.clone();
-        for index in 0..config.workers {
+        for (index, thread_budget) in config.worker_budgets.iter().copied().enumerate() {
             let queue = Arc::clone(&queue);
             let cancellations = Arc::clone(&cancellations);
             let tx = completion_tx.clone();
@@ -334,7 +334,7 @@ impl Scheduler {
             workers.push(
                 thread::Builder::new()
                     .name(format!("snow-ocr-worker-{index}"))
-                    .spawn(move || worker_loop(queue, cancellations, tx, cfg))
+                    .spawn(move || worker_loop(queue, cancellations, tx, cfg, thread_budget))
                     .map_err(|e| io::Error::other(e.to_string()))?,
             );
         }
@@ -387,7 +387,11 @@ impl Scheduler {
     }
 }
 
-fn make_engine(config: &Config, directml: bool) -> rapid_ocr_rs::Result<RapidOcr> {
+fn make_engine(
+    config: &Config,
+    directml: bool,
+    thread_budget: usize,
+) -> rapid_ocr_rs::Result<RapidOcr> {
     let mut engine = EngineConfig::default();
     engine.global.use_det = true;
     engine.global.use_cls = false;
@@ -403,8 +407,7 @@ fn make_engine(config: &Config, directml: bool) -> rapid_ocr_rs::Result<RapidOcr
     engine.rec.model.allow_download = false;
     engine.rec.model.model_path = Some(config.recognizer_model.clone());
     engine.rec.model.rec_keys_path = Some(config.dictionary.clone());
-    let physical = num_cpus::get_physical().max(1);
-    let budget = (physical / config.workers.max(1)).max(1);
+    let budget = thread_budget.max(1);
     for runtime in [
         &mut engine.det.runtime,
         &mut engine.cls.runtime,
@@ -443,6 +446,7 @@ fn worker_loop(
     cancellations: Arc<Mutex<std::collections::HashMap<u64, Arc<std::sync::atomic::AtomicBool>>>>,
     tx: Sender<Completion>,
     config: Config,
+    thread_budget: usize,
 ) {
     let mut engine: Option<RapidOcr> = None;
     loop {
@@ -464,7 +468,7 @@ fn worker_loop(
             if engine.is_none() {
                 let wants_directml =
                     config.directml && config.directml_enabled.load(Ordering::Acquire);
-                engine = match make_engine(&config, wants_directml) {
+                engine = match make_engine(&config, wants_directml, thread_budget) {
                     Ok(candidate) => {
                         let provider_ok = !wants_directml
                             || candidate
@@ -478,7 +482,7 @@ fn worker_loop(
                         if wants_directml && !provider_ok {
                             config.directml_cache.write(false);
                             config.directml_enabled.store(false, Ordering::Release);
-                            make_engine(&config, false).ok()
+                            make_engine(&config, false, thread_budget).ok()
                         } else {
                             Some(candidate)
                         }
@@ -486,7 +490,7 @@ fn worker_loop(
                     Err(_) if wants_directml => {
                         config.directml_cache.write(false);
                         config.directml_enabled.store(false, Ordering::Release);
-                        make_engine(&config, false).ok()
+                        make_engine(&config, false, thread_budget).ok()
                     }
                     Err(_error) => None,
                 };
@@ -513,7 +517,7 @@ fn worker_loop(
                     // CPU so one bad driver does not fail the OCR operation.
                     config.directml_cache.write(false);
                     config.directml_enabled.store(false, Ordering::Release);
-                    engine = make_engine(&config, false).ok();
+                    engine = make_engine(&config, false, thread_budget).ok();
                     match engine.as_mut() {
                         Some(cpu) => cpu
                             .run(input, options)
@@ -539,7 +543,7 @@ fn worker_loop(
 
 fn hello(frame: &Frame) -> io::Result<Config> {
     let mut d = Decoder::new(&frame.payload);
-    let workers = (d.u32()? as usize).clamp(1, 2);
+    let requested_workers = (d.u32()? as usize).clamp(1, 2);
     let directml = d.u8()? != 0;
     let detector_model = PathBuf::from(d.string()?);
     let recognizer_model = PathBuf::from(d.string()?);
@@ -548,7 +552,7 @@ fn hello(frame: &Frame) -> io::Result<Config> {
     let shm_path = PathBuf::from(d.string()?);
     let slot_bytes = d.u64()? as usize;
     let slot_count = d.u32()? as usize;
-    if !d.done() || slot_bytes < SLOT_HEADER + 4 || slot_count < workers {
+    if !d.done() || slot_bytes < SLOT_HEADER + 4 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "invalid OCR startup configuration",
@@ -564,8 +568,22 @@ fn hello(frame: &Frame) -> io::Result<Config> {
     }
     let state_dir = (!state.trim().is_empty()).then(|| PathBuf::from(state));
     let directml_cache = Arc::new(DirectMlCapabilityCache::new(state_dir.as_deref()));
+    let physical = num_cpus::get_physical().max(1);
+    let recognition_budget = (physical / 2).max(1);
+    let workers = requested_workers.min(recognition_budget);
+    if slot_count < workers {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "OCR shared-memory slot count is below worker count",
+        ));
+    }
+    let base = recognition_budget / workers;
+    let remainder = recognition_budget % workers;
+    let worker_budgets = (0..workers)
+        .map(|index| base + usize::from(index < remainder))
+        .collect();
     Ok(Config {
-        workers,
+        worker_budgets,
         directml,
         directml_enabled: Arc::new(AtomicBool::new(false)),
         directml_cache,
