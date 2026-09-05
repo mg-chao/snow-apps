@@ -1021,6 +1021,12 @@
         <translation>翻譯服務</translation>
     </message>
     <message>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="835"/>
+        <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="905"/>
+        <source>General Models</source>
+        <translation>一般模型</translation>
+    </message>
+    <message>
         <location filename="../src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp" line="855"/>
         <source>Translation settings</source>
         <translation>翻譯設定</translation>

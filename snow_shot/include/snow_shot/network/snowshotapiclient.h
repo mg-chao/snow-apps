@@ -28,6 +28,7 @@ struct SnowShotChatModel {
     QString name;
     bool thinking = false;
     bool supportsVision = false;
+    bool translation = false;
 };
 
 struct SnowShotChatModelsResult {

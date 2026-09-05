@@ -831,7 +831,8 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
     }
     QVector<adqt::widgets::AdSelect::Option> serviceOptions;
     for (const SnowShotChatModel& model : models) {
-        serviceOptions.push_back({model.id, model.name});
+        serviceOptions.push_back(
+            {model.id, model.name, false, tr("General Models")});
     }
     source->setOptions(sourceOptions);
     target->setOptions(targetOptions);
@@ -897,11 +898,12 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
             });
     modal->open();
 
-    const auto applyModels = [service, current](const QVector<SnowShotChatModel>& availableModels) {
+    const auto applyModels = [form, service, current](
+                                 const QVector<SnowShotChatModel>& availableModels) {
         QVector<adqt::widgets::AdSelect::Option> options;
         options.reserve(availableModels.size());
         for (const SnowShotChatModel& model : availableModels) {
-            options.push_back({model.id, model.name});
+            options.push_back({model.id, model.name, false, tr("General Models")});
         }
         service->setOptions(options);
         const bool currentAvailable =
@@ -913,6 +915,7 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
                                                    : availableModels.first().id);
         service->setLoading(false);
         service->setEnabled(true);
+        form->show();
     };
     if (!models.isEmpty()) {
         applyModels(models);
@@ -923,10 +926,12 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
     const QPointer<adqt::widgets::AdAlert> alertGuard(errorAlert);
     const QPointer<adqt::widgets::AdButton> retryGuard(retryButton);
     const QPointer<adqt::widgets::AdSelect> serviceGuard(service);
+    const QPointer<adqt::widgets::AdForm> formGuard(form);
     auto requestModels = std::make_shared<std::function<void()>>();
-    *requestModels = [this, modalGuard, alertGuard, retryGuard, serviceGuard, applyModels]() {
+    *requestModels = [this, modalGuard, alertGuard, retryGuard, serviceGuard, formGuard,
+                      applyModels]() {
         if (modalGuard == nullptr || alertGuard == nullptr || retryGuard == nullptr ||
-            serviceGuard == nullptr || m_tableRecognition == nullptr ||
+            serviceGuard == nullptr || formGuard == nullptr || m_tableRecognition == nullptr ||
             m_settingsModelsRequestToken != 0) {
             return;
         }
@@ -936,11 +941,11 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
         serviceGuard->setEnabled(false);
         m_settingsModelsRequestToken = m_tableRecognition->fetchChatModels(
             snow_shot::presentation::LanguageManager::instance().currentLocale().name(), this,
-            [this, modalGuard, alertGuard, retryGuard, serviceGuard,
+            [this, modalGuard, alertGuard, retryGuard, serviceGuard, formGuard,
              applyModels](SnowShotChatModelsResult result) {
                 m_settingsModelsRequestToken = 0;
                 if (modalGuard == nullptr || alertGuard == nullptr || retryGuard == nullptr ||
-                    serviceGuard == nullptr) {
+                    serviceGuard == nullptr || formGuard == nullptr) {
                     return;
                 }
                 serviceGuard->setLoading(false);
@@ -950,6 +955,7 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
                     alertGuard->setInformativeText(
                         result.error.isEmpty() ? tr("Translation service request failed")
                                                : result.error);
+                    formGuard->hide();
                     alertGuard->show();
                     return;
                 }
@@ -961,6 +967,7 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
             retryGuard->setBusy(false);
             alertGuard->setInformativeText(
                 tr("Translation service request could not be prepared"));
+            formGuard->hide();
             alertGuard->show();
         }
     };
