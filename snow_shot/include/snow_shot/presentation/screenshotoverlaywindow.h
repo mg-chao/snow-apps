@@ -70,6 +70,7 @@ class ScreenshotOverlayWindow final : public QWidget {
     [[nodiscard]] quint64 windowMaskApplicationCountForTesting() const;
     [[nodiscard]] ScreenshotCanvasRenderer* screenshotRendererForTesting() const;
 #endif
+    void warmPresentationSurface();
     void showPreparedFrame();
     // Release the native window and backing store while retaining the QObject,
     // canvas, renderer, and signal wiring for the next capture.

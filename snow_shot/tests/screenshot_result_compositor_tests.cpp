@@ -47,8 +47,7 @@ QImage solidContent(const QSize& size = QSize(80, 48)) {
 void squareResultPreservesPhysicalPixels() {
     const QImage result = ScreenshotResultCompositor::compose(solidContent(), {});
     require(result.size() == QSize(80, 48), "square output dimensions changed");
-    require(result.format() == QImage::Format_ARGB32_Premultiplied,
-            "result is not premultiplied");
+    require(result.format() == QImage::Format_ARGB32_Premultiplied, "result is not premultiplied");
     require(result.devicePixelRatio() == 1.0, "result DPR is not normalized");
     require(result.pixelColor(0, 0) == QColor(30, 100, 210, 255),
             "square output changed a source pixel");
@@ -69,8 +68,7 @@ void roundedAndShadowedResultHasRealTransparency() {
     require(result.pixelColor(12 + 40, 12 + 24).alpha() == 255,
             "content center became transparent");
     const int shadowAlpha = result.pixelColor(11, 12 + 24).alpha();
-    require(shadowAlpha > 0 && shadowAlpha < 255,
-            "shadow edge is not semitransparent");
+    require(shadowAlpha > 0 && shadowAlpha < 255, "shadow edge is not semitransparent");
 }
 
 void layoutScalesOnlyEffectsForFractionalDpr() {
@@ -109,8 +107,7 @@ void liveSurfaceClipsExistingCanvasPixelsBeforeAddingShadow() {
             "canvas pixels leaked outside the result and shadow bounds");
     require(surface.pixelColor(12, 12).alpha() < 255,
             "canvas pixels leaked through the rounded corner");
-    require(surface.pixelColor(35, 30).alpha() == 255,
-            "live result center was clipped");
+    require(surface.pixelColor(35, 30).alpha() == 255, "live result center was clipped");
     const int shadowAlpha = surface.pixelColor(11, 30).alpha();
     require(shadowAlpha > 0 && shadowAlpha < 255,
             "live surface did not add a semitransparent shadow behind content");
@@ -120,9 +117,8 @@ void clipboardPayloadOwnsPreparedPixels() {
     require(!ScreenshotClipboardService::prepareImage({}).isValid(),
             "null image produced a clipboard payload");
 
-    for (QImage::Format format : {QImage::Format_ARGB32,
-                                  QImage::Format_ARGB32_Premultiplied,
-                                  QImage::Format_RGBA8888}) {
+    for (QImage::Format format : {QImage::Format_ARGB32, QImage::Format_ARGB32_Premultiplied,
+                                  QImage::Format_RGB32, QImage::Format_RGBA8888}) {
         QImage source(QSize(3, 2), QImage::Format_ARGB32);
         source.setPixel(0, 0, qRgba(10, 20, 30, 40));
         source.setPixel(1, 0, qRgba(50, 60, 70, 80));
@@ -132,9 +128,12 @@ void clipboardPayloadOwnsPreparedPixels() {
         source.setPixel(2, 1, qRgba(210, 220, 230, 240));
         source = source.convertToFormat(format);
         const QImage expected = source.convertToFormat(QImage::Format_ARGB32);
+        require(format != QImage::Format_RGB32 ||
+                    ScreenshotClipboardPixelSource(source).usesPackedBgraLayout(),
+                "RGB32 clipboard sources must use packed BGRA layout");
 
-        ScreenshotClipboardPayload prepared = ScreenshotClipboardService::prepare(
-            ScreenshotClipboardPixelSource(source));
+        ScreenshotClipboardPayload prepared =
+            ScreenshotClipboardService::prepare(ScreenshotClipboardPixelSource(source));
         require(prepared.isValid(), "supported image format produced no clipboard payload");
         ScreenshotClipboardPayload moved = std::move(prepared);
         require(!prepared.isValid() && moved.isValid(),
@@ -152,10 +151,8 @@ void clipboardPayloadOwnsPreparedPixels() {
                     header->bV5Height == -2 && header->bV5Planes == 1 &&
                     header->bV5BitCount == 32 && header->bV5Compression == BI_BITFIELDS &&
                     header->bV5SizeImage == static_cast<DWORD>(expected.sizeInBytes()) &&
-                    header->bV5RedMask == 0x00ff0000 &&
-                    header->bV5GreenMask == 0x0000ff00 &&
-                    header->bV5BlueMask == 0x000000ff &&
-                    header->bV5AlphaMask == 0xff000000,
+                    header->bV5RedMask == 0x00ff0000 && header->bV5GreenMask == 0x0000ff00 &&
+                    header->bV5BlueMask == 0x000000ff && header->bV5AlphaMask == 0xff000000,
                 "prepared DIB header is invalid");
         const auto* pixels = reinterpret_cast<const uchar*>(header + 1);
         require(std::memcmp(pixels, expected.constBits(),
@@ -172,8 +169,8 @@ void rgbaClipboardSourceUsesWindowsChannelOrder() {
     source.setPixelColor(1, 0, QColor(50, 60, 70, 80));
     const QImage expected = source.convertToFormat(QImage::Format_ARGB32);
 
-    ScreenshotClipboardPayload prepared = ScreenshotClipboardService::prepare(
-        ScreenshotClipboardPixelSource(source));
+    ScreenshotClipboardPayload prepared =
+        ScreenshotClipboardService::prepare(ScreenshotClipboardPixelSource(source));
     require(prepared.isValid(), "RGBA clipboard source produced no payload");
 #if defined(Q_OS_WIN) || defined(_WIN32)
     require(ScreenshotClipboardPayloadTestAccess::formatMode(prepared) ==
@@ -248,8 +245,8 @@ void scrollingRowSourceProducesCompatibleDib() {
         return true;
     };
 
-    ScreenshotClipboardPayload prepared = ScreenshotClipboardService::prepare(
-        rows, ScreenshotClipboardFormatMode::CompatibleDib);
+    ScreenshotClipboardPayload prepared =
+        ScreenshotClipboardService::prepare(rows, ScreenshotClipboardFormatMode::CompatibleDib);
     require(prepared.isValid(), "scrolling row source produced no compatible DIB payload");
 #if defined(Q_OS_WIN) || defined(_WIN32)
     require(ScreenshotClipboardPayloadTestAccess::formatMode(prepared) ==

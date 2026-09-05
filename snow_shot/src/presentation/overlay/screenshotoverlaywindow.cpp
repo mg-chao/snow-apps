@@ -48,6 +48,7 @@ ScreenshotOverlayWindow::ScreenshotOverlayWindow(ScreenshotOverlayEventSink& eve
     setAttribute(Qt::WA_DeleteOnClose, false);
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
+    setAttribute(Qt::WA_ShowWithoutActivating, true);
     setAttribute(Qt::WA_TransparentForMouseEvents, false);
     setFocusPolicy(Qt::StrongFocus);
     setMouseTracking(true);
@@ -365,6 +366,12 @@ ScreenshotCanvasRenderer* ScreenshotOverlayWindow::screenshotRendererForTesting(
 }
 #endif
 
+void ScreenshotOverlayWindow::warmPresentationSurface() {
+    if (m_framePresenter != nullptr) {
+        m_framePresenter->warmPresentationSurface();
+    }
+}
+
 void ScreenshotOverlayWindow::showPreparedFrame() {
     if (m_framePresenter != nullptr) {
         m_framePresenter->presentPreparedFrame();
@@ -405,6 +412,7 @@ void ScreenshotOverlayWindow::initializeScreenshotSurface() {
     // WA_TranslucentBackground is unreliable for top-level layered windows on Windows.
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
+    setAttribute(Qt::WA_ShowWithoutActivating, true);
     setAttribute(Qt::WA_TransparentForMouseEvents, false);
 
     if (m_canvas == nullptr) {

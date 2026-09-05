@@ -25,6 +25,7 @@ class ScreenshotOverlayFramePresenter final {
   public:
     explicit ScreenshotOverlayFramePresenter(QWidget& window);
 
+    void warmPresentationSurface();
     void presentPreparedFrame();
 
     [[nodiscard]] static ScreenshotOverlayRevealStrategy
