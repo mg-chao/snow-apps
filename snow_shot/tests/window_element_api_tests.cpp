@@ -86,6 +86,30 @@ void settingsPersistAndResetToMsaa(const QString& configurationPath) {
             "invalid stored API values must fall back to MSAA");
 }
 
+void shutterSoundSettingsPersistAndReset(const QString& configurationPath) {
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    constexpr auto binding = settings::SettingsSwitchBinding::ScreenshotShutterSoundNotification;
+    require(backend.switchValue(binding), "shutter notification must default to enabled");
+    require(backend.applySwitchValue(binding, false) && !backend.switchValue(binding) &&
+                !storage::ScreenshotSettings().shutterSoundNotification(),
+            "shutter notification must be disabled through the settings backend");
+    require(storage::ApplicationStorage::instance().configuration().flushNow().success,
+            "shutter preference must be flushable");
+    storage::ConfigurationStore reloaded(configurationPath, true, true, 60000);
+    require(!reloaded.value(QStringLiteral("screenshot/shutter_sound_notification")).toBool(),
+            "disabled shutter preference must survive a configuration reload");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotCapture) &&
+                !backend.switchValue(binding),
+            "system screenshot reset must preserve the function shutter preference");
+    require(backend.resetSection(settings::SettingsSectionReset::ScreenshotSettings) &&
+                backend.switchValue(binding),
+            "function screenshot reset must restore shutter notification to enabled");
+    const auto invalid = storage::ConfigurationSchema::normalize(
+        QStringLiteral("screenshot/shutter_sound_notification"), QStringLiteral("enabled"));
+    require(!invalid.valid, "shutter preference must reject nonboolean values");
+}
+
 void toolbarLayoutSectionResetsRemainIndependent() {
     snow_shot::presentation::GlobalShortcutManager shortcuts;
     settings::BuiltInSettingsBackend backend(shortcuts);
@@ -296,6 +320,7 @@ int main(int argc, char** argv) {
         applicationStorage.initialize({temporary.filePath(QStringLiteral("bin")),
                                        temporary.filePath(QStringLiteral("data")), 60000}));
     settingsPersistAndResetToMsaa(temporary.filePath(QStringLiteral("data/config.json")));
+    shutterSoundSettingsPersistAndReset(temporary.filePath(QStringLiteral("data/config.json")));
     toolbarLayoutSectionResetsRemainIndependent();
     changedApiRefreshesServiceAndRejectsOldResults();
     apiChangesDuringRefreshAndWhileIdle();

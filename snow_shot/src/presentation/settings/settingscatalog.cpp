@@ -724,6 +724,17 @@ SettingsItemDefinition screenshotCaptureCursorItem() {
         SettingsSwitchBinding::ScreenshotCaptureCursor);
 }
 
+SettingsItemDefinition screenshotShutterSoundNotificationItem() {
+    return switchItem(
+        QStringLiteral("screenshot.shutter-sound-notification"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Shutter Sound Notification"),
+        QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Play a shutter sound when capturing the focused window or current display."),
+        QStringLiteral("screenshot/shutter_sound_notification"),
+        SettingsSwitchBinding::ScreenshotShutterSoundNotification);
+}
+
 SettingsItemDefinition screenshotAutoSaveAfterCopyItem() {
     return switchItem(
         QStringLiteral("screenshot.auto-save-after-copy"),
@@ -1391,7 +1402,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     {smartSelectionItem(), screenshotOcrActionItem(),
                      screenshotDoubleClickActionItem(), screenshotMiddleClickActionItem(),
                      screenshotAutoSaveAfterCopyItem(), screenshotCopyFileItem(),
-                     screenshotSaveAsFileDialogItem()},
+                     screenshotSaveAsFileDialogItem(), screenshotShutterSoundNotificationItem()},
                 },
                 {
                     QStringLiteral("pin-to-screen-settings"),
@@ -2376,6 +2387,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::ScreenshotCaptureCursor:
                         expectedKey = QStringLiteral("screenshot/capture_cursor");
+                        break;
+                    case SettingsSwitchBinding::ScreenshotShutterSoundNotification:
+                        expectedKey = QStringLiteral("screenshot/shutter_sound_notification");
                         break;
                     case SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors:
                         expectedKey = QStringLiteral("screenshot/restore_original_screen_colors");

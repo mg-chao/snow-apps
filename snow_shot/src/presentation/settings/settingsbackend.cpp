@@ -309,6 +309,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::ScreenshotSettings().autoSaveAfterCopy();
     case SettingsSwitchBinding::ScreenshotCaptureCursor:
         return storage::ScreenshotSettings().captureCursor();
+    case SettingsSwitchBinding::ScreenshotShutterSoundNotification:
+        return storage::ScreenshotSettings().shutterSoundNotification();
     case SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors:
         return storage::ScreenshotSettings().restoreOriginalScreenColors();
     case SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard:
@@ -338,6 +340,9 @@ bool BuiltInSettingsBackend::switchEnabled(SettingsSwitchBinding binding) const 
 }
 
 bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, bool value) {
+    if (binding == SettingsSwitchBinding::ScreenshotShutterSoundNotification) {
+        return storage::ScreenshotSettings().setShutterSoundNotification(value);
+    }
     if (binding == SettingsSwitchBinding::ScreenshotCaptureCursor) {
         return storage::ScreenshotSettings().setCaptureCursor(value);
     }
@@ -404,6 +409,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::TrayEnabled:
     case SettingsSwitchBinding::ScreenshotAutoSaveAfterCopy:
     case SettingsSwitchBinding::ScreenshotCaptureCursor:
+    case SettingsSwitchBinding::ScreenshotShutterSoundNotification:
     case SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors:
     case SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard:
     case SettingsSwitchBinding::PinAutomaticTextRecognition:
@@ -874,6 +880,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                    {QStringLiteral("screenshot/save_as_file_dialog"),
                     storage::ConfigurationSchema::defaultValue(
                         QStringLiteral("screenshot/save_as_file_dialog"))},
+                   {QStringLiteral("screenshot/shutter_sound_notification"),
+                    storage::ConfigurationSchema::defaultValue(
+                        QStringLiteral("screenshot/shutter_sound_notification"))},
                    {QStringLiteral("screenshot/auto_execute_after_text_recognition"),
                     storage::ConfigurationSchema::defaultValue(
                         QStringLiteral("screenshot/auto_execute_after_text_recognition"))},

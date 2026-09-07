@@ -94,9 +94,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(
-        sectionCount == 29 && itemCount == 119,
-        "catalog must contain the expected twenty-nine sections and one hundred nineteen items");
+    require(sectionCount == 29 && itemCount == 120,
+            "catalog must contain the expected twenty-nine sections and one hundred twenty items");
     const auto* saveDialog =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
                       QStringLiteral("screenshot.save-as-file-dialog")});
@@ -167,6 +166,23 @@ void builtInCatalogIsCompleteAndValid() {
             !storage::ConfigurationSchema::defaultValue(captureCursor->configurationKey).toBool(),
         "cursor capture must be the disabled final switch in system Screenshot settings");
     const auto* functionPage = catalog.page(QStringLiteral("function-settings"));
+    const auto* shutterSound =
+        catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
+                      QStringLiteral("screenshot.shutter-sound-notification")});
+    const auto* screenshotSettings =
+        catalog.section(QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"));
+    require(screenshotSettings != nullptr && !screenshotSettings->items.isEmpty() &&
+                screenshotSettings->items.constLast().id ==
+                    QStringLiteral("screenshot.shutter-sound-notification"),
+            "shutter notification must be the final item in Function Screenshot settings");
+    require(shutterSound != nullptr &&
+                shutterSound->title.translated() == QStringLiteral("Shutter Sound Notification") &&
+                shutterSound->configurationKey ==
+                    QStringLiteral("screenshot/shutter_sound_notification") &&
+                std::get<settings::SettingsSwitchDefinition>(shutterSound->payload).binding ==
+                    settings::SettingsSwitchBinding::ScreenshotShutterSoundNotification &&
+                storage::ConfigurationSchema::defaultValue(shutterSound->configurationKey).toBool(),
+            "Function Screenshot settings must expose the enabled shutter notification switch");
     const auto* smartSelection =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
                       QStringLiteral("screenshot.smart-selection")});
@@ -867,8 +883,8 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 155 && index.search(QString()).size() == 155,
-            "search must generate all one hundred fifty-five catalog nodes in catalog order");
+    require(index.entries().size() == 156 && index.search(QString()).size() == 156,
+            "search must generate all one hundred fifty-six catalog nodes in catalog order");
     const auto translation = index.search(QStringLiteral("original image translation"));
     require(!translation.isEmpty() && translation.constFirst().location.itemId ==
                                           QStringLiteral("translation.original-image"),
@@ -899,7 +915,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 7 && sections == 29 && items == 119,
+    require(pages == 7 && sections == 29 && items == 120,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));
