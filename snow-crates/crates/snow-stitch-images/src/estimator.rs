@@ -676,6 +676,7 @@ fn luminance_gradient(frame: &Frame, x: u32, y: u32) -> u16 {
     u16::from(horizontal) + u16::from(vertical)
 }
 
+// Independent scans avoid histogram-reduction overhead for small viewports.
 fn precise_alignment_error(
     reference: &Frame,
     incoming: &Frame,
@@ -730,6 +731,147 @@ fn precise_alignment_error(
         }
     }
     1.0
+}
+
+fn precise_alignment_errors(
+    reference: &Frame,
+    incoming: &Frame,
+    direct: &SimilarityMap,
+    axis: StitchAxis,
+    strongest_mode: i32,
+    maximum_shift: i32,
+) -> [(i32, f32); (2 * INLIER_TOLERANCE + 1) as usize] {
+    const OFFSETS: usize = (2 * INLIER_TOLERANCE + 1) as usize;
+    let offsets: [i32; OFFSETS] =
+        std::array::from_fn(|index| strongest_mode - INLIER_TOLERANCE + index as i32);
+    let width = incoming.width() as i32;
+    let height = incoming.height() as i32;
+    // Incoming values and the fixed-region mask are identical for every offset.
+    // Reduce integer histograms across row groups to preserve exact error scores.
+    let histograms = (0..incoming.height().saturating_sub(2).div_ceil(4))
+        .into_par_iter()
+        .with_min_len(16)
+        .fold(
+            || [[0_u64; 256]; OFFSETS],
+            |mut histograms, row| {
+                let y = 1 + row * 4;
+                for x in (1..incoming.width().saturating_sub(1)).step_by(4) {
+                    if direct.at_point(x as f32, y as f32).unwrap_or(1.0) >= 0.85 {
+                        continue;
+                    }
+                    let incoming_value = luminance_at(incoming, x, y);
+                    let incoming_gradient = luminance_gradient(incoming, x, y);
+                    for (offset, histogram) in offsets.iter().zip(&mut histograms) {
+                        if offset.abs() > maximum_shift {
+                            continue;
+                        }
+                        let (reference_x, reference_y) = match axis {
+                            StitchAxis::Vertical => (x as i32, y as i32 - offset),
+                            StitchAxis::Horizontal => (x as i32 - offset, y as i32),
+                        };
+                        if reference_x <= 0
+                            || reference_x >= width - 1
+                            || reference_y <= 0
+                            || reference_y >= height - 1
+                        {
+                            continue;
+                        }
+                        let reference_x = reference_x as u32;
+                        let reference_y = reference_y as u32;
+                        let reference_value = luminance_at(reference, reference_x, reference_y);
+                        let reference_gradient =
+                            luminance_gradient(reference, reference_x, reference_y);
+                        if reference_gradient.max(incoming_gradient) < 16 {
+                            continue;
+                        }
+                        let intensity_error = u16::from(reference_value.abs_diff(incoming_value));
+                        let gradient_error = reference_gradient.abs_diff(incoming_gradient) / 2;
+                        let difference = intensity_error.saturating_add(gradient_error).min(255);
+                        histogram[usize::from(difference)] += 1;
+                    }
+                }
+                histograms
+            },
+        )
+        .reduce(
+            || [[0_u64; 256]; OFFSETS],
+            |mut left, right| {
+                for (left, right) in left.iter_mut().flatten().zip(right.iter().flatten()) {
+                    *left += right;
+                }
+                left
+            },
+        );
+    std::array::from_fn(|index| {
+        let offset = offsets[index];
+        let histogram = histograms[index];
+        let samples = histogram.iter().sum::<u64>();
+        let target = samples.saturating_mul(3).div_ceil(5);
+        let mut accumulated = 0_u64;
+        let error = if samples == 0 {
+            1.0
+        } else {
+            histogram
+                .into_iter()
+                .position(|count| {
+                    accumulated += count;
+                    accumulated >= target
+                })
+                .map_or(1.0, |difference| difference as f32 / 255.0)
+        };
+        (offset, error)
+    })
+}
+
+fn refine_motion_offset(
+    reference: &Frame,
+    incoming: &Frame,
+    direct: &SimilarityMap,
+    axis: StitchAxis,
+    strongest_mode: i32,
+    maximum_shift: i32,
+) -> (i32, f32) {
+    let compare = |left: &(i32, f32), right: &(i32, f32)| {
+        left.1
+            .total_cmp(&right.1)
+            .then_with(|| {
+                (left.0 - strongest_mode)
+                    .abs()
+                    .cmp(&(right.0 - strongest_mode).abs())
+            })
+            .then_with(|| left.0.cmp(&right.0))
+    };
+    // Histogram reduction loses on small images and cheap Gray8 scans at 1080p.
+    let minimum_shared_pixels = match incoming.pixel_format() {
+        PixelFormat::Gray8 => 4 * 1024 * 1024,
+        PixelFormat::Rgb8 | PixelFormat::Rgba8 => 1024 * 1024,
+    };
+    let best = if u64::from(incoming.width()) * u64::from(incoming.height()) < minimum_shared_pixels
+    {
+        (strongest_mode - INLIER_TOLERANCE..=strongest_mode + INLIER_TOLERANCE)
+            .into_par_iter()
+            .filter(|offset| offset.abs() <= maximum_shift)
+            .map(|offset| {
+                (
+                    offset,
+                    precise_alignment_error(reference, incoming, direct, axis, offset),
+                )
+            })
+            .min_by(compare)
+    } else {
+        precise_alignment_errors(
+            reference,
+            incoming,
+            direct,
+            axis,
+            strongest_mode,
+            maximum_shift,
+        )
+        .into_iter()
+        .filter(|(offset, _)| offset.abs() <= maximum_shift)
+        .min_by(compare)
+    };
+    best.expect("motion refinement range contains its center")
 }
 
 fn options_error(message: impl Into<String>) -> StitchError {
@@ -1012,13 +1154,17 @@ impl VerticalMotionEstimator {
         let mut scored = candidates
             .into_iter()
             .map(|offset| {
-                let compensated = SimilarityMap::between(
-                    reference_gray,
-                    incoming_gray,
-                    self.layout,
-                    self.axis,
-                    offset,
-                );
+                let compensated = if offset == 0 {
+                    zero_alignment.clone()
+                } else {
+                    SimilarityMap::between(
+                        reference_gray,
+                        incoming_gray,
+                        self.layout,
+                        self.axis,
+                        offset,
+                    )
+                };
                 score_candidate(
                     offset,
                     self.axis,
@@ -1048,33 +1194,14 @@ impl VerticalMotionEstimator {
         let strongest_mode = scored[0].diagnostics.offset;
         if strongest_mode != 0 {
             let _perf = crate::perf::Scope::new(crate::perf::Stage::Refinement);
-            let (refined_offset, precise_error) = (strongest_mode - INLIER_TOLERANCE
-                ..=strongest_mode + INLIER_TOLERANCE)
-                .into_par_iter()
-                .filter(|offset| offset.abs() <= maximum_shift)
-                .map(|offset| {
-                    (
-                        offset,
-                        precise_alignment_error(
-                            motion_reference,
-                            incoming,
-                            direct,
-                            self.axis,
-                            offset,
-                        ),
-                    )
-                })
-                .min_by(|left, right| {
-                    left.1
-                        .total_cmp(&right.1)
-                        .then_with(|| {
-                            (left.0 - strongest_mode)
-                                .abs()
-                                .cmp(&(right.0 - strongest_mode).abs())
-                        })
-                        .then_with(|| left.0.cmp(&right.0))
-                })
-                .expect("motion refinement range contains its center");
+            let (refined_offset, precise_error) = refine_motion_offset(
+                motion_reference,
+                incoming,
+                direct,
+                self.axis,
+                strongest_mode,
+                maximum_shift,
+            );
             let mut refined = if let Some(index) = scored
                 .iter()
                 .position(|candidate| candidate.diagnostics.offset == refined_offset)
@@ -1163,6 +1290,10 @@ impl VerticalMotionEstimator {
         EvaluatedMotion::rejected(scene_cut, confidence, diagnostics)
     }
 }
+
+#[cfg(test)]
+#[path = "estimator_optimization_tests.rs"]
+mod optimization_tests;
 
 #[cfg(test)]
 mod tests {
