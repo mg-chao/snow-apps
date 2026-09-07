@@ -233,7 +233,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
             defaultValue("screen_recording/clarity").toString() == QStringLiteral("1080p") &&
             defaultValue("screen_recording/frame_rate").toInt() == 30 &&
             defaultValue("screen_recording/animated_image_clarity").toString() ==
-                QStringLiteral("1080p") &&
+                QStringLiteral("480p") &&
             defaultValue("screen_recording/animated_image_frame_rate").toInt() == 10 &&
             defaultValue("screen_recording/animated_image_format").toString() ==
                 QStringLiteral("gif") &&
@@ -794,7 +794,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     const storage::RecordingSettings recording;
     require(recording.screenRecordingClarity() == QStringLiteral("1080p") &&
                 recording.frameRate() == 30 &&
-                recording.animatedImageClarity() == QStringLiteral("1080p") &&
+                recording.animatedImageClarity() == QStringLiteral("480p") &&
                 recording.animatedImageFrameRate() == 10 &&
                 recording.animatedImageFormat() == QStringLiteral("gif") &&
                 recording.encoder() == QStringLiteral("h264_hw") &&

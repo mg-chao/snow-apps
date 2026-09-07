@@ -221,7 +221,7 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
       QStringLiteral("480p")}},
     {QStringLiteral("screen_recording/frame_rate"), 30, ConfigurationValueKind::Integer},
     {QStringLiteral("screen_recording/animated_image_clarity"),
-     QStringLiteral("1080p"),
+     QStringLiteral("480p"),
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("1080p"), QStringLiteral("720p"), QStringLiteral("480p")}},

@@ -1545,6 +1545,99 @@ void tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode() {
             "choosing Table should restore the default shared trigger presentation");
 }
 
+void drawingGroupClicksActivateOnceAfterPointerReentry() {
+    const QList<QStringList> groups{
+        {QStringLiteral("line"), QStringLiteral("arrow")},
+        {QStringLiteral("spotlight"), QStringLiteral("highlighter")},
+        {QStringLiteral("free-draw"), QStringLiteral("line"), QStringLiteral("shape")}};
+    const QList<ScreenshotToolPalette::Tool> tools{ScreenshotToolPalette::Tool::Arrow,
+                                                   ScreenshotToolPalette::Tool::PenHighlight,
+                                                   ScreenshotToolPalette::Tool::Shape};
+    for (int index = 0; index < groups.size(); ++index) {
+        ScreenshotToolPalette::Options options;
+        options.showShapeTool = groups.at(index).contains(QStringLiteral("shape"));
+        options.showArrowTool = groups.at(index).contains(QStringLiteral("arrow"));
+        options.showLineTool = groups.at(index).contains(QStringLiteral("line"));
+        options.showFreeDrawTool = groups.at(index).contains(QStringLiteral("free-draw"));
+        options.showHighlightTool = groups.at(index).contains(QStringLiteral("highlighter"));
+        options.showSpotlightTool = groups.at(index).contains(QStringLiteral("spotlight"));
+        options.enableStyleToolbar = false;
+        options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{{groups.at(index)}};
+        ScreenshotToolPalette palette(options);
+        palette.show();
+        QCoreApplication::processEvents();
+        const auto buttons = mainDrawingToolbarButtons(palette);
+        require(buttons.size() == 1, "the fixture must expose one drawing group trigger");
+        auto* trigger = buttons.constFirst();
+        palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+        const auto sendPointer = [&](QEvent::Type type, const QPointF& position,
+                                     Qt::MouseButton button, Qt::MouseButtons held) {
+            QMouseEvent event(type, position, trigger->mapToGlobal(position.toPoint()), button,
+                              held, Qt::NoModifier);
+            QCoreApplication::sendEvent(trigger, &event);
+        };
+        const QPointF center = trigger->rect().center();
+        sendPointer(QEvent::MouseButtonPress, center, Qt::LeftButton, Qt::LeftButton);
+        sendPointer(QEvent::MouseMove, QPointF(-5, -5), Qt::NoButton, Qt::LeftButton);
+        sendPointer(QEvent::MouseMove, center, Qt::NoButton, Qt::LeftButton);
+        sendPointer(QEvent::MouseButtonRelease, center, Qt::LeftButton, Qt::NoButton);
+        require(palette.activeToolForTests() == tools.at(index),
+                "a drawing group click must not toggle back off after pointer re-entry");
+        sendPointer(QEvent::MouseButtonPress, center, Qt::LeftButton, Qt::LeftButton);
+        sendPointer(QEvent::MouseButtonRelease, center, Qt::LeftButton, Qt::NoButton);
+        require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select,
+                "a second completed drawing group click must still toggle back to selection");
+        sendPointer(QEvent::MouseButtonPress, center, Qt::LeftButton, Qt::LeftButton);
+        require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select,
+                "a drawing group must wait for the completed click before activating");
+        sendPointer(QEvent::MouseMove, QPointF(-5, -5), Qt::NoButton, Qt::LeftButton);
+        sendPointer(QEvent::MouseButtonRelease, QPointF(-5, -5), Qt::LeftButton, Qt::NoButton);
+        require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select,
+                "releasing outside a drawing group must cancel activation");
+    }
+}
+
+void tableRecognitionClickActivatesOnceAfterPointerReentry() {
+    ScreenshotToolPalette::Options options;
+    options.showTableTool = true;
+    options.showQrTool = true;
+    options.enableStyleToolbar = false;
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    QCoreApplication::processEvents();
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Table);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    auto* trigger =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotTableQrButton"));
+    require(trigger != nullptr, "the shared recognition trigger must exist");
+    int tableRequests = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::tableRequested, [&]() { ++tableRequests; });
+    const auto sendPointer = [&](QEvent::Type type, const QPointF& position, Qt::MouseButton button,
+                                 Qt::MouseButtons buttons) {
+        QMouseEvent event(type, position, trigger->mapToGlobal(position.toPoint()), button, buttons,
+                          Qt::NoModifier);
+        QCoreApplication::sendEvent(trigger, &event);
+    };
+    const QPointF center = trigger->rect().center();
+    sendPointer(QEvent::MouseButtonPress, center, Qt::LeftButton, Qt::LeftButton);
+    require(tableRequests == 0 &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select,
+            "pressing the trigger must not start recognition before the click completes");
+    sendPointer(QEvent::MouseMove, QPointF(-5, -5), Qt::NoButton, Qt::LeftButton);
+    sendPointer(QEvent::MouseMove, center, Qt::NoButton, Qt::LeftButton);
+    sendPointer(QEvent::MouseButtonRelease, center, Qt::LeftButton, Qt::NoButton);
+    require(tableRequests == 1 &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::Table,
+            "one completed click must activate Table once even when the pointer re-enters");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    sendPointer(QEvent::MouseButtonPress, center, Qt::LeftButton, Qt::LeftButton);
+    sendPointer(QEvent::MouseMove, QPointF(-5, -5), Qt::NoButton, Qt::LeftButton);
+    sendPointer(QEvent::MouseButtonRelease, QPointF(-5, -5), Qt::LeftButton, Qt::NoButton);
+    require(tableRequests == 1 &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select,
+            "releasing outside the trigger must cancel the click without starting recognition");
+}
+
 void sharedToolbarLayoutModelOperationsAreDeterministic() {
     using snow_shot::presentation::toolbar_layout::defaultOrder;
     using snow_shot::presentation::toolbar_layout::moveItemToHidden;
@@ -6784,6 +6877,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--toolbar-layout-only"))) {
+        drawingGroupClicksActivateOnceAfterPointerReentry();
         configurableToolbarLayoutSupportsArbitraryPopoverGroups();
         arrowAndLineUseConfiguredPopoverGroup();
         highlightVariantsUseConfiguredPopoverGroup();
@@ -6792,6 +6886,9 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--action-toolbar-layout-only"))) {
+        drawingGroupClicksActivateOnceAfterPointerReentry();
+        tableRecognitionClickActivatesOnceAfterPointerReentry();
+        tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode();
         sharedToolbarLayoutModelOperationsAreDeterministic();
         configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
@@ -6821,6 +6918,8 @@ int main(int argc, char** argv) {
     clickingActiveToolbarToolReturnsToSelect();
     tableToolExposesStructureActionsAndOwnHistoryState();
     tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode();
+    tableRecognitionClickActivatesOnceAfterPointerReentry();
+    drawingGroupClicksActivateOnceAfterPointerReentry();
     sharedToolbarLayoutModelOperationsAreDeterministic();
     configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement();
     arrowAndLineRemainDirectWhenConfiguredIndividually();
