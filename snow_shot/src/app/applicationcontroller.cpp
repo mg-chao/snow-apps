@@ -32,6 +32,8 @@ const QString kTrayCustomIconKey = QStringLiteral("tray/custom_icon");
 const QString kTrayLeftClickActionKey = QStringLiteral("tray/left_click_action");
 const QString kTrayMenuOptionsKey = QStringLiteral("tray/menu_options");
 const QString kScreenshotDelaySecondsKey = QStringLiteral("screenshot/delay_seconds");
+const QString kOcrModelTypeKey = QStringLiteral("text_recognition/model_type");
+const QString kOcrDirectMlKey = QStringLiteral("text_recognition/direct_ml_acceleration");
 
 QStringList stringList(const QJsonValue& value) {
     QStringList result;
@@ -68,28 +70,25 @@ class ApplicationController::Impl {
                              systemTray.hide();
                              QApplication::quit();
                          });
+        QObject::connect(
+            &systemTray, &presentation::SystemTrayController::quickActionRequested, &q,
+            [this](presentation::GlobalShortcutAction action) { dispatchQuickAction(action); });
         QObject::connect(&systemTray,
-                         &presentation::SystemTrayController::quickActionRequested, &q,
-                         [this](presentation::GlobalShortcutAction action) {
-                             dispatchQuickAction(action);
+                         &presentation::SystemTrayController::shortcutFunctionsDisabledChanged, &q,
+                         [this](bool disabled) {
+                             globalShortcutManager.setShortcutFunctionsEnabled(!disabled);
                          });
         QObject::connect(
-            &systemTray,
-            &presentation::SystemTrayController::shortcutFunctionsDisabledChanged, &q,
-            [this](bool disabled) {
-                globalShortcutManager.setShortcutFunctionsEnabled(!disabled);
+            &groupManager,
+            &presentation::PinnedWindowGroupManager::restoreActiveGroupWindowsRequested, &q,
+            [this]() {
+                if (ScreenshotController* controller = ensureScreenshotController()) {
+                    controller->restoreActivePinnedGroupWindows();
+                }
             });
-        QObject::connect(&groupManager,
-                         &presentation::PinnedWindowGroupManager::restoreActiveGroupWindowsRequested,
-                         &q, [this]() {
-                             if (ScreenshotController* controller = ensureScreenshotController()) {
-                                 controller->restoreActivePinnedGroupWindows();
-                             }
-                         });
-        QObject::connect(&globalShortcutManager, &presentation::GlobalShortcutManager::activated,
-                         &q, [this](presentation::GlobalShortcutAction action) {
-                             dispatchQuickAction(action);
-                         });
+        QObject::connect(
+            &globalShortcutManager, &presentation::GlobalShortcutManager::activated, &q,
+            [this](presentation::GlobalShortcutAction action) { dispatchQuickAction(action); });
         QObject::connect(&globalShortcutManager, &presentation::GlobalShortcutManager::stateChanged,
                          &q,
                          [this](presentation::GlobalShortcutAction action,
@@ -113,24 +112,28 @@ class ApplicationController::Impl {
             ocrOptions.cacheRoot = QDir(applicationStorage.configurationDirectory())
                                        .filePath(QStringLiteral("assets/ocr"));
         }
+        ocrOptions.modelType = screenshotOcrModelTypeFromValue(
+            applicationStorage.configuration()
+                .value(QStringLiteral("text_recognition/model_type"))
+                .toString());
         const auto backendPreference =
             applicationStorage.configuration()
                     .value(QStringLiteral("text_recognition/direct_ml_acceleration"))
                     .toBool()
                 ? ScreenshotOcrBackendPreference::DirectMl
                 : ScreenshotOcrBackendPreference::Cpu;
-        ocrRecognition = std::make_unique<ScreenshotOcrRecognitionService>(
-            ocrOptions, backendPreference, &q);
+        ocrRecognition =
+            std::make_unique<ScreenshotOcrRecognitionService>(ocrOptions, backendPreference, &q);
         auto& configuration = applicationStorage.configuration();
         applyRuntimeConfiguration(configuration.value(kPinBorderColorKey), kPinBorderColorKey);
         applyRuntimeConfiguration(configuration.value(kTrayEnabledKey), kTrayEnabledKey);
         applyRuntimeConfiguration(configuration.value(kTrayIconKey), kTrayIconKey);
         applyRuntimeConfiguration(configuration.value(kTrayCustomIconKey), kTrayCustomIconKey);
         applyRuntimeConfiguration(configuration.value(kTrayLeftClickActionKey),
-                                   kTrayLeftClickActionKey);
+                                  kTrayLeftClickActionKey);
         applyRuntimeConfiguration(configuration.value(kTrayMenuOptionsKey), kTrayMenuOptionsKey);
         applyRuntimeConfiguration(configuration.value(kScreenshotDelaySecondsKey),
-                                   kScreenshotDelaySecondsKey);
+                                  kScreenshotDelaySecondsKey);
         QObject::connect(&configuration, &storage::ConfigurationStore::valueChanged, &q,
                          [this](const QString& key, const QJsonValue& value) {
                              applyRuntimeConfiguration(value, key);
@@ -192,6 +195,12 @@ class ApplicationController::Impl {
             systemTray.setMenuOptions(stringList(value));
         } else if (key == kScreenshotDelaySecondsKey) {
             systemTray.setScreenshotDelaySeconds(value.toInt(3));
+        } else if (key == kOcrModelTypeKey && ocrRecognition != nullptr) {
+            ocrRecognition->setModelType(screenshotOcrModelTypeFromValue(value.toString()));
+        } else if (key == kOcrDirectMlKey && ocrRecognition != nullptr) {
+            ocrRecognition->setBackendPreference(value.toBool()
+                                                     ? ScreenshotOcrBackendPreference::DirectMl
+                                                     : ScreenshotOcrBackendPreference::Cpu);
         }
     }
 
@@ -201,36 +210,33 @@ class ApplicationController::Impl {
             mainWindow = new MainWindow(*settingsRegistry, *runtimeSession);
             QObject::connect(mainWindow, &QObject::destroyed, &q,
                              [this]() { mainWindow = nullptr; });
+            QObject::connect(mainWindow, &MainWindow::screenshotRequested, &q, [this]() {
+                if (ScreenshotController* controller = ensureScreenshotController()) {
+                    controller->startCapture();
+                }
+            });
             QObject::connect(
-                mainWindow, &MainWindow::screenshotRequested, &q, [this]() {
-                    if (ScreenshotController* controller = ensureScreenshotController()) {
-                        controller->startCapture();
-                    }
-                });
-            QObject::connect(mainWindow, &MainWindow::quickActionRequested, &q,
-                             [this](presentation::GlobalShortcutAction action) {
-                                 dispatchQuickAction(action);
+                mainWindow, &MainWindow::quickActionRequested, &q,
+                [this](presentation::GlobalShortcutAction action) { dispatchQuickAction(action); });
+            QObject::connect(mainWindow, &MainWindow::screenshotHistoryEditRequested, &q,
+                             [this](const QString& recordId) {
+                                 if (ScreenshotController* controller =
+                                         ensureScreenshotController()) {
+                                     controller->editHistoryRecord(recordId);
+                                 }
                              });
-            QObject::connect(
-                mainWindow, &MainWindow::screenshotHistoryEditRequested, &q,
-                [this](const QString& recordId) {
-                    if (ScreenshotController* controller = ensureScreenshotController()) {
-                        controller->editHistoryRecord(recordId);
-                    }
-                });
         }
         return *mainWindow;
     }
 
     void ensureSettingsRuntime() {
         if (settingsRegistry == nullptr) {
-            settingsRegistry = std::make_unique<
-                presentation::settings::SettingsRegistry>(
+            settingsRegistry = std::make_unique<presentation::settings::SettingsRegistry>(
                 presentation::settings::buildBuiltInSettingsRegistry());
         }
         if (settingsBackend == nullptr) {
-            settingsBackend = std::make_unique<
-                presentation::settings::BuiltInSettingsBackend>(globalShortcutManager);
+            settingsBackend = std::make_unique<presentation::settings::BuiltInSettingsBackend>(
+                globalShortcutManager);
         }
         if (runtimeSession == nullptr) {
             runtimeSession = std::make_unique<presentation::settings::SettingsRuntimeSession>(
@@ -247,8 +253,7 @@ class ApplicationController::Impl {
             break;
         case presentation::GlobalShortcutAction::ScreenshotDelay:
             if (ScreenshotController* controller = ensureScreenshotController()) {
-                controller->startDelayedCapture(
-                    storage::ScreenshotSettings().delaySeconds());
+                controller->startDelayedCapture(storage::ScreenshotSettings().delaySeconds());
             }
             break;
         case presentation::GlobalShortcutAction::ScreenshotFixed:
@@ -338,8 +343,7 @@ class ApplicationController::Impl {
     // Settings are intentionally constructed on first window access.  The
     // tray and shortcut manager use only their compact bootstrap data.
     std::unique_ptr<presentation::settings::SettingsRegistry> settingsRegistry;
-    std::unique_ptr<presentation::settings::BuiltInSettingsBackend>
-        settingsBackend;
+    std::unique_ptr<presentation::settings::BuiltInSettingsBackend> settingsBackend;
     std::unique_ptr<presentation::settings::SettingsRuntimeSession> runtimeSession;
     std::unique_ptr<ScreenshotOcrRecognitionService> ocrRecognition;
     std::unique_ptr<ScreenshotController> screenshotController;

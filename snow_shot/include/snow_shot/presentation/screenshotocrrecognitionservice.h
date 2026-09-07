@@ -102,6 +102,7 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
         QString cacheRoot;
         // Resolved HTTP(S) proxy URL for component downloads. Empty means direct access.
         QString proxyUrl;
+        ScreenshotOcrModelType modelType = ScreenshotOcrModelType::Small;
         // Explicit local assets, primarily for tests and development builds.
         QString processPath;
         QString detectorModelPath;
@@ -129,6 +130,7 @@ class ScreenshotOcrRecognitionService final : public ScreenshotOcrRecognitionPor
     [[nodiscard]] ScreenshotOcrAssetStatus assetStatus() const override;
     void setBackendPreference(ScreenshotOcrBackendPreference preference);
     void setProxyUrl(const QString& proxyUrl);
+    void setModelType(ScreenshotOcrModelType modelType);
     [[nodiscard]] int liveWorkerCount() const;
 
   private:

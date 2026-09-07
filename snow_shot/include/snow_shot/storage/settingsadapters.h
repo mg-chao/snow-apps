@@ -86,6 +86,8 @@ class GlobalShortcutSettings final {
 
 class ScreenshotSettings final {
   public:
+    [[nodiscard]] bool shutterSoundNotification() const;
+    bool setShutterSoundNotification(bool enabled) const;
     [[nodiscard]] bool captureCursor() const;
     bool setCaptureCursor(bool enabled) const;
     [[nodiscard]] bool restoreOriginalScreenColors() const;
@@ -188,6 +190,7 @@ struct ScreenshotTranslationConfiguration {
     QString sourceLanguage;
     QString targetLanguage;
     QString modelId;
+    QString layoutProcessing = QStringLiteral("smart_merge");
 
     friend bool operator==(const ScreenshotTranslationConfiguration& first,
                            const ScreenshotTranslationConfiguration& second) = default;
@@ -197,6 +200,8 @@ class ScreenshotTranslationSettings final {
   public:
     [[nodiscard]] bool originalImageTranslationEnabled() const;
     bool setOriginalImageTranslationEnabled(bool enabled) const;
+    [[nodiscard]] QString layoutProcessing() const;
+    bool setLayoutProcessing(const QString& mode) const;
     [[nodiscard]] ScreenshotTranslationConfiguration configuration() const;
     bool setConfiguration(const ScreenshotTranslationConfiguration& configuration) const;
 };
@@ -209,6 +214,8 @@ class ScreenshotUiSettings final {
     bool setSelectionTransitionAnimationEnabled(bool enabled) const;
     [[nodiscard]] QString colorPickerDisplayMode() const;
     bool setColorPickerDisplayMode(const QString& mode) const;
+    [[nodiscard]] QString colorPickerFormat() const;
+    bool setColorPickerFormat(const QString& format) const;
     [[nodiscard]] QColor selectionMaskColor() const;
     bool setSelectionMaskColor(const QColor& color) const;
     [[nodiscard]] int shortcutHintOpacity() const;

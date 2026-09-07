@@ -13,6 +13,7 @@
 
 #include "adaptivescrollingcapturecadence.h"
 #include "screenshotscrollingpipeline.h"
+#include "windowcaptureexclusion.h"
 #include "../pinned/screenshotpintoperfinstrumentation.h"
 
 #include <QCoreApplication>
@@ -213,18 +214,11 @@ struct ScreenshotScrollingCaptureController::Impl {
         if (QCoreApplication::arguments().contains(QStringLiteral("--e2e-allow-overlay-capture"))) {
             return overlay != nullptr && toolbar != nullptr;
         }
-        if (overlay == nullptr || toolbar == nullptr ||
-            !snow_shot::platform::windows::setWindowExcludedFromCapture(overlay, true)) {
+        if (overlay == nullptr || toolbar == nullptr) {
             return false;
         }
-        if (!snow_shot::platform::windows::setWindowExcludedFromCapture(toolbar, true)) {
-            static_cast<void>(
-                snow_shot::platform::windows::setWindowExcludedFromCapture(overlay, false));
-            return false;
-        }
-
-        excludedOverlay = overlay;
-        excludedToolbar = toolbar;
+        captureExclusion.exclude(overlay);
+        captureExclusion.exclude(toolbar);
 #else
         Q_UNUSED(overlay);
 #endif
@@ -232,18 +226,7 @@ struct ScreenshotScrollingCaptureController::Impl {
     }
 
     void restoreScrollingWindowsCaptureVisibility() {
-#if defined(Q_OS_WIN) || defined(_WIN32)
-        if (excludedToolbar != nullptr) {
-            static_cast<void>(
-                snow_shot::platform::windows::setWindowExcludedFromCapture(excludedToolbar, false));
-        }
-        if (excludedOverlay != nullptr) {
-            static_cast<void>(
-                snow_shot::platform::windows::setWindowExcludedFromCapture(excludedOverlay, false));
-        }
-#endif
-        excludedToolbar = nullptr;
-        excludedOverlay = nullptr;
+        captureExclusion.restore();
     }
 
     void ensureWorker() {
@@ -388,8 +371,11 @@ struct ScreenshotScrollingCaptureController::Impl {
     bool restoreOriginalColors = false;
     std::unique_ptr<ScreenshotScrollingPipeline> pipeline;
     QPointer<ScreenshotOverlayWindow> thumbnailHost;
-    QPointer<ScreenshotOverlayWindow> excludedOverlay;
-    QPointer<ScreenshotToolbarWindow> excludedToolbar;
+    snow_shot::presentation::WindowCaptureExclusion captureExclusion{
+#if defined(Q_OS_WIN) || defined(_WIN32)
+        snow_shot::platform::windows::setWindowExcludedFromCapture
+#endif
+    };
     QSize latestOutputSize;
     ScreenshotScrollingSnapshot cachedSnapshot;
     int cachedSnapshotTop = -1;

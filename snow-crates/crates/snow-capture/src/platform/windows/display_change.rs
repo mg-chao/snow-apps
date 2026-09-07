@@ -7,9 +7,9 @@ use anyhow::Context;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, HWND_MESSAGE,
-    MSG, PostMessageW, RegisterClassW, TranslateMessage, WM_CLOSE, WM_DISPLAYCHANGE, WM_USER,
-    WNDCLASSW, WS_OVERLAPPED,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, MSG,
+    PostMessageW, RegisterClassW, TranslateMessage, WM_CLOSE, WM_DISPLAYCHANGE, WM_USER, WNDCLASSW,
+    WS_OVERLAPPED,
 };
 
 use crate::error::{CaptureError, CaptureResult};
@@ -197,7 +197,7 @@ impl Drop for DisplayInfoCache {
     }
 }
 
-/// Class name for our message-only window.
+/// Class name for our hidden top-level broadcast listener.
 const CLASS_NAME: &str = "SnowCaptureDisplayChangeListener";
 
 fn listener_thread_main(cache_ptr: usize, hwnd_tx: mpsc::Sender<CaptureResult<isize>>) {
@@ -248,7 +248,8 @@ fn create_listener_window(cache_ptr: usize) -> CaptureResult<HWND> {
             0,
             0,
             0,
-            Some(HWND_MESSAGE),
+            // Message-only windows do not receive WM_DISPLAYCHANGE broadcasts.
+            None,
             None,
             Some(hinstance.into()),
             Some(cache_ptr as *const std::ffi::c_void),
@@ -316,5 +317,118 @@ unsafe extern "system" fn display_change_wnd_proc(
             unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
         }
         _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::region::MonitorLayout;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, IsWindowVisible, SMTO_ABORTIFHUNG, SendMessageTimeoutW,
+    };
+    use windows::core::BOOL;
+
+    unsafe extern "system" fn collect_window(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let windows = unsafe { &mut *(lparam.0 as *mut Vec<HWND>) };
+        windows.push(hwnd);
+        BOOL(1)
+    }
+
+    fn top_level_windows() -> Vec<HWND> {
+        let mut windows = Vec::new();
+        unsafe {
+            EnumWindows(
+                Some(collect_window),
+                LPARAM(&mut windows as *mut Vec<HWND> as isize),
+            )
+            .expect("enumerate broadcast recipients");
+        }
+        windows
+    }
+
+    fn send_display_change(hwnd: HWND) {
+        let delivered = unsafe {
+            SendMessageTimeoutW(
+                hwnd,
+                WM_DISPLAYCHANGE,
+                WPARAM(32),
+                LPARAM(0),
+                SMTO_ABORTIFHUNG,
+                5000,
+                None,
+            )
+        };
+        assert_ne!(delivered.0, 0, "display-change handler must finish");
+    }
+
+    #[test]
+    fn direct_display_change_refreshes_stale_monitor_count() {
+        let cache = DisplayInfoCache::new().expect("create display cache");
+        let expected = cache.monitors().unwrap();
+        let hwnd = cache.listener_hwnd.lock().unwrap().unwrap();
+        cache
+            .state
+            .write()
+            .unwrap()
+            .monitors
+            .push(MonitorId::from_parts(
+                u64::MAX,
+                0,
+                0,
+                "disconnected-monitor",
+                false,
+            ));
+        let generation = cache.generation();
+        assert!(MonitorLayout::snapshot_from_monitors(cache.monitors().unwrap()).is_err());
+
+        send_display_change(hwnd);
+
+        assert!(cache.generation() > generation);
+        assert_eq!(cache.monitors().unwrap(), expected);
+        assert!(MonitorLayout::snapshot_from_monitors(cache.monitors().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn display_change_broadcast_refreshes_all_monitor_caches() {
+        // Snapshot workers have independent caches; every listener must receive broadcasts.
+        let caches = [
+            DisplayInfoCache::new().expect("create desktop cache"),
+            DisplayInfoCache::new().expect("create snapshot worker cache"),
+        ];
+        let expected = caches[0].monitors().unwrap();
+        let recipients = top_level_windows();
+        for (index, cache) in caches.iter().enumerate() {
+            let hwnd = cache.listener_hwnd.lock().unwrap().unwrap();
+            assert!(!unsafe { IsWindowVisible(hwnd) }.as_bool());
+            {
+                let mut state = cache.state.write().unwrap();
+                if index == 0 {
+                    state.monitors.clear();
+                } else {
+                    state.monitors.push(MonitorId::from_parts(
+                        u64::MAX,
+                        0,
+                        0,
+                        "disconnected-monitor",
+                        false,
+                    ));
+                }
+            }
+            let generation = cache.generation();
+
+            // Use Windows' broadcast recipient set, but notify only our test windows.
+            if recipients.contains(&hwnd) {
+                send_display_change(hwnd);
+            }
+
+            assert!(
+                cache.generation() > generation,
+                "display-change broadcasts must invalidate every native monitor cache"
+            );
+            assert_eq!(cache.monitors().unwrap(), expected);
+            assert_eq!(cache.resolved().unwrap().len(), expected.len());
+            assert!(MonitorLayout::snapshot_from_monitors(cache.monitors().unwrap()).is_ok());
+        }
     }
 }

@@ -9,6 +9,7 @@
 #include "snow_shot/presentation/screenrecordingareawindow.h"
 #include "snow_shot/presentation/screenrecordingtoolbarwindow.h"
 #include "screenrecordinggeometry.h"
+#include "../capture/windowcaptureexclusion.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_shot/storage/storageusagetracker.h"
 
@@ -382,10 +383,8 @@ struct ScreenRecordingController::Impl {
                 areaWindow->raise();
             }
             if (toolbarWindow != nullptr) {
-                if (!toolbarHiddenForCapture) {
-                    toolbarWindow->show();
-                    toolbarWindow->raise();
-                }
+                toolbarWindow->show();
+                toolbarWindow->raise();
             }
             durationTimer.start();
             report(QStringLiteral("recording.started"));
@@ -526,39 +525,11 @@ struct ScreenRecordingController::Impl {
 
     void excludeToolbarFromCapture() {
         restoreToolbarCaptureVisibility();
-        if (toolbarWindow == nullptr) {
-            return;
-        }
-#if defined(Q_OS_WIN) || defined(_WIN32)
-        if (snow_shot::platform::windows::setWindowExcludedFromCapture(toolbarWindow, true)) {
-            toolbarExcludedFromCapture = true;
-            return;
-        }
-#endif
-        toolbarWindow->hide();
-        toolbarHiddenForCapture = true;
+        captureExclusion.exclude(toolbarWindow);
     }
 
     void restoreToolbarCaptureVisibility() {
-        if (toolbarWindow == nullptr) {
-            toolbarExcludedFromCapture = false;
-            toolbarHiddenForCapture = false;
-            return;
-        }
-#if defined(Q_OS_WIN) || defined(_WIN32)
-        if (toolbarExcludedFromCapture) {
-            static_cast<void>(
-                snow_shot::platform::windows::setWindowExcludedFromCapture(toolbarWindow, false));
-        }
-#endif
-        const bool showToolbar =
-            toolbarHiddenForCapture && (areaWindow == nullptr || areaWindow->isVisible());
-        toolbarExcludedFromCapture = false;
-        toolbarHiddenForCapture = false;
-        if (showToolbar) {
-            toolbarWindow->show();
-            toolbarWindow->raise();
-        }
+        captureExclusion.restore();
     }
 
     void syncUi() {
@@ -618,8 +589,11 @@ struct ScreenRecordingController::Impl {
     bool startScheduled = false;
     bool pendingCopyToClipboard = false;
     bool pendingCloseAfter = false;
-    bool toolbarExcludedFromCapture = false;
-    bool toolbarHiddenForCapture = false;
+    snow_shot::presentation::WindowCaptureExclusion captureExclusion{
+#if defined(Q_OS_WIN) || defined(_WIN32)
+        snow_shot::platform::windows::setWindowExcludedFromCapture
+#endif
+    };
 };
 
 ScreenRecordingController::ScreenRecordingController(QObject* parent)

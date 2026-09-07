@@ -424,6 +424,7 @@ class SaveContent final : public QWidget {
         QVector<AdSelect::Option> options;
         for (const auto& entry : {std::pair<const char*, const char*>("png", "PNG"),
                                   {"jpeg", "JPEG"},
+                                  {"bmp", "BMP"},
                                   {"webp", "WebP"},
                                   {"jxl", "JPEG XL"},
                                   {"avif", "AVIF"}}) {
@@ -770,7 +771,8 @@ class SaveContent final : public QWidget {
         changed();
     }
     void updateControls() {
-        m_quality->setEnabled(m_state.output.format != Format::Png);
+        m_quality->setEnabled(m_state.output.format != Format::Png &&
+                              m_state.output.format != Format::Bmp);
         AdSlider::Mark minimumMark;
         minimumMark.label = tr("0%");
         AdSlider::Mark maximumMark;
@@ -1101,6 +1103,7 @@ class SaveContent final : public QWidget {
     QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "100%"),
     QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "PNG"),
     QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "JPEG"),
+    QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "BMP"),
     QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "WebP"),
     QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "JPEG XL"),
     QT_TRANSLATE_NOOP("ScreenshotSaveAsFileDialog", "AVIF"),

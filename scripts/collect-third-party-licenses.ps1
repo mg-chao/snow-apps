@@ -255,6 +255,10 @@ if ($missingCargoNotices.Count -gt 0) {
 
 Copy-LicenseNotice -Category "project-notices" -Package "ant-design-icons" `
     -DeclaredLicense "MIT" -Source $antDesignNoticePath -RelativeName "THIRD_PARTY_NOTICES.md"
+Copy-LicenseNotice -Category "project-notices" -Package "snow-shot-attributions" `
+    -DeclaredLicense "MIT" `
+    -Source (Join-Path $PSScriptRoot "../snow_shot/THIRD_PARTY_NOTICES.md") `
+    -RelativeName "THIRD_PARTY_NOTICES.md"
 
 $sortedRecords = @($records | Sort-Object Category, Package, Notice)
 $indexLines = [System.Collections.Generic.List[string]]::new()

@@ -8,6 +8,7 @@ pub(crate) mod gdi;
 pub(crate) mod gpu_tonemap;
 pub(crate) mod monitor;
 pub(crate) mod region_pipeline;
+mod rotation;
 pub(crate) mod surface;
 pub(crate) mod wgc;
 

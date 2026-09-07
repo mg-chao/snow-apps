@@ -3522,7 +3522,8 @@ void ScreenshotToolPalette::ensureTableQrPopover() {
 }
 
 void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
-    if (m_mainPanel == nullptr) {
+    // Recording owns a fixed, state-dependent row outside the screenshot layout catalog.
+    if (m_mainPanel == nullptr || m_options.showRecordingControls) {
         return;
     }
 
@@ -3632,7 +3633,7 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
                             ensureDrawingToolGroupPopover(trigger);
                         }
                     });
-            connect(group.trigger, &adqt::widgets::AdButton::pressed, this,
+            connect(group.trigger, &adqt::widgets::AdButton::clicked, this,
                     [this, trigger = group.trigger]() {
                         for (const DrawingToolGroup& candidate :
                              std::as_const(m_drawingToolGroups)) {
@@ -4034,7 +4035,7 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
                         ensureTableQrPopover();
                     }
                 });
-        connect(m_tableButton, &adqt::widgets::AdButton::pressed, this,
+        connect(m_tableButton, &adqt::widgets::AdButton::clicked, this,
                 [this]() { activateTableQrTool(m_tableQrEntryTool); });
         refreshTableQrTrigger();
         updateTableQrBusy();

@@ -23,6 +23,7 @@ enum class ScreenshotImageFileFormat {
     Webp,
     Jxl,
     Avif,
+    Bmp,
 };
 
 struct ScreenshotImageFileSaveResult {

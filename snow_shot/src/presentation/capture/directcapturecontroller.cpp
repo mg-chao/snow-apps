@@ -191,6 +191,7 @@ class DirectCaptureController::Impl {
         const storage::ScreenshotSettings settings;
         DirectCaptureRequest result;
         result.target = target;
+        result.shutterSoundNotification = settings.shutterSoundNotification();
         result.restoreOriginalScreenColors = settings.restoreOriginalScreenColors();
         result.requestedAt = QDateTime::currentDateTime();
         result.autoSave = settings.autoSaveAfterCopy();

@@ -500,6 +500,10 @@ ScreenshotController::Impl::Impl(ScreenshotController& controller,
                                                 ? ScreenshotOcrBackendPreference::DirectMl
                                                 : ScreenshotOcrBackendPreference::Cpu;
                     m_ocrRecognition->setBackendPreference(preference);
+                } else if (key == QStringLiteral("text_recognition/model_type") &&
+                           m_ocrRecognition != nullptr) {
+                    m_ocrRecognition->setModelType(
+                        screenshotOcrModelTypeFromValue(value.toString()));
                 } else if (key == QStringLiteral("network/proxy")) {
                     if (m_tableRecognition != nullptr) {
                         m_tableRecognition->setUseSystemProxy(value.toString() ==
@@ -838,6 +842,10 @@ bool ScreenshotController::Impl::ensureRecognitionFeature() {
             ? ScreenshotOcrBackendPreference::DirectMl
             : ScreenshotOcrBackendPreference::Cpu;
     ScreenshotOcrRecognitionService::Options ocrOptions;
+    ocrOptions.modelType = screenshotOcrModelTypeFromValue(
+        applicationStorage.configuration()
+            .value(QStringLiteral("text_recognition/model_type"))
+            .toString());
     ocrOptions.offlineRoot =
         QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("assets/ocr"));
     if (applicationStorage.isInitialized() &&

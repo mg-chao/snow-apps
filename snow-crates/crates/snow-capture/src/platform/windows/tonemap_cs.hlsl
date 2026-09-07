@@ -6,7 +6,7 @@ cbuffer Params : register(b0) {
     uint tex_width;
     uint tex_height;
     uint lut_size_minus_one;
-    uint _pad0;
+    uint rotation;
     float lut_input_max;
     float lut_inv_step;
     float _pad1;
@@ -41,6 +41,13 @@ float3 restore_screen_colors(float3 rgb) {
         return float3(dot(color_row_r, input), dot(color_row_g, input), dot(color_row_b, input));
     }
     return rgb;
+}
+
+uint2 hdr_source_coord(uint2 coord) {
+    if (rotation == 1u) return uint2(coord.y, tex_width - 1u - coord.x);
+    if (rotation == 2u) return uint2(tex_width - 1u - coord.x, tex_height - 1u - coord.y);
+    if (rotation == 3u) return uint2(tex_height - 1u - coord.y, coord.x);
+    return coord;
 }
 
 float nits_to_pq(float nits) {
@@ -145,7 +152,7 @@ void main(uint3 dtid : SV_DispatchThreadID) {
         return;
     }
 
-    float4 src = src_tex[coord];
+    float4 src = src_tex[hdr_source_coord(coord)];
     float3 rgb = inverse_windows_sdr_boost(max(restore_screen_colors(src.rgb), 0.0));
     bool is_sdr = is_sdr_identity_pixel(rgb);
     if (!is_sdr) {
@@ -163,7 +170,7 @@ void main_1d(uint3 dtid : SV_DispatchThreadID) {
         return;
     }
 
-    float4 src = src_tex[coord];
+    float4 src = src_tex[hdr_source_coord(coord)];
     float3 rgb = inverse_windows_sdr_boost(max(restore_screen_colors(src.rgb), 0.0));
     bool is_sdr = is_sdr_identity_pixel(rgb);
     if (!is_sdr) {
