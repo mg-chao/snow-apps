@@ -17,6 +17,52 @@ use snow_stitch_images::{
 };
 
 const DEFAULT_MAX_OUTPUT_HEIGHT: u32 = 2_160 * 32;
+
+#[cfg(feature = "perf-instrumentation")]
+#[unsafe(no_mangle)]
+pub extern "C" fn snow_stitch_perf_reset_thread() {
+    snow_stitch_images::perf::reset();
+}
+
+#[cfg(feature = "perf-instrumentation")]
+#[unsafe(no_mangle)]
+/// # Safety
+/// `output` must be null or point to writable storage of `output_size` bytes.
+pub unsafe extern "C" fn snow_stitch_perf_read_thread(
+    output: *mut snow_stitch_images::perf::Snapshot,
+    output_size: usize,
+) -> u8 {
+    if output.is_null() || output_size != size_of::<snow_stitch_images::perf::Snapshot>() {
+        return 0;
+    }
+    unsafe { output.write(snow_stitch_images::perf::snapshot()) };
+    1
+}
+
+#[cfg(all(test, feature = "perf-instrumentation"))]
+mod perf_ffi_tests {
+    use super::*;
+    use snow_stitch_images::perf::{Scope, Snapshot, Stage};
+
+    #[test]
+    fn snapshot_checks_size_and_preserves_counters() {
+        snow_stitch_perf_reset_thread();
+        Scope::new(Stage::FrameFreeze).finish();
+        let mut output = Snapshot::default();
+        assert_eq!(
+            unsafe { snow_stitch_perf_read_thread(ptr::null_mut(), size_of::<Snapshot>()) },
+            0
+        );
+        assert_eq!(unsafe { snow_stitch_perf_read_thread(&mut output, 1) }, 0);
+        assert_eq!(output, Snapshot::default());
+        assert_eq!(
+            unsafe { snow_stitch_perf_read_thread(&mut output, size_of::<Snapshot>()) },
+            1
+        );
+        assert_eq!(output.calls[Stage::FrameFreeze as usize], 1);
+        assert_eq!(output, snow_stitch_images::perf::snapshot());
+    }
+}
 const DEFAULT_MAX_OUTPUT_PIXELS: u64 = 3_840 * 2_160 * 32;
 const DEFAULT_MIN_OVERLAP_ROWS: u32 = 48;
 const DEFAULT_MIN_OVERLAP_RATIO: f32 = 0.15;
@@ -123,6 +169,8 @@ impl RgbaFrameBuffer {
     }
 
     fn freeze(mut self) -> Result<Frame, StitchError> {
+        let _perf =
+            snow_stitch_images::perf::Scope::new(snow_stitch_images::perf::Stage::FrameFreeze);
         let data = self
             .data
             .take()

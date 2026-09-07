@@ -14,6 +14,35 @@ typedef struct SnowStitchSnapshotImpl SnowStitchSnapshot;
 typedef struct SnowStitchOwnedImageImpl SnowStitchOwnedImage;
 typedef struct SnowStitchExportTaskImpl SnowStitchExportTask;
 
+#if defined(SNOW_STITCH_PERF_INSTRUMENTATION)
+typedef enum SnowStitchPerfStage {
+    SNOW_STITCH_PERF_FRAME_FREEZE = 0,
+    SNOW_STITCH_PERF_DUPLICATE_CHECK = 1,
+    SNOW_STITCH_PERF_REFERENCE_PREPARATION = 2,
+    SNOW_STITCH_PERF_GRAYSCALE = 3,
+    SNOW_STITCH_PERF_SIMILARITY_MAPS = 4,
+    SNOW_STITCH_PERF_FEATURE_EXTRACTION = 5,
+    SNOW_STITCH_PERF_DESCRIPTOR_MATCHING = 6,
+    SNOW_STITCH_PERF_CANDIDATE_SCORING = 7,
+    SNOW_STITCH_PERF_REFINEMENT = 8,
+    SNOW_STITCH_PERF_REGION_UPDATE = 9,
+    SNOW_STITCH_PERF_CANVAS_COMPOSITION = 10,
+    SNOW_STITCH_PERF_REFERENCE_SYNTHESIS = 11,
+    SNOW_STITCH_PERF_PREVIEW_SCALING = 12,
+    SNOW_STITCH_PERF_PUSH_TOTAL = 13,
+    SNOW_STITCH_PERF_INITIALIZATION = 14,
+    SNOW_STITCH_PERF_RESERVED = 15,
+    SNOW_STITCH_PERF_STAGE_COUNT = 16,
+} SnowStitchPerfStage;
+typedef struct SnowStitchPerfSnapshot {
+    uint64_t elapsed_ns[SNOW_STITCH_PERF_STAGE_COUNT];
+    uint64_t calls[SNOW_STITCH_PERF_STAGE_COUNT];
+} SnowStitchPerfSnapshot;
+/* Reset/read the calling thread only. Read preserves the counters. */
+void snow_stitch_perf_reset_thread(void);
+uint8_t snow_stitch_perf_read_thread(SnowStitchPerfSnapshot* output, size_t output_size);
+#endif
+
 typedef enum SnowStitchFrameEvent {
     SNOW_STITCH_FRAME_EVENT_INITIAL = 0,
     SNOW_STITCH_FRAME_EVENT_EXTENDED_TOP = 1,

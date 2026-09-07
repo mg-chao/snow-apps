@@ -272,6 +272,7 @@ impl Frame {
     }
 
     pub fn visible_pixels_equal(&self, other: &Self) -> bool {
+        let _perf = crate::perf::Scope::new(crate::perf::Stage::DuplicateCheck);
         if self.geometry() != other.geometry() {
             return false;
         }
@@ -286,6 +287,7 @@ impl Frame {
     }
 
     pub(crate) fn visible_interior_pixels_equal(&self, other: &Self) -> bool {
+        let _perf = crate::perf::Scope::new(crate::perf::Stage::DuplicateCheck);
         if self.geometry() != other.geometry() || self.width < 3 || self.height < 3 {
             return false;
         }

@@ -11,3 +11,6 @@ crate-type = ["staticlib", "rlib"]
 png.workspace = true
 snow-stitch-images = { path = "../snow-stitch-images", default-features = false }
 tempfile.workspace = true
+
+[features]
+perf-instrumentation = ["snow-stitch-images/perf-instrumentation"]

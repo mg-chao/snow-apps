@@ -19,6 +19,7 @@ option(SNOW_SHOT_BUILD_TESTS "Build Snow Shot test executables." OFF)
 option(SNOW_SHOT_BUILD_IMAGE_CODEC_SMOKE_TEST
     "Build the Snow Shot image-codec smoke test without the full QtTest suite." OFF)
 option(SNOW_SHOT_BUILD_BENCHMARKS "Build opt-in native Snow Shot benchmarks." OFF)
+option(SNOW_SHOT_SCROLLING_PERF_DETAIL "Compile detailed scrolling C++ and Rust timings." OFF)
 option(SNOW_SHOT_RELEASE_STATIC "Prefer static Snow Shot release linkage." OFF)
 option(SNOW_SHOT_QT_STATIC "Link Snow Shot against a static Qt build." OFF)
 unset(SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE CACHE)
@@ -142,8 +143,13 @@ if(WIN32)
 endif()
 
 if(NOT TARGET snow_capture_c)
+    set(_snow_scrolling_perf_features)
+    if(SNOW_SHOT_SCROLLING_PERF_DETAIL)
+        list(APPEND _snow_scrolling_perf_features snow-stitch-images-c/perf-instrumentation)
+    endif()
     snow_add_rust_static_libraries(snow_shot_rust_ffi
         MANIFEST_DIR "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
+        FEATURES ${_snow_scrolling_perf_features}
         TARGETS
             snow_capture_c
             snow_ui_selector_c
@@ -872,6 +878,8 @@ set(PROJECT_CXX_SOURCES
     src/presentation/capture/adaptivescrollingcapturecadence.h
     src/presentation/capture/latestbridgemailbox.h
     src/presentation/capture/screenshotscrollingcapturecontroller.cpp
+    src/presentation/capture/screenshotscrollingpipeline.cpp
+    src/presentation/capture/screenshotscrollingnativesource.cpp
     src/presentation/capture/screenshotscrollingthumbnailwidget.cpp
     src/presentation/services/screenshotcanvascolorsampler.cpp
     src/presentation/services/screenshotcanvascolorsamplerwindow.cpp
@@ -2074,6 +2082,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         ant_design_qt
         Qt6::Widgets
     )
+    snow_shot_import_offscreen_platform(snow-shot-scrolling-preview-benchmark)
 
     add_executable(snow-shot-scrolling-result-async-benchmark
         tests/scrolling_result_async_benchmark.cpp
@@ -3592,6 +3601,55 @@ if(SNOW_SHOT_BUILD_TESTS)
     unset(_SNOW_SHOT_SAVED_RUNTIME_OUTPUT_DIRECTORY)
     unset(_SNOW_SHOT_RUNTIME_OUTPUT_DIRECTORY_WAS_DEFINED)
 
+endif()
+
+function(snow_shot_configure_scrolling_replay_target target)
+    target_sources(${target} PRIVATE
+        tests/scrolling_image_replay.cpp
+        src/presentation/capture/screenshotscrollingpipeline.cpp
+        src/presentation/capture/screenshotscrollingthumbnailwidget.cpp
+    )
+    target_include_directories(${target} PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/image"
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-stitch-images-c/include"
+    )
+    target_compile_definitions(${target} PRIVATE
+        SNOW_SHOT_BENCH_INTERNALS=1
+        SNOW_SHOT_SCROLLING_PERF_INSTRUMENTATION=1
+        SNOW_SCROLLING_DEFAULT_IMAGE="${CMAKE_CURRENT_SOURCE_DIR}/test-imgs/scrollscreenshot-test.png"
+        SNOW_SCROLLING_DEFAULT_OUTPUT="${CMAKE_BINARY_DIR}/scrolling-image-performance"
+        SNOW_SCROLLING_BUILD_CONFIG="$<CONFIG>"
+    )
+    if(SNOW_SHOT_SCROLLING_PERF_DETAIL)
+        target_compile_definitions(${target} PRIVATE
+            SNOW_SHOT_SCROLLING_PERF_DETAIL=1 SNOW_STITCH_PERF_INSTRUMENTATION=1)
+    endif()
+    target_link_libraries(${target} PRIVATE
+        snow_stitch_images_c snow_shot_image_codec ant_design_qt Qt6::Widgets)
+    if(WIN32)
+        target_link_libraries(${target} PRIVATE Ntdll Ws2_32)
+        target_link_libraries(${target} PRIVATE PkgConfig::SNOW_SHOT_FFMPEG)
+    endif()
+    snow_shot_import_offscreen_platform(${target})
+    set_target_properties(${target} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test-bin")
+endfunction()
+
+if(SNOW_SHOT_BUILD_BENCHMARKS)
+    add_executable(snow-shot-scrolling-image-performance-benchmark
+        tests/scrolling_image_performance_benchmark.cpp)
+    snow_shot_configure_scrolling_replay_target(snow-shot-scrolling-image-performance-benchmark)
+endif()
+
+if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-scrolling-image-replay-tests tests/scrolling_image_replay_tests.cpp)
+    snow_shot_configure_scrolling_replay_target(snow-shot-scrolling-image-replay-tests)
+    add_test(NAME snow-shot-scrolling-image-replay-tests COMMAND snow-shot-scrolling-image-replay-tests)
+    set_tests_properties(snow-shot-scrolling-image-replay-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 endif()
 
 if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)

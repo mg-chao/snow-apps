@@ -4,6 +4,7 @@ mod error;
 mod estimator;
 mod frame;
 mod orb;
+pub mod perf;
 mod region;
 mod state;
 mod stitcher;

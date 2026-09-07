@@ -380,6 +380,7 @@ fn pure_rust_feature_evidence(
     parallel_work: bool,
     pyramid_plan: &crate::orb::PyramidPlan,
 ) -> FeatureEvidence {
+    let feature_perf = crate::perf::Scope::new(crate::perf::Stage::FeatureExtraction);
     let (reference_features, incoming_features) = if parallel_work {
         rayon::join(
             || detect_balanced_rust(reference, layout, regions, max_features, pyramid_plan),
@@ -391,6 +392,8 @@ fn pure_rust_feature_evidence(
             detect_balanced_rust(incoming, layout, regions, max_features, pyramid_plan),
         )
     };
+    feature_perf.finish();
+    let _perf = crate::perf::Scope::new(crate::perf::Stage::DescriptorMatching);
     let observations = mutual_observations_rust(
         &reference_features,
         &incoming_features,
@@ -822,14 +825,18 @@ impl VerticalMotionEstimator {
             return Ok(MotionEstimate::no_motion(1.0, diagnostics));
         }
 
+        let grayscale_perf = crate::perf::Scope::new(crate::perf::Stage::Grayscale);
         let reference_gray = GrayImage::from_frame(motion_reference)?;
         let previous_gray = GrayImage::from_frame(previous_raw)?;
         let incoming_gray = GrayImage::from_frame(incoming)?;
+        grayscale_perf.finish();
+        let similarity_perf = crate::perf::Scope::new(crate::perf::Stage::SimilarityMaps);
         let direct =
             SimilarityMap::between(&previous_gray, &incoming_gray, self.layout, self.axis, 0);
         let zero_alignment =
             SimilarityMap::between(&reference_gray, &incoming_gray, self.layout, self.axis, 0);
         let direct_similarity = direct.mean();
+        similarity_perf.finish();
 
         let primary_extent = self
             .axis
@@ -864,6 +871,7 @@ impl VerticalMotionEstimator {
             return Ok(self.rejected_estimate(direct_similarity < 0.6, 0.0, diagnostics));
         }
 
+        let scoring_perf = crate::perf::Scope::new(crate::perf::Stage::CandidateScoring);
         let candidates = candidate_offsets(&observations, self.axis, maximum_shift);
         if candidates.is_empty() {
             diagnostics.stage = MotionStage::NoCandidates;
@@ -905,8 +913,10 @@ impl VerticalMotionEstimator {
                 .then_with(|| left.diagnostics.offset.cmp(&right.diagnostics.offset))
         });
 
+        scoring_perf.finish();
         let strongest_mode = scored[0].diagnostics.offset;
         if strongest_mode != 0 {
+            let _perf = crate::perf::Scope::new(crate::perf::Stage::Refinement);
             let (refined_offset, precise_error) = (strongest_mode - INLIER_TOLERANCE
                 ..=strongest_mode + INLIER_TOLERANCE)
                 .into_par_iter()
@@ -1001,8 +1011,10 @@ impl VerticalMotionEstimator {
         if accepted {
             let selected_offset = best.offset;
             let selected_map = scored.remove(0).compensated;
+            let region_perf = crate::perf::Scope::new(crate::perf::Stage::RegionUpdate);
             self.regions
                 .update(&direct, &selected_map, self.options.temporal_learning_rate);
+            region_perf.finish();
             self.scene_cut_streak = 0;
             diagnostics.stage = MotionStage::Selected;
             diagnostics.regions = self.regions.summary();
