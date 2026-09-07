@@ -33,6 +33,7 @@ struct DirectCaptureRequest {
     QString imageFormat;
     QString filenameFormat;
     bool restoreOriginalScreenColors = false;
+    bool shutterSoundNotification = true;
 };
 
 struct DirectCaptureFrame {

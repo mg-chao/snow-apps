@@ -339,6 +339,14 @@ bool GlobalShortcutSettings::setDisableOnFocusedFullscreenWindow(bool disabled) 
                             disabled);
 }
 
+bool ScreenshotSettings::shutterSoundNotification() const {
+    return cache().value(QStringLiteral("screenshot/shutter_sound_notification")).toBool();
+}
+
+bool ScreenshotSettings::setShutterSoundNotification(bool enabled) const {
+    return cache().setValue(QStringLiteral("screenshot/shutter_sound_notification"), enabled);
+}
+
 bool ScreenshotSettings::captureCursor() const {
     return cache().value(QStringLiteral("screenshot/capture_cursor")).toBool();
 }
