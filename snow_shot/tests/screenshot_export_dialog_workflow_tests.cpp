@@ -301,7 +301,8 @@ void stateRules(const QTemporaryDir& temp) {
     state.setDimension(false, 123);
     require(state.output.size == QSize(320, 123), "unlocked height must be independent");
     state.filename = QStringLiteral("capture");
-    for (auto format : {Format::Png, Format::Jpeg, Format::Webp, Format::Jxl, Format::Avif}) {
+    for (auto format :
+         {Format::Png, Format::Jpeg, Format::Bmp, Format::Webp, Format::Jxl, Format::Avif}) {
         state.output.format = format;
         state.output.quality = 100;
         const bool supportsLossless =
@@ -317,6 +318,8 @@ void stateRules(const QTemporaryDir& temp) {
                                                     ScreenshotImageFileService::extension(format)),
                 "output must preserve the base name and append the selected format extension");
     }
+    require(pipeline::normalizedOptions({QSize(320, 123), Format::Bmp, 75}).quality == 100,
+            "BMP quality must normalize out because the encoder has no quality setting");
     state.output.size = QSize(0, 100);
     require(!state.validationError().isEmpty(), "zero dimensions must fail");
     state.output.format = Format::Webp;
@@ -347,8 +350,8 @@ void encodingAndFullResolutionDisplay() {
                                                   cancellation, &error);
             require(source.preview == original,
                     "original comparison pixels changed during source preparation");
-            for (auto format :
-                 {Format::Png, Format::Jpeg, Format::Webp, Format::Jxl, Format::Avif}) {
+            for (auto format : {Format::Png, Format::Jpeg, Format::Bmp, Format::Webp, Format::Jxl,
+                                Format::Avif}) {
                 for (int quality : {100, 72}) {
                     const ScreenshotSaveExportOptions options{
                         quality == 100 ? QSize(80, 50) : QSize(96, 32), format, quality};
@@ -397,8 +400,8 @@ void encodingAndFullResolutionDisplay() {
                                   cancellation, &error);
             require(large.rows.size == QSize(128, 6000) && large.preview.height() == 2048,
                     "large source must retain full dimensions and a bounded preview");
-            for (auto format :
-                 {Format::Png, Format::Jpeg, Format::Webp, Format::Jxl, Format::Avif}) {
+            for (auto format : {Format::Png, Format::Jpeg, Format::Bmp, Format::Webp, Format::Jxl,
+                                Format::Avif}) {
                 const auto output =
                     pipeline::render(large, {QSize(48, 2304), format, 72}, cancellation, &error);
                 require(output != nullptr, "large output encoding failed");
@@ -955,8 +958,8 @@ void previewAndSave(QWidget& owner, const QTemporaryDir& temp) {
     require(!filename->text().isEmpty() && !filename->text().endsWith(QStringLiteral(".png")),
             "filename input must initially omit the image format extension");
     filename->setText(QStringLiteral("capture.v2"));
-    for (const auto& key : {QStringLiteral("jpeg"), QStringLiteral("webp"), QStringLiteral("jxl"),
-                            QStringLiteral("avif"), QStringLiteral("png")}) {
+    for (const auto& key : {QStringLiteral("jpeg"), QStringLiteral("bmp"), QStringLiteral("webp"),
+                            QStringLiteral("jxl"), QStringLiteral("avif"), QStringLiteral("png")}) {
         format->setCurrentValue(key);
         require(filename->text() == QStringLiteral("capture.v2"),
                 "changing formats must leave the filename input unchanged");
@@ -1012,6 +1015,9 @@ void previewAndSave(QWidget& owner, const QTemporaryDir& temp) {
         modal->setContentWidget(content);
     }
     require(!quality->isEnabled(), "PNG must disable quality");
+    format->setCurrentValue(QStringLiteral("bmp"));
+    require(format->currentValue() == QStringLiteral("bmp") && !quality->isEnabled(),
+            "BMP must be selectable and disable quality");
     for (const auto& key :
          {QStringLiteral("webp"), QStringLiteral("avif"), QStringLiteral("jxl")}) {
         format->setCurrentValue(key);

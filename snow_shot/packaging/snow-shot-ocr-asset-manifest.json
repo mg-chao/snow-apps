@@ -1,19 +1,20 @@
 {
-  "schema": 1,
+  "schema": 2,
+  "default_model": "small",
   "runtime": {
-    "version": "1.0.2",
+    "version": "1.0.3",
     "platform": "windows-x64",
     "archive": {
-      "name": "snow-ocr-runtime-1.0.2-windows-x64.zip",
-      "size": 17231876,
-      "sha256": "ac732f906f70894883218a4c848e9cfa949294af525e98c7bfe53212768d15d8",
-      "url": "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/runtime/1.0.2/windows-x64/snow-ocr-runtime-1.0.2-windows-x64.zip"
+      "name": "snow-ocr-runtime-1.0.3-windows-x64.zip",
+      "size": 17235571,
+      "sha256": "e26a0c42d670e288d2f1107095a2657dab639a163b5b493f35bf2b8b7c59da59",
+      "url": "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/runtime/1.0.3/windows-x64/snow-ocr-runtime-1.0.3-windows-x64.zip"
     },
     "files": [
       {
-        "name": "snow-ocr-process-1.0.2-windows-x64.exe",
-        "size": 19039232,
-        "sha256": "576b9a7d22e9666ef6c5a2c8cd62d649b1a76f38143ca9652d18ffc42f337d79"
+        "name": "snow-ocr-process-1.0.3-windows-x64.exe",
+        "size": 19042304,
+        "sha256": "3d6794f6e876b971939502a9de24cb3a67b37751fff12977fdc66a012d279629"
       },
       {
         "name": "DirectML.dll",
@@ -23,31 +24,91 @@
       {
         "name": "runtime-manifest.json",
         "size": 447,
-        "sha256": "091b1db3c133c5cb90d583d297c6194a8076f048c46392caac09a99f78dcf4cb"
+        "sha256": "8b64afb44a4281bb3af64bfb7be4d9fdc42db53dbd7d62489885751e3c5db34b"
       }
     ]
   },
-  "model": {
-    "id": "ppocrv6-small-463ea9f",
-    "files": [
-      {
-        "name": "PP-OCRv6_det_small.onnx",
-        "size": 9929594,
-        "sha256": "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f",
-        "url": "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/PP-OCRv6/small/PP-OCRv6_det_small.onnx"
-      },
-      {
-        "name": "PP-OCRv6_rec_small.onnx",
-        "size": 21234383,
-        "sha256": "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884",
-        "url": "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/PP-OCRv6/small/PP-OCRv6_rec_small.onnx"
-      },
-      {
-        "name": "ppocrv6_dict.txt",
-        "size": 74947,
-        "sha256": "b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d",
-        "url": "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/PP-OCRv6/small/ppocrv6_dict.txt"
-      }
-    ]
-  }
+  "models": [
+    {
+      "type": "extra_small",
+      "id": "ppocrv6-tiny-cd609a1",
+      "detector": "PP-OCRv6_det_tiny.onnx",
+      "recognizer": "PP-OCRv6_rec_tiny.onnx",
+      "dictionary": "ppocrv6_tiny_dict.txt",
+      "files": [
+        {
+          "name": "PP-OCRv6_det_tiny.onnx",
+          "size": 1829618,
+          "sha256": "f42c0fbd294d95eac1a550e131b277dac97462c8025fa4b6c3cec1b7894bd3d5",
+          "url": "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/PP-OCRv6/tiny/PP-OCRv6_det_tiny.onnx"
+        },
+        {
+          "name": "PP-OCRv6_rec_tiny.onnx",
+          "size": 4489813,
+          "sha256": "e16e242de5937ad92609223f19bc2aff3727ee40b095f996907c24749bad251b",
+          "url": "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/PP-OCRv6/tiny/PP-OCRv6_rec_tiny.onnx"
+        },
+        {
+          "name": "ppocrv6_tiny_dict.txt",
+          "size": 27156,
+          "sha256": "c5cbe34ef40c29c4df07ed012bf96569cb69a2d2a01a07027e9f13cb832bd9cd",
+          "url": "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/PP-OCRv6/tiny/ppocrv6_tiny_dict.txt"
+        }
+      ]
+    },
+    {
+      "type": "small",
+      "id": "ppocrv6-small-463ea9f",
+      "detector": "PP-OCRv6_det_small.onnx",
+      "recognizer": "PP-OCRv6_rec_small.onnx",
+      "dictionary": "ppocrv6_dict.txt",
+      "files": [
+        {
+          "name": "PP-OCRv6_det_small.onnx",
+          "size": 9929594,
+          "sha256": "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f",
+          "url": "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/PP-OCRv6/small/PP-OCRv6_det_small.onnx"
+        },
+        {
+          "name": "PP-OCRv6_rec_small.onnx",
+          "size": 21234383,
+          "sha256": "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884",
+          "url": "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/PP-OCRv6/small/PP-OCRv6_rec_small.onnx"
+        },
+        {
+          "name": "ppocrv6_dict.txt",
+          "size": 74947,
+          "sha256": "b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d",
+          "url": "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/PP-OCRv6/small/ppocrv6_dict.txt"
+        }
+      ]
+    },
+    {
+      "type": "medium",
+      "id": "ppocrv6-medium-f5063c6",
+      "detector": "PP-OCRv6_det_medium.onnx",
+      "recognizer": "PP-OCRv6_rec_medium.onnx",
+      "dictionary": "ppocrv6_dict.txt",
+      "files": [
+        {
+          "name": "PP-OCRv6_det_medium.onnx",
+          "size": 62119454,
+          "sha256": "92078b7355007ccfffcd4c8cd441a3afd4538904d06881b29a155e1e679907c2",
+          "url": "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/PP-OCRv6/medium/PP-OCRv6_det_medium.onnx"
+        },
+        {
+          "name": "PP-OCRv6_rec_medium.onnx",
+          "size": 76629984,
+          "sha256": "eef444829dbbe18d7fea59a3f6eb75647518d2b3a9568d27c92e42940204894b",
+          "url": "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/PP-OCRv6/medium/PP-OCRv6_rec_medium.onnx"
+        },
+        {
+          "name": "ppocrv6_dict.txt",
+          "size": 74947,
+          "sha256": "b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d",
+          "url": "https://www.modelscope.cn/models/mgchao/SnowShotOCR/resolve/master/PP-OCRv6/medium/ppocrv6_dict.txt"
+        }
+      ]
+    }
+  ]
 }

@@ -2,6 +2,8 @@
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotguidelinerendering.h"
 #include "snow_shot/presentation/styles/thememanager.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
 
 #include <QFont>
 #include <QFontMetrics>
@@ -146,6 +148,14 @@ QPainterPath topRoundedRectPath(const QRectF& rect, qreal radius) {
 } // namespace
 
 ScreenshotColorPickerWidget::ScreenshotColorPickerWidget(QWidget* parent) : QWidget(parent) {
+    if (snow_shot::storage::ApplicationStorage::instance().isInitialized()) {
+        const QString format = snow_shot::storage::ScreenshotUiSettings().colorPickerFormat();
+        if (format == QStringLiteral("rgb")) {
+            m_colorFormat = ColorFormat::Rgb;
+        } else if (format == QStringLiteral("hsl")) {
+            m_colorFormat = ColorFormat::Hsl;
+        }
+    }
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
     setAutoFillBackground(false);
@@ -182,7 +192,6 @@ void ScreenshotColorPickerWidget::resetForNewCapture() {
     m_currentPhysicalPoint = QPoint();
     m_currentColor = QColor();
     m_hasCurrentColor = false;
-    m_colorFormat = ColorFormat::Hex;
     hidePicker();
 }
 
@@ -251,17 +260,24 @@ void ScreenshotColorPickerWidget::setCenterGuideLineColor(const QColor& color) {
 }
 
 void ScreenshotColorPickerWidget::cycleColorFormat() {
+    QString format;
     switch (m_colorFormat) {
     case ColorFormat::Hex:
         m_colorFormat = ColorFormat::Rgb;
+        format = QStringLiteral("rgb");
         break;
     case ColorFormat::Rgb:
         m_colorFormat = ColorFormat::Hsl;
+        format = QStringLiteral("hsl");
         break;
     case ColorFormat::Hsl:
     default:
         m_colorFormat = ColorFormat::Hex;
+        format = QStringLiteral("hex");
         break;
+    }
+    if (snow_shot::storage::ApplicationStorage::instance().isInitialized()) {
+        static_cast<void>(snow_shot::storage::ScreenshotUiSettings().setColorPickerFormat(format));
     }
     update();
 }

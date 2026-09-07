@@ -150,6 +150,11 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
     }
     case SettingsSelectBinding::Proxy:
         return storage::NetworkSettings().proxy();
+    case SettingsSelectBinding::OcrModelType:
+        return storage::ApplicationStorage::instance()
+            .configuration()
+            .value(QStringLiteral("text_recognition/model_type"))
+            .toString();
     case SettingsSelectBinding::ScreenshotApiMode:
         return storage::ScreenshotSettings().apiMode();
     case SettingsSelectBinding::WindowElementApi:
@@ -241,6 +246,9 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
     }
     case SettingsSelectBinding::Proxy:
         return storage::NetworkSettings().setProxy(value.toString());
+    case SettingsSelectBinding::OcrModelType:
+        return storage::ApplicationStorage::instance().configuration().setValue(
+            QStringLiteral("text_recognition/model_type"), value.toString());
     case SettingsSelectBinding::ScreenshotApiMode:
         return storage::ScreenshotSettings().setApiMode(value.toString());
     case SettingsSelectBinding::WindowElementApi:
@@ -1132,10 +1140,14 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
     }
     case SettingsSectionReset::TextRecognition: {
         auto& storage = storage::ApplicationStorage::instance();
-        const bool accepted = storage.configuration().setValue(
-            QStringLiteral("text_recognition/direct_ml_acceleration"),
-            storage::ConfigurationSchema::defaultValue(
-                QStringLiteral("text_recognition/direct_ml_acceleration")));
+        const bool accepted = storage.configuration().setValues({
+            {QStringLiteral("text_recognition/model_type"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("text_recognition/model_type"))},
+            {QStringLiteral("text_recognition/direct_ml_acceleration"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("text_recognition/direct_ml_acceleration"))},
+        });
         if (accepted) {
             emit synchronized();
         }

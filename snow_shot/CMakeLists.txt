@@ -1990,6 +1990,28 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_executable(snow-shot-screenshot-color-picker-tests
+        tests/screenshot_color_picker_tests.cpp
+        include/snow_shot/presentation/styles/thememanager.h
+        src/presentation/services/screenshotcolorpickerwidget.cpp
+        src/presentation/core/screenshotgeometry.cpp
+        src/presentation/styles/thememanager.cpp
+        src/presentation/styles/themecolorscheme.cpp
+    )
+    target_include_directories(snow-shot-screenshot-color-picker-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+    target_link_libraries(snow-shot-screenshot-color-picker-tests PRIVATE
+        snow_shot_storage snow_draw_engine_qt_canvas ant_design_qt Qt6::Widgets
+    )
+    snow_shot_import_offscreen_platform(snow-shot-screenshot-color-picker-tests)
+    add_test(NAME snow-shot-screenshot-color-picker-tests
+        COMMAND snow-shot-screenshot-color-picker-tests)
+    set_tests_properties(snow-shot-screenshot-color-picker-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
     add_executable(snow-shot-screenshot-history-tests
         tests/screenshot_history_tests.cpp
         src/presentation/capture/directcapturehistory.cpp
@@ -2711,9 +2733,14 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-screenshot-action-toolbar-layout-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --action-toolbar-layout-only
     )
+    add_test(
+        NAME snow-shot-screen-recording-toolbar-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --recording-controls-only
+    )
     set_tests_properties(
         snow-shot-screenshot-tool-palette-tests
         snow-shot-screenshot-action-toolbar-layout-tests
+        snow-shot-screen-recording-toolbar-tests
         PROPERTIES
         ENVIRONMENT
             "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"

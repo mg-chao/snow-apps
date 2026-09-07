@@ -1,5 +1,5 @@
 # Stages the verified Snow Shot OCR asset payload (standalone OCR runtime plus
-# PP-OCRv6 models) into a development build output directory.
+# the PP-OCRv6 Small model) into a development build output directory.
 #
 # Packaged installers ship either this exact payload (offline variant) or just
 # the trusted manifest (online variant). Development builds ship nothing, so
@@ -55,10 +55,35 @@ _snow_ocr_manifest_field(_archive_name runtime archive name)
 _snow_ocr_manifest_field(_archive_size runtime archive size)
 _snow_ocr_manifest_field(_archive_sha256 runtime archive sha256)
 _snow_ocr_manifest_field(_archive_url runtime archive url)
-_snow_ocr_manifest_field(_model_id model id)
+_snow_ocr_manifest_field(_schema schema)
+_snow_ocr_manifest_field(_default_model default_model)
+if(NOT _schema EQUAL 2 OR NOT _default_model STREQUAL "small")
+    message(FATAL_ERROR
+        "The checked-in OCR asset manifest must use schema 2 with Small as its default model.")
+endif()
+
+string(JSON _model_count LENGTH "${_manifest}" models)
+if(NOT _model_count EQUAL 3)
+    message(FATAL_ERROR
+        "The checked-in OCR asset manifest must describe exactly 3 models.")
+endif()
+set(_small_model_index "")
+foreach(_index RANGE 0 2)
+    _snow_ocr_manifest_field(_model_type models ${_index} type)
+    if(_model_type STREQUAL "small")
+        if(NOT _small_model_index STREQUAL "")
+            message(FATAL_ERROR "The checked-in OCR asset manifest has duplicate Small models.")
+        endif()
+        set(_small_model_index ${_index})
+    endif()
+endforeach()
+if(_small_model_index STREQUAL "")
+    message(FATAL_ERROR "The checked-in OCR asset manifest does not describe the Small model.")
+endif()
+_snow_ocr_manifest_field(_model_id models ${_small_model_index} id)
 
 string(JSON _runtime_file_count LENGTH "${_manifest}" runtime files)
-string(JSON _model_file_count LENGTH "${_manifest}" model files)
+string(JSON _model_file_count LENGTH "${_manifest}" models ${_small_model_index} files)
 if(NOT _runtime_file_count EQUAL 3 OR NOT _model_file_count EQUAL 3)
     message(FATAL_ERROR
         "The checked-in OCR asset manifest must describe 3 runtime files and 3 "
@@ -91,7 +116,7 @@ function(_snow_ocr_manifest_files _out_prefix)
 endfunction()
 
 _snow_ocr_manifest_files(_runtime_file runtime files)
-_snow_ocr_manifest_files(_model_file model files)
+_snow_ocr_manifest_files(_model_file models ${_small_model_index} files)
 
 # _snow_ocr_file_valid(<path> <size> <sha256> <out>): size pre-check, then hash.
 function(_snow_ocr_file_valid _path _size _sha256 _out)
@@ -152,6 +177,28 @@ endfunction()
 set(_runtime_directory
     "${SNOW_OCR_DESTINATION}/runtimes/${_runtime_version}/${_runtime_platform}")
 set(_model_directory "${SNOW_OCR_DESTINATION}/models/${_model_id}")
+
+# Development output mirrors the offline installer: one runtime and Small only.
+file(GLOB _staged_model_directories LIST_DIRECTORIES TRUE
+    "${SNOW_OCR_DESTINATION}/models/*")
+foreach(_directory IN LISTS _staged_model_directories)
+    if(IS_DIRECTORY "${_directory}")
+        get_filename_component(_name "${_directory}" NAME)
+        if(NOT _name STREQUAL _model_id)
+            file(REMOVE_RECURSE "${_directory}")
+        endif()
+    endif()
+endforeach()
+file(GLOB _staged_runtime_versions LIST_DIRECTORIES TRUE
+    "${SNOW_OCR_DESTINATION}/runtimes/*")
+foreach(_directory IN LISTS _staged_runtime_versions)
+    if(IS_DIRECTORY "${_directory}")
+        get_filename_component(_name "${_directory}" NAME)
+        if(NOT _name STREQUAL _runtime_version)
+            file(REMOVE_RECURSE "${_directory}")
+        endif()
+    endif()
+endforeach()
 
 # The runtime payload travels as a single hash-pinned ZIP; the models are
 # per-file downloads shared with the release packaging cache layout.

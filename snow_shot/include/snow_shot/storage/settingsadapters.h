@@ -209,6 +209,8 @@ class ScreenshotUiSettings final {
     bool setSelectionTransitionAnimationEnabled(bool enabled) const;
     [[nodiscard]] QString colorPickerDisplayMode() const;
     bool setColorPickerDisplayMode(const QString& mode) const;
+    [[nodiscard]] QString colorPickerFormat() const;
+    bool setColorPickerFormat(const QString& format) const;
     [[nodiscard]] QColor selectionMaskColor() const;
     bool setSelectionMaskColor(const QColor& color) const;
     [[nodiscard]] int shortcutHintOpacity() const;

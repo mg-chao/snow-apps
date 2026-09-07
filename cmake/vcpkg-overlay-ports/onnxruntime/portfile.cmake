@@ -155,6 +155,13 @@ if(VCPKG_TARGET_IS_WINDOWS)
     list(APPEND SNOW_ORT_DEBUG_OPTIONS
         "-DCMAKE_MSVC_RUNTIME_LIBRARY=${SNOW_ORT_MSVC_RUNTIME_DEBUG}")
 
+    if(VCPKG_LIBRARY_LINKAGE STREQUAL "dynamic")
+        # The reduced DirectML DLL still exceeds MSVC's final PDB capacity in
+        # Debug builds. Preserve Debug objects but omit the DLL's link PDB.
+        list(APPEND SNOW_ORT_DEBUG_OPTIONS
+            "-DCMAKE_SHARED_LINKER_FLAGS_DEBUG=/PDB:NONE")
+    endif()
+
     if(VCPKG_TARGET_ARCHITECTURE STREQUAL "x64")
         # MLAS includes macamd64.inc from the Windows SDK. MASM does not inherit
         # CMAKE_C/CXX_FLAGS, so provide its SDK include directory explicitly.

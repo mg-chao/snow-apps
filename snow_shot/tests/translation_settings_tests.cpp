@@ -45,6 +45,20 @@ int main(int argc, char** argv) {
         require(backend.resetSection(settings::SettingsSectionReset::Translation) &&
                     backend.switchValue(binding) && translation.configuration() == languages,
                 "reset Translation should restore only the display toggle");
+
+        require(backend.applySelectValue(settings::SettingsSelectBinding::OcrModelType,
+                                         QStringLiteral("medium")) &&
+                    backend.selectValue(settings::SettingsSelectBinding::OcrModelType).toString() ==
+                        QStringLiteral("medium") &&
+                    applicationStorage.configuration().setValue(
+                        QStringLiteral("text_recognition/direct_ml_acceleration"), false) &&
+                    backend.resetSection(settings::SettingsSectionReset::TextRecognition) &&
+                    backend.selectValue(settings::SettingsSelectBinding::OcrModelType).toString() ==
+                        QStringLiteral("small") &&
+                    applicationStorage.configuration()
+                        .value(QStringLiteral("text_recognition/direct_ml_acceleration"))
+                        .toBool(),
+                "reset Text Recognition should restore Small and the DirectML default together");
     }
     applicationStorage.shutdown();
     return 0;

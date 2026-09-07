@@ -1301,6 +1301,56 @@ void completionGesturesRequireAConfirmedSelectionAndSupportedTool() {
             "completion gestures must ignore Select and scrolling screenshot modes");
 }
 
+void colorCopyEndsCaptureOnlyAfterSuccessfulCopy() {
+    ScreenshotCaptureState captureState;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    interaction.confirmSelection();
+    QWidget shortcutWindow;
+    snow_shot::presentation::WindowShortcutManager shortcutManager;
+    shortcutManager.addScopeWindow(&shortcutWindow);
+
+    bool colorAvailable = false;
+    int copyCalls = 0;
+    int cancelCalls = 0;
+    ScreenshotOverlayInputActions actions;
+    actions.copyColorPickerColorToClipboard = [&]() {
+        if (interaction.inactive()) {
+            return false;
+        }
+        ++copyCalls;
+        return colorAvailable;
+    };
+    actions.cancelCapture = [&]() {
+        require(colorAvailable && copyCalls > cancelCalls,
+                "capture must close only after a successful color copy");
+        ++cancelCalls;
+        interaction.reset();
+    };
+    ScreenshotOverlayInputHandler handler(
+        {captureState, interaction, selection, intelligent, geometry, displays, actions});
+    ScreenshotOverlayShortcutController shortcutController(shortcutManager, handler, interaction,
+                                                           intelligent, actions);
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_C) && copyCalls == 1 && cancelCalls == 0 &&
+                !interaction.inactive(),
+            "a failed color copy must keep the capture open");
+    colorAvailable = true;
+    require(dispatchShortcut(shortcutWindow, Qt::Key_C) && copyCalls == 2 && cancelCalls == 1 &&
+                interaction.inactive(),
+            "a successful color copy must end the capture");
+    require(!dispatchShortcut(shortcutWindow, Qt::Key_C) && copyCalls == 2 && cancelCalls == 1,
+            "an inactive capture must not copy or close again");
+
+    interaction.beginCapture();
+    interaction.enterOverlayVisible(true);
+    require(dispatchShortcut(shortcutWindow, Qt::Key_C) && copyCalls == 3 && cancelCalls == 2 &&
+                interaction.inactive(),
+            "copying a color during initial selection must also end the capture");
+}
+
 void sharedShiftShortcutChoosesResizeOrColorFormat() {
     const storage::ScreenshotShortcutSettings shortcutSettings;
     const QStringList originalAspectShortcuts =
@@ -2181,6 +2231,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (QCoreApplication::arguments().contains(QStringLiteral("--shortcut-input-only"))) {
+        colorCopyEndsCaptureOnlyAfterSuccessfulCopy();
         sharedShiftShortcutChoosesResizeOrColorFormat();
         configuredSelectionShortcutsRouteTabHistoryAndColorActions();
         intelligentSelectionSupportsCursorMovementShortcuts();
@@ -2217,6 +2268,7 @@ int main(int argc, char** argv) {
     nonMoveToolPermanentlySwitchesForSelectionResize();
     recognitionAndScrollingToolsResizeSelectionBorder();
     completionGesturesRequireAConfirmedSelectionAndSupportedTool();
+    colorCopyEndsCaptureOnlyAfterSuccessfulCopy();
     sharedShiftShortcutChoosesResizeOrColorFormat();
     configuredSelectionShortcutsRouteTabHistoryAndColorActions();
     intelligentSelectionSupportsCursorMovementShortcuts();

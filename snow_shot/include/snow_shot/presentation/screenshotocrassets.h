@@ -7,6 +7,15 @@
 #include <memory>
 #include <functional>
 
+enum class ScreenshotOcrModelType {
+    ExtraSmall,
+    Small,
+    Medium,
+};
+
+[[nodiscard]] QString screenshotOcrModelTypeValue(ScreenshotOcrModelType type);
+[[nodiscard]] ScreenshotOcrModelType screenshotOcrModelTypeFromValue(const QString& value);
+
 enum class ScreenshotOcrAssetPhase {
     Unchecked,
     Verifying,
@@ -25,6 +34,8 @@ struct ScreenshotOcrAssetStatus {
 };
 
 struct ScreenshotOcrResolvedAssets {
+    ScreenshotOcrModelType modelType = ScreenshotOcrModelType::Small;
+    QString modelId;
     QString runtimeVersion;
     QString runtimeDirectory;
     QString processPath;
@@ -47,6 +58,7 @@ class ScreenshotOcrAssets final : public QObject {
         // Downloaded, application-managed components live here.
         QString cacheRoot;
         QString proxyUrl;
+        ScreenshotOcrModelType modelType = ScreenshotOcrModelType::Small;
         // Optional test hooks. Production uses the built-in HTTPS downloader
         // and minizip-ng extractor.
         std::function<bool(const QString& url, const QString& destination, QString* error)>
@@ -60,6 +72,7 @@ class ScreenshotOcrAssets final : public QObject {
 
     void prepare();
     void setProxyUrl(const QString& proxyUrl);
+    void setModelType(ScreenshotOcrModelType modelType);
 
   signals:
     void statusChanged(const ScreenshotOcrAssetStatus& status);

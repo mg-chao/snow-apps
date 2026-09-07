@@ -3522,7 +3522,8 @@ void ScreenshotToolPalette::ensureTableQrPopover() {
 }
 
 void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
-    if (m_mainPanel == nullptr) {
+    // Recording owns a fixed, state-dependent row outside the screenshot layout catalog.
+    if (m_mainPanel == nullptr || m_options.showRecordingControls) {
         return;
     }
 
