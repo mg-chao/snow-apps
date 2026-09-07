@@ -5,6 +5,7 @@ mod estimator;
 mod frame;
 mod orb;
 mod region;
+mod sampling;
 mod state;
 mod stitcher;
 mod tiled_canvas;
