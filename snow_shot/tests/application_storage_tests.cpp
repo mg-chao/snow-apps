@@ -201,6 +201,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
     require(
         defaultValue("system/auto_start_at_boot").toBool() &&
             defaultValue("network/proxy").toString() == QStringLiteral("none") &&
+            defaultValue("text_recognition/model_type").toString() == QStringLiteral("small") &&
             !defaultValue("global_shortcuts/disable_on_focused_fullscreen_window").toBool() &&
             defaultValue("global_shortcuts/screenshot").toArray() ==
                 QJsonArray{QStringLiteral("F1")} &&
@@ -232,7 +233,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
             defaultValue("screen_recording/clarity").toString() == QStringLiteral("1080p") &&
             defaultValue("screen_recording/frame_rate").toInt() == 30 &&
             defaultValue("screen_recording/animated_image_clarity").toString() ==
-                QStringLiteral("1080p") &&
+                QStringLiteral("720p") &&
             defaultValue("screen_recording/animated_image_frame_rate").toInt() == 10 &&
             defaultValue("screen_recording/animated_image_format").toString() ==
                 QStringLiteral("gif") &&
@@ -391,6 +392,10 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
             "frame-rate settings must reject unsupported and non-integral values");
 
     const QMap<QString, QStringList> allowedStringValues{
+        {QStringLiteral("text_recognition/fill_style"),
+         {QStringLiteral("blur"), QStringLiteral("background_fill")}},
+        {QStringLiteral("text_recognition/model_type"),
+         {QStringLiteral("extra_small"), QStringLiteral("small"), QStringLiteral("medium")}},
         {QStringLiteral("screenshot/auto_execute_after_text_recognition"),
          {QStringLiteral("no_action"), QStringLiteral("copy_text"),
           QStringLiteral("copy_text_and_end_screenshot"), QStringLiteral("quick_copy_text"),
@@ -402,6 +407,9 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
         {QStringLiteral("screenshot/middle_mouse_button_action"),
          {QStringLiteral("copy"), QStringLiteral("save"), QStringLiteral("pin"),
           QStringLiteral("none")}},
+        {QStringLiteral("screenshot/image_format"),
+         {QStringLiteral("png"), QStringLiteral("jpeg"), QStringLiteral("bmp"),
+          QStringLiteral("webp"), QStringLiteral("jxl"), QStringLiteral("avif")}},
         {QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode"),
          {QStringLiteral("mouse_position"), QStringLiteral("top_left"), QStringLiteral("top_right"),
           QStringLiteral("bottom_left"), QStringLiteral("bottom_right"), QStringLiteral("center")}},
@@ -614,13 +622,16 @@ void screenshotTranslationSettingsRoundTripSupportedValues() {
     static_cast<void>(initialize(executable, temporary.path()));
 
     const storage::ScreenshotTranslationSettings translation;
+    require(translation.layoutProcessing() == QStringLiteral("smart_merge"),
+            "layout processing should default to Smart Merge for existing configurations");
     require(translation.originalImageTranslationEnabled(),
             "original image translation should default to enabled for existing configurations");
     require(translation.configuration() ==
                 storage::ScreenshotTranslationConfiguration{QStringLiteral("auto"), {}, {}},
             "translation settings should default to Auto source and runtime-derived target/model");
     const storage::ScreenshotTranslationConfiguration selected{
-        QStringLiteral("ja"), QStringLiteral("zh-Hant"), QStringLiteral("model-a")};
+        QStringLiteral("ja"), QStringLiteral("zh-Hant"), QStringLiteral("model-a"),
+        QStringLiteral("original")};
     require(translation.setConfiguration(selected) && translation.configuration() == selected,
             "translation language and model selections should persist together");
     require(translation.setOriginalImageTranslationEnabled(false) &&
@@ -743,7 +754,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 screenshot.setCopyImageFileToClipboard(true) &&
                 screenshot.setImageSaveDirectory(QStringLiteral("D:/Captures")) &&
                 screenshot.setLastManualSaveDirectory(QStringLiteral("D:/Exports")) &&
-                screenshot.setImageFormat(QStringLiteral("webp")) &&
+                screenshot.setImageFormat(QStringLiteral("bmp")) &&
                 screenshot.setManualSaveFilenameFormat(QStringLiteral("Manual_{yyyyMMdd}")) &&
                 screenshot.setAutoSaveFilenameFormat(QStringLiteral("Auto_{HHmmss}")) &&
                 screenshot.autoExecuteAfterTextRecognition() ==
@@ -753,12 +764,12 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 screenshot.autoSaveAfterCopy() && screenshot.copyImageFileToClipboard() &&
                 screenshot.imageSaveDirectory() == QStringLiteral("D:/Captures") &&
                 screenshot.lastManualSaveDirectory() == QStringLiteral("D:/Exports") &&
-                screenshot.imageFormat() == QStringLiteral("webp") &&
+                screenshot.imageFormat() == QStringLiteral("bmp") &&
                 screenshot.manualSaveFilenameFormat() == QStringLiteral("Manual_{yyyyMMdd}") &&
                 screenshot.autoSaveFilenameFormat() == QStringLiteral("Auto_{HHmmss}"),
             "screenshot adapters must persist every new value type");
     require(!screenshot.setDoubleClickAction(QStringLiteral("unsupported")) &&
-                !screenshot.setImageFormat(QStringLiteral("bmp")) &&
+                !screenshot.setImageFormat(QStringLiteral("unsupported")) &&
                 !screenshot.setAutoSaveFilenameFormat(QStringLiteral("invalid/name")) &&
                 screenshot.doubleClickAction() == QStringLiteral("save"),
             "invalid screenshot actions must be rejected without changing the stored value");
@@ -788,7 +799,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     const storage::RecordingSettings recording;
     require(recording.screenRecordingClarity() == QStringLiteral("1080p") &&
                 recording.frameRate() == 30 &&
-                recording.animatedImageClarity() == QStringLiteral("1080p") &&
+                recording.animatedImageClarity() == QStringLiteral("720p") &&
                 recording.animatedImageFrameRate() == 10 &&
                 recording.animatedImageFormat() == QStringLiteral("gif") &&
                 recording.encoder() == QStringLiteral("h264_hw") &&
@@ -801,7 +812,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
             "recording adapters must expose requested defaults");
     require(recording.setScreenRecordingClarity(QStringLiteral("2k")) &&
                 recording.setFrameRate(83) &&
-                recording.setAnimatedImageClarity(QStringLiteral("720p")) &&
+                recording.setAnimatedImageClarity(QStringLiteral("480p")) &&
                 recording.setAnimatedImageFrameRate(24) &&
                 recording.setAnimatedImageFormat(QStringLiteral("webp")) &&
                 recording.setEncoder(QStringLiteral("h265")) &&
@@ -811,7 +822,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 recording.setVideoFilenameFormat(QStringLiteral("Recording_{yyyyMMdd}")) &&
                 recording.screenRecordingClarity() == QStringLiteral("2k") &&
                 recording.frameRate() == 83 &&
-                recording.animatedImageClarity() == QStringLiteral("720p") &&
+                recording.animatedImageClarity() == QStringLiteral("480p") &&
                 recording.animatedImageFrameRate() == 24 &&
                 recording.animatedImageFormat() == QStringLiteral("webp") &&
                 recording.encoder() == QStringLiteral("h265") &&
@@ -996,6 +1007,40 @@ void invalidCaptureCursorConfigurationFallsBackToDisabled() {
                      .value(QStringLiteral("capture_cursor"))
                      .toBool(),
             "invalid stored cursor capture values must be replaced with disabled");
+}
+
+void invalidOcrModelConfigurationFallsBackToSmallWithoutAMigration() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "failed to create invalid OCR model setting directory");
+    const QString config = QDir(temporary.path()).filePath(QStringLiteral("config.json"));
+    writeBytes(config, QByteArrayLiteral("{\n"
+                                         "  \"storage\": {\"schema_version\": 1},\n"
+                                         "  \"text_recognition\": {\"model_type\": \"large\"}\n"
+                                         "}\n"));
+    storage::ConfigurationStore store(config, true, true, 60000);
+    require(store.value(QStringLiteral("text_recognition/model_type")).toString() ==
+                    QStringLiteral("small") &&
+                store.value(QStringLiteral("storage/schema_version")).toInt() == 1 &&
+                store.isDirty() && store.flushNow().success,
+            "invalid OCR model types must normalize to Small without changing schema version");
+}
+
+void missingOcrModelConfigurationDefaultsToSmallWithoutAMigration() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "failed to create missing OCR model setting directory");
+    const QString config = QDir(temporary.path()).filePath(QStringLiteral("config.json"));
+    writeBytes(config,
+               QByteArrayLiteral("{\n"
+                                 "  \"storage\": {\"schema_version\": 1},\n"
+                                 "  \"text_recognition\": {\"direct_ml_acceleration\": false}\n"
+                                 "}\n"));
+    storage::ConfigurationStore store(config, true, true, 60000);
+    require(store.value(QStringLiteral("text_recognition/model_type")).toString() ==
+                    QStringLiteral("small") &&
+                !store.value(QStringLiteral("text_recognition/direct_ml_acceleration")).toBool() &&
+                store.value(QStringLiteral("storage/schema_version")).toInt() == 1 &&
+                store.isDirty() && store.flushNow().success,
+            "missing OCR model types must insert Small without changing schema version or peers");
 }
 
 void smartSelectionAccessorAndSignal() {
@@ -1314,6 +1359,8 @@ int main(int argc, char** argv) {
     screenshotTranslationSettingsRoundTripSupportedValues();
     settingsAdaptersRoundTripAndRejectInvalidValues();
     invalidCaptureCursorConfigurationFallsBackToDisabled();
+    invalidOcrModelConfigurationFallsBackToSmallWithoutAMigration();
+    missingOcrModelConfigurationDefaultsToSmallWithoutAMigration();
     smartSelectionAccessorAndSignal();
     unknownFieldsArePreserved();
     malformedConfigurationIsCopiedAndReplaced();

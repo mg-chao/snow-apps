@@ -876,6 +876,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/capture/screenshotcaptureperfinstrumentation.cpp
     src/presentation/capture/screenshotcaptureworkflow.cpp
     src/presentation/capture/adaptivescrollingcapturecadence.h
+    src/presentation/capture/windowcaptureexclusion.h
     src/presentation/capture/latestbridgemailbox.h
     src/presentation/capture/screenshotscrollingcapturecontroller.cpp
     src/presentation/capture/screenshotscrollingpipeline.cpp
@@ -908,6 +909,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/core/screenshotsmartselectiontransition.cpp
     src/presentation/ocr/screenshotocrcontroller.cpp
     src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp
+    src/presentation/ocr/screenshotocrlayout.cpp
     src/presentation/ocr/screenshotrecognitionwindow.cpp
     src/presentation/ocr/screenshottabledocument.cpp
     src/presentation/ocr/screenshottableeditor.cpp
@@ -1997,6 +1999,28 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_executable(snow-shot-screenshot-color-picker-tests
+        tests/screenshot_color_picker_tests.cpp
+        include/snow_shot/presentation/styles/thememanager.h
+        src/presentation/services/screenshotcolorpickerwidget.cpp
+        src/presentation/core/screenshotgeometry.cpp
+        src/presentation/styles/thememanager.cpp
+        src/presentation/styles/themecolorscheme.cpp
+    )
+    target_include_directories(snow-shot-screenshot-color-picker-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+    target_link_libraries(snow-shot-screenshot-color-picker-tests PRIVATE
+        snow_shot_storage snow_draw_engine_qt_canvas ant_design_qt Qt6::Widgets
+    )
+    snow_shot_import_offscreen_platform(snow-shot-screenshot-color-picker-tests)
+    add_test(NAME snow-shot-screenshot-color-picker-tests
+        COMMAND snow-shot-screenshot-color-picker-tests)
+    set_tests_properties(snow-shot-screenshot-color-picker-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
     add_executable(snow-shot-screenshot-history-tests
         tests/screenshot_history_tests.cpp
         src/presentation/capture/directcapturehistory.cpp
@@ -2314,6 +2338,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-pinned-window-tests
         tests/screenshot_pinned_window_tests.cpp
         tests/original_image_translation_tests.cpp
+        include/snow_shot/presentation/components/pathinput.h
+        src/presentation/components/pathinput.cpp
         include/snow_shot/presentation/screenshotsavepreviewcanvas.h
         src/presentation/services/screenshotsaveasfiledialog.cpp
         src/presentation/services/screenshotsaveexportpipeline.cpp
@@ -2345,6 +2371,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/ocr/screenshotocrtexteditingsession.cpp
         src/presentation/ocr/screenshotocrtexttransform.cpp
         src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp
+        src/presentation/ocr/screenshotocrlayout.cpp
         src/presentation/ocr/screenshotrecognitionwindow.cpp
         src/presentation/ocr/screenshottabledocument.cpp
         src/presentation/ocr/screenshottableeditor.cpp
@@ -2719,9 +2746,14 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-screenshot-action-toolbar-layout-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --action-toolbar-layout-only
     )
+    add_test(
+        NAME snow-shot-screen-recording-toolbar-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --recording-controls-only
+    )
     set_tests_properties(
         snow-shot-screenshot-tool-palette-tests
         snow-shot-screenshot-action-toolbar-layout-tests
+        snow-shot-screen-recording-toolbar-tests
         PROPERTIES
         ENVIRONMENT
             "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
@@ -3192,6 +3224,24 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_executable(snow-shot-window-capture-exclusion-tests
+        tests/window_capture_exclusion_tests.cpp
+        src/presentation/capture/windowcaptureexclusion.h
+    )
+    target_include_directories(snow-shot-window-capture-exclusion-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(snow-shot-window-capture-exclusion-tests PRIVATE Qt6::Widgets)
+    add_test(
+        NAME snow-shot-window-capture-exclusion-tests
+        COMMAND snow-shot-window-capture-exclusion-tests
+    )
+    set_tests_properties(snow-shot-window-capture-exclusion-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
     add_executable(snow-shot-screen-recording-geometry-tests
         tests/screen_recording_geometry_tests.cpp
         src/presentation/core/screenshotgeometry.cpp
@@ -3351,6 +3401,17 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_dependencies(snow-shot-ocr-recognition-service-tests snow_ocr_process)
 
+    add_executable(snow-shot-ocr-layout-tests
+        tests/screenshot_ocr_layout_tests.cpp
+        src/presentation/ocr/screenshotocrlayout.cpp
+    )
+    target_include_directories(snow-shot-ocr-layout-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow-shot-ocr-layout-tests PRIVATE Qt6::Gui)
+    add_test(NAME snow-shot-ocr-layout-tests COMMAND snow-shot-ocr-layout-tests)
+    set_tests_properties(snow-shot-ocr-layout-tests PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
     add_executable(snow-shot-recognition-session-controller-tests
         tests/screenshot_recognition_session_controller_tests.cpp
         tests/original_image_translation_tests.cpp
@@ -3368,6 +3429,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/ocr/screenshotocrtexttransform.cpp
         src/presentation/ocr/screenshotocrvisuals.cpp
         src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp
+        src/presentation/ocr/screenshotocrlayout.cpp
         src/presentation/ocr/screenshotrecognitionwindow.cpp
         src/presentation/ocr/screenshottabledocument.cpp
         src/presentation/ocr/screenshottableeditor.cpp
@@ -3547,6 +3609,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-application-icon-tests
         snow-shot-toolbar-main-panel-tests
         snow-shot-screen-recording-geometry-tests
+        snow-shot-window-capture-exclusion-tests
         snow-shot-ocr-presentation-tests
     )
         snow_shot_import_offscreen_platform(${_offscreen_qpa_test_target})

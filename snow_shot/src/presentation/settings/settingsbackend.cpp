@@ -135,6 +135,8 @@ BuiltInSettingsBackend::BuiltInSettingsBackend(
 
 QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) const {
     switch (binding) {
+    case SettingsSelectBinding::TranslationLayoutProcessing:
+        return storage::ScreenshotTranslationSettings().layoutProcessing();
     case SettingsSelectBinding::Theme:
         return themeModeValue(styles::ThemeManager::instance().themeMode());
     case SettingsSelectBinding::Language:
@@ -150,12 +152,22 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
     }
     case SettingsSelectBinding::Proxy:
         return storage::NetworkSettings().proxy();
+    case SettingsSelectBinding::OcrModelType:
+        return storage::ApplicationStorage::instance()
+            .configuration()
+            .value(QStringLiteral("text_recognition/model_type"))
+            .toString();
     case SettingsSelectBinding::ScreenshotApiMode:
         return storage::ScreenshotSettings().apiMode();
     case SettingsSelectBinding::WindowElementApi:
         return storage::ScreenshotSettings().windowElementApi();
     case SettingsSelectBinding::ScreenshotToolbarSize:
         return storage::ScreenshotUiSettings().toolbarSize();
+    case SettingsSelectBinding::OcrFillStyle:
+        return storage::ApplicationStorage::instance()
+            .configuration()
+            .value(QStringLiteral("text_recognition/fill_style"))
+            .toString();
     case SettingsSelectBinding::ColorPickerDisplayMode:
         return storage::ScreenshotUiSettings().colorPickerDisplayMode();
     case SettingsSelectBinding::ScreenshotOcrAction:
@@ -207,6 +219,8 @@ BuiltInSettingsBackend::dynamicSelectOptions(SettingsSelectBinding binding) cons
 bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
                                               const QVariant& value) {
     switch (binding) {
+    case SettingsSelectBinding::TranslationLayoutProcessing:
+        return storage::ScreenshotTranslationSettings().setLayoutProcessing(value.toString());
     case SettingsSelectBinding::Theme: {
         const auto requested = themeModeForValue(value);
         styles::ThemeManager::instance().setThemeMode(requested);
@@ -241,12 +255,18 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
     }
     case SettingsSelectBinding::Proxy:
         return storage::NetworkSettings().setProxy(value.toString());
+    case SettingsSelectBinding::OcrModelType:
+        return storage::ApplicationStorage::instance().configuration().setValue(
+            QStringLiteral("text_recognition/model_type"), value.toString());
     case SettingsSelectBinding::ScreenshotApiMode:
         return storage::ScreenshotSettings().setApiMode(value.toString());
     case SettingsSelectBinding::WindowElementApi:
         return storage::ScreenshotSettings().setWindowElementApi(value.toString());
     case SettingsSelectBinding::ScreenshotToolbarSize:
         return storage::ScreenshotUiSettings().setToolbarSize(value.toString());
+    case SettingsSelectBinding::OcrFillStyle:
+        return storage::ApplicationStorage::instance().configuration().setValue(
+            QStringLiteral("text_recognition/fill_style"), value.toString());
     case SettingsSelectBinding::ColorPickerDisplayMode:
         return storage::ScreenshotUiSettings().setColorPickerDisplayMode(value.toString());
     case SettingsSelectBinding::ScreenshotOcrAction:
@@ -301,6 +321,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::ScreenshotSettings().autoSaveAfterCopy();
     case SettingsSwitchBinding::ScreenshotCaptureCursor:
         return storage::ScreenshotSettings().captureCursor();
+    case SettingsSwitchBinding::ScreenshotShutterSoundNotification:
+        return storage::ScreenshotSettings().shutterSoundNotification();
     case SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors:
         return storage::ScreenshotSettings().restoreOriginalScreenColors();
     case SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard:
@@ -330,6 +352,9 @@ bool BuiltInSettingsBackend::switchEnabled(SettingsSwitchBinding binding) const 
 }
 
 bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, bool value) {
+    if (binding == SettingsSwitchBinding::ScreenshotShutterSoundNotification) {
+        return storage::ScreenshotSettings().setShutterSoundNotification(value);
+    }
     if (binding == SettingsSwitchBinding::ScreenshotCaptureCursor) {
         return storage::ScreenshotSettings().setCaptureCursor(value);
     }
@@ -396,6 +421,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::TrayEnabled:
     case SettingsSwitchBinding::ScreenshotAutoSaveAfterCopy:
     case SettingsSwitchBinding::ScreenshotCaptureCursor:
+    case SettingsSwitchBinding::ScreenshotShutterSoundNotification:
     case SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors:
     case SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard:
     case SettingsSwitchBinding::PinAutomaticTextRecognition:
@@ -866,6 +892,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                    {QStringLiteral("screenshot/save_as_file_dialog"),
                     storage::ConfigurationSchema::defaultValue(
                         QStringLiteral("screenshot/save_as_file_dialog"))},
+                   {QStringLiteral("screenshot/shutter_sound_notification"),
+                    storage::ConfigurationSchema::defaultValue(
+                        QStringLiteral("screenshot/shutter_sound_notification"))},
                    {QStringLiteral("screenshot/auto_execute_after_text_recognition"),
                     storage::ConfigurationSchema::defaultValue(
                         QStringLiteral("screenshot/auto_execute_after_text_recognition"))},
@@ -923,6 +952,11 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_toolbar/action_tools_layout"))},
         });
+    case SettingsSectionReset::TextRecognitionInterfaceSettings:
+        return storage::ApplicationStorage::instance().configuration().setValue(
+            QStringLiteral("text_recognition/fill_style"),
+            storage::ConfigurationSchema::defaultValue(
+                QStringLiteral("text_recognition/fill_style")));
     case SettingsSectionReset::Toolbar:
         return storage::ApplicationStorage::instance().configuration().setValue(
             QStringLiteral("screenshot_ui/toolbar_size"),
@@ -1023,10 +1057,14 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                  QStringLiteral("pin_to_screen/auto_resize_window"))},
         });
     case SettingsSectionReset::Translation:
-        return storage::ScreenshotTranslationSettings().setOriginalImageTranslationEnabled(
-            storage::ConfigurationSchema::defaultValue(
-                QStringLiteral("screenshot_translation/original_image_translation"))
-                .toBool());
+        return storage::ApplicationStorage::instance().configuration().setValues({
+            {QStringLiteral("screenshot_translation/original_image_translation"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot_translation/original_image_translation"))},
+            {QStringLiteral("screenshot_translation/layout_processing"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot_translation/layout_processing"))},
+        });
     case SettingsSectionReset::Tray:
         return storage::ApplicationStorage::instance().configuration().setValues({
             {QStringLiteral("tray/enabled"),
@@ -1132,10 +1170,14 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
     }
     case SettingsSectionReset::TextRecognition: {
         auto& storage = storage::ApplicationStorage::instance();
-        const bool accepted = storage.configuration().setValue(
-            QStringLiteral("text_recognition/direct_ml_acceleration"),
-            storage::ConfigurationSchema::defaultValue(
-                QStringLiteral("text_recognition/direct_ml_acceleration")));
+        const bool accepted = storage.configuration().setValues({
+            {QStringLiteral("text_recognition/model_type"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("text_recognition/model_type"))},
+            {QStringLiteral("text_recognition/direct_ml_acceleration"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("text_recognition/direct_ml_acceleration"))},
+        });
         if (accepted) {
             emit synchronized();
         }

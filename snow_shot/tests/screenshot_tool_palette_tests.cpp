@@ -124,6 +124,100 @@ int longestHorizontalColorRun(const QImage& image, const QColor& color) {
     return longestRun;
 }
 
+void recordingControlsRemainLaidOutAcrossStateChanges() {
+    ScreenshotToolPalette::Options options;
+    options.showDragHandle = true;
+    options.showSelectTool = false;
+    options.showShapeTool = false;
+    options.showArrowTool = false;
+    options.showRecordingControls = true;
+    options.enableStyleToolbar = false;
+    ScreenshotToolPalette palette(options);
+    palette.prepareForDisplay();
+    palette.show();
+    QCoreApplication::processEvents();
+
+    const char* sources[] = {
+        "Start recording",     "Stop recording",  "Pause recording",       "Resume recording",
+        "Record microphone",   "Record speakers", "Open recording folder", "Close recording",
+        "Copy animated image", "Copy video"};
+    QVector<adqt::widgets::AdButton*> buttons;
+    for (const char* source : sources) {
+        adqt::widgets::AdButton* match = nullptr;
+        for (auto* button : palette.mainPanel()->findChildren<adqt::widgets::AdButton*>()) {
+            if (button->property("snowShotTranslationTooltipSource").toString() ==
+                QLatin1String(source)) {
+                match = button;
+                break;
+            }
+        }
+        require(match != nullptr, "every recording control should be created");
+        buttons.push_back(match);
+    }
+    auto* duration = palette.findChild<QLabel*>(QStringLiteral("screenRecordingDuration"));
+    require(duration != nullptr, "recording duration should be created");
+
+    using State = ScreenshotToolPalette::RecordingState;
+    const auto verify = [&](State state, bool busy) {
+        palette.setRecordingState(state);
+        palette.setRecordingBusy(busy);
+        palette.prepareForDisplay();
+        QCoreApplication::processEvents();
+        const bool idle = state == State::Idle;
+        const bool paused = state == State::Paused;
+        const bool visible[] = {idle, !idle, !paused, paused, true, true, true, true, true, true};
+        const bool enabled[] = {idle && !busy,
+                                !idle && !busy,
+                                state == State::Recording && !busy,
+                                paused && !busy,
+                                idle && !busy,
+                                idle && !busy,
+                                true,
+                                !busy,
+                                !idle && !busy,
+                                !idle && !busy};
+        const QLayout* layout = palette.mainPanel()->layout();
+        QRect previous;
+        for (int index = 0; index < buttons.size(); ++index) {
+            auto* button = buttons.at(index);
+            require(layout->indexOf(button) >= 0,
+                    "every recording control must remain in the main toolbar layout");
+            require(button->isVisible() == visible[index],
+                    "recording control visibility should follow recording state");
+            require(button->isEnabled() == enabled[index],
+                    "recording control availability should follow recording and busy state");
+            if (visible[index]) {
+                require(!button->visibleRegion().isEmpty() &&
+                            palette.mainPanel()->rect().contains(button->geometry()),
+                        "visible recording controls should be unclipped inside the toolbar");
+                require(!previous.isValid() || previous.right() < button->geometry().left(),
+                        "recording controls should retain their order without overlap");
+                previous = button->geometry();
+            }
+        }
+        require(layout->indexOf(duration) >= 0 && duration->isVisible() &&
+                    palette.mainPanel()->rect().contains(duration->geometry()),
+                "recording duration must remain visible inside the toolbar layout");
+    };
+
+    verify(State::Idle, false);
+    for (State state : {State::Recording, State::Paused, State::Idle}) {
+        verify(state, false);
+        verify(state, true);
+    }
+    palette.setToolbarLayout({});
+    palette.setActionToolsLayout({});
+    verify(State::Idle, false);
+    palette.setRecordingDuration(65000);
+    require(duration->text() == QStringLiteral("00:01:05"),
+            "visible recording duration should update");
+    int startRequests = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingStartRequested, &palette,
+                     [&]() { ++startRequests; });
+    buttons.constFirst()->click();
+    require(startRequests == 1, "the visible start button should request recording");
+}
+
 void numericStrokeWidthPreviewUsesLineWithinPreviewBounds() {
     NumericValuePreviewButton button;
     button.resize(64, 32);
@@ -1449,6 +1543,99 @@ void tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode() {
                 palette.activeToolForTests() == ScreenshotToolPalette::Tool::Table &&
                 trigger->accessibleName() == QStringLiteral("Table recognition"),
             "choosing Table should restore the default shared trigger presentation");
+}
+
+void drawingGroupClicksActivateOnceAfterPointerReentry() {
+    const QList<QStringList> groups{
+        {QStringLiteral("line"), QStringLiteral("arrow")},
+        {QStringLiteral("spotlight"), QStringLiteral("highlighter")},
+        {QStringLiteral("free-draw"), QStringLiteral("line"), QStringLiteral("shape")}};
+    const QList<ScreenshotToolPalette::Tool> tools{ScreenshotToolPalette::Tool::Arrow,
+                                                   ScreenshotToolPalette::Tool::PenHighlight,
+                                                   ScreenshotToolPalette::Tool::Shape};
+    for (int index = 0; index < groups.size(); ++index) {
+        ScreenshotToolPalette::Options options;
+        options.showShapeTool = groups.at(index).contains(QStringLiteral("shape"));
+        options.showArrowTool = groups.at(index).contains(QStringLiteral("arrow"));
+        options.showLineTool = groups.at(index).contains(QStringLiteral("line"));
+        options.showFreeDrawTool = groups.at(index).contains(QStringLiteral("free-draw"));
+        options.showHighlightTool = groups.at(index).contains(QStringLiteral("highlighter"));
+        options.showSpotlightTool = groups.at(index).contains(QStringLiteral("spotlight"));
+        options.enableStyleToolbar = false;
+        options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{{groups.at(index)}};
+        ScreenshotToolPalette palette(options);
+        palette.show();
+        QCoreApplication::processEvents();
+        const auto buttons = mainDrawingToolbarButtons(palette);
+        require(buttons.size() == 1, "the fixture must expose one drawing group trigger");
+        auto* trigger = buttons.constFirst();
+        palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+        const auto sendPointer = [&](QEvent::Type type, const QPointF& position,
+                                     Qt::MouseButton button, Qt::MouseButtons held) {
+            QMouseEvent event(type, position, trigger->mapToGlobal(position.toPoint()), button,
+                              held, Qt::NoModifier);
+            QCoreApplication::sendEvent(trigger, &event);
+        };
+        const QPointF center = trigger->rect().center();
+        sendPointer(QEvent::MouseButtonPress, center, Qt::LeftButton, Qt::LeftButton);
+        sendPointer(QEvent::MouseMove, QPointF(-5, -5), Qt::NoButton, Qt::LeftButton);
+        sendPointer(QEvent::MouseMove, center, Qt::NoButton, Qt::LeftButton);
+        sendPointer(QEvent::MouseButtonRelease, center, Qt::LeftButton, Qt::NoButton);
+        require(palette.activeToolForTests() == tools.at(index),
+                "a drawing group click must not toggle back off after pointer re-entry");
+        sendPointer(QEvent::MouseButtonPress, center, Qt::LeftButton, Qt::LeftButton);
+        sendPointer(QEvent::MouseButtonRelease, center, Qt::LeftButton, Qt::NoButton);
+        require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select,
+                "a second completed drawing group click must still toggle back to selection");
+        sendPointer(QEvent::MouseButtonPress, center, Qt::LeftButton, Qt::LeftButton);
+        require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select,
+                "a drawing group must wait for the completed click before activating");
+        sendPointer(QEvent::MouseMove, QPointF(-5, -5), Qt::NoButton, Qt::LeftButton);
+        sendPointer(QEvent::MouseButtonRelease, QPointF(-5, -5), Qt::LeftButton, Qt::NoButton);
+        require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select,
+                "releasing outside a drawing group must cancel activation");
+    }
+}
+
+void tableRecognitionClickActivatesOnceAfterPointerReentry() {
+    ScreenshotToolPalette::Options options;
+    options.showTableTool = true;
+    options.showQrTool = true;
+    options.enableStyleToolbar = false;
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    QCoreApplication::processEvents();
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Table);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    auto* trigger =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotTableQrButton"));
+    require(trigger != nullptr, "the shared recognition trigger must exist");
+    int tableRequests = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::tableRequested, [&]() { ++tableRequests; });
+    const auto sendPointer = [&](QEvent::Type type, const QPointF& position, Qt::MouseButton button,
+                                 Qt::MouseButtons buttons) {
+        QMouseEvent event(type, position, trigger->mapToGlobal(position.toPoint()), button, buttons,
+                          Qt::NoModifier);
+        QCoreApplication::sendEvent(trigger, &event);
+    };
+    const QPointF center = trigger->rect().center();
+    sendPointer(QEvent::MouseButtonPress, center, Qt::LeftButton, Qt::LeftButton);
+    require(tableRequests == 0 &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select,
+            "pressing the trigger must not start recognition before the click completes");
+    sendPointer(QEvent::MouseMove, QPointF(-5, -5), Qt::NoButton, Qt::LeftButton);
+    sendPointer(QEvent::MouseMove, center, Qt::NoButton, Qt::LeftButton);
+    sendPointer(QEvent::MouseButtonRelease, center, Qt::LeftButton, Qt::NoButton);
+    require(tableRequests == 1 &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::Table,
+            "one completed click must activate Table once even when the pointer re-enters");
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    sendPointer(QEvent::MouseButtonPress, center, Qt::LeftButton, Qt::LeftButton);
+    sendPointer(QEvent::MouseMove, QPointF(-5, -5), Qt::NoButton, Qt::LeftButton);
+    sendPointer(QEvent::MouseButtonRelease, QPointF(-5, -5), Qt::LeftButton, Qt::NoButton);
+    require(tableRequests == 1 &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select,
+            "releasing outside the trigger must cancel the click without starting recognition");
 }
 
 void sharedToolbarLayoutModelOperationsAreDeterministic() {
@@ -6628,6 +6815,11 @@ int main(int argc, char** argv) {
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
             "the font editor tests require a system TrueType font");
 #endif
+    if (application.arguments().contains(QStringLiteral("--recording-controls-only"))) {
+        recordingControlsRemainLaidOutAcrossStateChanges();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--canvas-style-persistence-only"))) {
         canvasToolStylesPersistIndependentlyWithoutGlobalStyles();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
@@ -6685,6 +6877,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--toolbar-layout-only"))) {
+        drawingGroupClicksActivateOnceAfterPointerReentry();
         configurableToolbarLayoutSupportsArbitraryPopoverGroups();
         arrowAndLineUseConfiguredPopoverGroup();
         highlightVariantsUseConfiguredPopoverGroup();
@@ -6693,11 +6886,15 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--action-toolbar-layout-only"))) {
+        drawingGroupClicksActivateOnceAfterPointerReentry();
+        tableRecognitionClickActivatesOnceAfterPointerReentry();
+        tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode();
         sharedToolbarLayoutModelOperationsAreDeterministic();
         configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    recordingControlsRemainLaidOutAcrossStateChanges();
     numericStrokeWidthPreviewUsesLineWithinPreviewBounds();
     secondaryControlsMaterializeOnlyForTheRequestedFamily();
     textAndHighlightStrokeWidthTriggersUseSharedPreviewButton();
@@ -6721,6 +6918,8 @@ int main(int argc, char** argv) {
     clickingActiveToolbarToolReturnsToSelect();
     tableToolExposesStructureActionsAndOwnHistoryState();
     tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode();
+    tableRecognitionClickActivatesOnceAfterPointerReentry();
+    drawingGroupClicksActivateOnceAfterPointerReentry();
     sharedToolbarLayoutModelOperationsAreDeterministic();
     configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement();
     arrowAndLineRemainDirectWhenConfiguredIndividually();

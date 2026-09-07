@@ -94,9 +94,21 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(
-        sectionCount == 29 && itemCount == 118,
-        "catalog must contain the expected twenty-nine sections and one hundred eighteen items");
+    require(sectionCount == 30 && itemCount == 122,
+            "catalog must contain the expected thirty sections and one hundred twenty-two items");
+    const auto* fill = catalog.item({QStringLiteral("interface-settings"),
+                                     QStringLiteral("interface-text-recognition"),
+                                     QStringLiteral("interface.text-recognition.fill-style")});
+    require(fill != nullptr && fill->title.translated() == QStringLiteral("Fill Style"),
+            "Interface Settings must expose the OCR Fill Style setting");
+    const auto& fillSelect = std::get<settings::SettingsSelectDefinition>(fill->payload);
+    require(fillSelect.binding == settings::SettingsSelectBinding::OcrFillStyle &&
+                fillSelect.options.size() == 2 &&
+                fillSelect.options[0].value == QStringLiteral("blur") &&
+                fillSelect.options[1].value == QStringLiteral("background_fill") &&
+                storage::ConfigurationSchema::defaultValue(fill->configurationKey) ==
+                    QStringLiteral("background_fill"),
+            "OCR Fill Style must offer Blur and Background Fill, defaulting to Background Fill");
     const auto* saveDialog =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
                       QStringLiteral("screenshot.save-as-file-dialog")});
@@ -167,6 +179,23 @@ void builtInCatalogIsCompleteAndValid() {
             !storage::ConfigurationSchema::defaultValue(captureCursor->configurationKey).toBool(),
         "cursor capture must be the disabled final switch in system Screenshot settings");
     const auto* functionPage = catalog.page(QStringLiteral("function-settings"));
+    const auto* shutterSound =
+        catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
+                      QStringLiteral("screenshot.shutter-sound-notification")});
+    const auto* screenshotSettings =
+        catalog.section(QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"));
+    require(screenshotSettings != nullptr && !screenshotSettings->items.isEmpty() &&
+                screenshotSettings->items.constLast().id ==
+                    QStringLiteral("screenshot.shutter-sound-notification"),
+            "shutter notification must be the final item in Function Screenshot settings");
+    require(shutterSound != nullptr &&
+                shutterSound->title.translated() == QStringLiteral("Shutter Sound Notification") &&
+                shutterSound->configurationKey ==
+                    QStringLiteral("screenshot/shutter_sound_notification") &&
+                std::get<settings::SettingsSwitchDefinition>(shutterSound->payload).binding ==
+                    settings::SettingsSwitchBinding::ScreenshotShutterSoundNotification &&
+                storage::ConfigurationSchema::defaultValue(shutterSound->configurationKey).toBool(),
+            "Function Screenshot settings must expose the enabled shutter notification switch");
     const auto* smartSelection =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
                       QStringLiteral("screenshot.smart-selection")});
@@ -199,6 +228,20 @@ void builtInCatalogIsCompleteAndValid() {
                 functionPage->sections.at(2).reset == settings::SettingsSectionReset::Translation &&
                 storage::ConfigurationSchema::defaultValue(translation->configurationKey).toBool(),
             "Translation should expose its own default-on switch and section reset");
+    const auto* layout =
+        catalog.item({QStringLiteral("function-settings"), QStringLiteral("translation-settings"),
+                      QStringLiteral("translation.layout-processing")});
+    require(
+        layout != nullptr && layout->title.translated() == QStringLiteral("Layout Processing") &&
+            layout->configurationKey == QStringLiteral("screenshot_translation/layout_processing"),
+        "Translation should expose layout processing");
+    const auto& layoutOptions =
+        std::get<settings::SettingsSelectDefinition>(layout->payload).options;
+    require(layoutOptions.size() == 2 && layoutOptions[0].value == QStringLiteral("smart_merge") &&
+                layoutOptions[0].label.translated() == QStringLiteral("Smart Merge") &&
+                layoutOptions[1].value == QStringLiteral("original") &&
+                layoutOptions[1].label.translated() == QStringLiteral("Original"),
+            "layout processing must expose Smart Merge and Original");
     const auto* encodingPreset = catalog.item({QStringLiteral("function-settings"),
                                                QStringLiteral("screen-recording-settings"),
                                                QStringLiteral("screen-recording.encoding-preset")});
@@ -257,7 +300,10 @@ void builtInCatalogIsCompleteAndValid() {
             storagePage->sections.at(3).id == QStringLiteral("storage-status") &&
             imageFormat != nullptr && imageDirectory != nullptr && videoFilename != nullptr &&
             std::get<settings::SettingsSelectDefinition>(imageFormat->payload).options.size() ==
-                5 &&
+                6 &&
+            std::get<settings::SettingsSelectDefinition>(imageFormat->payload)
+                    .options.at(2)
+                    .value == QStringLiteral("bmp") &&
             std::get<settings::SettingsDirectoryPathDefinition>(imageDirectory->payload).binding ==
                 settings::SettingsDirectoryPathBinding::ScreenshotImageDirectory &&
             std::get<settings::SettingsTextDefinition>(videoFilename->payload).binding ==
@@ -270,6 +316,14 @@ void builtInCatalogIsCompleteAndValid() {
     const auto* proxySelect = proxy != nullptr
                                   ? std::get_if<settings::SettingsSelectDefinition>(&proxy->payload)
                                   : nullptr;
+    const auto* textRecognition =
+        catalog.section(QStringLiteral("system-settings"), QStringLiteral("text-recognition"));
+    const auto* modelType =
+        catalog.item({QStringLiteral("system-settings"), QStringLiteral("text-recognition"),
+                      QStringLiteral("text-recognition.model-type")});
+    const auto* modelTypeSelect =
+        modelType != nullptr ? std::get_if<settings::SettingsSelectDefinition>(&modelType->payload)
+                             : nullptr;
     require(
         systemPage != nullptr && systemPage->sections.size() == 5 &&
             systemPage->sections.at(0).id == QStringLiteral("system-general") &&
@@ -282,8 +336,22 @@ void builtInCatalogIsCompleteAndValid() {
             proxySelect->binding == settings::SettingsSelectBinding::Proxy &&
             proxySelect->options.size() == 2 &&
             proxySelect->options.at(0).value == QStringLiteral("none") &&
-            proxySelect->options.at(1).value == QStringLiteral("system"),
-        "System settings must place the Network proxy selector below General");
+            proxySelect->options.at(1).value == QStringLiteral("system") &&
+            textRecognition != nullptr &&
+            textRecognition->reset == settings::SettingsSectionReset::TextRecognition &&
+            textRecognition->items.size() == 2 &&
+            textRecognition->items.at(0).id == QStringLiteral("text-recognition.model-type") &&
+            textRecognition->items.at(1).id ==
+                QStringLiteral("text-recognition.direct-ml-acceleration") &&
+            modelType != nullptr &&
+            modelType->configurationKey == QStringLiteral("text_recognition/model_type") &&
+            modelTypeSelect != nullptr &&
+            modelTypeSelect->binding == settings::SettingsSelectBinding::OcrModelType &&
+            modelTypeSelect->options.size() == 3 &&
+            modelTypeSelect->options.at(0).value == QStringLiteral("extra_small") &&
+            modelTypeSelect->options.at(1).value == QStringLiteral("small") &&
+            modelTypeSelect->options.at(2).value == QStringLiteral("medium"),
+        "System settings must expose the ordered OCR model and acceleration controls");
 
     const auto* settingsGroup =
         std::get_if<settings::SettingsNavigationGroupDefinition>(&catalog.navigation().at(2));
@@ -416,13 +484,14 @@ void builtInCatalogIsCompleteAndValid() {
         "Hotkey settings must expose Screenshot before Drawing with stable local shortcuts");
 
     const auto* interfacePage = catalog.page(QStringLiteral("interface-settings"));
-    require(interfacePage != nullptr && interfacePage->sections.size() == 6 &&
+    require(interfacePage != nullptr && interfacePage->sections.size() == 7 &&
                 interfacePage->sections.at(1).id == QStringLiteral("interface-screenshot") &&
-                interfacePage->sections.at(2).id == QStringLiteral("toolbar") &&
-                interfacePage->sections.at(3).id == QStringLiteral("drawing") &&
-                interfacePage->sections.at(4).id == QStringLiteral("pin-to-screen") &&
-                interfacePage->sections.at(5).id == QStringLiteral("tray"),
-            "Interface settings must expose Screenshot, Toolbar, Drawing, Pin to screen, and Tray");
+                interfacePage->sections.at(2).id == QStringLiteral("interface-text-recognition") &&
+                interfacePage->sections.at(3).id == QStringLiteral("toolbar") &&
+                interfacePage->sections.at(4).id == QStringLiteral("drawing") &&
+                interfacePage->sections.at(5).id == QStringLiteral("pin-to-screen") &&
+                interfacePage->sections.at(6).id == QStringLiteral("tray"),
+            "Interface settings must place Text Recognition immediately below Screenshot");
     const auto* toolbarSize =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("toolbar"),
                       QStringLiteral("interface.screenshot.toolbar-size")});
@@ -433,7 +502,7 @@ void builtInCatalogIsCompleteAndValid() {
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("interface-screenshot"),
                       QStringLiteral("interface.screenshot.screenshot-toolbar-editor")});
     const auto& screenshotSection = interfacePage->sections.at(1);
-    const auto& toolbarSection = interfacePage->sections.at(2);
+    const auto& toolbarSection = interfacePage->sections.at(3);
     const auto* trayIcon =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("tray"),
                       QStringLiteral("interface.tray.icon")});
@@ -842,8 +911,8 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 154 && index.search(QString()).size() == 154,
-            "search must generate all one hundred fifty-four catalog nodes in catalog order");
+    require(index.entries().size() == 159 && index.search(QString()).size() == 159,
+            "search must generate all one hundred fifty-nine catalog nodes in catalog order");
     const auto translation = index.search(QStringLiteral("original image translation"));
     require(!translation.isEmpty() && translation.constFirst().location.itemId ==
                                           QStringLiteral("translation.original-image"),
@@ -874,7 +943,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 7 && sections == 29 && items == 118,
+    require(pages == 7 && sections == 30 && items == 122,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));
@@ -895,6 +964,10 @@ void searchIndexIsGeneratedAndRanked() {
     require(!windowElementApi.isEmpty() && windowElementApi.constFirst().location.itemId ==
                                                QStringLiteral("screenshot.window-element-api"),
             "window element API options must find the system Screenshot setting");
+    const auto ocrModel = index.search(QStringLiteral("Extra Small OCR model"));
+    require(!ocrModel.isEmpty() && ocrModel.constFirst().location.itemId ==
+                                       QStringLiteral("text-recognition.model-type"),
+            "OCR model labels and aliases must find the Model Type setting");
     const auto multipleTokens = index.search(QStringLiteral("storage error"));
     require(!multipleTokens.isEmpty() &&
                 multipleTokens.constFirst().location.itemId == QStringLiteral("storage.status"),

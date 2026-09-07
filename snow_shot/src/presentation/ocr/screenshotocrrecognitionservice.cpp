@@ -30,7 +30,7 @@
 namespace {
 constexpr quint32 kProtocolMagic = 0x52434f53; // "SOCR" in little endian.
 constexpr quint16 kProtocolVersion = 2;
-constexpr auto kRuntimeVersion = "1.0.2";
+constexpr auto kRuntimeVersion = "1.0.3";
 constexpr quint16 kHello = 1;
 constexpr quint16 kReady = 2;
 constexpr quint16 kSubmit = 3;
@@ -196,7 +196,8 @@ class ScreenshotOcrRecognitionService::Impl final {
     Impl(ScreenshotOcrRecognitionService* owner, const Options& options,
          ScreenshotOcrBackendPreference preference)
         : m_owner(owner), m_workerLimit(std::clamp(options.workerCount, 1, 2)),
-          m_proxyUrl(options.proxyUrl), m_backendPreference(preference) {
+          m_proxyUrl(options.proxyUrl), m_modelType(options.modelType),
+          m_backendPreference(preference) {
         m_queueClock.start();
         m_slots.resize(std::max(4, m_workerLimit + 2));
         m_localPool.setMaxThreadCount(m_workerLimit);
@@ -205,6 +206,8 @@ class ScreenshotOcrRecognitionService::Impl final {
             !options.recognizerModelPath.trimmed().isEmpty() &&
             !options.dictionaryPath.trimmed().isEmpty()) {
             m_assets.runtimeVersion = QString::fromLatin1(kRuntimeVersion);
+            m_assets.modelType = options.modelType;
+            m_assets.modelId = screenshotOcrModelTypeValue(options.modelType);
             m_assets.processPath = options.processPath;
             m_assets.runtimeDirectory = QFileInfo(options.processPath).absolutePath();
             m_assets.detectorModelPath = options.detectorModelPath;
@@ -218,15 +221,25 @@ class ScreenshotOcrRecognitionService::Impl final {
                                                   .filePath(QStringLiteral("assets/ocr"))
                                             : options.offlineRoot;
             m_assetManager = std::make_unique<ScreenshotOcrAssets>(
-                ScreenshotOcrAssets::Options{offlineRoot, options.cacheRoot, options.proxyUrl},
+                ScreenshotOcrAssets::Options{offlineRoot, options.cacheRoot, options.proxyUrl,
+                                             options.modelType},
                 owner);
             connect(m_assetManager.get(), &ScreenshotOcrAssets::statusChanged, owner,
                     [this](const ScreenshotOcrAssetStatus& status) { m_assetStatus = status; });
             connect(m_assetManager.get(), &ScreenshotOcrAssets::ready, owner,
                     [this](const ScreenshotOcrResolvedAssets& assets) {
                         m_assets = assets;
-                        if (ensureProcess())
+                        if (ensureProcess()) {
                             flushPending();
+                            return;
+                        }
+                        bool waitingForShutdown = false;
+                        {
+                            std::lock_guard lock(m_mutex);
+                            waitingForShutdown = m_shuttingDown || m_stopping;
+                        }
+                        if (!waitingForShutdown)
+                            failPendingForAssetError();
                     });
             connect(m_assetManager.get(), &ScreenshotOcrAssets::failed, owner,
                     [this](const QString& error) {
@@ -279,10 +292,8 @@ class ScreenshotOcrRecognitionService::Impl final {
                 std::lock_guard lock(m_mutex);
                 shuttingDown = m_shuttingDown;
             }
-            if (!shuttingDown) {
-                failJob(job, QCoreApplication::translate("ScreenshotOcrController",
-                                                         "Text recognition failed"));
-            }
+            if (!shuttingDown)
+                failPendingForAssetError();
         } else {
             flushPending();
         }
@@ -420,6 +431,31 @@ class ScreenshotOcrRecognitionService::Impl final {
             m_assetManager->setProxyUrl(proxyUrl);
     }
 
+    void setModelType(ScreenshotOcrModelType modelType) {
+        if (m_modelType == modelType)
+            return;
+        m_modelType = modelType;
+        if (m_assetManager != nullptr) {
+            m_assetManager->setModelType(modelType);
+        } else {
+            m_assets.modelType = modelType;
+            m_assets.modelId = screenshotOcrModelTypeValue(modelType);
+        }
+        bool restart = false;
+        bool prepare = false;
+        {
+            std::lock_guard lock(m_mutex);
+            restart = m_process != nullptr && !m_stopping;
+            prepare = !m_pending.empty() && !m_stopping;
+            if (restart)
+                m_configurationDirty = true;
+        }
+        if (prepare && m_assetManager != nullptr)
+            m_assetManager->prepare();
+        if (restart)
+            maybeShutdownProcess();
+    }
+
     int liveWorkerCount() const {
         std::lock_guard lock(m_mutex);
         return m_process != nullptr && m_process->state() != QProcess::NotRunning
@@ -483,17 +519,24 @@ class ScreenshotOcrRecognitionService::Impl final {
         }
         if (m_stopping)
             return false;
+        if (m_assetStatus.phase == ScreenshotOcrAssetPhase::Failed)
+            m_assetStatus = {ScreenshotOcrAssetPhase::Verifying, QStringLiteral("assets")};
+        const auto initializationFailed = [this]() {
+            m_assetStatus = {ScreenshotOcrAssetPhase::Failed, QStringLiteral("assets"), 0, 0,
+                             QStringLiteral("OCR model initialization failed")};
+            return false;
+        };
         m_shmFile = std::make_unique<QTemporaryFile>();
         m_shmFile->setAutoRemove(true);
         if (!m_shmFile->open())
-            return false;
+            return initializationFailed();
         m_slotBytes = kSlotHeaderBytes + kMaximumImageBytes;
         const qint64 size = static_cast<qint64>(m_slotBytes * m_slots.size());
         if (!m_shmFile->resize(size))
-            return false;
+            return initializationFailed();
         m_shmMapping = m_shmFile->map(0, size);
         if (m_shmMapping == nullptr)
-            return false;
+            return initializationFailed();
         // Keep the mapping alive but release the file handle so the child can
         // reopen the temporary backing file on Windows without sharing locks.
         m_shmFile->close();
@@ -563,7 +606,7 @@ class ScreenshotOcrRecognitionService::Impl final {
                 QStringLiteral("snow_shot.ocr"), QStringLiteral("ocr.start_failed"),
                 {{QStringLiteral("code"), static_cast<int>(m_process->error())}}, QtCriticalMsg);
             m_process.reset();
-            return false;
+            return initializationFailed();
         }
         snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.ocr"),
                                          QStringLiteral("ocr.process_started"),
@@ -759,6 +802,9 @@ class ScreenshotOcrRecognitionService::Impl final {
         Q_UNUSED(directMl);
         Q_UNUSED(provider);
         m_ready = true;
+        m_assetStatus = {m_assets.offline ? ScreenshotOcrAssetPhase::ReadyOffline
+                                          : ScreenshotOcrAssetPhase::ReadyCached,
+                         QStringLiteral("assets")};
         flushPending();
         maybeShutdownProcess();
     }
@@ -962,6 +1008,7 @@ class ScreenshotOcrRecognitionService::Impl final {
             std::lock_guard lock(m_mutex);
             if (m_process == nullptr || m_stopping || m_shuttingDown)
                 return;
+            const bool initializationFailed = !m_ready;
             for (auto it = m_jobs.begin(); it != m_jobs.end();) {
                 const auto job = it.value();
                 if (!job->localRendering) {
@@ -977,6 +1024,12 @@ class ScreenshotOcrRecognitionService::Impl final {
             m_ready = false;
             m_shuttingDown = false;
             m_configurationDirty = false;
+            if (initializationFailed) {
+                m_assetStatus = {ScreenshotOcrAssetPhase::Failed, QStringLiteral("assets"), 0, 0,
+                                 QStringLiteral("OCR model initialization failed")};
+                if (m_assetManager != nullptr)
+                    m_assets = {};
+            }
             process = std::move(m_process);
             m_shmMapping = nullptr;
             m_shmFile.reset();
@@ -1017,7 +1070,7 @@ class ScreenshotOcrRecognitionService::Impl final {
     }
 
     bool assetsReady() const {
-        return m_assets.valid();
+        return m_assets.valid() && m_assets.modelType == m_modelType;
     }
 
     void maybeShutdownProcess() {
@@ -1053,6 +1106,8 @@ class ScreenshotOcrRecognitionService::Impl final {
         }
         if (restart && ensureProcess())
             flushPending();
+        else if (restart && m_assetManager != nullptr)
+            m_assetManager->prepare();
     }
 
     void shutdown() {
@@ -1089,6 +1144,7 @@ class ScreenshotOcrRecognitionService::Impl final {
     ScreenshotOcrRecognitionService* m_owner = nullptr;
     const int m_workerLimit;
     QString m_proxyUrl;
+    ScreenshotOcrModelType m_modelType = ScreenshotOcrModelType::Small;
     ScreenshotOcrResolvedAssets m_assets;
     ScreenshotOcrAssetStatus m_assetStatus;
     std::unique_ptr<ScreenshotOcrAssets> m_assetManager;
@@ -1170,6 +1226,10 @@ void ScreenshotOcrRecognitionService::setBackendPreference(
 void ScreenshotOcrRecognitionService::setProxyUrl(const QString& proxyUrl) {
     if (m_impl != nullptr)
         m_impl->setProxyUrl(proxyUrl);
+}
+void ScreenshotOcrRecognitionService::setModelType(ScreenshotOcrModelType modelType) {
+    if (m_impl != nullptr)
+        m_impl->setModelType(modelType);
 }
 int ScreenshotOcrRecognitionService::liveWorkerCount() const {
     return m_impl != nullptr ? m_impl->liveWorkerCount() : 0;

@@ -4,6 +4,7 @@
 
 #include <QCoreApplication>
 #include <QClipboard>
+#include <QDataStream>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QJsonArray>
@@ -60,7 +61,8 @@ void waitUntil(const std::function<bool()>& condition, const char* message) {
 void configureTranslation(bool overlay = true, const QString& model = QStringLiteral("model-a")) {
     const snow_shot::storage::ScreenshotTranslationSettings settings;
     require(settings.setOriginalImageTranslationEnabled(overlay), "set translation display mode");
-    require(settings.setConfiguration({QStringLiteral("en"), QStringLiteral("zh-Hans"), model}),
+    require(settings.setConfiguration({QStringLiteral("en"), QStringLiteral("zh-Hans"), model,
+                                       QStringLiteral("original")}),
             "set translation languages and model");
 }
 
@@ -270,6 +272,59 @@ struct SessionProbe {
         controller->activate(ScreenshotRecognitionSessionController::Mode::Text);
     }
 };
+
+void smartLayoutStreamsParagraphsAndSwitchesModes() {
+    configureTranslation();
+    const snow_shot::storage::ScreenshotTranslationSettings settings;
+    require(settings.setLayoutProcessing(QStringLiteral("smart_merge")), "enable Smart Merge");
+    TranslationServer server;
+    SnowShotApiClient api(server.url());
+    SessionProbe session(&api, 3);
+    session.controller->beginTextTranslation();
+    server.waitForStreams(1);
+    require(server.streams[0].text == QStringLiteral("source 0 source 1 source 2") &&
+                session.displayed->lines.size() == 1 && session.displayed->lines[0].paragraph &&
+                session.displayed->lines[0].sourceLineQuads.size() == 3 &&
+                session.source->lines.size() == 3 &&
+                session.source->lines[0].text == QStringLiteral("source 0"),
+            "Smart Merge sends one paragraph with combined geometry and preserves original OCR");
+    server.delta(0, QStringLiteral("partial paragraph"));
+    waitUntil([&]() { return session.textUpdates == 1; },
+              "merged paragraph streams into its block");
+    require(settings.setLayoutProcessing(QStringLiteral("original")),
+            "switch layout while streaming");
+    server.waitForStreams(4);
+    waitUntil([&]() { return server.disconnected(0); },
+              "layout change cancels stale paragraph request");
+    require(session.displayed->lines.size() == 3 &&
+                session.displayed->lines[0].text == QStringLiteral("source 0") &&
+                server.streams[1].text == QStringLiteral("source 0") &&
+                server.streams[3].text == QStringLiteral("source 2"),
+            "Original restores OCR unit boundaries and discards old partial text");
+    for (int i = 1; i < 4; ++i) {
+        server.delta(i, QStringLiteral("translated %1").arg(i));
+        server.finish(i);
+    }
+    waitUntil([&]() { return !session.streaming; }, "original units finish");
+    require(settings.setLayoutProcessing(QStringLiteral("smart_merge")),
+            "rebuild completed original cache as paragraphs");
+    server.waitForStreams(5);
+    require(server.streams[4].text == QStringLiteral("source 0 source 1 source 2"),
+            "switching back merges source OCR rather than cached translated text");
+    server.fail(4);
+    waitUntil([&]() { return !session.streaming; }, "merged request fails");
+    session.controller->endTextEditing();
+    session.controller->beginTextTranslation();
+    server.waitForStreams(6);
+    require(server.streams[5].text == QStringLiteral("source 0 source 1 source 2"),
+            "retry reuses immutable paragraph source");
+    server.delta(5, QStringLiteral("finished paragraph"));
+    server.finish(5);
+    waitUntil([&]() { return !session.streaming; }, "merged retry finishes");
+    require(session.displayed->lines[0].text == QStringLiteral("finished paragraph") &&
+                session.source->lines[2].text == QStringLiteral("source 2"),
+            "merged output and original remain independent");
+}
 
 void queueStreamsIndividualBoxesAndKeepsOriginals() {
     configureTranslation();
@@ -523,7 +578,8 @@ void languageChangesRestartAndProviderDestructionCancels() {
     server.delta(0, QStringLiteral("old"));
     waitUntil([&]() { return session.textUpdates == 1; }, "old run should have partial output");
     require(snow_shot::storage::ScreenshotTranslationSettings().setConfiguration(
-                {QStringLiteral("ja"), QStringLiteral("en"), QStringLiteral("qwen")}),
+                {QStringLiteral("ja"), QStringLiteral("en"), QStringLiteral("qwen"),
+                 QStringLiteral("original")}),
             "change translation model and both languages together");
     server.waitForStreams(8);
     require(session.displayed->lines[0].text == QStringLiteral("source 0"),
@@ -684,6 +740,7 @@ void fragmentedUnicodeStreamsUpdateOnlyCompleteEvents() {
 } // namespace
 
 void runOriginalImageTranslationTests() {
+    smartLayoutStreamsParagraphsAndSwitchesModes();
     queueStreamsIndividualBoxesAndKeepsOriginals();
     fourBoxesAndOwnerClosure();
     partialFailuresRetryOnlyFailedBoxes();
@@ -698,6 +755,81 @@ void runOriginalImageTranslationTests() {
 
 #if defined(SNOW_SHOT_TEST_PINNED_TRANSLATION)
 void runPinnedOriginalImageTranslationTests() {
+    configureTranslation();
+    {
+        const snow_shot::storage::ScreenshotTranslationSettings settings;
+        require(settings.setLayoutProcessing(QStringLiteral("smart_merge")), "enable Smart Merge");
+        TranslationServer mergedServer;
+        SnowShotApiClient mergedApi(mergedServer.url());
+        SessionProbe mergedSeed(&mergedApi, 3);
+        mergedSeed.controller->beginTextTranslation();
+        mergedServer.waitForStreams(1);
+        mergedServer.delta(0, QStringLiteral("translated paragraph across multiple lines"));
+        mergedServer.finish(0);
+        waitUntil([&]() { return !mergedSeed.streaming; }, "finish merged translation for pinning");
+        const auto results = mergedSeed.controller->recognitionResultsSnapshot();
+        mergedSeed.controller.reset();
+        require(results.translatedText != nullptr && results.translatedText->lines.size() == 1,
+                "pin fixture must merge three OCR lines into one translated paragraph");
+        const auto& expected = results.translatedText->lines.front();
+        ScreenshotPinnedWindow::Config mergedConfig;
+        mergedConfig.canvasSourceRect = mergedSeed.source->selection;
+        mergedConfig.screen = QGuiApplication::primaryScreen();
+        require(mergedConfig.screen != nullptr, "merged pin requires a test screen");
+        mergedConfig.nativeGeometry =
+            QRect(ScreenshotGeometryMapper::physicalRectForScreen(*mergedConfig.screen).topLeft() +
+                      QPoint(40, 40),
+                  mergedSeed.source->selection.size());
+        QImage image(mergedSeed.source->selection.size(), QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::white);
+        mergedConfig.imageSource =
+            ScreenshotImageSource::fromImage(image, mergedConfig.canvasSourceRect);
+        mergedConfig.automaticTextRecognition = false;
+        mergedConfig.recognitionVisible = true;
+        mergedConfig.translationVisible = true;
+        mergedConfig.recognitionResults = results;
+        // Captured translations must survive even if the global layout setting has changed.
+        configureTranslation(false);
+        for (const bool restore : {false, true}) {
+            mergedConfig.restorePersistentState = restore;
+            auto* window = new ScreenshotPinnedWindow;
+            QPointer<ScreenshotPinnedWindow> guard(window);
+            require(window->present(mergedConfig), "present merged translation pin");
+            auto* session = window->findChild<ScreenshotRecognitionSessionController*>();
+            require(session != nullptr, "merged pin owns a recognition session");
+            waitUntil([&]() { return session->hasTextResult(); }, "load merged pin OCR");
+            require(session->originalImageTranslationActive(),
+                    "pinning and restoring must preserve the merged translation overlay");
+            const auto snapshot = session->recognitionResultsSnapshot();
+            require(snapshot.translatedText != nullptr &&
+                        snapshot.translatedText->lines.size() == 1 &&
+                        snapshot.text->presentation->lines.size() == 3,
+                    "merged pins preserve separate source lines and translated paragraphs");
+            const auto& actual = snapshot.translatedText->lines.front();
+            require(actual.text == expected.text && actual.quad == expected.quad &&
+                        actual.paragraph == expected.paragraph &&
+                        actual.sourceLineQuads == expected.sourceLineQuads &&
+                        actual.direction == expected.direction,
+                    "pin persistence must retain paragraph geometry and rendering metadata");
+            auto* content = window->findChild<ScreenshotRecognitionWindow*>();
+            auto* layer =
+                content == nullptr
+                    ? nullptr
+                    : content->findChild<QGraphicsView*>(QStringLiteral("snowShotOcrTextLayer"));
+            require(layer != nullptr && layer->isVisible() && layer->scene()->items().size() == 1 &&
+                        content->copyVisibleContentToClipboard() &&
+                        QApplication::clipboard()->text() == expected.text,
+                    "merged pinned paragraphs must remain visible and copyable");
+            const auto record = window->persistenceSnapshot();
+            mergedConfig.recognitionResults = {};
+            mergedConfig.persistedRecognitionResults = record.recognitionResults;
+            mergedConfig.persistedRecognitionVisible = record.recognitionVisible;
+            mergedConfig.persistedTranslationVisible = record.translationVisible;
+            require(mergedServer.streams.size() == 1, "pinning must not retranslate merged text");
+            window->close();
+            waitUntil([&]() { return guard.isNull(); }, "close merged translation pin");
+        }
+    }
     configureTranslation();
     TranslationServer server;
     SnowShotApiClient api(server.url());
@@ -742,6 +874,19 @@ void runPinnedOriginalImageTranslationTests() {
             "pinned overlay must update existing text items and copy translated display text");
     const auto partialRecord = pinned->persistenceSnapshot();
     const auto partialResults = controller->recognitionResultsSnapshot();
+    QByteArray legacyPayload;
+    {
+        QDataStream stream(&legacyPayload, QIODevice::WriteOnly);
+        const auto& source = *partialResults.text->presentation;
+        stream << partialResults.key << quint8(1) << quint8(0) << quint8(0)
+               << partialResults.text->error << source.selection << qint64(source.lines.size());
+        for (const auto& line : source.lines) {
+            stream << line.text << line.confidence << line.quad
+                   << quint8(line.direction == ScreenshotOcrTextDirection::Vertical ? 1 : 0);
+        }
+        stream << quint32(0x53535452) << quint8(1)
+               << QStringList{QStringLiteral("translated"), QStringLiteral("source 1")};
+    }
     require(partialRecord.recognitionVisible && partialRecord.translationVisible &&
                 !partialRecord.recognitionResults.isEmpty(),
             "a translating pin must persist the visible partial overlay");
@@ -782,7 +927,7 @@ void runPinnedOriginalImageTranslationTests() {
     config.tableRecognition = nullptr;
     configureTranslation(false);
     auto sourceViewRecord = partialRecord;
-    for (const int scenario : {0, 1, 2, 3}) {
+    for (const int scenario : {0, 1, 2, 3, 4}) {
         const bool visible = scenario != 2;
         const bool translated = scenario != 3;
         config.restorePersistentState = scenario != 0;
@@ -791,6 +936,9 @@ void runPinnedOriginalImageTranslationTests() {
         config.translationVisible = translated;
         config.persistedRecognitionResults =
             scenario == 3 ? sourceViewRecord.recognitionResults : partialRecord.recognitionResults;
+        if (scenario == 4) {
+            config.persistedRecognitionResults = legacyPayload;
+        }
         config.persistedRecognitionVisible =
             scenario == 3 ? sourceViewRecord.recognitionVisible : visible;
         config.persistedTranslationVisible =
@@ -862,12 +1010,19 @@ void runPinnedOriginalImageTranslationTests() {
         restored->close();
         waitUntil([&]() { return restoredGuard.isNull(); }, "close restored translation pin");
     }
-    for (const bool invalidTranslation : {false, true}) {
+    for (const int invalidTranslation : {0, 1, 2}) {
         config.recognitionResults = partialResults;
         config.recognitionResults.translatedText.reset();
-        if (invalidTranslation) {
+        if (invalidTranslation == 1) {
             config.recognitionResults.translatedText =
                 std::make_shared<ScreenshotOcrPresentation>();
+        } else if (invalidTranslation == 2) {
+            config.recognitionResults.translatedText =
+                std::make_shared<ScreenshotOcrPresentation>();
+            config.recognitionResults.translatedText->selection =
+                partialResults.translatedText->selection;
+            config.recognitionResults.translatedText->lines = partialResults.translatedText->lines;
+            config.recognitionResults.translatedText->lines[0].quad.translate(10, 10);
         }
         config.restorePersistentState = false;
         config.persistedRecognitionResults.clear();

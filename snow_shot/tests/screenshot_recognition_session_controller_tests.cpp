@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/configurationstore.h"
 
 #include "widgets/modal.h"
 #include "widgets/select.h"
@@ -48,11 +49,17 @@ class ControllableOcrRecognition final : public ScreenshotOcrRecognitionPort {
 
     void cancel(RequestToken) override {}
 
-    bool reprioritize(RequestToken, ScreenshotOcrRequestPriority) override { return true; }
+    bool reprioritize(RequestToken, ScreenshotOcrRequestPriority) override {
+        return true;
+    }
 
-    bool modelFilesReady() const override { return m_ready; }
+    bool modelFilesReady() const override {
+        return m_ready;
+    }
 
-    ScreenshotOcrAssetStatus assetStatus() const override { return m_status; }
+    ScreenshotOcrAssetStatus assetStatus() const override {
+        return m_status;
+    }
 
     void completeWithEmptyPresentation() {
         ScreenshotOcrRecognitionResult result;
@@ -65,8 +72,7 @@ class ControllableOcrRecognition final : public ScreenshotOcrRecognitionPort {
 
     int requests = 0;
     bool m_ready = false;
-    ScreenshotOcrAssetStatus m_status{ScreenshotOcrAssetPhase::Verifying,
-                                      QStringLiteral("assets")};
+    ScreenshotOcrAssetStatus m_status{ScreenshotOcrAssetPhase::Verifying, QStringLiteral("assets")};
 
   private:
     Completion m_completion;
@@ -91,8 +97,8 @@ struct PromptRecorder {
     }
 };
 
-std::unique_ptr<ScreenshotRecognitionSessionController> makeTextSession(
-    ControllableOcrRecognition& recognition, PromptRecorder& recorder) {
+std::unique_ptr<ScreenshotRecognitionSessionController>
+makeTextSession(ControllableOcrRecognition& recognition, PromptRecorder& recorder) {
     auto controller = std::make_unique<ScreenshotRecognitionSessionController>(
         &recognition, nullptr, nullptr, recorder.actions());
     ScreenshotRecognitionTarget target;
@@ -127,6 +133,44 @@ void cachedVerificationStaysSilent() {
     require(recorder.modelDownloadShows == 0 && recorder.modelDownloadHides == 0,
             "a cached launch must never touch the download prompt");
     require(recognition.requests == 1, "a cached launch must not requeue recognition");
+}
+
+void cachedRecognitionUsesTheSelectedFillStyle() {
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    require(configuration.setValue(QStringLiteral("text_recognition/fill_style"),
+                                   QStringLiteral("background_fill")),
+            "select background fill");
+    ControllableOcrRecognition recognition;
+    std::shared_ptr<ScreenshotOcrPresentation> displayed;
+    ScreenshotRecognitionSessionActions actions;
+    actions.applyOcrPresentation = [&](const auto& presentation) { displayed = presentation; };
+    ScreenshotRecognitionSessionController controller(&recognition, nullptr, nullptr, actions);
+    ScreenshotRecognitionTarget target;
+    target.key = QStringLiteral("fill-session");
+    target.image = QImage(64, 64, QImage::Format_ARGB32_Premultiplied);
+    target.image.fill(QColor(30, 40, 50));
+    target.canvasRect = QRectF(0, 0, 64, 64);
+    controller.setTarget(target);
+    ScreenshotRecognitionResults cached;
+    cached.key = target.key;
+    cached.text = ScreenshotOcrRecognitionResult{};
+    cached.text->presentation = std::make_shared<ScreenshotOcrPresentation>();
+    cached.text->presentation->selection = QRect(0, 0, 64, 64);
+    cached.text->presentation->lines.push_back(
+        {QStringLiteral("Text"), 1.0,
+         QPolygonF{QPointF(10, 10), QPointF(50, 10), QPointF(50, 30), QPointF(10, 30)}});
+    cached.text->presentation->prepareForRendering();
+    controller.seedRecognitionResults(cached);
+    controller.activate(ScreenshotRecognitionSessionController::Mode::Text);
+    require(displayed != nullptr && displayed->lines[0].backgroundFillColor == QColor(30, 40, 50),
+            "cached OCR must receive fill colors from the source image before display");
+    require(configuration.setValue(QStringLiteral("text_recognition/fill_style"),
+                                   QStringLiteral("blur")),
+            "restore Blur");
+    require(displayed != nullptr && !displayed->lines[0].backgroundFillColor.isValid() &&
+                recognition.requests == 0,
+            "switching visible OCR back to Blur clears solid colors without recognizing again");
+    controller.deactivate();
 }
 
 void displayedRecognitionSnapshotPreservesCachedResults() {
@@ -262,8 +306,7 @@ void liveDownloadsStillSurfaceThePrompt() {
     const int showsAfterDownload = recorder.modelDownloadShows;
     recognition.completeWithEmptyPresentation();
     processFor(250);
-    require(recorder.modelDownloadShows == showsAfterDownload &&
-                recorder.modelDownloadHides >= 1,
+    require(recorder.modelDownloadShows == showsAfterDownload && recorder.modelDownloadHides >= 1,
             "recognition completion must not leave the download prompt behind");
 }
 
@@ -298,6 +341,10 @@ void prefetchVerificationStaysSilentWhileDownloadsSurface() {
 }
 
 void translationLanguageSelectsUseCodePrefixGroups() {
+    const snow_shot::storage::ScreenshotTranslationSettings settings;
+    const auto previousConfiguration = settings.configuration();
+    require(settings.setLayoutProcessing(QStringLiteral("original")),
+            "select Original layout before opening language settings");
     QApplication::setQuitOnLastWindowClosed(false);
     QWidget owner;
     SnowShotApiClient apiClient(QStringLiteral("http://127.0.0.1:1"));
@@ -311,14 +358,12 @@ void translationLanguageSelectsUseCodePrefixGroups() {
         QStringLiteral("screenshotTranslationSettingsModal"));
     require(modal != nullptr, "translation settings should create its modal");
     QWidget* content = modal->contentWidget();
-    auto* source = content == nullptr
-                       ? nullptr
-                       : content->findChild<adqt::widgets::AdSelect*>(
-                             QStringLiteral("screenshotTranslationSourceLanguage"));
-    auto* target = content == nullptr
-                       ? nullptr
-                       : content->findChild<adqt::widgets::AdSelect*>(
-                             QStringLiteral("screenshotTranslationTargetLanguage"));
+    auto* source = content == nullptr ? nullptr
+                                      : content->findChild<adqt::widgets::AdSelect*>(
+                                            QStringLiteral("screenshotTranslationSourceLanguage"));
+    auto* target = content == nullptr ? nullptr
+                                      : content->findChild<adqt::widgets::AdSelect*>(
+                                            QStringLiteral("screenshotTranslationTargetLanguage"));
     require(source != nullptr && target != nullptr,
             "translation settings should expose source and target language selects");
     require(source->popupLayerMode() == adqt::widgets::AdSelect::PopupLayerMode::QtTool &&
@@ -341,7 +386,21 @@ void translationLanguageSelectsUseCodePrefixGroups() {
                 targetOptions.constLast().group == QStringLiteral("Z"),
             "target language options should group by the first character of their code");
 
-    modal->reject();
+    adqt::widgets::AdSelect* service = nullptr;
+    for (auto* select : content->findChildren<adqt::widgets::AdSelect*>()) {
+        if (select != source && select != target)
+            service = select;
+    }
+    require(service != nullptr, "language settings include a service selector");
+    service->setOptions({{QStringLiteral("test-model"), QStringLiteral("Test model")}});
+    service->setCurrentValue(QStringLiteral("test-model"));
+    source->setCurrentValue(QStringLiteral("en"));
+    target->setCurrentValue(QStringLiteral("zh-Hans"));
+    modal->closeRequested(adqt::widgets::AdModal::CloseReason::OkAction);
+    require(settings.layoutProcessing() == QStringLiteral("original") &&
+                settings.configuration().modelId == QStringLiteral("test-model"),
+            "accepting translation languages preserves the separate layout processing choice");
+    require(settings.setConfiguration(previousConfiguration), "restore translation configuration");
     QCoreApplication::sendPostedEvents();
     QCoreApplication::processEvents();
 }
@@ -362,6 +421,7 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    cachedRecognitionUsesTheSelectedFillStyle();
     translationLanguageSelectsUseCodePrefixGroups();
     displayedRecognitionSnapshotPreservesCachedResults();
     cachedVerificationStaysSilent();

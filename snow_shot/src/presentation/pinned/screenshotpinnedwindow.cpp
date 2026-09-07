@@ -90,7 +90,7 @@
 namespace {
 
 constexpr quint32 kTextTranslationPayloadMarker = 0x53535452;
-constexpr quint8 kTextTranslationPayloadVersion = 1;
+constexpr quint8 kTextTranslationPayloadVersion = 2;
 
 QByteArray serializeResultStyle(const ScreenshotResultStyle& style) {
     QByteArray bytes;
@@ -127,13 +127,14 @@ QByteArray serializeRecognitionResults(const ScreenshotRecognitionResults& resul
     }
     if (results.translatedText != nullptr && results.text.has_value() &&
         results.text->presentation != nullptr) {
-        QStringList translatedLines;
-        for (const auto& line : results.translatedText->lines) {
-            translatedLines.push_back(line.text);
-        }
-        // Translation shares the source OCR geometry but owns separate line contents.
+        // Merged translations own their geometry and paragraph rendering metadata.
         stream << kTextTranslationPayloadMarker << kTextTranslationPayloadVersion
-               << translatedLines;
+               << results.translatedText->selection << qint64(results.translatedText->lines.size());
+        for (const auto& line : results.translatedText->lines) {
+            stream << line.text << line.confidence << line.quad
+                   << quint8(line.direction == ScreenshotOcrTextDirection::Vertical ? 1 : 0)
+                   << line.paragraph << line.sourceLineQuads;
+        }
     }
     return bytes;
 }
@@ -184,23 +185,41 @@ ScreenshotRecognitionResults deserializeRecognitionResults(const QByteArray& byt
     if (stream.status() == QDataStream::Ok && !stream.atEnd()) {
         quint32 marker = 0;
         quint8 version = 0;
-        QStringList translatedLines;
         stream >> marker >> version;
-        if (marker != kTextTranslationPayloadMarker || version != kTextTranslationPayloadVersion ||
+        if (marker != kTextTranslationPayloadMarker ||
+            (version != 1 && version != kTextTranslationPayloadVersion) ||
             !results.text.has_value() || !results.text->error.isEmpty() ||
             results.text->presentation == nullptr) {
             return {};
         }
-        stream >> translatedLines;
-        const auto& source = results.text->presentation;
-        if (translatedLines.size() != source->lines.size()) {
-            return {};
-        }
         results.translatedText = std::make_shared<ScreenshotOcrPresentation>();
-        results.translatedText->selection = source->selection;
-        results.translatedText->lines = source->lines;
-        for (int index = 0; index < translatedLines.size(); ++index) {
-            results.translatedText->lines[index].text = translatedLines[index];
+        if (version == 1) {
+            QStringList translatedLines;
+            stream >> translatedLines;
+            const auto& source = results.text->presentation;
+            if (translatedLines.size() != source->lines.size()) {
+                return {};
+            }
+            results.translatedText->selection = source->selection;
+            results.translatedText->lines = source->lines;
+            for (int index = 0; index < translatedLines.size(); ++index) {
+                results.translatedText->lines[index].text = translatedLines[index];
+            }
+        } else {
+            qint64 lineCount = 0;
+            stream >> results.translatedText->selection >> lineCount;
+            if (lineCount < 0 || lineCount > 10000) {
+                return {};
+            }
+            for (int index = 0; index < lineCount; ++index) {
+                ScreenshotOcrLine line;
+                quint8 direction = 0;
+                stream >> line.text >> line.confidence >> line.quad >> direction >>
+                    line.paragraph >> line.sourceLineQuads;
+                line.direction = direction != 0 ? ScreenshotOcrTextDirection::Vertical
+                                                : ScreenshotOcrTextDirection::Horizontal;
+                results.translatedText->lines.push_back(std::move(line));
+            }
         }
         results.translatedText->prepareForRendering();
     }
@@ -2598,9 +2617,8 @@ void ScreenshotPinnedWindow::createContextMenu() {
     setActionTranslationSource(m_drawingAction, "Drawing mode");
     m_drawingAction->setObjectName(QStringLiteral("screenshotPinnedDrawingAction"));
     m_drawingAction->setCheckable(true);
-    connect(m_drawingAction, &QAction::toggled, this, [this](bool enabled) {
-        setEditMode(enabled);
-    });
+    connect(m_drawingAction, &QAction::toggled, this,
+            [this](bool enabled) { setEditMode(enabled); });
 
     auto* processMenu = m_contextMenu->addSubMenu(tr("Process image"), outlined_icons::Picture());
     setActionTranslationSource(processMenu->menuAction(), "Process image");
