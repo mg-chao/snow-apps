@@ -586,6 +586,18 @@ SettingsItemDefinition screenshotImageFormatItem() {
          {QStringLiteral("avif"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "AVIF"))}});
 }
 
+SettingsItemDefinition ocrFillStyleItem() {
+    return fixedSelectItem(
+        QStringLiteral("interface.text-recognition.fill-style"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Fill Style"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Choose how the area behind recognized text is filled"),
+        QStringLiteral("text_recognition/fill_style"), SettingsSelectBinding::OcrFillStyle,
+        {{QStringLiteral("blur"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Blur"))},
+         {QStringLiteral("background_fill"),
+          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Background Fill"))}});
+}
+
 SettingsItemDefinition screenshotSaveAsFileDialogItem() {
     return fixedSelectItem(
         QStringLiteral("screenshot.save-as-file-dialog"),
@@ -858,6 +870,19 @@ SettingsItemDefinition trayLeftClickItem() {
             {QStringLiteral("show_main_window"),
              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Show main window"))},
         });
+}
+
+SettingsItemDefinition translationLayoutProcessingItem() {
+    return fixedSelectItem(
+        QStringLiteral("translation.layout-processing"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Layout Processing"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Group recognized text before translating"),
+        QStringLiteral("screenshot_translation/layout_processing"),
+        SettingsSelectBinding::TranslationLayoutProcessing,
+        {{QStringLiteral("smart_merge"),
+          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Smart Merge"))},
+         {QStringLiteral("original"),
+          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Original"))}});
 }
 
 QVector<SettingsOptionDefinition> clarityOptions(bool includeHighRes) {
@@ -1418,7 +1443,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(
                         QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot translation settings")),
                     SettingsSectionReset::Translation,
-                    {originalImageTranslationItem()},
+                    {originalImageTranslationItem(), translationLayoutProcessingItem()},
                 },
                 {
                     QStringLiteral("drawing-settings"),
@@ -1515,6 +1540,14 @@ QVector<SettingsPageDefinition> builtInPages() {
                             SettingsColorBinding::ColorPickerCenterGuideLineColor),
                         screenshotToolbarEditorItem(),
                     },
+                },
+                {
+                    QStringLiteral("interface-text-recognition"),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Text Recognition")),
+                    settingsText(
+                        QT_TRANSLATE_NOOP("SettingsCatalog", "Text recognition appearance")),
+                    SettingsSectionReset::TextRecognitionInterfaceSettings,
+                    {ocrFillStyleItem()},
                 },
                 {
                     QStringLiteral("toolbar"),
@@ -2280,6 +2313,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSelectBinding::ColorPickerDisplayMode:
                         expectedKey = QStringLiteral("screenshot_ui/color_picker_display_mode");
                         break;
+                    case SettingsSelectBinding::OcrFillStyle:
+                        expectedKey = QStringLiteral("text_recognition/fill_style");
+                        break;
                     case SettingsSelectBinding::ScreenshotOcrAction:
                         expectedKey =
                             QStringLiteral("screenshot/auto_execute_after_text_recognition");
@@ -2322,6 +2358,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSelectBinding::TrayLeftClickAction:
                         expectedKey = QStringLiteral("tray/left_click_action");
+                        break;
+                    case SettingsSelectBinding::TranslationLayoutProcessing:
+                        expectedKey = QStringLiteral("screenshot_translation/layout_processing");
                         break;
                     }
                     if (schemaEntry == nullptr ||

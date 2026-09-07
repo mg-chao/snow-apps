@@ -693,6 +693,13 @@ void SettingsRuntimeSession::refreshField(const QString& fieldId,
         next.enabled = false;
     } else {
         next.enabled = currentStatus.writeAvailable;
+        if (const auto* select =
+                std::get_if<SettingsSelectDefinition>(&descriptor->definition->payload);
+            select != nullptr &&
+            select->binding == SettingsSelectBinding::TranslationLayoutProcessing) {
+            next.enabled = next.enabled &&
+                           m_backend.switchValue(SettingsSwitchBinding::OriginalImageTranslation);
+        }
         const bool historyField =
             descriptor->reset == SettingsSectionReset::HistoryPolicy ||
             descriptor->configurationKey.startsWith(QStringLiteral("capture_history/"));

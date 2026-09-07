@@ -40,8 +40,7 @@ struct ScreenshotRecognitionTarget {
     QString formattedPlainText;
 
     [[nodiscard]] bool isValid() const {
-        return !key.isEmpty() && !image.isNull() && canvasRect.isValid() &&
-               !canvasRect.isEmpty();
+        return !key.isEmpty() && !image.isNull() && canvasRect.isValid() && !canvasRect.isEmpty();
     }
 
     [[nodiscard]] bool hasFormattedText() const {
@@ -153,6 +152,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
         enum class TranslationStatus { Absent, Streaming, Completed, Failed };
         struct TranslationUnit {
             enum class Status { Pending, Streaming, Completed, Failed };
+            QString sourceText;
             QString text;
             Status status = Status::Pending;
         };

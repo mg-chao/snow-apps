@@ -135,6 +135,8 @@ BuiltInSettingsBackend::BuiltInSettingsBackend(
 
 QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) const {
     switch (binding) {
+    case SettingsSelectBinding::TranslationLayoutProcessing:
+        return storage::ScreenshotTranslationSettings().layoutProcessing();
     case SettingsSelectBinding::Theme:
         return themeModeValue(styles::ThemeManager::instance().themeMode());
     case SettingsSelectBinding::Language:
@@ -161,6 +163,11 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
         return storage::ScreenshotSettings().windowElementApi();
     case SettingsSelectBinding::ScreenshotToolbarSize:
         return storage::ScreenshotUiSettings().toolbarSize();
+    case SettingsSelectBinding::OcrFillStyle:
+        return storage::ApplicationStorage::instance()
+            .configuration()
+            .value(QStringLiteral("text_recognition/fill_style"))
+            .toString();
     case SettingsSelectBinding::ColorPickerDisplayMode:
         return storage::ScreenshotUiSettings().colorPickerDisplayMode();
     case SettingsSelectBinding::ScreenshotOcrAction:
@@ -212,6 +219,8 @@ BuiltInSettingsBackend::dynamicSelectOptions(SettingsSelectBinding binding) cons
 bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
                                               const QVariant& value) {
     switch (binding) {
+    case SettingsSelectBinding::TranslationLayoutProcessing:
+        return storage::ScreenshotTranslationSettings().setLayoutProcessing(value.toString());
     case SettingsSelectBinding::Theme: {
         const auto requested = themeModeForValue(value);
         styles::ThemeManager::instance().setThemeMode(requested);
@@ -255,6 +264,9 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
         return storage::ScreenshotSettings().setWindowElementApi(value.toString());
     case SettingsSelectBinding::ScreenshotToolbarSize:
         return storage::ScreenshotUiSettings().setToolbarSize(value.toString());
+    case SettingsSelectBinding::OcrFillStyle:
+        return storage::ApplicationStorage::instance().configuration().setValue(
+            QStringLiteral("text_recognition/fill_style"), value.toString());
     case SettingsSelectBinding::ColorPickerDisplayMode:
         return storage::ScreenshotUiSettings().setColorPickerDisplayMode(value.toString());
     case SettingsSelectBinding::ScreenshotOcrAction:
@@ -940,6 +952,11 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_toolbar/action_tools_layout"))},
         });
+    case SettingsSectionReset::TextRecognitionInterfaceSettings:
+        return storage::ApplicationStorage::instance().configuration().setValue(
+            QStringLiteral("text_recognition/fill_style"),
+            storage::ConfigurationSchema::defaultValue(
+                QStringLiteral("text_recognition/fill_style")));
     case SettingsSectionReset::Toolbar:
         return storage::ApplicationStorage::instance().configuration().setValue(
             QStringLiteral("screenshot_ui/toolbar_size"),
@@ -1040,10 +1057,14 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                  QStringLiteral("pin_to_screen/auto_resize_window"))},
         });
     case SettingsSectionReset::Translation:
-        return storage::ScreenshotTranslationSettings().setOriginalImageTranslationEnabled(
-            storage::ConfigurationSchema::defaultValue(
-                QStringLiteral("screenshot_translation/original_image_translation"))
-                .toBool());
+        return storage::ApplicationStorage::instance().configuration().setValues({
+            {QStringLiteral("screenshot_translation/original_image_translation"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot_translation/original_image_translation"))},
+            {QStringLiteral("screenshot_translation/layout_processing"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot_translation/layout_processing"))},
+        });
     case SettingsSectionReset::Tray:
         return storage::ApplicationStorage::instance().configuration().setValues({
             {QStringLiteral("tray/enabled"),

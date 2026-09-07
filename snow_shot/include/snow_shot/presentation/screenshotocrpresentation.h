@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTOCRPRESENTATION_H
 
 #include <QHash>
+#include <QColor>
 #include <QPolygonF>
 #include <QRect>
 #include <QString>
@@ -18,6 +19,9 @@ struct ScreenshotOcrLine {
     qreal confidence = 0.0;
     QPolygonF quad;
     ScreenshotOcrTextDirection direction = ScreenshotOcrTextDirection::Horizontal;
+    QVector<QPolygonF> sourceLineQuads;
+    bool paragraph = false;
+    QColor backgroundFillColor;
 };
 
 struct ScreenshotOcrTextPosition {
@@ -28,6 +32,8 @@ struct ScreenshotOcrTextPosition {
         return lineIndex >= 0 && characterIndex >= 0;
     }
 };
+
+[[nodiscard]] QColor screenshotOcrContrastingTextColor(const QColor& background);
 
 struct ScreenshotOcrTextRange {
     int start = 0;

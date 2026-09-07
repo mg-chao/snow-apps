@@ -901,6 +901,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/core/screenshotsmartselectiontransition.cpp
     src/presentation/ocr/screenshotocrcontroller.cpp
     src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp
+    src/presentation/ocr/screenshotocrlayout.cpp
     src/presentation/ocr/screenshotrecognitionwindow.cpp
     src/presentation/ocr/screenshottabledocument.cpp
     src/presentation/ocr/screenshottableeditor.cpp
@@ -2328,6 +2329,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-pinned-window-tests
         tests/screenshot_pinned_window_tests.cpp
         tests/original_image_translation_tests.cpp
+        include/snow_shot/presentation/components/pathinput.h
+        src/presentation/components/pathinput.cpp
         include/snow_shot/presentation/screenshotsavepreviewcanvas.h
         src/presentation/services/screenshotsaveasfiledialog.cpp
         src/presentation/services/screenshotsaveexportpipeline.cpp
@@ -2359,6 +2362,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/ocr/screenshotocrtexteditingsession.cpp
         src/presentation/ocr/screenshotocrtexttransform.cpp
         src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp
+        src/presentation/ocr/screenshotocrlayout.cpp
         src/presentation/ocr/screenshotrecognitionwindow.cpp
         src/presentation/ocr/screenshottabledocument.cpp
         src/presentation/ocr/screenshottableeditor.cpp
@@ -3388,6 +3392,17 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_dependencies(snow-shot-ocr-recognition-service-tests snow_ocr_process)
 
+    add_executable(snow-shot-ocr-layout-tests
+        tests/screenshot_ocr_layout_tests.cpp
+        src/presentation/ocr/screenshotocrlayout.cpp
+    )
+    target_include_directories(snow-shot-ocr-layout-tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_link_libraries(snow-shot-ocr-layout-tests PRIVATE Qt6::Gui)
+    add_test(NAME snow-shot-ocr-layout-tests COMMAND snow-shot-ocr-layout-tests)
+    set_tests_properties(snow-shot-ocr-layout-tests PROPERTIES
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
     add_executable(snow-shot-recognition-session-controller-tests
         tests/screenshot_recognition_session_controller_tests.cpp
         tests/original_image_translation_tests.cpp
@@ -3405,6 +3420,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/ocr/screenshotocrtexttransform.cpp
         src/presentation/ocr/screenshotocrvisuals.cpp
         src/presentation/ocr/screenshotrecognitionsessioncontroller.cpp
+        src/presentation/ocr/screenshotocrlayout.cpp
         src/presentation/ocr/screenshotrecognitionwindow.cpp
         src/presentation/ocr/screenshottabledocument.cpp
         src/presentation/ocr/screenshottableeditor.cpp

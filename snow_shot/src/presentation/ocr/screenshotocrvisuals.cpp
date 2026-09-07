@@ -9,7 +9,9 @@
 #include <QPolygonF>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 namespace {
@@ -26,10 +28,10 @@ QPolygonF expandedQuad(const QPolygonF& quad) {
     if (quad.size() != 4) {
         return quad;
     }
-    const qreal width = std::max(edgeLength(quad.at(0), quad.at(1)),
-                                 edgeLength(quad.at(3), quad.at(2)));
-    const qreal height = std::max(edgeLength(quad.at(0), quad.at(3)),
-                                  edgeLength(quad.at(1), quad.at(2)));
+    const qreal width =
+        std::max(edgeLength(quad.at(0), quad.at(1)), edgeLength(quad.at(3), quad.at(2)));
+    const qreal height =
+        std::max(edgeLength(quad.at(0), quad.at(3)), edgeLength(quad.at(1), quad.at(2)));
     const qreal margin = std::clamp(std::min(width, height) * kOcrRegionExpansionFraction,
                                     kOcrRegionExpansionMinimum, kOcrRegionExpansionMaximum);
     const QPointF center = quad.boundingRect().center();
@@ -39,7 +41,7 @@ QPolygonF expandedQuad(const QPolygonF& quad) {
         const QPointF delta = point - center;
         const qreal length = std::hypot(delta.x(), delta.y());
         expanded.push_back(length > 0.0 ? point + delta * (margin / length)
-                                       : point + QPointF(margin, margin));
+                                        : point + QPointF(margin, margin));
     }
     return expanded;
 }
@@ -62,6 +64,48 @@ QPolygon imagePolygonForQuad(const QPolygonF& quad, const QRectF& canvasRect,
 }
 
 } // namespace
+
+void prepareScreenshotOcrFillColors(ScreenshotOcrPresentation& presentation, const QImage& source,
+                                    const QRectF& canvasRect, bool backgroundFill) {
+    const QRectF normalized = canvasRect.normalized();
+    for (ScreenshotOcrLine& line : presentation.lines) {
+        line.backgroundFillColor = QColor();
+        if (!backgroundFill || source.isNull() || !normalized.isValid() || normalized.isEmpty() ||
+            line.quad.size() != 4) {
+            continue;
+        }
+        const QPolygonF quad = expandedQuad(line.quad);
+        std::array<QColor, 8> samples;
+        for (int index = 0; index < 4; ++index) {
+            const QPointF corner = quad.at(index);
+            const QPointF midpoint = (corner + quad.at((index + 1) % 4)) / 2.0;
+            const auto sample = [&](const QPointF& point) {
+                const QPoint pixel =
+                    imagePointForCanvasPoint(point, normalized, source.size()).toPoint();
+                QColor color = source.pixelColor(std::clamp(pixel.x(), 0, source.width() - 1),
+                                                 std::clamp(pixel.y(), 0, source.height() - 1));
+                color.setAlpha(255);
+                return color;
+            };
+            samples[static_cast<std::size_t>(index * 2)] = sample(corner);
+            samples[static_cast<std::size_t>(index * 2 + 1)] = sample(midpoint);
+        }
+        // The RGB medoid minimizes total (unsquared) distance without averaging outliers.
+        double bestDistance = std::numeric_limits<double>::max();
+        for (const QColor& candidate : samples) {
+            double distance = 0.0;
+            for (const QColor& sample : samples) {
+                distance += std::hypot(double(candidate.red() - sample.red()),
+                                       double(candidate.green() - sample.green()),
+                                       double(candidate.blue() - sample.blue()));
+            }
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                line.backgroundFillColor = candidate;
+            }
+        }
+    }
+}
 
 QImage materializeScreenshotImageSource(const ScreenshotImageSource& source,
                                         const QRectF& canvasRect, const QSize& pixelSize) {
@@ -86,8 +130,7 @@ QImage materializeScreenshotImageSource(const ScreenshotImageSource& source,
     const qreal scaleY = pixelSize.height() / normalized.height();
     QPainter painter(&image);
     painter.setRenderHint(QPainter::Antialiasing, false);
-    painter.setTransform(QTransform(scaleX, 0.0, 0.0, scaleY,
-                                    -normalized.left() * scaleX,
+    painter.setTransform(QTransform(scaleX, 0.0, 0.0, scaleY, -normalized.left() * scaleX,
                                     -normalized.top() * scaleY));
     const auto drawLayer = [&painter](const ScreenshotImageLayer& layer) {
         if (!layer.isValid()) {
@@ -124,6 +167,7 @@ QRegion screenshotOcrFilterRegion(const ScreenshotOcrPresentation& presentation,
     }
     QRegion region;
     for (const ScreenshotOcrLine& line : presentation.lines) {
+        // The displayed block is authoritative after layout processing, including its gaps.
         if (line.quad.size() >= 3) {
             region += QRegion(imagePolygonForQuad(line.quad, normalized, pixelSize, true));
         }
@@ -141,14 +185,14 @@ QRectF screenshotOcrFilteredImageCanvasRect(const QRectF& canvasRect, const QSiz
     const qreal scaleX = normalized.width() / pixelSize.width();
     const qreal scaleY = normalized.height() / pixelSize.height();
     return QRectF(normalized.left() + filteredPixels.left() * scaleX,
-                  normalized.top() + filteredPixels.top() * scaleY,
-                  filteredPixels.width() * scaleX, filteredPixels.height() * scaleY);
+                  normalized.top() + filteredPixels.top() * scaleY, filteredPixels.width() * scaleX,
+                  filteredPixels.height() * scaleY);
 }
 
 QImage renderScreenshotOcrFilteredImage(const QImage& source, const QRectF& canvasRect,
                                         const ScreenshotOcrPresentation& presentation,
-                                        const QColor& backgroundColor,
-                                        qreal devicePixelRatio, QRect* filteredPixels,
+                                        const QColor& backgroundColor, qreal devicePixelRatio,
+                                        QRect* filteredPixels,
                                         SnowCanvasRegionFilterScratch* scratch) {
     if (filteredPixels != nullptr) {
         *filteredPixels = {};
@@ -158,6 +202,32 @@ QImage renderScreenshotOcrFilteredImage(const QImage& source, const QRectF& canv
         return {};
     }
     const QRect imageRect(QPoint(0, 0), source.size());
+
+    if (std::any_of(
+            presentation.lines.cbegin(), presentation.lines.cend(),
+            [](const ScreenshotOcrLine& line) { return line.backgroundFillColor.isValid(); })) {
+        const QRect crop =
+            screenshotOcrFilterRegion(presentation, normalized, source.size()).boundingRect();
+        if (!crop.isEmpty()) {
+            QImage filtered =
+                source.copy(crop).convertToFormat(QImage::Format_ARGB32_Premultiplied);
+            filtered.setDevicePixelRatio(1.0);
+            QPainter painter(&filtered);
+            for (const ScreenshotOcrLine& line : presentation.lines) {
+                if (!line.backgroundFillColor.isValid()) {
+                    continue;
+                }
+                const QRegion region(
+                    imagePolygonForQuad(line.quad, normalized, source.size(), true));
+                painter.setClipRegion(region.translated(-crop.topLeft()));
+                painter.fillRect(filtered.rect(), line.backgroundFillColor);
+            }
+            if (filteredPixels != nullptr) {
+                *filteredPixels = crop;
+            }
+            return filtered;
+        }
+    }
 
     SnowCanvasRegionFilterParameters parameters;
     parameters.type = SnowCanvasFilterType::GaussianBlur;
@@ -177,8 +247,7 @@ QImage renderScreenshotOcrFilteredImage(const QImage& source, const QRectF& canv
         if (line.quad.size() < 3) {
             continue;
         }
-        const QPolygon polygon =
-            imagePolygonForQuad(line.quad, normalized, source.size(), true);
+        const QPolygon polygon = imagePolygonForQuad(line.quad, normalized, source.size(), true);
         if (polygon.isEmpty()) {
             continue;
         }
@@ -193,8 +262,7 @@ QImage renderScreenshotOcrFilteredImage(const QImage& source, const QRectF& canv
                 continue;
             }
             next.region += clusters[index].region;
-            next.expandedBounds =
-                next.expandedBounds.united(clusters[index].expandedBounds);
+            next.expandedBounds = next.expandedBounds.united(clusters[index].expandedBounds);
             clusters.erase(clusters.begin() + static_cast<std::ptrdiff_t>(index));
             index = 0;
         }
@@ -237,8 +305,7 @@ QImage renderScreenshotOcrFilteredImage(const QImage& source, const QRectF& canv
     QRegion fillRegion;
     for (Cluster& cluster : clusters) {
         const QRegion localRegion = cluster.region.translated(-crop.topLeft());
-        if (!applySnowCanvasRegionFilter(blurInput, filtered, localRegion, parameters,
-                                         scratch)) {
+        if (!applySnowCanvasRegionFilter(blurInput, filtered, localRegion, parameters, scratch)) {
             return {};
         }
         fillRegion += localRegion;
@@ -255,4 +322,3 @@ QImage renderScreenshotOcrFilteredImage(const QImage& source, const QRectF& canv
     }
     return filtered;
 }
-

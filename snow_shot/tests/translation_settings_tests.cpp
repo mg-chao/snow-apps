@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
+#include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 
@@ -40,6 +41,41 @@ int main(int argc, char** argv) {
                 "DirectML acceleration should be disabled by default");
         const auto binding = settings::SettingsSwitchBinding::OriginalImageTranslation;
         const storage::ScreenshotTranslationSettings translation;
+        settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
+        const auto fillBinding = settings::SettingsSelectBinding::OcrFillStyle;
+        require(backend.selectValue(fillBinding).toString() == QStringLiteral("background_fill"),
+                "OCR fill defaults to Background Fill");
+        require(backend.applySelectValue(fillBinding, QStringLiteral("blur")) &&
+                    backend.selectValue(fillBinding).toString() == QStringLiteral("blur"),
+                "OCR fill selection must persist");
+        require(!backend.applySelectValue(fillBinding, QStringLiteral("unsupported")) &&
+                    backend.selectValue(fillBinding).toString() == QStringLiteral("blur"),
+                "unsupported fill styles must not replace the saved choice");
+        require(backend.resetSection(
+                    settings::SettingsSectionReset::TextRecognitionInterfaceSettings) &&
+                    backend.selectValue(fillBinding).toString() ==
+                        QStringLiteral("background_fill"),
+                "resetting Text Recognition appearance restores Background Fill");
+        const auto layoutBinding = settings::SettingsSelectBinding::TranslationLayoutProcessing;
+        const QString layoutId = QStringLiteral("translation.layout-processing");
+        require(backend.selectValue(layoutBinding).toString() == QStringLiteral("smart_merge") &&
+                    session.state(layoutId).enabled,
+                "Smart Merge is the enabled default");
+        require(backend.applySelectValue(layoutBinding, QStringLiteral("original")),
+                "set Original layout");
+        require(backend.applySwitchValue(binding, false), "disable original-image translation");
+        session.refreshAll();
+        require(!session.state(layoutId).enabled &&
+                    translation.layoutProcessing() == QStringLiteral("original"),
+                "disabled layout selector retains its choice");
+        require(!backend.applySelectValue(layoutBinding, QStringLiteral("unsupported")),
+                "reject unknown mode");
+        require(backend.resetSection(settings::SettingsSectionReset::Translation),
+                "reset translation layout");
+        session.refreshAll();
+        require(session.state(layoutId).enabled &&
+                    translation.layoutProcessing() == QStringLiteral("smart_merge"),
+                "reset enables original-image translation and restores Smart Merge");
         const storage::ScreenshotTranslationConfiguration languages{
             QStringLiteral("ja"), QStringLiteral("zh-Hant"), QStringLiteral("chosen-model")};
         require(backend.switchEnabled(binding) && backend.switchValue(binding),

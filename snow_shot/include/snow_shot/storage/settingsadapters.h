@@ -190,6 +190,7 @@ struct ScreenshotTranslationConfiguration {
     QString sourceLanguage;
     QString targetLanguage;
     QString modelId;
+    QString layoutProcessing = QStringLiteral("smart_merge");
 
     friend bool operator==(const ScreenshotTranslationConfiguration& first,
                            const ScreenshotTranslationConfiguration& second) = default;
@@ -199,6 +200,8 @@ class ScreenshotTranslationSettings final {
   public:
     [[nodiscard]] bool originalImageTranslationEnabled() const;
     bool setOriginalImageTranslationEnabled(bool enabled) const;
+    [[nodiscard]] QString layoutProcessing() const;
+    bool setLayoutProcessing(const QString& mode) const;
     [[nodiscard]] ScreenshotTranslationConfiguration configuration() const;
     bool setConfiguration(const ScreenshotTranslationConfiguration& configuration) const;
 };

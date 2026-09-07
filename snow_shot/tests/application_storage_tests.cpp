@@ -233,7 +233,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
             defaultValue("screen_recording/clarity").toString() == QStringLiteral("1080p") &&
             defaultValue("screen_recording/frame_rate").toInt() == 30 &&
             defaultValue("screen_recording/animated_image_clarity").toString() ==
-                QStringLiteral("480p") &&
+                QStringLiteral("720p") &&
             defaultValue("screen_recording/animated_image_frame_rate").toInt() == 10 &&
             defaultValue("screen_recording/animated_image_format").toString() ==
                 QStringLiteral("gif") &&
@@ -392,6 +392,8 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
             "frame-rate settings must reject unsupported and non-integral values");
 
     const QMap<QString, QStringList> allowedStringValues{
+        {QStringLiteral("text_recognition/fill_style"),
+         {QStringLiteral("blur"), QStringLiteral("background_fill")}},
         {QStringLiteral("text_recognition/model_type"),
          {QStringLiteral("extra_small"), QStringLiteral("small"), QStringLiteral("medium")}},
         {QStringLiteral("screenshot/auto_execute_after_text_recognition"),
@@ -620,13 +622,16 @@ void screenshotTranslationSettingsRoundTripSupportedValues() {
     static_cast<void>(initialize(executable, temporary.path()));
 
     const storage::ScreenshotTranslationSettings translation;
+    require(translation.layoutProcessing() == QStringLiteral("smart_merge"),
+            "layout processing should default to Smart Merge for existing configurations");
     require(translation.originalImageTranslationEnabled(),
             "original image translation should default to enabled for existing configurations");
     require(translation.configuration() ==
                 storage::ScreenshotTranslationConfiguration{QStringLiteral("auto"), {}, {}},
             "translation settings should default to Auto source and runtime-derived target/model");
     const storage::ScreenshotTranslationConfiguration selected{
-        QStringLiteral("ja"), QStringLiteral("zh-Hant"), QStringLiteral("model-a")};
+        QStringLiteral("ja"), QStringLiteral("zh-Hant"), QStringLiteral("model-a"),
+        QStringLiteral("original")};
     require(translation.setConfiguration(selected) && translation.configuration() == selected,
             "translation language and model selections should persist together");
     require(translation.setOriginalImageTranslationEnabled(false) &&
@@ -794,7 +799,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
     const storage::RecordingSettings recording;
     require(recording.screenRecordingClarity() == QStringLiteral("1080p") &&
                 recording.frameRate() == 30 &&
-                recording.animatedImageClarity() == QStringLiteral("480p") &&
+                recording.animatedImageClarity() == QStringLiteral("720p") &&
                 recording.animatedImageFrameRate() == 10 &&
                 recording.animatedImageFormat() == QStringLiteral("gif") &&
                 recording.encoder() == QStringLiteral("h264_hw") &&
@@ -807,7 +812,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
             "recording adapters must expose requested defaults");
     require(recording.setScreenRecordingClarity(QStringLiteral("2k")) &&
                 recording.setFrameRate(83) &&
-                recording.setAnimatedImageClarity(QStringLiteral("720p")) &&
+                recording.setAnimatedImageClarity(QStringLiteral("480p")) &&
                 recording.setAnimatedImageFrameRate(24) &&
                 recording.setAnimatedImageFormat(QStringLiteral("webp")) &&
                 recording.setEncoder(QStringLiteral("h265")) &&
@@ -817,7 +822,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 recording.setVideoFilenameFormat(QStringLiteral("Recording_{yyyyMMdd}")) &&
                 recording.screenRecordingClarity() == QStringLiteral("2k") &&
                 recording.frameRate() == 83 &&
-                recording.animatedImageClarity() == QStringLiteral("720p") &&
+                recording.animatedImageClarity() == QStringLiteral("480p") &&
                 recording.animatedImageFrameRate() == 24 &&
                 recording.animatedImageFormat() == QStringLiteral("webp") &&
                 recording.encoder() == QStringLiteral("h265") &&
