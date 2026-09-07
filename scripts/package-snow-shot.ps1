@@ -734,6 +734,63 @@ function New-DeterministicZip {
     finally { $stream.Dispose() }
 }
 
+function Get-ReleaseTreeFileManifest {
+    param([Parameter(Mandatory = $true)][string]$Root)
+
+    return @(Get-ChildItem -LiteralPath $Root -Recurse -File | Sort-Object FullName | ForEach-Object {
+        [pscustomobject][ordered]@{
+            Path = [System.IO.Path]::GetRelativePath($Root, $_.FullName).Replace('\', '/')
+            Bytes = [long]$_.Length
+            Sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+    })
+}
+
+function Assert-ZipMatchesFileManifest {
+    param(
+        [Parameter(Mandatory = $true)][string]$ArchivePath,
+        [Parameter(Mandatory = $true)][object[]]$FileManifest
+    )
+
+    Add-Type -AssemblyName System.IO.Compression
+    $expectedFiles = @{}
+    foreach ($file in $FileManifest) {
+        $expectedFiles[$file.Path] = $file
+    }
+    $stream = [System.IO.File]::OpenRead($ArchivePath)
+    try {
+        $archive = [System.IO.Compression.ZipArchive]::new(
+            $stream, [System.IO.Compression.ZipArchiveMode]::Read, $false)
+        try {
+            $entries = @($archive.Entries | Where-Object { -not $_.FullName.EndsWith('/') })
+            if ($entries.Count -ne $expectedFiles.Count) {
+                throw "ZIP entry count does not match the release manifest for $ArchivePath."
+            }
+            foreach ($entry in $entries) {
+                if (-not $expectedFiles.ContainsKey($entry.FullName)) {
+                    throw "ZIP contains an unexpected entry: $($entry.FullName)"
+                }
+                $expected = $expectedFiles[$entry.FullName]
+                if ($entry.Length -ne $expected.Bytes) {
+                    throw "ZIP entry size does not match the release manifest: $($entry.FullName)"
+                }
+                $entryStream = $entry.Open()
+                try {
+                    $actualHash = [System.Convert]::ToHexString(
+                        [System.Security.Cryptography.SHA256]::HashData($entryStream)
+                    ).ToLowerInvariant()
+                }
+                finally { $entryStream.Dispose() }
+                if ($actualHash -cne $expected.Sha256) {
+                    throw "ZIP entry hash does not match the release manifest: $($entry.FullName)"
+                }
+            }
+        }
+        finally { $archive.Dispose() }
+    }
+    finally { $stream.Dispose() }
+}
+
 $runtimeSource = Join-Path $installDirectory "bin\snow-ocr-process.exe"
 $directMlSource = Join-Path $installDirectory "bin\DirectML.dll"
 $runtimeWork = Join-Path $artifactRoot "snow-ocr-runtime-$ocrRuntimeVersion"
@@ -976,6 +1033,7 @@ $runtimeArchive.sha256 | Set-Content -LiteralPath $runtimePublishedMarker -Encod
 $variantStages = [ordered]@{
     online = Join-Path $artifactRoot "snow-shot-$packageVersion-online-stage"
     offline = Join-Path $artifactRoot "snow-shot-$packageVersion-offline-stage"
+    portable = Join-Path $artifactRoot "snow-shot-$packageVersion-portable-stage"
 }
 $defaultOcrModel = @($ocrModels | Where-Object { $_.Type -eq $ocrDefaultModelType })[0]
 $defaultModelCache = Join-Path $artifactRoot "ocr-models-$($defaultOcrModel.Id)"
@@ -988,7 +1046,7 @@ foreach ($variant in $variantStages.Keys) {
     $assetRoot = Join-Path $stage "bin\assets\ocr"
     Reset-ReleaseDirectory -Path $assetRoot
     Copy-Item -LiteralPath $assetManifestSource -Destination (Join-Path $assetRoot "asset-manifest.json")
-    if ($variant -eq "offline") {
+    if ($variant -in @("offline", "portable")) {
         $runtimeDestination = Join-Path $assetRoot "runtimes\$ocrRuntimeVersion\$ocrPlatform"
         $modelDestination = Join-Path $assetRoot "models\$ocrDefaultModelId"
         New-Item -ItemType Directory -Path $runtimeDestination, $modelDestination -Force | Out-Null
@@ -1000,6 +1058,10 @@ foreach ($variant in $variantStages.Keys) {
             ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $runtimeDestination ".complete.json") -Encoding utf8
         [ordered]@{ schema = 1; component = $ocrDefaultModelId } |
             ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $modelDestination ".complete.json") -Encoding utf8
+    }
+    if ($variant -eq "portable") {
+        "portable" | Set-Content -LiteralPath (Join-Path $stage "bin\__data_directory") `
+            -Encoding ascii -NoNewline
     }
 }
 
@@ -1036,12 +1098,29 @@ if (@(Compare-Object $expectedOfflineDirectories $actualOfflineDirectories).Coun
     @(Compare-Object $expectedOfflineFiles $actualOfflineFiles).Count -ne 0) {
     throw "The offline installer must contain exactly runtime $ocrRuntimeVersion and the Small OCR model."
 }
+$portableProcess = Join-Path $variantStages.portable "bin\assets\ocr\runtimes\$ocrRuntimeVersion\$ocrPlatform\$ocrRuntimeFileName"
+if (-not (Test-Path -LiteralPath $portableProcess -PathType Leaf)) {
+    throw "The portable package stage is missing its versioned OCR runtime: $portableProcess"
+}
+$offlineOcrManifest = Get-ReleaseTreeFileManifest `
+    -Root (Join-Path $variantStages.offline "bin\assets\ocr")
+$portableOcrManifest = Get-ReleaseTreeFileManifest `
+    -Root (Join-Path $variantStages.portable "bin\assets\ocr")
+if (($offlineOcrManifest | ConvertTo-Json -Depth 4 -Compress) -cne
+    ($portableOcrManifest | ConvertTo-Json -Depth 4 -Compress)) {
+    throw "The portable package OCR resources do not match the offline installer resources."
+}
+$portableDataMarker = Join-Path $variantStages.portable "bin\__data_directory"
+if (-not (Test-Path -LiteralPath $portableDataMarker -PathType Leaf) -or
+    (Get-Content -LiteralPath $portableDataMarker -Raw) -cne "portable") {
+    throw "The portable package stage is missing its portable data-directory marker."
+}
 
 $producedPackages = @()
 # NSIS still uses MAX_PATH for payload input, including long third-party license names.
 $nsisWorkDirectory = Join-Path $repoRoot "build\nsis"
 New-Item -ItemType Directory -Path $nsisWorkDirectory -Force | Out-Null
-foreach ($variant in $variantStages.Keys) {
+foreach ($variant in @("online", "offline")) {
     $packageBaseName = "snow-shot-$packageVersion-windows-x64-$variant"
     $variantConfig = Join-Path $buildDirectory "CPackConfig-$variant.cmake"
     $baseConfigPath = $cpackConfig.Replace('\', '/')
@@ -1092,14 +1171,7 @@ string(REPLACE "snow-shot-$packageVersion-windows-x64.exe" "$packageBaseName.exe
         (Get-Content -LiteralPath $checksumPath -Raw) -notmatch [regex]::Escape($installerHash)) {
         throw "The generated installer checksum does not match $packageBaseName.exe."
     }
-    $stageFiles = @(Get-ChildItem -LiteralPath $variantStages[$variant] -Recurse -File | Sort-Object FullName)
-    $stageFileManifest = @($stageFiles | ForEach-Object {
-        [ordered]@{
-            Path = [System.IO.Path]::GetRelativePath($variantStages[$variant], $_.FullName).Replace('\', '/')
-            Bytes = $_.Length
-            Sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-        }
-    })
+    $stageFileManifest = Get-ReleaseTreeFileManifest -Root $variantStages[$variant]
     $manifestPath = Join-Path $buildDirectory "$packageBaseName.manifest.json"
     [ordered]@{
         SchemaVersion = 2
@@ -1114,7 +1186,7 @@ string(REPLACE "snow-shot-$packageVersion-windows-x64.exe" "$packageBaseName.exe
         OcrDefaultModelType = $ocrDefaultModelType
         OcrDefaultModelId = $ocrDefaultModelId
         Qt = $qtStamp
-        InstallTreeBytes = [long](($stageFiles | Measure-Object -Property Length -Sum).Sum)
+        InstallTreeBytes = [long](($stageFileManifest | Measure-Object -Property Bytes -Sum).Sum)
         InstallFiles = $stageFileManifest
         Installer = [ordered]@{
             Path = (Split-Path -Leaf $packagePath)
@@ -1128,6 +1200,43 @@ string(REPLACE "snow-shot-$packageVersion-windows-x64.exe" "$packageBaseName.exe
     Write-Output "Snow Shot $variant release manifest: $manifestPath"
 }
 
+$portableBaseName = "snow-shot-$packageVersion-windows-x64-portable"
+$portableArchivePath = Join-Path $buildDirectory "$portableBaseName.zip"
+New-DeterministicZip -SourceDirectory $variantStages.portable -Destination $portableArchivePath
+$portableArchiveHash =
+    (Get-FileHash -LiteralPath $portableArchivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+$portableChecksumPath = "$portableArchivePath.sha256"
+"$portableArchiveHash  $portableBaseName.zip" |
+    Set-Content -LiteralPath $portableChecksumPath -Encoding ascii
+$portableStageFileManifest = Get-ReleaseTreeFileManifest -Root $variantStages.portable
+Assert-ZipMatchesFileManifest -ArchivePath $portableArchivePath `
+    -FileManifest $portableStageFileManifest
+$portableManifestPath = Join-Path $buildDirectory "$portableBaseName.manifest.json"
+[ordered]@{
+    SchemaVersion = 2
+    PackageVersion = $packageVersion
+    Variant = "portable"
+    Preset = "snow-shot-msvc-release"
+    Architecture = "x64"
+    StaticCrt = $true
+    StaticQt = $true
+    StaticImageCodecBackend = $true
+    OcrRuntimeVersion = $ocrRuntimeVersion
+    OcrDefaultModelType = $ocrDefaultModelType
+    OcrDefaultModelId = $ocrDefaultModelId
+    Qt = $qtStamp
+    InstallTreeBytes = [long](($portableStageFileManifest | Measure-Object -Property Bytes -Sum).Sum)
+    InstallFiles = $portableStageFileManifest
+    Archive = [ordered]@{
+        Path = (Split-Path -Leaf $portableArchivePath)
+        Bytes = (Get-Item -LiteralPath $portableArchivePath).Length
+        Sha256 = $portableArchiveHash
+    }
+} | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $portableManifestPath -Encoding utf8
+$producedPackages += $portableArchivePath
+Write-Output "Snow Shot portable archive: $portableArchivePath"
+Write-Output "Snow Shot portable archive checksum: $portableChecksumPath"
+Write-Output "Snow Shot portable release manifest: $portableManifestPath"
 Write-Output "Snow Shot audited install tree: $installDirectory"
 Write-Output "OCR runtime upload artifact: $runtimeArchivePath"
 Write-Output "OCR runtime checksum: $runtimeArchiveChecksum"

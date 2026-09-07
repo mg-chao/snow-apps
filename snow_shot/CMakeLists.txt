@@ -870,6 +870,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/capture/screenshotcaptureperfinstrumentation.cpp
     src/presentation/capture/screenshotcaptureworkflow.cpp
     src/presentation/capture/adaptivescrollingcapturecadence.h
+    src/presentation/capture/windowcaptureexclusion.h
     src/presentation/capture/latestbridgemailbox.h
     src/presentation/capture/screenshotscrollingcapturecontroller.cpp
     src/presentation/capture/screenshotscrollingthumbnailwidget.cpp
@@ -3210,6 +3211,24 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_executable(snow-shot-window-capture-exclusion-tests
+        tests/window_capture_exclusion_tests.cpp
+        src/presentation/capture/windowcaptureexclusion.h
+    )
+    target_include_directories(snow-shot-window-capture-exclusion-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(snow-shot-window-capture-exclusion-tests PRIVATE Qt6::Widgets)
+    add_test(
+        NAME snow-shot-window-capture-exclusion-tests
+        COMMAND snow-shot-window-capture-exclusion-tests
+    )
+    set_tests_properties(snow-shot-window-capture-exclusion-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
     add_executable(snow-shot-screen-recording-geometry-tests
         tests/screen_recording_geometry_tests.cpp
         src/presentation/core/screenshotgeometry.cpp
@@ -3565,6 +3584,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-application-icon-tests
         snow-shot-toolbar-main-panel-tests
         snow-shot-screen-recording-geometry-tests
+        snow-shot-window-capture-exclusion-tests
         snow-shot-ocr-presentation-tests
     )
         snow_shot_import_offscreen_platform(${_offscreen_qpa_test_target})
