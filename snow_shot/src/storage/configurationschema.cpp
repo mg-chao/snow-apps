@@ -104,7 +104,7 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      ConfigurationValueKind::String,
      std::nullopt,
      {QStringLiteral("none"), QStringLiteral("system")}},
-    {QStringLiteral("text_recognition/direct_ml_acceleration"), true,
+    {QStringLiteral("text_recognition/direct_ml_acceleration"), false,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("text_recognition/model_type"),
      QStringLiteral("small"),

@@ -33,6 +33,11 @@ int main(int argc, char** argv) {
     {
         snow_shot::presentation::GlobalShortcutManager shortcuts;
         settings::BuiltInSettingsBackend backend(shortcuts);
+        require(!applicationStorage.configuration()
+                        .value(QStringLiteral("text_recognition/direct_ml_acceleration"))
+                        .toBool() &&
+                    !backend.switchValue(settings::SettingsSwitchBinding::DirectMlAcceleration),
+                "DirectML acceleration should be disabled by default");
         const auto binding = settings::SettingsSwitchBinding::OriginalImageTranslation;
         const storage::ScreenshotTranslationSettings translation;
         const storage::ScreenshotTranslationConfiguration languages{
@@ -51,14 +56,14 @@ int main(int argc, char** argv) {
                     backend.selectValue(settings::SettingsSelectBinding::OcrModelType).toString() ==
                         QStringLiteral("medium") &&
                     applicationStorage.configuration().setValue(
-                        QStringLiteral("text_recognition/direct_ml_acceleration"), false) &&
+                        QStringLiteral("text_recognition/direct_ml_acceleration"), true) &&
                     backend.resetSection(settings::SettingsSectionReset::TextRecognition) &&
                     backend.selectValue(settings::SettingsSelectBinding::OcrModelType).toString() ==
                         QStringLiteral("small") &&
-                    applicationStorage.configuration()
-                        .value(QStringLiteral("text_recognition/direct_ml_acceleration"))
-                        .toBool(),
-                "reset Text Recognition should restore Small and the DirectML default together");
+                    !applicationStorage.configuration()
+                         .value(QStringLiteral("text_recognition/direct_ml_acceleration"))
+                         .toBool(),
+                "reset Text Recognition should restore Small and disable DirectML acceleration");
     }
     applicationStorage.shutdown();
     return 0;
