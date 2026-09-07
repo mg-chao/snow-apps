@@ -6,6 +6,7 @@ mod frame;
 mod orb;
 pub mod perf;
 mod region;
+mod sampling;
 mod state;
 mod stitcher;
 mod tiled_canvas;

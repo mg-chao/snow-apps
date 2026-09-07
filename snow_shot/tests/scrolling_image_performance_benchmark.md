@@ -103,3 +103,64 @@ benchmark runs validate complete 3840 x 21944 coverage without changing stitchin
 
 The implementation prioritizes production-path fidelity, timing attribution, and testability.
 The source adapter and timing hooks add no dependency, setting, or migration requirement.
+
+## Adaptive directional feature sampling
+
+The Rust motion estimator reduces only the dimension perpendicular to scrolling before ORB
+feature extraction. For extent `d <= 512`, it retains the original dimension; otherwise it uses
+`ceil(sqrt(512 * d))`, computed with widened integer arithmetic. It caches exact integer area
+overlap weights and the reduced ORB pyramid plan. Descriptors use analysis coordinates; tile
+assignment and motion observations use original pixel-center coordinates. Similarity maps,
+original-pixel refinement, output composition, capture cadence, public options, and the C ABI
+retain their existing contracts. Gray8, RGB8, and RGBA8 are the supported Rust frame formats.
+
+Correctness takes priority over speed. A reduced attempt is accepted only for accepted movement
+with a positive competing-mode margin and usable original-pixel refinement (error below `1.0`).
+No-motion, rejected, ambiguous, and unrefinable results receive one full-resolution retry using
+a lazily cached full-resolution pyramid. Both attempts share similarity maps and read the same
+temporal state; only the final result updates that state. Exact duplicate frames still bypass
+feature extraction. Existing one-pixel motion clustering and the separate 4x similarity-map
+sampling are unchanged, including for small images.
+
+Tests cover both axes and directions, exact output pixels, narrow content, repeated rules, fixed
+overlays, no-motion retries, scene cuts, and state updates. Sampling tests cover rounding,
+extreme dimensions, fractional area coverage, pixel-center mapping, and all supported formats.
+The threshold and curve are internal defaults. Revisit them if representative fixtures regress;
+rollback requires restoring full-resolution feature extraction, with no data migration.
+
+### Matcher-only comparison
+
+When isolating alignment cost, an opt-in test compares adaptive sampling with the same estimator
+forced to full resolution. Run from the repository root after configuring the performance preset:
+
+```powershell
+. ./scripts/snow-build-environment.ps1
+Set-SnowBuildEnvironment -Preset windows-msvc-performance | Out-Null
+cargo test --manifest-path snow-crates/Cargo.toml -p snow-stitch-images --lib --release `
+    --target x86_64-pc-windows-msvc --target-dir build/windows-msvc-performance/cargo `
+    --features perf-instrumentation directional_sampling_release_benchmark -- --ignored --nocapture
+```
+
+This requires the same local PNG fixture as the application replay. It samples thirteen
+3840 x 1600 viewports separated by 25 pixels, performs an unreported warmup per mode, and
+alternates mode order across three measured rounds. Each mode measures 36 movements and
+12 changed-but-stationary comparisons. Every movement must be exactly -25; stationary cases
+must remain no-motion and adaptive stationary cases must attempt feature extraction twice.
+Decoding, frame preparation, and estimator initialization are outside the measured intervals.
+The report is `build/windows-msvc-performance/directional-matcher-results.json`.
+
+Local measurements on 2026-09-07 (milliseconds, nearest-rank percentiles):
+
+| Workload | Mode | Estimate p50 | Estimate p95 | Feature extraction p50 | Retries |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Scrolling | Full resolution | 126.97 | 153.37 | 96.77 | 0/36 |
+| Scrolling | Adaptive | 73.15 | 85.29 | 44.49 | 0/36 |
+| Changed, stationary | Full resolution | 110.27 | 149.04 | 96.02 | 0/12 |
+| Changed, stationary | Adaptive | 154.09 | 180.01 | 136.43 | 12/12 |
+
+These measurements demonstrate matcher improvement on the sampled fixture, not complete
+application latency or full-document coverage. The application replay benchmark and replay
+integration executable built, but both exited with `0xc0000142` before running. Windows Error
+Reporting identified an access violation in the existing `libde265.dll` during the unchanged
+baseline launch. Application replay verification remains pending until that runtime is repaired.
+Retain the Rust matcher comparison as supplemental evidence, not a substitute for that check.
