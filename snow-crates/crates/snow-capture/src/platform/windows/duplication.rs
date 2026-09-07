@@ -10,7 +10,8 @@ use windows::Win32::Graphics::Direct3D11::{
     ID3D11DeviceContext, ID3D11Query, ID3D11Resource, ID3D11Texture2D,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R16G16B16A16_FLOAT,
+    DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_MODE_ROTATION,
+    DXGI_MODE_ROTATION_IDENTITY,
 };
 use windows::Win32::Graphics::Dxgi::{
     DXGI_ERROR_ACCESS_LOST, DXGI_ERROR_WAIT_TIMEOUT, DXGI_OUTDUPL_FRAME_INFO,
@@ -38,6 +39,7 @@ use super::dirty_rect::{
 use super::gpu_tonemap::{GpuF16Converter, GpuTonemapper};
 use super::monitor::{MonitorResolver, ResolvedMonitor, hdr_to_sdr_params};
 use super::region_pipeline::{self, RegionPipelineState, RegionSlot, RegionStagingSlotAccess};
+use super::rotation;
 use super::surface::{self, StagingSampleDesc};
 
 #[inline(always)]
@@ -242,6 +244,77 @@ struct MoveRect {
     dst_y: u32,
     width: u32,
     height: u32,
+}
+
+fn orient_dirty_rects(
+    rects: &mut Vec<DirtyRect>,
+    width: u32,
+    height: u32,
+    rotation: DXGI_MODE_ROTATION,
+) {
+    if !rotation::is_rotated(rotation) {
+        return;
+    }
+    rects.retain_mut(|rect| {
+        let Some(clamped) = dirty_rect::clamp_dirty_rect(*rect, width, height) else {
+            return false;
+        };
+        let blit = CaptureBlitRegion {
+            src_x: clamped.x,
+            src_y: clamped.y,
+            width: clamped.width,
+            height: clamped.height,
+            dst_x: 0,
+            dst_y: 0,
+        };
+        let Ok(mapped) = rotation::oriented_blit(blit, width, height, rotation) else {
+            return false;
+        };
+        *rect = DirtyRect {
+            x: mapped.src_x,
+            y: mapped.src_y,
+            width: mapped.width,
+            height: mapped.height,
+        };
+        true
+    });
+}
+
+fn orient_move_rects(
+    rects: &mut [MoveRect],
+    width: u32,
+    height: u32,
+    rotation: DXGI_MODE_ROTATION,
+) -> CaptureResult<()> {
+    if !rotation::is_rotated(rotation) {
+        return Ok(());
+    }
+    for rect in rects {
+        let source = CaptureBlitRegion {
+            src_x: rect.src_x,
+            src_y: rect.src_y,
+            width: rect.width,
+            height: rect.height,
+            dst_x: 0,
+            dst_y: 0,
+        };
+        let destination = CaptureBlitRegion {
+            src_x: rect.dst_x,
+            src_y: rect.dst_y,
+            ..source
+        };
+        let source = rotation::oriented_blit(source, width, height, rotation)?;
+        let destination = rotation::oriented_blit(destination, width, height, rotation)?;
+        *rect = MoveRect {
+            src_x: source.src_x,
+            src_y: source.src_y,
+            dst_x: destination.src_x,
+            dst_y: destination.src_y,
+            width: source.width,
+            height: source.height,
+        };
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -1815,6 +1888,11 @@ struct OutputCapturer {
     /// Active desktop-duplication access. The D3D environment stays warm,
     /// but this interface is opened lazily and dropped after one-shot work.
     duplication: Option<IDXGIOutputDuplication>,
+    duplication_format: Option<DXGI_FORMAT>,
+    output_rotation: DXGI_MODE_ROTATION,
+    /// Native pixels are kept separate from caller-owned, upright frames.
+    rotation_frame: Option<Frame>,
+    rotation_region_frame: Option<Frame>,
     staging_ring: StagingRing,
     /// Cached descriptor of the last successfully read frame, used to
     /// read back the pipelined staging slot on the next capture call.
@@ -1909,6 +1987,10 @@ impl OutputCapturer {
             device,
             context,
             duplication: None,
+            duplication_format: None,
+            output_rotation: DXGI_MODE_ROTATION_IDENTITY,
+            rotation_frame: None,
+            rotation_region_frame: None,
             staging_ring: StagingRing::new(),
             pending_desc: None,
             pending_hdr: None,
@@ -1948,6 +2030,9 @@ impl OutputCapturer {
     }
 
     fn reset_capture_access_state(&mut self) {
+        self.duplication_format = None;
+        self.rotation_frame = None;
+        self.rotation_region_frame = None;
         self.clear_full_frame_pipeline_state();
         self.cached_src_desc = None;
         self.staging_ring.reset_pipeline();
@@ -1968,6 +2053,16 @@ impl OutputCapturer {
     fn open_capture_access(&mut self) -> CaptureResult<IDXGIOutputDuplication> {
         self.reset_capture_access_state();
         let duplication = create_duplication(&self.output, &self.device)?;
+        // DXGI always acquires an unrotated surface. Read the actual duplication
+        // rotation on every open, including recovery after a display change.
+        // https://learn.microsoft.com/windows/win32/direct3ddxgi/desktop-dup-api#rotating-the-desktop-image
+        let desc = unsafe { duplication.GetDesc() };
+        self.output_rotation = desc.Rotation;
+        self.duplication_format = Some(desc.ModeDesc.Format);
+        self.output_desktop_rect = unsafe { self.output.GetDesc() }
+            .context("IDXGIOutput::GetDesc failed while opening capture")
+            .map_err(CaptureError::platform)?
+            .DesktopCoordinates;
         self.duplication = Some(duplication.clone());
         Ok(duplication)
     }
@@ -2137,6 +2232,7 @@ impl OutputCapturer {
     }
 
     fn clear_full_frame_pipeline_state(&mut self) {
+        self.rotation_frame = None;
         self.pending_desc = None;
         self.pending_hdr = None;
         self.pending_is_duplicate = false;
@@ -2149,6 +2245,8 @@ impl OutputCapturer {
     }
 
     fn release_snapshot_capture_surfaces(&mut self) {
+        self.rotation_frame = None;
+        self.rotation_region_frame = None;
         self.staging_ring.invalidate();
         self.region.invalidate();
         self.spare_frame = None;
@@ -2208,6 +2306,19 @@ impl OutputCapturer {
         self.record_stage_timings = enabled;
     }
 
+    fn gpu_rotation(&self) -> DXGI_MODE_ROTATION {
+        rotation::hdr_gpu_rotation(
+            // The duplication descriptor lets the first HDR capture reuse the
+            // upright destination without allocating a CPU rotation buffer.
+            self.cached_src_desc
+                .map(|desc| desc.Format)
+                .or(self.duplication_format),
+            self.hdr_to_sdr.is_some(),
+            self.gpu_hdr_conversion_enabled,
+            self.output_rotation,
+        )
+    }
+
     fn effective_source(
         &mut self,
         desktop_texture: &ID3D11Texture2D,
@@ -2228,6 +2339,7 @@ impl OutputCapturer {
                     self.gpu_tonemapper = Some(GpuTonemapper::new(&self.device)?);
                 }
                 if let Some(tonemapper) = self.gpu_tonemapper.as_mut() {
+                    tonemapper.set_rotation(self.output_rotation);
                     let output = tonemapper.tonemap(
                         &self.device,
                         &self.context,
@@ -2621,13 +2733,99 @@ impl OutputCapturer {
         destination_has_history: bool,
         prefer_low_latency: bool,
     ) -> CaptureResult<CaptureSampleMetadata> {
+        // Region capture may consume a desktop update that the full-frame
+        // native history has not seen.
+        self.rotation_frame = None;
+        let (duplication, opened_capture_access) = self.ensure_capture_access()?;
+        let rotation = self.output_rotation;
+        if !rotation::is_rotated(rotation) {
+            return self.capture_native_region_into(
+                blit,
+                destination,
+                destination_has_history,
+                prefer_low_latency,
+                (duplication, opened_capture_access),
+                false,
+            );
+        }
+        let native_blit = rotation::native_blit(
+            blit,
+            (self.output_desktop_rect.right - self.output_desktop_rect.left) as u32,
+            (self.output_desktop_rect.bottom - self.output_desktop_rect.top) as u32,
+            rotation,
+        )?;
+        if rotation::is_rotated(self.gpu_rotation()) {
+            self.rotation_region_frame = None;
+            return self.capture_native_region_into(
+                CaptureBlitRegion {
+                    dst_x: blit.dst_x,
+                    dst_y: blit.dst_y,
+                    ..native_blit
+                },
+                destination,
+                destination_has_history,
+                prefer_low_latency,
+                (duplication, opened_capture_access),
+                false,
+            );
+        }
+        let native_has_history = rotation::has_native_region_history(
+            self.rotation_region_frame.as_ref(),
+            self.region.blit,
+            native_blit,
+            self.output_pixel_format,
+            opened_capture_access,
+        );
+        let mut native = self
+            .rotation_region_frame
+            .take()
+            .unwrap_or_else(Frame::empty);
+        native.ensure_capacity(
+            native_blit.width,
+            native_blit.height,
+            self.output_pixel_format,
+        )?;
+        // Incremental updates use only this buffer's native-coordinate history,
+        // never the caller's upright pixels.
+        let mut sample = self.capture_native_region_into(
+            native_blit,
+            &mut native,
+            native_has_history,
+            prefer_low_latency,
+            (duplication, opened_capture_access),
+            true,
+        )?;
+        let cpu_rotation = if rotation::is_rotated(self.gpu_rotation()) {
+            DXGI_MODE_ROTATION_IDENTITY
+        } else {
+            rotation
+        };
+        rotation::orient_into(&native, destination, blit.dst_x, blit.dst_y, cpu_rotation)?;
+        destination.metadata.color_space = native.metadata.color_space;
+        self.rotation_region_frame = Some(native);
+        sample.dirty_rects.clear();
+        sample.is_duplicate &= destination_has_history && native_has_history;
+        Ok(sample)
+    }
+
+    fn capture_native_region_into(
+        &mut self,
+        blit: CaptureBlitRegion,
+        destination: &mut Frame,
+        destination_has_history: bool,
+        prefer_low_latency: bool,
+        access: (IDXGIOutputDuplication, bool),
+        native_scratch: bool,
+    ) -> CaptureResult<CaptureSampleMetadata> {
+        let (mut duplication, opened_capture_access) = access;
+        let expected_gpu_rotation = self.gpu_rotation();
         if blit.width == 0 || blit.height == 0 {
             return Err(CaptureError::InvalidConfig(
                 "capture region dimensions must be non-zero".into(),
             ));
         }
 
-        let (mut duplication, opened_capture_access) = self.ensure_capture_access()?;
+        let capture_rotation = self.output_rotation;
 
         // Region capture uses its own sub-rect staging path.
         // Reset full-frame pipeline state so monitor capture and region
@@ -2716,6 +2914,11 @@ impl OutputCapturer {
                 }
             };
 
+        if self.output_rotation != capture_rotation {
+            // The crop was computed for the old orientation. Let the existing
+            // monitor/window recovery path resolve its desktop coordinates again.
+            return Err(CaptureError::AccessLost);
+        }
         let source_present_time_qpc = frame_info.LastPresentTime;
         let source_is_duplicate =
             source_present_time_qpc != 0 && source_present_time_qpc == self.last_present_time;
@@ -2738,6 +2941,18 @@ impl OutputCapturer {
 
             let (effective_source, effective_desc, effective_hdr) =
                 self.effective_source(&desktop_texture, src_desc)?;
+
+            let gpu_rotation = self.gpu_rotation();
+            if rotation::is_rotated(expected_gpu_rotation) && !rotation::is_rotated(gpu_rotation) {
+                return Err(CaptureError::AccessLost);
+            }
+            let native_blit = blit;
+            let blit =
+                rotation::oriented_blit(blit, src_desc.Width, src_desc.Height, gpu_rotation)?;
+            if native_scratch && rotation::is_rotated(gpu_rotation) {
+                destination.ensure_capacity(blit.width, blit.height, self.output_pixel_format)?;
+                destination_has_history = false;
+            }
 
             let src_right = blit
                 .src_x
@@ -2801,9 +3016,9 @@ impl OutputCapturer {
                         &duplication,
                         &frame_info,
                         &mut self.dxgi_rect_buffer,
-                        effective_desc.Width,
-                        effective_desc.Height,
-                        blit,
+                        src_desc.Width,
+                        src_desc.Height,
+                        native_blit,
                         &mut region_dirty_rects,
                     );
                     let region_move_available = {
@@ -2811,16 +3026,16 @@ impl OutputCapturer {
                             &duplication,
                             &frame_info,
                             &mut self.dxgi_move_rect_buffer,
-                            effective_desc.Width,
-                            effective_desc.Height,
+                            src_desc.Width,
+                            src_desc.Height,
                             &mut self.source_move_rects_scratch,
                         );
                         let region_move_available = source_move_available
                             && extract_region_move_rects(
                                 &self.source_move_rects_scratch,
-                                effective_desc.Width,
-                                effective_desc.Height,
-                                blit,
+                                src_desc.Width,
+                                src_desc.Height,
+                                native_blit,
                                 &mut region_move_rects,
                             );
                         if !region_move_available {
@@ -2829,6 +3044,18 @@ impl OutputCapturer {
                         region_move_available
                     };
 
+                    orient_dirty_rects(
+                        &mut region_dirty_rects,
+                        native_blit.width,
+                        native_blit.height,
+                        gpu_rotation,
+                    );
+                    orient_move_rects(
+                        &mut region_move_rects,
+                        native_blit.width,
+                        native_blit.height,
+                        gpu_rotation,
+                    )?;
                     if region_dirty_available
                         && region_dirty_rects.len() <= DXGI_DIRTY_COPY_MAX_RECTS
                     {
@@ -3008,10 +3235,43 @@ impl OutputCapturer {
         #[cfg(feature = "stage-timing")]
         let stages = StageScope::enter(self.record_stage_timings);
         let access_begin = stage_checkpoint();
-        let (mut duplication, opened_capture_access) = self.ensure_capture_access()?;
+        let (duplication, opened_capture_access) = self.ensure_capture_access()?;
         if opened_capture_access {
             stage_record_since("dxgi.lazy_init", access_begin);
         }
+        let mut upright_reuse = None;
+        let native_reuse = if rotation::is_rotated(self.output_rotation)
+            && !rotation::is_rotated(self.gpu_rotation())
+        {
+            upright_reuse = reuse;
+            self.rotation_frame.take()
+        } else {
+            reuse
+        };
+        let mut frame = self.capture_native(native_reuse, duplication, opened_capture_access)?;
+        if rotation::is_rotated(self.output_rotation) && !rotation::is_rotated(self.gpu_rotation())
+        {
+            let rotation_begin = stage_checkpoint();
+            let upright = rotation::orient_frame(
+                &frame,
+                upright_reuse.unwrap_or_else(Frame::empty),
+                self.output_rotation,
+            )?;
+            self.rotation_frame = Some(frame);
+            frame = upright;
+            stage_record_since("dxgi.rotate", rotation_begin);
+        }
+        #[cfg(feature = "stage-timing")]
+        attach_stage_timings(&mut frame, stages);
+        Ok(frame)
+    }
+
+    fn capture_native(
+        &mut self,
+        reuse: Option<Frame>,
+        mut duplication: IDXGIOutputDuplication,
+        opened_capture_access: bool,
+    ) -> CaptureResult<Frame> {
         // Full-frame capture and region/window capture keep independent
         // pipelines. Reset region state when callers switch back to full
         // monitor capture to avoid consuming stale region slots later.
@@ -3031,7 +3291,7 @@ impl OutputCapturer {
                 }
             })
             .unwrap_or_else(Frame::empty);
-        let has_frame_history = !opened_capture_access
+        let mut has_frame_history = !opened_capture_access
             && frame.metadata.stream_timestamp.is_some()
             && frame.pixel_format() == self.output_pixel_format
             && !frame.as_rgba_bytes().is_empty();
@@ -3044,6 +3304,7 @@ impl OutputCapturer {
                     }
                     TryAcquireResult::AccessLost => {
                         duplication = self.recreate_duplication(duplication)?;
+                        has_frame_history = false;
                         None
                     }
                     TryAcquireResult::Retry => {
@@ -3064,8 +3325,6 @@ impl OutputCapturer {
                             .set_timing(Some(capture_time), previous_present_time_qpc);
                         self.needs_presented_first_frame = false;
                         stage_mark("dxgi.acquire_loop");
-                        #[cfg(feature = "stage-timing")]
-                        attach_stage_timings(&mut frame, stages);
                         return Ok(frame);
                     }
                 }
@@ -3092,6 +3351,7 @@ impl OutputCapturer {
                     AcquireResult::Ok(texture, info, frame_guard) => (texture, info, frame_guard),
                     AcquireResult::AccessLost => {
                         duplication = self.recreate_duplication(duplication)?;
+                        has_frame_history = false;
                         let retry = if self.capture_mode == CaptureMode::Snapshot {
                             acquire_snapshot_frame(&duplication)
                         } else {
@@ -3169,6 +3429,13 @@ impl OutputCapturer {
 
         let (effective_source, effective_desc, effective_hdr) =
             self.effective_source(&desktop_texture, src_desc)?;
+        let gpu_rotation = self.gpu_rotation();
+        orient_dirty_rects(
+            &mut frame.metadata.dirty_rects,
+            src_desc.Width,
+            src_desc.Height,
+            gpu_rotation,
+        );
         stage_mark("dxgi.hdr_prepare");
 
         let output_matches_source = has_frame_history
@@ -3189,10 +3456,16 @@ impl OutputCapturer {
                 &duplication,
                 &frame_info,
                 &mut self.dxgi_move_rect_buffer,
-                effective_desc.Width,
-                effective_desc.Height,
+                src_desc.Width,
+                src_desc.Height,
                 &mut source_move_rects,
             );
+            orient_move_rects(
+                &mut source_move_rects,
+                src_desc.Width,
+                src_desc.Height,
+                gpu_rotation,
+            )?;
             continuous_frame_has_moves =
                 continuous_move_metadata_available && !source_move_rects.is_empty();
             // A frame with move metadata is changed even when its dirty list
@@ -3254,10 +3527,22 @@ impl OutputCapturer {
                 &duplication,
                 &frame_info,
                 &mut self.dxgi_move_rect_buffer,
-                effective_desc.Width,
-                effective_desc.Height,
+                src_desc.Width,
+                src_desc.Height,
                 &mut source_move_rects,
             );
+            orient_dirty_rects(
+                &mut normalized_dirty_rects,
+                src_desc.Width,
+                src_desc.Height,
+                gpu_rotation,
+            );
+            orient_move_rects(
+                &mut source_move_rects,
+                src_desc.Width,
+                src_desc.Height,
+                gpu_rotation,
+            )?;
             let has_moves = move_available && !source_move_rects.is_empty();
             if dirty_available
                 && move_available
@@ -3542,8 +3827,6 @@ impl OutputCapturer {
             return Err(err);
         }
 
-        #[cfg(feature = "stage-timing")]
-        attach_stage_timings(&mut frame, stages);
         Ok(frame)
     }
 }
@@ -4167,6 +4450,65 @@ impl crate::backend::MonitorCapturer for WindowsDxgiWindowCapturer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hdr_rotated_damage_reconstructs_the_same_pixels_as_native_damage() -> CaptureResult<()> {
+        use windows::Win32::Graphics::Dxgi::Common::{
+            DXGI_MODE_ROTATION_ROTATE90, DXGI_MODE_ROTATION_ROTATE180, DXGI_MODE_ROTATION_ROTATE270,
+        };
+        let mut native = Frame::empty();
+        native.ensure_rgba_capacity(8, 5)?;
+        for (i, pixel) in native.as_mut_bytes().chunks_exact_mut(4).enumerate() {
+            pixel.copy_from_slice(&(i as u32).to_ne_bytes());
+        }
+        let movement = MoveRect {
+            src_x: 0,
+            src_y: 0,
+            dst_x: 3,
+            dst_y: 2,
+            width: 4,
+            height: 3,
+        };
+        let mut moved = Frame::empty();
+        moved.copy_from_frame(&native)?;
+        for y in 0..movement.height {
+            for x in 0..movement.width {
+                let src = ((y * 8 + x) * 4) as usize;
+                let dst = (((y + movement.dst_y) * 8 + x + movement.dst_x) * 4) as usize;
+                moved.as_mut_bytes()[dst..dst + 4]
+                    .copy_from_slice(&native.as_bytes()[src..src + 4]);
+            }
+        }
+        for rotation in [
+            DXGI_MODE_ROTATION_ROTATE90,
+            DXGI_MODE_ROTATION_ROTATE180,
+            DXGI_MODE_ROTATION_ROTATE270,
+        ] {
+            let expected = rotation::orient_frame(&moved, Frame::empty(), rotation)?;
+            let mut actual = rotation::orient_frame(&native, Frame::empty(), rotation)?;
+            let mut moves = [movement];
+            orient_move_rects(&mut moves, 8, 5, rotation)?;
+            apply_move_rects_to_frame(&mut actual, &moves, 0, 0)?;
+            assert_eq!(actual.as_bytes(), expected.as_bytes());
+            let mut dirty = vec![DirtyRect {
+                x: movement.dst_x,
+                y: movement.dst_y,
+                width: movement.width,
+                height: movement.height,
+            }];
+            orient_dirty_rects(&mut dirty, 8, 5, rotation);
+            assert_eq!(
+                dirty,
+                vec![DirtyRect {
+                    x: moves[0].dst_x,
+                    y: moves[0].dst_y,
+                    width: moves[0].width,
+                    height: moves[0].height
+                }]
+            );
+        }
+        Ok(())
+    }
 
     #[test]
     fn snapshot_output_initialization_is_deferred_but_continuous_is_prepared() {
