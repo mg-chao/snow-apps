@@ -20,6 +20,7 @@ struct ScreenshotCapturePresentationCallbacks {
     std::function<void()> updateOverlayState;
     std::function<void()> updateColorPicker;
     std::function<void()> capturePresented;
+    std::function<void()> beforeCapturePresented = []() {};
 };
 
 struct ScreenshotCaptureWorkflowContext {
@@ -48,7 +49,9 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     ~ScreenshotCaptureWorkflow() override;
 
     void prewarmResources();
-    void startCapture();
+    enum class StartMode { Normal, ExternalDrag, NoToolbar };
+    void startCapture(StartMode mode = StartMode::Normal);
+    [[nodiscard]] bool suppressCaptureToolbar() const;
     void cancelCapture();
     void cancelCaptureForExport();
     void completeDeferredExportCleanup();
@@ -93,6 +96,7 @@ class ScreenshotCaptureWorkflow final : private ScreenshotCaptureWorkerEventSink
     bool m_layoutRefreshInFlight = false;
     bool m_refreshAfterCapture = false;
     quint64 m_layoutChangeSerial = 0;
+    StartMode m_startMode = StartMode::Normal;
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENSHOTCAPTUREWORKFLOW_H

@@ -622,7 +622,7 @@ class GlobalShortcutManager::Impl {
             const QString activeKey = m_registrationKeysById.value(registrationId);
             const auto active = m_activeRegistrations.constFind(activeKey);
             if (active != m_activeRegistrations.cend()) {
-                if (!m_shortcutFunctionsEnabled) {
+                if (!m_globalHotkeysEnabled) {
                     return;
                 }
                 const bool suppressionEnabled =
@@ -794,7 +794,7 @@ class GlobalShortcutManager::Impl {
     QHash<int, QString> m_registrationKeysById;
     int m_nextRegistrationId = FIRST_REGISTRATION_ID;
     bool m_initialized = false;
-    bool m_shortcutFunctionsEnabled = true;
+    bool m_globalHotkeysEnabled = true;
 };
 
 GlobalShortcutManager::GlobalShortcutManager(QObject* parent)
@@ -826,8 +826,8 @@ void GlobalShortcutManager::setShortcuts(GlobalShortcutAction action,
     m_impl->setShortcuts(action, shortcuts);
 }
 
-void GlobalShortcutManager::setShortcutFunctionsEnabled(bool enabled) {
-    m_impl->m_shortcutFunctionsEnabled = enabled;
+void GlobalShortcutManager::setGlobalHotkeysEnabled(bool enabled) {
+    m_impl->m_globalHotkeysEnabled = enabled;
 }
 
 } // namespace snow_shot::presentation

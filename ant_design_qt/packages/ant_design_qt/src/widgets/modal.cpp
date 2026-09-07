@@ -1717,6 +1717,7 @@ void AdModal::ensureOverlay() {
   auto* overlay = new ModalOverlayWidget(nativeParent, overlayFlags);
   overlay->setObjectName(QStringLiteral("ad-modal-overlay"));
   overlay->setProperty("adqt.interaction.surface", true);
+  overlay->setProperty("adqt.popup.container", true);
   if (windowMode) {
     overlay->setWindowTitle(windowTitle_.trimmed().isEmpty() ? tr("Modal")
                                                              : windowTitle_.trimmed());

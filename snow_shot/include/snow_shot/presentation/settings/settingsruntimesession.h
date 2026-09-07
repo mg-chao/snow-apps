@@ -122,6 +122,14 @@ class SettingsRuntimeSession final : public QObject {
                           const QString& shortcut) const;
     [[nodiscard]] bool applyLocalShortcuts(SettingsLocalShortcutScope scope,
                                            const QString& shortcutId, const QStringList& shortcuts);
+    [[nodiscard]] SettingsGlobalMouseCombination
+    globalMouseCombination(SettingsGlobalMouseAction action) const;
+    [[nodiscard]] bool
+    applyGlobalMouseCombination(SettingsGlobalMouseAction action,
+                                const SettingsGlobalMouseCombination& combination);
+    [[nodiscard]] bool
+    globalMouseCombinationAvailable(SettingsGlobalMouseAction action,
+                                    const SettingsGlobalMouseCombination& combination) const;
     [[nodiscard]] SettingsActionState actionState(SettingsActionBinding binding) const;
     [[nodiscard]] bool triggerAction(SettingsActionBinding binding);
     [[nodiscard]] storage::StorageStatus storageStatus() const;
@@ -176,6 +184,8 @@ class SettingsRuntimeSession final : public QObject {
     const SettingsFieldDescriptor* descriptorForShortcut(GlobalShortcutAction action) const;
     const SettingsFieldDescriptor* descriptorForLocal(SettingsLocalShortcutScope scope,
                                                       const QString& shortcutId) const;
+    const SettingsFieldDescriptor*
+    descriptorForGlobalMouseAction(SettingsGlobalMouseAction action) const;
     const SettingsFieldDescriptor* descriptorForAction(SettingsActionBinding binding) const;
     const SettingsFieldDescriptor* descriptorForCustom(SettingsCustomRenderer renderer) const;
 

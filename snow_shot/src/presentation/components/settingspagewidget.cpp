@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/components/settingspagewidget.h"
 
 #include "snow_shot/presentation/components/pagecontainerwidget.h"
+#include "snow_shot/presentation/components/globalmouserow.h"
 #include "snow_shot/presentation/components/pathinput.h"
 #include "snow_shot/presentation/components/sectionheaderwidget.h"
 #include "snow_shot/presentation/components/settingscustomwidget.h"
@@ -14,6 +15,7 @@
 
 #include "widgets/button.h"
 #include "widgets/color_picker.h"
+#include "widgets/divider.h"
 #include "widgets/input_number.h"
 #include "widgets/input_line_edit.h"
 #include "widgets/modal.h"
@@ -82,6 +84,7 @@ class SettingsPageWidget::Impl {
         DirectoryPathInput* directoryPathControl = nullptr;
         adqt::widgets::AdLineEdit* textControl = nullptr;
         ShortcutKeyRow* shortcutControl = nullptr;
+        GlobalMouseRow* globalMouseControl = nullptr;
         adqt::widgets::AdButton* actionControl = nullptr;
         SettingsCustomWidget* customControl = nullptr;
         QPointer<adqt::widgets::AdModal> modal;
@@ -100,8 +103,8 @@ class SettingsPageWidget::Impl {
         : q(owner), registry(sourceRegistry), catalog(sourceRegistry.catalog()),
           runtimeSession(sourceRuntimeSession), pagePlan(sourceRegistry.pagePlan(sourcePageId)),
           page(catalog.page(sourcePageId)),
-          colorScheme(snow_shot::presentation::styles::ThemeManager::instance()
-                          .themeColorScheme()) {
+          colorScheme(
+              snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme()) {
         Q_ASSERT(page == nullptr || page->id == sourcePageId);
         build();
         connectServices();
@@ -123,7 +126,7 @@ class SettingsPageWidget::Impl {
     void build() {
         if (page == nullptr) {
             q.setObjectName(settings::generatedObjectName(QStringLiteral("settings-page"),
-                                                           QStringLiteral("invalid")));
+                                                          QStringLiteral("invalid")));
             return;
         }
         const auto metric = colorScheme.metricAlias;
@@ -201,10 +204,14 @@ class SettingsPageWidget::Impl {
         list->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         auto* listLayout = new QVBoxLayout(list);
         listLayout->setContentsMargins(0, 0, 0, 0);
-        const bool twoColumnItemGrid = itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid;
+        const bool twoColumnItemGrid =
+            itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid;
+        const bool dividedItemList = itemLayout == settings::SettingsSectionItemLayout::DividedList;
         listLayout->setSpacing(twoColumnItemGrid
                                    ? 0
-                                   : (page->id == QStringLiteral("quick-functions")
+                                   : (dividedItemList ? 0
+                                      : (page->id == QStringLiteral("global-hotkeys") ||
+                                         page->id == QStringLiteral("global-mouse"))
                                           ? metric.padding
                                           : metric.paddingLG));
 
@@ -230,13 +237,12 @@ class SettingsPageWidget::Impl {
                 Q_ASSERT(descriptor.pageId == page->id &&
                          descriptor.sectionId == sectionDefinition.id &&
                          descriptor.definition != nullptr);
-                if (descriptor.pageId != page->id ||
-                    descriptor.sectionId != sectionDefinition.id ||
+                if (descriptor.pageId != page->id || descriptor.sectionId != sectionDefinition.id ||
                     descriptor.definition == nullptr) {
                     continue;
                 }
                 buildItem(*descriptor.definition, &descriptor, fieldIndex, list, listLayout,
-                          itemGrid, itemIndex);
+                          itemLayout, itemGrid, itemIndex);
             }
         }
         contentLayout->addWidget(list);
@@ -245,15 +251,25 @@ class SettingsPageWidget::Impl {
     void buildItem(const settings::SettingsItemDefinition& definition,
                    const settings::SettingsFieldDescriptor* descriptor, int fieldIndex,
                    QWidget* list, QVBoxLayout* listLayout,
-                   QGridLayout* itemGrid = nullptr, int itemIndex = 0) {
+                   settings::SettingsSectionItemLayout itemLayout, QGridLayout* itemGrid = nullptr,
+                   int itemIndex = 0) {
         RuntimeItem runtime;
         runtime.descriptor = descriptor;
         runtime.definition = &definition;
 
-        const auto addItemWidget = [listLayout, itemGrid, itemIndex](QWidget* widget) {
+        const auto addItemWidget = [list, listLayout, itemGrid, itemIndex,
+                                    itemLayout](QWidget* widget) {
             if (itemGrid != nullptr) {
                 itemGrid->addWidget(widget, itemIndex / 2, itemIndex % 2);
             } else {
+                if (itemLayout == settings::SettingsSectionItemLayout::DividedList &&
+                    itemIndex > 0) {
+                    auto* divider = new adqt::widgets::AdDivider(list);
+                    divider->setObjectName(
+                        QStringLiteral("settings-item-divider-%1").arg(itemIndex));
+                    divider->setDividerSize(adqt::widgets::AdDivider::Size::Small);
+                    listLayout->addWidget(divider);
+                }
                 listLayout->addWidget(widget);
             }
         };
@@ -265,22 +281,23 @@ class SettingsPageWidget::Impl {
                     auto* select = new adqt::widgets::AdSelect(list);
                     select->setMode(adqt::widgets::AdSelect::Mode::Single);
                     select->setControlSize(adqt::widgets::AdSelect::ControlSize::Middle);
-                    select->setFixedWidth(settings_ui::settingsControlWidth(colorScheme.metricAlias));
+                    select->setFixedWidth(
+                        settings_ui::settingsControlWidth(colorScheme.metricAlias));
                     runtime.select = select;
                     runtime.focusTarget = select;
                     runtime.anchor = settings_ui::createSettingItemRow(
                         list, colorScheme.metricAlias, &runtime.title, &runtime.description, select,
-                        settings::generatedObjectName(QStringLiteral("settings-item"), definition.id));
+                        settings::generatedObjectName(QStringLiteral("settings-item"),
+                                                      definition.id));
                     addItemWidget(runtime.anchor);
                     connect(select, &adqt::widgets::AdSelect::currentValueChanged, &q,
                             [this, itemId = definition.id](const QVariant& value) {
                                 applySelectValue(itemId, value);
                             });
-                } else if constexpr (std::is_same_v<
-                                         Payload, settings::SettingsMultiSelectDefinition>) {
+                } else if constexpr (std::is_same_v<Payload,
+                                                    settings::SettingsMultiSelectDefinition>) {
                     auto* control = new adqt::widgets::AdMultiSelect(list);
-                    control->setControlSize(
-                        adqt::widgets::AdMultiSelect::ControlSize::Middle);
+                    control->setControlSize(adqt::widgets::AdMultiSelect::ControlSize::Middle);
                     control->setResponsiveMaxTagCount(true);
                     control->setFixedWidth(
                         settings_ui::settingsControlWidth(colorScheme.metricAlias));
@@ -288,8 +305,9 @@ class SettingsPageWidget::Impl {
                     runtime.focusTarget = control;
                     runtime.anchor = settings_ui::createSettingItemRow(
                         list, colorScheme.metricAlias, &runtime.title, &runtime.description,
-                        control, settings::generatedObjectName(QStringLiteral("settings-item"),
-                                                               definition.id));
+                        control,
+                        settings::generatedObjectName(QStringLiteral("settings-item"),
+                                                      definition.id));
                     addItemWidget(runtime.anchor);
                     connect(control, &adqt::widgets::AdMultiSelect::selectedValuesChanged, &q,
                             [this, binding = payload.binding](const QVariantList& value) {
@@ -298,31 +316,32 @@ class SettingsPageWidget::Impl {
                                     syncValues();
                                 }
                             });
-                } else if constexpr (std::is_same_v<Payload,
-                                                    settings::SettingsSwitchDefinition>) {
+                } else if constexpr (std::is_same_v<Payload, settings::SettingsSwitchDefinition>) {
                     auto* control = new adqt::widgets::AdSwitch(list);
                     control->setControlSize(adqt::widgets::AdSwitch::ControlSize::Medium);
                     runtime.switchControl = control;
                     runtime.focusTarget = control;
                     runtime.anchor = settings_ui::createSettingItemRow(
-                        list, colorScheme.metricAlias, &runtime.title, &runtime.description, control,
-                        settings::generatedObjectName(QStringLiteral("settings-item"), definition.id));
+                        list, colorScheme.metricAlias, &runtime.title, &runtime.description,
+                        control,
+                        settings::generatedObjectName(QStringLiteral("settings-item"),
+                                                      definition.id));
                     addItemWidget(runtime.anchor);
                     connect(control, &QAbstractButton::toggled, &q,
                             [this, binding = payload.binding](bool checked) {
                                 applySwitchValue(binding, checked);
                             });
-                } else if constexpr (std::is_same_v<Payload,
-                                                     settings::SettingsIntegerDefinition>) {
+                } else if constexpr (std::is_same_v<Payload, settings::SettingsIntegerDefinition>) {
                     auto* control = new adqt::widgets::AdInputNumber(list);
                     control->setControlSize(adqt::widgets::AdInputNumber::ControlSize::Medium);
                     control->setVariant(adqt::widgets::AdInputNumber::Variant::Outlined);
                     control->setStepButtonLayout(
                         adqt::widgets::AdInputNumber::StepButtonLayout::Compact);
                     control->setDecimals(0);
-                    control->setFixedWidth(settings_ui::settingsControlWidth(colorScheme.metricAlias));
-                    const auto* schemaEntry = snow_shot::storage::ConfigurationSchema::entry(
-                        definition.configurationKey);
+                    control->setFixedWidth(
+                        settings_ui::settingsControlWidth(colorScheme.metricAlias));
+                    const auto* schemaEntry =
+                        snow_shot::storage::ConfigurationSchema::entry(definition.configurationKey);
                     Q_ASSERT(schemaEntry != nullptr && schemaEntry->integerRange.has_value());
                     control->setRange(schemaEntry->integerRange->minimum,
                                       schemaEntry->integerRange->maximum);
@@ -330,22 +349,23 @@ class SettingsPageWidget::Impl {
                     runtime.integerControl = control;
                     runtime.focusTarget = control;
                     runtime.anchor = settings_ui::createSettingItemRow(
-                        list, colorScheme.metricAlias, &runtime.title, &runtime.description, control,
-                        settings::generatedObjectName(QStringLiteral("settings-item"), definition.id));
+                        list, colorScheme.metricAlias, &runtime.title, &runtime.description,
+                        control,
+                        settings::generatedObjectName(QStringLiteral("settings-item"),
+                                                      definition.id));
                     addItemWidget(runtime.anchor);
                     connect(control, &adqt::widgets::AdInputNumber::valueChanged, &q,
                             [this, binding = payload.binding](double value) {
                                 applyIntegerValue(binding, static_cast<int>(value));
                             });
-                } else if constexpr (std::is_same_v<Payload,
-                                                     settings::SettingsSliderDefinition>) {
+                } else if constexpr (std::is_same_v<Payload, settings::SettingsSliderDefinition>) {
                     auto* container = new QWidget(list);
                     auto* layout = new QHBoxLayout(container);
                     layout->setContentsMargins(0, 0, 0, 0);
                     layout->setSpacing(0);
                     auto* control = new adqt::widgets::AdSlider(container);
-                    const auto* schemaEntry = snow_shot::storage::ConfigurationSchema::entry(
-                        definition.configurationKey);
+                    const auto* schemaEntry =
+                        snow_shot::storage::ConfigurationSchema::entry(definition.configurationKey);
                     Q_ASSERT(schemaEntry != nullptr && schemaEntry->integerRange.has_value());
                     control->setRange(schemaEntry->integerRange->minimum,
                                       schemaEntry->integerRange->maximum);
@@ -368,21 +388,19 @@ class SettingsPageWidget::Impl {
                         settings::generatedObjectName(QStringLiteral("settings-item"),
                                                       definition.id));
                     addItemWidget(runtime.anchor);
-                    connect(control, &adqt::widgets::AdSlider::valueChanged, &q,
-                            [this, binding = payload.binding, valueLabel,
-                             suffix = payload.suffix](double value) {
-                                const int integerValue = qRound(value);
-                                valueLabel->setText(
-                                    QStringLiteral("%1%2")
-                                        .arg(integerValue)
-                                        .arg(suffix.translated()));
-                                if (!synchronizingValues &&
-                                    !runtimeSession.applySliderValue(binding, integerValue)) {
-                                    syncValues();
-                                }
-                            });
-                } else if constexpr (std::is_same_v<Payload,
-                                                     settings::SettingsColorDefinition>) {
+                    connect(
+                        control, &adqt::widgets::AdSlider::valueChanged, &q,
+                        [this, binding = payload.binding, valueLabel,
+                         suffix = payload.suffix](double value) {
+                            const int integerValue = qRound(value);
+                            valueLabel->setText(
+                                QStringLiteral("%1%2").arg(integerValue).arg(suffix.translated()));
+                            if (!synchronizingValues &&
+                                !runtimeSession.applySliderValue(binding, integerValue)) {
+                                syncValues();
+                            }
+                        });
+                } else if constexpr (std::is_same_v<Payload, settings::SettingsColorDefinition>) {
                     auto* control = new adqt::widgets::AdColorPicker(list);
                     control->setSize(adqt::widgets::AdColorPicker::Size::Middle);
                     control->setModeOptions({adqt::widgets::AdColorPicker::Mode::Solid});
@@ -408,16 +426,14 @@ class SettingsPageWidget::Impl {
                                                       definition.id));
                     addItemWidget(runtime.anchor);
                     connect(control, &adqt::widgets::AdColorPicker::valueChanged, &q,
-                            [this, binding = payload.binding](
-                                const adqt::widgets::AdColorValue& value) {
+                            [this,
+                             binding = payload.binding](const adqt::widgets::AdColorValue& value) {
                                 if (!synchronizingValues && value.isSolid() &&
-                                    !runtimeSession.applyColorValue(binding,
-                                                                    value.solidColor)) {
+                                    !runtimeSession.applyColorValue(binding, value.solidColor)) {
                                     syncValues();
                                 }
                             });
-                } else if constexpr (std::is_same_v<Payload,
-                                                     settings::SettingsRadioDefinition>) {
+                } else if constexpr (std::is_same_v<Payload, settings::SettingsRadioDefinition>) {
                     auto* container = new QWidget(list);
                     auto* layout = new QHBoxLayout(container);
                     layout->setContentsMargins(0, 0, 0, 0);
@@ -455,17 +471,16 @@ class SettingsPageWidget::Impl {
                         settings::generatedObjectName(QStringLiteral("settings-item"),
                                                       definition.id));
                     addItemWidget(runtime.anchor);
-                    connect(group, &adqt::widgets::AdRadioButtonGroup::checkedIdChanged, &q,
-                            [this, binding = payload.binding,
-                             values = runtime.radioValues](int id) {
-                                if (!synchronizingValues && id >= 0 && id < values.size() &&
-                                    !runtimeSession.applyRadioValue(binding,
-                                                                    values.at(id))) {
-                                    syncValues();
-                                }
-                            });
+                    connect(
+                        group, &adqt::widgets::AdRadioButtonGroup::checkedIdChanged, &q,
+                        [this, binding = payload.binding, values = runtime.radioValues](int id) {
+                            if (!synchronizingValues && id >= 0 && id < values.size() &&
+                                !runtimeSession.applyRadioValue(binding, values.at(id))) {
+                                syncValues();
+                            }
+                        });
                 } else if constexpr (std::is_same_v<Payload,
-                                                     settings::SettingsFilePathDefinition>) {
+                                                    settings::SettingsFilePathDefinition>) {
                     auto* control = new FilePathInput(list);
                     control->setControlSize(adqt::widgets::AdLineEdit::ControlSize::Medium);
                     control->setAllowClear(true);
@@ -545,8 +560,7 @@ class SettingsPageWidget::Impl {
                                     syncValues();
                                 }
                             });
-                } else if constexpr (std::is_same_v<Payload,
-                                                     settings::SettingsTextDefinition>) {
+                } else if constexpr (std::is_same_v<Payload, settings::SettingsTextDefinition>) {
                     auto* control = new adqt::widgets::AdLineEdit(list);
                     control->setControlSize(adqt::widgets::AdLineEdit::ControlSize::Medium);
                     control->setAllowClear(false);
@@ -567,8 +581,8 @@ class SettingsPageWidget::Impl {
                                     syncValues();
                                 }
                             });
-                } else if constexpr (std::is_same_v<
-                                         Payload, settings::SettingsShortcutActionDefinition>) {
+                } else if constexpr (std::is_same_v<Payload,
+                                                    settings::SettingsShortcutActionDefinition>) {
                     const auto shortcutState = runtimeSession.shortcutState(payload.shortcutAction);
                     const auto metric = colorScheme.metricAlias;
                     const auto mainWindowMetric =
@@ -585,8 +599,10 @@ class SettingsPageWidget::Impl {
                         [this](const QString& shortcut) {
                             return runtimeSession.validateShortcut(shortcut);
                         },
-                        payload.adjustment == settings::SettingsShortcutAdjustment::ScreenshotDelaySeconds,
-                        payload.adjustment == settings::SettingsShortcutAdjustment::ScreenshotDelaySeconds
+                        payload.adjustment ==
+                            settings::SettingsShortcutAdjustment::ScreenshotDelaySeconds,
+                        payload.adjustment ==
+                                settings::SettingsShortcutAdjustment::ScreenshotDelaySeconds
                             ? runtimeSession.integerValue(
                                   settings::SettingsIntegerBinding::ScreenshotDelaySeconds)
                             : 3,
@@ -602,51 +618,51 @@ class SettingsPageWidget::Impl {
                     runtime.focusTarget = control;
                     runtime.anchor = control;
                     addItemWidget(control);
-                    connect(control, &ShortcutKeyRow::clicked, &q,
-                            [this, command = payload.command]() { emit q.commandRequested(command); });
+                    connect(
+                        control, &ShortcutKeyRow::clicked, &q,
+                        [this, command = payload.command]() { emit q.commandRequested(command); });
                     connect(control, &ShortcutKeyRow::shortcutsChanged, &q,
                             [this, action = payload.shortcutAction](const QStringList& shortcuts) {
-                                 if (!runtimeSession.applyShortcuts(action, shortcuts)) {
-                                     syncValues();
-                                 }
+                                if (!runtimeSession.applyShortcuts(action, shortcuts)) {
+                                    syncValues();
+                                }
                             });
-                } else if constexpr (std::is_same_v<
-                                         Payload, settings::SettingsLocalShortcutDefinition>) {
+                } else if constexpr (std::is_same_v<Payload,
+                                                    settings::SettingsLocalShortcutDefinition>) {
                     const QStringList shortcuts =
                         runtimeSession.localShortcuts(payload.scope, payload.shortcutId);
                     snow_shot::presentation::GlobalShortcutRegistrationState displayState;
                     displayState.shortcuts = shortcuts;
-                    displayState.status = shortcuts.isEmpty()
-                                              ? snow_shot::presentation::GlobalShortcutStatus::Unset
-                                              : snow_shot::presentation::GlobalShortcutStatus::Registered;
+                    displayState.status =
+                        shortcuts.isEmpty()
+                            ? snow_shot::presentation::GlobalShortcutStatus::Unset
+                            : snow_shot::presentation::GlobalShortcutStatus::Registered;
                     const auto metric = colorScheme.metricAlias;
                     const auto mainWindowMetric =
                         snow_shot::presentation::styles::buildMainWindowComponentMetricToken(
                             colorScheme);
                     ShortcutKeyRowConfig config;
                     config.title = definition.title.translated();
-                    config.iconRef = payload.iconFactory ? payload.iconFactory()
-                                                         : adqt::icons::IconRef();
+                    config.iconRef =
+                        payload.iconFactory ? payload.iconFactory() : adqt::icons::IconRef();
                     config.shortcuts = shortcuts;
                     config.registrationState = displayState;
                     config.rowState = QStringLiteral("normal");
                     config.useStableBorder = false;
                     config.maxShortcutCount = 2;
-                    config.shortcutValidator =
-                        [this, scope = payload.scope,
-                         shortcutId = payload.shortcutId](const QString& shortcut) {
-                            return runtimeSession.validateLocalShortcut(scope, shortcutId,
-                                                                         shortcut);
-                        };
+                    config.shortcutValidator = [this, scope = payload.scope,
+                                                shortcutId =
+                                                    payload.shortcutId](const QString& shortcut) {
+                        return runtimeSession.validateLocalShortcut(scope, shortcutId, shortcut);
+                    };
                     config.showRegistrationStatus = false;
                     config.validationScope =
                         payload.scope == settings::SettingsLocalShortcutScope::Screenshot
                             ? ShortcutKeyRowConfig::ValidationScope::ScreenshotShortcut
-                            : payload.scope == settings::SettingsLocalShortcutScope::Drawing
-                                  ? ShortcutKeyRowConfig::ValidationScope::DrawingShortcut
-                                  : ShortcutKeyRowConfig::ValidationScope::PinnedWindowShortcut;
-                    config.presentation =
-                        ShortcutKeyRowConfig::Presentation::CompactFormField;
+                        : payload.scope == settings::SettingsLocalShortcutScope::Drawing
+                            ? ShortcutKeyRowConfig::ValidationScope::DrawingShortcut
+                            : ShortcutKeyRowConfig::ValidationScope::PinnedWindowShortcut;
+                    config.presentation = ShortcutKeyRowConfig::Presentation::CompactFormField;
                     auto* control = new ShortcutKeyRow(config, metric, mainWindowMetric, list);
                     control->setObjectName(settings::generatedObjectName(
                         QStringLiteral("settings-item"), definition.id));
@@ -661,14 +677,30 @@ class SettingsPageWidget::Impl {
                                     syncValues();
                                 }
                             });
-                } else if constexpr (std::is_same_v<Payload,
-                                                    settings::SettingsActionDefinition>) {
+                } else if constexpr (std::is_same_v<
+                                         Payload, settings::SettingsGlobalMouseActionDefinition>) {
+                    auto* control =
+                        new GlobalMouseRow(definition.title.translated(), payload.action,
+                                           runtimeSession, colorScheme, list);
+                    control->setObjectName(settings::generatedObjectName(
+                        QStringLiteral("settings-item"), definition.id));
+                    runtime.globalMouseControl = control;
+                    runtime.focusTarget = control->configurationButton();
+                    runtime.anchor = control;
+                    addItemWidget(control);
+                    connect(control, &GlobalMouseRow::dragRequested, &q,
+                            [this](settings::SettingsGlobalMouseAction action) {
+                                settings::SettingsCommand command;
+                                command.kind = settings::SettingsCommandKind::BeginGlobalMouseDrag;
+                                command.globalMouseAction = action;
+                                emit q.commandRequested(command);
+                            });
+                } else if constexpr (std::is_same_v<Payload, settings::SettingsActionDefinition>) {
                     auto* control = new adqt::widgets::AdButton(list);
                     control->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Outline);
-                    control->setAccentRole(
-                        payload.accent == settings::SettingsActionAccent::Danger
-                            ? adqt::widgets::AdButton::AccentRole::Danger
-                            : adqt::widgets::AdButton::AccentRole::Neutral);
+                    control->setAccentRole(payload.accent == settings::SettingsActionAccent::Danger
+                                               ? adqt::widgets::AdButton::AccentRole::Danger
+                                               : adqt::widgets::AdButton::AccentRole::Neutral);
                     control->setSizeClass(adqt::widgets::AdButton::SizeClass::Medium);
                     if (payload.iconFactory) {
                         control->setIconRef(payload.iconFactory());
@@ -676,16 +708,16 @@ class SettingsPageWidget::Impl {
                     runtime.actionControl = control;
                     runtime.focusTarget = control;
                     runtime.anchor = settings_ui::createSettingItemRow(
-                        list, colorScheme.metricAlias, &runtime.title, &runtime.description, control,
-                        settings::generatedObjectName(QStringLiteral("settings-item"), definition.id));
+                        list, colorScheme.metricAlias, &runtime.title, &runtime.description,
+                        control,
+                        settings::generatedObjectName(QStringLiteral("settings-item"),
+                                                      definition.id));
                     addItemWidget(runtime.anchor);
                     connect(control, &QAbstractButton::clicked, &q,
                             [this, itemId = definition.id]() { triggerAction(itemId); });
-                } else if constexpr (std::is_same_v<Payload,
-                                                    settings::SettingsCustomDefinition>) {
-                    auto* control =
-                        createSettingsCustomWidget(payload.renderer, registry, definition,
-                                                   runtimeSession, list);
+                } else if constexpr (std::is_same_v<Payload, settings::SettingsCustomDefinition>) {
+                    auto* control = createSettingsCustomWidget(payload.renderer, registry,
+                                                               definition, runtimeSession, list);
                     Q_ASSERT(control != nullptr);
                     if (control == nullptr) {
                         return;
@@ -701,13 +733,12 @@ class SettingsPageWidget::Impl {
             definition.payload);
 
         if (runtime.focusTarget != nullptr && runtime.focusTarget != runtime.anchor) {
-            runtime.focusTarget->setObjectName(settings::generatedObjectName(
-                QStringLiteral("settings-control"), definition.id));
+            runtime.focusTarget->setObjectName(
+                settings::generatedObjectName(QStringLiteral("settings-control"), definition.id));
         }
         if (descriptor != nullptr && runtime.anchor != nullptr) {
             runtime.anchor->setProperty("settingsFieldIndex", fieldIndex);
-            runtime.anchor->setProperty("settingsFieldKind",
-                                        static_cast<int>(descriptor->kind));
+            runtime.anchor->setProperty("settingsFieldKind", static_cast<int>(descriptor->kind));
             runtime.anchor->setProperty("settingsProviderId", descriptor->providerId);
         }
         items.push_back(runtime);
@@ -722,19 +753,16 @@ class SettingsPageWidget::Impl {
         QObject::connect(&themeManager,
                          &snow_shot::presentation::styles::ThemeManager::themeModeChanged, &q,
                          [this](auto) { syncValues(); });
-        QObject::connect(&runtimeSession, &settings::SettingsRuntimeSession::shortcutStateChanged,
-                              &q,
-                              [this](
-                                  snow_shot::presentation::GlobalShortcutAction action,
-                                  const snow_shot::presentation::GlobalShortcutRegistrationState& state) {
-                                   const auto* descriptor =
-                                       registry.fieldForShortcut(action);
-                                  RuntimeItem* item =
-                                      descriptor == nullptr ? nullptr : runtimeItem(descriptor->id);
-                                  if (item != nullptr && item->shortcutControl != nullptr) {
-                                      item->shortcutControl->setRegistrationState(state);
-                                  }
-                              });
+        QObject::connect(
+            &runtimeSession, &settings::SettingsRuntimeSession::shortcutStateChanged, &q,
+            [this](snow_shot::presentation::GlobalShortcutAction action,
+                   const snow_shot::presentation::GlobalShortcutRegistrationState& state) {
+                const auto* descriptor = registry.fieldForShortcut(action);
+                RuntimeItem* item = descriptor == nullptr ? nullptr : runtimeItem(descriptor->id);
+                if (item != nullptr && item->shortcutControl != nullptr) {
+                    item->shortcutControl->setRegistrationState(state);
+                }
+            });
         QObject::connect(
             &runtimeSession, &settings::SettingsRuntimeSession::auxiliaryIntegerChanged, &q,
             [this](settings::SettingsIntegerBinding binding, int value) {
@@ -743,64 +771,59 @@ class SettingsPageWidget::Impl {
                 }
                 const auto* descriptor = registry.fieldForShortcut(
                     snow_shot::presentation::GlobalShortcutAction::ScreenshotDelay);
-                RuntimeItem* item =
-                    descriptor == nullptr ? nullptr : runtimeItem(descriptor->id);
+                RuntimeItem* item = descriptor == nullptr ? nullptr : runtimeItem(descriptor->id);
                 if (item != nullptr && item->shortcutControl != nullptr) {
                     item->shortcutControl->setDelaySeconds(value);
                 }
             });
         QObject::connect(&runtimeSession, &settings::SettingsRuntimeSession::fieldChanged, &q,
-                              [this](const QString& fieldId,
-                                     const settings::SettingsFieldState& state) {
-                                 RuntimeItem* item = runtimeItem(fieldId);
-                                 if (item == nullptr) {
-                                     return;
-                                 }
-                                  syncField(*item, &state);
-                              });
-        QObject::connect(&runtimeSession, &settings::SettingsRuntimeSession::optionsChanged, &q,
-                             [this](const QString& fieldId,
-                                    const settings::SettingsOptions& options) {
-                                 RuntimeItem* item = runtimeItem(fieldId);
-                                 if (item == nullptr) {
-                                     return;
-                                 }
-                                 if (item->select != nullptr) {
-                                     QList<adqt::widgets::AdSelect::Option> values;
-                                     values.reserve(options.values.size());
-                                     for (const settings::SettingsRuntimeOption& option :
-                                          options.values) {
-                                         values.push_back(selectOption(option.value, option.label));
-                                     }
-                                     const QSignalBlocker blocker(item->select);
-                                     item->select->setOptions(values);
-                                 }
-                                 if (item->multiSelect != nullptr) {
-                                     QVector<adqt::widgets::AdMultiSelect::Option> values;
-                                     values.reserve(options.values.size());
-                                     for (const settings::SettingsRuntimeOption& option :
-                                          options.values) {
-                                         values.push_back(selectOption(option.value, option.label));
-                                     }
-                                     const QSignalBlocker blocker(item->multiSelect);
-                                     item->multiSelect->setOptions(values);
-                                 }
-                             });
+                         [this](const QString& fieldId, const settings::SettingsFieldState& state) {
+                             RuntimeItem* item = runtimeItem(fieldId);
+                             if (item == nullptr) {
+                                 return;
+                             }
+                             syncField(*item, &state);
+                         });
+        QObject::connect(
+            &runtimeSession, &settings::SettingsRuntimeSession::optionsChanged, &q,
+            [this](const QString& fieldId, const settings::SettingsOptions& options) {
+                RuntimeItem* item = runtimeItem(fieldId);
+                if (item == nullptr) {
+                    return;
+                }
+                if (item->select != nullptr) {
+                    QList<adqt::widgets::AdSelect::Option> values;
+                    values.reserve(options.values.size());
+                    for (const settings::SettingsRuntimeOption& option : options.values) {
+                        values.push_back(selectOption(option.value, option.label));
+                    }
+                    const QSignalBlocker blocker(item->select);
+                    item->select->setOptions(values);
+                }
+                if (item->multiSelect != nullptr) {
+                    QVector<adqt::widgets::AdMultiSelect::Option> values;
+                    values.reserve(options.values.size());
+                    for (const settings::SettingsRuntimeOption& option : options.values) {
+                        values.push_back(selectOption(option.value, option.label));
+                    }
+                    const QSignalBlocker blocker(item->multiSelect);
+                    item->multiSelect->setOptions(values);
+                }
+            });
         QObject::connect(&runtimeSession, &settings::SettingsRuntimeSession::storageStateChanged,
-                              &q,
-                                     [this](const snow_shot::storage::StorageStatus& status) {
-                                 for (RuntimeSection& section : sections) {
-                                     if (section.definition != nullptr &&
-                                         section.reset != settings::SettingsSectionReset::None) {
-                                         const bool historyPolicyUpdate =
-                                             section.reset ==
-                                                 settings::SettingsSectionReset::HistoryPolicy &&
-                                             status.historyPolicyUpdating;
-                                         section.header->setResetEnabled(status.writeAvailable &&
-                                                                         !historyPolicyUpdate);
-                                     }
-                                  }
-                              });
+                         &q, [this](const snow_shot::storage::StorageStatus& status) {
+                             for (RuntimeSection& section : sections) {
+                                 if (section.definition != nullptr &&
+                                     section.reset != settings::SettingsSectionReset::None) {
+                                     const bool historyPolicyUpdate =
+                                         section.reset ==
+                                             settings::SettingsSectionReset::HistoryPolicy &&
+                                         status.historyPolicyUpdating;
+                                     section.header->setResetEnabled(status.writeAvailable &&
+                                                                     !historyPolicyUpdate);
+                                 }
+                             }
+                         });
 
         if (scrollArea != nullptr && scrollArea->verticalScrollBar() != nullptr) {
             QObject::connect(scrollArea->verticalScrollBar(), &QScrollBar::valueChanged, &q,
@@ -864,8 +887,8 @@ class SettingsPageWidget::Impl {
         const settings::SettingsConfirmationDefinition& confirmation = *action->confirmation;
         auto* modal = new adqt::widgets::AdModal(&q);
         item->modal = modal;
-        modal->setObjectName(settings::generatedObjectName(QStringLiteral("settings-modal"),
-                                                           item->definition->id));
+        modal->setObjectName(
+            settings::generatedObjectName(QStringLiteral("settings-modal"), item->definition->id));
         modal->setMode(adqt::widgets::AdModal::Mode::Window);
         modal->setOwnerWindow(q.window());
         modal->setPreset(adqt::widgets::AdModal::Preset::Confirm);
@@ -876,11 +899,12 @@ class SettingsPageWidget::Impl {
         modal->setAcceptAccentRole(adqt::widgets::AdButton::AccentRole::Danger);
         modal->setStandardButtons(adqt::widgets::AdModal::StandardButton::Ok |
                                   adqt::widgets::AdModal::StandardButton::Cancel);
-        QObject::connect(modal, &adqt::widgets::AdModal::accepted, &q, [this, binding = action->binding]() {
-            if (!runtimeSession.triggerAction(binding)) {
-                syncValues();
-            }
-        });
+        QObject::connect(modal, &adqt::widgets::AdModal::accepted, &q,
+                         [this, binding = action->binding]() {
+                             if (!runtimeSession.triggerAction(binding)) {
+                                 syncValues();
+                             }
+                         });
         QObject::connect(modal, &adqt::widgets::AdModal::finished, &q,
                          [this, itemId](adqt::widgets::AdModal::DialogCode) {
                              RuntimeItem* finishedItem = runtimeItem(itemId);
@@ -917,16 +941,16 @@ class SettingsPageWidget::Impl {
         if (runtime.definition == nullptr) {
             return;
         }
-        const QString fieldId = runtime.descriptor != nullptr ? runtime.descriptor->id
-                                                               : runtime.definition->id;
+        const QString fieldId =
+            runtime.descriptor != nullptr ? runtime.descriptor->id : runtime.definition->id;
         const settings::SettingsFieldState sessionState =
             providedState != nullptr ? *providedState : runtimeSession.state(fieldId);
         const bool fieldEnabled = sessionState.enabled;
         if (runtime.anchor != nullptr) {
             runtime.anchor->setVisible(sessionState.visible);
         }
-        QWidget* stateTarget = runtime.focusTarget != nullptr ? runtime.focusTarget
-                                                                : runtime.anchor;
+        QWidget* stateTarget =
+            runtime.focusTarget != nullptr ? runtime.focusTarget : runtime.anchor;
         if (stateTarget != nullptr) {
             stateTarget->setProperty("settingsDirty", sessionState.dirty);
             stateTarget->setProperty("settingsPending", sessionState.busy);
@@ -940,10 +964,11 @@ class SettingsPageWidget::Impl {
         {
             if (runtime.select != nullptr) {
                 const QSignalBlocker blocker(runtime.select);
-                const auto* definition = std::get_if<settings::SettingsSelectDefinition>(
-                    &runtime.definition->payload);
+                const auto* definition =
+                    std::get_if<settings::SettingsSelectDefinition>(&runtime.definition->payload);
                 if (definition != nullptr) {
-                    runtime.select->setCurrentValue(runtimeSession.selectValue(definition->binding));
+                    runtime.select->setCurrentValue(
+                        runtimeSession.selectValue(definition->binding));
                 }
                 runtime.select->setEnabled(fieldEnabled);
             }
@@ -960,8 +985,8 @@ class SettingsPageWidget::Impl {
             if (runtime.switchControl != nullptr) {
                 // AdSwitch refreshes its rendered thumb from toggled; the sync guard prevents
                 // this programmatic update from being written back as a user change.
-                const auto* definition = std::get_if<settings::SettingsSwitchDefinition>(
-                    &runtime.definition->payload);
+                const auto* definition =
+                    std::get_if<settings::SettingsSwitchDefinition>(&runtime.definition->payload);
                 if (definition != nullptr) {
                     const QSignalBlocker blocker(runtime.switchControl);
                     runtime.switchControl->setChecked(
@@ -973,8 +998,8 @@ class SettingsPageWidget::Impl {
             }
             if (runtime.integerControl != nullptr) {
                 const QSignalBlocker blocker(runtime.integerControl);
-                const auto* definition = std::get_if<settings::SettingsIntegerDefinition>(
-                    &runtime.definition->payload);
+                const auto* definition =
+                    std::get_if<settings::SettingsIntegerDefinition>(&runtime.definition->payload);
                 if (definition != nullptr) {
                     runtime.integerControl->setValue(
                         runtimeSession.integerValue(definition->binding));
@@ -983,8 +1008,8 @@ class SettingsPageWidget::Impl {
             }
             if (runtime.sliderControl != nullptr) {
                 const QSignalBlocker blocker(runtime.sliderControl);
-                const auto* definition = std::get_if<settings::SettingsSliderDefinition>(
-                    &runtime.definition->payload);
+                const auto* definition =
+                    std::get_if<settings::SettingsSliderDefinition>(&runtime.definition->payload);
                 if (definition != nullptr) {
                     const int value = runtimeSession.sliderValue(definition->binding);
                     runtime.sliderControl->setValue(value);
@@ -995,8 +1020,8 @@ class SettingsPageWidget::Impl {
             }
             if (runtime.colorControl != nullptr) {
                 const QSignalBlocker blocker(runtime.colorControl);
-                const auto* definition = std::get_if<settings::SettingsColorDefinition>(
-                    &runtime.definition->payload);
+                const auto* definition =
+                    std::get_if<settings::SettingsColorDefinition>(&runtime.definition->payload);
                 if (definition != nullptr) {
                     runtime.colorControl->setValue(adqt::widgets::AdColorValue::solid(
                         runtimeSession.colorValue(definition->binding)));
@@ -1005,8 +1030,8 @@ class SettingsPageWidget::Impl {
             }
             if (runtime.radioGroup != nullptr) {
                 const QSignalBlocker blocker(runtime.radioGroup);
-                const auto* definition = std::get_if<settings::SettingsRadioDefinition>(
-                    &runtime.definition->payload);
+                const auto* definition =
+                    std::get_if<settings::SettingsRadioDefinition>(&runtime.definition->payload);
                 if (definition != nullptr) {
                     const QVariant current = runtimeSession.radioValue(definition->binding);
                     runtime.radioGroup->setCheckedId(runtime.radioValues.indexOf(current));
@@ -1017,8 +1042,8 @@ class SettingsPageWidget::Impl {
             }
             if (runtime.filePathControl != nullptr) {
                 const QSignalBlocker blocker(runtime.filePathControl);
-                const auto* definition = std::get_if<settings::SettingsFilePathDefinition>(
-                    &runtime.definition->payload);
+                const auto* definition =
+                    std::get_if<settings::SettingsFilePathDefinition>(&runtime.definition->payload);
                 if (definition != nullptr) {
                     runtime.filePathControl->setText(
                         runtimeSession.filePathValue(definition->binding));
@@ -1027,9 +1052,8 @@ class SettingsPageWidget::Impl {
             }
             if (runtime.directoryPathControl != nullptr) {
                 const QSignalBlocker blocker(runtime.directoryPathControl);
-                const auto* definition =
-                    std::get_if<settings::SettingsDirectoryPathDefinition>(
-                        &runtime.definition->payload);
+                const auto* definition = std::get_if<settings::SettingsDirectoryPathDefinition>(
+                    &runtime.definition->payload);
                 if (definition != nullptr) {
                     runtime.directoryPathControl->setText(
                         runtimeSession.directoryPathValue(definition->binding));
@@ -1038,11 +1062,10 @@ class SettingsPageWidget::Impl {
             }
             if (runtime.textControl != nullptr) {
                 const QSignalBlocker blocker(runtime.textControl);
-                const auto* definition = std::get_if<settings::SettingsTextDefinition>(
-                    &runtime.definition->payload);
+                const auto* definition =
+                    std::get_if<settings::SettingsTextDefinition>(&runtime.definition->payload);
                 if (definition != nullptr) {
-                    runtime.textControl->setText(
-                        runtimeSession.textValue(definition->binding));
+                    runtime.textControl->setText(runtimeSession.textValue(definition->binding));
                 }
                 runtime.textControl->setEnabled(fieldEnabled);
             }
@@ -1054,9 +1077,8 @@ class SettingsPageWidget::Impl {
                         runtimeSession.shortcutState(definition->shortcutAction));
                     if (definition->adjustment ==
                         settings::SettingsShortcutAdjustment::ScreenshotDelaySeconds) {
-                        runtime.shortcutControl->setDelaySeconds(
-                            runtimeSession.integerValue(
-                                settings::SettingsIntegerBinding::ScreenshotDelaySeconds));
+                        runtime.shortcutControl->setDelaySeconds(runtimeSession.integerValue(
+                            settings::SettingsIntegerBinding::ScreenshotDelaySeconds));
                     }
                     runtime.shortcutControl->setEnabled(fieldEnabled);
                 }
@@ -1073,9 +1095,18 @@ class SettingsPageWidget::Impl {
                     runtime.shortcutControl->setEnabled(fieldEnabled);
                 }
             }
-            if (runtime.actionControl != nullptr) {
-                const auto* definition = std::get_if<settings::SettingsActionDefinition>(
+            if (runtime.globalMouseControl != nullptr) {
+                const auto* definition = std::get_if<settings::SettingsGlobalMouseActionDefinition>(
                     &runtime.definition->payload);
+                if (definition != nullptr) {
+                    runtime.globalMouseControl->setCombination(
+                        runtimeSession.globalMouseCombination(definition->action));
+                    runtime.globalMouseControl->setEnabled(fieldEnabled);
+                }
+            }
+            if (runtime.actionControl != nullptr) {
+                const auto* definition =
+                    std::get_if<settings::SettingsActionDefinition>(&runtime.definition->payload);
                 if (definition != nullptr) {
                     const settings::SettingsActionState state =
                         runtimeSession.actionState(definition->binding);
@@ -1154,9 +1185,7 @@ class SettingsPageWidget::Impl {
                     QStringLiteral("%1%2").arg(value).arg(slider->suffix.translated()));
                 runtime.sliderControl->setTooltipFormatter(
                     [suffix = slider->suffix](double current) {
-                        return QStringLiteral("%1%2")
-                            .arg(qRound(current))
-                            .arg(suffix.translated());
+                        return QStringLiteral("%1%2").arg(qRound(current)).arg(suffix.translated());
                     });
             }
             if (runtime.radioGroup != nullptr) {
@@ -1196,6 +1225,10 @@ class SettingsPageWidget::Impl {
                 runtime.shortcutControl->setAccessibleDescription(description);
                 runtime.shortcutControl->retranslateUi();
             }
+            if (runtime.globalMouseControl != nullptr) {
+                runtime.globalMouseControl->setTitle(title);
+                runtime.globalMouseControl->retranslateUi();
+            }
             if (runtime.actionControl != nullptr) {
                 const auto* action =
                     std::get_if<settings::SettingsActionDefinition>(&definition.payload);
@@ -1227,6 +1260,9 @@ class SettingsPageWidget::Impl {
             }
             if (runtime.shortcutControl != nullptr) {
                 runtime.shortcutControl->applyTheme(scheme);
+            }
+            if (runtime.globalMouseControl != nullptr) {
+                runtime.globalMouseControl->applyTheme(scheme);
             }
             if (runtime.customControl != nullptr) {
                 runtime.customControl->applyTheme(scheme);
@@ -1270,8 +1306,7 @@ class SettingsPageWidget::Impl {
             scrollBar->value() >= scrollBar->maximum()) {
             activeIndex = sections.size() - 1;
         } else {
-            const int activationLine =
-                scrollBar->value() + sectionViewportInset() + 1;
+            const int activationLine = scrollBar->value() + sectionViewportInset() + 1;
             for (int index = 1; index < sections.size(); ++index) {
                 if (sectionTop(sections.at(index)) > activationLine) {
                     break;
@@ -1373,12 +1408,9 @@ class SettingsPageWidget::Impl {
 };
 
 SettingsPageWidget::SettingsPageWidget(
-    const snow_shot::presentation::settings::SettingsRegistry& registry,
-    const QString& pageId,
-    snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession,
-    QWidget* parent)
-    : QWidget(parent),
-      m_impl(std::make_unique<Impl>(*this, registry, pageId, runtimeSession)) {}
+    const snow_shot::presentation::settings::SettingsRegistry& registry, const QString& pageId,
+    snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession, QWidget* parent)
+    : QWidget(parent), m_impl(std::make_unique<Impl>(*this, registry, pageId, runtimeSession)) {}
 
 SettingsPageWidget::~SettingsPageWidget() = default;
 

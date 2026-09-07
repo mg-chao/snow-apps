@@ -63,7 +63,7 @@ class CatalogTranslator final : public QTranslator {
 void builtInCatalogIsCompleteAndValid() {
     const settings::SettingsCatalog& catalog = settings::builtInSettingsRegistry().catalog();
     require(catalog.validationErrors().isEmpty(), "built-in settings catalog must validate");
-    require(catalog.pages().size() == 7, "catalog must contain seven pages");
+    require(catalog.pages().size() == 8, "catalog must contain eight pages");
 
     qsizetype sectionCount = 0;
     qsizetype itemCount = 0;
@@ -94,9 +94,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(
-        sectionCount == 29 && itemCount == 119,
-        "catalog must contain the expected twenty-nine sections and one hundred nineteen items");
+    require(sectionCount == 31 && itemCount == 126,
+            "catalog must contain thirty-one sections and one hundred twenty-six items");
     const auto* saveDialog =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
                       QStringLiteral("screenshot.save-as-file-dialog")});
@@ -311,35 +310,39 @@ void builtInCatalogIsCompleteAndValid() {
         "System settings must expose the ordered OCR model and acceleration controls");
 
     const auto* settingsGroup =
-        std::get_if<settings::SettingsNavigationGroupDefinition>(&catalog.navigation().at(2));
+        std::get_if<settings::SettingsNavigationGroupDefinition>(&catalog.navigation().at(3));
     require(settingsGroup != nullptr && settingsGroup->pages.size() >= 2 &&
                 settingsGroup->pages.at(0).pageId == QStringLiteral("interface-settings") &&
                 settingsGroup->pages.at(1).pageId == QStringLiteral("function-settings"),
             "Function settings must appear below Interface settings in the Settings navigation");
     require(settingsGroup->title.translated() == QStringLiteral("Settings") &&
                 settingsGroup->pages.size() == 5 &&
-                settingsGroup->pages.at(2).pageId == QStringLiteral("hotkey-settings") &&
+                settingsGroup->pages.at(2).pageId == QStringLiteral("application-shortcuts") &&
                 settingsGroup->pages.constLast().pageId == QStringLiteral("system-settings"),
-            "Settings navigation group must expose Hotkey and System settings");
-    require(catalog.page(QStringLiteral("hotkey-settings"))->route ==
-                QStringLiteral("/settings/hotKeySettings"),
-            "Hotkey settings must remain reachable below Function settings");
-    const auto* drawingShortcuts =
-        catalog.section(QStringLiteral("hotkey-settings"), QStringLiteral("drawing-shortcuts"));
-    const auto* screenshotShortcuts =
-        catalog.section(QStringLiteral("hotkey-settings"), QStringLiteral("screenshot-shortcuts"));
+            "Settings navigation group must expose Application shortcuts and System settings");
+    const auto* applicationShortcutsPage = catalog.page(QStringLiteral("application-shortcuts"));
+    require(applicationShortcutsPage != nullptr &&
+                applicationShortcutsPage->route ==
+                    QStringLiteral("/settings/applicationShortcuts") &&
+                applicationShortcutsPage->title.translated() ==
+                    QStringLiteral("Application shortcuts") &&
+                settingsGroup->pages.at(2).id == QStringLiteral("nav.application-shortcuts"),
+            "Application shortcuts must expose the renamed title, route, and navigation");
+    const auto* drawingShortcuts = catalog.section(QStringLiteral("application-shortcuts"),
+                                                   QStringLiteral("drawing-shortcuts"));
+    const auto* screenshotShortcuts = catalog.section(QStringLiteral("application-shortcuts"),
+                                                      QStringLiteral("screenshot-shortcuts"));
     const auto* otherShortcutSection =
-        catalog.section(QStringLiteral("hotkey-settings"), QStringLiteral("other-shortcuts"));
-    const auto* pinToScreenShortcuts = catalog.section(QStringLiteral("hotkey-settings"),
+        catalog.section(QStringLiteral("application-shortcuts"), QStringLiteral("other-shortcuts"));
+    const auto* pinToScreenShortcuts = catalog.section(QStringLiteral("application-shortcuts"),
                                                        QStringLiteral("pin-to-screen-shortcuts"));
-    const auto* hotkeyPage = catalog.page(QStringLiteral("hotkey-settings"));
     const bool everyHotkeySectionUsesTwoColumns =
-        hotkeyPage != nullptr &&
-        std::all_of(hotkeyPage->sections.cbegin(), hotkeyPage->sections.cend(),
-                    [](const settings::SettingsSectionDefinition& section) {
-                        return section.itemLayout ==
-                               settings::SettingsSectionItemLayout::TwoColumnGrid;
-                    });
+        applicationShortcutsPage != nullptr &&
+        std::all_of(
+            applicationShortcutsPage->sections.cbegin(), applicationShortcutsPage->sections.cend(),
+            [](const settings::SettingsSectionDefinition& section) {
+                return section.itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid;
+            });
     struct ScreenshotShortcutContract {
         int index;
         const char* id;
@@ -377,7 +380,7 @@ void builtInCatalogIsCompleteAndValid() {
                 QString::fromLatin1(contract.configurationKey);
     }
     require(
-        hotkeyPage != nullptr && hotkeyPage->sections.size() == 4 &&
+        applicationShortcutsPage != nullptr && applicationShortcutsPage->sections.size() == 4 &&
             everyHotkeySectionUsesTwoColumns && screenshotShortcuts != nullptr &&
             screenshotShortcuts->items.size() == 18 &&
             screenshotShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
@@ -438,7 +441,7 @@ void builtInCatalogIsCompleteAndValid() {
             otherShortcutSection->items.at(5).id == QStringLiteral("screenshot-shortcut.redo") &&
             drawingShortcuts->items.constFirst().id == QStringLiteral("drawing-shortcut.select") &&
             drawingShortcuts->items.at(1).id == QStringLiteral("drawing-shortcut.shape"),
-        "Hotkey settings must expose Screenshot before Drawing with stable local shortcuts");
+        "Application shortcuts must expose Screenshot before Drawing with stable local shortcuts");
 
     const auto* interfacePage = catalog.page(QStringLiteral("interface-settings"));
     require(interfacePage != nullptr && interfacePage->sections.size() == 6 &&
@@ -521,8 +524,96 @@ void builtInCatalogIsCompleteAndValid() {
             "shortcut schema metadata must expose list limits");
 }
 
-void quickFunctionShortcutsHaveStableContracts() {
+void globalMouseSettingsHaveStableContracts() {
+    using Action = settings::SettingsGlobalMouseAction;
+    struct Expectation {
+        const char* id;
+        const char* title;
+        const char* key;
+        Action action;
+    };
+    const Expectation expectations[] = {
+        {"global-mouse.screenshot-copy", "Copy to clipboard", "global_mouse/screenshot_copy",
+         Action::ScreenshotCopy},
+        {"global-mouse.screenshot-fixed", "Pin to screen", "global_mouse/screenshot_fixed",
+         Action::ScreenshotFixed},
+        {"global-mouse.screenshot-ocr", "Text recognition", "global_mouse/screenshot_ocr",
+         Action::ScreenshotOcr},
+        {"global-mouse.screenshot-translation", "Text translation",
+         "global_mouse/screenshot_translation", Action::ScreenshotTranslation},
+        {"global-mouse.screenshot-save", "Save as file", "global_mouse/screenshot_save",
+         Action::ScreenshotSave},
+        {"global-mouse.screenshot-quick-save", "Quick save", "global_mouse/screenshot_quick_save",
+         Action::ScreenshotQuickSave},
+        {"global-mouse.screen-recording", "Screen recording", "global_mouse/screen_recording",
+         Action::ScreenRecording},
+    };
+
+    const settings::SettingsRegistry& registry = settings::builtInSettingsRegistry();
+    const settings::SettingsCatalog& catalog = registry.catalog();
+    const auto* page = catalog.page(QStringLiteral("global-mouse"));
+    const auto* section =
+        catalog.section(QStringLiteral("global-mouse"), QStringLiteral("screenshot"));
+    require(page != nullptr && page->route == QStringLiteral("/global-mouse") &&
+                page->sections.size() == 2 && section == &page->sections.constFirst(),
+            "Global mouse must be a stable top-level page with two categories");
+    const auto* recording =
+        catalog.section(QStringLiteral("global-mouse"), QStringLiteral("screen-recording"));
+    require(recording != nullptr && recording->items.size() == 1 &&
+                recording->title.translated() == QStringLiteral("Screen recording") &&
+                recording->reset == settings::SettingsSectionReset::GlobalMouse &&
+                recording->itemLayout == settings::SettingsSectionItemLayout::VerticalList,
+            "Screen recording must have its own category and one configurable function");
+    require(section->reset == settings::SettingsSectionReset::GlobalMouse &&
+                section->itemLayout == settings::SettingsSectionItemLayout::VerticalList &&
+                section->items.size() == 6,
+            "Global mouse Screenshot must use action containers and reset all six fields");
+
+    const auto& navigation = catalog.navigation();
+    const auto* quick = std::get_if<settings::SettingsNavigationPageDefinition>(&navigation.at(0));
+    const auto* globalMouse =
+        std::get_if<settings::SettingsNavigationPageDefinition>(&navigation.at(1));
+    const auto* history =
+        std::get_if<settings::SettingsNavigationPageDefinition>(&navigation.at(2));
+    require(quick != nullptr && quick->pageId == QStringLiteral("global-hotkeys") &&
+                globalMouse != nullptr && globalMouse->id == QStringLiteral("nav.global-mouse") &&
+                globalMouse->pageId == QStringLiteral("global-mouse") && globalMouse->iconFactory &&
+                globalMouse->iconFactory() ==
+                    snow_shot::presentation::icons::custom::outlined::WheelMouse() &&
+                history != nullptr && history->pageId == QStringLiteral("screenshot-history"),
+            "Global mouse navigation must immediately follow Global hotkeys");
+
+    for (qsizetype index = 0; index < std::size(expectations); ++index) {
+        const auto& expected = expectations[index];
+        const auto& item = index < section->items.size() ? section->items.at(index)
+                                                         : recording->items.constFirst();
+        const auto* payload =
+            std::get_if<settings::SettingsGlobalMouseActionDefinition>(&item.payload);
+        const auto* descriptor = registry.field(QString::fromLatin1(expected.id));
+        require(
+            item.id == QString::fromLatin1(expected.id) &&
+                item.title.translated() == QString::fromLatin1(expected.title) &&
+                item.description.translated() == QString::fromLatin1(expected.title) &&
+                item.configurationKey == QString::fromLatin1(expected.key) && payload != nullptr &&
+                payload->action == expected.action && descriptor != nullptr &&
+                descriptor->kind == settings::SettingsFieldKind::GlobalMouseAction &&
+                descriptor->defaultValue ==
+                    storage::ConfigurationSchema::defaultValue(QString::fromLatin1(expected.key)) &&
+                registry.fieldForGlobalMouseAction(expected.action) == descriptor,
+            "Global mouse action metadata and typed registry bindings must remain stable");
+    }
+    require(registry.fieldsForReset(settings::SettingsSectionReset::GlobalMouse).size() == 7,
+            "Global mouse reset metadata must cover every Screenshot action");
+}
+
+void globalHotkeyShortcutsHaveStableContracts() {
     using Action = snow_shot::presentation::GlobalShortcutAction;
+    const auto* hotkeysPage =
+        settings::builtInSettingsRegistry().catalog().page(QStringLiteral("global-hotkeys"));
+    require(hotkeysPage != nullptr &&
+                hotkeysPage->title.translated() == QStringLiteral("Global hotkeys") &&
+                hotkeysPage->description.translated() == QStringLiteral("Global hotkeys page"),
+            "global hotkeys must expose the renamed page and description");
 
     struct ShortcutExpectation {
         Action action;
@@ -570,27 +661,27 @@ void quickFunctionShortcutsHaveStableContracts() {
     const settings::SettingsCatalog& catalog = settings::builtInSettingsRegistry().catalog();
     QSet<Action> actions;
     for (const ShortcutExpectation& expectation : expectations) {
-        const settings::SettingsLocation location{QStringLiteral("quick-functions"),
+        const settings::SettingsLocation location{QStringLiteral("global-hotkeys"),
                                                   QString::fromLatin1(expectation.sectionId),
                                                   QString::fromLatin1(expectation.itemId)};
         const auto* item = catalog.item(location);
-        require(item != nullptr, "every quick-function shortcut item must exist");
+        require(item != nullptr, "every global-hotkey shortcut item must exist");
         require(item->configurationKey == QString::fromLatin1(expectation.configurationKey),
-                "quick-function shortcut persistence keys must remain stable");
+                "global-hotkey shortcut persistence keys must remain stable");
 
         const auto* shortcut =
             std::get_if<settings::SettingsShortcutActionDefinition>(&item->payload);
         require(shortcut != nullptr && shortcut->shortcutAction == expectation.action &&
                     shortcut->command.kind == expectation.commandKind &&
                     shortcut->adjustment == expectation.adjustment,
-                "quick-function shortcut payloads must match their declared action contracts");
+                "global-hotkey shortcut payloads must match their declared action contracts");
         require(!actions.contains(shortcut->shortcutAction),
-                "quick-function shortcut actions must be unique");
+                "global-hotkey shortcut actions must be unique");
         actions.insert(shortcut->shortcutAction);
 
         const auto command = catalog.commandForShortcut(expectation.action);
         require(command.has_value() && command->kind == expectation.commandKind,
-                "every quick-function shortcut must resolve to its configured command");
+                "every global-hotkey shortcut must resolve to its configured command");
         if (expectation.commandKind == settings::SettingsCommandKind::CaptureScreenshot ||
             expectation.commandKind == settings::SettingsCommandKind::ExecuteQuickAction) {
             require(shortcut->command.shortcutAction == expectation.action &&
@@ -600,9 +691,9 @@ void quickFunctionShortcutsHaveStableContracts() {
     }
 
     require(actions.size() == expectations.size() && expectations.size() == 12,
-            "the quick-functions catalog must expose all twelve shortcut actions exactly once");
+            "the global-hotkeys catalog must expose all twelve shortcut actions exactly once");
     require(!catalog.commandForShortcut(Action::OpenSettings).has_value(),
-            "Open Interface settings must not appear in Quick functions");
+            "Open Interface settings must not appear in Global hotkeys");
 
     const auto trayGroups = catalog.trayMenuGroups();
     QStringList trayOptionIds;
@@ -639,7 +730,7 @@ void quickFunctionShortcutsHaveStableContracts() {
                 trayOptionIds.at(14) == QStringLiteral("tray.show-main-window") &&
                 trayOptionIds.at(15) == QStringLiteral("tray.exit") && trayMenuSchema != nullptr &&
                 trayMenuSchema->allowedStringValues == trayOptionIds,
-            "tray menu options must derive all quick-function groups and append system commands");
+            "tray menu options must derive all global-hotkey groups and append system commands");
 
     const auto* delaySchema =
         storage::ConfigurationSchema::entry(QStringLiteral("screenshot/delay_seconds"));
@@ -650,7 +741,7 @@ void quickFunctionShortcutsHaveStableContracts() {
             "delayed screenshots must use the persisted 3-second default and 1-10 second range");
 
     const auto* ocrItem =
-        catalog.item({QStringLiteral("quick-functions"), QStringLiteral("screenshot"),
+        catalog.item({QStringLiteral("global-hotkeys"), QStringLiteral("screenshot"),
                       QStringLiteral("quick.screenshot-ocr")});
     const auto* ocrShortcut =
         ocrItem != nullptr
@@ -661,14 +752,14 @@ void quickFunctionShortcutsHaveStableContracts() {
                     snow_shot::presentation::icons::custom::outlined::ToolRecognizeText(),
             "Text recognition quick action must use the screenshot toolbar OCR icon");
     const auto* translationItem =
-        catalog.item({QStringLiteral("quick-functions"), QStringLiteral("screenshot"),
+        catalog.item({QStringLiteral("global-hotkeys"), QStringLiteral("screenshot"),
                       QStringLiteral("quick.screenshot-translation")});
     const auto* translationShortcut =
         translationItem != nullptr
             ? std::get_if<settings::SettingsShortcutActionDefinition>(&translationItem->payload)
             : nullptr;
     const auto* screenshotSection =
-        catalog.section(QStringLiteral("quick-functions"), QStringLiteral("screenshot"));
+        catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("screenshot"));
     require(translationItem != nullptr && translationItem->title.source != nullptr &&
                 QString::fromLatin1(translationItem->title.source) ==
                     QStringLiteral("Text translation") &&
@@ -681,7 +772,7 @@ void quickFunctionShortcutsHaveStableContracts() {
             "Text translation must appear directly after Text recognition with its toolbar icon");
 
     const auto* recordingSection =
-        catalog.section(QStringLiteral("quick-functions"), QStringLiteral("screen-recording"));
+        catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("screen-recording"));
     require(recordingSection != nullptr && recordingSection->title.source != nullptr &&
                 QString::fromLatin1(recordingSection->title.source) ==
                     QStringLiteral("Screen recording") &&
@@ -689,19 +780,19 @@ void quickFunctionShortcutsHaveStableContracts() {
             "Screen recording must expose exactly its two quick actions");
 
     const auto* screenRecord =
-        catalog.item({QStringLiteral("quick-functions"), QStringLiteral("screen-recording"),
+        catalog.item({QStringLiteral("global-hotkeys"), QStringLiteral("screen-recording"),
                       QStringLiteral("quick.screen-record")});
     const auto* screenRecordCopy =
-        catalog.item({QStringLiteral("quick-functions"), QStringLiteral("screen-recording"),
+        catalog.item({QStringLiteral("global-hotkeys"), QStringLiteral("screen-recording"),
                       QStringLiteral("quick.screen-record-copy")});
     const auto* openHistory =
-        catalog.item({QStringLiteral("quick-functions"), QStringLiteral("other"),
+        catalog.item({QStringLiteral("global-hotkeys"), QStringLiteral("other"),
                       QStringLiteral("quick.open-capture-history")});
     const auto* pinClipboard =
-        catalog.item({QStringLiteral("quick-functions"), QStringLiteral("other"),
+        catalog.item({QStringLiteral("global-hotkeys"), QStringLiteral("other"),
                       QStringLiteral("quick.pin-clipboard-content")});
     const auto* otherShortcuts =
-        catalog.section(QStringLiteral("quick-functions"), QStringLiteral("other"));
+        catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("other"));
     require(otherShortcuts != nullptr && otherShortcuts->items.size() == 2 &&
                 otherShortcuts->items.at(0).id == QStringLiteral("quick.open-capture-history") &&
                 otherShortcuts->items.at(1).id == QStringLiteral("quick.pin-clipboard-content"),
@@ -824,12 +915,12 @@ void invalidCatalogReportsAllConformanceErrors() {
     QVector<settings::SettingsPageDefinition> pages = builtIn.pages();
     QVector<settings::SettingsNavigationNode> navigation = builtIn.navigation();
 
-    pages[3].route = pages[0].route;
-    pages[3].sections[0].items[0].configurationKey = QStringLiteral("interface/language");
-    pages[3].sections[0].items[1].id = QStringLiteral("interface-theme");
-    pages[4].sections[0].items[1].configurationKey = QStringLiteral("missing/key");
+    pages[4].route = pages[0].route;
+    pages[4].sections[0].items[0].configurationKey = QStringLiteral("interface/language");
+    pages[4].sections[0].items[1].id = QStringLiteral("interface-theme");
+    pages[5].sections[0].items[1].configurationKey = QStringLiteral("missing/key");
     auto& custom =
-        std::get<settings::SettingsCustomDefinition>(pages[4].sections[3].items[0].payload);
+        std::get<settings::SettingsCustomDefinition>(pages[5].sections[3].items[0].payload);
     custom.renderer = static_cast<settings::SettingsCustomRenderer>(999);
     pages.push_back({QStringLiteral("empty-page"),
                      QStringLiteral("relative-route"),
@@ -837,7 +928,7 @@ void invalidCatalogReportsAllConformanceErrors() {
                      text("Empty page description"),
                      {}});
 
-    auto* group = std::get_if<settings::SettingsNavigationGroupDefinition>(&navigation[2]);
+    auto* group = std::get_if<settings::SettingsNavigationGroupDefinition>(&navigation[3]);
     require(group != nullptr, "built-in Settings navigation group must exist");
     group->pages[0].pageId = QStringLiteral("missing-page");
 
@@ -867,8 +958,8 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 155 && index.search(QString()).size() == 155,
-            "search must generate all one hundred fifty-five catalog nodes in catalog order");
+    require(index.entries().size() == 165 && index.search(QString()).size() == 165,
+            "search must generate all catalog nodes in catalog order");
     const auto translation = index.search(QStringLiteral("original image translation"));
     require(!translation.isEmpty() && translation.constFirst().location.itemId ==
                                           QStringLiteral("translation.original-image"),
@@ -899,7 +990,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 7 && sections == 29 && items == 119,
+    require(pages == 8 && sections == 31 && items == 126,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));
@@ -911,7 +1002,7 @@ void searchIndexIsGeneratedAndRanked() {
     require(!theme.isEmpty() && theme.constFirst().id == QStringLiteral("item:interface.theme"),
             "exact item titles must rank ahead of descriptions and paths");
     require(index.search(QStringLiteral("preferences")).isEmpty(),
-            "removed quick functions must not remain in search");
+            "removed global hotkeys must not remain in search");
     const auto option = index.search(QStringLiteral("dark"));
     require(!option.isEmpty() &&
                 option.constFirst().location.itemId == QStringLiteral("interface.theme"),
@@ -1101,7 +1192,7 @@ void registryCompilesOwnedIndexesAndProviderPlans() {
     require(registry.isValid(), "the built-in settings registry must validate");
     require(registry.providerIds() == QStringList{QStringLiteral("built-in")},
             "the built-in registry must retain its provider ownership");
-    require(registry.providerIdForPage(QStringLiteral("quick-functions")) ==
+    require(registry.providerIdForPage(QStringLiteral("global-hotkeys")) ==
                 QStringLiteral("built-in"),
             "page plans must expose their contributing provider");
     require(registry.providerIdForPage(QStringLiteral("missing-page")).isEmpty(),
@@ -1207,6 +1298,13 @@ void registryCompilesOwnedIndexesAndProviderPlans() {
                     "local shortcut bindings must resolve through the registry index");
             break;
         }
+        case settings::SettingsFieldKind::GlobalMouseAction: {
+            const auto& payload = std::get<settings::SettingsGlobalMouseActionDefinition>(
+                descriptor.definition->payload);
+            require(registry.fieldForGlobalMouseAction(payload.action) == &descriptor,
+                    "global mouse bindings must resolve through the registry index");
+            break;
+        }
         case settings::SettingsFieldKind::Action:
             require(registry.fieldForAction(
                         std::get<settings::SettingsActionDefinition>(descriptor.definition->payload)
@@ -1230,6 +1328,7 @@ void registryCompilesOwnedIndexesAndProviderPlans() {
     }
     for (const settings::SettingsSectionReset reset : {
              settings::SettingsSectionReset::ScreenshotShortcuts,
+             settings::SettingsSectionReset::GlobalMouse,
              settings::SettingsSectionReset::GeneralSettings,
              settings::SettingsSectionReset::HistoryPolicy,
              settings::SettingsSectionReset::Tray,
@@ -1337,7 +1436,8 @@ void emptyRegistryBuilderIsExplicitlyInvalid() {
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     builtInCatalogIsCompleteAndValid();
-    quickFunctionShortcutsHaveStableContracts();
+    globalMouseSettingsHaveStableContracts();
+    globalHotkeyShortcutsHaveStableContracts();
     compactTrayManifestMatchesRegistryCatalog();
     structuredFallbackIsDeterministic();
     invalidCatalogReportsAllConformanceErrors();

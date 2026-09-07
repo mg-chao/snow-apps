@@ -30,8 +30,8 @@ const snow_shot::presentation::settings::SettingsCatalog& catalog() {
     return registry().catalog();
 }
 
-QVector<snow_shot::presentation::settings::SettingsSectionSummary> quickFunctionSections() {
-    return catalog().sectionSummaries(QStringLiteral("quick-functions"));
+QVector<snow_shot::presentation::settings::SettingsSectionSummary> globalHotkeySections() {
+    return catalog().sectionSummaries(QStringLiteral("global-hotkeys"));
 }
 
 void require(bool condition, const char* message) {
@@ -52,7 +52,7 @@ void headerPlacesSearchAboveAntDesignTabs() {
 
     MainContentHeaderWidget header(registry(),
                                    ThemeManager::instance().themeColorScheme().metricAlias);
-    header.setSections(quickFunctionSections());
+    header.setSections(globalHotkeySections());
     header.resize(680, header.sizeHint().height());
     header.show();
     flushEvents();
@@ -74,12 +74,12 @@ void headerPlacesSearchAboveAntDesignTabs() {
             "the global search should sit above the page tabs");
     require(search->width() >= 280 && search->width() <= 400,
             "the global search should retain a stable readable width");
-    const auto quickSections = quickFunctionSections();
-    require(tabs->count() == quickSections.size(),
-            "tabs should cover every category on the current quick-functions page");
-    for (int index = 0; index < quickSections.size(); ++index) {
-        require(tabs->tabKey(index) == quickSections.at(index).id &&
-                    tabs->tabText(index) == quickSections.at(index).label,
+    const auto globalHotkeySectionsForPage = globalHotkeySections();
+    require(tabs->count() == globalHotkeySectionsForPage.size(),
+            "tabs should cover every category on the current global-hotkeys page");
+    for (int index = 0; index < globalHotkeySectionsForPage.size(); ++index) {
+        require(tabs->tabKey(index) == globalHotkeySectionsForPage.at(index).id &&
+                    tabs->tabText(index) == globalHotkeySectionsForPage.at(index).label,
                 "tabs should preserve registry section IDs, order, and labels");
     }
     const qsizetype pageCount = registry().pages().size();
@@ -91,7 +91,7 @@ void headerPlacesSearchAboveAntDesignTabs() {
     const QString descriptionRole = QStringLiteral("__role_%1").arg(Qt::UserRole + 101);
     const QString categoryRole = QStringLiteral("__role_%1").arg(Qt::UserRole + 102);
     require(searchOptions.constFirst().metadata.value(descriptionRole).toString() ==
-                QStringLiteral("Quick functions page") &&
+                    QStringLiteral("Global hotkeys page") &&
                 searchOptions.constFirst().metadata.value(categoryRole).toString() ==
                     QStringLiteral("Pages"),
             "search rows should expose their description and right-aligned category context");
@@ -217,7 +217,7 @@ void tabsRequestCategoriesWithoutChangingPages() {
 
     MainContentHeaderWidget header(registry(),
                                    ThemeManager::instance().themeColorScheme().metricAlias);
-    header.setSections(quickFunctionSections());
+    header.setSections(globalHotkeySections());
     auto* tabs = header.findChild<adqt::widgets::AdTabs*>(QStringLiteral("mainSectionTabs"));
     require(tabs != nullptr, "section tabs should exist");
 
@@ -265,8 +265,8 @@ void tabsRequestCategoriesWithoutChangingPages() {
                     header.layout()->contentsMargins().top(),
             "pages without sections should hide the tabs and preserve balanced search spacing");
 
-    header.setSections(quickFunctionSections());
-    require(tabs->count() == quickFunctionSections().size() && !tabs->isHidden() &&
+    header.setSections(globalHotkeySections());
+    require(tabs->count() == globalHotkeySections().size() && !tabs->isHidden() &&
                 header.layout()->contentsMargins().bottom() == 0,
             "section tabs should become visible again with their original header spacing");
 }

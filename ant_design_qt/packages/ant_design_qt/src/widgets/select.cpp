@@ -67,6 +67,16 @@ constexpr char kTagTextMetadataKey[] = "__tagText";
 constexpr char kSelectedTextMetadataKey[] = "__selectedText";
 constexpr char kValueVariantMetadataKey[] = "__valueVariant";
 
+QWidget* selectPopupContainer(const QWidget* owner) {
+  // Keep modal-owned popups inside the modal's stacking context.
+  for (QWidget* ancestor = owner->parentWidget(); ancestor; ancestor = ancestor->parentWidget()) {
+    if (ancestor->property("adqt.popup.container").toBool() || ancestor->isWindow()) {
+      return ancestor;
+    }
+  }
+  return detail::resolvePopupScopeWindow(owner);
+}
+
 bool isLoadingIcon(const adqt::icons::IconRef& icon) {
   const auto metadata = adqt::icons::describeIcon(icon);
   return metadata.key.pack == QStringLiteral("antd") &&
@@ -5246,8 +5256,7 @@ void AdSelect::ensurePopup() {
     return;
   }
 
-  QWidget* scopeWindow = detail::resolvePopupScopeWindow(this);
-  popup_ = new PopupFrame(scopeWindow);
+  popup_ = new PopupFrame(selectPopupContainer(this));
   popup_->setAttribute(Qt::WA_DeleteOnClose, false);
   popup_->setObjectName(QStringLiteral("adselect-popup"));
   popup_->setProperty("adqt.interaction.surface", true);
@@ -5315,8 +5324,8 @@ void AdSelect::applyPopupLayerMode() {
     return;
   }
 
-  QWidget* scopeWindow = detail::resolvePopupScopeWindow(this);
-  QWidget* desiredParent = popupLayerMode_ == PopupLayerMode::QtTool ? nullptr : scopeWindow;
+  QWidget* desiredParent =
+      popupLayerMode_ == PopupLayerMode::QtTool ? nullptr : selectPopupContainer(this);
   const Qt::WindowFlags desiredFlags =
       popupLayerMode_ == PopupLayerMode::QtTool ? adQtToolWindowFlags() : Qt::Widget;
   const bool useToolWindow = popupLayerMode_ == PopupLayerMode::QtTool;
@@ -5478,7 +5487,7 @@ void AdSelect::syncPopupGeometry() {
   const bool useTopLevelToolLayer = popupLayerMode_ == PopupLayerMode::QtTool;
   QWidget* popupParent = popup_->parentWidget();
   QWidget* scopeWindow = detail::resolvePopupScopeWindow(this);
-  QWidget* expectedPopupParent = useTopLevelToolLayer ? nullptr : scopeWindow;
+  QWidget* expectedPopupParent = useTopLevelToolLayer ? nullptr : selectPopupContainer(this);
   if (popupParent != expectedPopupParent && scopeWindow) {
     QScopedValueRollback<bool> hideGuard(suppressPopupHideClose_, true);
     const bool wasVisible = popup_->isVisible();

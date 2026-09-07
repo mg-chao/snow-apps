@@ -1,10 +1,12 @@
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 
 #include "snow_shot/presentation/settings/settingscatalog.h"
+#include "snow_shot/presentation/globalmousegesture.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 
 #include <QMetaType>
+#include <QJsonObject>
 
 #include <utility>
 
@@ -32,6 +34,10 @@ QStringList stringListValue(const QVariant& value) {
 
 QString localShortcutKey(SettingsLocalShortcutScope scope, const QString& shortcutId) {
     return QString::number(static_cast<int>(scope)) + QLatin1Char('\x1f') + shortcutId;
+}
+
+QVariant globalMouseCombinationVariant(const SettingsGlobalMouseCombination& combination) {
+    return QVariant::fromValue(combination);
 }
 
 bool sameStorageStatus(const storage::StorageStatus& first, const storage::StorageStatus& second) {
@@ -62,6 +68,7 @@ SettingsRuntimeSession::SettingsRuntimeSession(const SettingsRegistry& registry,
     qRegisterMetaType<SettingsCommand>();
     qRegisterMetaType<SettingsCommandKind>();
     qRegisterMetaType<storage::ScreenshotToolbarLayout>();
+    qRegisterMetaType<SettingsGlobalMouseCombination>();
     connect(&m_backend, &SettingsBackend::actionFinished, this,
             &SettingsRuntimeSession::actionFinished);
     connect(
@@ -821,6 +828,11 @@ SettingsRuntimeSession::descriptorForCustom(SettingsCustomRenderer renderer) con
     return m_registry.fieldForCustom(renderer);
 }
 
+const SettingsFieldDescriptor*
+SettingsRuntimeSession::descriptorForGlobalMouseAction(SettingsGlobalMouseAction action) const {
+    return m_registry.fieldForGlobalMouseAction(action);
+}
+
 QVariant SettingsRuntimeSession::readValue(const SettingsFieldDescriptor& descriptor) const {
     if (descriptor.definition == nullptr) {
         return {};
@@ -853,6 +865,9 @@ QVariant SettingsRuntimeSession::readValue(const SettingsFieldDescriptor& descri
             } else if constexpr (std::is_same_v<Payload, SettingsLocalShortcutDefinition>) {
                 return stringListVariant(
                     m_backend.localShortcuts(payload.scope, payload.shortcutId));
+            } else if constexpr (std::is_same_v<Payload, SettingsGlobalMouseActionDefinition>) {
+                return globalMouseCombinationVariant(
+                    m_backend.globalMouseCombination(payload.action));
             } else if constexpr (std::is_same_v<Payload, SettingsActionDefinition>) {
                 const SettingsActionState state = m_backend.actionState(payload.binding);
                 return QVariantList{state.enabled, state.busy};
@@ -910,6 +925,12 @@ bool SettingsRuntimeSession::writeValue(const SettingsFieldDescriptor& descripto
             } else if constexpr (std::is_same_v<Payload, SettingsLocalShortcutDefinition>) {
                 return m_backend.applyLocalShortcuts(payload.scope, payload.shortcutId,
                                                      stringListValue(value));
+            } else if constexpr (std::is_same_v<Payload, SettingsGlobalMouseActionDefinition>) {
+                if (!value.canConvert<SettingsGlobalMouseCombination>()) {
+                    return false;
+                }
+                return m_backend.applyGlobalMouseCombination(
+                    payload.action, value.value<SettingsGlobalMouseCombination>());
             } else if constexpr (std::is_same_v<Payload, SettingsCustomDefinition>) {
                 switch (payload.renderer) {
                 case SettingsCustomRenderer::DrawingToolbarEditor:
@@ -974,6 +995,11 @@ bool SettingsRuntimeSession::valuesEqual(const SettingsFieldDescriptor& descript
     }
     if (std::holds_alternative<SettingsColorDefinition>(descriptor.definition->payload)) {
         return first.value<QColor>() == second.value<QColor>();
+    }
+    if (std::holds_alternative<SettingsGlobalMouseActionDefinition>(
+            descriptor.definition->payload)) {
+        return first.value<SettingsGlobalMouseCombination>() ==
+               second.value<SettingsGlobalMouseCombination>();
     }
     if (std::holds_alternative<SettingsLocalShortcutDefinition>(descriptor.definition->payload) ||
         std::holds_alternative<SettingsShortcutActionDefinition>(descriptor.definition->payload) ||
@@ -1054,9 +1080,9 @@ void SettingsRuntimeSession::refreshOptions(const SettingsFieldDescriptor& descr
 }
 
 void SettingsRuntimeSession::refreshCommandStates() {
-    const SettingsCommandKind kinds[] = {SettingsCommandKind::CaptureScreenshot,
-                                         SettingsCommandKind::ExecuteQuickAction,
-                                         SettingsCommandKind::Navigate};
+    const SettingsCommandKind kinds[] = {
+        SettingsCommandKind::CaptureScreenshot, SettingsCommandKind::ExecuteQuickAction,
+        SettingsCommandKind::BeginGlobalMouseDrag, SettingsCommandKind::Navigate};
     for (SettingsCommandKind kind : kinds) {
         SettingsCommandState next;
         next.enabled = true;
@@ -1287,6 +1313,46 @@ bool SettingsRuntimeSession::applyLocalShortcuts(SettingsLocalShortcutScope scop
                                                  const QStringList& shortcuts) {
     const auto* descriptor = descriptorForLocal(scope, shortcutId);
     return descriptor != nullptr && submitDraft(descriptor->id, stringListVariant(shortcuts));
+}
+
+SettingsGlobalMouseCombination
+SettingsRuntimeSession::globalMouseCombination(SettingsGlobalMouseAction action) const {
+    const auto* descriptor = descriptorForGlobalMouseAction(action);
+    if (descriptor == nullptr) {
+        return {};
+    }
+    return state(descriptor->id).draftValue.value<SettingsGlobalMouseCombination>();
+}
+
+bool SettingsRuntimeSession::applyGlobalMouseCombination(
+    SettingsGlobalMouseAction action, const SettingsGlobalMouseCombination& combination) {
+    const auto* descriptor = descriptorForGlobalMouseAction(action);
+    return descriptor != nullptr && globalMouseCombinationAvailable(action, combination) &&
+           submitDraft(descriptor->id, globalMouseCombinationVariant(combination));
+}
+
+bool SettingsRuntimeSession::globalMouseCombinationAvailable(
+    SettingsGlobalMouseAction action, const SettingsGlobalMouseCombination& combination) const {
+    if (combination.isUnset()) {
+        return true;
+    }
+    if (!globalMouseBinding(action, combination)) {
+        return false;
+    }
+    for (const SettingsFieldDescriptor& descriptor : m_registry.fields()) {
+        const auto* definition =
+            descriptor.definition != nullptr
+                ? std::get_if<SettingsGlobalMouseActionDefinition>(&descriptor.definition->payload)
+                : nullptr;
+        if (definition == nullptr || definition->action == action) {
+            continue;
+        }
+        if (state(descriptor.id).draftValue.value<SettingsGlobalMouseCombination>() ==
+            combination) {
+            return false;
+        }
+    }
+    return true;
 }
 
 SettingsActionState SettingsRuntimeSession::actionState(SettingsActionBinding binding) const {

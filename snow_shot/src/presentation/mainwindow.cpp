@@ -203,6 +203,8 @@ void MainWindow::buildUi() {
             &MainWindow::screenshotRequested);
     connect(m_contentCard, &ContentCardWidget::quickActionRequested, this,
             &MainWindow::quickActionRequested);
+    connect(m_contentCard, &ContentCardWidget::globalMouseDragRequested, this,
+            &MainWindow::globalMouseDragRequested);
     connect(m_contentCard, &ContentCardWidget::screenshotHistoryEditRequested, this,
             &MainWindow::screenshotHistoryEditRequested);
     m_contentCard->setCurrentRoute(m_sidebar->currentRoute());

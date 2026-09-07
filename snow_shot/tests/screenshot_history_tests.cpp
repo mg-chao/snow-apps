@@ -974,6 +974,19 @@ void manualSelectionUsesSharedMarqueeTransaction() {
         std::move(actions),
     });
 
+    handler.setExternalDragActive(true);
+    handler.handleMousePress(nullptr, QPointF(10, 10));
+    handler.handleMouseMove(nullptr, QPointF(30, 40));
+    handler.handleMouseRelease(nullptr, QPointF(30, 40));
+    require(handler.handleRightClick(nullptr, {}) && handler.handleWheel(nullptr, {}, {0, 120}, {}),
+            "external drags must consume ordinary right-click and wheel commands");
+    handler.handleUnhandledMiddleClick();
+    handler.handleUnhandledLeftDoubleClick();
+    require(!selection.hasPixelSelection() && !interaction.dragging() &&
+                selectionConfirmedCount == 0 && handler.shouldBlockUnhandledKeyInput(),
+            "ordinary overlay input must not create or confirm an external drag selection");
+    handler.setExternalDragActive(false);
+
     require(handler.shouldHandleMouseEvent(nullptr, QPointF(50, 50), true),
             "manual selection must handle an initial marquee press");
     handler.handleMousePress(nullptr, QPointF(50, 50));

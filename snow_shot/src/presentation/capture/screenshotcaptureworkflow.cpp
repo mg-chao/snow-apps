@@ -65,7 +65,11 @@ void ScreenshotCaptureWorkflow::prewarmResources() {
     initializeIdleResources(0);
 }
 
-void ScreenshotCaptureWorkflow::startCapture() {
+bool ScreenshotCaptureWorkflow::suppressCaptureToolbar() const {
+    return m_startMode != StartMode::Normal;
+}
+
+void ScreenshotCaptureWorkflow::startCapture(StartMode mode) {
     if (m_deferredExportCleanup) {
         completeDeferredExportCleanup();
     }
@@ -83,6 +87,7 @@ void ScreenshotCaptureWorkflow::startCapture() {
         m_context.runtime.ensureCaptureWorker();
     }
     const quint64 sessionId = ++m_state.sessionId;
+    m_startMode = mode;
     m_state.restoreOriginalScreenColors = m_context.restoreOriginalScreenColors();
     m_state.captureCursor = m_context.captureCursor();
     m_state.sessionState = ScreenshotSessionState::Capturing;
@@ -95,7 +100,8 @@ void ScreenshotCaptureWorkflow::startCapture() {
     m_captureModelsClean = false;
     m_context.restoreSelectionEffects();
     m_context.interaction.beginCapture();
-    m_context.intelligentSelection.beginCaptureSession(m_context.smartSelectionEnabled(),
+    m_context.intelligentSelection.beginCaptureSession(mode != StartMode::ExternalDrag &&
+                                                           m_context.smartSelectionEnabled(),
                                                        m_context.preferredSelectionTarget());
     beginCapturePreparation(sessionId);
 }
@@ -289,6 +295,10 @@ void ScreenshotCaptureWorkflow::shutdownCaptureWorker() {
 }
 
 void ScreenshotCaptureWorkflow::handleDisplayConfigurationChanged() {
+    if (m_startMode == StartMode::ExternalDrag &&
+        (m_state.captureInProgress || m_context.interaction.dragging())) {
+        cancelCapture();
+    }
     if (!m_context.runtime.captureWorkerCreated() &&
         m_state.sessionState == ScreenshotSessionState::IdleCold &&
         m_context.displaySession.isEmpty()) {
@@ -339,7 +349,9 @@ void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
 
         // Build the selector snapshot for this capture after overlay exclusions
         // are known, so the frame and initial smart selection use the same layout.
-        m_context.runtime.startWorkflowRefresh();
+        if (m_startMode != StartMode::ExternalDrag) {
+            m_context.runtime.startWorkflowRefresh();
+        }
         // Prewarm the hidden editing-toolbar surface only after the capture has
         // been dispatched so its construction overlaps the worker's frame
         // acquisition instead of delaying the capture or the editing reveal.
@@ -443,6 +455,12 @@ void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 session
     }
 
     m_visiblePresentationSessionId = sessionId;
+    if (m_context.presentation.beforeCapturePresented) {
+        m_context.presentation.beforeCapturePresented();
+    }
+    if (sessionId != m_state.sessionId) {
+        return;
+    }
     SNOW_SHOT_CAPTURE_PERF_MILESTONE("presentation.reveal_begin");
 
     // The desktop frame and initial smart-selection result have both arrived.
@@ -459,12 +477,21 @@ void ScreenshotCaptureWorkflow::showCapturePresentationWhenReady(quint64 session
     if (m_context.presentation.capturePresented) {
         m_context.presentation.capturePresented();
     }
-    if (!m_context.runtime.selectorReady() && !m_context.runtime.selectorRefreshInFlight()) {
+    if (m_startMode != StartMode::ExternalDrag && !m_context.runtime.selectorReady() &&
+        !m_context.runtime.selectorRefreshInFlight()) {
         m_context.runtime.startWorkflowRefresh();
     }
 }
 
 void ScreenshotCaptureWorkflow::enterOverlaySelectionModeAtCursor() {
+    if (m_startMode == StartMode::ExternalDrag) {
+        m_context.interaction.enterOverlayVisible(false);
+        static_cast<void>(
+            m_context.interaction.enterSelectionDrag(ScreenshotSelectionDragMode::Marquee));
+        m_context.intelligentSelection.clearTransientState();
+        m_context.runtime.clearSelectorSelection();
+        return;
+    }
     bool selectorReady = m_context.runtime.selectorReady();
     bool selectorRefreshInFlight = m_context.runtime.selectorRefreshInFlight();
     if (!selectorRefreshInFlight && !selectorReady) {

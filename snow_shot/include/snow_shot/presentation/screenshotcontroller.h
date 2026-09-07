@@ -2,7 +2,9 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTCONTROLLER_H
 
 #include <QObject>
+#include <QPoint>
 #include <QString>
+#include "snow_shot/presentation/globalmousetypes.h"
 
 #include <memory>
 
@@ -20,6 +22,13 @@ class ScreenshotController : public QObject {
         snow_shot::presentation::PinnedWindowGroupManager* groupManager = nullptr,
         ScreenshotOcrRecognitionService* sharedOcrRecognition = nullptr);
     ~ScreenshotController() override;
+    [[nodiscard]] bool captureAvailable() const;
+    [[nodiscard]] bool
+    beginGlobalMouseCapture(snow_shot::presentation::settings::SettingsGlobalMouseAction action,
+                            quint64 gestureId, const QPoint& physicalStart);
+    void updateGlobalMouseCapture(quint64 gestureId, const QPoint& physicalPoint);
+    void finishGlobalMouseCapture(quint64 gestureId, const QPoint& physicalPoint);
+    void cancelGlobalMouseCapture(quint64 gestureId);
 
   public slots:
     void prewarmResources();
@@ -38,6 +47,8 @@ class ScreenshotController : public QObject {
 
   signals:
     void showMainWindowRequested();
+    void captureAvailabilityChanged(bool available);
+    void globalMouseCaptureEnded(quint64 gestureId);
 
   private:
     struct Impl;

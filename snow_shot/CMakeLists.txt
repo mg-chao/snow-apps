@@ -599,6 +599,7 @@ function(snow_shot_add_translations target)
             snow_shot_settings_catalog
             snow_shot_settings_search
             snow_shot_settings
+            snow_shot_global_mouse
             snow_shot_diagnostics
         )
     else()
@@ -662,6 +663,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/presentation/globalshortcutmanager.h
     include/snow_shot/presentation/globalshortcuttypes.h
     include/snow_shot/presentation/components/pathinput.h
+    include/snow_shot/presentation/components/globalmouserow.h
     include/snow_shot/presentation/components/toolbareditorsettingswidget.h
     include/snow_shot/presentation/components/infotooltipicon.h
     include/snow_shot/presentation/components/pagecontainerwidget.h
@@ -670,6 +672,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/presentation/components/settingscustomwidget.h
     include/snow_shot/presentation/components/settingspagewidget.h
     include/snow_shot/presentation/components/shortcutkeyrow.h
+    include/snow_shot/presentation/components/shortcutconfigurationbutton.h
     include/snow_shot/presentation/components/storagestatussettingswidget.h
     include/snow_shot/presentation/screenshottoolbarlayoutmodel.h
     include/snow_shot/presentation/settings/settingsbackend.h
@@ -678,6 +681,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/presentation/settings/textrecognitionacceleration.h
     include/snow_shot/presentation/styles/thememanager.h
     src/presentation/components/infotooltipicon.cpp
+    src/presentation/components/globalmouserow.cpp
     src/presentation/components/pathinput.cpp
     src/presentation/components/pagecontainerwidget.cpp
     src/presentation/components/sectionheaderwidget.cpp
@@ -685,6 +689,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/presentation/components/settingscustomwidget.cpp
     src/presentation/components/settingspagewidget.cpp
     src/presentation/components/shortcutkeyrow.cpp
+    src/presentation/components/shortcutconfigurationbutton.cpp
     src/presentation/components/storagestatussettingswidget.cpp
     src/presentation/services/globalshortcutmanager.cpp
     src/presentation/settings/settingsbackend.cpp
@@ -696,7 +701,6 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/presentation/styles/themecolorscheme.cpp
     src/presentation/styles/thememanager.cpp
     src/platform/windows/autostartregistration.cpp
-    src/platform/windows/focusedfullscreenwindow.cpp
     src/platform/windows/printscreenshortcutrecorder.cpp
 )
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/components/screenshothistorypagewidget.cpp"
@@ -710,6 +714,21 @@ endif()
 unset(_snow_shot_history_source)
 unset(_snow_shot_history_global_pool_call)
 add_library(snow_shot_settings STATIC ${SNOW_SHOT_SETTINGS_SOURCES})
+add_library(snow_shot_global_mouse STATIC
+    include/snow_shot/presentation/globalmousemanager.h
+    include/snow_shot/presentation/globalmousegesture.h
+    include/snow_shot/presentation/globalmousetypes.h
+    src/presentation/services/globalmousemanager.cpp
+    src/presentation/services/globalmousegesture.cpp
+    src/platform/windows/globalmousebackend.cpp
+    src/platform/windows/focusedfullscreenwindow.cpp
+)
+target_include_directories(snow_shot_global_mouse PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(snow_shot_global_mouse PUBLIC snow_shot_storage Qt6::Gui)
+if(WIN32)
+    target_link_libraries(snow_shot_global_mouse PRIVATE dwmapi user32)
+endif()
+target_link_libraries(snow_shot_settings PRIVATE snow_shot_global_mouse)
 snow_enable_unity_build(snow_shot_settings)
 target_include_directories(snow_shot_settings PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(snow_shot_settings PUBLIC
@@ -869,6 +888,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/capture/screenshotcapturepolicy.cpp
     src/presentation/capture/screenshotcaptureperfinstrumentation.cpp
     src/presentation/capture/screenshotcaptureworkflow.cpp
+    src/presentation/capture/screenshotglobalmousedrag.cpp
     src/presentation/capture/adaptivescrollingcapturecadence.h
     src/presentation/capture/windowcaptureexclusion.h
     src/presentation/capture/latestbridgemailbox.h
@@ -1112,6 +1132,23 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
 
     enable_testing()
+
+    add_executable(snow-shot-global-mouse-tests tests/global_mouse_tests.cpp
+        include/snow_shot/presentation/globalshortcutmanager.h
+        src/presentation/services/globalshortcutmanager.cpp
+        src/presentation/capture/screenshotglobalmousedrag.cpp)
+    target_link_libraries(snow-shot-global-mouse-tests PRIVATE snow_shot_global_mouse Qt6::Widgets)
+    add_test(NAME snow-shot-global-mouse-tests COMMAND snow-shot-global-mouse-tests)
+    set_tests_properties(snow-shot-global-mouse-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    snow_shot_import_offscreen_platform(snow-shot-global-mouse-tests)
+    if(WIN32)
+        target_sources(snow-shot-global-mouse-tests PRIVATE tests/global_mouse_native_input_tests.cpp)
+        add_test(NAME snow-shot-global-mouse-native-smoke-tests
+            COMMAND snow-shot-global-mouse-tests --native-hook-smoke)
+        set_tests_properties(snow-shot-global-mouse-native-smoke-tests PROPERTIES
+            LABELS "interactive;windows" TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=windows")
+    endif()
 
     add_executable(snow-shot-diagnostics-tests tests/diagnostics_tests.cpp)
     target_link_libraries(snow-shot-diagnostics-tests PRIVATE snow_shot_diagnostics)
@@ -1475,6 +1512,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
     target_link_libraries(snow-shot-settings-runtime-session-tests PRIVATE
+        snow_shot_global_mouse
         snow_shot_settings_catalog
         snow_shot_storage
         Qt6::Core
@@ -1486,6 +1524,23 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+
+    add_executable(snow-shot-global-mouse-page-tests
+        tests/global_mouse_page_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+    )
+    target_link_libraries(snow-shot-global-mouse-page-tests PRIVATE
+        snow_shot_settings
+        Qt6::Widgets
+    )
+    add_test(NAME snow-shot-global-mouse-page-tests
+             COMMAND snow-shot-global-mouse-page-tests)
+    set_tests_properties(snow-shot-global-mouse-page-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+    snow_shot_import_offscreen_platform(snow-shot-global-mouse-page-tests)
 
     add_executable(snow-shot-selector-policy-tests
         tests/screenshot_selector_policy_tests.cpp
@@ -1657,6 +1712,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/platform/windows/printscreenshortcutrecorder.cpp
         include/snow_shot/presentation/components/infotooltipicon.h
         include/snow_shot/presentation/components/shortcutkeyrow.h
+        include/snow_shot/presentation/components/shortcutconfigurationbutton.h
         include/snow_shot/presentation/styles/buttonborder.h
         include/snow_shot/presentation/styles/mainwindowcomponenttoken.h
         include/snow_shot/presentation/styles/thememanager.h
@@ -1664,6 +1720,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/components/icons/snowshoticons.cpp
         src/presentation/components/infotooltipicon.cpp
         src/presentation/components/shortcutkeyrow.cpp
+        src/presentation/components/shortcutconfigurationbutton.cpp
         src/presentation/styles/buttonborder.cpp
         src/presentation/styles/mainwindowcomponenttoken.cpp
         src/presentation/styles/thememanager.cpp

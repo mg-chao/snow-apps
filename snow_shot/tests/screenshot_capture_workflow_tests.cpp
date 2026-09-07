@@ -861,7 +861,189 @@ void captureSnapshotsScreenColorSetting() {
             "the next capture must observe changed screenshot settings");
 }
 
+void normalCaptureRestoresToolbarAfterSuppressedCapture() {
+    using Mode = ScreenshotCaptureWorkflow::StartMode;
+    for (const auto mode : {Mode::ExternalDrag, Mode::NoToolbar}) {
+        for (const bool exportCleanup : {false, true}) {
+            ScreenshotCaptureState state;
+            ScreenshotDisplaySession displays;
+            ScreenshotGeometryMapper geometry;
+            ScreenshotInteractionState interaction;
+            ScreenshotSelectionModel selection;
+            ScreenshotIntelligentSelectionModel intelligent;
+            CaptureRuntime runtime;
+            auto workflow = makeWorkflow(state, displays, geometry, interaction, selection,
+                                         intelligent, runtime);
+            workflow.startCapture(mode);
+            require(workflow.suppressCaptureToolbar(),
+                    "external drag and no-toolbar requests must suppress the toolbar");
+            if (exportCleanup) {
+                workflow.cancelCaptureForExport();
+            } else {
+                workflow.cancelCapture();
+            }
+            // History editing starts the workflow directly with its default mode.
+            workflow.startCapture();
+            require(!workflow.suppressCaptureToolbar(),
+                    "a history edit must restore the toolbar after any suppressed capture");
+        }
+    }
+}
+
+void noToolbarCaptureWaitsForUserSelection() {
+    for (const bool preparedDisplay : {false, true}) {
+        for (const bool smartSelectionEnabled : {false, true}) {
+            ScreenshotCaptureState state;
+            ScreenshotDisplaySession displays;
+            ScreenshotGeometryMapper geometry;
+            ScreenshotInteractionState interaction;
+            ScreenshotSelectionModel selection;
+            ScreenshotIntelligentSelectionModel intelligent;
+            CaptureRuntime runtime;
+            runtime.seedActiveDisplayOnPrepare = preparedDisplay;
+            auto workflow = makeWorkflow(state, displays, geometry, interaction, selection,
+                                         intelligent, runtime, smartSelectionEnabled);
+            workflow.startCapture(ScreenshotCaptureWorkflow::StartMode::NoToolbar);
+
+            CapturedDisplayModel snapshot;
+            snapshot.stableId = QStringLiteral("primary");
+            snapshot.physicalRect = QRect(0, 0, 64, 48);
+            snapshot.logicalRect = snapshot.physicalRect;
+            snapshot.image = QImage(64, 48, QImage::Format_RGBA8888);
+            snapshot.image.fill(Qt::blue);
+            runtime.eventSink->handleCaptureFinished(successfulResult(state.sessionId, snapshot));
+
+            require(runtime.capturedImageShowCalls == 1 && !interaction.inactive(),
+                    "no-toolbar hotkey capture must present the selection overlay");
+            require(!interaction.dragging() && !selection.hasPixelSelection(),
+                    "no-toolbar hotkey capture must wait for a press before starting a drag");
+            require(intelligent.smartSelectionEnabled() == smartSelectionEnabled,
+                    "hiding the toolbar must preserve the configured smart-selection behavior");
+            require(runtime.startWorkflowRefreshCalls > 0,
+                    "no-toolbar hotkey capture must initialize cursor selection normally");
+        }
+    }
+}
+
+void externalDragBypassesSelectorAndPreparesBeforeReveal() {
+    for (const bool cancelBeforeReveal : {false, true}) {
+        ScreenshotCaptureState state;
+        state.sessionState = ScreenshotSessionState::IdlePrepared;
+        ScreenshotDisplaySession displays;
+        ScreenshotGeometryMapper geometry;
+        ScreenshotInteractionState interaction;
+        ScreenshotSelectionModel selection;
+        ScreenshotIntelligentSelectionModel intelligent;
+        CaptureRuntime runtime;
+        runtime.seedActiveDisplayOnPrepare = true;
+        runtime.acceptSelectorHitTest = true;
+        ScreenshotCaptureWorkflowContext context{state,       runtime,   geometry,    displays,
+                                                 interaction, selection, intelligent, {}};
+        ScreenshotCaptureWorkflow* active = nullptr;
+        int prepared = 0;
+        int presented = 0;
+        context.presentation.beforeCapturePresented = [&]() {
+            require(runtime.showOverlayCalls == 0 && !geometry.isEmpty(),
+                    "external selection must prepare against final geometry before reveal");
+            ++prepared;
+            selection.setSelectionStartEnd({10, 10}, {30, 20});
+            if (cancelBeforeReveal)
+                active->cancelCapture();
+        };
+        context.presentation.capturePresented = [&]() {
+            ++presented;
+            require(prepared == 1 && selection.pixelSelection() == QRect(10, 10, 20, 10),
+                    "first presentation must retain the supplied drag rectangle");
+        };
+        ScreenshotCaptureWorkflow workflow(context);
+        active = &workflow;
+        workflow.startCapture(ScreenshotCaptureWorkflow::StartMode::ExternalDrag);
+        require(runtime.startWorkflowRefreshCalls == 0 && interaction.manualSelecting(),
+                "global mouse capture must not initialize or wait on smart selection");
+        CapturedDisplayModel snapshot;
+        snapshot.stableId = QStringLiteral("primary");
+        snapshot.name = QStringLiteral("Primary");
+        snapshot.physicalRect = QRect(0, 0, 64, 48);
+        snapshot.logicalRect = snapshot.physicalRect;
+        snapshot.image = QImage(64, 48, QImage::Format_RGBA8888);
+        snapshot.image.fill(Qt::blue);
+        const auto result = successfulResult(state.sessionId, snapshot);
+        runtime.eventSink->handleCaptureFinished(result);
+        runtime.eventSink->handleCaptureFinished(result);
+        require(prepared == 1 && presented == (cancelBeforeReveal ? 0 : 1) &&
+                    runtime.capturedImageShowCalls == (cancelBeforeReveal ? 0 : 1),
+                "external capture must present once, or remain hidden after cancellation");
+        require(runtime.startWorkflowRefreshCalls == 0,
+                "external capture presentation must not launch a late selector refresh");
+        if (!cancelBeforeReveal) {
+            interaction.finishDrag();
+            interaction.confirmSelection();
+            state.sessionState = ScreenshotSessionState::Editing;
+            const quint64 completedSession = state.sessionId;
+            workflow.handleDisplayConfigurationChanged();
+            require(
+                state.sessionId == completedSession && !interaction.inactive(),
+                "completed global selections must retain normal editing display-change behavior");
+        }
+    }
+}
+
+void externalDragDisplayChangesInvalidatePendingCapture() {
+    ScreenshotCaptureState state;
+    state.sessionState = ScreenshotSessionState::IdlePrepared;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotInteractionState interaction;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    CaptureRuntime runtime;
+    int terminated = 0;
+    ScreenshotCaptureWorkflowContext context{state,       runtime,   geometry,    displays,
+                                             interaction, selection, intelligent, {}};
+    context.captureTerminated = [&]() { ++terminated; };
+    ScreenshotCaptureWorkflow workflow(context);
+    workflow.startCapture(ScreenshotCaptureWorkflow::StartMode::ExternalDrag);
+    const quint64 pending = state.sessionId;
+    workflow.handleDisplayConfigurationChanged();
+    require(terminated == 1 && state.sessionId != pending && interaction.inactive(),
+            "display changes must cancel a global drag before its geometry becomes stale");
+    CapturedDisplayModel snapshot;
+    snapshot.physicalRect = QRect(0, 0, 100, 100);
+    snapshot.image = QImage(100, 100, QImage::Format_RGBA8888);
+    snapshot.image.fill(Qt::red);
+    runtime.eventSink->handleCaptureFinished(successfulResult(pending, snapshot));
+    require(runtime.capturedImageShowCalls == 0 && interaction.inactive(),
+            "cancelled global capture results must never reopen the overlay");
+}
+
+void globalDragCoordinatesStayPhysicalAcrossDifferentDisplayScales() {
+    ScreenshotDisplaySession displays;
+    CapturedDisplayModel left;
+    left.active = true;
+    left.physicalRect = QRect(-1920, -200, 1920, 1080);
+    left.canvasRect = QRect(0, 0, 1920, 1080);
+    left.logicalRect = QRect(-1536, -160, 1536, 864);
+    CapturedDisplayModel right;
+    right.active = true;
+    right.physicalRect = QRect(0, 0, 2560, 1440);
+    right.canvasRect = QRect(1920, 200, 2560, 1440);
+    right.logicalRect = QRect(0, 0, 1707, 960);
+    displays.appendDisplay(left);
+    displays.appendDisplay(right);
+    ScreenshotGeometryMapper geometry;
+    const QPointF start = geometry.canvasPositionForPhysicalPoint(displays, {-100, -100});
+    const QPointF end = geometry.canvasPositionForPhysicalPoint(displays, {1500, 900});
+    require(start == QPointF(1820, 100) && end == QPointF(3420, 1100) &&
+                QRectF(start, end).size() == QSizeF(1600, 1000),
+            "mixed-DPI drags must retain physical pixel dimensions and negative monitor origins");
+}
+
 int main() {
+    noToolbarCaptureWaitsForUserSelection();
+    normalCaptureRestoresToolbarAfterSuppressedCapture();
+    externalDragDisplayChangesInvalidatePendingCapture();
+    globalDragCoordinatesStayPhysicalAcrossDifferentDisplayScales();
+    externalDragBypassesSelectorAndPreparesBeforeReveal();
     captureSnapshotsScreenColorSetting();
     captureRestoresSelectionEffectsAfterReset();
     idlePrewarmDoesNotInitializeSelector();
