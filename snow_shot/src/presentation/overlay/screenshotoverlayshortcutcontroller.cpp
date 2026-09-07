@@ -306,7 +306,11 @@ struct ScreenshotOverlayShortcutController::Impl {
                     return selected;
                 }
                 if (actionId == QStringLiteral("copy_color")) {
-                    return actions.copyColorPickerColorToClipboard();
+                    if (!actions.copyColorPickerColorToClipboard()) {
+                        return false;
+                    }
+                    actions.cancelCapture();
+                    return true;
                 }
                 if (actionId == QStringLiteral("table_recognition")) {
                     return actions.activateTableRecognition();

@@ -95,8 +95,8 @@ void builtInCatalogIsCompleteAndValid() {
         }
     }
     require(
-        sectionCount == 29 && itemCount == 118,
-        "catalog must contain the expected twenty-nine sections and one hundred eighteen items");
+        sectionCount == 29 && itemCount == 119,
+        "catalog must contain the expected twenty-nine sections and one hundred nineteen items");
     const auto* saveDialog =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
                       QStringLiteral("screenshot.save-as-file-dialog")});
@@ -257,7 +257,10 @@ void builtInCatalogIsCompleteAndValid() {
             storagePage->sections.at(3).id == QStringLiteral("storage-status") &&
             imageFormat != nullptr && imageDirectory != nullptr && videoFilename != nullptr &&
             std::get<settings::SettingsSelectDefinition>(imageFormat->payload).options.size() ==
-                5 &&
+                6 &&
+            std::get<settings::SettingsSelectDefinition>(imageFormat->payload)
+                    .options.at(2)
+                    .value == QStringLiteral("bmp") &&
             std::get<settings::SettingsDirectoryPathDefinition>(imageDirectory->payload).binding ==
                 settings::SettingsDirectoryPathBinding::ScreenshotImageDirectory &&
             std::get<settings::SettingsTextDefinition>(videoFilename->payload).binding ==
@@ -270,6 +273,14 @@ void builtInCatalogIsCompleteAndValid() {
     const auto* proxySelect = proxy != nullptr
                                   ? std::get_if<settings::SettingsSelectDefinition>(&proxy->payload)
                                   : nullptr;
+    const auto* textRecognition =
+        catalog.section(QStringLiteral("system-settings"), QStringLiteral("text-recognition"));
+    const auto* modelType =
+        catalog.item({QStringLiteral("system-settings"), QStringLiteral("text-recognition"),
+                      QStringLiteral("text-recognition.model-type")});
+    const auto* modelTypeSelect =
+        modelType != nullptr ? std::get_if<settings::SettingsSelectDefinition>(&modelType->payload)
+                             : nullptr;
     require(
         systemPage != nullptr && systemPage->sections.size() == 5 &&
             systemPage->sections.at(0).id == QStringLiteral("system-general") &&
@@ -282,8 +293,22 @@ void builtInCatalogIsCompleteAndValid() {
             proxySelect->binding == settings::SettingsSelectBinding::Proxy &&
             proxySelect->options.size() == 2 &&
             proxySelect->options.at(0).value == QStringLiteral("none") &&
-            proxySelect->options.at(1).value == QStringLiteral("system"),
-        "System settings must place the Network proxy selector below General");
+            proxySelect->options.at(1).value == QStringLiteral("system") &&
+            textRecognition != nullptr &&
+            textRecognition->reset == settings::SettingsSectionReset::TextRecognition &&
+            textRecognition->items.size() == 2 &&
+            textRecognition->items.at(0).id == QStringLiteral("text-recognition.model-type") &&
+            textRecognition->items.at(1).id ==
+                QStringLiteral("text-recognition.direct-ml-acceleration") &&
+            modelType != nullptr &&
+            modelType->configurationKey == QStringLiteral("text_recognition/model_type") &&
+            modelTypeSelect != nullptr &&
+            modelTypeSelect->binding == settings::SettingsSelectBinding::OcrModelType &&
+            modelTypeSelect->options.size() == 3 &&
+            modelTypeSelect->options.at(0).value == QStringLiteral("extra_small") &&
+            modelTypeSelect->options.at(1).value == QStringLiteral("small") &&
+            modelTypeSelect->options.at(2).value == QStringLiteral("medium"),
+        "System settings must expose the ordered OCR model and acceleration controls");
 
     const auto* settingsGroup =
         std::get_if<settings::SettingsNavigationGroupDefinition>(&catalog.navigation().at(2));
@@ -842,8 +867,8 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 154 && index.search(QString()).size() == 154,
-            "search must generate all one hundred fifty-four catalog nodes in catalog order");
+    require(index.entries().size() == 155 && index.search(QString()).size() == 155,
+            "search must generate all one hundred fifty-five catalog nodes in catalog order");
     const auto translation = index.search(QStringLiteral("original image translation"));
     require(!translation.isEmpty() && translation.constFirst().location.itemId ==
                                           QStringLiteral("translation.original-image"),
@@ -874,7 +899,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 7 && sections == 29 && items == 118,
+    require(pages == 7 && sections == 29 && items == 119,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));
@@ -895,6 +920,10 @@ void searchIndexIsGeneratedAndRanked() {
     require(!windowElementApi.isEmpty() && windowElementApi.constFirst().location.itemId ==
                                                QStringLiteral("screenshot.window-element-api"),
             "window element API options must find the system Screenshot setting");
+    const auto ocrModel = index.search(QStringLiteral("Extra Small OCR model"));
+    require(!ocrModel.isEmpty() && ocrModel.constFirst().location.itemId ==
+                                       QStringLiteral("text-recognition.model-type"),
+            "OCR model labels and aliases must find the Model Type setting");
     const auto multipleTokens = index.search(QStringLiteral("storage error"));
     require(!multipleTokens.isEmpty() &&
                 multipleTokens.constFirst().location.itemId == QStringLiteral("storage.status"),

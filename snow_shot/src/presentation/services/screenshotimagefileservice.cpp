@@ -21,6 +21,8 @@ QString filterForFormat(ScreenshotImageFileFormat format) {
     case ScreenshotImageFileFormat::Jpeg:
         return QCoreApplication::translate("ScreenshotImageFileService",
                                            "JPEG image (*.jpg *.jpeg)");
+    case ScreenshotImageFileFormat::Bmp:
+        return QCoreApplication::translate("ScreenshotImageFileService", "BMP image (*.bmp)");
     case ScreenshotImageFileFormat::Webp:
         return QCoreApplication::translate("ScreenshotImageFileService", "WebP image (*.webp)");
     case ScreenshotImageFileFormat::Jxl:
@@ -93,6 +95,7 @@ QString ScreenshotImageFileService::dialogFilter(ScreenshotImageFileFormat forma
 QString ScreenshotImageFileService::saveDialogFilter() {
     return QStringList{filterForFormat(ScreenshotImageFileFormat::Png),
                        filterForFormat(ScreenshotImageFileFormat::Jpeg),
+                       filterForFormat(ScreenshotImageFileFormat::Bmp),
                        filterForFormat(ScreenshotImageFileFormat::Webp),
                        filterForFormat(ScreenshotImageFileFormat::Jxl),
                        filterForFormat(ScreenshotImageFileFormat::Avif)}
@@ -151,6 +154,8 @@ QString ScreenshotImageFileService::extension(ScreenshotImageFileFormat format) 
         return QStringLiteral("png");
     case ScreenshotImageFileFormat::Jpeg:
         return QStringLiteral("jpg");
+    case ScreenshotImageFileFormat::Bmp:
+        return QStringLiteral("bmp");
     case ScreenshotImageFileFormat::Webp:
         return QStringLiteral("webp");
     case ScreenshotImageFileFormat::Jxl:
@@ -165,6 +170,9 @@ ScreenshotImageFileFormat ScreenshotImageFileService::formatForKey(const QString
     const QString normalized = key.trimmed().toLower();
     if (normalized == QStringLiteral("jpeg") || normalized == QStringLiteral("jpg")) {
         return ScreenshotImageFileFormat::Jpeg;
+    }
+    if (normalized == QStringLiteral("bmp")) {
+        return ScreenshotImageFileFormat::Bmp;
     }
     if (normalized == QStringLiteral("webp")) {
         return ScreenshotImageFileFormat::Webp;
@@ -207,6 +215,9 @@ ScreenshotImageFileService::formatForPath(const QString& path) {
     if (suffix == QStringLiteral("jpg") || suffix == QStringLiteral("jpeg")) {
         return ScreenshotImageFileFormat::Jpeg;
     }
+    if (suffix == QStringLiteral("bmp")) {
+        return ScreenshotImageFileFormat::Bmp;
+    }
     if (suffix == QStringLiteral("webp")) {
         return ScreenshotImageFileFormat::Webp;
     }
@@ -227,8 +238,8 @@ ScreenshotImageFileService::formatForDialogSelection(const QString& path,
     }
     for (ScreenshotImageFileFormat format :
          {ScreenshotImageFileFormat::Png, ScreenshotImageFileFormat::Jpeg,
-          ScreenshotImageFileFormat::Webp, ScreenshotImageFileFormat::Jxl,
-          ScreenshotImageFileFormat::Avif}) {
+          ScreenshotImageFileFormat::Bmp, ScreenshotImageFileFormat::Webp,
+          ScreenshotImageFileFormat::Jxl, ScreenshotImageFileFormat::Avif}) {
         if (selectedFilter == filterForFormat(format)) {
             return format;
         }
@@ -242,6 +253,8 @@ snow::image::Format ScreenshotImageFileService::snowImageFormat(ScreenshotImageF
         return snow::image::Format::png;
     case ScreenshotImageFileFormat::Jpeg:
         return snow::image::Format::jpeg;
+    case ScreenshotImageFileFormat::Bmp:
+        return snow::image::Format::bmp;
     case ScreenshotImageFileFormat::Webp:
         return snow::image::Format::webp;
     case ScreenshotImageFileFormat::Jxl:
@@ -263,6 +276,7 @@ ScreenshotImageFileService::encodeOptions(ScreenshotImageFileFormat format, int 
         options.compression_level = 0;
         break;
     case ScreenshotImageFileFormat::Jpeg:
+    case ScreenshotImageFileFormat::Bmp:
         break;
     case ScreenshotImageFileFormat::Webp:
         options.lossless = options.quality == 100;

@@ -522,6 +522,12 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
         window.findChild<ScreenshotTableEditor*>(QStringLiteral("snowShotRecognizedTable"));
     require(editor != nullptr && editor->geometry() == window.rect(),
             "the table editor should fill the recognition window");
+    require(editor->selectionModel()->selectedIndexes().isEmpty() &&
+                !editor->selectedRange().isValid() && !editor->commandState().hasSelection,
+            "a newly recognized table should not select a cell by default");
+    require(editor->copySelectionToClipboard() &&
+                QApplication::clipboard()->text() == QStringLiteral("A\tB\nC\tD"),
+            "copying a newly recognized table should copy the complete table");
     const auto tableTheme = adqt::theme::ThemeManager::instance().resolveTheme(editor);
     const int tablePadding = std::max(0, qRound(tableTheme.sizeSM));
     require(editor->viewport()->geometry().topLeft() == QPoint(tablePadding, tablePadding),

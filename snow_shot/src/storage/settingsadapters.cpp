@@ -838,6 +838,14 @@ bool ScreenshotUiSettings::setColorPickerDisplayMode(const QString& mode) const 
     return cache().setValue(QStringLiteral("screenshot_ui/color_picker_display_mode"), mode);
 }
 
+QString ScreenshotUiSettings::colorPickerFormat() const {
+    return cache().value(QStringLiteral("screenshot_ui/color_picker_format")).toString();
+}
+
+bool ScreenshotUiSettings::setColorPickerFormat(const QString& format) const {
+    return cache().setValue(QStringLiteral("screenshot_ui/color_picker_format"), format);
+}
+
 QColor ScreenshotUiSettings::selectionMaskColor() const {
     return colorValue(QStringLiteral("screenshot_ui/selection_mask_color"));
 }

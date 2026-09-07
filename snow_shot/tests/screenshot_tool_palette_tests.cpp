@@ -124,6 +124,100 @@ int longestHorizontalColorRun(const QImage& image, const QColor& color) {
     return longestRun;
 }
 
+void recordingControlsRemainLaidOutAcrossStateChanges() {
+    ScreenshotToolPalette::Options options;
+    options.showDragHandle = true;
+    options.showSelectTool = false;
+    options.showShapeTool = false;
+    options.showArrowTool = false;
+    options.showRecordingControls = true;
+    options.enableStyleToolbar = false;
+    ScreenshotToolPalette palette(options);
+    palette.prepareForDisplay();
+    palette.show();
+    QCoreApplication::processEvents();
+
+    const char* sources[] = {
+        "Start recording",     "Stop recording",  "Pause recording",       "Resume recording",
+        "Record microphone",   "Record speakers", "Open recording folder", "Close recording",
+        "Copy animated image", "Copy video"};
+    QVector<adqt::widgets::AdButton*> buttons;
+    for (const char* source : sources) {
+        adqt::widgets::AdButton* match = nullptr;
+        for (auto* button : palette.mainPanel()->findChildren<adqt::widgets::AdButton*>()) {
+            if (button->property("snowShotTranslationTooltipSource").toString() ==
+                QLatin1String(source)) {
+                match = button;
+                break;
+            }
+        }
+        require(match != nullptr, "every recording control should be created");
+        buttons.push_back(match);
+    }
+    auto* duration = palette.findChild<QLabel*>(QStringLiteral("screenRecordingDuration"));
+    require(duration != nullptr, "recording duration should be created");
+
+    using State = ScreenshotToolPalette::RecordingState;
+    const auto verify = [&](State state, bool busy) {
+        palette.setRecordingState(state);
+        palette.setRecordingBusy(busy);
+        palette.prepareForDisplay();
+        QCoreApplication::processEvents();
+        const bool idle = state == State::Idle;
+        const bool paused = state == State::Paused;
+        const bool visible[] = {idle, !idle, !paused, paused, true, true, true, true, true, true};
+        const bool enabled[] = {idle && !busy,
+                                !idle && !busy,
+                                state == State::Recording && !busy,
+                                paused && !busy,
+                                idle && !busy,
+                                idle && !busy,
+                                true,
+                                !busy,
+                                !idle && !busy,
+                                !idle && !busy};
+        const QLayout* layout = palette.mainPanel()->layout();
+        QRect previous;
+        for (int index = 0; index < buttons.size(); ++index) {
+            auto* button = buttons.at(index);
+            require(layout->indexOf(button) >= 0,
+                    "every recording control must remain in the main toolbar layout");
+            require(button->isVisible() == visible[index],
+                    "recording control visibility should follow recording state");
+            require(button->isEnabled() == enabled[index],
+                    "recording control availability should follow recording and busy state");
+            if (visible[index]) {
+                require(!button->visibleRegion().isEmpty() &&
+                            palette.mainPanel()->rect().contains(button->geometry()),
+                        "visible recording controls should be unclipped inside the toolbar");
+                require(!previous.isValid() || previous.right() < button->geometry().left(),
+                        "recording controls should retain their order without overlap");
+                previous = button->geometry();
+            }
+        }
+        require(layout->indexOf(duration) >= 0 && duration->isVisible() &&
+                    palette.mainPanel()->rect().contains(duration->geometry()),
+                "recording duration must remain visible inside the toolbar layout");
+    };
+
+    verify(State::Idle, false);
+    for (State state : {State::Recording, State::Paused, State::Idle}) {
+        verify(state, false);
+        verify(state, true);
+    }
+    palette.setToolbarLayout({});
+    palette.setActionToolsLayout({});
+    verify(State::Idle, false);
+    palette.setRecordingDuration(65000);
+    require(duration->text() == QStringLiteral("00:01:05"),
+            "visible recording duration should update");
+    int startRequests = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingStartRequested, &palette,
+                     [&]() { ++startRequests; });
+    buttons.constFirst()->click();
+    require(startRequests == 1, "the visible start button should request recording");
+}
+
 void numericStrokeWidthPreviewUsesLineWithinPreviewBounds() {
     NumericValuePreviewButton button;
     button.resize(64, 32);
@@ -6628,6 +6722,11 @@ int main(int argc, char** argv) {
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
             "the font editor tests require a system TrueType font");
 #endif
+    if (application.arguments().contains(QStringLiteral("--recording-controls-only"))) {
+        recordingControlsRemainLaidOutAcrossStateChanges();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--canvas-style-persistence-only"))) {
         canvasToolStylesPersistIndependentlyWithoutGlobalStyles();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
@@ -6698,6 +6797,7 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    recordingControlsRemainLaidOutAcrossStateChanges();
     numericStrokeWidthPreviewUsesLineWithinPreviewBounds();
     secondaryControlsMaterializeOnlyForTheRequestedFamily();
     textAndHighlightStrokeWidthTriggersUseSharedPreviewButton();

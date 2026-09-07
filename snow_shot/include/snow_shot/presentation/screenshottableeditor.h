@@ -43,7 +43,7 @@ class ScreenshotTableEditingSession final {
     ScreenshotTableDocument document;
     QUndoStack undoStack;
     ScreenshotTableRange selection;
-    QPoint currentCell;
+    QPoint currentCell{-1, -1};
     int horizontalScrollValue = 0;
     int verticalScrollValue = 0;
     std::function<void()> documentChanged;

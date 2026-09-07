@@ -392,6 +392,22 @@ fn make_engine(
     directml: bool,
     thread_budget: usize,
 ) -> rapid_ocr_rs::Result<RapidOcr> {
+    make_engine_for_models(
+        &config.detector_model,
+        &config.recognizer_model,
+        &config.dictionary,
+        directml,
+        thread_budget,
+    )
+}
+
+fn make_engine_for_models(
+    detector_model: &Path,
+    recognizer_model: &Path,
+    dictionary: &Path,
+    directml: bool,
+    thread_budget: usize,
+) -> rapid_ocr_rs::Result<RapidOcr> {
     let mut engine = EngineConfig::default();
     engine.global.use_det = true;
     engine.global.use_cls = false;
@@ -400,13 +416,13 @@ fn make_engine(
     engine.det.ocr_version = rapid_ocr_rs::OcrVersion::PPocrV6;
     engine.det.model_type = ModelType::Small;
     engine.det.allow_download = false;
-    engine.det.model_path = Some(config.detector_model.clone());
+    engine.det.model_path = Some(detector_model.to_path_buf());
     engine.rec.model.lang = LangRec::Ch;
     engine.rec.model.ocr_version = rapid_ocr_rs::OcrVersion::PPocrV6;
     engine.rec.model.model_type = ModelType::Small;
     engine.rec.model.allow_download = false;
-    engine.rec.model.model_path = Some(config.recognizer_model.clone());
-    engine.rec.model.rec_keys_path = Some(config.dictionary.clone());
+    engine.rec.model.model_path = Some(recognizer_model.to_path_buf());
+    engine.rec.model.rec_keys_path = Some(dictionary.to_path_buf());
     let budget = thread_budget.max(1);
     for runtime in [
         &mut engine.det.runtime,
@@ -433,10 +449,10 @@ fn make_engine(
     RapidOcr::new_with_sources(
         engine,
         PipelineSources {
-            det: Some(ModelSource::File(&config.detector_model)),
+            det: Some(ModelSource::File(detector_model)),
             cls: None,
-            rec: Some(ModelSource::File(&config.recognizer_model)),
-            rec_dictionary: Some(DictionarySource::File(&config.dictionary)),
+            rec: Some(ModelSource::File(recognizer_model)),
+            rec_dictionary: Some(DictionarySource::File(dictionary)),
         },
     )
 }
@@ -652,8 +668,50 @@ fn completion_payload(completion: &Completion) -> Vec<u8> {
 
 mod diagnostics;
 
+#[derive(Debug, PartialEq)]
+enum StartupMode {
+    Worker,
+    Version,
+    ValidateModelSet {
+        detector: PathBuf,
+        recognizer: PathBuf,
+        dictionary: PathBuf,
+    },
+}
+
+fn parse_startup_mode(arguments: &[std::ffi::OsString]) -> io::Result<StartupMode> {
+    if arguments.is_empty() {
+        return Ok(StartupMode::Worker);
+    }
+    if arguments.len() == 1 && arguments[0] == "--version" {
+        return Ok(StartupMode::Version);
+    }
+    if arguments
+        .first()
+        .is_some_and(|argument| argument == "--validate-model-set")
+    {
+        if arguments.len() != 4 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "usage: snow-ocr-process --validate-model-set <detector> <recognizer> <dictionary>",
+            ));
+        }
+        return Ok(StartupMode::ValidateModelSet {
+            detector: PathBuf::from(&arguments[1]),
+            recognizer: PathBuf::from(&arguments[2]),
+            dictionary: PathBuf::from(&arguments[3]),
+        });
+    }
+    Err(io::Error::new(
+        io::ErrorKind::InvalidInput,
+        "unknown snow-ocr-process command",
+    ))
+}
+
 fn main() -> io::Result<()> {
-    if std::env::args_os().any(|argument| argument == "--version") {
+    let arguments: Vec<_> = std::env::args_os().skip(1).collect();
+    let startup_mode = parse_startup_mode(&arguments)?;
+    if startup_mode == StartupMode::Version {
         println!(
             "snow-ocr-process {} {}-{} protocol {}",
             env!("CARGO_PKG_VERSION"),
@@ -663,7 +721,6 @@ fn main() -> io::Result<()> {
         );
         return Ok(());
     }
-    diagnostics::initialize();
     // Native ONNX Runtime diagnostics must never share stdout with the binary
     // IPC stream. Severity 3 suppresses the cpuinfo debug chatter emitted by
     // the Windows runtime before its custom logger is installed.
@@ -671,6 +728,18 @@ fn main() -> io::Result<()> {
         std::env::set_var("ORT_LOG_SEVERITY_LEVEL", "3");
         std::env::set_var("CPUINFO_LOG_LEVEL", "error");
     }
+    if let StartupMode::ValidateModelSet {
+        detector,
+        recognizer,
+        dictionary,
+    } = startup_mode
+    {
+        initialize_onnx_runtime().map_err(|error| io::Error::other(error.to_string()))?;
+        make_engine_for_models(&detector, &recognizer, &dictionary, false, 1)
+            .map_err(|error| io::Error::other(error.to_string()))?;
+        return Ok(());
+    }
+    diagnostics::initialize();
     let mut reader = BufReader::new(std::io::stdin());
     let mut writer = BufWriter::new(std::io::stdout());
     let startup = match read_frame(&mut reader) {
@@ -692,6 +761,9 @@ fn main() -> io::Result<()> {
         }
     };
     initialize_onnx_runtime().map_err(|e| io::Error::other(e.to_string()))?;
+    // Do not advertise protocol readiness until both model sessions and the
+    // dictionary can be initialized. Workers still build their own engines.
+    make_engine(&config, false, 1).map_err(|error| io::Error::other(error.to_string()))?;
     config
         .directml_enabled
         .store(directml_capability(&config), Ordering::Release);
@@ -800,4 +872,49 @@ fn main() -> io::Result<()> {
         )?;
     }
     write_frame(&mut writer, Kind::ShutdownAck, 0, &[])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{StartupMode, parse_startup_mode};
+    use std::{ffi::OsString, io, path::PathBuf};
+
+    fn arguments(values: &[&str]) -> Vec<OsString> {
+        values.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn startup_modes_accept_only_the_documented_shapes() {
+        assert_eq!(parse_startup_mode(&[]).unwrap(), StartupMode::Worker);
+        assert_eq!(
+            parse_startup_mode(&arguments(&["--version"])).unwrap(),
+            StartupMode::Version
+        );
+        assert_eq!(
+            parse_startup_mode(&arguments(&[
+                "--validate-model-set",
+                "det.onnx",
+                "rec.onnx",
+                "dict.txt"
+            ]))
+            .unwrap(),
+            StartupMode::ValidateModelSet {
+                detector: PathBuf::from("det.onnx"),
+                recognizer: PathBuf::from("rec.onnx"),
+                dictionary: PathBuf::from("dict.txt"),
+            }
+        );
+        assert_eq!(
+            parse_startup_mode(&arguments(&["--validate-model-set", "det.onnx"]))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidInput
+        );
+        assert_eq!(
+            parse_startup_mode(&arguments(&["--unknown"]))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidInput
+        );
+    }
 }

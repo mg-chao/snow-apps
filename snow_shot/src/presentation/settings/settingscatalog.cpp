@@ -580,6 +580,7 @@ SettingsItemDefinition screenshotImageFormatItem() {
         QStringLiteral("screenshot/image_format"), SettingsSelectBinding::ScreenshotImageFormat,
         {{QStringLiteral("png"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "PNG"))},
          {QStringLiteral("jpeg"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "JPEG"))},
+         {QStringLiteral("bmp"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "BMP"))},
          {QStringLiteral("webp"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "WebP"))},
          {QStringLiteral("jxl"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "JPEG XL"))},
          {QStringLiteral("avif"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "AVIF"))}});
@@ -1200,6 +1201,27 @@ SettingsItemDefinition directMlAccelerationItem() {
     };
 }
 
+SettingsItemDefinition ocrModelTypeItem() {
+    SettingsSelectDefinition payload;
+    payload.options = {
+        {QStringLiteral("extra_small"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Extra Small"))},
+        {QStringLiteral("small"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Small"))},
+        {QStringLiteral("medium"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Medium"))},
+    };
+    payload.binding = SettingsSelectBinding::OcrModelType;
+    return {
+        QStringLiteral("text-recognition.model-type"),
+        settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Model Type")),
+        settingsText(QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Choose the OCR model size to balance recognition speed and accuracy")),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "OCR model"))},
+        QStringLiteral("text_recognition/model_type"),
+        payload,
+    };
+}
+
 SettingsItemDefinition historyIntegerItem(const QString& id, TranslatableText title,
                                           TranslatableText description, const QString& key,
                                           SettingsIntegerBinding binding, TranslatableText suffix,
@@ -1627,10 +1649,10 @@ QVector<SettingsPageDefinition> builtInPages() {
                 {
                     QStringLiteral("text-recognition"),
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Text recognition")),
-                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
-                                                   "Configure text recognition acceleration")),
+                    settingsText(QT_TRANSLATE_NOOP(
+                        "SettingsCatalog", "Configure text recognition models and acceleration")),
                     SettingsSectionReset::TextRecognition,
-                    {directMlAccelerationItem()},
+                    {ocrModelTypeItem(), directMlAccelerationItem()},
                 },
                 {
                     QStringLiteral("core"),
@@ -2231,6 +2253,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSelectBinding::Proxy:
                         expectedKey = QStringLiteral("network/proxy");
+                        break;
+                    case SettingsSelectBinding::OcrModelType:
+                        expectedKey = QStringLiteral("text_recognition/model_type");
                         break;
                     case SettingsSelectBinding::ScreenshotApiMode:
                         expectedKey = QStringLiteral("screenshot/api_mode");

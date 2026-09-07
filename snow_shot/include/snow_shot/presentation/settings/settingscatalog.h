@@ -70,6 +70,7 @@ enum class SettingsSelectBinding {
     Language,
     ApplicationPriority,
     Proxy,
+    OcrModelType,
     ScreenshotApiMode,
     WindowElementApi,
     ScreenshotToolbarSize,

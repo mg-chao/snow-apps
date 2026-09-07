@@ -942,9 +942,8 @@ void ScreenshotTableEditor::restoreSessionViewState() {
     QModelIndex current;
     if (m_session->currentCell.x() >= 0 && m_session->currentCell.y() >= 0) {
         current = m_model->index(m_session->currentCell.y(), m_session->currentCell.x());
-    }
-    if (!current.isValid()) {
-        current = m_model->index(0, 0);
+    } else if (m_session->selection.isValid()) {
+        current = m_model->index(m_session->selection.top, m_session->selection.left);
     }
     setCurrentIndex(anchorIndex(current));
     if (m_session->selection.isValid()) {

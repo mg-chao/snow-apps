@@ -22,6 +22,8 @@ uint32_t bridgeFormat(ScreenshotImageFileFormat format) {
         return SNOW_SHOT_IMAGE_CODEC_FORMAT_PNG;
     case ScreenshotImageFileFormat::Jpeg:
         return SNOW_SHOT_IMAGE_CODEC_FORMAT_JPEG;
+    case ScreenshotImageFileFormat::Bmp:
+        return SNOW_SHOT_IMAGE_CODEC_FORMAT_BMP;
     case ScreenshotImageFileFormat::Webp:
         return SNOW_SHOT_IMAGE_CODEC_FORMAT_WEBP;
     case ScreenshotImageFileFormat::Jxl:
@@ -212,8 +214,9 @@ QSize encoderLimits(ScreenshotImageFileFormat format) {
             int(qMin(height, uint32_t(std::numeric_limits<int>::max() / 4)))};
 }
 ScreenshotSaveExportOptions normalizedOptions(ScreenshotSaveExportOptions options) {
-    options.quality =
-        options.format == ScreenshotImageFileFormat::Png ? 100 : qBound(1, options.quality, 100);
+    const bool supportsQuality = options.format != ScreenshotImageFileFormat::Png &&
+                                 options.format != ScreenshotImageFileFormat::Bmp;
+    options.quality = supportsQuality ? qBound(1, options.quality, 100) : 100;
     return options;
 }
 

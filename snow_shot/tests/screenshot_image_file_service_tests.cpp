@@ -51,6 +51,9 @@ class SaveDialogTranslator final : public QTranslator {
         if (source == QStringLiteral("JPEG image (*.jpg *.jpeg)")) {
             return QStringLiteral("JPEG localized (*.jpg *.jpeg)");
         }
+        if (source == QStringLiteral("BMP image (*.bmp)")) {
+            return QStringLiteral("BMP localized (*.bmp)");
+        }
         return {};
     }
 };
@@ -71,7 +74,11 @@ void namingAndFormatSelection() {
     require(ScreenshotImageFileService::extension(ScreenshotImageFileFormat::Jpeg) ==
                 QStringLiteral("jpg"),
             "JPEG should use the canonical jpg extension");
-    require(ScreenshotImageFileService::formatForKey(QStringLiteral("jpeg")) ==
+    require(ScreenshotImageFileService::extension(ScreenshotImageFileFormat::Bmp) ==
+                    QStringLiteral("bmp") &&
+                ScreenshotImageFileService::formatForKey(QStringLiteral("bmp")) ==
+                    ScreenshotImageFileFormat::Bmp &&
+                ScreenshotImageFileService::formatForKey(QStringLiteral("jpeg")) ==
                     ScreenshotImageFileFormat::Jpeg &&
                 ScreenshotImageFileService::formatForKey(QStringLiteral("webp")) ==
                     ScreenshotImageFileFormat::Webp &&
@@ -82,6 +89,10 @@ void namingAndFormatSelection() {
                 QStringLiteral("capture.unknown"), QStringLiteral("JPEG image (*.jpg *.jpeg)")) ==
                 ScreenshotImageFileFormat::Jpeg,
             "an unrecognized suffix should defer to the selected save-dialog filter");
+    require(ScreenshotImageFileService::formatForDialogSelection(
+                QStringLiteral("capture.bmp"), QStringLiteral("PNG image (*.png)")) ==
+                ScreenshotImageFileFormat::Bmp,
+            "the BMP suffix should select BMP independently of the selected dialog filter");
 
     SaveDialogTranslator translator;
     require(QCoreApplication::installTranslator(&translator),
@@ -90,15 +101,22 @@ void namingAndFormatSelection() {
         ScreenshotImageFileService::dialogFilter(ScreenshotImageFileFormat::Png);
     const QString localizedJpeg =
         ScreenshotImageFileService::dialogFilter(ScreenshotImageFileFormat::Jpeg);
+    const QString localizedBmp =
+        ScreenshotImageFileService::dialogFilter(ScreenshotImageFileFormat::Bmp);
     require(localizedPng == QStringLiteral("PNG localized (*.png)") &&
                 localizedJpeg == QStringLiteral("JPEG localized (*.jpg *.jpeg)") &&
+                localizedBmp == QStringLiteral("BMP localized (*.bmp)") &&
                 ScreenshotImageFileService::saveDialogFilter().startsWith(
-                    localizedPng + QStringLiteral(";;") + localizedJpeg),
+                    localizedPng + QStringLiteral(";;") + localizedJpeg + QStringLiteral(";;") +
+                    localizedBmp),
             "save-dialog format descriptions must use the active application translator");
     require(ScreenshotImageFileService::formatForDialogSelection(QStringLiteral("capture.unknown"),
                                                                  localizedJpeg) ==
                 ScreenshotImageFileFormat::Jpeg,
             "localized save-dialog filters must still resolve to their image format");
+    require(ScreenshotImageFileService::formatForDialogSelection(
+                QStringLiteral("capture.unknown"), localizedBmp) == ScreenshotImageFileFormat::Bmp,
+            "the localized BMP filter must resolve to BMP output");
     QCoreApplication::removeTranslator(&translator);
 
     require(ScreenshotImageFileService::normalizedPath(QStringLiteral("capture.unknown"),
@@ -113,6 +131,10 @@ void namingAndFormatSelection() {
                                                        ScreenshotImageFileFormat::Webp) ==
                 QStringLiteral("capture.webp"),
             "paths without a suffix must receive the selected format extension");
+    require(ScreenshotImageFileService::normalizedPath(QStringLiteral("capture.png"),
+                                                       ScreenshotImageFileFormat::Bmp) ==
+                QStringLiteral("capture.bmp"),
+            "BMP output must replace a mismatched explicit extension");
     require(ScreenshotImageFileService::normalizedPath(QStringLiteral(".capture"),
                                                        ScreenshotImageFileFormat::Png) ==
                 QStringLiteral(".capture.png"),
@@ -146,6 +168,7 @@ void writesEveryAdvertisedFormat() {
     for (const ScreenshotImageFileFormat format : {
              ScreenshotImageFileFormat::Png,
              ScreenshotImageFileFormat::Jpeg,
+             ScreenshotImageFileFormat::Bmp,
              ScreenshotImageFileFormat::Webp,
              ScreenshotImageFileFormat::Jxl,
              ScreenshotImageFileFormat::Avif,
@@ -159,6 +182,25 @@ void writesEveryAdvertisedFormat() {
         require(snow_shot::image_codec::inspectFile(
                     result.path, ScreenshotImageFileService::snowImageFormat(format), QSize(3, 2)),
                 "an advertised Save As output could not be inspected by snow_image");
+    }
+}
+
+void bmpPreservesTransparentPixels() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "temporary BMP directory could not be created");
+    QImage source = image();
+    source.setPixelColor(1, 1, QColor(10, 20, 30, 40));
+    const ScreenshotImageFileSaveResult result = ScreenshotImageFileService::write(
+        source, directory.filePath(QStringLiteral("transparent")), ScreenshotImageFileFormat::Bmp);
+    const QImage decoded =
+        snow_shot::image_codec::decodeFile(result.path, snow::image::Format::bmp);
+    require(result.succeeded() && decoded.size() == source.size(),
+            "BMP output must be encoded and decoded by snow_image");
+    for (int y = 0; y < source.height(); ++y) {
+        for (int x = 0; x < source.width(); ++x) {
+            require(decoded.pixelColor(x, y) == source.pixelColor(x, y),
+                    "BMP output must preserve RGBA screenshot pixels");
+        }
     }
 }
 
@@ -230,14 +272,14 @@ void configuredAutomaticOutputUsesFormatDirectoryAndFilename() {
             "an existing configured directory must precede platform fallbacks");
 
     const ScreenshotImageFileSaveResult result = ScreenshotImageFileService::saveAutomatically(
-        image(), candidates, ScreenshotImageFileFormat::Webp,
+        image(), candidates, ScreenshotImageFileFormat::Bmp,
         QStringLiteral("Auto_{yyyyMMdd_HHmmss}"), timestamp);
-    require(result.succeeded() &&
-                result.path ==
-                    QDir(directory.path()).filePath(QStringLiteral("Auto_20260814_090706.webp")) &&
-                snow_shot::image_codec::inspectFile(result.path, snow::image::Format::webp,
-                                                    QSize(3, 2)),
-            "configured automatic output must apply its directory, filename, and image format");
+    require(
+        result.succeeded() &&
+            result.path ==
+                QDir(directory.path()).filePath(QStringLiteral("Auto_20260814_090706.bmp")) &&
+            snow_shot::image_codec::inspectFile(result.path, snow::image::Format::bmp, QSize(3, 2)),
+        "configured automatic output must apply its directory, filename, and image format");
 
     const QString missing = QDir(directory.path()).filePath(QStringLiteral("missing"));
     const QStringList fallbackCandidates =
@@ -297,6 +339,9 @@ void codecOptionsUseFastLosslessAndMaximumJpegQuality() {
     const auto png = ScreenshotImageFileService::encodeOptions(ScreenshotImageFileFormat::Png);
     require(png.format == snow::image::Format::png && png.compression_level == 0,
             "PNG saves must use the fastest compression setting");
+    const auto bmp = ScreenshotImageFileService::encodeOptions(ScreenshotImageFileFormat::Bmp);
+    require(bmp.format == snow::image::Format::bmp,
+            "BMP saves must select the snow_image BMP encoder");
     const auto webp = ScreenshotImageFileService::encodeOptions(ScreenshotImageFileFormat::Webp);
     require(webp.lossless && webp.lossless_effort == 0,
             "lossless WebP saves must use the fastest lossless effort");
@@ -347,6 +392,7 @@ int main(int argc, char** argv) {
         namingAndFormatSelection();
         writesLosslessImageAndPreservesCollisionNames();
         writesEveryAdvertisedFormat();
+        bmpPreservesTransparentPixels();
         streamsRowsToAtomicFileAndCancelsWithoutPublishing();
         automaticDirectoriesUseSystemLocations();
         configuredAutomaticOutputUsesFormatDirectoryAndFilename();

@@ -201,6 +201,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
     require(
         defaultValue("system/auto_start_at_boot").toBool() &&
             defaultValue("network/proxy").toString() == QStringLiteral("none") &&
+            defaultValue("text_recognition/model_type").toString() == QStringLiteral("small") &&
             !defaultValue("global_shortcuts/disable_on_focused_fullscreen_window").toBool() &&
             defaultValue("global_shortcuts/screenshot").toArray() ==
                 QJsonArray{QStringLiteral("F1")} &&
@@ -391,6 +392,8 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
             "frame-rate settings must reject unsupported and non-integral values");
 
     const QMap<QString, QStringList> allowedStringValues{
+        {QStringLiteral("text_recognition/model_type"),
+         {QStringLiteral("extra_small"), QStringLiteral("small"), QStringLiteral("medium")}},
         {QStringLiteral("screenshot/auto_execute_after_text_recognition"),
          {QStringLiteral("no_action"), QStringLiteral("copy_text"),
           QStringLiteral("copy_text_and_end_screenshot"), QStringLiteral("quick_copy_text"),
@@ -402,6 +405,9 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
         {QStringLiteral("screenshot/middle_mouse_button_action"),
          {QStringLiteral("copy"), QStringLiteral("save"), QStringLiteral("pin"),
           QStringLiteral("none")}},
+        {QStringLiteral("screenshot/image_format"),
+         {QStringLiteral("png"), QStringLiteral("jpeg"), QStringLiteral("bmp"),
+          QStringLiteral("webp"), QStringLiteral("jxl"), QStringLiteral("avif")}},
         {QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode"),
          {QStringLiteral("mouse_position"), QStringLiteral("top_left"), QStringLiteral("top_right"),
           QStringLiteral("bottom_left"), QStringLiteral("bottom_right"), QStringLiteral("center")}},
@@ -743,7 +749,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 screenshot.setCopyImageFileToClipboard(true) &&
                 screenshot.setImageSaveDirectory(QStringLiteral("D:/Captures")) &&
                 screenshot.setLastManualSaveDirectory(QStringLiteral("D:/Exports")) &&
-                screenshot.setImageFormat(QStringLiteral("webp")) &&
+                screenshot.setImageFormat(QStringLiteral("bmp")) &&
                 screenshot.setManualSaveFilenameFormat(QStringLiteral("Manual_{yyyyMMdd}")) &&
                 screenshot.setAutoSaveFilenameFormat(QStringLiteral("Auto_{HHmmss}")) &&
                 screenshot.autoExecuteAfterTextRecognition() ==
@@ -753,12 +759,12 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 screenshot.autoSaveAfterCopy() && screenshot.copyImageFileToClipboard() &&
                 screenshot.imageSaveDirectory() == QStringLiteral("D:/Captures") &&
                 screenshot.lastManualSaveDirectory() == QStringLiteral("D:/Exports") &&
-                screenshot.imageFormat() == QStringLiteral("webp") &&
+                screenshot.imageFormat() == QStringLiteral("bmp") &&
                 screenshot.manualSaveFilenameFormat() == QStringLiteral("Manual_{yyyyMMdd}") &&
                 screenshot.autoSaveFilenameFormat() == QStringLiteral("Auto_{HHmmss}"),
             "screenshot adapters must persist every new value type");
     require(!screenshot.setDoubleClickAction(QStringLiteral("unsupported")) &&
-                !screenshot.setImageFormat(QStringLiteral("bmp")) &&
+                !screenshot.setImageFormat(QStringLiteral("unsupported")) &&
                 !screenshot.setAutoSaveFilenameFormat(QStringLiteral("invalid/name")) &&
                 screenshot.doubleClickAction() == QStringLiteral("save"),
             "invalid screenshot actions must be rejected without changing the stored value");
@@ -996,6 +1002,40 @@ void invalidCaptureCursorConfigurationFallsBackToDisabled() {
                      .value(QStringLiteral("capture_cursor"))
                      .toBool(),
             "invalid stored cursor capture values must be replaced with disabled");
+}
+
+void invalidOcrModelConfigurationFallsBackToSmallWithoutAMigration() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "failed to create invalid OCR model setting directory");
+    const QString config = QDir(temporary.path()).filePath(QStringLiteral("config.json"));
+    writeBytes(config, QByteArrayLiteral("{\n"
+                                         "  \"storage\": {\"schema_version\": 1},\n"
+                                         "  \"text_recognition\": {\"model_type\": \"large\"}\n"
+                                         "}\n"));
+    storage::ConfigurationStore store(config, true, true, 60000);
+    require(store.value(QStringLiteral("text_recognition/model_type")).toString() ==
+                    QStringLiteral("small") &&
+                store.value(QStringLiteral("storage/schema_version")).toInt() == 1 &&
+                store.isDirty() && store.flushNow().success,
+            "invalid OCR model types must normalize to Small without changing schema version");
+}
+
+void missingOcrModelConfigurationDefaultsToSmallWithoutAMigration() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "failed to create missing OCR model setting directory");
+    const QString config = QDir(temporary.path()).filePath(QStringLiteral("config.json"));
+    writeBytes(config,
+               QByteArrayLiteral("{\n"
+                                 "  \"storage\": {\"schema_version\": 1},\n"
+                                 "  \"text_recognition\": {\"direct_ml_acceleration\": false}\n"
+                                 "}\n"));
+    storage::ConfigurationStore store(config, true, true, 60000);
+    require(store.value(QStringLiteral("text_recognition/model_type")).toString() ==
+                    QStringLiteral("small") &&
+                !store.value(QStringLiteral("text_recognition/direct_ml_acceleration")).toBool() &&
+                store.value(QStringLiteral("storage/schema_version")).toInt() == 1 &&
+                store.isDirty() && store.flushNow().success,
+            "missing OCR model types must insert Small without changing schema version or peers");
 }
 
 void smartSelectionAccessorAndSignal() {
@@ -1314,6 +1354,8 @@ int main(int argc, char** argv) {
     screenshotTranslationSettingsRoundTripSupportedValues();
     settingsAdaptersRoundTripAndRejectInvalidValues();
     invalidCaptureCursorConfigurationFallsBackToDisabled();
+    invalidOcrModelConfigurationFallsBackToSmallWithoutAMigration();
+    missingOcrModelConfigurationDefaultsToSmallWithoutAMigration();
     smartSelectionAccessorAndSignal();
     unknownFieldsArePreserved();
     malformedConfigurationIsCopiedAndReplaced();
