@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/components/globalmouserow.h"
 
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
+#include "snow_shot/presentation/components/icons/iconrenderutils.h"
 #include "snow_shot/presentation/components/shortcutconfigurationbutton.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/styles/actionrowstyle.h"
@@ -26,6 +27,26 @@ namespace settings = snow_shot::presentation::settings;
 
 constexpr int CONFIGURATION_MODAL_WIDTH = 520;
 constexpr int COMBINATION_TEXT_MAX_WIDTH = 260;
+
+adqt::icons::IconRef actionIcon(settings::SettingsGlobalMouseAction action) {
+    switch (action) {
+    case settings::SettingsGlobalMouseAction::ScreenshotCopy:
+        return custom_outlined_icons::ScreenshotCopy();
+    case settings::SettingsGlobalMouseAction::ScreenshotFixed:
+        return custom_outlined_icons::PinToScreen();
+    case settings::SettingsGlobalMouseAction::ScreenshotOcr:
+        return custom_outlined_icons::ToolRecognizeText();
+    case settings::SettingsGlobalMouseAction::ScreenshotTranslation:
+        return custom_outlined_icons::OcrTranslate();
+    case settings::SettingsGlobalMouseAction::ScreenshotSave:
+        return custom_outlined_icons::Save();
+    case settings::SettingsGlobalMouseAction::ScreenshotQuickSave:
+        return custom_outlined_icons::QuickSave();
+    case settings::SettingsGlobalMouseAction::ScreenRecording:
+        return custom_outlined_icons::RecordScreen();
+    }
+    return {};
+}
 
 adqt::widgets::AdSelect::Option option(const QString& value, const QString& label) {
     adqt::widgets::AdSelect::Option result;
@@ -62,7 +83,13 @@ GlobalMouseRow::GlobalMouseRow(const QString& title, settings::SettingsGlobalMou
     m_titleLabel->setAttribute(Qt::WA_TransparentForMouseEvents, true);
     m_titleLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     m_titleLabel->setWordWrap(true);
-    layout->addWidget(m_titleLabel, 1, Qt::AlignVCenter);
+    layout->addWidget(m_titleLabel, 0, Qt::AlignVCenter);
+
+    m_titleIcon = new QLabel(this);
+    m_titleIcon->setObjectName(QStringLiteral("globalMouseActionIcon"));
+    m_titleIcon->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    layout->addWidget(m_titleIcon, 0, Qt::AlignVCenter);
+    layout->addStretch(1);
 
     m_button = new ShortcutConfigurationButton(metric, COMBINATION_TEXT_MAX_WIDTH,
                                                custom_outlined_icons::WheelMouse(), this);
@@ -129,6 +156,14 @@ void GlobalMouseRow::syncTitleColor() {
                          {}, isDown() && !configurationActive, underMouse() && !configurationActive,
                          m_colorScheme.map));
     m_titleLabel->setPalette(palette);
+    if (m_titleIcon != nullptr) {
+        const int side =
+            m_colorScheme.metricAlias.fontSizeLG + m_colorScheme.metricAlias.borderRadiusXS;
+        m_titleIcon->setFixedSize(side, side);
+        m_titleIcon->setPixmap(snow_shot::presentation::icons::renderTintedIconPixmap(
+            actionIcon(m_action), QSize(side, side), devicePixelRatioF(),
+            palette.color(QPalette::WindowText)));
+    }
 }
 
 void GlobalMouseRow::paintEvent(QPaintEvent*) {
@@ -146,7 +181,8 @@ void GlobalMouseRow::paintEvent(QPaintEvent*) {
 bool GlobalMouseRow::event(QEvent* event) {
     const bool handled = AdButton::event(event);
     if (event->type() == QEvent::Enter || event->type() == QEvent::Leave ||
-        event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseButtonRelease) {
+        event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseButtonRelease ||
+        event->type() == QEvent::DevicePixelRatioChange) {
         syncTitleColor();
         update();
     }

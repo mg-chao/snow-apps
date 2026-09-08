@@ -94,7 +94,8 @@ struct ScreenshotOverlayShortcutController::Impl {
     }
 
     [[nodiscard]] bool toolbarToolShortcutState() const {
-        return actions.mainToolbarVisible() && localShortcutState();
+        return !inputHandler.externalDragActive() && actions.mainToolbarVisible() &&
+               localShortcutState();
     }
 
     [[nodiscard]] bool screenshotShortcutState() const {
@@ -130,30 +131,30 @@ struct ScreenshotOverlayShortcutController::Impl {
         QList<QKeyCombination> confirmationKeys = anyModifierCombinations(Qt::Key_Return);
         confirmationKeys.append(anyModifierCombinations(Qt::Key_Enter));
         static_cast<void>(shortcutManager.addBinding(
-            &q, fixedBinding(QStringLiteral("screenshot.confirm_selection"),
-                             std::move(confirmationKeys),
-                             ShortcutManager::StandardPriority::WindowCommand,
-                             [this]() {
-                                  return !recognitionTool(interaction.activeTool()) &&
-                                         interaction.selecting() &&
-                                         !interaction.dragging() &&
-                                         actions.localShortcutInputAllowed();
-                             },
-                             [this]() {
-                                 inputHandler.confirmSelection();
-                                 return true;
-                             })));
+            &q, fixedBinding(
+                    QStringLiteral("screenshot.confirm_selection"), std::move(confirmationKeys),
+                    ShortcutManager::StandardPriority::WindowCommand,
+                    [this]() {
+                        return !inputHandler.externalDragActive() &&
+                               !recognitionTool(interaction.activeTool()) &&
+                               interaction.selecting() && !interaction.dragging() &&
+                               actions.localShortcutInputAllowed();
+                    },
+                    [this]() {
+                        inputHandler.confirmSelection();
+                        return true;
+                    })));
 
         static_cast<void>(shortcutManager.addBinding(
-            &q, fixedBinding(QStringLiteral("screenshot.cycle_color_format"),
-                             {QKeyCombination(Qt::ShiftModifier, Qt::Key_Shift)},
-                             ShortcutManager::StandardPriority::ContextualFallback,
-                             [this]() {
-                                 return interaction.moveToolActive() &&
-                                        !interaction.dragging() &&
-                                        actions.localShortcutInputAllowed();
-                             },
-                             [this]() { return actions.cycleColorPickerFormat(); })));
+            &q, fixedBinding(
+                    QStringLiteral("screenshot.cycle_color_format"),
+                    {QKeyCombination(Qt::ShiftModifier, Qt::Key_Shift)},
+                    ShortcutManager::StandardPriority::ContextualFallback,
+                    [this]() {
+                        return !inputHandler.externalDragActive() && interaction.moveToolActive() &&
+                               !interaction.dragging() && actions.localShortcutInputAllowed();
+                    },
+                    [this]() { return actions.cycleColorPickerFormat(); })));
     }
 
     void registerConfiguredBindings() {
@@ -189,6 +190,12 @@ struct ScreenshotOverlayShortcutController::Impl {
             binding.priority = ShortcutManager::StandardPriority::ScreenshotShortcut;
             binding.autoRepeat = actionId.startsWith(QStringLiteral("move_cursor_"));
             binding.canActivate = [this, actionId](const auto&) {
+                if (inputHandler.externalDragActive() &&
+                    actionId != QStringLiteral("move_entire_selection") &&
+                    actionId != QStringLiteral("keep_selection_width_and_height_consistent") &&
+                    actionId != QStringLiteral("cancel_screenshot")) {
+                    return false;
+                }
                 if (actionId == QStringLiteral("cancel_screenshot") ||
                     actionId == QStringLiteral("copy_to_clipboard")) {
                     return actions.localShortcutInputAllowed();
@@ -367,8 +374,21 @@ struct ScreenshotOverlayShortcutController::Impl {
                     return inputHandler.releaseKeepSelectionAspectRatioShortcut();
                 };
             }
-            screenshotBindings.insert(actionId,
-                                      shortcutManager.addBinding(&q, std::move(binding)));
+            if (binding.release) {
+                // The initiating global mouse modifiers may still be held. Only these
+                // two held selection controls tolerate them, and only during that drag.
+                auto externalBinding = binding;
+                externalBinding.id += QStringLiteral(".external_drag");
+                externalBinding.allowedAdditionalModifiers =
+                    Qt::ShiftModifier | Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier;
+                externalBinding.canActivate = [this, eligible =
+                                                         binding.canActivate](const auto& context) {
+                    return inputHandler.externalDragActive() && eligible(context);
+                };
+                externalBindings.insert(actionId,
+                                        shortcutManager.addBinding(&q, std::move(externalBinding)));
+            }
+            screenshotBindings.insert(actionId, shortcutManager.addBinding(&q, std::move(binding)));
         }
 
         const auto drawingShortcuts =
@@ -395,6 +415,13 @@ struct ScreenshotOverlayShortcutController::Impl {
                                      screenshotSettings.shortcuts(binding.key()))));
         }
 
+        for (auto binding = externalBindings.cbegin(); binding != externalBindings.cend();
+             ++binding) {
+            static_cast<void>(shortcutManager.setKeyCombinations(
+                binding.value(), ShortcutManager::keyCombinationsFromPortableText(
+                                     screenshotSettings.shortcuts(binding.key()))));
+        }
+
         const snow_shot::storage::DrawingShortcutSettings drawingSettings;
         for (auto binding = drawingBindings.cbegin(); binding != drawingBindings.cend();
              ++binding) {
@@ -411,6 +438,7 @@ struct ScreenshotOverlayShortcutController::Impl {
     ScreenshotIntelligentSelectionModel& intelligentSelection;
     ScreenshotOverlayInputActions actions;
     QMap<QString, BindingHandle> screenshotBindings;
+    QMap<QString, BindingHandle> externalBindings;
     QMap<QString, BindingHandle> drawingBindings;
 };
 

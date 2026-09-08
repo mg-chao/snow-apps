@@ -459,8 +459,6 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     quint64 m_delayedCaptureGeneration = 0;
     PendingSelectionAction m_pendingSelectionAction = PendingSelectionAction::None;
     ScreenshotGlobalMouseDrag m_globalMouseDrag;
-    snow_shot::presentation::WindowShortcutManager::InputSuspensionHandle m_globalMouseSuspension =
-        0;
     bool m_pendingOcrFromQuickOcrAction = false;
     bool m_ocrFromQuickOcrAction = false;
     bool m_ocrTranslateAfterRecognition = false;
@@ -1184,8 +1182,9 @@ void ScreenshotController::Impl::createCaptureWorkflow() {
                 [this]() {
                     if (m_globalMouseDrag.active()) {
                         m_globalMouseDrag.setReady();
-                        static_cast<void>(
-                            m_interaction.enterSelectionDrag(ScreenshotSelectionDragMode::Marquee));
+                        m_overlayInputHandler->beginExternalSelectionDrag(
+                            m_geometry.canvasPositionForPhysicalPoint(m_displaySession,
+                                                                      m_globalMouseDrag.start()));
                         applyGlobalMouseDrag(false);
                     }
                 },
@@ -3676,9 +3675,6 @@ void ScreenshotController::Impl::endGlobalMouseDrag() {
     if (m_overlayInputHandler) {
         m_overlayInputHandler->setExternalDragActive(false);
     }
-    if (m_windowShortcutManager && m_globalMouseSuspension != 0) {
-        m_windowShortcutManager->resumeInput(std::exchange(m_globalMouseSuspension, 0));
-    }
     if (id != 0) {
         emit owner.globalMouseCaptureEnded(id);
     }
@@ -3687,15 +3683,9 @@ void ScreenshotController::Impl::endGlobalMouseDrag() {
 void ScreenshotController::Impl::applyGlobalMouseDrag(bool finishReleased) {
     if (!m_globalMouseDrag.active() || !m_globalMouseDrag.ready())
         return;
-    const QPointF start =
-        m_geometry.canvasPositionForPhysicalPoint(m_displaySession, m_globalMouseDrag.start());
     const QPointF end =
         m_geometry.canvasPositionForPhysicalPoint(m_displaySession, m_globalMouseDrag.end());
-    m_selection.setSelectionRect(
-        ScreenshotGlobalMouseDrag::selection(start, end, m_geometry.canvasBounds()));
-    m_presentationServices->updateOverlayState();
-    m_colorPickerController->updateForSelectionDrag(end,
-                                                    m_presentationServices->colorPickerContext());
+    m_overlayInputHandler->updateExternalSelectionDrag(end);
     if (!m_globalMouseDrag.released())
         return;
     if (!m_selection.hasPixelSelection()) {
@@ -3985,7 +3975,6 @@ bool ScreenshotController::beginGlobalMouseCapture(
     }
     m_impl->m_globalMouseDrag.begin(gestureId, physicalStart);
     m_impl->m_overlayInputHandler->setExternalDragActive(true);
-    m_impl->m_globalMouseSuspension = m_impl->m_windowShortcutManager->suspendInput();
     if (!m_impl->beginCapture(pending, ScreenshotCaptureWorkflow::StartMode::ExternalDrag)) {
         m_impl->endGlobalMouseDrag();
         return false;
@@ -4003,12 +3992,7 @@ void ScreenshotController::updateGlobalMouseCapture(quint64 gestureId,
 void ScreenshotController::finishGlobalMouseCapture(quint64 gestureId,
                                                     const QPoint& physicalPoint) {
     if (m_impl->m_globalMouseDrag.update(gestureId, physicalPoint, true)) {
-        const QPoint start = m_impl->m_globalMouseDrag.start();
-        if (start.x() == physicalPoint.x() || start.y() == physicalPoint.y()) {
-            m_impl->cancelCapture();
-        } else {
-            m_impl->applyGlobalMouseDrag(true);
-        }
+        m_impl->applyGlobalMouseDrag(true);
     }
 }
 

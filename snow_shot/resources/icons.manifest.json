@@ -312,6 +312,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "QuickSave",
+      "name": "quick-save",
+      "source": "../src/presentation/components/icons/resources/quick-save.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "RecordScreen",
       "name": "record-screen",
       "source": "../src/presentation/components/icons/resources/record-screen.svg",

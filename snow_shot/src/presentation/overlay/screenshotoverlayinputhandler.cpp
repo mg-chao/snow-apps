@@ -186,6 +186,18 @@ void ScreenshotOverlayInputHandler::handleMousePress(ScreenshotOverlayWindow* ov
                            : hitMode);
 }
 
+void ScreenshotOverlayInputHandler::beginExternalSelectionDrag(const QPointF& canvasPosition) {
+    if (m_externalDragActive) {
+        beginSelectionDrag(nullptr, canvasPosition, ScreenshotSelectionDragMode::Marquee);
+    }
+}
+
+void ScreenshotOverlayInputHandler::updateExternalSelectionDrag(const QPointF& canvasPosition) {
+    if (m_externalDragActive && m_context.interaction.dragging()) {
+        updateSelectionDrag(canvasPosition);
+    }
+}
+
 void ScreenshotOverlayInputHandler::beginSelectionDrag(ScreenshotOverlayWindow* overlay,
                                                        const QPointF& virtualPosition,
                                                        ScreenshotSelectionDragMode dragMode) {
