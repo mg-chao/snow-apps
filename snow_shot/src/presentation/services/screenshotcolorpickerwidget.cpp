@@ -150,7 +150,9 @@ QPainterPath topRoundedRectPath(const QRectF& rect, qreal radius) {
 ScreenshotColorPickerWidget::ScreenshotColorPickerWidget(QWidget* parent) : QWidget(parent) {
     if (snow_shot::storage::ApplicationStorage::instance().isInitialized()) {
         const QString format = snow_shot::storage::ScreenshotUiSettings().colorPickerFormat();
-        if (format == QStringLiteral("rgb")) {
+        if (format == QStringLiteral("hex_without_hash")) {
+            m_colorFormat = ColorFormat::HexWithoutHash;
+        } else if (format == QStringLiteral("rgb")) {
             m_colorFormat = ColorFormat::Rgb;
         } else if (format == QStringLiteral("hsl")) {
             m_colorFormat = ColorFormat::Hsl;
@@ -263,6 +265,10 @@ void ScreenshotColorPickerWidget::cycleColorFormat() {
     QString format;
     switch (m_colorFormat) {
     case ColorFormat::Hex:
+        m_colorFormat = ColorFormat::HexWithoutHash;
+        format = QStringLiteral("hex_without_hash");
+        break;
+    case ColorFormat::HexWithoutHash:
         m_colorFormat = ColorFormat::Rgb;
         format = QStringLiteral("rgb");
         break;
@@ -410,8 +416,7 @@ bool ScreenshotColorPickerWidget::updatePosition(const QPointF& overlayLocalPosi
     const QRect bounds = parent != nullptr ? parent->rect() : QRect();
     const QPoint panelPosition = ScreenshotGeometryMapper::cursorPanelPosition(
         overlayLocalPosition.toPoint(), panelSize, bounds, kCursorGap);
-    const QPoint targetPosition =
-        panelPosition - QPoint(kShadowMargin, kShadowMargin);
+    const QPoint targetPosition = panelPosition - QPoint(kShadowMargin, kShadowMargin);
     if (pos() == targetPosition) {
         return false;
     }
@@ -437,6 +442,8 @@ QString ScreenshotColorPickerWidget::formatColor(const QColor& color) const {
             .arg(QString::number(saturation, 'f', 1))
             .arg(QString::number(lightness, 'f', 1));
     }
+    case ColorFormat::HexWithoutHash:
+        return rgbColor.name(QColor::HexRgb).mid(1).toUpper();
     case ColorFormat::Hex:
     default:
         return rgbColor.name(QColor::HexRgb).toUpper();

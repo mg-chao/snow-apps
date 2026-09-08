@@ -39,9 +39,10 @@ void formatPersistsAcrossCapturesAndRestarts() {
     require(settings.colorPickerFormat() == QStringLiteral("hex"),
             "missing color format must default to HEX");
 
-    const QStringList formats{QStringLiteral("hex"), QStringLiteral("rgb"), QStringLiteral("hsl"),
-                              QStringLiteral("hex")};
-    const QStringList colors{QStringLiteral("#FF0000"), QStringLiteral("rgb(255, 0, 0)"),
+    const QStringList formats{QStringLiteral("hex"), QStringLiteral("hex_without_hash"),
+                              QStringLiteral("rgb"), QStringLiteral("hsl"), QStringLiteral("hex")};
+    const QStringList colors{QStringLiteral("#FF0000"), QStringLiteral("FF0000"),
+                             QStringLiteral("rgb(255, 0, 0)"),
                              QStringLiteral("hsl(0, 100.0%, 50.0%)"), QStringLiteral("#FF0000")};
     for (qsizetype index = 0; index < formats.size(); ++index) {
         {
@@ -94,8 +95,24 @@ void formatSurvivesResetWithoutStorage() {
     picker.cycleColorFormat();
     picker.resetForNewCapture();
     sampleRed(picker);
-    require(picker.currentColorText() == QStringLiteral("rgb(255, 0, 0)"),
+    require(picker.currentColorText() == QStringLiteral("FF0000"),
             "format switching must remain usable when storage is unavailable");
+}
+
+void plainHexPreservesSixUppercaseDigits() {
+    ScreenshotColorPickerWidget picker;
+    picker.cycleColorFormat();
+    const QList<QColor> colors{QColor(0, 0, 0), QColor(0, 10, 188), QColor(255, 255, 255)};
+    const QStringList expected{QStringLiteral("000000"), QStringLiteral("000ABC"),
+                               QStringLiteral("FFFFFF")};
+    for (qsizetype index = 0; index < colors.size(); ++index) {
+        QImage image(16, 16, QImage::Format_RGBA8888);
+        image.fill(colors.at(index));
+        picker.setCaptureImage(image, image.rect());
+        picker.updatePicker(QPoint(8, 8), QPointF(8, 8), 0.0);
+        require(picker.currentColorText() == expected.at(index),
+                "plain HEX must preserve leading zeros and uppercase digits without a hash");
+    }
 }
 } // namespace
 
@@ -104,5 +121,6 @@ int main(int argc, char** argv) {
     QApplication application(argc, argv);
     formatPersistsAcrossCapturesAndRestarts();
     formatSurvivesResetWithoutStorage();
+    plainHexPreservesSixUppercaseDigits();
     return 0;
 }

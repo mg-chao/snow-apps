@@ -33,6 +33,7 @@ class ScreenshotColorPickerWidget final : public QWidget {
   private:
     enum class ColorFormat {
         Hex,
+        HexWithoutHash,
         Rgb,
         Hsl,
     };
