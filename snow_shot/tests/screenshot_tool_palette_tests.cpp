@@ -11,6 +11,7 @@
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "../src/presentation/tools/screenshottoolpalettebuttons.h"
 #include "../src/presentation/tools/screenshottoolpalettestylecomponents.h"
+#include "../src/presentation/tools/screenshottoolpalettestylepresets.h"
 
 #include "antd_icons.h"
 #include "widgets/select.h"
@@ -406,20 +407,38 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
 
     require(trail->presets().isEmpty() && click->presets().isEmpty(),
             "mouse effect presets should be moved out of the picker popups");
+    for (auto* picker : {trail, click}) {
+        require(picker->trigger() == adqt::widgets::AdColorPicker::Trigger::Hover,
+                "recording color pickers should expand on hover like drawing color pickers");
+        require(picker->toolTip().isEmpty() && picker->triggerContent()->toolTip().isEmpty(),
+                "recording color picker triggers should not display tooltips");
+    }
+    const auto verifyColorIconTooltips = [exportPanel, trail, click]() {
+        auto* trailIcon =
+            exportPanel->findChild<QWidget*>(QStringLiteral("screenRecordingMouseTrailIcon"));
+        auto* clickIcon =
+            exportPanel->findChild<QWidget*>(QStringLiteral("screenRecordingMouseClickIcon"));
+        require(trailIcon != nullptr && clickIcon != nullptr &&
+                    trailIcon->toolTip() == trail->accessibleName() &&
+                    clickIcon->toolTip() == click->accessibleName(),
+                "mouse effect descriptions should appear on the icons left of the pickers");
+    };
+    verifyColorIconTooltips();
     const auto findPresets = [exportPanel](adqt::widgets::AdColorPicker* picker) {
         QVector<adqt::widgets::AdButton*> presets;
-        const QStringList names = {QStringLiteral("Transparent"), QStringLiteral("Red"),
-                                   QStringLiteral("Green"), QStringLiteral("Blue"),
-                                   QStringLiteral("Yellow")};
-        for (int index = 0; index < names.size(); ++index) {
+        auto colors = snow_shot::presentation::style_presets::strokeColors().first(4);
+        colors.prepend(QColor(0, 0, 0, 0));
+        for (int index = 0; index < colors.size(); ++index) {
             auto* button = exportPanel->findChild<adqt::widgets::AdButton*>(
                 picker->objectName() + QStringLiteral("Preset%1").arg(index),
                 Qt::FindDirectChildrenOnly);
             require(button != nullptr && dynamic_cast<ColorSwatchButton*>(button) != nullptr,
                     "each mouse effect should expose five drawing-style toolbar swatches");
-            require(button->toolTip() == names.at(index) &&
-                        button->accessibleName() == names.at(index),
-                    "preset swatches should expose translated color names");
+            const QString tooltip =
+                picker->accessibleName() + QLatin1Char(' ') +
+                (index == 0 ? QStringLiteral("transparent") : colors.at(index).name());
+            require(button->toolTip() == tooltip && button->accessibleName() == tooltip,
+                    "preset tooltips should use the drawing toolbar's setting and color format");
             presets.push_back(button);
         }
         return presets;
@@ -865,6 +884,9 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
             "recording export controls should retranslate after LanguageChange");
     require(findPresets(trail) == trailPresets && findPresets(click) == clickPresets,
             "retranslation should preserve the toolbar presets and keep their labels current");
+    verifyColorIconTooltips();
+    require(trail->toolTip().isEmpty() && click->toolTip().isEmpty(),
+            "retranslation should keep color picker tooltips on their icons");
 }
 
 void numericStrokeWidthPreviewUsesLineWithinPreviewBounds() {

@@ -129,6 +129,10 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Export Settings"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mouse trail color"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mouse click color"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mouse trail color %1"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mouse trail color transparent"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mouse click color %1"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mouse click color transparent"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Show cursor in recording"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Copy recording"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Animated recording formats do not contain audio"),
@@ -4931,7 +4935,7 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
         picker->setModeOptions({adqt::widgets::AdColorPicker::Mode::Solid});
         picker->setMode(adqt::widgets::AdColorPicker::Mode::Solid);
         picker->setFormat(adqt::widgets::AdColorPicker::Format::Hex);
-        picker->setTrigger(adqt::widgets::AdColorPicker::Trigger::Click);
+        picker->setTrigger(adqt::widgets::AdColorPicker::Trigger::Hover);
         picker->setTriggerTextVisible(false);
         picker->setAlphaChannelEnabled(true);
         picker->setFormatSelectorEnabled(true);
@@ -4944,18 +4948,24 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
     };
 
     const auto addPresets = [this, layout](adqt::widgets::AdColorPicker* picker, int alpha,
+                                           const char* tooltipPattern,
+                                           const char* transparentTooltip,
                                            QVector<RecordingColorPreset>& presets) {
         QVector<QColor> colors = snow_shot::presentation::style_presets::strokeColors().first(4);
         for (QColor& color : colors) {
             color.setAlpha(alpha);
         }
         colors.prepend(QColor(0, 0, 0, 0));
-        const char* names[] = {"Transparent", "Red", "Green", "Blue", "Yellow"};
         for (int index = 0; index < colors.size(); ++index) {
             const QColor color = colors.at(index);
             auto* button = createScreenshotToolPaletteColorButton(
-                m_recordExportSettingsPanel, names[index], color, false, true,
+                m_recordExportSettingsPanel, nullptr, color, false, true,
                 styleButtonMetrics(m_physicalScale));
+            configureScreenshotToolPaletteTooltip(
+                button,
+                color.alpha() == 0
+                    ? ScreenshotToolPaletteTranslationText(transparentTooltip)
+                    : ScreenshotToolPaletteTranslationText(tooltipPattern).arg(color.name()));
             button->setObjectName(picker->objectName() + QStringLiteral("Preset%1").arg(index));
             presets.push_back({color, button});
             layout->addWidget(button);
@@ -4972,7 +4982,8 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
                     QStringLiteral("Mouse trail color"));
     m_recordMouseTrailColorPicker->setValue(
         adqt::widgets::AdColorValue::solid(m_recordingMouseTrailColor));
-    addPresets(m_recordMouseTrailColorPicker, 255, m_recordMouseTrailColorPresets);
+    addPresets(m_recordMouseTrailColorPicker, 255, "Mouse trail color %1",
+               "Mouse trail color transparent", m_recordMouseTrailColorPresets);
     addSeparator(QStringLiteral("screenRecordingExportTrailSeparator"));
 
     m_recordMouseClickIcon = addIcon(QStringLiteral("screenRecordingMouseClickIcon"),
@@ -4982,7 +4993,8 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
                     QStringLiteral("Mouse click color"));
     m_recordMouseClickColorPicker->setValue(
         adqt::widgets::AdColorValue::solid(m_recordingMouseClickColor));
-    addPresets(m_recordMouseClickColorPicker, 128, m_recordMouseClickColorPresets);
+    addPresets(m_recordMouseClickColorPicker, 128, "Mouse click color %1",
+               "Mouse click color transparent", m_recordMouseClickColorPresets);
     addSeparator(QStringLiteral("screenRecordingExportClickSeparator"));
 
     m_recordCursorButton = createScreenshotToolPaletteStyleActionButton(
@@ -5058,13 +5070,13 @@ void ScreenshotToolPalette::refreshRecordingExportSettingsText() {
     m_recordOutputFormatSelect->setAccessibleName(tr("Recording format"));
 
     if (m_recordMouseTrailColorPicker != nullptr) {
-        m_recordMouseTrailColorPicker->setToolTip(tr("Mouse trail color"));
         m_recordMouseTrailColorPicker->setAccessibleName(tr("Mouse trail color"));
     }
     if (m_recordMouseClickColorPicker != nullptr) {
-        m_recordMouseClickColorPicker->setToolTip(tr("Mouse click color"));
         m_recordMouseClickColorPicker->setAccessibleName(tr("Mouse click color"));
     }
+    configureScreenshotToolPaletteTooltip(m_recordMouseTrailIcon, "Mouse trail color");
+    configureScreenshotToolPaletteTooltip(m_recordMouseClickIcon, "Mouse click color");
     if (m_recordCursorButton != nullptr) {
         configureScreenshotToolPaletteTooltip(m_recordCursorButton, "Show cursor in recording");
     }
