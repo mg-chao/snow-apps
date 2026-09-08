@@ -294,6 +294,7 @@ void heldBindingsReleaseByTriggerKey() {
         ++activationCount;
         return true;
     };
+    held.cancel = [] {};
     held.release = [&releaseCount](const auto&) {
         ++releaseCount;
         return true;
@@ -319,6 +320,7 @@ void heldBindingsReleaseByTriggerKey() {
     int declinedReleaseCount = 0;
     auto declined = binding(QStringLiteral("declined-held"), Qt::Key_D, 100,
                             []() { return false; });
+    declined.cancel = [] {};
     declined.release = [&declinedReleaseCount](const auto&) {
         ++declinedReleaseCount;
         return true;
@@ -334,6 +336,7 @@ void heldBindingsReleaseByTriggerKey() {
     auto* owner = new QObject;
     auto destroyed = binding(QStringLiteral("destroyed-held"), Qt::Key_L, 100,
                              []() { return true; });
+    destroyed.cancel = [] {};
     destroyed.release = [&destroyedReleaseCount](const auto&) {
         ++destroyedReleaseCount;
         return true;
@@ -368,6 +371,7 @@ void heldModifierParsingAndAdditionalModifiersAreScoped() {
         ++shiftPressCount;
         return true;
     };
+    shiftBinding.cancel = [] {};
     shiftBinding.release = [&shiftReleaseCount](const auto&) {
         ++shiftReleaseCount;
         return true;
@@ -422,6 +426,7 @@ void inputSuspensionBlocksDispatchAndClearsHeldState() {
         ++activationCount;
         return true;
     };
+    binding.cancel = [] {};
     binding.release = [&releaseCount](const auto&) {
         ++releaseCount;
         return true;
@@ -557,6 +562,251 @@ void lostKeyReleaseDoesNotSwallowTheNextPress() {
     require(count == 3, "auto-repeat without an observed press must be ignored");
 }
 
+// Inactive managers also observe presses dispatched to other windows. If that
+// window closes before key-up, they must not keep treating the key as held.
+void lostReleaseInAnotherWindowDoesNotSwallowTheNextPress() {
+    for (const auto transition : {QEvent::Hide, QEvent::WindowDeactivate}) {
+        QWidget firstWindow;
+        QWidget nextWindow;
+        WindowShortcutManager firstManager;
+        WindowShortcutManager nextManager;
+        firstManager.addScopeWindow(&firstWindow);
+        nextManager.addScopeWindow(&nextWindow);
+        int firstCount = 0;
+        int nextCount = 0;
+        require(firstManager.addBinding(&firstWindow,
+                                        binding(QStringLiteral("first-close"), Qt::Key_Escape, 100,
+                                                [&]() {
+                                                    ++firstCount;
+                                                    return true;
+                                                })) != 0,
+                "first window close binding registration failed");
+        require(nextManager.addBinding(&nextWindow,
+                                       binding(QStringLiteral("next-close"), Qt::Key_Escape, 100,
+                                               [&]() {
+                                                   ++nextCount;
+                                                   return true;
+                                               })) != 0,
+                "next window close binding registration failed");
+        sendKey(&firstWindow, QEvent::KeyPress, Qt::Key_Escape);
+        require(firstCount == 1 && nextCount == 0, "only the first window must handle its press");
+        QEvent unreachable(transition);
+        QCoreApplication::sendEvent(&firstWindow, &unreachable);
+        sendKey(&nextWindow, QEvent::ShortcutOverride, Qt::Key_Escape, Qt::NoModifier, true);
+        sendKey(&nextWindow, QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier, true);
+        require(nextCount == 1, "a lost release in another window must not swallow the next press");
+        QWidget child(&nextWindow);
+        QEvent childHide(QEvent::Hide);
+        QCoreApplication::sendEvent(&child, &childHide);
+        sendKey(&nextWindow, QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier, true);
+        require(nextCount == 1, "hardware repeats must remain suppressed after recovery");
+    }
+}
+
+void lostReleaseSurvivesShortcutManagerRecreation() {
+    {
+        QWidget window;
+        WindowShortcutManager manager;
+        manager.addScopeWindow(&window);
+        sendKey(&window, QEvent::KeyPress, Qt::Key_Escape);
+        QEvent hide(QEvent::Hide);
+        QCoreApplication::sendEvent(&window, &hide);
+    }
+    QWidget window;
+    WindowShortcutManager manager;
+    manager.addScopeWindow(&window);
+    int count = 0;
+    require(manager.addBinding(&window, binding(QStringLiteral("new-close"), Qt::Key_Escape, 100,
+                                                [&]() {
+                                                    ++count;
+                                                    return true;
+                                                })) != 0,
+            "new window close binding registration failed");
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier, true);
+    require(count == 1, "lost-release recovery must survive replacement of all window managers");
+    sendKey(&window, QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier, true);
+    require(count == 1, "a replacement manager must still suppress hardware repeats");
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_Escape);
+}
+
+void interruptedInputLifecycleIsBalanced() {
+    for (const auto transition : {QEvent::Hide, QEvent::WindowDeactivate, QEvent::None}) {
+        QWidget window;
+        WindowShortcutManager manager;
+        manager.addScopeWindow(&window);
+        bool held = false;
+        int releases = 0;
+        int cancels = 0;
+        auto item = binding(QStringLiteral("interruptible"), Qt::Key_F6, 100, [&] {
+            held = true;
+            return true;
+        });
+        item.release = [&](const auto&) {
+            held = false;
+            ++releases;
+            return true;
+        };
+        item.cancel = [&] {
+            held = false;
+            ++cancels;
+        };
+        require(manager.addBinding(&window, std::move(item)) != 0, "held binding must register");
+        sendKey(&window, QEvent::KeyPress, Qt::Key_F6);
+        if (transition == QEvent::None) {
+            const auto first = manager.suspendInput();
+            const auto second = manager.suspendInput();
+            manager.resumeInput(first);
+            require(cancels == 1, "nested suspension must cancel a hold exactly once");
+            manager.resumeInput(second);
+        } else {
+            QEvent event(transition);
+            QCoreApplication::sendEvent(&window, &event);
+        }
+        require(!held && cancels == 1 && releases == 0,
+                "interruption must cancel client state without a physical-release action");
+        sendKey(&window, QEvent::KeyRelease, Qt::Key_F6);
+        require(releases == 0, "late release must not finish a canceled action twice");
+        sendKey(&window, QEvent::KeyPress, Qt::Key_F6);
+        sendKey(&window, QEvent::KeyRelease, Qt::Key_F6);
+        require(releases == 1 && !held, "a later hold must release normally");
+    }
+}
+
+void finalResumeRecoversKeysObservedDuringSuspension() {
+    QWidget window;
+    WindowShortcutManager manager;
+    manager.addScopeWindow(&window);
+    int count = 0;
+    require(manager.addBinding(&window, binding(QStringLiteral("resume"), Qt::Key_F7, 100,
+                                                [&] {
+                                                    ++count;
+                                                    return true;
+                                                })) != 0,
+            "resume binding must register");
+    const auto first = manager.suspendInput();
+    const auto second = manager.suspendInput();
+    sendKey(&window, QEvent::KeyPress, Qt::Key_F7);
+    manager.resumeInput(first);
+    sendKey(&window, QEvent::KeyPress, Qt::Key_F7, Qt::NoModifier, true);
+    require(count == 0, "partial resume must retain suspension");
+    manager.resumeInput(second);
+    sendKey(&window, QEvent::KeyPress, Qt::Key_F7, Qt::NoModifier, true);
+    require(count == 1, "final resume must recover a lost release during suspension");
+    manager.resumeInput(second);
+    sendKey(&window, QEvent::KeyPress, Qt::Key_F7, Qt::NoModifier, true);
+    require(count == 1, "invalid resume must not turn hardware repeats into fresh presses");
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_F7);
+}
+
+void recoveredPressSurvivesCrossManagerFallthrough() {
+    QWidget window;
+    WindowShortcutManager fallback;
+    WindowShortcutManager declining;
+    fallback.addScopeWindow(&window);
+    declining.addScopeWindow(&window);
+    int count = 0;
+    require(fallback.addBinding(&window, binding(QStringLiteral("fallback"), Qt::Key_F8, 100,
+                                                 [&] {
+                                                     ++count;
+                                                     return true;
+                                                 })) != 0,
+            "fallback must register");
+    require(declining.addBinding(&window, binding(QStringLiteral("declining"), Qt::Key_F8, 100,
+                                                  [&] {
+                                                      sendKey(&window, QEvent::KeyRelease,
+                                                              Qt::Key_F10);
+                                                      return false;
+                                                  })) != 0,
+            "declining handler must register");
+    sendKey(&window, QEvent::KeyPress, Qt::Key_F8);
+    QEvent hide(QEvent::Hide);
+    QCoreApplication::sendEvent(&window, &hide);
+    sendKey(&window, QEvent::KeyPress, Qt::Key_F8, Qt::NoModifier, true);
+    require(count == 2, "a declined recovered press must remain eligible for another manager");
+    sendKey(&window, QEvent::KeyPress, Qt::Key_F8, Qt::NoModifier, true);
+    require(count == 2, "handled recovery must still suppress hardware repeats");
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_F8);
+}
+
+void heldBindingsRequireCancellationAndHandleReentrantSuspension() {
+    QWidget window;
+    WindowShortcutManager manager;
+    manager.addScopeWindow(&window);
+    auto invalid = binding(QStringLiteral("invalid"), Qt::Key_F9, 100, [] { return true; });
+    invalid.release = [](const auto&) { return true; };
+    require(manager.addBinding(&window, invalid) == 0,
+            "a held binding without cancellation must be rejected");
+    invalid.release = {};
+    invalid.cancel = [] {};
+    require(manager.addBinding(&window, invalid) == 0,
+            "a cancellation callback without a held release must be rejected");
+    bool held = false;
+    int cancels = 0;
+    int releases = 0;
+    auto item = binding(QStringLiteral("reentrant"), Qt::Key_F9, 100, [&] {
+        held = true;
+        const auto suspension = manager.suspendInput();
+        manager.resumeInput(suspension);
+        return true;
+    });
+    item.cancel = [&] {
+        held = false;
+        ++cancels;
+        const auto nested = manager.suspendInput();
+        manager.resumeInput(nested);
+    };
+    item.release = [&](const auto&) {
+        ++releases;
+        return true;
+    };
+    require(manager.addBinding(&window, std::move(item)) != 0, "reentrant binding must register");
+    sendKey(&window, QEvent::KeyPress, Qt::Key_F9);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_F9);
+    require(!held && cancels == 1 && releases == 0,
+            "suspension inside activation must cancel once and must not rearm on return");
+}
+
+void cancellationSurvivesBindingRemovalFromCallbacks() {
+    QWidget window;
+    WindowShortcutManager manager;
+    manager.addScopeWindow(&window);
+    bool firstHeld = false;
+    bool secondHeld = false;
+    WindowShortcutManager::BindingHandle secondHandle = 0;
+    auto first = binding(QStringLiteral("cancel-first"), Qt::Key_F10, 100, [&] {
+        firstHeld = true;
+        return true;
+    });
+    first.release = [&](const auto&) {
+        firstHeld = false;
+        return true;
+    };
+    first.cancel = [&] {
+        firstHeld = false;
+        static_cast<void>(manager.removeBinding(secondHandle));
+    };
+    auto second = binding(QStringLiteral("cancel-second"), Qt::Key_F11, 100, [&] {
+        secondHeld = true;
+        return true;
+    });
+    second.release = [&](const auto&) {
+        secondHeld = false;
+        return true;
+    };
+    second.cancel = [&] { secondHeld = false; };
+    require(manager.addBinding(&window, std::move(first)) != 0, "first cancellation must register");
+    secondHandle = manager.addBinding(&window, std::move(second));
+    require(secondHandle != 0, "second cancellation must register");
+    sendKey(&window, QEvent::KeyPress, Qt::Key_F10);
+    sendKey(&window, QEvent::KeyPress, Qt::Key_F11);
+    const auto suspension = manager.suspendInput();
+    require(!firstHeld && !secondHeld,
+            "unregistering during cancellation must not strand another client");
+    manager.resumeInput(suspension);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_F10);
+    sendKey(&window, QEvent::KeyRelease, Qt::Key_F11);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -564,6 +814,11 @@ int main(int argc, char** argv) {
         qputenv("QT_QPA_PLATFORM", "offscreen");
     }
     QApplication application(argc, argv);
+    cancellationSurvivesBindingRemovalFromCallbacks();
+    heldBindingsRequireCancellationAndHandleReentrantSuspension();
+    interruptedInputLifecycleIsBalanced();
+    finalResumeRecoversKeysObservedDuringSuspension();
+    recoveredPressSurvivesCrossManagerFallthrough();
     priorityAndFallthroughAreDeterministic();
     scopeRepeatUpdatesAndLifetimeAreEnforced();
     bindingsCanExplicitlyHandleTransientToolWindows();
@@ -576,5 +831,7 @@ int main(int argc, char** argv) {
     childWindowOwnershipFallbackKeepsToolbarScope();
     transientToolWindowOwnershipKeepsScope();
     lostKeyReleaseDoesNotSwallowTheNextPress();
+    lostReleaseInAnotherWindowDoesNotSwallowTheNextPress();
+    lostReleaseSurvivesShortcutManagerRecreation();
     return 0;
 }

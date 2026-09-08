@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
+#include "../src/presentation/pinned/screenshotpinnedwindownative.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/screenshotpinnededitcontroller.h"
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
@@ -3227,6 +3228,154 @@ void pinnedControlsHideBelowMinimumNativeSize(SnowCanvasRuntime&) {
     verifyControls(QSize(383, 382), false);
 }
 
+void pinnedGeometryQueriesDoNotCreateNativeWindows() {
+    ScreenshotPinnedWindow window;
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    require(window.internalWinId() == 0, "the geometry fixture must start without a native window");
+    static_cast<void>(window.currentNativeGeometry());
+    require(window.internalWinId() == 0, "reading pinned geometry must not create a native window");
+    QEnterEvent enter(QPointF(10, 10), QPointF(10, 10), QPointF(10, 10));
+    QCoreApplication::sendEvent(&window, &enter);
+    require(window.internalWinId() == 0,
+            "hover delivery must not create an unpresented native window");
+
+    window.show();
+    window.close();
+    if (window.windowHandle() != nullptr) {
+        window.windowHandle()->destroy();
+    }
+    require(window.internalWinId() == 0, "the closed fixture must have no native window");
+    QCoreApplication::sendEvent(&window, &enter);
+    QEvent leave(QEvent::Leave);
+    QCoreApplication::sendEvent(&window, &leave);
+    static_cast<void>(window.currentNativeGeometry());
+    require(window.internalWinId() == 0,
+            "late hover and geometry queries must not recreate a closed native window");
+
+    // Full pin presentation installs HWND hooks and cannot run with the offscreen backend.
+    // The Windows registration also exercises passive reconciliation after native destruction.
+    if (QGuiApplication::platformName() != QStringLiteral("windows")) {
+        return;
+    }
+    ScreenshotPinnedWindow presentedWindow;
+    presentedWindow.setAttribute(Qt::WA_DeleteOnClose, false);
+    QImage background(400, 400, QImage::Format_ARGB32_Premultiplied);
+    background.fill(Qt::white);
+    ScreenshotPinnedWindow::Config config;
+    config.screen = QGuiApplication::primaryScreen();
+    require(config.screen != nullptr, "the presented geometry fixture needs a screen");
+    config.nativeGeometry = physicalPinGeometry(*config.screen, QPoint(40, 40), background.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(background.size()));
+    config.imageSource = ScreenshotImageSource::fromImage(background, config.canvasSourceRect);
+    config.automaticTextRecognition = false;
+    require(presentedWindow.present(config), "the native geometry fixture must present");
+    presentedWindow.windowHandle()->destroy();
+    require(presentedWindow.internalWinId() == 0,
+            "the presented fixture must lose its native window");
+    QEvent update(QEvent::UpdateRequest);
+    QCoreApplication::sendEvent(&presentedWindow, &update);
+    require(presentedWindow.internalWinId() == 0,
+            "passive geometry reconciliation must not recreate a native window");
+    presentedWindow.close();
+}
+
+void pinnedEscapeBurst(bool nativeKeys = false) {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+    QImage background(400, 400, QImage::Format_ARGB32_Premultiplied);
+    background.fill(QColor(42, 84, 126));
+    snow_shot::presentation::PinnedWindowGroupManager groupManager;
+    ScreenshotSelectionExportUiServices services(nullptr, nullptr, nullptr, {}, {}, &groupManager);
+    for (int batch = 0; batch < 4; ++batch) {
+        std::vector<QPointer<ScreenshotPinnedWindow>> windows;
+        for (int index = 0; index < 16; ++index) {
+            if (batch >= 2) {
+                require(
+                    services.presentPinnedImage(
+                        background, screen,
+                        physicalPinGeometry(*screen, QPoint(40 + index, 40), background.size())),
+                    "pooled burst pin presentation failed");
+                for (auto* window : topLevelPinnedWindows()) {
+                    if (window->isVisible() && std::none_of(windows.begin(), windows.end(),
+                                                            [window](const auto& existing) {
+                                                                return existing == window;
+                                                            })) {
+                        windows.emplace_back(window);
+                    }
+                }
+                require(windows.size() == static_cast<std::size_t>(index + 1),
+                        "each pooled presentation must create one visible pin");
+                continue;
+            }
+            auto* window = new ScreenshotPinnedWindow();
+            windows.emplace_back(window);
+            ScreenshotPinnedWindow::Config config;
+            config.nativeGeometry =
+                physicalPinGeometry(*screen, QPoint(40 + index, 40), background.size());
+            config.canvasSourceRect = QRectF(QPointF(), QSizeF(background.size()));
+            config.imageSource =
+                ScreenshotImageSource::fromImage(background, config.canvasSourceRect);
+            config.screen = screen;
+            config.enableEditing = true;
+            config.automaticTextRecognition = false;
+            config.groupManager = &groupManager;
+            config.groupId = groupManager.activeGroupId();
+            require(window->present(config), "burst pin presentation failed");
+        }
+        QCoreApplication::processEvents();
+        if (nativeKeys) {
+            std::reverse(windows.begin(), windows.end());
+        }
+        for (auto it = windows.rbegin(); it != windows.rend(); ++it) {
+            auto* canvas = (*it)->findChild<SnowCanvasWidget*>();
+            require(canvas != nullptr, "each burst pin must have a keyboard surface");
+            if (nativeKeys) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+                QElapsedTimer activationTimeout;
+                activationTimeout.start();
+                QElapsedTimer stableActivation;
+                stableActivation.start();
+                while (activationTimeout.elapsed() < 2000 && stableActivation.elapsed() < 100) {
+                    if (!(*it)->isActiveWindow() ||
+                        GetForegroundWindow() != toNativeHwnd((*it)->winId())) {
+                        static_cast<void>(
+                            screenshot_pinned_window_native::activateWindow((*it)->winId()));
+                        (*it)->activateWindow();
+                        canvas->setFocus();
+                        stableActivation.restart();
+                    }
+                    waitForUi(10);
+                }
+                require((*it)->isActiveWindow() &&
+                            GetForegroundWindow() == toNativeHwnd((*it)->winId()),
+                        "Escape target must be active");
+                canvas->setFocus();
+                require(QApplication::focusWidget() == canvas, "Escape canvas must own focus");
+                // Exercise the Windows key mapper without global input injection.
+                // The key-up is deliberately lost outside this process after close.
+                const LPARAM keyData =
+                    1 | (static_cast<LPARAM>(MapVirtualKeyW(VK_ESCAPE, MAPVK_VK_TO_VSC)) << 16);
+                require(PostMessageW(toNativeHwnd((*it)->winId()), WM_KEYDOWN, VK_ESCAPE,
+                                     keyData) != FALSE,
+                        "native Escape press failed");
+                require(processUntilDeleted(*it, 2000),
+                        "one native Escape press must close the active pin");
+#endif
+            } else {
+                sendShortcut(*canvas, Qt::Key_Escape);
+                sendShortcut(*canvas, Qt::Key_Escape, Qt::NoModifier, true);
+            }
+            if (batch % 2 != 0) {
+                require(processUntilDeleted(*it, 2000), "sequential Escape must delete its pin");
+            }
+        }
+        for (auto& window : windows) {
+            require(processUntilDeleted(window, 2000), "Escape must delete every pin in the burst");
+        }
+        QCoreApplication::processEvents();
+    }
+}
+
 void closePinnedWindow(SnowCanvasRuntime&, bool enableEditing, bool enterEditMode, int iteration) {
     std::cerr << "iteration=" << iteration << " editing=" << enableEditing
               << " editMode=" << enterEditMode << " start\n";
@@ -4215,7 +4364,7 @@ void restoredPinnedWindowKeepsExactWheelLevelAtSameDpi(SnowCanvasRuntime&) {
     closeRestoredPinnedWindow(restoredWindow, record.id);
 }
 
-void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime&) {
+void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime&, bool rotateTools = false) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
 
@@ -4252,6 +4401,34 @@ void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime&) {
                                          ? controller->toolbarWindow()->palette()
                                          : nullptr;
     require(toolbar != nullptr, "pinned drawing toolbar was not found");
+
+    if (rotateTools) {
+        for (int iteration = 0; iteration < 8; ++iteration) {
+            for (SnowCanvasTool tool : {SnowCanvasTool::Arrow, SnowCanvasTool::Line,
+                                        SnowCanvasTool::Highlight, SnowCanvasTool::Spotlight}) {
+                require(canvas->setCanvasTool(tool), "rotating drawing tool must activate");
+                QCoreApplication::processEvents();
+                const QPointF start(80, 80);
+                const QPointF end(180, 140);
+                QMouseEvent press(QEvent::MouseButtonPress, start,
+                                  canvas->mapToGlobal(start.toPoint()), Qt::LeftButton,
+                                  Qt::LeftButton, Qt::NoModifier);
+                QCoreApplication::sendEvent(canvas, &press);
+                QMouseEvent move(QEvent::MouseMove, end, canvas->mapToGlobal(end.toPoint()),
+                                 Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+                QCoreApplication::sendEvent(canvas, &move);
+                QMouseEvent release(QEvent::MouseButtonRelease, end,
+                                    canvas->mapToGlobal(end.toPoint()), Qt::LeftButton,
+                                    Qt::NoButton, Qt::NoModifier);
+                QCoreApplication::sendEvent(canvas, &release);
+                QCoreApplication::processEvents();
+                require(!canvas->grab().isNull(), "rotated drawing must remain renderable");
+            }
+        }
+        pinnedWindow->close();
+        require(processUntilDeleted(guardedWindow, 2000), "rotated drawing pin must close");
+        return;
+    }
 
     auto* translationButton = toolbar->findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotTextTranslationButton"));
@@ -4595,6 +4772,22 @@ int main(int argc, char* argv[]) {
         IsolatedPinnedStorage processStorage;
         SnowCanvasRuntime sourceRuntime;
         require(sourceRuntime.isValid(), "source runtime creation failed");
+        if (app.arguments().contains(QStringLiteral("--passive-geometry-only"))) {
+            pinnedGeometryQueriesDoNotCreateNativeWindows();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--escape-activation-only"))) {
+            pinnedEscapeBurst(true);
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--escape-burst-only"))) {
+            pinnedEscapeBurst();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--tool-rotation-only"))) {
+            pinnedDrawingToolbarMatchesCaptureInteractions(sourceRuntime, true);
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--middle-click-only"))) {
             pinnedMiddleClickActions();
             if (QGuiApplication::platformName() != QStringLiteral("offscreen")) {

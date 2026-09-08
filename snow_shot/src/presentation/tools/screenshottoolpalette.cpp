@@ -4719,7 +4719,9 @@ bool ScreenshotToolPalette::evictStyleToolbarContentsExcept(QWidget* retainedCon
     if (removedRows.contains(m_penFilterEditor.controls)) {
         m_penFilterEditor = {};
     }
-    if (retainedControls != m_spotlightStyleControlsWidget) {
+    // The pre-activation eviction retains no row. Both row pointers are then null,
+    // which must not be mistaken for retaining Spotlight's controls.
+    if (retainedControls == nullptr || retainedControls != m_spotlightStyleControlsWidget) {
         m_spotlightOpacityIcon = nullptr;
         m_spotlightOpacitySlider = nullptr;
     }

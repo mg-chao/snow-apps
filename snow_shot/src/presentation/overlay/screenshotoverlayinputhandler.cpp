@@ -582,6 +582,11 @@ bool ScreenshotOverlayInputHandler::releaseMoveEntireSelectionShortcut() {
     return true;
 }
 
+void ScreenshotOverlayInputHandler::cancelKeepSelectionAspectRatioShortcut() {
+    m_cycleColorFormatIfAspectShortcutUnused = false;
+    static_cast<void>(releaseKeepSelectionAspectRatioShortcut());
+}
+
 bool ScreenshotOverlayInputHandler::releaseKeepSelectionAspectRatioShortcut() {
     if (!m_keepSelectionAspectRatioShortcut) {
         return false;

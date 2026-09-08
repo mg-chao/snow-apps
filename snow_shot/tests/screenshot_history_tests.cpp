@@ -1408,6 +1408,33 @@ void sharedShiftShortcutChoosesResizeOrColorFormat() {
     require(dispatchShortcutRelease(shortcutWindow, Qt::Key_Shift) && colorFormatCycles == 1,
             "idle default Shift did not switch color format exactly once on release");
 
+    for (const auto transition : {QEvent::Hide, QEvent::WindowDeactivate, QEvent::None}) {
+        selection.setSelectionRect(QRectF(10, 10, 40, 20));
+        interaction.confirmSelection();
+        require(dispatchShortcut(shortcutWindow, Qt::Key_Shift, Qt::ShiftModifier) &&
+                    dispatchShortcut(shortcutWindow, Qt::Key_Space, Qt::ShiftModifier),
+                "temporary selection modifiers did not activate");
+        if (transition == QEvent::None) {
+            const auto suspension = shortcutManager.suspendInput();
+            shortcutManager.resumeInput(suspension);
+        } else {
+            QEvent event(transition);
+            QCoreApplication::sendEvent(&shortcutWindow, &event);
+        }
+        static_cast<void>(dispatchShortcutRelease(shortcutWindow, Qt::Key_Space));
+        static_cast<void>(dispatchShortcutRelease(shortcutWindow, Qt::Key_Shift));
+        require(colorFormatCycles == 1, "canceling Shift must not cycle the color format");
+        handler.handleMousePress(nullptr, QPointF(50, 20));
+        require(interaction.dragMode() == ScreenshotSelectionDragMode::Right,
+                "canceled Space must not leave whole-selection movement enabled");
+        handler.handleMouseMove(nullptr, QPointF(90, 20));
+        handler.handleMouseRelease(nullptr, QPointF(90, 20));
+        require(selection.normalizedSelection().size() == QSizeF(80, 20),
+                "canceled Shift must not constrain a later resize");
+    }
+    selection.setSelectionRect(QRectF(10, 10, 40, 20));
+    interaction.confirmSelection();
+
     require(dispatchShortcut(shortcutWindow, Qt::Key_Shift, Qt::ShiftModifier),
             "pre-held default Shift did not activate the aspect shortcut");
     handler.handleMousePress(nullptr, QPointF(50, 20));

@@ -151,6 +151,7 @@ class ScreenshotOverlayInputHandler final {
     [[nodiscard]] bool activateKeepSelectionAspectRatioShortcut(bool cycleColorFormatIfUnused);
     bool releaseMoveEntireSelectionShortcut();
     bool releaseKeepSelectionAspectRatioShortcut();
+    void cancelKeepSelectionAspectRatioShortcut();
     [[nodiscard]] bool toggleIntelligentSelectionTargetShortcut();
     void resetTransientShortcuts();
     [[nodiscard]] bool canvasColorSamplingActive() const;

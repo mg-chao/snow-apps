@@ -1209,7 +1209,10 @@ if(SNOW_SHOT_BUILD_TESTS)
             -DTEST_COMMAND=$<TARGET_FILE:snow-shot-application-storage-tests>
             -P ${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_flaky_test_with_retry.cmake
     )
-    set_tests_properties(snow-shot-application-storage-tests PROPERTIES
+    add_test(NAME snow-shot-storage-quit-lifetime-tests
+        COMMAND snow-shot-application-storage-tests --quit-lifetime-only)
+    set_tests_properties(snow-shot-application-storage-tests
+        snow-shot-storage-quit-lifetime-tests PROPERTIES
         RUN_SERIAL TRUE
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
@@ -2675,7 +2678,44 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-pinned-restore-wiring-tests
         COMMAND snow-shot-pinned-window-tests --restore-wiring-only
     )
+    if(WIN32)
+        add_test(NAME snow-shot-pinned-escape-activation-tests
+            COMMAND snow-shot-pinned-window-tests --escape-activation-only)
+        set_tests_properties(snow-shot-pinned-escape-activation-tests PROPERTIES
+            LABELS "interactive;windows"
+            RUN_SERIAL TRUE
+            TIMEOUT 90
+            ENVIRONMENT "QT_QPA_PLATFORM=windows"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
+    add_test(NAME snow-shot-pinned-escape-burst-tests
+        COMMAND snow-shot-pinned-window-tests --escape-burst-only)
+    add_test(NAME snow-shot-pinned-tool-rotation-tests
+        COMMAND snow-shot-pinned-window-tests --tool-rotation-only)
+    add_test(NAME snow-shot-pinned-passive-geometry-tests
+        COMMAND snow-shot-pinned-window-tests --passive-geometry-only)
+    set_tests_properties(snow-shot-pinned-passive-geometry-tests PROPERTIES
+        LABELS "unit"
+        RUN_SERIAL TRUE
+        TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    if(WIN32)
+        add_test(NAME snow-shot-pinned-passive-native-geometry-tests
+            COMMAND snow-shot-pinned-window-tests --passive-geometry-only)
+        set_tests_properties(snow-shot-pinned-passive-native-geometry-tests PROPERTIES
+            LABELS "unit;windows"
+            RUN_SERIAL TRUE
+            TIMEOUT 30
+            ENVIRONMENT "QT_QPA_PLATFORM=windows"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
     set(_snow_shot_pinned_window_test_names
+        snow-shot-pinned-escape-burst-tests
+        snow-shot-pinned-tool-rotation-tests
         snow-shot-pinned-middle-click-tests
         snow-shot-pinned-middle-click-offscreen-tests
         snow-shot-pinned-double-click-tests

@@ -15,6 +15,7 @@
 #include <QJsonObject>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QTimer>
 
 #include <atomic>
 #include <chrono>
@@ -1503,10 +1504,45 @@ void appUsageScanAndCacheCleanup() {
 }
 } // namespace
 
+void applicationQuitPreservesStorageForConsumerDestruction() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "quit-lifetime storage directory unavailable");
+    auto& applicationStorage = storage::ApplicationStorage::instance();
+    const storage::StorageInitializationOptions options{temporary.filePath(QStringLiteral("bin")),
+                                                        temporary.path(), 60000};
+    require(applicationStorage.initialize(options).success,
+            "quit-lifetime storage must initialize");
+    auto* history = &applicationStorage.captureHistory();
+    auto* pins = &applicationStorage.pinnedWindows();
+    auto* configuration = &applicationStorage.configuration();
+    require(storage::ScreenshotSettings().setCaptureCursor(true),
+            "pending settings must be accepted");
+    QTimer::singleShot(0, QCoreApplication::instance(), &QCoreApplication::quit);
+    QCoreApplication::exec();
+    require(applicationStorage.isInitialized(),
+            "aboutToQuit must preserve initialized storage until consumers are destroyed");
+    require(storage::ScreenshotSettings().captureCursor(), "destructors must still read settings");
+    require(&applicationStorage.captureHistory() == history &&
+                &applicationStorage.pinnedWindows() == pins &&
+                &applicationStorage.configuration() == configuration,
+            "settings reads after quit must not replace repositories held by consumers");
+    const auto saved = readObject(temporary.filePath(QStringLiteral("config.json")));
+    require(saved.value(QStringLiteral("screenshot"))
+                .toObject()
+                .value(QStringLiteral("capture_cursor"))
+                .toBool(),
+            "aboutToQuit must flush pending settings before the event loop exits");
+    applicationStorage.shutdown();
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     QCoreApplication::setOrganizationName(QStringLiteral("SnowShotTests"));
     QCoreApplication::setApplicationName(QStringLiteral("storage-tests"));
+    if (application.arguments().contains(QStringLiteral("--quit-lifetime-only"))) {
+        applicationQuitPreservesStorageForConsumerDestruction();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--pin-shortcuts-only"))) {
         settingsSchemaDefaultsAndValidationAreComplete();
         pinToScreenShortcutSettingsRoundTrip();
@@ -1533,6 +1569,7 @@ int main(int argc, char** argv) {
     persistedSelectionCodecIsCanonicalAndStrict();
     asynchronousMutationResultsAreObservable();
     appUsageScanAndCacheCleanup();
+    applicationQuitPreservesStorageForConsumerDestruction();
     storage::ApplicationStorage::instance().shutdown();
     return 0;
 }
