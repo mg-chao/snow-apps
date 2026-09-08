@@ -2,6 +2,80 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="en_US" sourcelanguage="en_US">
 <context>
+    <name>AboutPageWidget</name>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="164"/>
+        <source>About Snow Shot</source>
+        <translation>About Snow Shot</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="165"/>
+        <source>Snow Shot</source>
+        <translation>Snow Shot</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="166"/>
+        <source>Capture, annotate, and share your screen.</source>
+        <translation>Capture, annotate, and share your screen.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="167"/>
+        <source>Snow Shot logo</source>
+        <translation>Snow Shot logo</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="168"/>
+        <source>Installed version</source>
+        <translation>Installed version</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="169"/>
+        <source>Unavailable</source>
+        <translation>Unavailable</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="170"/>
+        <source>Installed version: %1</source>
+        <translation>Installed version: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="172"/>
+        <source>Copied</source>
+        <translation>Copied</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="172"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="173"/>
+        <source>Copy version</source>
+        <translation>Copy version</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="174"/>
+        <source>Copy the version number to the clipboard</source>
+        <translation>Copy the version number to the clipboard</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="177"/>
+        <source>License</source>
+        <translation>License</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="178"/>
+        <source>GNU General Public License v3.0 or later</source>
+        <translation>GNU General Public License v3.0 or later</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="179"/>
+        <source>Free and open-source software. Distributed without any warranty.</source>
+        <translation>Free and open-source software. Distributed without any warranty.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="181"/>
+        <source>Copyright © %1 %2</source>
+        <translation>Copyright © %1 %2</translation>
+    </message>
+</context>
+<context>
     <name>DiagnosticsService</name>
     <message>
         <location filename="../src/presentation/settings/settingsbackend.cpp" line="848"/>
@@ -3475,7 +3549,7 @@
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1621"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1809"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1849"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2249"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2263"/>
         <source>Screenshot</source>
         <translation>Screenshot</translation>
     </message>
@@ -3686,7 +3760,7 @@
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1581"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1726"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1877"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2284"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2298"/>
         <source>Screen recording</source>
         <translation>Screen recording</translation>
     </message>
@@ -3939,6 +4013,16 @@
         <translation>Delete</translation>
     </message>
     <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1898"/>
+        <source>About</source>
+        <translation>About</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1900"/>
+        <source>Software version and license information</source>
+        <translation>Software version and license information</translation>
+    </message>
+    <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1566"/>
         <source>Screenshot translation settings</source>
         <translation>Screenshot translation settings</translation>
@@ -3984,8 +4068,8 @@
         <translation>Shortcut keys for recording controls</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2200"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2318"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2214"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2332"/>
         <source>Exit</source>
         <translation>Exit</translation>
     </message>
@@ -4208,7 +4292,7 @@
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1161"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1252"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1495"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2271"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2285"/>
         <source>Copy to clipboard</source>
         <translation>Copy to clipboard</translation>
     </message>
@@ -4228,7 +4312,7 @@
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1555"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1694"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1868"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2259"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2273"/>
         <source>Pin to screen</source>
         <translation>Pin to screen</translation>
     </message>
@@ -4292,7 +4376,7 @@
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="171"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2288"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2302"/>
         <source>Start screen recording / stop and copy recording</source>
         <translation>Start screen recording / stop and copy recording</translation>
     </message>
@@ -4564,7 +4648,7 @@
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="76"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2254"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2268"/>
         <source>Delay %1s to execute</source>
         <translation>Delay %1s to execute</translation>
     </message>
@@ -4573,7 +4657,7 @@
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1178"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1503"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1825"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2263"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2277"/>
         <source>Text recognition</source>
         <translation>Text recognition</translation>
     </message>
@@ -4581,19 +4665,19 @@
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="112"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1182"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1507"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2267"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2281"/>
         <source>Text translation</source>
         <translation>Text translation</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="136"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2275"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2289"/>
         <source>Current monitor</source>
         <translation>Current monitor</translation>
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="149"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2279"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2293"/>
         <source>Focused window</source>
         <translation>Focused window</translation>
     </message>
@@ -4601,7 +4685,7 @@
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="184"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1474"/>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="1734"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2294"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2308"/>
         <source>Screenshot history</source>
         <translation>Screenshot history</translation>
     </message>
@@ -4697,7 +4781,7 @@
     </message>
     <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="518"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2298"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2312"/>
         <source>Pin clipboard content to screen</source>
         <translation>Pin clipboard content to screen</translation>
     </message>
@@ -5140,14 +5224,14 @@
         <translation>App-wide storage usage, location, mode, errors, and cleanup</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2189"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2303"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2203"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2317"/>
         <source>Window grouping</source>
         <translation>Window grouping</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2197"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2313"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2211"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2327"/>
         <source>Show main interface</source>
         <translation>Show main interface</translation>
     </message>
@@ -5419,7 +5503,7 @@
         <translation>Shortcut keys for recognition and screenshot actions</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1916"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="1925"/>
         <source>Settings</source>
         <translation>Settings</translation>
     </message>
@@ -5535,8 +5619,8 @@
         <translation>Application shortcuts</translation>
     </message>
     <message>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2193"/>
-        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2308"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2207"/>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="2322"/>
         <source>Disable global hotkeys</source>
         <translation>Disable global hotkeys</translation>
     </message>

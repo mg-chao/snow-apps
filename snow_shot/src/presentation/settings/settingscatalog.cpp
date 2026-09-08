@@ -1892,6 +1892,15 @@ QVector<SettingsPageDefinition> builtInPages() {
                 },
             },
         },
+        {
+            QStringLiteral("about"),
+            QStringLiteral("/about"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "About")),
+            settingsText(
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Software version and license information")),
+            {},
+            SettingsPageKind::About,
+        },
     };
 }
 
@@ -1943,7 +1952,12 @@ QVector<SettingsNavigationNode> builtInNavigation() {
         },
     };
 
-    return {globalHotkeys, globalMouse, history, settingsGroup};
+    SettingsNavigationPageDefinition about;
+    about.id = QStringLiteral("nav.about");
+    about.pageId = QStringLiteral("about");
+    about.iconFactory = []() { return outlined_icons::InfoCircle(); };
+
+    return {globalHotkeys, globalMouse, history, settingsGroup, about};
 }
 
 QString locationText(const SettingsLocation& location) {
@@ -2337,7 +2351,7 @@ SettingsLocation SettingsCatalog::resolveLocation(const SettingsLocation& reques
     const SettingsSectionDefinition* foundSection = section(foundPage->id, requested.sectionId);
     if (foundSection == nullptr) {
         if (foundPage->sections.isEmpty()) {
-            return foundPage->kind == SettingsPageKind::ScreenshotHistory ? resolved
+            return foundPage->kind != SettingsPageKind::GeneratedSettings ? resolved
                                                                           : m_defaultLocation;
         }
         foundSection = &foundPage->sections.constFirst();

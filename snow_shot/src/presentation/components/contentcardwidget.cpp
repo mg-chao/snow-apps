@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/components/contentcardwidget.h"
 
+#include "snow_shot/presentation/components/aboutpagewidget.h"
 #include "snow_shot/presentation/components/settingspagewidget.h"
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
@@ -122,6 +123,8 @@ QWidget* ContentCardWidget::createPage(
         connect(historyPage, &ScreenshotHistoryPageWidget::editRequested, this,
                 &ContentCardWidget::screenshotHistoryEditRequested);
         page = historyPage;
+    } else if (definition.kind == snow_shot::presentation::settings::SettingsPageKind::About) {
+        page = new AboutPageWidget(m_stack);
     } else {
         auto* settingsPage =
             new SettingsPageWidget(m_registry, definition.id, m_runtimeSession, m_stack);

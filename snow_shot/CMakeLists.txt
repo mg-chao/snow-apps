@@ -663,6 +663,7 @@ target_link_libraries(snow_shot_settings_search PUBLIC
 )
 
 set(SNOW_SHOT_SETTINGS_SOURCES
+    include/snow_shot/presentation/components/aboutpagewidget.h
     include/snow_shot/platform/windows/autostartregistration.h
     include/snow_shot/platform/windows/focusedfullscreenwindow.h
     include/snow_shot/platform/windows/printscreenshortcutrecorder.h
@@ -686,6 +687,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/presentation/settings/applicationpriority.h
     include/snow_shot/presentation/settings/textrecognitionacceleration.h
     include/snow_shot/presentation/styles/thememanager.h
+    src/presentation/components/aboutpagewidget.cpp
     src/presentation/components/infotooltipicon.cpp
     src/presentation/components/globalmouserow.cpp
     src/presentation/components/pathinput.cpp
@@ -1481,6 +1483,37 @@ if(SNOW_SHOT_BUILD_TESTS)
             "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
+    add_executable(snow-shot-about-page-tests
+        tests/about_page_tests.cpp
+        include/snow_shot/presentation/mainwindow.h
+        include/snow_shot/presentation/components/contentcardwidget.h
+        include/snow_shot/presentation/components/maincontentheaderwidget.h
+        include/snow_shot/presentation/components/sidebarwidget.h
+        include/snow_shot/presentation/components/titlebarwidget.h
+        src/presentation/mainwindow.cpp
+        src/presentation/components/contentcardwidget.cpp
+        src/presentation/components/maincontentheaderwidget.cpp
+        src/presentation/components/sidebarwidget.cpp
+        src/presentation/components/titlebarwidget.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+        src/platform/windows/windowchrome.cpp
+    )
+    target_link_libraries(snow-shot-about-page-tests PRIVATE
+        snow_shot_settings
+        snow_shot_image_codec
+    )
+    target_compile_definitions(snow-shot-about-page-tests PRIVATE
+        SNOW_SHOT_TEST_VERSION="${SNOW_SHOT_VERSION}"
+        SNOW_SHOT_TEST_TRANSLATIONS_DIR="${CMAKE_CURRENT_BINARY_DIR}"
+    )
+    add_dependencies(snow-shot-about-page-tests snow_shot_release_translations)
+    snow_shot_import_offscreen_platform(snow-shot-about-page-tests)
+    add_test(NAME snow-shot-about-page-tests COMMAND snow-shot-about-page-tests)
+    set_tests_properties(snow-shot-about-page-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
     add_executable(snow-shot-settings-catalog-tests

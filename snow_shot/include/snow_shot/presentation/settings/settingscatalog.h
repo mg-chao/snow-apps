@@ -389,6 +389,7 @@ struct SettingsSectionDefinition {
 enum class SettingsPageKind {
     GeneratedSettings,
     ScreenshotHistory,
+    About,
 };
 
 struct SettingsPageDefinition {

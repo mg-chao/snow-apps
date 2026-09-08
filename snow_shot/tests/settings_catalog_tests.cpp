@@ -69,7 +69,7 @@ class CatalogTranslator final : public QTranslator {
 void builtInCatalogIsCompleteAndValid() {
     const settings::SettingsCatalog& catalog = settings::builtInSettingsRegistry().catalog();
     require(catalog.validationErrors().isEmpty(), "built-in settings catalog must validate");
-    require(catalog.pages().size() == 8, "catalog must contain eight pages");
+    require(catalog.pages().size() == 9, "catalog must contain nine pages");
 
     qsizetype sectionCount = 0;
     qsizetype itemCount = 0;
@@ -1081,7 +1081,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 176 && index.search(QString()).size() == 176,
+    require(index.entries().size() == 177 && index.search(QString()).size() == 177,
             "search must generate all catalog nodes in catalog order");
     const auto middle = index.search(QStringLiteral("Reset Zoom"));
     require(!middle.isEmpty() && middle.constFirst().location.itemId ==
@@ -1117,7 +1117,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 8 && sections == 33 && items == 135,
+    require(pages == 9 && sections == 33 && items == 135,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));
