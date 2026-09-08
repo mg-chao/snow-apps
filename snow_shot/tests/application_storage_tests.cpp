@@ -587,24 +587,24 @@ void screenshotUiSchemaRepairsStructuredValues() {
         storage::ConfigurationSchema::defaultValue(
             QStringLiteral("screenshot_toolbar/action_tools_layout"))
             .toObject();
-    require(
-        defaultActionLayout ==
-            QJsonObject{
-                {QStringLiteral("positions"),
-                 QJsonArray{
+    require(defaultActionLayout ==
+                QJsonObject{
+                    {QStringLiteral("positions"),
                      QJsonArray{
-                         QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
-                         QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")},
-                     QJsonArray{QStringLiteral("record-screen")},
-                     QJsonArray{QStringLiteral("pin-to-screen")},
-                     QJsonArray{QStringLiteral("text-recognition")},
-                     QJsonArray{QStringLiteral("text-translation")},
-                     QJsonArray{QStringLiteral("scrolling-screenshot")},
-                     QJsonArray{QStringLiteral("save-as-file")},
-                 }},
-                {QStringLiteral("hidden"), QJsonArray{}},
-            },
-        "default action toolbar groups conversions with barcode and table recognition");
+                         QJsonArray{QStringLiteral("convert-to-html"),
+                                    QStringLiteral("convert-to-markdown"),
+                                    QStringLiteral("barcode-recognition"),
+                                    QStringLiteral("table-recognition")},
+                         QJsonArray{QStringLiteral("record-screen")},
+                         QJsonArray{QStringLiteral("pin-to-screen")},
+                         QJsonArray{QStringLiteral("text-recognition")},
+                         QJsonArray{QStringLiteral("text-translation")},
+                         QJsonArray{QStringLiteral("scrolling-screenshot")},
+                         QJsonArray{QStringLiteral("save-as-file")},
+                     }},
+                    {QStringLiteral("hidden"), QJsonArray{}},
+                },
+            "default action toolbar groups conversions with barcode and table recognition");
 
     const auto validColor = storage::ConfigurationSchema::normalize(
         QStringLiteral("screenshot_ui/cursor_guide_line_color"), QStringLiteral("#abcdef80"));

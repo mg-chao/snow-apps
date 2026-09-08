@@ -139,6 +139,27 @@ QImage sampleImage() {
     return image;
 }
 
+void settingsInitialAvailability() {
+    ConversionServer server;
+    SnowShotApiClient api(server.url());
+    QWidget owner;
+    owner.resize(640, 480);
+    owner.show();
+    for (auto* provider : {&api, static_cast<SnowShotApiClient*>(nullptr)}) {
+        ScreenshotImageConversionController controller;
+        controller.setProvider(provider);
+        controller.openSettings(&owner);
+        auto* modal = controller.findChild<adqt::widgets::AdModal*>();
+        require(modal && modal->acceptButton() && !modal->acceptButton()->isEnabled(),
+                "loading and unavailable providers disable OK on first display");
+        auto* select = modal->contentWidget()->findChild<adqt::widgets::AdSelect*>();
+        require(select && !select->isEnabled(),
+                "model selection is disabled until models are available");
+        modal->reject();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+}
+
 void conversionLifecycleAndSettings() {
     using Controller = ScreenshotImageConversionController;
     using Format = SnowShotImageConversionFormat;
@@ -164,6 +185,16 @@ void conversionLifecycleAndSettings() {
     controller.openSettings(&owner);
     auto* modal = controller.findChild<adqt::widgets::AdModal*>();
     require(modal != nullptr, "conversion settings opens a modal");
+    const QRect initialGeometry = modal->contentWidget()->window()->geometry();
+    const QRect initialBodyGeometry = modal->contentWidget()->geometry();
+    require(modal->contentWidget()->height() == modal->contentWidget()->sizeHint().height(),
+            "settings opens with content-sized height without unused alert space");
+    QCoreApplication::processEvents();
+    require(modal->contentWidget()->window()->geometry() == initialGeometry,
+            "settings geometry is stable after first display");
+    require(modal->contentWidget()->geometry() == initialBodyGeometry,
+            "settings content geometry is stable after first display");
+    require(modal->acceptButton()->isEnabled(), "cached vision models enable OK on first display");
     auto* select = modal->contentWidget()->findChild<adqt::widgets::AdSelect*>(
         QStringLiteral("screenshotVisionModel"));
     require(select && select->options().size() == 2 &&
@@ -608,6 +639,14 @@ void conversionToolbarMigration() {
     previousDefault.positions.insert(1, QStringList{QStringLiteral("convert-to-markdown")});
     previousDefault.positions.insert(2, QStringList{QStringLiteral("convert-to-html")});
     verify(previousDefault, defaults);
+    auto previousGroupedDefault = defaults;
+    previousGroupedDefault.positions[0] = {
+        QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
+        QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")};
+    verify(previousGroupedDefault, defaults);
+    auto customGrouped = previousGroupedDefault;
+    customGrouped.positions.move(0, 1);
+    verify(customGrouped, customGrouped);
     verify({}, defaults);
     auto customized = previousDefault;
     customized.positions.move(1, customized.positions.size() - 1);
@@ -625,7 +664,7 @@ void conversionToolbarMigration() {
                                 QStringLiteral("table-recognition")};
     auto conversionsOnly = recognitionHidden;
     conversionsOnly.positions.push_back(
-        {QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")});
+        {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown")});
     verify(recognitionHidden, conversionsOnly);
 }
 } // namespace
@@ -641,6 +680,7 @@ void runImageConversionTests() {
     adqt::theme::ThemeManager::instance().setConfig(theme);
     adqt::theme::ThemeManager::instance().applyTo(*qApp);
 #endif
+    settingsInitialAvailability();
     conversionLifecycleAndSettings();
     conversionSourceNormalization();
     renderingCopyAndPersistence();

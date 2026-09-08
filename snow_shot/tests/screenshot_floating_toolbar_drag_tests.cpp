@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshottoolbarcommands.h"
+#include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
 #include "snow_shot/presentation/screenshottoolbarwindow.h"
 #include "snow_shot/presentation/screenshottoolpalettehost.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -1412,12 +1413,8 @@ int actionToolbarButtonCount(const ScreenshotToolPalette& palette) {
         return 0;
     }
 
-    const QStringList actionIds{
-        QStringLiteral("barcode-recognition"),  QStringLiteral("table-recognition"),
-        QStringLiteral("record-screen"),        QStringLiteral("pin-to-screen"),
-        QStringLiteral("text-recognition"),     QStringLiteral("text-translation"),
-        QStringLiteral("scrolling-screenshot"), QStringLiteral("save-as-file"),
-    };
+    const QStringList actionIds = snow_shot::presentation::toolbar_layout::defaultOrder(
+        snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools);
     int count = 0;
     for (int index = 0; index < layout->count(); ++index) {
         const auto* button =
@@ -1510,12 +1507,8 @@ void screenshotActionLayoutReloadIsWindowScopedAndFitsThePreset() {
     require(applicationStorage.initialize({executableDirectory, temporary.path(), 60000}).success,
             "failed to initialize isolated action-layout test storage");
 
-    const QStringList actionIds{
-        QStringLiteral("barcode-recognition"),  QStringLiteral("table-recognition"),
-        QStringLiteral("record-screen"),        QStringLiteral("pin-to-screen"),
-        QStringLiteral("text-recognition"),     QStringLiteral("text-translation"),
-        QStringLiteral("scrolling-screenshot"), QStringLiteral("save-as-file"),
-    };
+    const QStringList actionIds = snow_shot::presentation::toolbar_layout::defaultOrder(
+        snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools);
     const snow_shot::storage::ScreenshotToolbarSettings toolbarSettings;
     require(toolbarSettings.setLayout(snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools,
                                       snow_shot::storage::ScreenshotToolbarLayout{{}, actionIds}),
@@ -1556,29 +1549,20 @@ void screenshotActionLayoutReloadIsWindowScopedAndFitsThePreset() {
         require(actionToolbarButtonCount(*genericToolbar.palette()) == 2,
                 "a generic palette should retain its fixed Table/Barcode and Record slots");
 
-        const snow_shot::storage::ScreenshotToolbarLayout unstackedLayout{
-            {
-                {QStringLiteral("barcode-recognition")},
-                {QStringLiteral("table-recognition")},
-                {QStringLiteral("record-screen")},
-                {QStringLiteral("pin-to-screen")},
-                {QStringLiteral("text-recognition")},
-                {QStringLiteral("text-translation")},
-                {QStringLiteral("scrolling-screenshot")},
-                {QStringLiteral("save-as-file")},
-            },
-            {},
-        };
+        snow_shot::storage::ScreenshotToolbarLayout unstackedLayout;
+        for (const QString& itemId : actionIds) {
+            unstackedLayout.positions.push_back({itemId});
+        }
         require(toolbarSettings.setLayout(
                     snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools, unstackedLayout),
                 "failed to persist the widest screenshot action layout");
         settleQueuedRefreshes();
-        require(actionToolbarButtonCount(*screenshotToolbar.palette()) == 8 &&
+        require(actionToolbarButtonCount(*screenshotToolbar.palette()) == actionIds.size() &&
                     screenshotToolbar.palette()->findChild<adqt::widgets::AdButton*>(
                         QStringLiteral("screenshotQrRecognitionButton")) != nullptr &&
                     screenshotToolbar.palette()->findChild<adqt::widgets::AdButton*>(
                         QStringLiteral("screenshotTableRecognitionButton")) != nullptr,
-                "the screenshot window should live-reload all eight independent action slots");
+                "the screenshot window should live-reload every independent action slot");
         require(actionToolbarButtonCount(*genericToolbar.palette()) == 2,
                 "screenshot action layout reloads must not modify generic palettes");
         requireDynamicToolbarContentFits(
@@ -1589,10 +1573,11 @@ void screenshotActionLayoutReloadIsWindowScopedAndFitsThePreset() {
                     snow_shot::storage::ScreenshotToolbarLayoutKind::ActionTools, {}),
                 "failed to restore the default screenshot action layout");
         settleQueuedRefreshes();
-        require(actionToolbarButtonCount(*screenshotToolbar.palette()) == 7 &&
-                    screenshotToolbar.palette()->findChild<adqt::widgets::AdButton*>(
-                        QStringLiteral("screenshotTableQrButton")) != nullptr,
-                "restoring the default layout should restore the shared Table/Barcode slot");
+        require(
+            actionToolbarButtonCount(*screenshotToolbar.palette()) == 7 &&
+                screenshotToolbar.palette()->findChild<adqt::widgets::AdButton*>(
+                    QStringLiteral("screenshotTableQrButton")) != nullptr,
+            "restoring the default layout should restore the shared recognition/conversion slot");
         require(actionToolbarButtonCount(*genericToolbar.palette()) == 2,
                 "restoring the screenshot layout must not modify generic palettes");
     }

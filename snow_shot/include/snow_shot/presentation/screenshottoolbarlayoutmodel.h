@@ -14,6 +14,31 @@
 
 namespace snow_shot::presentation::toolbar_layout {
 
+struct StackPresentation {
+    QStringList itemIds;
+    QStringList popoverItemIds;
+
+    [[nodiscard]] QString entryItemId() const {
+        return popoverItemIds.value(0);
+    }
+};
+
+template <typename IsAvailable>
+[[nodiscard]] StackPresentation stackPresentation(const QStringList& position,
+                                                  IsAvailable isAvailable) {
+    StackPresentation result;
+    for (const QString& itemId : position) {
+        if (isAvailable(itemId)) {
+            result.itemIds.push_back(itemId);
+        }
+    }
+    // Settings store a vertical stack from top to bottom. The bottom available tool is
+    // the initial trigger and the leftmost option in the horizontal popover.
+    result.popoverItemIds = result.itemIds;
+    std::reverse(result.popoverItemIds.begin(), result.popoverItemIds.end());
+    return result;
+}
+
 enum class Item {
     Shape,
     Arrow,
@@ -192,8 +217,8 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
 
 [[nodiscard]] inline QVector<QStringList> actionDefaultPositions() {
     return {
-        {QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
-         QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")},
+        {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
+         QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")},
         {QStringLiteral("record-screen")},
         {QStringLiteral("pin-to-screen")},
         {QStringLiteral("text-recognition")},
@@ -247,13 +272,18 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringLis
     }
 
     if (!result.positions.isEmpty() && known.contains(QStringLiteral("convert-to-markdown"))) {
-        // Fold the previous default's standalone conversions without changing custom placements.
+        // Upgrade earlier defaults without changing custom placements.
         auto previousDefault = defaultLayout;
         previousDefault[0] = {QStringLiteral("barcode-recognition"),
                               QStringLiteral("table-recognition")};
         previousDefault.insert(1, QStringList{QStringLiteral("convert-to-markdown")});
         previousDefault.insert(2, QStringList{QStringLiteral("convert-to-html")});
-        if (result.hidden.isEmpty() && result.positions == previousDefault) {
+        auto previousGroupedDefault = defaultLayout;
+        previousGroupedDefault[0] = {
+            QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
+            QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")};
+        if (result.hidden.isEmpty() &&
+            (result.positions == previousDefault || result.positions == previousGroupedDefault)) {
             result.positions = defaultLayout;
         }
         qsizetype recognitionPosition = -1;

@@ -401,11 +401,15 @@ void ScreenshotImageConversionController::openSettings(QWidget* owner) {
         m_modal = nullptr;
         modal->deleteLater();
     });
-    modal->open();
+    // Establish the initial content before the modal measures and shows its window.
     if (m_api != nullptr && !m_api->cachedChatModels().isEmpty() &&
         m_api->cachedChatModelsLocale() == currentLocale()) {
         apply(m_api->cachedChatModels());
     } else {
         load();
+    }
+    modal->open();
+    if (modal->acceptButton() != nullptr) {
+        modal->acceptButton()->setEnabled(select->isEnabled());
     }
 }
