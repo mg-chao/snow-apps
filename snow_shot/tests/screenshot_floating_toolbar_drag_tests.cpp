@@ -10,6 +10,7 @@
 #include "widgets/dpi_stable_window_controller.h"
 
 #include <QAbstractButton>
+#include <QAbstractNativeEventFilter>
 #include <QApplication>
 #include <QCoreApplication>
 #include <QCursor>
@@ -103,6 +104,33 @@ class ScreenshotFloatingToolPaletteWindowTestAccess {
 };
 
 namespace {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+class LayeredSurfaceMonitor final : public QAbstractNativeEventFilter {
+  public:
+    explicit LayeredSurfaceMonitor(WId id) : m_id(id) {
+        qApp->installNativeEventFilter(this);
+    }
+    ~LayeredSurfaceMonitor() override {
+        qApp->removeNativeEventFilter(this);
+    }
+    int resets = 0;
+
+    bool nativeEventFilter(const QByteArray&, void* message, qintptr*) override {
+        const auto* msg = static_cast<MSG*>(message);
+        if (msg->hwnd == reinterpret_cast<HWND>(m_id) && msg->message == WM_STYLECHANGED &&
+            msg->wParam == static_cast<WPARAM>(GWL_EXSTYLE)) {
+            const auto* style = reinterpret_cast<const STYLESTRUCT*>(msg->lParam);
+            if ((style->styleOld & WS_EX_LAYERED) != 0 && (style->styleNew & WS_EX_LAYERED) == 0) {
+                ++resets;
+            }
+        }
+        return false;
+    }
+
+  private:
+    WId m_id;
+};
+#endif
 std::atomic_bool nativeGeometryWarningEmitted{false};
 std::atomic_bool nonFocusableActivationWarningEmitted{false};
 QtMessageHandler previousMessageHandler = nullptr;
@@ -1496,6 +1524,28 @@ void keyboardFocusTransitionsKeepQtAndNativeStateConsistent() {
     storage.shutdown();
 }
 
+void qtFocusFlagChangeStillRequiresLayeredSurfacePreservation() {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    if (QGuiApplication::platformName() != QStringLiteral("windows")) {
+        return;
+    }
+    // Sentinel for Qt's applyWindowFlags()/initialize() layer reset. If Qt
+    // starts preserving the surface itself, retire the nativeEvent workaround.
+    QWidget window(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus);
+    window.setAttribute(Qt::WA_TranslucentBackground);
+    window.resize(80, 40);
+    window.show();
+    QCoreApplication::processEvents();
+    require((GetWindowLongPtr(reinterpret_cast<HWND>(window.winId()), GWL_EXSTYLE) &
+             WS_EX_LAYERED) != 0,
+            "Qt sentinel requires a layered window");
+    LayeredSurfaceMonitor surface(window.winId());
+    window.windowHandle()->setFlag(Qt::WindowDoesNotAcceptFocus, false);
+    require(surface.resets > 0,
+            "Qt now preserves layered surfaces: review and retire the focus-policy workaround");
+#endif
+}
+
 void screenshotActionLayoutReloadIsWindowScopedAndFitsThePreset() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "failed to create isolated action-layout test storage");
@@ -1933,11 +1983,33 @@ void floatingToolbarInputsAcquireKeyboardFocus() {
             }
         }
         require(input != nullptr, "floating toolbar should expose the active text input");
+#if defined(Q_OS_WIN) || defined(_WIN32)
+        const bool nativeWindows = QGuiApplication::platformName() == QStringLiteral("windows");
+        const auto hwnd = reinterpret_cast<HWND>(window.winId());
+        LayeredSurfaceMonitor surface(window.winId());
+        if (nativeWindows) {
+            require((GetWindowLongPtr(hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) != 0,
+                    "visible transparent toolbar must start with layered rendering");
+        }
+#endif
         click(input);
+#if defined(Q_OS_WIN) || defined(_WIN32)
+        if (nativeWindows) {
+            require(surface.resets == 0,
+                    "focusing a toolbar input must not discard the layered surface");
+            require((GetWindowLongPtr(hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) != 0,
+                    "focusing a toolbar input must preserve layered rendering before repaint");
+        }
+#endif
         QCoreApplication::processEvents();
         require(ScreenshotFloatingToolPaletteWindowTestAccess::keyboardFocusActive(window, input),
                 "clicking any floating toolbar input must enable its keyboard focus interaction");
         requireNativeFocus(input);
+        for (int repeat = 0; repeat < 3; ++repeat) {
+            click(input);
+            QCoreApplication::processEvents();
+            requireNativeFocus(input);
+        }
         input->selectAll();
         QKeyEvent key(QEvent::KeyPress, Qt::Key_4, Qt::NoModifier, QStringLiteral("42"));
         QApplication::sendEvent(input, &key);
@@ -1967,6 +2039,10 @@ void floatingToolbarInputsAcquireKeyboardFocus() {
         require(
             !ScreenshotFloatingToolPaletteWindowTestAccess::keyboardFocusActive(window, nullptr),
             "destroying an active input should not leave keyboard interaction enabled");
+#if defined(Q_OS_WIN) || defined(_WIN32)
+        require(surface.resets == 0,
+                "editing, repeated clicks, focus loss and input removal must preserve the surface");
+#endif
     }
     snow_shot::storage::ApplicationStorage::instance().shutdown();
 }
@@ -1975,6 +2051,7 @@ int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     try {
         if (app.arguments().contains(QStringLiteral("--keyboard-focus-only"))) {
+            qtFocusFlagChangeStillRequiresLayeredSurfacePreservation();
             keyboardFocusTransitionsKeepQtAndNativeStateConsistent();
             floatingToolbarInputsAcquireKeyboardFocus();
             return 0;
