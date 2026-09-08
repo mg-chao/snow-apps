@@ -16,6 +16,10 @@
 #include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QLayout>
+#include <QLineEdit>
+#include <QLabel>
+#include <QMouseEvent>
+#include <QKeyEvent>
 #include <QPoint>
 #include <QRect>
 #include <QScreen>
@@ -43,6 +47,12 @@
 
 class ScreenshotFloatingToolPaletteWindowTestAccess {
   public:
+    static bool keyboardFocusActive(const ScreenshotFloatingToolPaletteWindow& window,
+                                    const QWidget* editor) {
+        return window.m_keyboardFocusInteractionActive &&
+               (editor == nullptr || window.m_keyboardFocusEditor == editor);
+    }
+
     static void beginLogicalDrag(ScreenshotFloatingToolPaletteWindow& window,
                                  const QPoint& globalPosition) {
         window.m_draggingPalette = true;
@@ -1819,9 +1829,106 @@ void mainTextTranslationButtonUsesTranslationPresentation() {
 }
 } // namespace
 
+void floatingToolbarInputsAcquireKeyboardFocus() {
+    QTemporaryDir storageDirectory;
+    require(storageDirectory.isValid(), "keyboard focus tests require isolated storage");
+    require(snow_shot::storage::ApplicationStorage::instance()
+                .initialize({storageDirectory.path(), storageDirectory.path(), 60000})
+                .success,
+            "keyboard focus tests should initialize isolated storage");
+    QWidget owner;
+    owner.show();
+    ScreenshotToolPalette::Options options;
+    options.showSerialNumberTool = true;
+    ScreenshotFloatingToolPaletteWindow window(options);
+    window.setTransientOwnerWindow(&owner);
+    window.show();
+    auto* palette = window.palette();
+    const auto click = [](QWidget* target) {
+        const QPoint local = target->rect().center();
+        QMouseEvent press(QEvent::MouseButtonPress, QPointF(local),
+                          QPointF(target->mapToGlobal(local)), Qt::LeftButton, Qt::LeftButton,
+                          Qt::NoModifier);
+        QApplication::sendEvent(target, &press);
+        QMouseEvent release(QEvent::MouseButtonRelease, QPointF(local),
+                            QPointF(target->mapToGlobal(local)), Qt::LeftButton, Qt::NoButton,
+                            Qt::NoModifier);
+        QApplication::sendEvent(target, &release);
+    };
+    const auto requireNativeFocus = [&window](QWidget* input) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+        if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+            const auto hwnd = reinterpret_cast<HWND>(window.winId());
+            require((GetWindowLongPtr(hwnd, GWL_EXSTYLE) & WS_EX_NOACTIVATE) == 0,
+                    "editing should temporarily allow native toolbar activation");
+            require(input->hasFocus() && QApplication::focusWidget() == input,
+                    "clicking the floating input must give it actual keyboard focus");
+        }
+#else
+        Q_UNUSED(window);
+        Q_UNUSED(input);
+#endif
+    };
+    for (const auto tool :
+         {ScreenshotToolPalette::Tool::Watermark, ScreenshotToolPalette::Tool::SerialNumber}) {
+        palette->setActiveTool(tool);
+        QCoreApplication::processEvents();
+        QLineEdit* input = nullptr;
+        for (auto* candidate : palette->findChildren<QLineEdit*>()) {
+            if (candidate->isVisible() &&
+                (candidate->objectName() == QStringLiteral("screenshotWatermarkTextEdit") ||
+                 candidate->accessibleName() ==
+                     QStringLiteral("Sequence number (scroll to adjust)"))) {
+                input = candidate;
+                break;
+            }
+        }
+        require(input != nullptr, "floating toolbar should expose the active text input");
+        click(input);
+        QCoreApplication::processEvents();
+        require(ScreenshotFloatingToolPaletteWindowTestAccess::keyboardFocusActive(window, input),
+                "clicking any floating toolbar input must enable its keyboard focus interaction");
+        requireNativeFocus(input);
+        input->selectAll();
+        QKeyEvent key(QEvent::KeyPress, Qt::Key_4, Qt::NoModifier, QStringLiteral("42"));
+        QApplication::sendEvent(input, &key);
+        require(input->text() == QStringLiteral("42"), "the focused input should accept typing");
+        QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+        QApplication::sendEvent(input, &enter);
+        QCoreApplication::processEvents();
+        require(!ScreenshotFloatingToolPaletteWindowTestAccess::keyboardFocusActive(window, input),
+                "finishing input should release the temporary keyboard focus interaction");
+        if (auto* prefix = input->findChild<QLabel*>(QStringLiteral("ad-input-prefix-icon"));
+            prefix != nullptr && prefix->isVisible()) {
+            click(prefix);
+        } else {
+            click(input);
+        }
+        QCoreApplication::processEvents();
+        require(ScreenshotFloatingToolPaletteWindowTestAccess::keyboardFocusActive(window, input),
+                "clicking the input prefix should also start keyboard editing");
+        requireNativeFocus(input);
+        input->clearFocus();
+        QCoreApplication::processEvents();
+        require(!ScreenshotFloatingToolPaletteWindowTestAccess::keyboardFocusActive(window, input),
+                "focus loss should restore non-activating toolbar behavior");
+        click(input);
+        palette->setActiveTool(ScreenshotToolPalette::Tool::Select);
+        QCoreApplication::processEvents();
+        require(
+            !ScreenshotFloatingToolPaletteWindowTestAccess::keyboardFocusActive(window, nullptr),
+            "destroying an active input should not leave keyboard interaction enabled");
+    }
+    snow_shot::storage::ApplicationStorage::instance().shutdown();
+}
+
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     try {
+        if (app.arguments().contains(QStringLiteral("--keyboard-focus-only"))) {
+            floatingToolbarInputsAcquireKeyboardFocus();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--selection-reset-only"))) {
             NoOpToolbarCommands commands;
             ScreenshotToolbarWindow window(commands);

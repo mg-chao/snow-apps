@@ -144,7 +144,6 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     QPointer<QScreen> m_placementScreen;
     QPointer<QWidget> m_transientOwnerWindow;
     QPointer<QWidget> m_keyboardFocusEditor;
-    QPointer<QWidget> m_watermarkTextEditor;
     QSize m_stablePhysicalWindowSize;
     qreal m_referenceDevicePixelRatio = 0.0;
     qreal m_committedWindowDevicePixelRatio = 0.0;

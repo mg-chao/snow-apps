@@ -1881,7 +1881,7 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSerialNumberFamily(
         QCoreApplication::translate("ScreenshotToolPalette", "Mixed"));
     m_serialNumberEditor->setControlSize(adqt::widgets::AdLineEdit::ControlSize::Small);
     m_serialNumberEditor->setFocusPolicy(Qt::ClickFocus);
-    m_serialNumberEditor->setVariant(adqt::widgets::AdLineEdit::Variant::Borderless);
+    m_serialNumberEditor->setVariant(adqt::widgets::AdLineEdit::Variant::Underlined);
     m_serialNumberEditor->setPrefixIconRef(outlined_icons::Number());
     m_serialNumberEditor->setFixedSize(
         qMax(1, qRound(kSerialNumberInputWidth * metrics.physicalScale)),

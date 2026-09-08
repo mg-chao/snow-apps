@@ -460,13 +460,22 @@ bool ScreenshotFloatingToolPaletteWindow::event(QEvent* event) {
 }
 
 bool ScreenshotFloatingToolPaletteWindow::eventFilter(QObject* watched, QEvent* event) {
-    if (watched == m_watermarkTextEditor && event != nullptr) {
+    auto* watchedWidget = qobject_cast<QWidget*>(watched);
+    QLineEdit* textEditor = nullptr;
+    for (QWidget* widget = watchedWidget; widget != nullptr && widget != this;
+         widget = widget->parentWidget()) {
+        if (widget->property("snowShotFloatingTextFocusRegistered").toBool()) {
+            textEditor = qobject_cast<QLineEdit*>(widget);
+            break;
+        }
+    }
+    if (textEditor != nullptr && event != nullptr) {
         if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::FocusIn) {
-            beginKeyboardFocusInteraction(m_watermarkTextEditor);
-        } else if (event->type() == QEvent::FocusOut) {
-            const QPointer<QWidget> editor = m_watermarkTextEditor;
+            beginKeyboardFocusInteraction(textEditor);
+        } else if (watched == textEditor && event->type() == QEvent::FocusOut) {
+            const QPointer<QWidget> editor = textEditor;
             QTimer::singleShot(0, this, [this, editor]() {
-                if (editor == nullptr || !editor->hasFocus()) {
+                if (editor != nullptr && !editor->hasFocus()) {
                     endKeyboardFocusInteraction(editor);
                 }
             });
@@ -1086,18 +1095,39 @@ void ScreenshotFloatingToolPaletteWindow::registerMaterializedScope(QWidget* sco
     if (scope == nullptr) {
         return;
     }
-    if (auto* editor = scope->findChild<QLineEdit*>(
-            QStringLiteral("screenshotWatermarkTextEdit"))) {
-        if (m_watermarkTextEditor != editor) {
-            m_watermarkTextEditor = editor;
-            editor->installEventFilter(this);
-            connect(editor, &QLineEdit::editingFinished, this, [this, editor]() {
-                QTimer::singleShot(0, this,
-                                   [this, editor]() { endKeyboardFocusInteraction(editor); });
-            });
+    const auto selects = scope->findChildren<adqt::widgets::AdSelect*>();
+    for (QLineEdit* editor : scope->findChildren<QLineEdit*>()) {
+        // Searchable selects own their focus interaction for the popup's lifetime.
+        const bool selectEditor =
+            std::any_of(selects.cbegin(), selects.cend(),
+                        [editor](const auto* select) { return select->isAncestorOf(editor); });
+        if (selectEditor || editor->isReadOnly() || editor->focusPolicy() == Qt::NoFocus ||
+            editor->property("snowShotFloatingTextFocusRegistered").toBool()) {
+            continue;
         }
+        editor->setProperty("snowShotFloatingTextFocusRegistered", true);
+        editor->installEventFilter(this);
+        // Prefix icons can consume the press before it reaches the line edit.
+        for (QWidget* child : editor->findChildren<QWidget*>()) {
+            child->installEventFilter(this);
+        }
+        const QPointer<QWidget> guardedEditor = editor;
+        connect(editor, &QLineEdit::editingFinished, this, [this, guardedEditor]() {
+            QTimer::singleShot(0, this, [this, guardedEditor]() {
+                if (guardedEditor != nullptr) {
+                    endKeyboardFocusInteraction(guardedEditor);
+                }
+            });
+        });
+        connect(editor, &QObject::destroyed, this, [this]() {
+            QTimer::singleShot(0, this, [this]() {
+                if (m_keyboardFocusInteractionActive && m_keyboardFocusEditor == nullptr) {
+                    endKeyboardFocusInteraction();
+                }
+            });
+        });
     }
-    for (adqt::widgets::AdSelect* select : scope->findChildren<adqt::widgets::AdSelect*>()) {
+    for (adqt::widgets::AdSelect* select : selects) {
         if (select == nullptr || !select->searchEnabled() || select->lineEdit() == nullptr ||
             select->property("snowShotFloatingFocusRegistered").toBool()) {
             continue;

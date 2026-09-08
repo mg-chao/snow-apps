@@ -5844,10 +5844,10 @@ void serialNumberStyleControlsExposeAndEmitRequestedProperties() {
     QWidget* numberEditor = controlWithTooltip(palette, "Sequence number (scroll to adjust)");
     auto* numberInput = qobject_cast<adqt::widgets::AdLineEdit*>(numberEditor);
     require(numberInput != nullptr &&
-                numberInput->variant() == adqt::widgets::AdLineEdit::Variant::Borderless &&
+                numberInput->variant() == adqt::widgets::AdLineEdit::Variant::Underlined &&
                 adqt::icons::describeIcon(numberInput->prefixIconRef()).key.name ==
                     adqt::icons::describeIcon(adqt::icons::antd::outlined::Number()).key.name,
-            "sequence number should be a borderless input with its existing icon as a prefix");
+            "sequence number should be an underlined input with its existing icon as a prefix");
     const int numberEditorIndex = serialNumberLayout->indexOf(numberEditor);
     auto* fontSizeSummary = controlWithTooltip(palette, "Current sequence number font size");
     require(fontSizeSummary != nullptr &&

@@ -3234,6 +3234,15 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+    add_test(
+        NAME snow-shot-floating-toolbar-keyboard-focus-tests
+        COMMAND snow-shot-floating-toolbar-drag-tests --keyboard-focus-only
+    )
+    set_tests_properties(snow-shot-floating-toolbar-keyboard-focus-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
     set_tests_properties(snow-shot-floating-toolbar-drag-tests PROPERTIES
         RUN_SERIAL TRUE
         ENVIRONMENT_MODIFICATION
