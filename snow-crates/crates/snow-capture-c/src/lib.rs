@@ -22,9 +22,10 @@ use snow_capture::{
 };
 use snow_core::error::RecvTimeoutError;
 use snow_screen_recorder::{
-    EditingSession, ExportFormat, ExportRequest, RecordingAudioConfig, RecordingAudioTrackConfig,
-    RecordingConfig, RecordingRegion, RecordingSession, RecordingState, RecordingTarget,
-    VideoCodec, VideoEncodeConfig, VideoEncodingSpeed,
+    DirectRecordingConfig, DirectRecordingSession, EditingSession, ExportFormat, ExportRequest,
+    RecordingAudioConfig, RecordingAudioTrackConfig, RecordingConfig, RecordingRegion,
+    RecordingSession, RecordingState, RecordingTarget, ScreenRecorderError, VideoCodec,
+    VideoEncodeConfig, VideoEncodingSpeed,
 };
 
 pub struct SnowCaptureDesktopSessionImpl {
@@ -79,8 +80,13 @@ pub struct SnowCaptureFrameLeaseImpl {
 }
 
 pub struct SnowCaptureRecordingSessionImpl {
-    recording: Option<RecordingSession>,
+    recording: Option<RecordingSessionKind>,
     state: RecordingState,
+}
+
+enum RecordingSessionKind {
+    Legacy(Box<RecordingSession>),
+    Direct(DirectRecordingSession),
 }
 
 pub struct SnowCaptureStreamImpl {
@@ -301,6 +307,19 @@ pub enum SnowCaptureRecordingState {
     Stopped = 3,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SnowCaptureResult {
+    Ok = 0,
+    InvalidArgument = 1,
+    InvalidState = 2,
+    CaptureError = 3,
+    EncoderError = 4,
+    IoError = 5,
+    Canceled = 6,
+    InternalError = 255,
+}
+
 #[derive(Clone)]
 struct MonitorEntry {
     id: MonitorId,
@@ -504,6 +523,45 @@ pub struct SnowCaptureRecordingExportConfig {
     encoder_preference: u32,
     reserved: [u8; 32],
 }
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SnowCaptureDirectRecordingConfig {
+    version: u32,
+    struct_size: u32,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    capture_backend: u32,
+    output_file_utf8: *const c_char,
+    output_format: u32,
+    capture_fps: u32,
+    output_fps: u32,
+    maximum_width: u32,
+    maximum_height: u32,
+    codec: u32,
+    preset: u32,
+    encoder_preference: u32,
+    enable_microphone: u8,
+    enable_system_audio: u8,
+    show_cursor: u8,
+    reserved0: u8,
+    mouse_trail_rgba: u32,
+    mouse_click_rgba: u32,
+    reserved: [u8; 64],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct SnowCaptureDirectRecordingConfigHeader {
+    version: u32,
+    struct_size: u32,
+}
+
+pub const DIRECT_RECORDING_CONFIG_VERSION: u32 = 1;
+const DIRECT_RECORDING_CONFIG_SIZE: u32 =
+    std::mem::size_of::<SnowCaptureDirectRecordingConfig>() as u32;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -2476,7 +2534,7 @@ pub unsafe extern "C" fn snow_capture_recording_session_create(
         Ok(recording) => {
             clear_last_error();
             Box::into_raw(Box::new(SnowCaptureRecordingSessionImpl {
-                recording: Some(recording),
+                recording: Some(RecordingSessionKind::Legacy(Box::new(recording))),
                 state: RecordingState::Created,
             }))
         }
@@ -2500,7 +2558,12 @@ pub unsafe extern "C" fn snow_capture_recording_session_destroy(
         RecordingState::Running | RecordingState::Paused
     ) && let Some(recording) = session.recording.take()
     {
-        let _ = recording.stop();
+        match recording {
+            RecordingSessionKind::Legacy(recording) => {
+                let _ = (*recording).stop();
+            }
+            RecordingSessionKind::Direct(recording) => drop(recording),
+        }
     }
 }
 
@@ -2515,7 +2578,11 @@ pub extern "C" fn snow_capture_recording_session_start(
         set_last_error("recording session has already stopped");
         return 0;
     };
-    match recording.start() {
+    let result = match recording {
+        RecordingSessionKind::Legacy(recording) => recording.start(),
+        RecordingSessionKind::Direct(recording) => recording.start(),
+    };
+    match result {
         Ok(()) => {
             session.state = RecordingState::Running;
             clear_last_error();
@@ -2539,7 +2606,11 @@ pub extern "C" fn snow_capture_recording_session_pause(
         set_last_error("recording session has already stopped");
         return 0;
     };
-    match recording.pause() {
+    let result = match recording {
+        RecordingSessionKind::Legacy(recording) => recording.pause(),
+        RecordingSessionKind::Direct(recording) => recording.pause(),
+    };
+    match result {
         Ok(()) => {
             session.state = RecordingState::Paused;
             clear_last_error();
@@ -2563,7 +2634,11 @@ pub extern "C" fn snow_capture_recording_session_resume(
         set_last_error("recording session has already stopped");
         return 0;
     };
-    match recording.resume() {
+    let result = match recording {
+        RecordingSessionKind::Legacy(recording) => recording.resume(),
+        RecordingSessionKind::Direct(recording) => recording.resume(),
+    };
+    match result {
         Ok(()) => {
             session.state = RecordingState::Running;
             clear_last_error();
@@ -2588,9 +2663,226 @@ pub unsafe extern "C" fn snow_capture_recording_session_state(
     let Some(session) = recording_session_ref(session) else {
         return 0;
     };
-    unsafe { *out_state = ffi_recording_state(session.state) };
+    let state = match session.recording.as_ref() {
+        Some(RecordingSessionKind::Direct(recording)) => recording.state(),
+        Some(RecordingSessionKind::Legacy(_)) | None => session.state,
+    };
+    unsafe { *out_state = ffi_recording_state(state) };
     clear_last_error();
     1
+}
+
+fn direct_result_for_error(error: &ScreenRecorderError) -> SnowCaptureResult {
+    match error {
+        ScreenRecorderError::InvalidConfig(_) | ScreenRecorderError::UnsupportedFeature(_) => {
+            SnowCaptureResult::InvalidArgument
+        }
+        ScreenRecorderError::Capture(_) => SnowCaptureResult::CaptureError,
+        ScreenRecorderError::Audio(_) | ScreenRecorderError::Encode(_) => {
+            SnowCaptureResult::EncoderError
+        }
+        ScreenRecorderError::Io(_) => SnowCaptureResult::IoError,
+        ScreenRecorderError::ExportCanceled => SnowCaptureResult::Canceled,
+        ScreenRecorderError::Decode(_) | ScreenRecorderError::Export(_) => {
+            SnowCaptureResult::EncoderError
+        }
+    }
+}
+
+fn packed_rgba(value: u32) -> [u8; 4] {
+    [
+        (value >> 24) as u8,
+        (value >> 16) as u8,
+        (value >> 8) as u8,
+        value as u8,
+    ]
+}
+
+fn parse_direct_recording_config(
+    config: &SnowCaptureDirectRecordingConfig,
+) -> Result<DirectRecordingConfig, String> {
+    if config.version != DIRECT_RECORDING_CONFIG_VERSION {
+        return Err(format!(
+            "unsupported direct recording config version: {}",
+            config.version
+        ));
+    }
+    if config.struct_size < DIRECT_RECORDING_CONFIG_SIZE {
+        return Err(format!(
+            "direct recording config is too small: {} < {}",
+            config.struct_size, DIRECT_RECORDING_CONFIG_SIZE
+        ));
+    }
+    if config.reserved0 != 0 || config.reserved.iter().any(|byte| *byte != 0) {
+        return Err("direct recording reserved fields must be zero".to_string());
+    }
+    if config.width == 0 || config.height == 0 {
+        return Err("direct recording region must have non-zero dimensions".to_string());
+    }
+    if config.capture_fps == 0 || config.output_fps == 0 {
+        return Err("direct recording frame rates must be greater than zero".to_string());
+    }
+    if (config.maximum_width == 0) != (config.maximum_height == 0) {
+        return Err(
+            "direct recording maximum dimensions must both be zero or both be non-zero".to_string(),
+        );
+    }
+    if config.enable_microphone > 1 || config.enable_system_audio > 1 || config.show_cursor > 1 {
+        return Err("direct recording boolean fields must be zero or one".to_string());
+    }
+    let capture_backend = parse_capture_backend(
+        u8::try_from(config.capture_backend)
+            .map_err(|_| format!("invalid capture backend: {}", config.capture_backend))?,
+    )?;
+    let output_path = path_from_utf8(config.output_file_utf8, "direct recording output file")?;
+    let format = match config.output_format {
+        0 => ExportFormat::Mp4,
+        1 => ExportFormat::Gif,
+        2 => ExportFormat::Apng,
+        3 => ExportFormat::Webp,
+        value => return Err(format!("invalid direct recording output format: {value}")),
+    };
+    let codec = match config.codec {
+        0 => VideoCodec::H264,
+        1 => VideoCodec::H265,
+        value => return Err(format!("invalid direct recording video codec: {value}")),
+    };
+    let preset = match config.preset {
+        0 => VideoEncodingSpeed::UltraFast,
+        1 => VideoEncodingSpeed::VeryFast,
+        2 => VideoEncodingSpeed::Medium,
+        3 => VideoEncodingSpeed::VerySlow,
+        4 => VideoEncodingSpeed::Placebo,
+        value => return Err(format!("invalid direct recording encoding preset: {value}")),
+    };
+    let prefer_hardware_encoder = match config.encoder_preference {
+        0 => false,
+        1 => true,
+        value => {
+            return Err(format!(
+                "invalid direct recording encoder preference: {value}"
+            ));
+        }
+    };
+
+    let direct = DirectRecordingConfig {
+        region: RecordingRegion::new(config.x, config.y, config.width, config.height),
+        capture_backend,
+        output_path,
+        format,
+        capture_fps: config.capture_fps,
+        output_fps: config.output_fps,
+        maximum_width: (config.maximum_width != 0).then_some(config.maximum_width),
+        maximum_height: (config.maximum_height != 0).then_some(config.maximum_height),
+        codec,
+        preset,
+        prefer_hardware_encoder,
+        enable_microphone: config.enable_microphone != 0 && !format.is_animated_image(),
+        enable_system_audio: config.enable_system_audio != 0 && !format.is_animated_image(),
+        show_cursor: config.show_cursor != 0,
+        mouse_trail_rgba: packed_rgba(config.mouse_trail_rgba),
+        mouse_click_rgba: packed_rgba(config.mouse_click_rgba),
+    };
+    direct.validate()?;
+    Ok(direct)
+}
+
+unsafe fn read_direct_recording_config(
+    config: *const SnowCaptureDirectRecordingConfig,
+) -> Result<SnowCaptureDirectRecordingConfig, String> {
+    if config.is_null() {
+        return Err("direct recording config is null".to_string());
+    }
+    let header = unsafe {
+        std::ptr::read_unaligned(config.cast::<SnowCaptureDirectRecordingConfigHeader>())
+    };
+    if header.version != DIRECT_RECORDING_CONFIG_VERSION {
+        return Err(format!(
+            "unsupported direct recording config version: {}",
+            header.version
+        ));
+    }
+    if header.struct_size < DIRECT_RECORDING_CONFIG_SIZE {
+        return Err(format!(
+            "direct recording config is too small: {} < {}",
+            header.struct_size, DIRECT_RECORDING_CONFIG_SIZE
+        ));
+    }
+    Ok(unsafe { std::ptr::read_unaligned(config) })
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_capture_recording_session_create_direct(
+    config: *const SnowCaptureDirectRecordingConfig,
+    out_session: *mut *mut SnowCaptureRecordingSessionImpl,
+) -> SnowCaptureResult {
+    if out_session.is_null() {
+        set_last_error("direct recording out_session is null");
+        return SnowCaptureResult::InvalidArgument;
+    }
+    unsafe { *out_session = ptr::null_mut() };
+    let config = match unsafe { read_direct_recording_config(config) }
+        .and_then(|config| parse_direct_recording_config(&config))
+    {
+        Ok(config) => config,
+        Err(error) => {
+            set_last_error(error);
+            return SnowCaptureResult::InvalidArgument;
+        }
+    };
+    match DirectRecordingSession::create(config) {
+        Ok(recording) => {
+            unsafe {
+                *out_session = Box::into_raw(Box::new(SnowCaptureRecordingSessionImpl {
+                    recording: Some(RecordingSessionKind::Direct(recording)),
+                    state: RecordingState::Created,
+                }));
+            }
+            clear_last_error();
+            SnowCaptureResult::Ok
+        }
+        Err(error) => {
+            let result = direct_result_for_error(&error);
+            set_last_error(error);
+            result
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn snow_capture_recording_session_stop(
+    session: *mut SnowCaptureRecordingSessionImpl,
+) -> SnowCaptureResult {
+    let Some(session) = recording_session_mut(session) else {
+        return SnowCaptureResult::InvalidArgument;
+    };
+    if !matches!(
+        session.state,
+        RecordingState::Running | RecordingState::Paused
+    ) {
+        set_last_error("direct recording stop requires a running or paused session");
+        return SnowCaptureResult::InvalidState;
+    }
+    if !matches!(session.recording, Some(RecordingSessionKind::Direct(_))) {
+        set_last_error("recording session was not created with create_direct");
+        return SnowCaptureResult::InvalidState;
+    }
+    let Some(RecordingSessionKind::Direct(recording)) = session.recording.take() else {
+        set_last_error("direct recording session is unavailable");
+        return SnowCaptureResult::InternalError;
+    };
+    session.state = RecordingState::Stopped;
+    match recording.stop() {
+        Ok(_) => {
+            clear_last_error();
+            SnowCaptureResult::Ok
+        }
+        Err(error) => {
+            let result = direct_result_for_error(&error);
+            set_last_error(error);
+            result
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -2715,12 +3007,16 @@ fn stop_and_export_recording(
     let Some(session) = recording_session_mut(session) else {
         return 0;
     };
-    let Some(recording) = session.recording.take() else {
+    if !matches!(session.recording, Some(RecordingSessionKind::Legacy(_))) {
+        set_last_error("direct recording sessions must be finalized with recording_session_stop");
+        return 0;
+    }
+    let Some(RecordingSessionKind::Legacy(recording)) = session.recording.take() else {
         set_last_error("recording session has already stopped");
         return 0;
     };
 
-    let artifact = match recording.stop() {
+    let artifact = match (*recording).stop() {
         Ok(artifact) => artifact,
         Err(error) => {
             session.state = RecordingState::Stopped;
@@ -2922,6 +3218,105 @@ mod tests {
         let config = (&raw const short).cast::<SnowCaptureRecordingExportConfig>();
 
         assert!(unsafe { read_recording_export_config(config) }.is_err());
+    }
+
+    fn direct_config(output: &CStr) -> SnowCaptureDirectRecordingConfig {
+        SnowCaptureDirectRecordingConfig {
+            version: DIRECT_RECORDING_CONFIG_VERSION,
+            struct_size: std::mem::size_of::<SnowCaptureDirectRecordingConfig>() as u32,
+            x: -100,
+            y: 50,
+            width: 1280,
+            height: 720,
+            capture_backend: 2,
+            output_file_utf8: output.as_ptr(),
+            output_format: 0,
+            capture_fps: 30,
+            output_fps: 30,
+            maximum_width: 1920,
+            maximum_height: 1080,
+            codec: 0,
+            preset: 1,
+            encoder_preference: 1,
+            enable_microphone: 1,
+            enable_system_audio: 1,
+            show_cursor: 1,
+            reserved0: 0,
+            mouse_trail_rgba: 0x11223344,
+            mouse_click_rgba: 0xAABBCC80,
+            reserved: [0; 64],
+        }
+    }
+
+    #[test]
+    fn direct_config_maps_all_fields_and_rgba_order() {
+        let output = CString::new("recording.mp4").unwrap();
+        let parsed = parse_direct_recording_config(&direct_config(&output)).unwrap();
+        assert_eq!(parsed.region, RecordingRegion::new(-100, 50, 1280, 720));
+        assert_eq!(
+            parsed.capture_backend,
+            CaptureBackendKind::WindowsGraphicsCapture
+        );
+        assert_eq!(parsed.output_path, PathBuf::from("recording.mp4"));
+        assert_eq!(parsed.format, ExportFormat::Mp4);
+        assert_eq!(parsed.capture_fps, 30);
+        assert_eq!(parsed.output_fps, 30);
+        assert_eq!(parsed.maximum_width, Some(1920));
+        assert_eq!(parsed.maximum_height, Some(1080));
+        assert_eq!(parsed.codec, VideoCodec::H264);
+        assert_eq!(parsed.preset, VideoEncodingSpeed::VeryFast);
+        assert!(parsed.prefer_hardware_encoder);
+        assert!(parsed.enable_microphone && parsed.enable_system_audio && parsed.show_cursor);
+        assert_eq!(parsed.mouse_trail_rgba, [0x11, 0x22, 0x33, 0x44]);
+        assert_eq!(parsed.mouse_click_rgba, [0xAA, 0xBB, 0xCC, 0x80]);
+    }
+
+    #[test]
+    fn animated_direct_configs_omit_audio() {
+        let output = CString::new("recording.webp").unwrap();
+        let mut config = direct_config(&output);
+        config.output_format = 3;
+        let parsed = parse_direct_recording_config(&config).unwrap();
+        assert_eq!(parsed.format, ExportFormat::Webp);
+        assert!(!parsed.enable_microphone);
+        assert!(!parsed.enable_system_audio);
+    }
+
+    #[test]
+    fn direct_config_rejects_reserved_bytes_unknown_enums_and_invalid_sizes() {
+        let output = CString::new("recording.mp4").unwrap();
+        let mut config = direct_config(&output);
+        config.reserved[7] = 1;
+        assert!(parse_direct_recording_config(&config).is_err());
+        config.reserved[7] = 0;
+        config.output_format = 99;
+        assert!(parse_direct_recording_config(&config).is_err());
+        config.output_format = 0;
+        config.maximum_height = 0;
+        assert!(parse_direct_recording_config(&config).is_err());
+        config.maximum_height = 1080;
+        config.struct_size -= 1;
+        assert!(parse_direct_recording_config(&config).is_err());
+    }
+
+    #[test]
+    fn direct_config_reads_only_header_before_size_validation() {
+        let short = SnowCaptureDirectRecordingConfigHeader {
+            version: DIRECT_RECORDING_CONFIG_VERSION,
+            struct_size: std::mem::size_of::<SnowCaptureDirectRecordingConfigHeader>() as u32,
+        };
+        let config = (&raw const short).cast::<SnowCaptureDirectRecordingConfig>();
+        assert!(unsafe { read_direct_recording_config(config) }.is_err());
+    }
+
+    #[test]
+    fn direct_create_validates_output_pointer_without_starting_workers() {
+        let output = CString::new("recording.mp4").unwrap();
+        let config = direct_config(&output);
+        assert_eq!(
+            unsafe { snow_capture_recording_session_create_direct(&config, ptr::null_mut()) },
+            SnowCaptureResult::InvalidArgument
+        );
     }
 
     fn test_result() -> *mut SnowCaptureScreenshotResultImpl {

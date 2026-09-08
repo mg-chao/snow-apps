@@ -42,3 +42,18 @@ impl From<snow_recording_model::RecordingModelError> for ScreenRecorderError {
         }
     }
 }
+
+impl From<snow_recording_export::RecordingExportError> for ScreenRecorderError {
+    fn from(value: snow_recording_export::RecordingExportError) -> Self {
+        match value {
+            snow_recording_export::RecordingExportError::InvalidConfig(error) => {
+                Self::InvalidConfig(error)
+            }
+            snow_recording_export::RecordingExportError::Encode(error) => Self::Encode(error),
+            snow_recording_export::RecordingExportError::Io(error) => Self::Io(error),
+            snow_recording_export::RecordingExportError::Decode(error) => Self::Decode(error),
+            snow_recording_export::RecordingExportError::Export(error) => Self::Export(error),
+            snow_recording_export::RecordingExportError::ExportCanceled => Self::ExportCanceled,
+        }
+    }
+}

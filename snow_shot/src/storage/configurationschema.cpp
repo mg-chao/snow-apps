@@ -237,11 +237,17 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      {QStringLiteral("1080p"), QStringLiteral("720p"), QStringLiteral("480p")}},
     {QStringLiteral("screen_recording/animated_image_frame_rate"), 10,
      ConfigurationValueKind::Integer},
-    {QStringLiteral("screen_recording/animated_image_format"),
-     QStringLiteral("gif"),
+    {QStringLiteral("screen_recording/output_format"),
+     QStringLiteral("mp4"),
      ConfigurationValueKind::String,
      std::nullopt,
-     {QStringLiteral("gif"), QStringLiteral("apng"), QStringLiteral("webp")}},
+     {QStringLiteral("mp4"), QStringLiteral("gif"), QStringLiteral("apng"),
+      QStringLiteral("webp")}},
+    {QStringLiteral("screen_recording/mouse_trail_color"), QStringLiteral("#00000000"),
+     ConfigurationValueKind::String},
+    {QStringLiteral("screen_recording/mouse_click_color"), QStringLiteral("#00000000"),
+     ConfigurationValueKind::String},
+    {QStringLiteral("screen_recording/show_cursor"), true, ConfigurationValueKind::Boolean},
     {QStringLiteral("screen_recording/encoder"),
      QStringLiteral("h264_hw"),
      ConfigurationValueKind::String,
@@ -954,7 +960,9 @@ bool isRgbaColorKey(const QString& key) {
            key == QStringLiteral("screenshot_ui/cursor_guide_line_color") ||
            key == QStringLiteral("screenshot_ui/monitor_center_guide_line_color") ||
            key == QStringLiteral("screenshot_ui/color_picker_center_guide_line_color") ||
-           key == QStringLiteral("pin_to_screen/border_color");
+           key == QStringLiteral("pin_to_screen/border_color") ||
+           key == QStringLiteral("screen_recording/mouse_trail_color") ||
+           key == QStringLiteral("screen_recording/mouse_click_color");
 }
 
 ConfigurationNormalization normalizeRgbaColor(const QJsonValue& value) {

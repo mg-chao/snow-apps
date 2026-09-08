@@ -186,8 +186,6 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
         return storage::RecordingSettings().animatedImageClarity();
     case SettingsSelectBinding::AnimatedImageFrameRate:
         return storage::RecordingSettings().animatedImageFrameRate();
-    case SettingsSelectBinding::AnimatedImageFormat:
-        return storage::RecordingSettings().animatedImageFormat();
     case SettingsSelectBinding::ScreenRecordingEncoder:
         return storage::RecordingSettings().encoder();
     case SettingsSelectBinding::ScreenRecordingEncodingPreset:
@@ -285,8 +283,6 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
         return storage::RecordingSettings().setAnimatedImageClarity(value.toString());
     case SettingsSelectBinding::AnimatedImageFrameRate:
         return storage::RecordingSettings().setAnimatedImageFrameRate(value.toInt());
-    case SettingsSelectBinding::AnimatedImageFormat:
-        return storage::RecordingSettings().setAnimatedImageFormat(value.toString());
     case SettingsSelectBinding::ScreenRecordingEncoder:
         return storage::RecordingSettings().setEncoder(value.toString());
     case SettingsSelectBinding::ScreenRecordingEncodingPreset:
@@ -1095,9 +1091,18 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("screen_recording/animated_image_frame_rate"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/animated_image_frame_rate"))},
-            {QStringLiteral("screen_recording/animated_image_format"),
+            {QStringLiteral("screen_recording/output_format"),
              storage::ConfigurationSchema::defaultValue(
-                 QStringLiteral("screen_recording/animated_image_format"))},
+                 QStringLiteral("screen_recording/output_format"))},
+            {QStringLiteral("screen_recording/mouse_trail_color"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/mouse_trail_color"))},
+            {QStringLiteral("screen_recording/mouse_click_color"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/mouse_click_color"))},
+            {QStringLiteral("screen_recording/show_cursor"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/show_cursor"))},
             {QStringLiteral("screen_recording/encoder"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/encoder"))},

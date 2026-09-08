@@ -167,10 +167,10 @@ SettingsItemDefinition screenRecordItem() {
 SettingsItemDefinition screenRecordCopyItem() {
     return quickActionItem(
         QStringLiteral("quick.screen-record-copy"),
-        QT_TRANSLATE_NOOP("SettingsCatalog", "Start screen recording / stop and copy video"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Start screen recording / stop and copy recording"),
         QT_TRANSLATE_NOOP("SettingsCatalog",
-                          "Start a screen recording, or stop and copy the current video"),
-        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Copy video")),
+                          "Start a screen recording, or stop and copy the current recording"),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Copy recording")),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Recording toggle"))},
         GlobalShortcutAction::ScreenRecordCopy,
         QStringLiteral("global_shortcuts/screen_record_copy"),
@@ -946,16 +946,6 @@ QVector<SettingsItemDefinition> screenRecordingItems() {
             QT_TRANSLATE_NOOP("SettingsCatalog", "Set the frame rate of exported animated images"),
             QStringLiteral("screen_recording/animated_image_frame_rate"),
             SettingsSelectBinding::AnimatedImageFrameRate, frameRateOptions({10, 15, 24})),
-        fixedSelectItem(
-            QStringLiteral("screen-recording.animated-image-format"),
-            QT_TRANSLATE_NOOP("SettingsCatalog", "Animated image format"),
-            QT_TRANSLATE_NOOP("SettingsCatalog",
-                              "Choose the format used to export animated images"),
-            QStringLiteral("screen_recording/animated_image_format"),
-            SettingsSelectBinding::AnimatedImageFormat,
-            {{QStringLiteral("gif"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "GIF"))},
-             {QStringLiteral("apng"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "APNG"))},
-             {QStringLiteral("webp"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "WebP"))}}),
         fixedSelectItem(
             QStringLiteral("screen-recording.encoder"),
             QT_TRANSLATE_NOOP("SettingsCatalog", "Encoder"),
@@ -2119,11 +2109,11 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording"),
                 GlobalShortcutAction::ScreenRecord,
                 []() { return custom_outlined_icons::RecordScreen(); }),
-          quick(
-              QStringLiteral("quick.screen-record-copy"),
-              QT_TRANSLATE_NOOP("SettingsCatalog", "Start screen recording / stop and copy video"),
-              GlobalShortcutAction::ScreenRecordCopy,
-              []() { return custom_outlined_icons::ScreenshotCopy(); })}},
+          quick(QStringLiteral("quick.screen-record-copy"),
+                QT_TRANSLATE_NOOP("SettingsCatalog",
+                                  "Start screen recording / stop and copy recording"),
+                GlobalShortcutAction::ScreenRecordCopy,
+                []() { return custom_outlined_icons::ScreenshotCopy(); })}},
         {QStringLiteral("other"),
          {quick(QStringLiteral("quick.open-capture-history"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot history"),
@@ -2340,9 +2330,6 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSelectBinding::AnimatedImageFrameRate:
                         expectedKey = QStringLiteral("screen_recording/animated_image_frame_rate");
-                        break;
-                    case SettingsSelectBinding::AnimatedImageFormat:
-                        expectedKey = QStringLiteral("screen_recording/animated_image_format");
                         break;
                     case SettingsSelectBinding::ScreenRecordingEncoder:
                         expectedKey = QStringLiteral("screen_recording/encoder");

@@ -84,7 +84,6 @@ enum class SettingsSelectBinding {
     ScreenRecordingFrameRate,
     AnimatedImageClarity,
     AnimatedImageFrameRate,
-    AnimatedImageFormat,
     ScreenRecordingEncoder,
     ScreenRecordingEncodingPreset,
     ScreenshotImageFormat,

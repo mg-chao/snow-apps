@@ -32,6 +32,7 @@ use crate::export::{
     ExportStageDurationsMs, ExportTask,
 };
 use crate::ffmpeg_util::{copy_rgba_into_frame, ensure_ffmpeg_initialized, is_eagain};
+use crate::streaming::{StreamingEncoder, StreamingEncoderConfig};
 use crate::video_quality::{quality_to_h264_crf, smart_quality_bitrate_bps};
 
 const VIDEO_INDEX_MAGIC: &[u8] = b"SVIDX\0\0";
@@ -572,7 +573,7 @@ fn choose_export_fps(record_fps: u32, format: ExportFormat, requested_fps: Optio
     }
 }
 
-fn output_dimensions(
+pub(crate) fn output_dimensions(
     src_w: u32,
     src_h: u32,
     maximum_width: Option<u32>,
@@ -3722,7 +3723,7 @@ fn try_apply_mouse_overlays_native_from_decision(
     )
 }
 
-fn ensure_video_frame_writable(frame: &mut ffmpeg::frame::Video) -> Result<()> {
+pub(crate) fn ensure_video_frame_writable(frame: &mut ffmpeg::frame::Video) -> Result<()> {
     let status = unsafe { ffmpeg::ffi::av_frame_make_writable(frame.as_mut_ptr()) };
     if status < 0 {
         return Err(ScreenRecorderError::Export(format!(
@@ -5196,7 +5197,7 @@ fn choose_video_codec_id(format: ExportFormat, video_codec: VideoCodec) -> ffmpe
     }
 }
 
-fn choose_video_pixel_format(
+pub(crate) fn choose_video_pixel_format(
     format: ExportFormat,
     codec: ffmpeg::codec::Video,
     source_hint: Option<ffmpeg::format::Pixel>,
@@ -5266,7 +5267,7 @@ fn choose_video_pixel_format(
     })
 }
 
-fn choose_audio_codec(format: ExportFormat) -> Option<ffmpeg::Codec> {
+pub(crate) fn choose_audio_codec(format: ExportFormat) -> Option<ffmpeg::Codec> {
     match format {
         ExportFormat::Mp4 => ffmpeg::encoder::find(ffmpeg::codec::Id::AAC),
         ExportFormat::Avi => ffmpeg::encoder::find_by_name("libmp3lame")
@@ -5277,7 +5278,7 @@ fn choose_audio_codec(format: ExportFormat) -> Option<ffmpeg::Codec> {
     }
 }
 
-fn choose_audio_sample_rate(codec: ffmpeg::codec::Audio, requested_hz: u32) -> u32 {
+pub(crate) fn choose_audio_sample_rate(codec: ffmpeg::codec::Audio, requested_hz: u32) -> u32 {
     if let Some(rates) = codec.rates() {
         let available: Vec<u32> = rates.map(|rate| rate.max(1) as u32).collect();
         if available.is_empty() {
@@ -5294,7 +5295,7 @@ fn choose_audio_sample_rate(codec: ffmpeg::codec::Audio, requested_hz: u32) -> u
     requested_hz.max(1)
 }
 
-fn choose_audio_channel_layout(
+pub(crate) fn choose_audio_channel_layout(
     codec: ffmpeg::codec::Audio,
     requested_channels: u16,
 ) -> ffmpeg::ChannelLayout {
@@ -5317,11 +5318,11 @@ fn choose_audio_channel_layout(
     requested_layout
 }
 
-fn effective_audio_bitrate_kbps(requested_kbps: u16) -> u16 {
+pub(crate) fn effective_audio_bitrate_kbps(requested_kbps: u16) -> u16 {
     requested_kbps.clamp(128, 192)
 }
 
-fn choose_audio_sample_format(codec: ffmpeg::codec::Audio) -> ffmpeg::format::Sample {
+pub(crate) fn choose_audio_sample_format(codec: ffmpeg::codec::Audio) -> ffmpeg::format::Sample {
     let preferred = [
         ffmpeg::format::Sample::F32(ffmpeg::format::sample::Type::Planar),
         ffmpeg::format::Sample::F32(ffmpeg::format::sample::Type::Packed),
@@ -5344,7 +5345,7 @@ fn choose_audio_sample_format(codec: ffmpeg::codec::Audio) -> ffmpeg::format::Sa
     ffmpeg::format::Sample::I16(ffmpeg::format::sample::Type::Packed)
 }
 
-fn open_audio_encoder(
+pub(crate) fn open_audio_encoder(
     audio_encoder: ffmpeg::codec::encoder::audio::Audio,
     audio_codec: ffmpeg::Codec,
 ) -> Result<ffmpeg::encoder::audio::Encoder> {
@@ -5737,6 +5738,63 @@ fn export_video_generated<F>(
 where
     F: FnMut(usize, &mut [u8]) -> Result<()>,
 {
+    if mixed_audio.is_none() {
+        check_canceled(cancel_flag)?;
+        if output_path.exists() {
+            fs::remove_file(output_path)?;
+        }
+        let mut encoder = StreamingEncoder::create(StreamingEncoderConfig {
+            output_path: output_path.to_path_buf(),
+            format,
+            width,
+            height,
+            fps: export_fps.max(1),
+            codec: requested_codec,
+            prefer_hardware_h264,
+            execution_mode: perf_config.mode,
+            software_h264_priority: perf_config.software_h264_priority,
+            video: *video_config,
+            encode_threads: perf_config.encode_threads,
+            audio: None,
+        })?;
+        let rgba_len = width as usize * height as usize * 4;
+        let mut rgba = vec![0u8; rgba_len];
+        let started_at = Instant::now();
+        for index in 0..frame_count {
+            check_canceled(cancel_flag)?;
+            rgba_provider(index, &mut rgba)?;
+            let timestamp_ms = ((index as u128 * 1_000) / u128::from(export_fps.max(1)))
+                .min(u128::from(u64::MAX)) as u64;
+            encoder.push_rgba_frame(timestamp_ms, &rgba)?;
+            if index % 10 == 0 || index + 1 == frame_count {
+                let elapsed = started_at.elapsed().as_secs_f32().max(0.001);
+                let completed = index + 1;
+                let current_fps = completed as f32 / elapsed;
+                let remaining = frame_count.saturating_sub(completed) as f32;
+                let eta_ms =
+                    (current_fps > 0.0).then(|| ((remaining / current_fps) * 1_000.0) as u64);
+                let percent = 35.0 + (completed as f32 / frame_count.max(1) as f32) * 55.0;
+                emit_progress(
+                    progress_tx,
+                    ExportStage::VideoEncode,
+                    percent,
+                    current_fps,
+                    eta_ms,
+                );
+            }
+        }
+        let report = encoder.finish()?;
+        return Ok(ExportCodecTelemetry {
+            video_encoder: Some(report.video_encoder),
+            used_hardware_encode: report.used_hardware_video_encoder,
+            stage_durations_ms: ExportStageDurationsMs {
+                video_encode: started_at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+                ..ExportStageDurationsMs::default()
+            },
+            ..ExportCodecTelemetry::default()
+        });
+    }
+
     ensure_ffmpeg_initialized()?;
     validate_export_dimensions(width, height, format.requires_even_dimensions())?;
 
@@ -7949,7 +8007,7 @@ fn validate_export_dimensions(width: u32, height: u32, require_even: bool) -> Re
     Ok(())
 }
 
-fn select_video_codec(
+pub(crate) fn select_video_codec(
     output: &ffmpeg::format::context::Output,
     output_path: &Path,
     format: ExportFormat,
@@ -8031,11 +8089,11 @@ fn exact_mp4_encoder(codec: VideoCodec) -> (&'static str, &'static str) {
     }
 }
 
-fn effective_video_config(video_config: &VideoEncodeConfig) -> VideoEncodeConfig {
+pub(crate) fn effective_video_config(video_config: &VideoEncodeConfig) -> VideoEncodeConfig {
     *video_config
 }
 
-fn configure_codec_threads(
+pub(crate) fn configure_codec_threads(
     context: &mut ffmpeg::codec::context::Context,
     configured_threads: u8,
     kind: ffmpeg::codec::threading::Type,
@@ -8060,7 +8118,7 @@ fn should_use_x265_options(codec: &ffmpeg::Codec) -> bool {
     codec.name().eq_ignore_ascii_case("libx265")
 }
 
-fn is_hardware_h264_encoder(codec: &ffmpeg::Codec) -> bool {
+pub(crate) fn is_hardware_h264_encoder(codec: &ffmpeg::Codec) -> bool {
     let name = codec.name().to_ascii_lowercase();
     name.contains("nvenc") || name.contains("qsv") || name.contains("amf") || name.contains("mf")
 }
@@ -8087,7 +8145,7 @@ fn select_hardware_h264_codec() -> Option<ffmpeg::Codec> {
         .find_map(ffmpeg::encoder::find_by_name)
 }
 
-fn open_video_encoder(
+pub(crate) fn open_video_encoder(
     video_encoder: ffmpeg::codec::encoder::video::Video,
     codec: &ffmpeg::Codec,
     video_config: &VideoEncodeConfig,
@@ -8171,7 +8229,7 @@ fn x264_preset_for(speed: VideoEncodingSpeed) -> &'static str {
     speed.as_x264_preset()
 }
 
-fn drain_video_packets_with_durations(
+pub(crate) fn drain_video_packets_with_durations(
     encoder: &mut ffmpeg::encoder::video::Encoder,
     output: &mut ffmpeg::format::context::Output,
     stream_index: usize,
@@ -8207,7 +8265,7 @@ fn drain_video_packets_with_durations(
     Ok(())
 }
 
-fn drain_audio_packets_with_callback<F>(
+pub(crate) fn drain_audio_packets_with_callback<F>(
     encoder: &mut ffmpeg::encoder::audio::Encoder,
     draining: bool,
     mut on_packet: F,

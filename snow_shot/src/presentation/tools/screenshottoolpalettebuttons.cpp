@@ -201,6 +201,14 @@ class StyleButtonIconBinding final : public QObject {
         refresh();
     }
 
+    void setForcedDisabled(bool disabled) {
+        if (m_forcedDisabled == disabled) {
+            return;
+        }
+        m_forcedDisabled = disabled;
+        refresh();
+    }
+
   private:
     bool eventFilter(QObject* watched, QEvent* event) override {
         if (watched == m_button && event != nullptr && event->type() == QEvent::EnabledChange) {
@@ -218,29 +226,41 @@ class StyleButtonIconBinding final : public QObject {
             m_button->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid;
         const bool primary =
             m_button->accentRole() == adqt::widgets::AdButton::AccentRole::Primary;
-        const QColor normal = solid && primary
-                                  ? scheme.map.colorWhite
-                                  : (primary ? scheme.map.colorPrimary : scheme.map.colorText);
-        const QColor active = solid && primary
-                                  ? scheme.map.colorWhite
-                                  : (primary ? scheme.map.colorPrimaryHover : scheme.map.colorText);
-        const QColor selected = solid && primary
-                                    ? scheme.map.colorWhite
-                                    : (primary ? scheme.map.colorPrimaryActive
-                                               : scheme.map.colorText);
+        const QColor disabled = scheme.map.colorTextQuaternary;
+        const QColor normal =
+            m_forcedDisabled
+                ? disabled
+                : (solid && primary ? scheme.map.colorWhite
+                                    : (primary ? scheme.map.colorPrimary : scheme.map.colorText));
+        const QColor active =
+            m_forcedDisabled
+                ? disabled
+                : (solid && primary
+                       ? scheme.map.colorWhite
+                       : (primary ? scheme.map.colorPrimaryHover : scheme.map.colorText));
+        const QColor selected =
+            m_forcedDisabled
+                ? disabled
+                : (solid && primary
+                       ? scheme.map.colorWhite
+                       : (primary ? scheme.map.colorPrimaryActive : scheme.map.colorText));
 
         adqt::icons::IconStatePalette palette;
         palette.set(QIcon::Normal, QIcon::Off, adqt::icons::IconColors::primary(normal));
         palette.set(QIcon::Active, QIcon::Off, adqt::icons::IconColors::primary(active));
         palette.set(QIcon::Selected, QIcon::Off, adqt::icons::IconColors::primary(selected));
-        palette.set(QIcon::Disabled, QIcon::Off,
-                    adqt::icons::IconColors::primary(scheme.map.colorTextQuaternary));
-        m_button->setIconRef(m_iconRef);
-        m_button->setIcon(adqt::icons::makeIcon(m_iconRef, palette));
+        palette.set(QIcon::Disabled, QIcon::Off, adqt::icons::IconColors::primary(disabled));
+        const adqt::icons::IconRef displayedIcon =
+            m_forcedDisabled
+                ? snow_shot::presentation::icons::withPrimaryColor(m_iconRef, disabled)
+                : m_iconRef;
+        m_button->setIconRef(displayedIcon);
+        m_button->setIcon(adqt::icons::makeIcon(displayedIcon, palette));
     }
 
     QPointer<adqt::widgets::AdButton> m_button;
     adqt::icons::IconRef m_iconRef;
+    bool m_forcedDisabled = false;
 };
 
 int scaledMetric(int value, qreal physicalScale) {
@@ -1717,6 +1737,20 @@ void setScreenshotToolPaletteToolButtonIcon(adqt::widgets::AdButton* button,
         }
     }
     button->setIconRef(iconRef);
+}
+
+void setScreenshotToolPaletteToolButtonIconDisabled(adqt::widgets::AdButton* button,
+                                                    bool disabled) {
+    if (button == nullptr) {
+        return;
+    }
+
+    for (QObject* child : button->children()) {
+        if (auto* binding = dynamic_cast<StyleButtonIconBinding*>(child)) {
+            binding->setForcedDisabled(disabled);
+            return;
+        }
+    }
 }
 
 adqt::widgets::AdButton*

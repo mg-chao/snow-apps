@@ -76,6 +76,11 @@ class ScreenshotFloatingToolPaletteWindowTestAccess {
     static quint64 committedGeometryPassCount(const ScreenshotFloatingToolPaletteWindow& window) {
         return window.m_committedGeometryPassCount;
     }
+
+    static bool isPointInInteractiveContent(const ScreenshotFloatingToolPaletteWindow& window,
+                                            const QPoint& localPosition) {
+        return window.isPointInInteractiveContent(localPosition);
+    }
 };
 
 namespace {
@@ -454,6 +459,52 @@ ScreenshotToolPalette::Options recordingToolbarOptionsForPresetTest() {
     options.showRecordingControls = true;
     options.enableStyleToolbar = false;
     return options;
+}
+
+void settleQueuedRefreshes();
+
+void recordingRenderSettingsParticipateInNativeHitTesting() {
+    ScreenshotToolPalette::Options options = recordingToolbarOptionsForPresetTest();
+    options.showShapeTool = true;
+    options.recordingDrawingMode = true;
+    options.enableStyleToolbar = true;
+
+    ScreenshotFloatingToolPaletteWindow window(options);
+    window.prepareForDisplay();
+    window.show();
+    settleQueuedRefreshes();
+
+    ScreenshotToolPalette* palette = window.palette();
+    auto* renderButton = palette != nullptr
+                             ? palette->findChild<adqt::widgets::AdButton*>(
+                                   QStringLiteral("screenRecordingRenderSettings"))
+                             : nullptr;
+    require(renderButton != nullptr, "recording hit-test fixture should expose Render Settings");
+    renderButton->click();
+    settleQueuedRefreshes();
+
+    QWidget* renderPanel = palette->recordingRenderSettingsPanel();
+    auto* format = renderPanel != nullptr
+                       ? renderPanel->findChild<QWidget*>(
+                             QStringLiteral("screenRecordingOutputFormat"))
+                       : nullptr;
+    auto* cursor = renderPanel != nullptr
+                       ? renderPanel->findChild<QWidget*>(
+                             QStringLiteral("screenRecordingShowCursor"))
+                       : nullptr;
+    require(renderPanel != nullptr && renderPanel->isVisible() &&
+                palette->recordingRenderSettingsVisible() && format != nullptr && cursor != nullptr,
+            "opening Render Settings should expose its complete secondary toolbar");
+
+    const QPoint formatCenter =
+        format->mapTo(&window, QPoint(format->width() / 2, format->height() / 2));
+    const QPoint cursorCenter =
+        cursor->mapTo(&window, QPoint(cursor->width() / 2, cursor->height() / 2));
+    require(ScreenshotFloatingToolPaletteWindowTestAccess::isPointInInteractiveContent(
+                window, formatCenter) &&
+                ScreenshotFloatingToolPaletteWindowTestAccess::isPointInInteractiveContent(
+                    window, cursorCenter),
+            "native hit-testing should retain clicks over every Render Settings control");
 }
 
 void settleQueuedRefreshes() {
@@ -1775,6 +1826,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--action-layout-only"))) {
             screenshotActionLayoutReloadIsWindowScopedAndFitsThePreset();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--recording-hit-test-only"))) {
+            recordingRenderSettingsParticipateInNativeHitTesting();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--native-surface-lifecycle-only"))) {

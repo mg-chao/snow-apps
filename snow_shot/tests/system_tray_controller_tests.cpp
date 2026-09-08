@@ -80,17 +80,15 @@ int main(int argc, char* argv[]) {
     require(!trayIcon->isVisible(), "hide should make the tray icon invisible");
 
     const QStringList bundledSelections{
-        QStringLiteral("default"),      QStringLiteral("light"),
-        QStringLiteral("dark"),         QStringLiteral("snow-default"),
-        QStringLiteral("snow-light"),   QStringLiteral("snow-dark"),
+        QStringLiteral("default"),      QStringLiteral("light"),      QStringLiteral("dark"),
+        QStringLiteral("snow-default"), QStringLiteral("snow-light"), QStringLiteral("snow-dark"),
     };
     for (const QString& selection : bundledSelections) {
         controller.setIconSelection(selection);
         require(controller.iconSelection() == selection,
                 "each supported tray icon selection should be retained");
         require(trayIcon->property("resolvedIconSource").toString() ==
-                    QStringLiteral(":/snow-shot/app-icons/snow-shot-tray-%1.png")
-                        .arg(selection),
+                    QStringLiteral(":/snow-shot/app-icons/snow-shot-tray-%1.png").arg(selection),
                 "each tray icon selection should resolve to its bundled asset");
     }
     controller.setIconSelection(QStringLiteral("unsupported"));
@@ -108,10 +106,8 @@ int main(int argc, char* argv[]) {
                 trayIcon->icon().pixmap(QSize(64, 64)).toImage().pixelColor(32, 32) ==
                     QColor(242, 17, 137),
             "a valid custom image should replace the bundled tray icon");
-    const qulonglong firstDecodeCount =
-        trayIcon->property("customIconDecodeCount").toULongLong();
-    const qulonglong firstHitCount =
-        trayIcon->property("customIconCacheHits").toULongLong();
+    const qulonglong firstDecodeCount = trayIcon->property("customIconDecodeCount").toULongLong();
+    const qulonglong firstHitCount = trayIcon->property("customIconCacheHits").toULongLong();
     controller.show();
     controller.show();
     require(trayIcon->property("customIconDecodeCount").toULongLong() == firstDecodeCount &&
@@ -129,8 +125,7 @@ int main(int argc, char* argv[]) {
             "the replacement fixture should receive a distinct source fingerprint");
     replacementFile.close();
     controller.show();
-    require(trayIcon->property("customIconDecodeCount").toULongLong() ==
-                    firstDecodeCount + 1 &&
+    require(trayIcon->property("customIconDecodeCount").toULongLong() == firstDecodeCount + 1 &&
                 trayIcon->property("customIconSourcePixelSize").toSize() == QSize(80, 40) &&
                 trayIcon->icon().pixmap(QSize(80, 40)).toImage().pixelColor(40, 20) ==
                     QColor(17, 113, 229),
@@ -145,10 +140,9 @@ int main(int argc, char* argv[]) {
                 trayIcon->property("customIconDecodedPixelSize").toSize() == QSize(256, 128),
             "a large custom image should retain no raster larger than 256 by 256");
 
-    const QString icoPath =
-        QFileInfo(QString::fromUtf8(__FILE__))
-            .dir()
-            .absoluteFilePath(QStringLiteral("../resources/app-icon.ico"));
+    const QString icoPath = QFileInfo(QString::fromUtf8(__FILE__))
+                                .dir()
+                                .absoluteFilePath(QStringLiteral("../resources/app-icon.ico"));
     controller.setCustomIconPath(icoPath);
     require(trayIcon->property("customIconSourcePixelSize").toSize() == QSize(256, 256) &&
                 trayIcon->property("customIconDecodedPixelSize").toSize() == QSize(256, 256),
@@ -162,10 +156,8 @@ int main(int argc, char* argv[]) {
     require(oversizedImage.save(oversizedIconPath),
             "the oversized tray icon fixture should be writable");
     controller.setCustomIconPath(oversizedIconPath);
-    const qulonglong oversizedHitCount =
-        trayIcon->property("customIconCacheHits").toULongLong();
-    const qulonglong oversizedMissCount =
-        trayIcon->property("customIconCacheMisses").toULongLong();
+    const qulonglong oversizedHitCount = trayIcon->property("customIconCacheHits").toULongLong();
+    const qulonglong oversizedMissCount = trayIcon->property("customIconCacheMisses").toULongLong();
     const qulonglong oversizedDecodeCount =
         trayIcon->property("customIconDecodeCount").toULongLong();
     require(trayIcon->property("resolvedIconSource").toString() ==
@@ -175,12 +167,9 @@ int main(int argc, char* argv[]) {
             "pathological source dimensions should be rejected before pixel allocation");
     controller.show();
     controller.show();
-    require(trayIcon->property("customIconCacheHits").toULongLong() >=
-                    oversizedHitCount + 2 &&
-                trayIcon->property("customIconCacheMisses").toULongLong() ==
-                    oversizedMissCount &&
-                trayIcon->property("customIconDecodeCount").toULongLong() ==
-                    oversizedDecodeCount,
+    require(trayIcon->property("customIconCacheHits").toULongLong() >= oversizedHitCount + 2 &&
+                trayIcon->property("customIconCacheMisses").toULongLong() == oversizedMissCount &&
+                trayIcon->property("customIconDecodeCount").toULongLong() == oversizedDecodeCount,
             "a rejected source fingerprint should remain cached across fallback rendering");
 
     controller.setCustomIconPath(storageDirectory.filePath(QStringLiteral("missing.png")));
@@ -240,26 +229,21 @@ int main(int argc, char* argv[]) {
     controller.setMenuOptions(defaultMenuOptions);
     const QList<QAction*> defaultVisibleActions = visibleActions();
     auto* screenshotMenuAction = actionForId(QStringLiteral("quick.screenshot"));
-    auto* delayedScreenshotMenuAction =
-        actionForId(QStringLiteral("quick.screenshot-delay"));
-    auto* recordingToggleMenuAction =
-        actionForId(QStringLiteral("quick.screen-record-copy"));
-    auto* disableMenuAction =
-        actionForId(QStringLiteral("tray.disable-shortcut-functions"));
-    auto* showMainWindowMenuAction =
-        actionForId(QStringLiteral("tray.show-main-window"));
+    auto* delayedScreenshotMenuAction = actionForId(QStringLiteral("quick.screenshot-delay"));
+    auto* recordingToggleMenuAction = actionForId(QStringLiteral("quick.screen-record-copy"));
+    auto* disableMenuAction = actionForId(QStringLiteral("tray.disable-shortcut-functions"));
+    auto* showMainWindowMenuAction = actionForId(QStringLiteral("tray.show-main-window"));
     auto* exitMenuAction = actionForId(QStringLiteral("tray.exit"));
-    auto* windowGroupMenuAction = actionForObjectName(QStringLiteral("systemTrayWindowGroupAction"));
+    auto* windowGroupMenuAction =
+        actionForObjectName(QStringLiteral("systemTrayWindowGroupAction"));
     require(controller.menuOptions() == defaultMenuOptions && defaultVisibleActions.size() == 14 &&
                 screenshotMenuAction != nullptr && screenshotMenuAction->isVisible() &&
                 delayedScreenshotMenuAction != nullptr &&
-                delayedScreenshotMenuAction->isVisible() &&
-                recordingToggleMenuAction != nullptr &&
-                !recordingToggleMenuAction->isVisible() &&
-                !screenshotMenuAction->icon().isNull() && disableMenuAction != nullptr &&
-                disableMenuAction->isVisible() && disableMenuAction->isCheckable() &&
-                !disableMenuAction->isChecked() && showMainWindowMenuAction != nullptr &&
-                showMainWindowMenuAction->isVisible() &&
+                delayedScreenshotMenuAction->isVisible() && recordingToggleMenuAction != nullptr &&
+                !recordingToggleMenuAction->isVisible() && !screenshotMenuAction->icon().isNull() &&
+                disableMenuAction != nullptr && disableMenuAction->isVisible() &&
+                disableMenuAction->isCheckable() && !disableMenuAction->isChecked() &&
+                showMainWindowMenuAction != nullptr && showMainWindowMenuAction->isVisible() &&
                 !showMainWindowMenuAction->icon().isNull() && exitMenuAction != nullptr &&
                 exitMenuAction->isVisible() && !exitMenuAction->icon().isNull() &&
                 windowGroupMenuAction != nullptr && windowGroupMenuAction->isVisible() &&
@@ -274,7 +258,7 @@ int main(int argc, char* argv[]) {
     requireActionText(delayedScreenshotMenuAction, QStringLiteral("Delay 3s to execute"),
                       "Delayed screenshot should use the canonical shortcut title");
     requireActionText(recordingToggleMenuAction,
-                      QStringLiteral("Start screen recording / stop and copy video"),
+                      QStringLiteral("Start screen recording / stop and copy recording"),
                       "Recording toggle should use the canonical shortcut title");
     const QString screenshotShortcut = QStringLiteral("Ctrl+Alt+1");
     const QString alternateScreenshotShortcut = QStringLiteral("Meta+Shift+S");
@@ -396,11 +380,11 @@ int main(int argc, char* argv[]) {
                      [&showMainWindowRequests]() { ++showMainWindowRequests; });
     QObject::connect(&controller, &snow_shot::presentation::SystemTrayController::exitRequested,
                      [&exitRequests]() { ++exitRequests; });
-    QObject::connect(
-        &controller, &snow_shot::presentation::SystemTrayController::quickActionRequested,
-        [&quickActions](snow_shot::presentation::GlobalShortcutAction action) {
-            quickActions.push_back(action);
-        });
+    QObject::connect(&controller,
+                     &snow_shot::presentation::SystemTrayController::quickActionRequested,
+                     [&quickActions](snow_shot::presentation::GlobalShortcutAction action) {
+                         quickActions.push_back(action);
+                     });
     QObject::connect(
         &controller,
         &snow_shot::presentation::SystemTrayController::shortcutFunctionsDisabledChanged,
@@ -442,9 +426,8 @@ int main(int argc, char* argv[]) {
             "the disable command should expose its checked session state");
     controller.setMenuOptions({QStringLiteral("quick.screenshot"), QStringLiteral("tray.exit")});
     const QList<QAction*> compactVisibleActions = visibleActions();
-    require(!controller.shortcutFunctionsDisabled() && disableChanges == 2 &&
-                !shortcutsDisabled && compactVisibleActions.size() == 3 &&
-                compactVisibleActions.at(1)->isSeparator() &&
+    require(!controller.shortcutFunctionsDisabled() && disableChanges == 2 && !shortcutsDisabled &&
+                compactVisibleActions.size() == 3 && compactVisibleActions.at(1)->isSeparator() &&
                 !windowGroupMenuAction->isVisible(),
             "hiding the disable command should re-enable shortcuts and collapse empty groups");
     controller.setMenuOptions(defaultMenuOptions);
@@ -457,7 +440,7 @@ int main(int argc, char* argv[]) {
             "the Simplified Chinese translation should load");
     requireActionText(screenshotMenuAction,
                       QStringLiteral("\u622a\u56fe\t") + screenshotShortcutHint,
-                       "Screenshot should translate to Simplified Chinese");
+                      "Screenshot should translate to Simplified Chinese");
     requireActionText(
         delayedScreenshotMenuAction,
         snow_shot::presentation::settings::builtInSettingsRegistry().catalog().shortcutActionTitle(
@@ -469,11 +452,11 @@ int main(int argc, char* argv[]) {
             snow_shot::presentation::GlobalShortcutAction::ScreenRecordCopy),
         "Simplified Chinese recording text should equal the canonical shortcut title");
     requireActionText(showMainWindowMenuAction, QStringLiteral("\u663e\u793a\u4e3b\u754c\u9762"),
-                       "Show main interface should translate to Simplified Chinese");
+                      "Show main interface should translate to Simplified Chinese");
     requireActionText(disableMenuAction, QStringLiteral("\u7981\u7528\u5feb\u6377\u529f\u80fd"),
                       "Disable shortcut functions should translate to Simplified Chinese");
     requireActionText(exitMenuAction, QStringLiteral("\u9000\u51fa"),
-                       "Exit should translate to Simplified Chinese");
+                      "Exit should translate to Simplified Chinese");
     // The window group submenu title resolves through the SystemTrayController
     // catalog while the built-in group name comes from the namespaced
     // PinnedWindowGroupManager tr() context; both must follow the language.
@@ -500,7 +483,7 @@ int main(int argc, char* argv[]) {
             "the Traditional Chinese translation should load");
     requireActionText(screenshotMenuAction,
                       QStringLiteral("\u622a\u5716\t") + screenshotShortcutHint,
-                       "Screenshot should translate to Traditional Chinese");
+                      "Screenshot should translate to Traditional Chinese");
     requireActionText(
         delayedScreenshotMenuAction,
         snow_shot::presentation::settings::builtInSettingsRegistry().catalog().shortcutActionTitle(
@@ -512,11 +495,11 @@ int main(int argc, char* argv[]) {
             snow_shot::presentation::GlobalShortcutAction::ScreenRecordCopy),
         "Traditional Chinese recording text should equal the canonical shortcut title");
     requireActionText(showMainWindowMenuAction, QStringLiteral("\u986f\u793a\u4e3b\u4ecb\u9762"),
-                       "Show main interface should translate to Traditional Chinese");
+                      "Show main interface should translate to Traditional Chinese");
     requireActionText(disableMenuAction, QStringLiteral("\u505c\u7528\u5feb\u6377\u529f\u80fd"),
                       "Disable shortcut functions should translate to Traditional Chinese");
     requireActionText(exitMenuAction, QStringLiteral("\u7d50\u675f"),
-                       "Exit should translate to Traditional Chinese");
+                      "Exit should translate to Traditional Chinese");
     requireActionText(windowGroupMenuAction,
                       QStringLiteral("\u8996\u7a97\u7fa4\u7d44\uff1a\u9810\u8a2d"),
                       "the window group submenu title should translate to Traditional Chinese");
@@ -529,8 +512,7 @@ int main(int argc, char* argv[]) {
     requireActionText(groupActionNamed(QStringLiteral("systemTrayDeleteEmptyGroupsAction")),
                       QStringLiteral("\u522a\u9664\u7a7a\u7fa4\u7d44"),
                       "tray Delete Empty Groups should translate to Traditional Chinese");
-    controller.setGlobalShortcuts(
-        snow_shot::presentation::GlobalShortcutAction::Screenshot, {});
+    controller.setGlobalShortcuts(snow_shot::presentation::GlobalShortcutAction::Screenshot, {});
     requireActionText(screenshotMenuAction, QStringLiteral("\u622a\u5716"),
                       "clearing a global shortcut should remove its tray menu hint");
     snow_shot::storage::ApplicationStorage::instance().shutdown();

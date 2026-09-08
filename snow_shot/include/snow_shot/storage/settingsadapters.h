@@ -242,8 +242,14 @@ class RecordingSettings final {
     bool setAnimatedImageClarity(const QString& clarity) const;
     [[nodiscard]] int animatedImageFrameRate() const;
     bool setAnimatedImageFrameRate(int frameRate) const;
-    [[nodiscard]] QString animatedImageFormat() const;
-    bool setAnimatedImageFormat(const QString& format) const;
+    [[nodiscard]] QString outputFormat() const;
+    bool setOutputFormat(const QString& format) const;
+    [[nodiscard]] QColor mouseTrailColor() const;
+    bool setMouseTrailColor(const QColor& color) const;
+    [[nodiscard]] QColor mouseClickColor() const;
+    bool setMouseClickColor(const QColor& color) const;
+    [[nodiscard]] bool showCursor() const;
+    bool setShowCursor(bool show) const;
     [[nodiscard]] QString encoder() const;
     bool setEncoder(const QString& encoder) const;
     [[nodiscard]] QString encodingPreset() const;

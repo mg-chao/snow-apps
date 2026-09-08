@@ -944,12 +944,36 @@ bool RecordingSettings::setAnimatedImageFrameRate(int frameRate) const {
                             frameRate);
 }
 
-QString RecordingSettings::animatedImageFormat() const {
-    return cache().value(QStringLiteral("screen_recording/animated_image_format")).toString();
+QString RecordingSettings::outputFormat() const {
+    return cache().value(QStringLiteral("screen_recording/output_format")).toString();
 }
 
-bool RecordingSettings::setAnimatedImageFormat(const QString& format) const {
-    return cache().setValue(QStringLiteral("screen_recording/animated_image_format"), format);
+bool RecordingSettings::setOutputFormat(const QString& format) const {
+    return cache().setValue(QStringLiteral("screen_recording/output_format"), format);
+}
+
+QColor RecordingSettings::mouseTrailColor() const {
+    return colorValue(QStringLiteral("screen_recording/mouse_trail_color"));
+}
+
+bool RecordingSettings::setMouseTrailColor(const QColor& color) const {
+    return setColorValue(QStringLiteral("screen_recording/mouse_trail_color"), color);
+}
+
+QColor RecordingSettings::mouseClickColor() const {
+    return colorValue(QStringLiteral("screen_recording/mouse_click_color"));
+}
+
+bool RecordingSettings::setMouseClickColor(const QColor& color) const {
+    return setColorValue(QStringLiteral("screen_recording/mouse_click_color"), color);
+}
+
+bool RecordingSettings::showCursor() const {
+    return cache().value(QStringLiteral("screen_recording/show_cursor")).toBool();
+}
+
+bool RecordingSettings::setShowCursor(bool show) const {
+    return cache().setValue(QStringLiteral("screen_recording/show_cursor"), show);
 }
 
 QString RecordingSettings::encoder() const {

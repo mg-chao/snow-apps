@@ -19,7 +19,7 @@ class ScreenRecordingController final : public QObject {
     bool isOpen() const;
     bool isRecording() const;
     void startRecording();
-    void stopRecordingAndCopyVideo();
+    void stopRecordingAndCopy();
 
   private:
     struct Impl;

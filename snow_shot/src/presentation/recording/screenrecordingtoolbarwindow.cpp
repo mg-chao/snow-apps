@@ -1,7 +1,9 @@
 #include "snow_shot/presentation/screenrecordingtoolbarwindow.h"
 
 #include "snow_shot/presentation/screenshotgeometry.h"
+#include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "snow_shot/storage/settingsadapters.h"
 #include "screenrecordinggeometry.h"
 
 #include <QScreen>
@@ -13,10 +15,25 @@ ScreenshotToolPalette::Options recordingToolbarOptions() {
     ScreenshotToolPalette::Options options;
     options.showDragHandle = true;
     options.showSelectTool = false;
-    options.showShapeTool = false;
-    options.showArrowTool = false;
+    options.showShapeTool = true;
+    options.showArrowTool = true;
+    options.showLineTool = true;
+    options.showFreeDrawTool = true;
+    options.showHighlightTool = true;
+    options.showPenHighlightTool = true;
+    options.showSpotlightTool = true;
+    options.showEraserTool = true;
+    options.showFilterTool = true;
+    options.showWatermarkTool = true;
+    options.showTextTool = true;
+    options.showSerialNumberTool = true;
+    options.showHistoryActions = true;
     options.showRecordingControls = true;
-    options.enableStyleToolbar = false;
+    options.recordingDrawingMode = true;
+    options.enableStyleToolbar = true;
+    options.toolbarLayout = snow_shot::storage::ScreenshotToolbarSettings().layout(
+        snow_shot::storage::ScreenshotToolbarLayoutKind::DrawingTools);
+    options.styleDefaults = snow_shot::presentation::screenshotCanvasToolStyleDefaults();
     return options;
 }
 } // namespace

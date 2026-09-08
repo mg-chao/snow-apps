@@ -12,6 +12,7 @@ snow-capture = { path = "../snow-capture" }
 snow-cursor = { path = "../snow-cursor" }
 snow-audio-recorder = { path = "../snow-audio-recorder" }
 snow-recording-model = { path = "../snow-recording-model" }
+snow-recording-export = { path = "../snow-recording-export" }
 crossbeam-channel.workspace = true
 ffmpeg-next.workspace = true
 rayon.workspace = true
@@ -19,6 +20,13 @@ num_cpus.workspace = true
 smallvec.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [dev-dependencies]
 proptest = "1.11.0"

@@ -94,8 +94,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 30 && itemCount == 122,
-            "catalog must contain the expected thirty sections and one hundred twenty-two items");
+    require(sectionCount == 30 && itemCount == 121,
+            "catalog must contain the expected thirty sections and one hundred twenty-one items");
     const auto* fill = catalog.item({QStringLiteral("interface-settings"),
                                      QStringLiteral("interface-text-recognition"),
                                      QStringLiteral("interface.text-recognition.fill-style")});
@@ -768,7 +768,7 @@ void quickFunctionShortcutsHaveStableContracts() {
             "Screen recording must use the screenshot toolbar recording icon");
     require(screenRecordCopy != nullptr && screenRecordCopy->title.source != nullptr &&
                 QString::fromLatin1(screenRecordCopy->title.source) ==
-                    QStringLiteral("Start screen recording / stop and copy video") &&
+                    QStringLiteral("Start screen recording / stop and copy recording") &&
                 screenRecordCopyShortcut != nullptr && screenRecordCopyShortcut->iconFactory &&
                 screenRecordCopyShortcut->iconFactory() ==
                     snow_shot::presentation::icons::custom::outlined::ScreenshotCopy(),
@@ -911,8 +911,8 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 159 && index.search(QString()).size() == 159,
-            "search must generate all one hundred fifty-nine catalog nodes in catalog order");
+    require(index.entries().size() == 158 && index.search(QString()).size() == 158,
+            "search must generate all one hundred fifty-eight catalog nodes in catalog order");
     const auto translation = index.search(QStringLiteral("original image translation"));
     require(!translation.isEmpty() && translation.constFirst().location.itemId ==
                                           QStringLiteral("translation.original-image"),
@@ -943,7 +943,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 7 && sections == 30 && items == 122,
+    require(pages == 7 && sections == 30 && items == 121,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

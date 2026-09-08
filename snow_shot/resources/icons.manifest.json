@@ -296,6 +296,22 @@
     },
     {
       "variant": "outlined",
+      "symbol": "RecordingClick",
+      "name": "recording-click",
+      "source": "../src/presentation/components/icons/resources/recording-click.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "RecordingCursor",
+      "name": "recording-cursor",
+      "source": "../src/presentation/components/icons/resources/recording-cursor.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "RecordingFolder",
       "name": "recording-folder",
       "source": "../src/presentation/components/icons/resources/recording-folder.svg",
@@ -307,6 +323,14 @@
       "symbol": "RecordingMicrophone",
       "name": "recording-microphone",
       "source": "../src/presentation/components/icons/resources/recording-microphone.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "RecordingRender",
+      "name": "recording-render",
+      "source": "../src/presentation/components/icons/resources/recording-render.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },

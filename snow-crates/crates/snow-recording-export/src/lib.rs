@@ -4,6 +4,7 @@ pub mod config;
 pub mod editing;
 pub mod error;
 pub mod export;
+pub mod streaming;
 
 pub(crate) mod ffmpeg_util;
 pub(crate) mod video_quality;
@@ -17,4 +18,8 @@ pub use error::RecordingExportError;
 pub use export::{
     ExportPathKind, ExportProgress, ExportResult, ExportRuntimeReport, ExportStage,
     ExportStageDurationsMs, ExportTask,
+};
+pub use streaming::{
+    StreamingAudioConfig, StreamingEncoder, StreamingEncoderConfig, StreamingEncoderReport,
+    cleanup_stale_staging_files, scaled_output_dimensions,
 };

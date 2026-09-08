@@ -842,10 +842,10 @@ bool ScreenshotController::Impl::ensureRecognitionFeature() {
             ? ScreenshotOcrBackendPreference::DirectMl
             : ScreenshotOcrBackendPreference::Cpu;
     ScreenshotOcrRecognitionService::Options ocrOptions;
-    ocrOptions.modelType = screenshotOcrModelTypeFromValue(
-        applicationStorage.configuration()
-            .value(QStringLiteral("text_recognition/model_type"))
-            .toString());
+    ocrOptions.modelType =
+        screenshotOcrModelTypeFromValue(applicationStorage.configuration()
+                                            .value(QStringLiteral("text_recognition/model_type"))
+                                            .toString());
     ocrOptions.offlineRoot =
         QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("assets/ocr"));
     if (applicationStorage.isInitialized() &&
@@ -3856,7 +3856,7 @@ void ScreenshotController::startOrStopScreenRecordingAndCopy() {
     } else if (!m_impl->m_screenRecordingController->isRecording()) {
         m_impl->m_screenRecordingController->startRecording();
     } else {
-        m_impl->m_screenRecordingController->stopRecordingAndCopyVideo();
+        m_impl->m_screenRecordingController->stopRecordingAndCopy();
     }
 }
 

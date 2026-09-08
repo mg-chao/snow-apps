@@ -2972,6 +2972,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-floating-toolbar-action-layout-tests
         COMMAND snow-shot-floating-toolbar-drag-tests --action-layout-only
     )
+    add_test(
+        NAME snow-shot-floating-toolbar-recording-hit-test-tests
+        COMMAND snow-shot-floating-toolbar-drag-tests --recording-hit-test-only
+    )
     set_tests_properties(snow-shot-floating-toolbar-drag-tests PROPERTIES
         RUN_SERIAL TRUE
         ENVIRONMENT_MODIFICATION
@@ -2990,6 +2994,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+    set_tests_properties(snow-shot-floating-toolbar-recording-hit-test-tests PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
     if(NOT WIN32)
         set_tests_properties(snow-shot-floating-toolbar-drag-tests PROPERTIES
             ENVIRONMENT
@@ -3004,6 +3012,10 @@ if(SNOW_SHOT_BUILD_TESTS)
                 "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         )
         set_tests_properties(snow-shot-floating-toolbar-action-layout-tests PROPERTIES
+            ENVIRONMENT
+                "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        )
+        set_tests_properties(snow-shot-floating-toolbar-recording-hit-test-tests PROPERTIES
             ENVIRONMENT
                 "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         )
@@ -3250,6 +3262,38 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-screen-recording-geometry-tests
     )
     set_tests_properties(snow-shot-screen-recording-geometry-tests PROPERTIES
+        ENVIRONMENT
+            "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT};QT_SCALE_FACTOR=1.25"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
+    add_executable(snow-shot-screen-recording-area-window-tests
+        tests/screen_recording_area_window_tests.cpp
+        include/snow_shot/presentation/screenrecordingareawindow.h
+        src/presentation/core/screenshotcanvastoolstyles.cpp
+        src/presentation/core/screenshotgeometry.cpp
+        src/presentation/recording/screenrecordingareawindow.cpp
+        src/presentation/recording/screenrecordinggeometry.cpp
+    )
+    target_include_directories(snow-shot-screen-recording-area-window-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(snow-shot-screen-recording-area-window-tests PRIVATE
+        adqt_icon_core
+        Qt6::Widgets
+        snow_draw_engine_qt_canvas
+        snow_shot_storage
+    )
+    if(WIN32)
+        target_link_libraries(snow-shot-screen-recording-area-window-tests PRIVATE user32)
+    endif()
+    add_test(
+        NAME snow-shot-screen-recording-area-window-tests
+        COMMAND snow-shot-screen-recording-area-window-tests
+    )
+    set_tests_properties(snow-shot-screen-recording-area-window-tests PROPERTIES
         ENVIRONMENT
             "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT};QT_SCALE_FACTOR=1.25"
         ENVIRONMENT_MODIFICATION
@@ -3600,6 +3644,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-application-icon-tests
         snow-shot-toolbar-main-panel-tests
         snow-shot-screen-recording-geometry-tests
+        snow-shot-screen-recording-area-window-tests
         snow-shot-window-capture-exclusion-tests
         snow-shot-ocr-presentation-tests
     )
@@ -3871,6 +3916,20 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
             "${CARGO_EXECUTABLE}" build --locked --release
             --target x86_64-pc-windows-msvc
             --package snow-ui-selector --example hit_bench
+        WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
+        USES_TERMINAL
+        VERBATIM
+    )
+
+    # Not registered with CTest: this generates final-container fixtures through
+    # the streaming encoder used by direct recording and reports Release metrics.
+    add_custom_target(snow-shot-direct-recording-performance-benchmark
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
+            "FFMPEG_DIR=${SNOW_FFMPEG_ROOT}"
+            "${CARGO_EXECUTABLE}" build --locked --release
+            --target x86_64-pc-windows-msvc
+            --package snow-recording-export --example direct_recording_benchmark
         WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
         USES_TERMINAL
         VERBATIM

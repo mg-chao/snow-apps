@@ -129,6 +129,7 @@ class ScreenshotToolPalette final : public QWidget {
         bool copyButtonWithNeutralIcon = false;
         bool showScreenRecordButton = false;
         bool showRecordingControls = false;
+        bool recordingDrawingMode = false;
         bool showTrailingDragHandle = false;
         bool enableStyleToolbar = true;
         bool separatorAfterSelect = false;
@@ -148,6 +149,7 @@ class ScreenshotToolPalette final : public QWidget {
     QWidget* mainPanel() const;
     QWidget* actionPanel() const;
     QWidget* stylePanel() const;
+    QWidget* recordingRenderSettingsPanel() const;
     QWidget* dragHandle() const;
     QWidget* trailingDragHandle() const;
     QSize contentSizeHint() const;
@@ -179,6 +181,7 @@ class ScreenshotToolPalette final : public QWidget {
     void setStyleToolbarVisible(bool visible);
     bool styleToolbarVisible() const;
     bool actionToolbarVisible() const;
+    bool recordingRenderSettingsVisible() const;
     void setActiveTool(Tool tool);
     void refreshConfirmShortcutHint();
     void refreshShortcutTooltips();
@@ -202,6 +205,14 @@ class ScreenshotToolPalette final : public QWidget {
     void setRecordingMicrophoneEnabled(bool enabled);
     void setRecordingSystemAudioEnabled(bool enabled);
     void setRecordingBusy(bool busy);
+    void setRecordingOutputFormat(const QString& format);
+    [[nodiscard]] QString recordingOutputFormat() const;
+    void setRecordingMouseTrailColor(const QColor& color);
+    [[nodiscard]] QColor recordingMouseTrailColor() const;
+    void setRecordingMouseClickColor(const QColor& color);
+    [[nodiscard]] QColor recordingMouseClickColor() const;
+    void setRecordingCursorVisible(bool visible);
+    [[nodiscard]] bool recordingCursorVisible() const;
     void setOcrEnabled(bool enabled);
     void setOcrBusy(bool busy);
     void setTableEnabled(bool enabled);
@@ -307,8 +318,11 @@ class ScreenshotToolPalette final : public QWidget {
     void recordingSystemAudioToggled(bool enabled);
     void recordingOpenFolderRequested();
     void recordingCloseRequested();
-    void recordingCopyAnimatedImageRequested();
-    void recordingCopyVideoRequested();
+    void recordingCopyRequested();
+    void recordingOutputFormatChanged(const QString& format);
+    void recordingMouseTrailColorChanged(const QColor& color);
+    void recordingMouseClickColorChanged(const QColor& color);
+    void recordingCursorVisibleChanged(bool visible);
     void materializedScope(QWidget* scope);
 
   private:
@@ -348,10 +362,17 @@ class ScreenshotToolPalette final : public QWidget {
     void clearDrawingToolGroups();
     void activateToolFromToolbar(Tool tool, bool toggleVisibleButton = true);
     void activateDrawingTool(Tool tool);
+    [[nodiscard]] bool isRecordingUnavailableTool(Tool tool) const;
+    void refreshRecordingToolAvailability(adqt::widgets::AdButton* button, Tool tool,
+                                          const QString& label);
     [[nodiscard]] Tool drawingShortcutEntryTool(const QString& itemId, Tool fallback) const;
     void selectDrawingToolGroupEntry(Tool tool);
     void refreshDrawingToolGroup(int groupIndex);
     void addRecordingControls(QBoxLayout* layout);
+    void createRecordingRenderSettingsToolbar();
+    void setRecordingRenderSettingsVisible(bool visible);
+    void updateRecordingRenderSettingsControls();
+    void refreshRecordingRenderSettingsText();
     void activateTableQrTool(Tool tool, bool toggleVisibleButton = true);
     void setTableQrEntryTool(Tool tool);
     void refreshTableQrTrigger();
@@ -507,9 +528,11 @@ class ScreenshotToolPalette final : public QWidget {
     ScreenshotToolbarMainPanel* m_mainPanel = nullptr;
     QWidget* m_selectActionPanel = nullptr;
     QWidget* m_rectangleStylePanel = nullptr;
+    QWidget* m_recordRenderSettingsPanel = nullptr;
     QBoxLayout* m_rootLayout = nullptr;
     QBoxLayout* m_rectangleStyleLayout = nullptr;
     QBoxLayout* m_selectActionLayout = nullptr;
+    QBoxLayout* m_recordRenderSettingsLayout = nullptr;
     QVector<QBoxLayout*> m_styleControlLayouts;
     QWidget* m_rectangleStyleControlsWidget = nullptr;
     QWidget* m_lineStyleControlsWidget = nullptr;
@@ -571,6 +594,7 @@ class ScreenshotToolPalette final : public QWidget {
     adqt::widgets::AdButton* m_scrollingHorizontalButton = nullptr;
     adqt::widgets::AdButton* m_screenRecordButton = nullptr;
     adqt::widgets::AdButton* m_recordStartButton = nullptr;
+    adqt::widgets::AdButton* m_recordRenderSettingsButton = nullptr;
     adqt::widgets::AdButton* m_recordStopButton = nullptr;
     adqt::widgets::AdButton* m_recordPauseButton = nullptr;
     adqt::widgets::AdButton* m_recordResumeButton = nullptr;
@@ -578,8 +602,13 @@ class ScreenshotToolPalette final : public QWidget {
     adqt::widgets::AdButton* m_recordSystemAudioButton = nullptr;
     adqt::widgets::AdButton* m_recordOpenFolderButton = nullptr;
     adqt::widgets::AdButton* m_recordCloseButton = nullptr;
-    adqt::widgets::AdButton* m_recordCopyAnimatedImageButton = nullptr;
-    adqt::widgets::AdButton* m_recordCopyVideoButton = nullptr;
+    adqt::widgets::AdButton* m_recordCopyButton = nullptr;
+    adqt::widgets::AdSelect* m_recordOutputFormatSelect = nullptr;
+    adqt::widgets::AdColorPicker* m_recordMouseTrailColorPicker = nullptr;
+    adqt::widgets::AdColorPicker* m_recordMouseClickColorPicker = nullptr;
+    adqt::widgets::AdButton* m_recordCursorButton = nullptr;
+    QLabel* m_recordMouseTrailIcon = nullptr;
+    QLabel* m_recordMouseClickIcon = nullptr;
     QLabel* m_recordDurationLabel = nullptr;
     adqt::widgets::AdButton* m_pinButton = nullptr;
     adqt::widgets::AdButton* m_cancelButton = nullptr;
@@ -594,6 +623,7 @@ class ScreenshotToolPalette final : public QWidget {
     std::optional<Tool> m_activeTool;
     adqt::widgets::AdButton* m_activeToolButton = nullptr;
     QVector<QFrame*> m_styleSeparatorFrames;
+    QVector<QFrame*> m_recordRenderSettingsSeparators;
     QVector<QFrame*> m_panelFrames;
     QVector<SpacingItem> m_styleSpacingItems;
     QVector<StyleLayoutProfile> m_styleLayoutProfiles;
@@ -619,6 +649,11 @@ class ScreenshotToolPalette final : public QWidget {
     bool m_recordingMicrophoneEnabled = false;
     bool m_recordingSystemAudioEnabled = true;
     bool m_recordingBusy = false;
+    bool m_recordRenderSettingsVisible = false;
+    QString m_recordingOutputFormat = QStringLiteral("mp4");
+    QColor m_recordingMouseTrailColor = QColor(0, 0, 0, 0);
+    QColor m_recordingMouseClickColor = QColor(0, 0, 0, 0);
+    bool m_recordingCursorVisible = true;
     bool m_ocrEnabled = true;
     bool m_ocrBusy = false;
     bool m_tableEnabled = true;

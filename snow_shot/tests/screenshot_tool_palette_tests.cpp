@@ -5,6 +5,7 @@
 #include "snow_shot/presentation/components/icons/iconrenderutils.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/languagemanager.h"
+#include "snow_shot/presentation/styles/themecolorscheme.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "../src/presentation/tools/screenshottoolpalettebuttons.h"
@@ -137,10 +138,9 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
     palette.show();
     QCoreApplication::processEvents();
 
-    const char* sources[] = {
-        "Start recording",     "Stop recording",  "Pause recording",       "Resume recording",
-        "Record microphone",   "Record speakers", "Open recording folder", "Close recording",
-        "Copy animated image", "Copy video"};
+    const char* sources[] = {"Start recording",       "Stop recording",    "Pause recording",
+                             "Resume recording",      "Record microphone", "Record speakers",
+                             "Open recording folder", "Close recording",   "Copy recording"};
     QVector<adqt::widgets::AdButton*> buttons;
     for (const char* source : sources) {
         adqt::widgets::AdButton* match = nullptr;
@@ -165,7 +165,7 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
         QCoreApplication::processEvents();
         const bool idle = state == State::Idle;
         const bool paused = state == State::Paused;
-        const bool visible[] = {idle, !idle, !paused, paused, true, true, true, true, true, true};
+        const bool visible[] = {idle, !idle, !paused, paused, true, true, true, true, true};
         const bool enabled[] = {idle && !busy,
                                 !idle && !busy,
                                 state == State::Recording && !busy,
@@ -174,7 +174,6 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
                                 idle && !busy,
                                 true,
                                 !busy,
-                                !idle && !busy,
                                 !idle && !busy};
         const QLayout* layout = palette.mainPanel()->layout();
         QRect previous;
@@ -182,6 +181,11 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
             auto* button = buttons.at(index);
             require(layout->indexOf(button) >= 0,
                     "every recording control must remain in the main toolbar layout");
+            if (button->isVisible() != visible[index]) {
+                std::cerr << "visibility mismatch for " << sources[index] << " in state "
+                          << static_cast<int>(state) << " busy=" << busy << ": expected "
+                          << visible[index] << ", actual " << button->isVisible() << '\n';
+            }
             require(button->isVisible() == visible[index],
                     "recording control visibility should follow recording state");
             require(button->isEnabled() == enabled[index],
@@ -211,11 +215,274 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
     palette.setRecordingDuration(65000);
     require(duration->text() == QStringLiteral("00:01:05"),
             "visible recording duration should update");
+    for (qreal scale : {1.0, 0.75, 1.25, 1.5, 2.0}) {
+        palette.setPhysicalScale(scale);
+        int previousWidth = 0;
+        for (qint64 milliseconds : {0LL, 65000LL, 359999000LL, 360000000LL}) {
+            palette.setRecordingDuration(milliseconds);
+            palette.prepareForDisplay();
+            QCoreApplication::processEvents();
+            if (duration->width() < duration->sizeHint().width()) {
+                std::cerr << "duration " << duration->text().toStdString() << " at scale " << scale
+                          << ": allocated " << duration->width() << ", required "
+                          << duration->sizeHint().width() << '\n';
+            }
+            require(duration->width() >= duration->sizeHint().width(),
+                    "recording duration must fit its complete text without clipping");
+            require(palette.mainPanel()->rect().contains(duration->geometry()),
+                    "resized recording duration must remain inside the toolbar");
+            if (milliseconds < 360000000LL) {
+                require(previousWidth == 0 || duration->width() == previousWidth,
+                        "timer ticks must not change the width of a two-digit-hour display");
+            }
+            previousWidth = duration->width();
+        }
+    }
     int startRequests = 0;
     QObject::connect(&palette, &ScreenshotToolPalette::recordingStartRequested, &palette,
                      [&]() { ++startRequests; });
     buttons.constFirst()->click();
     require(startRequests == 1, "the visible start button should request recording");
+}
+
+void recordingRenderSettingsAndDrawingAvailabilityFollowSessionState() {
+    ScreenshotToolPalette::Options options;
+    options.showDragHandle = true;
+    options.showShapeTool = true;
+    options.showHighlightTool = true;
+    options.showPenHighlightTool = true;
+    options.showSpotlightTool = true;
+    options.showFilterTool = true;
+    options.showRecordingControls = true;
+    options.recordingDrawingMode = true;
+    options.enableStyleToolbar = true;
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    palette.prepareForDisplay();
+    QCoreApplication::processEvents();
+
+    auto* renderButton = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenRecordingRenderSettings"));
+    auto* renderPanel =
+        palette.findChild<QWidget*>(QStringLiteral("screenRecordingRenderSettingsPanel"));
+    auto* format =
+        palette.findChild<adqt::widgets::AdSelect*>(QStringLiteral("screenRecordingOutputFormat"));
+    auto* trail = palette.findChild<adqt::widgets::AdColorPicker*>(
+        QStringLiteral("screenRecordingMouseTrailColor"));
+    auto* click = palette.findChild<adqt::widgets::AdColorPicker*>(
+        QStringLiteral("screenRecordingMouseClickColor"));
+    auto* cursor =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenRecordingShowCursor"));
+    require(renderButton != nullptr && renderPanel != nullptr && format != nullptr &&
+                trail != nullptr && click != nullptr && cursor != nullptr,
+            "recording render settings controls should be created");
+    require(format->variant() == adqt::widgets::AdSelect::Variant::Borderless,
+            "the recording format select should use the borderless toolbar variant");
+
+    const auto findDrawingButton = [&palette](const QString& itemId) {
+        for (auto* button : palette.mainPanel()->findChildren<adqt::widgets::AdButton*>()) {
+            if (button->property("screenshotToolbarItemId").toString() == itemId &&
+                button->parentWidget() == palette.mainPanel()) {
+                return button;
+            }
+        }
+        return static_cast<adqt::widgets::AdButton*>(nullptr);
+    };
+    auto* shapeButton = findDrawingButton(QStringLiteral("shape"));
+    auto* filterButton = findDrawingButton(QStringLiteral("filter"));
+    require(shapeButton != nullptr && filterButton != nullptr,
+            "recording drawing controls should expose their configured toolbar entries");
+
+    QLayout* mainLayout = palette.mainPanel()->layout();
+    const int renderButtonIndex = mainLayout->indexOf(renderButton);
+    const int shapeButtonIndex = mainLayout->indexOf(shapeButton);
+    bool separatorAfterRenderSettings = false;
+    for (int index = renderButtonIndex + 1; index < shapeButtonIndex; ++index) {
+        if (qobject_cast<QFrame*>(mainLayout->itemAt(index)->widget()) != nullptr) {
+            separatorAfterRenderSettings = true;
+            break;
+        }
+    }
+    require(renderButtonIndex >= 0 && shapeButtonIndex > renderButtonIndex &&
+                separatorAfterRenderSettings,
+            "the main toolbar should place a separator immediately after Render Settings");
+
+    const auto disabledIconColor =
+        snow_shot::presentation::styles::generateThemeColorScheme().map.colorTextQuaternary;
+    const std::optional<QColor> filterIconColor = filterButton->iconRef().colors().primarySlot();
+    require(filterButton->isEnabled() && filterIconColor.has_value() &&
+                filterIconColor->rgba() == disabledIconColor.rgba(),
+            "unavailable recording tools should remain explorable and use the disabled icon color");
+    require(renderButton->toolTip() == QStringLiteral("Render settings") &&
+                renderButton->accessibleName() == QStringLiteral("Render settings") &&
+                format->accessibleName() == QStringLiteral("Recording format") &&
+                trail->accessibleName() == QStringLiteral("Mouse trail color") &&
+                click->accessibleName() == QStringLiteral("Mouse click color") &&
+                cursor->accessibleName() == QStringLiteral("Show cursor in recording"),
+            "recording render controls should expose translated accessibility text");
+    require(!renderPanel->isVisible() &&
+                format->currentValue().toString() == QStringLiteral("mp4") &&
+                trail->value().solidColor == QColor(0, 0, 0, 0) &&
+                click->value().solidColor == QColor(0, 0, 0, 0) && palette.recordingCursorVisible(),
+            "recording render settings should use the documented first-run defaults");
+
+    const auto trailPresets = trail->presets();
+    const auto clickPresets = click->presets();
+    require(trailPresets.size() == 1 && trailPresets.constFirst().colors.size() == 5 &&
+                trailPresets.constFirst().colors.at(0).solidColor == QColor(0, 0, 0, 0) &&
+                trailPresets.constFirst().colors.at(1).solidColor == QColor(255, 0, 0) &&
+                trailPresets.constFirst().colors.at(2).solidColor == QColor(0, 255, 0) &&
+                trailPresets.constFirst().colors.at(3).solidColor == QColor(0, 0, 255) &&
+                trailPresets.constFirst().colors.at(4).solidColor == QColor(255, 255, 0),
+            "mouse trail should expose transparent and opaque RGBY presets");
+    require(clickPresets.size() == 1 && clickPresets.constFirst().colors.size() == 5 &&
+                clickPresets.constFirst().colors.at(0).solidColor == QColor(0, 0, 0, 0) &&
+                clickPresets.constFirst().colors.at(1).solidColor == QColor(255, 0, 0, 128) &&
+                clickPresets.constFirst().colors.at(2).solidColor == QColor(0, 255, 0, 128) &&
+                clickPresets.constFirst().colors.at(3).solidColor == QColor(0, 0, 255, 128) &&
+                clickPresets.constFirst().colors.at(4).solidColor == QColor(255, 255, 0, 128),
+            "mouse click should expose transparent and semi-transparent RGBY presets");
+
+    const QRect mainGeometry = palette.mainPanel()->geometry();
+    renderButton->click();
+    QCoreApplication::processEvents();
+    require(renderPanel->isVisible() && palette.mainPanel()->geometry() == mainGeometry,
+            "opening render settings should not move or resize the main toolbar row");
+    auto* formatSeparator = renderPanel->findChild<QFrame*>(
+        QStringLiteral("screenRecordingRenderFormatSeparator"), Qt::FindDirectChildrenOnly);
+    auto* trailSeparator = renderPanel->findChild<QFrame*>(
+        QStringLiteral("screenRecordingRenderTrailSeparator"), Qt::FindDirectChildrenOnly);
+    auto* clickSeparator = renderPanel->findChild<QFrame*>(
+        QStringLiteral("screenRecordingRenderClickSeparator"), Qt::FindDirectChildrenOnly);
+    auto* trailIcon = renderPanel->findChild<QLabel*>(
+        QStringLiteral("screenRecordingMouseTrailIcon"), Qt::FindDirectChildrenOnly);
+    auto* clickIcon = renderPanel->findChild<QLabel*>(
+        QStringLiteral("screenRecordingMouseClickIcon"), Qt::FindDirectChildrenOnly);
+    QLayout* renderLayout = renderPanel->layout();
+    require(formatSeparator != nullptr && trailSeparator != nullptr && clickSeparator != nullptr &&
+                trailIcon != nullptr && clickIcon != nullptr && renderLayout != nullptr &&
+                renderLayout->spacing() == 4 && format->width() == 76 && trailIcon->width() == 24 &&
+                clickIcon->width() == 24 && trail->width() == 32 && click->width() == 32 &&
+                renderLayout->indexOf(format) < renderLayout->indexOf(formatSeparator) &&
+                renderLayout->indexOf(formatSeparator) < renderLayout->indexOf(trailIcon) &&
+                renderLayout->indexOf(trail) < renderLayout->indexOf(trailSeparator) &&
+                renderLayout->indexOf(trailSeparator) < renderLayout->indexOf(clickIcon) &&
+                renderLayout->indexOf(click) < renderLayout->indexOf(clickSeparator) &&
+                renderLayout->indexOf(clickSeparator) < renderLayout->indexOf(cursor),
+            "render settings should use compact, separated format, trail, click, and cursor groups");
+
+    int selectRequests = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::selectRequested, &palette,
+                     [&]() { ++selectRequests; });
+    renderButton->click();
+    require(renderPanel->isVisible() && !palette.activeToolForTests().has_value(),
+            "clicking active Render Settings should keep its shared selection stable");
+    shapeButton->click();
+    require(!renderPanel->isVisible() &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape,
+            "selecting a drawing tool should deselect and close Render Settings");
+    renderButton->click();
+    require(renderPanel->isVisible() && !palette.activeToolForTests().has_value() &&
+                selectRequests == 1,
+            "selecting Render Settings should clear drawing and request pass-through input");
+    filterButton->click();
+    require(renderPanel->isVisible() && !palette.activeToolForTests().has_value() &&
+                selectRequests == 1,
+            "selecting an unavailable recording tool should leave the shared state unchanged");
+    shapeButton->click();
+    shapeButton->click();
+    require(renderPanel->isVisible() && !palette.activeToolForTests().has_value() &&
+                selectRequests == 2,
+            "clicking the active drawing button should select Render Settings");
+
+    int formatChanges = 0;
+    int trailChanges = 0;
+    int clickChanges = 0;
+    int cursorChanges = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingOutputFormatChanged, &palette,
+                     [&](const QString&) { ++formatChanges; });
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingMouseTrailColorChanged, &palette,
+                     [&](const QColor&) { ++trailChanges; });
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingMouseClickColorChanged, &palette,
+                     [&](const QColor&) { ++clickChanges; });
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingCursorVisibleChanged, &palette,
+                     [&](bool) { ++cursorChanges; });
+    format->setCurrentValue(QStringLiteral("webp"));
+    trail->commitValue(adqt::widgets::AdColorValue::solid(QColor(12, 34, 56, 78)));
+    click->commitValue(adqt::widgets::AdColorValue::solid(QColor(90, 80, 70, 60)));
+    cursor->click();
+    require(palette.recordingOutputFormat() == QStringLiteral("webp") &&
+                palette.recordingMouseTrailColor() == QColor(12, 34, 56, 78) &&
+                palette.recordingMouseClickColor() == QColor(90, 80, 70, 60) &&
+                !palette.recordingCursorVisible() && formatChanges == 1 && trailChanges == 1 &&
+                clickChanges == 1 && cursorChanges == 1,
+            "render controls should accept arbitrary RGBA values and publish changes once");
+
+    adqt::widgets::AdButton* microphone = nullptr;
+    adqt::widgets::AdButton* systemAudio = nullptr;
+    for (auto* button : palette.mainPanel()->findChildren<adqt::widgets::AdButton*>()) {
+        const QString source = button->property("snowShotTranslationTooltipSource").toString();
+        if (source == QStringLiteral("Record microphone")) {
+            microphone = button;
+        } else if (source == QStringLiteral("Record speakers")) {
+            systemAudio = button;
+        }
+    }
+    require(microphone != nullptr && systemAudio != nullptr && !microphone->isEnabled() &&
+                !systemAudio->isEnabled() &&
+                microphone->toolTip() ==
+                    QStringLiteral("Animated recording formats do not contain audio") &&
+                systemAudio->toolTip() ==
+                    QStringLiteral("Animated recording formats do not contain audio"),
+            "animated formats should disable audio with an explanatory tooltip");
+    palette.setRecordingMicrophoneEnabled(true);
+    palette.setRecordingSystemAudioEnabled(false);
+    format->setCurrentValue(QStringLiteral("mp4"));
+    require(microphone->isEnabled() && systemAudio->isEnabled(),
+            "returning to MP4 should restore audio control availability");
+    format->setCurrentValue(QStringLiteral("gif"));
+    format->setCurrentValue(QStringLiteral("mp4"));
+    require(palette.recordingOutputFormat() == QStringLiteral("mp4"),
+            "animated format changes should not alter stored audio preferences");
+
+    palette.setRecordingState(ScreenshotToolPalette::RecordingState::Recording);
+    QCoreApplication::processEvents();
+    require(!renderPanel->isVisible() && !renderButton->isEnabled() && format->disabled() &&
+                trail->disabled() && click->disabled() && !cursor->isEnabled(),
+            "render settings should collapse and lock while recording");
+    palette.setRecordingState(ScreenshotToolPalette::RecordingState::Paused);
+    require(!renderButton->isEnabled(), "render settings should remain locked while paused");
+    palette.setRecordingState(ScreenshotToolPalette::RecordingState::Idle);
+    require(renderButton->isEnabled() && !format->disabled() && !trail->disabled() &&
+                !click->disabled() && cursor->isEnabled(),
+            "render settings should unlock after returning to idle");
+
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape,
+            "shape should activate during recording drawing mode");
+    require(!palette.activateDrawingShortcut(QStringLiteral("highlight")) &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape &&
+                !palette.activateDrawingShortcut(QStringLiteral("filter")) &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape,
+            "unavailable recording tools should not activate through scoped shortcuts");
+    require(palette.activateDrawingShortcut(QStringLiteral("eraser")) &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::Eraser,
+            "enabled recording tools should remain available through scoped shortcuts");
+
+    auto* spotlight =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotSpotlightButton"));
+    require(spotlight != nullptr, "spotlight should remain present while recording");
+    spotlight->click();
+    require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Spotlight &&
+                palette.stepSpotlightOpacity(-1),
+            "spotlight should activate and retain adjustable opacity while recording");
+
+    QEvent languageChange(QEvent::LanguageChange);
+    QCoreApplication::sendEvent(&palette, &languageChange);
+    require(renderButton->toolTip() == QStringLiteral("Render settings") &&
+                format->accessibleName() == QStringLiteral("Recording format") &&
+                cursor->accessibleName() == QStringLiteral("Show cursor in recording"),
+            "recording render controls should retranslate after LanguageChange");
 }
 
 void numericStrokeWidthPreviewUsesLineWithinPreviewBounds() {
@@ -6817,6 +7084,7 @@ int main(int argc, char** argv) {
 #endif
     if (application.arguments().contains(QStringLiteral("--recording-controls-only"))) {
         recordingControlsRemainLaidOutAcrossStateChanges();
+        recordingRenderSettingsAndDrawingAvailabilityFollowSessionState();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -6895,6 +7163,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     recordingControlsRemainLaidOutAcrossStateChanges();
+    recordingRenderSettingsAndDrawingAvailabilityFollowSessionState();
     numericStrokeWidthPreviewUsesLineWithinPreviewBounds();
     secondaryControlsMaterializeOnlyForTheRequestedFamily();
     textAndHighlightStrokeWidthTriggersUseSharedPreviewButton();
