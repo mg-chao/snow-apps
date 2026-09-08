@@ -1214,8 +1214,20 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
     auto* source = new adqt::widgets::AdSelect(form);
     auto* target = new adqt::widgets::AdSelect(form);
     auto* service = new adqt::widgets::AdSelect(form);
-    auto* originalImage = new adqt::widgets::AdSwitch(form);
+    // Keep the form's three-size enum from overriding the switch's two-size enum.
+    auto* originalImageRow = new QWidget(form);
+    auto* originalImageLayout = new QHBoxLayout(originalImageRow);
+    originalImageLayout->setContentsMargins(0, 0, 0, 0);
+    auto* originalImage = new adqt::widgets::AdSwitch(originalImageRow);
     originalImage->setObjectName(QStringLiteral("screenshotTranslationOriginalImage"));
+    originalImage->setControlSize(adqt::widgets::AdSwitch::ControlSize::Medium);
+    adqt::widgets::AdSwitch::ComponentTokens originalImageTokens;
+    originalImageTokens.metrics.trackHeight = 28;
+    originalImageTokens.metrics.trackMinWidth = 56;
+    originalImageTokens.metrics.thumbSize = 24;
+    originalImage->setComponentTokens(originalImageTokens);
+    originalImageLayout->addWidget(originalImage);
+    originalImageLayout->addStretch();
     originalImage->setChecked(
         snow_shot::storage::ScreenshotTranslationSettings().originalImageTranslationEnabled());
     originalImage->setAccessibleName(tr("Original Image Translation"));
@@ -1254,7 +1266,7 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
     form->addField(tr("Source language"), source, QStringLiteral("source"));
     form->addField(tr("Target language"), target, QStringLiteral("target"));
     form->addField(tr("Translation service"), service, QStringLiteral("service"));
-    form->addField(tr("Original Image Translation"), originalImage,
+    form->addField(tr("Original Image Translation"), originalImageRow,
                    QStringLiteral("originalImage"));
     bodyLayout->addWidget(form);
 
@@ -1276,27 +1288,36 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
     modal->setContentWidget(body);
     modal->setInitialFocusWidget(source);
     m_translationSettingsModal = modal;
-    connect(
-        modal, &adqt::widgets::AdModal::closeRequested, modal,
-        [modal, source, target, service,
-         originalImage](adqt::widgets::AdModal::CloseReason reason) {
-            if (reason != adqt::widgets::AdModal::CloseReason::OkAction) {
-                modal->reject();
-                return;
-            }
-            const snow_shot::storage::ScreenshotTranslationConfiguration selected{
-                source->currentValue().toString(), target->currentValue().toString(),
-                service->currentValue().toString(),
-                snow_shot::storage::ScreenshotTranslationSettings().layoutProcessing()};
-            if (selected.sourceLanguage.isEmpty() || selected.targetLanguage.isEmpty() ||
-                selected.modelId.isEmpty()) {
-                return;
-            }
-            snow_shot::storage::ScreenshotTranslationSettings().setConfiguration(selected);
-            snow_shot::storage::ScreenshotTranslationSettings().setOriginalImageTranslationEnabled(
-                originalImage->isChecked());
-            modal->accept();
-        });
+    connect(modal, &adqt::widgets::AdModal::closeRequested, modal,
+            [this, modal, source, target, service,
+             originalImage](adqt::widgets::AdModal::CloseReason reason) {
+                if (reason != adqt::widgets::AdModal::CloseReason::OkAction) {
+                    modal->reject();
+                    return;
+                }
+                const snow_shot::storage::ScreenshotTranslationConfiguration selected{
+                    source->currentValue().toString(), target->currentValue().toString(),
+                    service->currentValue().toString(),
+                    snow_shot::storage::ScreenshotTranslationSettings().layoutProcessing()};
+                if (selected.sourceLanguage.isEmpty() || selected.targetLanguage.isEmpty() ||
+                    selected.modelId.isEmpty()) {
+                    return;
+                }
+                const snow_shot::storage::ScreenshotTranslationSettings settings;
+                const bool restartTranslation =
+                    m_translating &&
+                    settings.originalImageTranslationEnabled() != originalImage->isChecked();
+                if (restartTranslation) {
+                    endTextEditing();
+                }
+                settings.setConfiguration(selected);
+                settings.setOriginalImageTranslationEnabled(originalImage->isChecked());
+                if (restartTranslation) {
+                    invalidateCurrentTranslation(false);
+                    beginTextTranslation();
+                }
+                modal->accept();
+            });
     connect(modal, &adqt::widgets::AdModal::finished, modal,
             [this, modal](adqt::widgets::AdModal::DialogCode) {
                 if (m_settingsModelsRequestToken != 0 && m_tableRecognition != nullptr) {
