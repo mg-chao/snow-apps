@@ -2882,6 +2882,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-screenshot-tool-palette-tests --tool-shortcuts-only
     )
     add_test(
+        NAME snow-shot-screenshot-shortcut-tooltip-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --shortcut-tooltips-only
+    )
+    add_test(
         NAME snow-shot-screenshot-selection-reset-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --selection-reset-only
     )
@@ -2893,6 +2897,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-screenshot-tool-palette-tests
         snow-shot-screenshot-action-toolbar-layout-tests
         snow-shot-screenshot-tool-shortcut-toggle-tests
+        snow-shot-screenshot-shortcut-tooltip-tests
         snow-shot-screenshot-selection-reset-tests
         snow-shot-screen-recording-toolbar-tests
         PROPERTIES

@@ -8,6 +8,7 @@
 #include "widgets/radio.h"
 #include "widgets/radio_button_group.h"
 #include "widgets/popover.h"
+#include "widgets/detail/qt_tooltip_bridge.h"
 #include "widgets/select.h"
 #include "widgets/slider.h"
 
@@ -1512,6 +1513,9 @@ createScreenshotToolPaletteOptionPopoverShell(adqt::widgets::AdButton* trigger) 
     if (trigger == nullptr) {
         return nullptr;
     }
+    // Toolbar group triggers also execute the selected command. Keep its description
+    // and shortcut below the toolbar while the hover menu shows choices above it.
+    trigger->setProperty(adqt::widgets::detail::kPopupTriggerTooltipEnabledProperty, true);
     auto* popover = new adqt::widgets::AdPopover(trigger);
     popover->setSourceWidget(trigger);
     popover->setTriggers(adqt::widgets::AdPopover::Trigger::Hover);

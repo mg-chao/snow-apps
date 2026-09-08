@@ -28,6 +28,7 @@
 #include <QGuiApplication>
 #include <QGridLayout>
 #include <QHash>
+#include <QHelpEvent>
 #include <QImage>
 #include <QJsonObject>
 #include <QLayout>
@@ -57,6 +58,7 @@
 #include "widgets/radio_button_group.h"
 #include "widgets/select.h"
 #include "widgets/slider.h"
+#include "widgets/tooltip.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -1815,6 +1817,136 @@ void screenshotToolbarUsesCanonicalOrderAndSectionSeparators() {
                 !hasSeparatorBetween(buttons.at(11), buttons.at(12)) &&
                 !hasSeparatorBetween(buttons.at(12), buttons.at(13)),
             "Arrow and Line grouping should not introduce an internal separator");
+}
+
+void groupedDrawingOptionsShowShortcutTooltips() {
+    adqt::widgets::AdTooltip::installApplicationTooltips();
+    ScreenshotToolPalette::Options options;
+    options.showLineTool = true;
+    options.showHighlightTool = true;
+    options.showSpotlightTool = true;
+    options.enableStyleToolbar = false;
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    QCoreApplication::processEvents();
+
+    const QMap<QString, QString> expectedTooltips{
+        {QStringLiteral("arrow"), QStringLiteral("Arrow (2)")},
+        {QStringLiteral("line"), QStringLiteral("Line")},
+        {QStringLiteral("highlighter"), QStringLiteral("Highlight (4, H)")},
+        {QStringLiteral("spotlight"), QStringLiteral("Spotlight")},
+    };
+    for (const char* triggerName : {"screenshotArrowLineButton", "screenshotHighlightButton"}) {
+        auto* trigger =
+            palette.findChild<adqt::widgets::AdButton*>(QString::fromLatin1(triggerName));
+        require(trigger != nullptr, "drawing group trigger should exist");
+        materializeLazyPopover(trigger);
+        auto* popover = popoverForTrigger(trigger);
+        require(popover != nullptr, "drawing group should expose its hover menu");
+        popover->show();
+        QCoreApplication::processEvents();
+        require(popover->isVisible(), "drawing group hover menu should be visible");
+
+        const auto buttons = popover->contentWidget()->findChildren<adqt::widgets::AdButton*>();
+        require(buttons.size() == 2, "default drawing group should expose both tools");
+        for (auto* button : buttons) {
+            const QString expected =
+                expectedTooltips.value(button->property("screenshotToolbarItemId").toString());
+            require(!expected.isEmpty() && button->toolTip() == expected,
+                    "drawing option should describe its function and assigned shortcuts");
+            button->click();
+            popover->show();
+            QCoreApplication::processEvents();
+            require(trigger->toolTip() == expected,
+                    "drawing trigger should describe the selected tool and its assigned shortcut");
+            for (auto* target : {trigger, button}) {
+                const QPoint center = target->rect().center();
+                QHelpEvent help(QEvent::ToolTip, center, target->mapToGlobal(center));
+                QApplication::sendEvent(target, &help);
+                require(
+                    help.isAccepted(),
+                    "drawing tool hover tooltip requests must be accepted while its menu is open");
+                bool visible = false;
+                for (auto* tooltip : qApp->findChildren<adqt::widgets::AdTooltip*>()) {
+                    visible |= tooltip->isVisible() && tooltip->targetWidget() == target &&
+                               tooltip->text() == expected;
+                }
+                require(visible, "drawing tool hover must display its description and shortcut");
+            }
+        }
+        popover->hide();
+        QCoreApplication::processEvents();
+    }
+}
+
+void groupedActionOptionsShowShortcutTooltips() {
+    adqt::widgets::AdTooltip::installApplicationTooltips();
+    bool allTooltipsVisible = true;
+    for (bool customLayout : {false, true}) {
+        ScreenshotToolPalette::Options options;
+        options.showTableTool = true;
+        options.showQrTool = true;
+        options.showScreenRecordButton = true;
+        options.showOcrTool = true;
+        options.showTextTranslationTool = true;
+        options.showScrollingScreenshotTool = true;
+        options.showSaveButton = true;
+        options.actions = ScreenshotToolPalette::PinAction;
+        options.enableStyleToolbar = false;
+        if (customLayout) {
+            options.actionToolsLayout = snow_shot::storage::ScreenshotToolbarLayout{
+                {{QStringLiteral("table-recognition"), QStringLiteral("record-screen"),
+                  QStringLiteral("save-as-file")},
+                 {QStringLiteral("barcode-recognition"), QStringLiteral("text-recognition"),
+                  QStringLiteral("text-translation")},
+                 {QStringLiteral("scrolling-screenshot"), QStringLiteral("pin-to-screen")}}};
+        }
+        ScreenshotToolPalette palette(options);
+        palette.show();
+        QCoreApplication::processEvents();
+        int groupCount = 0;
+        for (auto* trigger : mainActionToolbarButtons(palette)) {
+            auto* popover = popoverForTrigger(trigger);
+            if (popover == nullptr) {
+                continue;
+            }
+            ++groupCount;
+            materializeLazyPopover(trigger);
+            require(popover->contentWidget() != nullptr, "action group should materialize options");
+            const auto buttons = popover->contentWidget()->findChildren<adqt::widgets::AdButton*>();
+            require(buttons.size() >= 2, "action group should contain multiple commands");
+            for (auto* button : buttons) {
+                const QString expected = button->toolTip();
+                require(!expected.isEmpty(), "action option should describe its command");
+                button->click();
+                popover->show();
+                QCoreApplication::processEvents();
+                require(popover->isVisible() && trigger->toolTip() == expected,
+                        "action trigger should retain the selected command's tooltip");
+                for (auto* target : {trigger, button}) {
+                    const QPoint center = target->rect().center();
+                    QHelpEvent help(QEvent::ToolTip, center, target->mapToGlobal(center));
+                    QApplication::sendEvent(target, &help);
+                    bool visible = false;
+                    for (auto* tooltip : qApp->findChildren<adqt::widgets::AdTooltip*>()) {
+                        visible |= tooltip->isVisible() && tooltip->targetWidget() == target &&
+                                   tooltip->text() == expected;
+                    }
+                    if (!help.isAccepted() || !visible) {
+                        std::cerr << "Missing action tooltip: "
+                                  << target->objectName().toStdString() << " / "
+                                  << expected.toStdString() << '\n';
+                        allTooltipsVisible = false;
+                    }
+                }
+            }
+            popover->hide();
+            QCoreApplication::processEvents();
+        }
+        require(groupCount == (customLayout ? 3 : 1),
+                "tooltip audit should cover native recognition and all custom action groups");
+    }
+    require(allTooltipsVisible, "grouped action tooltips must remain visible while menus are open");
 }
 
 void screenshotActionTooltipsUseConfiguredShortcuts() {
@@ -7857,6 +7989,9 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--shortcut-tooltips-only"))) {
+        groupedDrawingOptionsShowShortcutTooltips();
+        groupedActionOptionsShowShortcutTooltips();
+        stylePopoverTriggersProvideMouseFeedback();
         screenshotActionTooltipsUseConfiguredShortcuts();
         screenshotActionTooltipsFollowStorageChangesWithoutRetranslation();
         ocrToolReplacesSelectionActionToolbarContents();
@@ -7916,6 +8051,8 @@ int main(int argc, char** argv) {
     recognitionToolsKeepDrawingToolsAvailable();
     scrollingScreenshotExposesAxisRecognitionModes();
     screenshotToolbarUsesCanonicalOrderAndSectionSeparators();
+    groupedDrawingOptionsShowShortcutTooltips();
+    groupedActionOptionsShowShortcutTooltips();
     screenshotActionTooltipsFollowStorageChangesWithoutRetranslation();
     configurableToolbarLayoutSupportsArbitraryPopoverGroups();
     ocrControlReflectsLoadingState();
