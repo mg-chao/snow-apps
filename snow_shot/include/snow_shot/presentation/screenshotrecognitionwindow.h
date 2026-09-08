@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTRECOGNITIONWINDOW_H
 
 #include "snow_shot/presentation/screenshotselectiongeometry.h"
+#include "snow_shot/presentation/screenshotimageconversion.h"
 
 #include <QPointF>
 #include <QRect>
@@ -27,6 +28,7 @@ class QTextBrowser;
 class QTextEdit;
 class QUrl;
 class ScreenshotFormattedTextLayer;
+class ScreenshotImageConversionView;
 class ScreenshotOcrPresentation;
 class ScreenshotOcrTextLayer;
 class ScreenshotTableEditingSession;
@@ -49,9 +51,7 @@ struct ScreenshotRecognitionWindowActions {
     std::function<void()> handleRedoTextEdit = []() {};
     std::function<ScreenshotSelectionDragMode(const QPointF&)> selectionResizeDragMode =
         [](const QPointF&) { return ScreenshotSelectionDragMode::None; };
-    std::function<bool(const QPointF&)> beginSelectionResize = [](const QPointF&) {
-        return false;
-    };
+    std::function<bool(const QPointF&)> beginSelectionResize = [](const QPointF&) { return false; };
     std::function<void(const QPointF&)> updateSelectionResize = [](const QPointF&) {};
     std::function<void(const QPointF&)> finishSelectionResize = [](const QPointF&) {};
     std::function<void()> selectionResizeFinished = []() {};
@@ -77,8 +77,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
     };
 
     explicit ScreenshotRecognitionWindow(
-        ScreenshotRecognitionWindowActions actions,
-        QWidget* parent = nullptr,
+        ScreenshotRecognitionWindowActions actions, QWidget* parent = nullptr,
         PresentationMode presentationMode = PresentationMode::TopLevelWindow,
         snow_shot::presentation::WindowShortcutManager* shortcutManager = nullptr);
     ~ScreenshotRecognitionWindow() override;
@@ -103,19 +102,22 @@ class ScreenshotRecognitionWindow final : public QWidget {
     void redoTableEdit();
     void commitActiveTableEdit();
 
-    void showTextEditor(QTextDocument* document, bool readOnly = false,
-                        bool streaming = false);
+    void showTextEditor(QTextDocument* document, bool readOnly = false, bool streaming = false);
     void setTextEditorStreaming(bool streaming);
     void hideTextEditor();
 
     void showQrContents(const QStringList& contents);
     void clearQrContents();
+    void showImageConversion(SnowShotImageConversionFormat format, const QString& source, bool busy,
+                             const QString& error);
+    void clearImageConversion();
 
     [[nodiscard]] bool copyVisibleContentToClipboard();
     [[nodiscard]] bool isOcrBackgroundAt(const QPointF& localPosition) const;
 
   signals:
     void embeddedContextMenuRequested(const QPoint& globalPosition);
+    void imageConversionRetryRequested();
 
   protected:
     void contextMenuEvent(QContextMenuEvent* event) override;
@@ -134,12 +136,12 @@ class ScreenshotRecognitionWindow final : public QWidget {
     void synchronizeTextLayer();
     void updateTextEditorSpinGeometry();
     void installSelectionResizeEventFilters(QWidget* widget);
-    [[nodiscard]] ScreenshotSelectionDragMode selectionResizeDragModeAtLocalPoint(
-        const QPointF& localPosition) const;
+    [[nodiscard]] ScreenshotSelectionDragMode
+    selectionResizeDragModeAtLocalPoint(const QPointF& localPosition) const;
     [[nodiscard]] bool handleSelectionResizeEvent(QObject* watched, QEvent* event);
     void updateSelectionResizeCursor(const QPointF& localPosition);
-    [[nodiscard]] static Qt::CursorShape cursorForSelectionResize(
-        ScreenshotSelectionDragMode dragMode);
+    [[nodiscard]] static Qt::CursorShape
+    cursorForSelectionResize(ScreenshotSelectionDragMode dragMode);
 
     ScreenshotRecognitionWindowActions m_actions;
     std::unique_ptr<snow_shot::presentation::WindowShortcutManager> m_ownedShortcutManager;
@@ -151,6 +153,7 @@ class ScreenshotRecognitionWindow final : public QWidget {
     QTextEdit* m_textEditor = nullptr;
     adqt::widgets::AdSpin* m_textEditorSpin = nullptr;
     QTextBrowser* m_qrBrowser = nullptr;
+    ScreenshotImageConversionView* m_conversionView = nullptr;
     ScreenshotFormattedTextLayer* m_formattedTextLayer = nullptr;
     ScreenshotTableEditor* m_tableEditor = nullptr;
     QRectF m_canvasSelection;

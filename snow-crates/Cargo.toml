@@ -23,6 +23,12 @@ members = [
 ]
 resolver = "3"
 
+[patch.crates-io]
+# Preserve native diagnostics; see ../docs/ort-native-logging-patch.md.
+# Keep the wrapper and its native API types on the same Git revision.
+ort = { git = "https://github.com/mg-chao/ort.git", rev = "90018ee581fb1bb1baf8e82eba8e679728ff27dc" }
+ort-sys = { git = "https://github.com/mg-chao/ort.git", rev = "90018ee581fb1bb1baf8e82eba8e679728ff27dc" }
+
 [workspace.package]
 license = "Apache-2.0"
 

@@ -61,7 +61,7 @@ class ScreenshotOcrController final : public QObject {
     Q_OBJECT
 
   public:
-    enum class Mode { Text, Table, Qr };
+    enum class Mode { Text, Table, Qr, Markdown, Html };
 
     explicit ScreenshotOcrController(ScreenshotOcrControllerContext context,
                                      QObject* parent = nullptr);
@@ -70,6 +70,8 @@ class ScreenshotOcrController final : public QObject {
     void activate();
     void activateTable();
     void activateQr();
+    void activateImageConversion(SnowShotImageConversionFormat format);
+    void openImageConversionSettings();
     // Leaves the visible recognition tool but deliberately keeps requests and cache entries alive.
     void deactivate();
     void deactivateForSelectionResize();

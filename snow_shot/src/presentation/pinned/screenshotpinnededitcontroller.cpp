@@ -27,7 +27,6 @@
 #include <QWheelEvent>
 #include <QWindow>
 
-
 namespace {
 constexpr int kToolbarGap = 4;
 ScreenshotToolPalette::Options pinnedEditToolbarOptions() {
@@ -50,14 +49,14 @@ ScreenshotToolPalette::Options pinnedEditToolbarOptions() {
     options.showTextTranslationTool = true;
     options.showTableTool = true;
     options.showQrTool = true;
+    options.showImageConversionTools = true;
     options.showSaveButton = true;
     options.saveButtonWithResultActions = true;
     options.copyButtonWithNeutralIcon = true;
     options.separatorAfterSelect = true;
     options.separatorBeforeConfirm = true;
     options.showDrawingModeShortcutOnConfirm = true;
-    options.actions =
-        ScreenshotToolPalette::CopyAction | ScreenshotToolPalette::ConfirmAction;
+    options.actions = ScreenshotToolPalette::CopyAction | ScreenshotToolPalette::ConfirmAction;
     options.styleDefaults = snow_shot::presentation::screenshotCanvasStyleDefaults();
     return options;
 }

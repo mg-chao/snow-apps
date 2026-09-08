@@ -23,6 +23,7 @@
 #include <QPointF>
 #include <QRegion>
 #include <QScreen>
+#include <QScopedValueRollback>
 #include <QShowEvent>
 #include <QTimer>
 #include <QWheelEvent>
@@ -40,8 +41,8 @@
 namespace {
 namespace native = screenshot_floating_palette_native;
 
-constexpr QSize kToolbarWindowPresetSize(1142, 142);
-}
+constexpr QSize kToolbarWindowPresetSize(1242, 142);
+} // namespace
 
 ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
     const ScreenshotToolPalette::Options& options, QWidget* parent)
@@ -78,27 +79,27 @@ ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
     registerMaterializedScope(m_paletteHost);
     connect(m_paletteHost->palette(), &ScreenshotToolPalette::materializedScope, this,
             &ScreenshotFloatingToolPaletteWindow::registerMaterializedScope);
-    connect(
-        m_dpiController, &adqt::widgets::AdDpiStableWindowController::scaleCommitCompleted, this,
-        [this](const adqt::widgets::AdControlScaleContext& context, const QSize&) {
-            m_processingNativeDpiChange = true;
-            m_committedWindowDevicePixelRatio = context.currentDpr;
-            ensureReferenceDevicePixelRatio();
-            const adqt::widgets::AdControlScaleContext effectiveContext =
-                adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(
-                    m_referenceDevicePixelRatio, context.currentDpr, m_paletteScaleMultiplier,
-                    context.revision);
-            if (m_scaleScope != nullptr) {
-                m_scaleScope->publishScale(effectiveContext);
-            }
-            if (m_paletteHost != nullptr) {
-                m_paletteHost->commitDpiScale(effectiveContext.logicalScale,
-                                              ScreenshotToolPaletteHost::defaultShadowMargins());
-            }
-            refreshGeometryForVisibleContent(true, true);
-            m_processingNativeDpiChange = false;
-            emit dpiScaleCommitCompleted();
-        });
+    connect(m_dpiController, &adqt::widgets::AdDpiStableWindowController::scaleCommitCompleted,
+            this, [this](const adqt::widgets::AdControlScaleContext& context, const QSize&) {
+                m_processingNativeDpiChange = true;
+                m_committedWindowDevicePixelRatio = context.currentDpr;
+                ensureReferenceDevicePixelRatio();
+                const adqt::widgets::AdControlScaleContext effectiveContext =
+                    adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(
+                        m_referenceDevicePixelRatio, context.currentDpr, m_paletteScaleMultiplier,
+                        context.revision);
+                if (m_scaleScope != nullptr) {
+                    m_scaleScope->publishScale(effectiveContext);
+                }
+                if (m_paletteHost != nullptr) {
+                    m_paletteHost->commitDpiScale(
+                        effectiveContext.logicalScale,
+                        ScreenshotToolPaletteHost::defaultShadowMargins());
+                }
+                refreshGeometryForVisibleContent(true, true);
+                m_processingNativeDpiChange = false;
+                emit dpiScaleCommitCompleted();
+            });
 
     connect(m_paletteHost, &ScreenshotToolPaletteHost::dragStarted, this,
             [this](const QPoint& pos) { beginPaletteDrag(pos); });
@@ -245,9 +246,9 @@ void ScreenshotFloatingToolPaletteWindow::prepareForDisplay() {
     const bool cachedContentOffsetChanged = m_lastAppliedContentOffset != contentOffset();
     const bool cachedMainRectChanged =
         m_lastAppliedMainToolbarContentRect != mainToolbarContentRect();
-    const bool hostAnchorChanged = m_paletteHost != nullptr &&
-                                   (m_paletteHost->pos() != QPoint(0, 0) ||
-                                    m_paletteHost->size() != windowSize);
+    const bool hostAnchorChanged =
+        m_paletteHost != nullptr &&
+        (m_paletteHost->pos() != QPoint(0, 0) || m_paletteHost->size() != windowSize);
     if (m_lastAppliedWindowDevicePixelRatio <= 0.0 ||
         !qFuzzyCompare(m_lastAppliedWindowDevicePixelRatio + 1.0, currentDpr + 1.0) ||
         windowSizeChanged || cachedWindowSizeChanged || cachedContentOffsetChanged ||
@@ -373,9 +374,9 @@ QRect ScreenshotFloatingToolPaletteWindow::topRightMainToolbarContentRect() cons
 }
 
 ScreenshotToolbarPlacementSnapshot ScreenshotFloatingToolPaletteWindow::placementSnapshot() const {
-    ScreenshotToolbarPlacementSnapshot snapshot =
-        m_paletteHost != nullptr ? m_paletteHost->placementSnapshot()
-                                 : ScreenshotToolbarPlacementSnapshot{};
+    ScreenshotToolbarPlacementSnapshot snapshot = m_paletteHost != nullptr
+                                                      ? m_paletteHost->placementSnapshot()
+                                                      : ScreenshotToolbarPlacementSnapshot{};
     snapshot.contentOffset = contentOffset();
     return snapshot;
 }
@@ -493,6 +494,18 @@ bool ScreenshotFloatingToolPaletteWindow::eventFilter(QObject* watched, QEvent* 
 bool ScreenshotFloatingToolPaletteWindow::nativeEvent(const QByteArray& eventType, void* message,
                                                       qintptr* result) {
     Q_UNUSED(eventType);
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    const auto* msg = static_cast<MSG*>(message);
+    if (m_changingKeyboardFocusPolicy && msg != nullptr && msg->message == WM_STYLECHANGING &&
+        msg->wParam == static_cast<WPARAM>(GWL_EXSTYLE)) {
+        auto* style = reinterpret_cast<STYLESTRUCT*>(msg->lParam);
+        // Qt 6.11's WindowCreationData::applyWindowFlags clears WS_EX_LAYERED
+        // before initialize() restores it. That discards the displayed surface;
+        // the next partial input repaint cannot restore the rest of the toolbar.
+        // A focus policy change must preserve the existing layered surface.
+        style->styleNew |= style->styleOld & WS_EX_LAYERED;
+    }
+#endif
     if (handleNativeHitTest(message, result)) {
         return true;
     }
@@ -547,8 +560,7 @@ void ScreenshotFloatingToolPaletteWindow::updatePaletteGeometryForVisibleContent
         m_paletteHost->move(0, 0);
     }
 #if defined(SNOW_SHOT_TEST_HOOKS)
-    if (previousHostSize != m_paletteHost->size() ||
-        previousHostPosition != m_paletteHost->pos()) {
+    if (previousHostSize != m_paletteHost->size() || previousHostPosition != m_paletteHost->pos()) {
         ++m_paletteGeometryRefreshCount;
     }
 #endif
@@ -762,10 +774,9 @@ bool ScreenshotFloatingToolPaletteWindow::commitGeometryUpdate(bool preserveCont
         }
     }
     if (m_processingNativeDpiChange) {
-        m_lastRequestedContentPosition =
-            m_draggingPalette && m_dragPhysicalAnchorValid
-                ? m_dragContentPosition.toPoint()
-                : contentPosition();
+        m_lastRequestedContentPosition = m_draggingPalette && m_dragPhysicalAnchorValid
+                                             ? m_dragContentPosition.toPoint()
+                                             : contentPosition();
         m_lastRequestedContentPositionValid = true;
     }
     if (m_draggingPalette && hasContentAnchor) {
@@ -860,9 +871,9 @@ void ScreenshotFloatingToolPaletteWindow::updateMainToolbarPositionSnapshot() {
         return;
     }
 
-    const QPoint currentContentPosition =
-        m_draggingPalette && m_dragPhysicalAnchorValid ? m_dragContentPosition.toPoint()
-                                                       : contentPosition();
+    const QPoint currentContentPosition = m_draggingPalette && m_dragPhysicalAnchorValid
+                                              ? m_dragContentPosition.toPoint()
+                                              : contentPosition();
     m_lastMainToolbarGlobalTopLeft = currentContentPosition + mainRect.topLeft();
     m_lastMainToolbarGlobalTopLeftValid = true;
 }
@@ -917,15 +928,14 @@ void ScreenshotFloatingToolPaletteWindow::beginPaletteDragAtPhysicalPosition(
 
     m_draggingPalette = true;
     m_lastDragPosition = dragPositionForEvent(globalPosition, physicalPosition);
-    if (m_dpiController != nullptr &&
-        m_dpiController->captureBaseline(targetDevicePixelRatio())) {
+    if (m_dpiController != nullptr && m_dpiController->captureBaseline(targetDevicePixelRatio())) {
         m_referenceDevicePixelRatio = m_dpiController->referenceDpr();
     }
     if (m_dpiController != nullptr && m_dpiController->beginPhysicalDrag(physicalPosition)) {
         m_dragPhysicalAnchorValid = true;
         m_stablePhysicalWindowSize = m_dpiController->stablePhysicalFrameSize();
         m_dragPhysicalCursorToWindowOffset = m_dpiController->physicalDragAnchor();
-            m_dragContentPosition = QPointF(contentPosition());
+        m_dragContentPosition = QPointF(contentPosition());
         raise();
         return;
     }
@@ -1000,8 +1010,8 @@ bool ScreenshotFloatingToolPaletteWindow::updatePaletteDragAtPhysicalPosition(
     const QPointF dragPosition = dragPositionForEvent(globalPosition, physicalPosition);
     m_dragContentPosition += dragPosition - m_lastDragPosition;
     m_lastDragPosition = dragPosition;
-    bool moved = m_dpiController != nullptr &&
-                 m_dpiController->moveForPhysicalCursor(physicalPosition);
+    bool moved =
+        m_dpiController != nullptr && m_dpiController->moveForPhysicalCursor(physicalPosition);
     if (!moved) {
         const QRect targetNativeGeometry = nativeWindowGeometryForPhysicalDrag(
             physicalPosition, m_dragPhysicalCursorToWindowOffset, m_stablePhysicalWindowSize);
@@ -1076,8 +1086,7 @@ void ScreenshotFloatingToolPaletteWindow::prewarmScopeIcons(QWidget* scope) {
     const qreal dpr = m_placementScreen != nullptr
                           ? m_placementScreen->devicePixelRatio()
                           : (screen() != nullptr ? screen()->devicePixelRatio() : 1.0);
-    const QList<adqt::widgets::AdButton*> buttons =
-        scope->findChildren<adqt::widgets::AdButton*>();
+    const QList<adqt::widgets::AdButton*> buttons = scope->findChildren<adqt::widgets::AdButton*>();
     for (const auto* button : buttons) {
         if (button == nullptr || !button->iconRef().isValid()) {
             continue;
@@ -1143,8 +1152,7 @@ void ScreenshotFloatingToolPaletteWindow::registerMaterializedScope(QWidget* sco
                 });
     }
     for (adqt::widgets::AdButton* button : scope->findChildren<adqt::widgets::AdButton*>()) {
-        if (button == nullptr ||
-            button->property("snowShotDpiSurfaceRegistered").toBool()) {
+        if (button == nullptr || button->property("snowShotDpiSurfaceRegistered").toBool()) {
             continue;
         }
         button->setProperty("snowShotDpiSurfaceRegistered", true);
@@ -1161,6 +1169,21 @@ void ScreenshotFloatingToolPaletteWindow::registerMaterializedScope(QWidget* sco
     prewarmScopeIcons(scope);
 }
 
+void ScreenshotFloatingToolPaletteWindow::setKeyboardFocusPolicy(bool enabled) {
+    const QScopedValueRollback<bool> changingPolicy(m_changingKeyboardFocusPolicy, true);
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    const WId nativeId = winId();
+#endif
+    // Qt also checks this flag when restoring focus to an editor. Keep its
+    // activation policy in sync with the native window throughout editing.
+    if (QWindow* handle = windowHandle()) {
+        handle->setFlag(Qt::WindowDoesNotAcceptFocus, !enabled);
+    }
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    static_cast<void>(native::setKeyboardFocusEnabled(nativeId, enabled));
+#endif
+}
+
 void ScreenshotFloatingToolPaletteWindow::beginKeyboardFocusInteraction(QWidget* editor) {
     if (editor == nullptr) {
         return;
@@ -1168,12 +1191,11 @@ void ScreenshotFloatingToolPaletteWindow::beginKeyboardFocusInteraction(QWidget*
 
     m_keyboardFocusEditor = editor;
     m_keyboardFocusInteractionActive = true;
+    setKeyboardFocusPolicy(true);
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    static_cast<void>(native::setKeyboardFocusEnabled(winId(), true));
     static_cast<void>(native::activateWindow(winId()));
 #else
     if (QWindow* handle = windowHandle()) {
-        handle->setFlag(Qt::WindowDoesNotAcceptFocus, false);
         handle->requestActivate();
     }
 #endif
@@ -1191,13 +1213,7 @@ void ScreenshotFloatingToolPaletteWindow::endKeyboardFocusInteraction(QWidget* e
 
     m_keyboardFocusInteractionActive = false;
     const bool acceptsFocus = !windowFlags().testFlag(Qt::WindowDoesNotAcceptFocus);
-#if defined(Q_OS_WIN) || defined(_WIN32)
-    static_cast<void>(native::setKeyboardFocusEnabled(winId(), acceptsFocus));
-#else
-    if (QWindow* handle = windowHandle()) {
-        handle->setFlag(Qt::WindowDoesNotAcceptFocus, !acceptsFocus);
-    }
-#endif
+    setKeyboardFocusPolicy(acceptsFocus);
 
     QWidget* owner =
         m_transientOwnerWindow != nullptr ? m_transientOwnerWindow.data() : parentWidget();
@@ -1230,8 +1246,9 @@ ScreenshotFloatingToolPaletteWindow::dragPositionForEvent(const QPoint& globalPo
     return QPointF(globalPosition);
 }
 
-QPointF ScreenshotFloatingToolPaletteWindow::dragPositionForEvent(
-    const QPoint& globalPosition, const QPointF& physicalPosition) const {
+QPointF
+ScreenshotFloatingToolPaletteWindow::dragPositionForEvent(const QPoint& globalPosition,
+                                                          const QPointF& physicalPosition) const {
     return ScreenshotGeometryMapper::logicalDragPositionForPhysicalPoint(
         QPointF(globalPosition), physicalPosition, m_movementLogicalBounds,
         m_movementPhysicalBounds);

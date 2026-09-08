@@ -72,6 +72,8 @@ class ScreenshotToolPalette final : public QWidget {
         ScrollingScreenshot,
         PenFilter,
         Spotlight,
+        Markdown,
+        Html,
     };
 
     enum class RecordingState {
@@ -85,6 +87,7 @@ class ScreenshotToolPalette final : public QWidget {
         TextRecognition,
         TableRecognition,
         ScrollingRecognition,
+        ImageConversion,
     };
 
     enum class MaterializationState {
@@ -124,6 +127,7 @@ class ScreenshotToolPalette final : public QWidget {
         bool showTextTranslationTool = false;
         bool showTableTool = false;
         bool showQrTool = false;
+        bool showImageConversionTools = false;
         bool showScrollingScreenshotTool = false;
         bool showSaveButton = false;
         bool saveButtonWithResultActions = false;
@@ -226,6 +230,8 @@ class ScreenshotToolPalette final : public QWidget {
     void setTableBusy(bool busy);
     void setQrEnabled(bool enabled);
     void setQrBusy(bool busy);
+    void setImageConversionEnabled(bool enabled);
+    void setImageConversionBusy(bool markdownBusy, bool htmlBusy);
     void setTableEditingState(bool available, bool canUndo, bool canRedo, bool canMerge,
                               bool canSplit, bool canReset);
     void setTextEditingState(bool available, bool editing, bool canUndo = false,
@@ -278,6 +284,9 @@ class ScreenshotToolPalette final : public QWidget {
     void textTranslationRequested();
     void tableRequested();
     void qrRequested();
+    void markdownRequested();
+    void htmlRequested();
+    void imageConversionSettingsRequested();
     void tableMergeRequested();
     void tableSplitRequested();
     void tableResetRequested();
@@ -353,6 +362,7 @@ class ScreenshotToolPalette final : public QWidget {
     void createSelectionActionFamily();
     void createTextRecognitionActionFamily();
     void createTableRecognitionActionFamily();
+    void createImageConversionActionFamily();
     void createScrollingRecognitionActionFamily();
     void createStyleFamily(Tool tool);
     void registerStyleFamily(QWidget* controls, std::initializer_list<Tool> tools);
@@ -534,6 +544,11 @@ class ScreenshotToolPalette final : public QWidget {
     [[nodiscard]] adqt::widgets::AdButton* actionToolSourceButton(const QString& itemId) const;
     [[nodiscard]] adqt::widgets::AdButton* actionToolEntryButton(const QString& itemId) const;
     [[nodiscard]] bool actionToolAvailable(const QString& itemId) const;
+    struct ActionToolState {
+        bool enabled = false;
+        bool busy = false;
+    };
+    [[nodiscard]] ActionToolState actionToolState(const QString& itemId) const;
     void activateActionTool(const QString& itemId, bool toggleVisibleButton = true);
     void selectActionToolGroupEntry(const QString& itemId);
     void refreshActionToolGroup(int groupIndex);
@@ -588,6 +603,9 @@ class ScreenshotToolPalette final : public QWidget {
     adqt::widgets::AdButton* m_tableButton = nullptr;
     adqt::widgets::AdButton* m_tableOptionButton = nullptr;
     adqt::widgets::AdButton* m_qrButton = nullptr;
+    adqt::widgets::AdButton* m_markdownButton = nullptr;
+    adqt::widgets::AdButton* m_htmlButton = nullptr;
+    adqt::widgets::AdButton* m_conversionSettingsButton = nullptr;
     adqt::widgets::AdPopover* m_tableQrPopover = nullptr;
     QVector<adqt::widgets::AdButton*> m_tableQrOptionButtons;
     QVector<int> m_tableQrOptionValues;

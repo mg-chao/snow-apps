@@ -321,12 +321,25 @@ struct ScreenRecordingController::Impl {
     }
 
     void open(const QRect& region) {
-        if (!region.isValid() || region.isEmpty() || busy) {
+        if (!region.isValid() || region.isEmpty() || busy ||
+            state != ScreenshotToolPalette::RecordingState::Idle) {
             return;
         }
-        if (isOpen()) {
-            if (state != ScreenshotToolPalette::RecordingState::Idle) {
-                return;
+        cancelPendingStart();
+        // Closing hides these persistent windows; reopening must not orphan
+        // another toolbar and its connections to this controller.
+        if (areaWindow != nullptr && toolbarWindow != nullptr) {
+            if (!isOpen()) {
+                // Window lifetime spans sessions, but annotations and transient
+                // editing state belong only to the session that created them.
+                auto* palette = toolbarWindow->palette();
+                palette->clearActiveTool();
+                auto* canvas = areaWindow->canvas();
+                static_cast<void>(canvas->resetEditingState());
+                static_cast<void>(canvas->clearDocument());
+                areaWindow->setInputMode(palette->recordingExportSettingsVisible()
+                                             ? ScreenRecordingAreaWindow::InputMode::RegionEditing
+                                             : ScreenRecordingAreaWindow::InputMode::PassThrough);
             }
             physicalRegion = region;
             updateCaptureRegion();
@@ -545,15 +558,26 @@ struct ScreenRecordingController::Impl {
         palette.setSpotlightConfig(canvas->canvasSpotlightConfig());
     }
 
+    void cancelPendingStart() {
+        ++startGeneration;
+        startScheduled = false;
+    }
+
     void start() {
-        if (state != ScreenshotToolPalette::RecordingState::Idle || busy || startScheduled ||
-            recordingSession != nullptr) {
+        if (!isOpen() || state != ScreenshotToolPalette::RecordingState::Idle || busy ||
+            startScheduled || recordingSession != nullptr) {
             return;
         }
         startScheduled = true;
         operation = QUuid::createUuid().toString(QUuid::Id128);
         operationTimer.start();
-        QTimer::singleShot(0, &owner, [this]() {
+        const quint64 generation = startGeneration;
+        QTimer::singleShot(0, &owner, [this, generation]() {
+            // An old callback must neither start a replacement session nor
+            // clear the pending flag of a newer request.
+            if (generation != startGeneration) {
+                return;
+            }
             startScheduled = false;
             if (state != ScreenshotToolPalette::RecordingState::Idle || busy ||
                 recordingSession != nullptr || !isOpen()) {
@@ -777,6 +801,7 @@ struct ScreenRecordingController::Impl {
     }
 
     void hideWindows() {
+        cancelPendingStart();
         restoreToolbarCaptureVisibility();
         if (toolbarWindow != nullptr) {
             toolbarWindow->hide();
@@ -866,6 +891,7 @@ struct ScreenRecordingController::Impl {
     QString operation;
     QElapsedTimer operationTimer;
     bool startScheduled = false;
+    quint64 startGeneration = 0;
     bool pendingCopyToClipboard = false;
     bool pendingCloseAfter = false;
     snow_shot::presentation::WindowCaptureExclusion captureExclusion{

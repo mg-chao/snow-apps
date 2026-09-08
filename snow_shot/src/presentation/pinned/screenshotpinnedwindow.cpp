@@ -20,6 +20,7 @@
 #include "snow_shot/presentation/screenshotexportartifact.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
+#include "snow_shot/presentation/screenshotimageconversionpersistence.h"
 #include "snow_shot/presentation/screenshottableeditor.h"
 #include "snow_shot/presentation/screenshotpinnededitcontroller.h"
 #include "snow_shot/presentation/screenshotfloatingtoolpalettewindow.h"
@@ -136,6 +137,13 @@ QByteArray serializeRecognitionResults(const ScreenshotRecognitionResults& resul
                    << line.paragraph << line.sourceLineQuads;
         }
     }
+    const QByteArray conversion = snow_shot::presentation::encodeImageConversions(results);
+    if (!conversion.isEmpty()) {
+        stream << snow_shot::presentation::kImageConversionPayloadMarker
+               << snow_shot::presentation::kImageConversionPayloadVersion
+               << quint32(conversion.size());
+        stream.writeRawData(conversion.constData(), static_cast<int>(conversion.size()));
+    }
     return bytes;
 }
 
@@ -182,10 +190,28 @@ ScreenshotRecognitionResults deserializeRecognitionResults(const QByteArray& byt
         stream >> qr.contents >> qr.error;
         results.qr = std::move(qr);
     }
-    if (stream.status() == QDataStream::Ok && !stream.atEnd()) {
+    while (stream.status() == QDataStream::Ok && !stream.atEnd()) {
         quint32 marker = 0;
         quint8 version = 0;
         stream >> marker >> version;
+        if (marker == snow_shot::presentation::kImageConversionPayloadMarker) {
+            quint32 size = 0;
+            stream >> size;
+            if (stream.status() != QDataStream::Ok ||
+                size > snow_shot::presentation::kMaximumImageConversionPayload ||
+                size > stream.device()->bytesAvailable()) {
+                return results;
+            }
+            QByteArray payload(static_cast<qsizetype>(size), Qt::Uninitialized);
+            if (stream.readRawData(payload.data(), static_cast<int>(size)) !=
+                static_cast<int>(size)) {
+                return results;
+            }
+            if (version == snow_shot::presentation::kImageConversionPayloadVersion) {
+                snow_shot::presentation::decodeImageConversions(payload, results);
+            }
+            continue;
+        }
         if (marker != kTextTranslationPayloadMarker ||
             (version != 1 && version != kTextTranslationPayloadVersion) ||
             !results.text.has_value() || !results.text->error.isEmpty() ||
@@ -1677,6 +1703,7 @@ bool ScreenshotPinnedWindow::present(const Config& config,
          (!std::isfinite(config.formattedTextDevicePixelRatio) ||
           config.formattedTextDevicePixelRatio <= 0.0)) ||
         m_canvas == nullptr) {
+        qWarning("Pinned window presentation failed: stage=config_validation");
         return false;
     }
     invalidatePendingCopy();
@@ -1692,12 +1719,14 @@ bool ScreenshotPinnedWindow::present(const Config& config,
     const QSize logicalSize(std::max(1, qRound(config.nativeGeometry.width() / screenScale)),
                             std::max(1, qRound(config.nativeGeometry.height() / screenScale)));
     if (!logicalSize.isValid() || logicalSize.isEmpty()) {
+        qWarning("Pinned window presentation failed: stage=logical_geometry");
         return false;
     }
 #else
     const QRect logicalGeometry =
         ScreenshotGeometryMapper::logicalRectForPhysicalRect(config.nativeGeometry, config.screen);
     if (!logicalGeometry.isValid() || logicalGeometry.isEmpty()) {
+        qWarning("Pinned window presentation failed: stage=logical_geometry");
         return false;
     }
 #endif
@@ -1815,6 +1844,7 @@ bool ScreenshotPinnedWindow::present(const Config& config,
     SNOW_SHOT_PIN_PERF_MILESTONE("window.state_initialized");
     if (m_nativeGeometryController == nullptr ||
         !m_nativeGeometryController->initialize(config.nativeGeometry)) {
+        qWarning("Pinned window presentation failed: stage=native_geometry_initialization");
         finishPresentation(false);
         return false;
     }
@@ -1868,11 +1898,13 @@ bool ScreenshotPinnedWindow::present(const Config& config,
     }
 #if defined(Q_OS_WIN) || defined(_WIN32)
     if (!native::applySystemResizeStyle(nativeWindowId)) {
+        qWarning("Pinned window presentation failed: stage=native_resize_style");
         finishPresentation(false);
         return false;
     }
     if (!native::applyClientGeometry(nativeWindowId, config.nativeGeometry,
                                      native::GeometryUpdate::DiscardClientPixels)) {
+        qWarning("Pinned window presentation failed: stage=native_client_geometry");
         finishPresentation(false);
         return false;
     }
@@ -2021,6 +2053,14 @@ bool ScreenshotPinnedWindow::present(const Config& config,
                         } else if (mode == static_cast<int>(
                                                ScreenshotRecognitionSessionController::Mode::Qr)) {
                             host->setActiveTool(ScreenshotToolPalette::Tool::Qr);
+                        } else if (mode ==
+                                   static_cast<int>(
+                                       ScreenshotRecognitionSessionController::Mode::Markdown)) {
+                            host->setActiveTool(ScreenshotToolPalette::Tool::Markdown);
+                        } else if (mode ==
+                                   static_cast<int>(
+                                       ScreenshotRecognitionSessionController::Mode::Html)) {
+                            host->setActiveTool(ScreenshotToolPalette::Tool::Html);
                         } else if (controller->editMode()) {
                             controller->restoreDrawingToolState();
                         } else {
@@ -2137,6 +2177,15 @@ bool ScreenshotPinnedWindow::present(const Config& config,
                     m_recognitionContent->updateOcrText(lineIndex, text);
                 }
                 schedulePersistence();
+            },
+            [this](bool, bool busy, SnowShotImageConversionFormat format) {
+                if (m_editController != nullptr && m_editController->toolbarWindow() != nullptr) {
+                    if (auto* palette = m_editController->toolbarWindow()->palette()) {
+                        palette->setImageConversionBusy(
+                            busy && format == SnowShotImageConversionFormat::Markdown,
+                            busy && format == SnowShotImageConversionFormat::Html);
+                    }
+                }
             },
         },
         this);
@@ -3371,6 +3420,29 @@ void ScreenshotPinnedWindow::finishDeferredPresentationSetup(quint64 generation)
     SNOW_SHOT_PIN_PERF_MILESTONE("window.recognition_target_ready");
     SNOW_SHOT_PIN_PERF_MILESTONE("window.context_menu_ready");
     SNOW_SHOT_PIN_PERF_MILESTONE("window.controls_ready");
+    if (const auto visible = std::exchange(m_recognitionResults.visibleConversion, std::nullopt)) {
+        const auto found = std::find_if(
+            m_recognitionResults.conversions.cbegin(), m_recognitionResults.conversions.cend(),
+            [visible](const auto& entry) {
+                return entry.isValid() && entry.format == *visible &&
+                       entry.model ==
+                           snow_shot::storage::ScreenshotImageConversionSettings().visionModel();
+            });
+        if (found != m_recognitionResults.conversions.cend()) {
+            const auto entry = *found;
+            requestMaterializedImage([this, generation, entry](bool succeeded) {
+                if (succeeded && generation == m_presentationGeneration && !m_closing &&
+                    imageConversionFingerprint(m_originalImage) == entry.imageFingerprint) {
+                    activateRecognitionMode(
+                        static_cast<int>(
+                            entry.format == SnowShotImageConversionFormat::Markdown
+                                ? ScreenshotRecognitionSessionController::Mode::Markdown
+                                : ScreenshotRecognitionSessionController::Mode::Html),
+                        false);
+                }
+            });
+        }
+    }
     if (std::exchange(m_initialRecognitionVisible, false)) {
         const bool translationVisible = std::exchange(m_initialTranslationVisible, false);
         if (m_recognitionSession != nullptr && m_recognitionSession->hasTextResult()) {
@@ -3383,17 +3455,18 @@ void ScreenshotPinnedWindow::finishDeferredPresentationSetup(quint64 generation)
         schedulePersistence();
     }
     if (m_automaticTextRecognition && m_recognitionSession != nullptr && m_recognition != nullptr &&
-        !m_recognitionSession->hasTextResult()) {
+        !m_recognitionSession->hasTextResult() && !m_recognitionSession->conversionModeActive()) {
         QTimer::singleShot(0, this, [this, generation]() {
             if (generation != m_presentationGeneration || m_closing ||
                 m_recognitionSession == nullptr || m_recognition == nullptr ||
-                !m_automaticTextRecognition || !m_ocrSupported) {
+                !m_automaticTextRecognition || !m_ocrSupported ||
+                m_recognitionSession->conversionModeActive()) {
                 return;
             }
             requestMaterializedImage([this, generation](bool succeeded) {
                 if (succeeded && generation == m_presentationGeneration && !m_closing &&
                     m_automaticTextRecognition && m_recognitionSession != nullptr &&
-                    m_recognition != nullptr) {
+                    m_recognition != nullptr && !m_recognitionSession->conversionModeActive()) {
                     m_recognitionSession->prefetchText();
                 }
             });
@@ -3471,6 +3544,19 @@ void ScreenshotPinnedWindow::configureEditToolbar(
     if (m_recognitionSession == nullptr) {
         return;
     }
+
+    connect(toolbar, &ScreenshotToolPalette::markdownRequested, this, [this]() {
+        m_translateAfterRecognition = false;
+        activateRecognitionMode(
+            static_cast<int>(ScreenshotRecognitionSessionController::Mode::Markdown));
+    });
+    connect(toolbar, &ScreenshotToolPalette::htmlRequested, this, [this]() {
+        m_translateAfterRecognition = false;
+        activateRecognitionMode(
+            static_cast<int>(ScreenshotRecognitionSessionController::Mode::Html));
+    });
+    connect(toolbar, &ScreenshotToolPalette::imageConversionSettingsRequested, this,
+            [this]() { m_recognitionSession->openImageConversionSettings(); });
 
     connect(toolbar, &ScreenshotToolPalette::textEditRequested, this,
             &ScreenshotPinnedWindow::handleTextEditingRequested);
@@ -3649,6 +3735,9 @@ bool ScreenshotPinnedWindow::recognitionModeAvailable(int mode) const {
                              : m_recognitionResults;
     const bool hasCacheKey = !results.key.isEmpty();
     switch (static_cast<ScreenshotRecognitionSessionController::Mode>(mode)) {
+    case ScreenshotRecognitionSessionController::Mode::Markdown:
+    case ScreenshotRecognitionSessionController::Mode::Html:
+        return !results.conversions.isEmpty() || (m_ocrSupported && m_tableRecognition != nullptr);
     case ScreenshotRecognitionSessionController::Mode::Text:
         return m_formattedTextAvailable ||
                (hasCacheKey && results.text.has_value() && results.text->error.isEmpty() &&
@@ -3677,6 +3766,11 @@ void ScreenshotPinnedWindow::updateRecognitionToolbarState() {
             static_cast<int>(ScreenshotRecognitionSessionController::Mode::Table)));
         toolbar->setQrEnabled(recognitionModeAvailable(
             static_cast<int>(ScreenshotRecognitionSessionController::Mode::Qr)));
+        toolbar->setImageConversionEnabled(recognitionModeAvailable(
+            static_cast<int>(ScreenshotRecognitionSessionController::Mode::Markdown)));
+        toolbar->setImageConversionBusy(
+            m_recognitionSession->busy(ScreenshotRecognitionSessionController::Mode::Markdown),
+            m_recognitionSession->busy(ScreenshotRecognitionSessionController::Mode::Html));
         toolbar->setOcrBusy(
             m_recognitionSession->busy(ScreenshotRecognitionSessionController::Mode::Text));
         toolbar->setTableBusy(

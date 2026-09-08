@@ -23,6 +23,7 @@
 #include <utility>
 
 void runOriginalImageTranslationTests();
+void runImageConversionTests();
 
 namespace {
 void require(bool condition, const char* message) {
@@ -442,6 +443,11 @@ int main(int argc, char** argv) {
                 .initialize({executable, temporary.path(), 60000})
                 .success,
             "initialize recognition test storage");
+    if (application.arguments().contains(QStringLiteral("--image-conversion-only"))) {
+        runImageConversionTests();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     runOriginalImageTranslationTests();
     if (application.arguments().contains(QStringLiteral("--translation-only"))) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();

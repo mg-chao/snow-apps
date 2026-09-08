@@ -41,6 +41,48 @@ void require(bool condition, const char* message) {
 
 constexpr int kRecognitionTimeoutMs = 30'000;
 
+QString sourceRuntimeDirectory;
+
+ScreenshotOcrRecognitionService::Options sourceRuntimeOptions() {
+    require(!sourceRuntimeDirectory.isEmpty(), "the source OCR runtime must be staged first");
+    const QDir models(QDir(QCoreApplication::applicationDirPath())
+                          .filePath(QStringLiteral("assets/ocr/models/ppocrv6-small-463ea9f")));
+    ScreenshotOcrRecognitionService::Options options;
+    options.processPath =
+        QDir(sourceRuntimeDirectory).filePath(QStringLiteral("snow-ocr-process.exe"));
+    options.detectorModelPath = models.filePath(QStringLiteral("PP-OCRv6_det_small.onnx"));
+    options.recognizerModelPath = models.filePath(QStringLiteral("PP-OCRv6_rec_small.onnx"));
+    options.dictionaryPath = models.filePath(QStringLiteral("ppocrv6_dict.txt"));
+    options.stateDirectory = sourceRuntimeDirectory;
+    return options;
+}
+
+void stageSourceRuntime(const QString& directory) {
+    sourceRuntimeDirectory = directory;
+    const QDir destination(directory);
+    QString executable = QStringLiteral(SNOW_TEST_OCR_EXECUTABLE);
+    for (const QString& argument : QCoreApplication::arguments()) {
+        if (argument.startsWith(QStringLiteral("--worker="))) {
+            executable = QFileInfo(argument.mid(9)).absoluteFilePath();
+        }
+    }
+    require(QFile::copy(executable, destination.filePath(QStringLiteral("snow-ocr-process.exe"))),
+            "the source OCR worker must be copied from the build target into the test fixture");
+    const QDir application(QCoreApplication::applicationDirPath());
+    // The isolated worker still needs the transitive DLLs staged beside the
+    // test executable (for example, the dynamic ONNX Runtime dependencies).
+    require(qputenv("PATH", QFile::encodeName(application.absolutePath()) + ';' + qgetenv("PATH")),
+            "the source OCR worker must inherit the staged runtime dependency directory");
+    for (const QString& library :
+         {QStringLiteral("DirectML.dll"), QStringLiteral("onnxruntime.dll")}) {
+        const QString source = application.filePath(library);
+        if (QFileInfo::exists(source)) {
+            require(QFile::copy(source, destination.filePath(library)),
+                    "the source OCR runtime dependencies must be copied into the fixture");
+        }
+    }
+}
+
 QImage whiteImage(int edge = 64) {
     QImage image(edge, edge, QImage::Format_RGBA8888);
     image.fill(Qt::white);
@@ -100,10 +142,7 @@ void modelInitializationFailureExposesAssetErrorAndRetries() {
     QTemporaryDir directory;
     require(directory.isValid(), "temporary OCR initialization directory should be available");
     ScreenshotOcrRecognitionService::Options options;
-    options.processPath =
-        QDir(QCoreApplication::applicationDirPath())
-            .filePath(QStringLiteral(
-                "assets/ocr/runtimes/1.0.3/windows-x64/snow-ocr-process-1.0.3-windows-x64.exe"));
+    options.processPath = sourceRuntimeOptions().processPath;
     options.detectorModelPath = QDir(directory.path()).filePath(QStringLiteral("invalid-det.onnx"));
     options.recognizerModelPath =
         QDir(directory.path()).filePath(QStringLiteral("invalid-rec.onnx"));
@@ -146,14 +185,24 @@ void modelInitializationFailureExposesAssetErrorAndRetries() {
         "a later OCR request should retry and report the selected model initialization failure");
 }
 
-void diskBackedEngineCompletesThroughTheQtWorker(bool directMlEnabled) {
-    // Real-engine integration run: models are acquired through the managed
-    // asset pipeline into a per-machine temp cache (or a packaged offline
-    // payload next to the test binary), so the run needs either cache,
-    // packaged assets, or network access.
-    ScreenshotOcrRecognitionService::Options options;
-    options.cacheRoot = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
-                            .filePath(QStringLiteral("snow-shot-ocr-test-assets"));
+void diskBackedEngineCompletesThroughTheQtWorker(bool directMlEnabled,
+                                                 bool managedRuntime = false) {
+    QTemporaryDir cache;
+    require(cache.isValid(), "an isolated OCR cache is required");
+    auto options =
+        managedRuntime ? ScreenshotOcrRecognitionService::Options{} : sourceRuntimeOptions();
+    const QString expectedProcess =
+        managedRuntime ? QDir(QCoreApplication::applicationDirPath())
+                             .filePath(QStringLiteral("assets/ocr/runtimes/1.0.4/windows-x64/"
+                                                      "snow-ocr-process-1.0.4-windows-x64.exe"))
+                       : options.processPath;
+    if (managedRuntime) {
+        // Exercise the same trusted offline selection as the app, without a
+        // pre-existing user cache or a successful network fallback.
+        options.cacheRoot = cache.path();
+        options.proxyUrl = QStringLiteral("http://127.0.0.1:1");
+        require(QFileInfo::exists(expectedProcess), "the managed OCR runtime must be staged");
+    }
     ScreenshotOcrRecognitionService service(options, directMlEnabled
                                                          ? ScreenshotOcrBackendPreference::DirectMl
                                                          : ScreenshotOcrBackendPreference::Cpu);
@@ -171,13 +220,17 @@ void diskBackedEngineCompletesThroughTheQtWorker(bool directMlEnabled) {
     });
 
     const QImage image = whiteImage();
-    const ScreenshotOcrRecognitionPort::RequestToken token =
-        service.recognize(ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size()))},
-                          &loop, [&](ScreenshotOcrRecognitionResult result) {
-                              output = std::move(result);
-                              completed = true;
-                              loop.quit();
-                          });
+    const ScreenshotOcrRecognitionPort::RequestToken token = service.recognize(
+        ScreenshotOcrRequest{image, QRectF(QPointF(), QSizeF(image.size()))}, &loop,
+        [&](ScreenshotOcrRecognitionResult result) {
+            const auto* child = service.findChild<QProcess*>();
+            require(child != nullptr && QFileInfo(child->program()).canonicalFilePath() ==
+                                            QFileInfo(expectedProcess).canonicalFilePath(),
+                    "OCR integration must execute the selected runtime");
+            output = std::move(result);
+            completed = true;
+            loop.quit();
+        });
 
     require(token != 0, "a valid OCR image should schedule recognition");
     timeout.start(kRecognitionTimeoutMs);
@@ -189,6 +242,10 @@ void diskBackedEngineCompletesThroughTheQtWorker(bool directMlEnabled) {
     }
     require(output.error.isEmpty(), "the disk-backed OCR engine should not report an error");
     require(output.presentation != nullptr, "OCR recognition should return a presentation");
+    if (managedRuntime) {
+        require(service.assetStatus().phase == ScreenshotOcrAssetPhase::ReadyOffline,
+                "managed OCR must use the verified offline payload without downloading");
+    }
 }
 
 std::shared_ptr<ScreenshotOcrPresentation> filterPresentation(const QRect& selection) {
@@ -244,7 +301,7 @@ void renderOnlyWorkRunsOnTheOcrWorkerWithoutAnEngine() {
 }
 
 void recognitionRenderIntentCanChangeWhileQueued() {
-    ScreenshotOcrRecognitionService::Options options;
+    auto options = sourceRuntimeOptions();
     options.workerCount = 1;
     ScreenshotOcrRecognitionService service(options);
     QObject receiver;
@@ -304,7 +361,7 @@ void recognitionRenderIntentCanChangeWhileQueued() {
 
 void concurrentRequestsCompleteExactlyOnce() {
     constexpr int kRequestCount = 3;
-    ScreenshotOcrRecognitionService service;
+    ScreenshotOcrRecognitionService service(sourceRuntimeOptions());
     QObject receiver;
     QEventLoop loop;
     QTimer timeout;
@@ -355,7 +412,7 @@ void concurrentRequestsCompleteExactlyOnce() {
 }
 
 void interactiveRequestsPrecedeQueuedPrefetch() {
-    ScreenshotOcrRecognitionService::Options options;
+    auto options = sourceRuntimeOptions();
     options.workerCount = 1;
     ScreenshotOcrRecognitionService service(options);
     QObject receiver;
@@ -403,7 +460,7 @@ void interactiveRequestsPrecedeQueuedPrefetch() {
 }
 
 void workerRecyclesImmediatelyAndCanBeRecreated() {
-    ScreenshotOcrRecognitionService service;
+    ScreenshotOcrRecognitionService service(sourceRuntimeOptions());
     require(service.liveWorkerCount() == 0,
             "OCR service construction must not create worker threads eagerly");
     QObject receiver;
@@ -450,10 +507,9 @@ void modelChangeDrainsSubmittedWorkBeforeRestartingPendingWork() {
     require(directory.isValid(), "temporary OCR model-change directory should be available");
     const QDir assetRoot(
         QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("assets/ocr")));
-    ScreenshotOcrRecognitionService::Options options;
+    auto options = sourceRuntimeOptions();
     options.workerCount = 1;
-    options.processPath = assetRoot.filePath(
-        QStringLiteral("runtimes/1.0.3/windows-x64/snow-ocr-process-1.0.3-windows-x64.exe"));
+    options.processPath = sourceRuntimeOptions().processPath;
     options.detectorModelPath =
         assetRoot.filePath(QStringLiteral("models/ppocrv6-small-463ea9f/PP-OCRv6_det_small.onnx"));
     options.recognizerModelPath =
@@ -521,7 +577,7 @@ void modelChangeDrainsSubmittedWorkBeforeRestartingPendingWork() {
 }
 
 void queuedCancellationSkipsExecution() {
-    ScreenshotOcrRecognitionService service;
+    ScreenshotOcrRecognitionService service(sourceRuntimeOptions());
     QObject receiver;
     QEventLoop loop;
     QTimer timeout;
@@ -548,7 +604,7 @@ void queuedCancellationSkipsExecution() {
 }
 
 void cancellationSuppressesCompletion() {
-    ScreenshotOcrRecognitionService service;
+    ScreenshotOcrRecognitionService service(sourceRuntimeOptions());
     QObject receiver;
     bool completed = false;
     const QImage image = whiteImage();
@@ -564,7 +620,7 @@ void cancellationSuppressesCompletion() {
 }
 
 void receiverDestructionSuppressesCompletion() {
-    ScreenshotOcrRecognitionService service;
+    ScreenshotOcrRecognitionService service(sourceRuntimeOptions());
     auto receiver = std::make_unique<QObject>();
     bool completed = false;
     const QImage image = whiteImage();
@@ -580,7 +636,7 @@ void receiverDestructionSuppressesCompletion() {
 void serviceDestructionJoinsWorkersAndSuppressesLateDelivery() {
     QObject receiver;
     int completions = 0;
-    auto service = std::make_unique<ScreenshotOcrRecognitionService>();
+    auto service = std::make_unique<ScreenshotOcrRecognitionService>(sourceRuntimeOptions());
     for (int index = 0; index < 3; ++index) {
         const QImage image = whiteImage(256);
         const auto token =
@@ -627,12 +683,12 @@ void writeAssetManifest(const QString& root, bool completePayload) {
     const QByteArray recognizer("recognizer");
     const QByteArray dictionary("dictionary");
     const QString runtimeDirectory =
-        QDir(root).filePath(QStringLiteral("runtimes/1.0.3/windows-x64"));
+        QDir(root).filePath(QStringLiteral("runtimes/1.0.4/windows-x64"));
     const QString modelDirectory =
         QDir(root).filePath(QStringLiteral("models/ppocrv6-small-463ea9f"));
     if (completePayload) {
         writeFixture(QDir(runtimeDirectory)
-                         .filePath(QStringLiteral("snow-ocr-process-1.0.3-windows-x64.exe")),
+                         .filePath(QStringLiteral("snow-ocr-process-1.0.4-windows-x64.exe")),
                      process);
         writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral("DirectML.dll")), directMl);
         writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral("runtime-manifest.json")),
@@ -643,12 +699,12 @@ void writeAssetManifest(const QString& root, bool completePayload) {
                      recognizer);
         writeFixture(QDir(modelDirectory).filePath(QStringLiteral("ppocrv6_dict.txt")), dictionary);
         writeFixture(QDir(runtimeDirectory).filePath(QStringLiteral(".complete.json")),
-                     R"({"schema":1,"component":"1.0.3"})");
+                     R"({"schema":1,"component":"1.0.4"})");
         writeFixture(QDir(modelDirectory).filePath(QStringLiteral(".complete.json")),
                      R"({"schema":1,"component":"ppocrv6-small-463ea9f"})");
     }
     const QJsonArray runtimeFiles{
-        assetFile(QStringLiteral("snow-ocr-process-1.0.3-windows-x64.exe"), process),
+        assetFile(QStringLiteral("snow-ocr-process-1.0.4-windows-x64.exe"), process),
         assetFile(QStringLiteral("DirectML.dll"), directMl),
         assetFile(QStringLiteral("runtime-manifest.json"), runtimeManifest)};
     const auto model = [](const QString& type, const QString& id, const QString& detectorName,
@@ -677,10 +733,10 @@ void writeAssetManifest(const QString& root, bool completePayload) {
         {QStringLiteral("schema"), 2},
         {QStringLiteral("default_model"), QStringLiteral("small")},
         {QStringLiteral("runtime"),
-         QJsonObject{{QStringLiteral("version"), QStringLiteral("1.0.3")},
+         QJsonObject{{QStringLiteral("version"), QStringLiteral("1.0.4")},
                      {QStringLiteral("platform"), QStringLiteral("windows-x64")},
                      {QStringLiteral("archive"),
-                      assetFile(QStringLiteral("snow-ocr-runtime-1.0.3-windows-x64.zip"), archive,
+                      assetFile(QStringLiteral("snow-ocr-runtime-1.0.4-windows-x64.zip"), archive,
                                 QStringLiteral("https://example.invalid/runtime"))},
                      {QStringLiteral("files"), runtimeFiles}}},
         {QStringLiteral("models"),
@@ -1069,7 +1125,7 @@ void actualOcrCrashAfterInference() {
     require(diagnostics.initialize(diagnosticsOptions) &&
                 diagnostics.status().crashCaptureAvailable,
             "actual OCR crash collector starts");
-    ScreenshotOcrRecognitionService service;
+    ScreenshotOcrRecognitionService service(sourceRuntimeOptions());
     QObject receiver;
     bool crashed = false;
     const auto image = whiteImage();
@@ -1122,7 +1178,7 @@ void actualOcrCrashAfterInference() {
     const auto bytes = dump.readAll();
     dump.close();
     require(bytes.contains(diagnostics.status().sessionId.toUtf8()) &&
-                bytes.contains("ocr.operation_started") && bytes.contains("1.0.3"),
+                bytes.contains("ocr.operation_started") && bytes.contains("1.0.4"),
             "actual OCR dump retains parent session, operation and runtime version");
     require(diagnostics.flush(), "actual OCR final diagnostics flush");
     diagnostics.shutdown();
@@ -1130,8 +1186,25 @@ void actualOcrCrashAfterInference() {
 }
 } // namespace
 
+int runOcrLifecycleChild();
+void ocrProcessLifecycleTests();
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
+    if (qEnvironmentVariableIsSet("SNOW_TEST_OCR_LIFECYCLE_CHILD"))
+        return runOcrLifecycleChild();
+    if (application.arguments().contains(QStringLiteral("--process-lifecycle"))) {
+        ocrProcessLifecycleTests();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--managed-runtime-only"))) {
+        diskBackedEngineCompletesThroughTheQtWorker(
+            application.arguments().contains(QStringLiteral("--directml")), true);
+        return 0;
+    }
+    QTemporaryDir sourceRuntime;
+    require(sourceRuntime.isValid(), "an isolated source OCR runtime directory is required");
+    stageSourceRuntime(sourceRuntime.path());
     if (application.arguments().contains(QStringLiteral("--native-crash"))) {
         actualOcrCrashAfterInference();
         return 0;

@@ -2150,10 +2150,6 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
             expandedStream.erase(std::unique(expandedStream.begin(), expandedStream.end()),
                                  expandedStream.end());
 
-            QPainter scenePainter(&scene);
-            scenePainter.setFont(painter.font());
-            scenePainter.setRenderHints(painter.renderHints());
-            scenePainter.translate(-surfaceGeometry.logicalOrigin);
             std::size_t replayStartPosition = 0;
             bool reusedPreLayer = false;
             bool preloadedLookupAttempted = false;
@@ -2197,16 +2193,18 @@ void renderSceneItemsImpl(const SceneRenderRequest& request) {
                                         retainedSource->image.constScanLine(row),
                                         static_cast<std::size_t>(scene.bytesPerLine()));
                         }
-                        scenePainter.begin(&scene);
-                        scenePainter.setFont(painter.font());
-                        scenePainter.setRenderHints(painter.renderHints());
-                        scenePainter.translate(-surfaceGeometry.logicalOrigin);
                         replayStartPosition = candidatePosition;
                         reusedPreLayer = true;
                     }
                     break;
                 }
             }
+            // Restore retained pixels before opening the painter. Cache hits
+            // and cold replays must both begin painting this surface once.
+            QPainter scenePainter(&scene);
+            scenePainter.setFont(painter.font());
+            scenePainter.setRenderHints(painter.renderHints());
+            scenePainter.translate(-surfaceGeometry.logicalOrigin);
             const StageTimer backgroundReplayTimer{g_filterDiagnostics.sceneReplayNanoseconds};
             if (!reusedPreLayer && !copiedBackgroundRows && backgroundImage != nullptr &&
                 !backgroundImage->isNull()) {

@@ -1,10 +1,22 @@
 use windows::Win32::Graphics::Dxgi::{
-    DXGI_OUTDUPL_POINTER_SHAPE_INFO, DXGI_OUTDUPL_POINTER_SHAPE_TYPE,
-    DXGI_OUTDUPL_POINTER_SHAPE_TYPE_COLOR, DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MASKED_COLOR,
-    DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MONOCHROME,
+    DXGI_OUTDUPL_FRAME_INFO, DXGI_OUTDUPL_POINTER_POSITION, DXGI_OUTDUPL_POINTER_SHAPE_INFO,
+    DXGI_OUTDUPL_POINTER_SHAPE_TYPE, DXGI_OUTDUPL_POINTER_SHAPE_TYPE_COLOR,
+    DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MASKED_COLOR, DXGI_OUTDUPL_POINTER_SHAPE_TYPE_MONOCHROME,
 };
 
 use snow_cursor::{CursorCompositionMode, CursorShape};
+
+pub(crate) fn update_dxgi_pointer_position(
+    position: &mut Option<DXGI_OUTDUPL_POINTER_POSITION>,
+    frame_info: &DXGI_OUTDUPL_FRAME_INFO,
+) {
+    // Desktop-only updates (for example, typing) contain no valid pointer
+    // position or visibility. Preserve the last mouse update in those frames.
+    // https://learn.microsoft.com/windows/win32/api/dxgi1_2/ns-dxgi1_2-dxgi_outdupl_frame_info
+    if frame_info.LastMouseUpdateTime != 0 {
+        *position = Some(frame_info.PointerPosition);
+    }
+}
 
 pub(crate) fn decode_dxgi_pointer_shape(
     shape_info: &DXGI_OUTDUPL_POINTER_SHAPE_INFO,
@@ -128,6 +140,73 @@ fn checked_rgba_len(width: u32, height: u32) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use windows::Win32::Foundation::POINT;
+
+    fn pointer_update(timestamp: i64, x: i32, y: i32, visible: bool) -> DXGI_OUTDUPL_FRAME_INFO {
+        DXGI_OUTDUPL_FRAME_INFO {
+            LastMouseUpdateTime: timestamp,
+            PointerPosition: DXGI_OUTDUPL_POINTER_POSITION {
+                Position: POINT { x, y },
+                Visible: visible.into(),
+            },
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn dxgi_pointer_preserves_stationary_cursor_during_desktop_updates() {
+        let mut position = None;
+        update_dxgi_pointer_position(&mut position, &pointer_update(1, 120, 80, true));
+
+        // Typing updates the desktop without updating the mouse. DXGI's
+        // pointer fields are invalid in those frames, even if zero-filled.
+        for timestamp in 2..32 {
+            update_dxgi_pointer_position(
+                &mut position,
+                &DXGI_OUTDUPL_FRAME_INFO {
+                    LastPresentTime: timestamp,
+                    AccumulatedFrames: 1,
+                    ..Default::default()
+                },
+            );
+            let pointer = position.expect("the last mouse update must remain available");
+            assert!(
+                pointer.Visible.as_bool(),
+                "desktop updates must not hide the cursor"
+            );
+            assert_eq!((pointer.Position.x, pointer.Position.y), (120, 80));
+        }
+    }
+
+    #[test]
+    fn dxgi_pointer_waits_for_first_valid_mouse_update() {
+        let mut position = None;
+        for visible in [false, true] {
+            update_dxgi_pointer_position(&mut position, &pointer_update(0, 120, 80, visible));
+            assert!(
+                position.is_none(),
+                "invalid pointer fields must not initialize state"
+            );
+        }
+        update_dxgi_pointer_position(&mut position, &pointer_update(1, 120, 80, true));
+        assert!(position.unwrap().Visible.as_bool());
+    }
+
+    #[test]
+    fn dxgi_pointer_applies_real_movement_and_visibility_changes() {
+        let mut position = None;
+        for (timestamp, x, y, visible) in
+            [(1, 120, 80, true), (2, 120, 80, false), (3, 240, 90, true)]
+        {
+            // Pointer-only updates are valid even without a desktop present.
+            update_dxgi_pointer_position(&mut position, &pointer_update(timestamp, x, y, visible));
+            // Invalid fields must neither hide nor resurrect the cursor.
+            update_dxgi_pointer_position(&mut position, &pointer_update(0, -1, -1, !visible));
+            let pointer = position.unwrap();
+            assert_eq!(pointer.Visible.as_bool(), visible);
+            assert_eq!((pointer.Position.x, pointer.Position.y), (x, y));
+        }
+    }
 
     #[test]
     fn dxgi_monochrome_decode_produces_expected_pixels() {

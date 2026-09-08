@@ -25,6 +25,7 @@ snow_enable_clang_tidy()
 set(CMAKE_DISABLE_FIND_PACKAGE_WrapVulkanHeaders TRUE)
 find_package(Qt6 REQUIRED COMPONENTS Widgets Svg)
 include(SnowTestCliGuard)
+include(SnowQtOffscreenTest)
 qt_standard_project_setup()
 
 if(NOT TARGET adqt::icons)
@@ -272,8 +273,12 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
     target_link_libraries(snow-canvas-filter-render-tests PRIVATE
         snow_draw_engine_qt_canvas
     )
+    snow_shot_import_offscreen_platform(snow-canvas-filter-render-tests)
     add_test(NAME snow-canvas-filter-render-tests COMMAND snow-canvas-filter-render-tests)
-    set_tests_properties(snow-canvas-filter-render-tests PROPERTIES
+    add_test(NAME snow-canvas-retained-filter-paint-tests
+        COMMAND snow-canvas-filter-render-tests --retained-filter-paint-only)
+    set_tests_properties(
+        snow-canvas-filter-render-tests snow-canvas-retained-filter-paint-tests PROPERTIES
         ENVIRONMENT
             "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=$<TARGET_FILE_DIR:Qt6::QOffscreenIntegrationPlugin>"
         ENVIRONMENT_MODIFICATION

@@ -129,6 +129,10 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Export Settings"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mouse trail color"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mouse click color"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mouse trail color %1"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mouse trail color transparent"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mouse click color %1"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mouse click color transparent"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Show cursor in recording"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Copy recording"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Animated recording formats do not contain audio"),
@@ -306,12 +310,17 @@ bool toolUsesActionToolbar(ScreenshotToolPalette::Tool tool) {
            tool == ScreenshotToolPalette::Tool::Ocr ||
            tool == ScreenshotToolPalette::Tool::TextTranslation ||
            tool == ScreenshotToolPalette::Tool::Table ||
+           tool == ScreenshotToolPalette::Tool::Markdown ||
+           tool == ScreenshotToolPalette::Tool::Html ||
            tool == ScreenshotToolPalette::Tool::ScrollingScreenshot;
 }
 
 std::optional<ScreenshotToolPalette::ActionFamily>
 actionFamilyForTool(ScreenshotToolPalette::Tool tool) {
     switch (tool) {
+    case ScreenshotToolPalette::Tool::Markdown:
+    case ScreenshotToolPalette::Tool::Html:
+        return ScreenshotToolPalette::ActionFamily::ImageConversion;
     case ScreenshotToolPalette::Tool::Select:
         return ScreenshotToolPalette::ActionFamily::Selection;
     case ScreenshotToolPalette::Tool::Ocr:
@@ -350,6 +359,8 @@ bool toolUsesStyleToolbar(ScreenshotToolPalette::Tool tool) {
     case ScreenshotToolPalette::Tool::Table:
     case ScreenshotToolPalette::Tool::Qr:
     case ScreenshotToolPalette::Tool::ScrollingScreenshot:
+    case ScreenshotToolPalette::Tool::Markdown:
+    case ScreenshotToolPalette::Tool::Html:
         return false;
     }
     return false;
@@ -402,6 +413,12 @@ QString actionToolShortcutId(const QString& itemId) {
 }
 
 std::optional<ScreenshotToolPalette::Tool> actionTool(const QString& itemId) {
+    if (itemId == QStringLiteral("convert-to-markdown")) {
+        return ScreenshotToolPalette::Tool::Markdown;
+    }
+    if (itemId == QStringLiteral("convert-to-html")) {
+        return ScreenshotToolPalette::Tool::Html;
+    }
     if (itemId == QStringLiteral("barcode-recognition")) {
         return ScreenshotToolPalette::Tool::Qr;
     }
@@ -422,6 +439,10 @@ std::optional<ScreenshotToolPalette::Tool> actionTool(const QString& itemId) {
 
 QString actionToolItemId(ScreenshotToolPalette::Tool tool) {
     switch (tool) {
+    case ScreenshotToolPalette::Tool::Markdown:
+        return QStringLiteral("convert-to-markdown");
+    case ScreenshotToolPalette::Tool::Html:
+        return QStringLiteral("convert-to-html");
     case ScreenshotToolPalette::Tool::Qr:
         return QStringLiteral("barcode-recognition");
     case ScreenshotToolPalette::Tool::Table:
@@ -1143,10 +1164,13 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
     const bool ocrVisible = m_activeTool == Tool::Ocr || m_activeTool == Tool::TextTranslation;
     const bool tableVisible = m_activeTool == Tool::Table;
     const bool qrVisible = m_activeTool == Tool::Qr;
+    const bool conversionVisible = m_activeTool == Tool::Markdown || m_activeTool == Tool::Html;
     const bool scrollingVisible = m_activeTool == Tool::ScrollingScreenshot;
     const bool recognitionActionVisible =
-        ocrVisible || tableVisible || qrVisible || scrollingVisible;
+        ocrVisible || tableVisible || qrVisible || scrollingVisible || conversionVisible;
     const bool recognitionControlsMatch =
+        (m_conversionSettingsButton == nullptr ||
+         m_conversionSettingsButton->isHidden() == !conversionVisible) &&
         (m_textEditButton == nullptr || m_textEditButton->isHidden() == !ocrVisible) &&
         (m_tableMergeButton == nullptr || m_tableMergeButton->isHidden() == !tableVisible) &&
         (m_scrollingRecognitionControls == nullptr ||
@@ -1158,6 +1182,9 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
 
     m_actionToolbarTargetVisible = actionToolbarVisible;
     m_styleToolbarTargetVisible = styleToolbarVisible;
+    if (m_conversionSettingsButton != nullptr) {
+        m_conversionSettingsButton->setVisible(conversionVisible);
+    }
     for (QWidget* widget : std::as_const(m_selectionActionControls)) {
         if (widget != nullptr) {
             widget->setVisible(!recognitionActionVisible);
@@ -1508,6 +1535,10 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     case Tool::TextTranslation:
         activeButton = actionToolEntryButton(QStringLiteral("text-translation"));
         break;
+    case Tool::Markdown:
+    case Tool::Html:
+        activeButton = actionToolEntryButton(actionToolItemId(tool));
+        break;
     case Tool::Table:
         activeButton = actionToolEntryButton(QStringLiteral("table-recognition"));
         break;
@@ -1552,10 +1583,8 @@ void ScreenshotToolPalette::setTableQrEntryTool(Tool tool) {
     if (tool != Tool::Table && tool != Tool::Qr) {
         return;
     }
-    if (m_tableQrEntryTool != tool) {
-        static_cast<void>(
-            toolbar_settings::ScreenshotToolbarSettings().setTableQrTool(tableQrToolSetting(tool)));
-    }
+    static_cast<void>(
+        toolbar_settings::ScreenshotToolbarSettings().setTableQrTool(tableQrToolSetting(tool)));
     m_tableQrEntryTool = tool;
     refreshTableQrTrigger();
     selectActionToolGroupEntry(tool == Tool::Qr ? QStringLiteral("barcode-recognition")
@@ -1584,6 +1613,8 @@ void ScreenshotToolPalette::selectDynamicEntryTool(Tool tool) {
         selectDrawingToolGroupEntry(tool);
     } else if (tool == Tool::Table || tool == Tool::Qr) {
         setTableQrEntryTool(tool);
+    } else if (tool == Tool::Markdown || tool == Tool::Html) {
+        selectActionToolGroupEntry(actionToolItemId(tool));
     } else if (tool == Tool::Ocr) {
         selectActionToolGroupEntry(QStringLiteral("text-recognition"));
     } else if (tool == Tool::TextTranslation) {
@@ -2567,17 +2598,18 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
     if (m_mainPanel != nullptr) {
         m_mainPanel->setPhysicalScale(m_physicalScale);
     }
-    for (const DrawingToolGroup& group : std::as_const(m_drawingToolGroups)) {
-        if (group.ownsTrigger) {
-            configureScreenshotToolPaletteBaseButton(group.trigger, nullptr,
-                                                     actionButtonMetrics(m_physicalScale));
+    const auto configureGroups = [this](const auto& groups) {
+        for (const auto& group : groups) {
+            if (group.ownsTrigger) {
+                configureScreenshotToolPaletteBaseButton(group.trigger, nullptr,
+                                                         actionButtonMetrics(m_physicalScale));
+            }
+            configureScreenshotToolPaletteOptionPopoverEditor(
+                group.popover, group.optionButtons, TOOLBAR_ITEM_SPACING, actionButtonMetrics(1.0));
         }
-        configureScreenshotToolPaletteOptionPopoverEditor(
-            group.popover, group.optionButtons, TOOLBAR_ITEM_SPACING, actionButtonMetrics(1.0));
-    }
-    const ScreenshotToolPaletteButtonMetrics popupMetrics = actionButtonMetrics(1.0);
-    configureScreenshotToolPaletteOptionPopoverEditor(m_tableQrPopover, m_tableQrOptionButtons,
-                                                      TOOLBAR_ITEM_SPACING, popupMetrics);
+    };
+    configureGroups(m_drawingToolGroups);
+    configureGroups(m_actionToolGroups);
 
     applyStyleMetricsForScope(m_activeStyleControlsWidget);
 
@@ -3246,7 +3278,8 @@ void ScreenshotToolPalette::createMainToolbar(const Options& options) {
     const bool hasEditingTools = addMainToolButtons(options, panelLayout);
     const bool hasSecondaryTools =
         options.showScreenRecordButton || options.showOcrTool || options.showTextTranslationTool ||
-        options.showTableTool || options.showQrTool || options.showScrollingScreenshotTool ||
+        options.showTableTool || options.showQrTool || options.showImageConversionTools ||
+        options.showScrollingScreenshotTool ||
         (options.showSaveButton && !options.saveButtonWithResultActions) ||
         (!options.showRecordingControls && (options.actions & PinAction) != 0);
     if (hasEditingTools && hasSecondaryTools) {
@@ -3394,6 +3427,12 @@ void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
     case Tool::Qr:
         emit qrRequested();
         break;
+    case Tool::Markdown:
+        emit markdownRequested();
+        break;
+    case Tool::Html:
+        emit htmlRequested();
+        break;
     case Tool::ScrollingScreenshot:
         emit scrollingScreenshotRequested();
         break;
@@ -3458,6 +3497,10 @@ void ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
         break;
     case Tool::TextTranslation:
         requestedButton = actionToolEntryButton(QStringLiteral("text-translation"));
+        break;
+    case Tool::Markdown:
+    case Tool::Html:
+        requestedButton = actionToolEntryButton(actionToolItemId(tool));
         break;
     case Tool::Table:
         requestedButton = actionToolEntryButton(QStringLiteral("table-recognition"));
@@ -3589,6 +3632,12 @@ void ScreenshotToolPalette::ensureDrawingToolGroupPopover(adqt::widgets::AdButto
 
 adqt::widgets::AdButton*
 ScreenshotToolPalette::actionToolSourceButton(const QString& itemId) const {
+    if (itemId == QStringLiteral("convert-to-markdown")) {
+        return m_markdownButton;
+    }
+    if (itemId == QStringLiteral("convert-to-html")) {
+        return m_htmlButton;
+    }
     if (itemId == QStringLiteral("barcode-recognition") ||
         itemId == QStringLiteral("table-recognition")) {
         return m_tableButton;
@@ -3633,7 +3682,24 @@ bool ScreenshotToolPalette::actionToolAvailable(const QString& itemId) const {
     return actionToolSourceButton(itemId) != nullptr;
 }
 
+ScreenshotToolPalette::ActionToolState
+ScreenshotToolPalette::actionToolState(const QString& itemId) const {
+    if (itemId == QStringLiteral("table-recognition")) {
+        return {m_tableEnabled, m_tableBusy};
+    }
+    if (itemId == QStringLiteral("barcode-recognition")) {
+        return {m_qrEnabled, m_qrBusy};
+    }
+    if (auto* source = actionToolSourceButton(itemId)) {
+        return {source->isEnabled(), source->busy()};
+    }
+    return {};
+}
+
 void ScreenshotToolPalette::activateActionTool(const QString& itemId, bool toggleVisibleButton) {
+    if (!actionToolState(itemId).enabled) {
+        return;
+    }
     selectActionToolGroupEntry(itemId);
     if (itemId == QStringLiteral("barcode-recognition")) {
         setTableQrEntryTool(Tool::Qr);
@@ -3649,6 +3715,10 @@ void ScreenshotToolPalette::activateActionTool(const QString& itemId, bool toggl
         activateToolFromToolbar(Tool::Ocr, toggleVisibleButton);
     } else if (itemId == QStringLiteral("text-translation")) {
         activateToolFromToolbar(Tool::TextTranslation, toggleVisibleButton);
+    } else if (itemId == QStringLiteral("convert-to-markdown")) {
+        activateToolFromToolbar(Tool::Markdown, toggleVisibleButton);
+    } else if (itemId == QStringLiteral("convert-to-html")) {
+        activateToolFromToolbar(Tool::Html, toggleVisibleButton);
     } else if (itemId == QStringLiteral("scrolling-screenshot")) {
         activateToolFromToolbar(Tool::ScrollingScreenshot, toggleVisibleButton);
     } else if (itemId == QStringLiteral("save-as-file")) {
@@ -3678,6 +3748,14 @@ void ScreenshotToolPalette::clearActionToolGroups() {
         }
     }
     m_actionToolGroups.clear();
+    if (m_tableQrPopover != nullptr) {
+        m_tableQrPopover->hide();
+        m_tableOptionButton = nullptr;
+        m_qrButton = nullptr;
+        m_tableQrOptionButtons.clear();
+        m_tableQrOptionValues.clear();
+        m_tableQrPopover->setContentWidget(nullptr);
+    }
 }
 
 void ScreenshotToolPalette::refreshActionToolGroup(int groupIndex) {
@@ -3689,45 +3767,24 @@ void ScreenshotToolPalette::refreshActionToolGroup(int groupIndex) {
         return;
     }
 
-    const QSet<QString> groupItems(group.itemIds.cbegin(), group.itemIds.cend());
-    const QSet<QString> recognitionItems{QStringLiteral("barcode-recognition"),
-                                         QStringLiteral("table-recognition")};
-    const bool nativeRecognitionGroup = groupItems == recognitionItems && !group.ownsTrigger;
-    if (nativeRecognitionGroup) {
-        group.entryItemId = m_tableQrEntryTool == Tool::Qr ? QStringLiteral("barcode-recognition")
-                                                           : QStringLiteral("table-recognition");
-    } else {
-        const toolbar_layout::EditorDescriptor* descriptor =
-            toolbar_layout::actionDescriptor(group.entryItemId);
-        if (descriptor == nullptr) {
-            return;
-        }
-        const QString label = QString::fromUtf8(descriptor->label);
-        configureScreenshotToolPaletteTooltip(group.trigger, descriptor->label);
-        applyScreenshotShortcutTooltip(group.trigger, label,
-                                       actionToolShortcutId(group.entryItemId));
-        setScreenshotToolPaletteToolButtonIcon(group.trigger,
-                                               toolbar_layout::icon(descriptor->icon));
-        if (adqt::widgets::AdButton* source = actionToolSourceButton(group.entryItemId)) {
-            group.trigger->setButtonStyle(source->buttonStyle());
-            group.trigger->setAccentRole(source->accentRole());
-        }
-
-        bool enabled = true;
-        bool busy = false;
-        if (group.entryItemId == QStringLiteral("table-recognition")) {
-            enabled = m_tableEnabled;
-            busy = m_tableBusy;
-        } else if (group.entryItemId == QStringLiteral("barcode-recognition")) {
-            enabled = m_qrEnabled;
-            busy = m_qrBusy;
-        } else if (adqt::widgets::AdButton* source = actionToolSourceButton(group.entryItemId)) {
-            enabled = source->isEnabled();
-            busy = source->busy();
-        }
-        group.trigger->setEnabled(enabled);
-        group.trigger->setBusy(busy);
+    const auto* entryDescriptor = toolbar_layout::actionDescriptor(group.entryItemId);
+    if (entryDescriptor == nullptr) {
+        return;
     }
+    configureScreenshotToolPaletteTooltip(group.trigger, entryDescriptor->label);
+    applyScreenshotShortcutTooltip(group.trigger, QString::fromUtf8(entryDescriptor->label),
+                                   actionToolShortcutId(group.entryItemId));
+    setScreenshotToolPaletteToolButtonIcon(group.trigger,
+                                           toolbar_layout::icon(entryDescriptor->icon));
+    if (auto* source = actionToolSourceButton(group.entryItemId)) {
+        group.trigger->setButtonStyle(source->buttonStyle());
+        group.trigger->setAccentRole(source->accentRole());
+    }
+    // A disabled entry must not prevent hovering the stack to choose an enabled alternative.
+    group.trigger->setEnabled(
+        std::any_of(group.itemIds.cbegin(), group.itemIds.cend(),
+                    [this](const QString& itemId) { return actionToolState(itemId).enabled; }));
+    group.trigger->setBusy(actionToolState(group.entryItemId).busy);
     group.trigger->setProperty("screenshotToolbarItemId", group.entryItemId);
     group.trigger->setProperty("screenshotToolbarPositionItems", group.itemIds);
 
@@ -3736,20 +3793,9 @@ void ScreenshotToolPalette::refreshActionToolGroup(int groupIndex) {
             continue;
         }
         const QString itemId = optionButton->property("screenshotToolbarItemId").toString();
-        bool enabled = true;
-        bool busy = false;
-        if (itemId == QStringLiteral("table-recognition")) {
-            enabled = m_tableEnabled;
-            busy = m_tableBusy;
-        } else if (itemId == QStringLiteral("barcode-recognition")) {
-            enabled = m_qrEnabled;
-            busy = m_qrBusy;
-        } else if (adqt::widgets::AdButton* source = actionToolSourceButton(itemId)) {
-            enabled = source->isEnabled();
-            busy = source->busy();
-        }
-        optionButton->setEnabled(enabled);
-        optionButton->setBusy(busy);
+        const auto state = actionToolState(itemId);
+        optionButton->setEnabled(state.enabled);
+        optionButton->setBusy(state.busy);
         const toolbar_layout::EditorDescriptor* descriptor =
             toolbar_layout::actionDescriptor(itemId);
         if (descriptor != nullptr) {
@@ -3782,13 +3828,14 @@ void ScreenshotToolPalette::refreshActionToolGroups() {
 void ScreenshotToolPalette::ensureActionToolGroupPopover(adqt::widgets::AdButton* trigger) {
     for (ActionToolGroup& group : m_actionToolGroups) {
         if (group.trigger != trigger || group.popover == nullptr ||
-            group.popover == m_tableQrPopover || group.popover->contentWidget() != nullptr ||
-            group.popoverConstructing) {
+            group.popover->contentWidget() != nullptr || group.popoverConstructing) {
             continue;
         }
         group.popoverConstructing = true;
         ScreenshotToolPaletteOptionPopoverEditorConfig config;
-        config.contentObjectName = QStringLiteral("screenshotActionToolGroupPopoverContent");
+        config.contentObjectName = group.popover == m_tableQrPopover
+                                       ? QStringLiteral("screenshotTableQrPopoverContent")
+                                       : QStringLiteral("screenshotActionToolGroupPopoverContent");
         config.optionSpacing = TOOLBAR_ITEM_SPACING;
         for (const QString& itemId : std::as_const(group.popoverItemIds)) {
             const toolbar_layout::EditorDescriptor* descriptor =
@@ -3818,6 +3865,15 @@ void ScreenshotToolPalette::ensureActionToolGroupPopover(adqt::widgets::AdButton
             button->setProperty("screenshotToolbarItemId", itemId);
             button->setBusyIndicatorPresentation(
                 adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
+            if (group.popover == m_tableQrPopover) {
+                const bool table = itemId == QStringLiteral("table-recognition");
+                (table ? m_tableOptionButton : m_qrButton) = button;
+                button->setObjectName(table
+                                          ? QStringLiteral("screenshotTableRecognitionOptionButton")
+                                          : QStringLiteral("screenshotQrRecognitionOptionButton"));
+                m_tableQrOptionButtons.push_back(button);
+                m_tableQrOptionValues.push_back(static_cast<int>(table ? Tool::Table : Tool::Qr));
+            }
         }
         group.popoverConstructing = false;
         refreshActionToolGroup(static_cast<int>(&group - m_actionToolGroups.data()));
@@ -3830,44 +3886,7 @@ void ScreenshotToolPalette::ensureActionToolGroupPopover(adqt::widgets::AdButton
 }
 
 void ScreenshotToolPalette::ensureTableQrPopover() {
-    if (m_tableQrPopover == nullptr || m_tableQrPopover->contentWidget() != nullptr) {
-        return;
-    }
-    ScreenshotToolPaletteOptionPopoverEditorConfig config;
-    config.contentObjectName = QStringLiteral("screenshotTableQrPopoverContent");
-    config.optionSpacing = TOOLBAR_ITEM_SPACING;
-    config.options = {{static_cast<int>(Tool::Table), QStringLiteral("Table recognition"),
-                       custom_outlined_icons::TableRecognition()},
-                      {static_cast<int>(Tool::Qr), QStringLiteral("Barcode recognition"),
-                       custom_outlined_icons::ScanQrcode()}};
-    const auto editor = materializeScreenshotToolPaletteOptionPopoverEditor(
-        m_tableQrPopover, this, config,
-        [this](int value) { activateTableQrTool(static_cast<Tool>(value), false); },
-        actionButtonMetrics(1.0));
-    m_tableQrOptionButtons = editor.buttons;
-    m_tableQrOptionValues = editor.values;
-    m_tableOptionButton = m_tableQrOptionButtons.value(0);
-    m_qrButton = m_tableQrOptionButtons.value(1);
-    if (m_tableOptionButton != nullptr) {
-        m_tableOptionButton->setObjectName(
-            QStringLiteral("screenshotTableRecognitionOptionButton"));
-        m_tableOptionButton->setBusyIndicatorPresentation(
-            adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
-        applyScreenshotShortcutTooltip(m_tableOptionButton, QStringLiteral("Table recognition"),
-                                       QStringLiteral("table_recognition"));
-    }
-    if (m_qrButton != nullptr) {
-        m_qrButton->setObjectName(QStringLiteral("screenshotQrRecognitionOptionButton"));
-        m_qrButton->setBusyIndicatorPresentation(
-            adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
-        applyScreenshotShortcutTooltip(m_qrButton, QStringLiteral("Barcode recognition"),
-                                       QStringLiteral("qr_code_recognition"));
-    }
-    updateTableQrBusy();
-    updateTableQrEnabled();
-    setActiveToolButton(m_activeToolButton);
-    emit materializedScope(m_tableQrPopover->contentWidget());
-    SNOW_SHOT_TOOLBAR_PERF_COUNTER("hydrate.table_qr_popover");
+    ensureActionToolGroupPopover(m_tableButton);
 }
 
 void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
@@ -3918,14 +3937,15 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
 
     bool hasDrawingPositions = false;
     for (const QStringList& position : normalized.positions) {
-        QStringList availableItemIds;
+        const auto stack =
+            toolbar_layout::stackPresentation(position, [this](const QString& itemId) {
+                return toolbar_layout::descriptor(itemId) != nullptr &&
+                       drawingToolButton(itemId) != nullptr;
+            });
+        const QStringList& availableItemIds = stack.itemIds;
         QVector<Tool> tools;
-        for (const QString& itemId : position) {
+        for (const QString& itemId : availableItemIds) {
             const toolbar_layout::Descriptor* descriptor = toolbar_layout::descriptor(itemId);
-            if (descriptor == nullptr || drawingToolButton(itemId) == nullptr) {
-                continue;
-            }
-            availableItemIds.push_back(itemId);
             tools.push_back(drawingToolFromItem(descriptor->item));
         }
         if (tools.isEmpty()) {
@@ -3941,12 +3961,14 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
         DrawingToolGroup group;
         group.itemIds = availableItemIds;
         group.tools = tools;
-        group.entryTool = tools.constLast();
+        group.entryTool =
+            drawingToolFromItem(toolbar_layout::descriptor(stack.entryItemId())->item);
+        group.popoverItemIds = stack.popoverItemIds;
         if (tools.size() == 1) {
             group.trigger = drawingToolButton(availableItemIds.constFirst());
         } else {
             const toolbar_layout::Descriptor* entryDescriptor =
-                toolbar_layout::descriptor(availableItemIds.constLast());
+                toolbar_layout::descriptor(stack.entryItemId());
             if (entryDescriptor == nullptr) {
                 continue;
             }
@@ -3971,14 +3993,6 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
             // the trigger before the popover's hover delay elapses so the first real hover can
             // materialize the options and continue through the normal opening path.
             group.trigger->installEventFilter(this);
-            for (int optionIndex = availableItemIds.size() - 1; optionIndex >= 0; --optionIndex) {
-                const toolbar_layout::Descriptor* descriptor =
-                    toolbar_layout::descriptor(availableItemIds.at(optionIndex));
-                if (descriptor == nullptr) {
-                    continue;
-                }
-                group.popoverItemIds.push_back(availableItemIds.at(optionIndex));
-            }
             connect(group.popover, &adqt::widgets::AdPopover::visibilityRequested, this,
                     [this, trigger = group.trigger](bool visible) {
                         if (visible) {
@@ -4028,6 +4042,8 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
 
     const QVector<adqt::widgets::AdButton*> actionSources{
         m_tableButton,
+        m_markdownButton,
+        m_htmlButton,
         m_screenRecordButton,
         m_pinButton,
         m_ocrButton,
@@ -4046,13 +4062,12 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
     const QSet<QString> recognitionItems{QStringLiteral("barcode-recognition"),
                                          QStringLiteral("table-recognition")};
     for (const QStringList& position : std::as_const(m_actionToolsLayout.positions)) {
-        QStringList availableItemIds;
-        for (const QString& itemId : position) {
-            if (toolbar_layout::actionDescriptor(itemId) != nullptr &&
-                actionToolAvailable(itemId)) {
-                availableItemIds.push_back(itemId);
-            }
-        }
+        const auto stack =
+            toolbar_layout::stackPresentation(position, [this](const QString& itemId) {
+                return toolbar_layout::actionDescriptor(itemId) != nullptr &&
+                       actionToolAvailable(itemId);
+            });
+        const QStringList& availableItemIds = stack.itemIds;
         if (availableItemIds.isEmpty()) {
             continue;
         }
@@ -4065,7 +4080,8 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
 
         ActionToolGroup group;
         group.itemIds = availableItemIds;
-        group.entryItemId = availableItemIds.constLast();
+        group.entryItemId = stack.entryItemId();
+        group.popoverItemIds = stack.popoverItemIds;
         const QSet<QString> items(availableItemIds.cbegin(), availableItemIds.cend());
         const bool nativeRecognitionGroup =
             items == recognitionItems && m_tableButton != nullptr && m_tableQrPopover != nullptr;
@@ -4078,9 +4094,9 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
         if (nativeRecognitionGroup) {
             group.trigger = m_tableButton;
             group.popover = m_tableQrPopover;
-            group.entryItemId = m_tableQrEntryTool == Tool::Qr
-                                    ? QStringLiteral("barcode-recognition")
-                                    : QStringLiteral("table-recognition");
+            m_tableQrEntryTool =
+                group.entryItemId == QStringLiteral("barcode-recognition") ? Tool::Qr : Tool::Table;
+            refreshTableQrTrigger();
         } else if (availableItemIds.size() == 1 && !recognitionNeedsIndependentTrigger) {
             group.trigger = actionToolSourceButton(group.entryItemId);
         } else {
@@ -4103,10 +4119,6 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
             if (availableItemIds.size() > 1) {
                 group.popover = createScreenshotToolPaletteOptionPopoverShell(group.trigger);
                 group.trigger->installEventFilter(this);
-                for (int optionIndex = availableItemIds.size() - 1; optionIndex >= 0;
-                     --optionIndex) {
-                    group.popoverItemIds.push_back(availableItemIds.at(optionIndex));
-                }
                 connect(group.popover, &adqt::widgets::AdPopover::visibilityRequested, this,
                         [this, trigger = group.trigger](bool visible) {
                             if (visible) {
@@ -4314,7 +4326,8 @@ void ScreenshotToolPalette::setHistoryState(const SnowCanvasHistoryState& state)
 void ScreenshotToolPalette::updateHistoryActionAvailability() {
     const bool tableActive = m_activeTool == Tool::Table;
     const bool textActive = m_activeTool == Tool::Ocr || m_activeTool == Tool::TextTranslation;
-    const bool qrActive = m_activeTool == Tool::Qr;
+    const bool qrActive =
+        m_activeTool == Tool::Qr || m_activeTool == Tool::Markdown || m_activeTool == Tool::Html;
     if (m_undoButton != nullptr) {
         m_undoButton->setEnabled(qrActive      ? false
                                  : tableActive ? m_tableEditingAvailable && m_tableCanUndo
@@ -4424,6 +4437,25 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
         addButton(m_tableButton);
         connect(m_tableButton, &adqt::widgets::AdButton::clicked, this,
                 [this]() { activateTableQrTool(Tool::Qr); });
+    }
+
+    if (options.showImageConversionTools) {
+        m_markdownButton =
+            addToolButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Convert to Markdown"),
+                          custom_outlined_icons::Markdown());
+        m_markdownButton->setObjectName(QStringLiteral("screenshotConvertToMarkdownButton"));
+        m_htmlButton = addToolButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Convert to HTML"),
+                                     custom_outlined_icons::Html());
+        m_htmlButton->setObjectName(QStringLiteral("screenshotConvertToHtmlButton"));
+        for (auto* button : {m_markdownButton, m_htmlButton}) {
+            button->setBusyIndicatorPresentation(
+                adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
+            addButton(button);
+        }
+        connect(m_markdownButton, &adqt::widgets::AdButton::clicked, this,
+                [this]() { activateToolFromToolbar(Tool::Markdown); });
+        connect(m_htmlButton, &adqt::widgets::AdButton::clicked, this,
+                [this]() { activateToolFromToolbar(Tool::Html); });
     }
 
     if (options.showScreenRecordButton) {
@@ -4903,7 +4935,7 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
         picker->setModeOptions({adqt::widgets::AdColorPicker::Mode::Solid});
         picker->setMode(adqt::widgets::AdColorPicker::Mode::Solid);
         picker->setFormat(adqt::widgets::AdColorPicker::Format::Hex);
-        picker->setTrigger(adqt::widgets::AdColorPicker::Trigger::Click);
+        picker->setTrigger(adqt::widgets::AdColorPicker::Trigger::Hover);
         picker->setTriggerTextVisible(false);
         picker->setAlphaChannelEnabled(true);
         picker->setFormatSelectorEnabled(true);
@@ -4916,18 +4948,24 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
     };
 
     const auto addPresets = [this, layout](adqt::widgets::AdColorPicker* picker, int alpha,
+                                           const char* tooltipPattern,
+                                           const char* transparentTooltip,
                                            QVector<RecordingColorPreset>& presets) {
         QVector<QColor> colors = snow_shot::presentation::style_presets::strokeColors().first(4);
         for (QColor& color : colors) {
             color.setAlpha(alpha);
         }
         colors.prepend(QColor(0, 0, 0, 0));
-        const char* names[] = {"Transparent", "Red", "Green", "Blue", "Yellow"};
         for (int index = 0; index < colors.size(); ++index) {
             const QColor color = colors.at(index);
             auto* button = createScreenshotToolPaletteColorButton(
-                m_recordExportSettingsPanel, names[index], color, false, true,
+                m_recordExportSettingsPanel, nullptr, color, false, true,
                 styleButtonMetrics(m_physicalScale));
+            configureScreenshotToolPaletteTooltip(
+                button,
+                color.alpha() == 0
+                    ? ScreenshotToolPaletteTranslationText(transparentTooltip)
+                    : ScreenshotToolPaletteTranslationText(tooltipPattern).arg(color.name()));
             button->setObjectName(picker->objectName() + QStringLiteral("Preset%1").arg(index));
             presets.push_back({color, button});
             layout->addWidget(button);
@@ -4944,7 +4982,8 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
                     QStringLiteral("Mouse trail color"));
     m_recordMouseTrailColorPicker->setValue(
         adqt::widgets::AdColorValue::solid(m_recordingMouseTrailColor));
-    addPresets(m_recordMouseTrailColorPicker, 255, m_recordMouseTrailColorPresets);
+    addPresets(m_recordMouseTrailColorPicker, 255, "Mouse trail color %1",
+               "Mouse trail color transparent", m_recordMouseTrailColorPresets);
     addSeparator(QStringLiteral("screenRecordingExportTrailSeparator"));
 
     m_recordMouseClickIcon = addIcon(QStringLiteral("screenRecordingMouseClickIcon"),
@@ -4954,7 +4993,8 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
                     QStringLiteral("Mouse click color"));
     m_recordMouseClickColorPicker->setValue(
         adqt::widgets::AdColorValue::solid(m_recordingMouseClickColor));
-    addPresets(m_recordMouseClickColorPicker, 128, m_recordMouseClickColorPresets);
+    addPresets(m_recordMouseClickColorPicker, 128, "Mouse click color %1",
+               "Mouse click color transparent", m_recordMouseClickColorPresets);
     addSeparator(QStringLiteral("screenRecordingExportClickSeparator"));
 
     m_recordCursorButton = createScreenshotToolPaletteStyleActionButton(
@@ -5030,13 +5070,13 @@ void ScreenshotToolPalette::refreshRecordingExportSettingsText() {
     m_recordOutputFormatSelect->setAccessibleName(tr("Recording format"));
 
     if (m_recordMouseTrailColorPicker != nullptr) {
-        m_recordMouseTrailColorPicker->setToolTip(tr("Mouse trail color"));
         m_recordMouseTrailColorPicker->setAccessibleName(tr("Mouse trail color"));
     }
     if (m_recordMouseClickColorPicker != nullptr) {
-        m_recordMouseClickColorPicker->setToolTip(tr("Mouse click color"));
         m_recordMouseClickColorPicker->setAccessibleName(tr("Mouse click color"));
     }
+    configureScreenshotToolPaletteTooltip(m_recordMouseTrailIcon, "Mouse trail color");
+    configureScreenshotToolPaletteTooltip(m_recordMouseClickIcon, "Mouse click color");
     if (m_recordCursorButton != nullptr) {
         configureScreenshotToolPaletteTooltip(m_recordCursorButton, "Show cursor in recording");
     }
@@ -5158,6 +5198,7 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_textTranslateButton = nullptr;
     m_textResetButton = nullptr;
     m_textSettingsButton = nullptr;
+    m_conversionSettingsButton = nullptr;
     m_tableMergeButton = nullptr;
     m_tableSplitButton = nullptr;
     m_tableResetButton = nullptr;
@@ -5428,6 +5469,9 @@ bool ScreenshotToolPalette::ensureActionFamily(ActionFamily family) {
     case ActionFamily::ScrollingRecognition:
         createScrollingRecognitionActionFamily();
         break;
+    case ActionFamily::ImageConversion:
+        createImageConversionActionFamily();
+        break;
     }
     initializeStyleLayoutProfiles();
     applyScaledToolbarMetrics();
@@ -5587,6 +5631,39 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
     setTextTranslationState(m_textEditingAvailable, m_textTranslating, m_textTranslationStreaming,
                             m_textCanUndo, m_textCanRedo, m_textCanReset, m_textTranslationInImage);
     setTextTransformSelections(m_textFormattingSelection, m_textPunctuationSelection);
+}
+
+void ScreenshotToolPalette::setImageConversionEnabled(bool enabled) {
+    for (auto* button : {m_markdownButton, m_htmlButton}) {
+        if (button != nullptr) {
+            button->setEnabled(enabled);
+        }
+    }
+    refreshActionToolGroups();
+}
+
+void ScreenshotToolPalette::setImageConversionBusy(bool markdownBusy, bool htmlBusy) {
+    if (m_markdownButton != nullptr) {
+        m_markdownButton->setBusy(markdownBusy);
+    }
+    if (m_htmlButton != nullptr) {
+        m_htmlButton->setBusy(htmlBusy);
+    }
+    refreshActionToolGroups();
+}
+
+void ScreenshotToolPalette::createImageConversionActionFamily() {
+    if (m_selectActionLayout == nullptr || m_conversionSettingsButton != nullptr) {
+        return;
+    }
+    m_conversionSettingsButton = createScreenshotToolPaletteStyleActionButton(
+        m_selectActionPanel, QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Settings"),
+        outlined_icons::Setting(), actionButtonMetrics(m_physicalScale));
+    m_conversionSettingsButton->setObjectName(
+        QStringLiteral("screenshotImageConversionSettingsButton"));
+    m_selectActionLayout->addWidget(m_conversionSettingsButton);
+    connect(m_conversionSettingsButton, &adqt::widgets::AdButton::clicked, this,
+            &ScreenshotToolPalette::imageConversionSettingsRequested);
 }
 
 void ScreenshotToolPalette::createTableRecognitionActionFamily() {

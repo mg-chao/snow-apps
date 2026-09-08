@@ -64,6 +64,10 @@ ScreenshotToolPalette::Tool paletteTool(ScreenshotActiveTool tool) {
         return ScreenshotToolPalette::Tool::Table;
     case ScreenshotActiveTool::Qr:
         return ScreenshotToolPalette::Tool::Qr;
+    case ScreenshotActiveTool::Markdown:
+        return ScreenshotToolPalette::Tool::Markdown;
+    case ScreenshotActiveTool::Html:
+        return ScreenshotToolPalette::Tool::Html;
     case ScreenshotActiveTool::Move:
     default:
         return ScreenshotToolPalette::Tool::Move;
@@ -75,8 +79,7 @@ QRect recognitionGeometryForDisplay(const ScreenshotGeometryMapper& geometry,
                                     const QRectF& canvasSelection) {
     const QRectF canvasRect = ScreenshotGeometryMapper::displayCanvasRect(display);
     if (!canvasRect.isValid() || canvasRect.isEmpty() || !display.logicalRect.isValid() ||
-        display.logicalRect.isEmpty() || !canvasSelection.isValid() ||
-        canvasSelection.isEmpty()) {
+        display.logicalRect.isEmpty() || !canvasSelection.isValid() || canvasSelection.isEmpty()) {
         return {};
     }
     return QRectF(geometry.logicalPositionForCanvasPoint(display, canvasSelection.topLeft()),
@@ -88,8 +91,7 @@ QRect recognitionGeometryForDisplay(const ScreenshotGeometryMapper& geometry,
 
 ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext context,
                                                  QObject* parent)
-    : QObject(parent),
-      m_context(std::move(context)),
+    : QObject(parent), m_context(std::move(context)),
       m_messages(std::make_unique<ScreenshotMessageService>(
           m_context.displaySession, m_context.geometry, m_context.selection,
           [this]() { return m_context.overlayCoordinator.toolbar(); })) {
@@ -117,12 +119,17 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                 }
                 if (ScreenshotToolbarWindow* toolbar = m_context.overlayCoordinator.toolbar()) {
                     const auto tool =
-                        mode == static_cast<int>(
-                                    ScreenshotRecognitionSessionController::Mode::Text)
+                        mode == static_cast<int>(ScreenshotRecognitionSessionController::Mode::Text)
                             ? ScreenshotActiveTool::Ocr
                         : mode == static_cast<int>(
-                                     ScreenshotRecognitionSessionController::Mode::Table)
+                                      ScreenshotRecognitionSessionController::Mode::Table)
                             ? ScreenshotActiveTool::Table
+                        : mode == static_cast<int>(
+                                      ScreenshotRecognitionSessionController::Mode::Markdown)
+                            ? ScreenshotActiveTool::Markdown
+                        : mode ==
+                                static_cast<int>(ScreenshotRecognitionSessionController::Mode::Html)
+                            ? ScreenshotActiveTool::Html
                             : ScreenshotActiveTool::Qr;
                     toolbar->setActiveTool(paletteTool(tool));
                 }
@@ -153,9 +160,7 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                     toolbar->setQrBusy(qrBusy);
                 }
             },
-            [this]() {
-                m_messages->destroy(QString::fromLatin1(kRecognitionMessageKey));
-            },
+            [this]() { m_messages->destroy(QString::fromLatin1(kRecognitionMessageKey)); },
             [this](const QString& message, bool error) { showStatus(message, error); },
             [this]() -> QWidget* {
                 const QRectF selection = m_context.selection.normalizedSelection();
@@ -163,7 +168,7 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                     m_context.displaySession, selection.center());
                 if (display == nullptr) {
                     display = m_context.geometry.displayForCanvasRect(m_context.displaySession,
-                                                                     selection);
+                                                                      selection);
                 }
                 return m_context.displaySession.overlayForDisplay(display);
             },
@@ -180,15 +185,13 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
                 m_messages->loading(QString::fromLatin1(kRecognitionMessageKey), message, {},
                                     m_recognitionWindow.data());
             },
-            [this]() {
-                m_messages->destroy(QString::fromLatin1(kModelDownloadMessageKey));
-            },
+            [this]() { m_messages->destroy(QString::fromLatin1(kModelDownloadMessageKey)); },
             [this]() {
                 if (ensureRecognitionWindow() && m_recognitionWindow != nullptr) {
                     const auto theme = adqt::theme::ThemeManager::instance().resolveTheme(
                         m_recognitionWindow.data());
                     return theme.colorBgContainer.isValid() ? theme.colorBgContainer
-                                                             : QColor(Qt::white);
+                                                            : QColor(Qt::white);
                 }
                 return QColor(Qt::white);
             },
@@ -202,6 +205,13 @@ ScreenshotOcrController::ScreenshotOcrController(ScreenshotOcrControllerContext 
             [this](int lineIndex, const QString& text) {
                 if (m_recognitionWindow != nullptr) {
                     m_recognitionWindow->updateOcrText(lineIndex, text);
+                }
+            },
+            [this](bool, bool busy, SnowShotImageConversionFormat format) {
+                if (auto* toolbar = m_context.overlayCoordinator.toolbar()) {
+                    toolbar->setImageConversionBusy(
+                        busy && format == SnowShotImageConversionFormat::Markdown,
+                        busy && format == SnowShotImageConversionFormat::Html);
                 }
             },
         },
@@ -244,6 +254,14 @@ void ScreenshotOcrController::activateTable() {
 
 void ScreenshotOcrController::activateQr() {
     activateMode(Mode::Qr);
+}
+
+void ScreenshotOcrController::activateImageConversion(SnowShotImageConversionFormat format) {
+    activateMode(format == SnowShotImageConversionFormat::Markdown ? Mode::Markdown : Mode::Html);
+}
+
+void ScreenshotOcrController::openImageConversionSettings() {
+    m_session->openImageConversionSettings();
 }
 
 QString ScreenshotOcrController::currentCacheKey() const {
@@ -308,14 +326,19 @@ void ScreenshotOcrController::activateMode(Mode mode) {
         m_context.interaction.setOcrTool();
     } else if (mode == Mode::Table) {
         m_context.interaction.setTableTool();
+    } else if (mode == Mode::Markdown || mode == Mode::Html) {
+        m_context.interaction.setCanvasTool(mode == Mode::Markdown ? ScreenshotActiveTool::Markdown
+                                                                   : ScreenshotActiveTool::Html);
     } else {
         m_context.interaction.setQrTool();
     }
     if (ScreenshotToolbarWindow* toolbar = m_context.overlayCoordinator.toolbar()) {
-        const ScreenshotActiveTool activeTool =
-            mode == Mode::Text    ? ScreenshotActiveTool::Ocr
-            : mode == Mode::Table ? ScreenshotActiveTool::Table
-                                  : ScreenshotActiveTool::Qr;
+        const ScreenshotActiveTool activeTool = mode == Mode::Text    ? ScreenshotActiveTool::Ocr
+                                                : mode == Mode::Table ? ScreenshotActiveTool::Table
+                                                : mode == Mode::Markdown
+                                                    ? ScreenshotActiveTool::Markdown
+                                                : mode == Mode::Html ? ScreenshotActiveTool::Html
+                                                                     : ScreenshotActiveTool::Qr;
         toolbar->setActiveTool(paletteTool(activeTool));
     }
 
@@ -341,7 +364,8 @@ bool ScreenshotOcrController::copyRecognitionToClipboard(bool endCapture) {
             m_recognitionWindow->commitActiveTableEdit();
         }
     }
-    bool copied = m_recognitionWindow != nullptr &&
+    // Conversion toolbar Copy exports source; selection Copy is handled inside the preview.
+    bool copied = !m_session->conversionModeActive() && m_recognitionWindow != nullptr &&
                   m_recognitionWindow->copyVisibleContentToClipboard();
     if (!copied) {
         std::unique_ptr<QMimeData> mimeData =
@@ -529,21 +553,20 @@ void ScreenshotOcrController::updateOverlays() const {
 void ScreenshotOcrController::applyOcrBackgroundToOverlays(
     const std::shared_ptr<ScreenshotOcrPresentation>& presentation, QImage filteredImage,
     QRectF filteredImageCanvasRect) const {
-    m_context.displaySession.forEachOverlay(
-        [&presentation, &filteredImage, &filteredImageCanvasRect](
-            qsizetype, ScreenshotOverlayWindow* overlay) {
-            if (overlay != nullptr) {
-                overlay->setScreenshotOcrBackground(presentation);
-                if (!filteredImage.isNull()) {
-                    const QRectF canvasRect =
-                        filteredImageCanvasRect.isValid() && !filteredImageCanvasRect.isEmpty()
-                            ? filteredImageCanvasRect.normalized()
-                            : (presentation != nullptr ? QRectF(presentation->selection)
-                                                       : QRectF());
-                    overlay->setScreenshotOcrFilteredImage(filteredImage, canvasRect);
-                }
+    m_context.displaySession.forEachOverlay([&presentation, &filteredImage,
+                                             &filteredImageCanvasRect](
+                                                qsizetype, ScreenshotOverlayWindow* overlay) {
+        if (overlay != nullptr) {
+            overlay->setScreenshotOcrBackground(presentation);
+            if (!filteredImage.isNull()) {
+                const QRectF canvasRect =
+                    filteredImageCanvasRect.isValid() && !filteredImageCanvasRect.isEmpty()
+                        ? filteredImageCanvasRect.normalized()
+                        : (presentation != nullptr ? QRectF(presentation->selection) : QRectF());
+                overlay->setScreenshotOcrFilteredImage(filteredImage, canvasRect);
             }
-        });
+        }
+    });
 }
 
 void ScreenshotOcrController::clearOcrBackgroundFromOverlays() const {
@@ -561,8 +584,8 @@ bool ScreenshotOcrController::ensureRecognitionWindow() {
     const CapturedDisplayModel* display =
         m_context.geometry.displayForCanvasPoint(m_context.displaySession, center);
     if (display == nullptr) {
-        display = m_context.geometry.displayForCanvasRect(m_context.displaySession,
-                                                         QRectF(selection));
+        display =
+            m_context.geometry.displayForCanvasRect(m_context.displaySession, QRectF(selection));
     }
     if (display == nullptr) {
         showStatus(tr("Unable to read the selected screenshot"), true);
@@ -607,34 +630,36 @@ bool ScreenshotOcrController::ensureRecognitionWindow() {
         showStatus(tr("Unable to read the selected screenshot"), true);
         return false;
     }
-    auto* window = new ScreenshotRecognitionWindow(ScreenshotRecognitionWindowActions{
-        [this]() { m_context.cancelCapture(); },
-        [this](const QString& text) { setTextDraft(text); },
-        [this](const ScreenshotTableCommandState& state) {
-            m_session->handleTableCommandState(state);
+    auto* window = new ScreenshotRecognitionWindow(
+        ScreenshotRecognitionWindowActions{
+            [this]() { m_context.cancelCapture(); },
+            [this](const QString& text) { setTextDraft(text); },
+            [this](const ScreenshotTableCommandState& state) {
+                m_session->handleTableCommandState(state);
+            },
+            [this](const QString& message) { showStatus(message, false); },
+            [this](const QUrl& url) { handleQrLinkActivated(url); },
+            [this]() { undoTextEdit(); },
+            [this]() { redoTextEdit(); },
+            [this](const QPointF& canvasPosition) {
+                return m_context.selectionResizeDragMode(canvasPosition);
+            },
+            [this](const QPointF& canvasPosition) {
+                return m_context.beginSelectionResize(canvasPosition);
+            },
+            [this](const QPointF& canvasPosition) {
+                m_context.updateSelectionResize(canvasPosition);
+                updateRecognitionWindowGeometry();
+            },
+            [this](const QPointF& canvasPosition) {
+                m_context.finishSelectionResize(canvasPosition);
+                updateRecognitionWindowGeometry();
+            },
+            []() {},
+            [this]() { m_context.cancelCapture(); },
         },
-        [this](const QString& message) { showStatus(message, false); },
-        [this](const QUrl& url) { handleQrLinkActivated(url); },
-        [this]() { undoTextEdit(); },
-        [this]() { redoTextEdit(); },
-        [this](const QPointF& canvasPosition) {
-            return m_context.selectionResizeDragMode(canvasPosition);
-        },
-        [this](const QPointF& canvasPosition) {
-            return m_context.beginSelectionResize(canvasPosition);
-        },
-        [this](const QPointF& canvasPosition) {
-            m_context.updateSelectionResize(canvasPosition);
-            updateRecognitionWindowGeometry();
-        },
-        [this](const QPointF& canvasPosition) {
-            m_context.finishSelectionResize(canvasPosition);
-            updateRecognitionWindowGeometry();
-        },
-        []() {},
-        [this]() { m_context.cancelCapture(); },
-    }, nullptr, ScreenshotRecognitionWindow::PresentationMode::TopLevelWindow,
-    m_context.shortcutManager);
+        nullptr, ScreenshotRecognitionWindow::PresentationMode::TopLevelWindow,
+        m_context.shortcutManager);
     if (!window->present(config)) {
         delete window;
         showStatus(tr("Unable to read the selected screenshot"), true);

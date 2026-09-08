@@ -591,7 +591,9 @@ void screenshotUiSchemaRepairsStructuredValues() {
                 QJsonObject{
                     {QStringLiteral("positions"),
                      QJsonArray{
-                         QJsonArray{QStringLiteral("barcode-recognition"),
+                         QJsonArray{QStringLiteral("convert-to-html"),
+                                    QStringLiteral("convert-to-markdown"),
+                                    QStringLiteral("barcode-recognition"),
                                     QStringLiteral("table-recognition")},
                          QJsonArray{QStringLiteral("record-screen")},
                          QJsonArray{QStringLiteral("pin-to-screen")},
@@ -602,7 +604,7 @@ void screenshotUiSchemaRepairsStructuredValues() {
                      }},
                     {QStringLiteral("hidden"), QJsonArray{}},
                 },
-            "the screenshot action toolbar schema default must preserve the legacy appearance");
+            "default action toolbar groups conversions with barcode and table recognition");
 
     const auto validColor = storage::ConfigurationSchema::normalize(
         QStringLiteral("screenshot_ui/cursor_guide_line_color"), QStringLiteral("#abcdef80"));
@@ -666,7 +668,9 @@ void screenshotUiSchemaRepairsStructuredValues() {
         normalizedActions.valid && normalizedActions.changed && actionLayout.size() == 2 &&
             actionLayout.value(QStringLiteral("positions")).toArray() ==
                 QJsonArray{
-                    QJsonArray{QStringLiteral("save-as-file"), QStringLiteral("table-recognition")},
+                    QJsonArray{QStringLiteral("save-as-file"), QStringLiteral("table-recognition"),
+                               QStringLiteral("convert-to-markdown"),
+                               QStringLiteral("convert-to-html")},
                     QJsonArray{QStringLiteral("record-screen")},
                     QJsonArray{QStringLiteral("pin-to-screen")},
                     QJsonArray{QStringLiteral("text-translation")},
@@ -682,6 +686,7 @@ void screenshotUiSchemaRepairsStructuredValues() {
         {QStringLiteral("positions"), QJsonArray{}},
         {QStringLiteral("hidden"),
          QJsonArray{QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
+                    QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html"),
                     QStringLiteral("record-screen"), QStringLiteral("pin-to-screen"),
                     QStringLiteral("text-recognition"), QStringLiteral("text-translation"),
                     QStringLiteral("scrolling-screenshot"), QStringLiteral("save-as-file")}},
@@ -742,6 +747,7 @@ void screenshotUiAdaptersRoundTripTypedValues() {
         {{QStringLiteral("save-as-file"), QStringLiteral("record-screen")},
          {QStringLiteral("table-recognition")}},
         {QStringLiteral("barcode-recognition"), QStringLiteral("pin-to-screen"),
+         QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html"),
          QStringLiteral("text-recognition"), QStringLiteral("text-translation"),
          QStringLiteral("scrolling-screenshot")},
     };
@@ -761,6 +767,10 @@ void screenshotTranslationSettingsRoundTripSupportedValues() {
     static_cast<void>(initialize(executable, temporary.path()));
 
     const storage::ScreenshotTranslationSettings translation;
+    const storage::ScreenshotImageConversionSettings conversion;
+    require(conversion.visionModel().isEmpty(), "vision model defaults to catalog selection");
+    require(conversion.setVisionModel(QStringLiteral("vision-model")),
+            "save the shared vision model");
     require(translation.layoutProcessing() == QStringLiteral("smart_merge"),
             "layout processing should default to Smart Merge for existing configurations");
     require(translation.originalImageTranslationEnabled(),
@@ -783,6 +793,8 @@ void screenshotTranslationSettingsRoundTripSupportedValues() {
     require(!translation.originalImageTranslationEnabled() &&
                 translation.configuration() == selected,
             "an explicitly disabled display toggle must survive restart");
+    require(conversion.visionModel() == QStringLiteral("vision-model"),
+            "vision model survives storage restart independently of translation settings");
 
     const auto unsupportedTarget = storage::ConfigurationSchema::normalize(
         QStringLiteral("screenshot_translation/target_language"), QStringLiteral("auto"));
@@ -1562,6 +1574,13 @@ int main(int argc, char** argv) {
     QCoreApplication::setApplicationName(QStringLiteral("storage-tests"));
     if (application.arguments().contains(QStringLiteral("--quit-lifetime-only"))) {
         applicationQuitPreservesStorageForConsumerDestruction();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--image-conversion-only"))) {
+        screenshotUiSchemaRepairsStructuredValues();
+        screenshotUiAdaptersRoundTripTypedValues();
+        screenshotTranslationSettingsRoundTripSupportedValues();
+        storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--pin-shortcuts-only"))) {

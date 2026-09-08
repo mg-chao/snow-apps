@@ -7,12 +7,24 @@
 #include <QColor>
 #include <QImage>
 #include <QSet>
+#include <QStringList>
 
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 
 namespace {
+
+QStringList renderWarnings;
+QtMessageHandler previousMessageHandler = nullptr;
+
+void captureRenderWarnings(QtMsgType type, const QMessageLogContext& context,
+                           const QString& message) {
+    if (type == QtWarningMsg || type == QtCriticalMsg)
+        renderWarnings.append(message);
+    if (previousMessageHandler != nullptr)
+        previousMessageHandler(type, context, message);
+}
 
 void require(bool condition, const char* message) {
     if (!condition) {
@@ -70,12 +82,21 @@ void everySnowShotEntryRenders() {
     const auto registered = icons::registerWith(renderer);
     require(registered.ok(), "Snow Shot pack registration should succeed");
     const adqt::icons::IconPack* staticPack = icons::pack().staticPack();
-    require(staticPack != nullptr && staticPack->entryCount == 85,
-            "Snow Shot pack should contain all 85 project-owned assets");
+    require(staticPack != nullptr && staticPack->entryCount == 87,
+            "Snow Shot pack should contain all 87 project-owned assets");
 
     adqt::icons::IconRenderRequest request;
     request.logicalSize = QSize(32, 32);
     request.devicePixelRatio = 1.25;
+    renderWarnings.clear();
+    struct MessageCapture {
+        MessageCapture() {
+            previousMessageHandler = qInstallMessageHandler(captureRenderWarnings);
+        }
+        ~MessageCapture() {
+            qInstallMessageHandler(previousMessageHandler);
+        }
+    } capture;
     for (std::size_t index = 0; index < staticPack->entryCount; ++index) {
         const auto ref = icons::pack().icon(index);
         require(ref.isValid(), "every Snow Shot pack entry should create a reference");
@@ -86,6 +107,10 @@ void everySnowShotEntryRenders() {
         require(!alphaBounds(pixmap.toImage()).isEmpty(),
                 "every Snow Shot pack entry should have nonblank alpha bounds");
     }
+    for (const auto& warning : renderWarnings)
+        std::cerr << warning.toStdString() << '\n';
+    require(renderWarnings.isEmpty(),
+            "every Snow Shot icon must render without missing images or undefined references");
 }
 
 void projectIconColorsAndModelsArePreserved() {
@@ -161,6 +186,26 @@ void flipVerticalIconUsesTheRotatedProjectAsset() {
             "flip-vertical should use the rotated Snow Shot project asset");
 }
 
+void conversionIconsUseTheSuppliedProjectAssets() {
+    namespace icons = snow_shot::presentation::icons::custom::outlined;
+    for (const QColor tint : {QColor(24, 24, 24), QColor(240, 240, 240)}) {
+        const auto colors = adqt::icons::IconColors::primary(tint);
+        for (const auto& ref : {icons::Markdown(colors), icons::Html(colors)}) {
+            const auto metadata = adqt::icons::describeIcon(ref);
+            require(metadata.key.pack == QStringLiteral("snow-shot") &&
+                        (metadata.key.name == QStringLiteral("markdown") ||
+                         metadata.key.name == QStringLiteral("html")),
+                    "conversion icons resolve to the supplied project vector assets");
+            for (const qreal dpr : {1.0, 1.5, 2.0}) {
+                const QImage image = render(ref, QSize(20, 20), dpr).toImage();
+                require(!alphaBounds(image).isEmpty() && containsOpaqueColor(image, tint),
+                        "conversion icons remain nonblank and theme-aware at toolbar sizes and "
+                        "fractional DPR");
+            }
+        }
+    }
+}
+
 void scrollingIconsUseTheRequestedOrientations() {
     namespace icons = snow_shot::presentation::icons::custom;
     const QColor tint(0, 166, 90);
@@ -202,6 +247,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         everySnowShotEntryRenders();
+        conversionIconsUseTheSuppliedProjectAssets();
         projectIconColorsAndModelsArePreserved();
         ocrTranslateIconUsesTheSuppliedProjectAsset();
         scrollingIconsUseTheRequestedOrientations();
