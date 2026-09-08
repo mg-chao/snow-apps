@@ -68,12 +68,14 @@ impl Engine {
         command: ApplyTransactionCommand,
     ) -> Result<MutationResult, ErrorCode> {
         let ApplyTransactionCommand {
-            transaction,
+            mut transaction,
             history_undo_snapshot,
         } = command;
         if transaction.is_empty() {
             return Ok(MutationResult::default());
         }
+        self.editor
+            .append_arrow_text_layouts(&self.model, &mut transaction);
         let redo_snapshot = self.capture_session_snapshot();
         let undo_snapshot = history_undo_snapshot.unwrap_or_else(|| redo_snapshot.clone());
         let label = transaction.label().to_owned();

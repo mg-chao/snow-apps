@@ -6,6 +6,188 @@ use crate::abi::text::{active_text_draft_from_c, text_draft_commit_from_c, text_
 use crate::abi::types::*;
 
 /// # Safety
+/// `runtime` must be null or a live runtime handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_runtime_arrow_text_count(runtime: SnowRuntime) -> u32 {
+    ffi_value(0, || {
+        with_runtime_ref(runtime, |engine| Ok(engine.arrow_text_count() as u32)).unwrap_or(0)
+    })
+}
+
+/// # Safety
+/// Handles must be live and `out_items` must hold `capacity` entries when nonzero.
+/// `out_count` must be writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_get_arrow_text_layout_requests(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    out_items: *mut SnowArrowTextLayoutRequest,
+    capacity: u32,
+    out_count: *mut u32,
+) -> SnowError {
+    ffi_error(|| {
+        if out_count.is_null() || (capacity != 0 && out_items.is_null()) {
+            return SnowError::InvalidArgument;
+        }
+        ffi_status(with_runtime_viewport_ref(
+            runtime,
+            viewport,
+            |engine, id| {
+                let requests = engine
+                    .arrow_text_layout_requests(id)
+                    .map_err(SnowError::from)?;
+                write_out(out_count, requests.len() as u32);
+                if capacity != 0 {
+                    if capacity < requests.len() as u32 {
+                        return Err(SnowError::InvalidArgument);
+                    }
+                    for (index, request) in requests.into_iter().enumerate() {
+                        let mut info = engine
+                            .text_element_info(request.text_id)
+                            .map_err(SnowError::from)?;
+                        info.center = request.text.center;
+                        let style = snow_draw_engine::TextStyle {
+                            color: request.text.color,
+                            font_size: request.text.font_size,
+                            font_family: request.text.font_family,
+                            fill: request.text.fill,
+                            fill_style: request.text.fill_style,
+                            stroke: request.text.stroke,
+                            stroke_width: request.text.stroke_width,
+                            corner_radii: request.text.corner_radii,
+                            horizontal_align: request.text.horizontal_align,
+                            vertical_align: request.text.vertical_align,
+                            opacity: request.text.opacity,
+                        };
+                        write_out(
+                            unsafe { out_items.add(index) },
+                            SnowArrowTextLayoutRequest {
+                                info: snow_text_element_info_from_rust(info),
+                                style: style.into(),
+                                key: request.key,
+                                max_width: request.max_width,
+                            },
+                        );
+                    }
+                }
+                Ok(())
+            },
+        ))
+    })
+}
+
+/// # Safety
+/// Handles must be live, `layouts` must hold `count` entries and output must be writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_apply_arrow_text_layouts_ex(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    layouts: *const SnowArrowTextLayoutResult,
+    count: u32,
+    out_changed_viewports: *mut SnowChangedViewportList,
+) -> SnowError {
+    ffi_error(|| {
+        if out_changed_viewports.is_null() || (count != 0 && layouts.is_null()) {
+            return SnowError::InvalidArgument;
+        }
+        let layouts = if count == 0 {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(layouts, count as usize) }
+        };
+        let layouts: Vec<_> = layouts
+            .iter()
+            .map(|r| (snow_element_id_to_rust(r.text_id), r.key, r.size.into()))
+            .collect();
+        ffi_status(with_runtime_viewport_mut(
+            runtime,
+            viewport,
+            |engine, id| {
+                let result = engine
+                    .apply_arrow_text_measurements(id, &layouts)
+                    .map_err(SnowError::from)?;
+                write_changed_viewports(out_changed_viewports, result.changed_viewports);
+                Ok(())
+            },
+        ))
+    })
+}
+
+/// Resolve an idle arrow or its label. With `use_point == 0`, require one selected arrow.
+/// # Safety
+/// Handles must be live and output pointers must be writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_viewport_get_arrow_text_target(
+    runtime: SnowRuntime,
+    viewport: SnowViewport,
+    use_point: u8,
+    x: f64,
+    y: f64,
+    out_info: *mut SnowTextElementInfo,
+    out_style: *mut SnowTextStyle,
+    out_found: *mut u8,
+) -> SnowError {
+    ffi_error(|| {
+        if out_info.is_null()
+            || out_style.is_null()
+            || out_found.is_null()
+            || (use_point != 0 && (!x.is_finite() || !y.is_finite()))
+        {
+            return SnowError::InvalidArgument;
+        }
+        ffi_status(with_runtime_viewport_ref(
+            runtime,
+            viewport,
+            |engine, id| {
+                let target = engine
+                    .arrow_text_target(id, (use_point != 0).then_some(Point::new(x, y)))
+                    .map_err(SnowError::from)?;
+                write_out(out_found, u8::from(target.is_some()));
+                if let Some((info, style)) = target {
+                    write_out(out_info, snow_text_element_info_from_rust(info));
+                    write_out(out_style, style.into());
+                }
+                Ok(())
+            },
+        ))
+    })
+}
+
+/// Read complete text without the fixed-size metadata preview's truncation.
+/// # Safety
+/// Handles must be live; `out_length` must be writable and `buffer` must have `capacity` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn snow_runtime_get_text_utf8(
+    runtime: SnowRuntime,
+    element: SnowElementId,
+    buffer: *mut u8,
+    capacity: u32,
+    out_length: *mut u32,
+) -> SnowError {
+    ffi_error(|| {
+        if out_length.is_null() || (capacity != 0 && buffer.is_null()) {
+            return SnowError::InvalidArgument;
+        }
+        ffi_status(with_runtime_ref(runtime, |state| {
+            let info = state
+                .text_element_info(snow_element_id_to_rust(element))
+                .map_err(SnowError::from)?;
+            let length = u32::try_from(info.text.len()).map_err(|_| SnowError::InvalidState)?;
+            write_out(out_length, length);
+            if capacity != 0 {
+                if capacity < length {
+                    return Err(SnowError::InvalidArgument);
+                }
+                unsafe {
+                    std::ptr::copy_nonoverlapping(info.text.as_ptr(), buffer, length as usize);
+                }
+            }
+            Ok(())
+        }))
+    })
+}
+
+/// # Safety
 /// If `runtime` and `viewport` are non-null, they must be live handles created by this library.
 /// `text_utf8` must either be null with `text_utf8_len == 0`, or point to `text_utf8_len` readable bytes.
 #[unsafe(no_mangle)]

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use snow_draw_engine_core::{
     Camera, ColorRgba8, CornerRadii, ErrorCode, PathGeometry, Point, SnapGuide, SurfaceSize,
-    arrow::{StrokeStyle, ArrowType, Arrowhead},
+    arrow::{ArrowType, Arrowhead, StrokeStyle},
     validate_camera,
 };
 use snow_draw_engine_document::{
@@ -331,6 +331,7 @@ pub enum ElementCreationPreview {
 pub struct EditorPresentationState {
     pub creation_preview: Option<ElementCreationPreview>,
     pub active_text_draft: Option<ActiveTextDraftPresentation>,
+    pub arrow_text_previews: Vec<(ElementId, TextData)>,
     pub preview_arrows: Vec<SelectionArrowState>,
     pub preview_elements: Vec<SelectionRectState>,
     pub preview_text_font_sizes: Vec<TextPreviewFontSize>,
@@ -438,6 +439,7 @@ pub struct SelectionBounds {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ActiveTextDraftTarget {
     New,
+    NewArrow(ElementId),
     Existing(ElementId),
 }
 
@@ -451,7 +453,7 @@ pub struct ActiveTextDraftPresentation {
 impl ActiveTextDraftPresentation {
     pub fn existing_id(&self) -> Option<ElementId> {
         match self.target {
-            ActiveTextDraftTarget::New => None,
+            ActiveTextDraftTarget::New | ActiveTextDraftTarget::NewArrow(_) => None,
             ActiveTextDraftTarget::Existing(id) => Some(id),
         }
     }

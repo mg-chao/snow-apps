@@ -4,6 +4,7 @@
 #include "snow_canvas_element_id.h"
 #include "snow_canvas_render_geometry.h"
 #include "snow_canvas_text.h"
+#include "snow_canvas_text_layout.h"
 #include "snow_canvas_text_edit_target.h"
 #include "snow_canvas_text_editor_connector.h"
 #include "snow_canvas_text_editor_input.h"
@@ -90,6 +91,63 @@ const SnowCanvasTextEditorSession& SnowCanvasWidgetTextInteraction::session() co
     return m_session;
 }
 
+snow_canvas_commands::MutationResult
+SnowCanvasWidgetTextInteraction::measureArrowText(SnowRuntime runtime, SnowViewport viewport) {
+    snow_canvas_commands::MutationResult result;
+    if (runtime == nullptr || viewport == nullptr) {
+        return result;
+    }
+    std::uint32_t count = 0;
+    if (snow_viewport_get_arrow_text_layout_requests(runtime, viewport, nullptr, 0, &count) !=
+        SNOW_OK) {
+        return result;
+    }
+    result.success = true;
+    if (count == 0) {
+        return result;
+    }
+    std::vector<SnowArrowTextLayoutRequest> requests(count);
+    if (snow_viewport_get_arrow_text_layout_requests(runtime, viewport, requests.data(), count,
+                                                     &count) != SNOW_OK) {
+        result.success = false;
+        return result;
+    }
+    std::vector<SnowArrowTextLayoutResult> layouts;
+    for (const auto& request : requests) {
+        SnowCanvasSceneItem item = snow_canvas_text::defaultPreviewItem(request.info);
+        snow_canvas_text::applyTextStyleToSceneItem(item, request.style);
+        QString text = snow_canvas_text::textFromElementInfo(request.info);
+        if (request.info.text_truncated != 0) {
+            std::uint32_t length = 0;
+            if (snow_runtime_get_text_utf8(runtime, request.info.id, nullptr, 0, &length) !=
+                SNOW_OK) {
+                result.success = false;
+                return result;
+            }
+            QByteArray utf8(static_cast<qsizetype>(length), Qt::Uninitialized);
+            if (snow_runtime_get_text_utf8(runtime, request.info.id,
+                                           reinterpret_cast<std::uint8_t*>(utf8.data()), length,
+                                           &length) != SNOW_OK) {
+                result.success = false;
+                return result;
+            }
+            text = QString::fromUtf8(utf8);
+        }
+        const QSizeF natural =
+            snow_canvas_text_layout::measureNaturalText(text, m_widget.font(), item);
+        const double width = qMin(natural.width(), request.max_width);
+        const QSizeF size =
+            snow_canvas_text_layout::measureWrappedText(text, m_widget.font(), item, width);
+        layouts.push_back(
+            SnowArrowTextLayoutResult{request.info.id, request.key, {width, size.height()}});
+    }
+    result.success =
+        snow_viewport_apply_arrow_text_layouts_ex(runtime, viewport, layouts.data(),
+                                                  static_cast<std::uint32_t>(layouts.size()),
+                                                  result.changedViewports.outParam()) == SNOW_OK;
+    return result;
+}
+
 bool SnowCanvasWidgetTextInteraction::isActive() const {
     return m_session.isActive();
 }
@@ -101,7 +159,7 @@ bool SnowCanvasWidgetTextInteraction::editorContains(const SnowCanvasDisplayCach
 
 bool SnowCanvasWidgetTextInteraction::selectionInteractionContains(
     const SnowCanvasDisplayCache& displayCache, const QPointF& position) const {
-    if (!m_session.isActive()) {
+    if (!m_session.isActive() || m_session.arrowId().generation != 0) {
         return false;
     }
     return snow_canvas_widget_selection_hit_testing::pointerHitsSelectionInteraction(displayCache,
@@ -141,6 +199,7 @@ SnowCanvasWidgetTextInteraction::publishActiveDraftPresentation(SnowRuntime runt
             static_cast<std::uint32_t>(utf8.size()),
             snow_canvas_text::textStyleFromSceneItem(*preview),
             m_session.activeDraftAutoResize(),
+            m_session.arrowId(),
         });
 }
 
@@ -256,6 +315,33 @@ QRegion SnowCanvasWidgetTextInteraction::applyEditorTextStyle(
     return region;
 }
 
+SnowCanvasWidgetTextInteraction::BeginResult
+SnowCanvasWidgetTextInteraction::beginArrow(SnowRuntime runtime, SnowViewport viewport,
+                                            SnowCanvasDisplayCache& displayCache,
+                                            const QPointF& viewPosition, bool selected) {
+    BeginResult result;
+    SnowTextElementInfo info{};
+    SnowTextStyle style{};
+    std::uint8_t found = 0;
+    const QPointF point = viewToCanvasPoint(displayCache, viewPosition);
+    if (snow_viewport_get_arrow_text_target(runtime, viewport, selected ? 0 : 1, point.x(),
+                                            point.y(), &info, &style, &found) != SNOW_OK ||
+        found == 0) {
+        return result;
+    }
+    result.started = beginForElement(
+        info, displayCache, canvasToViewPoint(displayCache, QPointF(info.center_x, info.center_y)),
+        &style, false, runtime);
+    if (!result.started) {
+        return result;
+    }
+    auto selection = snow_canvas_commands::selectElement(runtime, viewport, info.arrow_id);
+    result.firstChangedViewports = std::move(selection.changedViewports);
+    auto draft = publishActiveDraftPresentation(runtime, viewport);
+    result.secondChangedViewports = std::move(draft.changedViewports);
+    return result;
+}
+
 SnowCanvasWidgetTextInteraction::BeginResult SnowCanvasWidgetTextInteraction::beginAt(
     SnowRuntime runtime, SnowViewport viewport, SnowCanvasDisplayCache& displayCache,
     const QPointF& viewPosition, const SnowTextStyle& newTextStyle, bool allowCreate) {
@@ -264,6 +350,12 @@ SnowCanvasWidgetTextInteraction::BeginResult SnowCanvasWidgetTextInteraction::be
         return result;
     }
 
+    if (allowCreate) {
+        BeginResult arrow = beginArrow(runtime, viewport, displayCache, viewPosition);
+        if (arrow.started) {
+            return arrow;
+        }
+    }
     const std::optional<SnowTextElementInfo> target =
         snow_canvas_text_edit_target::resolveTextEditTarget(
             runtime, viewport, viewToCanvasPoint(displayCache, viewPosition), m_widget.font(),
@@ -274,7 +366,7 @@ SnowCanvasWidgetTextInteraction::BeginResult SnowCanvasWidgetTextInteraction::be
 
     const bool existingText = snow_canvas_element_id::hasElementId(target->id);
     result.started = beginForElement(*target, displayCache, viewPosition,
-                                     existingText ? nullptr : &newTextStyle);
+                                     existingText ? nullptr : &newTextStyle, true, runtime);
     if (!result.started || !existingText) {
         if (result.started) {
             snow_canvas_commands::MutationResult draftResult =
@@ -313,7 +405,7 @@ SnowCanvasWidgetTextInteraction::BeginResult SnowCanvasWidgetTextInteraction::be
         return result;
     }
 
-    result.started = beginForElement(*target, displayCache, viewPosition);
+    result.started = beginForElement(*target, displayCache, viewPosition, nullptr, true, runtime);
     if (result.started) {
         snow_canvas_commands::MutationResult draftResult =
             publishActiveDraftPresentation(runtime, viewport);
@@ -326,13 +418,35 @@ bool SnowCanvasWidgetTextInteraction::beginForElement(const SnowTextElementInfo&
                                                       const SnowCanvasDisplayCache& displayCache,
                                                       const QPointF& fallbackViewPosition,
                                                       const SnowTextStyle* newTextStyle,
-                                                      bool placeCursorFromViewPosition) {
+                                                      bool placeCursorFromViewPosition,
+                                                      SnowRuntime runtime) {
     const SnowSceneDisplayItem* existingSceneItem = nullptr;
     if (snow_canvas_element_id::hasElementId(info.id)) {
         existingSceneItem = findTextSceneItem(displayCache, info.id);
     }
 
-    if (!m_session.begin(info, existingSceneItem, m_widget.font(), newTextStyle)) {
+    QString completeText;
+    if (info.text_truncated != 0 && snow_canvas_element_id::hasElementId(info.id)) {
+        if (runtime != nullptr) {
+            std::uint32_t length = 0;
+            if (snow_runtime_get_text_utf8(runtime, info.id, nullptr, 0, &length) != SNOW_OK) {
+                return false;
+            }
+            QByteArray utf8(static_cast<qsizetype>(length), Qt::Uninitialized);
+            if (snow_runtime_get_text_utf8(runtime, info.id,
+                                           reinterpret_cast<std::uint8_t*>(utf8.data()), length,
+                                           &length) != SNOW_OK) {
+                return false;
+            }
+            completeText = QString::fromUtf8(utf8);
+        } else if (existingSceneItem != nullptr) {
+            completeText = snow_canvas_text::textFromSceneItem(*existingSceneItem);
+        } else {
+            return false;
+        }
+    }
+    if (!m_session.begin(info, existingSceneItem, m_widget.font(), newTextStyle,
+                         info.text_truncated != 0 ? &completeText : nullptr)) {
         return false;
     }
     const bool attached =
@@ -466,8 +580,10 @@ SnowCanvasWidgetTextInteraction::commit(SnowRuntime runtime, SnowViewport viewpo
     stopCaretBlink();
     m_selectionDragging = false;
     commitResult.sessionEnded = true;
-    commitResult.finishedExistingEdit.elementId = edit.elementId;
-    commitResult.finishedExistingEdit.hasElement = edit.hasExistingElement;
+    commitResult.finishedExistingEdit.elementId =
+        snow_canvas_element_id::hasElementId(edit.arrowId) ? edit.arrowId : edit.elementId;
+    commitResult.finishedExistingEdit.hasElement =
+        edit.hasExistingElement || snow_canvas_element_id::hasElementId(edit.arrowId);
 
     if (edit.shouldCommit(hasViewport)) {
         const QByteArray utf8 = edit.text.toUtf8();
@@ -484,6 +600,7 @@ SnowCanvasWidgetTextInteraction::commit(SnowRuntime runtime, SnowViewport viewpo
                                                  edit.style,
                                                  edit.autoResize,
                                                  edit.styleChanged,
+                                                 edit.arrowId,
                                              });
         if (result.success) {
             commitResult.changedViewports = std::move(result.changedViewports);

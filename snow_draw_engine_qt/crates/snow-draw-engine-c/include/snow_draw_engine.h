@@ -259,7 +259,6 @@ typedef enum SnowArrowhead {
     SNOW_ARROWHEAD_INVERTED_TRIANGLE = 14
 } SnowArrowhead;
 
-
 typedef enum SnowArrowType {
     SNOW_ARROW_TYPE_STRAIGHT = 0,
     SNOW_ARROW_TYPE_CURVE = 1,
@@ -600,6 +599,8 @@ typedef struct SnowTextLayoutOverride {
 typedef struct SnowTextCommitDraft {
     /* Existing text element to edit when has_existing_element is nonzero. Ignored for new text. */
     SnowElementId element_id;
+    /* Owner of a new arrow label; generation zero means standalone text. */
+    SnowElementId arrow_id;
     /* Nonzero edits element_id; zero creates a new text element. */
     uint8_t has_existing_element;
     /* Nonzero keeps auto-resize enabled after commit. */
@@ -622,6 +623,7 @@ typedef struct SnowTextCommitDraft {
 
 typedef struct SnowActiveTextDraftPresentation {
     SnowElementId element_id;
+    SnowElementId arrow_id;
     uint8_t has_existing_element;
     uint8_t auto_resize;
     uint8_t reserved0[6];
@@ -638,6 +640,8 @@ typedef struct SnowActiveTextDraftPresentation {
 
 typedef struct SnowTextElementInfo {
     SnowElementId id;
+    SnowElementId arrow_id;
+    double arrow_width;
     double center_x;
     double center_y;
     double width;
@@ -657,6 +661,28 @@ typedef struct SnowTextElementInfo {
     uint8_t reserved1[3];
     char font_family_utf8[SNOW_FONT_FAMILY_UTF8_CAPACITY];
 } SnowTextElementInfo;
+
+typedef struct SnowArrowTextLayoutRequest {
+    SnowTextElementInfo info;
+    SnowTextStyle style;
+    uint64_t key;
+    double max_width;
+} SnowArrowTextLayoutRequest;
+
+typedef struct SnowArrowTextLayoutResult {
+    SnowElementId text_id;
+    uint64_t key;
+    SnowTextLayoutSize size;
+} SnowArrowTextLayoutResult;
+
+uint32_t snow_runtime_arrow_text_count(SnowRuntime runtime);
+SnowError snow_viewport_get_arrow_text_layout_requests(SnowRuntime runtime, SnowViewport viewport,
+                                                       SnowArrowTextLayoutRequest* out_items,
+                                                       uint32_t capacity, uint32_t* out_count);
+SnowError snow_viewport_apply_arrow_text_layouts_ex(SnowRuntime runtime, SnowViewport viewport,
+                                                    const SnowArrowTextLayoutResult* layouts,
+                                                    uint32_t count,
+                                                    SnowChangedViewportList* out_changed_viewports);
 
 typedef struct SnowPointerEvent {
     uint32_t pointer_id;
@@ -918,6 +944,8 @@ typedef struct SnowSceneDisplayItem {
     uint8_t rect_shape;
     uint8_t reserved2[2];
     uint32_t bound_text_element_generation;
+    /* Canvas-space label exclusion rectangle, used only by arrows. */
+    double arrow_text_bounds[4];
     SnowFilterRenderSpec filter;
     const char* text_utf8;
     uint32_t font_family_utf8_len;
@@ -983,8 +1011,9 @@ SnowError snow_runtime_clone_document_session_with_config(SnowRuntime source,
 
 void snow_runtime_destroy(SnowRuntime runtime);
 
-SnowError snow_runtime_set_quick_selection_disabled_tools_ex(
-    SnowRuntime runtime, uint64_t tools, SnowChangedViewportList* out_changed_viewports);
+SnowError
+snow_runtime_set_quick_selection_disabled_tools_ex(SnowRuntime runtime, uint64_t tools,
+                                                   SnowChangedViewportList* out_changed_viewports);
 
 SnowError snow_viewport_create(SnowRuntime runtime, const SnowEngineConfig* config,
                                SnowViewport* out_viewport);
@@ -1110,6 +1139,14 @@ SnowError snow_viewport_get_active_text_draft_presentation(SnowRuntime runtime,
 
 SnowError snow_viewport_is_text_bound_to_serial_number(SnowRuntime runtime, SnowViewport viewport,
                                                        SnowElementId id, uint8_t* out_bound);
+
+/* Resolves a point hit or a single selected arrow without creating document content. */
+SnowError snow_viewport_get_arrow_text_target(SnowRuntime runtime, SnowViewport viewport,
+                                              uint8_t use_point, double x, double y,
+                                              SnowTextElementInfo* out_info,
+                                              SnowTextStyle* out_style, uint8_t* out_found);
+SnowError snow_runtime_get_text_utf8(SnowRuntime runtime, SnowElementId element, uint8_t* buffer,
+                                     uint32_t capacity, uint32_t* out_length);
 
 SnowError snow_runtime_get_text_element(SnowRuntime runtime, SnowElementId id,
                                         SnowTextElementInfo* out_info);

@@ -84,6 +84,8 @@ pub(crate) fn text_draft_commit_from_c(
     let text = text_string_from_raw(draft.text_utf8, draft.text_utf8_len)?;
     let target = if draft.has_existing_element != 0 {
         TextCommitTarget::Existing(snow_element_id_to_rust(draft.element_id))
+    } else if draft.arrow_id.generation != 0 {
+        TextCommitTarget::NewArrow(snow_element_id_to_rust(draft.arrow_id))
     } else {
         TextCommitTarget::New
     };
@@ -105,6 +107,8 @@ pub(crate) fn active_text_draft_from_c(
     let style: TextStyle = draft.style.into();
     let target = if draft.has_existing_element != 0 {
         ActiveTextDraftTarget::Existing(snow_element_id_to_rust(draft.element_id))
+    } else if draft.arrow_id.generation != 0 {
+        ActiveTextDraftTarget::NewArrow(snow_element_id_to_rust(draft.arrow_id))
     } else {
         ActiveTextDraftTarget::New
     };

@@ -69,11 +69,29 @@ impl Editor {
     pub fn set_active_text_draft_presentation(
         &mut self,
         document: &DocumentModel,
-        draft: ActiveTextDraftPresentation,
+        mut draft: ActiveTextDraftPresentation,
     ) -> Result<bool, ErrorCode> {
         validate_text(&draft.text)?;
         if let ActiveTextDraftTarget::Existing(id) = draft.target {
             document.text(id)?;
+        }
+        let arrow_id = match draft.target {
+            ActiveTextDraftTarget::NewArrow(id) => Some(id),
+            ActiveTextDraftTarget::Existing(id) => document.arrow_id_for_text(id),
+            ActiveTextDraftTarget::New => None,
+        };
+        if let Some(id) = arrow_id {
+            let arrow = document.arrow(id)?;
+            if arrow.linear_kind != snow_draw_engine_document::LinearElementKind::Arrow
+                || document.element(id)?.meta.locked
+                || !document.element(id)?.meta.visible
+                || (matches!(draft.target, ActiveTextDraftTarget::NewArrow(_))
+                    && arrow.text_element_id.is_some())
+            {
+                return Err(ErrorCode::InvalidState);
+            }
+            draft.text.center = snow_draw_engine_document::arrow_text_anchor(arrow);
+            draft.text.rotation = 0.0;
         }
         let draft_changed = self.state.active_text_draft.as_ref() != Some(&draft);
         let should_clear_selection =

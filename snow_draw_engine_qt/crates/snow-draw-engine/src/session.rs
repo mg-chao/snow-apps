@@ -7,8 +7,8 @@ use snow_draw_engine_model::DocumentModel;
 use crate::engine::EngineConfig as RuntimeEngineConfig;
 use crate::{Engine, history::HistoryStore};
 
-pub const DOCUMENT_SESSION_SCHEMA_VERSION: u32 = 1;
-pub const DOCUMENT_HISTORY_SCHEMA_VERSION: u32 = 1;
+pub const DOCUMENT_SESSION_SCHEMA_VERSION: u32 = 2;
+pub const DOCUMENT_HISTORY_SCHEMA_VERSION: u32 = 2;
 pub const MAX_DOCUMENT_SESSION_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize)]
@@ -59,7 +59,7 @@ impl Engine {
         }
         let session: DocumentSession =
             serde_json::from_slice(bytes).map_err(|_| ErrorCode::InvalidArgument)?;
-        if session.schema_version != DOCUMENT_SESSION_SCHEMA_VERSION {
+        if !(1..=DOCUMENT_SESSION_SCHEMA_VERSION).contains(&session.schema_version) {
             return Err(ErrorCode::Unsupported);
         }
 
@@ -103,7 +103,7 @@ impl Engine {
         }
         let history: DocumentHistory =
             serde_json::from_slice(bytes).map_err(|_| ErrorCode::InvalidArgument)?;
-        if history.schema_version != DOCUMENT_HISTORY_SCHEMA_VERSION {
+        if !(1..=DOCUMENT_HISTORY_SCHEMA_VERSION).contains(&history.schema_version) {
             return Err(ErrorCode::Unsupported);
         }
 

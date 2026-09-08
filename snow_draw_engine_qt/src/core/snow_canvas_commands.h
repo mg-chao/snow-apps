@@ -37,6 +37,7 @@ struct CommitTextRequest {
     SnowTextStyle style{};
     bool autoResize = false;
     bool updateDefaultStyle = false;
+    SnowElementId arrowId{};
 
     SnowTextCommitDraft toAbi() const;
 };
@@ -54,6 +55,7 @@ struct ActiveTextDraftPresentationRequest {
     SnowTextStyle style{};
     bool autoResize = false;
 
+    SnowElementId arrowId{};
     SnowActiveTextDraftPresentation toAbi() const;
 };
 

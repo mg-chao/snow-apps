@@ -142,6 +142,22 @@ pub(crate) fn append_delete_dependencies(
         {
             delete_ids.push(text_id);
         }
+        if let Some(text_id) = document.bound_text_id_for_arrow(id)
+            && !delete_ids.contains(&text_id)
+        {
+            delete_ids.push(text_id);
+        }
+    }
+
+    for id in ids {
+        if let Some(arrow_id) = document.arrow_id_for_text(*id)
+            && !delete_ids.contains(&arrow_id)
+            && let Ok(arrow) = document.arrow(arrow_id)
+        {
+            let mut arrow = arrow.clone();
+            arrow.text_element_id = None;
+            transaction.update_arrow(arrow_id, arrow);
+        }
     }
 
     for serial_id in ids
@@ -177,6 +193,11 @@ pub(crate) fn expanded_duplicate_ids(
             ids.push(id);
         }
         if let Some(text_id) = document.bound_text_id_for_serial_number(id)
+            && !ids.contains(&text_id)
+        {
+            ids.push(text_id);
+        }
+        if let Some(text_id) = document.bound_text_id_for_arrow(id)
             && !ids.contains(&text_id)
         {
             ids.push(text_id);
@@ -296,10 +317,25 @@ impl Editor {
             .existing_id()
             .and_then(|id| self.active_text_draft_rect_for_id(id))
             .map(|rect| rect.rotation);
-        self.clear_active_text_draft_presentation();
         let text_is_empty = draft.text_is_empty();
         let existing_id = draft.existing_id();
+        let arrow_id = match draft.target {
+            crate::TextCommitTarget::NewArrow(id) => Some(id),
+            crate::TextCommitTarget::Existing(id) => document.arrow_id_for_text(id),
+            crate::TextCommitTarget::New => None,
+        };
+        if let Some(id) = arrow_id {
+            let arrow = document.arrow(id)?;
+            if arrow.linear_kind != snow_draw_engine_document::LinearElementKind::Arrow
+                || document.element(id)?.meta.locked
+                || !document.element(id)?.meta.visible
+                || (existing_id.is_none() && arrow.text_element_id.is_some())
+            {
+                return Err(ErrorCode::InvalidState);
+            }
+        }
         if existing_id.is_none() && text_is_empty {
+            self.clear_active_text_draft_presentation();
             return Ok(None);
         }
 
@@ -334,13 +370,23 @@ impl Editor {
                 ElementMeta::default(),
                 updated,
             );
+            if let Some(id) = arrow_id {
+                let mut arrow = document.arrow(id)?.clone();
+                arrow.text_element_id = Some(document.peek_next_element_id());
+                transaction.update_arrow(id, arrow);
+            }
         }
 
+        self.clear_active_text_draft_presentation();
         if draft.update_default_style && !text_is_empty {
             self.state.default_text =
                 text_with_style_attributes(&self.state.default_text, &draft.style);
         }
-        self.clear_selection();
+        if let Some(id) = arrow_id {
+            self.set_selection_state_with_document(Some(document), vec![id], Some(id));
+        } else {
+            self.clear_selection();
+        }
         if transaction.is_empty() {
             return Ok(None);
         }
@@ -415,6 +461,9 @@ impl Editor {
                 }
                 ElementData::Arrow(arrow) => {
                     let mut duplicate = arrow.clone();
+                    duplicate.text_element_id = arrow
+                        .text_element_id
+                        .and_then(|text_id| id_map.get(&text_id).copied());
                     duplicate.x += offset.x;
                     duplicate.y += offset.y;
                     validate_arrow(&duplicate)?;
@@ -467,8 +516,22 @@ impl Editor {
             return Ok(None);
         }
         let selected: std::collections::HashSet<_> =
-            self.state.selection.ids.iter().copied().collect();
-        let mut order = document.paint_order().to_vec();
+            expanded_duplicate_ids(document, &self.state.selection.ids)
+                .into_iter()
+                .collect();
+        // Treat every arrow and its label as one layer, including unselected
+        // pairs that a selection crosses while moving backward or forward.
+        let labels: std::collections::HashSet<_> = document
+            .arrow_text_bindings()
+            .into_iter()
+            .map(|(_, text_id)| text_id)
+            .collect();
+        let mut order: Vec<_> = document
+            .paint_order()
+            .iter()
+            .copied()
+            .filter(|id| !labels.contains(id))
+            .collect();
         let before = order.clone();
         match action {
             0 => order.sort_by_key(|id| !selected.contains(id)),
@@ -493,6 +556,10 @@ impl Editor {
             return Ok(None);
         }
         let mut transaction = Transaction::new("reorder selection");
+        let order: Vec<_> = order
+            .into_iter()
+            .flat_map(|id| std::iter::once(id).chain(document.bound_text_id_for_arrow(id)))
+            .collect();
         transaction.reorder_elements(order, 0);
         Ok(Some(EditorCommand::ApplyTransaction(
             ApplyTransactionCommand::new(transaction),
@@ -529,7 +596,7 @@ impl Editor {
             return Err(ErrorCode::InvalidArgument);
         }
         let mut transaction = Transaction::new("set selection opacity");
-        for id in &self.state.selection.ids {
+        for id in &expanded_duplicate_ids(document, &self.state.selection.ids) {
             let element = document.element(*id)?;
             match &element.data {
                 ElementData::Rectangle(value) => {

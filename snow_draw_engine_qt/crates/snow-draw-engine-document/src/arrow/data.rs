@@ -4,8 +4,8 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use snow_draw_engine_core::arrow::{
-    ArrowEndpointPosition, ArrowPathCommand, StrokeStyle, ArrowType, Arrowhead,
-    ArrowheadFillMode, ArrowheadRenderPrimitive, CurvePathOp, FixedSegment,
+    ArrowEndpointPosition, ArrowPathCommand, ArrowType, Arrowhead, ArrowheadFillMode,
+    ArrowheadRenderPrimitive, CurvePathOp, FixedSegment, StrokeStyle,
 };
 use snow_draw_engine_core::{ColorRgba8, DrawRect, ErrorCode, Point};
 
@@ -54,6 +54,10 @@ impl From<ArrowEndpointBinding> for FixedPointBinding {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ArrowData {
     pub linear_kind: LinearElementKind,
+    /// Optional text owned by this arrow. Labels are ordinary text records so the
+    /// host renderer remains the authority for fonts and exact text layout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_element_id: Option<ElementId>,
     pub x: f64,
     pub y: f64,
     pub width: f64,
@@ -102,6 +106,7 @@ impl ArrowData {
         );
         Some(Self {
             linear_kind: LinearElementKind::Arrow,
+            text_element_id: None,
             x: normalized.x,
             y: normalized.y,
             width: normalized.width,
@@ -272,6 +277,7 @@ impl ArrowData {
         let points = patch.points.clone().unwrap_or_else(|| self.points.clone());
         Self {
             linear_kind: self.linear_kind,
+            text_element_id: self.text_element_id,
             x: patch.x.unwrap_or(self.x),
             y: patch.y.unwrap_or(self.y),
             width: patch.width.unwrap_or(self.width),
@@ -375,6 +381,77 @@ pub fn arrow_length(arrow: &ArrowData) -> f64 {
         .windows(2)
         .map(|segment| point_distance(segment[0], segment[1]))
         .sum()
+}
+
+/// Excalidraw's label anchor is the middle vertex, or the middle segment's
+/// half-length point. It is deliberately independent of editing handle geometry.
+pub fn arrow_text_anchor(arrow: &ArrowData) -> Point<f64> {
+    let points = arrow.global_points();
+    if points.is_empty() {
+        return Point::new(arrow.x, arrow.y);
+    }
+    let middle = points.len() / 2;
+    if points.len() % 2 == 1 {
+        return points[middle];
+    }
+    if arrow.is_curve() && points.len() >= 3 {
+        let segments = curve_bezier_segments(
+            &points,
+            arrow.curve_tension(),
+            false,
+            arrow.fixed_segments.as_deref(),
+        );
+        if let Some(segment) = segments.get(middle - 1) {
+            let total = label_curve_length(segment, 1.0);
+            if total > 1e-9 {
+                let (mut low, mut high) = (0.0, 1.0);
+                let mut t = 0.5;
+                for _ in 0..24 {
+                    let length = label_curve_length(segment, t);
+                    if (length - total * 0.5).abs() <= total * 0.00001 {
+                        break;
+                    }
+                    if length < total * 0.5 {
+                        low = t;
+                    } else {
+                        high = t;
+                    }
+                    t = f64::midpoint(low, high);
+                }
+                return point_at_bezier(segment[0], segment[1], segment[2], segment[3], t);
+            }
+        }
+    }
+    Point::new(
+        f64::midpoint(points[middle - 1].x, points[middle].x),
+        f64::midpoint(points[middle - 1].y, points[middle].y),
+    )
+}
+
+fn label_curve_length(points: &[Point<f64>; 4], end: f64) -> f64 {
+    // Simpson integration of the cubic's speed, in canvas coordinates. The
+    // fixed work bound keeps label placement deterministic during pointer moves.
+    let speed = |t: f64| {
+        let u = 1.0 - t;
+        let component = |a: f64, b: f64, c: f64, d: f64| {
+            3.0 * (u * u * (b - a) + 2.0 * u * t * (c - b) + t * t * (d - c))
+        };
+        component(points[0].x, points[1].x, points[2].x, points[3].x).hypot(component(
+            points[0].y,
+            points[1].y,
+            points[2].y,
+            points[3].y,
+        ))
+    };
+    let step = end / 64.0;
+    let sum = (1..64).fold(speed(0.0) + speed(end), |sum, i| {
+        sum + speed(f64::from(i) * step) * if i % 2 == 0 { 2.0 } else { 4.0 }
+    });
+    sum * step / 3.0
+}
+
+pub fn arrow_text_max_width(arrow: &ArrowData, font_size: f64) -> f64 {
+    (arrow.width * 0.7).max(font_size * 11.0)
 }
 
 pub fn arrow_segment_midpoints(arrow: &ArrowData) -> Vec<(usize, Point<f64>)> {

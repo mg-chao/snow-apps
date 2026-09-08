@@ -16,8 +16,8 @@ use selection_visuals::*;
 use snow_draw_engine_core::{
     ColorRgba8, CornerRadii, DrawRect, Point, SnapConfig, SnapGuide, ViewportQuery,
     arrow::{
-        ArrowEndpointPosition, ArrowPathCommand, StrokeStyle, ArrowType, ArrowheadDashMode,
-        ArrowheadFillMode, ArrowheadRenderPrimitive,
+        ArrowEndpointPosition, ArrowPathCommand, ArrowType, ArrowheadDashMode, ArrowheadFillMode,
+        ArrowheadRenderPrimitive, StrokeStyle,
     },
     canvas_viewport,
 };
@@ -25,24 +25,24 @@ use snow_draw_engine_display::{
     ArrowDisplayItem, ArrowheadDisplayDashMode, ArrowheadDisplayFillMode,
     ArrowheadDisplayPrimitive, ArrowheadDisplayPrimitiveKind, DecorationPatch, DecorationRevision,
     DecorationView, DirtyRegion, DisplayFillStyle, DisplayItemId, DisplaySpotlightCutout,
-    DisplayTextHorizontalAlign, DisplayTextVerticalAlign, FrameView,
-    LayerPatch, OverlayDisplayItem, OverlayRevision, PatchCursor, PathChunkReplacement,
-    PathGeometryPatch, PenFilterGeometryPatch, RectangleDisplayItem, ReplaceRangeOp,
-    SceneDisplayItem, SceneRevision, SerialNumberConnectorDisplayItem, SerialNumberDisplayItem,
-    SnapGuideDisplayItem, TextDisplayItem, UiFocusConnectionDisplayItem, UiRectangleDisplayItem,
-    UiShapeKind, ViewportPatch, full_surface_dirty_region,
+    DisplayTextHorizontalAlign, DisplayTextVerticalAlign, FrameView, LayerPatch,
+    OverlayDisplayItem, OverlayRevision, PatchCursor, PathChunkReplacement, PathGeometryPatch,
+    PenFilterGeometryPatch, RectangleDisplayItem, ReplaceRangeOp, SceneDisplayItem, SceneRevision,
+    SerialNumberConnectorDisplayItem, SerialNumberDisplayItem, SnapGuideDisplayItem,
+    TextDisplayItem, UiFocusConnectionDisplayItem, UiRectangleDisplayItem, UiShapeKind,
+    ViewportPatch, full_surface_dirty_region,
 };
 use snow_draw_engine_document::{
-    ArrowData, ElementData, ElementId, FillStyle, RectangleData, SerialNumberData,
-    TextData, TextHorizontalAlign, TextVerticalAlign, arrow_bounds, arrow_is_degenerate,
+    ArrowData, ElementData, ElementId, FillStyle, RectangleData, SerialNumberData, TextData,
+    TextHorizontalAlign, TextVerticalAlign, arrow_bounds, arrow_is_degenerate,
     arrowhead_render_primitives, filter_bounds, resolve_serial_number_stroke_width,
     resolve_serial_number_text_connection, serial_number_bounds, serial_number_with_selection_rect,
     text_bounds,
 };
 use snow_draw_engine_editor::{
-    ArrowHandleKind, ArrowHandleState, EditorPresentationState, EditorSession,
-    EditorViewportState, ElementCreationPreview, SelectionArrowState, SelectionBounds,
-    SelectionRectState, selection_box_visible_for_members,
+    ArrowHandleKind, ArrowHandleState, EditorPresentationState, EditorSession, EditorViewportState,
+    ElementCreationPreview, SelectionArrowState, SelectionBounds, SelectionRectState,
+    selection_box_visible_for_members,
 };
 use snow_draw_engine_model::DocumentModel;
 use std::collections::HashMap;
@@ -1442,6 +1442,8 @@ mod tests {
             false,
         ));
         SceneDisplayItem::Arrow(ArrowDisplayItem {
+            bound_text_id: None,
+            label_bounds: None,
             id: DisplayItemId {
                 index: 91,
                 generation: 3,

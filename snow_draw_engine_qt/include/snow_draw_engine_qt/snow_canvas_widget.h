@@ -75,6 +75,8 @@ class SnowCanvasWidget : public QWidget {
     bool setSelectedOpacity(double opacity);
     bool adjustSelectedSerialNumbers(qint64 delta);
     bool createSerialNumberText();
+    // Opens the label of one selected arrow, or starts an uncommitted attached draft.
+    bool editSelectedArrowText();
     // Commits active text, clears transient editing state and selection, and
     // restores the select tool.
     bool resetEditingState();

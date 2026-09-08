@@ -339,6 +339,8 @@ pub struct ArrowheadDisplayPrimitive {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ArrowDisplayItem {
     pub id: DisplayItemId,
+    pub bound_text_id: Option<DisplayItemId>,
+    pub label_bounds: Option<snow_draw_engine_core::DrawRect>,
     pub points: Vec<[f64; 2]>,
     pub path_commands: Vec<ArrowPathCommand>,
     pub geometry: Arc<PathGeometry>,
@@ -441,6 +443,8 @@ pub struct SerialNumberConnectorDisplayItem {
 impl Default for ArrowDisplayItem {
     fn default() -> Self {
         Self {
+            bound_text_id: None,
+            label_bounds: None,
             id: DisplayItemId::default(),
             points: Vec::new(),
             path_commands: Vec::new(),

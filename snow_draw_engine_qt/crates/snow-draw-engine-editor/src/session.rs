@@ -44,6 +44,37 @@ pub struct PersistedEditorSession {
 }
 
 impl EditorSession {
+    pub fn arrow_text_layout_requests(
+        &self,
+        document: &DocumentModel,
+    ) -> Vec<crate::ArrowTextLayoutRequest> {
+        self.editor.arrow_text_layout_requests(document)
+    }
+    pub fn apply_arrow_text_measurement(
+        &mut self,
+        document: &DocumentModel,
+        id: ElementId,
+        key: u64,
+        size: TextLayoutSize,
+    ) -> Result<bool, ErrorCode> {
+        self.editor
+            .apply_arrow_text_measurement(document, id, key, size)
+    }
+    pub fn append_arrow_text_layouts(
+        &self,
+        document: &DocumentModel,
+        transaction: &mut snow_draw_engine_document::Transaction,
+    ) {
+        self.editor.append_arrow_text_layouts(document, transaction);
+    }
+
+    pub fn can_begin_arrow_text(&self) -> bool {
+        matches!(
+            self.editor.state.interaction,
+            crate::state::InteractionState::Idle
+        )
+    }
+
     pub fn new(config: EngineConfig) -> Result<Self, ErrorCode> {
         Self::new_with_style_defaults(config, &EditorStyleDefaults::default())
     }

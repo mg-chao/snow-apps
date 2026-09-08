@@ -86,12 +86,13 @@ class SnowCanvasWidgetTextInteraction final {
         ScopedChangedViewportList changedViewports;
     };
 
-    SnowCanvasWidgetTextInteraction(QWidget& widget,
-                                    SnowCanvasCursorController& cursorController);
+    SnowCanvasWidgetTextInteraction(QWidget& widget, SnowCanvasCursorController& cursorController);
 
     SnowCanvasTextEditorSession& session();
     const SnowCanvasTextEditorSession& session() const;
 
+    snow_canvas_commands::MutationResult measureArrowText(SnowRuntime runtime,
+                                                          SnowViewport viewport);
     bool isActive() const;
     bool editorContains(const SnowCanvasDisplayCache& displayCache, const QPointF& position) const;
     bool selectionInteractionContains(const SnowCanvasDisplayCache& displayCache,
@@ -111,6 +112,9 @@ class SnowCanvasWidgetTextInteraction final {
                                             const SnowTextStyle& fallbackStyle,
                                             SnowCanvasTool canvasTool, const QWheelEvent* event);
 
+    BeginResult beginArrow(SnowRuntime runtime, SnowViewport viewport,
+                           SnowCanvasDisplayCache& displayCache, const QPointF& viewPosition,
+                           bool selected = false);
     BeginResult beginAt(SnowRuntime runtime, SnowViewport viewport,
                         SnowCanvasDisplayCache& displayCache, const QPointF& viewPosition,
                         const SnowTextStyle& newTextStyle, bool allowCreate = true);
@@ -121,7 +125,7 @@ class SnowCanvasWidgetTextInteraction final {
                          const SnowCanvasDisplayCache& displayCache,
                          const QPointF& fallbackViewPosition,
                          const SnowTextStyle* newTextStyle = nullptr,
-                         bool placeCursorFromViewPosition = true);
+                         bool placeCursorFromViewPosition = true, SnowRuntime runtime = nullptr);
     SerialTextCreationResult createSerialNumberText(SnowRuntime runtime, SnowViewport viewport,
                                                     const SnowCanvasDisplayCache& displayCache,
                                                     const SnowTextStyle& textStyle,

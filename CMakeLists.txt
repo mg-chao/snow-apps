@@ -30,6 +30,7 @@ include(RustStaticLibrary)
 option(SNOW_APPS_BUILD_ANT_DESIGN_QT "Build the Ant Design Qt libraries." ON)
 option(SNOW_APPS_BUILD_SNOW_IMAGE "Build the Snow Image library." ON)
 option(SNOW_APPS_BUILD_DRAW_ENGINE "Build the Snow Draw Engine Qt library." ON)
+option(SNOW_APPS_BUILD_DRAW_ENGINE_DEMO "Build the Snow Draw Engine Qt demo." OFF)
 option(SNOW_APPS_BUILD_IMAGE_VIEWER "Build Snow Image Viewer." ON)
 option(SNOW_APPS_BUILD_SNOW_SHOT "Build Snow Shot." ON)
 option(SNOW_APPS_BUILD_TESTS "Build tests for all enabled projects." ON)
@@ -183,7 +184,7 @@ if(SNOW_APPS_BUILD_ANT_DESIGN_QT)
 endif()
 
 if(SNOW_APPS_BUILD_DRAW_ENGINE)
-    set(SNOW_DRAW_ENGINE_QT_BUILD_DEMO OFF CACHE BOOL
+    set(SNOW_DRAW_ENGINE_QT_BUILD_DEMO ${SNOW_APPS_BUILD_DRAW_ENGINE_DEMO} CACHE BOOL
         "Build the Snow Draw Engine Qt demo." FORCE)
     set(SNOW_DRAW_ENGINE_QT_BUILD_TESTS ${SNOW_APPS_BUILD_TESTS} CACHE BOOL
         "Build Snow Draw Engine Qt tests." FORCE)
@@ -221,7 +222,7 @@ if(SNOW_APPS_BUILD_SNOW_SHOT)
         "Directory containing libclang.dll for Rust bindgen." FORCE)
     set(SNOW_SHOT_FFMPEG_BIN_DIR "${SNOW_FFMPEG_ROOT}/bin" CACHE PATH
         "Directory containing FFmpeg runtime DLLs." FORCE)
-    set(SNOW_DRAW_ENGINE_QT_BUILD_DEMO OFF CACHE BOOL
+    set(SNOW_DRAW_ENGINE_QT_BUILD_DEMO ${SNOW_APPS_BUILD_DRAW_ENGINE_DEMO} CACHE BOOL
         "Build the nested draw engine demo." FORCE)
     set(SNOW_DRAW_ENGINE_QT_BUILD_TESTS ${SNOW_APPS_BUILD_TESTS} CACHE BOOL
         "Build nested draw engine tests." FORCE)

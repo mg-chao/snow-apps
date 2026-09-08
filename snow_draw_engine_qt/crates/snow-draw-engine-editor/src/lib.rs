@@ -1,6 +1,8 @@
 mod active_text;
 mod api;
 mod arrow_ops;
+mod arrow_text;
+pub use arrow_text::ArrowTextLayoutRequest;
 mod creation_workflow;
 mod defaults;
 mod document_ops;

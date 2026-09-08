@@ -140,7 +140,6 @@ impl DocumentModel {
         self.queries.bound_bindable_ids(arrow_id)
     }
 
-
     pub fn bindable_element_states_with_overrides(
         &self,
         overrides: &[(ElementId, RectangleData)],
@@ -153,7 +152,7 @@ impl DocumentModel {
         self.document
             .element_states()
             .filter_map(|state| {
-                if !state.visible {
+                if !state.visible || self.document.arrow_id_for_text(state.id).is_some() {
                     return None;
                 }
                 let rect = overrides_by_id
