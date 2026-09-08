@@ -124,6 +124,9 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
   public:
     void setMoveTool() override {}
     void setSelectTool() override {}
+    void resetCanvas() override {
+        ++resetCanvasCount;
+    }
     void setShapeTool() override {}
     void setArrowTool() override {}
     void setLineTool() override {}
@@ -166,6 +169,7 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void hideColorPickersForScreenshotUi() override {}
 
     int repositionCount = 0;
+    int resetCanvasCount = 0;
     int presentationRepositionCount = 0;
     int textTranslationToolCount = 0;
     int textTranslationToggleCount = 0;
@@ -1818,6 +1822,21 @@ void mainTextTranslationButtonUsesTranslationPresentation() {
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     try {
+        if (app.arguments().contains(QStringLiteral("--selection-reset-only"))) {
+            NoOpToolbarCommands commands;
+            ScreenshotToolbarWindow window(commands);
+            auto* palette = window.palette();
+            require(palette != nullptr, "screenshot toolbar should expose its palette");
+            palette->setActiveTool(ScreenshotToolPalette::Tool::Select);
+            auto* reset = palette->findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("screenshotResetCanvasButton"));
+            require(reset != nullptr && reset->isEnabled(),
+                    "screenshot reset should be enabled without selection");
+            reset->click();
+            require(commands.resetCanvasCount == 1,
+                    "screenshot reset should forward exactly one canvas command");
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--ocr-translation-toggle-only"))) {
             translateButtonRoutesEveryClickThroughTheToggleCommand();
             mainTextTranslationButtonUsesTranslationPresentation();

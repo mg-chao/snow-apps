@@ -49,6 +49,8 @@ class ScreenRecordingAreaWindow final : public QWidget {
     void showEvent(QShowEvent* event) override;
 
   private:
+    friend class ScreenRecordingAreaWindowTestAccess;
+
     void applyInputMode();
     void applyNativePassThrough(bool enabled);
     [[nodiscard]] bool regionEditingEnabled() const;

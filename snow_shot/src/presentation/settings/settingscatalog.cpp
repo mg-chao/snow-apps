@@ -1009,12 +1009,15 @@ SettingsItemDefinition localShortcutItem(SettingsLocalShortcutScope scope,
                                          std::function<adqt::icons::IconRef()> iconFactory) {
     const bool screenshotShortcut = scope == SettingsLocalShortcutScope::Screenshot;
     const bool drawingShortcut = scope == SettingsLocalShortcutScope::Drawing;
-    const QString scopeName = screenshotShortcut ? QStringLiteral("screenshot")
-                              : drawingShortcut  ? QStringLiteral("drawing")
-                                                 : QStringLiteral("pin-to-screen");
+    const bool recordingShortcut = scope == SettingsLocalShortcutScope::ScreenRecording;
+    const QString scopeName = screenshotShortcut  ? QStringLiteral("screenshot")
+                              : drawingShortcut   ? QStringLiteral("drawing")
+                              : recordingShortcut ? QStringLiteral("screen-recording")
+                                                  : QStringLiteral("pin-to-screen");
     const QString configurationPrefix = screenshotShortcut ? QStringLiteral("screenshot_shortcuts/")
-                                        : drawingShortcut
-                                            ? QStringLiteral("drawing_shortcuts/")
+                                        : drawingShortcut  ? QStringLiteral("drawing_shortcuts/")
+                                        : recordingShortcut
+                                            ? QStringLiteral("screen_recording_shortcuts/")
                                             : QStringLiteral("pin_to_screen_shortcuts/");
     return {
         QStringLiteral("%1-shortcut.%2").arg(scopeName, shortcutId),
@@ -1025,12 +1028,16 @@ SettingsItemDefinition localShortcutItem(SettingsLocalShortcutScope scope,
         : drawingShortcut
             ? settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
                                              "Set up to two keys for this screenshot drawing tool"))
+        : recordingShortcut
+            ? settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                             "Set up to two keys for this recording action"))
             : settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
                                              "Set up to two keys for this pinned window action")),
         {settingsText(
-            screenshotShortcut ? QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot shortcut")
-            : drawingShortcut  ? QT_TRANSLATE_NOOP("SettingsCatalog", "Drawing shortcut")
-                               : QT_TRANSLATE_NOOP("SettingsCatalog", "Pin to screen shortcut"))},
+            screenshotShortcut  ? QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot shortcut")
+            : drawingShortcut   ? QT_TRANSLATE_NOOP("SettingsCatalog", "Drawing shortcut")
+            : recordingShortcut ? QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording shortcut")
+                                : QT_TRANSLATE_NOOP("SettingsCatalog", "Pin to screen shortcut"))},
         configurationPrefix + shortcutId,
         SettingsLocalShortcutDefinition{shortcutId, std::move(iconFactory), scope},
     };
@@ -1167,6 +1174,26 @@ QVector<SettingsItemDefinition> drawingShortcutItems() {
         localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("watermark"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Watermark"),
                           []() { return custom_outlined_icons::ToolWatermark(); }),
+    };
+}
+
+QVector<SettingsItemDefinition> screenRecordingShortcutItems() {
+    return {
+        localShortcutItem(SettingsLocalShortcutScope::ScreenRecording, QStringLiteral("export"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Export recording"),
+                          []() { return outlined_icons::Export(); }),
+        localShortcutItem(SettingsLocalShortcutScope::ScreenRecording,
+                          QStringLiteral("toggle_recording"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Start/pause/resume recording"),
+                          []() { return outlined_icons::Pause(); }),
+        localShortcutItem(SettingsLocalShortcutScope::ScreenRecording,
+                          QStringLiteral("copy_to_clipboard"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Copy recording"),
+                          []() { return outlined_icons::Copy(); }),
+        localShortcutItem(SettingsLocalShortcutScope::ScreenRecording,
+                          QStringLiteral("end_recording"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "End recording"),
+                          []() { return outlined_icons::Close(); }),
     };
 }
 
@@ -1730,6 +1757,15 @@ QVector<SettingsPageDefinition> builtInPages() {
                                                    "Shortcut keys for pinned-to-screen windows")),
                     SettingsSectionReset::PinToScreenShortcuts,
                     pinToScreenShortcutItems(),
+                    SettingsSectionItemLayout::TwoColumnGrid,
+                },
+                {
+                    QStringLiteral("screen-recording-shortcuts"),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording")),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                                   "Shortcut keys for recording controls")),
+                    SettingsSectionReset::ScreenRecordingShortcuts,
+                    screenRecordingShortcutItems(),
                     SettingsSectionItemLayout::TwoColumnGrid,
                 },
                 {
@@ -2574,6 +2610,8 @@ QStringList SettingsCatalog::validationErrors() const {
                              ? QStringLiteral("screenshot_shortcuts/")
                          : local->scope == SettingsLocalShortcutScope::Drawing
                              ? QStringLiteral("drawing_shortcuts/")
+                         : local->scope == SettingsLocalShortcutScope::ScreenRecording
+                             ? QStringLiteral("screen_recording_shortcuts/")
                              : QStringLiteral("pin_to_screen_shortcuts/")) +
                         local->shortcutId;
                     if (local->shortcutId.isEmpty() || !local->iconFactory ||

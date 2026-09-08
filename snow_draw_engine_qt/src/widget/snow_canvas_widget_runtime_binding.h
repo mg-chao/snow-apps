@@ -26,6 +26,7 @@ class SnowCanvasWidgetRuntimeBinding final {
     const SnowCanvasViewport& viewport() const;
     std::uint64_t viewportId() const;
     bool hasViewport() const;
+    bool clearDocumentPreservingViewports();
 
     void registerClient(snow_canvas_runtime::Client& client);
     void unregisterClient(snow_canvas_runtime::Client& client);

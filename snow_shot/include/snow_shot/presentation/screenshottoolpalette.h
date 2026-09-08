@@ -188,6 +188,7 @@ class ScreenshotToolPalette final : public QWidget {
     [[nodiscard]] bool activateDrawingShortcut(const QString& toolId);
     [[nodiscard]] bool activateToolShortcut(Tool tool);
     void clearActiveTool();
+    [[nodiscard]] std::optional<Tool> activeTool() const;
     void setHistoryState(const SnowCanvasHistoryState& state);
     void setScrollingScreenshotMode(bool enabled);
     [[nodiscard]] bool scrollingScreenshotMode() const;
@@ -201,6 +202,8 @@ class ScreenshotToolPalette final : public QWidget {
     void setSelectionOpacity(qreal opacity, bool mixed = false);
     void installWheelFilters(QObject* receiver, QWidget* scope = nullptr);
     bool handleToolbarWheel(QWheelEvent* event);
+    [[nodiscard]] bool canActivateRecordingShortcut(const QString& actionId) const;
+    bool activateRecordingShortcut(const QString& actionId);
     void setRecordingState(RecordingState state);
     void setRecordingDuration(qint64 durationMilliseconds);
     void setRecordingMicrophoneEnabled(bool enabled);
@@ -311,6 +314,7 @@ class ScreenshotToolPalette final : public QWidget {
     void selectionOpacityChanged(qreal opacity);
     void duplicateSelectionRequested();
     void deleteSelectionRequested();
+    void resetCanvasRequested();
     void visibleContentChanged();
     void recordingStartRequested();
     void recordingStopRequested();
@@ -403,6 +407,8 @@ class ScreenshotToolPalette final : public QWidget {
     void refreshThemeDependentIcons();
     void synchronizeFilterModeGroups(Tool tool);
     void updatePenFilterStrokeWidthControls();
+    adqt::widgets::AdButton* recordingShortcutButton(const QString& actionId) const;
+    void refreshRecordingShortcutTooltips();
     void updateRecordingControls();
     void updateRecordingControlMetrics();
     QSize styleToolbarSizeHint();
@@ -625,6 +631,7 @@ class ScreenshotToolPalette final : public QWidget {
     QLabel* m_selectionOpacityIcon = nullptr;
     adqt::widgets::AdSlider* m_selectionOpacitySlider = nullptr;
     QVector<QWidget*> m_selectionActionControls;
+    adqt::widgets::AdButton* m_resetCanvasButton = nullptr;
     QVector<QSpacerItem*> m_selectionActionSpacers;
     QVector<QSpacerItem*> m_textActionSpacers;
     QVector<QSpacerItem*> m_tableActionSpacers;

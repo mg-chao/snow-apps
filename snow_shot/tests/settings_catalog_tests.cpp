@@ -94,8 +94,9 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 30 && itemCount == 121,
-            "catalog must contain the expected thirty sections and one hundred twenty-one items");
+    require(
+        sectionCount == 31 && itemCount == 125,
+        "catalog must contain the expected thirty-one sections and one hundred twenty-five items");
     const auto* fill = catalog.item({QStringLiteral("interface-settings"),
                                      QStringLiteral("interface-text-recognition"),
                                      QStringLiteral("interface.text-recognition.fill-style")});
@@ -375,6 +376,25 @@ void builtInCatalogIsCompleteAndValid() {
         catalog.section(QStringLiteral("hotkey-settings"), QStringLiteral("other-shortcuts"));
     const auto* pinToScreenShortcuts = catalog.section(QStringLiteral("hotkey-settings"),
                                                        QStringLiteral("pin-to-screen-shortcuts"));
+    const auto* recordingShortcuts = catalog.section(QStringLiteral("hotkey-settings"),
+                                                     QStringLiteral("screen-recording-shortcuts"));
+    require(recordingShortcuts != nullptr && recordingShortcuts->items.size() == 4 &&
+                recordingShortcuts->reset ==
+                    settings::SettingsSectionReset::ScreenRecordingShortcuts,
+            "recording shortcuts must expose a resettable settings section");
+    const QStringList recordingActions = {
+        QStringLiteral("export"), QStringLiteral("toggle_recording"),
+        QStringLiteral("copy_to_clipboard"), QStringLiteral("end_recording")};
+    for (qsizetype index = 0; index < recordingActions.size(); ++index) {
+        const auto& item = recordingShortcuts->items.at(index);
+        require(item.id ==
+                        QStringLiteral("screen-recording-shortcut.") + recordingActions.at(index) &&
+                    item.configurationKey == QStringLiteral("screen_recording_shortcuts/") +
+                                                 recordingActions.at(index) &&
+                    std::get<settings::SettingsLocalShortcutDefinition>(item.payload).scope ==
+                        settings::SettingsLocalShortcutScope::ScreenRecording,
+                "recording shortcut fields must use stable IDs and a dedicated local scope");
+    }
     const auto* hotkeyPage = catalog.page(QStringLiteral("hotkey-settings"));
     const bool everyHotkeySectionUsesTwoColumns =
         hotkeyPage != nullptr &&
@@ -420,7 +440,7 @@ void builtInCatalogIsCompleteAndValid() {
                 QString::fromLatin1(contract.configurationKey);
     }
     require(
-        hotkeyPage != nullptr && hotkeyPage->sections.size() == 4 &&
+        hotkeyPage != nullptr && hotkeyPage->sections.size() == 5 &&
             everyHotkeySectionUsesTwoColumns && screenshotShortcuts != nullptr &&
             screenshotShortcuts->items.size() == 18 &&
             screenshotShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
@@ -911,8 +931,8 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 158 && index.search(QString()).size() == 158,
-            "search must generate all one hundred fifty-eight catalog nodes in catalog order");
+    require(index.entries().size() == 163 && index.search(QString()).size() == 163,
+            "search must generate all one hundred sixty-three catalog nodes in catalog order");
     const auto translation = index.search(QStringLiteral("original image translation"));
     require(!translation.isEmpty() && translation.constFirst().location.itemId ==
                                           QStringLiteral("translation.original-image"),
@@ -943,7 +963,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 7 && sections == 30 && items == 121,
+    require(pages == 7 && sections == 31 && items == 125,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

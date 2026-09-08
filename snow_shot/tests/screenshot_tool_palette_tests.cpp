@@ -86,6 +86,56 @@ QColor buttonBackgroundSample(QWidget& button) {
     return image.pixelColor(qMax(1, image.width() / 8), image.height() / 2);
 }
 
+void translucentColorSwatchesShowCheckerboardUnderlay() {
+    const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
+    for (const qreal scale : {1.0, 1.5, 2.0}) {
+        const ScreenshotToolPaletteButtonMetrics metrics{qRound(30 * scale), qRound(18 * scale),
+                                                         scale};
+        std::unique_ptr<FillStylePreviewTrigger> drawingTrigger(
+            createScreenshotToolPaletteFillStyleTrigger(nullptr, nullptr, Qt::transparent,
+                                                        SnowCanvasFillStyle::Solid, metrics));
+        const QImage triggerImage = renderButton(*drawingTrigger);
+        for (const bool summary : {false, true}) {
+            std::unique_ptr<ColorSwatchButton> button(createScreenshotToolPaletteColorButton(
+                nullptr, nullptr, Qt::red, summary, true, metrics));
+            for (const int alpha : {128, 254, 255, 0}) {
+                const QColor color(255, 0, 0, alpha);
+                button->setSwatchColor(color);
+                const QImage image = renderButton(*button);
+                const QRect interior =
+                    QRect(image.rect().center() - QPoint(qRound(6 * scale), qRound(6 * scale)),
+                          QSize(qRound(12 * scale), qRound(12 * scale)));
+                QImage expectedCells(2, 1, QImage::Format_RGBA8888);
+                expectedCells.fill(scheme.map.colorBgContainer);
+                {
+                    QPainter painter(&expectedCells);
+                    painter.fillRect(0, 0, 1, 1, scheme.map.colorFillTertiary);
+                    painter.fillRect(expectedCells.rect(), color);
+                }
+                int alternateCells = 0;
+                int baseCells = 0;
+                for (int y = interior.top(); y <= interior.bottom(); ++y) {
+                    for (int x = interior.left(); x <= interior.right(); ++x) {
+                        const QColor pixel = image.pixelColor(x, y);
+                        alternateCells += pixel == expectedCells.pixelColor(0, 0) ? 1 : 0;
+                        baseCells += pixel == expectedCells.pixelColor(1, 0) ? 1 : 0;
+                        if (alpha == 0) {
+                            require(
+                                pixel == triggerImage.pixelColor(x, y),
+                                "transparent presets must match the drawing fill picker trigger");
+                        }
+                        if (alpha == 255) {
+                            require(pixel == color, "opaque swatches must remain solid colors");
+                        }
+                    }
+                }
+                require(alternateCells >= 8 && baseCells >= 8,
+                        "translucent swatches must use the drawing trigger's themed checker cells");
+            }
+        }
+    }
+}
+
 bool imageHasVisiblePixel(const QImage& image) {
     for (int y = 0; y < image.height(); ++y) {
         for (int x = 0; x < image.width(); ++x) {
@@ -146,8 +196,7 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
     for (const char* source : sources) {
         adqt::widgets::AdButton* match = nullptr;
         for (auto* button : palette.mainPanel()->findChildren<adqt::widgets::AdButton*>()) {
-            if (button->property("snowShotTranslationTooltipSource").toString() ==
-                QLatin1String(source)) {
+            if (button->accessibleName() == QLatin1String(source)) {
                 match = button;
                 break;
             }
@@ -306,7 +355,7 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
     }
     require(exportButtonIndex >= 0 && shapeButtonIndex > exportButtonIndex &&
                 separatorAfterExportSettings,
-            "the main toolbar should place a separator immediately after Export Settings");
+            "the main toolbar should separate Export Settings and selection from drawing tools");
 
     const auto disabledIconColor =
         snow_shot::presentation::styles::generateThemeColorScheme().map.colorTextQuaternary;
@@ -506,9 +555,43 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
         require(
             palette.styleToolbarVisible() && palette.stylePanel()->height() == exportHeight,
             "export settings and drawing sub-toolbars should have equal heights at every scale");
+        const auto separatorGaps = [](QWidget* separator) {
+            QLayout* row = separator->parentWidget()->layout();
+            const int separatorIndex = row->indexOf(separator);
+            QWidget* before = nullptr;
+            QWidget* after = nullptr;
+            for (int index = separatorIndex - 1; index >= 0 && before == nullptr; --index) {
+                before = row->itemAt(index)->widget();
+            }
+            for (int index = separatorIndex + 1; index < row->count() && after == nullptr;
+                 ++index) {
+                after = row->itemAt(index)->widget();
+            }
+            require(before != nullptr && after != nullptr,
+                    "group separators should have controls on both sides");
+            return QSize(separator->x() - before->geometry().right() - 1,
+                         after->x() - separator->geometry().right() - 1);
+        };
+        auto* shapeSeparator =
+            palette.findChild<QFrame*>(QStringLiteral("screenshotShapeStyleGroupSeparator"));
+        require(shapeSeparator != nullptr, "Shape should expose its standard group separator");
+        const QSize expectedGaps = separatorGaps(shapeSeparator);
         exportButton->click();
         palette.prepareForDisplay();
         QCoreApplication::processEvents();
+        for (QFrame* separator : {formatSeparator, trailSeparator, clickSeparator}) {
+            const QSize actualGaps = separatorGaps(separator);
+            if (qAbs(actualGaps.width() - expectedGaps.width()) > 1 ||
+                qAbs(actualGaps.height() - expectedGaps.height()) > 1) {
+                std::cerr << "separator gaps at scale " << scale << ": export "
+                          << actualGaps.width() << '/' << actualGaps.height() << ", drawing "
+                          << expectedGaps.width() << '/' << expectedGaps.height() << '\n';
+            }
+            require(qAbs(actualGaps.width() - expectedGaps.width()) <= 1 &&
+                        qAbs(actualGaps.height() - expectedGaps.height()) <= 1,
+                    "export separators should match drawing group gaps on both sides, allowing "
+                    "one pixel for cumulative scaling rounding");
+        }
         require(exportPanel->isVisible() && exportPanel->height() == exportHeight,
                 "switching back to export settings should preserve the shared sub-toolbar height");
     }
@@ -6659,6 +6742,55 @@ void selectToolExposesDedicatedActionToolbar() {
             "opacity slider should be disabled again after clearing the selection");
 }
 
+void selectionResetRemainsAvailableWithoutSelection() {
+    ScreenshotToolPalette::Options options;
+    options.showSelectTool = true;
+    ScreenshotToolPalette palette(options);
+    int resetCount = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::resetCanvasRequested,
+                     [&resetCount]() { ++resetCount; });
+    for (const auto alternate :
+         {ScreenshotToolPalette::Tool::Ocr, ScreenshotToolPalette::Tool::Table}) {
+        palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+        palette.prepareForDisplay();
+        QPointer<adqt::widgets::AdButton> reset = palette.findChild<adqt::widgets::AdButton*>(
+            QStringLiteral("screenshotResetCanvasButton"));
+        require(reset != nullptr && !reset->isHidden() && reset->isEnabled(),
+                "canvas reset should be available without a selection");
+        require(reset->accentRole() == adqt::widgets::AdButton::AccentRole::Danger,
+                "canvas reset should use the danger accent");
+        require(reset->toolTip() == QStringLiteral("Reset") &&
+                    reset->accessibleName() == QStringLiteral("Reset"),
+                "canvas reset should have a tooltip and accessible name");
+        auto* layout = qobject_cast<QBoxLayout*>(palette.actionPanel()->layout());
+        const int index = layout->indexOf(reset);
+        require(index >= 2, "canvas reset should follow the selection actions");
+        QPointer<QFrame> separator = qobject_cast<QFrame*>(layout->itemAt(index - 2)->widget());
+        require(separator != nullptr && !separator->isHidden() &&
+                    layout->itemAt(index - 1)->spacerItem() != nullptr,
+                "canvas reset should have the standard separator on its left");
+        for (int i = index + 1; i < layout->count(); ++i) {
+            QWidget* widget = layout->itemAt(i)->widget();
+            require(widget == nullptr || widget->isHidden(),
+                    "canvas reset must be the far-right visible selection control");
+        }
+        reset->click();
+        SnowCanvasStyleToolbarState state;
+        state.source = SnowCanvasStyleToolbarSource::SelectedRectangle;
+        palette.setStyleToolbarState(state);
+        require(reset->isEnabled(), "canvas reset should remain enabled with a selection");
+        reset->click();
+        state.source = SnowCanvasStyleToolbarSource::DefaultRectangle;
+        palette.setStyleToolbarState(state);
+        require(reset->isEnabled(), "clearing selection must not disable canvas reset");
+        palette.setActiveTool(alternate);
+        require((reset == nullptr || reset->isHidden()) &&
+                    (separator == nullptr || separator->isHidden()),
+                "recognition modes should hide canvas reset and its separator");
+    }
+    require(resetCount == 4, "each reset click should emit exactly one canvas reset command");
+}
+
 void secondaryToolbarsStartHiddenUntilTheirToolIsSelected() {
     ScreenshotToolPalette::Options options;
     options.showSelectTool = true;
@@ -7473,6 +7605,12 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--selection-reset-only"))) {
+        selectionResetRemainsAvailableWithoutSelection();
+        selectToolExposesDedicatedActionToolbar();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--recording-controls-only"))) {
         recordingControlsRemainLaidOutAcrossStateChanges();
         recordingExportSettingsAndDrawingAvailabilityFollowSessionState();
@@ -7480,6 +7618,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--color-control-styles-only"))) {
+        translucentColorSwatchesShowCheckerboardUnderlay();
         configurationDrivenStyleEditorsShareStructuralContracts();
         mixedColorsKeepUniformStyleButtonsActive();
         toolbarScalingDoesNotRelayoutPopupContent();
@@ -7563,6 +7702,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     recordingControlsRemainLaidOutAcrossStateChanges();
+    translucentColorSwatchesShowCheckerboardUnderlay();
     recordingExportSettingsAndDrawingAvailabilityFollowSessionState();
     numericStrokeWidthPreviewUsesLineWithinPreviewBounds();
     secondaryControlsMaterializeOnlyForTheRequestedFamily();
@@ -7636,6 +7776,7 @@ int main(int argc, char** argv) {
     toolbarScalingDoesNotRelayoutPopupContent();
     popupColorEditorButtonsKeepPopupScaleAfterToolbarDpiCommit();
     selectToolExposesDedicatedActionToolbar();
+    selectionResetRemainsAvailableWithoutSelection();
     secondaryToolbarsStartHiddenUntilTheirToolIsSelected();
     selectToolRemainsTheSoleOwnerOfItsSecondaryToolbar();
     crossTypeSelectionRecalculatesStyleToolbarSize();

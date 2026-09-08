@@ -655,6 +655,35 @@ void applyPinToScreenShortcutTooltip(QWidget* widget, const QString& source,
     widget->setAccessibleName(title);
 }
 
+void applyScreenRecordingShortcutTooltip(QWidget* widget, const QString& source,
+                                         const QString& actionId) {
+    if (widget == nullptr || source.isEmpty() || actionId.isEmpty()) {
+        return;
+    }
+
+    const QStringList shortcuts =
+        snow_shot::storage::ScreenRecordingShortcutSettings().shortcuts(actionId);
+    QStringList displayShortcuts;
+    for (const QString& shortcut : shortcuts) {
+        const QString displayShortcut = formatDrawingShortcutForTooltip(shortcut);
+        if (!displayShortcut.isEmpty()) {
+            displayShortcuts.push_back(displayShortcut);
+        }
+    }
+    const QString title = ScreenshotToolPaletteTranslationText(source).translated();
+    if (displayShortcuts.isEmpty()) {
+        configureScreenshotToolPaletteTooltip(widget, ScreenshotToolPaletteTranslationText(source));
+        return;
+    }
+
+    configureScreenshotToolPaletteTooltip(
+        widget, ScreenshotToolPaletteTranslationText(QStringLiteral("%1 (%2)"))
+                    .arg(title)
+                    .arg(displayShortcuts.join(QStringLiteral(", "))));
+    setScreenshotToolPaletteAccessibleNameSource(widget, source.toUtf8().constData());
+    widget->setAccessibleName(title);
+}
+
 void applyDrawingShortcutTooltip(QWidget* widget, const QString& source,
                                  const QString& itemId = QString()) {
     if (widget == nullptr || source.isEmpty()) {
@@ -810,7 +839,8 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
                 this, [this](const QString& key, const QJsonValue&) {
                     if (key.startsWith(QStringLiteral("screenshot_shortcuts/")) ||
                         key.startsWith(QStringLiteral("drawing_shortcuts/")) ||
-                        key.startsWith(QStringLiteral("pin_to_screen_shortcuts/"))) {
+                        key.startsWith(QStringLiteral("pin_to_screen_shortcuts/")) ||
+                        key.startsWith(QStringLiteral("screen_recording_shortcuts/"))) {
                         refreshShortcutTooltips();
                     }
                 });
@@ -1200,7 +1230,7 @@ void ScreenshotToolPalette::updateSelectionActionAvailability(bool hasSelection)
     m_hasSelectedElements = hasSelection;
     for (QWidget* control : std::as_const(m_selectionActionControls)) {
         if (control != nullptr) {
-            control->setEnabled(hasSelection);
+            control->setEnabled(control == m_resetCanvasButton || hasSelection);
         }
     }
     if (m_selectionOpacitySlider != nullptr) {
@@ -1350,7 +1380,7 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     if (m_releasingSecondaryResources) {
         return;
     }
-    if (m_options.recordingDrawingMode && m_recordExportSettingsVisible && tool != Tool::Select &&
+    if (m_options.recordingDrawingMode && m_recordExportSettingsVisible &&
         !isRecordingUnavailableTool(tool)) {
         setRecordingExportSettingsVisible(false);
     }
@@ -1619,6 +1649,10 @@ void ScreenshotToolPalette::clearActiveTool() {
         update();
         emit visibleContentChanged();
     }
+}
+
+std::optional<ScreenshotToolPalette::Tool> ScreenshotToolPalette::activeTool() const {
+    return m_activeTool;
 }
 
 void ScreenshotToolPalette::setScrollingScreenshotMode(bool enabled) {
@@ -2619,8 +2653,12 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
         }
     }
     for (const SpacingItem& item : std::as_const(m_styleSpacingItems)) {
-        if (item.item != nullptr && item.owner != nullptr && m_selectActionPanel != nullptr &&
-            (item.owner == m_selectActionPanel || m_selectActionPanel->isAncestorOf(item.owner))) {
+        const bool selectionSpacing =
+            item.owner != nullptr && m_selectActionPanel != nullptr &&
+            (item.owner == m_selectActionPanel || m_selectActionPanel->isAncestorOf(item.owner));
+        const bool exportSettingsSpacing =
+            item.owner != nullptr && item.owner == m_recordExportSettingsPanel;
+        if (item.item != nullptr && (selectionSpacing || exportSettingsSpacing)) {
             item.item->changeSize(item.visible ? scaledMetric(item.baseSpacing) : 0, 0,
                                   QSizePolicy::Fixed, QSizePolicy::Minimum);
         }
@@ -3115,6 +3153,7 @@ void ScreenshotToolPalette::refreshShortcutTooltips() {
     }
     refreshActionToolGroups();
     refreshConfirmShortcutHint();
+    refreshRecordingShortcutTooltips();
 }
 
 void ScreenshotToolPalette::refreshConfirmShortcutHint() {
@@ -3398,7 +3437,7 @@ void ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
         !toggleVisibleButton         ? m_activeTool.has_value() && *m_activeTool == tool
         : requestedButton != nullptr ? m_activeToolButton == requestedButton
                                      : m_activeTool.has_value() && *m_activeTool == tool;
-    if (alreadyActive && m_options.recordingDrawingMode && tool != Tool::Select) {
+    if (alreadyActive && m_options.recordingDrawingMode) {
         clearActiveTool();
         emit selectRequested();
         return;
@@ -3832,9 +3871,11 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
     };
 
     addFixedWidget(m_recordExportSettingsButton);
-    addSeparator();
     addFixedWidget(m_moveButton);
     addFixedWidget(m_selectButton);
+    if (m_recordExportSettingsButton != nullptr) {
+        addSeparator();
+    }
 
     bool hasDrawingPositions = false;
     for (const QStringList& position : normalized.positions) {
@@ -4789,10 +4830,12 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
     layout->addWidget(m_recordOutputFormatSelect);
 
     const auto addSeparator = [this, layout](const QString& objectName) {
+        addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
         QFrame* separator = createStyleToolbarSeparator(m_recordExportSettingsPanel);
         separator->setObjectName(objectName);
         m_recordExportSettingsSeparators.push_back(separator);
         layout->addWidget(separator);
+        addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING);
     };
     addSeparator(QStringLiteral("screenRecordingExportFormatSeparator"));
 
@@ -5028,10 +5071,16 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     if (auto* frame = qobject_cast<QFrame*>(m_recordExportSettingsPanel)) {
         m_panelFrames.push_back(frame);
     }
-    m_styleSpacingItems.clear();
+    // Export Settings persists when drawing controls are evicted; retain its scale bindings.
+    m_styleSpacingItems.erase(std::remove_if(m_styleSpacingItems.begin(), m_styleSpacingItems.end(),
+                                             [this](const SpacingItem& item) {
+                                                 return item.owner != m_recordExportSettingsPanel;
+                                             }),
+                              m_styleSpacingItems.end());
     m_styleLayoutProfiles.clear();
     m_styleMetricRevisions.clear();
     m_selectionActionControls.clear();
+    m_resetCanvasButton = nullptr;
     m_selectionActionSpacers.clear();
     m_textActionSpacers.clear();
     m_tableActionSpacers.clear();
@@ -5391,6 +5440,17 @@ void ScreenshotToolPalette::createSelectionActionFamily() {
     addSpacing(STYLE_ITEM_SPACING);
     addSelectButton("Delete selected elements", custom_outlined_icons::Trash(),
                     &ScreenshotToolPalette::deleteSelectionRequested);
+    addSpacing(STYLE_GROUP_SPACING * 2);
+    m_selectActionLayout->addWidget(createStyleToolbarSeparator(m_selectActionPanel));
+    addSpacing(STYLE_GROUP_SPACING * 2);
+    m_resetCanvasButton = createScreenshotToolPaletteActionButton(
+        m_selectActionPanel, "Reset", outlined_icons::Reload(), true, false,
+        actionButtonMetrics(m_physicalScale));
+    m_resetCanvasButton->setObjectName(QStringLiteral("screenshotResetCanvasButton"));
+    m_selectionActionControls.push_back(m_resetCanvasButton);
+    m_selectActionLayout->addWidget(m_resetCanvasButton);
+    connect(m_resetCanvasButton, &adqt::widgets::AdButton::clicked, this,
+            &ScreenshotToolPalette::resetCanvasRequested);
     m_selectionActionAvailabilityInitialized = false;
     updateSelectionActionAvailability(m_hasSelectedElements);
     setSelectionOpacity(m_selectionOpacity, m_selectionOpacityMixed);
@@ -5877,6 +5937,7 @@ void ScreenshotToolPalette::addRecordingControls(QBoxLayout* layout) {
             &ScreenshotToolPalette::recordingCopyRequested);
 
     updateRecordingControls();
+    refreshRecordingShortcutTooltips();
     updateRecordingControlMetrics();
 }
 
@@ -6111,6 +6172,53 @@ bool ScreenshotToolPalette::applyActiveToolSecondaryToolbarVisibility() {
 
 bool ScreenshotToolPalette::activeToolUsesStyleToolbar() const {
     return m_activeTool.has_value() && toolUsesStyleToolbar(*m_activeTool);
+}
+
+adqt::widgets::AdButton*
+ScreenshotToolPalette::recordingShortcutButton(const QString& actionId) const {
+    if (actionId == QStringLiteral("export")) {
+        return m_recordStopButton;
+    }
+    if (actionId == QStringLiteral("toggle_recording")) {
+        return m_recordingState == RecordingState::Idle        ? m_recordStartButton
+               : m_recordingState == RecordingState::Recording ? m_recordPauseButton
+                                                               : m_recordResumeButton;
+    }
+    if (actionId == QStringLiteral("copy_to_clipboard")) {
+        return m_recordCopyButton;
+    }
+    if (actionId == QStringLiteral("end_recording")) {
+        return m_recordCloseButton;
+    }
+    return nullptr;
+}
+
+bool ScreenshotToolPalette::canActivateRecordingShortcut(const QString& actionId) const {
+    const auto* button = recordingShortcutButton(actionId);
+    return button != nullptr && button->isVisible() && button->isEnabled() && !m_recordingBusy;
+}
+
+bool ScreenshotToolPalette::activateRecordingShortcut(const QString& actionId) {
+    if (!canActivateRecordingShortcut(actionId)) {
+        return false;
+    }
+    recordingShortcutButton(actionId)->click();
+    return true;
+}
+
+void ScreenshotToolPalette::refreshRecordingShortcutTooltips() {
+    applyScreenRecordingShortcutTooltip(m_recordStopButton, QStringLiteral("Stop recording"),
+                                        QStringLiteral("export"));
+    applyScreenRecordingShortcutTooltip(m_recordStartButton, QStringLiteral("Start recording"),
+                                        QStringLiteral("toggle_recording"));
+    applyScreenRecordingShortcutTooltip(m_recordPauseButton, QStringLiteral("Pause recording"),
+                                        QStringLiteral("toggle_recording"));
+    applyScreenRecordingShortcutTooltip(m_recordResumeButton, QStringLiteral("Resume recording"),
+                                        QStringLiteral("toggle_recording"));
+    applyScreenRecordingShortcutTooltip(m_recordCopyButton, QStringLiteral("Copy recording"),
+                                        QStringLiteral("copy_to_clipboard"));
+    applyScreenRecordingShortcutTooltip(m_recordCloseButton, QStringLiteral("Close recording"),
+                                        QStringLiteral("end_recording"));
 }
 
 void ScreenshotToolPalette::updateRecordingControls() {

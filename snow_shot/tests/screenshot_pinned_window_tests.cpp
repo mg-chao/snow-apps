@@ -3958,6 +3958,26 @@ void pinnedDrawingShortcutsToggleActiveTool() {
         require(canvas->canvasTool() == tool,
                 "the third shortcut press should reactivate the pinned canvas tool");
     }
+    require(canvas->setCanvasTool(SnowCanvasTool::Shape), "reset fixture should activate Shape");
+    QMouseEvent down(QEvent::MouseButtonPress, QPointF(30, 30), QPointF(30, 30), Qt::LeftButton,
+                     Qt::LeftButton, Qt::NoModifier);
+    QMouseEvent move(QEvent::MouseMove, QPointF(90, 90), QPointF(90, 90), Qt::NoButton,
+                     Qt::LeftButton, Qt::NoModifier);
+    QMouseEvent up(QEvent::MouseButtonRelease, QPointF(90, 90), QPointF(90, 90), Qt::LeftButton,
+                   Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(canvas, &down);
+    QCoreApplication::sendEvent(canvas, &move);
+    QCoreApplication::sendEvent(canvas, &up);
+    require(canvas->canvasHistoryState().canUndo, "pinned reset fixture should contain an edit");
+    require(canvas->resetEditingState(), "pinned reset fixture should clear selection");
+    palette->setActiveTool(ScreenshotToolPalette::Tool::Select);
+    auto* reset =
+        palette->findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotResetCanvasButton"));
+    require(reset != nullptr && reset->isEnabled(),
+            "pinned canvas reset should be enabled without selection");
+    reset->click();
+    require(!canvas->canvasHistoryState().canUndo && !canvas->canvasHistoryState().canRedo,
+            "pinned reset should clear the canvas document and history");
     window->close();
     require(processUntilDeleted(guardedWindow, 2000), "shortcut test pin should close");
 }

@@ -290,6 +290,21 @@ shortcutValidationMessage(const snow_shot::presentation::GlobalShortcutValidatio
                    : QObject::tr("%1 cannot be used as a pinned window shortcut, try another key")
                          .arg(displayShortcut);
     }
+    if (validationScope == ShortcutKeyRowConfig::ValidationScope::RecordingShortcut) {
+        if (validation.failureReason ==
+            snow_shot::presentation::GlobalShortcutFailureReason::AlreadyInUse) {
+            return displayShortcut.isEmpty()
+                       ? QObject::tr("This key is already assigned to another recording action, "
+                                     "try another key")
+                       : QObject::tr(
+                             "%1 is already assigned to another recording action, try another key")
+                             .arg(displayShortcut);
+        }
+        return displayShortcut.isEmpty()
+                   ? QObject::tr("This key cannot be used as a recording shortcut, try another key")
+                   : QObject::tr("%1 cannot be used as a recording shortcut, try another key")
+                         .arg(displayShortcut);
+    }
 
     if (validation.failureReason ==
         snow_shot::presentation::GlobalShortcutFailureReason::UnsupportedPlatform) {
@@ -319,6 +334,8 @@ class ShortcutConfigInfoButton final : public adqt::widgets::AdButton {
             m_info->setAccessibleName(QObject::tr("Invalid drawing shortcut"));
         } else if (validationScope == ShortcutKeyRowConfig::ValidationScope::PinnedWindowShortcut) {
             m_info->setAccessibleName(QObject::tr("Invalid pinned window shortcut"));
+        } else if (validationScope == ShortcutKeyRowConfig::ValidationScope::RecordingShortcut) {
+            m_info->setAccessibleName(QObject::tr("Invalid recording shortcut"));
         } else {
             m_info->setAccessibleName(QObject::tr("Invalid global shortcut"));
         }
@@ -598,6 +615,15 @@ class ShortcutKeyConfigContent final : public QWidget {
     std::function<void(bool)> acceptanceAvailabilityChanged;
 
   protected:
+    bool event(QEvent* event) override {
+        // A key being recorded belongs to this editor, including the modal's Escape shortcut.
+        if (event->type() == QEvent::ShortcutOverride && m_recordingConfigIndex >= 0) {
+            event->accept();
+            return true;
+        }
+        return QWidget::event(event);
+    }
+
     void keyPressEvent(QKeyEvent* event) override {
         if (m_recordingConfigIndex < 0) {
             QWidget::keyPressEvent(event);

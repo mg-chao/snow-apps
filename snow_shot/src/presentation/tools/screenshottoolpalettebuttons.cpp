@@ -364,8 +364,8 @@ void drawFillStyleIcon(QPainter* painter, const QRectF& iconRect, SnowCanvasFill
     painter->restore();
 }
 
-void drawTransparentColorSwatch(QPainter* painter, const QRectF& swatchRect, qreal physicalScale,
-                                const QColor& border, bool borderVisible) {
+void drawColorSwatch(QPainter* painter, const QRectF& swatchRect, qreal physicalScale,
+                     const QColor& color, const QColor& border, bool borderVisible) {
     if (painter == nullptr || swatchRect.isEmpty()) {
         return;
     }
@@ -383,20 +383,29 @@ void drawTransparentColorSwatch(QPainter* painter, const QRectF& swatchRect, qre
     const QColor errorColor =
         scheme.map.colorError.isValid() ? scheme.map.colorError : QColor(0xff, 0x4d, 0x4f);
 
-    painter->fillPath(path, baseColor);
-    painter->save();
-    painter->setClipPath(path);
-    const int tileSize = std::max(1, qRound(4.0 * physicalScale));
-    for (int y = static_cast<int>(swatchRect.top()); y < swatchRect.bottom(); y += tileSize) {
-        for (int x = static_cast<int>(swatchRect.left()); x < swatchRect.right(); x += tileSize) {
-            const bool alternate = ((x / tileSize) + (y / tileSize)) % 2 == 0;
-            painter->fillRect(QRectF(x, y, tileSize, tileSize),
-                              alternate ? alternateColor : baseColor);
+    if (color.alpha() < 255) {
+        painter->fillPath(path, baseColor);
+        painter->save();
+        painter->setClipPath(path);
+        const int tileSize = std::max(1, qRound(4.0 * physicalScale));
+        for (int y = static_cast<int>(swatchRect.top()); y < swatchRect.bottom(); y += tileSize) {
+            for (int x = static_cast<int>(swatchRect.left()); x < swatchRect.right();
+                 x += tileSize) {
+                const bool alternate = ((x / tileSize) + (y / tileSize)) % 2 == 0;
+                painter->fillRect(QRectF(x, y, tileSize, tileSize),
+                                  alternate ? alternateColor : baseColor);
+            }
         }
+        painter->restore();
     }
-    painter->setPen(QPen(errorColor, std::max<qreal>(0.5, 1.5 * physicalScale)));
-    painter->drawLine(swatchRect.bottomLeft(), swatchRect.topRight());
-    painter->restore();
+    painter->fillPath(path, color);
+    if (color.alpha() == 0) {
+        painter->save();
+        painter->setClipPath(path);
+        painter->setPen(QPen(errorColor, std::max<qreal>(0.5, 1.5 * physicalScale)));
+        painter->drawLine(swatchRect.bottomLeft(), swatchRect.topRight());
+        painter->restore();
+    }
 
     if (borderVisible) {
         painter->setPen(QPen(border, std::max<qreal>(0.5, 1.0 * physicalScale)));
@@ -567,7 +576,7 @@ void drawFillStylePreview(QPainter* painter, const QWidget* widget, const QColor
         if (!border.isValid()) {
             border = QColor(QStringLiteral("#d9d9d9"));
         }
-        drawTransparentColorSwatch(painter, iconRect, physicalScale, border, true);
+        drawColorSwatch(painter, iconRect, physicalScale, Qt::transparent, border, true);
     } else {
         drawFillStyleIcon(painter, iconRect, fillStyle, contentColor);
     }
@@ -899,21 +908,7 @@ void ColorSwatchButton::paintEvent(QPaintEvent* event) {
         qMin<qreal>(STYLE_ICON_SIZE * m_physicalScale, qMin(width(), height()) - inset);
     const QRectF swatchRect(QRectF(rect()).center().x() - swatchSide / 2.0,
                             QRectF(rect()).center().y() - swatchSide / 2.0, swatchSide, swatchSide);
-    if (swatch.alpha() == 0) {
-        drawTransparentColorSwatch(&painter, swatchRect, m_physicalScale, border,
-                                   m_swatchBorderVisible);
-        return;
-    }
-
-    QPainterPath path;
-    const qreal radius = std::max<qreal>(1.0, 3.0 * m_physicalScale);
-    path.addRoundedRect(swatchRect, radius, radius);
-    painter.fillPath(path, swatch);
-    if (m_swatchBorderVisible) {
-        painter.setPen(QPen(border, std::max<qreal>(0.5, 1.0 * m_physicalScale)));
-        painter.setBrush(Qt::NoBrush);
-        painter.drawPath(path);
-    }
+    drawColorSwatch(&painter, swatchRect, m_physicalScale, swatch, border, m_swatchBorderVisible);
 }
 
 ColorPickerSamplerButton::ColorPickerSamplerButton(QWidget* parent)

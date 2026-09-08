@@ -382,6 +382,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void setSelectedElementsOpacity(qreal opacity) override;
     void duplicateSelectedElements() override;
     void deleteSelectedElements() override;
+    void resetCanvas() override;
     void repositionToolbarForContentChange() override;
     void repositionToolbarForPresentationChange() override;
     void toggleSelectionAspectRatioLockFromToolbar() override;
@@ -3864,4 +3865,14 @@ void ScreenshotController::Impl::duplicateSelectedElements() {
 
 void ScreenshotController::Impl::deleteSelectedElements() {
     m_overlayCoordinator->deleteSelectedElements(m_displaySession);
+}
+
+void ScreenshotController::Impl::resetCanvas() {
+    bool handled = false;
+    m_displaySession.forEachOverlay([&handled](qsizetype, ScreenshotOverlayWindow* overlay) {
+        if (!handled && overlay != nullptr && overlay->canvas() != nullptr) {
+            static_cast<void>(overlay->canvas()->clearDocument());
+            handled = true;
+        }
+    });
 }

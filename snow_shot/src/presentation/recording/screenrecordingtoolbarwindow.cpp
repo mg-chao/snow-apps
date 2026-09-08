@@ -14,7 +14,7 @@ constexpr int kToolbarGap = 4;
 ScreenshotToolPalette::Options recordingToolbarOptions() {
     ScreenshotToolPalette::Options options;
     options.showDragHandle = true;
-    options.showSelectTool = false;
+    options.showSelectTool = true;
     options.showShapeTool = true;
     options.showArrowTool = true;
     options.showLineTool = true;

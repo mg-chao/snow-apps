@@ -97,6 +97,22 @@ const QStringList& pinToScreenShortcutActionIds() {
     return ids;
 }
 
+const QStringList& screenRecordingShortcutActionIds() {
+    static const QStringList ids = {
+        QStringLiteral("export"),
+        QStringLiteral("toggle_recording"),
+        QStringLiteral("copy_to_clipboard"),
+        QStringLiteral("end_recording"),
+    };
+    return ids;
+}
+
+QString screenRecordingShortcutKey(const QString& actionId) {
+    return screenRecordingShortcutActionIds().contains(actionId)
+               ? QStringLiteral("screen_recording_shortcuts/") + actionId
+               : QString();
+}
+
 QString drawingShortcutKey(const QString& toolId) {
     return drawingShortcutToolIds().contains(toolId) ? QStringLiteral("drawing_shortcuts/") + toolId
                                                      : QString();
@@ -804,6 +820,58 @@ bool PinToScreenShortcutSettings::setAllShortcutsAtomic(
             return false;
         }
         const QString key = pinToScreenShortcutKey(actionId);
+        const ConfigurationNormalization normalized =
+            ConfigurationSchema::normalize(key, stringArray(shortcutsByAction.value(actionId)));
+        if (!normalized.valid) {
+            return false;
+        }
+        for (const QJsonValue& item : normalized.value.toArray()) {
+            const QString binding = item.toString().toCaseFolded();
+            if (seen.contains(binding)) {
+                return false;
+            }
+            seen.insert(binding);
+        }
+        values.insert(key, normalized.value);
+    }
+    return cache().setValues(values);
+}
+
+QStringList ScreenRecordingShortcutSettings::shortcuts(const QString& actionId) const {
+    const QString key = screenRecordingShortcutKey(actionId);
+    return key.isEmpty() ? QStringList{} : shortcutValue(key);
+}
+
+bool ScreenRecordingShortcutSettings::setShortcuts(const QString& actionId,
+                                                   const QStringList& value) const {
+    if (screenRecordingShortcutKey(actionId).isEmpty()) {
+        return false;
+    }
+    QMap<QString, QStringList> next = allShortcuts();
+    next.insert(actionId, value);
+    return setAllShortcutsAtomic(next);
+}
+
+QMap<QString, QStringList> ScreenRecordingShortcutSettings::allShortcuts() const {
+    QMap<QString, QStringList> result;
+    for (const QString& actionId : screenRecordingShortcutActionIds()) {
+        result.insert(actionId, shortcutValue(screenRecordingShortcutKey(actionId)));
+    }
+    return result;
+}
+
+bool ScreenRecordingShortcutSettings::setAllShortcutsAtomic(
+    const QMap<QString, QStringList>& shortcutsByAction) const {
+    if (shortcutsByAction.size() != screenRecordingShortcutActionIds().size()) {
+        return false;
+    }
+    QMap<QString, QJsonValue> values;
+    QSet<QString> seen;
+    for (const QString& actionId : screenRecordingShortcutActionIds()) {
+        if (!shortcutsByAction.contains(actionId)) {
+            return false;
+        }
+        const QString key = screenRecordingShortcutKey(actionId);
         const ConfigurationNormalization normalized =
             ConfigurationSchema::normalize(key, stringArray(shortcutsByAction.value(actionId)));
         if (!normalized.valid) {

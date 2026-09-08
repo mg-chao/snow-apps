@@ -217,6 +217,8 @@ void ScreenshotToolbarWindow::connectStyleCommands(ScreenshotToolPalette& toolPa
             [this]() { m_commands.duplicateSelectedElements(); });
     connect(&toolPalette, &ScreenshotToolPalette::deleteSelectionRequested, this,
             [this]() { m_commands.deleteSelectedElements(); });
+    connect(&toolPalette, &ScreenshotToolPalette::resetCanvasRequested, this,
+            [this]() { m_commands.resetCanvas(); });
     connect(
         &toolPalette, &ScreenshotToolPalette::shapeStyleChanged, this,
         [this](const SnowCanvasShapeStyle& style, quint32 properties, SnowCanvasShapeKind kind) {

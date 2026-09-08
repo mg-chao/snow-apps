@@ -23,6 +23,7 @@ class ScreenRecordingShortcutController final : public QObject {
     QPointer<ScreenRecordingAreaWindow> m_area;
     QPointer<ScreenRecordingToolbarWindow> m_toolbar;
     ShortcutManager m_shortcutManager;
+    QMap<QString, ShortcutManager::BindingHandle> m_recordingBindings;
     QMap<QString, ShortcutManager::BindingHandle> m_drawingBindings;
     QMap<QString, ShortcutManager::BindingHandle> m_historyBindings;
 };

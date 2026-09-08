@@ -56,7 +56,9 @@ QString localShortcutKey(SettingsLocalShortcutScope scope, const QString& shortc
     const QString prefix =
         scope == SettingsLocalShortcutScope::Screenshot ? QStringLiteral("screenshot_shortcuts/")
         : scope == SettingsLocalShortcutScope::Drawing  ? QStringLiteral("drawing_shortcuts/")
-                                                       : QStringLiteral("pin_to_screen_shortcuts/");
+        : scope == SettingsLocalShortcutScope::ScreenRecording
+            ? QStringLiteral("screen_recording_shortcuts/")
+            : QStringLiteral("pin_to_screen_shortcuts/");
     return prefix + shortcutId;
 }
 
@@ -668,6 +670,9 @@ QStringList BuiltInSettingsBackend::localShortcuts(SettingsLocalShortcutScope sc
     if (scope == SettingsLocalShortcutScope::Drawing) {
         return storage::DrawingShortcutSettings().shortcuts(shortcutId);
     }
+    if (scope == SettingsLocalShortcutScope::ScreenRecording) {
+        return storage::ScreenRecordingShortcutSettings().shortcuts(shortcutId);
+    }
     return storage::PinToScreenShortcutSettings().shortcuts(shortcutId);
 }
 
@@ -681,6 +686,7 @@ GlobalShortcutValidationResult BuiltInSettingsBackend::validateLocalShortcut(
     }
     const QString canonical = normalized.value.toArray().first().toString();
     if (scope != SettingsLocalShortcutScope::PinToScreen &&
+        scope != SettingsLocalShortcutScope::ScreenRecording &&
         storage::ScreenshotShortcutSettings::isReservedShortcut(canonical) &&
         (scope != SettingsLocalShortcutScope::Screenshot ||
          !storage::ScreenshotShortcutSettings::isReservedShortcutAllowed(shortcutId, canonical))) {
@@ -690,6 +696,8 @@ GlobalShortcutValidationResult BuiltInSettingsBackend::validateLocalShortcut(
                          ? storage::ScreenshotShortcutSettings().allShortcuts()
                      : scope == SettingsLocalShortcutScope::Drawing
                          ? storage::DrawingShortcutSettings().allShortcuts()
+                     : scope == SettingsLocalShortcutScope::ScreenRecording
+                         ? storage::ScreenRecordingShortcutSettings().allShortcuts()
                          : storage::PinToScreenShortcutSettings().allShortcuts();
     for (auto it = all.cbegin(); it != all.cend(); ++it) {
         if (it.key() == shortcutId) {
@@ -719,6 +727,9 @@ bool BuiltInSettingsBackend::applyLocalShortcuts(SettingsLocalShortcutScope scop
     }
     if (scope == SettingsLocalShortcutScope::Drawing) {
         return storage::DrawingShortcutSettings().setShortcuts(shortcutId, shortcuts);
+    }
+    if (scope == SettingsLocalShortcutScope::ScreenRecording) {
+        return storage::ScreenRecordingShortcutSettings().setShortcuts(shortcutId, shortcuts);
     }
     return storage::PinToScreenShortcutSettings().setShortcuts(shortcutId, shortcuts);
 }
@@ -1019,6 +1030,14 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                             stringListDefault(QStringLiteral("drawing_shortcuts/") + toolId));
         }
         return storage::DrawingShortcutSettings().setAllShortcutsAtomic(defaults);
+    }
+    case SettingsSectionReset::ScreenRecordingShortcuts: {
+        auto defaults = storage::ScreenRecordingShortcutSettings().allShortcuts();
+        for (auto it = defaults.begin(); it != defaults.end(); ++it) {
+            it.value() =
+                stringListDefault(QStringLiteral("screen_recording_shortcuts/") + it.key());
+        }
+        return storage::ScreenRecordingShortcutSettings().setAllShortcutsAtomic(defaults);
     }
     case SettingsSectionReset::PinToScreenShortcuts: {
         QMap<QString, QStringList> defaults;

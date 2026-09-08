@@ -1451,6 +1451,24 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_executable(snow-shot-screen-recording-shortcut-settings-tests
+        tests/screen_recording_shortcut_settings_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+    )
+    target_link_libraries(snow-shot-screen-recording-shortcut-settings-tests PRIVATE
+        snow_shot_settings
+        snow_shot_image_codec
+    )
+    add_test(NAME snow-shot-screen-recording-shortcut-settings-tests
+             COMMAND snow-shot-screen-recording-shortcut-settings-tests)
+    set_tests_properties(snow-shot-screen-recording-shortcut-settings-tests PROPERTIES
+        TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+    snow_shot_import_offscreen_platform(snow-shot-screen-recording-shortcut-settings-tests)
+
     add_executable(snow-shot-translation-settings-tests
         tests/translation_settings_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp
@@ -2749,6 +2767,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-screenshot-tool-palette-tests --tool-shortcuts-only
     )
     add_test(
+        NAME snow-shot-screenshot-selection-reset-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --selection-reset-only
+    )
+    add_test(
         NAME snow-shot-screen-recording-toolbar-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --recording-controls-only
     )
@@ -2756,6 +2778,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-screenshot-tool-palette-tests
         snow-shot-screenshot-action-toolbar-layout-tests
         snow-shot-screenshot-tool-shortcut-toggle-tests
+        snow-shot-screenshot-selection-reset-tests
         snow-shot-screen-recording-toolbar-tests
         PROPERTIES
         ENVIRONMENT
@@ -3041,6 +3064,15 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_test(
         NAME snow-shot-floating-toolbar-recording-hit-test-tests
         COMMAND snow-shot-floating-toolbar-drag-tests --recording-hit-test-only
+    )
+    add_test(
+        NAME snow-shot-screenshot-selection-reset-command-tests
+        COMMAND snow-shot-floating-toolbar-drag-tests --selection-reset-only
+    )
+    set_tests_properties(snow-shot-screenshot-selection-reset-command-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
     set_tests_properties(snow-shot-floating-toolbar-drag-tests PROPERTIES
         RUN_SERIAL TRUE
@@ -3701,6 +3733,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
 
     foreach(_offscreen_qpa_test_target IN ITEMS
+        snow-shot-floating-toolbar-drag-tests
         snow-shot-language-manager-tests
         snow-shot-shortcut-key-row-tests
         snow-shot-form-layout-tests

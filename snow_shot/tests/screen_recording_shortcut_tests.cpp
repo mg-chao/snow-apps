@@ -5,11 +5,16 @@
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
+#include "snow_draw_engine_qt/snow_canvas_runtime.h"
+#include "../src/presentation/recording/screenrecordingselection.h"
+#include "widgets/button.h"
 
 #include <QApplication>
 #include <QDir>
+#include <QFrame>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QLayout>
 #include <QMouseEvent>
 #include <QTemporaryDir>
 
@@ -25,6 +30,13 @@ class ScreenshotFloatingToolPaletteWindowTestAccess {
     static void edit(ScreenshotFloatingToolPaletteWindow& toolbar, QWidget& editor) {
         toolbar.beginKeyboardFocusInteraction(&editor);
         toolbar.endKeyboardFocusInteraction(&editor);
+    }
+};
+
+class ScreenRecordingAreaWindowTestAccess {
+  public:
+    static QByteArray history(const ScreenRecordingAreaWindow& area) {
+        return area.m_canvasRuntime->serializeDocumentHistory();
     }
 };
 
@@ -96,6 +108,308 @@ void recordingToolbarKeepsFocusAfterEditingAndSurfaceRestoration() {
         QCoreApplication::processEvents();
         requireFocusPolicy(*toolbar, acceptsFocus);
     }
+}
+
+void recordingSelectionEditsAnnotationsAndPreservesPassThrough() {
+    ScreenRecordingAreaWindow area;
+    ScreenRecordingToolbarWindow toolbar;
+    area.setPhysicalRegion(
+        ScreenshotGeometryMapper::physicalRectForScreen(*QGuiApplication::primaryScreen())
+            .adjusted(20, 20, -20, -20));
+    auto& palette = *toolbar.palette();
+    auto& canvas = *area.canvas();
+    snow_shot::presentation::recording::connectScreenRecordingSelection(palette, area, area);
+    area.show();
+    toolbar.show();
+    toolbar.prepareForDisplay();
+    QCoreApplication::processEvents();
+
+    const auto findButton = [&palette](const QString& source) {
+        for (auto* button : palette.findChildren<adqt::widgets::AdButton*>()) {
+            if (button->property("snowShotTranslationTooltipSource").toString() == source) {
+                return button;
+            }
+        }
+        return static_cast<adqt::widgets::AdButton*>(nullptr);
+    };
+    auto* select = findButton(QStringLiteral("Select elements"));
+    auto* settings = findButton(QStringLiteral("Export Settings"));
+    require(select != nullptr && settings != nullptr && select->isVisible(),
+            "the recording toolbar must expose Select elements");
+    QLayout* layout = palette.mainPanel()->layout();
+    const int exportIndex = layout->indexOf(settings);
+    const int selectIndex = layout->indexOf(select);
+    require(exportIndex >= 0 && selectIndex > exportIndex,
+            "Select elements must follow Export Settings in the main toolbar");
+    for (int index = exportIndex + 1; index < selectIndex; ++index) {
+        require(layout->itemAt(index)->widget() == nullptr,
+                "Export Settings and Select elements must share a group without a separator");
+    }
+    QWidget* nextWidget = nullptr;
+    for (int index = selectIndex + 1; index < layout->count() && nextWidget == nullptr; ++index) {
+        nextWidget = layout->itemAt(index)->widget();
+    }
+    require(qobject_cast<QFrame*>(nextWidget) != nullptr &&
+                nextWidget->x() > select->geometry().right(),
+            "the recording group separator must appear immediately after Select elements");
+    for (int index = exportIndex + 1; index < layout->count(); ++index) {
+        auto* nextButton = qobject_cast<adqt::widgets::AdButton*>(layout->itemAt(index)->widget());
+        if (nextButton != nullptr) {
+            require(nextButton == select && select->x() > settings->geometry().right(),
+                    "Select elements must be the first tool to the right of Export Settings");
+            break;
+        }
+    }
+
+    for (const auto state : {ScreenshotToolPalette::RecordingState::Idle,
+                             ScreenshotToolPalette::RecordingState::Recording,
+                             ScreenshotToolPalette::RecordingState::Paused}) {
+        palette.setRecordingState(state);
+        area.setRecordingState(state);
+        if (!palette.recordingExportSettingsVisible()) {
+            settings->click();
+        }
+        select->click();
+        require(palette.activeTool() == ScreenshotToolPalette::Tool::Select &&
+                    !palette.recordingExportSettingsVisible() &&
+                    canvas.canvasTool() == SnowCanvasTool::Select && canvas.interactionEnabled() &&
+                    area.inputMode() == ScreenRecordingAreaWindow::InputMode::Drawing,
+                "Select must replace Export Settings and enable annotation interaction");
+        require(select->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid,
+                "Select must retain its active appearance");
+        area.setDrawingBlocked(true);
+        require(!canvas.interactionEnabled(), "busy operations must block selection interaction");
+        area.setDrawingBlocked(false);
+        require(canvas.interactionEnabled(), "selection must resume after busy operations");
+        select->click();
+        require(!palette.activeTool().has_value() && !canvas.interactionEnabled() &&
+                    area.inputMode() == ScreenRecordingAreaWindow::InputMode::PassThrough,
+                "clicking active Select must return to pass-through mode");
+        select->click();
+        settings->click();
+        require(!palette.activeTool().has_value() && palette.recordingExportSettingsVisible() &&
+                    area.inputMode() == ScreenRecordingAreaWindow::InputMode::RegionEditing,
+                "Export Settings must leave selection and restore region editing mode");
+        palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+        require(palette.activateToolShortcut(ScreenshotToolPalette::Tool::Select) &&
+                    canvas.canvasTool() == SnowCanvasTool::Select && canvas.interactionEnabled(),
+                "explicit selection activation must leave a drawing tool");
+        palette.clearActiveTool();
+        emit palette.selectRequested();
+        require(area.inputMode() == ScreenRecordingAreaWindow::InputMode::PassThrough,
+                "deactivating drawing must keep the existing pass-through behavior");
+    }
+
+    select->click();
+    drawRectangle(canvas);
+    require(canvas.setCanvasTool(SnowCanvasTool::Select), "selection tool should activate");
+    const auto clickCanvas = [&canvas](QPointF position) {
+        QMouseEvent down(QEvent::MouseButtonPress, position, position, position, Qt::LeftButton,
+                         Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&canvas, &down);
+        QMouseEvent up(QEvent::MouseButtonRelease, position, position, position, Qt::LeftButton,
+                       Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(&canvas, &up);
+    };
+    clickCanvas({30, 55});
+    require(canvas.canvasStyleToolbarState().source ==
+                SnowCanvasStyleToolbarSource::SelectedRectangle,
+            "Select must select an existing recording annotation");
+    palette.prepareForDisplay();
+    auto* duplicate = findButton(QStringLiteral("Copy selected elements"));
+    auto* remove = findButton(QStringLiteral("Delete selected elements"));
+    require(duplicate != nullptr && remove != nullptr && duplicate->isEnabled() &&
+                remove->isEnabled(),
+            "selection actions must become available for a selected annotation");
+    const auto expectChange = [&area](const auto& action) {
+        const QByteArray before = ScreenRecordingAreaWindowTestAccess::history(area);
+        action();
+        require(ScreenRecordingAreaWindowTestAccess::history(area) != before,
+                "selection actions must change recording canvas history");
+    };
+    expectChange([&]() { emit palette.selectionOpacityChanged(0.5); });
+    expectChange([&]() { duplicate->click(); });
+    expectChange([&]() { emit palette.sendSelectionToBackRequested(); });
+    expectChange([&]() { emit palette.bringSelectionToFrontRequested(); });
+    expectChange([&]() { emit palette.sendSelectionBackwardRequested(); });
+    expectChange([&]() { emit palette.bringSelectionForwardRequested(); });
+    expectChange([&]() { remove->click(); });
+    clickCanvas({30, 55});
+    require(canvas.canvasStyleToolbarState().source ==
+                SnowCanvasStyleToolbarSource::SelectedRectangle,
+            "deleting a duplicated annotation must preserve the original");
+    remove->click();
+    clickCanvas({30, 55});
+    require(canvas.canvasStyleToolbarState().source !=
+                SnowCanvasStyleToolbarSource::SelectedRectangle,
+            "Delete must remove the selected recording annotation");
+    auto* reset =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotResetCanvasButton"));
+    require(reset != nullptr, "recording selection should expose canvas reset");
+    for (const bool selected : {false, true}) {
+        drawRectangle(canvas);
+        require(canvas.setCanvasTool(SnowCanvasTool::Select), "Select should activate");
+        clickCanvas({30, 55});
+        require(canvas.duplicateSelected(), "reset fixture should contain multiple elements");
+        if (!selected) {
+            require(canvas.resetEditingState(), "reset fixture should clear selection");
+        }
+        require(reset->isEnabled(), "recording reset must work with or without selection");
+        reset->click();
+        require(!canvas.canvasHistoryState().canUndo && !canvas.canvasHistoryState().canRedo,
+                "recording reset should clear canvas history");
+        clickCanvas({30, 55});
+        require(canvas.canvasStyleToolbarState().source !=
+                    SnowCanvasStyleToolbarSource::SelectedRectangle,
+                "recording reset must remove unselected annotations as well");
+        reset->click();
+        require(!canvas.canvasHistoryState().canUndo,
+                "resetting an empty recording canvas should be harmless");
+    }
+}
+
+void recordingControlShortcutsFollowButtonsAndSettings() {
+    const snow_shot::storage::ScreenRecordingShortcutSettings settings;
+    const auto defaults = settings.allShortcuts();
+    require(defaults.size() == 4 &&
+                defaults.value(QStringLiteral("export")) == QStringList{QStringLiteral("Ctrl+E")} &&
+                defaults.value(QStringLiteral("toggle_recording")) ==
+                    QStringList{QStringLiteral("Ctrl+S")} &&
+                defaults.value(QStringLiteral("copy_to_clipboard")) ==
+                    QStringList{QStringLiteral("Ctrl+C")} &&
+                defaults.value(QStringLiteral("end_recording")) ==
+                    QStringList{QStringLiteral("Esc")},
+            "recording controls must have the requested defaults");
+    ScreenRecordingAreaWindow area;
+    ScreenRecordingToolbarWindow toolbar;
+    area.setPhysicalRegion(
+        ScreenshotGeometryMapper::physicalRectForScreen(*QGuiApplication::primaryScreen())
+            .adjusted(20, 20, -20, -20));
+    auto& palette = *toolbar.palette();
+    ScreenRecordingShortcutController controller(area, toolbar);
+    int starts = 0, exports = 0, pauses = 0, resumes = 0, copies = 0, ends = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingStartRequested, &area,
+                     [&]() { ++starts; });
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingStopRequested, &area,
+                     [&]() { ++exports; });
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingPauseRequested, &area,
+                     [&]() { ++pauses; });
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingResumeRequested, &area,
+                     [&]() { ++resumes; });
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingCopyRequested, &area,
+                     [&]() { ++copies; });
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingCloseRequested, &area,
+                     [&]() { ++ends; });
+    const auto total = [&]() { return starts + exports + pauses + resumes + copies + ends; };
+    const auto pressAll = [&](QWidget& receiver, bool repeat = false) {
+        press(receiver, Qt::Key_E, Qt::ControlModifier, repeat);
+        press(receiver, Qt::Key_S, Qt::ControlModifier, repeat);
+        press(receiver, Qt::Key_C, Qt::ControlModifier, repeat);
+        press(receiver, Qt::Key_Escape, Qt::NoModifier, repeat);
+    };
+    area.show();
+    toolbar.show();
+    focus(toolbar);
+    pressAll(toolbar);
+    require(starts == 1 && ends == 1 && exports == 0 && copies == 0 && pauses == 0 && resumes == 0,
+            "idle shortcuts must only start or end the recording session");
+    palette.setRecordingState(ScreenshotToolPalette::RecordingState::Recording);
+    pressAll(area);
+    require(starts == 1 && exports == 1 && pauses == 1 && resumes == 0 && copies == 1 && ends == 2,
+            "recording shortcuts must export, pause, copy or end exactly once");
+    palette.setRecordingState(ScreenshotToolPalette::RecordingState::Paused);
+    pressAll(*area.canvas());
+    require(exports == 2 && pauses == 1 && resumes == 1 && copies == 2 && ends == 3,
+            "paused shortcuts must export, resume, copy or end exactly once");
+    const int before = total();
+    pressAll(toolbar, true);
+    palette.setRecordingBusy(true);
+    pressAll(toolbar);
+    palette.setRecordingBusy(false);
+    area.setDrawingBlocked(true);
+    pressAll(area);
+    area.setDrawingBlocked(false);
+    require(total() == before,
+            "busy operations and key repeat must not trigger recording commands");
+    QLineEdit editor(&toolbar);
+    editor.setText(QStringLiteral("recording shortcut text"));
+    editor.show();
+    focus(editor);
+    pressAll(editor);
+    editor.hide();
+    focus(toolbar);
+    require(total() == before, "editable controls must retain recording shortcut input");
+    require(area.canvas()->setCanvasTool(SnowCanvasTool::Text), "text tool should activate");
+    area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
+    const QPointF position(160, 100);
+    QMouseEvent down(QEvent::MouseButtonPress, position, position, position, Qt::LeftButton,
+                     Qt::LeftButton, Qt::NoModifier);
+    QMouseEvent up(QEvent::MouseButtonRelease, position, position, position, Qt::LeftButton,
+                   Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(area.canvas(), &down);
+    QCoreApplication::sendEvent(area.canvas(), &up);
+    require(area.canvas()->hasActiveTextEditing(), "canvas text editing should start");
+    pressAll(*area.canvas());
+    require(total() == before, "canvas text editing must not dispatch recording commands");
+    static_cast<void>(area.canvas()->cancelActiveTextEditing());
+    focus(toolbar);
+    QWidget unrelated;
+    unrelated.show();
+    pressAll(unrelated);
+    toolbar.hide();
+    pressAll(area);
+    toolbar.show();
+    area.hide();
+    pressAll(toolbar);
+    area.show();
+    focus(toolbar);
+    require(total() == before, "unrelated and hidden windows must not dispatch recording commands");
+    require(!palette.activateRecordingShortcut(QStringLiteral("unsupported")),
+            "unknown recording actions must not activate a button");
+    const auto findButton = [&](const QString& name) {
+        for (auto* button : palette.findChildren<adqt::widgets::AdButton*>()) {
+            if (button->accessibleName() == name) {
+                return button;
+            }
+        }
+        return static_cast<adqt::widgets::AdButton*>(nullptr);
+    };
+    auto* exportButton = findButton(QStringLiteral("Stop recording"));
+    require(exportButton != nullptr && exportButton->toolTip().contains(QStringLiteral("Ctrl+E")),
+            "export tooltip must show its configured shortcut");
+    require(settings.setShortcuts(QStringLiteral("export"),
+                                  {QStringLiteral("F12"), QStringLiteral("Ctrl+F12")}),
+            "recording actions must support two configurable keys");
+    press(toolbar, Qt::Key_E, Qt::ControlModifier);
+    require(total() == before, "reconfiguration must remove the old binding immediately");
+    press(toolbar, Qt::Key_F12);
+    QWidget popup(&toolbar, Qt::Tool);
+    emit palette.materializedScope(&popup);
+    popup.show();
+    press(popup, Qt::Key_F12, Qt::ControlModifier);
+    popup.hide();
+    require(exports == 4 && exportButton->toolTip().contains(QStringLiteral("F12")) &&
+                !exportButton->toolTip().contains(QStringLiteral("Ctrl+E")),
+            "both new keys and tooltip hints must update immediately, including popups");
+    require(settings.setShortcuts(QStringLiteral("export"), {}),
+            "recording shortcut may be cleared");
+    focus(toolbar);
+    press(toolbar, Qt::Key_F12);
+    require(exports == 4 && exportButton->toolTip() == QStringLiteral("Stop recording"),
+            "cleared shortcuts must remove bindings and hints");
+    require(settings.setShortcuts(QStringLiteral("export"), {QStringLiteral("F11")}) &&
+                snow_shot::storage::DrawingShortcutSettings().setArrow({QStringLiteral("F11")}),
+            "recording and drawing shortcuts can share keys across scopes");
+    int arrows = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::arrowRequested, &area, [&]() { ++arrows; });
+    press(toolbar, Qt::Key_F11);
+    require(exports == 5 && arrows == 0,
+            "recording buttons must take priority over drawing actions");
+    palette.setRecordingState(ScreenshotToolPalette::RecordingState::Idle);
+    press(toolbar, Qt::Key_F11);
+    require(exports == 5 && arrows == 1,
+            "unavailable recording buttons must allow drawing fallback");
+    require(settings.setAllShortcutsAtomic(defaults), "recording defaults must be restorable");
 }
 
 void recordingShortcutsFollowBothWindowsAndConfiguredKeys() {
@@ -294,6 +608,8 @@ int main(int argc, char* argv[]) {
     require(storage.initialize({executableDirectory, temporary.path(), 60000}).success,
             "isolated recording shortcut settings must initialize");
     recordingToolbarKeepsFocusAfterEditingAndSurfaceRestoration();
+    recordingSelectionEditsAnnotationsAndPreservesPassThrough();
+    recordingControlShortcutsFollowButtonsAndSettings();
     recordingShortcutsFollowBothWindowsAndConfiguredKeys();
     storage.shutdown();
     return 0;

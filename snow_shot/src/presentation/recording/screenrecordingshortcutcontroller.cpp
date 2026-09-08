@@ -50,13 +50,30 @@ ScreenRecordingShortcutController::ScreenRecordingShortcutController(
         };
         m_historyBindings.insert(action, m_shortcutManager.addBinding(this, std::move(binding)));
     }
+    const auto recordingShortcuts =
+        snow_shot::storage::ScreenRecordingShortcutSettings().allShortcuts();
+    for (auto action = recordingShortcuts.cbegin(); action != recordingShortcuts.cend(); ++action) {
+        ShortcutManager::Binding binding;
+        binding.id = QStringLiteral("recording.control.") + action.key();
+        binding.priority = ShortcutManager::StandardPriority::WindowCommand;
+        binding.canActivate = [this, actionId = action.key()](const auto& context) {
+            return canActivate(context) &&
+                   m_toolbar->palette()->canActivateRecordingShortcut(actionId);
+        };
+        binding.activate = [this, actionId = action.key()](const auto&) {
+            return m_toolbar->palette()->activateRecordingShortcut(actionId);
+        };
+        m_recordingBindings.insert(action.key(),
+                                   m_shortcutManager.addBinding(this, std::move(binding)));
+    }
     reloadConfiguredShortcuts();
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     connect(&storage.configuration(), &snow_shot::storage::ConfigurationStore::valueChanged, this,
             [this](const QString& key, const QJsonValue&) {
                 if (key.startsWith(QStringLiteral("drawing_shortcuts/")) ||
                     key == QStringLiteral("screenshot_shortcuts/undo") ||
-                    key == QStringLiteral("screenshot_shortcuts/redo")) {
+                    key == QStringLiteral("screenshot_shortcuts/redo") ||
+                    key.startsWith(QStringLiteral("screen_recording_shortcuts/"))) {
                     reloadConfiguredShortcuts();
                 }
             });
@@ -73,6 +90,13 @@ bool ScreenRecordingShortcutController::canActivate(
 }
 
 void ScreenRecordingShortcutController::reloadConfiguredShortcuts() {
+    const snow_shot::storage::ScreenRecordingShortcutSettings recording;
+    for (auto binding = m_recordingBindings.cbegin(); binding != m_recordingBindings.cend();
+         ++binding) {
+        static_cast<void>(m_shortcutManager.setKeyCombinations(
+            binding.value(),
+            ShortcutManager::keyCombinationsFromPortableText(recording.shortcuts(binding.key()))));
+    }
     const snow_shot::storage::DrawingShortcutSettings drawing;
     for (auto binding = m_drawingBindings.cbegin(); binding != m_drawingBindings.cend();
          ++binding) {

@@ -15,6 +15,7 @@ option(SNOW_DRAW_ENGINE_QT_STRICT_COMPILE "Treat Snow Draw Engine Qt warnings as
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake")
 include(RustStaticLibrary)
 include(ProjectWarnings)
+include(SnowQtOffscreenTest)
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/SnowCanvasQtSources.cmake")
 if(SNOW_DRAW_ENGINE_QT_STRICT_COMPILE)
     snow_enable_strict_warnings()
@@ -207,6 +208,17 @@ if(SNOW_DRAW_ENGINE_QT_BUILD_TESTS)
     add_test(
         NAME snow-canvas-custom-renderer-tests
         COMMAND snow-canvas-custom-renderer-tests
+    )
+    add_test(
+        NAME snow-canvas-document-reset-tests
+        COMMAND snow-canvas-custom-renderer-tests --document-reset-only
+    )
+    snow_shot_import_offscreen_platform(snow-canvas-custom-renderer-tests)
+    snow_shot_offscreen_qpa_environment(_snow_canvas_reset_qpa_environment)
+    set_tests_properties(snow-canvas-document-reset-tests PROPERTIES
+        ENVIRONMENT "${_snow_canvas_reset_qpa_environment}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
     if(WIN32)
         set_tests_properties(snow-canvas-custom-renderer-tests PROPERTIES

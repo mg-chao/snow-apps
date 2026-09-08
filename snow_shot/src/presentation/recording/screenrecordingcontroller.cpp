@@ -11,6 +11,7 @@
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenrecordingshortcutcontroller.h"
 #include "screenrecordinggeometry.h"
+#include "screenrecordingselection.h"
 #include "../capture/windowcaptureexclusion.h"
 #include "snow_shot/storage/settingsadapters.h"
 
@@ -302,12 +303,6 @@ struct ScreenRecordingController::Impl {
                              updateCaptureRegion();
                              toolbarWindow->placeForPhysicalRegion(region);
                          });
-        QObject::connect(palette, &ScreenshotToolPalette::recordingExportSettingsVisibleChanged,
-                         &owner, [this](bool visible) {
-                             areaWindow->setInputMode(
-                                 visible ? ScreenRecordingAreaWindow::InputMode::RegionEditing
-                                         : ScreenRecordingAreaWindow::InputMode::PassThrough);
-                         });
         if (palette->recordingExportSettingsVisible()) {
             areaWindow->setInputMode(ScreenRecordingAreaWindow::InputMode::RegionEditing);
         }
@@ -366,11 +361,8 @@ struct ScreenRecordingController::Impl {
             canvas->setCanvasTool(tool);
             areaWindow->setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
         };
-        QObject::connect(
-            &palette, &ScreenshotToolPalette::selectRequested, &owner, [this, &palette]() {
-                palette.clearActiveTool();
-                areaWindow->setInputMode(ScreenRecordingAreaWindow::InputMode::PassThrough);
-            });
+        snow_shot::presentation::recording::connectScreenRecordingSelection(palette, *areaWindow,
+                                                                            owner);
         QObject::connect(&palette, &ScreenshotToolPalette::shapeRequested, &owner,
                          [activate]() { activate(SnowCanvasTool::Shape); });
         QObject::connect(&palette, &ScreenshotToolPalette::arrowRequested, &owner,
@@ -393,13 +385,6 @@ struct ScreenRecordingController::Impl {
                          [canvas]() { static_cast<void>(canvas->undo()); });
         QObject::connect(&palette, &ScreenshotToolPalette::redoRequested, &owner,
                          [canvas]() { static_cast<void>(canvas->redo()); });
-        QObject::connect(
-            canvas, &SnowCanvasWidget::historyStateChanged, &owner,
-            [&palette, canvas]() { palette.setHistoryState(canvas->canvasHistoryState()); });
-        QObject::connect(canvas, &SnowCanvasWidget::styleToolbarStateChanged, &owner,
-                         [&palette, canvas]() {
-                             palette.setStyleToolbarState(canvas->canvasStyleToolbarState());
-                         });
         QObject::connect(&palette, &ScreenshotToolPalette::shapeStyleChanged, &owner,
                          [canvas, &palette](const SnowCanvasShapeStyle& style, quint32 properties,
                                             SnowCanvasShapeKind kind) {
