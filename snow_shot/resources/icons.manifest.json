@@ -272,6 +272,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "Html",
+      "name": "html",
+      "source": "../src/presentation/components/icons/resources/html.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "Keyboard",
       "name": "keyboard",
       "source": "../src/presentation/components/icons/resources/keyboard.svg",
@@ -283,6 +291,14 @@
       "symbol": "LaserPointer",
       "name": "laser-pointer",
       "source": "../src/presentation/components/icons/resources/laser-pointer.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "Markdown",
+      "name": "markdown",
+      "source": "../src/presentation/components/icons/resources/markdown.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },

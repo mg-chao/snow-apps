@@ -4,6 +4,7 @@
 #include "snow_shot/network/snowshotapiclient.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
+#include "snow_shot/presentation/screenshotimageconversion.h"
 
 #include <QString>
 
@@ -16,9 +17,11 @@ struct ScreenshotRecognitionResults {
     std::optional<SnowShotTableResult> table;
     std::optional<ScreenshotQrRecognitionResult> qr;
     std::shared_ptr<ScreenshotOcrPresentation> translatedText;
+    QVector<ScreenshotImageConversionEntry> conversions;
+    std::optional<SnowShotImageConversionFormat> visibleConversion;
 
     [[nodiscard]] bool isEmpty() const {
-        return !text.has_value() && !table.has_value() && !qr.has_value();
+        return !text.has_value() && !table.has_value() && !qr.has_value() && conversions.isEmpty();
     }
 
     [[nodiscard]] bool isValidFor(const QString& targetKey) const {

@@ -1126,6 +1126,14 @@ ScreenshotToolbarLayout ScreenshotToolbarSettings::layout(ScreenshotToolbarLayou
             stringList(object.value(QStringLiteral("hidden")))};
 }
 
+QString ScreenshotImageConversionSettings::visionModel() const {
+    return cache().value(QStringLiteral("screenshot_conversion/vision_model")).toString();
+}
+
+bool ScreenshotImageConversionSettings::setVisionModel(const QString& model) const {
+    return cache().setValue(QStringLiteral("screenshot_conversion/vision_model"), model.trimmed());
+}
+
 bool ScreenshotTranslationSettings::originalImageTranslationEnabled() const {
     return cache()
         .value(QStringLiteral("screenshot_translation/original_image_translation"))

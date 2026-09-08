@@ -911,6 +911,71 @@ void pinnedSnapshotRetainsRecognitionBeforeDeferredSetup() {
             "invalidating initialized recognition must not revive the original cached result");
 }
 
+void pinnedImageConversionsSurviveRestartWithoutProvider() {
+    using Format = SnowShotImageConversionFormat;
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    snow_shot::storage::ScreenshotImageConversionSettings().setVisionModel(
+        QStringLiteral("vision-saved"));
+    for (const Format format : {Format::Markdown, Format::Html}) {
+        IdleOcrRecognition recognition;
+        auto config = cachedOcrPinConfig(&recognition);
+        config.automaticTextRecognition = true;
+        if (format == Format::Markdown) {
+            config.recognitionResults.text.reset();
+        }
+        const QString source = format == Format::Markdown
+                                   ? QStringLiteral("# Saved\n\n**Document**")
+                                   : QStringLiteral("<h1>Saved</h1><p>Document</p>");
+        config.recognitionResults.conversions = {
+            {format, QStringLiteral("vision-saved"), source, 1,
+             imageConversionFingerprint(config.imageSource.materializedImage)}};
+        config.recognitionResults.visibleConversion = format;
+        QByteArray payload;
+        for (const bool restore : {false, true}) {
+            config.restorePersistentState = restore;
+            if (restore) {
+                config.persistedRecognitionResults = payload;
+                config.recognitionResults = {};
+            }
+            QPointer<ScreenshotPinnedWindow> window(new ScreenshotPinnedWindow);
+            const auto cleanup = qScopeGuard([&]() {
+                if (window) {
+                    window->close();
+                    static_cast<void>(processUntilDeleted(window, 2000));
+                }
+            });
+            require(window->present(config), "conversion pin should present");
+            auto* session = window->findChild<ScreenshotRecognitionSessionController*>();
+            waitForUi(100);
+            require(session && session->conversionModeActive() &&
+                        session->mode() ==
+                            (format == Format::Markdown ? Mode::Markdown : Mode::Html) &&
+                        !session->busy(session->mode()),
+                    "the last completed conversion is restored without a model provider");
+            const auto mime = session->recognitionClipboardMimeData();
+            require(mime && mime->text() == source,
+                    "restored toolbar Copy preserves exact format source");
+            const auto results = session->recognitionResultsSnapshot();
+            require(results.text.has_value() == (format == Format::Html) &&
+                        results.conversions.size() == 1 && results.visibleConversion == format,
+                    "conversion persistence retains the existing OCR payload and visible format");
+            require(recognition.requests == 0, "restoring a conversion never requires an OCR pass");
+            const auto record = window->persistenceSnapshot();
+            require(!record.recognitionResults.isEmpty(),
+                    "conversion is included in the actual pin record");
+            if (restore) {
+                require(record.recognitionResults == payload,
+                        "pin recognition payload round-trips exactly");
+                session->deactivate();
+                require(!session->recognitionResultsSnapshot().visibleConversion.has_value() &&
+                            session->cachedRecognitionResults().conversions.size() == 1,
+                        "hiding the preview retains the completed cache but not its visible state");
+            }
+            payload = record.recognitionResults;
+        }
+    }
+}
+
 void restoredInvalidOcrDoesNotSuppressRecognition() {
     for (const bool trailingBytes : {false, true}) {
         IdleOcrRecognition recognition;
@@ -4953,6 +5018,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--translation-only"))) {
             runPinnedOriginalImageTranslationTests();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--image-conversion-only"))) {
+            pinnedImageConversionsSurviveRestartWithoutProvider();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--save-dialog-only"))) {

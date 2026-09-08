@@ -41,16 +41,25 @@ class ScreenshotToolbarCommandSink {
     virtual void setTextTool() = 0;
     virtual void setSerialNumberTool() = 0;
     virtual void setOcrTool() = 0;
-    virtual void setTextTranslationTool() { setOcrTool(); }
+    virtual void setTextTranslationTool() {
+        setOcrTool();
+    }
     virtual void setTableTool() {}
     virtual void setQrTool() {}
+    virtual void setMarkdownTool() {}
+    virtual void setHtmlTool() {}
+    virtual void openImageConversionSettings() {}
     virtual void mergeTableSelection() {}
     virtual void splitTableSelection() {}
     virtual void resetTable() {}
     virtual void beginTextEditing() {}
-    virtual void toggleTextEditing() { beginTextEditing(); }
+    virtual void toggleTextEditing() {
+        beginTextEditing();
+    }
     virtual void beginTextTranslation() {}
-    virtual void toggleTextTranslation() { beginTextTranslation(); }
+    virtual void toggleTextTranslation() {
+        beginTextTranslation();
+    }
     virtual void resetTextEditing() {}
     virtual void openTextTranslationSettings() {}
     virtual void applyTextFormatting(const QString&) {}

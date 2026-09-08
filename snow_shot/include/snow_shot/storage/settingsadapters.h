@@ -206,6 +206,12 @@ struct ScreenshotTranslationConfiguration {
                            const ScreenshotTranslationConfiguration& second) = default;
 };
 
+class ScreenshotImageConversionSettings final {
+  public:
+    [[nodiscard]] QString visionModel() const;
+    bool setVisionModel(const QString& model) const;
+};
+
 class ScreenshotTranslationSettings final {
   public:
     [[nodiscard]] bool originalImageTranslationEnabled() const;

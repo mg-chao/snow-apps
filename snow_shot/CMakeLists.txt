@@ -3770,6 +3770,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     add_executable(snow-shot-recognition-session-controller-tests
         tests/screenshot_recognition_session_controller_tests.cpp
         tests/original_image_translation_tests.cpp
+        tests/image_conversion_tests.cpp
         include/snow_shot/network/snowshotapiclient.h
         include/snow_shot/presentation/languagemanager.h
         include/snow_shot/presentation/screenshotocrpresentation.h
@@ -3840,6 +3841,24 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+    add_test(NAME snow-shot-image-conversion-tests
+        COMMAND snow-shot-recognition-session-controller-tests --image-conversion-only -platform offscreen)
+    set_tests_properties(snow-shot-image-conversion-tests PROPERTIES TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-image-conversion-storage-tests
+        COMMAND snow-shot-application-storage-tests --image-conversion-only)
+    set_tests_properties(snow-shot-image-conversion-storage-tests PROPERTIES TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-image-conversion-toolbar-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --image-conversion-only -platform offscreen)
+    set_tests_properties(snow-shot-image-conversion-toolbar-tests PROPERTIES TIMEOUT 60
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-image-conversion-pinned-tests
+        COMMAND snow-shot-pinned-window-tests --image-conversion-only)
+    set_tests_properties(snow-shot-image-conversion-pinned-tests PROPERTIES TIMEOUT 60
+        ENVIRONMENT "QT_QPA_PLATFORM=windows"
+        LABELS "unit;windows"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     snow_shot_import_offscreen_platform(snow-shot-recognition-session-controller-tests)
 
     add_executable(snow-shot-qr-recognition-service-tests
@@ -4855,5 +4874,23 @@ install(DIRECTORY
     DESTINATION "${CMAKE_INSTALL_DATADIR}/snow-shot/licenses/third-party"
     OPTIONAL
 )
+
+foreach(_conversion_view_target IN ITEMS snow_shot snow-shot-recognition-window-tests
+        snow-shot-recognition-session-controller-tests snow-shot-pinned-window-tests)
+    if(TARGET ${_conversion_view_target})
+        target_sources(${_conversion_view_target} PRIVATE
+            include/snow_shot/presentation/screenshotimageconversion.h
+            include/snow_shot/presentation/screenshotimageconversionview.h
+            src/presentation/ocr/screenshotimageconversionview.cpp)
+    endif()
+endforeach()
+foreach(_conversion_controller_target IN ITEMS snow_shot
+        snow-shot-recognition-session-controller-tests snow-shot-pinned-window-tests)
+    if(TARGET ${_conversion_controller_target})
+        target_sources(${_conversion_controller_target} PRIVATE
+            include/snow_shot/presentation/screenshotimageconversioncontroller.h
+            src/presentation/ocr/screenshotimageconversioncontroller.cpp)
+    endif()
+endforeach()
 
 qt_finalize_executable(snow_shot)

@@ -7,6 +7,7 @@
 #include "snow_shot/presentation/screenshotocrtexttransform.h"
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
+#include "snow_shot/presentation/screenshotimageconversioncontroller.h"
 #include "snow_shot/presentation/screenshottabledocument.h"
 #include "snow_shot/presentation/screenshottableeditor.h"
 #include "snow_shot/storage/applicationstorage.h"
@@ -149,6 +150,13 @@ ScreenshotRecognitionSessionController::ScreenshotRecognitionSessionController(
     SnowShotApiClient* tableRecognition, ScreenshotRecognitionSessionActions actions,
     QObject* parent)
     : QObject(parent), m_actions(std::move(actions)) {
+    m_conversion = new ScreenshotImageConversionController(this);
+    connect(m_conversion, &ScreenshotImageConversionController::changed, this, [this]() {
+        updateConversionState();
+        updateConversionMessage();
+    });
+    connect(m_conversion, &ScreenshotImageConversionController::resultsChanged, this,
+            &ScreenshotRecognitionSessionController::recognitionResultsChanged);
     setProviders(recognition, qrRecognition, tableRecognition);
     connect(&snow_shot::storage::ApplicationStorage::instance().configuration(),
             &snow_shot::storage::ConfigurationStore::valueChanged, this,
@@ -197,6 +205,7 @@ void ScreenshotRecognitionSessionController::setProviders(
     }
     if (m_tableRecognition == nullptr && tableRecognition != nullptr) {
         m_tableRecognition = tableRecognition;
+        m_conversion->setProvider(tableRecognition);
         connect(tableRecognition, &QObject::destroyed, this,
                 [this]() { handleRecognitionProviderDestroyed(Mode::Table); });
     }
@@ -230,6 +239,7 @@ void ScreenshotRecognitionSessionController::seedRecognitionResults(
         return;
     }
 
+    m_conversion->seed(m_target.key, results.conversions);
     bool textInserted = false;
     if (!m_target.hasFormattedText() && results.text.has_value() && results.text->error.isEmpty() &&
         results.text->presentation != nullptr && !m_textCache.contains(m_target.key)) {
@@ -305,6 +315,7 @@ ScreenshotRecognitionSessionController::cachedRecognitionResults() const {
         return results;
     }
     results.key = m_target.key;
+    results.conversions = m_conversion->entries(m_target.key);
     if (const auto text = m_textCache.constFind(m_target.key);
         text != m_textCache.cend() && text->recognitionResult.error.isEmpty() &&
         text->recognitionResult.presentation != nullptr) {
@@ -328,6 +339,10 @@ ScreenshotRecognitionSessionController::cachedRecognitionResults() const {
 ScreenshotRecognitionResults
 ScreenshotRecognitionSessionController::recognitionResultsSnapshot() const {
     ScreenshotRecognitionResults results = cachedRecognitionResults();
+    if (conversionModeActive() &&
+        m_conversion->state() == ScreenshotImageConversionController::State::Completed) {
+        results.visibleConversion = m_conversion->format();
+    }
     if (results.text.has_value()) {
         results.text->presentation = copyTextPresentation(results.text->presentation);
     }
@@ -354,6 +369,7 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
         showStatus(tr("Unable to read the selected screenshot"), true);
         return;
     }
+    m_conversion->deactivate();
     clearTextEditingState();
     if (mode != Mode::Text && m_textRenderRequestToken != 0) {
         if (m_recognition != nullptr) {
@@ -437,7 +453,7 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
         } else {
             startTableRecognition();
         }
-    } else {
+    } else if (mode == Mode::Qr) {
         setPendingTextRecognitionRendering(false);
         const auto cached = m_qrCache.constFind(m_target.key);
         if (cached != m_qrCache.cend()) {
@@ -446,6 +462,11 @@ void ScreenshotRecognitionSessionController::activate(Mode mode) {
         } else {
             startQrRecognition();
         }
+    } else {
+        setPendingTextRecognitionRendering(false);
+        m_conversion->activate(m_target.key, m_target.image,
+                               mode == Mode::Markdown ? SnowShotImageConversionFormat::Markdown
+                                                      : SnowShotImageConversionFormat::Html);
     }
     updateBusyState();
     updateTextState();
@@ -457,6 +478,7 @@ void ScreenshotRecognitionSessionController::deactivate() {
     }
     clearTextEditingState();
     m_active = false;
+    m_conversion->deactivate();
     hideModelDownloadMessage();
     if (m_recognition != nullptr && m_textRenderRequestToken != 0) {
         m_recognition->cancel(m_textRenderRequestToken);
@@ -493,6 +515,7 @@ void ScreenshotRecognitionSessionController::deactivate() {
 
 void ScreenshotRecognitionSessionController::invalidate() {
     resetTargetState();
+    m_conversion->invalidate();
     m_textCache.clear();
     m_tableCache.clear();
     m_qrCache.clear();
@@ -548,7 +571,7 @@ bool ScreenshotRecognitionSessionController::active() const {
 }
 
 bool ScreenshotRecognitionSessionController::busy() const {
-    return busy(Mode::Text) || busy(Mode::Table) || busy(Mode::Qr);
+    return busy(Mode::Text) || busy(Mode::Table) || busy(Mode::Qr) || m_conversion->busy();
 }
 
 bool ScreenshotRecognitionSessionController::busy(Mode mode) const {
@@ -559,6 +582,9 @@ bool ScreenshotRecognitionSessionController::busy(Mode mode) const {
         return m_tableRequestToken != 0;
     case Mode::Qr:
         return m_qrRequestToken != 0;
+    case Mode::Markdown:
+    case Mode::Html:
+        return m_mode == mode && m_conversion->busy();
     }
     return false;
 }
@@ -573,6 +599,42 @@ bool ScreenshotRecognitionSessionController::tableModeActive() const {
 
 bool ScreenshotRecognitionSessionController::qrModeActive() const {
     return m_active && m_mode == Mode::Qr;
+}
+
+bool ScreenshotRecognitionSessionController::conversionModeActive() const {
+    return m_active && (m_mode == Mode::Markdown || m_mode == Mode::Html);
+}
+
+void ScreenshotRecognitionSessionController::openImageConversionSettings() {
+    QWidget* owner =
+        m_actions.translationSettingsOwner ? m_actions.translationSettingsOwner() : content();
+    m_conversion->openSettings(owner);
+}
+
+void ScreenshotRecognitionSessionController::updateConversionState() const {
+    if (conversionModeActive() && m_conversion->active() && content() != nullptr) {
+        content()->showImageConversion(m_conversion->format(), m_conversion->source(),
+                                       m_conversion->busy(), m_conversion->error());
+    }
+    if (m_actions.setConversionState) {
+        m_actions.setConversionState(conversionModeActive(), m_conversion->busy(),
+                                     m_conversion->format());
+    }
+}
+
+void ScreenshotRecognitionSessionController::updateConversionMessage() {
+    const bool loading = conversionModeActive() && m_conversion->busy();
+    if (loading == m_conversionMessageShown) {
+        return;
+    }
+    // Streaming updates must not restart the shared message's entrance animation.
+    m_conversionMessageShown = loading;
+    if (loading) {
+        showRecognitionMessage();
+    } else if (m_actions.hideLoading) {
+        // Background OCR may still be busy; it must not keep this conversion prompt alive.
+        m_actions.hideLoading();
+    }
 }
 
 void ScreenshotRecognitionSessionController::mergeTableSelection() {
@@ -750,6 +812,7 @@ void ScreenshotRecognitionSessionController::synchronizeUiState() const {
         m_actions.setActiveMode(static_cast<int>(m_mode));
     }
     updateTextState();
+    updateConversionState();
     if (m_active && m_mode == Mode::Table && content() != nullptr) {
         updateTableState(content()->tableCommandState());
     }
@@ -1523,6 +1586,13 @@ QString ScreenshotRecognitionSessionController::originalText() const {
 std::unique_ptr<QMimeData> ScreenshotRecognitionSessionController::recognitionClipboardMimeData(
     const ScreenshotOcrPresentation* displayedPresentation) const {
     auto mimeData = std::make_unique<QMimeData>();
+    if (conversionModeActive()) {
+        if (m_conversion->source().isEmpty()) {
+            return {};
+        }
+        mimeData->setText(m_conversion->source());
+        return mimeData;
+    }
     if (m_mode == Mode::Qr) {
         if (m_qrCacheKey.isEmpty() || !m_qrCache.contains(m_qrCacheKey)) {
             return {};
@@ -1887,6 +1957,10 @@ void ScreenshotRecognitionSessionController::handleQrOutput(quint64 generation, 
 void ScreenshotRecognitionSessionController::ensureContent() {
     if (m_content == nullptr && m_actions.ensureContent) {
         m_content = m_actions.ensureContent();
+        if (m_content != nullptr) {
+            connect(m_content, &ScreenshotRecognitionWindow::imageConversionRetryRequested,
+                    m_conversion, &ScreenshotImageConversionController::retry);
+        }
     }
 }
 
@@ -1896,6 +1970,7 @@ void ScreenshotRecognitionSessionController::clearContent() {
         m_content->clearFormattedText();
         m_content->clearTableSession();
         m_content->clearQrContents();
+        m_content->clearImageConversion();
     }
 }
 
@@ -2131,9 +2206,11 @@ void ScreenshotRecognitionSessionController::hideModelDownloadMessage() {
 }
 
 void ScreenshotRecognitionSessionController::showRecognitionMessage() const {
-    const QString message = m_mode == Mode::Table ? tr("Recognizing table")
-                            : m_mode == Mode::Qr  ? tr("Recognizing barcode")
-                                                  : tr("Recognizing text");
+    const QString message = m_mode == Mode::Table      ? tr("Recognizing table")
+                            : m_mode == Mode::Qr       ? tr("Recognizing barcode")
+                            : m_mode == Mode::Markdown ? tr("Converting to Markdown")
+                            : m_mode == Mode::Html     ? tr("Converting to HTML")
+                                                       : tr("Recognizing text");
     if (m_actions.showRecognition) {
         m_actions.showRecognition(message);
     } else if (m_actions.showStatus) {

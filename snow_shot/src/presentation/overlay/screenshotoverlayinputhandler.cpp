@@ -35,13 +35,11 @@ bool wheelAdjustsStrokeWidth(ScreenshotActiveTool tool) {
 }
 
 bool recognitionTool(ScreenshotActiveTool tool) {
-    return tool == ScreenshotActiveTool::Ocr || tool == ScreenshotActiveTool::Table ||
-           tool == ScreenshotActiveTool::Qr;
+    return isScreenshotRecognitionTool(tool);
 }
 
 bool screenshotCompletionGestureTool(ScreenshotActiveTool tool) {
-    return tool != ScreenshotActiveTool::Select && tool != ScreenshotActiveTool::Ocr &&
-           tool != ScreenshotActiveTool::Table && tool != ScreenshotActiveTool::Qr;
+    return tool != ScreenshotActiveTool::Select && !isScreenshotRecognitionTool(tool);
 }
 
 } // namespace

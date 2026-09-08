@@ -61,6 +61,16 @@ struct SnowShotTranslationResult {
     }
 };
 
+enum class SnowShotImageConversionFormat { Markdown, Html };
+
+struct SnowShotImageConversionRequest {
+    QString model;
+    QImage image;
+    SnowShotImageConversionFormat format = SnowShotImageConversionFormat::Markdown;
+};
+
+using SnowShotImageConversionResult = SnowShotTranslationResult;
+
 class SnowShotApiClient final : public QObject {
     Q_OBJECT
 
@@ -77,13 +87,20 @@ class SnowShotApiClient final : public QObject {
     [[nodiscard]] bool usesSystemProxy() const;
     void setUseSystemProxy(bool enabled);
     [[nodiscard]] const QVector<SnowShotChatModel>& cachedChatModels() const;
+    [[nodiscard]] QString cachedChatModelsLocale() const {
+        return m_cachedChatModelsLocale;
+    }
     [[nodiscard]] RequestToken extractTable(const QImage& image, QObject* receiver,
-                                             Completion completion);
+                                            Completion completion);
     [[nodiscard]] RequestToken fetchChatModels(const QString& locale, QObject* receiver,
                                                ChatModelsCompletion completion);
     [[nodiscard]] RequestToken streamTranslation(const SnowShotTranslationRequest& request,
                                                  QObject* receiver, TranslationDelta delta,
                                                  TranslationCompletion completion);
+    [[nodiscard]] RequestToken
+    streamImageConversion(const SnowShotImageConversionRequest& request, QObject* receiver,
+                          TranslationDelta delta,
+                          std::function<void(SnowShotImageConversionResult)> completion);
     void cancel(RequestToken token);
 
     [[nodiscard]] static QImage prepareImage(const QImage& image);
@@ -97,12 +114,14 @@ class SnowShotApiClient final : public QObject {
     void finish(RequestToken token, SnowShotTableResult result);
     void finishChatModels(RequestToken token, SnowShotChatModelsResult result);
     void finishTranslation(RequestToken token, SnowShotTranslationResult result);
+    void startChatStream(RequestToken token, const QByteArray& body);
 
     QString m_baseUrl;
     bool m_useSystemProxy = false;
     RequestToken m_nextToken = 0;
     QHash<RequestToken, Request*> m_requests;
     QVector<SnowShotChatModel> m_cachedChatModels;
+    QString m_cachedChatModelsLocale;
 };
 
 #endif // SNOW_SHOT_NETWORK_SNOWSHOTAPICLIENT_H

@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/styles/themecolorscheme.h"
+#include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "../src/presentation/tools/screenshottoolpalettebuttons.h"
@@ -13,6 +14,7 @@
 
 #include "antd_icons.h"
 #include "widgets/select.h"
+#include "theme/theme_manager.h"
 
 #include <QApplication>
 #include <QAbstractButton>
@@ -3029,6 +3031,165 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
                 verticalButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
                 horizontalButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text,
             "each new scrolling screenshot session should reset to vertical recognition");
+}
+
+void imageConversionToolsExposeOnlySettings() {
+    require(snow_shot::storage::ScreenshotToolbarSettings().setTableQrTool(QStringLiteral("qr")),
+            "recognition group fixture starts with the remembered barcode entry");
+    ScreenshotToolPalette::Options options;
+    options.showSelectTool = true;
+    options.showQrTool = true;
+    options.showTableTool = true;
+    options.showImageConversionTools = true;
+    ScreenshotToolPalette palette(options);
+    palette.show();
+    auto* markdownSource = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotConvertToMarkdownButton"));
+    auto* htmlSource = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotConvertToHtmlButton"));
+    auto* qr =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotTableQrButton"));
+    auto* group = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotActionToolGroupButton0"));
+    require(markdownSource && htmlSource && qr && group && markdownSource->isHidden() &&
+                htmlSource->isHidden() && qr->isHidden() && !group->isHidden() &&
+                group->property("screenshotToolbarPositionItems").toStringList() ==
+                    QStringList{
+                        QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
+                        QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")} &&
+                group->accessibleName() == QStringLiteral("Barcode recognition"),
+            "one recognition group replaces standalone conversions and preserves the remembered QR "
+            "entry");
+    static_cast<void>(palette.sizeHint());
+    QCoreApplication::processEvents();
+    materializeLazyPopover(group);
+    auto* popover = popoverForTrigger(group);
+    auto* markdown = popoverButtonWithTooltip(popover, "Convert to Markdown");
+    auto* html = popoverButtonWithTooltip(popover, "Convert to HTML");
+    require(markdown && html && popoverButtonWithTooltip(popover, "Table recognition") &&
+                popoverButtonWithTooltip(popover, "Barcode recognition"),
+            "the recognition popover exposes all four tools");
+    for (auto* button : {markdownSource, markdown, htmlSource, html}) {
+        const auto key = adqt::icons::describeIcon(button->iconRef()).key;
+        require(key.pack == QStringLiteral("snow-shot") &&
+                    key.name == ((button == markdownSource || button == markdown)
+                                     ? QStringLiteral("markdown")
+                                     : QStringLiteral("html")),
+                "source and popover buttons use the supplied Markdown and HTML artwork");
+    }
+    int markdownRequests = 0;
+    int htmlRequests = 0;
+    int settingsRequests = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::markdownRequested, &palette,
+                     [&]() { ++markdownRequests; });
+    QObject::connect(&palette, &ScreenshotToolPalette::htmlRequested, &palette,
+                     [&]() { ++htmlRequests; });
+    QObject::connect(&palette, &ScreenshotToolPalette::imageConversionSettingsRequested, &palette,
+                     [&]() { ++settingsRequests; });
+    palette.setQrEnabled(false);
+    palette.setTableEnabled(false);
+    require(group->isEnabled() && markdown->isEnabled() && html->isEnabled() &&
+                !popoverButtonWithTooltip(popover, "Barcode recognition")->isEnabled() &&
+                !popoverButtonWithTooltip(popover, "Table recognition")->isEnabled(),
+            "conversion options remain reachable when the selected barcode and table tools are "
+            "unavailable");
+    palette.setImageConversionEnabled(false);
+    require(!group->isEnabled(),
+            "the recognition group disables only when all options are unavailable");
+    palette.setImageConversionEnabled(true);
+    markdown->click();
+    require(markdownRequests == 1 &&
+                palette.activeTool() == ScreenshotToolPalette::Tool::Markdown &&
+                group->accessibleName() == QStringLiteral("Convert to Markdown") &&
+                adqt::icons::describeIcon(group->iconRef()).key.name == QStringLiteral("markdown"),
+            "Markdown activates its own recognition tool");
+    palette.setQrEnabled(true);
+    palette.setTableEnabled(true);
+    auto* settings = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotImageConversionSettingsButton"));
+    require(settings && !settings->isHidden(), "conversion activation exposes Settings");
+    for (auto* button : palette.actionPanel()->findChildren<adqt::widgets::AdButton*>()) {
+        require(button == settings || button->isHidden(),
+                "conversion sub-toolbar contains only Settings");
+    }
+    settings->click();
+    require(settingsRequests == 1, "Settings routes to conversion settings");
+    palette.setImageConversionBusy(true, false);
+    require(
+        markdown->busy() && group->busy() && !html->busy() && settings->isEnabled(),
+        "the group and active option show busy while Settings and other formats remain available");
+    html->click();
+    require(htmlRequests == 1 && palette.activeTool() == ScreenshotToolPalette::Tool::Html &&
+                !settings->isHidden() && !group->busy() &&
+                group->accessibleName() == QStringLiteral("Convert to HTML") &&
+                adqt::icons::describeIcon(group->iconRef()).key.name == QStringLiteral("html"),
+            "HTML switches format and retains the Settings-only sub-toolbar");
+    const QString snapshots = qEnvironmentVariable("SNOW_SHOT_CONVERSION_SNAPSHOTS");
+    if (!snapshots.isEmpty()) {
+        require(QDir().mkpath(snapshots), "create conversion toolbar snapshot directory");
+        const auto previousTheme = adqt::theme::ThemeManager::instance().config();
+        auto& appTheme = snow_shot::presentation::styles::ThemeManager::instance();
+        const auto previousMode = appTheme.themeMode();
+        for (const bool dark : {false, true}) {
+            appTheme.setThemeMode(dark ? snow_shot::presentation::styles::ThemeMode::Dark
+                                       : snow_shot::presentation::styles::ThemeMode::Light);
+            adqt::theme::ThemeManager::instance().applyTo(*qApp);
+            palette.setImageConversionBusy(false, false);
+            static_cast<void>(showPopoverForTrigger(group));
+            const QString suffix = dark ? QStringLiteral("dark") : QStringLiteral("light");
+            require(palette.grab().save(QDir(snapshots).filePath(
+                        QStringLiteral("conversion-toolbar-%1.png").arg(suffix))) &&
+                        popover->contentWidget()->grab().save(QDir(snapshots).filePath(
+                            QStringLiteral("recognition-group-%1.png").arg(suffix))),
+                    "save conversion toolbar and recognition group snapshots");
+            popover->hide();
+        }
+        appTheme.setThemeMode(previousMode);
+        adqt::theme::ThemeManager::instance().setConfig(previousTheme);
+        adqt::theme::ThemeManager::instance().applyTo(*qApp);
+    }
+    auto& language = snow_shot::presentation::LanguageManager::instance();
+    require(language.setLanguage(QStringLiteral("zh_CN")),
+            "load Simplified Chinese toolbar labels");
+    QCoreApplication::processEvents();
+    require(markdown->accessibleName() == QStringLiteral("转换为 Markdown") &&
+                html->accessibleName() == QStringLiteral("转换为 HTML") &&
+                group->accessibleName() == QStringLiteral("转换为 HTML") &&
+                settings->toolTip() == QStringLiteral("设置"),
+            "conversion buttons retranslate to Simplified Chinese");
+    require(language.setLanguage(QStringLiteral("zh_TW")),
+            "load Traditional Chinese toolbar labels");
+    QCoreApplication::processEvents();
+    require(markdown->accessibleName() == QStringLiteral("轉換為 Markdown") &&
+                html->accessibleName() == QStringLiteral("轉換為 HTML") &&
+                group->accessibleName() == QStringLiteral("轉換為 HTML") &&
+                settings->toolTip() == QStringLiteral("設定"),
+            "conversion buttons retranslate to Traditional Chinese");
+    require(language.setLanguage(QStringLiteral("en_US")), "restore English toolbar labels");
+    QCoreApplication::processEvents();
+    palette.setImageConversionBusy(false, false);
+    group->click();
+    require(!palette.activeTool().has_value() ||
+                palette.activeTool() == ScreenshotToolPalette::Tool::Select,
+            "clicking the selected conversion group trigger toggles recognition off");
+    group->click();
+    require(htmlRequests == 2 && palette.activeTool() == ScreenshotToolPalette::Tool::Html,
+            "the group trigger remembers and reactivates the selected conversion format");
+    settings = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotImageConversionSettingsButton"));
+    const QPointer<adqt::widgets::AdButton> settingsGuard(settings);
+    palette.setImageConversionEnabled(false);
+    require(group->isEnabled() && !markdown->isEnabled() && !html->isEnabled(),
+            "barcode and table remain reachable when the selected conversion is unavailable");
+    group->click();
+    require(htmlRequests == 2,
+            "the enabled group trigger cannot dispatch its disabled conversion entry");
+    popoverButtonWithTooltip(popover, "Barcode recognition")->click();
+    require(
+        palette.activeTool() == ScreenshotToolPalette::Tool::Qr,
+        "the recognition group can switch back to barcode after conversion becomes unavailable");
+    require(settingsGuard == nullptr || settingsGuard->isHidden(),
+            "leaving conversion removes its Settings control");
 }
 
 void ocrToolReplacesSelectionActionToolbarContents() {
@@ -8104,6 +8265,11 @@ int main(int argc, char** argv) {
     }
     if (application.arguments().contains(QStringLiteral("--ocr-translation-only"))) {
         ocrToolReplacesSelectionActionToolbarContents();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--image-conversion-only"))) {
+        imageConversionToolsExposeOnlySettings();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--screenshot-actions-tooltips-only"))) {
