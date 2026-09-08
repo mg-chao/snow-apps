@@ -58,6 +58,7 @@ namespace outlined {
 [[nodiscard]] adqt::icons::IconRef RecordingClick(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef RecordingCursor(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef RecordingFolder(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef RecordingKeyboard(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef RecordingMicrophone(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef RecordingRender(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef RecordingResume(const adqt::icons::IconColors& colors = {});

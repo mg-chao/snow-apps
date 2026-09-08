@@ -14,7 +14,7 @@ pub use snow_recording_model::{
 };
 pub use snow_recording_runtime::{
     AudioChannels, CaptureBackendKind, DirectRecordingConfig, DirectRecordingReport,
-    DirectRecordingSession, MonitorSelector, RecordingAudioConfig, RecordingAudioTrackConfig,
-    RecordingAudioTrackSource, RecordingConfig, RecordingRegion, RecordingSession, RecordingState,
-    RecordingTarget, ScreenRecorderError, WindowSelector,
+    DirectRecordingSession, KeyboardOverlayConfig, MonitorSelector, RecordingAudioConfig,
+    RecordingAudioTrackConfig, RecordingAudioTrackSource, RecordingConfig, RecordingRegion,
+    RecordingSession, RecordingState, RecordingTarget, ScreenRecorderError, WindowSelector,
 };

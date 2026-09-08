@@ -1036,6 +1036,14 @@ bool RecordingSettings::setMouseClickColor(const QColor& color) const {
     return setColorValue(QStringLiteral("screen_recording/mouse_click_color"), color);
 }
 
+bool RecordingSettings::showKeyboard() const {
+    return cache().value(QStringLiteral("screen_recording/show_keyboard")).toBool();
+}
+
+bool RecordingSettings::setShowKeyboard(bool show) const {
+    return cache().setValue(QStringLiteral("screen_recording/show_keyboard"), show);
+}
+
 bool RecordingSettings::showCursor() const {
     return cache().value(QStringLiteral("screen_recording/show_cursor")).toBool();
 }

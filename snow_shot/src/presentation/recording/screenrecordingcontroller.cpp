@@ -14,6 +14,7 @@
 #include "screenrecordingselection.h"
 #include "../capture/windowcaptureexclusion.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/presentation/styles/themecolorscheme.h"
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #include "snow_shot/platform/windows/windowchrome.h"
@@ -40,6 +41,75 @@
 
 namespace {
 constexpr int kDurationTickMilliseconds = 100;
+
+struct RecordingKeyboardLabels {
+    QVector<QByteArray> text;
+    QVector<SnowCaptureKeyboardLabel> entries;
+
+    explicit RecordingKeyboardLabels(bool enabled) {
+        if (!enabled) {
+            return;
+        }
+        const auto add = [this](uint32_t key, const QString& label) {
+            text.push_back(label.toUtf8());
+            entries.push_back({key, reinterpret_cast<const uint8_t*>(text.back().constData()),
+                               static_cast<uint32_t>(text.back().size())});
+        };
+        const auto keyText = [](const char* source) {
+            return QCoreApplication::translate("RecordingKeyboard", source);
+        };
+        const std::pair<uint32_t, const char*> names[] = {
+            {0x08, QT_TRANSLATE_NOOP("RecordingKeyboard", "Backspace")},
+            {0x09, QT_TRANSLATE_NOOP("RecordingKeyboard", "Tab")},
+            {0x0C, QT_TRANSLATE_NOOP("RecordingKeyboard", "Clear")},
+            {0x0D, QT_TRANSLATE_NOOP("RecordingKeyboard", "Enter")},
+            {0x10, QT_TRANSLATE_NOOP("RecordingKeyboard", "Shift")},
+            {0x11, QT_TRANSLATE_NOOP("RecordingKeyboard", "Ctrl")},
+            {0x12, QT_TRANSLATE_NOOP("RecordingKeyboard", "Alt")},
+            {0x13, QT_TRANSLATE_NOOP("RecordingKeyboard", "Pause")},
+            {0x14, QT_TRANSLATE_NOOP("RecordingKeyboard", "Caps Lock")},
+            {0x1B, QT_TRANSLATE_NOOP("RecordingKeyboard", "Esc")},
+            {0x20, QT_TRANSLATE_NOOP("RecordingKeyboard", "Space")},
+            {0x21, QT_TRANSLATE_NOOP("RecordingKeyboard", "Page Up")},
+            {0x22, QT_TRANSLATE_NOOP("RecordingKeyboard", "Page Down")},
+            {0x23, QT_TRANSLATE_NOOP("RecordingKeyboard", "End")},
+            {0x24, QT_TRANSLATE_NOOP("RecordingKeyboard", "Home")},
+            {0x25, QT_TRANSLATE_NOOP("RecordingKeyboard", "Left")},
+            {0x26, QT_TRANSLATE_NOOP("RecordingKeyboard", "Up")},
+            {0x27, QT_TRANSLATE_NOOP("RecordingKeyboard", "Right")},
+            {0x28, QT_TRANSLATE_NOOP("RecordingKeyboard", "Down")},
+            {0x2C, QT_TRANSLATE_NOOP("RecordingKeyboard", "Print Screen")},
+            {0x2D, QT_TRANSLATE_NOOP("RecordingKeyboard", "Insert")},
+            {0x2E, QT_TRANSLATE_NOOP("RecordingKeyboard", "Delete")},
+            {0x5B, QT_TRANSLATE_NOOP("RecordingKeyboard", "Win")},
+            {0x5D, QT_TRANSLATE_NOOP("RecordingKeyboard", "Menu")},
+            {0x6A, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num *")},
+            {0x6B, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num +")},
+            {0x6C, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num Separator")},
+            {0x6D, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num -")},
+            {0x6E, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num .")},
+            {0x6F, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num /")},
+            {0x90, QT_TRANSLATE_NOOP("RecordingKeyboard", "Num Lock")},
+            {0x91, QT_TRANSLATE_NOOP("RecordingKeyboard", "Scroll Lock")},
+            {0xA5, QT_TRANSLATE_NOOP("RecordingKeyboard", "AltGr")},
+            {0xAD, QT_TRANSLATE_NOOP("RecordingKeyboard", "Mute")},
+            {0xAE, QT_TRANSLATE_NOOP("RecordingKeyboard", "Volume Down")},
+            {0xAF, QT_TRANSLATE_NOOP("RecordingKeyboard", "Volume Up")},
+            {0xB0, QT_TRANSLATE_NOOP("RecordingKeyboard", "Next Track")},
+            {0xB1, QT_TRANSLATE_NOOP("RecordingKeyboard", "Previous Track")},
+            {0xB2, QT_TRANSLATE_NOOP("RecordingKeyboard", "Stop")},
+            {0xB3, QT_TRANSLATE_NOOP("RecordingKeyboard", "Play/Pause")},
+        };
+        text.reserve(64);
+        entries.reserve(64);
+        for (const auto& [key, label] : names) {
+            add(key, keyText(label));
+        }
+        for (uint32_t key = 0x60; key <= 0x69; ++key) {
+            add(key, keyText(QT_TRANSLATE_NOOP("RecordingKeyboard", "Num %1")).arg(key - 0x60));
+        }
+    }
+};
 
 struct DirectRecordingSettings {
     SnowCaptureRecordingOutputFormat format = SNOW_CAPTURE_RECORDING_OUTPUT_FORMAT_MP4;
@@ -177,7 +247,15 @@ QString recordingFilePath(const QString& extension) {
 
 QString captureError() {
     const char* error = snow_capture_last_error_message();
-    return QString::fromUtf8(error != nullptr ? error : "Unknown recording error");
+    const QString message = QString::fromUtf8(error != nullptr ? error : "");
+    if (message.contains(QStringLiteral("keyboard recording:"))) {
+        return QCoreApplication::translate("ScreenRecordingController",
+                                           "Keyboard recording failed: %1")
+            .arg(message.section(QStringLiteral("keyboard recording:"), 1).trimmed());
+    }
+    return message.isEmpty()
+               ? QCoreApplication::translate("ScreenRecordingController", "Unknown recording error")
+               : message;
 }
 
 uint32_t packedRgba(const QColor& color) {
@@ -202,6 +280,7 @@ struct ScreenRecordingController::Impl {
         mouseTrailColor = settings.mouseTrailColor();
         mouseClickColor = settings.mouseClickColor();
         showCursor = settings.showCursor();
+        showKeyboard = settings.showKeyboard();
         durationTimer.setInterval(kDurationTickMilliseconds);
         durationTimer.setTimerType(Qt::PreciseTimer);
         QObject::connect(&durationTimer, &QTimer::timeout, &owner, [this]() {
@@ -344,6 +423,12 @@ struct ScreenRecordingController::Impl {
                          [this](const QColor& color) {
                              mouseClickColor = color;
                              snow_shot::storage::RecordingSettings().setMouseClickColor(color);
+                         });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingKeyboardVisibleChanged, &owner,
+                         [this](bool visible) {
+                             showKeyboard = visible;
+                             snow_shot::storage::RecordingSettings().setShowKeyboard(visible);
+                             syncUi();
                          });
         QObject::connect(palette, &ScreenshotToolPalette::recordingCursorVisibleChanged, &owner,
                          [this](bool visible) {
@@ -494,6 +579,12 @@ struct ScreenRecordingController::Impl {
             const bool audioSupported = outputFormat == QStringLiteral("mp4");
             pendingOutputPath = recordingFilePath(sessionOutputSettings.extension);
             const QByteArray outputUtf8 = QDir::toNativeSeparators(pendingOutputPath).toUtf8();
+            const RecordingKeyboardLabels keyboardLabels(showKeyboard);
+            const auto keyboardTheme = snow_shot::presentation::styles::generateThemeColorScheme();
+            QColor keyboardBackground = keyboardTheme.map.colorBgElevated;
+            keyboardBackground.setAlpha(204);
+            QColor keyboardBorder = keyboardTheme.map.colorBorder;
+            keyboardBorder.setAlpha(100);
             const SnowCaptureDirectRecordingConfig config{
                 SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION,
                 sizeof(SnowCaptureDirectRecordingConfig),
@@ -520,6 +611,13 @@ struct ScreenRecordingController::Impl {
                 packedRgba(sessionMouseTrailColor),
                 packedRgba(sessionMouseClickColor),
                 {},
+                static_cast<uint32_t>(showKeyboard),
+                packedRgba(keyboardBackground),
+                packedRgba(keyboardTheme.map.colorText),
+                packedRgba(keyboardBorder),
+                keyboardLabels.entries.constData(),
+                static_cast<uint32_t>(keyboardLabels.entries.size()),
+                0,
             };
             const SnowCaptureResult createResult =
                 snow_capture_recording_session_create_direct(&config, &recordingSession);
@@ -715,6 +813,7 @@ struct ScreenRecordingController::Impl {
             palette->setRecordingMouseTrailColor(mouseTrailColor);
             palette->setRecordingMouseClickColor(mouseClickColor);
             palette->setRecordingCursorVisible(showCursor);
+            palette->setRecordingKeyboardVisible(showKeyboard);
             palette->setRecordingBusy(busy);
         }
     }
@@ -751,6 +850,7 @@ struct ScreenRecordingController::Impl {
     QColor mouseTrailColor{0, 0, 0, 0};
     QColor mouseClickColor{0, 0, 0, 0};
     bool showCursor = true;
+    bool showKeyboard = false;
     DirectRecordingSettings sessionOutputSettings;
     QColor sessionMouseTrailColor{0, 0, 0, 0};
     QColor sessionMouseClickColor{0, 0, 0, 0};

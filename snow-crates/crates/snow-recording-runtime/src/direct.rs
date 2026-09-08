@@ -26,6 +26,8 @@ use snow_recording_model::{VideoEncodeConfig, VideoEncodingSpeed};
 use crate::adapter::video::resolve_capture_target;
 use crate::config::{CaptureBackendKind, RecordingRegion, RecordingTarget};
 use crate::error::{Result, ScreenRecorderError};
+use crate::keyboard_hook::KeyboardInput;
+use crate::keyboard_overlay::{KeyEvent, KeyboardOverlay, KeyboardOverlayConfig};
 use crate::laser_trail::LaserTrail;
 use crate::mouse_hook::{MouseClickObservation, MouseHookObserver, ObservedMouseButton};
 use crate::recording::RecordingState;
@@ -53,6 +55,7 @@ pub struct DirectRecordingConfig {
     pub enable_microphone: bool,
     pub enable_system_audio: bool,
     pub show_cursor: bool,
+    pub keyboard: Option<KeyboardOverlayConfig>,
     pub mouse_trail_rgba: [u8; 4],
     pub mouse_click_rgba: [u8; 4],
 }
@@ -215,6 +218,13 @@ impl DirectRecordingSession {
             click_tx,
         )
         .map_err(ScreenRecorderError::Encode)?;
+        let keyboard_input = self
+            .config
+            .keyboard
+            .as_ref()
+            .map(|_| KeyboardInput::start())
+            .transpose()
+            .map_err(|error| ScreenRecorderError::Encode(format!("keyboard recording: {error}")))?;
         let (control_tx, control_rx) = crossbeam_channel::unbounded();
         let audio_stream = start_optional_audio_stream(&self.config);
         let config = self.config.clone();
@@ -225,6 +235,22 @@ impl DirectRecordingSession {
             .name("snow-direct-recording".to_string())
             .spawn(move || {
                 let result = (|| {
+                    let mut compositor = VisualCompositor::new(config.output_dimensions());
+                    if let Some(style) = config.keyboard.as_ref() {
+                        match crate::keyboard_rasterizer::create(style) {
+                            Ok(rasterizer) => {
+                                compositor.keyboard = Some(KeyboardOverlay::new(
+                                    config.output_dimensions(),
+                                    rasterizer,
+                                ))
+                            }
+                            Err(error) => {
+                                let message = format!("keyboard recording: {error}");
+                                let _ = ready_tx.send(Err(message.clone()));
+                                return Err(ScreenRecorderError::Encode(message));
+                            }
+                        }
+                    }
                     let encoder = match StreamingEncoder::create(config.streaming_config()) {
                         Ok(encoder) => {
                             let _ = ready_tx.send(Ok(()));
@@ -242,6 +268,8 @@ impl DirectRecordingSession {
                         capture_stream,
                         mouse_hook,
                         click_rx,
+                        keyboard_input,
+                        compositor,
                         control_rx,
                         clock,
                         audio_stream,
@@ -388,6 +416,8 @@ struct DirectWorkerInputs {
     capture_stream: CaptureStream,
     mouse_hook: MouseHookObserver,
     click_rx: Receiver<MouseClickObservation>,
+    keyboard_input: Option<KeyboardInput>,
+    compositor: VisualCompositor,
     control_rx: Receiver<ControlCommand>,
     clock: RecordingClock,
     audio_stream: Option<AudioStreamHandle>,
@@ -400,16 +430,21 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
         capture_stream,
         mouse_hook,
         click_rx,
+        mut keyboard_input,
+        mut compositor,
         control_rx,
         clock,
         mut audio_stream,
     } = inputs;
     let _mouse_hook = mouse_hook;
     let clock_controller = clock.controller();
-    let mut compositor = VisualCompositor::new(config.output_dimensions());
+    // Initialization can take time; keys used before the worker is ready are not recording input.
+    let mut keyboard_since = Instant::now();
+    let mut keyboard_generation = 0;
     let mut paused = false;
     let mut stopping = false;
     let mut canceled = false;
+    let mut input_end = None;
     let mut dropped_capture_frames = 0u64;
     let mut last_timestamp_ms = None;
     let mut latest_frame = None;
@@ -428,6 +463,11 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                     if let Some(audio) = audio_stream.as_ref() {
                         audio.pause();
                     }
+                    reset_keyboard(
+                        keyboard_input.as_ref(),
+                        &mut compositor,
+                        clock.active_elapsed_ms(at),
+                    );
                     clock_controller.mark_pause(at);
                     if let Some(mixer) = audio_mixer.as_mut() {
                         mixer.reset_alignment(None);
@@ -437,18 +477,62 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                 ControlCommand::Resume if paused => {
                     let at = Instant::now();
                     clock_controller.mark_resume(at);
+                    keyboard_since = at;
+                    reset_keyboard(
+                        keyboard_input.as_ref(),
+                        &mut compositor,
+                        clock.active_elapsed_ms(at),
+                    );
                     if let Some(audio) = audio_stream.as_ref() {
                         audio.resume();
                     }
                     capture_stream.resume();
                     paused = false;
                 }
-                ControlCommand::Stop => stopping = true,
-                ControlCommand::Cancel => canceled = true,
+                ControlCommand::Stop => {
+                    input_end = Some(Instant::now());
+                    stopping = true;
+                }
+                ControlCommand::Cancel => {
+                    input_end = Some(Instant::now());
+                    canceled = true;
+                }
                 ControlCommand::Pause | ControlCommand::Resume => {}
             }
         }
         drain_click_observations(&click_rx, &clock, paused, &mut compositor);
+        if let (Some(input), Some(style)) = (keyboard_input.as_ref(), config.keyboard.as_ref()) {
+            let generation = input.generation.load(Ordering::Acquire);
+            if keyboard_generation != generation {
+                compositor.pending_keys.clear();
+                if let Some(keyboard) = compositor.keyboard.as_mut() {
+                    keyboard
+                        .model
+                        .reset(clock.active_elapsed_ms(Instant::now()));
+                }
+                keyboard_generation = generation;
+            }
+            while let Ok(event) = input.receiver.try_recv() {
+                if paused
+                    || event.at < keyboard_since
+                    || event.generation != generation
+                    || input_end.is_some_and(|end| event.at > end)
+                {
+                    continue;
+                }
+                if compositor.pending_keys.len() == 256 {
+                    reset_keyboard(
+                        Some(input),
+                        &mut compositor,
+                        clock.active_elapsed_ms(Instant::now()),
+                    );
+                    break;
+                }
+                compositor
+                    .pending_keys
+                    .push_back(event.event(clock.active_elapsed_ms(event.at), style));
+            }
+        }
         drain_audio_events(audio_stream.as_ref(), &clock, paused, audio_mixer.as_mut());
         if !paused && let Some(mixer) = audio_mixer.as_mut() {
             mixer.emit_ready(
@@ -483,13 +567,15 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                 && let Some(frame) = latest_frame.as_ref()
             {
                 let timestamp_ms = monotonic_timestamp(&mut last_timestamp_ms, timestamp_ms);
-                let rgba = compositor.compose(&config, frame, timestamp_ms);
+                let rgba = compositor.compose(&config, frame, timestamp_ms)?;
                 encoder.push_rgba_frame(timestamp_ms, &rgba)?;
                 next_overlay_frame_ms = timestamp_ms.saturating_add(output_interval_ms);
             }
         }
     }
 
+    // Stop observation before potentially expensive encoder draining/finalization.
+    drop(keyboard_input.take());
     if canceled {
         capture_stream.stop();
         if let Some(audio) = audio_stream.take() {
@@ -801,7 +887,7 @@ fn process_capture_event(event: CaptureEvent, context: CaptureEventContext<'_>) 
                 .unwrap_or_else(Instant::now);
             let timestamp_ms =
                 monotonic_timestamp(last_timestamp_ms, clock.active_elapsed_ms(instant));
-            let rgba = compositor.compose(config, &frame, timestamp_ms);
+            let rgba = compositor.compose(config, &frame, timestamp_ms)?;
             encoder.push_rgba_frame(timestamp_ms, &rgba)?;
             *latest_frame = Some(frame);
         }
@@ -821,6 +907,16 @@ fn monotonic_timestamp(last: &mut Option<u64>, candidate: u64) -> u64 {
     let value = candidate.max(last.unwrap_or(0));
     *last = Some(value);
     value
+}
+
+fn reset_keyboard(input: Option<&KeyboardInput>, compositor: &mut VisualCompositor, now: u64) {
+    if let Some(input) = input {
+        input.reset();
+    }
+    compositor.pending_keys.clear();
+    if let Some(keyboard) = compositor.keyboard.as_mut() {
+        keyboard.model.reset(now);
+    }
 }
 
 fn drain_click_observations(
@@ -858,6 +954,8 @@ struct VisualCompositor {
     trail: LaserTrail,
     clicks: VecDeque<RenderClick>,
     cursor_shapes: HashMap<u64, CursorShape>,
+    keyboard: Option<KeyboardOverlay>,
+    pending_keys: VecDeque<KeyEvent>,
 }
 
 impl VisualCompositor {
@@ -867,6 +965,8 @@ impl VisualCompositor {
             trail: LaserTrail::default(),
             clicks: VecDeque::new(),
             cursor_shapes: HashMap::new(),
+            keyboard: None,
+            pending_keys: VecDeque::new(),
         }
     }
 
@@ -875,7 +975,7 @@ impl VisualCompositor {
         config: &DirectRecordingConfig,
         frame: &CapturedFrame,
         timestamp_ms: u64,
-    ) -> Vec<u8> {
+    ) -> Result<Vec<u8>> {
         let source_size = frame.dimensions();
         let mut rgba = resize_rgba(frame.as_rgba_bytes(), source_size, self.output_size);
         let cursor = frame.metadata().cursor().cloned();
@@ -927,7 +1027,21 @@ impl VisualCompositor {
                 &mut self.cursor_shapes,
             );
         }
-        rgba
+        if let Some(keyboard) = self.keyboard.as_mut() {
+            while self
+                .pending_keys
+                .front()
+                .is_some_and(|event| event.at_ms <= timestamp_ms)
+            {
+                keyboard
+                    .model
+                    .event(self.pending_keys.pop_front().expect("pending key"));
+            }
+            keyboard.draw(&mut rgba, timestamp_ms).map_err(|error| {
+                ScreenRecorderError::Encode(format!("keyboard recording: {error}"))
+            })?;
+        }
+        Ok(rgba)
     }
 
     fn has_active_animation(&self, config: &DirectRecordingConfig, timestamp_ms: u64) -> bool {
@@ -937,7 +1051,16 @@ impl VisualCompositor {
             && self.clicks.back().is_some_and(|click| {
                 timestamp_ms.saturating_sub(click.timestamp_ms) <= CLICK_ANIMATION_MS
             });
-        trail_active || click_active
+        trail_active
+            || click_active
+            || self
+                .pending_keys
+                .front()
+                .is_some_and(|event| event.at_ms <= timestamp_ms)
+            || self
+                .keyboard
+                .as_ref()
+                .is_some_and(|keyboard| keyboard.model.needs_frame(timestamp_ms))
     }
 }
 
@@ -1166,6 +1289,7 @@ mod tests {
             enable_microphone: false,
             enable_system_audio: false,
             show_cursor: true,
+            keyboard: None,
             mouse_trail_rgba: [0, 0, 0, 0],
             mouse_click_rgba: [0, 0, 0, 0],
         }
@@ -1187,6 +1311,106 @@ mod tests {
         assert_eq!(scale_point(100, 50, (200, 100), (100, 50)), (50, 25));
         let source = vec![255u8; 4 * 4 * 4];
         assert_eq!(resize_rgba(&source, (4, 4), (2, 2)).len(), 16);
+    }
+
+    struct KeyboardTestRasterizer;
+    impl crate::keyboard_overlay::KeycapRasterizer for KeyboardTestRasterizer {
+        fn rasterize(
+            &mut self,
+            _: &str,
+            _: f32,
+        ) -> std::result::Result<crate::keyboard_overlay::Keycap, String> {
+            Ok(crate::keyboard_overlay::Keycap {
+                width: 40,
+                height: 20,
+                pixels: [200, 0, 0, 255].repeat(800),
+            })
+        }
+    }
+
+    #[test]
+    fn keyboard_compositor_waits_for_event_time_and_emits_final_clean_static_frame() {
+        let config = config();
+        let size = (320, 180);
+        let original = [20, 40, 60, 255].repeat(size.0 as usize * size.1 as usize);
+        let frame: CapturedFrame =
+            snow_capture::frame::Frame::from_rgba8(size.0, size.1, original.clone())
+                .unwrap()
+                .into();
+        let mut compositor = VisualCompositor::new(size);
+        compositor.keyboard = Some(KeyboardOverlay::new(size, Box::new(KeyboardTestRasterizer)));
+        for (at_ms, down) in [(100, true), (200, false)] {
+            compositor.pending_keys.push_back(KeyEvent {
+                at_ms,
+                key: 65,
+                down,
+                label: "A".into(),
+                modifiers: vec![],
+            });
+        }
+        assert!(!compositor.has_active_animation(&config, 50));
+        assert_eq!(compositor.compose(&config, &frame, 50).unwrap(), original);
+        assert!(compositor.has_active_animation(&config, 100));
+        assert_ne!(compositor.compose(&config, &frame, 300).unwrap(), original);
+        assert!(
+            !compositor.has_active_animation(&config, 1000),
+            "retention is stationary"
+        );
+        assert!(
+            compositor.has_active_animation(&config, 1500),
+            "fade schedules on static desktop"
+        );
+        assert!(
+            compositor.has_active_animation(&config, 1800),
+            "expiration still owes a clean frame"
+        );
+        assert_eq!(compositor.compose(&config, &frame, 1800).unwrap(), original);
+        assert!(!compositor.has_active_animation(&config, 1800));
+    }
+
+    #[test]
+    fn keyboard_pause_discards_queued_input_and_freezes_history_on_recording_clock() {
+        let config = config();
+        let size = (320, 180);
+        let original = [20, 40, 60, 255].repeat(size.0 as usize * size.1 as usize);
+        let frame: CapturedFrame =
+            snow_capture::frame::Frame::from_rgba8(size.0, size.1, original.clone())
+                .unwrap()
+                .into();
+        let mut compositor = VisualCompositor::new(size);
+        compositor.keyboard = Some(KeyboardOverlay::new(size, Box::new(KeyboardTestRasterizer)));
+        compositor.pending_keys.push_back(KeyEvent {
+            at_ms: 0,
+            key: 65,
+            down: true,
+            label: "A".into(),
+            modifiers: vec![],
+        });
+        compositor.compose(&config, &frame, 0).unwrap();
+        compositor.pending_keys.push_back(KeyEvent {
+            at_ms: 210,
+            key: 66,
+            down: true,
+            label: "B".into(),
+            modifiers: vec![],
+        });
+        reset_keyboard(None, &mut compositor, 200);
+        assert!(compositor.pending_keys.is_empty());
+        let started = Instant::now();
+        let clock = RecordingClock::new(started);
+        clock
+            .controller()
+            .mark_pause(started + Duration::from_millis(200));
+        clock
+            .controller()
+            .mark_resume(started + Duration::from_millis(5200));
+        let active = clock.active_elapsed_ms(started + Duration::from_millis(5300));
+        assert_eq!(active, 300);
+        assert_ne!(
+            compositor.compose(&config, &frame, active).unwrap(),
+            original
+        );
+        assert_eq!(compositor.compose(&config, &frame, 1800).unwrap(), original);
     }
 
     #[test]

@@ -311,7 +311,14 @@ typedef struct SnowCaptureRecordingExportConfig {
     uint8_t reserved[32];
 } SnowCaptureRecordingExportConfig;
 
-#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 1u
+#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 2u
+
+/* Strings are bounded UTF-8 key names, copied during session creation. */
+typedef struct SnowCaptureKeyboardLabel {
+    uint32_t key_code;
+    const uint8_t* utf8;
+    uint32_t utf8_len;
+} SnowCaptureKeyboardLabel;
 
 /* RGBA values use 0xRRGGBBAA packing. A zero alpha disables the effect. */
 typedef struct SnowCaptureDirectRecordingConfig {
@@ -338,6 +345,14 @@ typedef struct SnowCaptureDirectRecordingConfig {
     uint32_t mouse_trail_rgba;
     uint32_t mouse_click_rgba;
     uint8_t reserved[64];
+    /* Version 2 extension. Version 1 callers end before show_keyboard and remain supported. */
+    uint32_t show_keyboard;
+    uint32_t keyboard_background_rgba;
+    uint32_t keyboard_text_rgba;
+    uint32_t keyboard_border_rgba;
+    const SnowCaptureKeyboardLabel* keyboard_labels;
+    uint32_t keyboard_label_count;
+    uint32_t keyboard_reserved;
 } SnowCaptureDirectRecordingConfig;
 
 SnowCaptureDesktopSession* snow_capture_desktop_session_create(

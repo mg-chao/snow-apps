@@ -4035,6 +4035,18 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
         VERBATIM
     )
 
+    add_custom_target(snow-shot-keyboard-recording-performance-benchmark
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
+            "FFMPEG_DIR=${SNOW_FFMPEG_ROOT}"
+            "${CARGO_EXECUTABLE}" build --locked --release
+            --target x86_64-pc-windows-msvc
+            --package snow-recording-runtime --example keyboard_overlay_benchmark
+        WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
+        USES_TERMINAL
+        VERBATIM
+    )
+
     add_executable(snow-shot-pin-to-screen-performance-benchmark
         tests/screenshot_pin_to_screen_performance_benchmark.cpp
     )

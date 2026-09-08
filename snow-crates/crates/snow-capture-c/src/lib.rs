@@ -526,6 +526,14 @@ pub struct SnowCaptureRecordingExportConfig {
 
 #[repr(C)]
 #[derive(Clone, Copy)]
+pub struct SnowCaptureKeyboardLabel {
+    key_code: u32,
+    utf8: *const u8,
+    utf8_len: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
 pub struct SnowCaptureDirectRecordingConfig {
     version: u32,
     struct_size: u32,
@@ -550,6 +558,13 @@ pub struct SnowCaptureDirectRecordingConfig {
     mouse_trail_rgba: u32,
     mouse_click_rgba: u32,
     reserved: [u8; 64],
+    show_keyboard: u32,
+    keyboard_background_rgba: u32,
+    keyboard_text_rgba: u32,
+    keyboard_border_rgba: u32,
+    keyboard_labels: *const SnowCaptureKeyboardLabel,
+    keyboard_label_count: u32,
+    keyboard_reserved: u32,
 }
 
 #[repr(C)]
@@ -559,7 +574,25 @@ struct SnowCaptureDirectRecordingConfigHeader {
     struct_size: u32,
 }
 
-pub const DIRECT_RECORDING_CONFIG_VERSION: u32 = 1;
+pub const DIRECT_RECORDING_CONFIG_VERSION: u32 = 2;
+const DIRECT_RECORDING_CONFIG_V1_FIELDS_SIZE: usize =
+    std::mem::offset_of!(SnowCaptureDirectRecordingConfig, show_keyboard);
+// The original structure has pointer alignment and may contain tail padding. Validate its
+// complete sizeof, but never reinterpret those unspecified padding bytes as v2 options.
+const DIRECT_RECORDING_CONFIG_V1_SIZE: u32 = (DIRECT_RECORDING_CONFIG_V1_FIELDS_SIZE
+    .div_ceil(std::mem::align_of::<SnowCaptureDirectRecordingConfig>())
+    * std::mem::align_of::<SnowCaptureDirectRecordingConfig>())
+    as u32;
+
+fn direct_config_size(version: u32) -> Result<u32, String> {
+    match version {
+        1 => Ok(DIRECT_RECORDING_CONFIG_V1_SIZE),
+        DIRECT_RECORDING_CONFIG_VERSION => Ok(DIRECT_RECORDING_CONFIG_SIZE),
+        _ => Err(format!(
+            "unsupported direct recording config version: {version}"
+        )),
+    }
+}
 const DIRECT_RECORDING_CONFIG_SIZE: u32 =
     std::mem::size_of::<SnowCaptureDirectRecordingConfig>() as u32;
 
@@ -2698,19 +2731,62 @@ fn packed_rgba(value: u32) -> [u8; 4] {
     ]
 }
 
+fn parse_keyboard_config(
+    config: &SnowCaptureDirectRecordingConfig,
+) -> Result<Option<snow_screen_recorder::KeyboardOverlayConfig>, String> {
+    if config.version == 1 {
+        return Ok(None);
+    }
+    if config.show_keyboard > 1
+        || config.keyboard_reserved != 0
+        || config.keyboard_label_count > 256
+    {
+        return Err("invalid keyboard recording options".into());
+    }
+    if config.show_keyboard == 0 {
+        return Ok(None);
+    }
+    if config.keyboard_label_count != 0 && config.keyboard_labels.is_null() {
+        return Err("keyboard labels pointer is null".into());
+    }
+    let mut labels = std::collections::BTreeMap::new();
+    for index in 0..config.keyboard_label_count as usize {
+        let label = unsafe { std::ptr::read_unaligned(config.keyboard_labels.add(index)) };
+        if label.key_code > 255
+            || label.utf8_len == 0
+            || label.utf8_len > 128
+            || label.utf8.is_null()
+        {
+            return Err("invalid keyboard label".into());
+        }
+        let bytes = unsafe { std::slice::from_raw_parts(label.utf8, label.utf8_len as usize) };
+        let text = std::str::from_utf8(bytes).map_err(|_| "keyboard label is not UTF-8")?;
+        if text.trim().is_empty() || text.chars().any(char::is_control) {
+            return Err("invalid keyboard label text".into());
+        }
+        if labels
+            .insert(label.key_code as u16, text.to_owned())
+            .is_some()
+        {
+            return Err("duplicate keyboard label".into());
+        }
+    }
+    Ok(Some(snow_screen_recorder::KeyboardOverlayConfig {
+        background_rgba: packed_rgba(config.keyboard_background_rgba),
+        text_rgba: packed_rgba(config.keyboard_text_rgba),
+        border_rgba: packed_rgba(config.keyboard_border_rgba),
+        labels,
+    }))
+}
+
 fn parse_direct_recording_config(
     config: &SnowCaptureDirectRecordingConfig,
 ) -> Result<DirectRecordingConfig, String> {
-    if config.version != DIRECT_RECORDING_CONFIG_VERSION {
-        return Err(format!(
-            "unsupported direct recording config version: {}",
-            config.version
-        ));
-    }
-    if config.struct_size < DIRECT_RECORDING_CONFIG_SIZE {
+    let required_size = direct_config_size(config.version)?;
+    if config.struct_size < required_size {
         return Err(format!(
             "direct recording config is too small: {} < {}",
-            config.struct_size, DIRECT_RECORDING_CONFIG_SIZE
+            config.struct_size, required_size
         ));
     }
     if config.reserved0 != 0 || config.reserved.iter().any(|byte| *byte != 0) {
@@ -2780,6 +2856,7 @@ fn parse_direct_recording_config(
         enable_microphone: config.enable_microphone != 0 && !format.is_animated_image(),
         enable_system_audio: config.enable_system_audio != 0 && !format.is_animated_image(),
         show_cursor: config.show_cursor != 0,
+        keyboard: parse_keyboard_config(config)?,
         mouse_trail_rgba: packed_rgba(config.mouse_trail_rgba),
         mouse_click_rgba: packed_rgba(config.mouse_click_rgba),
     };
@@ -2796,19 +2873,28 @@ unsafe fn read_direct_recording_config(
     let header = unsafe {
         std::ptr::read_unaligned(config.cast::<SnowCaptureDirectRecordingConfigHeader>())
     };
-    if header.version != DIRECT_RECORDING_CONFIG_VERSION {
-        return Err(format!(
-            "unsupported direct recording config version: {}",
-            header.version
-        ));
-    }
-    if header.struct_size < DIRECT_RECORDING_CONFIG_SIZE {
+    let required_size = direct_config_size(header.version)?;
+    if header.struct_size < required_size {
         return Err(format!(
             "direct recording config is too small: {} < {}",
-            header.struct_size, DIRECT_RECORDING_CONFIG_SIZE
+            header.struct_size, required_size
         ));
     }
-    Ok(unsafe { std::ptr::read_unaligned(config) })
+    // Zero-extension preserves the v1 ABI without reading past the caller's allocation.
+    let mut value: SnowCaptureDirectRecordingConfig = unsafe { std::mem::zeroed() };
+    let copy_size = if header.version == 1 {
+        DIRECT_RECORDING_CONFIG_V1_FIELDS_SIZE
+    } else {
+        required_size as usize
+    };
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            config.cast::<u8>(),
+            (&raw mut value).cast::<u8>(),
+            copy_size,
+        );
+    }
+    Ok(value)
 }
 
 #[unsafe(no_mangle)]
@@ -3245,6 +3331,13 @@ mod tests {
             mouse_trail_rgba: 0x11223344,
             mouse_click_rgba: 0xAABBCC80,
             reserved: [0; 64],
+            show_keyboard: 0,
+            keyboard_background_rgba: 0,
+            keyboard_text_rgba: 0,
+            keyboard_border_rgba: 0,
+            keyboard_labels: std::ptr::null(),
+            keyboard_label_count: 0,
+            keyboard_reserved: 0,
         }
     }
 
@@ -3307,6 +3400,68 @@ mod tests {
         };
         let config = (&raw const short).cast::<SnowCaptureDirectRecordingConfig>();
         assert!(unsafe { read_direct_recording_config(config) }.is_err());
+    }
+
+    #[test]
+    fn direct_config_v1_reads_exact_prefix_and_defaults_keyboard_off() {
+        let output = CString::new("recording.mp4").unwrap();
+        let mut config = direct_config(&output);
+        config.version = 1;
+        config.struct_size = DIRECT_RECORDING_CONFIG_V1_SIZE;
+        config.show_keyboard = 1;
+        // An allocation containing only the old ABI, not a full v2 struct.
+        let prefix = unsafe {
+            std::slice::from_raw_parts(
+                (&raw const config).cast::<u8>(),
+                DIRECT_RECORDING_CONFIG_V1_SIZE as usize,
+            )
+        }
+        .to_vec();
+        let read = unsafe { read_direct_recording_config(prefix.as_ptr().cast()) }.unwrap();
+        assert_eq!(read.show_keyboard, 0);
+        assert!(
+            parse_direct_recording_config(&read)
+                .unwrap()
+                .keyboard
+                .is_none()
+        );
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(DIRECT_RECORDING_CONFIG_V1_SIZE, 152);
+    }
+
+    #[test]
+    fn direct_config_keyboard_copies_labels_and_validates_the_extension() {
+        let output = CString::new("recording.mp4").unwrap();
+        let mut config = direct_config(&output);
+        config.show_keyboard = 1;
+        config.keyboard_background_rgba = 0x112233cc;
+        config.keyboard_text_rgba = 0xfafafaff;
+        let text = String::from("空格");
+        let mut label = SnowCaptureKeyboardLabel {
+            key_code: 32,
+            utf8: text.as_ptr(),
+            utf8_len: text.len() as u32,
+        };
+        config.keyboard_labels = &raw const label;
+        config.keyboard_label_count = 1;
+        let parsed = parse_direct_recording_config(&config)
+            .unwrap()
+            .keyboard
+            .unwrap();
+        assert_eq!(parsed.background_rgba, [0x11, 0x22, 0x33, 0xcc]);
+        assert_eq!(parsed.labels[&32], "空格");
+        label.utf8_len = 129;
+        config.keyboard_labels = &raw const label;
+        assert!(parse_direct_recording_config(&config).is_err());
+        config.keyboard_labels = std::ptr::null();
+        assert!(parse_direct_recording_config(&config).is_err());
+        config.keyboard_label_count = 257;
+        assert!(parse_direct_recording_config(&config).is_err());
+        config.keyboard_label_count = 0;
+        config.show_keyboard = 2;
+        assert!(parse_direct_recording_config(&config).is_err());
+        drop(text);
+        assert_eq!(parsed.labels[&32], "空格");
     }
 
     #[test]

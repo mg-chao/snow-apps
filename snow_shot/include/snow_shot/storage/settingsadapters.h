@@ -256,6 +256,8 @@ class RecordingSettings final {
     bool setMouseTrailColor(const QColor& color) const;
     [[nodiscard]] QColor mouseClickColor() const;
     bool setMouseClickColor(const QColor& color) const;
+    [[nodiscard]] bool showKeyboard() const;
+    bool setShowKeyboard(bool show) const;
     [[nodiscard]] bool showCursor() const;
     bool setShowCursor(bool show) const;
     [[nodiscard]] QString encoder() const;

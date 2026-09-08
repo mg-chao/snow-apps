@@ -460,19 +460,237 @@
     </message>
 </context>
 <context>
+    <name>RecordingKeyboard</name>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="62"/>
+        <source>Backspace</source>
+        <translation>Backspace</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="63"/>
+        <source>Tab</source>
+        <translation>Tab</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="64"/>
+        <source>Clear</source>
+        <translation>Clear</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="65"/>
+        <source>Enter</source>
+        <translation>Enter</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="66"/>
+        <source>Shift</source>
+        <translation>Shift</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="67"/>
+        <source>Ctrl</source>
+        <translation>Ctrl</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="68"/>
+        <source>Alt</source>
+        <translation>Alt</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="69"/>
+        <source>Pause</source>
+        <translation>Pause</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="70"/>
+        <source>Caps Lock</source>
+        <translation>Caps Lock</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="71"/>
+        <source>Esc</source>
+        <translation>Esc</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="72"/>
+        <source>Space</source>
+        <translation>Space</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="73"/>
+        <source>Page Up</source>
+        <translation>Page Up</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="74"/>
+        <source>Page Down</source>
+        <translation>Page Down</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="75"/>
+        <source>End</source>
+        <translation>End</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="76"/>
+        <source>Home</source>
+        <translation>Home</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="77"/>
+        <source>Left</source>
+        <translation>Left</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="78"/>
+        <source>Up</source>
+        <translation>Up</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="79"/>
+        <source>Right</source>
+        <translation>Right</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="80"/>
+        <source>Down</source>
+        <translation>Down</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="81"/>
+        <source>Print Screen</source>
+        <translation>Print Screen</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="82"/>
+        <source>Insert</source>
+        <translation>Insert</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="83"/>
+        <source>Delete</source>
+        <translation>Delete</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="84"/>
+        <source>Win</source>
+        <translation>Win</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="85"/>
+        <source>Menu</source>
+        <translation>Menu</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="86"/>
+        <source>Num *</source>
+        <translation>Num *</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="87"/>
+        <source>Num +</source>
+        <translation>Num +</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="88"/>
+        <source>Num Separator</source>
+        <translation>Num Separator</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="89"/>
+        <source>Num -</source>
+        <translation>Num -</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="90"/>
+        <source>Num .</source>
+        <translation>Num .</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="91"/>
+        <source>Num /</source>
+        <translation>Num /</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="92"/>
+        <source>Num Lock</source>
+        <translation>Num Lock</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="93"/>
+        <source>Scroll Lock</source>
+        <translation>Scroll Lock</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="94"/>
+        <source>AltGr</source>
+        <translation>AltGr</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="95"/>
+        <source>Mute</source>
+        <translation>Mute</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="96"/>
+        <source>Volume Down</source>
+        <translation>Volume Down</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="97"/>
+        <source>Volume Up</source>
+        <translation>Volume Up</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="98"/>
+        <source>Next Track</source>
+        <translation>Next Track</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="99"/>
+        <source>Previous Track</source>
+        <translation>Previous Track</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="100"/>
+        <source>Stop</source>
+        <translation>Stop</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="101"/>
+        <source>Play/Pause</source>
+        <translation>Play/Pause</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="109"/>
+        <source>Num %1</source>
+        <translation>Num %1</translation>
+    </message>
+</context>
+<context>
     <name>ScreenRecordingController</name>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="485"/>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="252"/>
+        <source>Keyboard recording failed: %1</source>
+        <translation>Keyboard recording failed: %1</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="257"/>
+        <source>Unknown recording error</source>
+        <translation>Unknown recording error</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="570"/>
         <source>Unable to create the recording directory</source>
         <translation>Unable to create the recording directory</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="732"/>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="831"/>
         <source>Screen recording</source>
         <translation>Screen recording</translation>
     </message>
     <message>
-        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="733"/>
+        <location filename="../src/presentation/recording/screenrecordingcontroller.cpp" line="832"/>
         <source>The recording operation failed</source>
         <translation>The recording operation failed</translation>
     </message>
@@ -2106,37 +2324,37 @@
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="110"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5479"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5513"/>
         <source>Formatting</source>
         <translation>Formatting</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="111"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5480"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5514"/>
         <source>Keep line breaks</source>
         <translation>Keep line breaks</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="112"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5481"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5515"/>
         <source>Remove line breaks</source>
         <translation>Remove line breaks</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="113"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5491"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5525"/>
         <source>Punctuation</source>
         <translation>Punctuation</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="114"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5493"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5527"/>
         <source>Half-width</source>
         <translation>Half-width</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="115"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5493"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5527"/>
         <source>Full-width</source>
         <translation>Full-width</translation>
     </message>
@@ -2187,15 +2405,15 @@
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="125"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6283"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6284"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6317"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6318"/>
         <source>Record microphone</source>
         <translation>Record microphone</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="126"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6305"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6306"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6339"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6340"/>
         <source>Record speakers</source>
         <translation>Record speakers</translation>
     </message>
@@ -2216,15 +2434,15 @@
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="130"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4984"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4985"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5010"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5011"/>
         <source>Mouse trail color</source>
         <translation>Mouse trail color</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="131"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4988"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4989"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5014"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5015"/>
         <source>Mouse click color</source>
         <translation>Mouse click color</translation>
     </message>
@@ -2240,24 +2458,24 @@
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="134"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6282"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6286"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6304"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6308"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6316"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6320"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6338"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="6342"/>
         <source>Animated recording formats do not contain audio</source>
         <translation>Animated recording formats do not contain audio</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="135"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3396"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3398"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3413"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3415"/>
         <source>Unavailable while recording</source>
         <translation>Unavailable while recording</translation>
     </message>
     <message>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="136"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4980"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="4981"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5006"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5007"/>
         <source>Recording format</source>
         <translation>Recording format</translation>
     </message>
@@ -2292,7 +2510,7 @@
         <location filename="../src/presentation/tools/screenshottoolpalettebuttons.cpp" line="744"/>
         <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="209"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="1634"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3115"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3132"/>
         <source>Mixed</source>
         <translation>Mixed</translation>
     </message>
@@ -2367,8 +2585,8 @@
         <translation>Horizontal scrolling</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3119"/>
-        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5893"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3136"/>
+        <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="5927"/>
         <source>Recording duration</source>
         <translation>Recording duration</translation>
     </message>

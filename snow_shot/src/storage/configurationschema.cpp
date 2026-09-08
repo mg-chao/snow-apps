@@ -247,6 +247,7 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      ConfigurationValueKind::String},
     {QStringLiteral("screen_recording/mouse_click_color"), QStringLiteral("#00000000"),
      ConfigurationValueKind::String},
+    {QStringLiteral("screen_recording/show_keyboard"), false, ConfigurationValueKind::Boolean},
     {QStringLiteral("screen_recording/show_cursor"), true, ConfigurationValueKind::Boolean},
     {QStringLiteral("screen_recording/encoder"),
      QStringLiteral("h264_hw"),

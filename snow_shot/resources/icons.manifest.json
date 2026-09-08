@@ -336,6 +336,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "RecordingKeyboard",
+      "name": "recording-keyboard",
+      "source": "../src/presentation/components/icons/resources/recording-keyboard.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "RecordingMicrophone",
       "name": "recording-microphone",
       "source": "../src/presentation/components/icons/resources/recording-microphone.svg",

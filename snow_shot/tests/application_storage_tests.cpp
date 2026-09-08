@@ -241,6 +241,7 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
             defaultValue("screen_recording/mouse_click_color").toString() ==
                 QStringLiteral("#00000000") &&
             defaultValue("screen_recording/show_cursor").toBool() &&
+            !defaultValue("screen_recording/show_keyboard").toBool() &&
             storage::ConfigurationSchema::entry(
                 QStringLiteral("screen_recording/animated_image_format")) == nullptr &&
             defaultValue("screen_recording/encoder").toString() == QStringLiteral("h264_hw") &&
@@ -811,7 +812,7 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 recording.outputFormat() == QStringLiteral("mp4") &&
                 recording.mouseTrailColor() == QColor(0, 0, 0, 0) &&
                 recording.mouseClickColor() == QColor(0, 0, 0, 0) && recording.showCursor() &&
-                recording.encoder() == QStringLiteral("h264_hw") &&
+                !recording.showKeyboard() && recording.encoder() == QStringLiteral("h264_hw") &&
                 recording.encodingPreset() == QStringLiteral("veryfast") &&
                 recording.hideToolbarInRecording() &&
                 recording.videoSaveDirectory() ==
@@ -819,31 +820,32 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
                 recording.videoFilenameFormat() ==
                     QStringLiteral("SnowShot_Video_{YYYY-MM-DD_HH-mm-ss}"),
             "recording adapters must expose requested defaults");
-    require(recording.setScreenRecordingClarity(QStringLiteral("2k")) &&
-                recording.setFrameRate(83) &&
-                recording.setAnimatedImageClarity(QStringLiteral("480p")) &&
-                recording.setAnimatedImageFrameRate(24) &&
-                recording.setOutputFormat(QStringLiteral("webp")) &&
-                recording.setMouseTrailColor(QColor(1, 2, 3, 4)) &&
-                recording.setMouseClickColor(QColor(5, 6, 7, 128)) &&
-                recording.setShowCursor(false) && recording.setEncoder(QStringLiteral("h265")) &&
-                recording.setEncodingPreset(QStringLiteral("placebo")) &&
-                recording.setHideToolbarInRecording(false) &&
-                recording.setVideoSaveDirectory(QStringLiteral("D:/Recordings")) &&
-                recording.setVideoFilenameFormat(QStringLiteral("Recording_{yyyyMMdd}")) &&
-                recording.screenRecordingClarity() == QStringLiteral("2k") &&
-                recording.frameRate() == 83 &&
-                recording.animatedImageClarity() == QStringLiteral("480p") &&
-                recording.animatedImageFrameRate() == 24 &&
-                recording.outputFormat() == QStringLiteral("webp") &&
-                recording.mouseTrailColor() == QColor(1, 2, 3, 4) &&
-                recording.mouseClickColor() == QColor(5, 6, 7, 128) && !recording.showCursor() &&
-                recording.encoder() == QStringLiteral("h265") &&
-                recording.encodingPreset() == QStringLiteral("placebo") &&
-                !recording.hideToolbarInRecording() &&
-                recording.videoSaveDirectory() == QStringLiteral("D:/Recordings") &&
-                recording.videoFilenameFormat() == QStringLiteral("Recording_{yyyyMMdd}"),
-            "recording adapters must round-trip every requested option");
+    require(
+        recording.setScreenRecordingClarity(QStringLiteral("2k")) && recording.setFrameRate(83) &&
+            recording.setAnimatedImageClarity(QStringLiteral("480p")) &&
+            recording.setAnimatedImageFrameRate(24) &&
+            recording.setOutputFormat(QStringLiteral("webp")) &&
+            recording.setMouseTrailColor(QColor(1, 2, 3, 4)) &&
+            recording.setMouseClickColor(QColor(5, 6, 7, 128)) && recording.setShowCursor(false) &&
+            recording.setShowKeyboard(true) && storage::RecordingSettings().showKeyboard() &&
+            recording.setEncoder(QStringLiteral("h265")) &&
+            recording.setEncodingPreset(QStringLiteral("placebo")) &&
+            recording.setHideToolbarInRecording(false) &&
+            recording.setVideoSaveDirectory(QStringLiteral("D:/Recordings")) &&
+            recording.setVideoFilenameFormat(QStringLiteral("Recording_{yyyyMMdd}")) &&
+            recording.screenRecordingClarity() == QStringLiteral("2k") &&
+            recording.frameRate() == 83 &&
+            recording.animatedImageClarity() == QStringLiteral("480p") &&
+            recording.animatedImageFrameRate() == 24 &&
+            recording.outputFormat() == QStringLiteral("webp") &&
+            recording.mouseTrailColor() == QColor(1, 2, 3, 4) &&
+            recording.mouseClickColor() == QColor(5, 6, 7, 128) && !recording.showCursor() &&
+            recording.encoder() == QStringLiteral("h265") &&
+            recording.encodingPreset() == QStringLiteral("placebo") &&
+            !recording.hideToolbarInRecording() &&
+            recording.videoSaveDirectory() == QStringLiteral("D:/Recordings") &&
+            recording.videoFilenameFormat() == QStringLiteral("Recording_{yyyyMMdd}"),
+        "recording adapters must round-trip every requested option");
     require(recording.setEncoder(QStringLiteral("h264_hw")) &&
                 recording.encoder() == QStringLiteral("h264_hw") &&
                 recording.setEncoder(QStringLiteral("h264")) &&

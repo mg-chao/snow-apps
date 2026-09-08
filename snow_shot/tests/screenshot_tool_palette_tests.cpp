@@ -323,6 +323,25 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
         QStringLiteral("screenRecordingMouseClickColor"));
     auto* cursor =
         palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenRecordingShowCursor"));
+    auto* keyboard =
+        palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenRecordingShowKeyboard"));
+    require(keyboard != nullptr && !palette.recordingKeyboardVisible() && keyboard->isEnabled(),
+            "keyboard recording should be available and initially off");
+    require(exportPanel->layout()->indexOf(keyboard) == exportPanel->layout()->indexOf(cursor) + 1,
+            "keyboard recording should immediately follow cursor recording");
+    require(keyboard->accessibleName() == QStringLiteral("Show keystrokes in recording") &&
+                adqt::icons::describeIcon(keyboard->iconRef()).key.name ==
+                    QStringLiteral("recording-keyboard"),
+            "keyboard toggle should expose its translated name and dedicated supplied icon");
+    int keyboardChanges = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingKeyboardVisibleChanged, &palette,
+                     [&keyboardChanges](bool) { ++keyboardChanges; });
+    keyboard->click();
+    require(palette.recordingKeyboardVisible() && keyboardChanges == 1,
+            "keyboard toggle should emit one change and become active");
+    palette.setRecordingKeyboardVisible(false);
+    require(!palette.recordingKeyboardVisible() && keyboardChanges == 1,
+            "programmatic synchronization should not emit a user change");
     require(exportButton != nullptr && exportPanel != nullptr && format != nullptr &&
                 trail != nullptr && click != nullptr && cursor != nullptr,
             "recording export settings controls should be created");
@@ -723,8 +742,13 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
                 "recording state changes should preserve the active Export Settings tool");
         require(exportPanel->isEnabled() == editable && format->disabled() == !editable &&
                     trail->disabled() == !editable && click->disabled() == !editable &&
-                    cursor->isEnabled() == editable,
+                    cursor->isEnabled() == editable && keyboard->isEnabled() == editable,
                 "only the export child toolbar should lock while recording or busy");
+        if (!editable) {
+            keyboard->click();
+            require(keyboardChanges == 1 && !palette.recordingKeyboardVisible(),
+                    "a locked keyboard toggle must not change its saved selection");
+        }
         verifyPresetsEditable(editable);
     };
     const int visibilityChangesBeforeRecording = exportVisibilityChanges;
@@ -831,7 +855,8 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
     QCoreApplication::sendEvent(&palette, &languageChange);
     require(exportButton->toolTip() == QStringLiteral("Export Settings") &&
                 format->accessibleName() == QStringLiteral("Recording format") &&
-                cursor->accessibleName() == QStringLiteral("Show cursor in recording"),
+                cursor->accessibleName() == QStringLiteral("Show cursor in recording") &&
+                keyboard->accessibleName() == QStringLiteral("Show keystrokes in recording"),
             "recording export controls should retranslate after LanguageChange");
     require(findPresets(trail) == trailPresets && findPresets(click) == clickPresets,
             "retranslation should preserve the toolbar presets and keep their labels current");

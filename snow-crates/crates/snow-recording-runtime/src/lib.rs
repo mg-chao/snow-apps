@@ -5,8 +5,12 @@ pub mod recording;
 
 pub(crate) mod adapter;
 pub(crate) mod ffmpeg_util;
+pub(crate) mod keyboard_hook;
+pub(crate) mod keyboard_overlay;
+pub(crate) mod keyboard_rasterizer;
 pub(crate) mod laser_trail;
 pub(crate) mod mouse_hook;
+pub use keyboard_overlay::KeyboardOverlayConfig;
 pub(crate) mod processor;
 pub(crate) mod temp;
 pub(crate) mod video_quality;

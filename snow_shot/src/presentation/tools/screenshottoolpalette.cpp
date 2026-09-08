@@ -1793,6 +1793,18 @@ void ScreenshotToolPalette::setRecordingCursorVisible(bool visible) {
     updateRecordingExportSettingsControls();
 }
 
+void ScreenshotToolPalette::setRecordingKeyboardVisible(bool visible) {
+    if (m_recordingKeyboardVisible == visible) {
+        return;
+    }
+    m_recordingKeyboardVisible = visible;
+    updateRecordingExportSettingsControls();
+}
+
+bool ScreenshotToolPalette::recordingKeyboardVisible() const {
+    return m_recordingKeyboardVisible;
+}
+
 bool ScreenshotToolPalette::recordingCursorVisible() const {
     return m_recordingCursorVisible;
 }
@@ -2637,6 +2649,11 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
     scaleRecordingExportIcon(m_recordMouseClickIcon, custom_outlined_icons::RecordingClick());
     if (m_recordCursorButton != nullptr) {
         configureScreenshotToolPaletteStyleButton(m_recordCursorButton, "Show cursor in recording",
+                                                  styleButtonMetrics(m_physicalScale));
+    }
+    if (m_recordKeyboardButton != nullptr) {
+        configureScreenshotToolPaletteStyleButton(m_recordKeyboardButton,
+                                                  "Show keystrokes in recording",
                                                   styleButtonMetrics(m_physicalScale));
     }
 
@@ -4922,6 +4939,15 @@ void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
         custom_outlined_icons::RecordingCursor(), styleButtonMetrics(m_physicalScale));
     m_recordCursorButton->setObjectName(QStringLiteral("screenRecordingShowCursor"));
     layout->addWidget(m_recordCursorButton);
+    m_recordKeyboardButton = createScreenshotToolPaletteStyleActionButton(
+        m_recordExportSettingsPanel, "Show keystrokes in recording",
+        custom_outlined_icons::RecordingKeyboard(), styleButtonMetrics(m_physicalScale));
+    m_recordKeyboardButton->setObjectName(QStringLiteral("screenRecordingShowKeyboard"));
+    layout->addWidget(m_recordKeyboardButton);
+    connect(m_recordKeyboardButton, &adqt::widgets::AdButton::clicked, this, [this]() {
+        setRecordingKeyboardVisible(!m_recordingKeyboardVisible);
+        emit recordingKeyboardVisibleChanged(m_recordingKeyboardVisible);
+    });
 
     connect(m_recordOutputFormatSelect, &adqt::widgets::AdSelect::currentValueChanged, this,
             [this](const QVariant& value) {
@@ -4991,6 +5017,10 @@ void ScreenshotToolPalette::refreshRecordingExportSettingsText() {
     if (m_recordCursorButton != nullptr) {
         configureScreenshotToolPaletteTooltip(m_recordCursorButton, "Show cursor in recording");
     }
+    if (m_recordKeyboardButton != nullptr) {
+        configureScreenshotToolPaletteTooltip(m_recordKeyboardButton,
+                                              "Show keystrokes in recording");
+    }
 }
 
 void ScreenshotToolPalette::setRecordingExportSettingsVisible(bool visible) {
@@ -5046,6 +5076,10 @@ void ScreenshotToolPalette::updateRecordingExportSettingsControls() {
     if (m_recordCursorButton != nullptr) {
         m_recordCursorButton->setEnabled(editable);
         applyMainToolbarToolActiveStyle(m_recordCursorButton, m_recordingCursorVisible);
+    }
+    if (m_recordKeyboardButton != nullptr) {
+        m_recordKeyboardButton->setEnabled(editable);
+        applyMainToolbarToolActiveStyle(m_recordKeyboardButton, m_recordingKeyboardVisible);
     }
 }
 

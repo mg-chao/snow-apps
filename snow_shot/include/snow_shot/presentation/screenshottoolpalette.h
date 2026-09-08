@@ -216,6 +216,8 @@ class ScreenshotToolPalette final : public QWidget {
     void setRecordingMouseClickColor(const QColor& color);
     [[nodiscard]] QColor recordingMouseClickColor() const;
     void setRecordingCursorVisible(bool visible);
+    void setRecordingKeyboardVisible(bool visible);
+    [[nodiscard]] bool recordingKeyboardVisible() const;
     [[nodiscard]] bool recordingCursorVisible() const;
     void setOcrEnabled(bool enabled);
     void setOcrBusy(bool busy);
@@ -328,6 +330,7 @@ class ScreenshotToolPalette final : public QWidget {
     void recordingOutputFormatChanged(const QString& format);
     void recordingMouseTrailColorChanged(const QColor& color);
     void recordingMouseClickColorChanged(const QColor& color);
+    void recordingKeyboardVisibleChanged(bool visible);
     void recordingCursorVisibleChanged(bool visible);
     void materializedScope(QWidget* scope);
 
@@ -620,6 +623,7 @@ class ScreenshotToolPalette final : public QWidget {
     };
     QVector<RecordingColorPreset> m_recordMouseTrailColorPresets;
     QVector<RecordingColorPreset> m_recordMouseClickColorPresets;
+    adqt::widgets::AdButton* m_recordKeyboardButton = nullptr;
     adqt::widgets::AdButton* m_recordCursorButton = nullptr;
     QLabel* m_recordMouseTrailIcon = nullptr;
     QLabel* m_recordMouseClickIcon = nullptr;
@@ -668,6 +672,7 @@ class ScreenshotToolPalette final : public QWidget {
     QString m_recordingOutputFormat = QStringLiteral("mp4");
     QColor m_recordingMouseTrailColor = QColor(0, 0, 0, 0);
     QColor m_recordingMouseClickColor = QColor(0, 0, 0, 0);
+    bool m_recordingKeyboardVisible = false;
     bool m_recordingCursorVisible = true;
     bool m_ocrEnabled = true;
     bool m_ocrBusy = false;
