@@ -8,7 +8,8 @@ use windows::Win32::Graphics::Direct3D11::{
     ID3D11Texture2D, ID3D11UnorderedAccessView,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R32_FLOAT, DXGI_SAMPLE_DESC,
+    DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R32_FLOAT, DXGI_MODE_ROTATION,
+    DXGI_MODE_ROTATION_IDENTITY, DXGI_SAMPLE_DESC,
 };
 use windows::core::Interface;
 
@@ -163,7 +164,7 @@ struct GpuParams {
     tex_width: u32,
     tex_height: u32,
     lut_size_minus_one: u32,
-    _pad0: u32,
+    rotation: u32,
     lut_input_max: f32,
     lut_inv_step: f32,
     _pad1: f32,
@@ -419,6 +420,7 @@ impl GpuComputePass {
 
 pub(crate) struct GpuTonemapper {
     pass: GpuComputePass,
+    rotation: DXGI_MODE_ROTATION,
     /// Combined cache of tonemap params and dimensions written to the
     cached_cbuf_state: Option<GpuParams>,
     cached_lut_state: Option<(HdrFrameContext, f32, f32)>,
@@ -437,12 +439,17 @@ impl GpuTonemapper {
         let pass = GpuComputePass::new(device, bytecode, bytecode_1d, "tonemap")?;
         Ok(Self {
             pass,
+            rotation: DXGI_MODE_ROTATION_IDENTITY,
             cached_cbuf_state: None,
             cached_lut_state: None,
             lut_tex: None,
             lut_srv: None,
             lut_disabled: false,
         })
+    }
+
+    pub(crate) fn set_rotation(&mut self, rotation: DXGI_MODE_ROTATION) {
+        self.rotation = rotation;
     }
 
     fn ensure_lut(
@@ -513,8 +520,8 @@ impl GpuTonemapper {
         screen_color_transform: Option<ScreenColorTransform>,
     ) -> CaptureResult<&ID3D11Texture2D> {
         let params = params.sanitized();
-        let width = source_desc.Width;
-        let height = source_desc.Height;
+        let (width, height) =
+            super::rotation::oriented_size(source_desc.Width, source_desc.Height, self.rotation);
         self.pass.ensure_output(device, width, height)?;
 
         let (lut_srv, lut_input_max, lut_inv_step, flags) =
@@ -543,7 +550,11 @@ impl GpuTonemapper {
             tex_width: width,
             tex_height: height,
             lut_size_minus_one: (HDR_LUMA_LUT_SIZE - 1) as u32,
-            _pad0: 0,
+            rotation: if super::rotation::is_rotated(self.rotation) {
+                (self.rotation.0 - 1) as u32
+            } else {
+                0
+            },
             lut_input_max,
             lut_inv_step,
             _pad1: 0.0,
@@ -615,7 +626,7 @@ impl GpuF16Converter {
             tex_width: width,
             tex_height: height,
             lut_size_minus_one: 0,
-            _pad0: 0,
+            rotation: 0,
             lut_input_max: 0.0,
             lut_inv_step: 0.0,
             _pad1: 0.0,
@@ -644,10 +655,308 @@ impl GpuF16Converter {
 
 #[cfg(test)]
 mod tests {
+    use super::super::{rotation, surface};
     use super::*;
+    use crate::backend::CaptureBlitRegion;
+    use crate::frame::{CapturePixelFormat, Frame};
     use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL_11_0};
     use windows::Win32::Graphics::Direct3D11::*;
     use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R16G16B16A16_FLOAT;
+
+    fn hdr_source(
+        device: &ID3D11Device,
+        width: u32,
+        height: u32,
+    ) -> anyhow::Result<(ID3D11Texture2D, D3D11_TEXTURE2D_DESC)> {
+        let pixels: Vec<[u16; 4]> = (0..width * height)
+            .map(|i| {
+                [
+                    ((i % 17) as f32) / 4.0,
+                    ((i % 31) as f32) / 6.0,
+                    ((i % 13) as f32) / 3.0,
+                    0.5,
+                ]
+                .map(|v| half::f16::from_f32(v).to_bits())
+            })
+            .collect();
+        let desc = D3D11_TEXTURE2D_DESC {
+            Width: width,
+            Height: height,
+            MipLevels: 1,
+            ArraySize: 1,
+            Format: DXGI_FORMAT_R16G16B16A16_FLOAT,
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
+            Usage: D3D11_USAGE_DEFAULT,
+            BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
+            ..Default::default()
+        };
+        let data = D3D11_SUBRESOURCE_DATA {
+            pSysMem: pixels.as_ptr().cast(),
+            SysMemPitch: width * 8,
+            SysMemSlicePitch: 0,
+        };
+        let mut source = None;
+        unsafe { device.CreateTexture2D(&desc, Some(&data), Some(&mut source)) }?;
+        Ok((source.unwrap(), desc))
+    }
+
+    struct Readback {
+        texture: ID3D11Texture2D,
+        desc: D3D11_TEXTURE2D_DESC,
+        frame: Frame,
+        format: CapturePixelFormat,
+    }
+
+    impl Readback {
+        fn new(
+            device: &ID3D11Device,
+            width: u32,
+            height: u32,
+            format: CapturePixelFormat,
+        ) -> anyhow::Result<Self> {
+            let desc = D3D11_TEXTURE2D_DESC {
+                Width: width,
+                Height: height,
+                MipLevels: 1,
+                ArraySize: 1,
+                Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                SampleDesc: DXGI_SAMPLE_DESC {
+                    Count: 1,
+                    Quality: 0,
+                },
+                Usage: D3D11_USAGE_STAGING,
+                CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+                ..Default::default()
+            };
+            let mut texture = None;
+            unsafe { device.CreateTexture2D(&desc, None, Some(&mut texture)) }?;
+            Ok(Self {
+                texture: texture.unwrap(),
+                desc,
+                frame: Frame::empty(),
+                format,
+            })
+        }
+
+        fn copy(
+            &mut self,
+            context: &ID3D11DeviceContext,
+            source: &ID3D11Texture2D,
+            x: u32,
+            y: u32,
+        ) -> anyhow::Result<()> {
+            let bounds = D3D11_BOX {
+                left: x,
+                top: y,
+                front: 0,
+                right: x + self.desc.Width,
+                bottom: y + self.desc.Height,
+                back: 1,
+            };
+            unsafe {
+                context.CopySubresourceRegion(&self.texture, 0, 0, 0, 0, source, 0, Some(&bounds));
+            }
+            surface::map_staging_to_frame_blocking(
+                context,
+                &self.texture,
+                None,
+                &self.desc,
+                &mut self.frame,
+                crate::convert::SurfaceConversionOptions {
+                    output_pixel_format: self.format,
+                    ..Default::default()
+                },
+                "HDR rotation test readback",
+            )?;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn hdr_fused_rotation_matches_cpu_for_dispatches_crops_and_cached_state() -> anyhow::Result<()>
+    {
+        use windows::Win32::Graphics::Dxgi::Common::{
+            DXGI_MODE_ROTATION_ROTATE90, DXGI_MODE_ROTATION_ROTATE180, DXGI_MODE_ROTATION_ROTATE270,
+        };
+        let mut device = None;
+        let mut context = None;
+        unsafe {
+            D3D11CreateDevice(
+                None,
+                D3D_DRIVER_TYPE_WARP,
+                windows::Win32::Foundation::HMODULE::default(),
+                D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                Some(&[D3D_FEATURE_LEVEL_11_0]),
+                D3D11_SDK_VERSION,
+                Some(&mut device),
+                None,
+                Some(&mut context),
+            )?;
+        }
+        let device = device.unwrap();
+        let context = context.unwrap();
+        for (width, height) in [(3, 2), (33, 17), (17, 17)] {
+            let (source, desc) = hdr_source(&device, width, height)?;
+            for use_1d in [false, true] {
+                for use_lut in [false, true] {
+                    let mut mapper = GpuTonemapper::new(&device)?;
+                    if !use_1d {
+                        mapper.pass.cs_1d = None;
+                    } else {
+                        assert!(mapper.pass.cs_1d.is_some());
+                    }
+                    let params = HdrFrameContext {
+                        tonemap_use_lut: use_lut,
+                        ..Default::default()
+                    };
+                    for format in [CapturePixelFormat::Rgba8, CapturePixelFormat::Bgra8] {
+                        mapper.set_rotation(DXGI_MODE_ROTATION_IDENTITY);
+                        let baseline =
+                            mapper.tonemap(&device, &context, &source, &desc, params, None)?;
+                        let mut native = Readback::new(&device, width, height, format)?;
+                        native.copy(&context, baseline, 0, 0)?;
+                        for rotation in [
+                            DXGI_MODE_ROTATION_ROTATE90,
+                            DXGI_MODE_ROTATION_ROTATE270,
+                            DXGI_MODE_ROTATION_ROTATE180,
+                            DXGI_MODE_ROTATION_IDENTITY,
+                        ] {
+                            mapper.set_rotation(rotation);
+                            let expected =
+                                rotation::orient_frame(&native.frame, Frame::empty(), rotation)?;
+                            let output = mapper
+                                .tonemap(&device, &context, &source, &desc, params, None)?
+                                .clone();
+                            let mut actual = Readback::new(
+                                &device,
+                                expected.width(),
+                                expected.height(),
+                                format,
+                            )?;
+                            actual.copy(&context, &output, 0, 0)?;
+                            assert_eq!(
+                                actual.frame.as_bytes(),
+                                expected.as_bytes(),
+                                "{width}x{height} {rotation:?} 1D={use_1d} LUT={use_lut}"
+                            );
+                            let output_again =
+                                mapper.tonemap(&device, &context, &source, &desc, params, None)?;
+                            assert_eq!(
+                                output.as_raw(),
+                                output_again.as_raw(),
+                                "stable output must reuse its texture"
+                            );
+                            let mut crop =
+                                Readback::new(&device, 1, expected.height() - 1, format)?;
+                            crop.copy(&context, &output, 1, 1)?;
+                            for y in 1..expected.height() {
+                                let offset = ((y * expected.width() + 1) * 4) as usize;
+                                assert_eq!(
+                                    &crop.frame.as_bytes()
+                                        [((y - 1) * 4) as usize..(y * 4) as usize],
+                                    &expected.as_bytes()[offset..offset + 4]
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "Release hardware benchmark; run scripts/run-capture-rotation-perf.ps1 -Hdr"]
+    fn hdr_rotation_performance_benchmark() -> anyhow::Result<()> {
+        use std::time::Instant;
+        use windows::Win32::Graphics::Dxgi::Common::DXGI_MODE_ROTATION_ROTATE90;
+        anyhow::ensure!(
+            !cfg!(debug_assertions),
+            "HDR rotation benchmark requires Release"
+        );
+        let (device, context) = super::super::d3d11::create_d3d11_device_default(true)?;
+        let dxgi: windows::Win32::Graphics::Dxgi::IDXGIDevice = device.cast()?;
+        let adapter = unsafe { dxgi.GetAdapter()?.GetDesc()? };
+        println!(
+            "adapter={}",
+            String::from_utf16_lossy(&adapter.Description).trim_end_matches('\0')
+        );
+        println!("source,crop,mode,median_ms,p95_ms");
+        for (width, height) in [(1920, 1080), (3840, 2160)] {
+            let (source, desc) = hdr_source(&device, width, height)?;
+            for (crop_width, crop_height) in [(height, width), (320, 180)] {
+                let desktop = CaptureBlitRegion {
+                    src_x: (height - crop_width) / 2,
+                    src_y: (width - crop_height) / 2,
+                    width: crop_width,
+                    height: crop_height,
+                    dst_x: 0,
+                    dst_y: 0,
+                };
+                let crop =
+                    rotation::native_blit(desktop, height, width, DXGI_MODE_ROTATION_ROTATE90)?;
+                let mut baseline = GpuTonemapper::new(&device)?;
+                let mut fused = GpuTonemapper::new(&device)?;
+                fused.set_rotation(DXGI_MODE_ROTATION_ROTATE90);
+                let mut native =
+                    Readback::new(&device, crop.width, crop.height, CapturePixelFormat::Bgra8)?;
+                let mut upright =
+                    Readback::new(&device, crop_width, crop_height, CapturePixelFormat::Bgra8)?;
+                let mut cpu_output = Frame::empty();
+                let mut samples = [Vec::new(), Vec::new()];
+                for iteration in 0..60 {
+                    for mode in [iteration % 2, 1 - iteration % 2] {
+                        let started = Instant::now();
+                        if mode == 0 {
+                            let output = baseline.tonemap(
+                                &device,
+                                &context,
+                                &source,
+                                &desc,
+                                HdrFrameContext::default(),
+                                None,
+                            )?;
+                            native.copy(&context, output, crop.src_x, crop.src_y)?;
+                            cpu_output = rotation::orient_frame(
+                                &native.frame,
+                                cpu_output,
+                                DXGI_MODE_ROTATION_ROTATE90,
+                            )?;
+                            std::hint::black_box(cpu_output.as_bytes());
+                        } else {
+                            let output = fused.tonemap(
+                                &device,
+                                &context,
+                                &source,
+                                &desc,
+                                HdrFrameContext::default(),
+                                None,
+                            )?;
+                            upright.copy(&context, output, desktop.src_x, desktop.src_y)?;
+                            std::hint::black_box(upright.frame.as_bytes());
+                        }
+                        if iteration >= 10 {
+                            samples[mode].push(started.elapsed().as_secs_f64() * 1000.0);
+                        }
+                    }
+                }
+                assert_eq!(cpu_output.as_bytes(), upright.frame.as_bytes());
+                for (mode, mut times) in samples.into_iter().enumerate() {
+                    times.sort_by(f64::total_cmp);
+                    println!(
+                        "{width}x{height},{crop_width}x{crop_height},{},{:.4},{:.4}",
+                        ["tone-map+CPU-rotation", "fused-HDR-rotation"][mode],
+                        times[25],
+                        times[47]
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
 
     fn read_pixel(
         device: &ID3D11Device,

@@ -2272,6 +2272,118 @@ void ocrPresentationRendersWhileCanvasContentIsHidden() {
     canvas.setCustomRenderer(nullptr);
 }
 
+void ocrBackgroundFillSamplesRobustlyAndChoosesContrastingText() {
+    QImage source(100, 100, QImage::Format_ARGB32_Premultiplied);
+    source.fill(QColor(200, 10, 150));
+    const QColor background(32, 48, 64);
+    // The expanded 40 x 40 region has corners and edge midpoints at 18, 40, 62.
+    const QVector<QPoint> samples{{18, 18}, {40, 18}, {62, 18}, {62, 40},
+                                  {62, 62}, {40, 62}, {18, 62}, {18, 40}};
+    for (const QPoint& sample : samples) {
+        source.setPixelColor(sample, background);
+    }
+    source.setPixelColor(samples[0], Qt::white);
+    source.setPixelColor(samples[5], Qt::red);
+    ScreenshotOcrPresentation presentation;
+    ScreenshotOcrLine line;
+    line.text = QStringLiteral("Text");
+    line.quad = QPolygonF({QPointF(20, 20), QPointF(60, 20), QPointF(60, 60), QPointF(20, 60)});
+    presentation.lines.push_back(line);
+    prepareScreenshotOcrFillColors(presentation, source, QRectF(0, 0, 100, 100), true);
+    require(presentation.lines[0].backgroundFillColor == background,
+            "eight boundary samples must select the dominant color despite two outliers");
+    require(screenshotOcrContrastingTextColor(background) == QColor(Qt::white) &&
+                screenshotOcrContrastingTextColor(QColor(240, 230, 210)) == QColor(Qt::black) &&
+                screenshotOcrContrastingTextColor(QColor(0, 0, 255)) == QColor(Qt::white) &&
+                screenshotOcrContrastingTextColor(QColor(0, 255, 0)) == QColor(Qt::black),
+            "text contrast must use luminance for dark, light, and saturated fills");
+    QRect crop;
+    const QImage filled = renderScreenshotOcrFilteredImage(source, QRectF(0, 0, 100, 100),
+                                                           presentation, Qt::white, 1.0, &crop);
+    require(filled.pixelColor(QPoint(40, 40) - crop.topLeft()) == background,
+            "the text region must be replaced with an opaque solid fill");
+    require(source.pixelColor(40, 40) == QColor(200, 10, 150),
+            "background filling must preserve the source image");
+    const QRegion region =
+        screenshotOcrFilterRegion(presentation, QRectF(0, 0, 100, 100), source.size());
+    for (int y = 0; y < filled.height(); ++y) {
+        for (int x = 0; x < filled.width(); ++x) {
+            const QPoint point = QPoint(x, y) + crop.topLeft();
+            require(filled.pixelColor(x, y) ==
+                        (region.contains(point) ? background : source.pixelColor(point)),
+                    "solid filling must affect only the expanded text polygon");
+        }
+    }
+    // The same pixels must be sampled with a translated canvas at fractional scale.
+    for (QPointF& point : presentation.lines[0].quad) {
+        point = point / 1.5 + QPointF(-80, 25);
+    }
+    QImage uniform = source.copy();
+    uniform.fill(background);
+    prepareScreenshotOcrFillColors(presentation, uniform, QRectF(-80, 25, 100 / 1.5, 100 / 1.5),
+                                   true);
+    require(presentation.lines[0].backgroundFillColor == background,
+            "fill sampling must support translated canvas coordinates and fractional scale");
+    presentation.lines[0].quad =
+        QPolygonF({QPointF(-4, -4), QPointF(104, -4), QPointF(104, 104), QPointF(-4, 104)});
+    prepareScreenshotOcrFillColors(presentation, uniform, QRectF(0, 0, 100, 100), true);
+    require(presentation.lines[0].backgroundFillColor == background,
+            "boundary samples must clamp to the source image");
+    prepareScreenshotOcrFillColors(presentation, uniform, QRectF(0, 0, 100, 100), false);
+    require(!presentation.lines[0].backgroundFillColor.isValid(),
+            "returning to Blur must clear adaptive fill colors");
+    prepareScreenshotOcrFillColors(presentation, {}, QRectF(0, 0, 100, 100), true);
+    require(!presentation.lines[0].backgroundFillColor.isValid(),
+            "an absent source must leave the existing blur fallback available");
+}
+
+void ocrSolidFillRendersAdaptiveTextPerBlock() {
+    SnowCanvasWidget canvas;
+    canvas.resize(160, 100);
+    canvas.setClearBackgroundEnabled(false);
+    require(canvas.setViewportCamera(0.0, 0.0, 1.0), "camera should update");
+    ScreenshotCanvasRenderer renderer(canvas);
+    canvas.setCustomRenderer(&renderer);
+    canvas.show();
+    QApplication::processEvents();
+    QImage source(160, 100, QImage::Format_ARGB32_Premultiplied);
+    source.fill(QColor(25, 25, 25));
+    {
+        QPainter painter(&source);
+        painter.fillRect(QRect(80, 0, 80, 100), QColor(235, 235, 235));
+    }
+    const QRectF canvasRect(-80, -50, 160, 100);
+    renderer.setImage(source, canvasRect);
+    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+    presentation->selection = canvasRect.toAlignedRect();
+    for (const qreal left : {-60.0, 20.0}) {
+        ScreenshotOcrLine line;
+        line.text = QStringLiteral("Text");
+        line.quad = QPolygonF({QPointF(left, -15), QPointF(left + 40, -15), QPointF(left + 40, 15),
+                               QPointF(left, 15)});
+        presentation->lines.push_back(line);
+    }
+    prepareScreenshotOcrFillColors(*presentation, source, canvasRect, true);
+    renderer.setOcrPresentation(presentation);
+    QRectF filteredCanvasRect;
+    const QImage background = testRenderOcrFilteredImage(source, canvasRect, *presentation,
+                                                         QColor(Qt::white), &filteredCanvasRect);
+    renderer.setOcrFilteredImage(background, filteredCanvasRect);
+    const QImage rendered = renderCanvas(canvas);
+    bool whiteText = false;
+    bool blackText = false;
+    for (int y = 36; y < 64; ++y) {
+        for (int x = 21; x < 59; ++x) {
+            whiteText = whiteText || rendered.pixelColor(x, y).red() > 245;
+            blackText = blackText || rendered.pixelColor(x + 80, y).red() < 10;
+        }
+    }
+    require(
+        whiteText && blackText,
+        "the same OCR presentation must render white text on dark fill and black on light fill");
+    canvas.setCustomRenderer(nullptr);
+}
+
 void ocrFilteredImageBlendsTowardTheSuppliedThemeBackground() {
     QImage source(20, 20, QImage::Format_RGBA8888);
     const QColor screenshotColor(0, 80, 240);
@@ -2460,6 +2572,93 @@ void ocrTextAspectFitUsesWidthConstraintWithoutVerticalStretch() {
             "wide OCR text should use the width-limited uniform fit without vertical stretching");
     require(std::abs(inkBounds.center().y() - 29.5) <= 1.0,
             "width-limited OCR text should remain vertically centered");
+    canvas.setCustomRenderer(nullptr);
+}
+
+void mergedParagraphWrapsAndFillsAnalyzedRegion() {
+    SnowCanvasWidget canvas;
+    canvas.resize(240, 160);
+    canvas.setClearBackgroundEnabled(false);
+    require(canvas.setViewportCamera(0, 0, 1), "set paragraph test camera");
+    ScreenshotCanvasRenderer renderer(canvas);
+    canvas.setCustomRenderer(&renderer);
+    canvas.show();
+    QApplication::processEvents();
+    QImage screenshot(240, 160, QImage::Format_RGBA8888);
+    screenshot.fill(QColor(0, 80, 240));
+    const QRectF canvasRect(-120, -80, 240, 160);
+    renderer.setImage(screenshot, canvasRect);
+    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+    presentation->selection = canvasRect.toRect();
+    ScreenshotOcrLine line;
+    line.text = QStringLiteral("This translated paragraph must wrap into several readable lines "
+                               "inside its original image region");
+    line.paragraph = true;
+    line.quad = {QPointF(-100, -60), QPointF(100, -60), QPointF(100, 60), QPointF(-100, 60)};
+    line.sourceLineQuads = {
+        {QPointF(-100, -60), QPointF(100, -60), QPointF(100, -40), QPointF(-100, -40)},
+        {QPointF(-100, 40), QPointF(100, 40), QPointF(100, 60), QPointF(-100, 60)}};
+    presentation->lines.push_back(line);
+    presentation->prepareForRendering();
+    renderer.setOcrPresentation(presentation);
+    const auto output = renderCanvas(canvas);
+    const auto ink = paintedInkBounds(output, QRect(20, 20, 200, 120), 80);
+    require(ink.height() > 60, "merged paragraph must occupy multiple visual rows");
+    require(std::abs(ink.center().y() - 79.5) <= 2.0,
+            "painted paragraph text must be vertically centered within its merged background");
+    for (const QString& sample :
+         {QStringLiteral("Mixed text with a short final line"),
+          QStringLiteral("AAA BBB CCC DDD EEE"), QStringLiteral("ggg ppp qqq yyy jjj"),
+          QStringLiteral("\u5408\u5e76\u540e\u7684\u591a\u884c\u7ffb\u8bd1\u6587\u5b57\u5e94\u5bf9"
+                         "\u9f50\u80cc\u666f")}) {
+        presentation->setLineText(0, sample);
+        renderer.setOcrPresentation(presentation);
+        const auto sampleImage = renderCanvas(canvas);
+        const auto sampleInk = paintedInkBounds(sampleImage, QRect(20, 20, 200, 120), 80);
+        require(
+            !sampleInk.isEmpty() && std::abs(sampleInk.center().y() - 79.5) <= 2.0 &&
+                std::abs(sampleInk.center().x() - 119.5) <= 2.0,
+            "paragraph alignment must use painted glyph bounds across scripts and font metrics");
+    }
+    presentation->setLineText(0, line.text);
+    renderer.setOcrPresentation(presentation);
+    static_cast<void>(renderCanvas(canvas));
+    const auto first =
+        renderer.ocrTextPositionAt(QPointF(ink.left() + 2 - 120, ink.top() + 2 - 80));
+    const auto last =
+        renderer.ocrTextPositionAt(QPointF(ink.left() + 2 - 120, ink.bottom() - 2 - 80));
+    require(first.valid() && last.valid() && last.characterIndex > first.characterIndex,
+            "paragraph selection must advance through wrapped rows");
+    const auto region = screenshotOcrFilterRegion(*presentation, canvasRect, screenshot.size());
+    require(region.contains(QPoint(120, 30)) && region.contains(QPoint(120, 130)) &&
+                region.contains(QPoint(120, 80)) && !region.contains(QPoint(5, 80)),
+            "layout-processed background must cover the paragraph, including source line gaps");
+    const auto renderBackground = [&](const ScreenshotOcrPresentation& layout) {
+        QRect filteredPixels;
+        const auto crop = renderScreenshotOcrFilteredImage(screenshot, canvasRect, layout,
+                                                           QColor(Qt::white), 1.0, &filteredPixels);
+        QImage result = screenshot.copy();
+        QPainter painter(&result);
+        painter.drawImage(filteredPixels.topLeft(), crop);
+        return result;
+    };
+    const auto filtered = renderBackground(*presentation);
+    require(filtered.pixelColor(120, 80) != screenshot.pixelColor(120, 80) &&
+                filtered.pixelColor(5, 80) == screenshot.pixelColor(5, 80),
+            "raster background must fill the analyzed region without changing outside pixels");
+    ScreenshotOcrPresentation original;
+    original.selection = presentation->selection;
+    for (const auto& sourceQuad : line.sourceLineQuads) {
+        ScreenshotOcrLine sourceLine;
+        sourceLine.quad = sourceQuad;
+        original.lines.push_back(sourceLine);
+    }
+    const auto originalRegion = screenshotOcrFilterRegion(original, canvasRect, screenshot.size());
+    require(!originalRegion.contains(QPoint(120, 80)),
+            "Original layout retains separate OCR line fill regions");
+    const auto originalFiltered = renderBackground(original);
+    require(originalFiltered.pixelColor(120, 80) == screenshot.pixelColor(120, 80),
+            "returning to Original layout restores the unfilled gap");
     canvas.setCustomRenderer(nullptr);
 }
 
@@ -3424,11 +3623,18 @@ int main(int argc, char** argv) {
             "the vertical OCR renderer test requires a system CJK font");
 #endif
     if (application.arguments().contains(QStringLiteral("--ocr-presentation"))) {
+        ocrBackgroundFillSamplesRobustlyAndChoosesContrastingText();
+        ocrSolidFillRendersAdaptiveTextPerBlock();
+        mergedParagraphWrapsAndFillsAnalyzedRegion();
+        ocrTextAspectFitUsesWidthConstraintWithoutVerticalStretch();
+        verticalOcrTextKeepsCjkGraphemesUprightAndSelectable();
         ocrPresentationRendersWhileCanvasContentIsHidden();
         ocrFilteredImageBlendsTowardTheSuppliedThemeBackground();
         ocrFilteredCropMatchesFullFrameReference();
         return 0;
     }
+    ocrBackgroundFillSamplesRobustlyAndChoosesContrastingText();
+    ocrSolidFillRendersAdaptiveTextPerBlock();
     screenshotImageMaskAndSelectionRenderInTheirOwnedPasses();
     rendererCoversTheWidgetRectOnceAScreenshotFillsTheViewport();
     overlayPaintSkipsRedundantTransparentClearWhenRendererCoversTheRect();

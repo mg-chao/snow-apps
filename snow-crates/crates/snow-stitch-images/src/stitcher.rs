@@ -47,7 +47,9 @@ impl Stitcher {
     }
 
     pub fn push(&mut self, frame: Frame) -> Result<Option<StitchDecision>, StitchError> {
+        let _perf = crate::perf::Scope::new(crate::perf::Stage::PushTotal);
         if self.accumulator.is_none() {
+            let _perf = crate::perf::Scope::new(crate::perf::Stage::Initialization);
             validate_first(&frame, self.options)?;
             self.estimator = Some(VerticalMotionEstimator::new_for_axis(
                 frame.geometry(),
@@ -341,12 +343,14 @@ impl StitchAccumulator {
                 .ok_or(StitchError::Arithmetic {
                     operation: "incrementing processed-frame count",
                 })?;
+        let reference_perf = crate::perf::Scope::new(crate::perf::Stage::ReferencePreparation);
         let canvas_window_reference = (comparison_mode == ReferenceMode::CanvasWindow)
             .then(|| self.comparison_reference())
             .transpose()?;
         let reference = canvas_window_reference
             .as_ref()
             .unwrap_or(&self.synthetic_reference);
+        reference_perf.finish();
         let estimate = estimator(reference, &self.previous_raw, &incoming)?;
 
         let maximum_shift = self.viewport_extent as f32 * self.options.estimator.max_motion_ratio;
@@ -403,6 +407,7 @@ impl StitchAccumulator {
                 synthetic_band = Some(band_height(self.viewport_extent, shift)?);
                 let band = band_height(self.viewport_extent, transition.growth)?;
                 let overlap = band - transition.growth;
+                let canvas_perf = crate::perf::Scope::new(crate::perf::Stage::CanvasComposition);
                 let old_end = self.canvas.extent() - overlap;
                 self.canvas.truncate_end(old_end)?;
                 self.canvas.append_axis(
@@ -410,6 +415,8 @@ impl StitchAccumulator {
                     self.viewport_extent - band,
                     self.viewport_extent,
                 )?;
+                canvas_perf.finish();
+                let _perf = crate::perf::Scope::new(crate::perf::Stage::ReferenceSynthesis);
                 if self.options.axis == StitchAxis::Vertical
                     && comparison_mode == ReferenceMode::Synthetic
                 {
@@ -435,9 +442,12 @@ impl StitchAccumulator {
                 canvas_band = Some(band_height(self.viewport_extent, transition.growth)?);
                 synthetic_band = Some(band_height(self.viewport_extent, shift)?);
                 let band = band_height(self.viewport_extent, transition.growth)?;
+                let canvas_perf = crate::perf::Scope::new(crate::perf::Stage::CanvasComposition);
                 let old_start = band - transition.growth;
                 self.canvas.truncate_start(old_start)?;
                 self.canvas.prepend_axis(&self.previous_raw, 0, band)?;
+                canvas_perf.finish();
+                let _perf = crate::perf::Scope::new(crate::perf::Stage::ReferenceSynthesis);
                 if self.options.axis == StitchAxis::Vertical
                     && comparison_mode == ReferenceMode::Synthetic
                 {

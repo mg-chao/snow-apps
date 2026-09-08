@@ -22,7 +22,7 @@ void DirectCaptureWorkflow::enqueue(DirectCaptureRequest request) {
         return;
     m_queue.push_back(std::move(request));
     const QPointer<DirectCaptureWorkflow> self(this);
-    if (m_ports.captureRequested)
+    if (m_queue.back().shutterSoundNotification && m_ports.captureRequested)
         m_ports.captureRequested();
     if (self && self->m_phase == Phase::Idle)
         self->startNext();

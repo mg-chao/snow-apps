@@ -47,7 +47,7 @@ class ScreenshotOcrGraphicsTextItem final : public QGraphicsItem {
   public:
     void configure(const QString& text, const QFont& font, const QColor& textColor,
                    const ScreenshotOcrTextRange& selection, ScreenshotOcrTextDirection direction,
-                   qreal targetAspectRatio);
+                   qreal targetAspectRatio, bool paragraph);
     void setSelection(const ScreenshotOcrTextRange& selection);
     [[nodiscard]] int cursorPositionAt(const QPointF& itemPosition) const;
 
@@ -75,6 +75,7 @@ class ScreenshotOcrGraphicsTextItem final : public QGraphicsItem {
     QVector<int> m_graphemeBoundaries;
     qreal m_verticalCellAdvance = 0.0;
     qreal m_targetAspectRatio = 0.0;
+    bool m_paragraph = false;
     QPointF m_layoutOrigin;
     QRectF m_bounds;
 };
@@ -1021,7 +1022,7 @@ void ScreenshotOcrGraphicsTextItem::configure(const QString& text, const QFont& 
                                               const QColor& textColor,
                                               const ScreenshotOcrTextRange& selection,
                                               ScreenshotOcrTextDirection direction,
-                                              qreal targetAspectRatio) {
+                                              qreal targetAspectRatio, bool paragraph) {
     targetAspectRatio = std::max<qreal>(0.0, targetAspectRatio);
     const bool selectionChanged =
         m_selection.start != selection.start || m_selection.length != selection.length;
@@ -1031,7 +1032,7 @@ void ScreenshotOcrGraphicsTextItem::configure(const QString& text, const QFont& 
     const bool aspectRatioMatches =
         qFuzzyCompare(1.0 + m_targetAspectRatio, 1.0 + targetAspectRatio);
     if (hasLayout && m_text == text && m_font == font && m_direction == direction &&
-        aspectRatioMatches) {
+        aspectRatioMatches && m_paragraph == paragraph) {
         const bool textColorChanged = m_textColor != textColor;
         m_textColor = textColor;
         m_selection = selection;
@@ -1048,6 +1049,7 @@ void ScreenshotOcrGraphicsTextItem::configure(const QString& text, const QFont& 
     m_selection = selection;
     m_direction = direction;
     m_targetAspectRatio = targetAspectRatio;
+    m_paragraph = paragraph;
     m_layout.reset();
     m_line = QTextLine();
     m_verticalGlyphs.clear();
@@ -1099,6 +1101,60 @@ void ScreenshotOcrGraphicsTextItem::configure(const QString& text, const QFont& 
         m_layoutOrigin = {};
         m_bounds = QRectF(0.0, 0.0, std::max<qreal>(1.0, columnWidth),
                           std::max<qreal>(1.0, m_verticalCellAdvance * graphemeCount));
+    } else if (paragraph && targetAspectRatio > 0) {
+        // Font ascent/descent and unused wrap width are not painted bounds. Use glyph ink for
+        // both choosing the wrap and centering it in the same quad as the paragraph background.
+        const auto createLayout = [&](qreal width) {
+            auto layout = std::make_unique<QTextLayout>(text, font);
+            QTextOption option;
+            option.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+            option.setUseDesignMetrics(true);
+            layout->setTextOption(option);
+            layout->beginLayout();
+            qreal y = 0;
+            while (true) {
+                auto line = layout->createLine();
+                if (!line.isValid())
+                    break;
+                line.setLineWidth(width);
+                line.setPosition(QPointF(0, y));
+                y += line.height();
+            }
+            layout->endLayout();
+            return layout;
+        };
+        const auto visualBounds = [](const QTextLayout& layout) {
+            QRectF bounds = textLayoutInkBounds(layout);
+            if (!bounds.isValid() || bounds.isEmpty())
+                bounds = layout.boundingRect();
+            if (!bounds.isValid() || bounds.isEmpty())
+                bounds = QRectF(0, 0, 1, 1);
+            return bounds.adjusted(-kOcrTextInkSafetyMargin, -kOcrTextInkSafetyMargin,
+                                   kOcrTextInkSafetyMargin, kOcrTextInkSafetyMargin);
+        };
+        const QFontMetricsF metrics(font);
+        qreal low = std::max<qreal>(1, metrics.height());
+        qreal high = std::max(low, metrics.horizontalAdvance(text) + metrics.height());
+        qreal bestScale = 0;
+        QRectF bestBounds;
+        for (int iteration = 0; iteration < 20; ++iteration) {
+            const qreal width = (low + high) / 2;
+            auto layout = createLayout(width);
+            const QRectF bounds = visualBounds(*layout);
+            const qreal scale = std::min(targetAspectRatio / bounds.width(), 1.0 / bounds.height());
+            if (scale > bestScale) {
+                bestScale = scale;
+                bestBounds = bounds;
+                m_layout = std::move(layout);
+            }
+            if (bounds.width() / bounds.height() < targetAspectRatio)
+                low = width;
+            else
+                high = width;
+        }
+        m_layoutOrigin = -bestBounds.topLeft();
+        m_bounds = QRectF(QPointF(), bestBounds.size());
+        m_line = m_layout->lineCount() > 0 ? m_layout->lineAt(0) : QTextLine();
     } else {
         MeasuredSingleLineLayout measured =
             createWidthExpandedSingleLineLayout(text, font, targetAspectRatio);
@@ -1132,6 +1188,15 @@ int ScreenshotOcrGraphicsTextItem::cursorPositionAt(const QPointF& itemPosition)
         return 0;
     }
     const qreal layoutX = itemPosition.x() - m_layoutOrigin.x();
+    if (m_paragraph && m_layout != nullptr) {
+        const qreal y = itemPosition.y() - m_layoutOrigin.y();
+        for (int i = 0; i < m_layout->lineCount(); ++i) {
+            const auto line = m_layout->lineAt(i);
+            if (y < line.y() + line.height() || i + 1 == m_layout->lineCount())
+                return qBound(0, line.xToCursor(layoutX, QTextLine::CursorBetweenCharacters),
+                              static_cast<int>(m_text.size()));
+        }
+    }
     return qBound(0, m_line.xToCursor(layoutX, QTextLine::CursorBetweenCharacters),
                   static_cast<int>(m_text.size()));
 }
@@ -1431,9 +1496,12 @@ void ScreenshotOcrTextLayer::synchronizeTextItem(TextItem& item,
                                 edgeLength(textFitQuad.at(1), textFitQuad.at(2))) /
                                2.0;
     const qreal targetAspectRatio = targetHeight > 0.0 ? targetWidth / targetHeight : 0.0;
-    item.graphicsText->configure(text, font, m_textColor,
+    const QColor textColor = line.backgroundFillColor.isValid()
+                                 ? screenshotOcrContrastingTextColor(line.backgroundFillColor)
+                                 : m_textColor;
+    item.graphicsText->configure(text, font, textColor,
                                  m_presentation->textSelectionForLine(item.lineIndex),
-                                 line.direction, targetAspectRatio);
+                                 line.direction, targetAspectRatio, line.paragraph);
 
     const QRectF sourceBounds = item.graphicsText->boundingRect();
     QTransform transform;

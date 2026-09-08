@@ -598,6 +598,18 @@ SettingsItemDefinition screenshotImageFormatItem() {
          {QStringLiteral("avif"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "AVIF"))}});
 }
 
+SettingsItemDefinition ocrFillStyleItem() {
+    return fixedSelectItem(
+        QStringLiteral("interface.text-recognition.fill-style"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Fill Style"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Choose how the area behind recognized text is filled"),
+        QStringLiteral("text_recognition/fill_style"), SettingsSelectBinding::OcrFillStyle,
+        {{QStringLiteral("blur"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Blur"))},
+         {QStringLiteral("background_fill"),
+          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Background Fill"))}});
+}
+
 SettingsItemDefinition screenshotSaveAsFileDialogItem() {
     return fixedSelectItem(
         QStringLiteral("screenshot.save-as-file-dialog"),
@@ -736,6 +748,17 @@ SettingsItemDefinition screenshotCaptureCursorItem() {
         SettingsSwitchBinding::ScreenshotCaptureCursor);
 }
 
+SettingsItemDefinition screenshotShutterSoundNotificationItem() {
+    return switchItem(
+        QStringLiteral("screenshot.shutter-sound-notification"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Shutter Sound Notification"),
+        QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Play a shutter sound when capturing the focused window or current display."),
+        QStringLiteral("screenshot/shutter_sound_notification"),
+        SettingsSwitchBinding::ScreenshotShutterSoundNotification);
+}
+
 SettingsItemDefinition screenshotAutoSaveAfterCopyItem() {
     return switchItem(
         QStringLiteral("screenshot.auto-save-after-copy"),
@@ -859,6 +882,19 @@ SettingsItemDefinition trayLeftClickItem() {
             {QStringLiteral("show_main_window"),
              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Show main window"))},
         });
+}
+
+SettingsItemDefinition translationLayoutProcessingItem() {
+    return fixedSelectItem(
+        QStringLiteral("translation.layout-processing"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Layout Processing"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Group recognized text before translating"),
+        QStringLiteral("screenshot_translation/layout_processing"),
+        SettingsSelectBinding::TranslationLayoutProcessing,
+        {{QStringLiteral("smart_merge"),
+          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Smart Merge"))},
+         {QStringLiteral("original"),
+          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Original"))}});
 }
 
 QVector<SettingsOptionDefinition> clarityOptions(bool includeHighRes) {
@@ -1459,7 +1495,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     {smartSelectionItem(), screenshotOcrActionItem(),
                      screenshotDoubleClickActionItem(), screenshotMiddleClickActionItem(),
                      screenshotAutoSaveAfterCopyItem(), screenshotCopyFileItem(),
-                     screenshotSaveAsFileDialogItem()},
+                     screenshotSaveAsFileDialogItem(), screenshotShutterSoundNotificationItem()},
                 },
                 {
                     QStringLiteral("pin-to-screen-settings"),
@@ -1475,7 +1511,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(
                         QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot translation settings")),
                     SettingsSectionReset::Translation,
-                    {originalImageTranslationItem()},
+                    {originalImageTranslationItem(), translationLayoutProcessingItem()},
                 },
                 {
                     QStringLiteral("drawing-settings"),
@@ -1574,6 +1610,14 @@ QVector<SettingsPageDefinition> builtInPages() {
                     },
                 },
                 {
+                    QStringLiteral("interface-text-recognition"),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Text Recognition")),
+                    settingsText(
+                        QT_TRANSLATE_NOOP("SettingsCatalog", "Text recognition appearance")),
+                    SettingsSectionReset::TextRecognitionInterfaceSettings,
+                    {ocrFillStyleItem()},
+                },
+                {
                     QStringLiteral("toolbar"),
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Toolbar")),
                     settingsText(QT_TRANSLATE_NOOP(
@@ -1639,6 +1683,14 @@ QVector<SettingsPageDefinition> builtInPages() {
                     SettingsSectionReset::HistoryPolicy,
                     {
                         historyEnabledItem(),
+                        {QStringLiteral("history.keep-permanently"),
+                         settingsText(
+                             QT_TRANSLATE_NOOP("SettingsCatalog", "Keep records permanently")),
+                         settingsText(
+                             QT_TRANSLATE_NOOP("SettingsCatalog", "No automatic history cleanup")),
+                         {},
+                         QStringLiteral("capture_history/keep_permanently"),
+                         SettingsSwitchDefinition{SettingsSwitchBinding::HistoryKeepPermanently}},
                         historyIntegerItem(
                             QStringLiteral("history.retention-days"),
                             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Retention period")),
@@ -2363,6 +2415,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSelectBinding::ColorPickerDisplayMode:
                         expectedKey = QStringLiteral("screenshot_ui/color_picker_display_mode");
                         break;
+                    case SettingsSelectBinding::OcrFillStyle:
+                        expectedKey = QStringLiteral("text_recognition/fill_style");
+                        break;
                     case SettingsSelectBinding::ScreenshotOcrAction:
                         expectedKey =
                             QStringLiteral("screenshot/auto_execute_after_text_recognition");
@@ -2405,6 +2460,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSelectBinding::TrayLeftClickAction:
                         expectedKey = QStringLiteral("tray/left_click_action");
+                        break;
+                    case SettingsSelectBinding::TranslationLayoutProcessing:
+                        expectedKey = QStringLiteral("screenshot_translation/layout_processing");
                         break;
                     }
                     if (schemaEntry == nullptr ||
@@ -2452,6 +2510,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     case SettingsSwitchBinding::HistoryEnabled:
                         expectedKey = QStringLiteral("capture_history/enabled");
                         break;
+                    case SettingsSwitchBinding::HistoryKeepPermanently:
+                        expectedKey = QStringLiteral("capture_history/keep_permanently");
+                        break;
                     case SettingsSwitchBinding::SmartSelection:
                         expectedKey = QStringLiteral("screenshot_selection/smart_selection");
                         break;
@@ -2470,6 +2531,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSwitchBinding::ScreenshotCaptureCursor:
                         expectedKey = QStringLiteral("screenshot/capture_cursor");
+                        break;
+                    case SettingsSwitchBinding::ScreenshotShutterSoundNotification:
+                        expectedKey = QStringLiteral("screenshot/shutter_sound_notification");
                         break;
                     case SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors:
                         expectedKey = QStringLiteral("screenshot/restore_original_screen_colors");

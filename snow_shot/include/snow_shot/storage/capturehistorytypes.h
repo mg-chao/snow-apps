@@ -164,6 +164,7 @@ struct CaptureHistoryPolicy {
     int retentionDays = 7;
     int maxEntries = 100;
     int maxDiskMiB = 1024;
+    bool keepPermanently = false;
 
     [[nodiscard]] bool isValid() const {
         return retentionDays >= MinimumRetentionDays && retentionDays <= MaximumRetentionDays &&
@@ -173,7 +174,8 @@ struct CaptureHistoryPolicy {
 
     friend bool operator==(const CaptureHistoryPolicy& first, const CaptureHistoryPolicy& second) {
         return first.enabled == second.enabled && first.retentionDays == second.retentionDays &&
-               first.maxEntries == second.maxEntries && first.maxDiskMiB == second.maxDiskMiB;
+               first.maxEntries == second.maxEntries && first.maxDiskMiB == second.maxDiskMiB &&
+               first.keepPermanently == second.keepPermanently;
     }
 };
 

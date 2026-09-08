@@ -100,6 +100,9 @@ QJsonObject globalMouseCombinationToJson(const SettingsGlobalMouseCombination& c
 
 storage::CaptureHistoryPolicy defaultHistoryPolicy() {
     storage::CaptureHistoryPolicy policy;
+    policy.keepPermanently = storage::ConfigurationSchema::defaultValue(
+                                 QStringLiteral("capture_history/keep_permanently"))
+                                 .toBool();
     policy.enabled =
         storage::ConfigurationSchema::defaultValue(QStringLiteral("capture_history/enabled"))
             .toBool();
@@ -173,6 +176,8 @@ BuiltInSettingsBackend::BuiltInSettingsBackend(
 
 QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) const {
     switch (binding) {
+    case SettingsSelectBinding::TranslationLayoutProcessing:
+        return storage::ScreenshotTranslationSettings().layoutProcessing();
     case SettingsSelectBinding::Theme:
         return themeModeValue(styles::ThemeManager::instance().themeMode());
     case SettingsSelectBinding::Language:
@@ -199,6 +204,11 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
         return storage::ScreenshotSettings().windowElementApi();
     case SettingsSelectBinding::ScreenshotToolbarSize:
         return storage::ScreenshotUiSettings().toolbarSize();
+    case SettingsSelectBinding::OcrFillStyle:
+        return storage::ApplicationStorage::instance()
+            .configuration()
+            .value(QStringLiteral("text_recognition/fill_style"))
+            .toString();
     case SettingsSelectBinding::ColorPickerDisplayMode:
         return storage::ScreenshotUiSettings().colorPickerDisplayMode();
     case SettingsSelectBinding::ScreenshotOcrAction:
@@ -250,6 +260,8 @@ BuiltInSettingsBackend::dynamicSelectOptions(SettingsSelectBinding binding) cons
 bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
                                               const QVariant& value) {
     switch (binding) {
+    case SettingsSelectBinding::TranslationLayoutProcessing:
+        return storage::ScreenshotTranslationSettings().setLayoutProcessing(value.toString());
     case SettingsSelectBinding::Theme: {
         const auto requested = themeModeForValue(value);
         styles::ThemeManager::instance().setThemeMode(requested);
@@ -293,6 +305,9 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
         return storage::ScreenshotSettings().setWindowElementApi(value.toString());
     case SettingsSelectBinding::ScreenshotToolbarSize:
         return storage::ScreenshotUiSettings().setToolbarSize(value.toString());
+    case SettingsSelectBinding::OcrFillStyle:
+        return storage::ApplicationStorage::instance().configuration().setValue(
+            QStringLiteral("text_recognition/fill_style"), value.toString());
     case SettingsSelectBinding::ColorPickerDisplayMode:
         return storage::ScreenshotUiSettings().setColorPickerDisplayMode(value.toString());
     case SettingsSelectBinding::ScreenshotOcrAction:
@@ -331,6 +346,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
     switch (binding) {
     case SettingsSwitchBinding::HistoryEnabled:
         return storage::ApplicationStorage::instance().captureHistoryPolicy().enabled;
+    case SettingsSwitchBinding::HistoryKeepPermanently:
+        return storage::ApplicationStorage::instance().captureHistoryPolicy().keepPermanently;
     case SettingsSwitchBinding::SmartSelection:
         return storage::ApplicationStorage::instance().smartSelectionEnabled();
     case SettingsSwitchBinding::DirectMlAcceleration:
@@ -347,6 +364,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::ScreenshotSettings().autoSaveAfterCopy();
     case SettingsSwitchBinding::ScreenshotCaptureCursor:
         return storage::ScreenshotSettings().captureCursor();
+    case SettingsSwitchBinding::ScreenshotShutterSoundNotification:
+        return storage::ScreenshotSettings().shutterSoundNotification();
     case SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors:
         return storage::ScreenshotSettings().restoreOriginalScreenColors();
     case SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard:
@@ -376,6 +395,9 @@ bool BuiltInSettingsBackend::switchEnabled(SettingsSwitchBinding binding) const 
 }
 
 bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, bool value) {
+    if (binding == SettingsSwitchBinding::ScreenshotShutterSoundNotification) {
+        return storage::ScreenshotSettings().setShutterSoundNotification(value);
+    }
     if (binding == SettingsSwitchBinding::ScreenshotCaptureCursor) {
         return storage::ScreenshotSettings().setCaptureCursor(value);
     }
@@ -434,6 +456,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::HistoryEnabled:
         policy.enabled = value;
         break;
+    case SettingsSwitchBinding::HistoryKeepPermanently:
+        policy.keepPermanently = value;
+        break;
     case SettingsSwitchBinding::SmartSelection:
         return false;
     case SettingsSwitchBinding::DirectMlAcceleration:
@@ -442,6 +467,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::TrayEnabled:
     case SettingsSwitchBinding::ScreenshotAutoSaveAfterCopy:
     case SettingsSwitchBinding::ScreenshotCaptureCursor:
+    case SettingsSwitchBinding::ScreenshotShutterSoundNotification:
     case SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors:
     case SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard:
     case SettingsSwitchBinding::PinAutomaticTextRecognition:
@@ -938,6 +964,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                    {QStringLiteral("screenshot/save_as_file_dialog"),
                     storage::ConfigurationSchema::defaultValue(
                         QStringLiteral("screenshot/save_as_file_dialog"))},
+                   {QStringLiteral("screenshot/shutter_sound_notification"),
+                    storage::ConfigurationSchema::defaultValue(
+                        QStringLiteral("screenshot/shutter_sound_notification"))},
                    {QStringLiteral("screenshot/auto_execute_after_text_recognition"),
                     storage::ConfigurationSchema::defaultValue(
                         QStringLiteral("screenshot/auto_execute_after_text_recognition"))},
@@ -995,6 +1024,11 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_toolbar/action_tools_layout"))},
         });
+    case SettingsSectionReset::TextRecognitionInterfaceSettings:
+        return storage::ApplicationStorage::instance().configuration().setValue(
+            QStringLiteral("text_recognition/fill_style"),
+            storage::ConfigurationSchema::defaultValue(
+                QStringLiteral("text_recognition/fill_style")));
     case SettingsSectionReset::Toolbar:
         return storage::ApplicationStorage::instance().configuration().setValue(
             QStringLiteral("screenshot_ui/toolbar_size"),
@@ -1095,10 +1129,14 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                  QStringLiteral("pin_to_screen/auto_resize_window"))},
         });
     case SettingsSectionReset::Translation:
-        return storage::ScreenshotTranslationSettings().setOriginalImageTranslationEnabled(
-            storage::ConfigurationSchema::defaultValue(
-                QStringLiteral("screenshot_translation/original_image_translation"))
-                .toBool());
+        return storage::ApplicationStorage::instance().configuration().setValues({
+            {QStringLiteral("screenshot_translation/original_image_translation"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot_translation/original_image_translation"))},
+            {QStringLiteral("screenshot_translation/layout_processing"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screenshot_translation/layout_processing"))},
+        });
     case SettingsSectionReset::Tray:
         return storage::ApplicationStorage::instance().configuration().setValues({
             {QStringLiteral("tray/enabled"),

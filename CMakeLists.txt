@@ -34,6 +34,7 @@ option(SNOW_APPS_BUILD_IMAGE_VIEWER "Build Snow Image Viewer." ON)
 option(SNOW_APPS_BUILD_SNOW_SHOT "Build Snow Shot." ON)
 option(SNOW_APPS_BUILD_TESTS "Build tests for all enabled projects." ON)
 option(SNOW_APPS_BUILD_BENCHMARKS "Build opt-in benchmark targets." OFF)
+option(SNOW_SHOT_SCROLLING_PERF_DETAIL "Compile detailed scrolling C++ and Rust timings." OFF)
 option(SNOW_APPS_STRICT_COMPILE "Enable strict warnings for all projects." ON)
 option(SNOW_APPS_ENABLE_CLANG_TIDY "Run clang-tidy while compiling C++ targets." OFF)
 option(SNOW_APPS_RELEASE_STATIC "Prefer static libraries and the static MSVC runtime." OFF)
@@ -121,10 +122,15 @@ if(SNOW_APPS_BUILD_TESTS)
 endif()
 
 if(SNOW_APPS_BUILD_SNOW_SHOT)
+    set(_snow_scrolling_perf_features)
+    if(SNOW_SHOT_SCROLLING_PERF_DETAIL)
+        list(APPEND _snow_scrolling_perf_features perf-instrumentation)
+    endif()
     snow_add_rust_static_library(snow_shot_rust_ffi_bundle
         PACKAGE snow-shot-rust-ffi
         MANIFEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/snow_rust_ffi"
         OUTPUT_NAME snow_shot_rust_ffi
+        FEATURES ${_snow_scrolling_perf_features}
         STRIP_MSVC_DIRECTIVES
     )
     foreach(_snow_rust_ffi_target IN ITEMS
@@ -306,6 +312,7 @@ if(NOT TARGET snow-benchmarks)
         snow-shot-save-to-file-performance-benchmark
         snow-shot-scrolling-preview-benchmark
         snow-shot-scrolling-result-async-benchmark
+        snow-shot-scrolling-image-performance-benchmark
     )
         if(TARGET ${_snow_benchmark})
             add_dependencies(snow-benchmarks ${_snow_benchmark})

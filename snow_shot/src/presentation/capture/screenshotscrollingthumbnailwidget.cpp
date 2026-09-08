@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotscrollingthumbnailwidget.h"
+#include "screenshotscrollingperfinstrumentation.h"
 
 #include "widgets/scroll_area.h"
 
@@ -209,6 +210,7 @@ bool ScreenshotScrollingThumbnailWidget::hasPreview() const {
 }
 
 void ScreenshotScrollingThumbnailWidget::replacePreview(const QImage& image) {
+    SNOW_SCROLL_DETAIL_SCOPE(ThumbnailTiles);
     m_previewTiles.clear();
     m_previewExtent = 0;
     m_tileDirection = TileDirection::None;
@@ -294,6 +296,7 @@ void ScreenshotScrollingThumbnailWidget::compactActiveTile() {
 }
 
 void ScreenshotScrollingThumbnailWidget::appendPreview(const QImage& image) {
+    SNOW_SCROLL_DETAIL_SCOPE(ThumbnailTiles);
     if (image.isNull() || imageCrossExtent(image, m_mode) != kThumbnailExtent) {
         return;
     }
@@ -330,6 +333,7 @@ void ScreenshotScrollingThumbnailWidget::appendPreview(const QImage& image) {
 }
 
 void ScreenshotScrollingThumbnailWidget::prependPreview(const QImage& image) {
+    SNOW_SCROLL_DETAIL_SCOPE(ThumbnailTiles);
     if (image.isNull() || imageCrossExtent(image, m_mode) != kThumbnailExtent) {
         return;
     }
@@ -368,6 +372,7 @@ void ScreenshotScrollingThumbnailWidget::prependPreview(const QImage& image) {
 void ScreenshotScrollingThumbnailWidget::drawPreviewTiles(QPainter& painter,
                                                           const QRectF& imageTarget,
                                                           const QRectF& visibleRect) const {
+    SNOW_SCROLL_DETAIL_SCOPE(ThumbnailTilePaint);
     int previewStart = 0;
     for (const PreviewTile& tile : m_previewTiles) {
         const QRectF target = horizontal(m_mode)
@@ -483,6 +488,7 @@ bool ScreenshotScrollingThumbnailWidget::isTrimHandleAtPosition(int position) co
 }
 
 void ScreenshotScrollingThumbnailWidget::updateWidgetMetrics() {
+    SNOW_SCROLL_DETAIL_SCOPE(ThumbnailMetrics);
     const int extent = std::max(1, std::min(m_maximumPreviewExtent, scaledImageExtent()));
     setFixedSize(horizontal(m_mode) ? QSize(extent, kThumbnailExtent)
                                     : QSize(kThumbnailExtent, extent));

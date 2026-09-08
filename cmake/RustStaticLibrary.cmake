@@ -3,7 +3,7 @@ include_guard(GLOBAL)
 function(snow_add_rust_static_libraries batch_name)
     set(options STRIP_MSVC_DIRECTIVES)
     set(oneValueArgs MANIFEST_DIR)
-    set(multiValueArgs TARGETS PACKAGES OUTPUT_NAMES)
+    set(multiValueArgs TARGETS PACKAGES OUTPUT_NAMES FEATURES)
     cmake_parse_arguments(SNOW_RUST "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
     if(NOT SNOW_RUST_MANIFEST_DIR)
@@ -173,11 +173,17 @@ function(snow_add_rust_static_libraries batch_name)
         endif()
     endif()
 
+    set(_cargo_feature_args)
+    if(SNOW_RUST_FEATURES)
+        list(JOIN SNOW_RUST_FEATURES "," _cargo_features)
+        list(APPEND _cargo_feature_args --features "${_cargo_features}")
+    endif()
     set(_cargo_commands
         COMMAND "${CMAKE_COMMAND}" -E env
             ${_cargo_environment}
             "${CARGO_EXECUTABLE}" build --locked
             ${_cargo_package_args}
+            ${_cargo_feature_args}
             --target "${SNOW_RUST_TARGET}"
             --profile "${_cargo_profile}"
     )
@@ -223,7 +229,7 @@ endfunction()
 function(snow_add_rust_static_library target_name)
     set(options STRIP_MSVC_DIRECTIVES)
     set(oneValueArgs PACKAGE MANIFEST_DIR OUTPUT_NAME)
-    cmake_parse_arguments(SNOW_RUST "${options}" "${oneValueArgs}" "" ${ARGN})
+    cmake_parse_arguments(SNOW_RUST "${options}" "${oneValueArgs}" "FEATURES" ${ARGN})
 
     foreach(_required IN ITEMS PACKAGE MANIFEST_DIR)
         if(NOT SNOW_RUST_${_required})
@@ -242,6 +248,7 @@ function(snow_add_rust_static_library target_name)
         TARGETS "${target_name}"
         PACKAGES "${SNOW_RUST_PACKAGE}"
         OUTPUT_NAMES "${SNOW_RUST_OUTPUT_NAME}"
+        FEATURES ${SNOW_RUST_FEATURES}
         ${_strip_option}
     )
 endfunction()

@@ -645,6 +645,52 @@ void startupExpiresAgeButDoesNotEnforceCapacity() {
             "read-only repository modified history");
 }
 
+void permanentHistoryBypassesLimitsAndAllowsManualDeletion() {
+    QTemporaryDir temporary;
+    const auto now = QDateTime::fromString(QStringLiteral("2026-09-08T12:00:00Z"), Qt::ISODate);
+    storage::CaptureHistoryRepositoryOptions options;
+    options.clock = [now]() { return now; };
+    options.policy.retentionDays = 1;
+    options.policy.maxEntries = 1;
+    options.policy.maxDiskMiB = storage::CaptureHistoryPolicy::MinimumDiskMiB;
+    require(!options.policy.keepPermanently, "permanent history must default to off");
+    auto repository = storage::makeCaptureHistoryRepository(temporary.path(), options);
+    auto oversized = draftAt(now);
+    const auto& image = oversized.displays.first().image;
+    auto encoded = pngBytes(image, 7);
+    // PNG readers allow trailing bytes; exceed the quota without a huge decoded image.
+    encoded.append(QByteArray(options.policy.maxDiskMiB * 1024 * 1024, '\0'));
+    oversized.preparedResultImage = storage::PreparedPngImage::fromBytes(
+        image.size(), std::make_shared<const QByteArray>(std::move(encoded)));
+    require(oversized.preparedResultImage.has_value(), "oversized PNG fixture must be valid");
+    require(!repository->publish(oversized).get().storage.success,
+            "bounded history must reject a record larger than its disk quota");
+    options.policy.keepPermanently = true;
+    require(repository->updatePolicy(options.policy).get().success,
+            "failed to enable permanent history");
+    require(repository->publish(oversized).get().storage.success &&
+                repository->publish(draftAt(now.addDays(-400))).get().storage.success &&
+                repository->records().size() == 2 &&
+                repository->usage().recordBytes > options.policy.maxDiskMiB * 1024LL * 1024,
+            "permanent history must bypass age, count, disk, and publication limits");
+    repository.reset();
+    repository = storage::makeCaptureHistoryRepository(temporary.path(), options);
+    repository->drain();
+    require(repository->records().size() == 2,
+            "startup must preserve permanent history beyond all limits");
+    auto bounded = options.policy;
+    bounded.keepPermanently = false;
+    require(repository->updatePolicy(bounded).get().success && repository->records().size() == 1,
+            "turning off permanent history must resume age cleanup");
+    require(repository->publish(draftAt(now.addSecs(1))).get().storage.success &&
+                repository->records().size() == 1 &&
+                repository->records().first().createdUtc == now.addSecs(1),
+            "turning off permanent history must resume capacity cleanup on publication");
+    require(repository->updatePolicy(options.policy).get().success &&
+                repository->requestClear().get().success && repository->records().isEmpty(),
+            "permanent history must still allow explicit clearing");
+}
+
 void clearCancelsQueuedPublicationsAndShutdownDrains() {
     QTemporaryDir temporary;
     std::promise<void> started, release;
@@ -686,6 +732,7 @@ int main(int argc, char** argv) {
     failedCommitPreservesPublishedHistory();
     pendingDeletionResumesWithoutScanningOrphans();
     startupExpiresAgeButDoesNotEnforceCapacity();
+    permanentHistoryBypassesLimitsAndAllowsManualDeletion();
     clearCancelsQueuedPublicationsAndShutdownDrains();
     return 0;
 }

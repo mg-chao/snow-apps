@@ -77,6 +77,7 @@ enum class SettingsSelectBinding {
     ScreenshotApiMode,
     WindowElementApi,
     ScreenshotToolbarSize,
+    OcrFillStyle,
     ColorPickerDisplayMode,
     ScreenshotOcrAction,
     ScreenshotDoubleClickAction,
@@ -92,6 +93,7 @@ enum class SettingsSelectBinding {
     ScreenshotImageFormat,
     ScreenshotSaveAsFileDialog,
     TrayLeftClickAction,
+    TranslationLayoutProcessing,
 };
 
 struct SettingsSelectDefinition {
@@ -102,12 +104,14 @@ struct SettingsSelectDefinition {
 
 enum class SettingsSwitchBinding {
     HistoryEnabled,
+    HistoryKeepPermanently,
     SmartSelection,
     DirectMlAcceleration,
     SelectionTransitionAnimation,
     TrayEnabled,
     ScreenshotAutoSaveAfterCopy,
     ScreenshotCaptureCursor,
+    ScreenshotShutterSoundNotification,
     ScreenshotRestoreOriginalScreenColors,
     ScreenshotCopyImageFileToClipboard,
     PinAutomaticTextRecognition,
@@ -341,6 +345,7 @@ enum class SettingsSectionReset {
     ScreenshotSettings,
     ScreenshotOutput,
     ScreenshotInterfaceSettings,
+    TextRecognitionInterfaceSettings,
     Toolbar,
     DrawingToolbar,
     DrawingQuickSelection,

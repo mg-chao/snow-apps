@@ -94,8 +94,33 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 31 && itemCount == 126,
-            "catalog must contain thirty-one sections and one hundred twenty-six items");
+    require(sectionCount == 32 && itemCount == 130,
+            "catalog must contain thirty-two sections and one hundred thirty items");
+    const auto* history =
+        catalog.section(QStringLiteral("storage-and-privacy"), QStringLiteral("history"));
+    require(history != nullptr && history->items.size() >= 2 &&
+                history->items[0].id == QStringLiteral("history.enabled") &&
+                history->items[1].id == QStringLiteral("history.keep-permanently"),
+            "permanent history must follow persistent history in Storage and Privacy");
+    const auto& permanent = history->items[1];
+    require(permanent.title.translated() == QStringLiteral("Keep records permanently") &&
+                std::get<settings::SettingsSwitchDefinition>(permanent.payload).binding ==
+                    settings::SettingsSwitchBinding::HistoryKeepPermanently &&
+                storage::ConfigurationSchema::defaultValue(permanent.configurationKey) == false,
+            "permanent history must be a default-off switch with the requested label");
+    const auto* fill = catalog.item({QStringLiteral("interface-settings"),
+                                     QStringLiteral("interface-text-recognition"),
+                                     QStringLiteral("interface.text-recognition.fill-style")});
+    require(fill != nullptr && fill->title.translated() == QStringLiteral("Fill Style"),
+            "Interface Settings must expose the OCR Fill Style setting");
+    const auto& fillSelect = std::get<settings::SettingsSelectDefinition>(fill->payload);
+    require(fillSelect.binding == settings::SettingsSelectBinding::OcrFillStyle &&
+                fillSelect.options.size() == 2 &&
+                fillSelect.options[0].value == QStringLiteral("blur") &&
+                fillSelect.options[1].value == QStringLiteral("background_fill") &&
+                storage::ConfigurationSchema::defaultValue(fill->configurationKey) ==
+                    QStringLiteral("background_fill"),
+            "OCR Fill Style must offer Blur and Background Fill, defaulting to Background Fill");
     const auto* saveDialog =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
                       QStringLiteral("screenshot.save-as-file-dialog")});
@@ -166,6 +191,23 @@ void builtInCatalogIsCompleteAndValid() {
             !storage::ConfigurationSchema::defaultValue(captureCursor->configurationKey).toBool(),
         "cursor capture must be the disabled final switch in system Screenshot settings");
     const auto* functionPage = catalog.page(QStringLiteral("function-settings"));
+    const auto* shutterSound =
+        catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
+                      QStringLiteral("screenshot.shutter-sound-notification")});
+    const auto* screenshotSettings =
+        catalog.section(QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"));
+    require(screenshotSettings != nullptr && !screenshotSettings->items.isEmpty() &&
+                screenshotSettings->items.constLast().id ==
+                    QStringLiteral("screenshot.shutter-sound-notification"),
+            "shutter notification must be the final item in Function Screenshot settings");
+    require(shutterSound != nullptr &&
+                shutterSound->title.translated() == QStringLiteral("Shutter Sound Notification") &&
+                shutterSound->configurationKey ==
+                    QStringLiteral("screenshot/shutter_sound_notification") &&
+                std::get<settings::SettingsSwitchDefinition>(shutterSound->payload).binding ==
+                    settings::SettingsSwitchBinding::ScreenshotShutterSoundNotification &&
+                storage::ConfigurationSchema::defaultValue(shutterSound->configurationKey).toBool(),
+            "Function Screenshot settings must expose the enabled shutter notification switch");
     const auto* smartSelection =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("screenshot-settings"),
                       QStringLiteral("screenshot.smart-selection")});
@@ -198,6 +240,20 @@ void builtInCatalogIsCompleteAndValid() {
                 functionPage->sections.at(2).reset == settings::SettingsSectionReset::Translation &&
                 storage::ConfigurationSchema::defaultValue(translation->configurationKey).toBool(),
             "Translation should expose its own default-on switch and section reset");
+    const auto* layout =
+        catalog.item({QStringLiteral("function-settings"), QStringLiteral("translation-settings"),
+                      QStringLiteral("translation.layout-processing")});
+    require(
+        layout != nullptr && layout->title.translated() == QStringLiteral("Layout Processing") &&
+            layout->configurationKey == QStringLiteral("screenshot_translation/layout_processing"),
+        "Translation should expose layout processing");
+    const auto& layoutOptions =
+        std::get<settings::SettingsSelectDefinition>(layout->payload).options;
+    require(layoutOptions.size() == 2 && layoutOptions[0].value == QStringLiteral("smart_merge") &&
+                layoutOptions[0].label.translated() == QStringLiteral("Smart Merge") &&
+                layoutOptions[1].value == QStringLiteral("original") &&
+                layoutOptions[1].label.translated() == QStringLiteral("Original"),
+            "layout processing must expose Smart Merge and Original");
     const auto* encodingPreset = catalog.item({QStringLiteral("function-settings"),
                                                QStringLiteral("screen-recording-settings"),
                                                QStringLiteral("screen-recording.encoding-preset")});
@@ -444,13 +500,14 @@ void builtInCatalogIsCompleteAndValid() {
         "Application shortcuts must expose Screenshot before Drawing with stable local shortcuts");
 
     const auto* interfacePage = catalog.page(QStringLiteral("interface-settings"));
-    require(interfacePage != nullptr && interfacePage->sections.size() == 6 &&
+    require(interfacePage != nullptr && interfacePage->sections.size() == 7 &&
                 interfacePage->sections.at(1).id == QStringLiteral("interface-screenshot") &&
-                interfacePage->sections.at(2).id == QStringLiteral("toolbar") &&
-                interfacePage->sections.at(3).id == QStringLiteral("drawing") &&
-                interfacePage->sections.at(4).id == QStringLiteral("pin-to-screen") &&
-                interfacePage->sections.at(5).id == QStringLiteral("tray"),
-            "Interface settings must expose Screenshot, Toolbar, Drawing, Pin to screen, and Tray");
+                interfacePage->sections.at(2).id == QStringLiteral("interface-text-recognition") &&
+                interfacePage->sections.at(3).id == QStringLiteral("toolbar") &&
+                interfacePage->sections.at(4).id == QStringLiteral("drawing") &&
+                interfacePage->sections.at(5).id == QStringLiteral("pin-to-screen") &&
+                interfacePage->sections.at(6).id == QStringLiteral("tray"),
+            "Interface settings must place Text Recognition immediately below Screenshot");
     const auto* toolbarSize =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("toolbar"),
                       QStringLiteral("interface.screenshot.toolbar-size")});
@@ -461,7 +518,7 @@ void builtInCatalogIsCompleteAndValid() {
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("interface-screenshot"),
                       QStringLiteral("interface.screenshot.screenshot-toolbar-editor")});
     const auto& screenshotSection = interfacePage->sections.at(1);
-    const auto& toolbarSection = interfacePage->sections.at(2);
+    const auto& toolbarSection = interfacePage->sections.at(3);
     const auto* trayIcon =
         catalog.item({QStringLiteral("interface-settings"), QStringLiteral("tray"),
                       QStringLiteral("interface.tray.icon")});
@@ -958,7 +1015,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 165 && index.search(QString()).size() == 165,
+    require(index.entries().size() == 170 && index.search(QString()).size() == 170,
             "search must generate all catalog nodes in catalog order");
     const auto translation = index.search(QStringLiteral("original image translation"));
     require(!translation.isEmpty() && translation.constFirst().location.itemId ==
@@ -990,7 +1047,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 8 && sections == 31 && items == 126,
+    require(pages == 8 && sections == 32 && items == 130,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

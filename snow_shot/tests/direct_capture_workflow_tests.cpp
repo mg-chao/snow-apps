@@ -100,6 +100,31 @@ void shutterPlaysImmediatelyForEveryRequest() {
     }
 }
 
+void shutterPreferenceAppliesToEachRequest() {
+    for (auto target : {DirectCaptureTarget::FocusedWindow, DirectCaptureTarget::CurrentMonitor}) {
+        Fixture f;
+        DirectCaptureRequest request;
+        request.target = target;
+        request.shutterSoundNotification = false;
+        f.workflow.enqueue(request);
+        f.workflow.enqueue(request);
+        require(f.events == QStringList({"acquire"}),
+                "disabled shutter notification played for an active or queued capture");
+        request.shutterSoundNotification = true;
+        f.workflow.enqueue(request);
+        require(f.events == QStringList({"acquire", "shutter"}),
+                "reenabling shutter notification did not affect the next request immediately");
+        for (int i = 0; i < 3; ++i) {
+            f.acquired(frame());
+            f.copied({});
+            QCoreApplication::processEvents();
+        }
+        require(f.events.count("shutter") == 1 && f.events.count("copy") == 3 &&
+                    f.workflow.pendingCount() == 0,
+                "shutter preference changed capture output or repeated a queued notification");
+    }
+}
+
 void outputsKeepRawPixelsAndProcessEveryRequest() {
     Fixture f;
     DirectCaptureRequest first;
@@ -319,6 +344,7 @@ void shutdownDuringNotificationsStopsOutputs() {
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
     shutterPlaysImmediatelyForEveryRequest();
+    shutterPreferenceAppliesToEachRequest();
     outputsKeepRawPixelsAndProcessEveryRequest();
     queuedCopiesRetainCaptureTargets();
     failuresDoNotBlockLaterRequests();

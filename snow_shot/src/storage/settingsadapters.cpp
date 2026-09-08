@@ -339,6 +339,14 @@ bool GlobalShortcutSettings::setDisableOnFocusedFullscreenWindow(bool disabled) 
                             disabled);
 }
 
+bool ScreenshotSettings::shutterSoundNotification() const {
+    return cache().value(QStringLiteral("screenshot/shutter_sound_notification")).toBool();
+}
+
+bool ScreenshotSettings::setShutterSoundNotification(bool enabled) const {
+    return cache().setValue(QStringLiteral("screenshot/shutter_sound_notification"), enabled);
+}
+
 bool ScreenshotSettings::captureCursor() const {
     return cache().value(QStringLiteral("screenshot/capture_cursor")).toBool();
 }
@@ -1024,7 +1032,16 @@ bool ScreenshotTranslationSettings::setOriginalImageTranslationEnabled(bool enab
 ScreenshotTranslationConfiguration ScreenshotTranslationSettings::configuration() const {
     return {cache().value(QStringLiteral("screenshot_translation/source_language")).toString(),
             cache().value(QStringLiteral("screenshot_translation/target_language")).toString(),
-            cache().value(QStringLiteral("screenshot_translation/model")).toString()};
+            cache().value(QStringLiteral("screenshot_translation/model")).toString(),
+            layoutProcessing()};
+}
+
+QString ScreenshotTranslationSettings::layoutProcessing() const {
+    return cache().value(QStringLiteral("screenshot_translation/layout_processing")).toString();
+}
+
+bool ScreenshotTranslationSettings::setLayoutProcessing(const QString& mode) const {
+    return cache().setValue(QStringLiteral("screenshot_translation/layout_processing"), mode);
 }
 
 bool ScreenshotTranslationSettings::setConfiguration(
@@ -1033,6 +1050,8 @@ bool ScreenshotTranslationSettings::setConfiguration(
         {QStringLiteral("screenshot_translation/source_language"), configuration.sourceLanguage},
         {QStringLiteral("screenshot_translation/target_language"), configuration.targetLanguage},
         {QStringLiteral("screenshot_translation/model"), configuration.modelId},
+        {QStringLiteral("screenshot_translation/layout_processing"),
+         configuration.layoutProcessing},
     });
 }
 
