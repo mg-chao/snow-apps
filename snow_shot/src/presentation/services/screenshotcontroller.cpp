@@ -3765,7 +3765,15 @@ bool ScreenshotController::Impl::beginCapture(PendingSelectionAction action,
         m_historyService->resetCaptureNavigation();
     }
     emit owner.captureAvailabilityChanged(false);
-    m_captureWorkflow->startCapture(mode);
+    using ToolbarPreparation = ScreenshotCaptureWorkflow::ToolbarPreparation;
+    using ToolbarVisibility = ScreenshotCaptureWorkflow::ToolbarVisibility;
+    const bool entersEditing = action == PendingSelectionAction::None ||
+                               action == PendingSelectionAction::RecognizeText ||
+                               action == PendingSelectionAction::RecognizeTextTranslation ||
+                               action == PendingSelectionAction::Save;
+    m_captureWorkflow->startCapture(
+        mode, entersEditing ? ToolbarPreparation::Prewarm : ToolbarPreparation::OnDemand,
+        entersEditing ? ToolbarVisibility::ShowAfterSelection : ToolbarVisibility::Suppressed);
     return true;
 }
 
@@ -4044,7 +4052,7 @@ void ScreenshotController::startDelayedCapture(int delaySeconds) {
 }
 
 void ScreenshotController::captureAndPinSelection() {
-    static_cast<void>(m_impl->beginCapture(Impl::PendingSelectionAction::Pin, ScreenshotCaptureWorkflow::StartMode::NoToolbar));
+    static_cast<void>(m_impl->beginCapture(Impl::PendingSelectionAction::Pin));
 }
 
 void ScreenshotController::captureAndRecognizeText() {
@@ -4056,11 +4064,11 @@ void ScreenshotController::captureAndTranslateText() {
 }
 
 void ScreenshotController::captureAndCopySelection() {
-    static_cast<void>(m_impl->beginCapture(Impl::PendingSelectionAction::Copy, ScreenshotCaptureWorkflow::StartMode::NoToolbar));
+    static_cast<void>(m_impl->beginCapture(Impl::PendingSelectionAction::Copy));
 }
 
 void ScreenshotController::captureAndStartScreenRecording() {
-    static_cast<void>(m_impl->beginCapture(Impl::PendingSelectionAction::StartVideo, ScreenshotCaptureWorkflow::StartMode::NoToolbar));
+    static_cast<void>(m_impl->beginCapture(Impl::PendingSelectionAction::StartVideo));
 }
 
 void ScreenshotController::startOrStopScreenRecordingAndCopy() {

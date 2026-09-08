@@ -861,9 +861,48 @@ void captureSnapshotsScreenColorSetting() {
             "the next capture must observe changed screenshot settings");
 }
 
+void toolbarVisibilityIsIndependentOfInputAndPreparation() {
+    using Mode = ScreenshotCaptureWorkflow::StartMode;
+    using Preparation = ScreenshotCaptureWorkflow::ToolbarPreparation;
+    using Visibility = ScreenshotCaptureWorkflow::ToolbarVisibility;
+    for (const auto mode : {Mode::Normal, Mode::ExternalDrag}) {
+        for (const auto preparation : {Preparation::Prewarm, Preparation::OnDemand}) {
+            ScreenshotCaptureState state;
+            ScreenshotDisplaySession displays;
+            ScreenshotGeometryMapper geometry;
+            ScreenshotInteractionState interaction;
+            ScreenshotSelectionModel selection;
+            ScreenshotIntelligentSelectionModel intelligent;
+            CaptureRuntime runtime;
+            auto workflow = makeWorkflow(state, displays, geometry, interaction, selection,
+                                         intelligent, runtime);
+            for (const auto visibility : {Visibility::Suppressed, Visibility::ShowAfterSelection,
+                                          Visibility::Suppressed, Visibility::ShowAfterSelection}) {
+                workflow.startCapture(mode, preparation, visibility);
+                CapturedDisplayModel snapshot;
+                snapshot.stableId = QStringLiteral("primary");
+                snapshot.physicalRect = QRect(0, 0, 64, 48);
+                snapshot.logicalRect = snapshot.physicalRect;
+                snapshot.image = QImage(64, 48, QImage::Format_RGBA8888);
+                snapshot.image.fill(Qt::blue);
+                runtime.eventSink->handleCaptureFinished(
+                    successfulResult(state.sessionId, snapshot));
+                selection.setSelectionStartEnd({10, 10}, {30, 20});
+                interaction.finishDrag();
+                interaction.confirmSelection();
+                state.sessionState = ScreenshotSessionState::Editing;
+                require(workflow.suppressCaptureToolbar() == (visibility == Visibility::Suppressed),
+                        "confirmed selection must use this request's toolbar visibility regardless "
+                        "of input mode, preparation strategy, or previous capture");
+                workflow.cancelCapture();
+            }
+        }
+    }
+}
+
 void normalCaptureRestoresToolbarAfterSuppressedCapture() {
     using Mode = ScreenshotCaptureWorkflow::StartMode;
-    for (const auto mode : {Mode::ExternalDrag, Mode::NoToolbar}) {
+    for (const auto mode : {Mode::ExternalDrag, Mode::Normal}) {
         for (const bool exportCleanup : {false, true}) {
             ScreenshotCaptureState state;
             ScreenshotDisplaySession displays;
@@ -874,9 +913,12 @@ void normalCaptureRestoresToolbarAfterSuppressedCapture() {
             CaptureRuntime runtime;
             auto workflow = makeWorkflow(state, displays, geometry, interaction, selection,
                                          intelligent, runtime);
-            workflow.startCapture(mode);
+            workflow.startCapture(mode, ScreenshotCaptureWorkflow::ToolbarPreparation::OnDemand,
+                                  ScreenshotCaptureWorkflow::ToolbarVisibility::Suppressed);
+            require(runtime.prewarmToolbarSurfaceCalls == 0,
+                    "on-demand captures must not prepare an unused editing toolbar");
             require(workflow.suppressCaptureToolbar(),
-                    "external drag and no-toolbar requests must suppress the toolbar");
+                    "explicit suppression must hide the toolbar for either input mode");
             if (exportCleanup) {
                 workflow.cancelCaptureForExport();
             } else {
@@ -886,6 +928,8 @@ void normalCaptureRestoresToolbarAfterSuppressedCapture() {
             workflow.startCapture();
             require(!workflow.suppressCaptureToolbar(),
                     "a history edit must restore the toolbar after any suppressed capture");
+            require(runtime.prewarmToolbarSurfaceCalls == 1,
+                    "normal capture must restore toolbar prewarming after on-demand capture");
         }
     }
 }
@@ -903,7 +947,9 @@ void noToolbarCaptureWaitsForUserSelection() {
             runtime.seedActiveDisplayOnPrepare = preparedDisplay;
             auto workflow = makeWorkflow(state, displays, geometry, interaction, selection,
                                          intelligent, runtime, smartSelectionEnabled);
-            workflow.startCapture(ScreenshotCaptureWorkflow::StartMode::NoToolbar);
+            workflow.startCapture(ScreenshotCaptureWorkflow::StartMode::Normal,
+                                  ScreenshotCaptureWorkflow::ToolbarPreparation::OnDemand,
+                                  ScreenshotCaptureWorkflow::ToolbarVisibility::Suppressed);
 
             CapturedDisplayModel snapshot;
             snapshot.stableId = QStringLiteral("primary");
@@ -921,6 +967,8 @@ void noToolbarCaptureWaitsForUserSelection() {
                     "hiding the toolbar must preserve the configured smart-selection behavior");
             require(runtime.startWorkflowRefreshCalls > 0,
                     "no-toolbar hotkey capture must initialize cursor selection normally");
+            require(runtime.prewarmToolbarSurfaceCalls == 0,
+                    "on-demand capture must not prepare the toolbar during presentation");
         }
     }
 }
@@ -958,6 +1006,8 @@ void externalDragBypassesSelectorAndPreparesBeforeReveal() {
         ScreenshotCaptureWorkflow workflow(context);
         active = &workflow;
         workflow.startCapture(ScreenshotCaptureWorkflow::StartMode::ExternalDrag);
+        require(runtime.prewarmToolbarSurfaceCalls == 1,
+                "external drags entering editing must retain toolbar prewarming");
         require(runtime.startWorkflowRefreshCalls == 0 && interaction.manualSelecting(),
                 "global mouse capture must not initialize or wait on smart selection");
         CapturedDisplayModel snapshot;
@@ -979,6 +1029,8 @@ void externalDragBypassesSelectorAndPreparesBeforeReveal() {
             interaction.finishDrag();
             interaction.confirmSelection();
             state.sessionState = ScreenshotSessionState::Editing;
+            require(!workflow.suppressCaptureToolbar(),
+                    "external drags entering editing must allow the screenshot toolbar");
             const quint64 completedSession = state.sessionId;
             workflow.handleDisplayConfigurationChanged();
             require(
@@ -1039,6 +1091,7 @@ void globalDragCoordinatesStayPhysicalAcrossDifferentDisplayScales() {
 }
 
 int main() {
+    toolbarVisibilityIsIndependentOfInputAndPreparation();
     noToolbarCaptureWaitsForUserSelection();
     normalCaptureRestoresToolbarAfterSuppressedCapture();
     externalDragDisplayChangesInvalidatePendingCapture();

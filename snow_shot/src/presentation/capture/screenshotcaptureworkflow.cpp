@@ -66,10 +66,11 @@ void ScreenshotCaptureWorkflow::prewarmResources() {
 }
 
 bool ScreenshotCaptureWorkflow::suppressCaptureToolbar() const {
-    return m_startMode != StartMode::Normal;
+    return m_toolbarVisibility == ToolbarVisibility::Suppressed;
 }
 
-void ScreenshotCaptureWorkflow::startCapture(StartMode mode) {
+void ScreenshotCaptureWorkflow::startCapture(StartMode mode, ToolbarPreparation toolbarPreparation,
+                                             ToolbarVisibility toolbarVisibility) {
     if (m_deferredExportCleanup) {
         completeDeferredExportCleanup();
     }
@@ -88,6 +89,8 @@ void ScreenshotCaptureWorkflow::startCapture(StartMode mode) {
     }
     const quint64 sessionId = ++m_state.sessionId;
     m_startMode = mode;
+    m_toolbarPreparation = toolbarPreparation;
+    m_toolbarVisibility = toolbarVisibility;
     m_state.restoreOriginalScreenColors = m_context.restoreOriginalScreenColors();
     m_state.captureCursor = m_context.captureCursor();
     m_state.sessionState = ScreenshotSessionState::Capturing;
@@ -355,7 +358,9 @@ void ScreenshotCaptureWorkflow::beginCapturePreparation(quint64 sessionId) {
         // Prewarm the hidden editing-toolbar surface only after the capture has
         // been dispatched so its construction overlaps the worker's frame
         // acquisition instead of delaying the capture or the editing reveal.
-        m_context.runtime.prewarmToolbarSurface(m_context.displaySession);
+        if (m_toolbarPreparation == ToolbarPreparation::Prewarm) {
+            m_context.runtime.prewarmToolbarSurface(m_context.displaySession);
+        }
     }
     const bool presentationBegun = preCapturePrepared && beginCapturePresentation(sessionId);
     if (presentationBegun) {

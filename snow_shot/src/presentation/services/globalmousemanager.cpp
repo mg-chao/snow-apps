@@ -3,6 +3,7 @@
 
 #include <QJsonObject>
 #include <QCursor>
+#include <QDeadlineTimer>
 #include <QGuiApplication>
 #include <QMutex>
 #include <QMutexLocker>
@@ -93,6 +94,7 @@ struct GlobalMouseManager::Impl {
             }
             pacing = true;
         }
+        QDeadlineTimer nextFrame(frameInterval, Qt::PreciseTimer);
         for (const auto& item : events) {
             if (epoch != generation || !started) {
                 return;
@@ -103,8 +105,10 @@ struct GlobalMouseManager::Impl {
                 // QCursor uses logical desktop coordinates, unlike native gesture positions.
                 const QScreen* screen = QGuiApplication::screenAt(QCursor::pos());
                 const qreal rate = screen ? screen->refreshRate() : 60.0;
-                frameTimer.setInterval(
-                    std::max(1, static_cast<int>(std::ceil(1000.0 / (rate > 0 ? rate : 60.0)))));
+                frameInterval =
+                    std::max(1, static_cast<int>(std::ceil(1000.0 / (rate > 0 ? rate : 60.0))));
+                frameTimer.setInterval(frameInterval);
+                nextFrame.setRemainingTime(frameInterval, Qt::PreciseTimer);
             } else if (item.kind == GlobalMouseDragEvent::Kind::Cancel &&
                        pendingCaptureId == item.id) {
                 activeId = 0;
@@ -120,7 +124,9 @@ struct GlobalMouseManager::Impl {
             return;
         }
         if (activeId != 0) {
-            frameTimer.start();
+            // Subscriber work consumes this frame's budget. Overruns yield once instead of
+            // adding a full interval or replaying missed frames.
+            frameTimer.start(static_cast<int>(std::max<qint64>(1, nextFrame.remainingTime())));
         } else {
             frameTimer.stop();
             QMutexLocker lock(&mutex);
@@ -135,6 +141,7 @@ struct GlobalMouseManager::Impl {
     QMutex mutex;
     QVector<GlobalMouseDragEvent> pending;
     QTimer frameTimer;
+    int frameInterval = 17;
     quint64 generation = 0;
     quint64 activeId = 0;
     // Release stops frame pacing, but capture preparation may still need cancellation.

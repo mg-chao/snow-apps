@@ -8,6 +8,7 @@
 #include <QJsonArray>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QThread>
 #include <array>
 #include <atomic>
 #include <cstdlib>
@@ -574,6 +575,29 @@ void managerPacesSustainedMovementAndDeliversTerminalEventsImmediately() {
         drain();
         require(delivered.size() == completedCount && !timer->isActive(),
                 "completion acknowledgement must discard queued cancellation after release");
+
+        int frameBudget = 0;
+        const auto slowSubscriber = QObject::connect(
+            &manager, &GlobalMouseManager::dragEvent, &manager, [&](const auto& event) {
+                if (event.id == 9) {
+                    if (event.kind == EventKind::Begin) {
+                        frameBudget = timer->interval();
+                    }
+                    // Force an overrun without depending on machine speed or timer delivery.
+                    QThread::msleep(static_cast<unsigned long>(frameBudget + 20));
+                }
+            });
+        input->handler({EventKind::Begin, 9, Action::ScreenshotCopy, {}});
+        drain();
+        require(timer->isActive() && timer->interval() == 1,
+                "a subscriber exceeding the frame budget must not incur another full interval");
+        input->handler({EventKind::Update, 9, Action::ScreenshotCopy, {10, 10}});
+        deadline();
+        require(timer->isActive() && timer->interval() == 1 &&
+                    delivered.back().position == QPoint(10, 10),
+                "update subscribers must consume the frame budget just like capture startup");
+        QObject::disconnect(slowSubscriber);
+        manager.cancelGesture(9);
     }
     storage.shutdown();
 }
