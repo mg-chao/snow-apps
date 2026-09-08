@@ -4142,13 +4142,12 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
         group.itemIds = availableItemIds;
         group.entryItemId = availableItemIds.constLast();
         const QSet<QString> items(availableItemIds.cbegin(), availableItemIds.cend());
-        if (items == QSet<QString>{QStringLiteral("barcode-recognition"),
-                                   QStringLiteral("table-recognition"),
-                                   QStringLiteral("convert-to-markdown"),
-                                   QStringLiteral("convert-to-html")}) {
-            group.entryItemId = m_tableQrEntryTool == Tool::Qr
-                                    ? QStringLiteral("barcode-recognition")
-                                    : QStringLiteral("table-recognition");
+        const bool conversionRecognitionGroup =
+            items == QSet<QString>{
+                         QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
+                         QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")};
+        if (conversionRecognitionGroup) {
+            group.entryItemId = QStringLiteral("table-recognition");
         }
         const bool nativeRecognitionGroup =
             items == recognitionItems && m_tableButton != nullptr && m_tableQrPopover != nullptr;
@@ -4186,9 +4185,15 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
             if (availableItemIds.size() > 1) {
                 group.popover = createScreenshotToolPaletteOptionPopoverShell(group.trigger);
                 group.trigger->installEventFilter(this);
-                for (int optionIndex = availableItemIds.size() - 1; optionIndex >= 0;
-                     --optionIndex) {
-                    group.popoverItemIds.push_back(availableItemIds.at(optionIndex));
+                if (conversionRecognitionGroup) {
+                    group.popoverItemIds = {
+                        QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
+                        QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")};
+                } else {
+                    for (int optionIndex = availableItemIds.size() - 1; optionIndex >= 0;
+                         --optionIndex) {
+                        group.popoverItemIds.push_back(availableItemIds.at(optionIndex));
+                    }
                 }
                 connect(group.popover, &adqt::widgets::AdPopover::visibilityRequested, this,
                         [this, trigger = group.trigger](bool visible) {

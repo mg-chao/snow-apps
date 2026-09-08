@@ -3051,15 +3051,15 @@ void imageConversionToolsExposeOnlySettings() {
         palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotTableQrButton"));
     auto* group = palette.findChild<adqt::widgets::AdButton*>(
         QStringLiteral("screenshotActionToolGroupButton0"));
-    require(markdownSource && htmlSource && qr && group && markdownSource->isHidden() &&
-                htmlSource->isHidden() && qr->isHidden() && !group->isHidden() &&
-                group->property("screenshotToolbarPositionItems").toStringList() ==
-                    QStringList{
-                        QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
-                        QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")} &&
-                group->accessibleName() == QStringLiteral("Barcode recognition"),
-            "one recognition group replaces standalone conversions and preserves the remembered QR "
-            "entry");
+    require(
+        markdownSource && htmlSource && qr && group && markdownSource->isHidden() &&
+            htmlSource->isHidden() && qr->isHidden() && !group->isHidden() &&
+            group->property("screenshotToolbarPositionItems").toStringList() ==
+                QStringList{
+                    QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
+                    QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")} &&
+            group->accessibleName() == QStringLiteral("Table recognition"),
+        "the recognition group initially shows table recognition even with a remembered QR entry");
     static_cast<void>(palette.sizeHint());
     QCoreApplication::processEvents();
     materializeLazyPopover(group);
@@ -3069,6 +3069,19 @@ void imageConversionToolsExposeOnlySettings() {
     require(markdown && html && popoverButtonWithTooltip(popover, "Table recognition") &&
                 popoverButtonWithTooltip(popover, "Barcode recognition"),
             "the recognition popover exposes all four tools");
+    QStringList popoverItems;
+    auto* content = popover->contentWidget();
+    for (auto* button : content->findChildren<adqt::widgets::AdButton*>()) {
+        const QString itemId = button->property("screenshotToolbarItemId").toString();
+        if (!itemId.isEmpty()) {
+            popoverItems.push_back(itemId);
+        }
+    }
+    require(popoverItems == QStringList{QStringLiteral("table-recognition"),
+                                        QStringLiteral("barcode-recognition"),
+                                        QStringLiteral("convert-to-markdown"),
+                                        QStringLiteral("convert-to-html")},
+            "recognition popover orders table, barcode, Markdown, then HTML");
     for (auto* button : {markdownSource, markdown, htmlSource, html}) {
         const auto key = adqt::icons::describeIcon(button->iconRef()).key;
         require(key.pack == QStringLiteral("snow-shot") &&
