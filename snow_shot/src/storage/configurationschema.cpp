@@ -60,8 +60,8 @@ QVector<QStringList> defaultDrawingToolbarPositions() {
 
 QVector<QStringList> defaultActionToolbarPositions() {
     return {
-        {QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
-         QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")},
+        {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
+         QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")},
         {QStringLiteral("record-screen")},
         {QStringLiteral("pin-to-screen")},
         {QStringLiteral("text-recognition")},
@@ -1145,13 +1145,18 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
     }
 
     if (!positions.isEmpty() && known.contains(QStringLiteral("convert-to-markdown"))) {
-        // Fold the previous default's standalone conversions without changing custom placements.
+        // Upgrade earlier defaults without changing custom placements.
         auto previousDefault = defaultPositions;
         previousDefault[0] = {QStringLiteral("barcode-recognition"),
                               QStringLiteral("table-recognition")};
         previousDefault.insert(1, QStringList{QStringLiteral("convert-to-markdown")});
         previousDefault.insert(2, QStringList{QStringLiteral("convert-to-html")});
-        if (hidden.isEmpty() && positions == previousDefault) {
+        auto previousGroupedDefault = defaultPositions;
+        previousGroupedDefault[0] = {
+            QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
+            QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")};
+        if (hidden.isEmpty() &&
+            (positions == previousDefault || positions == previousGroupedDefault)) {
             positions = defaultPositions;
         }
         qsizetype recognitionPosition = -1;

@@ -2240,8 +2240,8 @@ void arrowAndLineUseConfiguredPopoverGroup() {
 }
 
 void tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode() {
-    require(snow_shot::storage::ScreenshotToolbarSettings().setTableQrTool(QStringLiteral("table")),
-            "the shared recognition fixture should start in Table mode");
+    require(snow_shot::storage::ScreenshotToolbarSettings().setTableQrTool(QStringLiteral("qr")),
+            "the remembered recognition mode should differ from the configured bottom tool");
     ScreenshotToolPalette::Options options;
     options.showSelectTool = false;
     options.showShapeTool = false;
@@ -2249,6 +2249,8 @@ void tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode() {
     options.showTableTool = true;
     options.showQrTool = true;
     options.enableStyleToolbar = false;
+    options.actionToolsLayout = snow_shot::storage::ScreenshotToolbarLayout{
+        {{QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")}}, {}};
 
     ScreenshotToolPalette palette(options);
     palette.contentSizeHint();
@@ -2287,6 +2289,9 @@ void tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode() {
     require(tableRequests == 1 && qrRequests == 0 &&
                 palette.activeToolForTests() == ScreenshotToolPalette::Tool::Table,
             "the default shared trigger should run Table recognition directly");
+    require(snow_shot::storage::ScreenshotToolbarSettings().tableQrTool() ==
+                QStringLiteral("table"),
+            "activating the configured entry must persist the chosen recognition mode");
 
     popover->show();
     QCoreApplication::processEvents();
@@ -2311,11 +2316,18 @@ void tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode() {
     require(trigger->busy() && qrOption->busy() && tableOption->busy(),
             "concurrent recognition should preserve each option's independent busy state");
     palette.setQrBusy(false);
+    require(!trigger->busy() && tableOption->busy(),
+            "an inactive recognition option must not make the selected entry busy");
     palette.setTableBusy(false);
 
     palette.setQrEnabled(false);
     require(!qrOption->isEnabled() && tableOption->isEnabled() && trigger->isEnabled(),
             "disabling QR should keep the shared slot available for Table recognition");
+    palette.setQrEnabled(true);
+    palette.setTableEnabled(false);
+    palette.setQrEnabled(false);
+    require(!trigger->isEnabled(), "an action stack with no enabled options must be disabled");
+    palette.setTableEnabled(true);
     palette.setQrEnabled(true);
     tableOption->click();
     require(tableRequests == 2 && qrRequests == 1 &&
@@ -2415,6 +2427,147 @@ void tableRecognitionClickActivatesOnceAfterPointerReentry() {
     require(tableRequests == 1 &&
                 palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select,
             "releasing outside the trigger must cancel the click without starting recognition");
+}
+
+void toolbarStacksFollowConfiguredBottomToTopOrder() {
+    using snow_shot::storage::ScreenshotToolbarLayout;
+    using snow_shot::storage::ScreenshotToolbarLayoutKind;
+    const auto exercise = [](ScreenshotToolbarLayoutKind kind, QStringList position,
+                             bool conversionsAvailable = true) {
+        ScreenshotToolPalette::Options options;
+        options.showSelectTool = false;
+        options.showShapeTool = true;
+        options.showArrowTool = true;
+        options.showLineTool = true;
+        options.showFreeDrawTool = true;
+        options.showTableTool = true;
+        options.showQrTool = true;
+        options.showImageConversionTools = conversionsAvailable;
+        options.enableStyleToolbar = false;
+        const auto makeLayout = [kind](const QStringList& items) {
+            QStringList hidden = snow_shot::presentation::toolbar_layout::defaultOrder(kind);
+            for (const QString& item : items) {
+                hidden.removeAll(item);
+            }
+            return ScreenshotToolbarLayout{{items}, hidden};
+        };
+        if (kind == ScreenshotToolbarLayoutKind::DrawingTools) {
+            options.toolbarLayout = makeLayout(position);
+        } else {
+            options.actionToolsLayout = makeLayout(position);
+        }
+        ScreenshotToolPalette palette(options);
+        for (int rotation = 0; rotation < position.size(); ++rotation) {
+            if (kind == ScreenshotToolbarLayoutKind::DrawingTools) {
+                palette.setToolbarLayout(makeLayout(position));
+            } else {
+                palette.setActionToolsLayout(makeLayout(position));
+            }
+            QStringList available = position;
+            if (!conversionsAvailable) {
+                available.removeAll(QStringLiteral("convert-to-markdown"));
+                available.removeAll(QStringLiteral("convert-to-html"));
+            }
+            adqt::widgets::AdButton* trigger = nullptr;
+            for (auto* button : mainToolbarButtons(palette)) {
+                if (button->property("screenshotToolbarPositionItems").toStringList() ==
+                    available) {
+                    trigger = button;
+                    break;
+                }
+            }
+            require(trigger != nullptr, "each configured stack must have a visible trigger");
+            materializeLazyPopover(trigger);
+            auto* popover = popoverForTrigger(trigger);
+            require(popover && popover->contentWidget(), "a stack must materialize its options");
+            QStringList actual;
+            auto* layout = popover->contentWidget()->layout();
+            const auto descriptors =
+                snow_shot::presentation::toolbar_layout::editorDescriptors(kind);
+            for (int index = 0; index < layout->count(); ++index) {
+                auto* button =
+                    qobject_cast<adqt::widgets::AdButton*>(layout->itemAt(index)->widget());
+                if (button == nullptr) {
+                    continue;
+                }
+                for (const auto& descriptor : descriptors) {
+                    if (button->accessibleName() == QString::fromUtf8(descriptor.label)) {
+                        actual.push_back(QString::fromLatin1(descriptor.id));
+                    }
+                }
+            }
+            QStringList expected = available;
+            std::reverse(expected.begin(), expected.end());
+            if (actual != expected) {
+                std::cerr << "Stack: " << position.join(',').toStdString()
+                          << "; actual: " << actual.join(',').toStdString()
+                          << "; expected: " << expected.join(',').toStdString() << '\n';
+            }
+            require(actual == expected,
+                    "both toolbar popovers must display bottom to top, left to right");
+            require(trigger->property("screenshotToolbarItemId").toString() ==
+                        available.constLast(),
+                    "both toolbars must initially display the bottom available tool");
+            static_cast<void>(palette.setPhysicalScale(1.5));
+            require(trigger->height() == 48 && trigger->iconSize() == QSize(36, 36),
+                    "drawing and action stack triggers must use the same physical scale");
+            static_cast<void>(palette.setPhysicalScale(1.0));
+            for (const auto& descriptor : descriptors) {
+                if (available.constFirst() == QLatin1String(descriptor.id)) {
+                    auto* option = popoverButtonWithTooltip(popover, descriptor.label);
+                    require(option != nullptr, "the top stack item must be selectable");
+                    option->click();
+                    require(trigger->property("screenshotToolbarItemId").toString() ==
+                                available.constFirst(),
+                            "choosing an option must update either toolbar's entry");
+                    palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+                }
+            }
+            position.push_front(position.takeLast());
+        }
+    };
+    exercise(ScreenshotToolbarLayoutKind::DrawingTools,
+             {QStringLiteral("shape"), QStringLiteral("arrow"), QStringLiteral("line"),
+              QStringLiteral("free-draw")});
+    const QStringList recognition{
+        QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
+        QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")};
+    exercise(ScreenshotToolbarLayoutKind::ActionTools, recognition);
+    exercise(ScreenshotToolbarLayoutKind::ActionTools, recognition, false);
+}
+
+void actionStacksKeepEnabledAlternativesReachable() {
+    ScreenshotToolPalette::Options options;
+    options.showOcrTool = true;
+    options.showScreenRecordButton = true;
+    options.enableStyleToolbar = false;
+    options.actionToolsLayout = snow_shot::storage::ScreenshotToolbarLayout{
+        {{QStringLiteral("record-screen"), QStringLiteral("text-recognition")}}, {}};
+    ScreenshotToolPalette palette(options);
+    auto* trigger = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotActionToolGroupButton0"));
+    require(trigger != nullptr, "the mixed action stack must exist");
+    materializeLazyPopover(trigger);
+    auto* popover = popoverForTrigger(trigger);
+    auto* ocr = popoverButtonWithTooltip(popover, "Text recognition");
+    auto* record = popoverButtonWithTooltip(popover, "Record screen");
+    require(ocr && record, "the mixed stack must expose both actions");
+    int ocrRequests = 0;
+    int recordRequests = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::ocrRequested, [&]() { ++ocrRequests; });
+    QObject::connect(&palette, &ScreenshotToolPalette::screenRecordRequested,
+                     [&]() { ++recordRequests; });
+    palette.setOcrEnabled(false);
+    require(trigger->isEnabled() && record->isEnabled() && !ocr->isEnabled(),
+            "every action stack must keep its enabled alternatives reachable");
+    trigger->click();
+    require(ocrRequests == 0, "a reachable stack must not dispatch its disabled entry");
+    record->click();
+    require(recordRequests == 1 && trigger->accessibleName() == QStringLiteral("Record screen"),
+            "an enabled alternative must become the stack entry");
+    palette.setOcrBusy(true);
+    require(!trigger->busy() && ocr->busy() && !record->busy(),
+            "only the selected action may contribute the trigger's busy state");
 }
 
 void sharedToolbarLayoutModelOperationsAreDeterministic() {
@@ -3056,10 +3209,10 @@ void imageConversionToolsExposeOnlySettings() {
             htmlSource->isHidden() && qr->isHidden() && !group->isHidden() &&
             group->property("screenshotToolbarPositionItems").toStringList() ==
                 QStringList{
-                    QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
-                    QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")} &&
+                    QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown"),
+                    QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")} &&
             group->accessibleName() == QStringLiteral("Table recognition"),
-        "the recognition group initially shows table recognition even with a remembered QR entry");
+        "the recognition group initially shows the bottom tool even with a remembered QR entry");
     static_cast<void>(palette.sizeHint());
     QCoreApplication::processEvents();
     materializeLazyPopover(group);
@@ -3081,7 +3234,7 @@ void imageConversionToolsExposeOnlySettings() {
                                         QStringLiteral("barcode-recognition"),
                                         QStringLiteral("convert-to-markdown"),
                                         QStringLiteral("convert-to-html")},
-            "recognition popover orders table, barcode, Markdown, then HTML");
+            "recognition popover follows the configured stack from bottom to top");
     for (auto* button : {markdownSource, markdown, htmlSource, html}) {
         const auto key = adqt::icons::describeIcon(button->iconRef()).key;
         require(key.pack == QStringLiteral("snow-shot") &&
@@ -8320,7 +8473,15 @@ int main(int argc, char** argv) {
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
+    if (application.arguments().contains(QStringLiteral("--stack-availability-only"))) {
+        actionStacksKeepEnabledAlternativesReachable();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--action-toolbar-layout-only"))) {
+        screenshotToolbarUsesCanonicalOrderAndSectionSeparators();
+        toolbarStacksFollowConfiguredBottomToTopOrder();
+        actionStacksKeepEnabledAlternativesReachable();
         drawingGroupClicksActivateOnceAfterPointerReentry();
         tableRecognitionClickActivatesOnceAfterPointerReentry();
         tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode();
@@ -8369,6 +8530,8 @@ int main(int argc, char** argv) {
     tableRecognitionClickActivatesOnceAfterPointerReentry();
     drawingGroupClicksActivateOnceAfterPointerReentry();
     sharedToolbarLayoutModelOperationsAreDeterministic();
+    toolbarStacksFollowConfiguredBottomToTopOrder();
+    actionStacksKeepEnabledAlternativesReachable();
     configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement();
     arrowAndLineRemainDirectWhenConfiguredIndividually();
     confirmActionRemainsSeparatedAndCallableForPinnedEditing();
