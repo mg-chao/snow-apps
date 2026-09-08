@@ -8,10 +8,13 @@ use std::time::{Duration, Instant};
 
 use snow_capture::backend::CaptureBackendKind;
 use snow_capture::frame::Frame;
-use snow_capture::{CaptureOptions, CaptureRegion, CaptureSystem, CaptureTarget, WgcUpdateMode};
+use snow_capture::{
+    CaptureOptions, CaptureRegion, CaptureSystem, CaptureTarget, CaptureWorkload, WgcUpdateMode,
+};
 use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, FillRect, PAINTSTRUCT, UpdateWindow,
+    BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, FillRect, InvalidateRect, PAINTSTRUCT,
+    UpdateWindow,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{
@@ -20,9 +23,9 @@ use windows::Win32::UI::HiDpi::{
 use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GWLP_USERDATA,
     GetMessageW, GetWindowRect, MSG, PostMessageW, PostQuitMessage, RegisterClassW, SW_INVALIDATE,
-    ScrollWindowEx, SetCursorPos, SetWindowLongPtrW, ShowWindow, TranslateMessage, WM_APP,
-    WM_CLOSE, WM_DESTROY, WM_NCCREATE, WM_PAINT, WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-    WS_POPUP, WS_VISIBLE,
+    ScrollWindowEx, SetCursorPos, SetWindowDisplayAffinity, SetWindowLongPtrW, ShowWindow,
+    TranslateMessage, WDA_EXCLUDEFROMCAPTURE, WM_APP, WM_CLOSE, WM_DESTROY, WM_NCCREATE, WM_PAINT,
+    WNDCLASSW, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
 };
 use windows::core::PCWSTR;
 
@@ -33,6 +36,7 @@ const WINDOW_Y: i32 = 96;
 const BAND_HEIGHT: i32 = 8;
 const SCROLL_ROWS: i32 = 24;
 const WM_SCROLL_TEST_WINDOW: u32 = WM_APP + 41;
+const WM_REVEAL_TEST_WINDOW: u32 = WM_APP + 42;
 const PIXEL_TOLERANCE: u8 = 3;
 const REQUIRED_SHIFT_MATCH: f64 = 0.97;
 const MAX_STALE_MATCH: f64 = 0.35;
@@ -40,6 +44,7 @@ static NEXT_WINDOW_CLASS_ID: AtomicU64 = AtomicU64::new(1);
 
 struct ScrollWindowState {
     logical_top: i32,
+    black: bool,
     scroll_completed: mpsc::Sender<()>,
 }
 
@@ -67,6 +72,10 @@ impl Drop for ThreadDpiAwareness {
 
 impl ScrollWindow {
     fn spawn() -> Self {
+        Self::spawn_with_black(false)
+    }
+
+    fn spawn_with_black(black: bool) -> Self {
         let (handle_tx, handle_rx) = mpsc::sync_channel(1);
         let (scroll_tx, scroll_rx) = mpsc::channel();
         let thread = thread::spawn(move || {
@@ -91,6 +100,7 @@ impl ScrollWindow {
 
             let state = Box::into_raw(Box::new(ScrollWindowState {
                 logical_top: 0,
+                black,
                 scroll_completed: scroll_tx,
             }));
             let hwnd = unsafe {
@@ -130,12 +140,22 @@ impl ScrollWindow {
         let raw_handle = handle_rx
             .recv_timeout(Duration::from_secs(5))
             .expect("scroll test window should become ready");
-        thread::sleep(Duration::from_millis(150));
-        Self {
+        let window = Self {
             raw_handle,
             scroll_completed: scroll_rx,
             thread: Some(thread),
-        }
+        };
+        // Keep the pointer on the fixture, outside the compared pixels, so
+        // another application's hover tooltip cannot cover the capture region.
+        let region = window.client_region();
+        let _ = unsafe {
+            SetCursorPos(
+                region.x + region.width as i32 - 2,
+                region.y + region.height as i32 - 2,
+            )
+        };
+        thread::sleep(Duration::from_millis(150));
+        window
     }
 
     fn scroll_once(&self) {
@@ -204,11 +224,26 @@ extern "system" fn scroll_window_proc(
             }
             LRESULT(0)
         },
+        WM_REVEAL_TEST_WINDOW => unsafe {
+            if let Some(state) = scroll_window_state(hwnd) {
+                state.black = false;
+                let _ = InvalidateRect(Some(hwnd), None, false);
+                let _ = UpdateWindow(hwnd);
+                let _ = state.scroll_completed.send(());
+            }
+            LRESULT(0)
+        },
         WM_PAINT => unsafe {
             let mut paint = PAINTSTRUCT::default();
             let dc = BeginPaint(hwnd, &mut paint);
             if let Some(state) = scroll_window_state(hwnd) {
-                paint_pattern(dc, paint.rcPaint, state.logical_top);
+                if state.black {
+                    let brush = CreateSolidBrush(COLORREF(0));
+                    FillRect(dc, &paint.rcPaint, brush);
+                    let _ = DeleteObject(brush.into());
+                } else {
+                    paint_pattern(dc, paint.rcPaint, state.logical_top);
+                }
             }
             let _ = EndPaint(hwnd, &paint);
             LRESULT(0)
@@ -317,30 +352,41 @@ fn pixels_match(left: &[u8], right: &[u8]) -> bool {
         .all(|(left, right)| left.abs_diff(*right) <= PIXEL_TOLERANCE)
 }
 
-fn assert_hot_session_scroll(mode: WgcUpdateMode) {
+fn assert_hot_session_scroll(
+    backend: CaptureBackendKind,
+    workload: CaptureWorkload,
+    mode: WgcUpdateMode,
+) {
     let _dpi_awareness = ThreadDpiAwareness::per_monitor_v2();
     let window = ScrollWindow::spawn();
     let region = window.client_region();
-    let _ = unsafe { SetCursorPos(region.x - 32, region.y - 32) };
     let system = CaptureSystem::builder()
-        .with_backend_kind(CaptureBackendKind::WindowsGraphicsCapture)
+        .with_backend_kind(backend)
         .build()
-        .expect("WGC capture system should initialize");
+        .expect("capture system should initialize");
     let mut session = system
         .open_session(
             CaptureTarget::Region(region),
             CaptureOptions {
+                workload,
                 wgc_update_mode: mode,
                 ..CaptureOptions::default()
             },
         )
-        .expect("WGC scroll capture session should open");
+        .expect("scroll capture session should open");
     let mut before = Frame::empty();
     session
         .capture_into(&mut before)
-        .expect("baseline WGC frame should capture");
+        .expect("baseline frame should capture");
     assert_eq!(before.width(), region.width);
     assert_eq!(before.height(), region.height);
+    assert!(
+        before
+            .as_rgba_bytes()
+            .chunks_exact(4)
+            .any(|pixel| { pixel[0] > 8 || pixel[1] > 8 || pixel[2] > 8 }),
+        "{backend:?} {workload:?} returned a black baseline for a colored test window"
+    );
     let physical_scroll_rows =
         ((SCROLL_ROWS as u64 * before.height() as u64).div_ceil(region.height as u64)) as usize;
 
@@ -353,7 +399,7 @@ fn assert_hot_session_scroll(mode: WgcUpdateMode) {
     while Instant::now() < deadline {
         session
             .capture_into(&mut after)
-            .expect("post-scroll WGC frame should capture");
+            .expect("post-scroll frame should capture");
         observed_ordered_damage |= !after.metadata().dirty_rects().is_empty();
         let shifted = shifted_match_ratio(&before, &after, physical_scroll_rows);
         if shifted > best_shifted {
@@ -369,14 +415,183 @@ fn assert_hot_session_scroll(mode: WgcUpdateMode) {
         thread::sleep(Duration::from_millis(5));
     }
 
+    for (label, frame) in [("before", &before), ("after", &after)] {
+        let path =
+            std::env::temp_dir().join(format!("snow-capture-{}-{label}.png", backend.as_str()));
+        image::save_buffer(
+            &path,
+            frame.as_rgba_bytes(),
+            frame.width(),
+            frame.height(),
+            image::ColorType::Rgba8,
+        )
+        .unwrap();
+        eprintln!("scroll mismatch image: {}", path.display());
+    }
     panic!(
-        "{mode:?} never produced a complete translated WGC region frame with the requested contract; best shifted match was {best_shifted:.3}, stale same-position pixels matched {stale_at_best:.3}, ordered damage observed={observed_ordered_damage}"
+        "{backend:?} {workload:?} {mode:?} never produced a complete translated region frame with the requested contract; best shifted match was {best_shifted:.3}, stale same-position pixels matched {stale_at_best:.3}, ordered damage observed={observed_ordered_damage}"
     );
 }
 
 #[test]
 #[ignore = "requires an interactive Windows desktop and WGC"]
 fn wgc_hot_snapshot_scroll_updates_the_entire_frame() {
-    assert_hot_session_scroll(WgcUpdateMode::CompleteOnly);
-    assert_hot_session_scroll(WgcUpdateMode::OrderedIncremental);
+    for mode in [
+        WgcUpdateMode::CompleteOnly,
+        WgcUpdateMode::OrderedIncremental,
+    ] {
+        assert_hot_session_scroll(
+            CaptureBackendKind::WindowsGraphicsCapture,
+            CaptureWorkload::Snapshot,
+            mode,
+        );
+    }
+}
+
+fn assert_continuous_region_scroll(backend: CaptureBackendKind) {
+    for attempt in 0..5 {
+        eprintln!("continuous region capture: {backend:?}, attempt {attempt}");
+        assert_hot_session_scroll(
+            backend,
+            CaptureWorkload::Continuous,
+            WgcUpdateMode::CompleteOnly,
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires an interactive Windows desktop and DXGI"]
+fn dxgi_continuous_region_scroll_updates_the_entire_frame() {
+    assert_continuous_region_scroll(CaptureBackendKind::DxgiDuplication);
+}
+
+#[test]
+#[ignore = "requires an interactive Windows desktop and WGC"]
+fn wgc_continuous_region_scroll_updates_the_entire_frame() {
+    assert_continuous_region_scroll(CaptureBackendKind::WindowsGraphicsCapture);
+}
+
+#[test]
+#[ignore = "requires an interactive Windows desktop and GDI"]
+fn gdi_continuous_region_scroll_updates_the_entire_frame() {
+    assert_continuous_region_scroll(CaptureBackendKind::Gdi);
+}
+
+#[test]
+#[ignore = "requires an interactive Windows desktop and DXGI"]
+fn dxgi_continuous_region_delivers_black_to_color_transition() {
+    let _dpi_awareness = ThreadDpiAwareness::per_monitor_v2();
+    let window = ScrollWindow::spawn_with_black(true);
+    let region = window.client_region();
+    let system = CaptureSystem::builder()
+        .with_backend_kind(CaptureBackendKind::DxgiDuplication)
+        .build()
+        .unwrap();
+    let mut session = system
+        .open_session(
+            CaptureTarget::Region(region),
+            CaptureOptions {
+                workload: CaptureWorkload::Continuous,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let mut frame = session.capture().unwrap();
+    assert!(
+        frame
+            .as_rgba_bytes()
+            .chunks_exact(4)
+            .all(|p| p[..3] == [0, 0, 0])
+    );
+    unsafe {
+        PostMessageW(
+            Some(HWND(window.raw_handle as *mut c_void)),
+            WM_REVEAL_TEST_WINDOW,
+            WPARAM(0),
+            LPARAM(0),
+        )
+    }
+    .unwrap();
+    window
+        .scroll_completed
+        .recv_timeout(Duration::from_secs(2))
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut received = 0;
+    while Instant::now() < deadline {
+        match session.capture_into(&mut frame) {
+            Ok(()) => {
+                let colored = frame
+                    .as_rgba_bytes()
+                    .chunks_exact(4)
+                    .filter(|p| p[0] > 8 || p[1] > 8 || p[2] > 8)
+                    .count();
+                received += 1;
+                if received <= 3 {
+                    eprintln!(
+                        "black-to-color: colored={colored}, duplicate={}",
+                        frame.metadata().is_duplicate()
+                    );
+                }
+                if colored > (region.width * region.height / 2) as usize {
+                    assert!(
+                        !frame.metadata().is_duplicate(),
+                        "new colored pixels must reach the stitcher"
+                    );
+                    return;
+                }
+            }
+            Err(error) => eprintln!("black-to-color capture: {error}"),
+        }
+        thread::sleep(Duration::from_millis(33));
+    }
+    panic!("DXGI retained a black image after the window painted colored content");
+}
+
+#[test]
+#[ignore = "requires an interactive Windows desktop and capture exclusion support"]
+fn excluded_window_does_not_blacken_continuous_region_capture() {
+    let _dpi_awareness = ThreadDpiAwareness::per_monitor_v2();
+    let window = ScrollWindow::spawn();
+    let region = window.client_region();
+    let overlay = ScrollWindow::spawn_with_black(true);
+    unsafe {
+        SetWindowDisplayAffinity(
+            HWND(overlay.raw_handle as *mut c_void),
+            WDA_EXCLUDEFROMCAPTURE,
+        )
+    }
+    .unwrap();
+    for backend in [
+        CaptureBackendKind::DxgiDuplication,
+        CaptureBackendKind::WindowsGraphicsCapture,
+        CaptureBackendKind::Gdi,
+    ] {
+        for attempt in 0..5 {
+            let system = CaptureSystem::builder()
+                .with_backend_kind(backend)
+                .build()
+                .unwrap();
+            let mut session = system
+                .open_session(
+                    CaptureTarget::Region(region),
+                    CaptureOptions {
+                        workload: CaptureWorkload::Continuous,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            let frame = session.capture().unwrap();
+            let colored = frame
+                .as_rgba_bytes()
+                .chunks_exact(4)
+                .filter(|p| p[0] > 8 || p[1] > 8 || p[2] > 8)
+                .count();
+            eprintln!("excluded overlay: {backend:?}, attempt={attempt}, colored={colored}");
+            assert!(
+                colored > (region.width * region.height / 2) as usize,
+                "{backend:?} returned black through an excluded overlay"
+            );
+        }
+    }
 }

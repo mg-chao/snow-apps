@@ -56,6 +56,7 @@
 #include "snow_shot/presentation/screenrecordingcontroller.h"
 #include "snow_shot/presentation/windowshortcutmanager.h"
 #include "../pinned/screenshotpintoperfinstrumentation.h"
+#include "../recording/screenshotrecordingworkflow.h"
 
 #include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
@@ -3297,23 +3298,21 @@ bool ScreenshotController::Impl::prepareHistoryCandidate(
 
 void ScreenshotController::Impl::startScreenRecording() {
     deactivateRecognition();
-    if (!m_selection.hasPixelSelection() || !ensureRecordingFeature() ||
-        (m_scrollingCaptureController != nullptr && m_scrollingCaptureController->active())) {
-        return;
-    }
-    QRect physicalRegion = m_selection.pixelSelection().translated(m_geometry.canvasOrigin());
-    if (physicalRegion.width() < 2 || physicalRegion.height() < 2) {
-        return;
-    }
-    static_cast<void>(resetCanvasEditingState());
-
-    invalidateRecognitionSession();
-    m_captureWorkflow->cancelCapture();
-    if (m_historyService != nullptr) {
-        m_historyService->resetCaptureNavigation();
-    }
-    QTimer::singleShot(
-        0, &owner, [this, physicalRegion]() { m_screenRecordingController->open(physicalRegion); });
+    snow_shot::presentation::recording::startScreenshotRecording(
+        m_selection.pixelSelection(), m_geometry.canvasOrigin(),
+        {owner, [this]() { return ensureRecordingFeature(); },
+         [this]() { static_cast<void>(stopScrollingCapture(false)); },
+         [this]() { static_cast<void>(resetCanvasEditingState()); },
+         [this]() { invalidateRecognitionSession(); },
+         [this]() { m_captureWorkflow->cancelCapture(); },
+         [this]() {
+             if (m_historyService != nullptr) {
+                 m_historyService->resetCaptureNavigation();
+             }
+         },
+         [this](const QRect& physicalRegion) {
+             m_screenRecordingController->open(physicalRegion);
+         }});
 }
 
 void ScreenshotController::Impl::setShapeStyleFromToolbar(const SnowCanvasShapeStyle& style,

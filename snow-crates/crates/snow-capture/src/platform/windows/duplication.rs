@@ -95,7 +95,6 @@ impl Drop for AcquiredDxgiFrameGuard {
 
 const PRESENT_ATTEMPTS: usize = 15;
 const PRESENT_TIMEOUT_MS: u32 = 16;
-const FALLBACK_TIMEOUT_MS: u32 = 250;
 const STEADY_STATE_ATTEMPTS: usize = 20;
 const STEADY_STATE_TIMEOUT_MS: u32 = 100;
 
@@ -177,9 +176,18 @@ struct RegionStagingSlot {
     dirty_rects: Vec<DirtyRect>,
     move_rects: Vec<MoveRect>,
     populated: bool,
+    delivered: bool,
 }
 
 impl RegionStagingSlot {
+    fn needs_delivery(&self) -> bool {
+        self.populated && !self.delivered
+    }
+
+    fn is_duplicate_for_destination(&self, destination_has_history: bool) -> bool {
+        destination_has_history && (self.delivered || self.is_duplicate)
+    }
+
     fn reset_runtime_state(&mut self) {
         self.source_desc = None;
         self.hdr_to_sdr = None;
@@ -194,6 +202,7 @@ impl RegionStagingSlot {
         self.dirty_rects.clear();
         self.move_rects.clear();
         self.populated = false;
+        self.delivered = false;
     }
 
     fn invalidate(&mut self) {
@@ -1067,8 +1076,22 @@ fn acquire_with_retries(
     timeout_ms: u32,
     require_present_time: bool,
 ) -> CaptureResult<Option<AcquireResult>> {
+    acquire_with_retries_using(
+        attempts,
+        timeout_ms,
+        require_present_time,
+        &mut |timeout, require| try_acquire_frame(duplication, timeout, require),
+    )
+}
+
+fn acquire_with_retries_using(
+    attempts: usize,
+    timeout_ms: u32,
+    require_present_time: bool,
+    acquire: &mut impl FnMut(u32, bool) -> CaptureResult<TryAcquireResult>,
+) -> CaptureResult<Option<AcquireResult>> {
     for _ in 0..attempts {
-        match try_acquire_frame(duplication, timeout_ms, require_present_time)? {
+        match acquire(timeout_ms, require_present_time)? {
             TryAcquireResult::Ok(texture, info, frame_guard) => {
                 return Ok(Some(AcquireResult::Ok(texture, info, frame_guard)));
             }
@@ -1083,27 +1106,32 @@ fn acquire_frame(
     duplication: &IDXGIOutputDuplication,
     require_present_time: bool,
 ) -> CaptureResult<AcquireResult> {
+    acquire_continuous_frame_using(require_present_time, |timeout, require| {
+        try_acquire_frame(duplication, timeout, require)
+    })
+}
+
+fn acquire_continuous_frame_using(
+    require_present_time: bool,
+    mut acquire: impl FnMut(u32, bool) -> CaptureResult<TryAcquireResult>,
+) -> CaptureResult<AcquireResult> {
     if require_present_time {
         if let Some(result) =
-            acquire_with_retries(duplication, PRESENT_ATTEMPTS, PRESENT_TIMEOUT_MS, true)?
+            acquire_with_retries_using(PRESENT_ATTEMPTS, PRESENT_TIMEOUT_MS, true, &mut acquire)?
         {
             return Ok(result);
         }
 
-        return match try_acquire_frame(duplication, FALLBACK_TIMEOUT_MS, false)? {
-            TryAcquireResult::Ok(texture, info, frame_guard) => {
-                Ok(AcquireResult::Ok(texture, info, frame_guard))
-            }
-            TryAcquireResult::AccessLost => Ok(AcquireResult::AccessLost),
-            TryAcquireResult::Retry => Err(CaptureError::Timeout),
-        };
+        // A pointer-only initialization texture is not a valid baseline. Auto
+        // can switch backends when no presented frame arrives within the budget.
+        return Err(CaptureError::Timeout);
     }
 
-    if let Some(result) = acquire_with_retries(
-        duplication,
+    if let Some(result) = acquire_with_retries_using(
         STEADY_STATE_ATTEMPTS,
         STEADY_STATE_TIMEOUT_MS,
         false,
+        &mut acquire,
     )? {
         return Ok(result);
     }
@@ -2495,9 +2523,13 @@ impl OutputCapturer {
                 None
             },
             tick_format: snow_core::timestamp::TickFormat::RawQpc,
-            is_duplicate: slot.is_duplicate,
+            is_duplicate: slot.is_duplicate_for_destination(destination_has_history),
             dirty_rects: Vec::new(),
         };
+
+        if sample.is_duplicate {
+            return Ok(sample);
+        }
 
         let moves_only = {
             let slot = &self.region.slots[slot_idx];
@@ -2509,9 +2541,6 @@ impl OutputCapturer {
             has_moves && slot.dirty_mode_available && slot.dirty_rects.is_empty()
         };
 
-        if destination_has_history && sample.is_duplicate {
-            return Ok(sample);
-        }
         if moves_only {
             return Ok(sample);
         }
@@ -2850,32 +2879,67 @@ impl OutputCapturer {
         }
         self.region.ensure_blit(blit);
 
-        let capture_time = Instant::now();
-        let maybe_screenshot_frame =
-            if should_try_zero_wait_screenshot_reuse(self.capture_mode, destination_has_history) {
-                match try_acquire_frame(&duplication, 0, false)? {
-                    TryAcquireResult::Ok(texture, info, frame_guard) => {
-                        Some((texture, info, frame_guard))
+        // Keep overlapping copies while the desktop updates, but never wait for
+        // a new presentation when an unread frame is already available.
+        let pending_frame = if self.capture_mode == CaptureMode::Continuous
+            && let Some(slot_idx) = self.region.pending_slot
+            && self.region.slots[slot_idx].needs_delivery()
+        {
+            match try_acquire_frame(&duplication, 0, false)? {
+                TryAcquireResult::Ok(texture, info, guard) => Some((texture, info, guard)),
+                TryAcquireResult::Retry => {
+                    let result = self.read_region_slot_into_output(
+                        slot_idx,
+                        destination,
+                        destination_has_history,
+                        blit,
+                    );
+                    if result.is_ok() {
+                        self.region.slots[slot_idx].delivered = true;
+                    } else {
+                        self.region.reset();
                     }
-                    TryAcquireResult::AccessLost => {
-                        duplication = self.recreate_duplication(duplication)?;
-                        destination_has_history = false;
-                        self.region.ensure_blit(blit);
-                        None
-                    }
-                    TryAcquireResult::Retry => {
-                        return Ok(CaptureSampleMetadata {
-                            capture_time: Some(capture_time),
-                            raw_os_ticks: None,
-                            tick_format: snow_core::timestamp::TickFormat::RawQpc,
-                            is_duplicate: true,
-                            dirty_rects: Vec::new(),
-                        });
-                    }
+                    return result;
                 }
-            } else {
-                None
-            };
+                TryAcquireResult::AccessLost => {
+                    duplication = self.recreate_duplication(duplication)?;
+                    destination_has_history = false;
+                    self.region.ensure_blit(blit);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        let capture_time = Instant::now();
+        let maybe_screenshot_frame = if pending_frame.is_some() {
+            pending_frame
+        } else if should_try_zero_wait_screenshot_reuse(self.capture_mode, destination_has_history)
+        {
+            match try_acquire_frame(&duplication, 0, false)? {
+                TryAcquireResult::Ok(texture, info, frame_guard) => {
+                    Some((texture, info, frame_guard))
+                }
+                TryAcquireResult::AccessLost => {
+                    duplication = self.recreate_duplication(duplication)?;
+                    destination_has_history = false;
+                    self.region.ensure_blit(blit);
+                    None
+                }
+                TryAcquireResult::Retry => {
+                    return Ok(CaptureSampleMetadata {
+                        capture_time: Some(capture_time),
+                        raw_os_ticks: None,
+                        tick_format: snow_core::timestamp::TickFormat::RawQpc,
+                        is_duplicate: true,
+                        dirty_rects: Vec::new(),
+                    });
+                }
+            }
+        } else {
+            None
+        };
         let single_shot_screenshot =
             self.capture_mode == CaptureMode::Snapshot && !destination_has_history;
         let (desktop_texture, frame_info, _frame_guard) =
@@ -3136,19 +3200,22 @@ impl OutputCapturer {
             let read_slot = if skip_submit_copy {
                 let slot_idx = self.region.pending_slot.unwrap_or(read_slot);
                 let slot = &mut self.region.slots[slot_idx];
-                slot.capture_time = Some(capture_time);
-                slot.present_time_qpc = source_present_time_qpc;
-                slot.is_duplicate = true;
-                slot.hdr_to_sdr = effective_hdr;
-                slot.source_desc = Some(region_desc);
-                slot.dirty_mode_available = region_dirty_available;
-                slot.move_mode_available = region_move_available;
-                slot.dirty_cpu_copy_preferred = false;
-                slot.dirty_gpu_copy_preferred = false;
-                slot.dirty_total_pixels = 0;
-                slot.dirty_rects.clear();
-                slot.move_rects.clear();
-                slot.populated = true;
+                // Source equality says nothing about whether this pending image
+                // reached the caller. Preserve unread pixels' damage and timing.
+                if slot.delivered {
+                    slot.capture_time = Some(capture_time);
+                    slot.present_time_qpc = source_present_time_qpc;
+                    slot.is_duplicate = true;
+                    slot.hdr_to_sdr = effective_hdr;
+                    slot.source_desc = Some(region_desc);
+                    slot.dirty_mode_available = region_dirty_available;
+                    slot.move_mode_available = region_move_available;
+                    slot.dirty_cpu_copy_preferred = false;
+                    slot.dirty_gpu_copy_preferred = false;
+                    slot.dirty_total_pixels = 0;
+                    slot.dirty_rects.clear();
+                    slot.move_rects.clear();
+                }
                 slot_idx
             } else {
                 self.ensure_region_slot(write_slot, &region_desc)?;
@@ -3177,6 +3244,7 @@ impl OutputCapturer {
                         && dirty_gpu_copy_preferred;
                     slot.dirty_total_pixels = dirty_copy_strategy.dirty_pixels;
                     slot.populated = true;
+                    slot.delivered = false;
                 }
 
                 self.copy_region_source_to_slot(
@@ -3195,6 +3263,7 @@ impl OutputCapturer {
                 destination_has_history,
                 blit,
             )?;
+            self.region.slots[read_slot].delivered = true;
 
             if recording_mode {
                 if !skip_submit_copy {
@@ -4521,6 +4590,53 @@ mod tests {
         assert_eq!(SNAPSHOT_ACQUISITION_POLICY.attempts, 3);
         assert_eq!(SNAPSHOT_ACQUISITION_POLICY.timeout_ms, 16);
         const _: () = assert!(SNAPSHOT_ACQUISITION_POLICY.require_present_time);
+    }
+
+    #[test]
+    fn continuous_startup_never_relaxes_presented_frame_requirement() {
+        let mut requests = Vec::new();
+        let result = acquire_continuous_frame_using(true, |timeout, require_present| {
+            requests.push((timeout, require_present));
+            Ok(TryAcquireResult::Retry)
+        });
+        assert!(matches!(result, Err(CaptureError::Timeout)));
+        assert!(!requests.is_empty());
+        assert!(requests.iter().all(|(_, require)| *require));
+    }
+
+    #[test]
+    fn continuous_steady_state_accepts_pointer_updates_and_propagates_access_loss() {
+        let result = acquire_continuous_frame_using(false, |_, require_present| {
+            assert!(!require_present);
+            Ok(TryAcquireResult::AccessLost)
+        });
+        assert!(matches!(result, Ok(AcquireResult::AccessLost)));
+    }
+
+    #[test]
+    fn region_delivery_tracks_unread_pixels_separately_from_source_duplicates() {
+        let mut slot = RegionStagingSlot::default();
+        assert!(!slot.needs_delivery());
+        slot.populated = true;
+        assert!(slot.needs_delivery());
+        assert!(!slot.is_duplicate_for_destination(true));
+
+        slot.delivered = true;
+        assert!(!slot.needs_delivery());
+        assert!(slot.is_duplicate_for_destination(true));
+        assert!(!slot.is_duplicate_for_destination(false));
+
+        // Reusing a slot for new source pixels invalidates its delivery history.
+        slot.delivered = false;
+        assert!(slot.needs_delivery());
+        assert!(!slot.is_duplicate_for_destination(true));
+        slot.is_duplicate = true;
+        assert!(slot.needs_delivery());
+        assert!(!slot.is_duplicate_for_destination(false));
+
+        slot.reset_runtime_state();
+        assert!(!slot.needs_delivery());
+        assert!(!slot.is_duplicate_for_destination(true));
     }
 
     #[test]

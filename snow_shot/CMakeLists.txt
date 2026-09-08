@@ -3254,6 +3254,19 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_executable(snow-shot-screenshot-recording-workflow-tests
+        tests/screenshot_recording_workflow_tests.cpp
+    )
+    target_link_libraries(snow-shot-screenshot-recording-workflow-tests PRIVATE Qt6::Core)
+    add_test(NAME snow-shot-screenshot-recording-workflow-tests
+        COMMAND snow-shot-screenshot-recording-workflow-tests)
+    set_tests_properties(snow-shot-screenshot-recording-workflow-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30)
+    if(WIN32)
+        set_tests_properties(snow-shot-screenshot-recording-workflow-tests PROPERTIES
+            ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>\;$ENV{PATH}")
+    endif()
+
     add_executable(snow-shot-screen-recording-geometry-tests
         tests/screen_recording_geometry_tests.cpp
         src/presentation/core/screenshotgeometry.cpp
