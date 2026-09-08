@@ -4807,13 +4807,26 @@ void pinnedSaveDialogRoutingAndCancellation() {
     const auto restoreNativeSetting = qScopeGuard([previousNativeSetting] {
         QApplication::setAttribute(Qt::AA_DontUseNativeDialogs, previousNativeSetting);
     });
+    require(settings.setLastManualSaveFormat(QStringLiteral("jpeg")),
+            "remembered native format setup failed");
     bool systemDialogSeen = false;
+    bool rememberedFormatSeen = false;
     QTimer dismiss;
     dismiss.setInterval(10);
     QObject::connect(&dismiss, &QTimer::timeout, window, [&] {
         for (auto* widget : QApplication::topLevelWidgets()) {
             if (auto* dialog = qobject_cast<QFileDialog*>(widget)) {
                 systemDialogSeen = true;
+                rememberedFormatSeen =
+                    dialog->selectedNameFilter().contains(QStringLiteral("*.jpg")) &&
+                    dialog->selectedFiles().value(0).endsWith(QStringLiteral(".jpg"));
+                for (const QString& filter : dialog->nameFilters()) {
+                    if (filter.contains(QStringLiteral("*.png")))
+                        dialog->selectNameFilter(filter);
+                }
+                rememberedFormatSeen =
+                    rememberedFormatSeen &&
+                    dialog->selectedNameFilter().contains(QStringLiteral("*.png"));
                 dialog->reject();
             }
         }
@@ -4821,10 +4834,39 @@ void pinnedSaveDialogRoutingAndCancellation() {
     dismiss.start();
     action->trigger();
     dismiss.stop();
-    require(systemDialogSeen &&
+    require(systemDialogSeen && rememberedFormatSeen &&
+                settings.lastManualSaveFormat() == QStringLiteral("jpeg") &&
                 !window->findChild<AdModal*>(QStringLiteral("screenshotSaveAsFileModal")),
             "System must retain the QFileDialog route");
-    require(settings.setSaveAsFileDialog(QStringLiteral("snow_shot")),
+    const QString nativeDirectory = directory.filePath(QStringLiteral("native"));
+    require(QDir().mkpath(nativeDirectory), "native save directory setup failed");
+    QTimer accept;
+    accept.setInterval(10);
+    QObject::connect(&accept, &QTimer::timeout, window, [&] {
+        for (auto* widget : QApplication::topLevelWidgets()) {
+            if (auto* dialog = qobject_cast<QFileDialog*>(widget)) {
+                // A recognized suffix takes precedence over the remembered JPEG filter.
+                dialog->selectFile(QDir(nativeDirectory).filePath(QStringLiteral("native.bmp")));
+                QMetaObject::invokeMethod(dialog, "accept", Qt::DirectConnection);
+            }
+        }
+    });
+    accept.start();
+    action->trigger();
+    accept.stop();
+    require(settings.lastManualSaveFormat() == QStringLiteral("bmp"),
+            "native save must remember the accepted filename's effective format");
+    QElapsedTimer nativeSaved;
+    nativeSaved.start();
+    while (settings.lastManualSaveDirectory() != nativeDirectory && nativeSaved.elapsed() < 10000)
+        waitForUi(10);
+    require(settings.lastManualSaveDirectory() == nativeDirectory &&
+                QFileInfo::exists(QDir(nativeDirectory).filePath(QStringLiteral("native.bmp"))),
+            "native save must finish writing the selected format");
+    require(settings.setLastManualSaveDirectory(directory.path()),
+            "restore custom save directory failed");
+    require(settings.setLastManualSaveFormat(QStringLiteral("png")) &&
+                settings.setSaveAsFileDialog(QStringLiteral("snow_shot")),
             "Snow Shot routing setup failed");
     action->trigger();
     auto* modal = window->findChild<AdModal*>(QStringLiteral("screenshotSaveAsFileModal"));

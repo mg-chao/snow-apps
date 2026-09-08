@@ -446,6 +446,14 @@ QString ScreenshotSettings::saveAsFileDialog() const {
     return cache().value(QStringLiteral("screenshot/save_as_file_dialog")).toString();
 }
 
+QString ScreenshotSettings::lastManualSaveFormat() const {
+    return cache().value(QStringLiteral("screenshot/last_manual_save_format")).toString();
+}
+
+bool ScreenshotSettings::setLastManualSaveFormat(const QString& format) const {
+    return cache().setValue(QStringLiteral("screenshot/last_manual_save_format"), format);
+}
+
 bool ScreenshotSettings::setSaveAsFileDialog(const QString& dialog) const {
     return cache().setValue(QStringLiteral("screenshot/save_as_file_dialog"), dialog);
 }

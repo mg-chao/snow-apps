@@ -4027,11 +4027,12 @@ void ScreenshotPinnedWindow::saveAsFile() {
     const QString directory = ScreenshotImageFileService::saveDialogDirectory(
         outputSettings.lastManualSaveDirectory(), outputSettings.imageSaveDirectory());
     static_cast<void>(QDir().mkpath(directory));
+    const auto initialFormat =
+        ScreenshotImageFileService::formatForKey(outputSettings.lastManualSaveFormat());
     const QString initialPath = QDir(directory).filePath(
         ScreenshotImageFileService::suggestedBaseName(outputSettings.manualSaveFilenameFormat()) +
-        QStringLiteral(".png"));
-    QString selectedFilter =
-        ScreenshotImageFileService::dialogFilter(ScreenshotImageFileFormat::Png);
+        QStringLiteral(".") + ScreenshotImageFileService::extension(initialFormat));
+    QString selectedFilter = ScreenshotImageFileService::dialogFilter(initialFormat);
     const QString selectedPath = QFileDialog::getSaveFileName(
         this, translatePinnedText("Save as file"), initialPath,
         ScreenshotImageFileService::saveDialogFilter(), &selectedFilter);
@@ -4041,6 +4042,8 @@ void ScreenshotPinnedWindow::saveAsFile() {
 
     const ScreenshotImageFileFormat format =
         ScreenshotImageFileService::formatForDialogSelection(selectedPath, selectedFilter);
+    static_cast<void>(
+        outputSettings.setLastManualSaveFormat(ScreenshotImageFileService::formatKey(format)));
     const QString outputPath = ScreenshotImageFileService::normalizedPath(selectedPath, format);
     if (m_canvas != nullptr && !m_canvas->resetEditingStatePreservingTool()) {
         return;

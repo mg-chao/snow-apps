@@ -2828,6 +2828,13 @@ if(SNOW_SHOT_BUILD_TESTS)
     snow_shot_import_offscreen_platform(snow-shot-export-dialog-workflow-tests)
     add_test(NAME snow-shot-export-dialog-workflow-tests
         COMMAND snow-shot-export-dialog-workflow-tests)
+    add_test(NAME snow-shot-save-format-tests
+        COMMAND snow-shot-export-dialog-workflow-tests --remember-format)
+    set_tests_properties(snow-shot-save-format-tests PROPERTIES
+        TIMEOUT 90
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+        LABELS "unit")
     add_test(NAME snow-shot-export-dialog-pipeline-tests
         COMMAND snow-shot-export-dialog-workflow-tests --optimized-pipeline)
     add_test(NAME snow-shot-export-dialog-placement-tests

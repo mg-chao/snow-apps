@@ -112,6 +112,8 @@ class ScreenshotSettings final {
     bool setImageSaveDirectory(const QString& directory) const;
     [[nodiscard]] QString lastManualSaveDirectory() const;
     bool setLastManualSaveDirectory(const QString& directory) const;
+    [[nodiscard]] QString lastManualSaveFormat() const;
+    bool setLastManualSaveFormat(const QString& format) const;
     [[nodiscard]] QString saveAsFileDialog() const;
     bool setSaveAsFileDialog(const QString& dialog) const;
     [[nodiscard]] QVector<ScreenshotSavePathShortcut> savePathShortcuts() const;

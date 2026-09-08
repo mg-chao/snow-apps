@@ -2631,23 +2631,26 @@ void ScreenshotController::Impl::saveSelectionToFile() {
     const QString directory = ScreenshotImageFileService::saveDialogDirectory(
         outputSettings.lastManualSaveDirectory(), outputSettings.imageSaveDirectory());
     static_cast<void>(QDir().mkpath(directory));
+    const auto initialFormat =
+        ScreenshotImageFileService::formatForKey(outputSettings.lastManualSaveFormat());
     const QString initialPath = QDir(directory).filePath(
         ScreenshotImageFileService::suggestedBaseName(outputSettings.manualSaveFilenameFormat()) +
-        QStringLiteral(".png"));
-    QString selectedFilter =
-        ScreenshotImageFileService::dialogFilter(ScreenshotImageFileFormat::Png);
+        QStringLiteral(".") + ScreenshotImageFileService::extension(initialFormat));
+    QString selectedFilter = ScreenshotImageFileService::dialogFilter(initialFormat);
     const QString selectedPath = QFileDialog::getSaveFileName(
         dialogOwner.data(), QCoreApplication::translate("ScreenshotController", "Save screenshot"),
         initialPath, ScreenshotImageFileService::saveDialogFilter(), &selectedFilter);
     if (selectedPath.isEmpty()) {
         return;
     }
+    const ScreenshotImageFileFormat format =
+        ScreenshotImageFileService::formatForDialogSelection(selectedPath, selectedFilter);
+    static_cast<void>(
+        outputSettings.setLastManualSaveFormat(ScreenshotImageFileService::formatKey(format)));
     if (!ensureExportFeature()) {
         return;
     }
 
-    const ScreenshotImageFileFormat format =
-        ScreenshotImageFileService::formatForDialogSelection(selectedPath, selectedFilter);
     const QString outputPath = ScreenshotImageFileService::normalizedPath(selectedPath, format);
     const bool historyEligible = m_interaction.activeTool() != ScreenshotActiveTool::Ocr &&
                                  m_interaction.activeTool() != ScreenshotActiveTool::Table &&
