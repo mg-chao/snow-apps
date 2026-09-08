@@ -25,6 +25,7 @@ class QWidget;
 class ScreenshotOcrPresentation;
 class ScreenshotOcrTextEditingSession;
 class ScreenshotRecognitionWindow;
+class ScreenshotImageConversionController;
 class ScreenshotTableEditingSession;
 struct ScreenshotTableCommandState;
 
@@ -77,13 +78,14 @@ struct ScreenshotRecognitionSessionActions {
     std::function<void(std::shared_ptr<ScreenshotOcrPresentation>, QImage, QRectF)>
         applyOcrBackgroundImage;
     std::function<void(int, const QString&)> updateOcrText;
+    std::function<void(bool, bool, SnowShotImageConversionFormat)> setConversionState;
 };
 
 class ScreenshotRecognitionSessionController final : public QObject {
     Q_OBJECT
 
   public:
-    enum class Mode { Text = 0, Table = 1, Qr = 2 };
+    enum class Mode { Text = 0, Table = 1, Qr = 2, Markdown = 3, Html = 4 };
 
     ScreenshotRecognitionSessionController(ScreenshotOcrRecognitionPort* recognition,
                                            ScreenshotQrRecognitionPort* qrRecognition,
@@ -112,6 +114,8 @@ class ScreenshotRecognitionSessionController final : public QObject {
     [[nodiscard]] Mode mode() const;
     [[nodiscard]] bool tableModeActive() const;
     [[nodiscard]] bool qrModeActive() const;
+    [[nodiscard]] bool conversionModeActive() const;
+    void openImageConversionSettings();
 
     void mergeTableSelection();
     void splitTableSelection();
@@ -214,6 +218,8 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void showTranslationSettingsModal(const QVector<SnowShotChatModel>& models);
     void invalidateCurrentTranslation(bool restartIfVisible);
     void updateBusyState() const;
+    void updateConversionState() const;
+    void updateConversionMessage();
     void updateTextState() const;
     void updateTableState(const ScreenshotTableCommandState& state) const;
     void clearTextEditingState();
@@ -234,6 +240,8 @@ class ScreenshotRecognitionSessionController final : public QObject {
     QPointer<ScreenshotOcrRecognitionPort> m_recognition;
     QPointer<ScreenshotQrRecognitionPort> m_qrRecognition;
     QPointer<SnowShotApiClient> m_tableRecognition;
+    ScreenshotImageConversionController* m_conversion = nullptr;
+    bool m_conversionMessageShown = false;
     ScreenshotRecognitionSessionActions m_actions;
     ScreenshotRecognitionTarget m_target;
     QPointer<ScreenshotRecognitionWindow> m_content;

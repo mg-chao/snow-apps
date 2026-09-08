@@ -34,6 +34,7 @@ class ScreenshotToolbarWindow final : public ScreenshotFloatingToolPaletteWindow
     void setTableBusy(bool busy);
     void setQrEnabled(bool enabled);
     void setQrBusy(bool busy);
+    void setImageConversionBusy(bool markdownBusy, bool htmlBusy);
     void setTableEditingState(bool available, bool canUndo, bool canRedo, bool canMerge,
                               bool canSplit, bool canReset);
     void setTextEditingState(bool available, bool editing, bool canUndo = false,

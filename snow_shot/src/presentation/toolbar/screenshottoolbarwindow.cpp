@@ -35,6 +35,7 @@ ScreenshotToolPalette::Options screenshotToolbarOptions() {
     options.showTextTranslationTool = true;
     options.showTableTool = true;
     options.showQrTool = true;
+    options.showImageConversionTools = true;
     options.showScreenRecordButton = true;
     options.showScrollingScreenshotTool = true;
     options.showSaveButton = true;
@@ -155,6 +156,16 @@ void ScreenshotToolbarWindow::connectToolCommands(ScreenshotToolPalette& toolPal
         m_commands.setTableTool();
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::Table);
     });
+    connect(&toolPalette, &ScreenshotToolPalette::markdownRequested, this, [this]() {
+        m_commands.setMarkdownTool();
+        setActiveToolAndReposition(ScreenshotToolPalette::Tool::Markdown);
+    });
+    connect(&toolPalette, &ScreenshotToolPalette::htmlRequested, this, [this]() {
+        m_commands.setHtmlTool();
+        setActiveToolAndReposition(ScreenshotToolPalette::Tool::Html);
+    });
+    connect(&toolPalette, &ScreenshotToolPalette::imageConversionSettingsRequested, this,
+            [this]() { m_commands.openImageConversionSettings(); });
     connect(&toolPalette, &ScreenshotToolPalette::qrRequested, this, [this]() {
         m_commands.setQrTool();
         setActiveToolAndReposition(ScreenshotToolPalette::Tool::Qr);
@@ -462,6 +473,12 @@ void ScreenshotToolbarWindow::setTextTransformSelections(const QString& formatti
 void ScreenshotToolbarWindow::setQrBusy(bool busy) {
     if (ScreenshotToolPalette* toolPalette = palette()) {
         toolPalette->setQrBusy(busy);
+    }
+}
+
+void ScreenshotToolbarWindow::setImageConversionBusy(bool markdownBusy, bool htmlBusy) {
+    if (auto* toolPalette = palette()) {
+        toolPalette->setImageConversionBusy(markdownBusy, htmlBusy);
     }
 }
 

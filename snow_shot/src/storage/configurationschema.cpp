@@ -26,6 +26,7 @@ const QStringList kDrawingToolbarItemIds = {
 
 const QStringList kActionToolbarItemIds = {
     QStringLiteral("barcode-recognition"),  QStringLiteral("table-recognition"),
+    QStringLiteral("convert-to-markdown"),  QStringLiteral("convert-to-html"),
     QStringLiteral("record-screen"),        QStringLiteral("pin-to-screen"),
     QStringLiteral("text-recognition"),     QStringLiteral("text-translation"),
     QStringLiteral("scrolling-screenshot"), QStringLiteral("save-as-file"),
@@ -59,7 +60,8 @@ QVector<QStringList> defaultDrawingToolbarPositions() {
 
 QVector<QStringList> defaultActionToolbarPositions() {
     return {
-        {QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")},
+        {QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
+         QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")},
         {QStringLiteral("record-screen")},
         {QStringLiteral("pin-to-screen")},
         {QStringLiteral("text-recognition")},
@@ -128,6 +130,8 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
       QStringLiteral("ru"), QStringLiteral("tr"), QStringLiteral("zh-Hans"),
       QStringLiteral("zh-Hant")}},
     {QStringLiteral("screenshot_translation/model"), QString(), ConfigurationValueKind::String},
+    {QStringLiteral("screenshot_conversion/vision_model"), QString(),
+     ConfigurationValueKind::String},
     {QStringLiteral("screenshot_translation/original_image_translation"), true,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot_translation/layout_processing"),
@@ -1140,6 +1144,37 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
         return {};
     }
 
+    if (!positions.isEmpty() && known.contains(QStringLiteral("convert-to-markdown"))) {
+        // Fold the previous default's standalone conversions without changing custom placements.
+        auto previousDefault = defaultPositions;
+        previousDefault[0] = {QStringLiteral("barcode-recognition"),
+                              QStringLiteral("table-recognition")};
+        previousDefault.insert(1, QStringList{QStringLiteral("convert-to-markdown")});
+        previousDefault.insert(2, QStringList{QStringLiteral("convert-to-html")});
+        if (hidden.isEmpty() && positions == previousDefault) {
+            positions = defaultPositions;
+        }
+        qsizetype recognitionPosition = -1;
+        for (const QString& anchor :
+             {QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")}) {
+            for (qsizetype index = 0; index < positions.size(); ++index) {
+                if (positions.at(index).contains(anchor)) {
+                    recognitionPosition = index;
+                    break;
+                }
+            }
+            if (recognitionPosition >= 0) {
+                break;
+            }
+        }
+        for (const QString& id :
+             {QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")}) {
+            if (recognitionPosition >= 0 && !positioned.contains(id) && !hiddenSet.contains(id)) {
+                positions[recognitionPosition].push_back(id);
+                positioned.insert(id);
+            }
+        }
+    }
     for (const QStringList& defaultPosition : defaultPositions) {
         QStringList missing;
         for (const QString& id : defaultPosition) {

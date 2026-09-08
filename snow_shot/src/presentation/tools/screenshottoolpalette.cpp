@@ -306,12 +306,17 @@ bool toolUsesActionToolbar(ScreenshotToolPalette::Tool tool) {
            tool == ScreenshotToolPalette::Tool::Ocr ||
            tool == ScreenshotToolPalette::Tool::TextTranslation ||
            tool == ScreenshotToolPalette::Tool::Table ||
+           tool == ScreenshotToolPalette::Tool::Markdown ||
+           tool == ScreenshotToolPalette::Tool::Html ||
            tool == ScreenshotToolPalette::Tool::ScrollingScreenshot;
 }
 
 std::optional<ScreenshotToolPalette::ActionFamily>
 actionFamilyForTool(ScreenshotToolPalette::Tool tool) {
     switch (tool) {
+    case ScreenshotToolPalette::Tool::Markdown:
+    case ScreenshotToolPalette::Tool::Html:
+        return ScreenshotToolPalette::ActionFamily::ImageConversion;
     case ScreenshotToolPalette::Tool::Select:
         return ScreenshotToolPalette::ActionFamily::Selection;
     case ScreenshotToolPalette::Tool::Ocr:
@@ -350,6 +355,8 @@ bool toolUsesStyleToolbar(ScreenshotToolPalette::Tool tool) {
     case ScreenshotToolPalette::Tool::Table:
     case ScreenshotToolPalette::Tool::Qr:
     case ScreenshotToolPalette::Tool::ScrollingScreenshot:
+    case ScreenshotToolPalette::Tool::Markdown:
+    case ScreenshotToolPalette::Tool::Html:
         return false;
     }
     return false;
@@ -402,6 +409,12 @@ QString actionToolShortcutId(const QString& itemId) {
 }
 
 std::optional<ScreenshotToolPalette::Tool> actionTool(const QString& itemId) {
+    if (itemId == QStringLiteral("convert-to-markdown")) {
+        return ScreenshotToolPalette::Tool::Markdown;
+    }
+    if (itemId == QStringLiteral("convert-to-html")) {
+        return ScreenshotToolPalette::Tool::Html;
+    }
     if (itemId == QStringLiteral("barcode-recognition")) {
         return ScreenshotToolPalette::Tool::Qr;
     }
@@ -422,6 +435,10 @@ std::optional<ScreenshotToolPalette::Tool> actionTool(const QString& itemId) {
 
 QString actionToolItemId(ScreenshotToolPalette::Tool tool) {
     switch (tool) {
+    case ScreenshotToolPalette::Tool::Markdown:
+        return QStringLiteral("convert-to-markdown");
+    case ScreenshotToolPalette::Tool::Html:
+        return QStringLiteral("convert-to-html");
     case ScreenshotToolPalette::Tool::Qr:
         return QStringLiteral("barcode-recognition");
     case ScreenshotToolPalette::Tool::Table:
@@ -1143,10 +1160,13 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
     const bool ocrVisible = m_activeTool == Tool::Ocr || m_activeTool == Tool::TextTranslation;
     const bool tableVisible = m_activeTool == Tool::Table;
     const bool qrVisible = m_activeTool == Tool::Qr;
+    const bool conversionVisible = m_activeTool == Tool::Markdown || m_activeTool == Tool::Html;
     const bool scrollingVisible = m_activeTool == Tool::ScrollingScreenshot;
     const bool recognitionActionVisible =
-        ocrVisible || tableVisible || qrVisible || scrollingVisible;
+        ocrVisible || tableVisible || qrVisible || scrollingVisible || conversionVisible;
     const bool recognitionControlsMatch =
+        (m_conversionSettingsButton == nullptr ||
+         m_conversionSettingsButton->isHidden() == !conversionVisible) &&
         (m_textEditButton == nullptr || m_textEditButton->isHidden() == !ocrVisible) &&
         (m_tableMergeButton == nullptr || m_tableMergeButton->isHidden() == !tableVisible) &&
         (m_scrollingRecognitionControls == nullptr ||
@@ -1158,6 +1178,9 @@ bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisi
 
     m_actionToolbarTargetVisible = actionToolbarVisible;
     m_styleToolbarTargetVisible = styleToolbarVisible;
+    if (m_conversionSettingsButton != nullptr) {
+        m_conversionSettingsButton->setVisible(conversionVisible);
+    }
     for (QWidget* widget : std::as_const(m_selectionActionControls)) {
         if (widget != nullptr) {
             widget->setVisible(!recognitionActionVisible);
@@ -1508,6 +1531,10 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     case Tool::TextTranslation:
         activeButton = actionToolEntryButton(QStringLiteral("text-translation"));
         break;
+    case Tool::Markdown:
+    case Tool::Html:
+        activeButton = actionToolEntryButton(actionToolItemId(tool));
+        break;
     case Tool::Table:
         activeButton = actionToolEntryButton(QStringLiteral("table-recognition"));
         break;
@@ -1584,6 +1611,8 @@ void ScreenshotToolPalette::selectDynamicEntryTool(Tool tool) {
         selectDrawingToolGroupEntry(tool);
     } else if (tool == Tool::Table || tool == Tool::Qr) {
         setTableQrEntryTool(tool);
+    } else if (tool == Tool::Markdown || tool == Tool::Html) {
+        selectActionToolGroupEntry(actionToolItemId(tool));
     } else if (tool == Tool::Ocr) {
         selectActionToolGroupEntry(QStringLiteral("text-recognition"));
     } else if (tool == Tool::TextTranslation) {
@@ -3246,7 +3275,8 @@ void ScreenshotToolPalette::createMainToolbar(const Options& options) {
     const bool hasEditingTools = addMainToolButtons(options, panelLayout);
     const bool hasSecondaryTools =
         options.showScreenRecordButton || options.showOcrTool || options.showTextTranslationTool ||
-        options.showTableTool || options.showQrTool || options.showScrollingScreenshotTool ||
+        options.showTableTool || options.showQrTool || options.showImageConversionTools ||
+        options.showScrollingScreenshotTool ||
         (options.showSaveButton && !options.saveButtonWithResultActions) ||
         (!options.showRecordingControls && (options.actions & PinAction) != 0);
     if (hasEditingTools && hasSecondaryTools) {
@@ -3394,6 +3424,12 @@ void ScreenshotToolPalette::activateDrawingTool(Tool tool) {
     case Tool::Qr:
         emit qrRequested();
         break;
+    case Tool::Markdown:
+        emit markdownRequested();
+        break;
+    case Tool::Html:
+        emit htmlRequested();
+        break;
     case Tool::ScrollingScreenshot:
         emit scrollingScreenshotRequested();
         break;
@@ -3458,6 +3494,10 @@ void ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
         break;
     case Tool::TextTranslation:
         requestedButton = actionToolEntryButton(QStringLiteral("text-translation"));
+        break;
+    case Tool::Markdown:
+    case Tool::Html:
+        requestedButton = actionToolEntryButton(actionToolItemId(tool));
         break;
     case Tool::Table:
         requestedButton = actionToolEntryButton(QStringLiteral("table-recognition"));
@@ -3589,6 +3629,12 @@ void ScreenshotToolPalette::ensureDrawingToolGroupPopover(adqt::widgets::AdButto
 
 adqt::widgets::AdButton*
 ScreenshotToolPalette::actionToolSourceButton(const QString& itemId) const {
+    if (itemId == QStringLiteral("convert-to-markdown")) {
+        return m_markdownButton;
+    }
+    if (itemId == QStringLiteral("convert-to-html")) {
+        return m_htmlButton;
+    }
     if (itemId == QStringLiteral("barcode-recognition") ||
         itemId == QStringLiteral("table-recognition")) {
         return m_tableButton;
@@ -3634,6 +3680,13 @@ bool ScreenshotToolPalette::actionToolAvailable(const QString& itemId) const {
 }
 
 void ScreenshotToolPalette::activateActionTool(const QString& itemId, bool toggleVisibleButton) {
+    if (itemId == QStringLiteral("convert-to-markdown") ||
+        itemId == QStringLiteral("convert-to-html")) {
+        auto* source = actionToolSourceButton(itemId);
+        if (source == nullptr || !source->isEnabled()) {
+            return;
+        }
+    }
     selectActionToolGroupEntry(itemId);
     if (itemId == QStringLiteral("barcode-recognition")) {
         setTableQrEntryTool(Tool::Qr);
@@ -3649,6 +3702,10 @@ void ScreenshotToolPalette::activateActionTool(const QString& itemId, bool toggl
         activateToolFromToolbar(Tool::Ocr, toggleVisibleButton);
     } else if (itemId == QStringLiteral("text-translation")) {
         activateToolFromToolbar(Tool::TextTranslation, toggleVisibleButton);
+    } else if (itemId == QStringLiteral("convert-to-markdown")) {
+        activateToolFromToolbar(Tool::Markdown, toggleVisibleButton);
+    } else if (itemId == QStringLiteral("convert-to-html")) {
+        activateToolFromToolbar(Tool::Html, toggleVisibleButton);
     } else if (itemId == QStringLiteral("scrolling-screenshot")) {
         activateToolFromToolbar(Tool::ScrollingScreenshot, toggleVisibleButton);
     } else if (itemId == QStringLiteral("save-as-file")) {
@@ -3724,6 +3781,22 @@ void ScreenshotToolPalette::refreshActionToolGroup(int groupIndex) {
         } else if (adqt::widgets::AdButton* source = actionToolSourceButton(group.entryItemId)) {
             enabled = source->isEnabled();
             busy = source->busy();
+        }
+        // Keep conversion groups reachable while any of their options remain available.
+        if (groupItems.contains(QStringLiteral("convert-to-markdown")) ||
+            groupItems.contains(QStringLiteral("convert-to-html"))) {
+            for (const QString& itemId : group.itemIds) {
+                if (enabled) {
+                    break;
+                }
+                if (itemId == QStringLiteral("barcode-recognition")) {
+                    enabled = m_qrEnabled;
+                } else if (itemId == QStringLiteral("table-recognition")) {
+                    enabled = m_tableEnabled;
+                } else if (auto* source = actionToolSourceButton(itemId)) {
+                    enabled = source->isEnabled();
+                }
+            }
         }
         group.trigger->setEnabled(enabled);
         group.trigger->setBusy(busy);
@@ -4028,6 +4101,8 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
 
     const QVector<adqt::widgets::AdButton*> actionSources{
         m_tableButton,
+        m_markdownButton,
+        m_htmlButton,
         m_screenRecordButton,
         m_pinButton,
         m_ocrButton,
@@ -4067,6 +4142,14 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
         group.itemIds = availableItemIds;
         group.entryItemId = availableItemIds.constLast();
         const QSet<QString> items(availableItemIds.cbegin(), availableItemIds.cend());
+        if (items == QSet<QString>{QStringLiteral("barcode-recognition"),
+                                   QStringLiteral("table-recognition"),
+                                   QStringLiteral("convert-to-markdown"),
+                                   QStringLiteral("convert-to-html")}) {
+            group.entryItemId = m_tableQrEntryTool == Tool::Qr
+                                    ? QStringLiteral("barcode-recognition")
+                                    : QStringLiteral("table-recognition");
+        }
         const bool nativeRecognitionGroup =
             items == recognitionItems && m_tableButton != nullptr && m_tableQrPopover != nullptr;
         const bool recognitionNeedsIndependentTrigger =
@@ -4314,7 +4397,8 @@ void ScreenshotToolPalette::setHistoryState(const SnowCanvasHistoryState& state)
 void ScreenshotToolPalette::updateHistoryActionAvailability() {
     const bool tableActive = m_activeTool == Tool::Table;
     const bool textActive = m_activeTool == Tool::Ocr || m_activeTool == Tool::TextTranslation;
-    const bool qrActive = m_activeTool == Tool::Qr;
+    const bool qrActive =
+        m_activeTool == Tool::Qr || m_activeTool == Tool::Markdown || m_activeTool == Tool::Html;
     if (m_undoButton != nullptr) {
         m_undoButton->setEnabled(qrActive      ? false
                                  : tableActive ? m_tableEditingAvailable && m_tableCanUndo
@@ -4424,6 +4508,25 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
         addButton(m_tableButton);
         connect(m_tableButton, &adqt::widgets::AdButton::clicked, this,
                 [this]() { activateTableQrTool(Tool::Qr); });
+    }
+
+    if (options.showImageConversionTools) {
+        m_markdownButton =
+            addToolButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Convert to Markdown"),
+                          custom_outlined_icons::Markdown());
+        m_markdownButton->setObjectName(QStringLiteral("screenshotConvertToMarkdownButton"));
+        m_htmlButton = addToolButton(QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Convert to HTML"),
+                                     custom_outlined_icons::Html());
+        m_htmlButton->setObjectName(QStringLiteral("screenshotConvertToHtmlButton"));
+        for (auto* button : {m_markdownButton, m_htmlButton}) {
+            button->setBusyIndicatorPresentation(
+                adqt::widgets::AdButton::BusyIndicatorPresentation::IsolatedSurface);
+            addButton(button);
+        }
+        connect(m_markdownButton, &adqt::widgets::AdButton::clicked, this,
+                [this]() { activateToolFromToolbar(Tool::Markdown); });
+        connect(m_htmlButton, &adqt::widgets::AdButton::clicked, this,
+                [this]() { activateToolFromToolbar(Tool::Html); });
     }
 
     if (options.showScreenRecordButton) {
@@ -5158,6 +5261,7 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_textTranslateButton = nullptr;
     m_textResetButton = nullptr;
     m_textSettingsButton = nullptr;
+    m_conversionSettingsButton = nullptr;
     m_tableMergeButton = nullptr;
     m_tableSplitButton = nullptr;
     m_tableResetButton = nullptr;
@@ -5428,6 +5532,9 @@ bool ScreenshotToolPalette::ensureActionFamily(ActionFamily family) {
     case ActionFamily::ScrollingRecognition:
         createScrollingRecognitionActionFamily();
         break;
+    case ActionFamily::ImageConversion:
+        createImageConversionActionFamily();
+        break;
     }
     initializeStyleLayoutProfiles();
     applyScaledToolbarMetrics();
@@ -5587,6 +5694,39 @@ void ScreenshotToolPalette::createTextRecognitionActionFamily() {
     setTextTranslationState(m_textEditingAvailable, m_textTranslating, m_textTranslationStreaming,
                             m_textCanUndo, m_textCanRedo, m_textCanReset, m_textTranslationInImage);
     setTextTransformSelections(m_textFormattingSelection, m_textPunctuationSelection);
+}
+
+void ScreenshotToolPalette::setImageConversionEnabled(bool enabled) {
+    for (auto* button : {m_markdownButton, m_htmlButton}) {
+        if (button != nullptr) {
+            button->setEnabled(enabled);
+        }
+    }
+    refreshActionToolGroups();
+}
+
+void ScreenshotToolPalette::setImageConversionBusy(bool markdownBusy, bool htmlBusy) {
+    if (m_markdownButton != nullptr) {
+        m_markdownButton->setBusy(markdownBusy);
+    }
+    if (m_htmlButton != nullptr) {
+        m_htmlButton->setBusy(htmlBusy);
+    }
+    refreshActionToolGroups();
+}
+
+void ScreenshotToolPalette::createImageConversionActionFamily() {
+    if (m_selectActionLayout == nullptr || m_conversionSettingsButton != nullptr) {
+        return;
+    }
+    m_conversionSettingsButton = createScreenshotToolPaletteStyleActionButton(
+        m_selectActionPanel, QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Settings"),
+        outlined_icons::Setting(), actionButtonMetrics(m_physicalScale));
+    m_conversionSettingsButton->setObjectName(
+        QStringLiteral("screenshotImageConversionSettingsButton"));
+    m_selectActionLayout->addWidget(m_conversionSettingsButton);
+    connect(m_conversionSettingsButton, &adqt::widgets::AdButton::clicked, this,
+            &ScreenshotToolPalette::imageConversionSettingsRequested);
 }
 
 void ScreenshotToolPalette::createTableRecognitionActionFamily() {
