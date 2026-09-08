@@ -125,6 +125,9 @@ struct ScreenshotOverlayInputHandlerContext {
 class ScreenshotOverlayInputHandler final {
   public:
     explicit ScreenshotOverlayInputHandler(ScreenshotOverlayInputHandlerContext context);
+    void setExternalDragActive(bool active) {
+        m_externalDragActive = active;
+    }
 
     void handleMousePress(ScreenshotOverlayWindow* overlay, const QPointF& localPosition);
     [[nodiscard]] ScreenshotSelectionDragMode
@@ -192,6 +195,7 @@ class ScreenshotOverlayInputHandler final {
     void finishTransientDrag();
 
     ScreenshotOverlayInputHandlerContext m_context;
+    bool m_externalDragActive = false;
     std::optional<ScreenshotActiveTool> m_toolBeforeSelectionResize;
     bool m_scrollingCaptureSelectionResize = false;
     bool m_moveEntireSelectionShortcut = false;

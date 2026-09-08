@@ -3,6 +3,7 @@
 
 #include "icon_core.h"
 #include "snow_shot/presentation/globalshortcuttypes.h"
+#include "snow_shot/presentation/globalmousetypes.h"
 
 #include <QMetaType>
 #include <QHash>
@@ -44,6 +45,7 @@ enum class SettingsCommandKind {
     CaptureScreenshot,
     ExecuteQuickAction,
     Navigate,
+    BeginGlobalMouseDrag,
 };
 
 struct SettingsCommand {
@@ -53,6 +55,7 @@ struct SettingsCommand {
     // the command lets the settings surface use the same dispatcher as a
     // global shortcut activation without introducing one signal per action.
     GlobalShortcutAction shortcutAction = GlobalShortcutAction::Screenshot;
+    SettingsGlobalMouseAction globalMouseAction = SettingsGlobalMouseAction::ScreenshotCopy;
 };
 
 struct SettingsOptionDefinition {
@@ -80,6 +83,8 @@ enum class SettingsSelectBinding {
     ScreenshotDoubleClickAction,
     ScreenshotMiddleClickAction,
     PinMouseWheelZoomMode,
+    PinDoubleClickAction,
+    PinMiddleClickAction,
     ScreenRecordingClarity,
     ScreenRecordingFrameRate,
     AnimatedImageClarity,
@@ -100,6 +105,7 @@ struct SettingsSelectDefinition {
 
 enum class SettingsSwitchBinding {
     HistoryEnabled,
+    HistoryKeepPermanently,
     SmartSelection,
     DirectMlAcceleration,
     SelectionTransitionAnimation,
@@ -272,13 +278,17 @@ enum class SettingsCustomRenderer {
     TrayMenuOptions,
 };
 
+struct SettingsGlobalMouseActionDefinition {
+    SettingsGlobalMouseAction action = SettingsGlobalMouseAction::ScreenshotCopy;
+};
+
 struct SettingsCustomDefinition {
     SettingsCustomRenderer renderer = SettingsCustomRenderer::StorageStatus;
 };
 
 enum class SettingsTrayMenuOptionKind {
     QuickAction,
-    DisableShortcutFunctions,
+    DisableGlobalHotkeys,
     ShowMainWindow,
     Exit,
     WindowGrouping,
@@ -308,13 +318,12 @@ struct TrayCommandManifest {
                                               int screenshotDelaySeconds = 3) const;
 };
 
-using SettingsItemPayload =
-    std::variant<SettingsSelectDefinition, SettingsSwitchDefinition, SettingsIntegerDefinition,
-                 SettingsMultiSelectDefinition, SettingsSliderDefinition, SettingsColorDefinition,
-                 SettingsRadioDefinition, SettingsFilePathDefinition,
-                 SettingsDirectoryPathDefinition, SettingsTextDefinition,
-                 SettingsShortcutActionDefinition, SettingsLocalShortcutDefinition,
-                 SettingsActionDefinition, SettingsCustomDefinition>;
+using SettingsItemPayload = std::variant<
+    SettingsSelectDefinition, SettingsSwitchDefinition, SettingsIntegerDefinition,
+    SettingsMultiSelectDefinition, SettingsSliderDefinition, SettingsColorDefinition,
+    SettingsRadioDefinition, SettingsFilePathDefinition, SettingsDirectoryPathDefinition,
+    SettingsTextDefinition, SettingsShortcutActionDefinition, SettingsLocalShortcutDefinition,
+    SettingsActionDefinition, SettingsCustomDefinition, SettingsGlobalMouseActionDefinition>;
 
 struct SettingsItemDefinition {
     // Item IDs are globally stable within a registry. They are used as the
@@ -331,6 +340,7 @@ struct SettingsItemDefinition {
 enum class SettingsSectionReset {
     None,
     ScreenshotShortcuts,
+    GlobalMouse,
     OtherShortcuts,
     GeneralSettings,
     HistoryPolicy,
@@ -364,6 +374,7 @@ enum class SettingsSectionReset {
 enum class SettingsSectionItemLayout {
     VerticalList,
     TwoColumnGrid,
+    DividedList,
 };
 
 struct SettingsSectionDefinition {

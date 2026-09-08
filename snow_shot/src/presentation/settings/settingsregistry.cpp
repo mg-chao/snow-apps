@@ -35,6 +35,8 @@ SettingsFieldKind fieldKind(const SettingsItemPayload& payload) {
                 return SettingsFieldKind::ShortcutAction;
             } else if constexpr (std::is_same_v<Value, SettingsLocalShortcutDefinition>) {
                 return SettingsFieldKind::LocalShortcut;
+            } else if constexpr (std::is_same_v<Value, SettingsGlobalMouseActionDefinition>) {
+                return SettingsFieldKind::GlobalMouseAction;
             } else if constexpr (std::is_same_v<Value, SettingsActionDefinition>) {
                 return SettingsFieldKind::Action;
             } else {
@@ -68,7 +70,7 @@ SettingsRegistryBuilder& SettingsRegistryBuilder::addProvider(const SettingsProv
 }
 
 SettingsRegistryBuilder& SettingsRegistryBuilder::addCatalog(SettingsCatalog catalog,
-                                                               QString providerId) {
+                                                             QString providerId) {
     const int index = m_contributions.size();
     const QString normalizedId = providerName(providerId, index);
     if (providerId.trimmed().isEmpty()) {
@@ -76,7 +78,8 @@ SettingsRegistryBuilder& SettingsRegistryBuilder::addCatalog(SettingsCatalog cat
     }
     if (normalizedId.contains(QChar(0x1f))) {
         m_validationErrors.push_back(
-            QStringLiteral("settings provider id contains the reserved settings index delimiter: %1")
+            QStringLiteral(
+                "settings provider id contains the reserved settings index delimiter: %1")
                 .arg(normalizedId));
     }
     for (const Contribution& contribution : m_contributions) {
@@ -117,9 +120,9 @@ SettingsRegistry SettingsRegistryBuilder::build() const {
         validationErrors.push_back(
             QStringLiteral("settings registry requires at least one provider"));
     }
-    return SettingsRegistry(SettingsCatalog(std::move(pages), std::move(navigation),
-                                            std::move(defaultLocation)),
-                            std::move(pageProviderIds), std::move(validationErrors));
+    return SettingsRegistry(
+        SettingsCatalog(std::move(pages), std::move(navigation), std::move(defaultLocation)),
+        std::move(pageProviderIds), std::move(validationErrors));
 }
 
 QStringList SettingsRegistryBuilder::validationErrors() const {
@@ -144,8 +147,7 @@ SettingsRegistry::SettingsRegistry(SettingsCatalog catalog, QVector<QString> pag
 }
 
 SettingsRegistry::SettingsRegistry(const SettingsRegistry& other)
-    : m_catalog(other.m_catalog),
-      m_providerValidationErrors(other.m_providerValidationErrors),
+    : m_catalog(other.m_catalog), m_providerValidationErrors(other.m_providerValidationErrors),
       m_compilationValidationErrors(other.m_compilationValidationErrors),
       m_pageProviderIds(other.m_pageProviderIds) {
     compile(m_pageProviderIds, {});
@@ -209,6 +211,7 @@ void SettingsRegistry::compile(const QVector<QString>& pageProviderIds,
     m_fieldIndexByDirectoryPath.clear();
     m_fieldIndexByText.clear();
     m_fieldIndexByLocalShortcut.clear();
+    m_fieldIndexByGlobalMouseAction.clear();
     m_fieldIndexByAction.clear();
     m_fieldIndexByCustom.clear();
     m_pagePlanIndexById.clear();
@@ -226,8 +229,8 @@ void SettingsRegistry::compile(const QVector<QString>& pageProviderIds,
             QStringLiteral("duplicate %1: %2").arg(kind, value));
     };
     const auto insertStringIndex = [this, &duplicate](QHash<QString, int>& index,
-                                                       const QString& key, int value,
-                                                       const QString& kind) {
+                                                      const QString& key, int value,
+                                                      const QString& kind) {
         if (key.isEmpty()) {
             return;
         }
@@ -238,7 +241,7 @@ void SettingsRegistry::compile(const QVector<QString>& pageProviderIds,
         index.insert(key, value);
     };
     const auto insertIntegerIndex = [this, &duplicate](QHash<int, int>& index, int key, int value,
-                                                        const QString& kind) {
+                                                       const QString& kind) {
         if (index.contains(key)) {
             duplicate(kind, QString::number(key));
             return;
@@ -297,58 +300,70 @@ void SettingsRegistry::compile(const QVector<QString>& pageProviderIds,
                     [&](const auto& payload) {
                         using Payload = std::decay_t<decltype(payload)>;
                         if constexpr (std::is_same_v<Payload, SettingsSelectDefinition>) {
-                            insertIntegerIndex(m_fieldIndexBySelect, static_cast<int>(payload.binding),
-                                                currentIndex, QStringLiteral("select binding"));
+                            insertIntegerIndex(m_fieldIndexBySelect,
+                                               static_cast<int>(payload.binding), currentIndex,
+                                               QStringLiteral("select binding"));
                         } else if constexpr (std::is_same_v<Payload, SettingsSwitchDefinition>) {
-                            insertIntegerIndex(m_fieldIndexBySwitch, static_cast<int>(payload.binding),
-                                                currentIndex, QStringLiteral("switch binding"));
+                            insertIntegerIndex(m_fieldIndexBySwitch,
+                                               static_cast<int>(payload.binding), currentIndex,
+                                               QStringLiteral("switch binding"));
                         } else if constexpr (std::is_same_v<Payload, SettingsIntegerDefinition>) {
                             insertIntegerIndex(m_fieldIndexByInteger,
-                                                static_cast<int>(payload.binding), currentIndex,
-                                                QStringLiteral("integer binding"));
+                                               static_cast<int>(payload.binding), currentIndex,
+                                               QStringLiteral("integer binding"));
                         } else if constexpr (std::is_same_v<Payload,
-                                                             SettingsMultiSelectDefinition>) {
+                                                            SettingsMultiSelectDefinition>) {
                             insertIntegerIndex(m_fieldIndexByMultiSelect,
-                                                static_cast<int>(payload.binding), currentIndex,
-                                                QStringLiteral("multi-select binding"));
+                                               static_cast<int>(payload.binding), currentIndex,
+                                               QStringLiteral("multi-select binding"));
                         } else if constexpr (std::is_same_v<Payload, SettingsSliderDefinition>) {
-                            insertIntegerIndex(m_fieldIndexBySlider, static_cast<int>(payload.binding),
-                                                currentIndex, QStringLiteral("slider binding"));
+                            insertIntegerIndex(m_fieldIndexBySlider,
+                                               static_cast<int>(payload.binding), currentIndex,
+                                               QStringLiteral("slider binding"));
                         } else if constexpr (std::is_same_v<Payload, SettingsColorDefinition>) {
-                            insertIntegerIndex(m_fieldIndexByColor, static_cast<int>(payload.binding),
-                                                currentIndex, QStringLiteral("color binding"));
+                            insertIntegerIndex(m_fieldIndexByColor,
+                                               static_cast<int>(payload.binding), currentIndex,
+                                               QStringLiteral("color binding"));
                         } else if constexpr (std::is_same_v<Payload, SettingsRadioDefinition>) {
-                            insertIntegerIndex(m_fieldIndexByRadio, static_cast<int>(payload.binding),
-                                                currentIndex, QStringLiteral("radio binding"));
+                            insertIntegerIndex(m_fieldIndexByRadio,
+                                               static_cast<int>(payload.binding), currentIndex,
+                                               QStringLiteral("radio binding"));
                         } else if constexpr (std::is_same_v<Payload, SettingsFilePathDefinition>) {
                             insertIntegerIndex(m_fieldIndexByFilePath,
-                                                static_cast<int>(payload.binding), currentIndex,
-                                                QStringLiteral("file path binding"));
+                                               static_cast<int>(payload.binding), currentIndex,
+                                               QStringLiteral("file path binding"));
                         } else if constexpr (std::is_same_v<Payload,
-                                                             SettingsDirectoryPathDefinition>) {
+                                                            SettingsDirectoryPathDefinition>) {
                             insertIntegerIndex(m_fieldIndexByDirectoryPath,
-                                                static_cast<int>(payload.binding), currentIndex,
-                                                QStringLiteral("directory path binding"));
+                                               static_cast<int>(payload.binding), currentIndex,
+                                               QStringLiteral("directory path binding"));
                         } else if constexpr (std::is_same_v<Payload, SettingsTextDefinition>) {
-                            insertIntegerIndex(m_fieldIndexByText, static_cast<int>(payload.binding),
-                                                currentIndex, QStringLiteral("text binding"));
+                            insertIntegerIndex(m_fieldIndexByText,
+                                               static_cast<int>(payload.binding), currentIndex,
+                                               QStringLiteral("text binding"));
                         } else if constexpr (std::is_same_v<Payload,
-                                                             SettingsShortcutActionDefinition>) {
+                                                            SettingsShortcutActionDefinition>) {
                             insertIntegerIndex(m_fieldIndexByShortcut,
-                                                static_cast<int>(payload.shortcutAction), currentIndex,
-                                                QStringLiteral("shortcut action"));
+                                               static_cast<int>(payload.shortcutAction),
+                                               currentIndex, QStringLiteral("shortcut action"));
                         } else if constexpr (std::is_same_v<Payload,
-                                                             SettingsLocalShortcutDefinition>) {
+                                                            SettingsLocalShortcutDefinition>) {
                             insertStringIndex(m_fieldIndexByLocalShortcut,
                                               localShortcutKey(payload.scope, payload.shortcutId),
                                               currentIndex, QStringLiteral("local shortcut"));
+                        } else if constexpr (std::is_same_v<Payload,
+                                                            SettingsGlobalMouseActionDefinition>) {
+                            insertIntegerIndex(m_fieldIndexByGlobalMouseAction,
+                                               static_cast<int>(payload.action), currentIndex,
+                                               QStringLiteral("global mouse action"));
                         } else if constexpr (std::is_same_v<Payload, SettingsActionDefinition>) {
-                            insertIntegerIndex(m_fieldIndexByAction, static_cast<int>(payload.binding),
-                                                currentIndex, QStringLiteral("action binding"));
+                            insertIntegerIndex(m_fieldIndexByAction,
+                                               static_cast<int>(payload.binding), currentIndex,
+                                               QStringLiteral("action binding"));
                         } else if constexpr (std::is_same_v<Payload, SettingsCustomDefinition>) {
                             insertIntegerIndex(m_fieldIndexByCustom,
-                                                static_cast<int>(payload.renderer), currentIndex,
-                                                QStringLiteral("custom renderer"));
+                                               static_cast<int>(payload.renderer), currentIndex,
+                                               QStringLiteral("custom renderer"));
                         }
                     },
                     item.payload);
@@ -385,8 +400,7 @@ const SettingsFieldDescriptor* SettingsRegistry::field(const QString& fieldId) c
 const SettingsFieldDescriptor*
 SettingsRegistry::fieldForConfigurationKey(const QString& key) const {
     const auto found = m_fieldIndexByConfigurationKey.constFind(key);
-    return found == m_fieldIndexByConfigurationKey.cend() ? nullptr
-                                                           : &m_fields.at(found.value());
+    return found == m_fieldIndexByConfigurationKey.cend() ? nullptr : &m_fields.at(found.value());
 }
 
 const SettingsFieldDescriptor*
@@ -395,17 +409,16 @@ SettingsRegistry::fieldForShortcut(GlobalShortcutAction action) const {
     return found == m_fieldIndexByShortcut.cend() ? nullptr : &m_fields.at(found.value());
 }
 
-#define REGISTRY_INTEGER_LOOKUP(name, member, type)                                    \
-    const SettingsFieldDescriptor* SettingsRegistry::name(type value) const {          \
-        const auto found = member.constFind(static_cast<int>(value));                 \
-        return found == member.cend() ? nullptr : &m_fields.at(found.value());         \
+#define REGISTRY_INTEGER_LOOKUP(name, member, type)                                                \
+    const SettingsFieldDescriptor* SettingsRegistry::name(type value) const {                      \
+        const auto found = member.constFind(static_cast<int>(value));                              \
+        return found == member.cend() ? nullptr : &m_fields.at(found.value());                     \
     }
 
 REGISTRY_INTEGER_LOOKUP(fieldForSelect, m_fieldIndexBySelect, SettingsSelectBinding)
 REGISTRY_INTEGER_LOOKUP(fieldForSwitch, m_fieldIndexBySwitch, SettingsSwitchBinding)
 REGISTRY_INTEGER_LOOKUP(fieldForInteger, m_fieldIndexByInteger, SettingsIntegerBinding)
-REGISTRY_INTEGER_LOOKUP(fieldForMultiSelect, m_fieldIndexByMultiSelect,
-                        SettingsMultiSelectBinding)
+REGISTRY_INTEGER_LOOKUP(fieldForMultiSelect, m_fieldIndexByMultiSelect, SettingsMultiSelectBinding)
 REGISTRY_INTEGER_LOOKUP(fieldForSlider, m_fieldIndexBySlider, SettingsSliderBinding)
 REGISTRY_INTEGER_LOOKUP(fieldForColor, m_fieldIndexByColor, SettingsColorBinding)
 REGISTRY_INTEGER_LOOKUP(fieldForRadio, m_fieldIndexByRadio, SettingsRadioBinding)
@@ -413,13 +426,16 @@ REGISTRY_INTEGER_LOOKUP(fieldForFilePath, m_fieldIndexByFilePath, SettingsFilePa
 REGISTRY_INTEGER_LOOKUP(fieldForDirectoryPath, m_fieldIndexByDirectoryPath,
                         SettingsDirectoryPathBinding)
 REGISTRY_INTEGER_LOOKUP(fieldForText, m_fieldIndexByText, SettingsTextBinding)
+REGISTRY_INTEGER_LOOKUP(fieldForGlobalMouseAction, m_fieldIndexByGlobalMouseAction,
+                        SettingsGlobalMouseAction)
 REGISTRY_INTEGER_LOOKUP(fieldForAction, m_fieldIndexByAction, SettingsActionBinding)
 REGISTRY_INTEGER_LOOKUP(fieldForCustom, m_fieldIndexByCustom, SettingsCustomRenderer)
 
 #undef REGISTRY_INTEGER_LOOKUP
 
-const SettingsFieldDescriptor* SettingsRegistry::fieldForLocalShortcut(
-    SettingsLocalShortcutScope scope, const QString& shortcutId) const {
+const SettingsFieldDescriptor*
+SettingsRegistry::fieldForLocalShortcut(SettingsLocalShortcutScope scope,
+                                        const QString& shortcutId) const {
     const auto found = m_fieldIndexByLocalShortcut.constFind(localShortcutKey(scope, shortcutId));
     return found == m_fieldIndexByLocalShortcut.cend() ? nullptr : &m_fields.at(found.value());
 }
@@ -460,8 +476,7 @@ const QStringList& SettingsRegistry::providerIds() const {
 
 QString SettingsRegistry::providerIdForPage(const QString& pageId) const {
     const SettingsPagePlan* plan = pagePlan(pageId);
-    if (plan == nullptr || plan->pageIndex < 0 ||
-        plan->pageIndex >= m_pageProviderIds.size()) {
+    if (plan == nullptr || plan->pageIndex < 0 || plan->pageIndex >= m_pageProviderIds.size()) {
         return {};
     }
     return m_pageProviderIds.at(plan->pageIndex);
@@ -479,15 +494,14 @@ const SettingsLocation& SettingsRegistry::defaultLocation() const {
     return m_catalog.defaultLocation();
 }
 
-SettingsRegistry SettingsRegistry::fromCatalog(const SettingsCatalog& catalog,
-                                                QString providerId) {
-    return SettingsRegistry(SettingsCatalog(catalog.pages(), catalog.navigation(),
-                                            catalog.defaultLocation()),
-                            std::move(providerId));
+SettingsRegistry SettingsRegistry::fromCatalog(const SettingsCatalog& catalog, QString providerId) {
+    return SettingsRegistry(
+        SettingsCatalog(catalog.pages(), catalog.navigation(), catalog.defaultLocation()),
+        std::move(providerId));
 }
 
-SettingsRegistry SettingsRegistry::fromProviders(
-    const QVector<const SettingsProvider*>& providers) {
+SettingsRegistry
+SettingsRegistry::fromProviders(const QVector<const SettingsProvider*>& providers) {
     SettingsRegistryBuilder builder;
     QStringList nullProviderErrors;
     for (const SettingsProvider* provider : providers) {

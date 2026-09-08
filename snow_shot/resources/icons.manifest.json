@@ -160,6 +160,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "AutoScroll",
+      "name": "auto-scroll",
+      "source": "../src/presentation/components/icons/resources/auto-scroll.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "Blur",
       "name": "blur",
       "source": "../src/presentation/components/icons/resources/blur.svg",

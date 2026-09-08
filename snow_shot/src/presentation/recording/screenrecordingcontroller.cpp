@@ -590,7 +590,8 @@ struct ScreenRecordingController::Impl {
                 captureRegion.y(),
                 static_cast<uint32_t>(captureRegion.width()),
                 static_cast<uint32_t>(captureRegion.height()),
-                static_cast<uint32_t>(SNOW_CAPTURE_BACKEND_WGC),
+                // Auto tries WGC first, then DXGI and GDI on eligible capture failures.
+                static_cast<uint32_t>(SNOW_CAPTURE_BACKEND_AUTO),
                 outputUtf8.constData(),
                 static_cast<uint32_t>(sessionOutputSettings.format),
                 static_cast<uint32_t>(validRecordingFrameRate(settings.frameRate())),

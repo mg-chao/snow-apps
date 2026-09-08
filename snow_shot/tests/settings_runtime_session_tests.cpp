@@ -39,6 +39,24 @@ enum class WriteMode {
     Pending,
 };
 
+QString globalMouseFieldId(settings::SettingsGlobalMouseAction action) {
+    switch (action) {
+    case settings::SettingsGlobalMouseAction::ScreenshotCopy:
+        return QStringLiteral("global-mouse.screenshot-copy");
+    case settings::SettingsGlobalMouseAction::ScreenshotFixed:
+        return QStringLiteral("global-mouse.screenshot-fixed");
+    case settings::SettingsGlobalMouseAction::ScreenshotOcr:
+        return QStringLiteral("global-mouse.screenshot-ocr");
+    case settings::SettingsGlobalMouseAction::ScreenshotTranslation:
+        return QStringLiteral("global-mouse.screenshot-translation");
+    case settings::SettingsGlobalMouseAction::ScreenshotSave:
+        return QStringLiteral("global-mouse.screenshot-save");
+    case settings::SettingsGlobalMouseAction::ScreenshotQuickSave:
+        return QStringLiteral("global-mouse.screenshot-quick-save");
+    }
+    return {};
+}
+
 class FakeSettingsBackend final : public settings::SettingsBackend {
   public:
     FakeSettingsBackend() {
@@ -73,6 +91,9 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     }
 
     bool switchValue(settings::SettingsSwitchBinding binding) const override {
+        if (binding == settings::SettingsSwitchBinding::HistoryKeepPermanently) {
+            return m_keepPermanently;
+        }
         if (binding == settings::SettingsSwitchBinding::TrayEnabled) {
             return m_trayEnabled;
         }
@@ -84,6 +105,11 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     }
 
     bool applySwitchValue(settings::SettingsSwitchBinding binding, bool value) override {
+        if (binding == settings::SettingsSwitchBinding::HistoryKeepPermanently) {
+            m_keepPermanently = value;
+            emit synchronized();
+            return true;
+        }
         if (binding != settings::SettingsSwitchBinding::TrayEnabled) {
             return false;
         }
@@ -210,6 +236,22 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
         return false;
     }
 
+    settings::SettingsGlobalMouseCombination
+    globalMouseCombination(settings::SettingsGlobalMouseAction action) const override {
+        return m_globalMouseCombinations.value(static_cast<int>(action));
+    }
+
+    bool applyGlobalMouseCombination(
+        settings::SettingsGlobalMouseAction action,
+        const settings::SettingsGlobalMouseCombination& combination) override {
+        return applyField(globalMouseFieldId(action), QVariant::fromValue(combination),
+                          [this, action](const QVariant& next) {
+                              m_globalMouseCombinations.insert(
+                                  static_cast<int>(action),
+                                  next.value<settings::SettingsGlobalMouseCombination>());
+                          });
+    }
+
     settings::SettingsActionState actionState(settings::SettingsActionBinding) const override {
         return {true, false};
     }
@@ -235,7 +277,7 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
         emit synchronized();
     }
 
-    bool resetSection(settings::SettingsSectionReset) override {
+    bool resetSection(settings::SettingsSectionReset reset) override {
         if (!m_resetAccepted) {
             m_status.lastConfigurationError = QStringLiteral("reset rejected");
             emit synchronized();
@@ -243,6 +285,9 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
         }
         if (m_resetHistoryPending) {
             m_status.historyPolicyUpdating = true;
+        }
+        if (reset == settings::SettingsSectionReset::GlobalMouse) {
+            m_globalMouseCombinations.clear();
         }
         return true;
     }
@@ -359,6 +404,22 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
             m_drawingToolbar = value.value<storage::ScreenshotToolbarLayout>();
         } else if (fieldId == QStringLiteral("action-toolbar")) {
             m_actionToolbar = value.value<storage::ScreenshotToolbarLayout>();
+        } else if (fieldId.startsWith(QStringLiteral("global-mouse."))) {
+            for (const auto action : {
+                     settings::SettingsGlobalMouseAction::ScreenshotCopy,
+                     settings::SettingsGlobalMouseAction::ScreenshotFixed,
+                     settings::SettingsGlobalMouseAction::ScreenshotOcr,
+                     settings::SettingsGlobalMouseAction::ScreenshotTranslation,
+                     settings::SettingsGlobalMouseAction::ScreenshotQuickSave,
+                     settings::SettingsGlobalMouseAction::ScreenshotSave,
+                 }) {
+                if (globalMouseFieldId(action) == fieldId) {
+                    m_globalMouseCombinations.insert(
+                        static_cast<int>(action),
+                        value.value<settings::SettingsGlobalMouseCombination>());
+                    break;
+                }
+            }
         }
     }
 
@@ -376,6 +437,7 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
 
     QString m_theme = QStringLiteral("system");
     bool m_trayEnabled = true;
+    bool m_keepPermanently = false;
     int m_delay = 3;
     QVariantList m_trayOptions{QStringLiteral("quick.screenshot")};
     storage::ScreenshotToolbarLayout m_drawingToolbar{{{QStringLiteral("select")}},
@@ -383,6 +445,7 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     storage::ScreenshotToolbarLayout m_actionToolbar{
         {{QStringLiteral("table-recognition")}, {QStringLiteral("save-as-file")}},
         {QStringLiteral("barcode-recognition")}};
+    QHash<int, settings::SettingsGlobalMouseCombination> m_globalMouseCombinations;
     storage::StorageStatus m_status;
     QHash<QString, WriteMode> m_modes;
     QHash<QString, int> m_applyCounts;
@@ -1076,11 +1139,109 @@ void auxiliaryIntegerValuesRemainReactiveWithoutSyntheticFields() {
             "backend synchronization must refresh auxiliary integer consumers exactly once");
 }
 
+void globalMouseCombinationsUseTypedStateAndRejectDuplicates() {
+    using Action = settings::SettingsGlobalMouseAction;
+    using Combination = settings::SettingsGlobalMouseCombination;
+    const Action actions[]{Action::ScreenshotCopy,      Action::ScreenshotFixed,
+                           Action::ScreenshotOcr,       Action::ScreenshotTranslation,
+                           Action::ScreenshotQuickSave, Action::ScreenshotSave};
+    const Combination combinations[]{
+        {{QStringLiteral("windows")}, QStringLiteral("left_drag")},
+        {{QStringLiteral("ctrl")}, QStringLiteral("right_drag")},
+        {{QStringLiteral("alt")}, QStringLiteral("wheel_drag")},
+        {{QStringLiteral("shift")}, QStringLiteral("side_button_1_drag")},
+        {{QStringLiteral("windows")}, QStringLiteral("side_button_2_drag")},
+        {{QStringLiteral("ctrl"), QStringLiteral("alt")}, QStringLiteral("left_drag")},
+    };
+
+    const settings::SettingsRegistry& registry = settings::builtInSettingsRegistry();
+    FakeSettingsBackend backend;
+    settings::SettingsRuntimeSession session(registry, backend);
+    for (const Action action : actions) {
+        require(session.globalMouseCombination(action).isUnset(),
+                "global mouse defaults must load as Unset typed values");
+    }
+
+    require(session.applyGlobalMouseCombination(actions[0], combinations[0]) &&
+                session.globalMouseCombination(actions[0]) == combinations[0] &&
+                session.globalMouseCombinationAvailable(actions[0], combinations[0]),
+            "a global mouse combination must round-trip and remain available to its own action");
+    require(!session.globalMouseCombinationAvailable(actions[1], combinations[0]) &&
+                !session.applyGlobalMouseCombination(actions[1], combinations[0]) &&
+                backend.applyCount(globalMouseFieldId(actions[1])) == 0,
+            "a duplicate global mouse combination must be rejected before persistence");
+    require(session.globalMouseCombinationAvailable(actions[1], Combination{}),
+            "Unset must always remain available to every global mouse action");
+    const Combination multi{{QStringLiteral("shift"), QStringLiteral("ctrl")},
+                            QStringLiteral("left_drag")};
+    require(session.applyGlobalMouseCombination(actions[0], multi),
+            "multiple activation keys must use typed settings state");
+    require(!session.globalMouseCombinationAvailable(
+                actions[1],
+                {{QStringLiteral("ctrl"), QStringLiteral("shift")}, QStringLiteral("left_drag")}),
+            "selection order must not bypass duplicate-combination validation");
+    require(!session.globalMouseCombinationAvailable(actions[1], {{}, QStringLiteral("left_drag")}),
+            "a global binding must require at least one activation key");
+
+    for (int index = 1; index < 6; ++index) {
+        require(session.applyGlobalMouseCombination(actions[index], combinations[index]),
+                "each global mouse action must accept an independent unique combination");
+    }
+    backend.setMode(globalMouseFieldId(actions[0]), WriteMode::Reject);
+    const Combination rejected{{QStringLiteral("ctrl")}, QStringLiteral("wheel_drag")};
+    require(!session.applyGlobalMouseCombination(actions[0], rejected),
+            "backend persistence failures must reject a global mouse write");
+    const settings::SettingsFieldState rejectedState =
+        session.state(globalMouseFieldId(actions[0]));
+    require(rejectedState.dirty && !rejectedState.busy &&
+                rejectedState.phase == settings::SettingsWritePhase::Rejected &&
+                rejectedState.draftValue.value<Combination>() == rejected &&
+                rejectedState.error == QStringLiteral("rejected"),
+            "global mouse persistence failures must use normal field error state");
+
+    require(session.reset(settings::SettingsSectionReset::GlobalMouse),
+            "the Global mouse reset must be accepted");
+    for (const Action action : actions) {
+        const settings::SettingsFieldState state = session.state(globalMouseFieldId(action));
+        require(session.globalMouseCombination(action).isUnset() && !state.dirty && !state.busy &&
+                    state.phase == settings::SettingsWritePhase::Clean,
+                "reset must clear every global mouse field and retire failed drafts");
+    }
+}
+
 } // namespace
+
+void permanentHistoryDisablesOnlyLimitControls() {
+    FakeSettingsBackend backend;
+    settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
+    const QString toggle = QStringLiteral("history.keep-permanently");
+    const QStringList limits{QStringLiteral("history.retention-days"),
+                             QStringLiteral("history.max-entries"),
+                             QStringLiteral("history.max-disk-mib")};
+    require(!session.state(toggle).acceptedValue.toBool() && session.state(toggle).enabled,
+            "permanent history toggle must default to off and be available");
+    for (const auto& id : limits)
+        require(session.state(id).enabled, "history limits must initially be enabled");
+    require(session.submitDraft(toggle, true), "permanent history toggle write failed");
+    flushEvents();
+    for (const auto& id : limits) {
+        require(!session.state(id).enabled, "permanent history must disable limit controls");
+    }
+    require(session.state(QStringLiteral("history.enabled")).enabled &&
+                session.state(QStringLiteral("history.clear")).enabled &&
+                session.state(toggle).enabled,
+            "permanent history must leave saving, clearing, and its own toggle available");
+    require(session.submitDraft(toggle, false), "disabling permanent history failed");
+    flushEvents();
+    for (const auto& id : limits)
+        require(session.state(id).enabled,
+                "disabling permanent history must restore limit controls");
+}
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     initialStateAndNoOp();
+    permanentHistoryDisablesOnlyLimitControls();
     storageUsagePropagation();
     synchronousWriteAndFieldSignals();
     rejectedWriteRetainsDraftAndCanRetry();
@@ -1097,5 +1258,6 @@ int main(int argc, char** argv) {
     discardingAsynchronousResetQuarantinesLateCompletion();
     rejectedResetRetainsStateAndErrorUntilDiscarded();
     auxiliaryIntegerValuesRemainReactiveWithoutSyntheticFields();
+    globalMouseCombinationsUseTypedStateAndRejectDuplicates();
     return 0;
 }

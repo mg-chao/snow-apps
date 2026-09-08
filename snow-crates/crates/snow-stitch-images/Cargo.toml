@@ -12,6 +12,7 @@ name = "snow_stitch_images"
 path = "src/lib.rs"
 
 [features]
+perf-instrumentation = []
 default = ["full-image-io"]
 # Gates the developer-facing batch-stitch CLI so plain `cargo build` only
 # produces the library consumed by the FFI wrapper. Build the CLI with:

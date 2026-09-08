@@ -1384,6 +1384,11 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
         !isRecordingUnavailableTool(tool)) {
         setRecordingExportSettingsVisible(false);
     }
+    if (tool == Tool::RectangleHighlight || tool == Tool::PenHighlight) {
+        m_lastHighlightTool = tool;
+    } else if (tool == Tool::RectangleFilter || tool == Tool::PenFilter) {
+        m_lastFilterTool = tool;
+    }
     const bool activeToolNoop = m_activeTool.has_value() && *m_activeTool == tool &&
                                 (!toolUsesStyleToolbar(tool) ||
                                  (m_activeStyleTool.has_value() && *m_activeStyleTool == tool));
@@ -1660,6 +1665,11 @@ void ScreenshotToolPalette::setScrollingScreenshotMode(bool enabled) {
         return;
     }
     m_scrollingScreenshotMode = enabled;
+    if (m_scrollingAutoScroll) {
+        m_scrollingAutoScroll = false;
+        updateScrollingRecognitionButtons();
+        emit scrollingAutoScrollChanged(false);
+    }
     if (enabled) {
         setScrollingRecognitionMode(ScreenshotScrollingRecognitionMode::Vertical);
     }
@@ -1843,6 +1853,7 @@ ScreenshotScrollingRecognitionMode ScreenshotToolPalette::scrollingRecognitionMo
 }
 
 void ScreenshotToolPalette::updateScrollingRecognitionButtons() {
+    applyMainToolbarToolActiveStyle(m_scrollingAutoScrollButton, m_scrollingAutoScroll);
     const auto updateButton = [this](adqt::widgets::AdButton* button,
                                      ScreenshotScrollingRecognitionMode mode) {
         if (button == nullptr) {
@@ -2585,7 +2596,7 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
         }
         if (m_scrollingRecognitionControls != nullptr &&
             m_scrollingRecognitionControls->layout() != nullptr) {
-            m_scrollingRecognitionControls->layout()->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
+            m_scrollingRecognitionControls->layout()->setSpacing(0);
         }
         ScreenshotToolPaletteSliderEditor opacityEditor;
         opacityEditor.icon = m_selectionOpacityIcon;
@@ -3415,7 +3426,18 @@ void ScreenshotToolPalette::refreshRecordingToolAvailability(adqt::widgets::AdBu
     button->setAccessibleDescription(tr("Unavailable while recording"));
 }
 
+ScreenshotToolPalette::Tool ScreenshotToolPalette::rememberedDrawingMode(Tool tool) const {
+    if (tool == Tool::RectangleHighlight || tool == Tool::PenHighlight) {
+        return m_lastHighlightTool;
+    }
+    if (tool == Tool::RectangleFilter || tool == Tool::PenFilter) {
+        return m_lastFilterTool;
+    }
+    return tool;
+}
+
 void ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibleButton) {
+    tool = rememberedDrawingMode(tool);
     if (isRecordingUnavailableTool(tool)) {
         return;
     }
@@ -4517,6 +4539,7 @@ bool ScreenshotToolPalette::activateDrawingShortcut(const QString& toolId) {
 }
 
 bool ScreenshotToolPalette::activateToolShortcut(Tool tool) {
+    tool = rememberedDrawingMode(tool);
     if (isRecordingUnavailableTool(tool)) {
         return false;
     }
@@ -5141,6 +5164,7 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     m_textFormattingSelect = nullptr;
     m_textPunctuationSelect = nullptr;
     m_scrollingRecognitionControls = nullptr;
+    m_scrollingAutoScrollButton = nullptr;
     m_scrollingVerticalButton = nullptr;
     m_scrollingHorizontalButton = nullptr;
 
@@ -5604,7 +5628,7 @@ void ScreenshotToolPalette::createScrollingRecognitionActionFamily() {
         QStringLiteral("screenshotScrollingRecognitionMode"));
     auto* layout = new QHBoxLayout(m_scrollingRecognitionControls);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
+    layout->setSpacing(0);
     m_scrollingVerticalButton = createScreenshotToolPaletteStyleActionButton(
         m_scrollingRecognitionControls, "Vertical scrolling",
         custom_outlined_icons::ScrollingVertical(), actionButtonMetrics(m_physicalScale));
@@ -5614,12 +5638,30 @@ void ScreenshotToolPalette::createScrollingRecognitionActionFamily() {
     m_scrollingVerticalButton->setObjectName(QStringLiteral("screenshotScrollingVerticalButton"));
     m_scrollingHorizontalButton->setObjectName(
         QStringLiteral("screenshotScrollingHorizontalButton"));
+    m_scrollingAutoScrollButton = createScreenshotToolPaletteStyleActionButton(
+        m_scrollingRecognitionControls, QT_TR_NOOP("Auto-scroll"),
+        custom_outlined_icons::AutoScroll(), actionButtonMetrics(m_physicalScale));
+    m_scrollingAutoScrollButton->setObjectName(
+        QStringLiteral("screenshotScrollingAutoScrollButton"));
+    layout->addWidget(m_scrollingAutoScrollButton);
+    addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING * 2);
+    auto* separator = createStyleToolbarSeparator(m_scrollingRecognitionControls);
+    separator->setObjectName(QStringLiteral("screenshotScrollingAutoScrollSeparator"));
+    layout->addWidget(separator);
+    addStyleToolbarSpacing(layout, STYLE_GROUP_SPACING * 2);
     layout->addWidget(m_scrollingVerticalButton);
+    addStyleToolbarSpacing(layout, STYLE_ITEM_SPACING);
     layout->addWidget(m_scrollingHorizontalButton);
     m_selectActionLayout->addWidget(m_scrollingRecognitionControls);
     stampScreenshotToolbarReferenceWidth(m_scrollingRecognitionControls,
-                                         actionButtonMetrics(1.0).buttonSize * 2 +
-                                             STYLE_ITEM_SPACING);
+                                         actionButtonMetrics(1.0).buttonSize * 3 +
+                                             STYLE_GROUP_SPACING * 4 + STYLE_ITEM_SPACING +
+                                             TOOLBAR_SEPARATOR_WIDTH);
+    connect(m_scrollingAutoScrollButton, &adqt::widgets::AdButton::clicked, this, [this]() {
+        m_scrollingAutoScroll = !m_scrollingAutoScroll;
+        updateScrollingRecognitionButtons();
+        emit scrollingAutoScrollChanged(m_scrollingAutoScroll);
+    });
     connect(m_scrollingVerticalButton, &adqt::widgets::AdButton::clicked, this, [this]() {
         setScrollingRecognitionMode(ScreenshotScrollingRecognitionMode::Vertical);
     });

@@ -25,6 +25,7 @@ enum class SettingsFieldKind {
     Text,
     ShortcutAction,
     LocalShortcut,
+    GlobalMouseAction,
     Action,
     Custom,
 };
@@ -89,8 +90,7 @@ class SettingsRegistryBuilder final {
     SettingsRegistryBuilder() = default;
 
     SettingsRegistryBuilder& addProvider(const SettingsProvider& provider);
-    SettingsRegistryBuilder& addCatalog(SettingsCatalog catalog,
-                                         QString providerId = {});
+    SettingsRegistryBuilder& addCatalog(SettingsCatalog catalog, QString providerId = {});
 
     // An empty builder is deliberately invalid: the application must make an
     // explicit provider contribution before a registry can drive a settings
@@ -119,8 +119,7 @@ class SettingsRegistry final {
     [[nodiscard]] const SettingsCatalog& catalog() const;
     [[nodiscard]] const QVector<SettingsFieldDescriptor>& fields() const;
     [[nodiscard]] const SettingsFieldDescriptor* field(const QString& fieldId) const;
-    [[nodiscard]] const SettingsFieldDescriptor*
-    fieldForConfigurationKey(const QString& key) const;
+    [[nodiscard]] const SettingsFieldDescriptor* fieldForConfigurationKey(const QString& key) const;
     [[nodiscard]] const SettingsFieldDescriptor*
     fieldForShortcut(GlobalShortcutAction action) const;
     [[nodiscard]] const SettingsFieldDescriptor*
@@ -133,19 +132,17 @@ class SettingsRegistry final {
     fieldForMultiSelect(SettingsMultiSelectBinding binding) const;
     [[nodiscard]] const SettingsFieldDescriptor*
     fieldForSlider(SettingsSliderBinding binding) const;
-    [[nodiscard]] const SettingsFieldDescriptor*
-    fieldForColor(SettingsColorBinding binding) const;
-    [[nodiscard]] const SettingsFieldDescriptor*
-    fieldForRadio(SettingsRadioBinding binding) const;
+    [[nodiscard]] const SettingsFieldDescriptor* fieldForColor(SettingsColorBinding binding) const;
+    [[nodiscard]] const SettingsFieldDescriptor* fieldForRadio(SettingsRadioBinding binding) const;
     [[nodiscard]] const SettingsFieldDescriptor*
     fieldForFilePath(SettingsFilePathBinding binding) const;
     [[nodiscard]] const SettingsFieldDescriptor*
     fieldForDirectoryPath(SettingsDirectoryPathBinding binding) const;
+    [[nodiscard]] const SettingsFieldDescriptor* fieldForText(SettingsTextBinding binding) const;
     [[nodiscard]] const SettingsFieldDescriptor*
-    fieldForText(SettingsTextBinding binding) const;
+    fieldForLocalShortcut(SettingsLocalShortcutScope scope, const QString& shortcutId) const;
     [[nodiscard]] const SettingsFieldDescriptor*
-    fieldForLocalShortcut(SettingsLocalShortcutScope scope,
-                          const QString& shortcutId) const;
+    fieldForGlobalMouseAction(SettingsGlobalMouseAction action) const;
     [[nodiscard]] const SettingsFieldDescriptor*
     fieldForAction(SettingsActionBinding binding) const;
     [[nodiscard]] const SettingsFieldDescriptor*
@@ -166,9 +163,9 @@ class SettingsRegistry final {
     [[nodiscard]] const SettingsLocation& defaultLocation() const;
 
     [[nodiscard]] static SettingsRegistry fromCatalog(const SettingsCatalog& catalog,
-                                                       QString providerId = {});
-    [[nodiscard]] static SettingsRegistry fromProviders(
-        const QVector<const SettingsProvider*>& providers);
+                                                      QString providerId = {});
+    [[nodiscard]] static SettingsRegistry
+    fromProviders(const QVector<const SettingsProvider*>& providers);
 
   private:
     friend class SettingsRegistryBuilder;
@@ -196,6 +193,7 @@ class SettingsRegistry final {
     QHash<int, int> m_fieldIndexByDirectoryPath;
     QHash<int, int> m_fieldIndexByText;
     QHash<QString, int> m_fieldIndexByLocalShortcut;
+    QHash<int, int> m_fieldIndexByGlobalMouseAction;
     QHash<int, int> m_fieldIndexByAction;
     QHash<int, int> m_fieldIndexByCustom;
     QHash<QString, int> m_pagePlanIndexById;

@@ -103,7 +103,7 @@ impl fmt::Display for CaptureError {
             Self::ResolutionChanged(w, h) => {
                 write!(f, "capture source resolution changed to {w}x{h}")
             }
-            Self::Platform(inner) => write!(f, "{inner}"),
+            Self::Platform(inner) => write!(f, "{inner:#}"),
         }
     }
 }
@@ -128,5 +128,28 @@ impl snow_core::error::Classify for CaptureError {
             CaptureErrorClass::Transient => snow_core::error::ErrorClass::Transient,
             CaptureErrorClass::Fatal => snow_core::error::ErrorClass::Fatal,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CaptureError;
+
+    #[test]
+    fn platform_error_display_preserves_windows_cause_and_context() {
+        let cause =
+            windows::core::Error::from_hresult(windows::core::HRESULT(0x80040154_u32 as i32));
+        let cause_text = cause.to_string();
+        let error = CaptureError::platform(
+            anyhow::Error::from(cause)
+                .context("GraphicsCaptureSession::IsSupported failed")
+                .context("capture initialization failed"),
+        );
+
+        let displayed = error.to_string();
+        assert!(displayed.contains("capture initialization failed"));
+        assert!(displayed.contains("GraphicsCaptureSession::IsSupported failed"));
+        assert!(displayed.contains(&cause_text));
+        assert!(displayed.contains("80040154"));
     }
 }

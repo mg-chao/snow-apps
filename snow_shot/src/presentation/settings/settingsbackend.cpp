@@ -11,6 +11,7 @@
 #include "snow_shot/presentation/screenshotclipboardservice.h"
 
 #include <QJsonArray>
+#include <QJsonObject>
 #include <QApplication>
 #include <QClipboard>
 #include <QMimeData>
@@ -62,8 +63,48 @@ QString localShortcutKey(SettingsLocalShortcutScope scope, const QString& shortc
     return prefix + shortcutId;
 }
 
+QString globalMouseKey(SettingsGlobalMouseAction action) {
+    switch (action) {
+    case SettingsGlobalMouseAction::ScreenshotCopy:
+        return QStringLiteral("global_mouse/screenshot_copy");
+    case SettingsGlobalMouseAction::ScreenshotFixed:
+        return QStringLiteral("global_mouse/screenshot_fixed");
+    case SettingsGlobalMouseAction::ScreenshotOcr:
+        return QStringLiteral("global_mouse/screenshot_ocr");
+    case SettingsGlobalMouseAction::ScreenshotTranslation:
+        return QStringLiteral("global_mouse/screenshot_translation");
+    case SettingsGlobalMouseAction::ScreenshotQuickSave:
+        return QStringLiteral("global_mouse/screenshot_quick_save");
+    case SettingsGlobalMouseAction::ScreenRecording:
+        return QStringLiteral("global_mouse/screen_recording");
+    case SettingsGlobalMouseAction::ScreenshotSave:
+        return QStringLiteral("global_mouse/screenshot_save");
+    }
+    return {};
+}
+
+SettingsGlobalMouseCombination globalMouseCombinationFromJson(const QJsonValue& value) {
+    const QJsonObject object = value.toObject();
+    return {object.value(QStringLiteral("activation_key")).toVariant().toStringList(),
+            object.value(QStringLiteral("mouse_button")).toString()};
+}
+
+QJsonObject globalMouseCombinationToJson(const SettingsGlobalMouseCombination& combination) {
+    if (combination.isUnset()) {
+        return {};
+    }
+    const QStringList keys = combination.sortedActivationKeys();
+    return {{QStringLiteral("activation_key"), keys.size() == 1
+                                                   ? QJsonValue(keys.front())
+                                                   : QJsonValue(QJsonArray::fromStringList(keys))},
+            {QStringLiteral("mouse_button"), combination.mouseButton}};
+}
+
 storage::CaptureHistoryPolicy defaultHistoryPolicy() {
     storage::CaptureHistoryPolicy policy;
+    policy.keepPermanently = storage::ConfigurationSchema::defaultValue(
+                                 QStringLiteral("capture_history/keep_permanently"))
+                                 .toBool();
     policy.enabled =
         storage::ConfigurationSchema::defaultValue(QStringLiteral("capture_history/enabled"))
             .toBool();
@@ -178,6 +219,10 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
         return storage::ScreenshotSettings().doubleClickAction();
     case SettingsSelectBinding::ScreenshotMiddleClickAction:
         return storage::ScreenshotSettings().middleMouseButtonAction();
+    case SettingsSelectBinding::PinDoubleClickAction:
+        return storage::PinToScreenSettings().doubleClickAction();
+    case SettingsSelectBinding::PinMiddleClickAction:
+        return storage::PinToScreenSettings().middleMouseButtonAction();
     case SettingsSelectBinding::PinMouseWheelZoomMode:
         return storage::PinToScreenSettings().mouseWheelZoomMode();
     case SettingsSelectBinding::ScreenRecordingClarity:
@@ -275,6 +320,10 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
         return storage::ScreenshotSettings().setDoubleClickAction(value.toString());
     case SettingsSelectBinding::ScreenshotMiddleClickAction:
         return storage::ScreenshotSettings().setMiddleMouseButtonAction(value.toString());
+    case SettingsSelectBinding::PinDoubleClickAction:
+        return storage::PinToScreenSettings().setDoubleClickAction(value.toString());
+    case SettingsSelectBinding::PinMiddleClickAction:
+        return storage::PinToScreenSettings().setMiddleMouseButtonAction(value.toString());
     case SettingsSelectBinding::PinMouseWheelZoomMode:
         return storage::PinToScreenSettings().setMouseWheelZoomMode(value.toString());
     case SettingsSelectBinding::ScreenRecordingClarity:
@@ -303,6 +352,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
     switch (binding) {
     case SettingsSwitchBinding::HistoryEnabled:
         return storage::ApplicationStorage::instance().captureHistoryPolicy().enabled;
+    case SettingsSwitchBinding::HistoryKeepPermanently:
+        return storage::ApplicationStorage::instance().captureHistoryPolicy().keepPermanently;
     case SettingsSwitchBinding::SmartSelection:
         return storage::ApplicationStorage::instance().smartSelectionEnabled();
     case SettingsSwitchBinding::DirectMlAcceleration:
@@ -410,6 +461,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     switch (binding) {
     case SettingsSwitchBinding::HistoryEnabled:
         policy.enabled = value;
+        break;
+    case SettingsSwitchBinding::HistoryKeepPermanently:
+        policy.keepPermanently = value;
         break;
     case SettingsSwitchBinding::SmartSelection:
         return false;
@@ -734,6 +788,18 @@ bool BuiltInSettingsBackend::applyLocalShortcuts(SettingsLocalShortcutScope scop
     return storage::PinToScreenShortcutSettings().setShortcuts(shortcutId, shortcuts);
 }
 
+SettingsGlobalMouseCombination
+BuiltInSettingsBackend::globalMouseCombination(SettingsGlobalMouseAction action) const {
+    return globalMouseCombinationFromJson(
+        storage::ApplicationStorage::instance().configuration().value(globalMouseKey(action)));
+}
+
+bool BuiltInSettingsBackend::applyGlobalMouseCombination(
+    SettingsGlobalMouseAction action, const SettingsGlobalMouseCombination& combination) {
+    return storage::ApplicationStorage::instance().configuration().setValue(
+        globalMouseKey(action), globalMouseCombinationToJson(combination));
+}
+
 SettingsActionState BuiltInSettingsBackend::actionState(SettingsActionBinding binding) const {
     const storage::StorageStatus status = storage::ApplicationStorage::instance().status();
     switch (binding) {
@@ -865,6 +931,20 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
                                          .toInt()) &&
                    accepted;
         return accepted;
+    }
+    case SettingsSectionReset::GlobalMouse: {
+        QMap<QString, QJsonValue> values;
+        for (const auto action :
+             {SettingsGlobalMouseAction::ScreenshotCopy, SettingsGlobalMouseAction::ScreenshotFixed,
+              SettingsGlobalMouseAction::ScreenshotOcr,
+              SettingsGlobalMouseAction::ScreenshotTranslation,
+              SettingsGlobalMouseAction::ScreenshotSave,
+              SettingsGlobalMouseAction::ScreenshotQuickSave,
+              SettingsGlobalMouseAction::ScreenRecording}) {
+            const QString key = globalMouseKey(action);
+            values.insert(key, storage::ConfigurationSchema::defaultValue(key));
+        }
+        return storage::ApplicationStorage::instance().configuration().setValues(values);
     }
     case SettingsSectionReset::OtherShortcuts: {
         bool accepted = true;
@@ -1061,6 +1141,12 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         });
     case SettingsSectionReset::PinToScreenBehavior:
         return storage::ApplicationStorage::instance().configuration().setValues({
+            {QStringLiteral("pin_to_screen/middle_mouse_button_action"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("pin_to_screen/middle_mouse_button_action"))},
+            {QStringLiteral("pin_to_screen/double_click_action"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("pin_to_screen/double_click_action"))},
             {QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode"))},

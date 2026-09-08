@@ -335,6 +335,8 @@ void ScreenshotToolbarWindow::connectScrollingScreenshotCommands(
     ScreenshotToolPalette& toolPalette) {
     connect(&toolPalette, &ScreenshotToolPalette::scrollingScreenshotRequested, this,
             [this]() { m_commands.startScrollingScreenshot(); });
+    connect(&toolPalette, &ScreenshotToolPalette::scrollingAutoScrollChanged, this,
+            [this](bool enabled) { m_commands.setScrollingScreenshotAutoScroll(enabled); });
     connect(&toolPalette, &ScreenshotToolPalette::scrollingRecognitionModeChanged, this,
             [this](ScreenshotScrollingRecognitionMode mode) {
                 m_commands.setScrollingScreenshotRecognitionMode(mode);

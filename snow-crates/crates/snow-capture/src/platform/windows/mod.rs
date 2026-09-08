@@ -796,6 +796,16 @@ mod tests {
         fn capture_access_active(&self) -> bool {
             self.state.lock().unwrap().active
         }
+
+        fn capture_region_into(
+            &mut self,
+            _blit: CaptureBlitRegion,
+            destination: &mut Frame,
+            _destination_has_history: bool,
+        ) -> CaptureResult<Option<CaptureSampleMetadata>> {
+            *destination = self.capture(None)?;
+            Ok(Some(CaptureSampleMetadata::default()))
+        }
     }
 
     fn scripted_auto(
@@ -865,6 +875,58 @@ mod tests {
         assert_eq!(gdi.lock().unwrap().calls, 0);
         capturer.release_capture_access();
         assert!(!capturer.capture_access_active());
+        Ok(())
+    }
+
+    #[test]
+    fn region_startup_timeout_falls_back_to_wgc_then_gdi() -> CaptureResult<()> {
+        for wgc_fails in [false, true] {
+            let dxgi = Arc::new(Mutex::new(CandidateState {
+                outcomes: VecDeque::from([Err(CaptureError::Timeout)]),
+                ..Default::default()
+            }));
+            let wgc = Arc::new(Mutex::new(CandidateState {
+                outcomes: VecDeque::from([if wgc_fails {
+                    Err(CaptureError::Timeout)
+                } else {
+                    Ok(())
+                }]),
+                ..Default::default()
+            }));
+            let gdi = Arc::new(Mutex::new(CandidateState::default()));
+            let mut capturer = scripted_auto(&[
+                (CaptureBackendKind::DxgiDuplication, Arc::clone(&dxgi)),
+                (CaptureBackendKind::WindowsGraphicsCapture, Arc::clone(&wgc)),
+                (CaptureBackendKind::Gdi, Arc::clone(&gdi)),
+            ]);
+            let mut destination = Frame::empty();
+            let sample = capturer.capture_region_into(
+                CaptureBlitRegion {
+                    src_x: 0,
+                    src_y: 0,
+                    width: 2,
+                    height: 2,
+                    dst_x: 0,
+                    dst_y: 0,
+                },
+                &mut destination,
+                false,
+            )?;
+            assert!(sample.is_some());
+            assert_eq!(destination.dimensions(), (2, 2));
+            assert_eq!(
+                capturer.backend_kind(),
+                if wgc_fails {
+                    CaptureBackendKind::Gdi
+                } else {
+                    CaptureBackendKind::WindowsGraphicsCapture
+                }
+            );
+            assert_eq!(dxgi.lock().unwrap().calls, 1);
+            assert_eq!(dxgi.lock().unwrap().releases, 1);
+            assert_eq!(wgc.lock().unwrap().calls, 1);
+            assert_eq!(gdi.lock().unwrap().calls, usize::from(wgc_fails));
+        }
         Ok(())
     }
 

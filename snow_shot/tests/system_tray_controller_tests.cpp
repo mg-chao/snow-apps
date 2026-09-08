@@ -282,7 +282,7 @@ int main(int argc, char* argv[]) {
                       "the tray should refresh the canonical delayed screenshot title");
     controller.setScreenshotDelaySeconds(3);
     requireActionText(showMainWindowMenuAction, QStringLiteral("Show main interface"),
-                      "Show main interface should follow Disable shortcut functions");
+                      "Show main interface should follow Disable global hotkeys");
     requireActionText(exitMenuAction, QStringLiteral("Exit"), "Exit should be last");
 
     snow_shot::presentation::PinnedWindowGroupManager groupManager;
@@ -385,13 +385,12 @@ int main(int argc, char* argv[]) {
                      [&quickActions](snow_shot::presentation::GlobalShortcutAction action) {
                          quickActions.push_back(action);
                      });
-    QObject::connect(
-        &controller,
-        &snow_shot::presentation::SystemTrayController::shortcutFunctionsDisabledChanged,
-        [&disableChanges, &shortcutsDisabled](bool disabled) {
-            ++disableChanges;
-            shortcutsDisabled = disabled;
-        });
+    QObject::connect(&controller,
+                     &snow_shot::presentation::SystemTrayController::globalHotkeysDisabledChanged,
+                     [&disableChanges, &shortcutsDisabled](bool disabled) {
+                         ++disableChanges;
+                         shortcutsDisabled = disabled;
+                     });
 
     trayIcon->activated(QSystemTrayIcon::Trigger);
     trayIcon->activated(QSystemTrayIcon::Context);
@@ -422,11 +421,11 @@ int main(int argc, char* argv[]) {
     require(exitRequests == 1, "the Exit action should emit its request");
 
     disableMenuAction->trigger();
-    require(controller.shortcutFunctionsDisabled() && disableChanges == 1 && shortcutsDisabled,
+    require(controller.globalHotkeysDisabled() && disableChanges == 1 && shortcutsDisabled,
             "the disable command should expose its checked session state");
     controller.setMenuOptions({QStringLiteral("quick.screenshot"), QStringLiteral("tray.exit")});
     const QList<QAction*> compactVisibleActions = visibleActions();
-    require(!controller.shortcutFunctionsDisabled() && disableChanges == 2 && !shortcutsDisabled &&
+    require(!controller.globalHotkeysDisabled() && disableChanges == 2 && !shortcutsDisabled &&
                 compactVisibleActions.size() == 3 && compactVisibleActions.at(1)->isSeparator() &&
                 !windowGroupMenuAction->isVisible(),
             "hiding the disable command should re-enable shortcuts and collapse empty groups");
@@ -453,8 +452,9 @@ int main(int argc, char* argv[]) {
         "Simplified Chinese recording text should equal the canonical shortcut title");
     requireActionText(showMainWindowMenuAction, QStringLiteral("\u663e\u793a\u4e3b\u754c\u9762"),
                       "Show main interface should translate to Simplified Chinese");
-    requireActionText(disableMenuAction, QStringLiteral("\u7981\u7528\u5feb\u6377\u529f\u80fd"),
-                      "Disable shortcut functions should translate to Simplified Chinese");
+    requireActionText(disableMenuAction,
+                      QStringLiteral("\u7981\u7528\u5168\u5c40\u5feb\u6377\u952e"),
+                      "Disable global hotkeys should translate to Simplified Chinese");
     requireActionText(exitMenuAction, QStringLiteral("\u9000\u51fa"),
                       "Exit should translate to Simplified Chinese");
     // The window group submenu title resolves through the SystemTrayController
@@ -496,8 +496,9 @@ int main(int argc, char* argv[]) {
         "Traditional Chinese recording text should equal the canonical shortcut title");
     requireActionText(showMainWindowMenuAction, QStringLiteral("\u986f\u793a\u4e3b\u4ecb\u9762"),
                       "Show main interface should translate to Traditional Chinese");
-    requireActionText(disableMenuAction, QStringLiteral("\u505c\u7528\u5feb\u6377\u529f\u80fd"),
-                      "Disable shortcut functions should translate to Traditional Chinese");
+    requireActionText(disableMenuAction,
+                      QStringLiteral("\u505c\u7528\u5168\u57df\u5feb\u901f\u9375"),
+                      "Disable global hotkeys should translate to Traditional Chinese");
     requireActionText(exitMenuAction, QStringLiteral("\u7d50\u675f"),
                       "Exit should translate to Traditional Chinese");
     requireActionText(windowGroupMenuAction,

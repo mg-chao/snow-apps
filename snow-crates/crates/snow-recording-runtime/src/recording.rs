@@ -11,6 +11,7 @@ use snow_audio_recorder::{
     AudioRecordingArtifact, AudioRecordingConfig, AudioRecordingSession, AudioTrackConfig,
     AudioTrackDevice,
 };
+use snow_capture::backend::{AutoBackendPolicy, CaptureBackendKind};
 use snow_capture::{
     CaptureEvent, CaptureOptions, CaptureStream, CaptureStreamConfig, CaptureSystem,
     CaptureWorkload, CapturedFrame,
@@ -37,6 +38,16 @@ use crate::temp::TempLayout;
 use crate::video_quality::{quality_to_h264_crf, smart_quality_bitrate_bps};
 
 const VIDEO_INDEX_MAGIC: &[u8] = b"SVIDX\0\0";
+
+fn recording_auto_backend_policy() -> AutoBackendPolicy {
+    AutoBackendPolicy {
+        priority: vec![
+            CaptureBackendKind::WindowsGraphicsCapture,
+            CaptureBackendKind::DxgiDuplication,
+            CaptureBackendKind::Gdi,
+        ],
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 enum ControlCommand {
@@ -181,6 +192,7 @@ impl RecordingSession {
         let capture_target = resolve_capture_target(&self.config.target)?;
         let capture_system = CaptureSystem::builder()
             .with_backend_kind(self.config.capture_backend)
+            .with_auto_backend_policy(recording_auto_backend_policy())
             .build()?;
         let capture_session = capture_system.open_session(
             capture_target,
@@ -1200,6 +1212,22 @@ fn handle_source_error<E: Classify>(
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn recording_auto_prefers_wgc_and_retains_dxgi_gdi_fallbacks() {
+        assert_eq!(
+            RecordingConfig::default().capture_backend,
+            CaptureBackendKind::Auto
+        );
+        assert_eq!(
+            recording_auto_backend_policy().normalized_priority(),
+            vec![
+                CaptureBackendKind::WindowsGraphicsCapture,
+                CaptureBackendKind::DxgiDuplication,
+                CaptureBackendKind::Gdi,
+            ]
+        );
+    }
 
     #[test]
     fn video_index_writer_streams_expected_records() {

@@ -606,6 +606,7 @@ impl TiledCanvasSnapshot {
     }
 
     pub fn render_scaled(&self, width: u32, height: u32) -> Result<Frame, StitchError> {
+        let _perf = crate::perf::Scope::new(crate::perf::Stage::PreviewScaling);
         if width == 0 || height == 0 {
             return Err(StitchError::InvalidFrame {
                 message: "scaled dimensions must be non-zero".to_owned(),

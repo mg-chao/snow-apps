@@ -47,9 +47,9 @@ const ORB_PATTERN_BASE64: &str = "CP0JBQQCB/T1CfgCB/QM8wLzAgwB+QEG/vb+/PPz9fjz/f
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Image {
-    width: usize,
-    height: usize,
-    pixels: Vec<u8>,
+    pub(super) width: usize,
+    pub(super) height: usize,
+    pub(super) pixels: Vec<u8>,
 }
 
 impl Image {

@@ -1163,6 +1163,22 @@ bool ScreenshotToolbarSettings::setLayout(ScreenshotToolbarLayoutKind kind,
                     {QStringLiteral("hidden"), stringArray(layout.hidden)}});
 }
 
+QString PinToScreenSettings::doubleClickAction() const {
+    return cache().value(QStringLiteral("pin_to_screen/double_click_action")).toString();
+}
+
+bool PinToScreenSettings::setDoubleClickAction(const QString& action) const {
+    return cache().setValue(QStringLiteral("pin_to_screen/double_click_action"), action);
+}
+
+QString PinToScreenSettings::middleMouseButtonAction() const {
+    return cache().value(QStringLiteral("pin_to_screen/middle_mouse_button_action")).toString();
+}
+
+bool PinToScreenSettings::setMiddleMouseButtonAction(const QString& action) const {
+    return cache().setValue(QStringLiteral("pin_to_screen/middle_mouse_button_action"), action);
+}
+
 QColor PinToScreenSettings::borderColor() const {
     return colorValue(QStringLiteral("pin_to_screen/border_color"));
 }

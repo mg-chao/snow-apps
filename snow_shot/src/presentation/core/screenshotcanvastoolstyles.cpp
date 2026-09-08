@@ -234,7 +234,7 @@ void readTextValue(const QJsonObject& object, SnowCanvasTextStyle* style) {
 
 QJsonObject serialNumberValue(const SnowCanvasSerialNumberStyle& style) {
     QJsonObject value;
-    value.insert(QStringLiteral("number"), style.number);
+    // The current number belongs to the editing session, not the saved appearance.
     value.insert(QStringLiteral("color"), colorValue(style.color));
     value.insert(QStringLiteral("fill"), colorValue(style.fill));
     putEnum(&value, QStringLiteral("fill_style"), style.fillStyle);
@@ -251,16 +251,6 @@ void readSerialNumberValue(const QJsonObject& object, SnowCanvasSerialNumberStyl
     QColor color;
     if (colorValue(object.value(QStringLiteral("color")), &color)) style->color = color;
     if (colorValue(object.value(QStringLiteral("fill")), &color)) style->fill = color;
-    const QJsonValue numberValue = object.value(QStringLiteral("number"));
-    if (numberValue.isDouble()) {
-        bool ok = false;
-        const qint64 number =
-            QString::fromUtf8(numberValue.toJson(QJsonValue::JsonFormat::Compact))
-                .toLongLong(&ok);
-        if (ok && number >= 0) {
-            style->number = number;
-        }
-    }
     readEnum(object, QStringLiteral("fill_style"), static_cast<int>(SnowCanvasFillStyle::Solid),
              &style->fillStyle);
     readDouble(object, QStringLiteral("font_size"), &style->fontSize);

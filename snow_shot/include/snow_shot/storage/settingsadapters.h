@@ -282,6 +282,10 @@ class ScreenshotToolbarSettings final {
 
 class PinToScreenSettings final {
   public:
+    [[nodiscard]] QString doubleClickAction() const;
+    bool setDoubleClickAction(const QString& action) const;
+    [[nodiscard]] QString middleMouseButtonAction() const;
+    bool setMiddleMouseButtonAction(const QString& action) const;
     [[nodiscard]] QColor borderColor() const;
     bool setBorderColor(const QColor& color) const;
     [[nodiscard]] QString mouseWheelZoomMode() const;

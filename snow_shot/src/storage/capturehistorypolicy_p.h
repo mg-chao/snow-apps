@@ -15,6 +15,7 @@ captureHistoryPolicyFromConfiguration(const ConfigurationStore& configuration) {
         configuration.value(QStringLiteral("capture_history/retention_days")).toInt(7),
         configuration.value(QStringLiteral("capture_history/max_entries")).toInt(100),
         configuration.value(QStringLiteral("capture_history/max_disk_mib")).toInt(1024),
+        configuration.value(QStringLiteral("capture_history/keep_permanently")).toBool(false),
     };
 }
 
@@ -22,6 +23,7 @@ inline QMap<QString, QJsonValue>
 captureHistoryPolicyConfigurationValues(const CaptureHistoryPolicy& policy) {
     return {
         {QStringLiteral("capture_history/enabled"), policy.enabled},
+        {QStringLiteral("capture_history/keep_permanently"), policy.keepPermanently},
         {QStringLiteral("capture_history/retention_days"), policy.retentionDays},
         {QStringLiteral("capture_history/max_entries"), policy.maxEntries},
         {QStringLiteral("capture_history/max_disk_mib"), policy.maxDiskMiB},

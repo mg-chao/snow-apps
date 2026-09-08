@@ -5,6 +5,7 @@
 #include <QMainWindow>
 
 #include "snow_shot/presentation/globalshortcuttypes.h"
+#include "snow_shot/presentation/globalmousetypes.h"
 
 class QEvent;
 class QResizeEvent;
@@ -37,6 +38,8 @@ class MainWindow : public QMainWindow {
   signals:
     void screenshotRequested();
     void quickActionRequested(snow_shot::presentation::GlobalShortcutAction action);
+    void
+    globalMouseDragRequested(snow_shot::presentation::settings::SettingsGlobalMouseAction action);
     void screenshotHistoryEditRequested(const QString& recordId);
 
   protected:

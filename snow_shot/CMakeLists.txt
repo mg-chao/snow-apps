@@ -19,6 +19,7 @@ option(SNOW_SHOT_BUILD_TESTS "Build Snow Shot test executables." OFF)
 option(SNOW_SHOT_BUILD_IMAGE_CODEC_SMOKE_TEST
     "Build the Snow Shot image-codec smoke test without the full QtTest suite." OFF)
 option(SNOW_SHOT_BUILD_BENCHMARKS "Build opt-in native Snow Shot benchmarks." OFF)
+option(SNOW_SHOT_SCROLLING_PERF_DETAIL "Compile detailed scrolling C++ and Rust timings." OFF)
 option(SNOW_SHOT_RELEASE_STATIC "Prefer static Snow Shot release linkage." OFF)
 option(SNOW_SHOT_QT_STATIC "Link Snow Shot against a static Qt build." OFF)
 unset(SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE CACHE)
@@ -142,8 +143,13 @@ if(WIN32)
 endif()
 
 if(NOT TARGET snow_capture_c)
+    set(_snow_scrolling_perf_features)
+    if(SNOW_SHOT_SCROLLING_PERF_DETAIL)
+        list(APPEND _snow_scrolling_perf_features snow-stitch-images-c/perf-instrumentation)
+    endif()
     snow_add_rust_static_libraries(snow_shot_rust_ffi
         MANIFEST_DIR "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
+        FEATURES ${_snow_scrolling_perf_features}
         TARGETS
             snow_capture_c
             snow_ui_selector_c
@@ -599,6 +605,7 @@ function(snow_shot_add_translations target)
             snow_shot_settings_catalog
             snow_shot_settings_search
             snow_shot_settings
+            snow_shot_global_mouse
             snow_shot_diagnostics
         )
     else()
@@ -662,6 +669,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/presentation/globalshortcutmanager.h
     include/snow_shot/presentation/globalshortcuttypes.h
     include/snow_shot/presentation/components/pathinput.h
+    include/snow_shot/presentation/components/globalmouserow.h
     include/snow_shot/presentation/components/toolbareditorsettingswidget.h
     include/snow_shot/presentation/components/infotooltipicon.h
     include/snow_shot/presentation/components/pagecontainerwidget.h
@@ -670,6 +678,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/presentation/components/settingscustomwidget.h
     include/snow_shot/presentation/components/settingspagewidget.h
     include/snow_shot/presentation/components/shortcutkeyrow.h
+    include/snow_shot/presentation/components/shortcutconfigurationbutton.h
     include/snow_shot/presentation/components/storagestatussettingswidget.h
     include/snow_shot/presentation/screenshottoolbarlayoutmodel.h
     include/snow_shot/presentation/settings/settingsbackend.h
@@ -678,6 +687,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/presentation/settings/textrecognitionacceleration.h
     include/snow_shot/presentation/styles/thememanager.h
     src/presentation/components/infotooltipicon.cpp
+    src/presentation/components/globalmouserow.cpp
     src/presentation/components/pathinput.cpp
     src/presentation/components/pagecontainerwidget.cpp
     src/presentation/components/sectionheaderwidget.cpp
@@ -685,6 +695,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/presentation/components/settingscustomwidget.cpp
     src/presentation/components/settingspagewidget.cpp
     src/presentation/components/shortcutkeyrow.cpp
+    src/presentation/components/shortcutconfigurationbutton.cpp
     src/presentation/components/storagestatussettingswidget.cpp
     src/presentation/services/globalshortcutmanager.cpp
     src/presentation/settings/settingsbackend.cpp
@@ -696,7 +707,6 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/presentation/styles/themecolorscheme.cpp
     src/presentation/styles/thememanager.cpp
     src/platform/windows/autostartregistration.cpp
-    src/platform/windows/focusedfullscreenwindow.cpp
     src/platform/windows/printscreenshortcutrecorder.cpp
 )
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/src/presentation/components/screenshothistorypagewidget.cpp"
@@ -710,6 +720,21 @@ endif()
 unset(_snow_shot_history_source)
 unset(_snow_shot_history_global_pool_call)
 add_library(snow_shot_settings STATIC ${SNOW_SHOT_SETTINGS_SOURCES})
+add_library(snow_shot_global_mouse STATIC
+    include/snow_shot/presentation/globalmousemanager.h
+    include/snow_shot/presentation/globalmousegesture.h
+    include/snow_shot/presentation/globalmousetypes.h
+    src/presentation/services/globalmousemanager.cpp
+    src/presentation/services/globalmousegesture.cpp
+    src/platform/windows/globalmousebackend.cpp
+    src/platform/windows/focusedfullscreenwindow.cpp
+)
+target_include_directories(snow_shot_global_mouse PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(snow_shot_global_mouse PUBLIC snow_shot_storage Qt6::Gui)
+if(WIN32)
+    target_link_libraries(snow_shot_global_mouse PRIVATE dwmapi user32)
+endif()
+target_link_libraries(snow_shot_settings PRIVATE snow_shot_global_mouse)
 snow_enable_unity_build(snow_shot_settings)
 target_include_directories(snow_shot_settings PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(snow_shot_settings PUBLIC
@@ -858,6 +883,7 @@ set(PROJECT_CXX_SOURCES
     src/app/singleinstancecoordinator.cpp
     src/platform/physicalcursor.cpp
     src/platform/windows/windowchrome.cpp
+    src/platform/windows/scrollinput.cpp
     src/presentation/components/contentcardwidget.cpp
     src/presentation/components/maincontentheaderwidget.cpp
     src/presentation/components/sidebarwidget.cpp
@@ -870,10 +896,13 @@ set(PROJECT_CXX_SOURCES
     src/presentation/capture/screenshotcapturepolicy.cpp
     src/presentation/capture/screenshotcaptureperfinstrumentation.cpp
     src/presentation/capture/screenshotcaptureworkflow.cpp
+    src/presentation/capture/screenshotglobalmousedrag.cpp
     src/presentation/capture/adaptivescrollingcapturecadence.h
     src/presentation/capture/windowcaptureexclusion.h
     src/presentation/capture/latestbridgemailbox.h
     src/presentation/capture/screenshotscrollingcapturecontroller.cpp
+    src/presentation/capture/screenshotscrollingpipeline.cpp
+    src/presentation/capture/screenshotscrollingnativesource.cpp
     src/presentation/capture/screenshotscrollingthumbnailwidget.cpp
     src/presentation/services/screenshotcanvascolorsampler.cpp
     src/presentation/services/screenshotcanvascolorsamplerwindow.cpp
@@ -1115,6 +1144,23 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
 
     enable_testing()
+
+    add_executable(snow-shot-global-mouse-tests tests/global_mouse_tests.cpp
+        include/snow_shot/presentation/globalshortcutmanager.h
+        src/presentation/services/globalshortcutmanager.cpp
+        src/presentation/capture/screenshotglobalmousedrag.cpp)
+    target_link_libraries(snow-shot-global-mouse-tests PRIVATE snow_shot_global_mouse Qt6::Widgets)
+    add_test(NAME snow-shot-global-mouse-tests COMMAND snow-shot-global-mouse-tests)
+    set_tests_properties(snow-shot-global-mouse-tests PROPERTIES
+        LABELS "unit" TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    snow_shot_import_offscreen_platform(snow-shot-global-mouse-tests)
+    if(WIN32)
+        target_sources(snow-shot-global-mouse-tests PRIVATE tests/global_mouse_native_input_tests.cpp)
+        add_test(NAME snow-shot-global-mouse-native-smoke-tests
+            COMMAND snow-shot-global-mouse-tests --native-hook-smoke)
+        set_tests_properties(snow-shot-global-mouse-native-smoke-tests PROPERTIES
+            LABELS "interactive;windows" TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=windows")
+    endif()
 
     add_executable(snow-shot-diagnostics-tests tests/diagnostics_tests.cpp)
     target_link_libraries(snow-shot-diagnostics-tests PRIVATE snow_shot_diagnostics)
@@ -1496,6 +1542,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
     target_link_libraries(snow-shot-settings-runtime-session-tests PRIVATE
+        snow_shot_global_mouse
         snow_shot_settings_catalog
         snow_shot_storage
         Qt6::Core
@@ -1507,6 +1554,37 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+
+    add_executable(snow-shot-button-border-tests
+        tests/button_border_tests.cpp
+        src/presentation/styles/buttonborder.cpp
+    )
+    target_include_directories(snow-shot-button-border-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+    target_link_libraries(snow-shot-button-border-tests PRIVATE Qt6::Gui)
+    add_test(NAME snow-shot-button-border-tests COMMAND snow-shot-button-border-tests)
+    set_tests_properties(snow-shot-button-border-tests PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
+    add_executable(snow-shot-global-mouse-page-tests
+        tests/global_mouse_page_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+    )
+    target_link_libraries(snow-shot-global-mouse-page-tests PRIVATE
+        snow_shot_settings
+        Qt6::Widgets
+    )
+    add_test(NAME snow-shot-global-mouse-page-tests
+             COMMAND snow-shot-global-mouse-page-tests)
+    set_tests_properties(snow-shot-global-mouse-page-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+    snow_shot_import_offscreen_platform(snow-shot-global-mouse-page-tests)
 
     add_executable(snow-shot-selector-policy-tests
         tests/screenshot_selector_policy_tests.cpp
@@ -1678,6 +1756,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/platform/windows/printscreenshortcutrecorder.cpp
         include/snow_shot/presentation/components/infotooltipicon.h
         include/snow_shot/presentation/components/shortcutkeyrow.h
+        include/snow_shot/presentation/components/shortcutconfigurationbutton.h
         include/snow_shot/presentation/styles/buttonborder.h
         include/snow_shot/presentation/styles/mainwindowcomponenttoken.h
         include/snow_shot/presentation/styles/thememanager.h
@@ -1685,6 +1764,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         src/presentation/components/icons/snowshoticons.cpp
         src/presentation/components/infotooltipicon.cpp
         src/presentation/components/shortcutkeyrow.cpp
+        src/presentation/components/shortcutconfigurationbutton.cpp
         src/presentation/styles/buttonborder.cpp
         src/presentation/styles/mainwindowcomponenttoken.cpp
         src/presentation/styles/thememanager.cpp
@@ -2118,6 +2198,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         ant_design_qt
         Qt6::Widgets
     )
+    snow_shot_import_offscreen_platform(snow-shot-scrolling-preview-benchmark)
 
     add_executable(snow-shot-scrolling-result-async-benchmark
         tests/scrolling_result_async_benchmark.cpp
@@ -2157,6 +2238,17 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/scrolling_capture_cadence_tests.cpp
         src/presentation/capture/adaptivescrollingcapturecadence.h
     )
+    add_executable(snow-shot-scrolling-auto-scroll-tests
+        tests/scrolling_auto_scroll_tests.cpp
+        src/platform/windows/scrollinput.cpp
+    )
+    target_include_directories(snow-shot-scrolling-auto-scroll-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+    target_link_libraries(snow-shot-scrolling-auto-scroll-tests PRIVATE Qt6::Core Qt6::Gui)
+    add_test(NAME snow-shot-scrolling-auto-scroll-tests
+        COMMAND snow-shot-scrolling-auto-scroll-tests)
     target_include_directories(snow-shot-scrolling-capture-cadence-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
     )
@@ -2455,6 +2547,19 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-pinned-window-tests
         COMMAND snow-shot-pinned-window-tests
     )
+    snow_shot_import_offscreen_platform(snow-shot-pinned-window-tests)
+    add_test(NAME snow-shot-pinned-middle-click-tests
+        COMMAND snow-shot-pinned-window-tests --middle-click-only)
+    add_test(NAME snow-shot-pinned-middle-click-offscreen-tests
+        COMMAND snow-shot-pinned-window-tests --middle-click-only)
+    set_tests_properties(snow-shot-pinned-middle-click-offscreen-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    add_test(NAME snow-shot-pinned-double-click-tests
+        COMMAND snow-shot-pinned-window-tests --double-click-only)
+    add_test(NAME snow-shot-pinned-double-click-offscreen-tests
+        COMMAND snow-shot-pinned-window-tests --double-click-only)
+    set_tests_properties(snow-shot-pinned-double-click-offscreen-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     add_test(NAME snow-shot-pinned-save-dialog-tests
         COMMAND snow-shot-pinned-window-tests --save-dialog-only)
     set_tests_properties(snow-shot-pinned-save-dialog-tests PROPERTIES TIMEOUT 90)
@@ -2595,6 +2700,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --restore-wiring-only
     )
     set(_snow_shot_pinned_window_test_names
+        snow-shot-pinned-middle-click-tests
+        snow-shot-pinned-middle-click-offscreen-tests
+        snow-shot-pinned-double-click-tests
+        snow-shot-pinned-double-click-offscreen-tests
         snow-shot-pinned-window-tests
         snow-shot-pinned-translation-tests
         snow-shot-pinned-async-presentation-tests
@@ -3343,6 +3452,19 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_executable(snow-shot-screenshot-recording-workflow-tests
+        tests/screenshot_recording_workflow_tests.cpp
+    )
+    target_link_libraries(snow-shot-screenshot-recording-workflow-tests PRIVATE Qt6::Core)
+    add_test(NAME snow-shot-screenshot-recording-workflow-tests
+        COMMAND snow-shot-screenshot-recording-workflow-tests)
+    set_tests_properties(snow-shot-screenshot-recording-workflow-tests PROPERTIES
+        LABELS "unit" TIMEOUT 30)
+    if(WIN32)
+        set_tests_properties(snow-shot-screenshot-recording-workflow-tests PROPERTIES
+            ENVIRONMENT "PATH=$<TARGET_FILE_DIR:Qt6::Core>\;$ENV{PATH}")
+    endif()
+
     add_executable(snow-shot-screen-recording-geometry-tests
         tests/screen_recording_geometry_tests.cpp
         src/presentation/core/screenshotgeometry.cpp
@@ -3800,6 +3922,55 @@ if(SNOW_SHOT_BUILD_TESTS)
     unset(_SNOW_SHOT_SAVED_RUNTIME_OUTPUT_DIRECTORY)
     unset(_SNOW_SHOT_RUNTIME_OUTPUT_DIRECTORY_WAS_DEFINED)
 
+endif()
+
+function(snow_shot_configure_scrolling_replay_target target)
+    target_sources(${target} PRIVATE
+        tests/scrolling_image_replay.cpp
+        src/presentation/capture/screenshotscrollingpipeline.cpp
+        src/presentation/capture/screenshotscrollingthumbnailwidget.cpp
+    )
+    target_include_directories(${target} PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/image"
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-stitch-images-c/include"
+    )
+    target_compile_definitions(${target} PRIVATE
+        SNOW_SHOT_BENCH_INTERNALS=1
+        SNOW_SHOT_SCROLLING_PERF_INSTRUMENTATION=1
+        SNOW_SCROLLING_DEFAULT_IMAGE="${CMAKE_CURRENT_SOURCE_DIR}/test-imgs/scrollscreenshot-test.png"
+        SNOW_SCROLLING_DEFAULT_OUTPUT="${CMAKE_BINARY_DIR}/scrolling-image-performance"
+        SNOW_SCROLLING_BUILD_CONFIG="$<CONFIG>"
+    )
+    if(SNOW_SHOT_SCROLLING_PERF_DETAIL)
+        target_compile_definitions(${target} PRIVATE
+            SNOW_SHOT_SCROLLING_PERF_DETAIL=1 SNOW_STITCH_PERF_INSTRUMENTATION=1)
+    endif()
+    target_link_libraries(${target} PRIVATE
+        snow_stitch_images_c snow_shot_image_codec ant_design_qt Qt6::Widgets)
+    if(WIN32)
+        target_link_libraries(${target} PRIVATE Ntdll Ws2_32)
+        target_link_libraries(${target} PRIVATE PkgConfig::SNOW_SHOT_FFMPEG)
+    endif()
+    snow_shot_import_offscreen_platform(${target})
+    set_target_properties(${target} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/test-bin")
+endfunction()
+
+if(SNOW_SHOT_BUILD_BENCHMARKS)
+    add_executable(snow-shot-scrolling-image-performance-benchmark
+        tests/scrolling_image_performance_benchmark.cpp)
+    snow_shot_configure_scrolling_replay_target(snow-shot-scrolling-image-performance-benchmark)
+endif()
+
+if(SNOW_SHOT_BUILD_TESTS)
+    add_executable(snow-shot-scrolling-image-replay-tests tests/scrolling_image_replay_tests.cpp)
+    snow_shot_configure_scrolling_replay_target(snow-shot-scrolling-image-replay-tests)
+    add_test(NAME snow-shot-scrolling-image-replay-tests COMMAND snow-shot-scrolling-image-replay-tests)
+    set_tests_properties(snow-shot-scrolling-image-replay-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 endif()
 
 if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)

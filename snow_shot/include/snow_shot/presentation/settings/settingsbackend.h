@@ -106,6 +106,19 @@ class SettingsBackend : public QObject {
                                                    const QString& shortcutId,
                                                    const QStringList& shortcuts) = 0;
 
+    [[nodiscard]] virtual SettingsGlobalMouseCombination
+    globalMouseCombination(SettingsGlobalMouseAction action) const {
+        Q_UNUSED(action);
+        return {};
+    }
+    [[nodiscard]] virtual bool
+    applyGlobalMouseCombination(SettingsGlobalMouseAction action,
+                                const SettingsGlobalMouseCombination& combination) {
+        Q_UNUSED(action);
+        Q_UNUSED(combination);
+        return false;
+    }
+
     [[nodiscard]] virtual SettingsActionState actionState(SettingsActionBinding binding) const = 0;
     [[nodiscard]] virtual bool triggerAction(SettingsActionBinding binding) = 0;
     [[nodiscard]] virtual storage::StorageStatus storageStatus() const = 0;
@@ -186,6 +199,11 @@ class BuiltInSettingsBackend final : public SettingsBackend {
     [[nodiscard]] bool applyLocalShortcuts(SettingsLocalShortcutScope scope,
                                            const QString& shortcutId,
                                            const QStringList& shortcuts) override;
+    [[nodiscard]] SettingsGlobalMouseCombination
+    globalMouseCombination(SettingsGlobalMouseAction action) const override;
+    [[nodiscard]] bool
+    applyGlobalMouseCombination(SettingsGlobalMouseAction action,
+                                const SettingsGlobalMouseCombination& combination) override;
     [[nodiscard]] SettingsActionState actionState(SettingsActionBinding binding) const override;
     [[nodiscard]] bool triggerAction(SettingsActionBinding binding) override;
     [[nodiscard]] storage::StorageStatus storageStatus() const override;

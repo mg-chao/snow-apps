@@ -2754,6 +2754,390 @@ void pinnedNativeDragCrossingDpiBoundaryPreservesDestination(SnowCanvasRuntime&)
 }
 #endif
 
+void pinnedMiddleClickActions() {
+    const snow_shot::storage::PinToScreenSettings settings;
+    const QString previousAction = settings.middleMouseButtonAction();
+    const auto restore = qScopeGuard([&] { settings.setMiddleMouseButtonAction(previousAction); });
+    const bool offscreen = QGuiApplication::platformName() == QStringLiteral("offscreen");
+    auto* window = new ScreenshotPinnedWindow();
+    QPointer<ScreenshotPinnedWindow> guarded(window);
+    if (offscreen) {
+        // Offscreen Windows widgets cannot present an HWND-backed pin. Check command
+        // state and Qt routing here; the native run additionally checks physical geometry.
+        window->resize(600, 400);
+        window->show();
+    } else {
+        QScreen* screen = QGuiApplication::primaryScreen();
+        require(screen != nullptr, "middle-click test needs a screen");
+        QImage image(600, 400, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::white);
+        ScreenshotPinnedWindow::Config config;
+        config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), image.size());
+        config.canvasSourceRect = image.rect();
+        config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+        config.screen = screen;
+        config.automaticTextRecognition = false;
+        require(window->present(config), "middle-click pin presentation failed");
+    }
+    waitForUi(200);
+    auto* canvas = window->findChild<SnowCanvasWidget*>();
+    auto* thumbnail =
+        window->findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
+    auto* scale = window->findChild<adqt::widgets::AdContextMenu*>(
+        QStringLiteral("screenshotPinnedScaleMenu"));
+    require(canvas != nullptr && thumbnail != nullptr && scale != nullptr,
+            "middle-click controls missing");
+    const QRect original = window->currentNativeGeometry();
+    const auto send = [](QWidget* receiver, QEvent::Type type, const QPoint& point) {
+        QMouseEvent event(
+            type, QPointF(point), QPointF(receiver->mapToGlobal(point)), Qt::MiddleButton,
+            type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::MiddleButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(receiver, &event);
+    };
+    const auto press = [&](QWidget* receiver) {
+        send(receiver, QEvent::MouseButtonPress, receiver->rect().center());
+    };
+    require(settings.setMiddleMouseButtonAction(QStringLiteral("reset_zoom")), "configure reset");
+    scale->actions().at(1)->trigger();
+    press(canvas);
+    require(scale->actions().at(3)->isChecked(), "middle-click must select 100 percent zoom");
+    if (!offscreen) {
+        require(window->currentNativeGeometry() == original, "reset must restore baseline size");
+    }
+    require(settings.setMiddleMouseButtonAction(QStringLiteral("thumbnail_mode")),
+            "configure middle-click thumbnail");
+    press(window);
+    require(thumbnail->isChecked(), "window middle press must toggle exactly once");
+    send(window, QEvent::MouseButtonRelease, window->rect().center());
+    require(thumbnail->isChecked(), "middle release must not execute another action");
+    if (!offscreen) {
+        press(canvas);
+        require(thumbnail->isChecked(), "geometry animation must block middle-click");
+    }
+    waitForUi(300);
+    send(canvas, QEvent::MouseButtonDblClick, canvas->rect().center());
+    waitForUi(300);
+    require(!thumbnail->isChecked(), "second physical middle press must dispatch exactly once");
+    press(canvas);
+    waitForUi(300);
+    require(settings.setMiddleMouseButtonAction(QStringLiteral("none")), "configure None");
+    const QRect thumbnailGeometry = window->currentNativeGeometry();
+    press(canvas);
+    require(thumbnail->isChecked() && window->currentNativeGeometry() == thumbnailGeometry,
+            "None must preserve thumbnail state and geometry");
+    require(settings.setMiddleMouseButtonAction(QStringLiteral("reset_zoom")), "configure reset");
+    press(canvas);
+    require(!thumbnail->isChecked() && scale->actions().at(3)->isChecked(),
+            "reset zoom must leave thumbnail mode and select 100 percent");
+    if (!offscreen) {
+        require(window->currentNativeGeometry() == original,
+                "reset from thumbnail must restore 100 percent physical geometry");
+        require(settings.setMiddleMouseButtonAction(QStringLiteral("thumbnail_mode")),
+                "configure exclusion tests");
+        setPinnedWindowHovered(*window, true);
+        auto* controls =
+            window->findChild<QFrame*>(QStringLiteral("screenshotPinnedControlsPanel"));
+        require(controls != nullptr && controls->isVisible(), "middle-click controls missing");
+        send(window, QEvent::MouseButtonPress, controls->mapTo(window, controls->rect().center()));
+        press(controls);
+        require(!thumbnail->isChecked(), "controls must not dispatch middle-click actions");
+        auto* drawing =
+            window->findChild<QAction*>(QStringLiteral("screenshotPinnedDrawingAction"));
+        require(drawing != nullptr, "drawing action missing");
+        drawing->setChecked(true);
+        waitForUi(50);
+        press(canvas);
+        require(!thumbnail->isChecked(), "drawing mode must not dispatch middle-click actions");
+        drawing->setChecked(false);
+        waitForUi(50);
+#if defined(Q_OS_WIN) || defined(_WIN32)
+        const HWND hwnd = toNativeHwnd(window->winId());
+        const auto native = [&](UINT message, WPARAM hit) {
+            const QPoint point = window->currentNativeGeometry().center();
+            SendMessageW(hwnd, message, hit,
+                         MAKELPARAM(static_cast<WORD>(point.x()), static_cast<WORD>(point.y())));
+        };
+        native(WM_NCMBUTTONDOWN, HTLEFT);
+        require(!thumbnail->isChecked(), "native resize regions must not dispatch middle-click");
+        native(WM_NCMBUTTONDOWN, HTCAPTION);
+        native(WM_NCMBUTTONUP, HTCAPTION);
+        waitForUi(300);
+        require(thumbnail->isChecked(), "native middle press/release must dispatch exactly once");
+        native(WM_NCMBUTTONDBLCLK, HTCAPTION);
+        waitForUi(300);
+        require(!thumbnail->isChecked(), "native second middle press must dispatch exactly once");
+        require(settings.setMiddleMouseButtonAction(QStringLiteral("none")),
+                "configure native None");
+        native(WM_NCMBUTTONDOWN, HTCAPTION);
+        require(!thumbnail->isChecked(), "native None must preserve state");
+        scale->actions().at(1)->trigger();
+        require(settings.setMiddleMouseButtonAction(QStringLiteral("reset_zoom")),
+                "configure native reset");
+        native(WM_NCMBUTTONDOWN, HTCAPTION);
+        require(window->currentNativeGeometry() == original, "native middle-click must reset zoom");
+#endif
+    }
+    bool removed = false;
+    QObject::connect(window, &ScreenshotPinnedWindow::closingForPersistence,
+                     [&removed](const auto&, bool remove) { removed = remove; });
+    require(settings.setMiddleMouseButtonAction(QStringLiteral("close")), "configure Close");
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    if (!offscreen) {
+        const QPoint point = window->currentNativeGeometry().center();
+        SendMessageW(toNativeHwnd(window->winId()), WM_NCMBUTTONDOWN, HTCAPTION,
+                     MAKELPARAM(static_cast<WORD>(point.x()), static_cast<WORD>(point.y())));
+    } else
+#endif
+    {
+        press(canvas);
+    }
+    require(processUntilDeleted(guarded, 2000), "middle-click Close must delete the pin");
+    require(offscreen || removed, "middle-click Close must use the persistence removal lifecycle");
+}
+
+void pinnedOffscreenDoubleClickActions() {
+    // A fully presented Windows pin requires an HWND. Exercise Qt event routing
+    // and command state on an offscreen widget; native tests cover its geometry.
+    const snow_shot::storage::PinToScreenSettings settings;
+    const QString previousAction = settings.doubleClickAction();
+    const auto restore = qScopeGuard([&] { settings.setDoubleClickAction(previousAction); });
+    auto* window = new ScreenshotPinnedWindow();
+    QPointer<ScreenshotPinnedWindow> guarded(window);
+    window->resize(600, 400);
+    window->show();
+    waitForUi(30);
+    auto* canvas = window->findChild<SnowCanvasWidget*>();
+    auto* thumbnail =
+        window->findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
+    require(canvas != nullptr && thumbnail != nullptr, "offscreen double-click controls missing");
+    const auto send = [](QWidget* receiver, Qt::MouseButton button = Qt::LeftButton) {
+        const QPoint point = receiver->rect().center();
+        QMouseEvent event(QEvent::MouseButtonDblClick, QPointF(point),
+                          QPointF(receiver->mapToGlobal(point)), button, button, Qt::NoModifier);
+        QCoreApplication::sendEvent(receiver, &event);
+    };
+    require(settings.setDoubleClickAction(QStringLiteral("thumbnail_mode")), "configure toggle");
+    send(window, Qt::MiddleButton);
+    require(!thumbnail->isChecked(), "offscreen non-left double-click must not toggle");
+    send(window);
+    require(thumbnail->isChecked(), "offscreen window double-click must enter thumbnail mode");
+    waitForUi(300);
+    send(canvas);
+    waitForUi(300);
+    require(!thumbnail->isChecked(), "offscreen canvas double-click must leave thumbnail mode");
+    require(settings.setDoubleClickAction(QStringLiteral("none")), "configure offscreen None");
+    send(canvas);
+    require(guarded && !thumbnail->isChecked(), "offscreen None must leave the window unchanged");
+    require(settings.setDoubleClickAction(QStringLiteral("close")), "configure offscreen Close");
+    send(canvas);
+    require(processUntilDeleted(guarded, 2000), "offscreen Close must delete the clicked window");
+}
+
+void pinnedOcrDoubleClickUsesDragRegion(bool middleClick = false) {
+    const snow_shot::storage::PinToScreenSettings settings;
+    const QString previousAction = settings.doubleClickAction();
+    const QString previousMiddleAction = settings.middleMouseButtonAction();
+    const auto restoreMiddle =
+        qScopeGuard([&] { settings.setMiddleMouseButtonAction(previousMiddleAction); });
+    require(settings.setMiddleMouseButtonAction(QStringLiteral("close")),
+            "configure OCR middle-click");
+    const auto eventType = middleClick ? QEvent::MouseButtonPress : QEvent::MouseButtonDblClick;
+    const auto button = middleClick ? Qt::MiddleButton : Qt::LeftButton;
+    const auto restore = qScopeGuard([&] { settings.setDoubleClickAction(previousAction); });
+    require(settings.setDoubleClickAction(QStringLiteral("close")), "configure OCR double-click");
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+    QImage image(600, 360, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+    presentation->selection = image.rect();
+    const QRectF textRect(100, 100, 300, 40);
+    ScreenshotOcrLine line;
+    line.text = QStringLiteral("Double click selectable text");
+    line.confidence = 0.99;
+    line.quad = QPolygonF(
+        {textRect.topLeft(), textRect.topRight(), textRect.bottomRight(), textRect.bottomLeft()});
+    presentation->lines.push_back(line);
+    presentation->prepareForRendering();
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), image.size());
+    config.canvasSourceRect = image.rect();
+    config.contentCanvasRect = image.rect();
+    config.surfaceCanvasRect = image.rect();
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    config.screen = screen;
+    config.automaticTextRecognition = false;
+    config.recognitionVisible = true;
+    config.recognitionResults.key = QStringLiteral("double-click-ocr");
+    ScreenshotOcrRecognitionResult recognition;
+    recognition.presentation = presentation;
+    config.recognitionResults.text = recognition;
+    auto* window = new ScreenshotPinnedWindow();
+    QPointer<ScreenshotPinnedWindow> guarded(window);
+    require(window->present(config), "OCR double-click pin presentation failed");
+    waitForUi(200);
+    auto* content = window->findChild<ScreenshotRecognitionWindow*>(
+        QStringLiteral("screenshotPinnedRecognitionContent"));
+    require(content != nullptr && content->isVisible(), "OCR double-click surface missing");
+    auto* textLayer = content->findChild<QGraphicsView*>(QStringLiteral("snowShotOcrTextLayer"));
+    require(textLayer != nullptr && !textLayer->scene()->items().isEmpty(), "OCR text missing");
+    const auto* item = textLayer->scene()->items().front();
+    const QPoint textPoint = textLayer->viewport()->mapTo(
+        content, textLayer->mapFromScene(item->sceneBoundingRect().center()));
+    const QPoint background(20, content->height() - 30);
+    require(!content->isOcrBackgroundAt(textPoint) && content->isOcrBackgroundAt(background),
+            "OCR fixture must distinguish text and draggable background");
+    QMouseEvent textDoubleClick(eventType, QPointF(textPoint),
+                                QPointF(content->mapToGlobal(textPoint)), button, button,
+                                Qt::NoModifier);
+    QCoreApplication::sendEvent(content, &textDoubleClick);
+    QMouseEvent textRelease(QEvent::MouseButtonRelease, QPointF(textPoint),
+                            QPointF(content->mapToGlobal(textPoint)), button, Qt::NoButton,
+                            Qt::NoModifier);
+    QCoreApplication::sendEvent(content, &textRelease);
+    waitForUi(30);
+    require(guarded && window->isVisible(), "double-clicking OCR text must not close the pin");
+    if (middleClick) {
+        require(settings.setMiddleMouseButtonAction(QStringLiteral("reset_zoom")),
+                "configure OCR reset zoom");
+        const QRect before = window->currentNativeGeometry();
+        QMouseEvent reset(QEvent::MouseButtonPress, QPointF(background),
+                          QPointF(content->mapToGlobal(background)), button, button,
+                          Qt::NoModifier);
+        QCoreApplication::sendEvent(content, &reset);
+        require(window->currentNativeGeometry() == before && content->isVisible(),
+                "reset zoom must leave text-only OCR geometry unchanged");
+        require(settings.setMiddleMouseButtonAction(QStringLiteral("close")), "restore OCR Close");
+    }
+    QMouseEvent backgroundDoubleClick(eventType, QPointF(background),
+                                      QPointF(content->mapToGlobal(background)), button, button,
+                                      Qt::NoModifier);
+    QCoreApplication::sendEvent(content, &backgroundDoubleClick);
+    require(processUntilDeleted(guarded, 2000), "double-clicking OCR drag background must close");
+}
+
+void pinnedDoubleClickActions() {
+    const snow_shot::storage::PinToScreenSettings settings;
+    const QString previousAction = settings.doubleClickAction();
+    const auto restore = qScopeGuard([&] { settings.setDoubleClickAction(previousAction); });
+    require(settings.setDoubleClickAction(QStringLiteral("thumbnail_mode")),
+            "configure pinned double-click default");
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+    QImage image(600, 400, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), image.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(image.size()));
+    config.imageSource = ScreenshotImageSource::fromImage(image, config.canvasSourceRect);
+    config.screen = screen;
+    config.automaticTextRecognition = false;
+    auto* window = new ScreenshotPinnedWindow();
+    QPointer<ScreenshotPinnedWindow> guarded(window);
+    require(window->present(config), "double-click pin presentation failed");
+    waitForUi(200);
+    auto* canvas = window->findChild<SnowCanvasWidget*>();
+    auto* thumbnail =
+        window->findChild<QAction*>(QStringLiteral("screenshotPinnedThumbnailAction"));
+    require(canvas != nullptr && thumbnail != nullptr, "double-click pin controls missing");
+    const QRect original = window->currentNativeGeometry();
+    const auto send = [](QWidget* receiver, const QPoint& point,
+                         Qt::MouseButton button = Qt::LeftButton) {
+        QMouseEvent event(QEvent::MouseButtonDblClick, QPointF(point),
+                          QPointF(receiver->mapToGlobal(point)), button, button, Qt::NoModifier);
+        QCoreApplication::sendEvent(receiver, &event);
+    };
+    for (const auto button : {Qt::RightButton, Qt::MiddleButton}) {
+        send(window, window->rect().center(), button);
+        require(!thumbnail->isChecked(), "non-left double-click must not toggle thumbnail mode");
+    }
+    send(window, window->rect().center());
+    require(thumbnail->isChecked(), "default double-click must enter thumbnail mode exactly once");
+    // The second gesture during the transition cannot restart or reverse the animation.
+    send(window, window->rect().center());
+    require(thumbnail->isChecked(), "animation must block another double-click action");
+    waitForUi(300);
+    send(canvas, canvas->rect().center());
+    waitForUi(300);
+    require(!thumbnail->isChecked() && window->currentNativeGeometry() == original,
+            "canvas double-click must restore the pre-thumbnail geometry exactly once");
+
+    require(settings.setDoubleClickAction(QStringLiteral("none")), "configure None on open pin");
+    send(canvas, canvas->rect().center());
+    waitForUi(30);
+    require(guarded && !thumbnail->isChecked() && window->currentNativeGeometry() == original,
+            "None must leave the existing pin unchanged");
+    require(settings.setDoubleClickAction(QStringLiteral("thumbnail_mode")), "restore toggle");
+    setPinnedWindowHovered(*window, true);
+    auto* controls = window->findChild<QFrame*>(QStringLiteral("screenshotPinnedControlsPanel"));
+    require(controls != nullptr && controls->isVisible(), "double-click controls must be visible");
+    send(window, controls->mapTo(window, controls->rect().center()));
+    require(!thumbnail->isChecked(), "control panel must not trigger the double-click action");
+    auto* drawing = window->findChild<QAction*>(QStringLiteral("screenshotPinnedDrawingAction"));
+    require(drawing != nullptr, "drawing action missing");
+    drawing->setChecked(true);
+    waitForUi(50);
+    send(canvas, canvas->rect().center());
+    require(!thumbnail->isChecked(), "drawing input must not trigger the double-click action");
+    drawing->setChecked(false);
+    waitForUi(50);
+
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    if (QGuiApplication::platformName() != QStringLiteral("offscreen")) {
+        const HWND hwnd = toNativeHwnd(window->winId());
+        const auto nativeDoubleClick = [&](const QPoint& point, WPARAM hit) {
+            SendMessageW(hwnd, WM_NCLBUTTONDBLCLK, hit,
+                         MAKELPARAM(static_cast<WORD>(point.x()), static_cast<WORD>(point.y())));
+        };
+        for (const QString& action : {QStringLiteral("none"), QStringLiteral("thumbnail_mode")}) {
+            require(settings.setDoubleClickAction(action), "configure native double-click");
+            nativeDoubleClick(window->currentNativeGeometry().center(), HTCAPTION);
+            waitForUi(300);
+            require(thumbnail->isChecked() == (action == QStringLiteral("thumbnail_mode")) &&
+                        !window->isMaximized(),
+                    "native caption double-click must dispatch once without maximizing");
+        }
+        nativeDoubleClick(window->currentNativeGeometry().center(), HTCAPTION);
+        waitForUi(300);
+        require(!thumbnail->isChecked() && window->currentNativeGeometry() == original,
+                "native thumbnail double-click must restore original geometry");
+        const QPoint border(original.left(), original.center().y());
+        require(SendMessageW(hwnd, WM_NCHITTEST, 0,
+                             MAKELPARAM(static_cast<WORD>(border.x()),
+                                        static_cast<WORD>(border.y()))) == HTLEFT,
+                "resize border must not become a double-click caption");
+    }
+#endif
+    require(settings.setDoubleClickAction(QStringLiteral("thumbnail_mode")), "configure toggle");
+    send(window, window->rect().center());
+    waitForUi(300);
+    require(thumbnail->isChecked(), "enter thumbnail before changing the action");
+    require(settings.setDoubleClickAction(QStringLiteral("none")), "configure None on thumbnail");
+    send(canvas, canvas->rect().center());
+    require(thumbnail->isChecked(), "None must also apply to an already open thumbnail");
+    auto* other = new ScreenshotPinnedWindow();
+    QPointer<ScreenshotPinnedWindow> otherGuard(other);
+    require(other->present(config), "second pin presentation failed");
+    bool removed = false;
+    QObject::connect(window, &ScreenshotPinnedWindow::closingForPersistence,
+                     [&removed](const auto&, bool remove) { removed = remove; });
+    require(settings.setDoubleClickAction(QStringLiteral("close")), "configure Close on thumbnail");
+    send(canvas, canvas->rect().center());
+    require(processUntilDeleted(guarded, 2000) && removed && otherGuard && other->isVisible(),
+            "Close must remove only the clicked thumbnail through the user-close lifecycle");
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    if (QGuiApplication::platformName() != QStringLiteral("offscreen")) {
+        const QPoint center = other->currentNativeGeometry().center();
+        SendMessageW(toNativeHwnd(other->winId()), WM_NCLBUTTONDBLCLK, HTCAPTION,
+                     MAKELPARAM(static_cast<WORD>(center.x()), static_cast<WORD>(center.y())));
+    } else
+#endif
+    {
+        send(other, other->rect().center());
+    }
+    require(processUntilDeleted(otherGuard, 2000), "Close must also close a normal-sized pin");
+}
+
 void pinnedThumbnailUsesOpaqueThemeBackground(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -4279,6 +4663,22 @@ int main(int argc, char* argv[]) {
         IsolatedPinnedStorage processStorage;
         SnowCanvasRuntime sourceRuntime;
         require(sourceRuntime.isValid(), "source runtime creation failed");
+        if (app.arguments().contains(QStringLiteral("--middle-click-only"))) {
+            pinnedMiddleClickActions();
+            if (QGuiApplication::platformName() != QStringLiteral("offscreen")) {
+                pinnedOcrDoubleClickUsesDragRegion(true);
+            }
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--double-click-only"))) {
+            if (QGuiApplication::platformName() == QStringLiteral("offscreen")) {
+                pinnedOffscreenDoubleClickActions();
+            } else {
+                pinnedDoubleClickActions();
+                pinnedOcrDoubleClickUsesDragRegion();
+            }
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--translation-only"))) {
             runPinnedOriginalImageTranslationTests();
             return 0;
