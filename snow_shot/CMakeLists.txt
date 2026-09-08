@@ -3591,6 +3591,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/screenshotfloatingtoolpalettewindow.h
         include/snow_shot/presentation/screenshottoolpalettehost.h
         src/presentation/recording/screenrecordingcontroller.cpp
+        include/snow_shot/presentation/screenrecordingshortcutcontroller.h
+        src/presentation/recording/screenrecordingshortcutcontroller.cpp
         src/presentation/recording/screenrecordingareawindow.cpp
         src/presentation/recording/screenrecordingtoolbarwindow.cpp
         src/presentation/recording/screenrecordinggeometry.cpp
@@ -3606,11 +3608,11 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
     target_link_libraries(snow-shot-screen-recording-controller-tests PRIVATE
         adqt_icon_core ant_design_icons_qt ant_design_qt snow_draw_engine_qt_canvas
-        snow_shot_storage snow_shot_image_codec Qt6::Widgets)
+        snow_shot_storage snow_shot_image_codec snow_shot_window_shortcuts Qt6::Widgets)
     target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE SNOW_SHOT_TEST_HOOKS=1)
     # Override only the test executable: exercise the real controller without
     # opening capture devices, recording the desktop, or exporting media.
-    foreach(_operation create destroy start pause resume stop_and_export)
+    foreach(_operation create_direct destroy start pause resume stop state)
         target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
             "snow_capture_recording_session_${_operation}=test_recording_session_${_operation}")
     endforeach()
@@ -3621,8 +3623,9 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
     add_test(NAME snow-shot-screen-recording-controller-tests
         COMMAND snow-shot-screen-recording-controller-tests)
+    snow_shot_import_offscreen_platform(snow-shot-screen-recording-controller-tests)
     set_tests_properties(snow-shot-screen-recording-controller-tests PROPERTIES
-        ENVIRONMENT "QT_QPA_PLATFORM=$<IF:$<BOOL:${WIN32}>,windows,offscreen>"
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
         RUN_SERIAL TRUE TIMEOUT 60)
 

@@ -329,6 +329,18 @@ struct ScreenRecordingController::Impl {
         // Closing hides these persistent windows; reopening must not orphan
         // another toolbar and its connections to this controller.
         if (areaWindow != nullptr && toolbarWindow != nullptr) {
+            if (!isOpen()) {
+                // Window lifetime spans sessions, but annotations and transient
+                // editing state belong only to the session that created them.
+                auto* palette = toolbarWindow->palette();
+                palette->clearActiveTool();
+                auto* canvas = areaWindow->canvas();
+                static_cast<void>(canvas->resetEditingState());
+                static_cast<void>(canvas->clearDocument());
+                areaWindow->setInputMode(palette->recordingExportSettingsVisible()
+                                             ? ScreenRecordingAreaWindow::InputMode::RegionEditing
+                                             : ScreenRecordingAreaWindow::InputMode::PassThrough);
+            }
             physicalRegion = region;
             updateCaptureRegion();
             areaWindow->setPhysicalRegion(region);

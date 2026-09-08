@@ -1,5 +1,7 @@
 #include "snow_shot/presentation/screenrecordingcontroller.h"
 #include "snow_shot/presentation/screenrecordingtoolbarwindow.h"
+#include "snow_shot/presentation/screenrecordingareawindow.h"
+#include "snow_draw_engine_qt/snow_canvas_widget.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "snow_capture.h"
@@ -9,6 +11,7 @@
 #include <QTemporaryDir>
 #include <QElapsedTimer>
 #include <QThread>
+#include <QMouseEvent>
 #include <atomic>
 #include <cstdlib>
 #include <iostream>
@@ -37,9 +40,11 @@ ScreenshotToolPalette* palette() {
 } // namespace
 
 extern "C" {
-SnowCaptureRecordingSession*
-snow_capture_recording_session_create(const SnowCaptureRecordingConfig*) {
-    return &session;
+SnowCaptureResult
+snow_capture_recording_session_create_direct(const SnowCaptureDirectRecordingConfig*,
+                                             SnowCaptureRecordingSession** result) {
+    *result = &session;
+    return SNOW_CAPTURE_RESULT_OK;
 }
 void snow_capture_recording_session_destroy(SnowCaptureRecordingSession*) {}
 uint8_t snow_capture_recording_session_start(SnowCaptureRecordingSession*) {
@@ -52,9 +57,13 @@ uint8_t snow_capture_recording_session_pause(SnowCaptureRecordingSession*) {
 uint8_t snow_capture_recording_session_resume(SnowCaptureRecordingSession*) {
     return 1;
 }
-uint8_t snow_capture_recording_session_stop_and_export(SnowCaptureRecordingSession*,
-                                                       const SnowCaptureRecordingExportConfig*) {
+SnowCaptureResult snow_capture_recording_session_stop(SnowCaptureRecordingSession*) {
     ++exports;
+    return SNOW_CAPTURE_RESULT_OK;
+}
+uint8_t snow_capture_recording_session_state(const SnowCaptureRecordingSession*,
+                                             SnowCaptureRecordingState* state) {
+    *state = SNOW_CAPTURE_RECORDING_STATE_RUNNING;
     return 1;
 }
 const char* snow_capture_last_error_message() {
@@ -75,6 +84,45 @@ int main(int argc, char** argv) {
             "test output directory must be set");
     require(RecordingSettings().setHideToolbarInRecording(false),
             "capture exclusion must be disabled for fake backend");
+    {
+        ScreenRecordingController controller;
+        const QRect region(40, 40, 320, 240);
+        controller.open(region);
+        ScreenRecordingAreaWindow* area = nullptr;
+        for (auto* widget : QApplication::topLevelWidgets()) {
+            if (auto* candidate = qobject_cast<ScreenRecordingAreaWindow*>(widget)) {
+                area = candidate;
+            }
+        }
+        require(area != nullptr, "recording area must exist");
+        auto* canvas = area->canvas();
+        require(palette()->activateDrawingShortcut(QStringLiteral("shape")),
+                "drawing shortcut must activate the shape tool");
+        require(canvas->setCanvasTool(SnowCanvasTool::Shape), "shape must activate");
+        const auto mouse = [canvas](QEvent::Type type, QPointF position, Qt::MouseButton button,
+                                    Qt::MouseButtons buttons) {
+            QMouseEvent event(type, position, position, position, button, buttons, Qt::NoModifier);
+            QCoreApplication::sendEvent(canvas, &event);
+        };
+        mouse(QEvent::MouseButtonPress, {30, 30}, Qt::LeftButton, Qt::LeftButton);
+        mouse(QEvent::MouseMove, {100, 80}, Qt::NoButton, Qt::LeftButton);
+        mouse(QEvent::MouseButtonRelease, {100, 80}, Qt::LeftButton, Qt::NoButton);
+        require(canvas->canvasHistoryState().canUndo, "drawing must create history");
+        controller.open(region);
+        require(canvas->canvasHistoryState().canUndo,
+                "opening an already visible region must preserve its drawing");
+        palette()->recordingCloseRequested();
+        controller.open(region);
+        require(area->isVisible() && area->canvas() == canvas,
+                "a new recording session must reuse the area and canvas");
+        require(!canvas->canvasHistoryState().canUndo && !canvas->canvasHistoryState().canRedo,
+                "a new session at the same rectangle must clear drawing and history");
+        require(canvas->canvasTool() == SnowCanvasTool::Select &&
+                    area->inputMode() != ScreenRecordingAreaWindow::InputMode::Drawing &&
+                    !palette()->activeTool().has_value(),
+                "a new session must reset transient drawing tools");
+    }
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     {
         ScreenRecordingController controller;
         controller.startRecording();
@@ -111,8 +159,8 @@ int main(int argc, char** argv) {
         palette()->recordingPauseRequested();
         require(controller.isRecording(),
                 "paused recording must remain stoppable by the global toggle");
-        controller.stopRecordingAndCopyVideo();
-        controller.stopRecordingAndCopyVideo();
+        controller.stopRecordingAndCopy();
+        controller.stopRecordingAndCopy();
         controller.startRecording();
         // Do not pump the UI export-completion timer: this test must not alter
         // the desktop clipboard. Destruction joins the fake export worker.
