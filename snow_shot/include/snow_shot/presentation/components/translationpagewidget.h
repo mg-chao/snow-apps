@@ -4,7 +4,9 @@
 #include "snow_shot/presentation/styles/themecolorscheme.h"
 
 #include <QWidget>
+#include <QTimer>
 
+class QAction;
 class QLabel;
 class QGridLayout;
 class QHideEvent;
@@ -15,7 +17,8 @@ class AdSelect;
 class AdTextEdit;
 class AdButton;
 class AdAlert;
-class AdPopover;
+class AdContextMenu;
+class AdSpin;
 } // namespace adqt::widgets
 namespace snow_shot::presentation {
 class TranslationPageController;
@@ -29,11 +32,12 @@ class TranslationPageWidget final : public QWidget {
                                    int debounceMilliseconds = 1500);
     ~TranslationPageWidget() override;
     void deactivate();
+    void setSourceText(const QString& text);
     void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme);
     void retranslateUi();
 
   signals:
-    void hideWindowRequested();
+    void closeWindowRequested();
 
   protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -43,9 +47,13 @@ class TranslationPageWidget final : public QWidget {
 
   private:
     void syncState();
+    void scheduleResultUpdate();
+    void flushResultUpdate();
+    void syncResultActions();
     void updateLayout();
+    void updateResultOverlays();
     void updateResult(const QString& text);
-    void copyResult(bool hideWindow);
+    void copyResult(bool closeWindow);
     void dismissPopups();
     bool ownsFocusWidget(const QWidget* widget) const;
 
@@ -59,22 +67,25 @@ class TranslationPageWidget final : public QWidget {
     QGridLayout* m_editorsLayout = nullptr;
     adqt::widgets::AdTextEdit* m_source = nullptr;
     adqt::widgets::AdTextEdit* m_result = nullptr;
+    adqt::widgets::AdSpin* m_resultSpin = nullptr;
     QWidget* m_resultPane = nullptr;
     adqt::widgets::AdButton* m_swap = nullptr;
     adqt::widgets::AdButton* m_resultCopy = nullptr;
     adqt::widgets::AdButton* m_floating = nullptr;
-    adqt::widgets::AdButton* m_copy = nullptr;
-    adqt::widgets::AdButton* m_copyHide = nullptr;
+    QAction* m_copy = nullptr;
+    QAction* m_copyClose = nullptr;
     adqt::widgets::AdButton* m_retry = nullptr;
     adqt::widgets::AdAlert* m_error = nullptr;
-    adqt::widgets::AdPopover* m_popover = nullptr;
-    QWidget* m_actions = nullptr;
+    adqt::widgets::AdContextMenu* m_menu = nullptr;
     QLabel* m_status = nullptr;
+    QTimer m_resultUpdate;
+    QString m_renderedResult;
     snow_shot::presentation::styles::ThemeColorScheme m_scheme;
     bool m_syncing = false;
     bool m_layoutQueued = false;
     bool m_active = true;
     int m_layoutColumns = 0;
+    int m_formColumns = 0;
 };
 
 #endif

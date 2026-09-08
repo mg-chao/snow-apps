@@ -1,5 +1,6 @@
 #include "snow_shot/presentation/screenshotsaveasfiledialog.h"
 
+#include "snow_shot/presentation/components/actionpopupmenu.h"
 #include "snow_shot/presentation/components/aspectratiolockbutton.h"
 #include "snow_shot/presentation/components/pathinput.h"
 #include "snow_shot/presentation/screenshotexportartifact.h"
@@ -23,13 +24,11 @@
 
 #include <QApplication>
 #include <QCoreApplication>
-#include <QCursor>
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QMouseEvent>
 #include <QPointer>
 #include <QRegularExpression>
 #include <QScreen>
@@ -190,12 +189,6 @@ class SaveContent final : public QWidget {
                     m_preview->update();
                 });
 
-        m_menuCloseTimer.setSingleShot(true);
-        m_menuCloseTimer.setInterval(150);
-        connect(&m_menuCloseTimer, &QTimer::timeout, this, [this] {
-            if (m_menu && m_menu->isVisible() && !shortcutMenuContains(QCursor::pos()))
-                m_menu->hide();
-        });
         connect(m_directory, &DirectoryPathInput::textChanged, this, [this](const QString& value) {
             m_state.directory = value;
             validateFields();
@@ -248,7 +241,8 @@ class SaveContent final : public QWidget {
     void cancel(bool cancelSource = false) {
         m_closed = true;
         ++m_generation;
-        m_menuCloseTimer.stop();
+        if (m_menu)
+            m_menu->hide();
         m_job.cancel();
         cancelDecode();
         m_saveJob.cancel();
@@ -324,26 +318,6 @@ class SaveContent final : public QWidget {
         if (event->type() == QEvent::LanguageChange && m_editor &&
             object == m_editor->contentWidget())
             retranslateSecondary();
-        if (event->type() == QEvent::Enter) {
-            if (auto* button = qobject_cast<AdButton*>(object);
-                button && button->property("shortcutIndex").isValid())
-                openShortcutMenu(button, button->property("shortcutIndex").toInt());
-        }
-        if (m_menu && m_menu->isVisible() &&
-            (object == m_menu || object == m_menu->triggerWidget())) {
-            if (event->type() == QEvent::Enter) {
-                m_menuCloseTimer.stop();
-            } else if (event->type() == QEvent::Leave) {
-                m_menuCloseTimer.start();
-            } else if (event->type() == QEvent::MouseMove) {
-                // QMenu also receives grabbed mouse moves outside its native popup window.
-                const auto* mouse = static_cast<QMouseEvent*>(event);
-                if (shortcutMenuContains(mouse->globalPosition().toPoint()))
-                    m_menuCloseTimer.stop();
-                else if (!m_menuCloseTimer.isActive())
-                    m_menuCloseTimer.start();
-            }
-        }
         return QWidget::eventFilter(object, event);
     }
 
@@ -508,10 +482,8 @@ class SaveContent final : public QWidget {
                 expand->setFixedSize(24, 24);
                 expand->setToolTip(tr("Edit or delete save path"));
                 expand->setAccessibleName(expand->toolTip());
-                expand->setProperty("shortcutIndex", index);
-                expand->installEventFilter(this);
-                connect(expand, &QAbstractButton::clicked, this,
-                        [this, expand, index] { openShortcutMenu(expand, index); });
+                new snow_shot::presentation::ActionPopupMenu(
+                    expand, [this, expand, index] { return createShortcutMenu(expand, index); });
                 group->addControl(expand);
             }
             m_shortcutsLayout->addWidget(group);
@@ -537,30 +509,15 @@ class SaveContent final : public QWidget {
         if (m_shortcutsHost->minimumHeight() != height)
             m_shortcutsHost->setFixedHeight(height);
     }
-    bool shortcutMenuContains(const QPoint& globalPosition) const {
-        if (!m_menu)
-            return false;
-        const auto* trigger = m_menu->triggerWidget();
-        return m_menu->rect().contains(m_menu->mapFromGlobal(globalPosition)) ||
-               (trigger && trigger->rect().contains(trigger->mapFromGlobal(globalPosition)));
-    }
-    void openShortcutMenu(AdButton* trigger, int index) {
-        if ((m_menu && m_menu->isVisible()) || index < 0 || index >= m_shortcuts.size())
-            return;
+    AdContextMenu* createShortcutMenu(AdButton* trigger, int index) {
+        if (index < 0 || index >= m_shortcuts.size())
+            return nullptr;
         if (m_menu)
             m_menu->deleteLater();
         auto* menu = new AdContextMenu(this);
         m_menu = menu;
         menu->setObjectName(QStringLiteral("savePathMenu"));
         menu->setTriggerWidget(trigger);
-        menu->installEventFilter(this);
-        connect(menu, &QMenu::aboutToHide, &m_menuCloseTimer, &QTimer::stop);
-        const auto theme = adqt::theme::ThemeManager::instance().resolveTheme(this);
-        auto tokens = menu->componentTokens();
-        tokens.minimumWidth = 0;
-        tokens.text = theme.colorPrimary;
-        tokens.hoverText = theme.colorPrimary;
-        menu->setComponentTokens(tokens);
         auto* edit = menu->addItem(tr("Edit"), icons::Edit());
         auto* remove = menu->addItem(tr("Delete"), icons::IconDelete());
         menu->setActionDanger(remove);
@@ -573,7 +530,7 @@ class SaveContent final : public QWidget {
             else
                 showError(tr("The save paths could not be stored"));
         });
-        menu->popupAt(trigger->mapToGlobal(QPoint(0, trigger->height())));
+        return menu;
     }
     void shortcutDialog(int index) {
         auto* modal = new AdModal(this);
@@ -1088,7 +1045,6 @@ class SaveContent final : public QWidget {
     adqt::widgets::detail::FlowLayout* m_shortcutsLayout = nullptr;
     QVector<Shortcut> m_shortcuts;
     QPointer<AdContextMenu> m_menu;
-    QTimer m_menuCloseTimer;
     QPointer<AdModal> m_editor;
     QPointer<AdModal> m_overwrite;
 };

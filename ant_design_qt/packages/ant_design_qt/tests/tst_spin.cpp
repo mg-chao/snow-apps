@@ -4,6 +4,7 @@
 #include <QImage>
 #include <QLabel>
 #include <QMetaProperty>
+#include <QPainter>
 #include <QPointer>
 #include <QPushButton>
 #include <QSignalSpy>
@@ -26,6 +27,8 @@ class SpinTest final : public QObject {
   void accessibleProgressContract();
   void delayDefersAndCancellationPreventsActivation();
   void sizeClassesFollowAntDesignTokenRatios();
+  void sizeHintContainsCompleteIndicator_data();
+  void sizeHintContainsCompleteIndicator();
   void contentOverlayTracksGeometryAndBlocksHitTesting();
   void contentOverlayBlocksScopedInput();
   void customIndicatorIsOwnedAndCentered();
@@ -138,6 +141,55 @@ void SpinTest::sizeClassesFollowAntDesignTokenRatios() {
   spin.setDescription(QStringLiteral("Loading"));
   QVERIFY(spin.sizeHint().height() > large.height());
   QCOMPARE(spin.accessibleDescription(), QStringLiteral("Loading"));
+}
+
+void SpinTest::sizeHintContainsCompleteIndicator_data() {
+  QTest::addColumn<int>("side");
+  QTest::addColumn<bool>("progress");
+  for (const int side : {14, 15, 20, 21, 32, 33}) {
+    for (const bool progress : {false, true}) {
+      QTest::newRow(qPrintable(QStringLiteral("%1-%2").arg(side).arg(progress)))
+          << side << progress;
+    }
+  }
+}
+
+void SpinTest::sizeHintContainsCompleteIndicator() {
+  QFETCH(int, side);
+  QFETCH(bool, progress);
+  AdSpin spin;
+  AdSpin::ComponentTokens tokens;
+  tokens.metrics.dotSize = side;
+  tokens.metrics.animationCycleMs = 0;
+  spin.setComponentTokens(tokens);
+  if (progress) {
+    spin.setPercent(100.0);
+  }
+  AdSpin::SemanticStyles styles;
+  styles.root.backgroundColor = Qt::white;
+  spin.setSemanticStyles(styles);
+
+  const auto render = [&spin](const QSize& size) {
+    spin.resize(size);
+    spin.show();
+    QCoreApplication::processEvents();
+    QImage image(size, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    spin.render(&image);
+    return image;
+  };
+  const QSize hint = spin.sizeHint();
+  const QImage tight = render(hint);
+  constexpr int padding = 8;
+  const QImage roomy = render(hint + QSize(padding * 2, padding * 2));
+  QImage expected(roomy.size(), roomy.format());
+  expected.fill(Qt::white);
+  {
+    QPainter painter(&expected);
+    painter.drawImage(QPoint(padding, padding), tight);
+  }
+  QVERIFY2(roomy == expected,
+           "Rendering at sizeHint must preserve every pixel of the unconstrained indicator");
 }
 
 void SpinTest::contentOverlayTracksGeometryAndBlocksHitTesting() {

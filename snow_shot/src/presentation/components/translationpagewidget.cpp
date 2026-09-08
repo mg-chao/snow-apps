@@ -12,9 +12,11 @@
 #include "widgets/alert.h"
 #include "widgets/button.h"
 #include "widgets/input_text_edit.h"
-#include "widgets/popover.h"
+#include "snow_shot/presentation/components/actionpopupmenu.h"
+#include "widgets/context_menu.h"
 #include "widgets/select.h"
 #include "widgets/scroll_area.h"
+#include "widgets/spin.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -26,6 +28,7 @@
 #include <QLineEdit>
 #include <QScopedValueRollback>
 #include <QScrollBar>
+#include <QSignalBlocker>
 #include <QTextCursor>
 #include <QTextBlockFormat>
 #include <QTimer>
@@ -123,13 +126,23 @@ TranslationPageWidget::TranslationPageWidget(QWidget* parent, SnowShotApiClient*
         m_selects[index] = select;
         select->setVariant(AdSelect::Variant::Underlined);
         select->setSearchEnabled(true);
-        select->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+        select->setSizeAdjustPolicy(AdSelect::SizeAdjustPolicy::AdjustToCurrentText);
+        select->setPopupMatchSelectWidth(false);
+        if (index < 2) {
+            select->setPopupLayerMode(AdSelect::PopupLayerMode::QtTool);
+        }
+        select->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
         m_labels[index]->setBuddy(select);
-        row->addWidget(select, 1);
+        row->addWidget(select);
         if (index == 0) {
             m_swap = iconButton(outlined::Swap(), field);
             m_swap->setObjectName(QStringLiteral("translationSwap"));
             row->addWidget(m_swap);
+        }
+        if (index == 2) {
+            row->insertStretch(0);
+        } else {
+            row->addStretch();
         }
         fieldLayout->addLayout(row);
         connect(select, &AdSelect::currentValueChanged, this, [this, index]() {
@@ -156,9 +169,10 @@ TranslationPageWidget::TranslationPageWidget(QWidget* parent, SnowShotApiClient*
     m_source->setMaximumCharacterCount(5000);
     m_source->setCountVisible(true);
     m_source->setAllowClear(true);
-    m_source->setHeightMode(AdTextEdit::HeightMode::FixedGeometry);
-    m_source->setMinimumVisibleRows(12);
-    m_source->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
+    m_source->setHeightMode(AdTextEdit::HeightMode::AutoGrow);
+    m_source->setMinimumVisibleRows(10);
+    m_source->setMaximumVisibleRows(QWIDGETSIZE_MAX);
+    m_source->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
     m_resultPane = new QWidget(editors);
     m_resultPane->installEventFilter(this);
     auto* resultLayout = new QVBoxLayout(m_resultPane);
@@ -167,14 +181,23 @@ TranslationPageWidget::TranslationPageWidget(QWidget* parent, SnowShotApiClient*
     m_result->setObjectName(QStringLiteral("translationResultText"));
     m_result->setAcceptRichText(false);
     m_result->setReadOnly(true);
+    m_result->setUndoRedoEnabled(false);
     m_result->setVariant(AdTextEdit::Variant::Filled);
-    m_result->setHeightMode(AdTextEdit::HeightMode::FixedGeometry);
-    m_result->setMinimumVisibleRows(12);
-    m_result->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
+    m_result->setHeightMode(AdTextEdit::HeightMode::AutoGrow);
+    m_result->setMinimumVisibleRows(10);
+    m_result->setMaximumVisibleRows(QWIDGETSIZE_MAX);
+    m_result->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
     resultLayout->addWidget(m_result);
     m_resultCopy = iconButton(outlined::Copy(), m_resultPane);
     m_resultCopy->setObjectName(QStringLiteral("translationResultCopy"));
-    layout->addWidget(editors, 1);
+    m_resultSpin = new AdSpin(m_resultPane);
+    m_resultSpin->setObjectName(QStringLiteral("translationResultSpin"));
+    m_resultSpin->setSizeClass(AdSpin::SizeClass::Small);
+    m_resultSpin->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_resultSpin->setFocusPolicy(Qt::NoFocus);
+    m_result->installEventFilter(this);
+    layout->addWidget(editors);
+    layout->addStretch();
 
     m_status = new QLabel(this);
     m_status->setObjectName(QStringLiteral("translationStatus"));
@@ -184,26 +207,14 @@ TranslationPageWidget::TranslationPageWidget(QWidget* parent, SnowShotApiClient*
     m_floating->setIconRef(translation::icons::custom::outlined::Keyboard());
     m_floating->setShape(AdButton::Shape::Circle);
     m_floating->setFocusPolicy(Qt::StrongFocus);
-    m_popover = new AdPopover(this);
-    m_popover->setObjectName(QStringLiteral("translationActionsPopover"));
-    m_popover->setSourceWidget(m_floating);
-    m_popover->setPlacement(AdPopover::Placement::TopRight);
-    m_popover->setTriggers(AdPopover::Trigger::Hover | AdPopover::Trigger::Click);
-    m_popover->setArrowPointAtCenter(true);
-    m_actions = new QWidget;
-    auto* actionsLayout = new QVBoxLayout(m_actions);
-    actionsLayout->setContentsMargins(0, 0, 0, 0);
-    actionsLayout->setSpacing(metric.paddingXXS);
-    m_copy = new AdButton(m_actions);
+    m_menu = new AdContextMenu(this);
+    m_menu->setObjectName(QStringLiteral("translationActionsMenu"));
+    m_copy = m_menu->addItem({});
     m_copy->setObjectName(QStringLiteral("translationCopy"));
-    m_copyHide = new AdButton(m_actions);
-    m_copyHide->setObjectName(QStringLiteral("translationCopyAndHide"));
-    for (auto* button : {m_copy, m_copyHide}) {
-        button->setButtonStyle(AdButton::ButtonStyle::Text);
-        button->setFocusPolicy(Qt::StrongFocus);
-        actionsLayout->addWidget(button);
-    }
-    m_popover->setContentWidget(m_actions);
+    m_copyClose = m_menu->addItem({});
+    m_copyClose->setObjectName(QStringLiteral("translationCopyAndClose"));
+    new translation::ActionPopupMenu(
+        m_floating, [this] { return m_menu; }, translation::ActionPopupMenu::Placement::TopRight);
 
     connect(m_swap, &AdButton::clicked, m_controller,
             &translation::TranslationPageController::swapLanguages);
@@ -211,9 +222,15 @@ TranslationPageWidget::TranslationPageWidget(QWidget* parent, SnowShotApiClient*
             &translation::TranslationPageController::setSourceText);
     connect(m_retry, &AdButton::clicked, m_controller,
             &translation::TranslationPageController::retry);
-    connect(m_copy, &AdButton::clicked, this, [this]() { copyResult(false); });
-    connect(m_copyHide, &AdButton::clicked, this, [this]() { copyResult(true); });
+    connect(m_copy, &QAction::triggered, this, [this]() { copyResult(false); });
+    connect(m_copyClose, &QAction::triggered, this, [this]() { copyResult(true); });
     connect(m_resultCopy, &AdButton::clicked, this, [this]() { copyResult(false); });
+    // Do not restart an active timer: a continuous stream must still make visible progress.
+    m_resultUpdate.setSingleShot(true);
+    m_resultUpdate.setInterval(33);
+    connect(&m_resultUpdate, &QTimer::timeout, this, &TranslationPageWidget::flushResultUpdate);
+    connect(m_controller, &translation::TranslationPageController::resultChanged, this,
+            &TranslationPageWidget::scheduleResultUpdate);
     connect(m_controller, &translation::TranslationPageController::stateChanged, this,
             &TranslationPageWidget::syncState);
     qApp->installEventFilter(this);
@@ -231,15 +248,28 @@ TranslationPageWidget::~TranslationPageWidget() {
     deactivate();
 }
 
+void TranslationPageWidget::setSourceText(const QString& text) {
+    if (!m_active) {
+        return;
+    }
+    // Use the same Unicode-aware length policy and newline normalization as pasted text.
+    const QSignalBlocker blocker(m_source);
+    m_source->setPlainText(text);
+    m_controller->setSourceText(m_source->toPlainText());
+    m_controller->setComposing(false);
+    m_source->setFocus(Qt::OtherFocusReason);
+}
+
 void TranslationPageWidget::deactivate() {
     m_active = false;
+    m_resultUpdate.stop();
     qApp->removeEventFilter(this);
     dismissPopups();
     m_controller->deactivate();
 }
 
 void TranslationPageWidget::dismissPopups() {
-    m_popover->hide();
+    m_menu->hide();
     for (auto* select : m_selects) {
         select->setPopupVisible(false);
     }
@@ -250,23 +280,26 @@ void TranslationPageWidget::hideEvent(QHideEvent* event) {
     QWidget::hideEvent(event);
 }
 
-void TranslationPageWidget::copyResult(bool hideWindow) {
+void TranslationPageWidget::copyResult(bool closeWindow) {
     if (!m_active || m_controller->resultText().isEmpty()) {
         return;
     }
     QApplication::clipboard()->setText(m_controller->resultText());
-    m_popover->hide();
-    if (hideWindow) {
-        emit hideWindowRequested();
+    m_menu->hide();
+    if (closeWindow) {
+        emit closeWindowRequested();
     }
 }
 
 bool TranslationPageWidget::ownsFocusWidget(const QWidget* widget) const {
     return widget != nullptr && (widget->window() == window() || isAncestorOf(widget) ||
-                                 widget == m_actions || m_actions->isAncestorOf(widget));
+                                 widget == m_menu || m_menu->isAncestorOf(widget));
 }
 
 bool TranslationPageWidget::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == m_result && (event->type() == QEvent::Resize || event->type() == QEvent::Move)) {
+        updateResultOverlays();
+    }
     if ((watched == m_container->contentWidget() || watched == m_resultPane) &&
         event->type() == QEvent::Resize && !m_layoutQueued) {
         m_layoutQueued = true;
@@ -286,7 +319,7 @@ bool TranslationPageWidget::eventFilter(QObject* watched, QEvent* event) {
     if (event->type() == QEvent::KeyPress || event->type() == QEvent::ShortcutOverride) {
         auto* key = static_cast<QKeyEvent*>(event);
         const bool copy = key->matches(QKeySequence::Copy);
-        const bool copyHide = key->key() == Qt::Key_Q && key->modifiers() == Qt::ControlModifier;
+        const bool copyClose = key->key() == Qt::Key_Q && key->modifiers() == Qt::ControlModifier;
         if (copy) {
             if (const auto* editor = qobject_cast<QTextEdit*>(widget);
                 editor != nullptr && editor->textCursor().hasSelection()) {
@@ -297,26 +330,10 @@ bool TranslationPageWidget::eventFilter(QObject* watched, QEvent* event) {
                 return false;
             }
         }
-        if (copy || copyHide) {
+        if (copy || copyClose) {
             key->accept();
             if (event->type() == QEvent::KeyPress) {
-                copyResult(copyHide);
-            }
-            return true;
-        }
-        if (event->type() == QEvent::KeyPress && key->key() == Qt::Key_Escape &&
-            m_popover->isVisible()) {
-            m_popover->hide();
-            m_floating->setFocus();
-            return true;
-        }
-        if (event->type() == QEvent::KeyPress && widget == m_floating &&
-            (key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter ||
-             key->key() == Qt::Key_Space || key->key() == Qt::Key_Up ||
-             key->key() == Qt::Key_Down)) {
-            m_popover->show();
-            if (m_copy->isEnabled()) {
-                m_copy->setFocus();
+                copyResult(copyClose);
             }
             return true;
         }
@@ -325,12 +342,14 @@ bool TranslationPageWidget::eventFilter(QObject* watched, QEvent* event) {
 }
 
 void TranslationPageWidget::updateResult(const QString& text) {
-    const QString previous = m_result->toPlainText();
+    // Keep the original stream text: toPlainText scans the document and normalizes characters.
+    const QString& previous = m_renderedResult;
     if (previous == text) {
         return;
     }
     if (text.isEmpty() || !text.startsWith(previous)) {
         m_result->setPlainText(text);
+        m_renderedResult = text;
         return;
     }
     auto* scroll = m_result->verticalScrollBar();
@@ -340,6 +359,8 @@ void TranslationPageWidget::updateResult(const QString& text) {
     const int cursorPosition = m_result->textCursor().position();
     QTextCursor append(m_result->document());
     append.movePosition(QTextCursor::End);
+    // Formatting and insertion must trigger only one text/auto-grow layout update.
+    append.beginEditBlock();
     auto lastBlockFormat = append.blockFormat();
     lastBlockFormat.setBottomMargin(0);
     append.setBlockFormat(lastBlockFormat);
@@ -348,12 +369,42 @@ void TranslationPageWidget::updateResult(const QString& text) {
     lastBlockFormat = append.blockFormat();
     lastBlockFormat.setBottomMargin(36);
     append.setBlockFormat(lastBlockFormat);
+    append.endEditBlock();
+    m_renderedResult = text;
     // QTextCursor copies track insertions, so preserve numeric endpoints rather than a live cursor.
     QTextCursor selection(m_result->document());
     selection.setPosition(anchor);
     selection.setPosition(cursorPosition, QTextCursor::KeepAnchor);
     m_result->setTextCursor(selection);
     scroll->setValue(atBottom && !selection.hasSelection() ? scroll->maximum() : position);
+}
+
+void TranslationPageWidget::syncResultActions() {
+    const bool hasResult = !m_controller->resultText().isEmpty();
+    m_copy->setEnabled(hasResult);
+    m_copyClose->setEnabled(hasResult);
+    m_resultCopy->setEnabled(hasResult);
+    m_resultCopy->setVisible(hasResult);
+}
+
+void TranslationPageWidget::scheduleResultUpdate() {
+    if (!m_active) {
+        return;
+    }
+    // Copy uses the controller's latest text, including tokens awaiting the next visual update.
+    if (!m_copy->isEnabled()) {
+        syncResultActions();
+    }
+    if (!m_resultUpdate.isActive()) {
+        m_resultUpdate.start();
+    }
+}
+
+void TranslationPageWidget::flushResultUpdate() {
+    m_resultUpdate.stop();
+    updateResult(m_controller->resultText());
+    syncResultActions();
+    updateResultOverlays();
 }
 
 void TranslationPageWidget::syncState() {
@@ -385,21 +436,19 @@ void TranslationPageWidget::syncState() {
     m_selects[2]->setEnabled(!services.isEmpty() && !m_controller->loadingModels());
     m_swap->setEnabled(preferences.sourceLanguage != QStringLiteral("auto") &&
                        preferences.sourceLanguage != preferences.targetLanguage);
-    updateResult(m_controller->resultText());
-    const bool hasResult = !m_controller->resultText().isEmpty();
-    m_copy->setEnabled(hasResult);
-    m_copyHide->setEnabled(hasResult);
-    m_resultCopy->setEnabled(hasResult);
-    m_resultCopy->setVisible(hasResult);
+    // Lifecycle changes clear stale output or flush final/error output synchronously.
+    flushResultUpdate();
+    m_resultSpin->setSpinning(m_controller->translating());
+    m_resultSpin->setVisible(m_controller->translating());
     const QString error = m_controller->errorText();
     m_error->setText(error);
     m_error->setVisible(!error.isEmpty());
     m_retry->setEnabled(!m_controller->loadingModels() && !m_controller->translating());
     m_status->setText(m_controller->loadingModels() ? tr("Loading translation services…")
-                      : m_controller->translating() ? tr("Translating…")
                                                     : QString());
     m_status->setAccessibleName(m_status->text());
     m_status->setVisible(!m_status->text().isEmpty());
+    updateLayout();
 }
 
 void TranslationPageWidget::retranslateUi() {
@@ -414,7 +463,8 @@ void TranslationPageWidget::retranslateUi() {
     QVector<AdSelect::Option> targetOptions;
     for (const auto& language : translation::translationLanguages()) {
         const QString code = QString::fromLatin1(language.code);
-        const AdSelect::Option option{code, translation::translationLanguageName(code)};
+        const AdSelect::Option option{code, translation::translationLanguageName(code), false,
+                                      code.left(1).toUpper()};
         sourceOptions.push_back(option);
         targetOptions.push_back(option);
     }
@@ -425,13 +475,14 @@ void TranslationPageWidget::retranslateUi() {
     m_source->setAccessibleName(tr("Source text"));
     m_result->setPlaceholderText(tr("Translation appears here"));
     m_result->setAccessibleName(tr("Translated text"));
+    m_resultSpin->setAccessibleName(tr("Translating…"));
     m_swap->setAccessibleName(tr("Swap languages"));
     m_swap->setToolTip(tr("Swap languages"));
     m_floating->setAccessibleName(tr("Translation actions"));
     m_resultCopy->setAccessibleName(tr("Copy translated text"));
     m_resultCopy->setToolTip(tr("Copy translated text"));
     m_copy->setText(tr("Copy (Ctrl+C)"));
-    m_copyHide->setText(tr("Copy and Hide (Ctrl+Q)"));
+    m_copyClose->setText(tr("Copy and Close (Ctrl+Q)"));
     m_retry->setText(tr("Retry"));
     m_controller->setLocale(translation::LanguageManager::instance().currentLocale());
     syncState();
@@ -451,16 +502,14 @@ void TranslationPageWidget::applyTheme(const translation::styles::ThemeColorSche
     m_status->setFont(labelFont);
     m_status->setMinimumHeight(QFontMetrics(labelFont).height());
     const auto& metric = scheme.metricAlias;
-    // Keep the floating actions outside the scroll viewport, including when an error adds rows.
-    layout()->setContentsMargins(0, 0, 0, 40 + metric.padding);
     m_container->contentLayout()->setContentsMargins(metric.paddingLG, metric.paddingLG,
-                                                     metric.paddingLG, 0);
-    m_formLayout->setHorizontalSpacing(metric.paddingLG);
+                                                     metric.paddingLG, metric.paddingLG);
+    m_formLayout->setHorizontalSpacing(metric.paddingXXS);
     m_formLayout->setVerticalSpacing(metric.paddingSM);
     m_editorsLayout->setSpacing(metric.paddingLG);
     const int countHeight = m_source->sizeHint().height() - m_result->sizeHint().height();
     m_resultPane->layout()->setContentsMargins(0, 0, 0, std::max(0, countHeight));
-    m_floating->setFixedSize(40, 40);
+    m_floating->setFixedSize(32, 32);
     m_resultCopy->setFixedSize(32, 32);
     updateLayout();
 }
@@ -469,21 +518,36 @@ void TranslationPageWidget::updateLayout() {
     m_container->contentWidget()->setMinimumHeight(m_container->scrollArea()->viewport()->height());
     const auto margins = m_container->contentLayout()->contentsMargins();
     const int available = m_container->contentWidget()->width() - margins.left() - margins.right();
-    const int columns = available >= 560 ? 2 : 1;
-    if (columns != m_layoutColumns) {
-        m_layoutColumns = columns;
+    int formWidth = 3 * m_formLayout->horizontalSpacing();
+    for (auto* field : m_fields) {
+        field->layout()->invalidate();
+        formWidth += field->sizeHint().width();
+    }
+    const int formColumns = available >= formWidth ? 3 : 1;
+    if (formColumns != m_formColumns) {
+        m_formColumns = formColumns;
         for (auto* field : m_fields) {
             m_formLayout->removeWidget(field);
         }
-        for (int index = 0; index < 3; ++index) {
-            m_formLayout->setColumnStretch(index, columns == 2 ? 1 : 0);
-            m_formLayout->addWidget(m_fields[index], columns == 2 ? 0 : index,
-                                    columns == 2 ? index : 0);
+        for (int index = 0; index < 4; ++index) {
+            m_formLayout->setColumnStretch(index, 0);
         }
+        for (int index = 0; index < 3; ++index) {
+            m_formLayout->addWidget(m_fields[index], formColumns == 3 ? 0 : index,
+                                    formColumns == 3 ? (index == 2 ? 3 : index) : 0,
+                                    index == 2 ? Qt::AlignRight : Qt::Alignment{});
+        }
+        // Keep the languages together; put spare width before the service selector.
+        m_formLayout->setColumnStretch(formColumns == 3 ? 2 : 0, 1);
+    }
+    const int columns = available >= 560 ? 2 : 1;
+    if (columns != m_layoutColumns) {
+        m_layoutColumns = columns;
         m_editorsLayout->removeWidget(m_source);
         m_editorsLayout->removeWidget(m_resultPane);
-        m_editorsLayout->addWidget(m_source, 0, 0);
-        m_editorsLayout->addWidget(m_resultPane, columns == 2 ? 0 : 1, columns == 2 ? 1 : 0);
+        m_editorsLayout->addWidget(m_source, 0, 0, Qt::AlignTop);
+        m_editorsLayout->addWidget(m_resultPane, columns == 2 ? 0 : 1, columns == 2 ? 1 : 0,
+                                   Qt::AlignTop);
         m_editorsLayout->setColumnStretch(0, 1);
         m_editorsLayout->setColumnStretch(1, columns == 2 ? 1 : 0);
         m_editorsLayout->setRowStretch(0, 1);
@@ -496,9 +560,20 @@ void TranslationPageWidget::updateLayout() {
     m_status->setGeometry(margins.left(), m_floating->y(),
                           std::max(0, m_floating->x() - margins.left() - inset),
                           m_floating->height());
-    m_resultCopy->move(std::max(0, m_result->width() - m_resultCopy->width() - 12),
-                       std::max(0, m_result->height() - m_resultCopy->height() - 8));
+    updateResultOverlays();
+}
+
+void TranslationPageWidget::updateResultOverlays() {
+    // The editor can resize after its parent's layout pass; anchor overlays to its final geometry.
+    m_resultCopy->move(m_result->x() + std::max(0, m_result->width() - m_resultCopy->width() - 12),
+                       m_result->y() +
+                           std::max(0, m_result->height() - m_resultCopy->height() - 8));
     m_resultCopy->raise();
+    m_resultSpin->setFixedSize(m_resultSpin->sizeHint());
+    m_resultSpin->move(
+        m_result->x() + 12,
+        std::max(0, m_resultCopy->y() + (m_resultCopy->height() - m_resultSpin->height()) / 2));
+    m_resultSpin->raise();
 }
 
 void TranslationPageWidget::resizeEvent(QResizeEvent* event) {

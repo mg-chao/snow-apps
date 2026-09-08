@@ -9,6 +9,8 @@ members = [
     "crates/snow-capture-c",
     "crates/snow-ui-selector",
     "crates/snow-ui-selector-c",
+    "crates/snow-selected-text",
+    "crates/snow-selected-text-c",
     "crates/snow-stitch-images",
     "crates/snow-stitch-images-c",
     "crates/snow-ocr-process",

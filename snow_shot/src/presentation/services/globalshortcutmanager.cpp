@@ -26,7 +26,7 @@ namespace {
 constexpr int MAX_SHORTCUTS_PER_ACTION = 2;
 constexpr int FIRST_REGISTRATION_ID = 0x2200;
 constexpr int LAST_REGISTRATION_ID = 0xBFFF;
-constexpr std::size_t ACTION_COUNT = 13;
+constexpr std::size_t ACTION_COUNT = 14;
 
 constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::Screenshot,
@@ -42,6 +42,7 @@ constexpr std::array<GlobalShortcutAction, ACTION_COUNT> ALL_ACTIONS = {
     GlobalShortcutAction::OpenCaptureHistory,
     GlobalShortcutAction::OpenSettings,
     GlobalShortcutAction::PinClipboardContent,
+    GlobalShortcutAction::TranslateSelectedText,
 };
 
 int actionIndex(GlobalShortcutAction action) {
@@ -72,6 +73,8 @@ int actionIndex(GlobalShortcutAction action) {
         return 11;
     case GlobalShortcutAction::PinClipboardContent:
         return 12;
+    case GlobalShortcutAction::TranslateSelectedText:
+        return 13;
     }
     return 0;
 }
@@ -558,6 +561,8 @@ QStringList persistedShortcuts(const snow_shot::storage::ShortcutSettings& setti
         return settings.openSettings();
     case GlobalShortcutAction::PinClipboardContent:
         return settings.pinClipboardContent();
+    case GlobalShortcutAction::TranslateSelectedText:
+        return settings.translateSelectedText();
     }
     return {};
 }
@@ -591,6 +596,8 @@ bool persistShortcuts(const snow_shot::storage::ShortcutSettings& settings,
         return settings.setOpenSettings(shortcuts);
     case GlobalShortcutAction::PinClipboardContent:
         return settings.setPinClipboardContent(shortcuts);
+    case GlobalShortcutAction::TranslateSelectedText:
+        return settings.setTranslateSelectedText(shortcuts);
     }
     return false;
 }

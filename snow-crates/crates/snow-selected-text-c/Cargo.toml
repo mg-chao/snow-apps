@@ -1,0 +1,11 @@
+[package]
+name = "snow-selected-text-c"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+snow-selected-text = { path = "../snow-selected-text" }

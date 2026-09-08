@@ -336,6 +336,14 @@ bool ShortcutSettings::setOpenSettings(const QStringList& shortcuts) const {
     return setShortcutValue(QStringLiteral("global_shortcuts/open_settings"), shortcuts);
 }
 
+QStringList ShortcutSettings::translateSelectedText() const {
+    return shortcutValue(QStringLiteral("global_shortcuts/translate_selected_text"));
+}
+
+bool ShortcutSettings::setTranslateSelectedText(const QStringList& shortcuts) const {
+    return setShortcutValue(QStringLiteral("global_shortcuts/translate_selected_text"), shortcuts);
+}
+
 QStringList ShortcutSettings::pinClipboardContent() const {
     return shortcutValue(QStringLiteral("global_shortcuts/pin_clipboard_content"));
 }

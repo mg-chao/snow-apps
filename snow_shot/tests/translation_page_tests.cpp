@@ -14,13 +14,15 @@
 #include "widgets/button.h"
 #include "widgets/input_text_edit.h"
 #include "widgets/navigation_menu.h"
-#include "widgets/popover.h"
+#include "widgets/context_menu.h"
 #include "widgets/scroll_area.h"
 #include "widgets/select.h"
+#include "widgets/spin.h"
 #include "widgets/tabs.h"
 
 #include <QApplication>
 #include <QClipboard>
+#include <QCloseEvent>
 #include <QCursor>
 #include <QDir>
 #include <QDragEnterEvent>
@@ -50,12 +52,6 @@ namespace styles = snow_shot::presentation::styles;
 namespace {
 template <typename T> T* child(QObject& owner, const char* name) {
     auto* widget = owner.findChild<T*>(QString::fromLatin1(name));
-    if (widget == nullptr) {
-        if (auto* popup = owner.findChild<AdPopover*>();
-            popup != nullptr && popup->contentWidget()) {
-            widget = popup->contentWidget()->findChild<T*>(QString::fromLatin1(name));
-        }
-    }
     require(widget != nullptr, name);
     return widget;
 }
@@ -78,29 +74,169 @@ void snapshot(QWidget& window, const QString& name) {
     }
 }
 
+class CloseTrackingWindow final : public QWidget {
+  public:
+    int closeCount = 0;
+
+  protected:
+    void closeEvent(QCloseEvent* event) override {
+        ++closeCount;
+        QWidget::closeEvent(event);
+    }
+};
+
+void editorContentGeometry() {
+    Server server;
+    SnowShotApiClient client(server.url());
+    TranslationPageWidget page(nullptr, &client, 0);
+    page.deactivate();
+    page.resize(900, 650);
+    page.show();
+    flushEvents();
+    auto* source = child<AdTextEdit>(page, "translationSourceText");
+    auto* result = child<AdTextEdit>(page, "translationResultText");
+    for (auto* editor : {source, result}) {
+        const int baseline = editor->height();
+        require(baseline == editor->minimumSizeHint().height(),
+                "empty editor uses its minimum rows without filling spare page space");
+        editor->setPlainText(QStringLiteral("A line of text.\n").repeated(80));
+        waitUntil(
+            [&] {
+                return editor->height() > baseline && editor->verticalScrollBar()->maximum() == 0;
+            },
+            "multiline text expands the editor without internal scrolling");
+        editor->clear();
+        waitUntil([&] { return editor->height() == baseline; },
+                  "clearing text restores the minimum height");
+        editor->setPlainText(QString(4500, u'W'));
+        flushEvents();
+        const int wideHeight = editor->height();
+        page.resize(300, 650);
+        waitUntil(
+            [&] {
+                return editor->height() > wideHeight && editor->verticalScrollBar()->maximum() == 0;
+            },
+            "narrow layouts grow to fit wrapped text");
+        editor->clear();
+        page.resize(900, 650);
+        flushEvents();
+    }
+}
+
+void selectedTextHandoff() {
+    Server server;
+    SnowShotApiClient client(server.url());
+    TranslationPageWidget page(nullptr, &client, 0);
+    auto* source = child<AdTextEdit>(page, "translationSourceText");
+    auto* controller = page.findChild<snow_shot::presentation::TranslationPageController*>();
+    waitUntil([&]() { return !controller->loadingModels(); },
+              "load selected text translation models");
+    const auto preferences = controller->preferences();
+    const QString selected =
+        QString::fromUtf8("  selected \xe4\xb8\xad\xe6\x96\x87 \xf0\x9f\x8c\x8d\r\nsecond line  ");
+    controller->setComposing(true);
+    page.setSourceText(selected);
+    const QString normalized =
+        QString(selected).replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    require(source->toPlainText() == normalized && controller->sourceText() == normalized,
+            "handoff fills source and controller using the editor newline policy");
+    waitUntil([&]() { return server.streams.size() == 1; },
+              "handoff ends previous composition and automatically translates");
+    require(QJsonDocument(server.streams.first().body).toJson().contains("selected"),
+            "translation request contains captured source");
+    server.delta(0, QStringLiteral("old result"));
+    waitUntil([&]() { return controller->resultText() == QStringLiteral("old result"); },
+              "first request streams a result");
+    page.setSourceText(QStringLiteral("replacement"));
+    require(controller->resultText().isEmpty(), "replacing source clears obsolete translation");
+    server.delta(0, QStringLiteral("stale"));
+    waitUntil([&]() { return server.streams.size() == 2 && server.disconnected(0); },
+              "replacement cancels the old stream and starts one new translation");
+    server.delta(1, QStringLiteral("new result"));
+    waitUntil([&]() { return controller->resultText() == QStringLiteral("new result"); },
+              "cancelled request cannot replace the new result");
+    page.setSourceText(QStringLiteral("replacement"));
+    flushEvents();
+    require(server.streams.size() == 2 &&
+                controller->resultText() == QStringLiteral("new result") &&
+                controller->preferences().sourceLanguage == preferences.sourceLanguage &&
+                controller->preferences().targetLanguage == preferences.targetLanguage &&
+                controller->preferences().modelId == preferences.modelId,
+            "identical handoff is a no-op and language/model preferences are preserved");
+    const QString boundary = QString(4999, u'a') + QString::fromUcs4(U"\U0001f30d");
+    page.setSourceText(boundary + QStringLiteral("overflow"));
+    require(source->toPlainText() == boundary && controller->sourceText() == boundary,
+            "selected text observes the same 5000-code-point limit as pasted text");
+    page.deactivate();
+    page.setSourceText(QStringLiteral("late"));
+    require(controller->sourceText().isEmpty(), "deactivated page rejects a late handoff");
+}
+
+void selectedTextNavigation() {
+    Server server;
+    qputenv("SNOW_SHOT_API_BASE_URL", server.url().toUtf8());
+    snow_shot::presentation::GlobalShortcutManager shortcuts;
+    settings::BuiltInSettingsBackend backend(shortcuts);
+    settings::SettingsRuntimeSession runtime(settings::builtInSettingsRegistry(), backend);
+    MainWindow window(settings::builtInSettingsRegistry(), runtime);
+    window.setAttribute(Qt::WA_DeleteOnClose, false);
+    auto* card = window.findChild<ContentCardWidget*>();
+    auto* sidebar = window.findChild<SidebarWidget*>();
+    window.showTranslation(QStringLiteral("first selection"));
+    auto* page = window.findChild<TranslationPageWidget*>();
+    require(window.isVisible() && page != nullptr &&
+                sidebar->currentRoute() == QStringLiteral("/tools/translation") &&
+                card->currentRoute() == QStringLiteral("/tools/translation") &&
+                child<AdTextEdit>(*page, "translationSourceText")->toPlainText() ==
+                    QStringLiteral("first selection"),
+            "hidden main window opens Translation and synchronizes navigation and source");
+    window.showMinimized();
+    window.showTranslation(QStringLiteral("second selection"));
+    require(!window.isMinimized() && window.findChild<TranslationPageWidget*>() == page &&
+                child<AdTextEdit>(*page, "translationSourceText")->toPlainText() ==
+                    QStringLiteral("second selection"),
+            "handoff restores minimized window and reuses an active translation page");
+    card->setCurrentRoute(QStringLiteral("/global-hotkeys"));
+    flushEvents();
+    window.hide();
+    window.showTranslation(QStringLiteral("third selection"));
+    page = window.findChild<TranslationPageWidget*>();
+    require(window.isVisible() && page != nullptr &&
+                child<AdTextEdit>(*page, "translationSourceText")->toPlainText() ==
+                    QStringLiteral("third selection"),
+            "handoff creates a new translation page after navigation disposed the previous one");
+    window.close();
+    qunsetenv("SNOW_SHOT_API_BASE_URL");
+}
+
 void editorAndShortcutBehavior() {
     Server server;
     SnowShotApiClient client(server.url());
-    QWidget owner;
+    CloseTrackingWindow owner;
     owner.resize(700, 650);
     auto* page = new TranslationPageWidget(&owner, &client, 0);
     page->setGeometry(owner.rect());
-    QObject::connect(page, &TranslationPageWidget::hideWindowRequested, &owner, &QWidget::hide);
+    QObject::connect(page, &TranslationPageWidget::closeWindowRequested, &owner, &QWidget::close);
     owner.show();
     auto* source = child<AdTextEdit>(*page, "translationSourceText");
     auto* result = child<AdTextEdit>(*page, "translationResultText");
-    auto* copy = child<AdButton>(*page, "translationCopy");
-    auto* copyHide = child<AdButton>(*page, "translationCopyAndHide");
+    auto* spin = child<AdSpin>(*page, "translationResultSpin");
+    require(!spin->spinning() && spin->isHidden(), "idle translation has no loading indicator");
+    auto* copy = child<QAction>(*page, "translationCopy");
+    auto* copyClose = child<QAction>(*page, "translationCopyAndClose");
     auto* floating = child<AdButton>(*page, "translationActions");
-    auto* popover = child<AdPopover>(*page, "translationActionsPopover");
+    auto* menu = child<AdContextMenu>(*page, "translationActionsMenu");
+    require(!menu->actionIcon(copy).isValid() && !menu->actionIcon(copyClose).isValid(),
+            "translation menu actions have no leading icons");
     auto* controller = page->findChild<snow_shot::presentation::TranslationPageController*>();
     require(controller != nullptr && result->isReadOnly() && !copy->isEnabled() &&
                 !child<AdButton>(*page, "translationResultCopy")->isEnabled(),
             "empty page has read-only result and disabled copy actions");
     QApplication::clipboard()->setText(QStringLiteral("sentinel"));
     key(source, Qt::Key_Q, Qt::ControlModifier);
-    require(owner.isVisible() && QApplication::clipboard()->text() == QStringLiteral("sentinel"),
-            "empty Copy and Hide leaves clipboard and window intact");
+    require(owner.closeCount == 0 && owner.isVisible() &&
+                QApplication::clipboard()->text() == QStringLiteral("sentinel"),
+            "empty Copy and Close leaves clipboard and window intact");
 
     const QString emoji = QString::fromUcs4(U"😀");
     const QString boundary = QString(4999, u'a') + emoji;
@@ -136,10 +272,13 @@ void editorAndShortcutBehavior() {
     require(source->toPlainText() == boundary, "drop obeys the Unicode limit");
     source->setPlainText(QStringLiteral("Hello, world!"));
     waitUntil([&]() { return server.streams.size() == 1; }, "source starts one translation");
+    require(spin->spinning() && spin->isVisible(),
+            "Spin appears while waiting for the first token");
     server.delta(0, QStringLiteral("你好，"));
     waitUntil([&]() { return result->toPlainText() == QStringLiteral("你好，"); },
               "show partial result");
-    require(copy->isEnabled() && copyHide->isEnabled(), "partial results are copyable");
+    require(copy->isEnabled() && copyClose->isEnabled(), "partial results are copyable");
+    require(spin->spinning() && spin->isVisible(), "Spin stays visible while tokens stream");
     source->setFocus();
     source->selectAll();
     key(source, Qt::Key_C, Qt::ControlModifier);
@@ -164,38 +303,67 @@ void editorAndShortcutBehavior() {
             "streaming preserves output selection");
     key(result, Qt::Key_C, Qt::ControlModifier);
     require(QApplication::clipboard()->text() == selected, "Ctrl+C copies the selected output");
-    copy->click();
+    copy->trigger();
     require(QApplication::clipboard()->text() == result->toPlainText(),
             "floating Copy always copies the whole result despite a selection");
 
-    popover->setHoverOpenDelayMs(0);
-    popover->setHoverCloseDelayMs(0);
     const QPointF local = floating->rect().center();
     QCursor::setPos(floating->mapToGlobal(local.toPoint()));
     QEnterEvent hover(local, local, floating->mapToGlobal(local.toPoint()));
     QApplication::sendEvent(floating, &hover);
-    waitUntil([&]() { return popover->isVisible(); }, "hover reveals actions");
+    waitUntil([&]() { return menu->isVisible(); }, "hover reveals actions");
+    require(menu->geometry().bottom() < floating->mapToGlobal(QPoint()).y(),
+            "translation actions open above the floating trigger");
+    require(menu->triggerWidget() == floating && menu->actions().size() == 2,
+            "translation uses the shared two-action context menu");
     QEvent leave(QEvent::Leave);
     QApplication::sendEvent(floating, &leave);
-    QCursor::setPos(copy->mapToGlobal(QPoint(5, 5)));
-    QEnterEvent actionHover(QPointF(5, 5), QPointF(5, 5), copy->mapToGlobal(QPoint(5, 5)));
-    QApplication::sendEvent(copy, &actionHover);
+    QCursor::setPos(menu->mapToGlobal(menu->actionGeometry(copy).center()));
+    QEnterEvent actionHover(QPointF(5, 5), QPointF(5, 5),
+                            menu->mapToGlobal(menu->actionGeometry(copy).center()));
+    QApplication::sendEvent(menu, &actionHover);
     flushEvents();
-    require(popover->isVisible(), "pointer can travel from floating button to action");
-    key(copy, Qt::Key_Escape);
-    require(!popover->isVisible(), "Escape dismisses the action popup");
+    require(menu->isVisible(), "pointer can travel from floating button to action");
+    key(menu, Qt::Key_Escape);
+    require(!menu->isVisible() && floating->hasFocus(),
+            "Escape dismisses the action popup and restores trigger focus");
+    QCursor::setPos(owner.mapToGlobal(QPoint(2, 2)));
+    flushEvents();
     key(floating, Qt::Key_Return);
-    require(popover->isVisible(), "keyboard activation reveals actions");
-    key(copy, Qt::Key_Escape);
+    require(menu->isVisible() && menu->activeAction() == copy,
+            "keyboard activation reveals actions and selects Copy");
+    QApplication::sendEvent(menu, &leave);
+    QEventLoop settle;
+    QTimer::singleShot(200, &settle, &QEventLoop::quit);
+    settle.exec();
+    require(menu->isVisible(), "keyboard navigation does not require pointer hover");
+    key(menu, Qt::Key_Escape);
     key(floating, Qt::Key_Space);
-    require(popover->isVisible(), "Space also reveals the actions");
+    require(menu->isVisible(), "Space also reveals the actions");
     QApplication::clipboard()->setText(QStringLiteral("before keyboard action"));
-    key(copy, Qt::Key_Return);
-    require(!popover->isVisible() && QApplication::clipboard()->text() == result->toPlainText(),
+    key(menu, Qt::Key_Return);
+    require(!menu->isVisible() && QApplication::clipboard()->text() == result->toPlainText(),
             "Enter activates a focused popup action");
+    floating->click();
+    require(menu->isVisible(), "click opens the same action menu");
+    key(menu, Qt::Key_C, Qt::ControlModifier);
+    require(!menu->isVisible() && QApplication::clipboard()->text() == result->toPlainText(),
+            "Ctrl+C works while the context menu owns focus");
+    floating->click();
+    owner.hide();
+    require(!menu->isVisible(), "hiding the owner dismisses the action menu");
+    owner.show();
+    const int shortResultHeight = result->height();
     server.delta(0, QStringLiteral("\nA line of translated text.").repeated(80));
-    waitUntil([&]() { return result->verticalScrollBar()->maximum() > 0; },
-              "long results can scroll inside their pane");
+    waitUntil(
+        [&]() {
+            return result->height() > shortResultHeight &&
+                   result->verticalScrollBar()->maximum() == 0;
+        },
+        "long results grow without internal scrolling");
+    auto* pageScroll = page->findChild<AdScrollArea*>();
+    waitUntil([&] { return pageScroll->verticalScrollBar()->maximum() > 0; },
+              "long translations scroll at page level");
     cursor = result->textCursor();
     cursor.clearSelection();
     result->setTextCursor(cursor);
@@ -206,19 +374,134 @@ void editorAndShortcutBehavior() {
     require(result->verticalScrollBar()->value() == 0,
             "streaming does not scroll away from the reader");
     key(source, Qt::Key_Q, Qt::ControlModifier);
-    require(!owner.isVisible() && QApplication::clipboard()->text() == result->toPlainText(),
-            "Ctrl+Q copies the partial result and hides the owning window");
+    require(owner.closeCount == 1 && !owner.isVisible() &&
+                QApplication::clipboard()->text() == result->toPlainText(),
+            "Ctrl+Q copies the partial result and closes the owning window");
     server.finish(0);
     waitUntil([&]() { return !controller->translating(); }, "hidden page finishes its stream");
+    require(!spin->spinning() && spin->isHidden(), "completion stops and hides Spin");
     owner.show();
     require(!source->toPlainText().isEmpty() && !result->toPlainText().isEmpty(),
-            "hide and reopen retains the same page draft");
+            "non-deleting test owner retains its draft after closing");
+    floating->click();
+    require(menu->isVisible(), "actions reopen before deactivation");
     page->deactivate();
+    require(!menu->isVisible(), "deactivation dismisses the action menu");
     source->setPlainText(QStringLiteral("after deactivation"));
     QApplication::clipboard()->setText(QStringLiteral("untouched"));
     key(source, Qt::Key_Q, Qt::ControlModifier);
     require(owner.isVisible() && QApplication::clipboard()->text() == QStringLiteral("untouched"),
             "inactive page cannot execute translation shortcuts");
+}
+
+void languageDropdowns() {
+    Server server;
+    SnowShotApiClient client(server.url());
+    TranslationPageWidget page(nullptr, &client, 0);
+    page.deactivate();
+    page.resize(900, 650);
+    page.show();
+    flushEvents();
+    for (const char* name : {"translationSourceLanguage", "translationTargetLanguage"}) {
+        auto* select = child<AdSelect>(page, name);
+        require(select->popupLayerMode() == AdSelect::PopupLayerMode::QtTool,
+                "language dropdowns use the screenshot settings tool layer");
+        for (const auto& option : select->options()) {
+            const QString code = option.value.toString();
+            require(option.group ==
+                        (code == QStringLiteral("auto") ? QString() : code.left(1).toUpper()),
+                    "languages use code-initial groups with auto-detect outside the groups");
+        }
+        select->setPopupVisible(true);
+        flushEvents();
+        QWidget* popup = nullptr;
+        for (auto* widget : QApplication::topLevelWidgets()) {
+            if (widget->objectName() == QStringLiteral("adselect-popup") && widget->isVisible()) {
+                popup = widget;
+                break;
+            }
+        }
+        require(popup != nullptr && popup->windowType() == Qt::Tool,
+                "opening a language dropdown displays a separate tool window");
+        select->setPopupVisible(false);
+        flushEvents();
+        require(!popup->isVisible(), "closing the language dropdown hides its tool window");
+    }
+}
+
+void selectorContentGeometry() {
+    AdSelect sizing;
+    sizing.setOptions({{QStringLiteral("en"), QStringLiteral("English")},
+                       {QStringLiteral("zh"), QStringLiteral("Simplified Chinese")}});
+    sizing.setCurrentValue(QStringLiteral("en"));
+    const QSize fixedHint = sizing.sizeHint();
+    sizing.setCurrentValue(QStringLiteral("zh"));
+    require(sizing.sizeHint() == fixedHint, "default Select sizing remains compatible");
+    sizing.setSizeAdjustPolicy(AdSelect::SizeAdjustPolicy::AdjustToCurrentText);
+    const int longHint = sizing.sizeHint().width();
+    sizing.setCurrentValue(QStringLiteral("en"));
+    require(sizing.sizeHint().width() < longHint, "content policy measures the selected label");
+    const int unprefixed = sizing.sizeHint().width();
+    sizing.setPrefixText(QStringLiteral("Language"));
+    require(sizing.sizeHint().width() > unprefixed, "content sizing includes a visible prefix");
+    sizing.setPrefixText({});
+    require(sizing.sizeHint().width() == unprefixed, "removing prefix releases its width");
+    sizing.setCurrentValue({});
+    sizing.setPlaceholder(QStringLiteral("Choose"));
+    const int placeholderWidth = sizing.sizeHint().width();
+    sizing.setPlaceholder(QStringLiteral("Choose a translation language"));
+    require(sizing.sizeHint().width() > placeholderWidth, "empty select measures its placeholder");
+    sizing.setMode(AdSelect::Mode::Multiple);
+    require(sizing.sizeHint().width() == fixedHint.width(),
+            "multiple selection keeps wrapping sizing");
+
+    Server server;
+    SnowShotApiClient client(server.url());
+    TranslationPageWidget page(nullptr, &client, 0);
+    page.resize(1100, 650);
+    page.show();
+    auto* controller = page.findChild<snow_shot::presentation::TranslationPageController*>();
+    waitUntil([&]() { return !controller->loadingModels(); }, "load selector geometry fixture");
+    auto* scroll = page.findChild<AdScrollArea*>();
+    require(scroll->viewport()->mapTo(&page, scroll->viewport()->rect().bottomLeft()).y() ==
+                page.rect().bottom(),
+            "floating shortcuts do not reserve a footer below the scroll viewport");
+    auto* target = child<AdSelect>(page, "translationTargetLanguage");
+    auto* swap = child<AdButton>(page, "translationSwap");
+    target->setCurrentValue(QStringLiteral("en"));
+    flushEvents();
+    flushEvents();
+    const int shortWidth = target->width();
+    const int gap =
+        target->mapTo(&page, QPoint()).x() - swap->mapTo(&page, QPoint(swap->width(), 0)).x();
+    target->setCurrentValue(QStringLiteral("zh-Hans"));
+    flushEvents();
+    flushEvents();
+    require(target->width() > shortWidth, "selector grows to fit a longer selected label");
+    require(gap >= 0 &&
+                gap <= styles::ThemeManager::instance().themeColorScheme().metricAlias.paddingXXS,
+            "target language follows the swap button without unused column space");
+    target->setCurrentValue(QStringLiteral("en"));
+    flushEvents();
+    flushEvents();
+    require(target->width() == shortWidth, "selector shrinks when returning to a shorter label");
+    for (const char* name :
+         {"translationSourceLanguage", "translationTargetLanguage", "translationService"}) {
+        auto* select = child<AdSelect>(page, name);
+        require(select->width() == select->sizeHint().width(),
+                "all translation selectors use their content width");
+    }
+    auto* service = child<AdSelect>(page, "translationService");
+    auto* result = child<AdTextEdit>(page, "translationResultText");
+    require(service->mapTo(&page, QPoint(service->width(), 0)).x() ==
+                result->mapTo(&page, QPoint(result->width(), 0)).x(),
+            "translation service aligns with the right edge of the result pane");
+    page.resize(320, 650);
+    flushEvents();
+    flushEvents();
+    auto* source = child<AdSelect>(page, "translationSourceLanguage");
+    require(source->mapTo(&page, QPoint()).x() == target->mapTo(&page, QPoint()).x(),
+            "stacked source and target selectors share the same left edge");
 }
 
 void navigationThemesLanguagesAndGeometry() {
@@ -244,8 +527,8 @@ void navigationThemesLanguagesAndGeometry() {
         }
     }
     require(translationRow > 0 && model->index(translationRow - 1, 0).data(role).toString() ==
-                                      QStringLiteral("/global-mouse"),
-            "Translation follows Global mouse in navigation");
+                                      QStringLiteral("/history"),
+            "Translation follows Screenshot history in navigation");
     card->setCurrentRoute(QStringLiteral("/tools/translation"));
     auto* page = window.findChild<TranslationPageWidget*>();
     require(page != nullptr && card->currentSections().isEmpty() &&
@@ -273,9 +556,10 @@ void navigationThemesLanguagesAndGeometry() {
                         "load complete translation catalog");
                 QCoreApplication::installTranslator(&translator);
                 flushEvents();
-                require(child<AdButton>(*page, "translationCopyAndHide")->text() ==
-                            translator.translate("TranslationPageWidget", "Copy and Hide (Ctrl+Q)"),
-                        "floating actions retranslate immediately");
+                require(
+                    child<QAction>(*page, "translationCopyAndClose")->text() ==
+                        translator.translate("TranslationPageWidget", "Copy and Close (Ctrl+Q)"),
+                    "floating actions retranslate immediately");
                 for (const bool collapsed : {false, true}) {
                     sidebar->setCollapsed(collapsed);
                     for (const QSize size : {QSize(900, 556), QSize(512, 316), QSize(1200, 900)}) {
@@ -290,20 +574,44 @@ void navigationThemesLanguagesAndGeometry() {
                                 "floating action remains within the visible page");
                         const QRect viewportGeometry(scroll->viewport()->mapTo(page, QPoint()),
                                                      scroll->viewport()->size());
-                        require(!viewportGeometry.intersects(floating->geometry()),
-                                "floating actions never cover scrolled text or inline controls");
+                        require(viewportGeometry.contains(floating->geometry()) &&
+                                    viewportGeometry.bottom() == page->rect().bottom(),
+                                "shortcut button floats over a viewport that fills the page");
+                        require(floating->size() == QSize(32, 32),
+                                "shortcut button uses the smaller 32-pixel size");
+                        require(page->childAt(floating->geometry().center()) == floating,
+                                "shortcut button stays above the scrolling content");
+                        const auto* inlineCopy = child<AdButton>(*page, "translationResultCopy");
                         require(source->width() > 100 && result->width() > 100,
                                 "both text panes remain usable at minimum window size");
+                        const auto* spin = child<AdSpin>(*page, "translationResultSpin");
+                        require(spin->spinning() == controller->translating() &&
+                                    spin->isHidden() != controller->translating(),
+                                "Spin follows translation state across theme and layout changes");
+                        if (controller->translating()) {
+                            const QRect spinRect(spin->pos() - result->pos(), spin->size());
+                            const auto* copy = child<AdButton>(*page, "translationResultCopy");
+                            const QRect copyRect(copy->pos() - result->pos(), copy->size());
+                            if (!result->rect().contains(spinRect)) {
+                                std::cerr << "Spin outside result: locale=" << locale.toStdString()
+                                          << " window=" << size.width() << 'x' << size.height()
+                                          << " result=" << result->width() << 'x'
+                                          << result->height() << " spin=" << spinRect.x() << ','
+                                          << spinRect.y() << ' ' << spinRect.width() << 'x'
+                                          << spinRect.height() << '\n';
+                            }
+                            require(result->rect().contains(spinRect) &&
+                                        spinRect.center().x() < result->width() / 2 &&
+                                        spinRect.center().y() > result->height() / 2,
+                                    "Spin overlays the lower-left corner of the result");
+                            require(copy->isHidden() || !spinRect.intersects(copyRect),
+                                    "streaming Spin leaves the inline copy button reachable");
+                        }
                         require(source->height() >= source->minimumSizeHint().height() &&
                                     result->height() >= result->minimumSizeHint().height() &&
-                                    source->height() > 200,
-                                "editor geometry retains its twelve-row baseline after updates");
-                        if (source->mapTo(page, QPoint()).y() ==
-                            result->mapTo(page, QPoint()).y()) {
-                            require(std::abs(source->viewport()->height() -
-                                             result->viewport()->height()) <= 2,
-                                    "source and result editing surfaces have matching heights");
-                        }
+                                    source->minimumVisibleRows() == 10 &&
+                                    result->minimumVisibleRows() == 10,
+                                "editor geometry retains its 10-row baseline after updates");
                         const QString snapshotName =
                             (state == QStringLiteral("completed")
                                  ? QStringLiteral("translation-")
@@ -321,14 +629,16 @@ void navigationThemesLanguagesAndGeometry() {
                                 scroll->verticalScrollBar()->maximum());
                             flushEvents();
                             if (!result->toPlainText().isEmpty()) {
-                                const auto* inlineCopy =
-                                    child<AdButton>(*page, "translationResultCopy");
                                 const QRect copyGeometry(
                                     inlineCopy->mapTo(scroll->viewport(), QPoint()),
                                     inlineCopy->size());
                                 require(scroll->viewport()->rect().contains(copyGeometry),
                                         "scrolling to the bottom makes the inline copy fully "
                                         "reachable");
+                                require(
+                                    !QRect(inlineCopy->mapTo(page, QPoint()), inlineCopy->size())
+                                         .intersects(floating->geometry()),
+                                    "shortcut overlay does not cover copy after scrolling");
                             }
                             snapshot(window, snapshotName + QStringLiteral("-scrolled"));
                             scroll->verticalScrollBar()->setValue(0);
@@ -360,15 +670,14 @@ void navigationThemesLanguagesAndGeometry() {
               "main-window error presentation");
     snapshot(window, QStringLiteral("translation-error"));
     const auto* actions = child<AdButton>(*page, "translationActions");
-    const QRect footer(page->mapTo(&window, QPoint(0, actions->y())),
-                       QSize(page->width(), page->height() - actions->y()));
+    const QRect actionGeometry = actions->geometry();
     source->clearFocus();
     flushEvents();
-    const QImage unfocusedFooter = window.grab(footer).toImage();
     source->setFocus();
     flushEvents();
-    require(window.grab(footer).toImage() == unfocusedFooter,
-            "editor focus effects remain clipped to the scroll viewport");
+    require(actions->geometry() == actionGeometry &&
+                page->childAt(actionGeometry.center()) == actions,
+            "focusing the editor leaves the shortcut overlay fixed and reachable");
     inspectVariants(QStringLiteral("error"));
     child<AdButton>(*page, "translationResultCopy")->click();
     require(QApplication::clipboard()->text() == result->toPlainText() &&
@@ -380,9 +689,8 @@ void navigationThemesLanguagesAndGeometry() {
     server.finish(1);
     waitUntil([&]() { return !controller->translating(); }, "main-window completed result");
     const QString originalResult = result->toPlainText();
-    child<AdButton>(*page, "translationCopyAndHide")->click();
-    require(!window.isVisible() && QApplication::clipboard()->text() == originalResult,
-            "main window forwards the page's Copy and Hide request");
+    window.hide();
+    require(!window.isVisible(), "ordinary hiding leaves the main window available");
     window.showAndActivate();
     require(result->toPlainText() == originalResult, "main-window reopening retains the draft");
     inspectVariants(QStringLiteral("completed"));
@@ -397,16 +705,32 @@ void navigationThemesLanguagesAndGeometry() {
                 child<AdTextEdit>(*page, "translationSourceText")->toPlainText().isEmpty(),
             "returning to Translation starts an empty draft");
     window.hide();
-    QPointer<MainWindow> closing = new MainWindow(settings::builtInSettingsRegistry(), runtime);
-    closing->show();
-    closing->findChild<ContentCardWidget*>()->setCurrentRoute(QStringLiteral("/tools/translation"));
-    QPointer<TranslationPageWidget> closingPage = closing->findChild<TranslationPageWidget*>();
-    require(closingPage != nullptr, "closing window owns a translation page");
-    child<AdTextEdit>(*closingPage, "translationSourceText")
-        ->setPlainText(QStringLiteral("Discard me"));
-    closing->close();
-    flushEvents();
-    require(closing.isNull() && closingPage.isNull(), "closing the main window destroys its draft");
+    for (const bool useShortcut : {false, true}) {
+        QPointer<MainWindow> closing = new MainWindow(settings::builtInSettingsRegistry(), runtime);
+        closing->show();
+        closing->findChild<ContentCardWidget*>()->setCurrentRoute(
+            QStringLiteral("/tools/translation"));
+        QPointer<TranslationPageWidget> closingPage = closing->findChild<TranslationPageWidget*>();
+        require(closingPage != nullptr, "closing window owns a translation page");
+        auto* closingSource = child<AdTextEdit>(*closingPage, "translationSourceText");
+        auto* closingResult = child<AdTextEdit>(*closingPage, "translationResultText");
+        const int streamIndex = static_cast<int>(server.streams.size());
+        closingSource->setPlainText(QStringLiteral("Discard me"));
+        waitUntil([&] { return server.streams.size() == streamIndex + 1; },
+                  "start translation in the window to close");
+        server.delta(streamIndex, QStringLiteral("Copied before closing"));
+        waitUntil([&] { return !closingResult->toPlainText().isEmpty(); },
+                  "receive a partial translation before closing");
+        if (useShortcut)
+            key(closingSource, Qt::Key_Q, Qt::ControlModifier);
+        else
+            child<QAction>(*closingPage, "translationCopyAndClose")->trigger();
+        flushEvents();
+        require(
+            closing.isNull() && closingPage.isNull() &&
+                QApplication::clipboard()->text() == QStringLiteral("Copied before closing"),
+            "Copy and Close and Ctrl+Q copy the result and destroy the current window and draft");
+    }
     qunsetenv("SNOW_SHOT_API_BASE_URL");
 }
 
@@ -419,7 +743,7 @@ void nativeWindowInteraction() {
     owner.resize(800, 650);
     auto* page = new TranslationPageWidget(&owner, &client, 0);
     page->setGeometry(owner.rect());
-    QObject::connect(page, &TranslationPageWidget::hideWindowRequested, &owner, &QWidget::hide);
+    QObject::connect(page, &TranslationPageWidget::closeWindowRequested, &owner, &QWidget::close);
     // This native scenario exercises mouse and copy shortcuts. Do not inherit an unfinished
     // composition from the user's active Windows IME when the test takes foreground focus.
     auto* source = child<AdTextEdit>(*page, "translationSourceText");
@@ -450,12 +774,12 @@ void nativeWindowInteraction() {
     waitUntil([&]() { return !result->toPlainText().isEmpty(); },
               "native page displays streamed text");
     auto* floating = child<AdButton>(*page, "translationActions");
-    auto* popover = child<AdPopover>(*page, "translationActionsPopover");
+    auto* menu = child<AdContextMenu>(*page, "translationActionsMenu");
     QCursor::setPos(floating->mapToGlobal(floating->rect().center()));
-    waitUntil([&]() { return popover->isVisible(); }, "native pointer hover opens the popup");
+    waitUntil([&]() { return menu->isVisible(); }, "native pointer hover opens the popup");
     snapshot(owner, QStringLiteral("translation-native-hover"));
-    auto nativeClick = [](QWidget* widget) {
-        QCursor::setPos(widget->mapToGlobal(widget->rect().center()));
+    auto nativeClick = [menu](QAction* action) {
+        QCursor::setPos(menu->mapToGlobal(menu->actionGeometry(action).center()));
         flushEvents();
         INPUT input[2]{};
         input[0].type = INPUT_MOUSE;
@@ -479,7 +803,7 @@ void nativeWindowInteraction() {
         require(SendInput(4, input, sizeof(INPUT)) == 4, "send native copy shortcut");
     };
     QApplication::clipboard()->setText(QStringLiteral("before native copy"));
-    nativeClick(child<AdButton>(*page, "translationCopy"));
+    nativeClick(child<QAction>(*page, "translationCopy"));
     waitUntil([&]() { return QApplication::clipboard()->text() == result->toPlainText(); },
               "native hover action copies the partial translation");
     source->setFocus();
@@ -494,7 +818,7 @@ void nativeWindowInteraction() {
     waitUntil([&]() { return QApplication::clipboard()->text() == result->toPlainText(); },
               "native Ctrl+C falls back to translation");
     nativeCopy('Q');
-    waitUntil([&]() { return !owner.isVisible(); }, "native Ctrl+Q hides the window");
+    waitUntil([&]() { return !owner.isVisible(); }, "native Ctrl+Q closes the window");
     server.finish(0);
     owner.show();
     owner.raise();
@@ -503,9 +827,10 @@ void nativeWindowInteraction() {
     QCursor::setPos(owner.mapToGlobal(QPoint(8, 8)));
     flushEvents();
     QCursor::setPos(floating->mapToGlobal(floating->rect().center()));
-    waitUntil([&]() { return popover->isVisible(); }, "native hover works after hide and reopen");
-    nativeClick(child<AdButton>(*page, "translationCopyAndHide"));
-    waitUntil([&]() { return !owner.isVisible(); }, "native Copy and Hide action hides the window");
+    waitUntil([&]() { return menu->isVisible(); }, "native hover works after hide and reopen");
+    nativeClick(child<QAction>(*page, "translationCopyAndClose"));
+    waitUntil([&]() { return !owner.isVisible(); },
+              "native Copy and Close action closes the window");
 }
 #endif
 } // namespace
@@ -528,12 +853,22 @@ int main(int argc, char** argv) {
     require(storage.initialize({directory.path(), directory.path(), 60000}).success,
             "initialize isolated translation-page storage");
     styles::ThemeManager::instance().initialize(app);
+    if (app.arguments().contains(QStringLiteral("--language-dropdowns"))) {
+        languageDropdowns();
+        storage.shutdown();
+        return 0;
+    }
 #ifdef Q_OS_WIN
     if (app.arguments().contains(QStringLiteral("--native-interaction"))) {
         nativeWindowInteraction();
     } else
 #endif
     {
+        selectedTextHandoff();
+        selectedTextNavigation();
+        editorContentGeometry();
+        languageDropdowns();
+        selectorContentGeometry();
         editorAndShortcutBehavior();
         navigationThemesLanguagesAndGeometry();
     }

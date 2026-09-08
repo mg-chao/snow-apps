@@ -201,7 +201,7 @@ void MainWindow::buildUi() {
             });
     connect(m_contentCard, &ContentCardWidget::screenshotRequested, this,
             &MainWindow::screenshotRequested);
-    connect(m_contentCard, &ContentCardWidget::hideWindowRequested, this, &QWidget::hide);
+    connect(m_contentCard, &ContentCardWidget::closeWindowRequested, this, &QWidget::close);
     connect(m_contentCard, &ContentCardWidget::quickActionRequested, this,
             &MainWindow::quickActionRequested);
     connect(m_contentCard, &ContentCardWidget::globalMouseDragRequested, this,
@@ -218,6 +218,13 @@ void MainWindow::showInterfaceSettings() {
         m_contentCard->showInterfaceSettings();
     }
 
+    showAndActivate();
+}
+
+void MainWindow::showTranslation(const QString& text) {
+    if (m_contentCard != nullptr) {
+        m_contentCard->showTranslation(text);
+    }
     showAndActivate();
 }
 

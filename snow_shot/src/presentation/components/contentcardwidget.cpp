@@ -130,8 +130,8 @@ QWidget* ContentCardWidget::createPage(
     } else if (definition.kind ==
                snow_shot::presentation::settings::SettingsPageKind::Translation) {
         auto* translationPage = new TranslationPageWidget(m_stack);
-        connect(translationPage, &TranslationPageWidget::hideWindowRequested, this,
-                &ContentCardWidget::hideWindowRequested);
+        connect(translationPage, &TranslationPageWidget::closeWindowRequested, this,
+                &ContentCardWidget::closeWindowRequested);
         page = translationPage;
     } else if (definition.kind == snow_shot::presentation::settings::SettingsPageKind::About) {
         page = new AboutPageWidget(m_stack);
@@ -196,6 +196,13 @@ void ContentCardWidget::destroyActivePage() {
     m_activePageId.clear();
     page->setParent(nullptr);
     page->deleteLater();
+}
+
+void ContentCardWidget::showTranslation(const QString& text) {
+    setCurrentRoute(QStringLiteral("/tools/translation"));
+    if (auto* page = qobject_cast<TranslationPageWidget*>(m_activePage.data())) {
+        page->setSourceText(text);
+    }
 }
 
 void ContentCardWidget::showInterfaceSettings() {

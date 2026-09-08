@@ -958,12 +958,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "snow-selected-text"
+version = "0.1.0"
+dependencies = [
+ "windows",
+]
+
+[[package]]
+name = "snow-selected-text-c"
+version = "0.1.0"
+dependencies = [
+ "snow-selected-text",
+]
+
+[[package]]
 name = "snow-shot-rust-ffi"
 version = "0.1.0"
 dependencies = [
  "snow-capture-c",
  "snow-diagnostics",
  "snow-draw-engine-c",
+ "snow-selected-text-c",
  "snow-stitch-images-c",
  "snow-ui-selector-c",
 ]

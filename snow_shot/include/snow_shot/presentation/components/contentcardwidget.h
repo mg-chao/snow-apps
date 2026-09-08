@@ -36,11 +36,12 @@ class ContentCardWidget final : public QFrame {
     void activateSection(const QString& sectionId);
     void navigateTo(const snow_shot::presentation::settings::SettingsLocation& location);
     void showInterfaceSettings();
+    void showTranslation(const QString& text);
     void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme);
     void retranslateUi();
 
   signals:
-    void hideWindowRequested();
+    void closeWindowRequested();
     void routeChanged(const QString& route);
     void sectionListChanged();
     void locationChanged(const snow_shot::presentation::settings::SettingsLocation& location);

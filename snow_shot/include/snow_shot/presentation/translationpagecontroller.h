@@ -55,6 +55,8 @@ class TranslationPageController final : public QObject {
     [[nodiscard]] QString errorText() const;
 
   signals:
+    // Stream content is separate from preferences, request lifecycle, and error state.
+    void resultChanged();
     void stateChanged();
 
   private:

@@ -2973,6 +2973,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "snow-selected-text"
+version = "0.1.0"
+dependencies = [
+ "windows",
+]
+
+[[package]]
+name = "snow-selected-text-c"
+version = "0.1.0"
+dependencies = [
+ "snow-selected-text",
+]
+
+[[package]]
 name = "snow-stitch-images"
 version = "0.1.0"
 dependencies = [

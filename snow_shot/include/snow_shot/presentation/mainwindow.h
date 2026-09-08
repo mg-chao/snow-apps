@@ -20,7 +20,7 @@ struct ThemeColorScheme;
 namespace snow_shot::presentation::settings {
 class SettingsRegistry;
 class SettingsRuntimeSession;
-}
+} // namespace snow_shot::presentation::settings
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -34,6 +34,7 @@ class MainWindow : public QMainWindow {
     void showAndActivate();
     void showInterfaceSettings();
     void showScreenshotHistory();
+    void showTranslation(const QString& text);
 
   signals:
     void screenshotRequested();

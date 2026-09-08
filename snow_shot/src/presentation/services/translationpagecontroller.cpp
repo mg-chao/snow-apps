@@ -224,7 +224,7 @@ void TranslationPageController::startTranslation() {
         [this, generation](const QString& delta) {
             if (m_active && generation == m_generation) {
                 m_result += delta;
-                emit stateChanged();
+                emit resultChanged();
             }
         },
         [this, generation](SnowShotTranslationResult response) {

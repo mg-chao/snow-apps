@@ -166,6 +166,16 @@ if(NOT TARGET snow_capture_c)
     )
 endif()
 
+if(NOT TARGET snow_selected_text_c)
+    snow_add_rust_static_library(snow_selected_text_c
+        PACKAGE snow-selected-text-c
+        MANIFEST_DIR "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
+        OUTPUT_NAME snow_selected_text_c
+        STRIP_MSVC_DIRECTIVES)
+    target_include_directories(snow_selected_text_c INTERFACE
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-selected-text-c/include")
+endif()
+
 # zxing-cpp backs the in-process barcode recognition service (QR, DataMatrix,
 # Aztec, PDF417 and 1D symbologies); text recognition lives in the standalone
 # OCR process.
@@ -582,6 +592,8 @@ target_link_libraries(snow_shot_storage PUBLIC
 )
 
 add_library(snow_shot_translation STATIC
+    include/snow_shot/presentation/selectedtexttranslationcontroller.h
+    src/presentation/services/selectedtexttranslationcontroller.cpp
     include/snow_shot/network/snowshotapiclient.h
     src/network/snowshotapiclient.cpp
     include/snow_shot/presentation/translationlanguages.h
@@ -591,7 +603,8 @@ add_library(snow_shot_translation STATIC
 )
 snow_enable_unity_build(snow_shot_translation)
 target_include_directories(snow_shot_translation PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
-target_link_libraries(snow_shot_translation PUBLIC snow_shot_storage Qt6::Network)
+target_link_libraries(snow_shot_translation PUBLIC snow_shot_storage Qt6::Network
+    PRIVATE snow_selected_text_c)
 target_compile_definitions(snow_shot_translation PRIVATE
     SNOW_SHOT_API_BASE_URL=\"${SNOW_SHOT_API_BASE_URL}\"
 )
@@ -3879,6 +3892,26 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_executable(snow-shot-selected-text-translation-tests
+        tests/selected_text_translation_tests.cpp)
+    target_link_libraries(snow-shot-selected-text-translation-tests PRIVATE snow_shot_translation)
+    add_test(NAME snow-shot-selected-text-translation-tests
+        COMMAND snow-shot-selected-text-translation-tests)
+    set_tests_properties(snow-shot-selected-text-translation-tests PROPERTIES LABELS "unit" TIMEOUT 30)
+
+    # Compile the production backend against a fake C boundary; do not link the Rust runtime.
+    add_executable(snow-shot-selected-text-strategy-tests
+        tests/selected_text_strategy_tests.cpp
+        src/presentation/services/selectedtexttranslationcontroller.cpp
+        include/snow_shot/presentation/selectedtexttranslationcontroller.h)
+    target_include_directories(snow-shot-selected-text-strategy-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-selected-text-c/include")
+    target_link_libraries(snow-shot-selected-text-strategy-tests PRIVATE Qt6::Core)
+    add_test(NAME snow-shot-selected-text-strategy-tests
+        COMMAND snow-shot-selected-text-strategy-tests)
+    set_tests_properties(snow-shot-selected-text-strategy-tests PROPERTIES LABELS "unit" TIMEOUT 30)
+
     add_executable(snow-shot-translation-page-controller-tests
         tests/translation_page_controller_tests.cpp
         tests/translation_test_support.h
@@ -3906,6 +3939,21 @@ if(SNOW_SHOT_BUILD_TESTS)
         LABELS "unit"
         ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
     )
+
+    add_executable(snow-shot-translation-page-streaming-tests
+        tests/translation_page_streaming_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-translation-page-streaming-tests PRIVATE
+        snow_shot_settings snow_shot_image_codec)
+    if(WIN32)
+        target_link_libraries(snow-shot-translation-page-streaming-tests PRIVATE
+            PkgConfig::SNOW_SHOT_FFMPEG)
+    endif()
+    snow_shot_import_offscreen_platform(snow-shot-translation-page-streaming-tests)
+    add_test(NAME snow-shot-translation-page-streaming-tests
+             COMMAND snow-shot-translation-page-streaming-tests)
+    set_tests_properties(snow-shot-translation-page-streaming-tests PROPERTIES
+        LABELS "unit" ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
 
     add_executable(snow-shot-api-client-tests
         tests/snowshot_api_client_tests.cpp
@@ -4101,6 +4149,17 @@ function(snow_shot_configure_scrolling_replay_target target)
 endfunction()
 
 if(SNOW_SHOT_BUILD_BENCHMARKS)
+    add_executable(snow-shot-translation-page-streaming-benchmark
+        tests/translation_page_streaming_benchmark.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-translation-page-streaming-benchmark PRIVATE
+        snow_shot_settings snow_shot_image_codec)
+    if(WIN32)
+        target_link_libraries(snow-shot-translation-page-streaming-benchmark PRIVATE
+            PkgConfig::SNOW_SHOT_FFMPEG)
+    endif()
+    snow_shot_import_offscreen_platform(snow-shot-translation-page-streaming-benchmark)
+
     add_executable(snow-shot-scrolling-image-performance-benchmark
         tests/scrolling_image_performance_benchmark.cpp)
     snow_shot_configure_scrolling_replay_target(snow-shot-scrolling-image-performance-benchmark)
