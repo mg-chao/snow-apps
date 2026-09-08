@@ -1156,6 +1156,9 @@ bool ScreenshotPinnedWindow::event(QEvent* event) {
 
 bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* message,
                                          qintptr* result) {
+    if (m_closing) {
+        return QWidget::nativeEvent(eventType, message, result);
+    }
 #if defined(Q_OS_WIN) || defined(_WIN32)
     const bool isWindowsMessage = eventType == QByteArrayLiteral("windows_generic_MSG") ||
                                   eventType == QByteArrayLiteral("windows_dispatcher_MSG");
@@ -1565,16 +1568,17 @@ bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* mess
 
         if (nativeMessage->message == WM_WINDOWPOSCHANGED &&
             m_nativeGeometryController != nullptr && m_presented) {
-            const QRect actual = native::currentClientGeometry(winId());
+            const WId nativeWindowId = reinterpret_cast<WId>(pinnedHwnd);
+            const QRect actual = native::currentClientGeometry(nativeWindowId);
             const QRect target = m_nativeGeometryController->targetGeometry();
             if (m_nativeGeometryController->phase() ==
                     ScreenshotPinnedNativeGeometryController::Phase::DpiChanging &&
-                actual != target && !native::applyClientGeometry(winId(), target)) {
+                actual != target && !native::applyClientGeometry(nativeWindowId, target)) {
                 static_cast<void>(restoreCommittedNativeGeometry());
             }
             if (m_nativeGeometryController->phase() ==
                     ScreenshotPinnedNativeGeometryController::Phase::DpiChanging &&
-                native::currentClientGeometry(winId()) == target) {
+                native::currentClientGeometry(nativeWindowId) == target) {
                 const auto change = m_nativeGeometryController->commitTarget();
                 if (change.sizeChanged || change.dpiChanged) {
                     m_preserveScaleForSettledGeometry = false;
@@ -1582,7 +1586,7 @@ bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* mess
                 }
             } else if (m_nativeGeometryController->phase() ==
                            ScreenshotPinnedNativeGeometryController::Phase::Stable &&
-                       native::currentClientGeometry(winId()) !=
+                       native::currentClientGeometry(nativeWindowId) !=
                            m_nativeGeometryController->committedGeometry()) {
                 static_cast<void>(restoreCommittedNativeGeometry());
             }
@@ -1673,6 +1677,7 @@ bool ScreenshotPinnedWindow::present(const Config& config,
          (!std::isfinite(config.formattedTextDevicePixelRatio) ||
           config.formattedTextDevicePixelRatio <= 0.0)) ||
         m_canvas == nullptr) {
+        qWarning("Pinned window presentation failed: stage=config_validation");
         return false;
     }
     invalidatePendingCopy();
@@ -1688,12 +1693,14 @@ bool ScreenshotPinnedWindow::present(const Config& config,
     const QSize logicalSize(std::max(1, qRound(config.nativeGeometry.width() / screenScale)),
                             std::max(1, qRound(config.nativeGeometry.height() / screenScale)));
     if (!logicalSize.isValid() || logicalSize.isEmpty()) {
+        qWarning("Pinned window presentation failed: stage=logical_geometry");
         return false;
     }
 #else
     const QRect logicalGeometry =
         ScreenshotGeometryMapper::logicalRectForPhysicalRect(config.nativeGeometry, config.screen);
     if (!logicalGeometry.isValid() || logicalGeometry.isEmpty()) {
+        qWarning("Pinned window presentation failed: stage=logical_geometry");
         return false;
     }
 #endif
@@ -1811,6 +1818,7 @@ bool ScreenshotPinnedWindow::present(const Config& config,
     SNOW_SHOT_PIN_PERF_MILESTONE("window.state_initialized");
     if (m_nativeGeometryController == nullptr ||
         !m_nativeGeometryController->initialize(config.nativeGeometry)) {
+        qWarning("Pinned window presentation failed: stage=native_geometry_initialization");
         finishPresentation(false);
         return false;
     }
@@ -1864,11 +1872,13 @@ bool ScreenshotPinnedWindow::present(const Config& config,
     }
 #if defined(Q_OS_WIN) || defined(_WIN32)
     if (!native::applySystemResizeStyle(nativeWindowId)) {
+        qWarning("Pinned window presentation failed: stage=native_resize_style");
         finishPresentation(false);
         return false;
     }
     if (!native::applyClientGeometry(nativeWindowId, config.nativeGeometry,
                                      native::GeometryUpdate::DiscardClientPixels)) {
+        qWarning("Pinned window presentation failed: stage=native_client_geometry");
         finishPresentation(false);
         return false;
     }
@@ -2229,7 +2239,9 @@ bool ScreenshotPinnedWindow::present(const Config& config,
 
 QRect ScreenshotPinnedWindow::currentNativeGeometry() const {
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    const QRect nativeGeometry = native::currentClientGeometry(winId());
+    // Geometry queries also run from late hover messages during close. winId()
+    // creates a native window when none exists, recursively reentering nativeEvent.
+    const QRect nativeGeometry = native::currentClientGeometry(internalWinId());
     if (nativeGeometry.isValid() && !nativeGeometry.isEmpty()) {
         return nativeGeometry;
     }
@@ -3017,6 +3029,9 @@ void ScreenshotPinnedWindow::updateCanvasViewport() {
 }
 
 void ScreenshotPinnedWindow::updateControlsGeometry() {
+    if (m_closing) {
+        return;
+    }
     if (m_scaleLabel != nullptr) {
         m_scaleLabel->adjustSize();
         m_scaleLabel->move(kScaleReadoutInset,
@@ -4688,8 +4703,13 @@ bool ScreenshotPinnedWindow::finishNativeGeometryInteraction() {
     }
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    if (native::currentClientGeometry(winId()) != target &&
-        !native::applyClientGeometry(winId(), target)) {
+    const WId nativeWindowId = internalWinId();
+    if (nativeWindowId == 0) {
+        m_nativeGeometryController->cancelPendingInteraction();
+        return false;
+    }
+    if (native::currentClientGeometry(nativeWindowId) != target &&
+        !native::applyClientGeometry(nativeWindowId, target)) {
         static_cast<void>(restoreCommittedNativeGeometry());
         return false;
     }
@@ -4706,7 +4726,8 @@ bool ScreenshotPinnedWindow::finishNativeGeometryInteraction() {
 
 bool ScreenshotPinnedWindow::reconcilePassiveNativeGeometry() {
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    if (!m_presented || m_closing || m_nativeGeometryController == nullptr) {
+    const WId nativeWindowId = internalWinId();
+    if (!m_presented || m_closing || m_nativeGeometryController == nullptr || nativeWindowId == 0) {
         return false;
     }
 
@@ -4718,13 +4739,13 @@ bool ScreenshotPinnedWindow::reconcilePassiveNativeGeometry() {
          !m_nativeGeometryController->hasAcceptedInteractiveGeometry());
     const QRect target = m_nativeGeometryController->targetGeometry();
     if (!passive || !target.isValid() || target.isEmpty() ||
-        native::currentClientGeometry(winId()) == target) {
+        native::currentClientGeometry(nativeWindowId) == target) {
         return false;
     }
 
     m_passiveGeometryReconciliationActive = true;
-    const bool reconciled =
-        native::applyClientGeometry(winId(), target, native::GeometryUpdate::DiscardClientPixels);
+    const bool reconciled = native::applyClientGeometry(
+        nativeWindowId, target, native::GeometryUpdate::DiscardClientPixels);
     m_passiveGeometryReconciliationActive = false;
     if (reconciled) {
         return true;
@@ -4744,7 +4765,7 @@ bool ScreenshotPinnedWindow::restoreCommittedNativeGeometry() {
     const QRect committed = m_nativeGeometryController->targetGeometry();
     bool restored = committed.isValid() && !committed.isEmpty();
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    restored = restored && native::applyClientGeometry(winId(), committed,
+    restored = restored && native::applyClientGeometry(internalWinId(), committed,
                                                        native::GeometryUpdate::DiscardClientPixels);
 #else
     if (restored) {

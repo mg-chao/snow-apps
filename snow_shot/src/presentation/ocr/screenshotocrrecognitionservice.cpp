@@ -30,7 +30,7 @@
 namespace {
 constexpr quint32 kProtocolMagic = 0x52434f53; // "SOCR" in little endian.
 constexpr quint16 kProtocolVersion = 2;
-constexpr auto kRuntimeVersion = "1.0.3";
+constexpr auto kRuntimeVersion = "1.0.4";
 constexpr quint16 kHello = 1;
 constexpr quint16 kReady = 2;
 constexpr quint16 kSubmit = 3;
@@ -376,7 +376,18 @@ class ScreenshotOcrRecognitionService::Impl final {
             // the final process-bound task, tear down the child instead of
             // retaining it until the canceled inference returns.
             abortProcess = job->running && job->processSubmitted && m_runningCount == 1 &&
-                           m_pending.empty() && m_process != nullptr;
+                           m_pending.empty() && m_process != nullptr &&
+                           m_process->state() != QProcess::NotRunning;
+            if (abortProcess) {
+                // Retire this generation before another request can reuse it.
+                // The finished handler starts a fresh child for queued work.
+                m_shuttingDown = true;
+                m_ready = false;
+                *m_processStopReason = ProcessStopReason::Cancelled;
+                m_jobs.erase(it);
+                m_slots[job->slot].reset();
+                m_runningCount = 0;
+            }
         }
         if (job->running && job->processSubmitted)
             sendFrame(makeFrame(kCancel, token));
@@ -471,6 +482,8 @@ class ScreenshotOcrRecognitionService::Impl final {
     }
 
   private:
+    enum class ProcessStopReason { None, Cancelled, Shutdown };
+
     struct Job {
         Job() {
             elapsed.start();
@@ -547,6 +560,7 @@ class ScreenshotOcrRecognitionService::Impl final {
             std::memset(header, 0, static_cast<size_t>(kSlotHeaderBytes));
         }
         m_process = std::make_unique<QProcess>(m_owner);
+        m_processStopReason = std::make_shared<ProcessStopReason>(ProcessStopReason::None);
         connect(m_process.get(), &QProcess::readyReadStandardOutput, m_owner,
                 [this]() { readProcessOutput(); });
         connect(m_process.get(), &QProcess::readyReadStandardError, m_owner, [this]() {
@@ -566,21 +580,25 @@ class ScreenshotOcrRecognitionService::Impl final {
             }
         });
         connect(m_process.get(), qOverload<int, QProcess::ExitStatus>(&QProcess::finished), m_owner,
-                [this](int code, QProcess::ExitStatus exitStatus) {
-                    const QByteArray remaining =
-                        m_process ? m_process->readAllStandardError().left(8192) : QByteArray();
+                [this, process = m_process.get(),
+                 reason = m_processStopReason](int code, QProcess::ExitStatus exitStatus) {
+                    const QByteArray remaining = process->readAllStandardError().left(8192);
                     if (!remaining.isEmpty()) {
                         snow_shot::diagnostics::DiagnosticsService::instance().record(
                             QtWarningMsg, QStringLiteral("snow_shot.ocr"),
                             QStringLiteral("ocr.stderr"), QString::fromUtf8(remaining));
                     }
+                    const bool expected = *reason != ProcessStopReason::None;
+                    const bool crashed = exitStatus == QProcess::CrashExit;
+                    const QString outcome =
+                        *reason == ProcessStopReason::Cancelled  ? QStringLiteral("cancelled")
+                        : *reason == ProcessStopReason::Shutdown ? QStringLiteral("shutdown")
+                        : crashed                                ? QStringLiteral("crashed")
+                                                                 : QStringLiteral("exited");
                     snow_shot::diagnostics::logEvent(
                         QStringLiteral("snow_shot.ocr"), QStringLiteral("ocr.process_exit"),
-                        {{QStringLiteral("exit_code"), code},
-                         {QStringLiteral("outcome"), exitStatus == QProcess::CrashExit
-                                                         ? QStringLiteral("crashed")
-                                                         : QStringLiteral("exited")}},
-                        exitStatus == QProcess::CrashExit ? QtCriticalMsg : QtInfoMsg);
+                        {{QStringLiteral("exit_code"), code}, {QStringLiteral("outcome"), outcome}},
+                        crashed && !expected ? QtCriticalMsg : QtInfoMsg);
                     snow_shot::diagnostics::DiagnosticsService::instance().requestMaintenance();
                     bool shuttingDown = false;
                     {
@@ -629,7 +647,8 @@ class ScreenshotOcrRecognitionService::Impl final {
             bool timedOut = false;
             {
                 std::lock_guard lock(m_mutex);
-                timedOut = m_process != nullptr && !m_ready && generation == m_processGeneration;
+                timedOut = m_process != nullptr && !m_ready && !m_shuttingDown &&
+                           generation == m_processGeneration;
             }
             if (timedOut)
                 processFailed();
@@ -686,7 +705,7 @@ class ScreenshotOcrRecognitionService::Impl final {
 
     void flushPending() {
         std::lock_guard lock(m_mutex);
-        if (!m_ready || m_configurationDirty)
+        if (!m_ready || m_shuttingDown || m_configurationDirty)
             return;
         while (true) {
             const int slot = acquireSlot();
@@ -1134,8 +1153,10 @@ class ScreenshotOcrRecognitionService::Impl final {
             if (process->state() != QProcess::NotRunning) {
                 process->write(makeFrame(kShutdown, 0));
                 process->closeWriteChannel();
-                if (!process->waitForFinished(1000))
+                if (!process->waitForFinished(1000)) {
+                    *m_processStopReason = ProcessStopReason::Shutdown;
                     process->kill();
+                }
             }
             process.reset();
         }
@@ -1156,6 +1177,7 @@ class ScreenshotOcrRecognitionService::Impl final {
     std::shared_ptr<std::atomic_bool> m_alive = std::make_shared<std::atomic_bool>(true);
     std::vector<quint64> m_slotSequences;
     std::unique_ptr<QProcess> m_process;
+    std::shared_ptr<ProcessStopReason> m_processStopReason;
     std::unique_ptr<QTemporaryFile> m_shmFile;
     uchar* m_shmMapping = nullptr;
     qsizetype m_slotBytes = 0;

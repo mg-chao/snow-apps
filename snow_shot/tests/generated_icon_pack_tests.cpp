@@ -7,12 +7,24 @@
 #include <QColor>
 #include <QImage>
 #include <QSet>
+#include <QStringList>
 
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 
 namespace {
+
+QStringList renderWarnings;
+QtMessageHandler previousMessageHandler = nullptr;
+
+void captureRenderWarnings(QtMsgType type, const QMessageLogContext& context,
+                           const QString& message) {
+    if (type == QtWarningMsg || type == QtCriticalMsg)
+        renderWarnings.append(message);
+    if (previousMessageHandler != nullptr)
+        previousMessageHandler(type, context, message);
+}
 
 void require(bool condition, const char* message) {
     if (!condition) {
@@ -76,6 +88,15 @@ void everySnowShotEntryRenders() {
     adqt::icons::IconRenderRequest request;
     request.logicalSize = QSize(32, 32);
     request.devicePixelRatio = 1.25;
+    renderWarnings.clear();
+    struct MessageCapture {
+        MessageCapture() {
+            previousMessageHandler = qInstallMessageHandler(captureRenderWarnings);
+        }
+        ~MessageCapture() {
+            qInstallMessageHandler(previousMessageHandler);
+        }
+    } capture;
     for (std::size_t index = 0; index < staticPack->entryCount; ++index) {
         const auto ref = icons::pack().icon(index);
         require(ref.isValid(), "every Snow Shot pack entry should create a reference");
@@ -86,6 +107,10 @@ void everySnowShotEntryRenders() {
         require(!alphaBounds(pixmap.toImage()).isEmpty(),
                 "every Snow Shot pack entry should have nonblank alpha bounds");
     }
+    for (const auto& warning : renderWarnings)
+        std::cerr << warning.toStdString() << '\n';
+    require(renderWarnings.isEmpty(),
+            "every Snow Shot icon must render without missing images or undefined references");
 }
 
 void projectIconColorsAndModelsArePreserved() {

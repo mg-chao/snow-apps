@@ -16,6 +16,7 @@
 #include <QElapsedTimer>
 #include <QGuiApplication>
 #include <QLayout>
+#include <QLineEdit>
 #include <QPoint>
 #include <QRect>
 #include <QScreen>
@@ -43,6 +44,14 @@
 
 class ScreenshotFloatingToolPaletteWindowTestAccess {
   public:
+    static void beginKeyboardFocus(ScreenshotFloatingToolPaletteWindow& window, QWidget* editor) {
+        window.beginKeyboardFocusInteraction(editor);
+    }
+
+    static void endKeyboardFocus(ScreenshotFloatingToolPaletteWindow& window, QWidget* editor) {
+        window.endKeyboardFocusInteraction(editor);
+    }
+
     static void beginLogicalDrag(ScreenshotFloatingToolPaletteWindow& window,
                                  const QPoint& globalPosition) {
         window.m_draggingPalette = true;
@@ -80,6 +89,7 @@ class ScreenshotFloatingToolPaletteWindowTestAccess {
 
 namespace {
 std::atomic_bool nativeGeometryWarningEmitted{false};
+std::atomic_bool nonFocusableActivationWarningEmitted{false};
 QtMessageHandler previousMessageHandler = nullptr;
 
 void captureNativeGeometryWarning(QtMsgType type, const QMessageLogContext& context,
@@ -87,6 +97,8 @@ void captureNativeGeometryWarning(QtMsgType type, const QMessageLogContext& cont
     if (type == QtWarningMsg && message.contains(QStringLiteral("QWindowsWindow::setGeometry"))) {
         nativeGeometryWarningEmitted.store(true, std::memory_order_relaxed);
     }
+    if (type == QtWarningMsg && message.contains(QStringLiteral("WindowDoesNotAcceptFocus")))
+        nonFocusableActivationWarningEmitted.store(true, std::memory_order_relaxed);
 
     if (previousMessageHandler != nullptr) {
         previousMessageHandler(type, context, message);
@@ -99,6 +111,7 @@ class NativeGeometryWarningScope final {
   public:
     NativeGeometryWarningScope() {
         nativeGeometryWarningEmitted.store(false, std::memory_order_relaxed);
+        nonFocusableActivationWarningEmitted.store(false, std::memory_order_relaxed);
         previousMessageHandler = qInstallMessageHandler(captureNativeGeometryWarning);
     }
 
@@ -1359,6 +1372,68 @@ int actionToolbarButtonCount(const ScreenshotToolPalette& palette) {
     return count;
 }
 
+void keyboardFocusTransitionsKeepQtAndNativeStateConsistent() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "failed to create keyboard-focus test storage");
+    const QString executableDirectory = QDir(temporary.path()).filePath(QStringLiteral("bin"));
+    require(QDir().mkpath(executableDirectory), "failed to create test executable directory");
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(storage.initialize({executableDirectory, temporary.path(), 60000}).success,
+            "failed to initialize keyboard-focus test storage");
+    {
+        const NativeGeometryWarningScope warningScope;
+        NoOpToolbarCommands commands;
+        ScreenshotToolbarWindow screenshotToolbar(commands);
+        ScreenshotFloatingToolPaletteWindow genericToolbar(ScreenshotToolPalette::Options{});
+        for (ScreenshotFloatingToolPaletteWindow* toolbar :
+             {static_cast<ScreenshotFloatingToolPaletteWindow*>(&screenshotToolbar),
+              &genericToolbar}) {
+            const WId originalId = toolbar->winId();
+            QWindow* handle = toolbar->windowHandle();
+            const QRect originalGeometry = handle->geometry();
+            const Qt::WindowFlags originalFlags = handle->flags();
+            QLineEdit first(toolbar);
+            QLineEdit second(toolbar);
+            const auto checkState = [&](bool enabled) {
+                require(toolbar->winId() == originalId,
+                        "keyboard focus transitions must preserve the native surface");
+                require(handle->geometry() == originalGeometry &&
+                            (handle->flags() & ~Qt::WindowDoesNotAcceptFocus) ==
+                                (originalFlags & ~Qt::WindowDoesNotAcceptFocus),
+                        "keyboard focus must preserve toolbar geometry and other window flags");
+                require(handle->flags().testFlag(Qt::WindowDoesNotAcceptFocus) != enabled,
+                        "Qt focus policy must follow the active keyboard interaction");
+#if defined(Q_OS_WIN) || defined(_WIN32)
+                if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+                    const auto style =
+                        GetWindowLongPtrW(reinterpret_cast<HWND>(originalId), GWL_EXSTYLE);
+                    require(((style & WS_EX_NOACTIVATE) == 0) == enabled,
+                            "Windows focus policy must agree with Qt focus policy");
+                }
+#endif
+            };
+            checkState(false);
+            ScreenshotFloatingToolPaletteWindowTestAccess::beginKeyboardFocus(*toolbar, &first);
+            handle->requestActivate();
+            require(
+                !nonFocusableActivationWarningEmitted.load(std::memory_order_relaxed),
+                "an active keyboard editor must not request activation of a non-focusable window");
+            checkState(true);
+            ScreenshotFloatingToolPaletteWindowTestAccess::beginKeyboardFocus(*toolbar, &second);
+            ScreenshotFloatingToolPaletteWindowTestAccess::endKeyboardFocus(*toolbar, &first);
+            checkState(true);
+            ScreenshotFloatingToolPaletteWindowTestAccess::endKeyboardFocus(*toolbar, &second);
+            checkState(false);
+            ScreenshotFloatingToolPaletteWindowTestAccess::endKeyboardFocus(*toolbar, nullptr);
+            checkState(false);
+            require(!toolbar->isVisible(), "focus transitions must not show a hidden toolbar");
+        }
+        require(!warningScope.emitted(),
+                "focus transitions must not cause native geometry warnings");
+    }
+    storage.shutdown();
+}
+
 void screenshotActionLayoutReloadIsWindowScopedAndFitsThePreset() {
     QTemporaryDir temporary;
     require(temporary.isValid(), "failed to create isolated action-layout test storage");
@@ -1763,6 +1838,10 @@ void mainTextTranslationButtonUsesTranslationPresentation() {
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     try {
+        if (app.arguments().contains(QStringLiteral("--keyboard-focus-only"))) {
+            keyboardFocusTransitionsKeepQtAndNativeStateConsistent();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--ocr-translation-toggle-only"))) {
             translateButtonRoutesEveryClickThroughTheToggleCommand();
             mainTextTranslationButtonUsesTranslationPresentation();

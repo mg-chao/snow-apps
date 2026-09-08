@@ -11,7 +11,10 @@ fn run(arguments: &[&str]) -> Output {
 fn validation_command_reports_process_success_and_failures() {
     let version = run(&["--version"]);
     assert!(version.status.success());
-    assert!(String::from_utf8_lossy(&version.stdout).contains("snow-ocr-process 1.0.3"));
+    assert!(
+        String::from_utf8_lossy(&version.stdout)
+            .contains(concat!("snow-ocr-process ", env!("CARGO_PKG_VERSION")))
+    );
 
     let malformed = run(&["--validate-model-set", "detector.onnx"]);
     assert!(!malformed.status.success());

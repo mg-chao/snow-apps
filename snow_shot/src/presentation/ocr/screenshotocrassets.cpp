@@ -36,7 +36,7 @@
 
 namespace {
 constexpr auto kManifestName = "asset-manifest.json";
-constexpr auto kRuntimeVersion = "1.0.3";
+constexpr auto kRuntimeVersion = "1.0.4";
 constexpr auto kPlatform = "windows-x64";
 
 struct FileDescriptor {

@@ -1047,6 +1047,16 @@ void ScreenshotRecognitionSessionController::handleTranslationUnitFinished(
     unit.status = result.succeeded() && !unit.text.trimmed().isEmpty()
                       ? TextCacheEntry::TranslationUnit::Status::Completed
                       : TextCacheEntry::TranslationUnit::Status::Failed;
+    if (result.httpStatus == 429) {
+        // Rate limiting applies to the batch, not just this box. Preserve
+        // in-flight results, but leave unsent boxes for an explicit retry
+        // instead of immediately sending more work to the rejecting server.
+        for (auto& pending : it->overlayTranslation.units) {
+            if (pending.status == TextCacheEntry::TranslationUnit::Status::Pending)
+                pending.status = TextCacheEntry::TranslationUnit::Status::Failed;
+        }
+        m_nextTranslationUnit = it->overlayTranslation.units.size();
+    }
     pumpTranslationQueue();
 }
 

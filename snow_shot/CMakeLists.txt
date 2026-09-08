@@ -43,16 +43,21 @@ find_package(Qt6 6.11.1 EXACT REQUIRED COMPONENTS Widgets LinguistTools Svg Netw
 include(SnowTestCliGuard)
 include(SnowQtOffscreenTest)
 
+set(_snow_shot_static_qt_plugins
+    Qt6::QWindowsIntegrationPlugin
+    Qt6::QSchannelBackendPlugin
+    # The full-color application icon embeds SVG images. QtSvg renders the
+    # outer document, but QImageReader needs this plugin for those images.
+    Qt6::QSvgPlugin
+)
+
 if(SNOW_SHOT_QT_STATIC)
     if(NOT QT_FEATURE_static)
         message(FATAL_ERROR
             "SNOW_SHOT_QT_STATIC requires a static Qt 6.11.1 kit. "
             "Set SNOW_QT_STATIC_DIR or Qt6_DIR to its lib/cmake/Qt6 directory.")
     endif()
-    foreach(_snow_shot_static_qt_plugin IN ITEMS
-        Qt6::QWindowsIntegrationPlugin
-        Qt6::QSchannelBackendPlugin
-    )
+    foreach(_snow_shot_static_qt_plugin IN LISTS _snow_shot_static_qt_plugins)
         if(NOT TARGET ${_snow_shot_static_qt_plugin})
             message(FATAL_ERROR
                 "The static Qt kit does not provide ${_snow_shot_static_qt_plugin}.")
@@ -1209,7 +1214,10 @@ if(SNOW_SHOT_BUILD_TESTS)
             -DTEST_COMMAND=$<TARGET_FILE:snow-shot-application-storage-tests>
             -P ${CMAKE_CURRENT_SOURCE_DIR}/scripts/run_flaky_test_with_retry.cmake
     )
-    set_tests_properties(snow-shot-application-storage-tests PROPERTIES
+    add_test(NAME snow-shot-storage-quit-lifetime-tests
+        COMMAND snow-shot-application-storage-tests --quit-lifetime-only)
+    set_tests_properties(snow-shot-application-storage-tests
+        snow-shot-storage-quit-lifetime-tests PROPERTIES
         RUN_SERIAL TRUE
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
@@ -2610,6 +2618,13 @@ if(SNOW_SHOT_BUILD_TESTS)
     )
     add_test(NAME snow-shot-clipboard-content-tests
              COMMAND snow-shot-clipboard-content-tests)
+    snow_shot_import_offscreen_platform(snow-shot-clipboard-content-tests)
+    add_test(NAME snow-shot-clipboard-mime-data-tests
+             COMMAND snow-shot-clipboard-content-tests --mime-data-only)
+    set_tests_properties(snow-shot-clipboard-mime-data-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     set_tests_properties(snow-shot-clipboard-content-tests PROPERTIES
         RUN_SERIAL TRUE
         ENVIRONMENT_MODIFICATION
@@ -2675,7 +2690,44 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-pinned-restore-wiring-tests
         COMMAND snow-shot-pinned-window-tests --restore-wiring-only
     )
+    if(WIN32)
+        add_test(NAME snow-shot-pinned-escape-activation-tests
+            COMMAND snow-shot-pinned-window-tests --escape-activation-only)
+        set_tests_properties(snow-shot-pinned-escape-activation-tests PROPERTIES
+            LABELS "interactive;windows"
+            RUN_SERIAL TRUE
+            TIMEOUT 90
+            ENVIRONMENT "QT_QPA_PLATFORM=windows"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
+    add_test(NAME snow-shot-pinned-escape-burst-tests
+        COMMAND snow-shot-pinned-window-tests --escape-burst-only)
+    add_test(NAME snow-shot-pinned-tool-rotation-tests
+        COMMAND snow-shot-pinned-window-tests --tool-rotation-only)
+    add_test(NAME snow-shot-pinned-passive-geometry-tests
+        COMMAND snow-shot-pinned-window-tests --passive-geometry-only)
+    set_tests_properties(snow-shot-pinned-passive-geometry-tests PROPERTIES
+        LABELS "unit"
+        RUN_SERIAL TRUE
+        TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    if(WIN32)
+        add_test(NAME snow-shot-pinned-passive-native-geometry-tests
+            COMMAND snow-shot-pinned-window-tests --passive-geometry-only)
+        set_tests_properties(snow-shot-pinned-passive-native-geometry-tests PROPERTIES
+            LABELS "unit;windows"
+            RUN_SERIAL TRUE
+            TIMEOUT 30
+            ENVIRONMENT "QT_QPA_PLATFORM=windows"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
     set(_snow_shot_pinned_window_test_names
+        snow-shot-pinned-escape-burst-tests
+        snow-shot-pinned-tool-rotation-tests
         snow-shot-pinned-middle-click-tests
         snow-shot-pinned-middle-click-offscreen-tests
         snow-shot-pinned-double-click-tests
@@ -3055,6 +3107,21 @@ if(SNOW_SHOT_BUILD_TESTS)
             comctl32
         )
     endif()
+    snow_shot_import_offscreen_platform(snow-shot-floating-toolbar-drag-tests)
+    add_test(NAME snow-shot-floating-toolbar-keyboard-focus-tests
+        COMMAND snow-shot-floating-toolbar-drag-tests --keyboard-focus-only)
+    set_tests_properties(snow-shot-floating-toolbar-keyboard-focus-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    if(WIN32)
+        add_test(NAME snow-shot-floating-toolbar-keyboard-focus-windows-tests
+            COMMAND snow-shot-floating-toolbar-drag-tests --keyboard-focus-only)
+        set_tests_properties(snow-shot-floating-toolbar-keyboard-focus-windows-tests PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=windows"
+            ENVIRONMENT_MODIFICATION
+                "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endif()
     # The forward and reverse drag tests drive a native toolbar through real
     # hardware-style drag sequences and assert final HWND positions within a
     # few pixels. They are flaky by design under machine load: parallel tests
@@ -3163,6 +3230,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         Qt6::Widgets
         Qt6::Svg
     )
+    if(WIN32 AND QT_FEATURE_static)
+        # Exercise the release application's explicit plugin policy even
+        # when the Debug preset enables Qt's default plugin imports.
+        qt_import_plugins(snow-shot-generated-icon-pack-tests
+            NO_DEFAULT INCLUDE ${_snow_shot_static_qt_plugins})
+    endif()
     add_test(
         NAME snow-shot-generated-icon-pack-tests
         COMMAND snow-shot-generated-icon-pack-tests
@@ -3201,6 +3274,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         Qt6::Widgets
         Qt6::Svg
     )
+    if(WIN32 AND QT_FEATURE_static)
+        qt_import_plugins(snow-shot-application-icon-tests
+            NO_DEFAULT INCLUDE ${_snow_shot_static_qt_plugins})
+    endif()
     add_test(
         NAME snow-shot-application-icon-tests
         COMMAND snow-shot-application-icon-tests
@@ -3342,6 +3419,52 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    get_target_property(_recording_test_sources snow-shot-screenshot-tool-palette-tests SOURCES)
+    list(FILTER _recording_test_sources EXCLUDE REGEX "tests/screenshot_tool_palette_tests.cpp$")
+    add_executable(snow-shot-screen-recording-controller-tests
+        ${_recording_test_sources}
+        tests/screen_recording_controller_tests.cpp
+        include/snow_shot/presentation/screenrecordingcontroller.h
+        include/snow_shot/presentation/screenrecordingareawindow.h
+        include/snow_shot/presentation/screenrecordingtoolbarwindow.h
+        include/snow_shot/presentation/screenshotfloatingtoolpalettewindow.h
+        include/snow_shot/presentation/screenshottoolpalettehost.h
+        src/presentation/recording/screenrecordingcontroller.cpp
+        src/presentation/recording/screenrecordingareawindow.cpp
+        src/presentation/recording/screenrecordingtoolbarwindow.cpp
+        src/presentation/recording/screenrecordinggeometry.cpp
+        src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
+        src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
+        src/presentation/tools/screenshottoolpalettehost.cpp
+        src/presentation/core/screenshotgeometry.cpp
+        src/presentation/services/screenshotimagefileservice.cpp
+        src/platform/windows/windowchrome.cpp
+    )
+    target_include_directories(snow-shot-screen-recording-controller-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${SNOW_SHOT_CAPTURE_CRATES_DIR}/crates/snow-capture-c/include")
+    target_link_libraries(snow-shot-screen-recording-controller-tests PRIVATE
+        adqt_icon_core ant_design_icons_qt ant_design_qt snow_draw_engine_qt_canvas
+        snow_shot_storage snow_shot_image_codec Qt6::Widgets)
+    target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE SNOW_SHOT_TEST_HOOKS=1)
+    # Override only the test executable: exercise the real controller without
+    # opening capture devices, recording the desktop, or exporting media.
+    foreach(_operation create destroy start pause resume stop_and_export)
+        target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
+            "snow_capture_recording_session_${_operation}=test_recording_session_${_operation}")
+    endforeach()
+    target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
+        snow_capture_last_error_message=test_recording_last_error_message)
+    if(WIN32)
+        target_link_libraries(snow-shot-screen-recording-controller-tests PRIVATE user32 dwmapi)
+    endif()
+    add_test(NAME snow-shot-screen-recording-controller-tests
+        COMMAND snow-shot-screen-recording-controller-tests)
+    set_tests_properties(snow-shot-screen-recording-controller-tests PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=$<IF:$<BOOL:${WIN32}>,windows,offscreen>"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+        RUN_SERIAL TRUE TIMEOUT 60)
+
     add_executable(snow-shot-screenshot-recording-workflow-tests
         tests/screenshot_recording_workflow_tests.cpp
     )
@@ -3464,6 +3587,7 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     add_executable(snow-shot-ocr-recognition-service-tests
         tests/screenshot_ocr_recognition_service_tests.cpp
+        tests/screenshot_ocr_process_lifecycle_tests.cpp
         include/snow_shot/presentation/screenshotocrpresentation.h
         include/snow_shot/presentation/screenshotocrrecognitionservice.h
         include/snow_shot/presentation/screenshotocrassets.h
@@ -3476,6 +3600,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/include"
         "${SNOW_DRAW_ENGINE_SOURCE_DIR}/include"
     )
+    target_compile_definitions(snow-shot-ocr-recognition-service-tests PRIVATE
+        SNOW_TEST_OCR_EXECUTABLE="$<TARGET_FILE:snow_ocr_process>")
     target_link_libraries(snow-shot-ocr-recognition-service-tests PRIVATE
         snow_shot_diagnostics
         snow_draw_engine_qt_canvas
@@ -3512,6 +3638,18 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+    add_test(NAME snow-shot-ocr-process-lifecycle-tests
+        COMMAND snow-shot-ocr-recognition-service-tests --process-lifecycle)
+    add_test(NAME snow-shot-ocr-managed-runtime-tests
+        COMMAND snow-shot-ocr-recognition-service-tests --managed-runtime-only)
+    add_test(NAME snow-shot-ocr-managed-directml-runtime-tests
+        COMMAND snow-shot-ocr-recognition-service-tests --managed-runtime-only --directml)
+    set_tests_properties(snow-shot-ocr-managed-runtime-tests
+        snow-shot-ocr-managed-directml-runtime-tests PROPERTIES
+        TIMEOUT 60 LABELS "unit;windows"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    set_tests_properties(snow-shot-ocr-process-lifecycle-tests PROPERTIES TIMEOUT 30
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     add_dependencies(snow-shot-ocr-recognition-service-tests snow_ocr_process)
 
     add_executable(snow-shot-ocr-layout-tests
@@ -4538,9 +4676,7 @@ if(SNOW_SHOT_QT_STATIC)
     # Import only the integrations required by the Windows release binary.
     qt_import_plugins(snow_shot
         NO_DEFAULT
-        INCLUDE
-            Qt6::QWindowsIntegrationPlugin
-            Qt6::QSchannelBackendPlugin
+        INCLUDE ${_snow_shot_static_qt_plugins}
     )
 endif()
 

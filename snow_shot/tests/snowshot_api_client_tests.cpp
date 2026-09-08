@@ -1,15 +1,19 @@
 #include "snow_shot/network/snowshotapiclient.h"
+#include "snow_shot/diagnostics/diagnostics.h"
 
 #include <QCoreApplication>
 #include <QEventLoop>
+#include <QFile>
 #include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QNetworkProxy>
+#include <QStringList>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QTemporaryDir>
 #include <QTimer>
 
 #include <cstdlib>
@@ -19,7 +23,7 @@ namespace {
 void require(bool condition, const char* message) {
     if (!condition) {
         std::cerr << message << '\n';
-        std::exit(1);
+        std::_Exit(1);
     }
 }
 
@@ -57,6 +61,80 @@ QByteArray waitForHttpRequest(QTcpServer& server, const QByteArray& response) {
     loop.exec();
     require(timeout.isActive(), "local API test server timed out waiting for a request");
     return request;
+}
+
+void failedRequestsIdentifyTheirKindWithoutContent() {
+    QTemporaryDir temporary;
+    require(temporary.isValid(), "network diagnostics need isolated storage");
+    snow_shot::diagnostics::DiagnosticsOptions options;
+    options.directories = {temporary.path()};
+    options.enableCrashCapture = false;
+    options.mirrorToConsole = false;
+    options.installMessageHandler = false;
+    auto& diagnostics = snow_shot::diagnostics::DiagnosticsService::instance();
+    require(diagnostics.initialize(options), "network diagnostics must initialize");
+    const QStringList kinds{QStringLiteral("table_extract"), QStringLiteral("chat_models"),
+                            QStringLiteral("translation")};
+    for (const auto& kind : kinds) {
+        QTcpServer server;
+        require(server.listen(QHostAddress::LocalHost), "diagnostic HTTP server must listen");
+        SnowShotApiClient client(QStringLiteral("http://127.0.0.1:%1").arg(server.serverPort()));
+        bool finished = false;
+        QEventLoop loop;
+        QTimer timeout;
+        timeout.setSingleShot(true);
+        QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+        const auto completion = [&](const auto& result) {
+            require(result.httpStatus == 429, "test failure must reach the client unchanged");
+            finished = true;
+            loop.quit();
+        };
+        SnowShotApiClient::RequestToken token = 0;
+        if (kind == QStringLiteral("table_extract")) {
+            QImage source(8, 8, QImage::Format_RGBA8888);
+            source.fill(Qt::white);
+            token = client.extractTable(source, &client, completion);
+        } else if (kind == QStringLiteral("chat_models")) {
+            token = client.fetchChatModels(QStringLiteral("private-locale-marker"), &client,
+                                           completion);
+        } else {
+            token = client.streamTranslation(
+                {QStringLiteral("private-model-marker"), QStringLiteral("en"), QStringLiteral("fr"),
+                 QStringLiteral("private-text-marker")},
+                &client, [](const QString&) {}, completion);
+        }
+        require(token != 0, "diagnostic request must start");
+        const QByteArray body = R"({"error":{"message":"private-response-marker"}})";
+        const QByteArray response =
+            QByteArrayLiteral("HTTP/1.1 429 Too Many Requests\r\nContent-Type: application/json\r\n"
+                              "Connection: close\r\nContent-Length: ") +
+            QByteArray::number(body.size()) + "\r\n\r\n" + body;
+        static_cast<void>(waitForHttpRequest(server, response));
+        if (!finished) {
+            timeout.start(5000);
+            loop.exec();
+        }
+        require(finished, "diagnostic request must finish");
+    }
+    require(diagnostics.flush(), "network diagnostics must flush");
+    QFile log(diagnostics.status().currentFile);
+    require(log.open(QIODevice::ReadOnly), "network diagnostic file must be readable");
+    QStringList recordedKinds;
+    for (const auto& line : log.readAll().split('\n')) {
+        const auto record = QJsonDocument::fromJson(line).object();
+        if (record.value(QStringLiteral("event")) != QStringLiteral("request.finished"))
+            continue;
+        const auto fields = record.value(QStringLiteral("fields")).toObject();
+        recordedKinds.append(fields.value(QStringLiteral("request_kind")).toString());
+        require(fields.value(QStringLiteral("status")) == 429 &&
+                    fields.value(QStringLiteral("outcome")) == QStringLiteral("failed"),
+                "request kind must accompany the actual HTTP failure");
+        require(!line.contains("private-") && !line.contains("127.0.0.1") &&
+                    !line.contains("/api/"),
+                "network diagnostics must omit payloads, models, locales, and endpoints");
+    }
+    require(recordedKinds == kinds, "every API failure must identify its static request kind");
+    diagnostics.shutdown();
 }
 
 void translationPromptPreservesEditorContract() {
@@ -402,5 +480,6 @@ int main(int argc, char** argv) {
             "transport failures without a code should remain concise");
     apiClientUsesModelCatalogAndStreamingChatContracts();
     translationPromptPreservesEditorContract();
+    failedRequestsIdentifyTheirKindWithoutContent();
     return 0;
 }

@@ -5,6 +5,7 @@
 
 #include "widgets/button.h"
 #include "widgets/radio.h"
+#include "widgets/slider.h"
 #include "widgets/tooltip.h"
 
 #include <QApplication>
@@ -19,6 +20,7 @@
 #include <QMargins>
 #include <QPainter>
 #include <QPixmap>
+#include <QPointer>
 #include <QVector>
 
 #include <cstdlib>
@@ -788,10 +790,55 @@ void filterValuesDoNotRelayoutTheStableControlSet() {
     require(visibleContentChanges == 0, "filter value updates and duplicates must not relayout");
 }
 
+void spotlightConfigSurvivesStyleRowEviction() {
+    ScreenshotToolPalette toolbar(ScreenshotToolPalette::Options{});
+    prepare(toolbar);
+    for (int iteration = 0; iteration < 8; ++iteration) {
+        toolbar.setActiveTool(ScreenshotToolPalette::Tool::Spotlight);
+        flushEvents();
+        QPointer<adqt::widgets::AdSlider> oldSlider = toolbar.findChild<adqt::widgets::AdSlider*>(
+            QStringLiteral("screenshotSpotlightOpacitySlider"));
+        require(oldSlider != nullptr, "Spotlight must materialize its opacity slider");
+        // Leave value/geometry tooltip work queued when the style row is evicted.
+        // Queued tooltip work must not outlive the style row that owns the slider.
+        oldSlider->setTooltipEnabled(true);
+        oldSlider->setValue(17 + iteration);
+        oldSlider->resize(oldSlider->width() + 1, oldSlider->height());
+        toolbar.setActiveTool(ScreenshotToolPalette::Tool::Arrow);
+        require(oldSlider == nullptr, "changing tool must evict the old Spotlight slider");
+        SnowCanvasSpotlightConfig config;
+        config.opacity = 0.37;
+        toolbar.setSpotlightConfig(config);
+        flushEvents();
+        toolbar.setActiveTool(ScreenshotToolPalette::Tool::Spotlight);
+        auto* slider = toolbar.findChild<adqt::widgets::AdSlider*>(
+            QStringLiteral("screenshotSpotlightOpacitySlider"));
+        require(slider != nullptr && qRound(slider->value()) == 37,
+                "the recreated Spotlight slider must reflect settings synchronized while absent");
+    }
+
+    // Spotlight and Watermark reuse the opacity editor. A live widget that now
+    // belongs to Watermark must no longer receive Spotlight settings either.
+    toolbar.setActiveTool(ScreenshotToolPalette::Tool::Watermark);
+    auto* watermarkSlider = toolbar.findChild<adqt::widgets::AdSlider*>(
+        QStringLiteral("screenshotWatermarkOpacitySlider"));
+    require(watermarkSlider != nullptr, "Watermark must materialize its opacity slider");
+    const double watermarkOpacity = watermarkSlider->value();
+    SnowCanvasSpotlightConfig config;
+    config.opacity = 0.81;
+    toolbar.setSpotlightConfig(config);
+    require(watermarkSlider->value() == watermarkOpacity,
+            "Spotlight updates must not modify an opacity editor reused by Watermark");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--spotlight-eviction-only"))) {
+        spotlightConfigSurvivesStyleRowEviction();
+        return 0;
+    }
     historyButtonsFollowCanvasAvailability();
     toolbarSurfacesFollowThemeBackground();
     toolbarSeparatorsKeepMinimumWidthAtCompactScale();
@@ -807,5 +854,6 @@ int main(int argc, char** argv) {
     styleRadioIconsMatchTheirCurrentDevicePixelRatio();
     duplicateStyleStateDoesNotInvalidateToolbarGeometry();
     filterValuesDoNotRelayoutTheStableControlSet();
+    spotlightConfigSurvivesStyleRowEviction();
     return 0;
 }

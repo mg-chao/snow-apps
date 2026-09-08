@@ -12,6 +12,7 @@
 #include <QMargins>
 #include <QHash>
 #include <QPoint>
+#include <QPointer>
 #include <QRect>
 #include <QSize>
 #include <QStringList>
@@ -663,8 +664,8 @@ class ScreenshotToolPalette final : public QWidget {
     QVector<ActionToolGroup> m_actionToolGroups;
     FilterEditor m_filterEditor;
     FilterEditor m_penFilterEditor;
-    QLabel* m_spotlightOpacityIcon = nullptr;
-    adqt::widgets::AdSlider* m_spotlightOpacitySlider = nullptr;
+    QPointer<QLabel> m_spotlightOpacityIcon;
+    QPointer<adqt::widgets::AdSlider> m_spotlightOpacitySlider;
 
     struct LayoutResult {
         QSize paletteSize;

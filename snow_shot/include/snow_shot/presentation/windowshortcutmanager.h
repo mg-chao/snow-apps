@@ -50,6 +50,9 @@ class WindowShortcutManager final : public QObject {
         // Optional key-release action. It is used by held local modifiers
         // whose state must end before the mouse gesture is released.
         std::function<bool(const ActivationContext&)> release;
+        // Required together with release. Ends a held action when input is
+        // interrupted, without performing physical-release-only actions.
+        std::function<void()> cancel;
         // Modal interactions may receive keys through a transient tool window
         // that is not part of the owner's normal shortcut scope.
         std::function<bool(const ActivationContext&)> canActivateOutsideScope;

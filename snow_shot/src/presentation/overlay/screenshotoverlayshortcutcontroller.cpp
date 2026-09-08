@@ -354,11 +354,15 @@ struct ScreenshotOverlayShortcutController::Impl {
             };
             if (actionId == QStringLiteral("move_entire_selection")) {
                 binding.allowedAdditionalModifiers = Qt::ShiftModifier;
+                binding.cancel = [this] {
+                    static_cast<void>(inputHandler.releaseMoveEntireSelectionShortcut());
+                };
                 binding.release = [this](const auto&) {
                     return inputHandler.releaseMoveEntireSelectionShortcut();
                 };
             } else if (actionId ==
                        QStringLiteral("keep_selection_width_and_height_consistent")) {
+                binding.cancel = [this] { inputHandler.cancelKeepSelectionAspectRatioShortcut(); };
                 binding.release = [this](const auto&) {
                     return inputHandler.releaseKeepSelectionAspectRatioShortcut();
                 };

@@ -1138,13 +1138,19 @@ void ScreenshotFloatingToolPaletteWindow::beginKeyboardFocusInteraction(QWidget*
     m_keyboardFocusEditor = editor;
     m_keyboardFocusInteractionActive = true;
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    static_cast<void>(native::setKeyboardFocusEnabled(winId(), true));
-    static_cast<void>(native::activateWindow(winId()));
-#else
+    const WId nativeId = winId();
+#endif
+    // Qt also checks this flag when restoring focus to an editor. Keep its
+    // activation policy in sync with the native window throughout editing.
     if (QWindow* handle = windowHandle()) {
         handle->setFlag(Qt::WindowDoesNotAcceptFocus, false);
+#if !defined(Q_OS_WIN) && !defined(_WIN32)
         handle->requestActivate();
+#endif
     }
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    static_cast<void>(native::setKeyboardFocusEnabled(nativeId, true));
+    static_cast<void>(native::activateWindow(nativeId));
 #endif
     editor->setFocus(Qt::MouseFocusReason);
 }
@@ -1159,12 +1165,11 @@ void ScreenshotFloatingToolPaletteWindow::endKeyboardFocusInteraction(QWidget* e
     }
 
     m_keyboardFocusInteractionActive = false;
-#if defined(Q_OS_WIN) || defined(_WIN32)
-    static_cast<void>(native::setKeyboardFocusEnabled(winId(), false));
-#else
     if (QWindow* handle = windowHandle()) {
         handle->setFlag(Qt::WindowDoesNotAcceptFocus, true);
     }
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    static_cast<void>(native::setKeyboardFocusEnabled(winId(), false));
 #endif
 
     QWidget* owner =
