@@ -2693,6 +2693,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --invalid-ocr-restore-only)
     add_test(NAME snow-shot-pinned-cached-ocr-provider-tests
         COMMAND snow-shot-pinned-window-tests --cached-ocr-provider-only)
+    add_test(NAME snow-shot-pinned-recognition-shortcut-tests
+        COMMAND snow-shot-pinned-window-tests --recognition-shortcut-only)
+    add_test(NAME snow-shot-pinned-recognition-shortcut-offscreen-tests
+        COMMAND snow-shot-pinned-window-tests --recognition-shortcut-only -platform offscreen)
     add_test(NAME snow-shot-pinned-transformed-ocr-tests
         COMMAND snow-shot-pinned-window-tests --transformed-ocr-only)
     add_test(
@@ -2715,6 +2719,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-pinned-early-ocr-snapshot-tests
         snow-shot-pinned-invalid-ocr-restore-tests
         snow-shot-pinned-cached-ocr-provider-tests
+        snow-shot-pinned-recognition-shortcut-tests
+        snow-shot-pinned-recognition-shortcut-offscreen-tests
         snow-shot-pinned-transformed-ocr-tests
         snow-shot-pinned-restore-wiring-tests
         snow-shot-pinned-toolbar-parity-tests

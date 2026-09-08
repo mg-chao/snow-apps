@@ -844,6 +844,43 @@ ScreenshotPinnedWindow::Config cachedOcrPinConfig(ScreenshotOcrRecognitionPort* 
     return config;
 }
 
+void pinnedRecognitionShortcutTogglesResults() {
+    const bool offscreen = QGuiApplication::platformName() == QStringLiteral("offscreen");
+    auto config = cachedOcrPinConfig(nullptr);
+    QPointer<ScreenshotPinnedWindow> window(new ScreenshotPinnedWindow());
+    const auto cleanup = qScopeGuard([&]() {
+        if (window != nullptr) {
+            window->close();
+            static_cast<void>(processUntilDeleted(window, 2000));
+        }
+    });
+    if (offscreen) {
+        window->show();
+        window->activateWindow();
+    } else {
+        require(window->present(config), "the recognition shortcut pin should present");
+    }
+    waitForUi(50);
+    auto* canvas = window->findChild<SnowCanvasWidget*>();
+    QAction* action = pinnedMenuActionNamed(*window, QStringLiteral("screenshotPinnedOcrAction"));
+    if (offscreen && action != nullptr) {
+        // Native image presentation requires an HWND. Exercise shortcut/action parity here;
+        // the native run additionally verifies the actual recognition visibility.
+        QObject::disconnect(action, nullptr, window, nullptr);
+        action->setEnabled(true);
+    }
+    require(canvas != nullptr && action != nullptr && action->isEnabled(),
+            "the recognition shortcut fixture should expose cached OCR");
+    require(!window->persistenceSnapshot().recognitionVisible,
+            "recognition should initially be hidden");
+    for (const bool visible : {true, false, true, false}) {
+        sendShortcut(*canvas, Qt::Key_D, Qt::ControlModifier);
+        require(action->isChecked() == visible &&
+                    (offscreen || window->persistenceSnapshot().recognitionVisible == visible),
+                "each recognition shortcut press must toggle result visibility");
+    }
+}
+
 void pinnedSnapshotRetainsRecognitionBeforeDeferredSetup() {
     IdleOcrRecognition recognition;
     auto config = cachedOcrPinConfig(&recognition);
@@ -4739,6 +4776,10 @@ int main(int argc, char* argv[]) {
             restoredInvalidOcrDoesNotSuppressRecognition();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--recognition-shortcut-only"))) {
+            pinnedRecognitionShortcutTogglesResults();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--cached-ocr-provider-only"))) {
             cachedPinnedOcrAvailableWithoutRecognitionProvider();
             return 0;
@@ -4817,6 +4858,7 @@ int main(int argc, char* argv[]) {
         restoredPinnedSelectionRendersCachedOcrAfterStorageRestart();
         pinnedSnapshotRetainsRecognitionBeforeDeferredSetup();
         restoredInvalidOcrDoesNotSuppressRecognition();
+        pinnedRecognitionShortcutTogglesResults();
         cachedPinnedOcrAvailableWithoutRecognitionProvider();
         transformedPinnedOcrTracksCanvasViewport();
         pinnedTransformResetPersistsWithoutResize();
