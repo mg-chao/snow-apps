@@ -1249,13 +1249,25 @@ void asynchronousMutationResultsAreObservable() {
     auto& applicationStorage = initialize(executable, temporary.path(), 60000);
 
     storage::CaptureHistoryPolicy policy = applicationStorage.captureHistoryPolicy();
+    require(!policy.keepPermanently, "permanent history must default to off");
     policy.maxEntries = 2;
+    policy.keepPermanently = true;
     const auto policyResult = applicationStorage.requestCaptureHistoryPolicyAsync(policy);
     require(policyResult.valid() && policyResult.get().success,
             "asynchronous policy mutation did not complete successfully");
     QCoreApplication::processEvents();
     require(!applicationStorage.status().historyPolicyUpdating,
             "policy mutation remained busy after completion");
+    require(applicationStorage.captureHistoryPolicy() == policy &&
+                applicationStorage.configuration()
+                    .value(QStringLiteral("capture_history/keep_permanently"))
+                    .toBool(),
+            "permanent history policy must update the repository and configuration");
+    require(applicationStorage.flushNow().success, "flush permanent history configuration");
+    applicationStorage.shutdown();
+    initialize(executable, temporary.path(), 60000);
+    require(applicationStorage.captureHistoryPolicy() == policy,
+            "permanent history and existing limits must survive restart");
 
     const auto clearResult = applicationStorage.requestCaptureHistoryClearAsync();
     require(clearResult.valid() && clearResult.get().success,

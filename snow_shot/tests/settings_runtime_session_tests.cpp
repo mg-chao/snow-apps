@@ -73,6 +73,9 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     }
 
     bool switchValue(settings::SettingsSwitchBinding binding) const override {
+        if (binding == settings::SettingsSwitchBinding::HistoryKeepPermanently) {
+            return m_keepPermanently;
+        }
         if (binding == settings::SettingsSwitchBinding::TrayEnabled) {
             return m_trayEnabled;
         }
@@ -84,6 +87,11 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
     }
 
     bool applySwitchValue(settings::SettingsSwitchBinding binding, bool value) override {
+        if (binding == settings::SettingsSwitchBinding::HistoryKeepPermanently) {
+            m_keepPermanently = value;
+            emit synchronized();
+            return true;
+        }
         if (binding != settings::SettingsSwitchBinding::TrayEnabled) {
             return false;
         }
@@ -376,6 +384,7 @@ class FakeSettingsBackend final : public settings::SettingsBackend {
 
     QString m_theme = QStringLiteral("system");
     bool m_trayEnabled = true;
+    bool m_keepPermanently = false;
     int m_delay = 3;
     QVariantList m_trayOptions{QStringLiteral("quick.screenshot")};
     storage::ScreenshotToolbarLayout m_drawingToolbar{{{QStringLiteral("select")}},
@@ -1078,9 +1087,37 @@ void auxiliaryIntegerValuesRemainReactiveWithoutSyntheticFields() {
 
 } // namespace
 
+void permanentHistoryDisablesOnlyLimitControls() {
+    FakeSettingsBackend backend;
+    settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
+    const QString toggle = QStringLiteral("history.keep-permanently");
+    const QStringList limits{QStringLiteral("history.retention-days"),
+                             QStringLiteral("history.max-entries"),
+                             QStringLiteral("history.max-disk-mib")};
+    require(!session.state(toggle).acceptedValue.toBool() && session.state(toggle).enabled,
+            "permanent history toggle must default to off and be available");
+    for (const auto& id : limits)
+        require(session.state(id).enabled, "history limits must initially be enabled");
+    require(session.submitDraft(toggle, true), "permanent history toggle write failed");
+    flushEvents();
+    for (const auto& id : limits) {
+        require(!session.state(id).enabled, "permanent history must disable limit controls");
+    }
+    require(session.state(QStringLiteral("history.enabled")).enabled &&
+                session.state(QStringLiteral("history.clear")).enabled &&
+                session.state(toggle).enabled,
+            "permanent history must leave saving, clearing, and its own toggle available");
+    require(session.submitDraft(toggle, false), "disabling permanent history failed");
+    flushEvents();
+    for (const auto& id : limits)
+        require(session.state(id).enabled,
+                "disabling permanent history must restore limit controls");
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     initialStateAndNoOp();
+    permanentHistoryDisablesOnlyLimitControls();
     storageUsagePropagation();
     synchronousWriteAndFieldSignals();
     rejectedWriteRetainsDraftAndCanRetry();

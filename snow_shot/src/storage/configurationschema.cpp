@@ -719,6 +719,7 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
     {QStringLiteral("screenshot_selection/selection_rect_presets"), QJsonArray(),
      ConfigurationValueKind::Structured},
     {QStringLiteral("capture_history/enabled"), true, ConfigurationValueKind::Boolean},
+    {QStringLiteral("capture_history/keep_permanently"), false, ConfigurationValueKind::Boolean},
     {QStringLiteral("capture_history/retention_days"), 7, ConfigurationValueKind::Integer,
      ConfigurationIntegerRange{CaptureHistoryPolicy::MinimumRetentionDays,
                                CaptureHistoryPolicy::MaximumRetentionDays, 1}},

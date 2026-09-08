@@ -62,6 +62,9 @@ QString localShortcutKey(SettingsLocalShortcutScope scope, const QString& shortc
 
 storage::CaptureHistoryPolicy defaultHistoryPolicy() {
     storage::CaptureHistoryPolicy policy;
+    policy.keepPermanently = storage::ConfigurationSchema::defaultValue(
+                                 QStringLiteral("capture_history/keep_permanently"))
+                                 .toBool();
     policy.enabled =
         storage::ConfigurationSchema::defaultValue(QStringLiteral("capture_history/enabled"))
             .toBool();
@@ -305,6 +308,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
     switch (binding) {
     case SettingsSwitchBinding::HistoryEnabled:
         return storage::ApplicationStorage::instance().captureHistoryPolicy().enabled;
+    case SettingsSwitchBinding::HistoryKeepPermanently:
+        return storage::ApplicationStorage::instance().captureHistoryPolicy().keepPermanently;
     case SettingsSwitchBinding::SmartSelection:
         return storage::ApplicationStorage::instance().smartSelectionEnabled();
     case SettingsSwitchBinding::DirectMlAcceleration:
@@ -412,6 +417,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     switch (binding) {
     case SettingsSwitchBinding::HistoryEnabled:
         policy.enabled = value;
+        break;
+    case SettingsSwitchBinding::HistoryKeepPermanently:
+        policy.keepPermanently = value;
         break;
     case SettingsSwitchBinding::SmartSelection:
         return false;

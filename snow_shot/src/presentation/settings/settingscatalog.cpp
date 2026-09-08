@@ -1615,6 +1615,14 @@ QVector<SettingsPageDefinition> builtInPages() {
                     SettingsSectionReset::HistoryPolicy,
                     {
                         historyEnabledItem(),
+                        {QStringLiteral("history.keep-permanently"),
+                         settingsText(
+                             QT_TRANSLATE_NOOP("SettingsCatalog", "Keep records permanently")),
+                         settingsText(
+                             QT_TRANSLATE_NOOP("SettingsCatalog", "No automatic history cleanup")),
+                         {},
+                         QStringLiteral("capture_history/keep_permanently"),
+                         SettingsSwitchDefinition{SettingsSwitchBinding::HistoryKeepPermanently}},
                         historyIntegerItem(
                             QStringLiteral("history.retention-days"),
                             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Retention period")),
@@ -2407,6 +2415,9 @@ QStringList SettingsCatalog::validationErrors() const {
                     switch (switchDefinition->binding) {
                     case SettingsSwitchBinding::HistoryEnabled:
                         expectedKey = QStringLiteral("capture_history/enabled");
+                        break;
+                    case SettingsSwitchBinding::HistoryKeepPermanently:
+                        expectedKey = QStringLiteral("capture_history/keep_permanently");
                         break;
                     case SettingsSwitchBinding::SmartSelection:
                         expectedKey = QStringLiteral("screenshot_selection/smart_selection");

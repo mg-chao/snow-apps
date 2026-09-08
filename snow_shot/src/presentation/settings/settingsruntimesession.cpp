@@ -706,6 +706,15 @@ void SettingsRuntimeSession::refreshField(const QString& fieldId,
         if (historyField) {
             next.enabled = next.enabled && !currentStatus.historyPolicyUpdating;
         }
+        if (const auto* integer =
+                std::get_if<SettingsIntegerDefinition>(&descriptor->definition->payload);
+            integer != nullptr &&
+            (integer->binding == SettingsIntegerBinding::HistoryRetentionDays ||
+             integer->binding == SettingsIntegerBinding::HistoryMaxEntries ||
+             integer->binding == SettingsIntegerBinding::HistoryMaxDiskMiB)) {
+            next.enabled = next.enabled &&
+                           !m_backend.switchValue(SettingsSwitchBinding::HistoryKeepPermanently);
+        }
         if (const auto* switchDefinition =
                 std::get_if<SettingsSwitchDefinition>(&descriptor->definition->payload)) {
             next.enabled = next.enabled && m_backend.switchEnabled(switchDefinition->binding);
@@ -959,9 +968,11 @@ bool SettingsRuntimeSession::isPending(const SettingsFieldDescriptor& descriptor
                 payload.binding == SettingsIntegerBinding::HistoryMaxDiskMiB);
     }
     if (std::holds_alternative<SettingsSwitchDefinition>(descriptor.definition->payload)) {
+        const auto binding =
+            std::get<SettingsSwitchDefinition>(descriptor.definition->payload).binding;
         return status.historyPolicyUpdating &&
-               std::get<SettingsSwitchDefinition>(descriptor.definition->payload).binding ==
-                   SettingsSwitchBinding::HistoryEnabled;
+               (binding == SettingsSwitchBinding::HistoryEnabled ||
+                binding == SettingsSwitchBinding::HistoryKeepPermanently);
     }
     return false;
 }

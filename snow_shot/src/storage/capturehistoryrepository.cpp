@@ -751,7 +751,7 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
 
     bool hasExpired() const {
         const auto current = policy();
-        if (!current.enabled)
+        if (!current.enabled || current.keepPermanently)
             return false;
         const auto cutoff = m_options.clock().toUTC().addDays(-current.retentionDays);
         const auto currentSnapshot = snapshot();
@@ -761,7 +761,7 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
 
     void prune(Snapshot& next, bool capacity, const QString& protectedId = {}) const {
         const auto current = policy();
-        if (!current.enabled)
+        if (!current.enabled || current.keepPermanently)
             return;
         const auto cutoff = m_options.clock().toUTC().addDays(-current.retentionDays);
         qint64 bytes = 0;
@@ -818,7 +818,11 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
             return {fail(QStringLiteral("The capture-history ID already exists")), {}};
         }
         EncodedDraft encoded;
-        if (!encodeDraft(draft, static_cast<qint64>(policy().maxDiskMiB) * kMiB, &encoded)) {
+        const auto current = policy();
+        const qint64 quota = current.keepPermanently
+                                 ? kMaximumStoredBytes
+                                 : static_cast<qint64>(current.maxDiskMiB) * kMiB;
+        if (!encodeDraft(draft, quota, &encoded)) {
             return {
                 fail(QStringLiteral("The capture-history draft is invalid or exceeds its quota")),
                 {}};
@@ -1026,6 +1030,7 @@ class CaptureHistoryRepositoryImpl final : public CaptureHistoryRepository {
                     }
                     if (command.policy.enabled &&
                         (!previous.enabled ||
+                         previous.keepPermanently != command.policy.keepPermanently ||
                          previous.retentionDays != command.policy.retentionDays))
                         result = maintenance();
                     else if (!cleanup())

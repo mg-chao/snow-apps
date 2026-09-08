@@ -101,6 +101,7 @@ struct SettingsSelectDefinition {
 
 enum class SettingsSwitchBinding {
     HistoryEnabled,
+    HistoryKeepPermanently,
     SmartSelection,
     DirectMlAcceleration,
     SelectionTransitionAnimation,

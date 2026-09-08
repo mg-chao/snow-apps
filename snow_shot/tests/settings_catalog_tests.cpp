@@ -94,8 +94,20 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 30 && itemCount == 122,
-            "catalog must contain the expected thirty sections and one hundred twenty-two items");
+    require(sectionCount == 30 && itemCount == 123,
+            "catalog must contain the expected thirty sections and one hundred twenty-three items");
+    const auto* history =
+        catalog.section(QStringLiteral("storage-and-privacy"), QStringLiteral("history"));
+    require(history != nullptr && history->items.size() >= 2 &&
+                history->items[0].id == QStringLiteral("history.enabled") &&
+                history->items[1].id == QStringLiteral("history.keep-permanently"),
+            "permanent history must follow persistent history in Storage and Privacy");
+    const auto& permanent = history->items[1];
+    require(permanent.title.translated() == QStringLiteral("Keep records permanently") &&
+                std::get<settings::SettingsSwitchDefinition>(permanent.payload).binding ==
+                    settings::SettingsSwitchBinding::HistoryKeepPermanently &&
+                storage::ConfigurationSchema::defaultValue(permanent.configurationKey) == false,
+            "permanent history must be a default-off switch with the requested label");
     const auto* fill = catalog.item({QStringLiteral("interface-settings"),
                                      QStringLiteral("interface-text-recognition"),
                                      QStringLiteral("interface.text-recognition.fill-style")});
@@ -911,8 +923,8 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 159 && index.search(QString()).size() == 159,
-            "search must generate all one hundred fifty-nine catalog nodes in catalog order");
+    require(index.entries().size() == 160 && index.search(QString()).size() == 160,
+            "search must generate all one hundred sixty catalog nodes in catalog order");
     const auto translation = index.search(QStringLiteral("original image translation"));
     require(!translation.isEmpty() && translation.constFirst().location.itemId ==
                                           QStringLiteral("translation.original-image"),
@@ -943,7 +955,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 7 && sections == 30 && items == 122,
+    require(pages == 7 && sections == 30 && items == 123,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));
