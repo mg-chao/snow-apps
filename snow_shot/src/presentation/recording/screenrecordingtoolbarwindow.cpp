@@ -47,6 +47,13 @@ ScreenRecordingToolbarWindow::ScreenRecordingToolbarWindow(QWidget* parent)
     prepareForDisplay();
 }
 
+void ScreenRecordingToolbarWindow::showAndActivate() {
+    show();
+    raise();
+    activateWindow();
+    setFocus(Qt::OtherFocusReason);
+}
+
 void ScreenRecordingToolbarWindow::placeForPhysicalRegion(const QRect& physicalRegion) {
     if (!physicalRegion.isValid() || physicalRegion.isEmpty()) {
         return;

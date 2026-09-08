@@ -88,6 +88,24 @@ void requireFocusPolicy(QWidget& widget, bool acceptsFocus) {
 #endif
 }
 
+void recordingToolbarTakesFocusWhenOpenedOrStarted() {
+    ScreenRecordingToolbarWindow toolbar;
+    QLineEdit otherWindow;
+    otherWindow.show();
+    for (const bool alreadyVisible : {false, true}) {
+        if (alreadyVisible) {
+            toolbar.show();
+        }
+        focus(otherWindow);
+        require(QApplication::focusWidget() == &otherWindow,
+                "another window must own focus before recording opens or starts");
+        toolbar.showAndActivate();
+        QCoreApplication::processEvents();
+        require(toolbar.isActiveWindow() && QApplication::focusWidget() == &toolbar,
+                "opening or starting recording must activate and focus the toolbar");
+    }
+}
+
 void recordingToolbarKeepsFocusAfterEditingAndSurfaceRestoration() {
     ScreenRecordingToolbarWindow recording;
     ScreenshotFloatingToolPaletteWindow screenshot{ScreenshotToolPalette::Options{}};
@@ -607,6 +625,7 @@ int main(int argc, char* argv[]) {
     auto& storage = snow_shot::storage::ApplicationStorage::instance();
     require(storage.initialize({executableDirectory, temporary.path(), 60000}).success,
             "isolated recording shortcut settings must initialize");
+    recordingToolbarTakesFocusWhenOpenedOrStarted();
     recordingToolbarKeepsFocusAfterEditingAndSurfaceRestoration();
     recordingSelectionEditsAnnotationsAndPreservesPassThrough();
     recordingControlShortcutsFollowButtonsAndSettings();

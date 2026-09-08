@@ -333,9 +333,8 @@ struct ScreenRecordingController::Impl {
             areaWindow->setPhysicalRegion(region);
             toolbarWindow->placeForPhysicalRegion(region);
             areaWindow->show();
-            toolbarWindow->show();
             areaWindow->raise();
-            toolbarWindow->raise();
+            toolbarWindow->showAndActivate();
             return;
         }
 
@@ -356,9 +355,8 @@ struct ScreenRecordingController::Impl {
         syncUi();
 
         areaWindow->show();
-        toolbarWindow->show();
         areaWindow->raise();
-        toolbarWindow->raise();
+        toolbarWindow->showAndActivate();
     }
 
     bool isOpen() const {
@@ -655,8 +653,7 @@ struct ScreenRecordingController::Impl {
                 areaWindow->raise();
             }
             if (toolbarWindow != nullptr) {
-                toolbarWindow->show();
-                toolbarWindow->raise();
+                toolbarWindow->showAndActivate();
             }
             durationTimer.start();
             report(QStringLiteral("recording.started"));
