@@ -2321,7 +2321,7 @@
         <translation>高亮</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="278"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="280"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="90"/>
         <source>Pen highlight</source>
         <translation>画笔高亮</translation>
@@ -2330,7 +2330,8 @@
         <location filename="../src/presentation/tools/screenshottoolpalettebuttons.cpp" line="607"/>
         <location filename="../src/presentation/tools/screenshottoolpalettebuttons.cpp" line="625"/>
         <location filename="../src/presentation/tools/screenshottoolpalettebuttons.cpp" line="744"/>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="209"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="211"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="1881"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="1639"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="3143"/>
         <source>Mixed</source>
@@ -2342,7 +2343,7 @@
         <translation>编辑选区</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="271"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="273"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="65"/>
         <source>Gaussian blur</source>
         <translation>高斯模糊</translation>
@@ -2635,25 +2636,25 @@
         <translation>黄色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="276"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="278"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="61"/>
         <source>Pen filter</source>
         <translation>画笔滤镜</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="277"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="279"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="62"/>
         <source>Rectangle filter</source>
         <translation>矩形滤镜</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="267"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="269"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="70"/>
         <source>Opacity</source>
         <translation>透明度</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="268"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="270"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="71"/>
         <source>Adjust opacity</source>
         <translation>调整透明度</translation>
@@ -2664,43 +2665,43 @@
         <translation>聚光灯</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="269"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="271"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="63"/>
         <source>Filter type</source>
         <translation>滤镜类型</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="270"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="272"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="64"/>
         <source>Mosaic</source>
         <translation>马赛克</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="272"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="274"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="66"/>
         <source>Grayscale</source>
         <translation>灰度</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="273"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="275"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="67"/>
         <source>Inversion</source>
         <translation>反相</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="274"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="276"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="68"/>
         <source>Filter intensity</source>
         <translation>滤镜强度</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="275"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="277"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="69"/>
         <source>Adjust filter intensity</source>
         <translation>调整滤镜强度</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="279"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="281"/>
         <location filename="../src/presentation/tools/screenshottoolpalette.cpp" line="72"/>
         <source>Rectangle highlight</source>
         <translation>矩形高亮</translation>
@@ -2722,550 +2723,551 @@
         <translation>录制时长</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="184"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="186"/>
         <source>Rectangle</source>
         <translation>矩形</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="185"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="187"/>
         <source>Ellipse</source>
         <translation>椭圆</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="186"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="188"/>
         <source>Diamond</source>
         <translation>菱形</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="187"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="189"/>
         <source>Stroke color</source>
         <translation>描边颜色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="188"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="190"/>
         <source>Stroke color %1</source>
         <translation>描边颜色 %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="189"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="191"/>
         <source>Stroke width %1</source>
         <translation>描边宽度 %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="190"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="192"/>
         <source>Fill color</source>
         <translation>填充颜色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="191"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="193"/>
         <source>Fill color %1</source>
         <translation>填充颜色 %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="192"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="194"/>
         <source>Fill color transparent</source>
         <translation>填充颜色透明</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="193"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="195"/>
         <source>Highlight color</source>
         <translation>高亮颜色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="194"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="196"/>
         <source>Highlight color %1</source>
         <translation>高亮颜色 %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="195"/>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="266"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="197"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="268"/>
         <source>Highlight stroke width</source>
         <translation>高亮描边宽度</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="196"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="198"/>
         <source>Highlight stroke width %1px</source>
         <translation>高亮描边宽度 %1 像素</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="197"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="199"/>
         <source>Highlight stroke color %1</source>
         <translation>高亮描边颜色 %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="198"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="200"/>
         <source>Pen highlight color</source>
         <translation>画笔高亮颜色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="199"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="201"/>
         <source>Pen highlight color %1</source>
         <translation>画笔高亮颜色 %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="200"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="202"/>
         <source>Arrow stroke color</source>
         <translation>箭头描边颜色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="201"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="203"/>
         <source>Arrow stroke color %1</source>
         <translation>箭头描边颜色 %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="202"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="204"/>
         <source>Arrow stroke width %1</source>
         <translation>箭头描边宽度 %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="203"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="205"/>
         <source>Text color</source>
         <translation>文本颜色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="204"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="206"/>
         <source>Text color %1</source>
         <translation>文本颜色 %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="205"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="207"/>
         <source>Text font size %1 (%2px)</source>
         <translation>文本字号 %1（%2 像素）</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="206"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="208"/>
         <source>Text font family</source>
         <translation>文本字体</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="207"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="209"/>
         <source>Font family</source>
         <translation>字体</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="208"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="210"/>
         <source>Default</source>
         <translation>默认</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="210"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="212"/>
         <source>Text alignment</source>
         <translation>文本对齐</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="211"/>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="253"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="213"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="255"/>
         <source>Text stroke width</source>
         <translation>文本描边宽度</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="212"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="214"/>
         <source>Text stroke width %1px</source>
         <translation>文本描边宽度 %1 像素</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="213"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="215"/>
         <source>Text stroke color transparent</source>
         <translation>文本描边颜色透明</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="214"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="216"/>
         <source>Text stroke color %1</source>
         <translation>文本描边颜色 %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="215"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="217"/>
         <source>Text fill color</source>
         <translation>文本填充颜色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="216"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="218"/>
         <source>Text fill color transparent</source>
         <translation>文本填充颜色透明</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="217"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="219"/>
         <source>Text fill color %1</source>
         <translation>文本填充颜色 %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="218"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="220"/>
         <source>Watermark color</source>
         <translation>水印颜色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="219"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="221"/>
         <source>Watermark color %1</source>
         <translation>水印颜色 %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="265"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="267"/>
         <source>%1 (unavailable)</source>
         <translation>%1（不可用）</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="280"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="282"/>
         <source>Corner radius (scroll to adjust)</source>
         <translation>圆角半径（滚动调整）</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="281"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="283"/>
         <source>Text fill corner radius (scroll to adjust)</source>
         <translation>文本填充圆角半径（滚动调整）</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="282"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="284"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="1878"/>
         <source>Sequence number (scroll to adjust)</source>
         <translation>序号（滚动调整）</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="286"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="288"/>
         <source>Start arrowhead none</source>
         <translation>起始箭头 无</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="287"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="289"/>
         <source>Start arrowhead standard</source>
         <translation>起始箭头 标准</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="288"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="290"/>
         <source>Start arrowhead bar</source>
         <translation>起始箭头 横杠</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="289"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="291"/>
         <source>Start arrowhead dot</source>
         <translation>起始箭头 圆点</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="290"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="292"/>
         <source>Start arrowhead circle</source>
         <translation>起始箭头 圆形</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="291"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="293"/>
         <source>Start arrowhead circle outline</source>
         <translation>起始箭头 空心圆</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="292"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="294"/>
         <source>Start arrowhead triangle</source>
         <translation>起始箭头 三角形</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="293"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="295"/>
         <source>Start arrowhead triangle outline</source>
         <translation>起始箭头 空心三角形</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="294"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="296"/>
         <source>Start arrowhead diamond</source>
         <translation>起始箭头 菱形</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="295"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="297"/>
         <source>Start arrowhead diamond outline</source>
         <translation>起始箭头 空心菱形</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="296"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="298"/>
         <source>Start arrowhead crowfoot one</source>
         <translation>起始箭头 鸟爪单</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="297"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="299"/>
         <source>Start arrowhead crowfoot many</source>
         <translation>起始箭头 鸟爪多</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="298"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="300"/>
         <source>Start arrowhead crowfoot one or many</source>
         <translation>起始箭头 鸟爪一或多</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="302"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="304"/>
         <source>End arrowhead none</source>
         <translation>末端箭头 无</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="303"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="305"/>
         <source>End arrowhead standard</source>
         <translation>末端箭头 标准</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="304"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="306"/>
         <source>End arrowhead bar</source>
         <translation>末端箭头 横杠</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="305"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="307"/>
         <source>End arrowhead dot</source>
         <translation>末端箭头 圆点</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="306"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="308"/>
         <source>End arrowhead circle</source>
         <translation>末端箭头 圆形</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="307"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="309"/>
         <source>End arrowhead circle outline</source>
         <translation>末端箭头 空心圆</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="308"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="310"/>
         <source>End arrowhead triangle</source>
         <translation>末端箭头 三角形</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="309"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="311"/>
         <source>End arrowhead triangle outline</source>
         <translation>末端箭头 空心三角形</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="310"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="312"/>
         <source>End arrowhead diamond</source>
         <translation>末端箭头 菱形</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="311"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="313"/>
         <source>End arrowhead diamond outline</source>
         <translation>末端箭头 空心菱形</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="312"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="314"/>
         <source>End arrowhead crowfoot one</source>
         <translation>末端箭头 鸟爪单</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="313"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="315"/>
         <source>End arrowhead crowfoot many</source>
         <translation>末端箭头 鸟爪多</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="314"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="316"/>
         <source>End arrowhead crowfoot one or many</source>
         <translation>末端箭头 鸟爪一或多</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="221"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="223"/>
         <source>Watermark font family</source>
         <translation>水印字体</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="222"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="224"/>
         <source>Sequence number color</source>
         <translation>序号颜色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="223"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="225"/>
         <source>Sequence number color %1</source>
         <translation>序号颜色 %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="224"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="226"/>
         <source>Sequence number font size %1px</source>
         <translation>序号字号 %1 像素</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="225"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="227"/>
         <source>Sequence number font family</source>
         <translation>序号字体</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="226"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="228"/>
         <source>Sequence number fill color</source>
         <translation>序号填充颜色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="227"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="229"/>
         <source>Sequence number fill color transparent</source>
         <translation>序号填充颜色透明</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="228"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="230"/>
         <source>Sequence number fill color %1</source>
         <translation>序号填充颜色 %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="229"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="231"/>
         <source>Mask color</source>
         <translation>遮罩颜色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="230"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="232"/>
         <source>Mask color %1</source>
         <translation>遮罩颜色 %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="231"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="233"/>
         <source>Current pen filter stroke width</source>
         <translation>当前画笔滤镜描边宽度</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="232"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="234"/>
         <source>Pen filter stroke width %1 (%2px)</source>
         <translation>画笔滤镜描边宽度 %1 (%2px)</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="233"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="235"/>
         <source>Current stroke width</source>
         <translation>当前描边宽度</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="234"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="236"/>
         <source>Dashed stroke</source>
         <translation>虚线描边</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="235"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="237"/>
         <source>Dotted stroke</source>
         <translation>点线描边</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="236"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="238"/>
         <source>Solid stroke</source>
         <translation>实线描边</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="240"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="242"/>
         <source>Pick color from canvas</source>
         <translation>从画布拾取颜色</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="237"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="239"/>
         <source>Cross-line fill</source>
         <translation>交叉线填充</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="220"/>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="2023"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="222"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="2047"/>
         <source>Watermark text</source>
         <translation>水印文本</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="238"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="240"/>
         <source>Line fill</source>
         <translation>线条填充</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="239"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="241"/>
         <source>Solid fill</source>
         <translation>纯色填充</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="241"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="243"/>
         <source>Current pen highlight stroke width</source>
         <translation>当前画笔高亮描边宽度</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="242"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="244"/>
         <source>Pen highlight stroke width %1 (%2px)</source>
         <translation>画笔高亮描边宽度 %1 (%2px)</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="243"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="245"/>
         <source>Dashed arrow stroke</source>
         <translation>虚线箭头描边</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="244"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="246"/>
         <source>Dotted arrow stroke</source>
         <translation>点线箭头描边</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="245"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="247"/>
         <source>Solid arrow stroke</source>
         <translation>实线箭头描边</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="246"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="248"/>
         <source>Current arrow stroke width</source>
         <translation>当前箭头描边宽度</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="247"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="249"/>
         <source>Start arrowhead</source>
         <translation>起始箭头</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="248"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="250"/>
         <source>End arrowhead</source>
         <translation>末端箭头</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="249"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="251"/>
         <source>Current text font size</source>
         <translation>当前文本字体大小</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="250"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="252"/>
         <source>Align text left</source>
         <translation>文本左对齐</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="251"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="253"/>
         <source>Align text center</source>
         <translation>文本居中对齐</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="252"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="254"/>
         <source>Align text right</source>
         <translation>文本右对齐</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="254"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="256"/>
         <source>Cross-line text fill</source>
         <translation>交叉线文本填充</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="255"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="257"/>
         <source>Line text fill</source>
         <translation>线条文本填充</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="256"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="258"/>
         <source>Solid text fill</source>
         <translation>纯色文本填充</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="257"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="259"/>
         <source>Current watermark font size</source>
         <translation>当前水印字体大小</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="258"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="260"/>
         <source>Watermark font size %1 (%2px)</source>
         <translation>水印字体大小 %1 (%2px)</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="259"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="261"/>
         <source>Watermark angle</source>
         <translation>水印角度</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="260"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="262"/>
         <source>Watermark gap</source>
         <translation>水印间距</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="261"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="263"/>
         <source>Current sequence number font size</source>
         <translation>当前序号字体大小</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="262"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="264"/>
         <source>Cross-line sequence number fill</source>
         <translation>交叉线序号填充</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="263"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="265"/>
         <source>Line sequence number fill</source>
         <translation>线条序号填充</translation>
     </message>
     <message>
-        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="264"/>
+        <location filename="../src/presentation/tools/screenshottoolpalettestylecontrols.cpp" line="266"/>
         <source>Solid sequence number fill</source>
         <translation>纯色序号填充</translation>
     </message>

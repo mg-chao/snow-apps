@@ -19,6 +19,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QObject>
+#include <QRegularExpressionValidator>
 #include <QSignalBlocker>
 #include <QSpacerItem>
 #include <QStandardItem>
@@ -47,6 +48,7 @@ namespace style_presets = snow_shot::presentation::style_presets;
 constexpr int kCornerRadiusLeadingSpacing = 4;
 constexpr int kTextStrokeColorTrailingSpacing = 4;
 constexpr int kSerialNumberTrailingSpacing = 4;
+constexpr int kSerialNumberInputWidth = 64;
 constexpr int kWatermarkTextWidth = 135;
 constexpr int kOpacitySliderWidth = 96;
 constexpr int kCompactSliderIconSize = 16;
@@ -1859,21 +1861,43 @@ QWidget* ScreenshotToolPaletteStyleControls::buildSerialNumberFamily(
     if (host.addGroupSeparator) {
         host.addGroupSeparator(layout);
     }
-    m_serialNumberEditor = dynamic_cast<CornerRadiusEditorButton*>(
+    m_serialNumberEditor = qobject_cast<adqt::widgets::AdLineEdit*>(
         takeReusableWidget(kRoleSerialValue, kSignatureSerialValue, layout, controls));
     if (m_serialNumberEditor == nullptr) {
-        m_serialNumberEditor = createScreenshotToolPaletteCornerRadiusEditor(
-            controls, "Sequence number (scroll to adjust)", outlined_icons::Number(),
-            static_cast<int>(std::clamp<qint64>(m_state.m_serialNumberStyle.number, 0,
-                                                std::numeric_limits<int>::max())),
-            metrics);
+        m_serialNumberEditor = new adqt::widgets::AdLineEdit(controls);
+        m_serialNumberEditor->setValidator(new QRegularExpressionValidator(
+            QRegularExpression(QStringLiteral("[0-9]*")), m_serialNumberEditor));
         layout->addWidget(m_serialNumberEditor);
-    } else {
-        configureScreenshotToolPaletteTooltip(
-            m_serialNumberEditor,
-            ScreenshotToolPaletteTranslationText("Sequence number (scroll to adjust)"));
-        configureScreenshotToolPaletteCornerRadiusEditor(m_serialNumberEditor, metrics);
     }
+    configureScreenshotToolPaletteTooltip(
+        m_serialNumberEditor,
+        ScreenshotToolPaletteTranslationText("Sequence number (scroll to adjust)"));
+    setScreenshotToolPaletteAccessibleNameSource(m_serialNumberEditor,
+                                                 "Sequence number (scroll to adjust)");
+    m_serialNumberEditor->setAccessibleName(
+        QCoreApplication::translate("ScreenshotToolPalette", "Sequence number (scroll to adjust)"));
+    setScreenshotToolPalettePlaceholderSource(m_serialNumberEditor, "Mixed");
+    m_serialNumberEditor->setPlaceholderText(
+        QCoreApplication::translate("ScreenshotToolPalette", "Mixed"));
+    m_serialNumberEditor->setControlSize(adqt::widgets::AdLineEdit::ControlSize::Small);
+    m_serialNumberEditor->setFocusPolicy(Qt::ClickFocus);
+    m_serialNumberEditor->setVariant(adqt::widgets::AdLineEdit::Variant::Borderless);
+    m_serialNumberEditor->setPrefixIconRef(outlined_icons::Number());
+    m_serialNumberEditor->setFixedSize(
+        qMax(1, qRound(kSerialNumberInputWidth * metrics.physicalScale)),
+        qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
+    stampScreenshotToolbarReferenceWidth(m_serialNumberEditor, kSerialNumberInputWidth);
+    QObject::connect(m_serialNumberEditor, &QLineEdit::editingFinished, controls, [this]() {
+        if (m_serialNumberEditor == nullptr) {
+            return;
+        }
+        bool valid = false;
+        const qint64 number = m_serialNumberEditor->text().toLongLong(&valid);
+        if (valid && number >= 0) {
+            setSerialNumber(number);
+        }
+        updateSerialNumberStyleControls(SerialNumberValueRefresh);
+    });
     m_serialNumberEditor->setProperty("screenshotStyleEditorRoot", true);
     m_serialNumberEditor->setProperty("screenshotStyleEditorRole", kRoleSerialValue);
     m_serialNumberEditor->setProperty("screenshotStyleEditorSignature", kSignatureSerialValue);
@@ -2616,9 +2640,11 @@ void ScreenshotToolPaletteStyleControls::registerSerialNumberEntries() {
          [this, mixed]() {
              SNOW_SHOT_TOOLBAR_PERF_COUNTER("style.serial_number.value_refresh");
              if (m_serialNumberEditor != nullptr) {
-                 m_serialNumberEditor->setCornerRadius(static_cast<int>(std::clamp<qint64>(
-                     m_state.m_serialNumberStyle.number, 0, std::numeric_limits<int>::max())));
-                 m_serialNumberEditor->setMixed(mixed(SnowCanvasSerialNumberStyleMixedNumber));
+                 const QSignalBlocker blocker(m_serialNumberEditor);
+                 m_serialNumberEditor->setText(
+                     mixed(SnowCanvasSerialNumberStyleMixedNumber)
+                         ? QString()
+                         : QString::number(m_state.m_serialNumberStyle.number));
              }
          }},
         {SerialNumberFontSizeRefresh,
@@ -3128,12 +3154,15 @@ bool ScreenshotToolPaletteStyleControls::handleSerialNumberWheel(const QPoint& g
     if (m_serialNumberEditor != nullptr &&
         m_serialNumberEditor->rect().contains(
             m_serialNumberEditor->mapFromGlobal(globalPosition))) {
+        bool valid = false;
+        const qint64 editedNumber = m_serialNumberEditor->text().toLongLong(&valid);
+        const qint64 number =
+            valid && editedNumber >= 0 ? editedNumber : m_state.m_serialNumberStyle.number;
         const qint64 nextNumber =
-            direction > 0 ? (m_state.m_serialNumberStyle.number < std::numeric_limits<qint64>::max()
-                                 ? m_state.m_serialNumberStyle.number + 1
-                                 : m_state.m_serialNumberStyle.number)
-                          : std::max<qint64>(0, m_state.m_serialNumberStyle.number - 1);
+            direction > 0 ? (number < std::numeric_limits<qint64>::max() ? number + 1 : number)
+                          : std::max<qint64>(0, number - 1);
         setSerialNumber(nextNumber);
+        updateSerialNumberStyleControls(SerialNumberValueRefresh);
         return true;
     }
     if (m_serialNumberFontEditor != nullptr && m_serialNumberFontEditor->sizeSummary() != nullptr &&
@@ -3334,7 +3363,12 @@ void ScreenshotToolPaletteStyleControls::refreshToolbarMetrics(
     }
     configureScreenshotToolPaletteCornerRadiusEditor(m_cornerRadiusEditor, metrics);
     configureScreenshotToolPaletteCornerRadiusEditor(m_textCornerRadiusEditor, metrics);
-    configureScreenshotToolPaletteCornerRadiusEditor(m_serialNumberEditor, metrics);
+    if (applies(m_serialNumberEditor)) {
+        m_serialNumberEditor->setFixedSize(
+            qMax(1, qRound(kSerialNumberInputWidth * metrics.physicalScale)),
+            qMax(1, qRound(metrics.buttonSize * metrics.physicalScale)));
+        stampScreenshotToolbarReferenceWidth(m_serialNumberEditor, kSerialNumberInputWidth);
+    }
     configureScreenshotToolPaletteIconNumericValueButton(m_watermarkAngleEditor, metrics);
     configureScreenshotToolPaletteIconNumericValueButton(m_watermarkGapEditor, metrics);
     refreshWatermarkOpacityMetrics(metrics);

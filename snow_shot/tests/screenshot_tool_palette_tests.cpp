@@ -5842,8 +5842,12 @@ void serialNumberStyleControlsExposeAndEmitRequestedProperties() {
                 "sequence-number color presets should match the text color format");
     }
     QWidget* numberEditor = controlWithTooltip(palette, "Sequence number (scroll to adjust)");
-    require(numberEditor != nullptr && numberEditor->cursor().shape() == Qt::SplitVCursor,
-            "sequence number should use the shared wheel-adjustable editor");
+    auto* numberInput = qobject_cast<adqt::widgets::AdLineEdit*>(numberEditor);
+    require(numberInput != nullptr &&
+                numberInput->variant() == adqt::widgets::AdLineEdit::Variant::Borderless &&
+                adqt::icons::describeIcon(numberInput->prefixIconRef()).key.name ==
+                    adqt::icons::describeIcon(adqt::icons::antd::outlined::Number()).key.name,
+            "sequence number should be a borderless input with its existing icon as a prefix");
     const int numberEditorIndex = serialNumberLayout->indexOf(numberEditor);
     auto* fontSizeSummary = controlWithTooltip(palette, "Current sequence number font size");
     require(fontSizeSummary != nullptr &&
@@ -5901,6 +5905,126 @@ void serialNumberStyleControlsExposeAndEmitRequestedProperties() {
     require(changeCount == 4 && emittedStyle.fill == QColor(QStringLiteral("#bae0ff")) &&
                 emittedStyle.fillStyle == SnowCanvasFillStyle::Line,
             "changing sequence-number fill color should preserve its fill pattern");
+}
+
+void serialNumberInputCommitsEditsAndSupportsWheel() {
+    ScreenshotToolPalette::Options options;
+    options.showSerialNumberTool = true;
+    ScreenshotToolPalette palette(options);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::SerialNumber);
+    SnowCanvasStyleToolbarState state;
+    state.source = SnowCanvasStyleToolbarSource::SelectedSerialNumber;
+    state.serialNumberStyle.number = 12;
+    palette.setStyleToolbarState(state);
+    palette.show();
+    QCoreApplication::processEvents();
+    auto* input = qobject_cast<adqt::widgets::AdLineEdit*>(
+        controlWithTooltip(palette, "Sequence number (scroll to adjust)"));
+    require(input != nullptr && input->text() == QStringLiteral("12") && !input->isReadOnly(),
+            "sequence number should expose its current value for direct editing");
+    require(input->focusPolicy() == Qt::ClickFocus,
+            "sequence number should accept click focus without joining the toolbar Tab chain");
+    auto* prefix = input->findChild<QLabel*>(QStringLiteral("ad-input-prefix-icon"));
+    require(prefix != nullptr && prefix->isVisible() &&
+                input->rect().contains(prefix->geometry()) &&
+                prefix->geometry().right() < input->textMargins().left(),
+            "sequence number icon should sit inside the input to the left of editable text");
+
+    int changes = 0;
+    qint64 number = 12;
+    QObject::connect(&palette, &ScreenshotToolPalette::serialNumberStyleChanged,
+                     [&changes, &number](const SnowCanvasSerialNumberStyle& style) {
+                         ++changes;
+                         number = style.number;
+                     });
+    const auto typeText = [input](const QString& text) {
+        input->selectAll();
+        QKeyEvent key(QEvent::KeyPress, Qt::Key_unknown, Qt::NoModifier, text);
+        QApplication::sendEvent(input, &key);
+    };
+    const auto finish = [input]() {
+        QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+        QApplication::sendEvent(input, &enter);
+    };
+    const auto wheel = [](QWidget* target, int delta) {
+        const QPoint local = target->rect().center();
+        QWheelEvent event(QPointF(local), target->mapToGlobal(local), QPoint(), QPoint(0, delta),
+                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(target, &event);
+        require(event.isAccepted(), "sequence number input and prefix should consume wheel events");
+    };
+    typeText(QStringLiteral("40"));
+    require(changes == 0, "typing should defer sequence number changes until editing finishes");
+    finish();
+    require(changes == 1 && number == 40, "Enter should commit the typed sequence number");
+    wheel(input, 120);
+    require(changes == 2 && number == 41 && input->text() == QStringLiteral("41"),
+            "scrolling up over the input should increment and display the number");
+    wheel(prefix, -120);
+    require(changes == 3 && number == 40 && input->text() == QStringLiteral("40"),
+            "scrolling down over the embedded icon should decrement the number");
+    typeText(QStringLiteral("70"));
+    wheel(input, 120);
+    require(changes == 4 && number == 71,
+            "wheel adjustment should use a valid pending edit as its starting value");
+    input->clear();
+    finish();
+    require(changes == 4 && input->text() == QStringLiteral("71"),
+            "empty input should restore the current number without changing it");
+    typeText(QStringLiteral("9223372036854775808"));
+    finish();
+    require(changes == 4 && input->text() == QStringLiteral("71"),
+            "overflowing input should restore the current number without changing it");
+    typeText(QStringLiteral("-1"));
+    require(input->text() == QStringLiteral("71"), "negative input should be rejected");
+    typeText(QStringLiteral("abc"));
+    require(input->text() == QStringLiteral("71"), "nonnumeric input should be rejected");
+    typeText(QStringLiteral("0"));
+    finish();
+    wheel(input, -120);
+    require(changes == 5 && number == 0 && input->text() == QStringLiteral("0"),
+            "scrolling down at zero should stay at zero without emitting a redundant change");
+    typeText(QStringLiteral("9223372036854775807"));
+    finish();
+    require(changes == 6 && input->text() == QStringLiteral("9223372036854775807"),
+            "sequence number input should preserve the exact maximum 64-bit integer");
+    wheel(prefix, 120);
+    require(changes == 6 && input->text() == QStringLiteral("9223372036854775807"),
+            "scrolling up at the maximum should clamp without overflow or redundant changes");
+    wheel(input, -120);
+    require(changes == 7 && input->text() == QStringLiteral("9223372036854775806"),
+            "large sequence numbers should decrement exactly without floating point rounding");
+
+    state.serialNumberStyleMixed = SnowCanvasSerialNumberStyleMixedNumber;
+    palette.setStyleToolbarState(state);
+    require(changes == 7 && input->text().isEmpty() &&
+                input->placeholderText() == QStringLiteral("Mixed"),
+            "mixed sequence numbers should show a placeholder without emitting changes");
+    finish();
+    require(changes == 7 && input->text().isEmpty(),
+            "finishing an untouched mixed input should preserve mixed state");
+    typeText(QStringLiteral("12"));
+    finish();
+    require(changes == 8 && number == 12 && input->text() == QStringLiteral("12"),
+            "entering the representative number should resolve mixed state");
+    input->setFocus();
+    typeText(QStringLiteral("23"));
+    input->clearFocus();
+    require(changes == 9 && number == 23, "focus loss should commit sequence number edits");
+    typeText(QStringLiteral("9223372036854775808"));
+    wheel(input, 120);
+    require(changes == 10 && number == 24 && input->text() == QStringLiteral("24"),
+            "wheel adjustment should recover invalid pending text using the current number");
+    input->setFocus();
+    typeText(QStringLiteral("35"));
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Text);
+    QCoreApplication::processEvents();
+    palette.setActiveTool(ScreenshotToolPalette::Tool::SerialNumber);
+    QCoreApplication::processEvents();
+    input = qobject_cast<adqt::widgets::AdLineEdit*>(
+        controlWithTooltip(palette, "Sequence number (scroll to adjust)"));
+    require(input != nullptr && !input->text().isEmpty(),
+            "switching tools during an edit should safely recreate the sequence number input");
 }
 
 void stylePopoverTriggersProvideMouseFeedback() {
@@ -8100,6 +8224,7 @@ int main(int argc, char** argv) {
     selectedArrowMixedPropertiesResolveIndependently();
     textStyleControlsExposeAndEmitAllRequestedProperties();
     serialNumberStyleControlsExposeAndEmitRequestedProperties();
+    serialNumberInputCommitsEditsAndSupportsWheel();
     stylePopoverTriggersProvideMouseFeedback();
     cornerRadiusButtonsRestoreTheDefaultValue();
     selectedStrokeColorDragKeepsPickerIndicatorInSync();
