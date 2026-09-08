@@ -5,6 +5,7 @@ pub mod recording;
 
 pub(crate) mod adapter;
 pub(crate) mod ffmpeg_util;
+pub(crate) mod laser_trail;
 pub(crate) mod mouse_hook;
 pub(crate) mod processor;
 pub(crate) mod temp;

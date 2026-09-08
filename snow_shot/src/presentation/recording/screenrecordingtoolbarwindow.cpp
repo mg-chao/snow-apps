@@ -40,6 +40,9 @@ ScreenshotToolPalette::Options recordingToolbarOptions() {
 
 ScreenRecordingToolbarWindow::ScreenRecordingToolbarWindow(QWidget* parent)
     : ScreenshotFloatingToolPaletteWindow(recordingToolbarOptions(), parent) {
+    setWindowFlag(Qt::WindowDoesNotAcceptFocus, false);
+    setAttribute(Qt::WA_ShowWithoutActivating, false);
+    setFocusPolicy(Qt::StrongFocus);
     setAttribute(Qt::WA_DeleteOnClose, false);
     prepareForDisplay();
 }

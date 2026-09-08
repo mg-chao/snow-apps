@@ -4,7 +4,9 @@
 
 #include "snow_shot/presentation/screenshottoolbarmainpanel.h"
 #include "screenshottoolpalettebuttons.h"
+#include "screenshottoolpalettestylecomponents.h"
 #include "screenshottoolpalettestylecontrols.h"
+#include "screenshottoolpalettestylepresets.h"
 #include "snow_shot/presentation/components/icons/iconrenderutils.h"
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/screenshottoolbarlayoutmodel.h"
@@ -124,7 +126,7 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Record speakers"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Open recording folder"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Close recording"),
-    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Render settings"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Export Settings"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mouse trail color"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Mouse click color"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Show cursor in recording"),
@@ -768,12 +770,15 @@ ScreenshotToolPalette::ScreenshotToolPalette(const Options& options, QWidget* pa
         createSecondaryToolbarShell();
     }
     if (options.showRecordingControls) {
-        createRecordingRenderSettingsToolbar();
+        createRecordingExportSettingsToolbar();
     }
     {
         SNOW_SHOT_TOOLBAR_PERF_SCOPE("palette.ctor.initial_layout");
         updateToolbarGeometry();
         resetStyleState();
+    }
+    if (options.showRecordingControls && options.recordingDrawingMode) {
+        setRecordingExportSettingsVisible(true);
     }
     installWheelFilters(this);
 
@@ -833,8 +838,8 @@ QWidget* ScreenshotToolPalette::stylePanel() const {
     return m_rectangleStylePanel;
 }
 
-QWidget* ScreenshotToolPalette::recordingRenderSettingsPanel() const {
-    return m_recordRenderSettingsPanel;
+QWidget* ScreenshotToolPalette::recordingExportSettingsPanel() const {
+    return m_recordExportSettingsPanel;
 }
 
 QWidget* ScreenshotToolPalette::dragHandle() const {
@@ -1094,8 +1099,8 @@ bool ScreenshotToolPalette::actionToolbarVisible() const {
     return m_actionToolbarTargetVisible;
 }
 
-bool ScreenshotToolPalette::recordingRenderSettingsVisible() const {
-    return m_recordRenderSettingsVisible;
+bool ScreenshotToolPalette::recordingExportSettingsVisible() const {
+    return m_recordExportSettingsVisible;
 }
 
 bool ScreenshotToolPalette::setSecondaryToolbarVisibility(bool actionToolbarVisible,
@@ -1259,20 +1264,20 @@ void ScreenshotToolPalette::refreshThemeDependentIcons() {
         m_recordResumeButton->setIconRef(snow_shot::presentation::icons::withPrimaryColor(
             custom_outlined_icons::RecordingResume(), scheme.map.colorPrimary));
     }
-    const auto refreshRecordingRenderIcon = [this, &scheme](QLabel* label,
+    const auto refreshRecordingExportIcon = [this, &scheme](QLabel* label,
                                                             const adqt::icons::IconRef& iconRef) {
         if (label == nullptr) {
             return;
         }
-        const int iconSize = scaledMetric(STYLE_ICON_SIZE);
+        const int iconSize = scaledMetric(actionButtonMetrics(m_physicalScale).iconSize);
         label->setPixmap(snow_shot::presentation::icons::renderTintedIconPixmap(
             iconRef, QSize(iconSize, iconSize), devicePixelRatioF(), scheme.map.colorText));
     };
-    refreshRecordingRenderIcon(m_recordMouseTrailIcon, custom_outlined_icons::RecordingRender());
-    refreshRecordingRenderIcon(m_recordMouseClickIcon, custom_outlined_icons::RecordingClick());
+    refreshRecordingExportIcon(m_recordMouseTrailIcon, custom_outlined_icons::LaserPointer());
+    refreshRecordingExportIcon(m_recordMouseClickIcon, custom_outlined_icons::RecordingClick());
 
     updateRecordingControls();
-    updateRecordingRenderSettingsControls();
+    updateRecordingExportSettingsControls();
     updateRecordingControlMetrics();
 }
 
@@ -1345,9 +1350,9 @@ void ScreenshotToolPalette::setActiveTool(Tool tool) {
     if (m_releasingSecondaryResources) {
         return;
     }
-    if (m_options.recordingDrawingMode && m_recordRenderSettingsVisible && tool != Tool::Select &&
+    if (m_options.recordingDrawingMode && m_recordExportSettingsVisible && tool != Tool::Select &&
         !isRecordingUnavailableTool(tool)) {
-        setRecordingRenderSettingsVisible(false);
+        setRecordingExportSettingsVisible(false);
     }
     const bool activeToolNoop = m_activeTool.has_value() && *m_activeTool == tool &&
                                 (!toolUsesStyleToolbar(tool) ||
@@ -1722,6 +1727,7 @@ void ScreenshotToolPalette::setRecordingMouseTrailColor(const QColor& color) {
         const QSignalBlocker blocker(m_recordMouseTrailColorPicker);
         m_recordMouseTrailColorPicker->setValue(adqt::widgets::AdColorValue::solid(value));
     }
+    updateRecordingExportSettingsControls();
 }
 
 QColor ScreenshotToolPalette::recordingMouseTrailColor() const {
@@ -1738,6 +1744,7 @@ void ScreenshotToolPalette::setRecordingMouseClickColor(const QColor& color) {
         const QSignalBlocker blocker(m_recordMouseClickColorPicker);
         m_recordMouseClickColorPicker->setValue(adqt::widgets::AdColorValue::solid(value));
     }
+    updateRecordingExportSettingsControls();
 }
 
 QColor ScreenshotToolPalette::recordingMouseClickColor() const {
@@ -1749,7 +1756,7 @@ void ScreenshotToolPalette::setRecordingCursorVisible(bool visible) {
         return;
     }
     m_recordingCursorVisible = visible;
-    updateRecordingRenderSettingsControls();
+    updateRecordingExportSettingsControls();
 }
 
 bool ScreenshotToolPalette::recordingCursorVisible() const {
@@ -2221,9 +2228,9 @@ void ScreenshotToolPalette::ensureLayoutApplied() const {
     if (self->m_styleToolbarTargetVisible) {
         cachedOccupied = cachedOccupied.united(self->panelContentRect(self->m_rectangleStylePanel));
     }
-    if (self->m_recordRenderSettingsVisible) {
+    if (self->m_recordExportSettingsVisible) {
         cachedOccupied =
-            cachedOccupied.united(self->panelContentRect(self->m_recordRenderSettingsPanel));
+            cachedOccupied.united(self->panelContentRect(self->m_recordExportSettingsPanel));
     }
     self->m_layoutResult.occupiedContentRect = cachedOccupied;
     SNOW_SHOT_TOOLBAR_PERF_COUNTER("layout.commit");
@@ -2276,13 +2283,13 @@ void ScreenshotToolPalette::commitLayout() {
             m_rectangleStylePanel->setFixedSize(styleSize);
         }
     }
-    if (m_recordRenderSettingsPanel != nullptr) {
-        activateLayout(m_recordRenderSettingsPanel);
-        const QSize renderSettingsSize = m_recordRenderSettingsPanel->sizeHint();
-        if (m_recordRenderSettingsPanel->size() != renderSettingsSize ||
-            m_recordRenderSettingsPanel->minimumSize() != renderSettingsSize ||
-            m_recordRenderSettingsPanel->maximumSize() != renderSettingsSize) {
-            m_recordRenderSettingsPanel->setFixedSize(renderSettingsSize);
+    if (m_recordExportSettingsPanel != nullptr) {
+        activateLayout(m_recordExportSettingsPanel);
+        const QSize exportSettingsSize = m_recordExportSettingsPanel->sizeHint();
+        if (m_recordExportSettingsPanel->size() != exportSettingsSize ||
+            m_recordExportSettingsPanel->minimumSize() != exportSettingsSize ||
+            m_recordExportSettingsPanel->maximumSize() != exportSettingsSize) {
+            m_recordExportSettingsPanel->setFixedSize(exportSettingsSize);
         }
     }
     const QSize contentSize = contentSizeForVisibleRows();
@@ -2319,7 +2326,7 @@ void ScreenshotToolPalette::commitLayout() {
     activateRowLayout(m_mainPanel);
     activateRowLayout(m_selectActionPanel);
     activateRowLayout(m_rectangleStylePanel);
-    activateRowLayout(m_recordRenderSettingsPanel);
+    activateRowLayout(m_recordExportSettingsPanel);
 }
 
 QSize ScreenshotToolPalette::styleToolbarSizeHint() {
@@ -2369,8 +2376,8 @@ QSize ScreenshotToolPalette::maximumSecondaryToolbarSizeHint() const {
     const QMargins margins = m_rectangleStyleLayout->contentsMargins();
     QSize result =
         controlsSize + QSize(margins.left() + margins.right(), margins.top() + margins.bottom());
-    if (m_recordRenderSettingsPanel != nullptr) {
-        result = result.expandedTo(m_recordRenderSettingsPanel->sizeHint());
+    if (m_recordExportSettingsPanel != nullptr) {
+        result = result.expandedTo(m_recordExportSettingsPanel->sizeHint());
     }
     return result;
 }
@@ -2556,49 +2563,57 @@ void ScreenshotToolPalette::applyScaledToolbarMetrics() {
         m_selectActionLayout->setSpacing(0);
         m_selectActionLayout->invalidate();
     }
-    if (m_recordRenderSettingsLayout != nullptr) {
-        m_recordRenderSettingsLayout->setContentsMargins(
-            scaledPanelMargins(TOOLBAR_PANEL_HORIZONTAL_MARGIN, TOOLBAR_PANEL_VERTICAL_MARGIN, 32));
-        m_recordRenderSettingsLayout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
-        m_recordRenderSettingsLayout->invalidate();
+    if (m_recordExportSettingsLayout != nullptr) {
+        m_recordExportSettingsLayout->setContentsMargins(scaledPanelMargins(
+            STYLE_PANEL_HORIZONTAL_MARGIN, STYLE_PANEL_VERTICAL_MARGIN, STYLE_BUTTON_SIZE));
+        m_recordExportSettingsLayout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
+        m_recordExportSettingsLayout->invalidate();
     }
     if (m_recordOutputFormatSelect != nullptr) {
-        m_recordOutputFormatSelect->setFixedWidth(scaledMetric(76));
+        m_recordOutputFormatSelect->setFixedSize(scaledMetric(76), scaledMetric(STYLE_BUTTON_SIZE));
     }
     for (adqt::widgets::AdColorPicker* picker :
-        {m_recordMouseTrailColorPicker, m_recordMouseClickColorPicker}) {
+         {m_recordMouseTrailColorPicker, m_recordMouseClickColorPicker}) {
         if (picker != nullptr) {
-            picker->setFixedWidth(scaledMetric(32));
+            snow_shot::presentation::refreshScreenshotToolPaletteColorPickerMetrics(
+                picker, styleButtonMetrics(m_physicalScale));
+        }
+    }
+    for (const auto* presets : {&m_recordMouseTrailColorPresets, &m_recordMouseClickColorPresets}) {
+        for (const RecordingColorPreset& preset : *presets) {
+            configureScreenshotToolPaletteStyleButton(preset.button, nullptr,
+                                                      styleButtonMetrics(m_physicalScale));
+            static_cast<ColorSwatchButton*>(preset.button)->setPhysicalScale(m_physicalScale);
         }
     }
     const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
-    const auto scaleRecordingRenderIcon = [this, &scheme](QLabel* label,
+    const auto scaleRecordingExportIcon = [this, &scheme](QLabel* label,
                                                           const adqt::icons::IconRef& iconRef) {
         if (label == nullptr) {
             return;
         }
-        const int controlSize = scaledMetric(24);
-        const int iconSize = scaledMetric(STYLE_ICON_SIZE);
+        const auto metrics = styleButtonMetrics(m_physicalScale);
+        const int controlSize = scaledMetric(metrics.buttonSize);
+        const int iconSize = scaledMetric(metrics.iconSize);
         label->setFixedSize(controlSize, controlSize);
         label->setPixmap(snow_shot::presentation::icons::renderTintedIconPixmap(
             iconRef, QSize(iconSize, iconSize), devicePixelRatioF(), scheme.map.colorText));
     };
-    scaleRecordingRenderIcon(m_recordMouseTrailIcon, custom_outlined_icons::RecordingRender());
-    scaleRecordingRenderIcon(m_recordMouseClickIcon, custom_outlined_icons::RecordingClick());
+    scaleRecordingExportIcon(m_recordMouseTrailIcon, custom_outlined_icons::LaserPointer());
+    scaleRecordingExportIcon(m_recordMouseClickIcon, custom_outlined_icons::RecordingClick());
     if (m_recordCursorButton != nullptr) {
         configureScreenshotToolPaletteStyleButton(m_recordCursorButton, "Show cursor in recording",
-                                                  actionButtonMetrics(m_physicalScale));
+                                                  styleButtonMetrics(m_physicalScale));
     }
 
     for (QFrame* separator : std::as_const(m_styleSeparatorFrames)) {
-        const bool selectionSeparator =
-            separator != nullptr && m_selectActionPanel != nullptr &&
-            (separator->parentWidget() == m_selectActionPanel ||
-             m_selectActionPanel->isAncestorOf(separator));
-        const bool renderSettingsSeparator =
-            separator != nullptr && m_recordRenderSettingsPanel != nullptr &&
-            separator->parentWidget() == m_recordRenderSettingsPanel;
-        if (selectionSeparator || renderSettingsSeparator) {
+        const bool selectionSeparator = separator != nullptr && m_selectActionPanel != nullptr &&
+                                        (separator->parentWidget() == m_selectActionPanel ||
+                                         m_selectActionPanel->isAncestorOf(separator));
+        const bool exportSettingsSeparator =
+            separator != nullptr && m_recordExportSettingsPanel != nullptr &&
+            separator->parentWidget() == m_recordExportSettingsPanel;
+        if (selectionSeparator || exportSettingsSeparator) {
             separator->setFixedSize(scaledMetric(TOOLBAR_SEPARATOR_WIDTH),
                                     scaledMetric(TOOLBAR_SEPARATOR_HEIGHT));
         }
@@ -3065,7 +3080,7 @@ void ScreenshotToolPalette::retranslateUi() {
     if (m_recordDurationLabel != nullptr) {
         m_recordDurationLabel->setAccessibleName(tr("Recording duration"));
     }
-    refreshRecordingRenderSettingsText();
+    refreshRecordingExportSettingsText();
     updateRecordingControls();
     refreshShortcutTooltips();
 }
@@ -3152,13 +3167,13 @@ void ScreenshotToolPalette::createMainToolbar(const Options& options) {
     QBoxLayout* panelLayout = m_mainPanel->contentLayout();
 
     if (options.showRecordingControls) {
-        m_recordRenderSettingsButton =
-            addActionButton("Render settings", custom_outlined_icons::RecordingRender());
-        m_recordRenderSettingsButton->setObjectName(
-            QStringLiteral("screenRecordingRenderSettings"));
-        panelLayout->addWidget(m_recordRenderSettingsButton);
-        connect(m_recordRenderSettingsButton, &adqt::widgets::AdButton::clicked, this,
-                [this]() { setRecordingRenderSettingsVisible(true); });
+        m_recordExportSettingsButton =
+            addActionButton("Export Settings", custom_outlined_icons::ExportSettings());
+        m_recordExportSettingsButton->setObjectName(
+            QStringLiteral("screenRecordingExportSettings"));
+        panelLayout->addWidget(m_recordExportSettingsButton);
+        connect(m_recordExportSettingsButton, &adqt::widgets::AdButton::clicked, this,
+                [this]() { setRecordingExportSettingsVisible(!m_recordExportSettingsVisible); });
     }
 
     const bool hasEditingTools = addMainToolButtons(options, panelLayout);
@@ -3349,8 +3364,8 @@ void ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
         return;
     }
 
-    // Toolbar clicks are toggle-like: clicking the active drawing/action tool
-    // returns to selection mode. Programmatic setActiveTool() calls remain
+    // Toolbar clicks and shortcuts toggle the active drawing/action tool back
+    // to selection mode. Programmatic setActiveTool() calls remain
     // explicit so state synchronization does not unexpectedly toggle.
     adqt::widgets::AdButton* requestedButton = nullptr;
     switch (tool) {
@@ -3384,7 +3399,8 @@ void ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
         : requestedButton != nullptr ? m_activeToolButton == requestedButton
                                      : m_activeTool.has_value() && *m_activeTool == tool;
     if (alreadyActive && m_options.recordingDrawingMode && tool != Tool::Select) {
-        setRecordingRenderSettingsVisible(true);
+        clearActiveTool();
+        emit selectRequested();
         return;
     }
     const Tool requestedTool = alreadyActive && tool != Tool::Select ? Tool::Select : tool;
@@ -3815,7 +3831,7 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
         }
     };
 
-    addFixedWidget(m_recordRenderSettingsButton);
+    addFixedWidget(m_recordExportSettingsButton);
     addSeparator();
     addFixedWidget(m_moveButton);
     addFixedWidget(m_selectButton);
@@ -4403,6 +4419,9 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
 
 ScreenshotToolPalette::Tool ScreenshotToolPalette::drawingShortcutEntryTool(const QString& itemId,
                                                                             Tool fallback) const {
+    if (m_activeTool.has_value() && drawingToolItemId(*m_activeTool) == itemId) {
+        return *m_activeTool;
+    }
     for (const DrawingToolGroup& group : m_drawingToolGroups) {
         if (group.itemIds.contains(itemId)) {
             return group.entryTool;
@@ -4436,10 +4455,18 @@ bool ScreenshotToolPalette::activateDrawingShortcut(const QString& toolId) {
     } else {
         return false;
     }
+    return activateToolShortcut(tool);
+}
+
+bool ScreenshotToolPalette::activateToolShortcut(Tool tool) {
     if (isRecordingUnavailableTool(tool)) {
         return false;
     }
-    activateDrawingTool(tool);
+    if (m_options.recordingDrawingMode) {
+        activateDrawingTool(tool);
+    } else {
+        activateToolFromToolbar(tool, false);
+    }
     return true;
 }
 
@@ -4732,47 +4759,50 @@ void ScreenshotToolPalette::createSecondaryToolbarShell() {
     m_rectangleStylePanel->hide();
 }
 
-void ScreenshotToolPalette::createRecordingRenderSettingsToolbar() {
-    if (m_recordRenderSettingsPanel != nullptr) {
+void ScreenshotToolPalette::createRecordingExportSettingsToolbar() {
+    if (m_recordExportSettingsPanel != nullptr) {
         return;
     }
 
-    m_recordRenderSettingsPanel =
-        createPanel(this, QStringLiteral("screenRecordingRenderSettingsPanel"));
-    if (auto* frame = qobject_cast<QFrame*>(m_recordRenderSettingsPanel)) {
+    m_recordExportSettingsPanel =
+        createPanel(this, QStringLiteral("screenRecordingExportSettingsPanel"));
+    if (auto* frame = qobject_cast<QFrame*>(m_recordExportSettingsPanel)) {
         m_panelFrames.push_back(frame);
         updatePanelMetrics(frame);
     }
-    auto* layout = new QHBoxLayout(m_recordRenderSettingsPanel);
-    m_recordRenderSettingsLayout = layout;
-    m_styleControlLayouts.push_back(layout);
-    layout->setContentsMargins(
-        scaledPanelMargins(TOOLBAR_PANEL_HORIZONTAL_MARGIN, TOOLBAR_PANEL_VERTICAL_MARGIN, 32));
+    auto* layout = new QHBoxLayout(m_recordExportSettingsPanel);
+    m_recordExportSettingsLayout = layout;
+    // This persistent row owns its spacing through applyScaledToolbarMetrics().
+    // Drawing layout profiles are discarded on tool eviction, so registering
+    // this row there would leave generated gaps behind and add more on reuse.
+    layout->setContentsMargins(scaledPanelMargins(STYLE_PANEL_HORIZONTAL_MARGIN,
+                                                  STYLE_PANEL_VERTICAL_MARGIN, STYLE_BUTTON_SIZE));
     layout->setSpacing(scaledMetric(STYLE_ITEM_SPACING));
 
-    m_recordOutputFormatSelect = new adqt::widgets::AdSelect(m_recordRenderSettingsPanel);
+    m_recordOutputFormatSelect = new adqt::widgets::AdSelect(m_recordExportSettingsPanel);
     m_recordOutputFormatSelect->setObjectName(QStringLiteral("screenRecordingOutputFormat"));
     m_recordOutputFormatSelect->setControlSize(adqt::widgets::AdSelect::ControlSize::Small);
     m_recordOutputFormatSelect->setVariant(adqt::widgets::AdSelect::Variant::Borderless);
     m_recordOutputFormatSelect->setSearchEnabled(false);
     m_recordOutputFormatSelect->setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
-    m_recordOutputFormatSelect->setFixedWidth(scaledMetric(76));
+    m_recordOutputFormatSelect->setFixedSize(scaledMetric(76), scaledMetric(STYLE_BUTTON_SIZE));
     layout->addWidget(m_recordOutputFormatSelect);
 
     const auto addSeparator = [this, layout](const QString& objectName) {
-        QFrame* separator = createStyleToolbarSeparator(m_recordRenderSettingsPanel);
+        QFrame* separator = createStyleToolbarSeparator(m_recordExportSettingsPanel);
         separator->setObjectName(objectName);
-        m_recordRenderSettingsSeparators.push_back(separator);
+        m_recordExportSettingsSeparators.push_back(separator);
         layout->addWidget(separator);
     };
-    addSeparator(QStringLiteral("screenRecordingRenderFormatSeparator"));
+    addSeparator(QStringLiteral("screenRecordingExportFormatSeparator"));
 
     const auto addIcon = [this, layout](const QString& objectName,
                                         const adqt::icons::IconRef& iconRef) {
-        auto* label = new QLabel(m_recordRenderSettingsPanel);
+        auto* label = new QLabel(m_recordExportSettingsPanel);
         label->setObjectName(objectName);
-        const int controlSize = scaledMetric(24);
-        const int iconSize = scaledMetric(STYLE_ICON_SIZE);
+        const auto metrics = styleButtonMetrics(m_physicalScale);
+        const int controlSize = scaledMetric(metrics.buttonSize);
+        const int iconSize = scaledMetric(metrics.iconSize);
         const auto scheme = snow_shot::presentation::styles::generateThemeColorScheme();
         label->setFixedSize(controlSize, controlSize);
         label->setAlignment(Qt::AlignCenter);
@@ -4783,9 +4813,10 @@ void ScreenshotToolPalette::createRecordingRenderSettingsToolbar() {
     };
 
     const auto configurePicker = [this, layout](adqt::widgets::AdColorPicker* picker,
-                                                const QString& objectName) {
+                                                const QString& objectName,
+                                                const QString& accessibleName) {
         picker->setObjectName(objectName);
-        picker->setSize(adqt::widgets::AdColorPicker::Size::Small);
+        picker->setSize(adqt::widgets::AdColorPicker::Size::Middle);
         picker->setModeOptions({adqt::widgets::AdColorPicker::Mode::Solid});
         picker->setMode(adqt::widgets::AdColorPicker::Mode::Solid);
         picker->setFormat(adqt::widgets::AdColorPicker::Format::Hex);
@@ -4796,31 +4827,56 @@ void ScreenshotToolPalette::createRecordingRenderSettingsToolbar() {
         picker->setAllowClear(false);
         picker->setPlacement(adqt::widgets::AdColorPicker::Placement::Bottom);
         picker->setPopupLayerMode(adqt::widgets::AdColorPicker::PopupLayerMode::QtTool);
-        picker->setFixedWidth(scaledMetric(32));
+        snow_shot::presentation::createScreenshotToolPaletteColorPickerTrigger(
+            picker, accessibleName, QColor(0, 0, 0, 0), styleButtonMetrics(m_physicalScale));
         layout->addWidget(picker);
     };
 
+    const auto addPresets = [this, layout](adqt::widgets::AdColorPicker* picker, int alpha,
+                                           QVector<RecordingColorPreset>& presets) {
+        QVector<QColor> colors = snow_shot::presentation::style_presets::strokeColors().first(4);
+        for (QColor& color : colors) {
+            color.setAlpha(alpha);
+        }
+        colors.prepend(QColor(0, 0, 0, 0));
+        const char* names[] = {"Transparent", "Red", "Green", "Blue", "Yellow"};
+        for (int index = 0; index < colors.size(); ++index) {
+            const QColor color = colors.at(index);
+            auto* button = createScreenshotToolPaletteColorButton(
+                m_recordExportSettingsPanel, names[index], color, false, true,
+                styleButtonMetrics(m_physicalScale));
+            button->setObjectName(picker->objectName() + QStringLiteral("Preset%1").arg(index));
+            presets.push_back({color, button});
+            layout->addWidget(button);
+            connect(button, &adqt::widgets::AdButton::clicked, this, [picker, color]() {
+                picker->commitValue(adqt::widgets::AdColorValue::solid(color));
+            });
+        }
+    };
+
     m_recordMouseTrailIcon = addIcon(QStringLiteral("screenRecordingMouseTrailIcon"),
-                                     custom_outlined_icons::RecordingRender());
-    m_recordMouseTrailColorPicker = new adqt::widgets::AdColorPicker(m_recordRenderSettingsPanel);
-    configurePicker(m_recordMouseTrailColorPicker,
-                    QStringLiteral("screenRecordingMouseTrailColor"));
+                                     custom_outlined_icons::LaserPointer());
+    m_recordMouseTrailColorPicker = new adqt::widgets::AdColorPicker(m_recordExportSettingsPanel);
+    configurePicker(m_recordMouseTrailColorPicker, QStringLiteral("screenRecordingMouseTrailColor"),
+                    QStringLiteral("Mouse trail color"));
     m_recordMouseTrailColorPicker->setValue(
         adqt::widgets::AdColorValue::solid(m_recordingMouseTrailColor));
-    addSeparator(QStringLiteral("screenRecordingRenderTrailSeparator"));
+    addPresets(m_recordMouseTrailColorPicker, 255, m_recordMouseTrailColorPresets);
+    addSeparator(QStringLiteral("screenRecordingExportTrailSeparator"));
 
     m_recordMouseClickIcon = addIcon(QStringLiteral("screenRecordingMouseClickIcon"),
                                      custom_outlined_icons::RecordingClick());
-    m_recordMouseClickColorPicker = new adqt::widgets::AdColorPicker(m_recordRenderSettingsPanel);
-    configurePicker(m_recordMouseClickColorPicker,
-                    QStringLiteral("screenRecordingMouseClickColor"));
+    m_recordMouseClickColorPicker = new adqt::widgets::AdColorPicker(m_recordExportSettingsPanel);
+    configurePicker(m_recordMouseClickColorPicker, QStringLiteral("screenRecordingMouseClickColor"),
+                    QStringLiteral("Mouse click color"));
     m_recordMouseClickColorPicker->setValue(
         adqt::widgets::AdColorValue::solid(m_recordingMouseClickColor));
-    addSeparator(QStringLiteral("screenRecordingRenderClickSeparator"));
+    addPresets(m_recordMouseClickColorPicker, 128, m_recordMouseClickColorPresets);
+    addSeparator(QStringLiteral("screenRecordingExportClickSeparator"));
 
     m_recordCursorButton = createScreenshotToolPaletteStyleActionButton(
-        m_recordRenderSettingsPanel, "Show cursor in recording",
-        custom_outlined_icons::RecordingCursor(), actionButtonMetrics(m_physicalScale));
+        m_recordExportSettingsPanel, "Show cursor in recording",
+        custom_outlined_icons::RecordingCursor(), styleButtonMetrics(m_physicalScale));
     m_recordCursorButton->setObjectName(QStringLiteral("screenRecordingShowCursor"));
     layout->addWidget(m_recordCursorButton);
 
@@ -4858,15 +4914,15 @@ void ScreenshotToolPalette::createRecordingRenderSettingsToolbar() {
     });
 
     if (m_rootLayout != nullptr) {
-        m_rootLayout->addWidget(m_recordRenderSettingsPanel, 0, Qt::AlignRight);
+        m_rootLayout->addWidget(m_recordExportSettingsPanel, 0, Qt::AlignRight);
     }
-    m_recordRenderSettingsPanel->hide();
-    refreshRecordingRenderSettingsText();
-    updateRecordingRenderSettingsControls();
-    installWheelFilters(this, m_recordRenderSettingsPanel);
+    m_recordExportSettingsPanel->hide();
+    refreshRecordingExportSettingsText();
+    updateRecordingExportSettingsControls();
+    installWheelFilters(this, m_recordExportSettingsPanel);
 }
 
-void ScreenshotToolPalette::refreshRecordingRenderSettingsText() {
+void ScreenshotToolPalette::refreshRecordingExportSettingsText() {
     if (m_recordOutputFormatSelect == nullptr) {
         return;
     }
@@ -4881,29 +4937,11 @@ void ScreenshotToolPalette::refreshRecordingRenderSettingsText() {
     m_recordOutputFormatSelect->setToolTip(tr("Recording format"));
     m_recordOutputFormatSelect->setAccessibleName(tr("Recording format"));
 
-    const auto solid = [](const QColor& color) {
-        return adqt::widgets::AdColorValue::solid(color);
-    };
     if (m_recordMouseTrailColorPicker != nullptr) {
-        m_recordMouseTrailColorPicker->setPresets({
-            {tr("Mouse trail color"),
-             {solid(QColor(0, 0, 0, 0)), solid(QColor(255, 0, 0)), solid(QColor(0, 255, 0)),
-              solid(QColor(0, 0, 255)), solid(QColor(255, 255, 0))},
-             true,
-             QStringLiteral("recording-trail")},
-        });
         m_recordMouseTrailColorPicker->setToolTip(tr("Mouse trail color"));
         m_recordMouseTrailColorPicker->setAccessibleName(tr("Mouse trail color"));
     }
     if (m_recordMouseClickColorPicker != nullptr) {
-        m_recordMouseClickColorPicker->setPresets({
-            {tr("Mouse click color"),
-             {solid(QColor(0, 0, 0, 0)), solid(QColor(255, 0, 0, 128)),
-              solid(QColor(0, 255, 0, 128)), solid(QColor(0, 0, 255, 128)),
-              solid(QColor(255, 255, 0, 128))},
-             true,
-             QStringLiteral("recording-click")},
-        });
         m_recordMouseClickColorPicker->setToolTip(tr("Mouse click color"));
         m_recordMouseClickColorPicker->setAccessibleName(tr("Mouse click color"));
     }
@@ -4912,17 +4950,17 @@ void ScreenshotToolPalette::refreshRecordingRenderSettingsText() {
     }
 }
 
-void ScreenshotToolPalette::setRecordingRenderSettingsVisible(bool visible) {
-    visible = visible && m_recordingState == RecordingState::Idle && !m_recordingBusy;
+void ScreenshotToolPalette::setRecordingExportSettingsVisible(bool visible) {
     if (visible && m_options.recordingDrawingMode && m_activeTool.has_value()) {
         clearActiveTool();
         emit selectRequested();
     }
-    if (m_recordRenderSettingsVisible == visible) {
+    if (m_recordExportSettingsVisible == visible) {
         return;
     }
-    m_recordRenderSettingsVisible = visible;
-    applyMainToolbarToolActiveStyle(m_recordRenderSettingsButton, visible);
+    m_recordExportSettingsVisible = visible;
+    emit recordingExportSettingsVisibleChanged(visible);
+    applyMainToolbarToolActiveStyle(m_recordExportSettingsButton, visible);
     if (visible) {
         static_cast<void>(setSecondaryToolbarVisibility(false, false));
     } else {
@@ -4933,20 +4971,35 @@ void ScreenshotToolPalette::setRecordingRenderSettingsVisible(bool visible) {
     emit visibleContentChanged();
 }
 
-void ScreenshotToolPalette::updateRecordingRenderSettingsControls() {
+void ScreenshotToolPalette::updateRecordingExportSettingsControls() {
     const bool editable = m_recordingState == RecordingState::Idle && !m_recordingBusy;
-    if (m_recordRenderSettingsButton != nullptr) {
-        m_recordRenderSettingsButton->setEnabled(editable);
+    if (m_recordExportSettingsPanel != nullptr) {
+        m_recordExportSettingsPanel->setEnabled(editable);
     }
     if (m_recordOutputFormatSelect != nullptr) {
         m_recordOutputFormatSelect->setDisabled(!editable);
     }
     if (m_recordMouseTrailColorPicker != nullptr) {
         m_recordMouseTrailColorPicker->setDisabled(!editable);
+        static_cast<ColorSwatchButton*>(m_recordMouseTrailColorPicker->triggerContent())
+            ->setSwatchColor(m_recordingMouseTrailColor);
     }
     if (m_recordMouseClickColorPicker != nullptr) {
         m_recordMouseClickColorPicker->setDisabled(!editable);
+        static_cast<ColorSwatchButton*>(m_recordMouseClickColorPicker->triggerContent())
+            ->setSwatchColor(m_recordingMouseClickColor);
     }
+    const auto updatePresets = [editable](const QVector<RecordingColorPreset>& presets,
+                                          const QColor& color) {
+        for (const RecordingColorPreset& preset : presets) {
+            const bool active = preset.color == color;
+            preset.button->setEnabled(editable);
+            snow_shot::presentation::setScreenshotToolPaletteStyleButtonActive(preset.button,
+                                                                               active);
+        }
+    };
+    updatePresets(m_recordMouseTrailColorPresets, m_recordingMouseTrailColor);
+    updatePresets(m_recordMouseClickColorPresets, m_recordingMouseClickColor);
     if (m_recordCursorButton != nullptr) {
         m_recordCursorButton->setEnabled(editable);
         applyMainToolbarToolActiveStyle(m_recordCursorButton, m_recordingCursorVisible);
@@ -4959,11 +5012,8 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     if (m_selectActionLayout != nullptr) {
         m_styleControlLayouts.push_back(m_selectActionLayout);
     }
-    if (m_recordRenderSettingsLayout != nullptr) {
-        m_styleControlLayouts.push_back(m_recordRenderSettingsLayout);
-    }
     m_styleSeparatorFrames.clear();
-    for (QFrame* separator : std::as_const(m_recordRenderSettingsSeparators)) {
+    for (QFrame* separator : std::as_const(m_recordExportSettingsSeparators)) {
         if (separator != nullptr) {
             m_styleSeparatorFrames.push_back(separator);
         }
@@ -4975,7 +5025,7 @@ void ScreenshotToolPalette::clearSecondaryResourceBindings() {
     if (auto* frame = qobject_cast<QFrame*>(m_rectangleStylePanel)) {
         m_panelFrames.push_back(frame);
     }
-    if (auto* frame = qobject_cast<QFrame*>(m_recordRenderSettingsPanel)) {
+    if (auto* frame = qobject_cast<QFrame*>(m_recordExportSettingsPanel)) {
         m_panelFrames.push_back(frame);
     }
     m_styleSpacingItems.clear();
@@ -5844,8 +5894,8 @@ void ScreenshotToolPalette::updateToolbarRowGeometry(bool styleToolbarVisible) {
         if (m_rectangleStylePanel != nullptr) {
             m_rootLayout->removeWidget(m_rectangleStylePanel);
         }
-        if (m_recordRenderSettingsPanel != nullptr) {
-            m_rootLayout->removeWidget(m_recordRenderSettingsPanel);
+        if (m_recordExportSettingsPanel != nullptr) {
+            m_rootLayout->removeWidget(m_recordExportSettingsPanel);
         }
         if (m_styleToolbarAboveMain) {
             if (m_selectActionPanel != nullptr) {
@@ -5854,8 +5904,8 @@ void ScreenshotToolPalette::updateToolbarRowGeometry(bool styleToolbarVisible) {
             if (m_rectangleStylePanel != nullptr) {
                 m_rootLayout->addWidget(m_rectangleStylePanel, 0, Qt::AlignRight);
             }
-            if (m_recordRenderSettingsPanel != nullptr) {
-                m_rootLayout->addWidget(m_recordRenderSettingsPanel, 0, Qt::AlignRight);
+            if (m_recordExportSettingsPanel != nullptr) {
+                m_rootLayout->addWidget(m_recordExportSettingsPanel, 0, Qt::AlignRight);
             }
             m_rootLayout->addWidget(m_mainPanel, 0, Qt::AlignRight);
         } else {
@@ -5866,8 +5916,8 @@ void ScreenshotToolPalette::updateToolbarRowGeometry(bool styleToolbarVisible) {
             if (m_rectangleStylePanel != nullptr) {
                 m_rootLayout->addWidget(m_rectangleStylePanel, 0, Qt::AlignRight);
             }
-            if (m_recordRenderSettingsPanel != nullptr) {
-                m_rootLayout->addWidget(m_recordRenderSettingsPanel, 0, Qt::AlignRight);
+            if (m_recordExportSettingsPanel != nullptr) {
+                m_rootLayout->addWidget(m_recordExportSettingsPanel, 0, Qt::AlignRight);
             }
         }
         m_rowOrderDirty = false;
@@ -5887,9 +5937,9 @@ void ScreenshotToolPalette::updateToolbarRowGeometry(bool styleToolbarVisible) {
         m_rectangleStylePanel->isHidden() == styleToolbarVisible) {
         m_rectangleStylePanel->setVisible(styleToolbarVisible);
     }
-    if (m_recordRenderSettingsPanel != nullptr &&
-        m_recordRenderSettingsPanel->isHidden() == m_recordRenderSettingsVisible) {
-        m_recordRenderSettingsPanel->setVisible(m_recordRenderSettingsVisible);
+    if (m_recordExportSettingsPanel != nullptr &&
+        m_recordExportSettingsPanel->isHidden() == m_recordExportSettingsVisible) {
+        m_recordExportSettingsPanel->setVisible(m_recordExportSettingsVisible);
     }
 }
 
@@ -6049,7 +6099,7 @@ bool ScreenshotToolPalette::setStyleControlsActive(Tool tool) {
 }
 
 bool ScreenshotToolPalette::applyActiveToolSecondaryToolbarVisibility() {
-    if (m_recordRenderSettingsVisible) {
+    if (m_recordExportSettingsVisible) {
         return setSecondaryToolbarVisibility(false, false);
     }
     if (!m_activeTool.has_value()) {
@@ -6069,10 +6119,7 @@ void ScreenshotToolPalette::updateRecordingControls() {
     const bool paused = m_recordingState == RecordingState::Paused;
     const bool active = recording || paused;
     const bool animatedFormat = m_recordingOutputFormat != QStringLiteral("mp4");
-    if ((!idle || m_recordingBusy) && m_recordRenderSettingsVisible) {
-        setRecordingRenderSettingsVisible(false);
-    }
-    updateRecordingRenderSettingsControls();
+    updateRecordingExportSettingsControls();
     const bool visibilityChanged =
         (m_recordStartButton != nullptr && m_recordStartButton->isVisible() != idle) ||
         (m_recordStopButton != nullptr && m_recordStopButton->isVisible() != active) ||
@@ -6225,7 +6272,7 @@ QSize ScreenshotToolPalette::contentSizeForVisibleRows() const {
     };
 
     appendPanel(m_mainPanel, m_mainPanel != nullptr);
-    const QWidget* secondaryPanel = m_recordRenderSettingsVisible  ? m_recordRenderSettingsPanel
+    const QWidget* secondaryPanel = m_recordExportSettingsVisible  ? m_recordExportSettingsPanel
                                     : m_actionToolbarTargetVisible ? m_selectActionPanel
                                     : m_styleToolbarTargetVisible  ? m_rectangleStylePanel
                                                                    : nullptr;
@@ -6253,7 +6300,7 @@ QSize ScreenshotToolPalette::fullContentSize() const {
     const QSize mainSize = panelSize(m_mainPanel);
     QSize maximumSecondarySize = panelSize(m_selectActionPanel);
     maximumSecondarySize = maximumSecondarySize.expandedTo(maximumSecondaryToolbarSizeHint());
-    maximumSecondarySize = maximumSecondarySize.expandedTo(panelSize(m_recordRenderSettingsPanel));
+    maximumSecondarySize = maximumSecondarySize.expandedTo(panelSize(m_recordExportSettingsPanel));
     if (maximumSecondarySize.isEmpty()) {
         return mainSize;
     }
@@ -6288,8 +6335,8 @@ ScreenshotToolbarPlacementSnapshot ScreenshotToolPalette::buildPlacementSnapshot
     }
 
     const QWidget* secondaryPanel = nullptr;
-    if (m_recordRenderSettingsVisible) {
-        secondaryPanel = m_recordRenderSettingsPanel;
+    if (m_recordExportSettingsVisible) {
+        secondaryPanel = m_recordExportSettingsPanel;
     } else if (m_actionToolbarTargetVisible) {
         secondaryPanel = m_selectActionPanel;
     } else if (m_styleToolbarTargetVisible) {

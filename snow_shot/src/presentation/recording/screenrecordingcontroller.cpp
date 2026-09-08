@@ -9,7 +9,7 @@
 #include "snow_shot/presentation/screenrecordingareawindow.h"
 #include "snow_shot/presentation/screenrecordingtoolbarwindow.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
-#include "snow_shot/presentation/windowshortcutmanager.h"
+#include "snow_shot/presentation/screenrecordingshortcutcontroller.h"
 #include "screenrecordinggeometry.h"
 #include "../capture/windowcaptureexclusion.h"
 #include "snow_shot/storage/settingsadapters.h"
@@ -201,7 +201,6 @@ struct ScreenRecordingController::Impl {
         mouseTrailColor = settings.mouseTrailColor();
         mouseClickColor = settings.mouseClickColor();
         showCursor = settings.showCursor();
-        registerDrawingShortcuts();
         durationTimer.setInterval(kDurationTickMilliseconds);
         durationTimer.setTimerType(Qt::PreciseTimer);
         QObject::connect(&durationTimer, &QTimer::timeout, &owner, [this]() {
@@ -269,8 +268,8 @@ struct ScreenRecordingController::Impl {
         areaWindow->setPhysicalRegion(region);
         toolbarWindow->placeForPhysicalRegion(region);
         connectToolbar();
-        shortcutManager->addScopeWindow(areaWindow);
-        shortcutManager->addScopeWindow(toolbarWindow);
+        shortcutController = std::make_unique<ScreenRecordingShortcutController>(
+            *areaWindow, *toolbarWindow, &owner);
 
         state = ScreenshotToolPalette::RecordingState::Idle;
         durationMilliseconds = 0;
@@ -294,6 +293,24 @@ struct ScreenRecordingController::Impl {
             return;
         }
         connectDrawingToolbar(*palette);
+        QObject::connect(areaWindow, &ScreenRecordingAreaWindow::physicalRegionChanged, &owner,
+                         [this](const QRect& region) {
+                             if (state != ScreenshotToolPalette::RecordingState::Idle || busy) {
+                                 return;
+                             }
+                             physicalRegion = region;
+                             updateCaptureRegion();
+                             toolbarWindow->placeForPhysicalRegion(region);
+                         });
+        QObject::connect(palette, &ScreenshotToolPalette::recordingExportSettingsVisibleChanged,
+                         &owner, [this](bool visible) {
+                             areaWindow->setInputMode(
+                                 visible ? ScreenRecordingAreaWindow::InputMode::RegionEditing
+                                         : ScreenRecordingAreaWindow::InputMode::PassThrough);
+                         });
+        if (palette->recordingExportSettingsVisible()) {
+            areaWindow->setInputMode(ScreenRecordingAreaWindow::InputMode::RegionEditing);
+        }
         QObject::connect(palette, &ScreenshotToolPalette::recordingStartRequested, &owner,
                          [this]() { start(); });
         QObject::connect(palette, &ScreenshotToolPalette::recordingStopRequested, &owner,
@@ -337,12 +354,6 @@ struct ScreenRecordingController::Impl {
                          [this](bool visible) {
                              showCursor = visible;
                              snow_shot::storage::RecordingSettings().setShowCursor(visible);
-                         });
-        QObject::connect(palette, &ScreenshotToolPalette::materializedScope, &owner,
-                         [this](QWidget* scope) {
-                             if (shortcutManager != nullptr && scope != nullptr) {
-                                 shortcutManager->addScopeWindow(scope->window());
-                             }
                          });
     }
 
@@ -464,34 +475,6 @@ struct ScreenRecordingController::Impl {
         palette.setStyleToolbarState(canvas->canvasStyleToolbarState());
         palette.setWatermarkConfig(canvas->canvasWatermarkConfig());
         palette.setSpotlightConfig(canvas->canvasSpotlightConfig());
-    }
-
-    void registerDrawingShortcuts() {
-        shortcutManager = std::make_unique<snow_shot::presentation::WindowShortcutManager>(&owner);
-        const auto shortcuts = snow_shot::storage::DrawingShortcutSettings().allShortcuts();
-        for (auto tool = shortcuts.cbegin(); tool != shortcuts.cend(); ++tool) {
-            snow_shot::presentation::WindowShortcutManager::Binding binding;
-            binding.id = QStringLiteral("recording.drawing.") + tool.key();
-            binding.priority =
-                snow_shot::presentation::WindowShortcutManager::StandardPriority::DrawingShortcut;
-            binding.keyCombinations =
-                snow_shot::presentation::WindowShortcutManager::keyCombinationsFromPortableText(
-                    tool.value());
-            binding.canActivate = [this](const auto& context) {
-                return areaWindow != nullptr && toolbarWindow != nullptr &&
-                       areaWindow->inputMode() == ScreenRecordingAreaWindow::InputMode::Drawing &&
-                       !areaWindow->drawingBlocked() &&
-                       !snow_shot::presentation::WindowShortcutManager::focusAcceptsTextInput(
-                           context.focusWidget) &&
-                       !areaWindow->canvas()->hasActiveTextEditing();
-            };
-            binding.activate = [this, toolId = tool.key()](const auto&) {
-                ScreenshotToolPalette* palette =
-                    toolbarWindow != nullptr ? toolbarWindow->palette() : nullptr;
-                return palette != nullptr && palette->activateDrawingShortcut(toolId);
-            };
-            static_cast<void>(shortcutManager->addBinding(&owner, std::move(binding)));
-        }
     }
 
     void start() {
@@ -788,7 +771,7 @@ struct ScreenRecordingController::Impl {
     QColor sessionMouseClickColor{0, 0, 0, 0};
     bool sessionShowCursor = true;
     bool busy = false;
-    std::unique_ptr<snow_shot::presentation::WindowShortcutManager> shortcutManager;
+    std::unique_ptr<ScreenRecordingShortcutController> shortcutController;
     void report(const QString& event, QtMsgType level = QtInfoMsg) const {
         snow_shot::diagnostics::logEvent(QStringLiteral("snow_shot.recording"), event,
                                          {{QStringLiteral("operation"), operation},

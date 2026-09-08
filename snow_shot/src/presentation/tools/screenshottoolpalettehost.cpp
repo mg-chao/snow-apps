@@ -137,8 +137,8 @@ QRegion ScreenshotToolPaletteHost::interactiveHostRegion() const {
     appendPanel(m_palette->mainPanel(), true);
     appendPanel(m_palette->actionPanel(), m_palette->actionToolbarVisible());
     appendPanel(m_palette->stylePanel(), m_palette->styleToolbarVisible());
-    appendPanel(m_palette->recordingRenderSettingsPanel(),
-                m_palette->recordingRenderSettingsVisible());
+    appendPanel(m_palette->recordingExportSettingsPanel(),
+                m_palette->recordingExportSettingsVisible());
     return region;
 }
 

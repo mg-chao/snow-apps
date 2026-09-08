@@ -200,6 +200,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "ExportSettings",
+      "name": "export-settings",
+      "source": "../src/presentation/components/icons/resources/export-settings.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "FillSolid",
       "name": "fill-solid",
       "source": "../src/presentation/components/icons/resources/fill-solid.svg",
@@ -259,6 +267,14 @@
       "symbol": "Keyboard",
       "name": "keyboard",
       "source": "../src/presentation/components/icons/resources/keyboard.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "LaserPointer",
+      "name": "laser-pointer",
+      "source": "../src/presentation/components/icons/resources/laser-pointer.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },

@@ -463,7 +463,7 @@ ScreenshotToolPalette::Options recordingToolbarOptionsForPresetTest() {
 
 void settleQueuedRefreshes();
 
-void recordingRenderSettingsParticipateInNativeHitTesting() {
+void recordingExportSettingsParticipateInNativeHitTesting() {
     ScreenshotToolPalette::Options options = recordingToolbarOptionsForPresetTest();
     options.showShapeTool = true;
     options.recordingDrawingMode = true;
@@ -475,26 +475,30 @@ void recordingRenderSettingsParticipateInNativeHitTesting() {
     settleQueuedRefreshes();
 
     ScreenshotToolPalette* palette = window.palette();
-    auto* renderButton = palette != nullptr
-                             ? palette->findChild<adqt::widgets::AdButton*>(
-                                   QStringLiteral("screenRecordingRenderSettings"))
-                             : nullptr;
-    require(renderButton != nullptr, "recording hit-test fixture should expose Render Settings");
-    renderButton->click();
+    auto* exportButton = palette != nullptr ? palette->findChild<adqt::widgets::AdButton*>(
+                                                  QStringLiteral("screenRecordingExportSettings"))
+                                            : nullptr;
+    require(exportButton != nullptr, "recording hit-test fixture should expose Export Settings");
+    exportButton->click();
+    settleQueuedRefreshes();
+    require(!palette->recordingExportSettingsVisible() &&
+                !palette->recordingExportSettingsPanel()->isVisible(),
+            "clicking active Export Settings should close the floating secondary toolbar");
+    exportButton->click();
     settleQueuedRefreshes();
 
-    QWidget* renderPanel = palette->recordingRenderSettingsPanel();
-    auto* format = renderPanel != nullptr
-                       ? renderPanel->findChild<QWidget*>(
-                             QStringLiteral("screenRecordingOutputFormat"))
-                       : nullptr;
-    auto* cursor = renderPanel != nullptr
-                       ? renderPanel->findChild<QWidget*>(
-                             QStringLiteral("screenRecordingShowCursor"))
-                       : nullptr;
-    require(renderPanel != nullptr && renderPanel->isVisible() &&
-                palette->recordingRenderSettingsVisible() && format != nullptr && cursor != nullptr,
-            "opening Render Settings should expose its complete secondary toolbar");
+    QWidget* exportPanel = palette->recordingExportSettingsPanel();
+    auto* format =
+        exportPanel != nullptr
+            ? exportPanel->findChild<QWidget*>(QStringLiteral("screenRecordingOutputFormat"))
+            : nullptr;
+    auto* cursor =
+        exportPanel != nullptr
+            ? exportPanel->findChild<QWidget*>(QStringLiteral("screenRecordingShowCursor"))
+            : nullptr;
+    require(exportPanel != nullptr && exportPanel->isVisible() &&
+                palette->recordingExportSettingsVisible() && format != nullptr && cursor != nullptr,
+            "opening Export Settings should expose its complete secondary toolbar");
 
     const QPoint formatCenter =
         format->mapTo(&window, QPoint(format->width() / 2, format->height() / 2));
@@ -504,7 +508,7 @@ void recordingRenderSettingsParticipateInNativeHitTesting() {
                 window, formatCenter) &&
                 ScreenshotFloatingToolPaletteWindowTestAccess::isPointInInteractiveContent(
                     window, cursorCenter),
-            "native hit-testing should retain clicks over every Render Settings control");
+            "native hit-testing should retain clicks over every Export Settings control");
 }
 
 void settleQueuedRefreshes() {
@@ -1829,7 +1833,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--recording-hit-test-only"))) {
-            recordingRenderSettingsParticipateInNativeHitTesting();
+            recordingExportSettingsParticipateInNativeHitTesting();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--native-surface-lifecycle-only"))) {

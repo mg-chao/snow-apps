@@ -1243,6 +1243,12 @@ void ScreenshotController::Impl::createDisplayConfigurationObserver() {
 }
 
 void ScreenshotController::Impl::createOverlayInputPipeline() {
+    const auto activateToolShortcut = [this](ScreenshotToolPalette::Tool tool) {
+        ScreenshotToolbarWindow* toolbar =
+            m_overlayCoordinator != nullptr ? m_overlayCoordinator->toolbar() : nullptr;
+        ScreenshotToolPalette* palette = toolbar != nullptr ? toolbar->palette() : nullptr;
+        return palette != nullptr && palette->activateToolShortcut(tool);
+    };
     ScreenshotOverlayInputActions actions{
         [this](const QPoint& physicalPoint) {
             return m_selectorWorkflow->returnToSelection(physicalPoint);
@@ -1290,14 +1296,8 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
                 });
             return allowed;
         },
-        [this]() {
-            setMoveTool();
-            if (m_overlayCoordinator != nullptr) {
-                if (ScreenshotToolbarWindow* toolbar = m_overlayCoordinator->toolbar()) {
-                    toolbar->setActiveTool(ScreenshotToolPalette::Tool::Move);
-                }
-            }
-            return m_interaction.moveToolActive();
+        [activateToolShortcut]() {
+            return activateToolShortcut(ScreenshotToolPalette::Tool::Move);
         },
         [this](const QString& toolId) {
             ScreenshotToolbarWindow* toolbar =
@@ -1385,48 +1385,24 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
         [this](ScreenshotOverlayWindow* overlay, const QPointF& localPosition) {
             updateCanvasColorSamplingPreview(overlay, localPosition);
         },
-        [this]() {
-            setOcrTool();
-            if (m_overlayCoordinator != nullptr) {
-                if (ScreenshotToolbarWindow* toolbar = m_overlayCoordinator->toolbar()) {
-                    toolbar->setActiveTool(ScreenshotToolPalette::Tool::Ocr);
-                }
-            }
-            return true;
+        [activateToolShortcut]() { return activateToolShortcut(ScreenshotToolPalette::Tool::Ocr); },
+        [activateToolShortcut]() {
+            return activateToolShortcut(ScreenshotToolPalette::Tool::Table);
         },
-        [this]() {
-            setTableTool();
-            if (m_overlayCoordinator != nullptr) {
-                if (ScreenshotToolbarWindow* toolbar = m_overlayCoordinator->toolbar()) {
-                    toolbar->setActiveTool(ScreenshotToolPalette::Tool::Table);
-                }
-            }
-            return true;
-        },
-        [this]() {
-            setQrTool();
-            if (m_overlayCoordinator != nullptr) {
-                if (ScreenshotToolbarWindow* toolbar = m_overlayCoordinator->toolbar()) {
-                    toolbar->setActiveTool(ScreenshotToolPalette::Tool::Qr);
-                }
-            }
-            return true;
-        },
+        [activateToolShortcut]() { return activateToolShortcut(ScreenshotToolPalette::Tool::Qr); },
         [this]() {
             startScreenRecording();
             return true;
         },
-        [this]() {
-            startScrollingScreenshot();
-            return true;
+        [activateToolShortcut]() {
+            return activateToolShortcut(ScreenshotToolPalette::Tool::ScrollingScreenshot);
         },
         [this]() {
             saveSelectionToFile();
             return true;
         },
-        [this]() {
-            setTextTranslationTool();
-            return true;
+        [activateToolShortcut]() {
+            return activateToolShortcut(ScreenshotToolPalette::Tool::TextTranslation);
         },
         [this]() {
             pinSelectionToScreen();

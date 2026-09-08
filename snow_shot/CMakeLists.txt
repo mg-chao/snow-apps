@@ -839,6 +839,7 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshotuipreferences.h
     include/snow_shot/presentation/screenrecordingareawindow.h
     include/snow_shot/presentation/screenrecordingcontroller.h
+    include/snow_shot/presentation/screenrecordingshortcutcontroller.h
     include/snow_shot/presentation/screenrecordingtoolbarwindow.h
     include/snow_shot/presentation/styles/mainwindowcomponenttoken.h
     include/snow_shot/presentation/styles/buttonborder.h
@@ -969,6 +970,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/toolbar/screenshottoolbarwindow.cpp
     src/presentation/recording/screenrecordingareawindow.cpp
     src/presentation/recording/screenrecordingcontroller.cpp
+    src/presentation/recording/screenrecordingshortcutcontroller.cpp
     src/presentation/recording/screenrecordinggeometry.cpp
     src/presentation/recording/screenrecordingtoolbarwindow.cpp
 )
@@ -2448,6 +2450,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-pinned-movement-shortcut-tests
         COMMAND snow-shot-pinned-window-tests --movement-shortcut-only
     )
+    add_test(
+        NAME snow-shot-pinned-drawing-shortcut-toggle-tests
+        COMMAND snow-shot-pinned-window-tests --drawing-shortcut-toggle-only
+    )
     if(WIN32)
         add_test(
             NAME snow-shot-pinned-native-drag-shortcut-tests
@@ -2586,6 +2592,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-pinned-restore-wiring-tests
         snow-shot-pinned-toolbar-parity-tests
         snow-shot-pinned-movement-shortcut-tests
+        snow-shot-pinned-drawing-shortcut-toggle-tests
     )
     if(WIN32)
         list(APPEND _snow_shot_pinned_window_test_names
@@ -2738,12 +2745,17 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-screenshot-tool-palette-tests --action-toolbar-layout-only
     )
     add_test(
+        NAME snow-shot-screenshot-tool-shortcut-toggle-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --tool-shortcuts-only
+    )
+    add_test(
         NAME snow-shot-screen-recording-toolbar-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --recording-controls-only
     )
     set_tests_properties(
         snow-shot-screenshot-tool-palette-tests
         snow-shot-screenshot-action-toolbar-layout-tests
+        snow-shot-screenshot-tool-shortcut-toggle-tests
         snow-shot-screen-recording-toolbar-tests
         PROPERTIES
         ENVIRONMENT
@@ -2903,6 +2915,60 @@ if(SNOW_SHOT_BUILD_TESTS)
                 user32
         )
     endif()
+
+    add_executable(snow-shot-screen-recording-shortcut-tests
+        tests/screen_recording_shortcut_tests.cpp
+        include/snow_shot/presentation/screenshotfloatingtoolpalettewindow.h
+        include/snow_shot/presentation/screenrecordingareawindow.h
+        include/snow_shot/presentation/screenrecordingtoolbarwindow.h
+        include/snow_shot/presentation/screenrecordingshortcutcontroller.h
+        src/presentation/recording/screenrecordingareawindow.cpp
+        src/presentation/recording/screenrecordingtoolbarwindow.cpp
+        src/presentation/recording/screenrecordingshortcutcontroller.cpp
+        src/presentation/recording/screenrecordinggeometry.cpp
+        include/snow_shot/presentation/screenshottoolpalette.h
+        include/snow_shot/presentation/screenshottoolpalettehost.h
+        include/snow_shot/presentation/styles/thememanager.h
+        src/presentation/components/icons/snowshoticons.cpp
+        src/presentation/core/screenshotgeometry.cpp
+        src/presentation/core/screenshotcanvastoolstyles.cpp
+        src/presentation/styles/thememanager.cpp
+        src/presentation/styles/themecolorscheme.cpp
+        src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
+        src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
+        src/presentation/tools/screenshottoolbarmainpanel.cpp
+        src/presentation/tools/screenshottoolpalettebuttons.cpp
+        src/presentation/tools/screenshottoolpalettehost.cpp
+        src/presentation/tools/screenshottoolpalettestylecontrols.cpp
+        src/presentation/tools/screenshottoolpalettestylecomponents.cpp
+        src/presentation/tools/screenshottoolpalettestylemodel.cpp
+        src/presentation/tools/screenshottoolpalettestylepresets.cpp
+        src/presentation/tools/screenshottoolpalette.cpp
+    )
+    target_compile_definitions(snow-shot-screen-recording-shortcut-tests PRIVATE
+        SNOW_SHOT_TEST_HOOKS=1
+    )
+    target_include_directories(snow-shot-screen-recording-shortcut-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+    target_link_libraries(snow-shot-screen-recording-shortcut-tests PRIVATE
+        adqt_icon_core
+        ant_design_icons_qt
+        ant_design_qt
+        Qt6::Widgets
+        snow_draw_engine_qt_canvas
+        snow_shot_window_shortcuts
+        snow_shot_storage
+    )
+    if(WIN32)
+        target_link_libraries(snow-shot-screen-recording-shortcut-tests PRIVATE user32 comctl32)
+    endif()
+    add_test(NAME snow-shot-screen-recording-shortcut-tests
+        COMMAND snow-shot-screen-recording-shortcut-tests)
+    set_tests_properties(snow-shot-screen-recording-shortcut-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
 
     add_executable(snow-shot-floating-toolbar-drag-tests
         tests/screenshot_floating_toolbar_drag_tests.cpp
@@ -3645,6 +3711,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-toolbar-main-panel-tests
         snow-shot-screen-recording-geometry-tests
         snow-shot-screen-recording-area-window-tests
+        snow-shot-screen-recording-shortcut-tests
         snow-shot-window-capture-exclusion-tests
         snow-shot-ocr-presentation-tests
     )

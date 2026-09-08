@@ -62,6 +62,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <iterator>
+#include <memory>
 #include <utility>
 
 namespace {
@@ -245,7 +246,7 @@ void recordingControlsRemainLaidOutAcrossStateChanges() {
     require(startRequests == 1, "the visible start button should request recording");
 }
 
-void recordingRenderSettingsAndDrawingAvailabilityFollowSessionState() {
+void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
     ScreenshotToolPalette::Options options;
     options.showDragHandle = true;
     options.showShapeTool = true;
@@ -261,10 +262,10 @@ void recordingRenderSettingsAndDrawingAvailabilityFollowSessionState() {
     palette.prepareForDisplay();
     QCoreApplication::processEvents();
 
-    auto* renderButton = palette.findChild<adqt::widgets::AdButton*>(
-        QStringLiteral("screenRecordingRenderSettings"));
-    auto* renderPanel =
-        palette.findChild<QWidget*>(QStringLiteral("screenRecordingRenderSettingsPanel"));
+    auto* exportButton = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenRecordingExportSettings"));
+    auto* exportPanel =
+        palette.findChild<QWidget*>(QStringLiteral("screenRecordingExportSettingsPanel"));
     auto* format =
         palette.findChild<adqt::widgets::AdSelect*>(QStringLiteral("screenRecordingOutputFormat"));
     auto* trail = palette.findChild<adqt::widgets::AdColorPicker*>(
@@ -273,9 +274,9 @@ void recordingRenderSettingsAndDrawingAvailabilityFollowSessionState() {
         QStringLiteral("screenRecordingMouseClickColor"));
     auto* cursor =
         palette.findChild<adqt::widgets::AdButton*>(QStringLiteral("screenRecordingShowCursor"));
-    require(renderButton != nullptr && renderPanel != nullptr && format != nullptr &&
+    require(exportButton != nullptr && exportPanel != nullptr && format != nullptr &&
                 trail != nullptr && click != nullptr && cursor != nullptr,
-            "recording render settings controls should be created");
+            "recording export settings controls should be created");
     require(format->variant() == adqt::widgets::AdSelect::Variant::Borderless,
             "the recording format select should use the borderless toolbar variant");
 
@@ -294,18 +295,18 @@ void recordingRenderSettingsAndDrawingAvailabilityFollowSessionState() {
             "recording drawing controls should expose their configured toolbar entries");
 
     QLayout* mainLayout = palette.mainPanel()->layout();
-    const int renderButtonIndex = mainLayout->indexOf(renderButton);
+    const int exportButtonIndex = mainLayout->indexOf(exportButton);
     const int shapeButtonIndex = mainLayout->indexOf(shapeButton);
-    bool separatorAfterRenderSettings = false;
-    for (int index = renderButtonIndex + 1; index < shapeButtonIndex; ++index) {
+    bool separatorAfterExportSettings = false;
+    for (int index = exportButtonIndex + 1; index < shapeButtonIndex; ++index) {
         if (qobject_cast<QFrame*>(mainLayout->itemAt(index)->widget()) != nullptr) {
-            separatorAfterRenderSettings = true;
+            separatorAfterExportSettings = true;
             break;
         }
     }
-    require(renderButtonIndex >= 0 && shapeButtonIndex > renderButtonIndex &&
-                separatorAfterRenderSettings,
-            "the main toolbar should place a separator immediately after Render Settings");
+    require(exportButtonIndex >= 0 && shapeButtonIndex > exportButtonIndex &&
+                separatorAfterExportSettings,
+            "the main toolbar should place a separator immediately after Export Settings");
 
     const auto disabledIconColor =
         snow_shot::presentation::styles::generateThemeColorScheme().map.colorTextQuaternary;
@@ -313,87 +314,235 @@ void recordingRenderSettingsAndDrawingAvailabilityFollowSessionState() {
     require(filterButton->isEnabled() && filterIconColor.has_value() &&
                 filterIconColor->rgba() == disabledIconColor.rgba(),
             "unavailable recording tools should remain explorable and use the disabled icon color");
-    require(renderButton->toolTip() == QStringLiteral("Render settings") &&
-                renderButton->accessibleName() == QStringLiteral("Render settings") &&
+    require(exportButton->toolTip() == QStringLiteral("Export Settings") &&
+                exportButton->accessibleName() == QStringLiteral("Export Settings") &&
+                adqt::icons::describeIcon(exportButton->iconRef()).key.name ==
+                    QStringLiteral("export-settings") &&
                 format->accessibleName() == QStringLiteral("Recording format") &&
                 trail->accessibleName() == QStringLiteral("Mouse trail color") &&
                 click->accessibleName() == QStringLiteral("Mouse click color") &&
                 cursor->accessibleName() == QStringLiteral("Show cursor in recording"),
-            "recording render controls should expose translated accessibility text");
-    require(!renderPanel->isVisible() &&
+            "recording export controls should expose translated accessibility text");
+    require(exportPanel->isVisible() && palette.recordingExportSettingsVisible() &&
+                !palette.activeToolForTests().has_value() &&
+                exportButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid &&
                 format->currentValue().toString() == QStringLiteral("mp4") &&
                 trail->value().solidColor == QColor(0, 0, 0, 0) &&
                 click->value().solidColor == QColor(0, 0, 0, 0) && palette.recordingCursorVisible(),
-            "recording render settings should use the documented first-run defaults");
+            "entering recording should activate export settings with the first-run defaults");
 
-    const auto trailPresets = trail->presets();
-    const auto clickPresets = click->presets();
-    require(trailPresets.size() == 1 && trailPresets.constFirst().colors.size() == 5 &&
-                trailPresets.constFirst().colors.at(0).solidColor == QColor(0, 0, 0, 0) &&
-                trailPresets.constFirst().colors.at(1).solidColor == QColor(255, 0, 0) &&
-                trailPresets.constFirst().colors.at(2).solidColor == QColor(0, 255, 0) &&
-                trailPresets.constFirst().colors.at(3).solidColor == QColor(0, 0, 255) &&
-                trailPresets.constFirst().colors.at(4).solidColor == QColor(255, 255, 0),
-            "mouse trail should expose transparent and opaque RGBY presets");
-    require(clickPresets.size() == 1 && clickPresets.constFirst().colors.size() == 5 &&
-                clickPresets.constFirst().colors.at(0).solidColor == QColor(0, 0, 0, 0) &&
-                clickPresets.constFirst().colors.at(1).solidColor == QColor(255, 0, 0, 128) &&
-                clickPresets.constFirst().colors.at(2).solidColor == QColor(0, 255, 0, 128) &&
-                clickPresets.constFirst().colors.at(3).solidColor == QColor(0, 0, 255, 128) &&
-                clickPresets.constFirst().colors.at(4).solidColor == QColor(255, 255, 0, 128),
-            "mouse click should expose transparent and semi-transparent RGBY presets");
+    require(trail->presets().isEmpty() && click->presets().isEmpty(),
+            "mouse effect presets should be moved out of the picker popups");
+    const auto findPresets = [exportPanel](adqt::widgets::AdColorPicker* picker) {
+        QVector<adqt::widgets::AdButton*> presets;
+        const QStringList names = {QStringLiteral("Transparent"), QStringLiteral("Red"),
+                                   QStringLiteral("Green"), QStringLiteral("Blue"),
+                                   QStringLiteral("Yellow")};
+        for (int index = 0; index < names.size(); ++index) {
+            auto* button = exportPanel->findChild<adqt::widgets::AdButton*>(
+                picker->objectName() + QStringLiteral("Preset%1").arg(index),
+                Qt::FindDirectChildrenOnly);
+            require(button != nullptr && dynamic_cast<ColorSwatchButton*>(button) != nullptr,
+                    "each mouse effect should expose five drawing-style toolbar swatches");
+            require(button->toolTip() == names.at(index) &&
+                        button->accessibleName() == names.at(index),
+                    "preset swatches should expose translated color names");
+            presets.push_back(button);
+        }
+        return presets;
+    };
+    const auto trailPresets = findPresets(trail);
+    const auto clickPresets = findPresets(click);
+    const auto verifyTriggerColor = [](adqt::widgets::AdColorPicker* picker, qreal scale = 1.0) {
+        auto* trigger = dynamic_cast<ColorSwatchButton*>(picker->triggerContent());
+        require(trigger != nullptr,
+                "export color pickers should use the drawing toolbar's custom swatch trigger");
+        require(trigger->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Outline &&
+                    trigger->accentRole() == adqt::widgets::AdButton::AccentRole::Neutral &&
+                    trigger->sizeClass() == adqt::widgets::AdButton::SizeClass::Small,
+                "export triggers should show the current RGBA color with drawing summary styling");
+        std::unique_ptr<ColorSwatchButton> reference(createScreenshotToolPaletteColorButton(
+            trigger->parentWidget(), nullptr, picker->value().solidColor, true, true,
+            {28, 18, scale}));
+        require(renderButton(*trigger) == renderButton(*reference),
+                "export triggers should render RGBA colors exactly like drawing summary swatches");
+    };
+    verifyTriggerColor(trail);
+    verifyTriggerColor(click);
+    const auto verifyActivePreset = [](const QVector<adqt::widgets::AdButton*>& presets,
+                                       int activeIndex) {
+        for (int index = 0; index < presets.size(); ++index) {
+            require(presets.at(index)->buttonStyle() ==
+                        (index == activeIndex ? adqt::widgets::AdButton::ButtonStyle::Tonal
+                                              : adqt::widgets::AdButton::ButtonStyle::Text),
+                    "only the preset matching the complete RGBA value should be highlighted");
+            require(presets.at(index)->accentRole() ==
+                        (index == activeIndex ? adqt::widgets::AdButton::AccentRole::Primary
+                                              : adqt::widgets::AdButton::AccentRole::Neutral),
+                    "export presets should use the drawing toolbar's selected and idle accents");
+        }
+    };
+    verifyActivePreset(trailPresets, 0);
+    verifyActivePreset(clickPresets, 0);
 
     const QRect mainGeometry = palette.mainPanel()->geometry();
-    renderButton->click();
+    int exportVisibilityChanges = 0;
+    bool exportVisible = palette.recordingExportSettingsVisible();
+    QObject::connect(&palette, &ScreenshotToolPalette::recordingExportSettingsVisibleChanged,
+                     &palette, [&](bool visible) {
+                         ++exportVisibilityChanges;
+                         exportVisible = visible;
+                         require(visible == palette.recordingExportSettingsVisible(),
+                                 "export visibility signal should expose the updated state");
+                     });
+    exportButton->click();
     QCoreApplication::processEvents();
-    require(renderPanel->isVisible() && palette.mainPanel()->geometry() == mainGeometry,
-            "opening render settings should not move or resize the main toolbar row");
-    auto* formatSeparator = renderPanel->findChild<QFrame*>(
-        QStringLiteral("screenRecordingRenderFormatSeparator"), Qt::FindDirectChildrenOnly);
-    auto* trailSeparator = renderPanel->findChild<QFrame*>(
-        QStringLiteral("screenRecordingRenderTrailSeparator"), Qt::FindDirectChildrenOnly);
-    auto* clickSeparator = renderPanel->findChild<QFrame*>(
-        QStringLiteral("screenRecordingRenderClickSeparator"), Qt::FindDirectChildrenOnly);
-    auto* trailIcon = renderPanel->findChild<QLabel*>(
+    require(!exportPanel->isVisible() && !palette.recordingExportSettingsVisible() &&
+                !palette.activeToolForTests().has_value() && !exportVisible &&
+                exportVisibilityChanges == 1 &&
+                exportButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text,
+            "clicking active Export Settings should deactivate it and notify the controller");
+    exportButton->click();
+    QCoreApplication::processEvents();
+    require(exportPanel->isVisible() && palette.mainPanel()->geometry() == mainGeometry,
+            "opening export settings should not move or resize the main toolbar row");
+    auto* formatSeparator = exportPanel->findChild<QFrame*>(
+        QStringLiteral("screenRecordingExportFormatSeparator"), Qt::FindDirectChildrenOnly);
+    auto* trailSeparator = exportPanel->findChild<QFrame*>(
+        QStringLiteral("screenRecordingExportTrailSeparator"), Qt::FindDirectChildrenOnly);
+    auto* clickSeparator = exportPanel->findChild<QFrame*>(
+        QStringLiteral("screenRecordingExportClickSeparator"), Qt::FindDirectChildrenOnly);
+    auto* trailIcon = exportPanel->findChild<QLabel*>(
         QStringLiteral("screenRecordingMouseTrailIcon"), Qt::FindDirectChildrenOnly);
-    auto* clickIcon = renderPanel->findChild<QLabel*>(
+    auto* clickIcon = exportPanel->findChild<QLabel*>(
         QStringLiteral("screenRecordingMouseClickIcon"), Qt::FindDirectChildrenOnly);
-    QLayout* renderLayout = renderPanel->layout();
-    require(formatSeparator != nullptr && trailSeparator != nullptr && clickSeparator != nullptr &&
-                trailIcon != nullptr && clickIcon != nullptr && renderLayout != nullptr &&
-                renderLayout->spacing() == 4 && format->width() == 76 && trailIcon->width() == 24 &&
-                clickIcon->width() == 24 && trail->width() == 32 && click->width() == 32 &&
-                renderLayout->indexOf(format) < renderLayout->indexOf(formatSeparator) &&
-                renderLayout->indexOf(formatSeparator) < renderLayout->indexOf(trailIcon) &&
-                renderLayout->indexOf(trail) < renderLayout->indexOf(trailSeparator) &&
-                renderLayout->indexOf(trailSeparator) < renderLayout->indexOf(clickIcon) &&
-                renderLayout->indexOf(click) < renderLayout->indexOf(clickSeparator) &&
-                renderLayout->indexOf(clickSeparator) < renderLayout->indexOf(cursor),
-            "render settings should use compact, separated format, trail, click, and cursor groups");
+    QLayout* exportLayout = exportPanel->layout();
+    require(
+        formatSeparator != nullptr && trailSeparator != nullptr && clickSeparator != nullptr &&
+            trailIcon != nullptr && clickIcon != nullptr && exportLayout != nullptr &&
+            exportLayout->spacing() == 4 && format->width() == 76 && trailIcon->width() == 28 &&
+            clickIcon->width() == 28 && trail->width() == 28 && click->width() == 28 &&
+            exportLayout->indexOf(format) < exportLayout->indexOf(formatSeparator) &&
+            exportLayout->indexOf(formatSeparator) < exportLayout->indexOf(trailIcon) &&
+            exportLayout->indexOf(trail) < exportLayout->indexOf(trailSeparator) &&
+            exportLayout->indexOf(trailSeparator) < exportLayout->indexOf(clickIcon) &&
+            exportLayout->indexOf(click) < exportLayout->indexOf(clickSeparator) &&
+            exportLayout->indexOf(clickSeparator) < exportLayout->indexOf(cursor),
+        "export settings should use compact, separated format, trail, click, and cursor groups");
+
+    for (const qreal scale : {1.0, 0.75, 1.25, 1.5, 2.0, 1.0}) {
+        palette.setPhysicalScale(scale);
+        palette.prepareForDisplay();
+        QCoreApplication::processEvents();
+        const int controlSize = qRound(28 * scale);
+        const int iconSize = qRound(18 * scale);
+        for (QLabel* icon : {trailIcon, clickIcon}) {
+            require(icon->size() == QSize(controlSize, controlSize) &&
+                        icon->pixmap().deviceIndependentSize() == QSizeF(iconSize, iconSize),
+                    "mouse effect icons should match drawing style controls at every scale");
+        }
+        for (auto* picker : {trail, click}) {
+            auto* trigger = dynamic_cast<ColorSwatchButton*>(picker->triggerContent());
+            require(picker->QWidget::size() == QSize(controlSize, controlSize) &&
+                        trigger->size() == QSize(controlSize, controlSize) &&
+                        trigger->iconSize() == QSize(iconSize, iconSize),
+                    "export picker triggers should retain drawing swatch metrics at every scale");
+            verifyTriggerColor(picker, scale);
+        }
+        require(format->QWidget::size() == QSize(qRound(76 * scale), controlSize) &&
+                    cursor->size() == QSize(controlSize, controlSize) &&
+                    cursor->iconSize() == QSize(iconSize, iconSize),
+                "format and cursor controls should match drawing style sizing at every scale");
+        const QMargins margins = exportLayout->contentsMargins();
+        require(exportPanel->height() == controlSize + margins.top() + margins.bottom(),
+                "preset buttons must preserve the export toolbar's single-row height");
+        for (const auto* presets : {&trailPresets, &clickPresets}) {
+            for (auto* button : *presets) {
+                require(button->size() == QSize(controlSize, controlSize) && button->isVisible(),
+                        "preset buttons should match the export toolbar height at every scale");
+            }
+        }
+        QList<QWidget*> controls = {format, formatSeparator, trailIcon, trail};
+        for (auto* button : trailPresets) {
+            controls.push_back(button);
+        }
+        controls.append({trailSeparator, clickIcon, click});
+        for (auto* button : clickPresets) {
+            controls.push_back(button);
+        }
+        controls.append({clickSeparator, cursor});
+        for (int index = 0; index < controls.size(); ++index) {
+            require(exportPanel->rect().contains(controls[index]->geometry()),
+                    "export settings controls should fit inside the toolbar");
+            if (index > 0) {
+                require(controls[index - 1]->geometry().right() <
+                            controls[index]->geometry().left(),
+                        "export settings controls should retain group order without overlap");
+            }
+        }
+        const int exportHeight = exportPanel->height();
+        const QSize exportSize = exportPanel->size();
+        const int exportItemCount = exportLayout->count();
+        for (int iteration = 0; iteration < 8; ++iteration) {
+            shapeButton->click();
+            palette.prepareForDisplay();
+            QCoreApplication::processEvents();
+            exportButton->click();
+            palette.prepareForDisplay();
+            QCoreApplication::processEvents();
+            if (exportPanel->size() != exportSize || exportLayout->count() != exportItemCount) {
+                std::cerr << "export settings at scale " << scale << ", iteration " << iteration
+                          << ": width " << exportSize.width() << " -> " << exportPanel->width()
+                          << ", layout items " << exportItemCount << " -> " << exportLayout->count()
+                          << '\n';
+            }
+            require(exportPanel->isVisible() && exportPanel->size() == exportSize &&
+                        exportLayout->count() == exportItemCount,
+                    "repeated tool switches must preserve export settings size and layout items");
+        }
+        shapeButton->click();
+        palette.prepareForDisplay();
+        QCoreApplication::processEvents();
+        require(
+            palette.styleToolbarVisible() && palette.stylePanel()->height() == exportHeight,
+            "export settings and drawing sub-toolbars should have equal heights at every scale");
+        exportButton->click();
+        palette.prepareForDisplay();
+        QCoreApplication::processEvents();
+        require(exportPanel->isVisible() && exportPanel->height() == exportHeight,
+                "switching back to export settings should preserve the shared sub-toolbar height");
+    }
 
     int selectRequests = 0;
     QObject::connect(&palette, &ScreenshotToolPalette::selectRequested, &palette,
                      [&]() { ++selectRequests; });
-    renderButton->click();
-    require(renderPanel->isVisible() && !palette.activeToolForTests().has_value(),
-            "clicking active Render Settings should keep its shared selection stable");
+    exportButton->click();
+    require(!exportPanel->isVisible() && !palette.activeToolForTests().has_value(),
+            "clicking active Export Settings should clear its selection");
     shapeButton->click();
-    require(!renderPanel->isVisible() &&
+    require(!exportPanel->isVisible() &&
                 palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape,
-            "selecting a drawing tool should deselect and close Render Settings");
-    renderButton->click();
-    require(renderPanel->isVisible() && !palette.activeToolForTests().has_value() &&
+            "selecting a drawing tool should deselect and close Export Settings");
+    require(!exportVisible && exportVisibilityChanges > 0,
+            "selecting drawing should notify the controller to stop moving the region");
+    exportButton->click();
+    require(exportPanel->isVisible() && !palette.activeToolForTests().has_value() &&
                 selectRequests == 1,
-            "selecting Render Settings should clear drawing and request pass-through input");
+            "selecting Export Settings should clear drawing selection");
+    require(exportVisible && exportVisibilityChanges > 1,
+            "activating export settings should notify the controller to enable region movement");
     filterButton->click();
-    require(renderPanel->isVisible() && !palette.activeToolForTests().has_value() &&
+    require(exportPanel->isVisible() && !palette.activeToolForTests().has_value() &&
                 selectRequests == 1,
             "selecting an unavailable recording tool should leave the shared state unchanged");
     shapeButton->click();
     shapeButton->click();
-    require(renderPanel->isVisible() && !palette.activeToolForTests().has_value() &&
+    require(!exportPanel->isVisible() && !palette.activeToolForTests().has_value() &&
+                !palette.styleToolbarVisible() &&
+                shapeButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text &&
                 selectRequests == 2,
-            "clicking the active drawing button should select Render Settings");
+            "clicking the active drawing button should deactivate drawing and close its tools");
+    exportButton->click();
 
     int formatChanges = 0;
     int trailChanges = 0;
@@ -417,6 +566,89 @@ void recordingRenderSettingsAndDrawingAvailabilityFollowSessionState() {
                 !palette.recordingCursorVisible() && formatChanges == 1 && trailChanges == 1 &&
                 clickChanges == 1 && cursorChanges == 1,
             "render controls should accept arbitrary RGBA values and publish changes once");
+
+    verifyActivePreset(trailPresets, -1);
+    verifyActivePreset(clickPresets, -1);
+    verifyTriggerColor(trail);
+    verifyTriggerColor(click);
+    const QVector<QColor> opaqueColors = {
+        QColor(0, 0, 0, 0), QColor(QStringLiteral("#f5222d")), QColor(QStringLiteral("#52c41a")),
+        QColor(QStringLiteral("#1677ff")), QColor(QStringLiteral("#fadb14"))};
+    for (int index = 0; index < opaqueColors.size(); ++index) {
+        const QColor trailColor = opaqueColors.at(index);
+        QColor clickColor = trailColor;
+        if (index != 0) {
+            clickColor.setAlpha(128);
+        }
+        const int previousTrailChanges = trailChanges;
+        const int previousClickChanges = clickChanges;
+        trailPresets.at(index)->click();
+        require(palette.recordingMouseTrailColor() == trailColor &&
+                    trail->value().solidColor == trailColor &&
+                    trailChanges == previousTrailChanges + 1 &&
+                    clickChanges == previousClickChanges && !trail->popupVisible(),
+                "trail presets should commit opaque RGBY or transparent without opening a popup");
+        verifyActivePreset(trailPresets, index);
+        clickPresets.at(index)->click();
+        require(palette.recordingMouseClickColor() == clickColor &&
+                    click->value().solidColor == clickColor &&
+                    clickChanges == previousClickChanges + 1 &&
+                    trailChanges == previousTrailChanges + 1 && !click->popupVisible(),
+                "click presets should commit RGBY with alpha 128 or transparent independently");
+        verifyActivePreset(clickPresets, index);
+        verifyTriggerColor(trail);
+        verifyTriggerColor(click);
+        trailPresets.at(index)->click();
+        clickPresets.at(index)->click();
+        require(trailChanges == previousTrailChanges + 1 &&
+                    clickChanges == previousClickChanges + 1,
+                "selecting an unchanged preset should not publish duplicate changes");
+    }
+    const int previousTrailChanges = trailChanges;
+    const int previousClickChanges = clickChanges;
+    palette.setRecordingMouseTrailColor(QColor(0xf5, 0x22, 0x2d));
+    palette.setRecordingMouseClickColor(QColor(0x52, 0xc4, 0x1a, 128));
+    verifyActivePreset(trailPresets, 1);
+    verifyActivePreset(clickPresets, 2);
+    palette.setRecordingMouseTrailColor(QColor(0xf5, 0x22, 0x2d, 128));
+    palette.setRecordingMouseClickColor(QColor(0x52, 0xc4, 0x1a));
+    verifyActivePreset(trailPresets, -1);
+    verifyActivePreset(clickPresets, -1);
+    require(trailChanges == previousTrailChanges && clickChanges == previousClickChanges,
+            "external color synchronization should refresh presets without publishing changes");
+    verifyTriggerColor(trail);
+    verifyTriggerColor(click);
+
+    const auto verifyPresetsEditable = [&](bool editable) {
+        for (const auto* presets : {&trailPresets, &clickPresets}) {
+            for (auto* button : *presets) {
+                require(button->isEnabled() == editable,
+                        "preset availability should follow the recording and busy state");
+                if (!editable) {
+                    button->click();
+                }
+            }
+        }
+        require(trailChanges == previousTrailChanges && clickChanges == previousClickChanges,
+                "locked presets must not change recording settings");
+    };
+    const auto verifyExportSettingsSelected = [&](bool editable) {
+        require(exportButton->isEnabled() && exportPanel->isVisible() &&
+                    palette.recordingExportSettingsVisible() &&
+                    !palette.activeToolForTests().has_value() &&
+                    exportButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid,
+                "recording state changes should preserve the active Export Settings tool");
+        require(exportPanel->isEnabled() == editable && format->disabled() == !editable &&
+                    trail->disabled() == !editable && click->disabled() == !editable &&
+                    cursor->isEnabled() == editable,
+                "only the export child toolbar should lock while recording or busy");
+        verifyPresetsEditable(editable);
+    };
+    const int visibilityChangesBeforeRecording = exportVisibilityChanges;
+    palette.setRecordingBusy(true);
+    verifyExportSettingsSelected(false);
+    palette.setRecordingBusy(false);
+    verifyExportSettingsSelected(true);
 
     adqt::widgets::AdButton* microphone = nullptr;
     adqt::widgets::AdButton* systemAudio = nullptr;
@@ -447,15 +679,50 @@ void recordingRenderSettingsAndDrawingAvailabilityFollowSessionState() {
 
     palette.setRecordingState(ScreenshotToolPalette::RecordingState::Recording);
     QCoreApplication::processEvents();
-    require(!renderPanel->isVisible() && !renderButton->isEnabled() && format->disabled() &&
-                trail->disabled() && click->disabled() && !cursor->isEnabled(),
-            "render settings should collapse and lock while recording");
+    verifyExportSettingsSelected(false);
+    require(exportVisible && exportVisibilityChanges == visibilityChangesBeforeRecording,
+            "starting recording must preserve Export Settings without a visibility notification");
     palette.setRecordingState(ScreenshotToolPalette::RecordingState::Paused);
-    require(!renderButton->isEnabled(), "render settings should remain locked while paused");
+    verifyExportSettingsSelected(false);
+    require(exportVisible && exportVisibilityChanges == visibilityChangesBeforeRecording,
+            "pausing must preserve Export Settings without a visibility notification");
+    for (const auto state : {ScreenshotToolPalette::RecordingState::Recording,
+                             ScreenshotToolPalette::RecordingState::Paused}) {
+        palette.setRecordingState(state);
+        shapeButton->click();
+        require(!exportPanel->isVisible() &&
+                    palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape,
+                "drawing tools should still replace Export Settings during recording");
+        exportButton->click();
+        verifyExportSettingsSelected(false);
+        palette.setRecordingState(state);
+        verifyExportSettingsSelected(false);
+        const int visibilityChangesBeforeClick = exportVisibilityChanges;
+        exportButton->click();
+        require(!exportPanel->isVisible() && !palette.recordingExportSettingsVisible() &&
+                    !palette.activeToolForTests().has_value() && !exportVisible &&
+                    exportVisibilityChanges == visibilityChangesBeforeClick + 1,
+                "clicking active Export Settings during recording should deactivate it");
+        shapeButton->click();
+        const int selectRequestsBeforeClick = selectRequests;
+        shapeButton->click();
+        require(!palette.activeToolForTests().has_value() &&
+                    !palette.recordingExportSettingsVisible() && !palette.styleToolbarVisible() &&
+                    selectRequests == selectRequestsBeforeClick + 1,
+                "clicking active drawing during recording should return to pass-through mode");
+        shapeButton->click();
+        require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape,
+                "a deactivated drawing tool should activate on the next click");
+        exportButton->click();
+        verifyExportSettingsSelected(false);
+    }
+    const int visibilityChangesBeforeResume = exportVisibilityChanges;
+    palette.setRecordingState(ScreenshotToolPalette::RecordingState::Recording);
+    verifyExportSettingsSelected(false);
+    require(exportVisible && exportVisibilityChanges == visibilityChangesBeforeResume,
+            "resuming recording must preserve Export Settings without a visibility notification");
     palette.setRecordingState(ScreenshotToolPalette::RecordingState::Idle);
-    require(renderButton->isEnabled() && !format->disabled() && !trail->disabled() &&
-                !click->disabled() && cursor->isEnabled(),
-            "render settings should unlock after returning to idle");
+    verifyExportSettingsSelected(true);
 
     palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
     require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape,
@@ -479,10 +746,12 @@ void recordingRenderSettingsAndDrawingAvailabilityFollowSessionState() {
 
     QEvent languageChange(QEvent::LanguageChange);
     QCoreApplication::sendEvent(&palette, &languageChange);
-    require(renderButton->toolTip() == QStringLiteral("Render settings") &&
+    require(exportButton->toolTip() == QStringLiteral("Export Settings") &&
                 format->accessibleName() == QStringLiteral("Recording format") &&
                 cursor->accessibleName() == QStringLiteral("Show cursor in recording"),
-            "recording render controls should retranslate after LanguageChange");
+            "recording export controls should retranslate after LanguageChange");
+    require(findPresets(trail) == trailPresets && findPresets(click) == clickPresets,
+            "retranslation should preserve the toolbar presets and keep their labels current");
 }
 
 void numericStrokeWidthPreviewUsesLineWithinPreviewBounds() {
@@ -2659,6 +2928,120 @@ void clickingActiveToolbarToolReturnsToSelect() {
     require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Select &&
                 selectRequests == 2,
             "clicking an active recognition tool should return to Select");
+}
+
+void repeatingDrawingShortcutsReturnsToSelect() {
+    using Tool = ScreenshotToolPalette::Tool;
+    ScreenshotToolPalette::Options options;
+    options.enableStyleToolbar = false;
+    ScreenshotToolPalette palette(options);
+    int selectRequests = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::selectRequested,
+                     [&selectRequests]() { ++selectRequests; });
+
+    const std::pair<const char*, Tool> shortcuts[] = {
+        {"shape", Tool::Shape},         {"arrow", Tool::Arrow},
+        {"brush", Tool::FreeDraw},      {"highlight", Tool::PenHighlight},
+        {"text", Tool::Text},           {"serial_number", Tool::SerialNumber},
+        {"filter", Tool::PenFilter},    {"eraser", Tool::Eraser},
+        {"watermark", Tool::Watermark},
+    };
+    for (const auto& [id, tool] : shortcuts) {
+        palette.setActiveTool(Tool::Select);
+        require(palette.activateDrawingShortcut(QString::fromLatin1(id)) &&
+                    palette.activeToolForTests() == tool,
+                "a drawing shortcut should activate its tool");
+        const int previousSelectRequests = selectRequests;
+        require(palette.activateDrawingShortcut(QString::fromLatin1(id)) &&
+                    palette.activeToolForTests() == Tool::Select &&
+                    selectRequests == previousSelectRequests + 1,
+                "repeating an active drawing shortcut should request Select exactly once");
+        require(palette.activateDrawingShortcut(QString::fromLatin1(id)) &&
+                    palette.activeToolForTests() == tool,
+                "a drawing shortcut should reactivate its tool after toggling to Select");
+        palette.setActiveTool(tool);
+        require(palette.activeToolForTests() == tool,
+                "programmatic tool synchronization should remain idempotent");
+    }
+    require(palette.activateDrawingShortcut(QStringLiteral("select")) &&
+                palette.activateDrawingShortcut(QStringLiteral("select")) &&
+                palette.activeToolForTests() == Tool::Select,
+            "repeating the selection shortcut should keep Select active");
+    require(!palette.activateDrawingShortcut(QStringLiteral("unknown")) &&
+                palette.activeToolForTests() == Tool::Select,
+            "unknown shortcuts should leave the active tool unchanged");
+}
+
+void repeatingActionShortcutsReturnsToSelect() {
+    using Tool = ScreenshotToolPalette::Tool;
+    ScreenshotToolPalette::Options options;
+    options.showMoveTool = true;
+    options.showOcrTool = true;
+    options.showTextTranslationTool = true;
+    options.showTableTool = true;
+    options.showQrTool = true;
+    options.showScrollingScreenshotTool = true;
+    options.enableStyleToolbar = false;
+    ScreenshotToolPalette palette(options);
+    int selectRequests = 0;
+    QObject::connect(&palette, &ScreenshotToolPalette::selectRequested,
+                     [&selectRequests]() { ++selectRequests; });
+    for (const Tool tool : {Tool::Move, Tool::Ocr, Tool::TextTranslation, Tool::Table, Tool::Qr,
+                            Tool::ScrollingScreenshot}) {
+        palette.setActiveTool(Tool::Select);
+        require(palette.activateToolShortcut(tool) && palette.activeToolForTests() == tool,
+                "an action shortcut should activate its tool");
+        const int previousSelectRequests = selectRequests;
+        require(palette.activateToolShortcut(tool) &&
+                    palette.activeToolForTests() == Tool::Select &&
+                    selectRequests == previousSelectRequests + 1,
+                "repeating an active action shortcut should request Select exactly once");
+        palette.setActiveTool(tool);
+        require(palette.activateToolShortcut(tool) && palette.activeToolForTests() == Tool::Select,
+                "shortcuts should toggle tools activated through another input path");
+    }
+}
+
+void groupedToolShortcutsToggleOnlyTheRequestedTool() {
+    using Tool = ScreenshotToolPalette::Tool;
+    ScreenshotToolPalette::Options options;
+    options.showLineTool = true;
+    options.showHighlightTool = true;
+    options.showRectangleHighlightTool = true;
+    options.showPenHighlightTool = true;
+    options.showFilterTool = true;
+    options.enableStyleToolbar = false;
+    options.toolbarLayout = snow_shot::storage::ScreenshotToolbarLayout{
+        {{QStringLiteral("select")},
+         {QStringLiteral("shape"), QStringLiteral("arrow"), QStringLiteral("line")},
+         {QStringLiteral("highlighter")},
+         {QStringLiteral("filter")}}};
+    ScreenshotToolPalette palette(options);
+    palette.setActiveTool(Tool::Line);
+    require(palette.activateDrawingShortcut(QStringLiteral("arrow")) &&
+                palette.activeToolForTests() == Tool::Arrow,
+            "a shortcut should activate a different tool even when it shares the active button");
+    require(palette.activateDrawingShortcut(QStringLiteral("arrow")) &&
+                palette.activeToolForTests() == Tool::Select,
+            "repeating a grouped tool shortcut should return to Select");
+
+    for (const auto& [id, tool] : {std::pair{"highlight", Tool::RectangleHighlight},
+                                   std::pair{"filter", Tool::RectangleFilter}}) {
+        palette.setActiveTool(tool);
+        require(palette.activateDrawingShortcut(QString::fromLatin1(id)) &&
+                    palette.activeToolForTests() == Tool::Select,
+                "shortcuts should toggle the active highlight or filter variant");
+    }
+
+    options.recordingDrawingMode = true;
+    ScreenshotToolPalette recordingPalette(options);
+    require(recordingPalette.activateDrawingShortcut(QStringLiteral("shape")) &&
+                recordingPalette.activateDrawingShortcut(QStringLiteral("shape")) &&
+                recordingPalette.activeToolForTests() == Tool::Shape,
+            "recording shortcuts should retain explicit tool activation");
+    require(!recordingPalette.activateDrawingShortcut(QStringLiteral("highlight")) &&
+                recordingPalette.activeToolForTests() == Tool::Shape,
+            "unavailable recording shortcuts should leave the current tool unchanged");
 }
 
 void tableToolExposesStructureActionsAndOwnHistoryState() {
@@ -7082,9 +7465,26 @@ int main(int argc, char** argv) {
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
             "the font editor tests require a system TrueType font");
 #endif
+    if (application.arguments().contains(QStringLiteral("--tool-shortcuts-only"))) {
+        clickingActiveToolbarToolReturnsToSelect();
+        repeatingDrawingShortcutsReturnsToSelect();
+        repeatingActionShortcutsReturnsToSelect();
+        groupedToolShortcutsToggleOnlyTheRequestedTool();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--recording-controls-only"))) {
         recordingControlsRemainLaidOutAcrossStateChanges();
-        recordingRenderSettingsAndDrawingAvailabilityFollowSessionState();
+        recordingExportSettingsAndDrawingAvailabilityFollowSessionState();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--color-control-styles-only"))) {
+        configurationDrivenStyleEditorsShareStructuralContracts();
+        mixedColorsKeepUniformStyleButtonsActive();
+        toolbarScalingDoesNotRelayoutPopupContent();
+        popupColorEditorButtonsKeepPopupScaleAfterToolbarDpiCommit();
+        familiesHydratedAfterScaleKeepTheSamePhysicalSize();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -7163,7 +7563,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     recordingControlsRemainLaidOutAcrossStateChanges();
-    recordingRenderSettingsAndDrawingAvailabilityFollowSessionState();
+    recordingExportSettingsAndDrawingAvailabilityFollowSessionState();
     numericStrokeWidthPreviewUsesLineWithinPreviewBounds();
     secondaryControlsMaterializeOnlyForTheRequestedFamily();
     textAndHighlightStrokeWidthTriggersUseSharedPreviewButton();
@@ -7185,6 +7585,9 @@ int main(int argc, char** argv) {
     ocrControlReflectsLoadingState();
     ocrToolReplacesSelectionActionToolbarContents();
     clickingActiveToolbarToolReturnsToSelect();
+    repeatingDrawingShortcutsReturnsToSelect();
+    repeatingActionShortcutsReturnsToSelect();
+    groupedToolShortcutsToggleOnlyTheRequestedTool();
     tableToolExposesStructureActionsAndOwnHistoryState();
     tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode();
     tableRecognitionClickActivatesOnceAfterPointerReentry();

@@ -15,7 +15,7 @@ use snow_capture::{
     CaptureWorkload, CapturedFrame,
 };
 use snow_core::recording_clock::RecordingClock;
-use snow_cursor::{AttachedCursorSample, CursorShape, CursorShapeState};
+use snow_cursor::{AttachedCursorSample, CursorCompositionMode, CursorShape, CursorShapeState};
 use snow_recording_export::{
     ExportExecutionMode, ExportFormat, SoftwareH264Priority, StreamingAudioConfig,
     StreamingEncoder, StreamingEncoderConfig, StreamingEncoderReport, VideoCodec,
@@ -26,11 +26,11 @@ use snow_recording_model::{VideoEncodeConfig, VideoEncodingSpeed};
 use crate::adapter::video::resolve_capture_target;
 use crate::config::{CaptureBackendKind, RecordingRegion, RecordingTarget};
 use crate::error::{Result, ScreenRecorderError};
+use crate::laser_trail::LaserTrail;
 use crate::mouse_hook::{MouseClickObservation, MouseHookObserver, ObservedMouseButton};
 use crate::recording::RecordingState;
 
 const CLICK_ANIMATION_MS: u64 = 450;
-const TRAIL_WINDOW_MS: u64 = 350;
 const CLICK_QUEUE_DEPTH: usize = 128;
 const AUDIO_SAMPLE_RATE: u32 = 48_000;
 const AUDIO_CHANNELS: u16 = 2;
@@ -429,6 +429,9 @@ fn run_direct_worker(inputs: DirectWorkerInputs) -> Result<DirectRecordingReport
                         audio.pause();
                     }
                     clock_controller.mark_pause(at);
+                    if let Some(mixer) = audio_mixer.as_mut() {
+                        mixer.reset_alignment(None);
+                    }
                     paused = true;
                 }
                 ControlCommand::Resume if paused => {
@@ -585,6 +588,8 @@ struct LiveAudioMixer {
     next_slot: u64,
     slots: BTreeMap<u64, AudioMixSlot>,
     dropped_frames: u64,
+    next_system_frame: Option<u64>,
+    next_microphone_frame: Option<u64>,
 }
 
 impl LiveAudioMixer {
@@ -597,11 +602,23 @@ impl LiveAudioMixer {
             next_slot: 0,
             slots: BTreeMap::new(),
             dropped_frames: 0,
+            next_system_frame: None,
+            next_microphone_frame: None,
+        }
+    }
+
+    fn reset_alignment(&mut self, source: Option<AudioSourceKind>) {
+        if source.is_none_or(|source| source == AudioSourceKind::System) {
+            self.next_system_frame = None;
+        }
+        if source.is_none_or(|source| source == AudioSourceKind::Microphone) {
+            self.next_microphone_frame = None;
         }
     }
 
     fn insert_packet(&mut self, packet: AudioPacket, clock: &RecordingClock) {
-        if packet.format != AudioFormat::new(AUDIO_SAMPLE_RATE, AUDIO_CHANNELS)
+        if packet.frames == 0
+            || packet.format != AudioFormat::new(AUDIO_SAMPLE_RATE, AUDIO_CHANNELS)
             || packet.data.len() != packet.frames as usize * usize::from(AUDIO_CHANNELS)
         {
             return;
@@ -616,7 +633,20 @@ impl LiveAudioMixer {
         let Some(started_at) = packet.start_capture_time() else {
             return;
         };
-        let start_frame = duration_to_audio_frames(clock.active_elapsed_duration(started_at));
+        let next_frame = match packet.source {
+            AudioSourceKind::System => &mut self.next_system_frame,
+            AudioSourceKind::Microphone => &mut self.next_microphone_frame,
+        };
+        // Capture instants include device-read scheduling jitter. Preserve PCM continuity
+        // between alignment boundaries, as the buffered recording writer does.
+        let start_frame = if packet.metadata.discontinuity {
+            duration_to_audio_frames(clock.active_elapsed_duration(started_at))
+        } else {
+            next_frame.unwrap_or_else(|| {
+                duration_to_audio_frames(clock.active_elapsed_duration(started_at))
+            })
+        };
+        *next_frame = Some(start_frame.saturating_add(u64::from(packet.frames)));
         self.insert_samples(packet.source, start_frame, packet.frames, &packet.data);
     }
 
@@ -729,11 +759,16 @@ fn process_audio_event(
     paused: bool,
     mixer: Option<&mut LiveAudioMixer>,
 ) {
-    if paused {
+    let Some(mixer) = mixer else {
         return;
-    }
-    if let (AudioEvent::Packet(packet), Some(mixer)) = (event, mixer) {
-        mixer.insert_packet(packet, clock);
+    };
+    match event {
+        AudioEvent::Packet(packet) if !paused => mixer.insert_packet(packet, clock),
+        AudioEvent::Paused { .. } | AudioEvent::Resumed { .. } => mixer.reset_alignment(None),
+        AudioEvent::SourceRestarted { source, .. } | AudioEvent::PacketDropped { source, .. } => {
+            mixer.reset_alignment(Some(source))
+        }
+        _ => {}
     }
 }
 
@@ -811,13 +846,6 @@ fn drain_click_observations(
 }
 
 #[derive(Clone, Copy)]
-struct TrailPoint {
-    timestamp_ms: u64,
-    x: i32,
-    y: i32,
-}
-
-#[derive(Clone, Copy)]
 struct RenderClick {
     timestamp_ms: u64,
     x: i32,
@@ -827,7 +855,7 @@ struct RenderClick {
 
 struct VisualCompositor {
     output_size: (u32, u32),
-    trail: VecDeque<TrailPoint>,
+    trail: LaserTrail,
     clicks: VecDeque<RenderClick>,
     cursor_shapes: HashMap<u64, CursorShape>,
 }
@@ -836,7 +864,7 @@ impl VisualCompositor {
     fn new(output_size: (u32, u32)) -> Self {
         Self {
             output_size,
-            trail: VecDeque::new(),
+            trail: LaserTrail::default(),
             clicks: VecDeque::new(),
             cursor_shapes: HashMap::new(),
         }
@@ -851,18 +879,18 @@ impl VisualCompositor {
         let source_size = frame.dimensions();
         let mut rgba = resize_rgba(frame.as_rgba_bytes(), source_size, self.output_size);
         let cursor = frame.metadata().cursor().cloned();
-        if let Some(cursor) = cursor.as_ref()
-            && cursor.visible
-        {
-            let (x, y) = scale_point(cursor.x, cursor.y, source_size, self.output_size);
-            self.trail.push_back(TrailPoint { timestamp_ms, x, y });
-        }
-        while self
-            .trail
-            .front()
-            .is_some_and(|point| timestamp_ms.saturating_sub(point.timestamp_ms) > TRAIL_WINDOW_MS)
-        {
-            self.trail.pop_front();
+        if config.mouse_trail_rgba[3] != 0 {
+            self.trail.observe(
+                cursor
+                    .as_ref()
+                    .filter(|cursor| cursor.visible)
+                    .map(|cursor| (cursor.x, cursor.y)),
+                source_size,
+                self.output_size,
+                timestamp_ms,
+            );
+        } else {
+            self.trail.clear();
         }
         while self.clicks.front().is_some_and(|click| {
             timestamp_ms.saturating_sub(click.timestamp_ms) > CLICK_ANIMATION_MS
@@ -871,10 +899,9 @@ impl VisualCompositor {
         }
 
         if config.mouse_trail_rgba[3] != 0 {
-            draw_trail(
+            self.trail.draw(
                 &mut rgba,
                 self.output_size,
-                &self.trail,
                 timestamp_ms,
                 config.mouse_trail_rgba,
             );
@@ -904,10 +931,8 @@ impl VisualCompositor {
     }
 
     fn has_active_animation(&self, config: &DirectRecordingConfig, timestamp_ms: u64) -> bool {
-        let trail_active = config.mouse_trail_rgba[3] > 0
-            && self.trail.back().is_some_and(|point| {
-                timestamp_ms.saturating_sub(point.timestamp_ms) <= TRAIL_WINDOW_MS
-            });
+        let trail_active =
+            config.mouse_trail_rgba[3] > 0 && self.trail.has_active_animation(timestamp_ms);
         let click_active = config.mouse_click_rgba[3] > 0
             && self.clicks.back().is_some_and(|click| {
                 timestamp_ms.saturating_sub(click.timestamp_ms) <= CLICK_ANIMATION_MS
@@ -953,29 +978,6 @@ fn scale_coordinate(value: i32, source_extent: u32, output_extent: u32) -> i32 {
     ((i64::from(value) * i64::from(output_extent) + i64::from(source_extent) / 2)
         / i64::from(source_extent))
     .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
-}
-
-fn draw_trail(
-    rgba: &mut [u8],
-    size: (u32, u32),
-    points: &VecDeque<TrailPoint>,
-    timestamp_ms: u64,
-    color: [u8; 4],
-) {
-    let points: Vec<_> = points.iter().copied().collect();
-    for pair in points.windows(2) {
-        let age = timestamp_ms.saturating_sub(pair[1].timestamp_ms);
-        let alpha =
-            ((u64::from(color[3]) * (TRAIL_WINDOW_MS.saturating_sub(age))) / TRAIL_WINDOW_MS) as u8;
-        draw_line_rgba(
-            rgba,
-            size,
-            (pair[0].x, pair[0].y),
-            (pair[1].x, pair[1].y),
-            [color[0], color[1], color[2], alpha],
-            3,
-        );
-    }
 }
 
 fn draw_clicks(
@@ -1056,7 +1058,7 @@ fn draw_cursor(
             if index + 4 > shape.shape_rgba.len() {
                 continue;
             }
-            blend_pixel(
+            composite_cursor_pixel(
                 rgba,
                 output_size,
                 origin_x.saturating_add(x as i32),
@@ -1067,31 +1069,38 @@ fn draw_cursor(
                     shape.shape_rgba[index + 2],
                     shape.shape_rgba[index + 3],
                 ],
+                shape.composition_mode,
             );
         }
     }
 }
 
-fn draw_line_rgba(
+fn composite_cursor_pixel(
     rgba: &mut [u8],
     size: (u32, u32),
-    from: (i32, i32),
-    to: (i32, i32),
+    x: i32,
+    y: i32,
     color: [u8; 4],
-    radius: i32,
+    mode: CursorCompositionMode,
 ) {
-    let dx = to.0.saturating_sub(from.0);
-    let dy = to.1.saturating_sub(from.1);
-    let steps = dx.unsigned_abs().max(dy.unsigned_abs()).max(1);
-    for step in 0..=steps {
-        let x = from.0 + ((i64::from(dx) * i64::from(step)) / i64::from(steps)) as i32;
-        let y = from.1 + ((i64::from(dy) * i64::from(step)) / i64::from(steps)) as i32;
-        for oy in -radius..=radius {
-            for ox in -radius..=radius {
-                if ox * ox + oy * oy <= radius * radius {
-                    blend_pixel(rgba, size, x + ox, y + oy, color);
-                }
+    match (mode, color[3]) {
+        (CursorCompositionMode::AlphaBlend, _) | (CursorCompositionMode::MaskedColor, 1..=254) => {
+            blend_pixel(rgba, size, x, y, color)
+        }
+        (CursorCompositionMode::MaskedColor, 0 | 255) => {
+            if x < 0 || y < 0 || x as u32 >= size.0 || y as u32 >= size.1 {
+                return;
             }
+            let index = (y as usize * size.0 as usize + x as usize) * 4;
+            if index + 4 > rgba.len() || color == [0, 0, 0, 255] {
+                return;
+            }
+            // Masked cursor alpha stores the AND mask, not opacity: zero copies
+            // the color, while 255 XORs it with the existing background.
+            for channel in 0..3 {
+                rgba[index + channel] = (rgba[index + channel] & color[3]) ^ color[channel];
+            }
+            rgba[index + 3] = 255;
         }
     }
 }
@@ -1139,7 +1148,7 @@ fn blend_pixel(rgba: &mut [u8], size: (u32, u32), x: i32, y: i32, color: [u8; 4]
 #[cfg(test)]
 mod tests {
     use super::*;
-    use snow_cursor::{CursorCompositionMode, CursorShapeId};
+    use snow_cursor::CursorShapeId;
 
     fn config() -> DirectRecordingConfig {
         DirectRecordingConfig {
@@ -1214,6 +1223,242 @@ mod tests {
     }
 
     #[test]
+    fn cursor_composition_respects_mask_operations_and_alpha() {
+        let cases = [
+            (CursorCompositionMode::MaskedColor, [0, 0, 0, 255]),
+            (CursorCompositionMode::MaskedColor, [0, 0, 0, 0]),
+            (CursorCompositionMode::MaskedColor, [255, 255, 255, 0]),
+            (CursorCompositionMode::MaskedColor, [255, 255, 255, 255]),
+            (CursorCompositionMode::MaskedColor, [53, 170, 204, 0]),
+            (CursorCompositionMode::MaskedColor, [53, 170, 204, 255]),
+            (CursorCompositionMode::MaskedColor, [53, 170, 204, 128]),
+            (CursorCompositionMode::AlphaBlend, [53, 170, 204, 0]),
+            (CursorCompositionMode::AlphaBlend, [53, 170, 204, 128]),
+            (CursorCompositionMode::AlphaBlend, [53, 170, 204, 255]),
+        ];
+        for background in [[37, 91, 163, 255], [255, 255, 255, 255], [0, 0, 0, 255]] {
+            for (mode, pixel) in cases {
+                let mut expected = background;
+                if mode == CursorCompositionMode::MaskedColor && matches!(pixel[3], 0 | 255) {
+                    // Windows masked cursors apply (destination AND mask) XOR color.
+                    for channel in 0..3 {
+                        expected[channel] = (background[channel] & pixel[3]) ^ pixel[channel];
+                    }
+                } else {
+                    for channel in 0..3 {
+                        expected[channel] = ((u32::from(pixel[channel]) * u32::from(pixel[3])
+                            + u32::from(background[channel]) * (255 - u32::from(pixel[3]))
+                            + 127)
+                            / 255) as u8;
+                    }
+                }
+                let shape = CursorShape::from_rgba(0, 0, 1, 1, mode, pixel.to_vec());
+                let shape_id = shape.shape_id;
+                let mut shapes = HashMap::new();
+                for state in [
+                    CursorShapeState::Embedded(shape),
+                    CursorShapeState::Cached(shape_id),
+                ] {
+                    let cursor = AttachedCursorSample {
+                        x: 0,
+                        y: 0,
+                        visible: true,
+                        shape: state,
+                    };
+                    for output_size in [(1, 1), (2, 2)] {
+                        let count = (output_size.0 * output_size.1) as usize;
+                        let mut rgba = background.repeat(count);
+                        draw_cursor(&mut rgba, output_size, (1, 1), &cursor, &mut shapes);
+                        assert_eq!(
+                            rgba,
+                            expected.repeat(count),
+                            "{mode:?}, {pixel:?}, {background:?}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn masked_cursor_preserves_background_around_visible_pixels_when_clipped() {
+        let background = [37, 91, 163, 255];
+        let mut pixels = [0, 0, 0, 255].repeat(9);
+        pixels[16..20].copy_from_slice(&[255, 255, 255, 255]);
+        let cursor = AttachedCursorSample {
+            x: 0,
+            y: 0,
+            visible: true,
+            shape: CursorShapeState::Embedded(CursorShape::from_rgba(
+                1,
+                1,
+                3,
+                3,
+                CursorCompositionMode::MaskedColor,
+                pixels,
+            )),
+        };
+        let mut rgba = background.repeat(4);
+        let mut expected = rgba.clone();
+        expected[..4].copy_from_slice(&[218, 164, 92, 255]);
+        draw_cursor(&mut rgba, (2, 2), (2, 2), &cursor, &mut HashMap::new());
+        assert_eq!(rgba, expected);
+    }
+
+    #[test]
+    fn live_audio_mixer_preserves_contiguous_samples_despite_timestamp_jitter() {
+        for source in [AudioSourceKind::System, AudioSourceKind::Microphone] {
+            let started_at = Instant::now();
+            let clock = RecordingClock::new(started_at);
+            let mut mixer = LiveAudioMixer::new(true, true);
+            let mut expected = Vec::new();
+            for (index, end_us) in [10_000, 20_500, 29_500].into_iter().enumerate() {
+                let data: Vec<i16> = (0..960)
+                    .map(|sample| (index * 960 + sample + 1) as i16)
+                    .collect();
+                expected.extend_from_slice(&data);
+                mixer.insert_packet(
+                    test_audio_packet(
+                        source,
+                        started_at + Duration::from_micros(end_us),
+                        index as u64 + 1,
+                        data,
+                    ),
+                    &clock,
+                );
+            }
+            let actual: Vec<i16> = (0..3)
+                .flat_map(|slot| mix_audio_slot(mixer.slots.remove(&slot).unwrap_or_default(), 960))
+                .collect();
+            let mismatches = actual.iter().zip(&expected).filter(|(a, b)| a != b).count();
+            assert_eq!(
+                mismatches, 0,
+                "{source:?}: contiguous PCM must survive timestamp jitter"
+            );
+        }
+    }
+
+    fn test_audio_packet(
+        source: AudioSourceKind,
+        end: Instant,
+        sequence: u64,
+        data: Vec<i16>,
+    ) -> AudioPacket {
+        AudioPacket {
+            source,
+            format: AudioFormat::new(AUDIO_SAMPLE_RATE, AUDIO_CHANNELS),
+            frames: (data.len() / usize::from(AUDIO_CHANNELS)) as u32,
+            data,
+            metadata: snow_audio_recorder::AudioPacketMetadata {
+                sequence,
+                stream_timestamp: Some(snow_core::timestamp::StreamTimestamp {
+                    instant: end,
+                    raw_os_ticks: None,
+                    tick_format: snow_core::timestamp::TickFormat::Hns100,
+                }),
+                ..Default::default()
+            },
+        }
+    }
+
+    #[test]
+    fn live_audio_mixer_realigns_at_stream_boundaries() {
+        let started_at = Instant::now();
+        let clock = RecordingClock::new(started_at);
+        for event in [
+            AudioEvent::PacketDropped {
+                source: AudioSourceKind::System,
+                dropped_frames: 480,
+            },
+            AudioEvent::SourceRestarted {
+                source: AudioSourceKind::System,
+                old_device_id: None,
+                new_device_id: "test".to_string(),
+                downtime: Duration::from_millis(10),
+            },
+            AudioEvent::Paused { at: started_at },
+            AudioEvent::Resumed {
+                at: started_at,
+                gap: Duration::from_millis(10),
+            },
+        ] {
+            let mut mixer = LiveAudioMixer::new(true, true);
+            mixer.insert_packet(
+                test_audio_packet(
+                    AudioSourceKind::System,
+                    started_at + Duration::from_millis(10),
+                    1,
+                    vec![1000; 960],
+                ),
+                &clock,
+            );
+            process_audio_event(event, &clock, true, Some(&mut mixer));
+            mixer.insert_packet(
+                test_audio_packet(
+                    AudioSourceKind::System,
+                    started_at + Duration::from_millis(30),
+                    2,
+                    vec![2000; 960],
+                ),
+                &clock,
+            );
+            assert!(
+                !mixer.slots.contains_key(&1),
+                "a real gap must remain silent"
+            );
+            assert_eq!(
+                mix_audio_slot(mixer.slots.remove(&2).unwrap(), 960),
+                vec![2000; 960]
+            );
+        }
+    }
+
+    #[test]
+    fn live_audio_mixer_keeps_source_positions_independent_and_realigns_discontinuities() {
+        let started_at = Instant::now();
+        let clock = RecordingClock::new(started_at);
+        let mut mixer = LiveAudioMixer::new(true, true);
+        mixer.insert_packet(
+            test_audio_packet(
+                AudioSourceKind::System,
+                started_at + Duration::from_millis(10),
+                1,
+                vec![1000; 960],
+            ),
+            &clock,
+        );
+        mixer.insert_packet(
+            test_audio_packet(
+                AudioSourceKind::Microphone,
+                started_at + Duration::from_millis(20),
+                1,
+                vec![2000; 960],
+            ),
+            &clock,
+        );
+        let mut packet = test_audio_packet(
+            AudioSourceKind::System,
+            started_at + Duration::from_millis(30),
+            2,
+            vec![3000; 960],
+        );
+        packet.metadata.discontinuity = true;
+        mixer.insert_packet(packet, &clock);
+        assert_eq!(
+            mix_audio_slot(mixer.slots.remove(&0).unwrap(), 960),
+            vec![1000; 960]
+        );
+        assert_eq!(
+            mix_audio_slot(mixer.slots.remove(&1).unwrap(), 960),
+            vec![2000; 960]
+        );
+        assert_eq!(
+            mix_audio_slot(mixer.slots.remove(&2).unwrap(), 960),
+            vec![3000; 960]
+        );
+    }
+
+    #[test]
     fn live_audio_mixer_saturates_sources_and_bounds_future_slots() {
         let mut mixer = LiveAudioMixer::new(true, true);
         let samples = vec![24_000i16; 480 * 2];
@@ -1234,13 +1479,11 @@ mod tests {
         value.mouse_trail_rgba = [255, 0, 0, 255];
         value.mouse_click_rgba = [0, 255, 0, 128];
         let mut compositor = VisualCompositor::new((4, 4));
-        compositor.trail.push_back(TrailPoint {
-            timestamp_ms: 100,
-            x: 1,
-            y: 1,
-        });
-        assert!(compositor.has_active_animation(&value, 449));
-        assert!(!compositor.has_active_animation(&value, 451));
+        compositor.trail.observe(Some((1, 1)), (4, 4), (4, 4), 0);
+        compositor.trail.observe(Some((2, 1)), (4, 4), (4, 4), 100);
+        assert!(compositor.has_active_animation(&value, 599));
+        assert!(!compositor.has_active_animation(&value, 600));
+        compositor.trail.clear();
         compositor.clicks.push_back(RenderClick {
             timestamp_ms: 500,
             x: 1,
