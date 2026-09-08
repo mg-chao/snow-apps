@@ -125,6 +125,7 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     void applyWindowAttributes();
     void registerMaterializedScope(QWidget* scope);
     void prewarmScopeIcons(QWidget* scope);
+    void setKeyboardFocusPolicy(bool enabled);
     QSize fixedWindowSizeHint() const;
     QPoint contentOffset() const;
     QPointF dragPositionForEvent(const QPoint& globalPosition) const;
@@ -162,6 +163,7 @@ class ScreenshotFloatingToolPaletteWindow : public QWidget {
     bool m_lastMainToolbarGlobalTopLeftValid = false;
     bool m_processingNativeDpiChange = false;
     bool m_keyboardFocusInteractionActive = false;
+    bool m_changingKeyboardFocusPolicy = false;
     bool m_geometryCommitActive = false;
     bool m_geometryUpdatePending = false;
     bool m_pendingPreserveContentPosition = false;
