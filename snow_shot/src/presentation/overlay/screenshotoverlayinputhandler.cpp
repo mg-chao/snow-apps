@@ -119,6 +119,8 @@ void ScreenshotOverlayInputHandler::finishSelectionResizeAtCanvasPosition(
 
 void ScreenshotOverlayInputHandler::handleMousePress(ScreenshotOverlayWindow* overlay,
                                                      const QPointF& localPosition) {
+    if (m_externalDragActive)
+        return;
     if (m_canvasColorSamplingArmed) {
         m_canvasColorSamplingArmed = false;
         static_cast<void>(m_context.actions.sampleCanvasColor(overlay, localPosition));
@@ -232,6 +234,8 @@ void ScreenshotOverlayInputHandler::handleIntelligentSelectionPress(
 bool ScreenshotOverlayInputHandler::shouldHandleMouseEvent(const ScreenshotOverlayWindow* overlay,
                                                            const QPointF& localPosition,
                                                            bool) const {
+    if (m_externalDragActive)
+        return true;
     if (m_canvasColorSamplingArmed) {
         return true;
     }
@@ -259,6 +263,8 @@ bool ScreenshotOverlayInputHandler::shouldHandleMouseEvent(const ScreenshotOverl
 
 void ScreenshotOverlayInputHandler::handleMouseMove(ScreenshotOverlayWindow* overlay,
                                                     const QPointF& localPosition) {
+    if (m_externalDragActive)
+        return;
     if (m_canvasColorSamplingArmed) {
         m_context.actions.previewCanvasColor(overlay, localPosition);
         return;
@@ -348,6 +354,8 @@ void ScreenshotOverlayInputHandler::updateSelectionDrag(const QPointF& virtualPo
 
 void ScreenshotOverlayInputHandler::handleMouseRelease(ScreenshotOverlayWindow* overlay,
                                                        const QPointF& localPosition) {
+    if (m_externalDragActive)
+        return;
     const QPointF virtualPosition = virtualPositionForOverlay(overlay, localPosition);
     if (m_context.interaction.intelligentSelecting()) {
         handleIntelligentSelectionRelease(virtualPosition);
@@ -409,6 +417,8 @@ void ScreenshotOverlayInputHandler::finishSelectionDrag(ScreenshotOverlayWindow*
 
 bool ScreenshotOverlayInputHandler::handleRightClick(ScreenshotOverlayWindow* overlay,
                                                      const QPointF& localPosition) {
+    if (m_externalDragActive)
+        return true;
     if (m_canvasColorSamplingArmed) {
         cancelCanvasColorSampling();
         return true;
@@ -444,6 +454,8 @@ bool ScreenshotOverlayInputHandler::handleWheel(ScreenshotOverlayWindow* overlay
                                                 const QPointF& localPosition,
                                                 const QPoint& angleDelta,
                                                 const QPoint& pixelDelta) {
+    if (m_externalDragActive)
+        return true;
     if (m_context.interaction.scrollingCapture()) {
         return false;
     }
@@ -489,7 +501,7 @@ bool ScreenshotOverlayInputHandler::handleWheel(ScreenshotOverlayWindow* overlay
 }
 
 bool ScreenshotOverlayInputHandler::shouldBlockUnhandledKeyInput() const {
-    return recognitionTool(m_context.interaction.activeTool());
+    return m_externalDragActive || recognitionTool(m_context.interaction.activeTool());
 }
 
 bool ScreenshotOverlayInputHandler::activateMoveEntireSelectionShortcut() {
@@ -646,6 +658,8 @@ void ScreenshotOverlayInputHandler::confirmSelection() {
 }
 
 void ScreenshotOverlayInputHandler::handleUnhandledLeftDoubleClick() {
+    if (m_externalDragActive)
+        return;
     if (!(m_context.interaction.movingSelection() || m_context.interaction.editing()) ||
         !m_context.selection.hasPixelSelection() ||
         !screenshotCompletionGestureTool(m_context.interaction.activeTool())) {
@@ -656,6 +670,8 @@ void ScreenshotOverlayInputHandler::handleUnhandledLeftDoubleClick() {
 }
 
 void ScreenshotOverlayInputHandler::handleUnhandledMiddleClick() {
+    if (m_externalDragActive)
+        return;
     if (!(m_context.interaction.movingSelection() || m_context.interaction.editing()) ||
         !m_context.selection.hasPixelSelection() ||
         !screenshotCompletionGestureTool(m_context.interaction.activeTool())) {

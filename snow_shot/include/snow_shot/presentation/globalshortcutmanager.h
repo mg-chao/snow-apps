@@ -36,7 +36,7 @@ class GlobalShortcutManager final : public QObject {
     [[nodiscard]] GlobalShortcutRegistrationState state(GlobalShortcutAction action) const;
     [[nodiscard]] GlobalShortcutValidationResult validateShortcut(const QString& shortcut) const;
     void setShortcuts(GlobalShortcutAction action, const QStringList& shortcuts);
-    void setShortcutFunctionsEnabled(bool enabled);
+    void setGlobalHotkeysEnabled(bool enabled);
 
   signals:
     void activated(snow_shot::presentation::GlobalShortcutAction action);

@@ -21,13 +21,14 @@ constexpr TranslatableText settingsText(const char* source) {
     return {"SettingsCatalog", source};
 }
 
-constexpr auto QUICK_PAGE_ID = "quick-functions";
+constexpr auto GLOBAL_HOTKEYS_PAGE_ID = "global-hotkeys";
+constexpr auto GLOBAL_MOUSE_PAGE_ID = "global-mouse";
 constexpr auto HISTORY_PAGE_ID = "screenshot-history";
 constexpr auto FUNCTION_PAGE_ID = "function-settings";
 constexpr auto INTERFACE_PAGE_ID = "interface-settings";
 constexpr auto STORAGE_PAGE_ID = "storage-and-privacy";
 constexpr auto SYSTEM_PAGE_ID = "system-settings";
-constexpr auto HOTKEY_PAGE_ID = "hotkey-settings";
+constexpr auto APPLICATION_SHORTCUTS_PAGE_ID = "application-shortcuts";
 
 SettingsItemDefinition screenshotItem() {
     SettingsShortcutActionDefinition payload;
@@ -524,6 +525,17 @@ SettingsItemDefinition pinClipboardContentItem() {
         []() { return custom_outlined_icons::PinToScreen(); });
 }
 
+SettingsItemDefinition globalMouseItem(const QString& id, const char* title,
+                                       SettingsGlobalMouseAction action,
+                                       const QString& configurationKey) {
+    return {id,
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", title)),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", title)),
+            {},
+            configurationKey,
+            SettingsGlobalMouseActionDefinition{action}};
+}
+
 SettingsItemDefinition fixedSelectItem(const QString& id, const char* title,
                                        const char* description, const QString& key,
                                        SettingsSelectBinding binding,
@@ -674,10 +686,10 @@ SettingsItemDefinition screenshotOcrActionItem() {
             {QStringLiteral("copy_text_and_end_screenshot"),
              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Copy text and end screenshot"))},
             {QStringLiteral("quick_copy_text"),
-             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Copy text (quick function)"))},
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Copy text (Global)"))},
             {QStringLiteral("quick_copy_text_and_end_screenshot"),
              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
-                                            "Copy text and end screenshot (quick function)"))},
+                                            "Copy text and end screenshot (Global)"))},
             {QStringLiteral("enable_edit_mode"),
              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Enable edit mode"))},
         });
@@ -1357,10 +1369,10 @@ SettingsItemDefinition clearRecordingTempItem() {
 QVector<SettingsPageDefinition> builtInPages() {
     return {
         {
-            QString::fromLatin1(QUICK_PAGE_ID),
+            QString::fromLatin1(GLOBAL_HOTKEYS_PAGE_ID),
             QStringLiteral("/"),
-            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Quick functions")),
-            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Quick functions page")),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Global hotkeys")),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Global hotkeys page")),
             {
                 {
                     QStringLiteral("screenshot"),
@@ -1411,6 +1423,62 @@ QVector<SettingsPageDefinition> builtInPages() {
                                            "Preview and manage saved screenshot history")),
             {},
             SettingsPageKind::ScreenshotHistory,
+        },
+        {
+            QString::fromLatin1(GLOBAL_MOUSE_PAGE_ID),
+            QStringLiteral("/global-mouse"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Global mouse")),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                           "Configure mouse combinations for screenshot actions")),
+            {
+                {
+                    QStringLiteral("screenshot"),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot")),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                                   "Mouse combinations for screenshot actions")),
+                    SettingsSectionReset::GlobalMouse,
+                    {
+                        globalMouseItem(QStringLiteral("global-mouse.screenshot-copy"),
+                                        QT_TRANSLATE_NOOP("SettingsCatalog", "Copy to clipboard"),
+                                        SettingsGlobalMouseAction::ScreenshotCopy,
+                                        QStringLiteral("global_mouse/screenshot_copy")),
+                        globalMouseItem(QStringLiteral("global-mouse.screenshot-fixed"),
+                                        QT_TRANSLATE_NOOP("SettingsCatalog", "Pin to screen"),
+                                        SettingsGlobalMouseAction::ScreenshotFixed,
+                                        QStringLiteral("global_mouse/screenshot_fixed")),
+                        globalMouseItem(QStringLiteral("global-mouse.screenshot-ocr"),
+                                        QT_TRANSLATE_NOOP("SettingsCatalog", "Text recognition"),
+                                        SettingsGlobalMouseAction::ScreenshotOcr,
+                                        QStringLiteral("global_mouse/screenshot_ocr")),
+                        globalMouseItem(QStringLiteral("global-mouse.screenshot-translation"),
+                                        QT_TRANSLATE_NOOP("SettingsCatalog", "Text translation"),
+                                        SettingsGlobalMouseAction::ScreenshotTranslation,
+                                        QStringLiteral("global_mouse/screenshot_translation")),
+                        globalMouseItem(QStringLiteral("global-mouse.screenshot-save"),
+                                        QT_TRANSLATE_NOOP("SettingsCatalog", "Save as file"),
+                                        SettingsGlobalMouseAction::ScreenshotSave,
+                                        QStringLiteral("global_mouse/screenshot_save")),
+                        globalMouseItem(QStringLiteral("global-mouse.screenshot-quick-save"),
+                                        QT_TRANSLATE_NOOP("SettingsCatalog", "Quick save"),
+                                        SettingsGlobalMouseAction::ScreenshotQuickSave,
+                                        QStringLiteral("global_mouse/screenshot_quick_save")),
+                    },
+                    SettingsSectionItemLayout::VerticalList,
+                },
+                {
+                    QStringLiteral("screen-recording"),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording")),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording")),
+                    SettingsSectionReset::GlobalMouse,
+                    {
+                        globalMouseItem(QStringLiteral("global-mouse.screen-recording"),
+                                        QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording"),
+                                        SettingsGlobalMouseAction::ScreenRecording,
+                                        QStringLiteral("global_mouse/screen_recording")),
+                    },
+                    SettingsSectionItemLayout::VerticalList,
+                },
+            },
         },
         {
             QString::fromLatin1(FUNCTION_PAGE_ID),
@@ -1716,9 +1784,9 @@ QVector<SettingsPageDefinition> builtInPages() {
             },
         },
         {
-            QString::fromLatin1(HOTKEY_PAGE_ID),
-            QStringLiteral("/settings/hotKeySettings"),
-            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Hotkey settings")),
+            QString::fromLatin1(APPLICATION_SHORTCUTS_PAGE_ID),
+            QStringLiteral("/settings/applicationShortcuts"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Application shortcuts")),
             settingsText(
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Configure screenshot editor shortcut keys")),
             {
@@ -1765,10 +1833,15 @@ QVector<SettingsPageDefinition> builtInPages() {
 }
 
 QVector<SettingsNavigationNode> builtInNavigation() {
-    SettingsNavigationPageDefinition quick;
-    quick.id = QStringLiteral("nav.quick-functions");
-    quick.pageId = QString::fromLatin1(QUICK_PAGE_ID);
-    quick.iconFactory = []() { return outlined_icons::Thunderbolt(); };
+    SettingsNavigationPageDefinition globalHotkeys;
+    globalHotkeys.id = QStringLiteral("nav.global-hotkeys");
+    globalHotkeys.pageId = QString::fromLatin1(GLOBAL_HOTKEYS_PAGE_ID);
+    globalHotkeys.iconFactory = []() { return outlined_icons::Thunderbolt(); };
+
+    SettingsNavigationPageDefinition globalMouse;
+    globalMouse.id = QStringLiteral("nav.global-mouse");
+    globalMouse.pageId = QString::fromLatin1(GLOBAL_MOUSE_PAGE_ID);
+    globalMouse.iconFactory = []() { return custom_outlined_icons::WheelMouse(); };
 
     SettingsNavigationPageDefinition history;
     history.id = QStringLiteral("nav.screenshot-history");
@@ -1791,8 +1864,8 @@ QVector<SettingsNavigationNode> builtInNavigation() {
             []() { return outlined_icons::Function(); },
         },
         {
-            QStringLiteral("nav.hotkey-settings"),
-            QString::fromLatin1(HOTKEY_PAGE_ID),
+            QStringLiteral("nav.application-shortcuts"),
+            QString::fromLatin1(APPLICATION_SHORTCUTS_PAGE_ID),
             []() { return custom_outlined_icons::Keyboard(); },
         },
         {
@@ -1807,7 +1880,7 @@ QVector<SettingsNavigationNode> builtInNavigation() {
         },
     };
 
-    return {quick, history, settingsGroup};
+    return {globalHotkeys, globalMouse, history, settingsGroup};
 }
 
 QString locationText(const SettingsLocation& location) {
@@ -1860,6 +1933,26 @@ QString shortcutConfigurationKey(GlobalShortcutAction action) {
         return QStringLiteral("global_shortcuts/open_settings");
     case GlobalShortcutAction::PinClipboardContent:
         return QStringLiteral("global_shortcuts/pin_clipboard_content");
+    }
+    return {};
+}
+
+QString globalMouseConfigurationKey(SettingsGlobalMouseAction action) {
+    switch (action) {
+    case SettingsGlobalMouseAction::ScreenshotCopy:
+        return QStringLiteral("global_mouse/screenshot_copy");
+    case SettingsGlobalMouseAction::ScreenshotFixed:
+        return QStringLiteral("global_mouse/screenshot_fixed");
+    case SettingsGlobalMouseAction::ScreenshotOcr:
+        return QStringLiteral("global_mouse/screenshot_ocr");
+    case SettingsGlobalMouseAction::ScreenshotTranslation:
+        return QStringLiteral("global_mouse/screenshot_translation");
+    case SettingsGlobalMouseAction::ScreenshotQuickSave:
+        return QStringLiteral("global_mouse/screenshot_quick_save");
+    case SettingsGlobalMouseAction::ScreenRecording:
+        return QStringLiteral("global_mouse/screen_recording");
+    case SettingsGlobalMouseAction::ScreenshotSave:
+        return QStringLiteral("global_mouse/screenshot_save");
     }
     return {};
 }
@@ -2003,10 +2096,11 @@ QString SettingsCatalog::shortcutActionTitle(GlobalShortcutAction action,
 
 QVector<SettingsTrayMenuGroupDefinition> SettingsCatalog::trayMenuGroups() const {
     QVector<SettingsTrayMenuGroupDefinition> groups;
-    const SettingsPageDefinition* quickPage = page(QString::fromLatin1(QUICK_PAGE_ID));
-    if (quickPage != nullptr) {
-        groups.reserve(quickPage->sections.size() + 1);
-        for (const SettingsSectionDefinition& sectionDefinition : quickPage->sections) {
+    const SettingsPageDefinition* globalHotkeysPage =
+        page(QString::fromLatin1(GLOBAL_HOTKEYS_PAGE_ID));
+    if (globalHotkeysPage != nullptr) {
+        groups.reserve(globalHotkeysPage->sections.size() + 1);
+        for (const SettingsSectionDefinition& sectionDefinition : globalHotkeysPage->sections) {
             SettingsTrayMenuGroupDefinition group;
             group.id = sectionDefinition.id;
             for (const SettingsItemDefinition& itemDefinition : sectionDefinition.items) {
@@ -2033,8 +2127,8 @@ QVector<SettingsTrayMenuGroupDefinition> SettingsCatalog::trayMenuGroups() const
          SettingsTrayMenuOptionKind::WindowGrouping, GlobalShortcutAction::Screenshot,
          []() { return custom_outlined_icons::Group(); }},
         {QStringLiteral("tray.disable-shortcut-functions"),
-         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Disable shortcut functions")),
-         SettingsTrayMenuOptionKind::DisableShortcutFunctions, GlobalShortcutAction::Screenshot,
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Disable global hotkeys")),
+         SettingsTrayMenuOptionKind::DisableGlobalHotkeys, GlobalShortcutAction::Screenshot,
          []() { return custom_outlined_icons::Disabled(); }},
         {QStringLiteral("tray.show-main-window"),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Show main interface")),
@@ -2148,8 +2242,8 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
            GlobalShortcutAction::Screenshot,
            []() { return custom_outlined_icons::Group(); }},
           {QStringLiteral("tray.disable-shortcut-functions"),
-           {"SettingsCatalog", QT_TRANSLATE_NOOP("SettingsCatalog", "Disable shortcut functions")},
-           SettingsTrayMenuOptionKind::DisableShortcutFunctions,
+           {"SettingsCatalog", QT_TRANSLATE_NOOP("SettingsCatalog", "Disable global hotkeys")},
+           SettingsTrayMenuOptionKind::DisableGlobalHotkeys,
            GlobalShortcutAction::Screenshot,
            []() { return custom_outlined_icons::Disabled(); }},
           {QStringLiteral("tray.show-main-window"),
@@ -2608,6 +2702,15 @@ QStringList SettingsCatalog::validationErrors() const {
                                              .arg(itemDefinition.id));
                     }
                 }
+                if (const auto* globalMouse =
+                        std::get_if<SettingsGlobalMouseActionDefinition>(&itemDefinition.payload)) {
+                    const QString expectedKey = globalMouseConfigurationKey(globalMouse->action);
+                    if (itemDefinition.configurationKey != expectedKey || schemaEntry == nullptr ||
+                        schemaEntry->valueKind != storage::ConfigurationValueKind::Structured) {
+                        errors.push_back(QStringLiteral("global mouse item is incomplete: %1")
+                                             .arg(itemDefinition.id));
+                    }
+                }
                 if (const auto* slider =
                         std::get_if<SettingsSliderDefinition>(&itemDefinition.payload)) {
                     QString expectedKey;
@@ -2844,7 +2947,7 @@ QStringList SettingsCatalog::validationErrors() const {
 SettingsCatalog buildBuiltInSettingsCatalog() {
     return {builtInPages(),
             builtInNavigation(),
-            {QString::fromLatin1(QUICK_PAGE_ID), QStringLiteral("screenshot"),
+            {QString::fromLatin1(GLOBAL_HOTKEYS_PAGE_ID), QStringLiteral("screenshot"),
              QStringLiteral("quick.screenshot")}};
 }
 

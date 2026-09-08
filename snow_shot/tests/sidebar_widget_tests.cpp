@@ -169,7 +169,7 @@ void firstTopLevelMenuAndCollapseTriggerUseThemeBackground() {
     const QModelIndex firstItemIndex = inlineView->model()->index(0, 0, inlineView->rootIndex());
     const QRect firstItemRect = inlineView->visualRect(firstItemIndex);
     require(firstItemIndex.isValid() && firstItemRect.isValid(),
-            "quick functions should be visible");
+            "global hotkeys should be visible");
     require(inlineView->viewport()->mapTo(menu, firstItemRect.topLeft()).y() ==
                 FIRST_TOP_LEVEL_MENU_TOP_SPACING,
             "the first top-level item should begin after the configured top spacing");

@@ -443,6 +443,131 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
     }
 }
 
+void globalMouseCombinationSchemaIsStrictAndPersistent() {
+    const QStringList keys{
+        QStringLiteral("global_mouse/screenshot_copy"),
+        QStringLiteral("global_mouse/screenshot_fixed"),
+        QStringLiteral("global_mouse/screenshot_ocr"),
+        QStringLiteral("global_mouse/screenshot_translation"),
+        QStringLiteral("global_mouse/screenshot_save"),
+        QStringLiteral("global_mouse/screenshot_quick_save"),
+    };
+    const QStringList activationKeys{QStringLiteral("windows"), QStringLiteral("ctrl"),
+                                     QStringLiteral("alt"), QStringLiteral("shift")};
+    const QStringList mouseButtons{
+        QStringLiteral("left_drag"),          QStringLiteral("right_drag"),
+        QStringLiteral("wheel_drag"),         QStringLiteral("side_button_1_drag"),
+        QStringLiteral("side_button_2_drag"),
+    };
+    for (const QString& key : keys) {
+        const auto* entry = storage::ConfigurationSchema::entry(key);
+        require(entry != nullptr && entry->valueKind == storage::ConfigurationValueKind::Structured,
+                "global mouse fields must be structured values");
+        const QString button =
+            key.endsWith(QStringLiteral("screenshot_copy"))    ? QStringLiteral("left_drag")
+            : key.endsWith(QStringLiteral("screenshot_fixed")) ? QStringLiteral("wheel_drag")
+            : key.endsWith(QStringLiteral("screenshot_ocr"))   ? QStringLiteral("right_drag")
+                                                               : QString();
+        const QJsonObject expected = button.isEmpty()
+                                         ? QJsonObject{}
+                                         : QJsonObject{{QStringLiteral("activation_key"),
+                                                        QJsonArray{QStringLiteral("windows")}},
+                                                       {QStringLiteral("mouse_button"), button}};
+        require(entry->defaultValue == expected,
+                "copy, pin, and OCR must default to Windows plus left, middle, and right drag");
+        const auto unset = storage::ConfigurationSchema::normalize(key, QJsonObject());
+        require(unset.valid && !unset.changed && unset.value == QJsonObject(),
+                "an empty global mouse object must normalize as Unset");
+        for (const QString& activationKey : activationKeys) {
+            for (const QString& mouseButton : mouseButtons) {
+                const QJsonObject combination{
+                    {QStringLiteral("activation_key"), activationKey},
+                    {QStringLiteral("mouse_button"), mouseButton},
+                };
+                const auto normalized = storage::ConfigurationSchema::normalize(key, combination);
+                require(normalized.valid && !normalized.changed && normalized.value == combination,
+                        "every declared global mouse combination must be accepted unchanged");
+            }
+        }
+    }
+
+    const QString key = keys.constFirst();
+    const QJsonObject multi{
+        {QStringLiteral("activation_key"),
+         QJsonArray{QStringLiteral("shift"), QStringLiteral("ctrl"), QStringLiteral("ctrl")}},
+        {QStringLiteral("mouse_button"), QStringLiteral("left_drag")}};
+    const auto normalizedMulti = storage::ConfigurationSchema::normalize(key, multi);
+    require(normalizedMulti.valid && normalizedMulti.changed &&
+                normalizedMulti.value.toObject().value(QStringLiteral("activation_key")) ==
+                    QJsonArray{QStringLiteral("ctrl"), QStringLiteral("shift")},
+            "multiple activation keys must normalize as a sorted unique set");
+    const QVector<QJsonValue> malformed{
+        QStringLiteral("windows+left_drag"),
+        QJsonArray{QStringLiteral("windows"), QStringLiteral("left_drag")},
+        QJsonObject{{QStringLiteral("activation_key"), QStringLiteral("windows")}},
+        QJsonObject{{QStringLiteral("mouse_button"), QStringLiteral("left_drag")}},
+        QJsonObject{{QStringLiteral("activation_key"), QStringLiteral("meta")},
+                    {QStringLiteral("mouse_button"), QStringLiteral("left_drag")}},
+        QJsonObject{{QStringLiteral("activation_key"), QStringLiteral("windows")},
+                    {QStringLiteral("mouse_button"), QStringLiteral("middle_drag")}},
+        QJsonObject{{QStringLiteral("activation_key"), QStringLiteral("windows")},
+                    {QStringLiteral("mouse_button"), QStringLiteral("left_drag")},
+                    {QStringLiteral("extra"), true}},
+        QJsonObject{{QStringLiteral("activation_key"), 1},
+                    {QStringLiteral("mouse_button"), QStringLiteral("left_drag")}},
+        QJsonObject{{QStringLiteral("activation_key"), QJsonArray{}},
+                    {QStringLiteral("mouse_button"), QStringLiteral("left_drag")}},
+        QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("ctrl"), 1}},
+                    {QStringLiteral("mouse_button"), QStringLiteral("left_drag")}},
+        QJsonObject{{QStringLiteral("activation_key"),
+                     QJsonArray{QStringLiteral("ctrl"), QStringLiteral("bad")}},
+                    {QStringLiteral("mouse_button"), QStringLiteral("left_drag")}},
+    };
+    for (const QJsonValue& value : malformed) {
+        require(!storage::ConfigurationSchema::normalize(key, value).valid,
+                "malformed global mouse values must be rejected");
+    }
+
+    QTemporaryDir roundTripDirectory;
+    require(roundTripDirectory.isValid(), "failed to create global mouse round-trip directory");
+    const QString roundTripPath =
+        QDir(roundTripDirectory.path()).filePath(QStringLiteral("config.json"));
+    const QJsonObject savedCombination{
+        {QStringLiteral("activation_key"),
+         QJsonArray{QStringLiteral("ctrl"), QStringLiteral("shift")}},
+        {QStringLiteral("mouse_button"), QStringLiteral("side_button_2_drag")},
+    };
+    {
+        storage::ConfigurationStore store(roundTripPath, true, true, 60000);
+        require(store.value(key) == storage::ConfigurationSchema::defaultValue(key) &&
+                    store.setValue(key, savedCombination) &&
+                    !store.setValue(key, malformed.constFirst()) &&
+                    store.value(key) == savedCombination && store.flushNow().success,
+                "global mouse persistence must retain valid values after a rejected mutation");
+    }
+    storage::ConfigurationStore reloaded(roundTripPath, true, true, 60000);
+    require(reloaded.value(key) == savedCombination,
+            "a valid global mouse combination must round-trip through storage");
+    require(reloaded.setValue(key, QJsonObject{}) && reloaded.flushNow().success,
+            "a default binding must be explicitly clearable");
+    storage::ConfigurationStore cleared(roundTripPath, true, true, 60000);
+    require(cleared.value(key) == QJsonObject{},
+            "an explicitly unset binding must remain unset after reload");
+
+    QTemporaryDir repairDirectory;
+    require(repairDirectory.isValid(), "failed to create global mouse repair directory");
+    const QString repairPath = QDir(repairDirectory.path()).filePath(QStringLiteral("config.json"));
+    QJsonObject malformedDocument = storage::ConfigurationSchema::completeDefaultDocument();
+    QJsonObject globalMouse = malformedDocument.value(QStringLiteral("global_mouse")).toObject();
+    globalMouse.insert(QStringLiteral("screenshot_copy"), malformed.constFirst());
+    malformedDocument.insert(QStringLiteral("global_mouse"), globalMouse);
+    writeBytes(repairPath, QJsonDocument(malformedDocument).toJson(QJsonDocument::Indented));
+    storage::ConfigurationStore repaired(repairPath, true, true, 60000);
+    require(repaired.value(key) == storage::ConfigurationSchema::defaultValue(key) &&
+                repaired.isDirty(),
+            "malformed persisted global mouse values must be restored to their default");
+}
+
 void screenshotUiSchemaRepairsStructuredValues() {
     const QJsonObject defaultActionLayout =
         storage::ConfigurationSchema::defaultValue(
@@ -1366,6 +1491,7 @@ int main(int argc, char** argv) {
     markerResolutionAndStatus();
     defaultsAndTypedRoundTrip();
     settingsSchemaDefaultsAndValidationAreComplete();
+    globalMouseCombinationSchemaIsStrictAndPersistent();
     screenshotUiSchemaRepairsStructuredValues();
     screenshotUiAdaptersRoundTripTypedValues();
     screenshotTranslationSettingsRoundTripSupportedValues();

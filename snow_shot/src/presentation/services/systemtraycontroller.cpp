@@ -289,13 +289,12 @@ class SystemTrayController::Impl {
                                          emit q.quickActionRequested(shortcutAction);
                                      });
                     break;
-                case settings::SettingsTrayMenuOptionKind::DisableShortcutFunctions:
-                    disableShortcutFunctionsAction = action;
+                case settings::SettingsTrayMenuOptionKind::DisableGlobalHotkeys:
+                    disableGlobalHotkeysAction = action;
                     action->setCheckable(true);
-                    QObject::connect(action, &QAction::toggled, &q,
-                                     [this](bool checked) {
-                                         emit q.shortcutFunctionsDisabledChanged(checked);
-                                     });
+                    QObject::connect(action, &QAction::toggled, &q, [this](bool checked) {
+                        emit q.globalHotkeysDisabledChanged(checked);
+                    });
                     break;
                 case settings::SettingsTrayMenuOptionKind::ShowMainWindow:
                     QObject::connect(action, &QAction::triggered, &q,
@@ -323,9 +322,9 @@ class SystemTrayController::Impl {
             actions.insert(windowGroupingOptionId, groupMenuAction);
         }
         // Window grouping sits above the disable command so pinned windows can
-        // be re-grouped without scrolling past the quick-function switches.
-        if (disableShortcutFunctionsAction != nullptr) {
-            menu->insertAction(disableShortcutFunctionsAction, groupMenuAction);
+        // be re-grouped without scrolling past the global-hotkey switches.
+        if (disableGlobalHotkeysAction != nullptr) {
+            menu->insertAction(disableGlobalHotkeysAction, groupMenuAction);
         } else if (showMainWindow != nullptr) {
             menu->insertAction(showMainWindow, groupMenuAction);
         }
@@ -435,10 +434,9 @@ class SystemTrayController::Impl {
             priorGroupVisible = priorGroupVisible || visibleGroups.at(groupIndex);
         }
 
-        if (disableShortcutFunctionsAction != nullptr &&
-            !disableShortcutFunctionsAction->isVisible() &&
-            disableShortcutFunctionsAction->isChecked()) {
-            disableShortcutFunctionsAction->setChecked(false);
+        if (disableGlobalHotkeysAction != nullptr && !disableGlobalHotkeysAction->isVisible() &&
+            disableGlobalHotkeysAction->isChecked()) {
+            disableGlobalHotkeysAction->setChecked(false);
         }
     }
 
@@ -482,7 +480,7 @@ class SystemTrayController::Impl {
     QHash<GlobalShortcutAction, QString> shortcutText;
     QVector<QAction*> separatorsBeforeGroup;
     TrayImageCache iconCache;
-    QAction* disableShortcutFunctionsAction = nullptr;
+    QAction* disableGlobalHotkeysAction = nullptr;
     QStringList menuOptions;
     QString iconSelection = QString::fromLatin1(DEFAULT_TRAY_ICON);
     QString customIconPath;
@@ -628,8 +626,8 @@ QStringList SystemTrayController::menuOptions() const {
     return m_impl->menuOptions;
 }
 
-bool SystemTrayController::shortcutFunctionsDisabled() const {
-    return m_impl->disableShortcutFunctionsAction != nullptr &&
-           m_impl->disableShortcutFunctionsAction->isChecked();
+bool SystemTrayController::globalHotkeysDisabled() const {
+    return m_impl->disableGlobalHotkeysAction != nullptr &&
+           m_impl->disableGlobalHotkeysAction->isChecked();
 }
 } // namespace snow_shot::presentation

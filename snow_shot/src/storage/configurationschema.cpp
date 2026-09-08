@@ -221,6 +221,26 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      2},
     {QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window"), false,
      ConfigurationValueKind::Boolean},
+    {QStringLiteral("global_mouse/screenshot_copy"),
+     QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("windows")}},
+                 {QStringLiteral("mouse_button"), QStringLiteral("left_drag")}},
+     ConfigurationValueKind::Structured},
+    {QStringLiteral("global_mouse/screenshot_fixed"),
+     QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("windows")}},
+                 {QStringLiteral("mouse_button"), QStringLiteral("wheel_drag")}},
+     ConfigurationValueKind::Structured},
+    {QStringLiteral("global_mouse/screenshot_ocr"),
+     QJsonObject{{QStringLiteral("activation_key"), QJsonArray{QStringLiteral("windows")}},
+                 {QStringLiteral("mouse_button"), QStringLiteral("right_drag")}},
+     ConfigurationValueKind::Structured},
+    {QStringLiteral("global_mouse/screenshot_translation"), QJsonObject(),
+     ConfigurationValueKind::Structured},
+    {QStringLiteral("global_mouse/screenshot_quick_save"), QJsonObject(),
+     ConfigurationValueKind::Structured},
+    {QStringLiteral("global_mouse/screenshot_save"), QJsonObject(),
+     ConfigurationValueKind::Structured},
+    {QStringLiteral("global_mouse/screen_recording"), QJsonObject(),
+     ConfigurationValueKind::Structured},
     {QStringLiteral("screen_recording/enable_microphone"), false, ConfigurationValueKind::Boolean},
     {QStringLiteral("screen_recording/enable_system_audio"), true, ConfigurationValueKind::Boolean},
     {QStringLiteral("screen_recording/clarity"),
@@ -1086,6 +1106,59 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
     return {normalized, true, normalized != object};
 }
 
+bool isGlobalMouseKey(const QString& key) {
+    return key.startsWith(QStringLiteral("global_mouse/"));
+}
+
+ConfigurationNormalization normalizeGlobalMouseCombination(const QJsonValue& value) {
+    if (!value.isObject()) {
+        return {};
+    }
+    const QJsonObject object = value.toObject();
+    if (object.isEmpty()) {
+        return {QJsonObject(), true, false};
+    }
+    const QJsonValue activationValue = object.value(QStringLiteral("activation_key"));
+    if (object.size() != 2 || (!activationValue.isString() && !activationValue.isArray()) ||
+        !object.value(QStringLiteral("mouse_button")).isString()) {
+        return {};
+    }
+
+    QStringList keys;
+    if (activationValue.isString()) {
+        keys.push_back(activationValue.toString().trimmed());
+    } else {
+        for (const QJsonValue& item : activationValue.toArray()) {
+            if (!item.isString()) {
+                return {};
+            }
+            keys.push_back(item.toString().trimmed());
+        }
+    }
+    const QString mouseButton = object.value(QStringLiteral("mouse_button")).toString().trimmed();
+    static const QSet<QString> activationKeys{QStringLiteral("windows"), QStringLiteral("ctrl"),
+                                              QStringLiteral("alt"), QStringLiteral("shift")};
+    static const QSet<QString> mouseButtons{
+        QStringLiteral("left_drag"), QStringLiteral("right_drag"), QStringLiteral("wheel_drag"),
+        QStringLiteral("side_button_1_drag"), QStringLiteral("side_button_2_drag")};
+    if (keys.isEmpty() || !mouseButtons.contains(mouseButton)) {
+        return {};
+    }
+    for (const QString& key : keys) {
+        if (!activationKeys.contains(key)) {
+            return {};
+        }
+    }
+    keys.removeDuplicates();
+    keys.sort();
+
+    const QJsonObject normalized{{QStringLiteral("activation_key"),
+                                  keys.size() == 1 ? QJsonValue(keys.front())
+                                                   : QJsonValue(QJsonArray::fromStringList(keys))},
+                                 {QStringLiteral("mouse_button"), mouseButton}};
+    return {normalized, true, normalized != object};
+}
+
 void insertPath(QJsonObject* root, const QString& path, const QJsonValue& value) {
     const QStringList parts = path.split(u'/');
     if (root == nullptr || parts.size() != 2) {
@@ -1159,6 +1232,9 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
     if (key == QStringLiteral("screenshot_toolbar/action_tools_layout")) {
         return normalizeToolbarLayout(value, kActionToolbarItemIds,
                                       defaultActionToolbarPositions());
+    }
+    if (isGlobalMouseKey(key)) {
+        return normalizeGlobalMouseCombination(value);
     }
     if (isRgbaColorKey(key)) {
         return normalizeRgbaColor(value);

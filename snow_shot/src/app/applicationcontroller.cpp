@@ -1,6 +1,7 @@
 #include "snow_shot/app/applicationcontroller.h"
 
 #include "snow_shot/presentation/globalshortcutmanager.h"
+#include "snow_shot/presentation/globalmousemanager.h"
 #include "snow_shot/presentation/mainwindow.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
@@ -73,11 +74,9 @@ class ApplicationController::Impl {
         QObject::connect(
             &systemTray, &presentation::SystemTrayController::quickActionRequested, &q,
             [this](presentation::GlobalShortcutAction action) { dispatchQuickAction(action); });
-        QObject::connect(&systemTray,
-                         &presentation::SystemTrayController::shortcutFunctionsDisabledChanged, &q,
-                         [this](bool disabled) {
-                             globalShortcutManager.setShortcutFunctionsEnabled(!disabled);
-                         });
+        QObject::connect(
+            &systemTray, &presentation::SystemTrayController::globalHotkeysDisabledChanged, &q,
+            [this](bool disabled) { globalShortcutManager.setGlobalHotkeysEnabled(!disabled); });
         QObject::connect(
             &groupManager,
             &presentation::PinnedWindowGroupManager::restoreActiveGroupWindowsRequested, &q,
@@ -97,6 +96,33 @@ class ApplicationController::Impl {
                          });
         QObject::connect(&app, &QCoreApplication::aboutToQuit, &systemTray,
                          &presentation::SystemTrayController::hide);
+        QObject::connect(&app, &QCoreApplication::aboutToQuit, &globalMouseManager,
+                         &presentation::GlobalMouseManager::shutdown);
+        QObject::connect(
+            &globalMouseManager, &presentation::GlobalMouseManager::operationFailed, &q,
+            [this](const QString& message) { systemTray.showCaptureMessage(message, true); });
+        QObject::connect(&globalMouseManager, &presentation::GlobalMouseManager::dragEvent, &q,
+                         [this](const presentation::GlobalMouseDragEvent& event) {
+                             auto* controller = ensureScreenshotController();
+                             using Kind = presentation::GlobalMouseDragEvent::Kind;
+                             switch (event.kind) {
+                             case Kind::Begin:
+                                 if (!controller->beginGlobalMouseCapture(event.action, event.id,
+                                                                          event.position)) {
+                                     globalMouseManager.cancelGesture(event.id);
+                                 }
+                                 break;
+                             case Kind::Update:
+                                 controller->updateGlobalMouseCapture(event.id, event.position);
+                                 break;
+                             case Kind::Finish:
+                                 controller->finishGlobalMouseCapture(event.id, event.position);
+                                 break;
+                             case Kind::Cancel:
+                                 controller->cancelGlobalMouseCapture(event.id);
+                                 break;
+                             }
+                         });
         auto& applicationStorage = storage::ApplicationStorage::instance();
         if (!applicationStorage.isInitialized()) {
             static_cast<void>(applicationStorage.initialize());
@@ -155,6 +181,8 @@ class ApplicationController::Impl {
 
         systemTray.show();
         globalShortcutManager.initialize();
+        globalMouseManager.setCaptureAvailable(ensureScreenshotController()->captureAvailable());
+        globalMouseManager.initialize();
         QTimer::singleShot(0, &q, [this]() {
             if (ScreenshotController* controller = ensureScreenshotController()) {
                 controller->prewarmResources();
@@ -170,6 +198,12 @@ class ApplicationController::Impl {
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::showMainWindowRequested, &q,
                              [this]() { showMainWindow(); });
+            QObject::connect(screenshotController.get(),
+                             &ScreenshotController::captureAvailabilityChanged, &globalMouseManager,
+                             &presentation::GlobalMouseManager::setCaptureAvailable);
+            QObject::connect(screenshotController.get(),
+                             &ScreenshotController::globalMouseCaptureEnded, &globalMouseManager,
+                             &presentation::GlobalMouseManager::cancelGesture);
         }
         return screenshotController.get();
     }
@@ -218,6 +252,8 @@ class ApplicationController::Impl {
             QObject::connect(
                 mainWindow, &MainWindow::quickActionRequested, &q,
                 [this](presentation::GlobalShortcutAction action) { dispatchQuickAction(action); });
+            QObject::connect(mainWindow, &MainWindow::globalMouseDragRequested, &globalMouseManager,
+                             &presentation::GlobalMouseManager::beginButtonDrag);
             QObject::connect(mainWindow, &MainWindow::screenshotHistoryEditRequested, &q,
                              [this](const QString& recordId) {
                                  if (ScreenshotController* controller =
@@ -340,6 +376,7 @@ class ApplicationController::Impl {
     presentation::PinnedWindowGroupManager groupManager;
     presentation::SystemTrayController systemTray;
     presentation::GlobalShortcutManager globalShortcutManager;
+    presentation::GlobalMouseManager globalMouseManager;
     // Settings are intentionally constructed on first window access.  The
     // tray and shortcut manager use only their compact bootstrap data.
     std::unique_ptr<presentation::settings::SettingsRegistry> settingsRegistry;
