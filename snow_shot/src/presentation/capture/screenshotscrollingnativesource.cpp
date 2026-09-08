@@ -101,18 +101,13 @@ ScrollingSourceFactory nativeScrollingSource(QRect selection, bool restoreOrigin
         config.max_consecutive_errors = 30;
         config.capture_retry_count = 1;
         config.wgc_update_mode = SNOW_CAPTURE_WGC_UPDATE_MODE_COMPLETE_ONLY;
-        config.capture_backend = SNOW_CAPTURE_BACKEND_WGC;
+        // Auto tries DXGI first, then WGC and GDI on eligible capture failures.
+        config.capture_backend = SNOW_CAPTURE_BACKEND_AUTO;
         config.pixel_format = SNOW_CAPTURE_PIXEL_FORMAT_RGBA8;
         config.adaptive_fps = 1;
         config.include_cursor = 0;
         config.restore_original_colors = restoreOriginalColors ? 1 : 0;
         auto* stream = snow_capture_stream_create_region(&config);
-        if (!stream) {
-            qWarning("Direct scrolling stream unavailable; retrying with automatic backend: %s",
-                     snow_capture_last_error_message());
-            config.capture_backend = SNOW_CAPTURE_BACKEND_AUTO;
-            stream = snow_capture_stream_create_region(&config);
-        }
         if (!stream) {
             qWarning("Failed to create continuous scrolling stream: %s",
                      snow_capture_last_error_message());

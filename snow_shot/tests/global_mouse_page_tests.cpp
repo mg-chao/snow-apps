@@ -510,10 +510,12 @@ void globalMouseAndGlobalHotkeyRowsSharePresentation() {
     const std::unique_ptr<ShortcutKeyRow> quickRowOwner(quickRow);
     auto& shortcut = *quickRow;
     shortcut.applyTheme(scheme);
-    mouse.resize(600, mouse.height());
+    mouse.resize(601, mouse.height());
     shortcut.resize(mouse.size());
-    const auto renderSurface = [](QWidget& widget) {
-        QImage image(widget.size(), QImage::Format_ARGB32_Premultiplied);
+    const auto renderSurface = [](QWidget& widget, qreal dpr) {
+        QImage image(QSize(qRound(widget.width() * dpr), qRound(widget.height() * dpr)),
+                     QImage::Format_ARGB32_Premultiplied);
+        image.setDevicePixelRatio(dpr);
         image.fill(Qt::transparent);
         widget.render(&image, QPoint(), QRegion(), QWidget::DrawWindowBackground);
         return image;
@@ -529,18 +531,21 @@ void globalMouseAndGlobalHotkeyRowsSharePresentation() {
             for (const bool configurationActive : {false, true}) {
                 mouse.configurationButton()->setDown(configurationActive);
                 shortcutButton->setDown(configurationActive);
-                const QImage mouseSurface = renderSurface(mouse);
-                const QImage shortcutSurface = renderSurface(shortcut);
-                if (mouseSurface != shortcutSurface) {
-                    std::cerr << "Row comparison: hovered=" << hovered << " pressed=" << pressed
-                              << " configurationActive=" << configurationActive
-                              << " mouse=" << mouseSurface.width() << 'x' << mouseSurface.height()
-                              << " quick=" << shortcutSurface.width() << 'x'
-                              << shortcutSurface.height() << '\n';
-                }
-                require(mouseSurface == shortcutSurface,
+                for (const qreal dpr : {1.0, 1.25, 1.5, 1.75, 2.0}) {
+                    const QImage mouseSurface = renderSurface(mouse, dpr);
+                    const QImage shortcutSurface = renderSurface(shortcut, dpr);
+                    if (mouseSurface != shortcutSurface) {
+                        std::cerr << "Row comparison: hovered=" << hovered << " pressed=" << pressed
+                                  << " configurationActive=" << configurationActive
+                                  << " mouse=" << mouseSurface.width() << 'x'
+                                  << mouseSurface.height() << " quick=" << shortcutSurface.width()
+                                  << 'x' << shortcutSurface.height() << '\n';
+                    }
+                    require(
+                        mouseSurface == shortcutSurface,
                         "global mouse and global-hotkey action surfaces must render identically "
                         "in normal, hovered, pressed, and configuration-active states");
+                }
             }
         }
     }

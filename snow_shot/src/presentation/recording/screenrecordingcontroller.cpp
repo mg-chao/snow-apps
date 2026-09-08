@@ -343,7 +343,8 @@ struct ScreenRecordingController::Impl {
                 static_cast<uint32_t>(validRecordingFrameRate(settings.frameRate())),
                 static_cast<uint8_t>(microphoneEnabled),
                 static_cast<uint8_t>(systemAudioEnabled),
-                static_cast<uint8_t>(SNOW_CAPTURE_BACKEND_WGC),
+                // Recording Auto tries WGC first, then DXGI and GDI on eligible capture failures.
+                static_cast<uint8_t>(SNOW_CAPTURE_BACKEND_AUTO),
                 0,
                 workingDirectoryUtf8.constData(),
                 {},

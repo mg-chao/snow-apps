@@ -57,6 +57,7 @@ class ScreenshotToolbarCommandSink {
     virtual void applyTextPunctuation(const QString&) {}
     virtual void startScrollingScreenshot() = 0;
     virtual void setScrollingScreenshotRecognitionMode(ScreenshotScrollingRecognitionMode) {}
+    virtual void setScrollingScreenshotAutoScroll(bool) {}
     virtual void pinSelectionToScreen() = 0;
     virtual void saveSelectionToFile() {}
     virtual void cancelCapture() = 0;

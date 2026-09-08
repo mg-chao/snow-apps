@@ -24,6 +24,7 @@
 #include "widgets/form.h"
 #include "widgets/modal.h"
 #include "widgets/select.h"
+#include "widgets/switch.h"
 
 #include <algorithm>
 #include <utility>
@@ -1213,6 +1214,23 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
     auto* source = new adqt::widgets::AdSelect(form);
     auto* target = new adqt::widgets::AdSelect(form);
     auto* service = new adqt::widgets::AdSelect(form);
+    // Keep the form's three-size enum from overriding the switch's two-size enum.
+    auto* originalImageRow = new QWidget(form);
+    auto* originalImageLayout = new QHBoxLayout(originalImageRow);
+    originalImageLayout->setContentsMargins(0, 0, 0, 0);
+    auto* originalImage = new adqt::widgets::AdSwitch(originalImageRow);
+    originalImage->setObjectName(QStringLiteral("screenshotTranslationOriginalImage"));
+    originalImage->setControlSize(adqt::widgets::AdSwitch::ControlSize::Medium);
+    adqt::widgets::AdSwitch::ComponentTokens originalImageTokens;
+    originalImageTokens.metrics.trackHeight = 28;
+    originalImageTokens.metrics.trackMinWidth = 56;
+    originalImageTokens.metrics.thumbSize = 24;
+    originalImage->setComponentTokens(originalImageTokens);
+    originalImageLayout->addWidget(originalImage);
+    originalImageLayout->addStretch();
+    originalImage->setChecked(
+        snow_shot::storage::ScreenshotTranslationSettings().originalImageTranslationEnabled());
+    originalImage->setAccessibleName(tr("Original Image Translation"));
     source->setObjectName(QStringLiteral("screenshotTranslationSourceLanguage"));
     target->setObjectName(QStringLiteral("screenshotTranslationTargetLanguage"));
     source->setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
@@ -1248,6 +1266,8 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
     form->addField(tr("Source language"), source, QStringLiteral("source"));
     form->addField(tr("Target language"), target, QStringLiteral("target"));
     form->addField(tr("Translation service"), service, QStringLiteral("service"));
+    form->addField(tr("Original Image Translation"), originalImageRow,
+                   QStringLiteral("originalImage"));
     bodyLayout->addWidget(form);
 
     auto* modal = new adqt::widgets::AdModal(this);
@@ -1269,7 +1289,8 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
     modal->setInitialFocusWidget(source);
     m_translationSettingsModal = modal;
     connect(modal, &adqt::widgets::AdModal::closeRequested, modal,
-            [modal, source, target, service](adqt::widgets::AdModal::CloseReason reason) {
+            [this, modal, source, target, service,
+             originalImage](adqt::widgets::AdModal::CloseReason reason) {
                 if (reason != adqt::widgets::AdModal::CloseReason::OkAction) {
                     modal->reject();
                     return;
@@ -1282,7 +1303,19 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
                     selected.modelId.isEmpty()) {
                     return;
                 }
-                snow_shot::storage::ScreenshotTranslationSettings().setConfiguration(selected);
+                const snow_shot::storage::ScreenshotTranslationSettings settings;
+                const bool restartTranslation =
+                    m_translating &&
+                    settings.originalImageTranslationEnabled() != originalImage->isChecked();
+                if (restartTranslation) {
+                    endTextEditing();
+                }
+                settings.setConfiguration(selected);
+                settings.setOriginalImageTranslationEnabled(originalImage->isChecked());
+                if (restartTranslation) {
+                    invalidateCurrentTranslation(false);
+                    beginTextTranslation();
+                }
                 modal->accept();
             });
     connect(modal, &adqt::widgets::AdModal::finished, modal,

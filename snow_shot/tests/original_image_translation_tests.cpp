@@ -1,6 +1,8 @@
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "widgets/modal.h"
+#include "widgets/switch.h"
 
 #include <QCoreApplication>
 #include <QClipboard>
@@ -216,8 +218,10 @@ struct SessionProbe {
     }
 
     SessionProbe(SnowShotApiClient* api, int boxes, QString key = QStringLiteral("image"),
-                 bool formatted = false, ScreenshotOcrRecognitionPort* ocr = nullptr) {
+                 bool formatted = false, ScreenshotOcrRecognitionPort* ocr = nullptr,
+                 QWidget* settingsOwner = nullptr) {
         ScreenshotRecognitionSessionActions actions;
+        actions.translationSettingsOwner = [settingsOwner]() { return settingsOwner; };
         actions.applyOcrPresentation = [this](auto presentation) {
             displayed = std::move(presentation);
         };
@@ -527,6 +531,89 @@ void backgroundFailuresAreReportedOnReturn() {
             "a successful retry must not repeat the previous failure summary");
 }
 
+void translationSettingsSwitchKeepsReadableSize() {
+    configureTranslation();
+    QWidget owner;
+    TranslationServer server;
+    SnowShotApiClient api(server.url());
+    SessionProbe session(&api, 1, QStringLiteral("image"), false, nullptr, &owner);
+    session.controller->openTranslationSettings();
+    auto* modal = session.controller->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("screenshotTranslationSettingsModal"));
+    require(modal != nullptr, "open translation settings for switch sizing");
+    auto* toggle = modal->contentWidget()->findChild<adqt::widgets::AdSwitch*>(
+        QStringLiteral("screenshotTranslationOriginalImage"));
+    require(toggle != nullptr, "find original image translation switch for sizing");
+    for (const bool checked : {false, true}) {
+        toggle->setChecked(checked);
+        QCoreApplication::processEvents();
+        require(toggle->sizeHint().width() >= 56 && toggle->sizeHint().height() >= 28,
+                "translation switch must request at least a 56 by 28 logical-pixel indicator");
+        require(toggle->width() >= toggle->sizeHint().width() &&
+                    toggle->height() >= toggle->sizeHint().height(),
+                "translation settings layout must not shrink the switch below its size hint");
+    }
+    modal->reject();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+}
+
+void confirmingTranslationDisplayModeRestartsTranslation() {
+    configureTranslation();
+    QWidget owner;
+    TranslationServer server;
+    SnowShotApiClient api(server.url());
+    SessionProbe session(&api, 2, QStringLiteral("image"), false, nullptr, &owner);
+    session.controller->beginTextTranslation();
+    server.waitForStreams(2);
+
+    const auto changeMode = [&](bool enabled, bool accept) {
+        session.controller->openTranslationSettings();
+        auto* modal = session.controller->findChild<adqt::widgets::AdModal*>(
+            QStringLiteral("screenshotTranslationSettingsModal"));
+        require(modal != nullptr, "open translation settings for active translation");
+        auto* toggle = modal->contentWidget()->findChild<adqt::widgets::AdSwitch*>(
+            QStringLiteral("screenshotTranslationOriginalImage"));
+        require(toggle != nullptr, "find original image translation toggle");
+        toggle->setChecked(enabled);
+        modal->closeRequested(accept ? adqt::widgets::AdModal::CloseReason::OkAction
+                                     : adqt::widgets::AdModal::CloseReason::CancelAction);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    };
+
+    changeMode(false, false);
+    require(session.overlayState && server.streams.size() == 2,
+            "Cancel must preserve the active translation and its requests");
+    changeMode(false, true);
+    require(session.controller->translating() && session.controller->editing() &&
+                !session.overlayState,
+            "confirming disabled original image translation must immediately show the editor");
+    server.waitForStreams(3);
+    require(server.streams[2].text == QStringLiteral("source 0\nsource 1"),
+            "confirming editor mode must retranslate the full source text");
+    for (int index = 0; index < 2; ++index) {
+        waitUntil([&]() { return server.disconnected(index); },
+                  "confirming a mode change must cancel old overlay streams");
+    }
+    server.delta(2, QStringLiteral("whole translation"));
+    server.finish(2);
+    waitUntil([&]() { return !session.streaming; }, "complete editor translation");
+    changeMode(true, true);
+    require(session.controller->translating() && !session.controller->editing() &&
+                session.overlayState,
+            "confirming enabled original image translation must immediately show the overlay");
+    server.waitForStreams(5);
+    for (int index = 3; index < 5; ++index) {
+        server.delta(index, QStringLiteral("new translation %1").arg(index));
+        server.finish(index);
+    }
+    waitUntil([&]() { return !session.streaming; }, "complete refreshed overlay translation");
+    require(session.displayed->lines[0].text == QStringLiteral("new translation 3"),
+            "the refreshed overlay must display the new translation");
+    changeMode(true, true);
+    require(!session.streaming && server.streams.size() == 5,
+            "confirming unchanged settings must retain the completed translation");
+}
+
 void invalidationAndModeChangesCancelOldWork() {
     configureTranslation();
     TranslationServer server;
@@ -740,6 +827,8 @@ void fragmentedUnicodeStreamsUpdateOnlyCompleteEvents() {
 } // namespace
 
 void runOriginalImageTranslationTests() {
+    translationSettingsSwitchKeepsReadableSize();
+    confirmingTranslationDisplayModeRestartsTranslation();
     smartLayoutStreamsParagraphsAndSwitchesModes();
     queueStreamsIndividualBoxesAndKeepsOriginals();
     fourBoxesAndOwnerClosure();

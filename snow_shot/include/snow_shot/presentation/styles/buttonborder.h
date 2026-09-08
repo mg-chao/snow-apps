@@ -12,17 +12,11 @@ enum class BorderPattern {
     Dashed,
 };
 
-enum class BorderWidthRounding {
-    Floor,
-    Round,
-};
-
 struct ButtonBorderSpec {
     QColor color;
     int width = 1;
     int radius = 0;
     BorderPattern pattern = BorderPattern::Solid;
-    BorderWidthRounding widthRounding = BorderWidthRounding::Floor;
 };
 
 void drawButtonBorder(QPainter* painter, const QSize& logicalSize, const ButtonBorderSpec& spec);
