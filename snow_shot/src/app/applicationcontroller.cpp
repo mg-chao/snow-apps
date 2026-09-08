@@ -6,6 +6,7 @@
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 #include "snow_shot/presentation/screenshotcontroller.h"
 #include "snow_shot/presentation/directcapturecontroller.h"
+#include "snow_shot/presentation/selectedtexttranslationcontroller.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotpinnedwindow.h"
 #include "snow_shot/presentation/systemtraycontroller.h"
@@ -334,12 +335,34 @@ class ApplicationController::Impl {
         case presentation::GlobalShortcutAction::OpenSettings:
             showInterfaceSettings();
             break;
+        case presentation::GlobalShortcutAction::TranslateSelectedText:
+            ensureSelectedTextTranslationController().capture();
+            break;
         case presentation::GlobalShortcutAction::PinClipboardContent:
             if (ScreenshotController* controller = ensureScreenshotController()) {
                 controller->pinClipboardContentToScreen();
             }
             break;
         }
+    }
+
+    presentation::SelectedTextTranslationController& ensureSelectedTextTranslationController() {
+        if (!selectedTextTranslationController) {
+            selectedTextTranslationController =
+                std::make_unique<presentation::SelectedTextTranslationController>();
+            QObject::connect(
+                selectedTextTranslationController.get(),
+                &presentation::SelectedTextTranslationController::textReady, &q,
+                [this](const QString& text) { ensureMainWindow().showTranslation(text); });
+            QObject::connect(selectedTextTranslationController.get(),
+                             &presentation::SelectedTextTranslationController::operationFailed,
+                             &systemTray,
+                             &presentation::SystemTrayController::showTranslationMessage);
+            QObject::connect(&app, &QCoreApplication::aboutToQuit,
+                             selectedTextTranslationController.get(),
+                             &presentation::SelectedTextTranslationController::shutdown);
+        }
+        return *selectedTextTranslationController;
     }
 
     presentation::DirectCaptureController& ensureDirectCaptureController() {
@@ -385,6 +408,8 @@ class ApplicationController::Impl {
     std::unique_ptr<ScreenshotOcrRecognitionService> ocrRecognition;
     std::unique_ptr<ScreenshotController> screenshotController;
     std::unique_ptr<presentation::DirectCaptureController> directCaptureController;
+    std::unique_ptr<presentation::SelectedTextTranslationController>
+        selectedTextTranslationController;
     QPointer<MainWindow> mainWindow;
     bool started = false;
 };

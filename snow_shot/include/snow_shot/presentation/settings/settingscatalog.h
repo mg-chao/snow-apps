@@ -390,6 +390,7 @@ enum class SettingsPageKind {
     GeneratedSettings,
     ScreenshotHistory,
     About,
+    Translation,
 };
 
 struct SettingsPageDefinition {

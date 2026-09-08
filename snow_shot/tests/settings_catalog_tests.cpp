@@ -69,7 +69,7 @@ class CatalogTranslator final : public QTranslator {
 void builtInCatalogIsCompleteAndValid() {
     const settings::SettingsCatalog& catalog = settings::builtInSettingsRegistry().catalog();
     require(catalog.validationErrors().isEmpty(), "built-in settings catalog must validate");
-    require(catalog.pages().size() == 9, "catalog must contain nine pages");
+    require(catalog.pages().size() == 10, "catalog must contain ten pages");
 
     qsizetype sectionCount = 0;
     qsizetype itemCount = 0;
@@ -100,8 +100,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 33 && itemCount == 135,
-            "catalog must contain thirty-three sections and one hundred thirty-five items");
+    require(sectionCount == 33 && itemCount == 136,
+            "catalog must contain thirty-three sections and one hundred thirty-six items");
     const auto* history =
         catalog.section(QStringLiteral("storage-and-privacy"), QStringLiteral("history"));
     require(history != nullptr && history->items.size() >= 2 &&
@@ -412,8 +412,14 @@ void builtInCatalogIsCompleteAndValid() {
             modelTypeSelect->options.at(2).value == QStringLiteral("medium"),
         "System settings must expose the ordered OCR model and acceleration controls");
 
-    const auto* settingsGroup =
-        std::get_if<settings::SettingsNavigationGroupDefinition>(&catalog.navigation().at(3));
+    const settings::SettingsNavigationGroupDefinition* settingsGroup = nullptr;
+    for (const auto& node : catalog.navigation()) {
+        if (const auto* group = std::get_if<settings::SettingsNavigationGroupDefinition>(&node);
+            group != nullptr && group->id == QStringLiteral("nav.settings")) {
+            settingsGroup = group;
+            break;
+        }
+    }
     require(settingsGroup != nullptr && settingsGroup->pages.size() >= 2 &&
                 settingsGroup->pages.at(0).pageId == QStringLiteral("interface-settings") &&
                 settingsGroup->pages.at(1).pageId == QStringLiteral("function-settings"),
@@ -698,13 +704,18 @@ void globalMouseSettingsHaveStableContracts() {
         std::get_if<settings::SettingsNavigationPageDefinition>(&navigation.at(1));
     const auto* history =
         std::get_if<settings::SettingsNavigationPageDefinition>(&navigation.at(2));
-    require(quick != nullptr && quick->pageId == QStringLiteral("global-hotkeys") &&
-                globalMouse != nullptr && globalMouse->id == QStringLiteral("nav.global-mouse") &&
-                globalMouse->pageId == QStringLiteral("global-mouse") && globalMouse->iconFactory &&
-                globalMouse->iconFactory() ==
-                    snow_shot::presentation::icons::custom::outlined::WheelMouse() &&
-                history != nullptr && history->pageId == QStringLiteral("screenshot-history"),
-            "Global mouse navigation must immediately follow Global hotkeys");
+    const auto* translation =
+        std::get_if<settings::SettingsNavigationPageDefinition>(&navigation.at(3));
+    require(
+        quick != nullptr && quick->pageId == QStringLiteral("global-hotkeys") &&
+            globalMouse != nullptr && globalMouse->id == QStringLiteral("nav.global-mouse") &&
+            globalMouse->pageId == QStringLiteral("global-mouse") && globalMouse->iconFactory &&
+            globalMouse->iconFactory() ==
+                snow_shot::presentation::icons::custom::outlined::WheelMouse() &&
+            translation != nullptr && translation->pageId == QStringLiteral("translation") &&
+            translation->iconFactory && history != nullptr &&
+            history->pageId == QStringLiteral("screenshot-history"),
+        "navigation order must be Global hotkeys, Global mouse, Screenshot history, Translation");
 
     for (qsizetype index = 0; index < std::size(expectations); ++index) {
         const auto& expected = expectations[index];
@@ -776,6 +787,9 @@ void globalHotkeyShortcutsHaveStableContracts() {
         {Action::OpenCaptureHistory, "other", "quick.open-capture-history",
          "global_shortcuts/open_capture_history",
          settings::SettingsCommandKind::ExecuteQuickAction},
+        {Action::TranslateSelectedText, "other", "quick.translate-selected-text",
+         "global_shortcuts/translate_selected_text",
+         settings::SettingsCommandKind::ExecuteQuickAction},
         {Action::PinClipboardContent, "other", "quick.pin-clipboard-content",
          "global_shortcuts/pin_clipboard_content",
          settings::SettingsCommandKind::ExecuteQuickAction},
@@ -813,8 +827,8 @@ void globalHotkeyShortcutsHaveStableContracts() {
         }
     }
 
-    require(actions.size() == expectations.size() && expectations.size() == 12,
-            "the global-hotkeys catalog must expose all twelve shortcut actions exactly once");
+    require(actions.size() == expectations.size() && expectations.size() == 13,
+            "the global-hotkeys catalog must expose all thirteen shortcut actions exactly once");
     require(!catalog.commandForShortcut(Action::OpenSettings).has_value(),
             "Open Interface settings must not appear in Global hotkeys");
 
@@ -843,15 +857,16 @@ void globalHotkeyShortcutsHaveStableContracts() {
                 trayGroups.at(1).id == QStringLiteral("screen-recording") &&
                 trayGroups.at(1).options.size() == 2 &&
                 trayGroups.at(2).id == QStringLiteral("other") &&
-                trayGroups.at(2).options.size() == 2 &&
+                trayGroups.at(2).options.size() == 3 &&
                 trayGroups.at(3).id == QStringLiteral("system") &&
-                trayGroups.at(3).options.size() == 4 && trayOptionIds.size() == 16 &&
-                trayOptionIds.at(12) == QStringLiteral("tray.window-grouping") &&
+                trayGroups.at(3).options.size() == 4 && trayOptionIds.size() == 17 &&
+                trayOptionIds.at(12) == QStringLiteral("quick.translate-selected-text") &&
+                trayOptionIds.at(13) == QStringLiteral("tray.window-grouping") &&
                 trayGroups.at(3).options.at(0).kind ==
                     settings::SettingsTrayMenuOptionKind::WindowGrouping &&
-                trayOptionIds.at(13) == QStringLiteral("tray.disable-shortcut-functions") &&
-                trayOptionIds.at(14) == QStringLiteral("tray.show-main-window") &&
-                trayOptionIds.at(15) == QStringLiteral("tray.exit") && trayMenuSchema != nullptr &&
+                trayOptionIds.at(14) == QStringLiteral("tray.disable-shortcut-functions") &&
+                trayOptionIds.at(15) == QStringLiteral("tray.show-main-window") &&
+                trayOptionIds.at(16) == QStringLiteral("tray.exit") && trayMenuSchema != nullptr &&
                 trayMenuSchema->allowedStringValues == trayOptionIds,
             "tray menu options must derive all global-hotkey groups and append system commands");
 
@@ -916,10 +931,11 @@ void globalHotkeyShortcutsHaveStableContracts() {
                       QStringLiteral("quick.pin-clipboard-content")});
     const auto* otherShortcuts =
         catalog.section(QStringLiteral("global-hotkeys"), QStringLiteral("other"));
-    require(otherShortcuts != nullptr && otherShortcuts->items.size() == 2 &&
+    require(otherShortcuts != nullptr && otherShortcuts->items.size() == 3 &&
                 otherShortcuts->items.at(0).id == QStringLiteral("quick.open-capture-history") &&
-                otherShortcuts->items.at(1).id == QStringLiteral("quick.pin-clipboard-content"),
-            "Other quick actions must only expose history and clipboard pinning");
+                otherShortcuts->items.at(1).id == QStringLiteral("quick.pin-clipboard-content") &&
+                otherShortcuts->items.at(2).id == QStringLiteral("quick.translate-selected-text"),
+            "Other quick actions expose history, clipboard pinning and selected text translation");
     const auto shortcutPayload = [](const settings::SettingsItemDefinition* item) {
         return item != nullptr
                    ? std::get_if<settings::SettingsShortcutActionDefinition>(&item->payload)
@@ -1001,7 +1017,8 @@ void compactTrayManifestMatchesRegistryCatalog() {
           presentation::GlobalShortcutAction::ScreenRecord,
           presentation::GlobalShortcutAction::ScreenRecordCopy,
           presentation::GlobalShortcutAction::OpenCaptureHistory,
-          presentation::GlobalShortcutAction::PinClipboardContent}) {
+          presentation::GlobalShortcutAction::PinClipboardContent,
+          presentation::GlobalShortcutAction::TranslateSelectedText}) {
         require(compact.shortcutActionTitle(action, 0) == catalog.shortcutActionTitle(action, 0) &&
                     compact.shortcutActionTitle(action, 99) ==
                         catalog.shortcutActionTitle(action, 99),
@@ -1038,12 +1055,20 @@ void invalidCatalogReportsAllConformanceErrors() {
     QVector<settings::SettingsPageDefinition> pages = builtIn.pages();
     QVector<settings::SettingsNavigationNode> navigation = builtIn.navigation();
 
-    pages[4].route = pages[0].route;
-    pages[4].sections[0].items[0].configurationKey = QStringLiteral("interface/language");
-    pages[4].sections[0].items[1].id = QStringLiteral("interface-theme");
-    pages[5].sections[0].items[1].configurationKey = QStringLiteral("missing/key");
+    const auto mutablePage = [&pages](const QString& id) -> settings::SettingsPageDefinition& {
+        const auto found = std::find_if(pages.begin(), pages.end(),
+                                        [&id](const auto& page) { return page.id == id; });
+        require(found != pages.end(), "validation fixture page must exist");
+        return *found;
+    };
+    auto& interfacePage = mutablePage(QStringLiteral("interface-settings"));
+    auto& storagePage = mutablePage(QStringLiteral("storage-and-privacy"));
+    interfacePage.route = pages[0].route;
+    interfacePage.sections[0].items[0].configurationKey = QStringLiteral("interface/language");
+    interfacePage.sections[0].items[1].id = QStringLiteral("interface-theme");
+    storagePage.sections[0].items[1].configurationKey = QStringLiteral("missing/key");
     auto& custom =
-        std::get<settings::SettingsCustomDefinition>(pages[5].sections[3].items[0].payload);
+        std::get<settings::SettingsCustomDefinition>(storagePage.sections[3].items[0].payload);
     custom.renderer = static_cast<settings::SettingsCustomRenderer>(999);
     pages.push_back({QStringLiteral("empty-page"),
                      QStringLiteral("relative-route"),
@@ -1051,7 +1076,14 @@ void invalidCatalogReportsAllConformanceErrors() {
                      text("Empty page description"),
                      {}});
 
-    auto* group = std::get_if<settings::SettingsNavigationGroupDefinition>(&navigation[3]);
+    settings::SettingsNavigationGroupDefinition* group = nullptr;
+    for (auto& node : navigation) {
+        if (auto* candidate = std::get_if<settings::SettingsNavigationGroupDefinition>(&node);
+            candidate != nullptr && candidate->id == QStringLiteral("nav.settings")) {
+            group = candidate;
+            break;
+        }
+    }
     require(group != nullptr, "built-in Settings navigation group must exist");
     group->pages[0].pageId = QStringLiteral("missing-page");
 
@@ -1081,8 +1113,15 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 177 && index.search(QString()).size() == 177,
+    require(index.entries().size() == 179 && index.search(QString()).size() == 179,
             "search must generate all catalog nodes in catalog order");
+    const auto selectedText = index.search(QStringLiteral("Translate Selected Text"));
+    require(!selectedText.isEmpty() &&
+                selectedText.constFirst().location ==
+                    settings::SettingsLocation{QStringLiteral("global-hotkeys"),
+                                               QStringLiteral("other"),
+                                               QStringLiteral("quick.translate-selected-text")},
+            "search navigates directly to the selected text shortcut under Other");
     const auto middle = index.search(QStringLiteral("Reset Zoom"));
     require(!middle.isEmpty() && middle.constFirst().location.itemId ==
                                      QStringLiteral("pin-to-screen.middle-mouse-button-action"),
@@ -1117,7 +1156,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 9 && sections == 33 && items == 135,
+    require(pages == 10 && sections == 33 && items == 136,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

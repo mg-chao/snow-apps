@@ -542,6 +542,12 @@ void SystemTrayController::showCaptureMessage(const QString& message, bool warni
                                   warning ? QSystemTrayIcon::Warning : QSystemTrayIcon::Critical);
 }
 
+void SystemTrayController::showTranslationMessage(const QString& message) {
+    if (m_impl->enabled) {
+        m_impl->trayIcon->showMessage(tr("Translation"), message, QSystemTrayIcon::Warning);
+    }
+}
+
 void SystemTrayController::setEnabled(bool enabled) {
     if (m_impl->enabled == enabled) {
         return;

@@ -57,9 +57,9 @@ class TitleBarBottomShadowWidget final : public QWidget {
 };
 } // namespace
 
-MainWindow::MainWindow(
-    const snow_shot::presentation::settings::SettingsRegistry& registry,
-    snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession, QWidget* parent)
+MainWindow::MainWindow(const snow_shot::presentation::settings::SettingsRegistry& registry,
+                       snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession,
+                       QWidget* parent)
     : QMainWindow(parent), m_settingsRegistry(registry), m_runtimeSession(runtimeSession) {
     setObjectName(QStringLiteral("snowShotMainWindow"));
     setAccessibleName(QStringLiteral("SnowShot"));
@@ -201,6 +201,7 @@ void MainWindow::buildUi() {
             });
     connect(m_contentCard, &ContentCardWidget::screenshotRequested, this,
             &MainWindow::screenshotRequested);
+    connect(m_contentCard, &ContentCardWidget::closeWindowRequested, this, &QWidget::close);
     connect(m_contentCard, &ContentCardWidget::quickActionRequested, this,
             &MainWindow::quickActionRequested);
     connect(m_contentCard, &ContentCardWidget::globalMouseDragRequested, this,
@@ -217,6 +218,13 @@ void MainWindow::showInterfaceSettings() {
         m_contentCard->showInterfaceSettings();
     }
 
+    showAndActivate();
+}
+
+void MainWindow::showTranslation(const QString& text) {
+    if (m_contentCard != nullptr) {
+        m_contentCard->showTranslation(text);
+    }
     showAndActivate();
 }
 

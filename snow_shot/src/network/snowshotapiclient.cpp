@@ -16,6 +16,7 @@
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QTimer>
+#include <QProcessEnvironment>
 #include <QCoreApplication>
 #include <QThreadPool>
 #include <QUuid>
@@ -237,6 +238,12 @@ struct SnowShotApiClient::Request {
     QString model;
     QString format;
 };
+
+QString SnowShotApiClient::configuredBaseUrl() {
+    const QString overrideUrl =
+        QProcessEnvironment::systemEnvironment().value(QStringLiteral("SNOW_SHOT_API_BASE_URL"));
+    return overrideUrl.trimmed().isEmpty() ? QStringLiteral(SNOW_SHOT_API_BASE_URL) : overrideUrl;
+}
 
 SnowShotApiClient::SnowShotApiClient(QString baseUrl, QObject* parent)
     : QObject(parent), m_baseUrl(normalizedBaseUrl(std::move(baseUrl))) {}

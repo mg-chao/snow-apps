@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/components/contentcardwidget.h"
 
 #include "snow_shot/presentation/components/aboutpagewidget.h"
+#include "snow_shot/presentation/components/translationpagewidget.h"
 #include "snow_shot/presentation/components/settingspagewidget.h"
 #include "snow_shot/presentation/components/screenshothistorypagewidget.h"
 #include "snow_shot/presentation/settings/settingsregistry.h"
@@ -40,7 +41,11 @@ ContentCardWidget::ContentCardWidget(
     applyTheme(m_colorScheme);
 }
 
-ContentCardWidget::~ContentCardWidget() = default;
+ContentCardWidget::~ContentCardWidget() {
+    if (auto* page = qobject_cast<TranslationPageWidget*>(m_activePage.data())) {
+        page->deactivate();
+    }
+}
 
 QString ContentCardWidget::currentRoute() const {
     const auto& catalog = m_registry.catalog();
@@ -117,12 +122,17 @@ void ContentCardWidget::navigateTo(
 QWidget* ContentCardWidget::createPage(
     const snow_shot::presentation::settings::SettingsPageDefinition& definition) {
     QWidget* page = nullptr;
-    if (definition.kind ==
-        snow_shot::presentation::settings::SettingsPageKind::ScreenshotHistory) {
+    if (definition.kind == snow_shot::presentation::settings::SettingsPageKind::ScreenshotHistory) {
         auto* historyPage = new ScreenshotHistoryPageWidget(m_stack);
         connect(historyPage, &ScreenshotHistoryPageWidget::editRequested, this,
                 &ContentCardWidget::screenshotHistoryEditRequested);
         page = historyPage;
+    } else if (definition.kind ==
+               snow_shot::presentation::settings::SettingsPageKind::Translation) {
+        auto* translationPage = new TranslationPageWidget(m_stack);
+        connect(translationPage, &TranslationPageWidget::closeWindowRequested, this,
+                &ContentCardWidget::closeWindowRequested);
+        page = translationPage;
     } else if (definition.kind == snow_shot::presentation::settings::SettingsPageKind::About) {
         page = new AboutPageWidget(m_stack);
     } else {
@@ -151,6 +161,9 @@ QWidget* ContentCardWidget::createPage(
 
 void ContentCardWidget::destroyActivePage() {
     QWidget* page = m_activePage.data();
+    if (auto* translationPage = qobject_cast<TranslationPageWidget*>(page)) {
+        translationPage->deactivate();
+    }
     if (page == nullptr) {
         m_activePageId.clear();
         return;
@@ -185,6 +198,13 @@ void ContentCardWidget::destroyActivePage() {
     page->deleteLater();
 }
 
+void ContentCardWidget::showTranslation(const QString& text) {
+    setCurrentRoute(QStringLiteral("/tools/translation"));
+    if (auto* page = qobject_cast<TranslationPageWidget*>(m_activePage.data())) {
+        page->setSourceText(text);
+    }
+}
+
 void ContentCardWidget::showInterfaceSettings() {
     navigateTo({QStringLiteral("interface-settings"), QStringLiteral("general"), {}});
 }
@@ -210,10 +230,12 @@ void ContentCardWidget::handleCommand(
 void ContentCardWidget::applyTheme(
     const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
     m_colorScheme = scheme;
+    if (auto* page = qobject_cast<TranslationPageWidget*>(m_activePage.data())) {
+        page->applyTheme(scheme);
+    }
     if (auto* page = dynamic_cast<SettingsPageWidget*>(m_activePage.data()); page != nullptr) {
         page->applyTheme(scheme);
-    } else if (auto* historyPage =
-                   dynamic_cast<ScreenshotHistoryPageWidget*>(m_activePage.data());
+    } else if (auto* historyPage = dynamic_cast<ScreenshotHistoryPageWidget*>(m_activePage.data());
                historyPage != nullptr) {
         historyPage->applyTheme(scheme);
     }
@@ -221,10 +243,12 @@ void ContentCardWidget::applyTheme(
 }
 
 void ContentCardWidget::retranslateUi() {
+    if (auto* page = qobject_cast<TranslationPageWidget*>(m_activePage.data())) {
+        page->retranslateUi();
+    }
     if (auto* page = dynamic_cast<SettingsPageWidget*>(m_activePage.data()); page != nullptr) {
         page->retranslateUi();
-    } else if (auto* historyPage =
-                   dynamic_cast<ScreenshotHistoryPageWidget*>(m_activePage.data());
+    } else if (auto* historyPage = dynamic_cast<ScreenshotHistoryPageWidget*>(m_activePage.data());
                historyPage != nullptr) {
         historyPage->retranslateUi();
     }

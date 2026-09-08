@@ -6,7 +6,7 @@ pub extern "C" fn snow_diagnostics_install_panic_hook(callback: snow_diagnostics
 }
 
 // Public module re-exports keep every C-ABI entry point reachable while Cargo
-// packages the five FFI crates and the Rust runtime into one static archive.
+// packages the FFI crates and the Rust runtime into one static archive.
 pub mod capture {
     pub use snow_capture_c::*;
 }
@@ -21,4 +21,8 @@ pub mod stitch_images {
 
 pub mod ui_selector {
     pub use snow_ui_selector_c::*;
+}
+
+pub mod selected_text {
+    pub use snow_selected_text_c::*;
 }

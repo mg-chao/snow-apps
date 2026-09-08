@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
+#include "snow_shot/presentation/translationlanguages.h"
 #include "snow_shot/presentation/screenshotocrlayout.h"
 
 #include "snow_shot/presentation/screenshotocrpresentation.h"
@@ -70,25 +71,9 @@ bool translationMatchesSource(const ScreenshotOcrPresentation& translation,
                                               source.lines, source.selection.topLeft()));
 }
 
-struct TranslationLanguage {
-    const char* code;
-    const char* name;
-};
-
-const QVector<TranslationLanguage> kTranslationLanguages{
-    {"ar", QT_TRANSLATE_NOOP("ScreenshotRecognitionSessionController", "Arabic")},
-    {"de", QT_TRANSLATE_NOOP("ScreenshotRecognitionSessionController", "German")},
-    {"en", QT_TRANSLATE_NOOP("ScreenshotRecognitionSessionController", "English")},
-    {"es", QT_TRANSLATE_NOOP("ScreenshotRecognitionSessionController", "Spanish")},
-    {"fr", QT_TRANSLATE_NOOP("ScreenshotRecognitionSessionController", "French")},
-    {"it", QT_TRANSLATE_NOOP("ScreenshotRecognitionSessionController", "Italian")},
-    {"ja", QT_TRANSLATE_NOOP("ScreenshotRecognitionSessionController", "Japanese")},
-    {"pt", QT_TRANSLATE_NOOP("ScreenshotRecognitionSessionController", "Portuguese")},
-    {"ru", QT_TRANSLATE_NOOP("ScreenshotRecognitionSessionController", "Russian")},
-    {"tr", QT_TRANSLATE_NOOP("ScreenshotRecognitionSessionController", "Turkish")},
-    {"zh-Hans", QT_TRANSLATE_NOOP("ScreenshotRecognitionSessionController", "Simplified Chinese")},
-    {"zh-Hant", QT_TRANSLATE_NOOP("ScreenshotRecognitionSessionController", "Traditional Chinese")},
-};
+using snow_shot::presentation::TranslationLanguage;
+using snow_shot::presentation::translationLanguageName;
+using snow_shot::presentation::translationModelIndex;
 
 bool backgroundFillEnabled() {
     return snow_shot::storage::ApplicationStorage::instance()
@@ -97,52 +82,16 @@ bool backgroundFillEnabled() {
                .toString() == QStringLiteral("background_fill");
 }
 
-QString languageName(const QString& code) {
-    if (code == QStringLiteral("auto")) {
-        return ScreenshotRecognitionSessionController::tr("Auto-detect language");
-    }
-    for (const TranslationLanguage& language : kTranslationLanguages) {
-        if (code == QLatin1StringView(language.code)) {
-            return QCoreApplication::translate("ScreenshotRecognitionSessionController",
-                                               language.name);
-        }
-    }
-    return code;
-}
-
 adqt::widgets::AdSelect::Option translationLanguageOption(const TranslationLanguage& language) {
     const QString code = QString::fromLatin1(language.code);
-    return {code, languageName(code), false, code.left(1).toUpper()};
+    return {code, translationLanguageName(code), false, code.left(1).toUpper()};
 }
 
 QString defaultTargetLanguage() {
-    const QLocale locale = snow_shot::presentation::LanguageManager::instance().currentLocale();
-    switch (locale.language()) {
-    case QLocale::Arabic:
-        return QStringLiteral("ar");
-    case QLocale::German:
-        return QStringLiteral("de");
-    case QLocale::Spanish:
-        return QStringLiteral("es");
-    case QLocale::French:
-        return QStringLiteral("fr");
-    case QLocale::Italian:
-        return QStringLiteral("it");
-    case QLocale::Japanese:
-        return QStringLiteral("ja");
-    case QLocale::Portuguese:
-        return QStringLiteral("pt");
-    case QLocale::Russian:
-        return QStringLiteral("ru");
-    case QLocale::Turkish:
-        return QStringLiteral("tr");
-    case QLocale::Chinese:
-        return locale.script() == QLocale::TraditionalHanScript ? QStringLiteral("zh-Hant")
-                                                                : QStringLiteral("zh-Hans");
-    default:
-        return QStringLiteral("en");
-    }
+    return snow_shot::presentation::defaultTranslationTargetLanguage(
+        snow_shot::presentation::LanguageManager::instance().currentLocale());
 }
+
 } // namespace
 
 ScreenshotRecognitionSessionController::ScreenshotRecognitionSessionController(
@@ -959,27 +908,21 @@ void ScreenshotRecognitionSessionController::startTranslationWithModels(
     if (settings.sourceLanguage.isEmpty()) {
         settings.sourceLanguage = QStringLiteral("auto");
     }
-    const auto selected =
-        std::find_if(models.cbegin(), models.cend(), [&settings](const auto& model) {
-            return !model.supportsVision && model.id == settings.modelId;
-        });
-    if (selected == models.cend()) {
-        const auto general = std::find_if(models.cbegin(), models.cend(), [](const auto& model) {
-            return !model.supportsVision && model.translationMode == QStringLiteral("default");
-        });
-        settings.modelId = general != models.cend() ? general->id : models.first().id;
+    const int modelIndex = translationModelIndex(models, settings.modelId);
+    if (modelIndex < 0) {
+        failTranslationPreparation(tr("Translation service is unavailable"));
+        return;
     }
-    const auto effectiveModel =
-        std::find_if(models.cbegin(), models.cend(),
-                     [&settings](const auto& model) { return model.id == settings.modelId; });
+    settings.modelId = models.at(modelIndex).id;
+    const auto effectiveModel = models.cbegin() + modelIndex;
     const QString key = m_translationKey;
     const quint64 generation = m_translationGeneration;
     const bool usesQwenMt = effectiveModel != models.cend() &&
                             effectiveModel->translationMode == QStringLiteral("qwen-mt");
     m_translationRequest = SnowShotTranslationRequest{
         settings.modelId,
-        usesQwenMt ? settings.sourceLanguage : languageName(settings.sourceLanguage),
-        usesQwenMt ? settings.targetLanguage : languageName(settings.targetLanguage),
+        usesQwenMt ? settings.sourceLanguage : translationLanguageName(settings.sourceLanguage),
+        usesQwenMt ? settings.targetLanguage : translationLanguageName(settings.targetLanguage),
         it->editingSession != nullptr ? it->editingSession->originalText() : QString{},
         effectiveModel != models.cend() ? effectiveModel->translationMode
                                         : QStringLiteral("default")};
@@ -1252,16 +1195,8 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
     if (current.targetLanguage.isEmpty()) {
         current.targetLanguage = defaultTargetLanguage();
     }
-    if (!models.isEmpty() &&
-        std::none_of(models.cbegin(), models.cend(), [&current](const auto& model) {
-            return !model.supportsVision && model.id == current.modelId;
-        })) {
-        const auto general = std::find_if(models.cbegin(), models.cend(), [](const auto& model) {
-            return !model.supportsVision && model.translationMode == QStringLiteral("default");
-        });
-        if (general != models.cend()) {
-            current.modelId = general->id;
-        }
+    if (const int index = translationModelIndex(models, current.modelId); index >= 0) {
+        current.modelId = models.at(index).id;
     }
 
     auto* body = new QWidget;
@@ -1312,7 +1247,7 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
     QVector<adqt::widgets::AdSelect::Option> sourceOptions{
         {QStringLiteral("auto"), tr("Auto-detect language")}};
     QVector<adqt::widgets::AdSelect::Option> targetOptions;
-    for (const TranslationLanguage& language : kTranslationLanguages) {
+    for (const TranslationLanguage& language : snow_shot::presentation::translationLanguages()) {
         const adqt::widgets::AdSelect::Option option = translationLanguageOption(language);
         sourceOptions.push_back(option);
         targetOptions.push_back(option);
@@ -1424,19 +1359,8 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
             return;
         }
         service->setOptions(options);
-        const bool currentAvailable =
-            std::any_of(availableModels.cbegin(), availableModels.cend(),
-                        [&current](const SnowShotChatModel& model) {
-                            return !model.supportsVision && model.id == current.modelId;
-                        });
-        const auto general =
-            std::find_if(availableModels.cbegin(), availableModels.cend(), [](const auto& model) {
-                return !model.supportsVision && model.translationMode == QStringLiteral("default");
-            });
-        service->setCurrentValue(
-            currentAvailable
-                ? current.modelId
-                : (general != availableModels.cend() ? general->id : options.first().value));
+        const int index = translationModelIndex(availableModels, current.modelId);
+        service->setCurrentValue(availableModels.at(index).id);
         service->setLoading(false);
         service->setEnabled(true);
         form->show();
