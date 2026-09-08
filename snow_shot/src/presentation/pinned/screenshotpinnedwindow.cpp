@@ -1703,6 +1703,7 @@ bool ScreenshotPinnedWindow::present(const Config& config,
          (!std::isfinite(config.formattedTextDevicePixelRatio) ||
           config.formattedTextDevicePixelRatio <= 0.0)) ||
         m_canvas == nullptr) {
+        qWarning("Pinned window presentation failed: stage=config_validation");
         return false;
     }
     invalidatePendingCopy();
@@ -1718,12 +1719,14 @@ bool ScreenshotPinnedWindow::present(const Config& config,
     const QSize logicalSize(std::max(1, qRound(config.nativeGeometry.width() / screenScale)),
                             std::max(1, qRound(config.nativeGeometry.height() / screenScale)));
     if (!logicalSize.isValid() || logicalSize.isEmpty()) {
+        qWarning("Pinned window presentation failed: stage=logical_geometry");
         return false;
     }
 #else
     const QRect logicalGeometry =
         ScreenshotGeometryMapper::logicalRectForPhysicalRect(config.nativeGeometry, config.screen);
     if (!logicalGeometry.isValid() || logicalGeometry.isEmpty()) {
+        qWarning("Pinned window presentation failed: stage=logical_geometry");
         return false;
     }
 #endif
@@ -1841,6 +1844,7 @@ bool ScreenshotPinnedWindow::present(const Config& config,
     SNOW_SHOT_PIN_PERF_MILESTONE("window.state_initialized");
     if (m_nativeGeometryController == nullptr ||
         !m_nativeGeometryController->initialize(config.nativeGeometry)) {
+        qWarning("Pinned window presentation failed: stage=native_geometry_initialization");
         finishPresentation(false);
         return false;
     }
@@ -1894,11 +1898,13 @@ bool ScreenshotPinnedWindow::present(const Config& config,
     }
 #if defined(Q_OS_WIN) || defined(_WIN32)
     if (!native::applySystemResizeStyle(nativeWindowId)) {
+        qWarning("Pinned window presentation failed: stage=native_resize_style");
         finishPresentation(false);
         return false;
     }
     if (!native::applyClientGeometry(nativeWindowId, config.nativeGeometry,
                                      native::GeometryUpdate::DiscardClientPixels)) {
+        qWarning("Pinned window presentation failed: stage=native_client_geometry");
         finishPresentation(false);
         return false;
     }

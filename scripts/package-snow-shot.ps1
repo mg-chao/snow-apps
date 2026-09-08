@@ -260,12 +260,15 @@ if (-not $SkipBuild) {
 
 $thirdPartyLicenseCollector = Join-Path $PSScriptRoot "collect-third-party-licenses.ps1"
 $thirdPartyLicenseDirectory = Join-Path $buildDirectory "snow_shot\third-party-licenses\third-party"
+$ocrCargoManifest = Join-Path $repoRoot "snow-crates\crates\snow-ocr-process\Cargo.toml"
 & $thirdPartyLicenseCollector `
     -Destination $thirdPartyLicenseDirectory `
     -AllowedRoot $buildDirectory `
     -VcpkgPrefix $staticVcpkgPrefix `
     -QtPrefix $qtPrefix `
-    -CargoManifest (Join-Path $repoRoot "snow_rust_ffi\Cargo.toml") `
+    -CargoManifest @((Join-Path $repoRoot "snow_rust_ffi\Cargo.toml"), $ocrCargoManifest) `
+    -CargoOptions @{ $ocrCargoManifest = @('--no-default-features', '--features',
+        'static-onnx-runtime,directml-provider,crash-diagnostics') } `
     -AntDesignNotice (Join-Path $repoRoot "ant_design_qt\THIRD_PARTY_NOTICES.md") `
     -FallbackLicenseDirectory (Join-Path $repoRoot "licenses")
 if ($LASTEXITCODE -ne 0) {
@@ -607,7 +610,7 @@ if ($versionInfo.FileVersion -ne "$packageVersionNumeric.0" -or
     throw "Snow Shot binary version '$($versionInfo.FileVersion)'/'$($versionInfo.ProductVersion)' does not match package version '$packageVersion'."
 }
 
-$ocrRuntimeVersion = "1.0.3"
+$ocrRuntimeVersion = "1.0.4"
 $ocrPlatform = "windows-x64"
 $ocrDefaultModelType = "small"
 $ocrDefaultModelId = "ppocrv6-small-463ea9f"
@@ -799,18 +802,18 @@ Copy-Item -LiteralPath $runtimeSource -Destination (Join-Path $runtimeWork $ocrR
 Copy-Item -LiteralPath $directMlSource -Destination (Join-Path $runtimeWork "DirectML.dll")
 $ocrVersionOutput = & (Join-Path $runtimeWork $ocrRuntimeFileName) --version 2>$null
 if ($LASTEXITCODE -ne 0 -or $ocrVersionOutput -notmatch
-    '^snow-ocr-process 1\.0\.3 windows-x86_64 protocol 2$') {
+    '^snow-ocr-process 1\.0\.4 windows-x86_64 protocol 2$') {
     throw "The staged OCR runtime reported an unexpected version: $ocrVersionOutput"
 }
 $ocrRuntimeVersionInfo = (Get-Item -LiteralPath (Join-Path $runtimeWork $ocrRuntimeFileName)).VersionInfo
 $expectedOcrMetadata = @{
     CompanyName = "Snow Apps"
     FileDescription = "Snow Shot OCR runtime"
-    FileVersion = "1.0.3.0"
+    FileVersion = "1.0.4.0"
     InternalName = "snow-ocr-process"
     OriginalFilename = $ocrRuntimeFileName
     ProductName = "Snow Shot OCR Runtime"
-    ProductVersion = "1.0.3"
+    ProductVersion = "1.0.4"
 }
 foreach ($property in $expectedOcrMetadata.Keys) {
     if ($ocrRuntimeVersionInfo.$property -ne $expectedOcrMetadata[$property]) {

@@ -639,6 +639,14 @@ void conversionToolbarMigration() {
     previousDefault.positions.insert(1, QStringList{QStringLiteral("convert-to-markdown")});
     previousDefault.positions.insert(2, QStringList{QStringLiteral("convert-to-html")});
     verify(previousDefault, defaults);
+    auto previousGroupedDefault = defaults;
+    previousGroupedDefault.positions[0] = {
+        QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
+        QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")};
+    verify(previousGroupedDefault, defaults);
+    auto customGrouped = previousGroupedDefault;
+    customGrouped.positions.move(0, 1);
+    verify(customGrouped, customGrouped);
     verify({}, defaults);
     auto customized = previousDefault;
     customized.positions.move(1, customized.positions.size() - 1);
@@ -656,7 +664,7 @@ void conversionToolbarMigration() {
                                 QStringLiteral("table-recognition")};
     auto conversionsOnly = recognitionHidden;
     conversionsOnly.positions.push_back(
-        {QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")});
+        {QStringLiteral("convert-to-html"), QStringLiteral("convert-to-markdown")});
     verify(recognitionHidden, conversionsOnly);
 }
 } // namespace

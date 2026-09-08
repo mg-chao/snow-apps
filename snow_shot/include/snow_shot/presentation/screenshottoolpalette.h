@@ -544,6 +544,11 @@ class ScreenshotToolPalette final : public QWidget {
     [[nodiscard]] adqt::widgets::AdButton* actionToolSourceButton(const QString& itemId) const;
     [[nodiscard]] adqt::widgets::AdButton* actionToolEntryButton(const QString& itemId) const;
     [[nodiscard]] bool actionToolAvailable(const QString& itemId) const;
+    struct ActionToolState {
+        bool enabled = false;
+        bool busy = false;
+    };
+    [[nodiscard]] ActionToolState actionToolState(const QString& itemId) const;
     void activateActionTool(const QString& itemId, bool toggleVisibleButton = true);
     void selectActionToolGroupEntry(const QString& itemId);
     void refreshActionToolGroup(int groupIndex);

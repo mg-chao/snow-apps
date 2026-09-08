@@ -187,8 +187,23 @@ std::optional<QString> qwenMtLanguage(const QString& language) {
 } // namespace
 
 struct SnowShotApiClient::Request {
-    Request() {
+    enum class Kind { TableExtract, ChatModels, Translation, ImageConversion };
+    explicit Request(Kind requestKind) : kind(requestKind) {
         elapsed.start();
+    }
+    const Kind kind;
+    QString kindName() const {
+        switch (kind) {
+        case Kind::TableExtract:
+            return QStringLiteral("table_extract");
+        case Kind::ChatModels:
+            return QStringLiteral("chat_models");
+        case Kind::Translation:
+            return QStringLiteral("translation");
+        case Kind::ImageConversion:
+            return QStringLiteral("image_conversion");
+        }
+        Q_UNREACHABLE();
     }
     QElapsedTimer elapsed;
     QString operation = QUuid::createUuid().toString(QUuid::Id128);
@@ -196,6 +211,7 @@ struct SnowShotApiClient::Request {
         snow_shot::diagnostics::logEvent(
             QStringLiteral("snow_shot.network"), QStringLiteral("request.finished"),
             {{QStringLiteral("operation"), operation},
+             {QStringLiteral("request_kind"), kindName()},
              {QStringLiteral("duration_ms"), elapsed.elapsed()},
              {QStringLiteral("status"), status},
              {QStringLiteral("outcome"), outcome},
@@ -304,7 +320,7 @@ SnowShotApiClient::extractTable(const QImage& source, QObject* receiver, Complet
     auto* manager = networkAccessManager();
 
     const RequestToken token = ++m_nextToken;
-    auto* requestState = new Request;
+    auto* requestState = new Request(Request::Kind::TableExtract);
     requestState->receiver = receiver;
     requestState->completion = std::move(completion);
     m_requests.insert(token, requestState);
@@ -405,7 +421,7 @@ SnowShotApiClient::fetchChatModels(const QString& locale, QObject* receiver,
     }
     auto* manager = networkAccessManager();
     const RequestToken token = ++m_nextToken;
-    auto* state = new Request;
+    auto* state = new Request(Request::Kind::ChatModels);
     state->receiver = receiver;
     state->chatModelsCompletion = std::move(completion);
     m_requests.insert(token, state);
@@ -511,7 +527,7 @@ SnowShotApiClient::streamTranslation(const SnowShotTranslationRequest& input, QO
         body.insert(QStringLiteral("enable_thinking"), false);
     }
     const RequestToken token = ++m_nextToken;
-    auto* state = new Request;
+    auto* state = new Request(Request::Kind::Translation);
     state->receiver = receiver;
     state->translationDelta = std::move(delta);
     state->translationCompletion = std::move(completion);
@@ -528,7 +544,7 @@ SnowShotApiClient::RequestToken SnowShotApiClient::streamImageConversion(
         return 0;
     }
     const RequestToken token = ++m_nextToken;
-    auto* state = new Request;
+    auto* state = new Request(Request::Kind::ImageConversion);
     state->receiver = receiver;
     state->translationDelta = std::move(delta);
     state->translationCompletion = std::move(completion);
