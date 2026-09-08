@@ -446,12 +446,14 @@ struct SnowCanvasStyleToolbarState {
     quint32 shapeStyleMixed = 0;
     SnowCanvasFilterStyle filterStyle;
     quint32 filterStyleMixed = 0;
+    bool canEditArrowText = false;
 };
 
 inline bool operator==(const SnowCanvasStyleToolbarState& lhs,
                        const SnowCanvasStyleToolbarState& rhs) {
-    return lhs.source == rhs.source && lhs.shapeStyle == rhs.shapeStyle &&
-           lhs.textStyle == rhs.textStyle && lhs.serialNumberStyle == rhs.serialNumberStyle &&
+    return lhs.canEditArrowText == rhs.canEditArrowText && lhs.source == rhs.source &&
+           lhs.shapeStyle == rhs.shapeStyle && lhs.textStyle == rhs.textStyle &&
+           lhs.serialNumberStyle == rhs.serialNumberStyle &&
            lhs.textStyleMixed == rhs.textStyleMixed &&
            lhs.serialNumberStyleMixed == rhs.serialNumberStyleMixed &&
            lhs.shapeStyleMixed == rhs.shapeStyleMixed && lhs.filterStyle == rhs.filterStyle &&

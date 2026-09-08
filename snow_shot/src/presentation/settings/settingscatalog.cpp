@@ -168,10 +168,10 @@ SettingsItemDefinition screenRecordItem() {
 SettingsItemDefinition screenRecordCopyItem() {
     return quickActionItem(
         QStringLiteral("quick.screen-record-copy"),
-        QT_TRANSLATE_NOOP("SettingsCatalog", "Start screen recording / stop and copy video"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Start screen recording / stop and copy recording"),
         QT_TRANSLATE_NOOP("SettingsCatalog",
-                          "Start a screen recording, or stop and copy the current video"),
-        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Copy video")),
+                          "Start a screen recording, or stop and copy the current recording"),
+        {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Copy recording")),
          settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Recording toggle"))},
         GlobalShortcutAction::ScreenRecordCopy,
         QStringLiteral("global_shortcuts/screen_record_copy"),
@@ -995,16 +995,6 @@ QVector<SettingsItemDefinition> screenRecordingItems() {
             QStringLiteral("screen_recording/animated_image_frame_rate"),
             SettingsSelectBinding::AnimatedImageFrameRate, frameRateOptions({10, 15, 24})),
         fixedSelectItem(
-            QStringLiteral("screen-recording.animated-image-format"),
-            QT_TRANSLATE_NOOP("SettingsCatalog", "Animated image format"),
-            QT_TRANSLATE_NOOP("SettingsCatalog",
-                              "Choose the format used to export animated images"),
-            QStringLiteral("screen_recording/animated_image_format"),
-            SettingsSelectBinding::AnimatedImageFormat,
-            {{QStringLiteral("gif"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "GIF"))},
-             {QStringLiteral("apng"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "APNG"))},
-             {QStringLiteral("webp"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "WebP"))}}),
-        fixedSelectItem(
             QStringLiteral("screen-recording.encoder"),
             QT_TRANSLATE_NOOP("SettingsCatalog", "Encoder"),
             QT_TRANSLATE_NOOP("SettingsCatalog", "Choose the video encoder"),
@@ -1067,12 +1057,15 @@ SettingsItemDefinition localShortcutItem(SettingsLocalShortcutScope scope,
                                          std::function<adqt::icons::IconRef()> iconFactory) {
     const bool screenshotShortcut = scope == SettingsLocalShortcutScope::Screenshot;
     const bool drawingShortcut = scope == SettingsLocalShortcutScope::Drawing;
-    const QString scopeName = screenshotShortcut ? QStringLiteral("screenshot")
-                              : drawingShortcut  ? QStringLiteral("drawing")
-                                                 : QStringLiteral("pin-to-screen");
+    const bool recordingShortcut = scope == SettingsLocalShortcutScope::ScreenRecording;
+    const QString scopeName = screenshotShortcut  ? QStringLiteral("screenshot")
+                              : drawingShortcut   ? QStringLiteral("drawing")
+                              : recordingShortcut ? QStringLiteral("screen-recording")
+                                                  : QStringLiteral("pin-to-screen");
     const QString configurationPrefix = screenshotShortcut ? QStringLiteral("screenshot_shortcuts/")
-                                        : drawingShortcut
-                                            ? QStringLiteral("drawing_shortcuts/")
+                                        : drawingShortcut  ? QStringLiteral("drawing_shortcuts/")
+                                        : recordingShortcut
+                                            ? QStringLiteral("screen_recording_shortcuts/")
                                             : QStringLiteral("pin_to_screen_shortcuts/");
     return {
         QStringLiteral("%1-shortcut.%2").arg(scopeName, shortcutId),
@@ -1083,12 +1076,16 @@ SettingsItemDefinition localShortcutItem(SettingsLocalShortcutScope scope,
         : drawingShortcut
             ? settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
                                              "Set up to two keys for this screenshot drawing tool"))
+        : recordingShortcut
+            ? settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                             "Set up to two keys for this recording action"))
             : settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
                                              "Set up to two keys for this pinned window action")),
         {settingsText(
-            screenshotShortcut ? QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot shortcut")
-            : drawingShortcut  ? QT_TRANSLATE_NOOP("SettingsCatalog", "Drawing shortcut")
-                               : QT_TRANSLATE_NOOP("SettingsCatalog", "Pin to screen shortcut"))},
+            screenshotShortcut  ? QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot shortcut")
+            : drawingShortcut   ? QT_TRANSLATE_NOOP("SettingsCatalog", "Drawing shortcut")
+            : recordingShortcut ? QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording shortcut")
+                                : QT_TRANSLATE_NOOP("SettingsCatalog", "Pin to screen shortcut"))},
         configurationPrefix + shortcutId,
         SettingsLocalShortcutDefinition{shortcutId, std::move(iconFactory), scope},
     };
@@ -1225,6 +1222,26 @@ QVector<SettingsItemDefinition> drawingShortcutItems() {
         localShortcutItem(SettingsLocalShortcutScope::Drawing, QStringLiteral("watermark"),
                           QT_TRANSLATE_NOOP("SettingsCatalog", "Watermark"),
                           []() { return custom_outlined_icons::ToolWatermark(); }),
+    };
+}
+
+QVector<SettingsItemDefinition> screenRecordingShortcutItems() {
+    return {
+        localShortcutItem(SettingsLocalShortcutScope::ScreenRecording, QStringLiteral("export"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Export recording"),
+                          []() { return outlined_icons::Export(); }),
+        localShortcutItem(SettingsLocalShortcutScope::ScreenRecording,
+                          QStringLiteral("toggle_recording"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Start/pause/resume recording"),
+                          []() { return outlined_icons::Pause(); }),
+        localShortcutItem(SettingsLocalShortcutScope::ScreenRecording,
+                          QStringLiteral("copy_to_clipboard"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "Copy recording"),
+                          []() { return outlined_icons::Copy(); }),
+        localShortcutItem(SettingsLocalShortcutScope::ScreenRecording,
+                          QStringLiteral("end_recording"),
+                          QT_TRANSLATE_NOOP("SettingsCatalog", "End recording"),
+                          []() { return outlined_icons::Close(); }),
     };
 }
 
@@ -1856,6 +1873,15 @@ QVector<SettingsPageDefinition> builtInPages() {
                     SettingsSectionItemLayout::TwoColumnGrid,
                 },
                 {
+                    QStringLiteral("screen-recording-shortcuts"),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording")),
+                    settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
+                                                   "Shortcut keys for recording controls")),
+                    SettingsSectionReset::ScreenRecordingShortcuts,
+                    screenRecordingShortcutItems(),
+                    SettingsSectionItemLayout::TwoColumnGrid,
+                },
+                {
                     QStringLiteral("other-shortcuts"),
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Other")),
                     settingsText(QT_TRANSLATE_NOOP(
@@ -1865,6 +1891,15 @@ QVector<SettingsPageDefinition> builtInPages() {
                     SettingsSectionItemLayout::TwoColumnGrid,
                 },
             },
+        },
+        {
+            QStringLiteral("about"),
+            QStringLiteral("/about"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "About")),
+            settingsText(
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Software version and license information")),
+            {},
+            SettingsPageKind::About,
         },
     };
 }
@@ -1917,7 +1952,12 @@ QVector<SettingsNavigationNode> builtInNavigation() {
         },
     };
 
-    return {globalHotkeys, globalMouse, history, settingsGroup};
+    SettingsNavigationPageDefinition about;
+    about.id = QStringLiteral("nav.about");
+    about.pageId = QStringLiteral("about");
+    about.iconFactory = []() { return outlined_icons::InfoCircle(); };
+
+    return {globalHotkeys, globalMouse, history, settingsGroup, about};
 }
 
 QString locationText(const SettingsLocation& location) {
@@ -2258,11 +2298,11 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Screen recording"),
                 GlobalShortcutAction::ScreenRecord,
                 []() { return custom_outlined_icons::RecordScreen(); }),
-          quick(
-              QStringLiteral("quick.screen-record-copy"),
-              QT_TRANSLATE_NOOP("SettingsCatalog", "Start screen recording / stop and copy video"),
-              GlobalShortcutAction::ScreenRecordCopy,
-              []() { return custom_outlined_icons::ScreenshotCopy(); })}},
+          quick(QStringLiteral("quick.screen-record-copy"),
+                QT_TRANSLATE_NOOP("SettingsCatalog",
+                                  "Start screen recording / stop and copy recording"),
+                GlobalShortcutAction::ScreenRecordCopy,
+                []() { return custom_outlined_icons::ScreenshotCopy(); })}},
         {QStringLiteral("other"),
          {quick(QStringLiteral("quick.open-capture-history"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot history"),
@@ -2311,7 +2351,7 @@ SettingsLocation SettingsCatalog::resolveLocation(const SettingsLocation& reques
     const SettingsSectionDefinition* foundSection = section(foundPage->id, requested.sectionId);
     if (foundSection == nullptr) {
         if (foundPage->sections.isEmpty()) {
-            return foundPage->kind == SettingsPageKind::ScreenshotHistory ? resolved
+            return foundPage->kind != SettingsPageKind::GeneratedSettings ? resolved
                                                                           : m_defaultLocation;
         }
         foundSection = &foundPage->sections.constFirst();
@@ -2485,9 +2525,6 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSelectBinding::AnimatedImageFrameRate:
                         expectedKey = QStringLiteral("screen_recording/animated_image_frame_rate");
-                        break;
-                    case SettingsSelectBinding::AnimatedImageFormat:
-                        expectedKey = QStringLiteral("screen_recording/animated_image_format");
                         break;
                     case SettingsSelectBinding::ScreenRecordingEncoder:
                         expectedKey = QStringLiteral("screen_recording/encoder");
@@ -2735,6 +2772,8 @@ QStringList SettingsCatalog::validationErrors() const {
                              ? QStringLiteral("screenshot_shortcuts/")
                          : local->scope == SettingsLocalShortcutScope::Drawing
                              ? QStringLiteral("drawing_shortcuts/")
+                         : local->scope == SettingsLocalShortcutScope::ScreenRecording
+                             ? QStringLiteral("screen_recording_shortcuts/")
                              : QStringLiteral("pin_to_screen_shortcuts/")) +
                         local->shortcutId;
                     if (local->shortcutId.isEmpty() || !local->iconFactory ||

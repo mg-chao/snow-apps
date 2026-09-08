@@ -975,6 +975,8 @@ class SaveContent final : public QWidget {
     void beginSave() {
         if (m_saving || m_closed)
             return;
+        static_cast<void>(snow_shot::storage::ScreenshotSettings().setLastManualSaveFormat(
+            ScreenshotImageFileService::formatKey(m_state.output.format)));
         m_saving = true;
         m_savePath = m_state.outputPath();
         m_form->setDisabled(true);
@@ -1125,6 +1127,8 @@ ScreenshotSaveDialogState ScreenshotSaveDialogState::initial(QSize size) {
         ScreenshotImageFileService::suggestedBaseName(settings.manualSaveFilenameFormat());
     result.sourceSize = size;
     result.output.size = size;
+    result.output.format =
+        ScreenshotImageFileService::formatForKey(settings.lastManualSaveFormat());
     return result;
 }
 void ScreenshotSaveDialogState::setDimension(bool width, int value) {

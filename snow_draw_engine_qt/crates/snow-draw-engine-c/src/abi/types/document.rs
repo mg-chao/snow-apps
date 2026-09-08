@@ -1,6 +1,23 @@
 use super::*;
 
 #[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SnowArrowTextLayoutRequest {
+    pub info: SnowTextElementInfo,
+    pub style: SnowTextStyle,
+    pub key: u64,
+    pub max_width: f64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SnowArrowTextLayoutResult {
+    pub text_id: SnowElementId,
+    pub key: u64,
+    pub size: SnowTextLayoutSize,
+}
+
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SnowElementId {
     pub index: u32,
@@ -28,6 +45,7 @@ pub struct SnowTextLayoutOverride {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SnowTextCommitDraft {
     pub element_id: SnowElementId,
+    pub arrow_id: SnowElementId,
     pub has_existing_element: u8,
     pub auto_resize: u8,
     pub update_default_style: u8,
@@ -45,6 +63,7 @@ impl Default for SnowTextCommitDraft {
     fn default() -> Self {
         Self {
             element_id: SnowElementId::default(),
+            arrow_id: SnowElementId::default(),
             has_existing_element: 0,
             auto_resize: 0,
             update_default_style: 0,
@@ -64,6 +83,7 @@ impl Default for SnowTextCommitDraft {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SnowActiveTextDraftPresentation {
     pub element_id: SnowElementId,
+    pub arrow_id: SnowElementId,
     pub has_existing_element: u8,
     pub auto_resize: u8,
     pub reserved0: [u8; 6],
@@ -82,6 +102,7 @@ impl Default for SnowActiveTextDraftPresentation {
     fn default() -> Self {
         Self {
             element_id: SnowElementId::default(),
+            arrow_id: SnowElementId::default(),
             has_existing_element: 0,
             auto_resize: 0,
             reserved0: [0; 6],
@@ -102,6 +123,8 @@ impl Default for SnowActiveTextDraftPresentation {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SnowTextElementInfo {
     pub id: SnowElementId,
+    pub arrow_id: SnowElementId,
+    pub arrow_width: f64,
     pub center_x: f64,
     pub center_y: f64,
     pub width: f64,
@@ -126,6 +149,8 @@ impl Default for SnowTextElementInfo {
     fn default() -> Self {
         Self {
             id: SnowElementId::default(),
+            arrow_id: SnowElementId::default(),
+            arrow_width: 0.0,
             center_x: 0.0,
             center_y: 0.0,
             width: 0.0,

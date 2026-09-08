@@ -25,6 +25,16 @@ class AdSelect;
 
 namespace snow_shot::presentation {
 
+void setScreenshotToolPaletteStyleButtonActive(adqt::widgets::AdButton* button, bool active);
+
+ColorSwatchButton*
+createScreenshotToolPaletteColorPickerTrigger(adqt::widgets::AdColorPicker* picker,
+                                              const QString& accessibleName, const QColor& color,
+                                              const ScreenshotToolPaletteButtonMetrics& metrics);
+
+void refreshScreenshotToolPaletteColorPickerMetrics(
+    adqt::widgets::AdColorPicker* picker, const ScreenshotToolPaletteButtonMetrics& metrics);
+
 // Cross-editor services injected by the style-controls owner. Components stay
 // palette-agnostic: canvas sampling and popup-lifecycle bookkeeping are
 // forwarded through these callbacks instead of reaching into the palette.

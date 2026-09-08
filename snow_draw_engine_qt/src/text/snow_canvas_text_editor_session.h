@@ -22,6 +22,7 @@ class SnowCanvasTextEditorSession final {
         QString text;
         QPointF canvasCenter;
         SnowElementId elementId{};
+        SnowElementId arrowId{};
         bool hasExistingElement = false;
         SnowTextLayoutSize measuredLayout{1.0, 1.0};
         SnowTextStyle style{};
@@ -44,10 +45,14 @@ class SnowCanvasTextEditorSession final {
     };
 
     bool begin(const SnowTextElementInfo& info, const SnowSceneDisplayItem* existingSceneItem,
-               const QFont& baseFont, const SnowTextStyle* newTextStyle = nullptr);
+               const QFont& baseFont, const SnowTextStyle* newTextStyle = nullptr,
+               const QString* completeText = nullptr);
     FinishedEdit finish(const QFont& baseFont);
     void cancel();
 
+    SnowElementId arrowId() const {
+        return m_arrowId;
+    }
     bool isActive() const;
     bool containsViewPosition(const SceneDisplayInfo& sceneInfo, const QPointF& viewPosition) const;
 
@@ -87,6 +92,8 @@ class SnowCanvasTextEditorSession final {
 
     QPointF m_canvasAnchor;
     SnowElementId m_elementId{};
+    SnowElementId m_arrowId{};
+    double m_arrowWidth = 0.0;
     bool m_hasExistingElement = false;
     SnowCanvasSceneItem m_previewItem;
     bool m_hasPreview = false;

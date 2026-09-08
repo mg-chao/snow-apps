@@ -9,6 +9,8 @@ use snow_draw_engine_editor::{
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextElementInfo {
     pub id: ElementId,
+    pub arrow_id: Option<ElementId>,
+    pub arrow_width: f64,
     pub center: Point<f64>,
     pub width: f64,
     pub height: f64,
@@ -23,6 +25,8 @@ pub struct TextElementInfo {
 fn text_element_info_from_resize_request(request: TextResizeMeasurementRequest) -> TextElementInfo {
     TextElementInfo {
         id: request.id,
+        arrow_id: None,
+        arrow_width: 0.0,
         center: request.center,
         width: request.width,
         height: request.height,
@@ -38,6 +42,8 @@ fn text_element_info_from_resize_request(request: TextResizeMeasurementRequest) 
 fn text_element_info_from_active_draft(draft: &ActiveTextDraftPresentation) -> TextElementInfo {
     TextElementInfo {
         id: draft.existing_id().unwrap_or_default(),
+        arrow_id: None,
+        arrow_width: 0.0,
         center: draft.text.center,
         width: draft.text.width,
         height: draft.text.height,
@@ -67,6 +73,97 @@ fn text_style_from_text(text: &TextData) -> TextStyle {
 }
 
 impl Engine {
+    pub fn arrow_text_count(&self) -> usize {
+        self.model.arrow_text_bindings().len()
+    }
+
+    pub fn arrow_text_layout_requests(
+        &self,
+        viewport: ViewportId,
+    ) -> Result<Vec<snow_draw_engine_editor::ArrowTextLayoutRequest>, ErrorCode> {
+        self.ensure_viewport(viewport)?;
+        Ok(self.editor.arrow_text_layout_requests(&self.model))
+    }
+
+    pub fn apply_arrow_text_measurements(
+        &mut self,
+        viewport: ViewportId,
+        layouts: &[(ElementId, u64, TextLayoutSize)],
+    ) -> Result<MutationResult, ErrorCode> {
+        self.ensure_viewport(viewport)?;
+        let before = self.editor.snapshot();
+        let editor_before = self.editor.clone();
+        for (id, key, size) in layouts {
+            if let Err(error) =
+                self.editor
+                    .apply_arrow_text_measurement(&self.model, *id, *key, *size)
+            {
+                self.editor = editor_before;
+                return Err(error);
+            }
+        }
+        self.refresh_after_session_mutation(before)
+    }
+
+    pub fn arrow_text_target(
+        &self,
+        viewport: ViewportId,
+        point: Option<Point<f64>>,
+    ) -> Result<Option<(TextElementInfo, TextStyle)>, ErrorCode> {
+        self.ensure_viewport(viewport)?;
+        if !self.editor.can_begin_arrow_text() {
+            return Ok(None);
+        }
+        let target = if let Some(point) = point {
+            let zoom = self.viewport_slot(viewport)?.view.camera.zoom;
+            self.model
+                .topmost_element_at_with_tolerance(point, 8.0 / zoom.max(0.01))
+                .map(|(id, _)| self.model.arrow_id_for_text(id).unwrap_or(id))
+        } else {
+            let ids = self.editor.selected_ids();
+            (ids.len() == 1).then(|| self.model.arrow_id_for_text(ids[0]).unwrap_or(ids[0]))
+        };
+        let Some(id) = target else {
+            return Ok(None);
+        };
+        let Ok(arrow) = self.model.arrow(id) else {
+            return Ok(None);
+        };
+        let meta = self.model.element(id)?.meta;
+        if arrow.linear_kind != snow_draw_engine_document::LinearElementKind::Arrow
+            || meta.locked
+            || !meta.visible
+        {
+            return Ok(None);
+        }
+        if let Some(text_id) = arrow.text_element_id {
+            return Ok(Some((
+                self.text_element_info(text_id)?,
+                text_style_from_text(self.model.text(text_id)?),
+            )));
+        }
+        let mut style = self.editor.text_style(&self.model);
+        style.horizontal_align = snow_draw_engine_document::TextHorizontalAlign::Center;
+        style.vertical_align = snow_draw_engine_document::TextVerticalAlign::Center;
+        Ok(Some((
+            TextElementInfo {
+                id: ElementId::default(),
+                arrow_id: Some(id),
+                arrow_width: arrow.width,
+                center: snow_draw_engine_document::arrow_text_anchor(arrow),
+                width: 1.0,
+                height: style.font_size,
+                rotation: 0.0,
+                text: String::new(),
+                font_size: style.font_size,
+                font_family: style.font_family.clone(),
+                auto_resize: true,
+                measure_natural_width: false,
+            },
+            style,
+        )))
+    }
+
     pub fn set_viewport_text_style(
         &mut self,
         id: ViewportId,
@@ -131,6 +228,12 @@ impl Engine {
         let layout = resolve_text_layout_rect(text);
         Ok(TextElementInfo {
             id,
+            arrow_id: self.model.arrow_id_for_text(id),
+            arrow_width: self
+                .model
+                .arrow_id_for_text(id)
+                .and_then(|id| self.model.arrow(id).ok())
+                .map_or(0.0, |arrow| arrow.width),
             center: layout.center,
             width: layout.width,
             height: layout.height,
@@ -195,7 +298,18 @@ impl Engine {
             .active_text_draft_display_presentation()
             .map(|draft| {
                 let style = text_style_from_text(&draft.text);
-                (text_element_info_from_active_draft(&draft), style)
+                let mut info = text_element_info_from_active_draft(&draft);
+                info.arrow_id = match draft.target {
+                    snow_draw_engine_editor::ActiveTextDraftTarget::NewArrow(id) => Some(id),
+                    _ => draft
+                        .existing_id()
+                        .and_then(|id| self.model.arrow_id_for_text(id)),
+                };
+                info.arrow_width = info
+                    .arrow_id
+                    .and_then(|id| self.model.arrow(id).ok())
+                    .map_or(0.0, |arrow| arrow.width);
+                (info, style)
             }))
     }
 

@@ -7,10 +7,9 @@ use snow_draw_engine_core::{
 use snow_draw_engine_display::{PatchCursor, ViewportPatch};
 use snow_draw_engine_document::{ElementId, SpotlightConfig, WatermarkConfig};
 use snow_draw_engine_editor::{
-    ActiveTool, ApplyTransactionCommand, DocumentSyncSnapshot, EditorCommand,
-    EditorSession, EditorSessionSnapshot, EditorStyleDefaults,
-    EditorViewportState, FilterStyle, HistoryState, RectangleShapeStyle, SerialNumberToolbarState,
-    ShapeStylePatch, StyleToolbarState,
+    ActiveTool, ApplyTransactionCommand, DocumentSyncSnapshot, EditorCommand, EditorSession,
+    EditorSessionSnapshot, EditorStyleDefaults, EditorViewportState, FilterStyle, HistoryState,
+    RectangleShapeStyle, SerialNumberToolbarState, ShapeStylePatch, StyleToolbarState,
 };
 use snow_draw_engine_interaction::{InputEvent, InteractionOutput};
 use snow_draw_engine_model::DocumentModel;
@@ -672,3 +671,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "engine/arrow_text_tests.rs"]
+mod arrow_text_tests;

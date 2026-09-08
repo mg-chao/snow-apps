@@ -16,6 +16,7 @@
 #include <QEvent>
 #include <QFontMetricsF>
 #include <QKeyEvent>
+#include <QKeySequence>
 #include <QLabel>
 #include <QLayout>
 #include <QString>
@@ -565,8 +566,8 @@ bool sendNativeRecorderMessage(QWidget* window, UINT message, Qt::KeyboardModifi
 
 void localShortcutRecordersUseOnlyNormalKeyEvents() {
     using Scope = ShortcutKeyRowConfig::ValidationScope;
-    for (const Scope scope :
-         {Scope::ScreenshotShortcut, Scope::DrawingShortcut, Scope::PinnedWindowShortcut}) {
+    for (const Scope scope : {Scope::ScreenshotShortcut, Scope::DrawingShortcut,
+                              Scope::PinnedWindowShortcut, Scope::RecordingShortcut}) {
         PrintScreenRecordingSession session(scope);
         for (int recording = 0; recording < 2; ++recording) {
             session.validated.clear();
@@ -607,6 +608,25 @@ void localShortcutRecordersUseOnlyNormalKeyEvents() {
         session.flush();
         require(session.saved == QStringList{QStringLiteral("Ctrl+A")},
                 "local shortcut recording must retain its existing save behavior");
+    }
+}
+
+void recordingShortcutRecorderAcceptsControlKeysAndEscape() {
+    for (const auto key : {Qt::Key_E, Qt::Key_S, Qt::Key_C, Qt::Key_Escape}) {
+        PrintScreenRecordingSession session(
+            ShortcutKeyRowConfig::ValidationScope::RecordingShortcut);
+        const auto modifiers = key == Qt::Key_Escape ? Qt::NoModifier : Qt::ControlModifier;
+        const QString expected =
+            QKeySequence(QKeyCombination(modifiers, key)).toString(QKeySequence::PortableText);
+        session.key(QEvent::KeyPress, key, modifiers);
+        session.flush();
+        require(session.validated == QStringList{expected} &&
+                    session.modal->acceptButton()->isEnabled(),
+                "recording shortcut editor must capture Ctrl+E, Ctrl+S, Ctrl+C and Esc");
+        session.modal->acceptButton()->click();
+        session.flush();
+        require(session.saved == QStringList{expected},
+                "recording shortcut editor must save each captured default");
     }
 }
 
@@ -1060,6 +1080,7 @@ int main(int argc, char** argv) {
     printScreenReleaseRecordsModifiers();
     printScreenRecordingPreservesEventOrderAndLifecycle();
     localShortcutRecordersUseOnlyNormalKeyEvents();
+    recordingShortcutRecorderAcceptsControlKeysAndEscape();
     nativePrintScreenRecordingPreservesModifiers();
     drawingRecorderUsesLocalValidationLanguage();
     compactTitleAndKeyButtonStylesMatchReference();

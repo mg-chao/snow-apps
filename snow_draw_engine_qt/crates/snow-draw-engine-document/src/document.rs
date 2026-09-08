@@ -14,9 +14,7 @@ use crate::{
     free_draw_bounds, free_draw_hit_test,
 };
 pub use snow_draw_engine_core::arrow::StrokeStyle;
-use snow_draw_engine_core::{
-    ColorRgba8, CornerRadii, DrawRect, ErrorCode, Point,
-};
+use snow_draw_engine_core::{ColorRgba8, CornerRadii, DrawRect, ErrorCode, Point};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WatermarkConfig {
@@ -704,6 +702,99 @@ impl Document {
                 }
             }
         }
+        self.validate_arrow_text_bindings()
+    }
+
+    pub fn arrow_text_bindings(&self) -> Vec<(ElementId, ElementId)> {
+        self.paint_order
+            .iter()
+            .filter_map(|id| {
+                self.arrow(*id)
+                    .ok()?
+                    .text_element_id
+                    .map(|text_id| (*id, text_id))
+            })
+            .collect()
+    }
+
+    pub fn bound_text_id_for_arrow(&self, id: ElementId) -> Option<ElementId> {
+        self.arrow(id).ok()?.text_element_id
+    }
+
+    pub fn arrow_id_for_text(&self, text_id: ElementId) -> Option<ElementId> {
+        self.paint_order
+            .iter()
+            .copied()
+            .find(|id| self.bound_text_id_for_arrow(*id) == Some(text_id))
+    }
+
+    fn validate_arrow_text_bindings(&self) -> Result<(), ErrorCode> {
+        let mut owned = HashSet::new();
+        for (arrow_id, text_id) in self.arrow_text_bindings() {
+            if self.arrow(arrow_id)?.linear_kind != crate::LinearElementKind::Arrow
+                || self.text(text_id).is_err()
+                || !owned.insert(text_id)
+                || self.is_text_bound_to_serial_number(text_id)
+            {
+                return Err(ErrorCode::InvalidArgument);
+            }
+        }
+        Ok(())
+    }
+
+    fn synchronize_arrow_text(
+        &mut self,
+        inverse: &mut Vec<Operation>,
+        changes: &mut DocumentDelta,
+    ) -> Result<(), ErrorCode> {
+        self.validate_arrow_text_bindings()?;
+        let bindings = self.arrow_text_bindings();
+        for (arrow_id, text_id) in &bindings {
+            let arrow = self.arrow(*arrow_id)?;
+            let mut text = self.text(*text_id)?.clone();
+            text.center = crate::arrow_text_anchor(arrow);
+            text.rotation = 0.0;
+            text.auto_resize = true;
+            let meta = self.element(*arrow_id)?.meta;
+            if self.element(*text_id)?.meta != meta {
+                inverse.push(self.apply_operation(
+                    &Operation::UpdateElementMeta { id: *text_id, meta },
+                    changes,
+                )?);
+            }
+            if self.text(*text_id)? != &text {
+                inverse.push(self.apply_operation(
+                    &Operation::UpdateElementData {
+                        id: *text_id,
+                        data: ElementData::Text(text),
+                    },
+                    changes,
+                )?);
+            }
+        }
+        if !bindings.is_empty() {
+            let labels: HashSet<_> = bindings.iter().map(|(_, text)| *text).collect();
+            let owners: HashMap<_, _> = bindings.into_iter().collect();
+            let mut order = Vec::with_capacity(self.paint_order.len());
+            for id in &self.paint_order {
+                if labels.contains(id) {
+                    continue;
+                }
+                order.push(*id);
+                if let Some(label) = owners.get(id) {
+                    order.push(*label);
+                }
+            }
+            if order != self.paint_order {
+                inverse.push(self.apply_operation(
+                    &Operation::ReorderElements {
+                        ids: order,
+                        paint_index: 0,
+                    },
+                    changes,
+                )?);
+            }
+        }
         Ok(())
     }
 
@@ -919,6 +1010,7 @@ impl Document {
         let mut changes = DocumentDelta::default();
         let start_revision = self.revision;
         let start_next_index = self.next_index;
+        let start_slots_len = self.slots.len();
 
         for operation in &transaction.operations {
             match self.apply_operation(operation, &mut changes) {
@@ -930,11 +1022,22 @@ impl Document {
                     }
                     self.revision = start_revision;
                     self.next_index = start_next_index;
+                    self.slots.truncate(start_slots_len);
                     return Err(error);
                 }
             }
         }
 
+        if let Err(error) = self.synchronize_arrow_text(&mut inverse, &mut changes) {
+            for operation in inverse.iter().rev() {
+                self.apply_operation(operation, &mut DocumentDelta::default())
+                    .expect("document rollback must succeed");
+            }
+            self.revision = start_revision;
+            self.next_index = start_next_index;
+            self.slots.truncate(start_slots_len);
+            return Err(error);
+        }
         inverse.reverse();
         self.revision.0 = self.revision.0.wrapping_add(1);
         let document_revision = self.revision;
@@ -999,7 +1102,6 @@ impl Document {
         })
     }
 
-
     pub fn serial_number_text_bindings(&self) -> Vec<SerialNumberTextBinding> {
         self.paint_order
             .iter()
@@ -1034,7 +1136,6 @@ impl Document {
             .map(|binding| binding.serial_id)
             .collect()
     }
-
 
     pub fn paint_order(&self) -> &[ElementId] {
         &self.paint_order
@@ -1213,7 +1314,9 @@ impl Document {
                     .copied()
                     .map(|id| (id, self.element_change_snapshot(id)))
                     .collect();
-                let inverse_positions = self.current_paint_positions(ids)?;
+                // A reorder can permute or gather disjoint layers. Retain the
+                // complete prior order so undo also restores intervening items.
+                let inverse_order = self.paint_order.clone();
                 self.reorder_elements_internal(ids, *paint_index)?;
                 for id in ids {
                     changes.note_existing_bounds(self, *id);
@@ -1227,12 +1330,8 @@ impl Document {
                 }
                 changes.z_order_changed = true;
                 Ok(Operation::ReorderElements {
-                    ids: inverse_positions.iter().map(|(id, _)| *id).collect(),
-                    paint_index: inverse_positions
-                        .iter()
-                        .map(|(_, index)| *index)
-                        .min()
-                        .unwrap_or(0),
+                    ids: inverse_order,
+                    paint_index: 0,
                 })
             }
         }
@@ -1281,40 +1380,6 @@ impl Document {
         *slot = None;
         self.paint_order.retain(|candidate| *candidate != id);
         Ok(())
-    }
-
-    fn current_paint_positions(
-        &self,
-        ids: &[ElementId],
-    ) -> Result<Vec<(ElementId, u32)>, ErrorCode> {
-        let mut positions = Vec::with_capacity(ids.len());
-        if ids.len() <= 4 {
-            for id in ids {
-                let index = self
-                    .paint_order
-                    .iter()
-                    .position(|candidate| candidate == id)
-                    .ok_or(ErrorCode::NotFound)? as u32;
-                positions.push((*id, index));
-            }
-            return Ok(positions);
-        }
-
-        let targets: HashSet<_> = ids.iter().copied().collect();
-        let mut lookup = HashMap::with_capacity(targets.len());
-        for (index, candidate) in self.paint_order.iter().copied().enumerate() {
-            if targets.contains(&candidate) {
-                lookup.insert(candidate, index as u32);
-                if lookup.len() == targets.len() {
-                    break;
-                }
-            }
-        }
-
-        for id in ids {
-            positions.push((*id, *lookup.get(id).ok_or(ErrorCode::NotFound)?));
-        }
-        Ok(positions)
     }
 
     fn reorder_elements_internal(
@@ -1369,7 +1434,7 @@ impl Document {
 }
 
 fn element_data_has_arrow_relations(data: &ElementData) -> bool {
-    matches!(data, ElementData::Arrow(arrow) if !arrow.bound_element_ids().is_empty())
+    matches!(data, ElementData::Arrow(arrow) if arrow.text_element_id.is_some() || !arrow.bound_element_ids().is_empty())
 }
 
 fn element_data_arrow_relation_targets_changed(previous: &ElementData, next: &ElementData) -> bool {
@@ -1378,13 +1443,46 @@ fn element_data_arrow_relation_targets_changed(previous: &ElementData, next: &El
     };
     let previous_ids = previous.bound_element_ids();
     let next_ids = next.bound_element_ids();
-    previous_ids.len() != next_ids.len() || previous_ids.iter().any(|id| !next_ids.contains(id))
+    previous.text_element_id != next.text_element_id
+        || previous_ids.len() != next_ids.len()
+        || previous_ids.iter().any(|id| !next_ids.contains(id))
 }
 
 #[cfg(test)]
 mod tests {
 
     use super::*;
+
+    #[test]
+    fn reorder_inverse_restores_permuted_and_disjoint_layers() {
+        let mut document = Document::new();
+        let ids: Vec<_> = (0..6)
+            .map(|index| ElementId {
+                index,
+                generation: 1,
+            })
+            .collect();
+        let mut setup = Transaction::new("layers");
+        for id in &ids {
+            setup.insert_text(*id, ElementMeta::default(), TextData::default());
+        }
+        document.apply(&setup).unwrap();
+        let original = document.clone();
+        for reordered in [vec![ids[5], ids[1]], ids.iter().rev().copied().collect()] {
+            let mut tx = Transaction::new("reorder layers");
+            tx.reorder_elements(reordered, 0);
+            let result = document.apply(&tx).unwrap();
+            assert_ne!(document.paint_order(), original.paint_order());
+            document.apply(&result.inverse).unwrap();
+            assert!(document.has_same_session_content(&original));
+            tx.remove_element(ElementId {
+                index: 100,
+                generation: 1,
+            });
+            assert!(document.apply(&tx).is_err());
+            assert!(document.has_same_session_content(&original));
+        }
+    }
 
     #[test]
     fn common_element_state_has_one_geometry_opacity_and_z_order_definition() {

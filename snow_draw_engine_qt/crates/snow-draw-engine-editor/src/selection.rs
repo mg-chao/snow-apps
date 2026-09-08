@@ -80,6 +80,9 @@ impl Editor {
     ) {
         let mut next_ids = Vec::with_capacity(selection.len());
         for id in selection {
+            let id = document
+                .and_then(|document| document.arrow_id_for_text(id))
+                .unwrap_or(id);
             let missing = document.is_some_and(|document| document.element(id).is_err());
             if next_ids.contains(&id) || missing {
                 continue;
@@ -95,7 +98,16 @@ impl Editor {
         let next_arrows = document
             .map(|document| Self::selection_arrows_from_ids(document, &next_ids))
             .unwrap_or_default();
-        let next_bounds = selection_bounds_from_selection(&next_elements, &next_arrows);
+        let next_bounds = document.map_or_else(
+            || selection_bounds_from_selection(&next_elements, &next_arrows),
+            |document| {
+                self.arrow_text_selection_bounds(
+                    document,
+                    selection_bounds_from_selection(&next_elements, &next_arrows),
+                    &next_arrows,
+                )
+            },
+        );
         let next = SelectionState {
             ids: next_ids,
             primary: next_primary,
@@ -184,6 +196,7 @@ impl Editor {
                 .bounds
                 .or_else(|| selection_bounds_from_selection(&next_elements, &next_arrows))
         };
+        let next_bounds = self.arrow_text_selection_bounds(document, next_bounds, &next_arrows);
         let next = SelectionState {
             ids: filtered_ids,
             primary: filtered_primary,

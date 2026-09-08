@@ -203,6 +203,7 @@ void publicCanvasDtosUseExactCompleteEquality() {
     changedToolbar.serialNumberStyle.number = 9;
     requireUnequalPair(toolbar, changedToolbar, "serial style should participate");
     REQUIRE_TOOLBAR_CHANGE(textStyleMixed, 1u);
+    REQUIRE_TOOLBAR_CHANGE(canEditArrowText, true);
     REQUIRE_TOOLBAR_CHANGE(serialNumberStyleMixed, 2u);
     REQUIRE_TOOLBAR_CHANGE(shapeStyleMixed, 4u);
     changedToolbar = toolbar;
@@ -288,8 +289,7 @@ SnowStyleToolbarState toolbarState(SnowCanvasRuntime& runtime, SnowViewport view
                                    SnowActiveTool tool) {
     SnowRuntime handle = snow_canvas_runtime::Access::handle(runtime);
     ScopedChangedViewportList changed;
-    require(snow_viewport_set_active_tool_ex(handle, viewport, tool, changed.outParam()) ==
-                SNOW_OK,
+    require(snow_viewport_set_active_tool_ex(handle, viewport, tool, changed.outParam()) == SNOW_OK,
             "configured tool selection should succeed");
     SnowStyleToolbarState state{};
     require(snow_viewport_get_style_toolbar_state(handle, viewport, &state) == SNOW_OK,

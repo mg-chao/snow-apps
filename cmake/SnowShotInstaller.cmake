@@ -69,14 +69,28 @@ snow_shot_nsis_replace([=["Uninstall failed."]=] [=["$(SnowShotUninstallFailed)"
 snow_shot_nsis_replace([=["Install Options" "Choose options for installing @CPACK_NSIS_PACKAGE_NAME@"]=]
     [=["$(SnowShotOptionsTitle)" "$(SnowShotOptionsDescription)"]=])
 snow_shot_nsis_replace("Function InstallOptionsPage\n" [=[Function InstallOptionsPage
-  StrCmp "@CPACK_NSIS_MODIFY_PATH@" "ON" +2
-    Abort
   !insertmacro MUI_INSTALLOPTIONS_WRITE "NSIS.InstallOptions.ini" "Field 1" "Text" "$(SnowShotPathDescription)"
   !insertmacro MUI_INSTALLOPTIONS_WRITE "NSIS.InstallOptions.ini" "Field 2" "Text" "$(SnowShotPathNone)"
   !insertmacro MUI_INSTALLOPTIONS_WRITE "NSIS.InstallOptions.ini" "Field 3" "Text" "$(SnowShotPathAll)"
   !insertmacro MUI_INSTALLOPTIONS_WRITE "NSIS.InstallOptions.ini" "Field 4" "Text" "$(SnowShotPathCurrent)"
   !insertmacro MUI_INSTALLOPTIONS_WRITE "NSIS.InstallOptions.ini" "Field 5" "Text" "$(SnowShotDesktopIcon)"
 ]=])
+# Extract options even when PATH changes are disabled. Initialize the default only
+# once, so returning to the page does not overwrite an unchecked shortcut choice.
+snow_shot_nsis_replace([=[  StrCmp "@CPACK_NSIS_MODIFY_PATH@" "ON" 0 noOptionsPage]=] "")
+snow_shot_nsis_replace([=[    !insertmacro MUI_INSTALLOPTIONS_EXTRACT "NSIS.InstallOptions.ini"]=]
+    [=[    !insertmacro MUI_INSTALLOPTIONS_EXTRACT "NSIS.InstallOptions.ini"
+    !insertmacro MUI_INSTALLOPTIONS_WRITE "NSIS.InstallOptions.ini" "Field 5" "State" "1"]=])
+if(NOT CPACK_NSIS_MODIFY_PATH)
+    # Keep CPack's state fields for registry bookkeeping, but display only the
+    # shortcut checkbox. Fields beyond NumFields remain readable in the INI.
+    snow_shot_nsis_replace([=["Field 5"]=] [=["Field 1"]=])
+    snow_shot_nsis_replace([=[    !insertmacro MUI_INSTALLOPTIONS_WRITE "NSIS.InstallOptions.ini" "Field 1" "State" "1"]=]
+        [=[    !insertmacro MUI_INSTALLOPTIONS_WRITE "NSIS.InstallOptions.ini" "Settings" "NumFields" "1"
+    !insertmacro MUI_INSTALLOPTIONS_WRITE "NSIS.InstallOptions.ini" "Field 1" "Type" "CheckBox"
+    !insertmacro MUI_INSTALLOPTIONS_WRITE "NSIS.InstallOptions.ini" "Field 1" "Bottom" "12"
+    !insertmacro MUI_INSTALLOPTIONS_WRITE "NSIS.InstallOptions.ini" "Field 1" "State" "1"]=])
+endif()
 snow_shot_nsis_replace([=["Set install registry entry: '$1' to '$0'"]=]
     [=["$(SnowShotRegistryEntry)"]=])
 snow_shot_nsis_replace([=["Selected environment for all users"]=] [=["$(SnowShotEnvironmentAll)"]=])

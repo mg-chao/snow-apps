@@ -63,6 +63,7 @@ class GlobalMouseRow final : public adqt::widgets::AdButton {
     snow_shot::presentation::settings::SettingsGlobalMouseCombination m_combination;
     snow_shot::presentation::styles::ThemeColorScheme m_colorScheme;
     QLabel* m_titleLabel = nullptr;
+    QLabel* m_titleIcon = nullptr;
     ShortcutConfigurationButton* m_button = nullptr;
     QPointer<adqt::widgets::AdModal> m_modal;
     QPointer<QLabel> m_activationField;

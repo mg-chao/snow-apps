@@ -70,11 +70,15 @@ class SnowCanvasWidget : public QWidget {
     bool undo();
     bool redo();
     bool deleteSelected();
+    // Clears all document elements and history, preserving viewports and creation styles.
+    bool clearDocument();
     bool duplicateSelected(const QPointF& offset = QPointF(12.0, 12.0));
     bool reorderSelected(SnowCanvasSelectionOrder order);
     bool setSelectedOpacity(double opacity);
     bool adjustSelectedSerialNumbers(qint64 delta);
     bool createSerialNumberText();
+    // Opens the label of one selected arrow, or starts an uncommitted attached draft.
+    bool editSelectedArrowText();
     // Commits active text, clears transient editing state and selection, and
     // restores the select tool.
     bool resetEditingState();

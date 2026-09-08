@@ -3,6 +3,7 @@
 
 #include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "antd_icons.h"
 
 #include <QSet>
 #include <QString>
@@ -47,6 +48,8 @@ enum class Icon {
     TextTranslation,
     ScrollingScreenshot,
     SaveAsFile,
+    Markdown,
+    Html,
 };
 
 struct Descriptor {
@@ -127,6 +130,11 @@ struct EditorDescriptor {
         {"table-recognition", "ScreenshotToolbarEditorSettingsWidget",
          QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Table recognition"),
          Icon::TableRecognition},
+        {"convert-to-markdown", "ScreenshotToolbarEditorSettingsWidget",
+         QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Convert to Markdown"),
+         Icon::Markdown},
+        {"convert-to-html", "ScreenshotToolbarEditorSettingsWidget",
+         QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Convert to HTML"), Icon::Html},
         {"record-screen", "ScreenshotToolbarEditorSettingsWidget",
          QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Record screen"),
          Icon::RecordScreen},
@@ -184,7 +192,8 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
 
 [[nodiscard]] inline QVector<QStringList> actionDefaultPositions() {
     return {
-        {QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")},
+        {QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
+         QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")},
         {QStringLiteral("record-screen")},
         {QStringLiteral("pin-to-screen")},
         {QStringLiteral("text-recognition")},
@@ -237,6 +246,38 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringLis
         }
     }
 
+    if (!result.positions.isEmpty() && known.contains(QStringLiteral("convert-to-markdown"))) {
+        // Fold the previous default's standalone conversions without changing custom placements.
+        auto previousDefault = defaultLayout;
+        previousDefault[0] = {QStringLiteral("barcode-recognition"),
+                              QStringLiteral("table-recognition")};
+        previousDefault.insert(1, QStringList{QStringLiteral("convert-to-markdown")});
+        previousDefault.insert(2, QStringList{QStringLiteral("convert-to-html")});
+        if (result.hidden.isEmpty() && result.positions == previousDefault) {
+            result.positions = defaultLayout;
+        }
+        qsizetype recognitionPosition = -1;
+        for (const QString& anchor :
+             {QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")}) {
+            for (qsizetype index = 0; index < result.positions.size(); ++index) {
+                if (result.positions.at(index).contains(anchor)) {
+                    recognitionPosition = index;
+                    break;
+                }
+            }
+            if (recognitionPosition >= 0) {
+                break;
+            }
+        }
+        for (const QString& itemId :
+             {QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")}) {
+            if (recognitionPosition >= 0 && !positioned.contains(itemId) &&
+                !hidden.contains(itemId)) {
+                result.positions[recognitionPosition].push_back(itemId);
+                positioned.insert(itemId);
+            }
+        }
+    }
     for (const QStringList& defaultPosition : defaultLayout) {
         QStringList missing;
         for (const QString& itemId : defaultPosition) {
@@ -407,6 +448,10 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
         return custom::ScanQrcode();
     case Icon::TableRecognition:
         return custom::TableRecognition();
+    case Icon::Markdown:
+        return custom::Markdown();
+    case Icon::Html:
+        return custom::Html();
     case Icon::RecordScreen:
         return custom::RecordScreen();
     case Icon::PinToScreen:

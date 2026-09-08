@@ -99,7 +99,7 @@ impl Editor {
         let selection_elements = self.presentation_selection_elements(document);
         let selection_arrows = self.presentation_selection_arrows(document);
         let selection_bounds =
-            self.presentation_selection_bounds(&selection_elements, &selection_arrows);
+            self.presentation_selection_bounds(document, &selection_elements, &selection_arrows);
         let marquee_candidate_elements = self.marquee_candidate_elements(document);
         let marquee_candidate_arrows = self.marquee_candidate_arrows(document);
         let text_rect_ids = text_rect_ids_for_groups(
@@ -141,6 +141,7 @@ impl Editor {
                 })
             });
         EditorPresentationState {
+            arrow_text_previews: self.arrow_text_previews(document),
             creation_preview: self
                 .pen_filter_creation_preview()
                 .or_else(|| self.free_draw_creation_preview())
@@ -444,7 +445,12 @@ impl Editor {
             _ => {
                 let elements = self.selected_document_elements_snapshot(document);
                 let arrows = self.selected_arrows_snapshot(document);
-                selection_bounds_from_selection(&elements, &arrows).or(self.state.selection.bounds)
+                self.arrow_text_selection_bounds(
+                    document,
+                    selection_bounds_from_selection(&elements, &arrows),
+                    &arrows,
+                )
+                .or(self.state.selection.bounds)
             }
         }
     }
@@ -471,10 +477,11 @@ impl Editor {
 
     pub(crate) fn presentation_selection_bounds(
         &self,
+        document: &DocumentModel,
         selection_elements: &[SelectionRectState],
         selection_arrows: &[SelectionArrowState],
     ) -> Option<SelectionBounds> {
-        match &self.state.interaction {
+        let bounds = match &self.state.interaction {
             InteractionState::EditingSelection(state) => Some(state.preview_bounds),
             InteractionState::EditingArrow(_) => {
                 selection_bounds_from_selection(selection_elements, selection_arrows)
@@ -486,7 +493,8 @@ impl Editor {
             }
             _ => selection_bounds_from_selection(selection_elements, selection_arrows)
                 .or(self.state.selection.bounds),
-        }
+        };
+        self.arrow_text_selection_bounds(document, bounds, selection_arrows)
     }
 
     pub(crate) fn preview_selection_arrows(
@@ -595,7 +603,19 @@ impl Editor {
             });
         }
 
+        let labels = self.arrow_text_previews(document);
+        let label = arrow.text_element_id.and_then(|id| {
+            labels
+                .iter()
+                .find(|(text_id, _)| *text_id == id)
+                .map(|(_, text)| text)
+        });
         for (_, midpoint, fixed_segment) in self.visible_arrow_segment_midpoints(arrow) {
+            if label
+                .is_some_and(|text| snow_draw_engine_document::text_hit_test(text, midpoint, 0.0))
+            {
+                continue;
+            }
             handles.push(ArrowHandleState {
                 kind: ArrowHandleKind::Segment,
                 center: midpoint,

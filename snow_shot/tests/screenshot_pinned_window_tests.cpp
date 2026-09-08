@@ -845,6 +845,43 @@ ScreenshotPinnedWindow::Config cachedOcrPinConfig(ScreenshotOcrRecognitionPort* 
     return config;
 }
 
+void pinnedRecognitionShortcutTogglesResults() {
+    const bool offscreen = QGuiApplication::platformName() == QStringLiteral("offscreen");
+    auto config = cachedOcrPinConfig(nullptr);
+    QPointer<ScreenshotPinnedWindow> window(new ScreenshotPinnedWindow());
+    const auto cleanup = qScopeGuard([&]() {
+        if (window != nullptr) {
+            window->close();
+            static_cast<void>(processUntilDeleted(window, 2000));
+        }
+    });
+    if (offscreen) {
+        window->show();
+        window->activateWindow();
+    } else {
+        require(window->present(config), "the recognition shortcut pin should present");
+    }
+    waitForUi(50);
+    auto* canvas = window->findChild<SnowCanvasWidget*>();
+    QAction* action = pinnedMenuActionNamed(*window, QStringLiteral("screenshotPinnedOcrAction"));
+    if (offscreen && action != nullptr) {
+        // Native image presentation requires an HWND. Exercise shortcut/action parity here;
+        // the native run additionally verifies the actual recognition visibility.
+        QObject::disconnect(action, nullptr, window, nullptr);
+        action->setEnabled(true);
+    }
+    require(canvas != nullptr && action != nullptr && action->isEnabled(),
+            "the recognition shortcut fixture should expose cached OCR");
+    require(!window->persistenceSnapshot().recognitionVisible,
+            "recognition should initially be hidden");
+    for (const bool visible : {true, false, true, false}) {
+        sendShortcut(*canvas, Qt::Key_D, Qt::ControlModifier);
+        require(action->isChecked() == visible &&
+                    (offscreen || window->persistenceSnapshot().recognitionVisible == visible),
+                "each recognition shortcut press must toggle result visibility");
+    }
+}
+
 void pinnedSnapshotRetainsRecognitionBeforeDeferredSetup() {
     IdleOcrRecognition recognition;
     auto config = cachedOcrPinConfig(&recognition);
@@ -872,6 +909,71 @@ void pinnedSnapshotRetainsRecognitionBeforeDeferredSetup() {
     session->invalidate();
     require(window->persistenceSnapshot().recognitionResults.isEmpty(),
             "invalidating initialized recognition must not revive the original cached result");
+}
+
+void pinnedImageConversionsSurviveRestartWithoutProvider() {
+    using Format = SnowShotImageConversionFormat;
+    using Mode = ScreenshotRecognitionSessionController::Mode;
+    snow_shot::storage::ScreenshotImageConversionSettings().setVisionModel(
+        QStringLiteral("vision-saved"));
+    for (const Format format : {Format::Markdown, Format::Html}) {
+        IdleOcrRecognition recognition;
+        auto config = cachedOcrPinConfig(&recognition);
+        config.automaticTextRecognition = true;
+        if (format == Format::Markdown) {
+            config.recognitionResults.text.reset();
+        }
+        const QString source = format == Format::Markdown
+                                   ? QStringLiteral("# Saved\n\n**Document**")
+                                   : QStringLiteral("<h1>Saved</h1><p>Document</p>");
+        config.recognitionResults.conversions = {
+            {format, QStringLiteral("vision-saved"), source, 1,
+             imageConversionFingerprint(config.imageSource.materializedImage)}};
+        config.recognitionResults.visibleConversion = format;
+        QByteArray payload;
+        for (const bool restore : {false, true}) {
+            config.restorePersistentState = restore;
+            if (restore) {
+                config.persistedRecognitionResults = payload;
+                config.recognitionResults = {};
+            }
+            QPointer<ScreenshotPinnedWindow> window(new ScreenshotPinnedWindow);
+            const auto cleanup = qScopeGuard([&]() {
+                if (window) {
+                    window->close();
+                    static_cast<void>(processUntilDeleted(window, 2000));
+                }
+            });
+            require(window->present(config), "conversion pin should present");
+            auto* session = window->findChild<ScreenshotRecognitionSessionController*>();
+            waitForUi(100);
+            require(session && session->conversionModeActive() &&
+                        session->mode() ==
+                            (format == Format::Markdown ? Mode::Markdown : Mode::Html) &&
+                        !session->busy(session->mode()),
+                    "the last completed conversion is restored without a model provider");
+            const auto mime = session->recognitionClipboardMimeData();
+            require(mime && mime->text() == source,
+                    "restored toolbar Copy preserves exact format source");
+            const auto results = session->recognitionResultsSnapshot();
+            require(results.text.has_value() == (format == Format::Html) &&
+                        results.conversions.size() == 1 && results.visibleConversion == format,
+                    "conversion persistence retains the existing OCR payload and visible format");
+            require(recognition.requests == 0, "restoring a conversion never requires an OCR pass");
+            const auto record = window->persistenceSnapshot();
+            require(!record.recognitionResults.isEmpty(),
+                    "conversion is included in the actual pin record");
+            if (restore) {
+                require(record.recognitionResults == payload,
+                        "pin recognition payload round-trips exactly");
+                session->deactivate();
+                require(!session->recognitionResultsSnapshot().visibleConversion.has_value() &&
+                            session->cachedRecognitionResults().conversions.size() == 1,
+                        "hiding the preview retains the completed cache but not its visible state");
+            }
+            payload = record.recognitionResults;
+        }
+    }
 }
 
 void restoredInvalidOcrDoesNotSuppressRecognition() {
@@ -4475,6 +4577,74 @@ void pinnedDrawingToolbarMatchesCaptureInteractions(SnowCanvasRuntime&, bool rot
             "pinned window was not deleted after the Spotlight wheel test");
 }
 
+void pinnedDrawingShortcutsToggleActiveTool() {
+    QScreen* screen = QGuiApplication::primaryScreen();
+    require(screen != nullptr, "a primary screen is required");
+    auto* window = new ScreenshotPinnedWindow();
+    QPointer<ScreenshotPinnedWindow> guardedWindow(window);
+    QImage background(320, 180, QImage::Format_ARGB32_Premultiplied);
+    background.fill(Qt::white);
+    ScreenshotPinnedWindow::Config config;
+    config.nativeGeometry = physicalPinGeometry(*screen, QPoint(40, 40), background.size());
+    config.canvasSourceRect = QRectF(QPointF(), QSizeF(background.size()));
+    config.imageSource = ScreenshotImageSource::fromImage(background, config.canvasSourceRect);
+    config.screen = screen;
+    config.enableEditing = true;
+    require(window->present(config), "shortcut test pin presentation failed");
+    auto* editButton = buttonNamed(*window, QStringLiteral("Enable drawing mode"));
+    require(editButton != nullptr, "drawing mode button was not found");
+    editButton->click();
+    QCoreApplication::processEvents();
+
+    auto* canvas = window->findChild<SnowCanvasWidget*>();
+    auto* controller = window->findChild<ScreenshotPinnedEditController*>();
+    require(canvas != nullptr && controller != nullptr && controller->toolbarWindow() != nullptr,
+            "drawing shortcut fixture should expose a canvas and toolbar");
+    auto* palette = controller->toolbarWindow()->palette();
+    require(palette != nullptr, "drawing shortcut fixture should expose its palette");
+    const auto pressKey = [canvas](Qt::Key key) {
+        QKeyEvent press(QEvent::KeyPress, key, Qt::NoModifier);
+        QCoreApplication::sendEvent(canvas, &press);
+        QKeyEvent release(QEvent::KeyRelease, key, Qt::NoModifier);
+        QCoreApplication::sendEvent(canvas, &release);
+    };
+    for (const auto& [key, tool] : {std::pair{Qt::Key_P, SnowCanvasTool::FreeDraw},
+                                    std::pair{Qt::Key_1, SnowCanvasTool::Shape}}) {
+        pressKey(key);
+        require(canvas->canvasTool() == tool,
+                "the first shortcut press should activate the pinned canvas tool");
+        pressKey(key);
+        require(canvas->canvasTool() == SnowCanvasTool::Select &&
+                    palette->activeToolForTests() == ScreenshotToolPalette::Tool::Select,
+                "the second shortcut press should return both canvas and toolbar to Select");
+        pressKey(key);
+        require(canvas->canvasTool() == tool,
+                "the third shortcut press should reactivate the pinned canvas tool");
+    }
+    require(canvas->setCanvasTool(SnowCanvasTool::Shape), "reset fixture should activate Shape");
+    QMouseEvent down(QEvent::MouseButtonPress, QPointF(30, 30), QPointF(30, 30), Qt::LeftButton,
+                     Qt::LeftButton, Qt::NoModifier);
+    QMouseEvent move(QEvent::MouseMove, QPointF(90, 90), QPointF(90, 90), Qt::NoButton,
+                     Qt::LeftButton, Qt::NoModifier);
+    QMouseEvent up(QEvent::MouseButtonRelease, QPointF(90, 90), QPointF(90, 90), Qt::LeftButton,
+                   Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(canvas, &down);
+    QCoreApplication::sendEvent(canvas, &move);
+    QCoreApplication::sendEvent(canvas, &up);
+    require(canvas->canvasHistoryState().canUndo, "pinned reset fixture should contain an edit");
+    require(canvas->resetEditingState(), "pinned reset fixture should clear selection");
+    palette->setActiveTool(ScreenshotToolPalette::Tool::Select);
+    auto* reset =
+        palette->findChild<adqt::widgets::AdButton*>(QStringLiteral("screenshotResetCanvasButton"));
+    require(reset != nullptr && reset->isEnabled(),
+            "pinned canvas reset should be enabled without selection");
+    reset->click();
+    require(!canvas->canvasHistoryState().canUndo && !canvas->canvasHistoryState().canRedo,
+            "pinned reset should clear the canvas document and history");
+    window->close();
+    require(processUntilDeleted(guardedWindow, 2000), "shortcut test pin should close");
+}
+
 void pinnedEditToolbarControlsCanvasHistory(SnowCanvasRuntime&) {
     QScreen* screen = QGuiApplication::primaryScreen();
     require(screen != nullptr, "a primary screen is required");
@@ -4702,13 +4872,26 @@ void pinnedSaveDialogRoutingAndCancellation() {
     const auto restoreNativeSetting = qScopeGuard([previousNativeSetting] {
         QApplication::setAttribute(Qt::AA_DontUseNativeDialogs, previousNativeSetting);
     });
+    require(settings.setLastManualSaveFormat(QStringLiteral("jpeg")),
+            "remembered native format setup failed");
     bool systemDialogSeen = false;
+    bool rememberedFormatSeen = false;
     QTimer dismiss;
     dismiss.setInterval(10);
     QObject::connect(&dismiss, &QTimer::timeout, window, [&] {
         for (auto* widget : QApplication::topLevelWidgets()) {
             if (auto* dialog = qobject_cast<QFileDialog*>(widget)) {
                 systemDialogSeen = true;
+                rememberedFormatSeen =
+                    dialog->selectedNameFilter().contains(QStringLiteral("*.jpg")) &&
+                    dialog->selectedFiles().value(0).endsWith(QStringLiteral(".jpg"));
+                for (const QString& filter : dialog->nameFilters()) {
+                    if (filter.contains(QStringLiteral("*.png")))
+                        dialog->selectNameFilter(filter);
+                }
+                rememberedFormatSeen =
+                    rememberedFormatSeen &&
+                    dialog->selectedNameFilter().contains(QStringLiteral("*.png"));
                 dialog->reject();
             }
         }
@@ -4716,10 +4899,39 @@ void pinnedSaveDialogRoutingAndCancellation() {
     dismiss.start();
     action->trigger();
     dismiss.stop();
-    require(systemDialogSeen &&
+    require(systemDialogSeen && rememberedFormatSeen &&
+                settings.lastManualSaveFormat() == QStringLiteral("jpeg") &&
                 !window->findChild<AdModal*>(QStringLiteral("screenshotSaveAsFileModal")),
             "System must retain the QFileDialog route");
-    require(settings.setSaveAsFileDialog(QStringLiteral("snow_shot")),
+    const QString nativeDirectory = directory.filePath(QStringLiteral("native"));
+    require(QDir().mkpath(nativeDirectory), "native save directory setup failed");
+    QTimer accept;
+    accept.setInterval(10);
+    QObject::connect(&accept, &QTimer::timeout, window, [&] {
+        for (auto* widget : QApplication::topLevelWidgets()) {
+            if (auto* dialog = qobject_cast<QFileDialog*>(widget)) {
+                // A recognized suffix takes precedence over the remembered JPEG filter.
+                dialog->selectFile(QDir(nativeDirectory).filePath(QStringLiteral("native.bmp")));
+                QMetaObject::invokeMethod(dialog, "accept", Qt::DirectConnection);
+            }
+        }
+    });
+    accept.start();
+    action->trigger();
+    accept.stop();
+    require(settings.lastManualSaveFormat() == QStringLiteral("bmp"),
+            "native save must remember the accepted filename's effective format");
+    QElapsedTimer nativeSaved;
+    nativeSaved.start();
+    while (settings.lastManualSaveDirectory() != nativeDirectory && nativeSaved.elapsed() < 10000)
+        waitForUi(10);
+    require(settings.lastManualSaveDirectory() == nativeDirectory &&
+                QFileInfo::exists(QDir(nativeDirectory).filePath(QStringLiteral("native.bmp"))),
+            "native save must finish writing the selected format");
+    require(settings.setLastManualSaveDirectory(directory.path()),
+            "restore custom save directory failed");
+    require(settings.setLastManualSaveFormat(QStringLiteral("png")) &&
+                settings.setSaveAsFileDialog(QStringLiteral("snow_shot")),
             "Snow Shot routing setup failed");
     action->trigger();
     auto* modal = window->findChild<AdModal*>(QStringLiteral("screenshotSaveAsFileModal"));
@@ -4808,6 +5020,10 @@ int main(int argc, char* argv[]) {
             runPinnedOriginalImageTranslationTests();
             return 0;
         }
+        if (app.arguments().contains(QStringLiteral("--image-conversion-only"))) {
+            pinnedImageConversionsSurviveRestartWithoutProvider();
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--save-dialog-only"))) {
             pinnedSaveDialogRoutingAndCancellation();
             return 0;
@@ -4818,6 +5034,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--movement-shortcut-only"))) {
             pinnedMovementShortcutsMoveIdleWindow();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--drawing-shortcut-toggle-only"))) {
+            pinnedDrawingShortcutsToggleActiveTool();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--toolbar-lifecycle-only"))) {
@@ -4858,6 +5078,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--invalid-ocr-restore-only"))) {
             restoredInvalidOcrDoesNotSuppressRecognition();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--recognition-shortcut-only"))) {
+            pinnedRecognitionShortcutTogglesResults();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--cached-ocr-provider-only"))) {
@@ -4938,6 +5162,7 @@ int main(int argc, char* argv[]) {
         restoredPinnedSelectionRendersCachedOcrAfterStorageRestart();
         pinnedSnapshotRetainsRecognitionBeforeDeferredSetup();
         restoredInvalidOcrDoesNotSuppressRecognition();
+        pinnedRecognitionShortcutTogglesResults();
         cachedPinnedOcrAvailableWithoutRecognitionProvider();
         transformedPinnedOcrTracksCanvasViewport();
         pinnedTransformResetPersistsWithoutResize();
@@ -4951,6 +5176,7 @@ int main(int argc, char* argv[]) {
         pinnedThumbnailUsesOpaqueThemeBackground(sourceRuntime);
         pinnedControlsHideBelowMinimumNativeSize(sourceRuntime);
         pinnedLargeImageRemainsOpenWhenEnteringDrawingMode(sourceRuntime);
+        pinnedDrawingShortcutsToggleActiveTool();
         pinnedEditToolbarControlsCanvasHistory(sourceRuntime);
         pinnedDrawingToolbarMatchesCaptureInteractions(sourceRuntime);
 

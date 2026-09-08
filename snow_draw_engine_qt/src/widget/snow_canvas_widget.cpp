@@ -409,12 +409,14 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     bool undo();
     bool redo();
     bool deleteSelected();
+    bool clearDocument();
     bool duplicateSelected(const QPointF& offset);
     bool reorderSelected(SnowCanvasSelectionOrder order);
     bool setSelectedOpacity(double opacity);
     bool adjustSelectedSerialNumbers(qint64 delta);
     bool createSerialNumberText();
-    bool resetEditingState(bool restoreSelectTool);
+    bool beginArrowText(const QPointF& viewPosition, bool selected);
+    bool resetEditingState(bool restoreSelectTool) override;
     bool cancelActiveTextEditing();
     bool hasActiveTextEditing() const;
     SnowCanvasWidgetTextInteraction::CommitResult commitText(bool refocusWidget = true,
@@ -576,7 +578,11 @@ bool SnowCanvasWidget::Impl::prepareActiveTextResizeMeasurementForPointerUp(
     if (!state.success) {
         return false;
     }
-    if (!state.active) {
+    const auto tool = canvasTool();
+    const bool geometryTool = tool == SnowCanvasTool::Select || tool == SnowCanvasTool::Arrow ||
+                              tool == SnowCanvasTool::Shape;
+    if (!state.active &&
+        (!geometryTool || snow_runtime_arrow_text_count(runtimeBinding.engine()) == 0)) {
         return true;
     }
 
@@ -823,8 +829,7 @@ bool SnowCanvasWidget::setCanvasTool(SnowCanvasTool tool) {
     return m_impl->setCanvasTool(tool);
 }
 
-void SnowCanvasWidget::Impl::setCursorForLayer(SnowCanvasCursorLayer layer,
-                                               const QCursor& cursor) {
+void SnowCanvasWidget::Impl::setCursorForLayer(SnowCanvasCursorLayer layer, const QCursor& cursor) {
     cursorController.setCursor(layer, cursor);
 }
 
@@ -843,7 +848,18 @@ void SnowCanvasWidget::clearCursorForLayer(SnowCanvasCursorLayer layer) {
 SnowCanvasStyleToolbarState SnowCanvasWidget::Impl::canvasStyleToolbarState() const {
     SnowCanvasStyleToolbarState state =
         snow_canvas_types::toCanvasStyleToolbarState(displayState.snapshot().styleToolbarState);
+    SnowTextElementInfo arrowText{};
+    SnowTextStyle arrowTextStyle{};
+    std::uint8_t foundArrow = 0;
+    state.canEditArrowText = hasViewport() && interactionEnabled() && !textInteraction.isActive() &&
+                             snow_viewport_get_arrow_text_target(
+                                 runtimeBinding.engine(), runtimeBinding.viewportHandle(), 0, 0.0,
+                                 0.0, &arrowText, &arrowTextStyle, &foundArrow) == SNOW_OK &&
+                             foundArrow != 0;
     if (textInteraction.isActive()) {
+        if (textInteraction.session().arrowId().generation != 0) {
+            state.source = SnowCanvasStyleToolbarSource::SelectedText;
+        }
         state.textStyle = snow_canvas_types::toCanvasTextStyle(textInteraction.currentTextStyle());
         state.textStyleMixed = 0;
     }
@@ -1578,6 +1594,15 @@ bool SnowCanvasWidget::deleteSelected() {
     return m_impl->deleteSelected();
 }
 
+bool SnowCanvasWidget::Impl::clearDocument() {
+    const SnowCanvasTool previousTool = canvasTool();
+    return runtimeBinding.clearDocumentPreservingViewports() && setCanvasTool(previousTool);
+}
+
+bool SnowCanvasWidget::clearDocument() {
+    return m_impl->clearDocument();
+}
+
 bool SnowCanvasWidget::Impl::duplicateSelected(const QPointF& offset) {
     return applyMutationResult(snow_canvas_commands::duplicateSelected(
         runtimeBinding.engine(), runtimeBinding.viewportHandle(), offset.x(), offset.y()));
@@ -1632,6 +1657,25 @@ bool SnowCanvasWidget::Impl::createSerialNumberText() {
         refocusWidget();
     }
     return true;
+}
+
+bool SnowCanvasWidget::Impl::beginArrowText(const QPointF& viewPosition, bool selected) {
+    if (!interactionEnabled() || textInteraction.isActive()) {
+        return false;
+    }
+    auto result =
+        textInteraction.beginArrow(runtimeBinding.engine(), runtimeBinding.viewportHandle(),
+                                   displayState.displayCache(), viewPosition, selected);
+    syncChangedViewports(result.firstChangedViewports.get());
+    syncChangedViewports(result.secondChangedViewports.get());
+    if (result.started) {
+        emit widget.styleToolbarStateChanged();
+    }
+    return result.started;
+}
+
+bool SnowCanvasWidget::editSelectedArrowText() {
+    return m_impl->beginArrowText(QPointF(), true);
 }
 
 bool SnowCanvasWidget::createSerialNumberText() {
@@ -1904,6 +1948,9 @@ void SnowCanvasWidget::Impl::syncAfterEngineMutation(bool emitSignals) {
 }
 
 void SnowCanvasWidget::Impl::syncChangedViewports(SnowChangedViewportList changedViewports) {
+    const auto labels =
+        textInteraction.measureArrowText(runtimeBinding.engine(), runtimeBinding.viewportHandle());
+    runtimeBinding.syncChangedViewports(labels.changedViewports.get());
     runtimeBinding.syncChangedViewports(changedViewports);
 }
 
@@ -2280,6 +2327,11 @@ bool SnowCanvasWidget::Impl::handleMouseDoubleClick(QMouseEvent* event) {
     }
     flushLiveStrokeMoves();
     flushEraserMove();
+    if (event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier &&
+        beginArrowText(event->position(), false)) {
+        event->accept();
+        return true;
+    }
     return dispatchInput(
         event, snow_canvas_input::makePointerInput(*event, SNOW_POINTER_EVENT_DOUBLE_CLICK));
 }
@@ -2526,6 +2578,12 @@ bool SnowCanvasWidget::Impl::handleKeyPress(QKeyEvent* event) {
         }
     }
 
+    if (event != nullptr && !event->isAutoRepeat() && event->modifiers() == Qt::NoModifier &&
+        (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) &&
+        beginArrowText(QPointF(), true)) {
+        event->accept();
+        return true;
+    }
     const snow_canvas_widget_keyboard_flow::KeyPlan plan =
         snow_canvas_widget_keyboard_flow::planPress(event);
     if (!plan.hasEvent) {

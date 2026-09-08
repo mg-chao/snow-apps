@@ -2,8 +2,7 @@
 
 namespace {
 bool recognitionTool(ScreenshotActiveTool tool) {
-    return tool == ScreenshotActiveTool::Ocr || tool == ScreenshotActiveTool::Table ||
-           tool == ScreenshotActiveTool::Qr;
+    return isScreenshotRecognitionTool(tool);
 }
 
 bool drawingToolSupportsCursorMovement(ScreenshotActiveTool tool) {
@@ -155,13 +154,11 @@ bool ScreenshotInteractionState::manualSelecting() const {
 }
 
 bool ScreenshotInteractionState::marqueeSelecting() const {
-    return manualSelecting() &&
-           (!m_dragging || m_dragMode == ScreenshotSelectionDragMode::Marquee);
+    return manualSelecting() && (!m_dragging || m_dragMode == ScreenshotSelectionDragMode::Marquee);
 }
 
 bool ScreenshotInteractionState::modifyingSelection() const {
-    return manualSelecting() && m_dragging &&
-           m_dragMode != ScreenshotSelectionDragMode::Marquee;
+    return manualSelecting() && m_dragging && m_dragMode != ScreenshotSelectionDragMode::Marquee;
 }
 
 bool ScreenshotInteractionState::movingSelection() const {

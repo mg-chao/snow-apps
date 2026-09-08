@@ -69,7 +69,7 @@ class CatalogTranslator final : public QTranslator {
 void builtInCatalogIsCompleteAndValid() {
     const settings::SettingsCatalog& catalog = settings::builtInSettingsRegistry().catalog();
     require(catalog.validationErrors().isEmpty(), "built-in settings catalog must validate");
-    require(catalog.pages().size() == 8, "catalog must contain eight pages");
+    require(catalog.pages().size() == 9, "catalog must contain nine pages");
 
     qsizetype sectionCount = 0;
     qsizetype itemCount = 0;
@@ -100,8 +100,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 32 && itemCount == 132,
-            "catalog must contain thirty-two sections and one hundred thirty-two items");
+    require(sectionCount == 33 && itemCount == 135,
+            "catalog must contain thirty-three sections and one hundred thirty-five items");
     const auto* history =
         catalog.section(QStringLiteral("storage-and-privacy"), QStringLiteral("history"));
     require(history != nullptr && history->items.size() >= 2 &&
@@ -439,6 +439,25 @@ void builtInCatalogIsCompleteAndValid() {
         catalog.section(QStringLiteral("application-shortcuts"), QStringLiteral("other-shortcuts"));
     const auto* pinToScreenShortcuts = catalog.section(QStringLiteral("application-shortcuts"),
                                                        QStringLiteral("pin-to-screen-shortcuts"));
+    const auto* recordingShortcuts = catalog.section(QStringLiteral("application-shortcuts"),
+                                                     QStringLiteral("screen-recording-shortcuts"));
+    require(recordingShortcuts != nullptr && recordingShortcuts->items.size() == 4 &&
+                recordingShortcuts->reset ==
+                    settings::SettingsSectionReset::ScreenRecordingShortcuts,
+            "recording shortcuts must expose a resettable settings section");
+    const QStringList recordingActions = {
+        QStringLiteral("export"), QStringLiteral("toggle_recording"),
+        QStringLiteral("copy_to_clipboard"), QStringLiteral("end_recording")};
+    for (qsizetype index = 0; index < recordingActions.size(); ++index) {
+        const auto& item = recordingShortcuts->items.at(index);
+        require(item.id ==
+                        QStringLiteral("screen-recording-shortcut.") + recordingActions.at(index) &&
+                    item.configurationKey == QStringLiteral("screen_recording_shortcuts/") +
+                                                 recordingActions.at(index) &&
+                    std::get<settings::SettingsLocalShortcutDefinition>(item.payload).scope ==
+                        settings::SettingsLocalShortcutScope::ScreenRecording,
+                "recording shortcut fields must use stable IDs and a dedicated local scope");
+    }
     const bool everyHotkeySectionUsesTwoColumns =
         applicationShortcutsPage != nullptr &&
         std::all_of(
@@ -483,7 +502,7 @@ void builtInCatalogIsCompleteAndValid() {
                 QString::fromLatin1(contract.configurationKey);
     }
     require(
-        applicationShortcutsPage != nullptr && applicationShortcutsPage->sections.size() == 4 &&
+        applicationShortcutsPage != nullptr && applicationShortcutsPage->sections.size() == 5 &&
             everyHotkeySectionUsesTwoColumns && screenshotShortcuts != nullptr &&
             screenshotShortcuts->items.size() == 18 &&
             screenshotShortcuts->itemLayout == settings::SettingsSectionItemLayout::TwoColumnGrid &&
@@ -919,7 +938,7 @@ void globalHotkeyShortcutsHaveStableContracts() {
             "Screen recording must use the screenshot toolbar recording icon");
     require(screenRecordCopy != nullptr && screenRecordCopy->title.source != nullptr &&
                 QString::fromLatin1(screenRecordCopy->title.source) ==
-                    QStringLiteral("Start screen recording / stop and copy video") &&
+                    QStringLiteral("Start screen recording / stop and copy recording") &&
                 screenRecordCopyShortcut != nullptr && screenRecordCopyShortcut->iconFactory &&
                 screenRecordCopyShortcut->iconFactory() ==
                     snow_shot::presentation::icons::custom::outlined::ScreenshotCopy(),
@@ -1062,7 +1081,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 172 && index.search(QString()).size() == 172,
+    require(index.entries().size() == 177 && index.search(QString()).size() == 177,
             "search must generate all catalog nodes in catalog order");
     const auto middle = index.search(QStringLiteral("Reset Zoom"));
     require(!middle.isEmpty() && middle.constFirst().location.itemId ==
@@ -1098,7 +1117,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 8 && sections == 32 && items == 132,
+    require(pages == 9 && sections == 33 && items == 135,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

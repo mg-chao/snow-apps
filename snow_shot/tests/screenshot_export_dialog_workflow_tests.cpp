@@ -272,6 +272,93 @@ void persistence(const QTemporaryDir& temp) {
     require(adapter.setSavePathShortcuts({}), "shortcut cleanup failed");
 }
 
+void rememberedManualFormat(QWidget& owner, const QTemporaryDir& temp) {
+    const storage::ScreenshotSettings settings;
+    const QString key = QStringLiteral("screenshot/last_manual_save_format");
+    const auto cleanup = qScopeGuard(
+        [&] { static_cast<void>(settings.setLastManualSaveFormat(QStringLiteral("png"))); });
+    require(settings.lastManualSaveFormat() == QStringLiteral("png"),
+            "missing manual format must default to PNG");
+    const QString automaticFormat = settings.imageFormat();
+    const QString configPath =
+        QDir(storage::ApplicationStorage::instance().configurationDirectory())
+            .filePath("config.json");
+    for (const auto format :
+         {Format::Png, Format::Jpeg, Format::Bmp, Format::Webp, Format::Jxl, Format::Avif}) {
+        const QString value = ScreenshotImageFileService::formatKey(format);
+        require(settings.setLastManualSaveFormat(value) &&
+                    ScreenshotSaveDialogState::initial(QSize(160, 100)).output.format == format,
+                "manual format must initialize the next dialog for every supported format");
+        require(storage::ApplicationStorage::instance().flushNow().success,
+                "manual format flush failed");
+        storage::ConfigurationStore reloaded(configPath, true, false);
+        require(reloaded.value(key).toString() == value,
+                "manual format must survive configuration reload");
+    }
+    require(!settings.setLastManualSaveFormat(QStringLiteral("unsupported")) &&
+                settings.lastManualSaveFormat() == QStringLiteral("avif"),
+            "invalid format writes must preserve the previous preference");
+    const QString invalidPath = temp.filePath("invalid-format.json");
+    QFile invalid(invalidPath);
+    require(invalid.open(QIODevice::WriteOnly), "invalid format fixture unavailable");
+    invalid.write(R"({"screenshot":{"last_manual_save_format":"unsupported"}})");
+    invalid.close();
+    storage::ConfigurationStore invalidStore(invalidPath, true, false);
+    require(invalidStore.value(key).toString() == QStringLiteral("png"),
+            "invalid persisted manual format must fall back to PNG");
+
+    require(settings.setLastManualSaveFormat(QStringLiteral("jpeg")) &&
+                settings.setLastManualSaveDirectory(temp.path()),
+            "manual format dialog setup failed");
+    auto* modal = openDialog(owner, fixture());
+    auto* content = modal->contentWidget();
+    auto* format = child<AdSelect>(content, "saveFormatSelect");
+    require(format->currentValue().toString() == QStringLiteral("jpeg"),
+            "reopened dialog must select the remembered JPEG format");
+    format->setCurrentValue(QStringLiteral("bmp"));
+    modal->reject();
+    flush();
+    require(settings.lastManualSaveFormat() == QStringLiteral("jpeg"),
+            "cancel must not remember an unconfirmed format change");
+
+    QString savedPath;
+    modal = openDialog(owner, fixture(), [&](const QString& path) { savedPath = path; });
+    content = modal->contentWidget();
+    child<AdSelect>(content, "saveFormatSelect")->setCurrentValue(QStringLiteral("bmp"));
+    child<AdLineEdit>(content, "saveFilenameInput")->setText(QStringLiteral("remember-format"));
+    const QString existingPath = temp.filePath("remember-format.bmp");
+    QFile existing(existingPath);
+    require(existing.open(QIODevice::WriteOnly), "overwrite fixture unavailable");
+    existing.write("fixture");
+    existing.close();
+    modal->acceptButton()->click();
+    child<AdModal>(content, "saveOverwriteModal")->rejectButton()->click();
+    flush();
+    require(settings.lastManualSaveFormat() == QStringLiteral("jpeg"),
+            "declining overwrite must not remember the new format");
+
+    child<AdLineEdit>(content, "saveDirectoryInput")
+        ->setText(existingPath + QStringLiteral("/child"));
+    modal->acceptButton()->click();
+    processUntil([&] { return !child<QLabel>(content, "saveErrorLabel")->isHidden(); });
+    require(settings.lastManualSaveFormat() == QStringLiteral("bmp") && savedPath.isEmpty(),
+            "confirmed format must be remembered even when the file write fails");
+    child<AdLineEdit>(content, "saveDirectoryInput")->setText(temp.path());
+    modal->acceptButton()->click();
+    child<AdModal>(content, "saveOverwriteModal")->acceptButton()->click();
+    processUntil([&] { return !savedPath.isEmpty(); });
+    flush();
+    require(savedPath == existingPath && settings.imageFormat() == automaticFormat,
+            "manual save must use BMP without changing automatic-save format");
+    modal = openDialog(owner, fixture());
+    require(
+        child<AdSelect>(modal->contentWidget(), "saveFormatSelect")->currentValue().toString() ==
+            QStringLiteral("bmp"),
+        "successful save must initialize the next dialog with BMP");
+    modal->reject();
+    flush();
+}
+
 void stateRules(const QTemporaryDir& temp) {
     storage::ScreenshotSettings settings;
     const QString configured = temp.filePath("configured");
@@ -1549,6 +1636,9 @@ class ExportObserver final : public QObject {
 
 AdModal* openCountedDialog(QWidget& owner, const std::shared_ptr<ExportProbe>& probe,
                            ScreenshotSaveAsFileDialog::Saved saved = {}) {
+    // Pipeline pass counts require a PNG baseline independent of earlier saves.
+    require(storage::ScreenshotSettings().setLastManualSaveFormat(QStringLiteral("png")),
+            "pipeline format setup failed");
     auto rows = snow_shot::image_codec::srgbRowSource(fixture());
     rows.readRows = [read = rows.readRows, probe](int first, int count, qsizetype stride,
                                                   uchar* target, qsizetype capacity) {
@@ -2026,6 +2116,13 @@ int main(int argc, char* argv[]) {
         QWidget owner;
         owner.resize(1200, 800);
         owner.show();
+        if (app.arguments().contains(QStringLiteral("--remember-format"))) {
+            rememberedManualFormat(owner, temp);
+            ScreenshotExportCoordinator::shared().shutdown();
+            storage::ApplicationStorage::instance().shutdown();
+            std::cout << "Remembered manual save format tests passed\n";
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--shared-export"))) {
             encodingAndFullResolutionDisplay();
             saveReusesCalculatedResult(owner, temp);
@@ -2091,6 +2188,7 @@ int main(int argc, char* argv[]) {
         reusablePathInputsAndSettings();
         persistence(temp);
         stateRules(temp);
+        rememberedManualFormat(owner, temp);
         encodingAndFullResolutionDisplay();
         canvasInteraction();
         canvasZoomHint();

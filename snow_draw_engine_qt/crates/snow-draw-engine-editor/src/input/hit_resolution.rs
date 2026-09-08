@@ -12,6 +12,10 @@ impl Editor {
         canvas_point: Point<f64>,
         include_selection_handles: bool,
     ) -> CanvasHit {
+        let labels = self.arrow_text_previews(document);
+        let label_hit = labels
+            .iter()
+            .any(|(_, text)| text_hit_test(text, canvas_point, 0.0));
         let single_rect = self
             .selected_single_rectangle_snapshot(document)
             .map(|(_, rect)| rect);
@@ -46,6 +50,7 @@ impl Editor {
             && include_selection_handles
             && let Some((arrow_id, arrow)) = single_arrow.clone()
             && let Some(target) = self.arrow_hit_target(document, arrow_id, &arrow, canvas_point)
+            && !(label_hit && matches!(target, crate::state::ArrowHitTarget::Segment(_)))
         {
             return CanvasHit::ArrowHandle(target);
         }
@@ -69,6 +74,7 @@ impl Editor {
         if include_selection_handles
             && let Some((arrow_id, arrow)) = single_arrow
             && let Some(target) = self.arrow_hit_target(document, arrow_id, &arrow, canvas_point)
+            && !(label_hit && matches!(target, crate::state::ArrowHitTarget::Segment(_)))
         {
             return CanvasHit::ArrowHandle(target);
         }
@@ -132,7 +138,16 @@ impl Editor {
                     {
                         ElementKind::FreeDraw
                     }
-                    ElementData::Text(text) if text_hit_test(text, canvas_point, hit_tolerance) => {
+                    ElementData::Text(text)
+                        if text_hit_test(
+                            labels
+                                .iter()
+                                .find(|(text_id, _)| text_id == id)
+                                .map_or(text, |(_, text)| text),
+                            canvas_point,
+                            hit_tolerance,
+                        ) =>
+                    {
                         ElementKind::Text
                     }
                     ElementData::SerialNumber(serial)
@@ -143,8 +158,15 @@ impl Editor {
                     _ => continue,
                 }
             };
-            if Self::selection_scope_matches_document(document, policy.selection_scope, *id, kind) {
-                return CanvasHit::EligibleElement(*id, kind);
+            let owner = document.arrow_id_for_text(*id);
+            let (hit_id, kind) = owner.map_or((*id, kind), |id| (id, ElementKind::Arrow));
+            if Self::selection_scope_matches_document(
+                document,
+                policy.selection_scope,
+                hit_id,
+                kind,
+            ) {
+                return CanvasHit::EligibleElement(hit_id, kind);
             }
         }
         CanvasHit::Empty
@@ -157,7 +179,7 @@ mod tests {
     use crate::{ActiveTextDraftPresentation, ActiveTextDraftTarget};
     use snow_draw_engine_core::{
         ColorRgba8, CornerRadii, EngineConfig,
-        arrow::{ArrowEndpointEdge, StrokeStyle, ArrowType},
+        arrow::{ArrowEndpointEdge, ArrowType, StrokeStyle},
     };
     use snow_draw_engine_document::{
         ArrowData, CanvasFilterType, ElementMeta, FilterData, PenFilterData, Transaction,

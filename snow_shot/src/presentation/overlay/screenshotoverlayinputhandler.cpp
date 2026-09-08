@@ -35,13 +35,11 @@ bool wheelAdjustsStrokeWidth(ScreenshotActiveTool tool) {
 }
 
 bool recognitionTool(ScreenshotActiveTool tool) {
-    return tool == ScreenshotActiveTool::Ocr || tool == ScreenshotActiveTool::Table ||
-           tool == ScreenshotActiveTool::Qr;
+    return isScreenshotRecognitionTool(tool);
 }
 
 bool screenshotCompletionGestureTool(ScreenshotActiveTool tool) {
-    return tool != ScreenshotActiveTool::Select && tool != ScreenshotActiveTool::Ocr &&
-           tool != ScreenshotActiveTool::Table && tool != ScreenshotActiveTool::Qr;
+    return tool != ScreenshotActiveTool::Select && !isScreenshotRecognitionTool(tool);
 }
 
 } // namespace
@@ -184,6 +182,18 @@ void ScreenshotOverlayInputHandler::handleMousePress(ScreenshotOverlayWindow* ov
                        hitMode == ScreenshotSelectionDragMode::None
                            ? ScreenshotSelectionDragMode::Marquee
                            : hitMode);
+}
+
+void ScreenshotOverlayInputHandler::beginExternalSelectionDrag(const QPointF& canvasPosition) {
+    if (m_externalDragActive) {
+        beginSelectionDrag(nullptr, canvasPosition, ScreenshotSelectionDragMode::Marquee);
+    }
+}
+
+void ScreenshotOverlayInputHandler::updateExternalSelectionDrag(const QPointF& canvasPosition) {
+    if (m_externalDragActive && m_context.interaction.dragging()) {
+        updateSelectionDrag(canvasPosition);
+    }
 }
 
 void ScreenshotOverlayInputHandler::beginSelectionDrag(ScreenshotOverlayWindow* overlay,

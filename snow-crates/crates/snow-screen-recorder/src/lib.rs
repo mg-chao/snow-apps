@@ -2,7 +2,8 @@ pub use snow_recording_export::{
     EditingSession, ExportAudioOutputConfig, ExportAudioTrackRequest, ExportExecutionMode,
     ExportFormat, ExportPathKind, ExportPerformanceConfig, ExportProgress, ExportRequest,
     ExportResult, ExportRuntimeReport, ExportStage, ExportStageDurationsMs, ExportTask,
-    MouseEditConfig, RecordingExportError, SoftwareH264Priority, VideoCodec,
+    MouseEditConfig, RecordingExportError, SoftwareH264Priority, StreamingAudioConfig,
+    StreamingEncoder, StreamingEncoderConfig, StreamingEncoderReport, VideoCodec,
 };
 pub use snow_recording_model::{
     AudioSampleFormat, AudioTrackManifest, AudioTrackRole, ClickEventRecord, CursorFrameRecord,
@@ -12,7 +13,8 @@ pub use snow_recording_model::{
     read_mouse_records, write_mouse_records,
 };
 pub use snow_recording_runtime::{
-    AudioChannels, CaptureBackendKind, MonitorSelector, RecordingAudioConfig,
+    AudioChannels, CaptureBackendKind, DirectRecordingConfig, DirectRecordingReport,
+    DirectRecordingSession, KeyboardOverlayConfig, MonitorSelector, RecordingAudioConfig,
     RecordingAudioTrackConfig, RecordingAudioTrackSource, RecordingConfig, RecordingRegion,
     RecordingSession, RecordingState, RecordingTarget, ScreenRecorderError, WindowSelector,
 };

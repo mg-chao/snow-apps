@@ -8,6 +8,7 @@ use super::TextStyle;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextCommitTarget {
     New,
+    NewArrow(ElementId),
     Existing(ElementId),
 }
 
@@ -45,7 +46,7 @@ impl TextDraftCommit {
 
     pub fn existing_id(&self) -> Option<ElementId> {
         match self.target {
-            TextCommitTarget::New => None,
+            TextCommitTarget::New | TextCommitTarget::NewArrow(_) => None,
             TextCommitTarget::Existing(id) => Some(id),
         }
     }

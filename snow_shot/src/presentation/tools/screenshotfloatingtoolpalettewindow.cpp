@@ -40,8 +40,8 @@
 namespace {
 namespace native = screenshot_floating_palette_native;
 
-constexpr QSize kToolbarWindowPresetSize(1142, 142);
-}
+constexpr QSize kToolbarWindowPresetSize(1242, 142);
+} // namespace
 
 ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
     const ScreenshotToolPalette::Options& options, QWidget* parent)
@@ -78,27 +78,27 @@ ScreenshotFloatingToolPaletteWindow::ScreenshotFloatingToolPaletteWindow(
     registerMaterializedScope(m_paletteHost);
     connect(m_paletteHost->palette(), &ScreenshotToolPalette::materializedScope, this,
             &ScreenshotFloatingToolPaletteWindow::registerMaterializedScope);
-    connect(
-        m_dpiController, &adqt::widgets::AdDpiStableWindowController::scaleCommitCompleted, this,
-        [this](const adqt::widgets::AdControlScaleContext& context, const QSize&) {
-            m_processingNativeDpiChange = true;
-            m_committedWindowDevicePixelRatio = context.currentDpr;
-            ensureReferenceDevicePixelRatio();
-            const adqt::widgets::AdControlScaleContext effectiveContext =
-                adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(
-                    m_referenceDevicePixelRatio, context.currentDpr, m_paletteScaleMultiplier,
-                    context.revision);
-            if (m_scaleScope != nullptr) {
-                m_scaleScope->publishScale(effectiveContext);
-            }
-            if (m_paletteHost != nullptr) {
-                m_paletteHost->commitDpiScale(effectiveContext.logicalScale,
-                                              ScreenshotToolPaletteHost::defaultShadowMargins());
-            }
-            refreshGeometryForVisibleContent(true, true);
-            m_processingNativeDpiChange = false;
-            emit dpiScaleCommitCompleted();
-        });
+    connect(m_dpiController, &adqt::widgets::AdDpiStableWindowController::scaleCommitCompleted,
+            this, [this](const adqt::widgets::AdControlScaleContext& context, const QSize&) {
+                m_processingNativeDpiChange = true;
+                m_committedWindowDevicePixelRatio = context.currentDpr;
+                ensureReferenceDevicePixelRatio();
+                const adqt::widgets::AdControlScaleContext effectiveContext =
+                    adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(
+                        m_referenceDevicePixelRatio, context.currentDpr, m_paletteScaleMultiplier,
+                        context.revision);
+                if (m_scaleScope != nullptr) {
+                    m_scaleScope->publishScale(effectiveContext);
+                }
+                if (m_paletteHost != nullptr) {
+                    m_paletteHost->commitDpiScale(
+                        effectiveContext.logicalScale,
+                        ScreenshotToolPaletteHost::defaultShadowMargins());
+                }
+                refreshGeometryForVisibleContent(true, true);
+                m_processingNativeDpiChange = false;
+                emit dpiScaleCommitCompleted();
+            });
 
     connect(m_paletteHost, &ScreenshotToolPaletteHost::dragStarted, this,
             [this](const QPoint& pos) { beginPaletteDrag(pos); });
@@ -245,9 +245,9 @@ void ScreenshotFloatingToolPaletteWindow::prepareForDisplay() {
     const bool cachedContentOffsetChanged = m_lastAppliedContentOffset != contentOffset();
     const bool cachedMainRectChanged =
         m_lastAppliedMainToolbarContentRect != mainToolbarContentRect();
-    const bool hostAnchorChanged = m_paletteHost != nullptr &&
-                                   (m_paletteHost->pos() != QPoint(0, 0) ||
-                                    m_paletteHost->size() != windowSize);
+    const bool hostAnchorChanged =
+        m_paletteHost != nullptr &&
+        (m_paletteHost->pos() != QPoint(0, 0) || m_paletteHost->size() != windowSize);
     if (m_lastAppliedWindowDevicePixelRatio <= 0.0 ||
         !qFuzzyCompare(m_lastAppliedWindowDevicePixelRatio + 1.0, currentDpr + 1.0) ||
         windowSizeChanged || cachedWindowSizeChanged || cachedContentOffsetChanged ||
@@ -373,9 +373,9 @@ QRect ScreenshotFloatingToolPaletteWindow::topRightMainToolbarContentRect() cons
 }
 
 ScreenshotToolbarPlacementSnapshot ScreenshotFloatingToolPaletteWindow::placementSnapshot() const {
-    ScreenshotToolbarPlacementSnapshot snapshot =
-        m_paletteHost != nullptr ? m_paletteHost->placementSnapshot()
-                                 : ScreenshotToolbarPlacementSnapshot{};
+    ScreenshotToolbarPlacementSnapshot snapshot = m_paletteHost != nullptr
+                                                      ? m_paletteHost->placementSnapshot()
+                                                      : ScreenshotToolbarPlacementSnapshot{};
     snapshot.contentOffset = contentOffset();
     return snapshot;
 }
@@ -460,13 +460,22 @@ bool ScreenshotFloatingToolPaletteWindow::event(QEvent* event) {
 }
 
 bool ScreenshotFloatingToolPaletteWindow::eventFilter(QObject* watched, QEvent* event) {
-    if (watched == m_watermarkTextEditor && event != nullptr) {
+    auto* watchedWidget = qobject_cast<QWidget*>(watched);
+    QLineEdit* textEditor = nullptr;
+    for (QWidget* widget = watchedWidget; widget != nullptr && widget != this;
+         widget = widget->parentWidget()) {
+        if (widget->property("snowShotFloatingTextFocusRegistered").toBool()) {
+            textEditor = qobject_cast<QLineEdit*>(widget);
+            break;
+        }
+    }
+    if (textEditor != nullptr && event != nullptr) {
         if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::FocusIn) {
-            beginKeyboardFocusInteraction(m_watermarkTextEditor);
-        } else if (event->type() == QEvent::FocusOut) {
-            const QPointer<QWidget> editor = m_watermarkTextEditor;
+            beginKeyboardFocusInteraction(textEditor);
+        } else if (watched == textEditor && event->type() == QEvent::FocusOut) {
+            const QPointer<QWidget> editor = textEditor;
             QTimer::singleShot(0, this, [this, editor]() {
-                if (editor == nullptr || !editor->hasFocus()) {
+                if (editor != nullptr && !editor->hasFocus()) {
                     endKeyboardFocusInteraction(editor);
                 }
             });
@@ -538,8 +547,7 @@ void ScreenshotFloatingToolPaletteWindow::updatePaletteGeometryForVisibleContent
         m_paletteHost->move(0, 0);
     }
 #if defined(SNOW_SHOT_TEST_HOOKS)
-    if (previousHostSize != m_paletteHost->size() ||
-        previousHostPosition != m_paletteHost->pos()) {
+    if (previousHostSize != m_paletteHost->size() || previousHostPosition != m_paletteHost->pos()) {
         ++m_paletteGeometryRefreshCount;
     }
 #endif
@@ -753,10 +761,9 @@ bool ScreenshotFloatingToolPaletteWindow::commitGeometryUpdate(bool preserveCont
         }
     }
     if (m_processingNativeDpiChange) {
-        m_lastRequestedContentPosition =
-            m_draggingPalette && m_dragPhysicalAnchorValid
-                ? m_dragContentPosition.toPoint()
-                : contentPosition();
+        m_lastRequestedContentPosition = m_draggingPalette && m_dragPhysicalAnchorValid
+                                             ? m_dragContentPosition.toPoint()
+                                             : contentPosition();
         m_lastRequestedContentPositionValid = true;
     }
     if (m_draggingPalette && hasContentAnchor) {
@@ -851,9 +858,9 @@ void ScreenshotFloatingToolPaletteWindow::updateMainToolbarPositionSnapshot() {
         return;
     }
 
-    const QPoint currentContentPosition =
-        m_draggingPalette && m_dragPhysicalAnchorValid ? m_dragContentPosition.toPoint()
-                                                       : contentPosition();
+    const QPoint currentContentPosition = m_draggingPalette && m_dragPhysicalAnchorValid
+                                              ? m_dragContentPosition.toPoint()
+                                              : contentPosition();
     m_lastMainToolbarGlobalTopLeft = currentContentPosition + mainRect.topLeft();
     m_lastMainToolbarGlobalTopLeftValid = true;
 }
@@ -908,15 +915,14 @@ void ScreenshotFloatingToolPaletteWindow::beginPaletteDragAtPhysicalPosition(
 
     m_draggingPalette = true;
     m_lastDragPosition = dragPositionForEvent(globalPosition, physicalPosition);
-    if (m_dpiController != nullptr &&
-        m_dpiController->captureBaseline(targetDevicePixelRatio())) {
+    if (m_dpiController != nullptr && m_dpiController->captureBaseline(targetDevicePixelRatio())) {
         m_referenceDevicePixelRatio = m_dpiController->referenceDpr();
     }
     if (m_dpiController != nullptr && m_dpiController->beginPhysicalDrag(physicalPosition)) {
         m_dragPhysicalAnchorValid = true;
         m_stablePhysicalWindowSize = m_dpiController->stablePhysicalFrameSize();
         m_dragPhysicalCursorToWindowOffset = m_dpiController->physicalDragAnchor();
-            m_dragContentPosition = QPointF(contentPosition());
+        m_dragContentPosition = QPointF(contentPosition());
         raise();
         return;
     }
@@ -991,8 +997,8 @@ bool ScreenshotFloatingToolPaletteWindow::updatePaletteDragAtPhysicalPosition(
     const QPointF dragPosition = dragPositionForEvent(globalPosition, physicalPosition);
     m_dragContentPosition += dragPosition - m_lastDragPosition;
     m_lastDragPosition = dragPosition;
-    bool moved = m_dpiController != nullptr &&
-                 m_dpiController->moveForPhysicalCursor(physicalPosition);
+    bool moved =
+        m_dpiController != nullptr && m_dpiController->moveForPhysicalCursor(physicalPosition);
     if (!moved) {
         const QRect targetNativeGeometry = nativeWindowGeometryForPhysicalDrag(
             physicalPosition, m_dragPhysicalCursorToWindowOffset, m_stablePhysicalWindowSize);
@@ -1051,11 +1057,12 @@ bool ScreenshotFloatingToolPaletteWindow::handleToolbarWheel(QWheelEvent* event)
 void ScreenshotFloatingToolPaletteWindow::applyWindowAttributes() {
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
-    setAttribute(Qt::WA_ShowWithoutActivating, true);
-    // This no-activate tool window must still dispatch tooltip events.
+    const bool acceptsFocus = !windowFlags().testFlag(Qt::WindowDoesNotAcceptFocus);
+    setAttribute(Qt::WA_ShowWithoutActivating, !acceptsFocus);
+    // Tool windows must still dispatch tooltip events.
     setAttribute(Qt::WA_AlwaysShowToolTips, true);
     setAutoFillBackground(false);
-    setFocusPolicy(Qt::NoFocus);
+    setFocusPolicy(acceptsFocus ? Qt::StrongFocus : Qt::NoFocus);
 }
 
 void ScreenshotFloatingToolPaletteWindow::prewarmScopeIcons(QWidget* scope) {
@@ -1066,8 +1073,7 @@ void ScreenshotFloatingToolPaletteWindow::prewarmScopeIcons(QWidget* scope) {
     const qreal dpr = m_placementScreen != nullptr
                           ? m_placementScreen->devicePixelRatio()
                           : (screen() != nullptr ? screen()->devicePixelRatio() : 1.0);
-    const QList<adqt::widgets::AdButton*> buttons =
-        scope->findChildren<adqt::widgets::AdButton*>();
+    const QList<adqt::widgets::AdButton*> buttons = scope->findChildren<adqt::widgets::AdButton*>();
     for (const auto* button : buttons) {
         if (button == nullptr || !button->iconRef().isValid()) {
             continue;
@@ -1085,18 +1091,39 @@ void ScreenshotFloatingToolPaletteWindow::registerMaterializedScope(QWidget* sco
     if (scope == nullptr) {
         return;
     }
-    if (auto* editor = scope->findChild<QLineEdit*>(
-            QStringLiteral("screenshotWatermarkTextEdit"))) {
-        if (m_watermarkTextEditor != editor) {
-            m_watermarkTextEditor = editor;
-            editor->installEventFilter(this);
-            connect(editor, &QLineEdit::editingFinished, this, [this, editor]() {
-                QTimer::singleShot(0, this,
-                                   [this, editor]() { endKeyboardFocusInteraction(editor); });
-            });
+    const auto selects = scope->findChildren<adqt::widgets::AdSelect*>();
+    for (QLineEdit* editor : scope->findChildren<QLineEdit*>()) {
+        // Searchable selects own their focus interaction for the popup's lifetime.
+        const bool selectEditor =
+            std::any_of(selects.cbegin(), selects.cend(),
+                        [editor](const auto* select) { return select->isAncestorOf(editor); });
+        if (selectEditor || editor->isReadOnly() || editor->focusPolicy() == Qt::NoFocus ||
+            editor->property("snowShotFloatingTextFocusRegistered").toBool()) {
+            continue;
         }
+        editor->setProperty("snowShotFloatingTextFocusRegistered", true);
+        editor->installEventFilter(this);
+        // Prefix icons can consume the press before it reaches the line edit.
+        for (QWidget* child : editor->findChildren<QWidget*>()) {
+            child->installEventFilter(this);
+        }
+        const QPointer<QWidget> guardedEditor = editor;
+        connect(editor, &QLineEdit::editingFinished, this, [this, guardedEditor]() {
+            QTimer::singleShot(0, this, [this, guardedEditor]() {
+                if (guardedEditor != nullptr) {
+                    endKeyboardFocusInteraction(guardedEditor);
+                }
+            });
+        });
+        connect(editor, &QObject::destroyed, this, [this]() {
+            QTimer::singleShot(0, this, [this]() {
+                if (m_keyboardFocusInteractionActive && m_keyboardFocusEditor == nullptr) {
+                    endKeyboardFocusInteraction();
+                }
+            });
+        });
     }
-    for (adqt::widgets::AdSelect* select : scope->findChildren<adqt::widgets::AdSelect*>()) {
+    for (adqt::widgets::AdSelect* select : selects) {
         if (select == nullptr || !select->searchEnabled() || select->lineEdit() == nullptr ||
             select->property("snowShotFloatingFocusRegistered").toBool()) {
             continue;
@@ -1112,8 +1139,7 @@ void ScreenshotFloatingToolPaletteWindow::registerMaterializedScope(QWidget* sco
                 });
     }
     for (adqt::widgets::AdButton* button : scope->findChildren<adqt::widgets::AdButton*>()) {
-        if (button == nullptr ||
-            button->property("snowShotDpiSurfaceRegistered").toBool()) {
+        if (button == nullptr || button->property("snowShotDpiSurfaceRegistered").toBool()) {
             continue;
         }
         button->setProperty("snowShotDpiSurfaceRegistered", true);
@@ -1165,11 +1191,12 @@ void ScreenshotFloatingToolPaletteWindow::endKeyboardFocusInteraction(QWidget* e
     }
 
     m_keyboardFocusInteractionActive = false;
+    const bool acceptsFocus = !windowFlags().testFlag(Qt::WindowDoesNotAcceptFocus);
     if (QWindow* handle = windowHandle()) {
-        handle->setFlag(Qt::WindowDoesNotAcceptFocus, true);
+        handle->setFlag(Qt::WindowDoesNotAcceptFocus, !acceptsFocus);
     }
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    static_cast<void>(native::setKeyboardFocusEnabled(winId(), false));
+    static_cast<void>(native::setKeyboardFocusEnabled(winId(), acceptsFocus));
 #endif
 
     QWidget* owner =
@@ -1203,8 +1230,9 @@ ScreenshotFloatingToolPaletteWindow::dragPositionForEvent(const QPoint& globalPo
     return QPointF(globalPosition);
 }
 
-QPointF ScreenshotFloatingToolPaletteWindow::dragPositionForEvent(
-    const QPoint& globalPosition, const QPointF& physicalPosition) const {
+QPointF
+ScreenshotFloatingToolPaletteWindow::dragPositionForEvent(const QPoint& globalPosition,
+                                                          const QPointF& physicalPosition) const {
     return ScreenshotGeometryMapper::logicalDragPositionForPhysicalPoint(
         QPointF(globalPosition), physicalPosition, m_movementLogicalBounds,
         m_movementPhysicalBounds);

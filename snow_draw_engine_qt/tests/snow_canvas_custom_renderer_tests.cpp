@@ -13,6 +13,7 @@
 #include <QCursor>
 #include <QImage>
 #include <QMouseEvent>
+#include <QKeyEvent>
 #include <QPainter>
 #include <QPixmap>
 
@@ -431,6 +432,97 @@ void canvasContentVisibilityPreservesCustomRenderingAndState() {
     canvas.setCustomRenderer(nullptr);
 }
 
+void documentResetClearsElementsAndPreservesViews() {
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
+    SnowCanvasWidget secondView(runtime);
+    canvas.resize(100, 100);
+    secondView.resize(100, 100);
+    canvas.show();
+    secondView.show();
+    QApplication::processEvents();
+    RecordingRenderer renderer;
+    canvas.setCustomRenderer(&renderer);
+    const QImage empty = renderCanvas(canvas);
+    const QImage secondEmpty = renderCanvas(secondView);
+    const auto viewport = canvas.viewportId();
+    const auto secondViewport = secondView.viewportId();
+    const auto transform = canvas.canvasToViewTransform();
+    const bool clearBackground = canvas.clearBackgroundEnabled();
+    for (const bool selected : {false, true}) {
+        require(canvas.setCanvasTool(SnowCanvasTool::Shape), "shape tool should activate");
+        for (const QPointF start : {QPointF(10, 10), QPointF(60, 60)}) {
+            const QPointF end = start + QPointF(25, 25);
+            sendMouseEvent(canvas, QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
+            sendMouseEvent(canvas, QEvent::MouseMove, end, Qt::NoButton, Qt::LeftButton);
+            sendMouseEvent(canvas, QEvent::MouseButtonRelease, end, Qt::LeftButton, Qt::NoButton);
+        }
+        require(canvas.setCanvasTool(SnowCanvasTool::Select), "Select should activate");
+        if (selected) {
+            sendMouseEvent(canvas, QEvent::MouseButtonPress, QPointF(10, 20), Qt::LeftButton,
+                           Qt::LeftButton);
+            sendMouseEvent(canvas, QEvent::MouseButtonRelease, QPointF(10, 20), Qt::LeftButton,
+                           Qt::NoButton);
+            require(canvas.canvasStyleToolbarState().source ==
+                        SnowCanvasStyleToolbarSource::SelectedRectangle,
+                    "reset fixture should select one of its elements");
+        } else {
+            require(canvas.resetEditingState(), "selection should clear");
+        }
+        require(renderCanvas(canvas) != empty && renderCanvas(secondView) != secondEmpty,
+                "both viewports should display document elements before reset");
+        require(canvas.clearDocument(), "document reset should succeed");
+        require(renderCanvas(canvas) == empty && renderCanvas(secondView) == secondEmpty,
+                "reset should clear all elements and refresh every viewport");
+        require(!canvas.canvasHistoryState().canUndo && !canvas.canvasHistoryState().canRedo,
+                "reset should clear undo and redo history");
+        require(canvas.viewportId() == viewport && secondView.viewportId() == secondViewport &&
+                    canvas.canvasToViewTransform() == transform &&
+                    canvas.clearBackgroundEnabled() == clearBackground,
+                "reset should preserve viewport identity, camera and background settings");
+        require(canvas.clearDocument() && renderCanvas(canvas) == empty,
+                "resetting an empty document should be harmless");
+    }
+    require(canvas.setCanvasTool(SnowCanvasTool::Shape), "shape tool should activate");
+    SnowCanvasShapeStyle style = canvas.canvasStyleToolbarState().shapeStyle;
+    style.strokeWidth = 9.0;
+    require(canvas.setCanvasShapeStylePatch(style, SnowCanvasShapeStylePropertyStrokeWidth,
+                                            SnowCanvasShapeKind::Rectangle),
+            "creation style should update");
+    require(canvas.clearDocument() && canvas.canvasTool() == SnowCanvasTool::Shape &&
+                canvas.canvasStyleToolbarState().shapeStyle.strokeWidth == 9.0,
+            "reset should preserve the active tool and creation styles");
+    require(canvas.setCanvasTool(SnowCanvasTool::Text), "text tool should activate");
+    sendMouseEvent(canvas, QEvent::MouseButtonPress, QPointF(30, 30), Qt::LeftButton,
+                   Qt::LeftButton);
+    sendMouseEvent(canvas, QEvent::MouseButtonRelease, QPointF(30, 30), Qt::LeftButton,
+                   Qt::NoButton);
+    QKeyEvent text(QEvent::KeyPress, Qt::Key_A, Qt::NoModifier, QStringLiteral("a"));
+    QApplication::sendEvent(&canvas, &text);
+    require(canvas.hasActiveTextEditing(), "reset fixture should have a pending text draft");
+    require(canvas.clearDocument() && !canvas.hasActiveTextEditing(),
+            "reset should finish and remove pending text editing");
+    require(canvas.setCanvasTool(SnowCanvasTool::Select), "Select should activate");
+    QApplication::processEvents();
+    require(renderCanvas(canvas) == empty && !canvas.canvasHistoryState().canUndo,
+            "a pending text draft must not reappear after reset");
+    require(secondView.setCanvasTool(SnowCanvasTool::Text), "second view should activate Text");
+    sendMouseEvent(secondView, QEvent::MouseButtonPress, QPointF(30, 30), Qt::LeftButton,
+                   Qt::LeftButton);
+    sendMouseEvent(secondView, QEvent::MouseButtonRelease, QPointF(30, 30), Qt::LeftButton,
+                   Qt::NoButton);
+    QApplication::sendEvent(&secondView, &text);
+    require(secondView.hasActiveTextEditing(), "second view should have a pending text draft");
+    require(canvas.clearDocument() && !secondView.hasActiveTextEditing(),
+            "reset should close pending text editors in every attached view");
+    require(canvas.setCanvasTool(SnowCanvasTool::Select), "Select should activate");
+    QApplication::processEvents();
+    require(renderCanvas(canvas) == empty && renderCanvas(secondView) == secondEmpty &&
+                !canvas.canvasHistoryState().canUndo,
+            "another viewport's pending draft must not survive document reset");
+    canvas.setCustomRenderer(nullptr);
+}
+
 void coalescedSceneRevisionsInvalidateEveryDirtyRegion() {
     SnowCanvasWidget canvas;
     canvas.resize(240, 120);
@@ -598,10 +690,15 @@ void rotationHandleCursorMatchesTheReferencePlatformBehavior() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--document-reset-only"))) {
+        documentResetClearsElementsAndPreservesViews();
+        return 0;
+    }
     rotationHandleCursorMatchesTheReferencePlatformBehavior();
     customRendererContractIsOrderedAndIsolated();
     runtimeExportUsesTheRequestedCanvasOrigin();
     canvasContentVisibilityPreservesCustomRenderingAndState();
+    documentResetClearsElementsAndPreservesViews();
     coalescedSceneRevisionsInvalidateEveryDirtyRegion();
     rectangleStrokeStylesRenderDistinctPatterns();
     highlightItemsRenderWithMultiplyBlendMode();

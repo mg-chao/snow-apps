@@ -1,4 +1,6 @@
 #include "demo_window.h"
+
+#include <QEvent>
 #include "demo_serial_number_controls.h"
 
 #include <QCheckBox>
@@ -464,8 +466,8 @@ SnowCanvasArrowhead arrowheadFromComboBox(const QComboBox* comboBox) {
 }
 
 SnowCanvasStrokeStyle arrowStrokeStyleFromComboBox(const QComboBox* comboBox) {
-    return static_cast<SnowCanvasStrokeStyle>(
-        comboBox != nullptr ? comboBox->currentData().toInt() : 0);
+    return static_cast<SnowCanvasStrokeStyle>(comboBox != nullptr ? comboBox->currentData().toInt()
+                                                                  : 0);
 }
 
 SnowCanvasArrowType arrowTypeFromComboBox(const QComboBox* comboBox) {
@@ -594,6 +596,18 @@ void DemoWindow::initializeUi() {
     toolGrid->addWidget(m_textToolButton, 1, 1);
     toolGrid->addWidget(m_serialNumberToolButton, 2, 0, 1, 2);
     toolLayout->addLayout(toolGrid);
+
+    m_editArrowTextToolButton = new QToolButton(toolPanel);
+    m_editArrowTextToolButton->setText(tr("Edit arrow text"));
+    m_editArrowTextToolButton->setToolTip(
+        tr("Edit the selected arrow label. You can also double-click an arrow or press Enter."));
+    m_editArrowTextToolButton->setFocusPolicy(Qt::NoFocus);
+    m_editArrowTextToolButton->setEnabled(false);
+    toolLayout->addWidget(m_editArrowTextToolButton);
+    connect(m_editArrowTextToolButton, &QToolButton::clicked, this, [this]() {
+        m_canvas->editSelectedArrowText();
+        refocusCanvas();
+    });
 
     auto* serialTitle = new QLabel("Serial Number", toolPanel);
     serialTitle->setStyleSheet("font-weight: 600; color: #17232e;");
@@ -1012,6 +1026,12 @@ void DemoWindow::syncSnapControls() {
 }
 
 void DemoWindow::syncStyleControls() {
+    if (m_editArrowTextToolButton != nullptr) {
+        m_editArrowTextToolButton->setText(tr("Edit arrow text"));
+        m_editArrowTextToolButton->setToolTip(tr(
+            "Edit the selected arrow label. You can also double-click an arrow or press Enter."));
+        m_editArrowTextToolButton->setEnabled(m_canvas->canvasStyleToolbarState().canEditArrowText);
+    }
     const SnowCanvasStyleToolbarState state = m_canvas->canvasStyleToolbarState();
     m_primaryColor = state.shapeStyle.stroke;
     m_fillColor = state.shapeStyle.fill;
@@ -1524,4 +1544,11 @@ void DemoWindow::updateColorButtonAppearance(QPushButton* button, const QColor& 
                                   "}")
                               .arg(color.name(QColor::HexArgb))
                               .arg(textColor.name()));
+}
+
+void DemoWindow::changeEvent(QEvent* event) {
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange && m_editArrowTextToolButton != nullptr) {
+        syncStyleControls();
+    }
 }

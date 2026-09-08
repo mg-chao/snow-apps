@@ -1,5 +1,6 @@
 #include <QApplication>
 #include <QCoreApplication>
+#include <QHelpEvent>
 #include <QListView>
 #include <QPointer>
 #include <QPushButton>
@@ -8,6 +9,7 @@
 
 #include "widgets/date_picker.h"
 #include "widgets/detail/overlay_popup_surface.h"
+#include "widgets/detail/qt_tooltip_bridge.h"
 #include "widgets/popover.h"
 #include "widgets/select.h"
 #include "widgets/tooltip.h"
@@ -81,6 +83,7 @@ class QtToolPopupTest final : public QObject {
 
  private slots:
   void popoverReleasesAndRecreatesNativeResources();
+  void popupTriggerTooltipsRequireOptIn();
   void selectReleasesAndRecreatesNativeResources();
   void tooltipReleasesAndRecreatesNativeResources();
   void datePickerReleasesAndRecreatesNativeResources();
@@ -88,6 +91,38 @@ class QtToolPopupTest final : public QObject {
   void recreateLifetimeStillDestroysPopupSurface();
   void retainedPopupCachesFollowVisibilityAndStayComponentLocal();
 };
+
+void QtToolPopupTest::popupTriggerTooltipsRequireOptIn() {
+  AdTooltip::installApplicationTooltips();
+  QWidget host;
+  host.resize(640, 360);
+  auto* trigger = new QPushButton(QStringLiteral("Draw"), &host);
+  trigger->setGeometry(24, 24, 100, 32);
+  trigger->setToolTip(QStringLiteral("Draw (2)"));
+  AdPopover popover;
+  popover.setSourceWidget(trigger);
+  popover.setPopupLayerMode(AdPopover::PopupLayerMode::QtTool);
+  popover.setText(QStringLiteral("Drawing options"));
+  host.show();
+  QCoreApplication::processEvents();
+  popover.show();
+  QCoreApplication::processEvents();
+  QVERIFY(popover.isVisible());
+
+  for (bool enabled : {false, true, false}) {
+    trigger->setProperty(adqt::widgets::detail::kPopupTriggerTooltipEnabledProperty, enabled);
+    const QPoint center = trigger->rect().center();
+    QHelpEvent help(QEvent::ToolTip, center, trigger->mapToGlobal(center));
+    QApplication::sendEvent(trigger, &help);
+    QCOMPARE(help.isAccepted(), enabled);
+    bool visible = false;
+    for (auto* tooltip : qApp->findChildren<AdTooltip*>()) {
+      visible |= tooltip->isVisible() && tooltip->targetWidget() == trigger &&
+                 tooltip->text() == trigger->toolTip();
+    }
+    QCOMPARE(visible, enabled);
+  }
+}
 
 void QtToolPopupTest::popoverReleasesAndRecreatesNativeResources() {
   QWidget host;

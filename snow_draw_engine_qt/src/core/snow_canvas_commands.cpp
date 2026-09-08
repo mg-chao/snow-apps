@@ -30,6 +30,7 @@ bool getGridConfigRaw(SnowRuntime runtime, SnowViewport viewport, SnowGridConfig
 SnowTextCommitDraft CommitTextRequest::toAbi() const {
     SnowTextCommitDraft draft{};
     draft.element_id = elementId;
+    draft.arrow_id = arrowId;
     draft.has_existing_element = hasExistingElement ? 1 : 0;
     draft.auto_resize = autoResize ? 1 : 0;
     draft.update_default_style = updateDefaultStyle ? 1 : 0;
@@ -45,6 +46,7 @@ SnowTextCommitDraft CommitTextRequest::toAbi() const {
 SnowActiveTextDraftPresentation ActiveTextDraftPresentationRequest::toAbi() const {
     SnowActiveTextDraftPresentation draft{};
     draft.element_id = elementId;
+    draft.arrow_id = arrowId;
     draft.has_existing_element = hasExistingElement ? 1 : 0;
     draft.auto_resize = autoResize ? 1 : 0;
     draft.center_x = centerX;

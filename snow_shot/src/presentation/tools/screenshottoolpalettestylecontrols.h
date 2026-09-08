@@ -459,7 +459,7 @@ class ScreenshotToolPaletteStyleControls final {
     std::unique_ptr<ScreenshotToolPaletteIconOptionEditor> m_textAlignmentEditor;
     std::unique_ptr<ScreenshotToolPaletteColorEditor> m_serialNumberColorEditor;
     std::unique_ptr<ScreenshotToolPaletteFillEditor> m_serialNumberFillEditor;
-    CornerRadiusEditorButton* m_serialNumberEditor = nullptr;
+    adqt::widgets::AdLineEdit* m_serialNumberEditor = nullptr;
     std::unique_ptr<ScreenshotToolPaletteFontEditor> m_serialNumberFontEditor;
     bool m_watermarkColorPreviewPending = false;
     std::unique_ptr<ScreenshotToolPaletteColorEditor> m_watermarkColorEditor;

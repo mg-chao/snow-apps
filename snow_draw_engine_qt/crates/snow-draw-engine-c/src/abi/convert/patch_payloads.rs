@@ -8,10 +8,10 @@ use snow_draw_engine::{
 use crate::abi::types::*;
 
 use super::{
-    snow_arrow_path_commands_from_rust, snow_arrow_points_from_rust,
-    snow_stroke_style_from_rust, snow_arrow_type_from_rust, snow_arrowhead_from_rust,
-    snow_arrowhead_primitives_from_rust, snow_fill_style_from_rust,
-    snow_text_horizontal_align_from_rust, snow_text_vertical_align_from_rust,
+    snow_arrow_path_commands_from_rust, snow_arrow_points_from_rust, snow_arrow_type_from_rust,
+    snow_arrowhead_from_rust, snow_arrowhead_primitives_from_rust, snow_fill_style_from_rust,
+    snow_stroke_style_from_rust, snow_text_horizontal_align_from_rust,
+    snow_text_vertical_align_from_rust,
 };
 
 fn slice_ptr_or_null<T>(value: &[T]) -> *const T {
@@ -239,6 +239,14 @@ pub(crate) fn snow_scene_display_item_from_rust(
             }
         }
         SceneDisplayItem::Arrow(item) => {
+            if let Some(bounds) = item.label_bounds {
+                out.arrow_text_bounds = [bounds.min_x, bounds.min_y, bounds.max_x, bounds.max_y];
+            }
+            if let Some(id) = item.bound_text_id {
+                out.has_bound_text_element = 1;
+                out.bound_text_element_index = id.index;
+                out.bound_text_element_generation = id.generation;
+            }
             out.kind = SnowSceneDisplayItemKind::Arrow;
             out.element_id = SnowElementId {
                 index: item.id.index,
@@ -481,8 +489,8 @@ mod tests {
         ArrowDisplayItem, ArrowPathCommand, ArrowheadDisplayDashMode, ArrowheadDisplayFillMode,
         ArrowheadDisplayPrimitive, ArrowheadDisplayPrimitiveKind, ColorRgba8, DecorationPatch,
         DecorationView, DirtyRegion, DisplayFillStyle, DisplayFilterType, DisplaySpotlightConfig,
-        DisplaySpotlightCutout, StrokeStyle, DisplayWatermarkConfig, FilterDisplayItem,
-        FrameView, LayerPatch, RectangleDisplayItem, ReplaceRangeOp, SerialNumberDisplayItem,
+        DisplaySpotlightCutout, DisplayWatermarkConfig, FilterDisplayItem, FrameView, LayerPatch,
+        RectangleDisplayItem, ReplaceRangeOp, SerialNumberDisplayItem, StrokeStyle,
         TextDisplayItem, UiFocusConnectionDisplayItem, UiRectangleDisplayItem, ViewportPatch,
     };
 

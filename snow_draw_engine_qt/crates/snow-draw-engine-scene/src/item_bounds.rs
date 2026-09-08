@@ -1,7 +1,7 @@
 use crate::dirty_regions::clip_dirty_region;
 use snow_draw_engine_core::{
     ColorRgba8, DrawRect, Point, SnapGuideAxis, SnapGuideKind,
-    arrow::{StrokeStyle, ArrowType, Arrowhead},
+    arrow::{ArrowType, Arrowhead, StrokeStyle},
     rotated_rect_extents,
 };
 use snow_draw_engine_display::{
@@ -481,6 +481,7 @@ fn display_arrow_to_document_arrow(
     )
     .unwrap_or_else(|| ArrowData {
         linear_kind: LinearElementKind::Arrow,
+        text_element_id: None,
         x: 0.0,
         y: 0.0,
         width: 0.0,

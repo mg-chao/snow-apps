@@ -950,6 +950,80 @@ void moveToolResizesSelectionFromOutsidePress() {
             "outside resize did not confirm exactly once on release");
 }
 
+void externalSelectionSupportsHeldShortcuts() {
+    ScreenshotCaptureState captureState;
+    ScreenshotDisplaySession displays;
+    displays.appendDisplay(display(QStringLiteral("external"), QStringLiteral("external"),
+                                   QRect(0, 0, 500, 500),
+                                   solidImage(QSize(500, 500), qRgb(0, 0, 0))));
+    ScreenshotGeometryMapper geometry;
+    geometry.rebuild(displays);
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    interaction.enterOverlayVisible(false);
+    QWidget window;
+    snow_shot::presentation::WindowShortcutManager manager;
+    manager.addScopeWindow(&window);
+    ScreenshotOverlayInputActions actions;
+    ScreenshotOverlayInputHandler handler(
+        {captureState, interaction, selection, intelligent, geometry, displays, actions});
+    ScreenshotOverlayShortcutController shortcuts(manager, handler, interaction, intelligent,
+                                                  actions);
+    for (const auto modifiers : {Qt::NoModifier, Qt::ControlModifier, Qt::AltModifier,
+                                 Qt::MetaModifier, Qt::ShiftModifier}) {
+        interaction.enterOverlayVisible(false);
+        handler.setExternalDragActive(true);
+        handler.beginExternalSelectionDrag(QPointF(100, 100));
+        handler.updateExternalSelectionDrag(QPointF(160, 140));
+        require(selection.normalizedSelection() == QRectF(100, 100, 60, 40),
+                "external drag must initialize a shared marquee");
+        require(dispatchShortcut(window, Qt::Key_Space, modifiers),
+                "external selection must accept Space with the activation modifier still held");
+        handler.updateExternalSelectionDrag(QPointF(180, 170));
+        require(selection.normalizedSelection() == QRectF(120, 130, 60, 40),
+                "Space must translate the external selection without resizing it");
+        require(dispatchShortcutRelease(window, Qt::Key_Space, modifiers),
+                "Space release must restore the external marquee");
+        handler.updateExternalSelectionDrag(QPointF(200, 180));
+        require(selection.normalizedSelection() == QRectF(120, 130, 80, 50),
+                "resumed external resizing must retain the translated anchor");
+        require(dispatchShortcut(window, Qt::Key_Shift, Qt::ShiftModifier | modifiers),
+                "external selection must accept the aspect ratio shortcut");
+        handler.updateExternalSelectionDrag(QPointF(220, 190));
+        require(selection.normalizedSelection().width() == selection.normalizedSelection().height(),
+                "Shift must constrain external selection to a square");
+        require(dispatchShortcutRelease(window, Qt::Key_Shift),
+                "external aspect shortcut must release after activation modifiers change");
+        require(!dispatchShortcut(window, Qt::Key_Comma) &&
+                    !dispatchShortcut(window, Qt::Key_Return),
+                "external drag must not allow history or premature confirmation");
+        handler.setExternalDragActive(false);
+        interaction.finishDrag();
+    }
+    handler.setExternalDragActive(true);
+    interaction.enterOverlayVisible(false);
+    handler.beginExternalSelectionDrag(QPointF(100, 100));
+    require(dispatchShortcut(window, Qt::Key_Space), "early Space must be accepted");
+    handler.updateExternalSelectionDrag(QPointF(160, 140));
+    handler.updateExternalSelectionDrag(QPointF(100, 100));
+    require(selection.normalizedSelection() == QRectF(40, 60, 60, 40),
+            "moving back to the original press must preserve a nonempty selection");
+    handler.updateExternalSelectionDrag(QPointF(-100, -100));
+    require(selection.normalizedSelection() == QRectF(0, 0, 60, 40),
+            "external translation must clamp at canvas bounds without resizing");
+    static_cast<void>(dispatchShortcutRelease(window, Qt::Key_Space));
+    handler.setExternalDragActive(false);
+    interaction.finishDrag();
+    interaction.enterOverlayVisible(false);
+    handler.setExternalDragActive(true);
+    handler.beginExternalSelectionDrag(QPointF(10, 10));
+    handler.updateExternalSelectionDrag(QPointF(80, 50));
+    require(selection.normalizedSelection() == QRectF(10, 10, 70, 40),
+            "completed external gestures must not leak held shortcut state into the next drag");
+    handler.setExternalDragActive(false);
+}
+
 void manualSelectionUsesSharedMarqueeTransaction() {
     ScreenshotCaptureState captureState;
     ScreenshotDisplaySession displays;
@@ -2271,6 +2345,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (QCoreApplication::arguments().contains(QStringLiteral("--shortcut-input-only"))) {
+        externalSelectionSupportsHeldShortcuts();
         colorCopyEndsCaptureOnlyAfterSuccessfulCopy();
         sharedShiftShortcutChoosesResizeOrColorFormat();
         configuredSelectionShortcutsRouteTabHistoryAndColorActions();
@@ -2308,6 +2383,7 @@ int main(int argc, char** argv) {
     nonMoveToolPermanentlySwitchesForSelectionResize();
     recognitionAndScrollingToolsResizeSelectionBorder();
     completionGesturesRequireAConfirmedSelectionAndSupportedTool();
+    externalSelectionSupportsHeldShortcuts();
     colorCopyEndsCaptureOnlyAfterSuccessfulCopy();
     sharedShiftShortcutChoosesResizeOrColorFormat();
     configuredSelectionShortcutsRouteTabHistoryAndColorActions();

@@ -126,8 +126,17 @@ class ScreenshotOverlayInputHandler final {
   public:
     explicit ScreenshotOverlayInputHandler(ScreenshotOverlayInputHandlerContext context);
     void setExternalDragActive(bool active) {
+        if (m_externalDragActive && !active) {
+            resetTransientShortcuts();
+        }
         m_externalDragActive = active;
     }
+
+    [[nodiscard]] bool externalDragActive() const {
+        return m_externalDragActive;
+    }
+    void beginExternalSelectionDrag(const QPointF& canvasPosition);
+    void updateExternalSelectionDrag(const QPointF& canvasPosition);
 
     void handleMousePress(ScreenshotOverlayWindow* overlay, const QPointF& localPosition);
     [[nodiscard]] ScreenshotSelectionDragMode

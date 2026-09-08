@@ -3,17 +3,17 @@ mod patch_payloads;
 pub(crate) use patch_payloads::*;
 
 use snow_draw_engine::{
-    ActiveTool, ArrowPathCommand, StrokeStyle, ArrowType, Arrowhead, ArrowheadDisplayDashMode,
+    ActiveTool, ArrowPathCommand, ArrowType, Arrowhead, ArrowheadDisplayDashMode,
     ArrowheadDisplayFillMode, ArrowheadDisplayPrimitive, ArrowheadDisplayPrimitiveKind,
     CanvasFilterType, ColorRgba8, CornerRadii, CursorCommand, CursorStyle, DisplayFillStyle,
-    DisplayTextHorizontalAlign, DisplayTextVerticalAlign, ElementId,
-    EngineConfig, FillStyle, FilterStyle, GridConfig, HistoryState, InputEvent, InteractionOutput,
-    KeyCode, KeyEvent, KeyEventType, Modifiers, Point, PointerButton, PointerButtons,
-    PointerCaptureCommand, PointerDevice, PointerEvent, PointerEventType, RectangleShapeStyle,
-    RuntimeConfig, SerialNumberStyle, ShapeKind, ShapeStyle, SnapConfig, SpotlightConfig,
-    StyleDefaults, StyleToolbarSource, TextElementInfo, TextHorizontalAlign,
-    TextLayoutOverride, TextLayoutSize, TextStyle, TextVerticalAlign, Vector2, WatermarkConfig,
-    WheelDeltaKind, WheelEvent, ZoomFocus, normalize_font_family,
+    DisplayTextHorizontalAlign, DisplayTextVerticalAlign, ElementId, EngineConfig, FillStyle,
+    FilterStyle, GridConfig, HistoryState, InputEvent, InteractionOutput, KeyCode, KeyEvent,
+    KeyEventType, Modifiers, Point, PointerButton, PointerButtons, PointerCaptureCommand,
+    PointerDevice, PointerEvent, PointerEventType, RectangleShapeStyle, RuntimeConfig,
+    SerialNumberStyle, ShapeKind, ShapeStyle, SnapConfig, SpotlightConfig, StrokeStyle,
+    StyleDefaults, StyleToolbarSource, TextElementInfo, TextHorizontalAlign, TextLayoutOverride,
+    TextLayoutSize, TextStyle, TextVerticalAlign, Vector2, WatermarkConfig, WheelDeltaKind,
+    WheelEvent, ZoomFocus, normalize_font_family,
 };
 
 use crate::abi::text::{
@@ -431,6 +431,11 @@ fn font_family_from_c<const N: usize>(bytes: &[std::ffi::c_char; N], len: u32) -
 pub(crate) fn snow_text_element_info_from_rust(value: TextElementInfo) -> SnowTextElementInfo {
     let mut out = SnowTextElementInfo {
         id: snow_element_id_from_rust(value.id),
+        arrow_id: value
+            .arrow_id
+            .map(snow_element_id_from_rust)
+            .unwrap_or_default(),
+        arrow_width: value.arrow_width,
         center_x: value.center.x,
         center_y: value.center.y,
         width: value.width,
@@ -1325,6 +1330,8 @@ mod tests {
         let (family_prefix, family) = boundary_test_string(SNOW_FONT_FAMILY_UTF8_CAPACITY - 1);
 
         let info = snow_text_element_info_from_rust(TextElementInfo {
+            arrow_id: None,
+            arrow_width: 0.0,
             id: ElementId {
                 index: 7,
                 generation: 3,

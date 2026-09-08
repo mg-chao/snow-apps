@@ -51,6 +51,8 @@ pub(crate) fn scene_item_from_arrow(id: ElementId, arrow: ArrowData) -> SceneDis
     ));
     let arrowhead_primitives = arrowhead_display_primitives(&arrow);
     SceneDisplayItem::Arrow(ArrowDisplayItem {
+        bound_text_id: None,
+        label_bounds: None,
         id: display_item_id(id),
         points: arrow
             .global_points()
@@ -101,6 +103,8 @@ pub(crate) fn scene_item_from_free_draw(
     geometry: Arc<snow_draw_engine_core::PathGeometry>,
 ) -> SceneDisplayItem {
     SceneDisplayItem::Arrow(ArrowDisplayItem {
+        bound_text_id: None,
+        label_bounds: None,
         id: display_item_id(id),
         points: free_draw
             .global_vertices()
@@ -129,6 +133,8 @@ pub(crate) fn scene_item_from_free_draw_preview(
     preview: &FreeDrawPreview,
 ) -> SceneDisplayItem {
     SceneDisplayItem::Arrow(ArrowDisplayItem {
+        bound_text_id: None,
+        label_bounds: None,
         id: display_item_id(id),
         points: Vec::new(),
         path_commands: preview.geometry.flattened_commands(),
@@ -404,7 +410,6 @@ fn display_fill_style(style: FillStyle) -> DisplayFillStyle {
     }
 }
 
-
 fn display_text_horizontal_align(align: TextHorizontalAlign) -> DisplayTextHorizontalAlign {
     match align {
         TextHorizontalAlign::Left => DisplayTextHorizontalAlign::Left,
@@ -633,7 +638,7 @@ pub(crate) fn snap_guide_display_item(
     }
 }
 
-fn display_item_id(id: ElementId) -> DisplayItemId {
+pub(crate) fn display_item_id(id: ElementId) -> DisplayItemId {
     DisplayItemId {
         index: id.index,
         generation: id.generation,

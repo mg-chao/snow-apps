@@ -1,4 +1,6 @@
 #include "snow_shot/presentation/components/globalmouserow.h"
+#include "snow_shot/presentation/components/icons/iconrenderutils.h"
+#include "snow_shot/presentation/components/icons/snowshoticons.h"
 #include "snow_shot/presentation/components/settingspagewidget.h"
 #include "snow_shot/presentation/components/shortcutconfigurationbutton.h"
 #include "snow_shot/presentation/components/shortcutkeyrow.h"
@@ -297,13 +299,16 @@ void globalMousePageRendersActionButtons() {
         QStringLiteral("Screen recording")};
     for (GlobalMouseRow* row : rows) {
         auto* label = row->findChild<QLabel*>(QStringLiteral("globalMouseActionLabel"));
+        auto* icon = row->findChild<QLabel*>(QStringLiteral("globalMouseActionIcon"));
         auto* button = configurationButton(*row);
         QLayout* layout = row->layout();
         require(dynamic_cast<QAbstractButton*>(row) != nullptr,
                 "Global mouse action rows must be button containers");
         const bool correctlyOrdered =
-            label != nullptr && button != nullptr && layout != nullptr && layout->count() == 2 &&
-            layout->itemAt(0)->widget() == label && layout->itemAt(1)->widget() == button;
+            label != nullptr && icon != nullptr && button != nullptr && layout != nullptr &&
+            layout->count() == 4 && layout->itemAt(0)->widget() == label &&
+            layout->itemAt(1)->widget() == icon && layout->itemAt(2)->spacerItem() != nullptr &&
+            layout->itemAt(3)->widget() == button;
         if (!correctlyOrdered) {
             std::cerr << "row=" << row->objectName().toStdString()
                       << " label=" << (label != nullptr) << " button=" << (button != nullptr)
@@ -312,6 +317,15 @@ void globalMousePageRendersActionButtons() {
         }
         require(correctlyOrdered,
                 "Global mouse rows must place the action label left of the configuration button");
+        require(!icon->pixmap().isNull() && icon->testAttribute(Qt::WA_TransparentForMouseEvents),
+                "Every global mouse action must display an icon without intercepting clicks");
+        if (label->text() == QStringLiteral("Quick save")) {
+            const QPixmap expected = presentation::icons::renderTintedIconPixmap(
+                presentation::icons::custom::outlined::QuickSave(), icon->size(),
+                row->devicePixelRatioF(), label->palette().color(QPalette::WindowText));
+            require(icon->pixmap().toImage() == expected.toImage(),
+                    "Quick save must display the supplied quick-save icon");
+        }
         require(remainingTitles.removeOne(label->text()),
                 "Global mouse rows must expose each declared action label exactly once");
         require(

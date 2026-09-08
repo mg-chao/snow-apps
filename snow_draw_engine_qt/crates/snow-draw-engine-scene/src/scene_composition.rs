@@ -205,7 +205,107 @@ pub(crate) fn compose_scene_items(
         ));
     }
 
+    compose_arrow_text(&mut items, model, presentation, &preview_arrows, viewport);
     items
+}
+
+fn compose_arrow_text(
+    items: &mut Vec<SceneDisplayItem>,
+    model: &DocumentModel,
+    presentation: &EditorPresentationState,
+    arrows: &HashMap<ElementId, ArrowData>,
+    viewport: (f64, f64, f64, f64),
+) {
+    let mut bindings = model.arrow_text_bindings();
+    let new_draft = presentation.active_text_draft.as_ref().and_then(|draft| {
+        if let snow_draw_engine_editor::ActiveTextDraftTarget::NewArrow(id) = draft.target {
+            Some((id, draft.display_id()))
+        } else {
+            None
+        }
+    });
+    if let Some(binding) = new_draft {
+        bindings.push(binding);
+    }
+    for (arrow_id, text_id) in bindings {
+        let Some(arrow) = arrows.get(&arrow_id).or_else(|| model.arrow(arrow_id).ok()) else {
+            continue;
+        };
+        let Ok(owner) = model.element(arrow_id) else {
+            continue;
+        };
+        let draft = presentation
+            .active_text_draft
+            .as_ref()
+            .filter(|draft| draft.display_id() == text_id);
+        let Some(mut text) = draft
+            .map(|d| d.text.clone())
+            .or_else(|| {
+                presentation
+                    .arrow_text_previews
+                    .iter()
+                    .find(|(id, _)| *id == text_id)
+                    .map(|(_, text)| text.clone())
+            })
+            .or_else(|| model.text(text_id).ok().cloned())
+        else {
+            continue;
+        };
+        text.center = snow_draw_engine_document::arrow_text_anchor(arrow);
+        text.rotation = 0.0;
+        if let Ok(committed) = model.arrow(arrow_id)
+            && committed.opacity > 0.0
+            && arrow.opacity != committed.opacity
+        {
+            text.opacity = (text.opacity * arrow.opacity / committed.opacity).clamp(0.0, 1.0);
+        }
+        let text_display_id = display_item_id(text_id);
+        items.retain(
+            |item| !matches!(item, SceneDisplayItem::Text(item) if item.id == text_display_id),
+        );
+        if !owner.meta.visible {
+            continue;
+        }
+        for item in items.iter_mut() {
+            if let SceneDisplayItem::Arrow(item) = item
+                && item.id == display_item_id(arrow_id)
+                && !text.text.trim().is_empty()
+            {
+                item.bound_text_id = Some(text_display_id);
+                item.label_bounds = Some(text_bounds(&text));
+            }
+        }
+        if !bounds_visible(text_bounds(&text), viewport) {
+            continue;
+        }
+        let item = scene_item_from_text(text_id, text);
+        if let Some(index) = items.iter().position(|item| matches!(item, SceneDisplayItem::Arrow(item) if item.id == display_item_id(arrow_id))) {
+            items.insert(index + 1, item);
+        } else {
+            // The arrow itself may be culled while its label is in the viewport.
+            let rank = model.paint_rank(arrow_id).unwrap_or(u32::MAX);
+            let index = items.iter().position(|item| {
+                scene_element_id(item).and_then(|id| model.paint_rank(id)).is_some_and(|r| r > rank)
+            }).unwrap_or(items.len());
+            items.insert(index, item);
+        }
+    }
+}
+
+fn scene_element_id(item: &SceneDisplayItem) -> Option<ElementId> {
+    let id = match item {
+        SceneDisplayItem::Arrow(item) => item.id,
+        SceneDisplayItem::Text(item) => item.id,
+        SceneDisplayItem::Rectangle(item) => item.id,
+        SceneDisplayItem::Filter(item) => item.id,
+        SceneDisplayItem::Stroke | SceneDisplayItem::Image => return None,
+        SceneDisplayItem::SerialNumber(item) => item.id,
+        SceneDisplayItem::SerialNumberConnector(item) => item.id,
+    };
+    Some(ElementId {
+        index: id.index,
+        generation: id.generation,
+    })
 }
 
 fn preview_text_items(
@@ -309,6 +409,92 @@ mod tests {
                 zoom: 1.0,
             },
             clear_color: ColorRgba8::default(),
+        }
+    }
+
+    #[test]
+    fn arrow_text_composition_tracks_preview_gap_and_preserves_paint_order() {
+        use snow_draw_engine_core::arrow::{ArrowType, StrokeStyle};
+        for kind in [ArrowType::Straight, ArrowType::Curve, ArrowType::Elbow] {
+            let owner = ElementId {
+                index: 0,
+                generation: 1,
+            };
+            let text_id = ElementId {
+                index: 1,
+                generation: 1,
+            };
+            let mut arrow = ArrowData::from_global_points(
+                &[Point::new(-200.0, 0.0), Point::new(200.0, 0.0)],
+                ColorRgba8::default(),
+                2.0,
+                StrokeStyle::Solid,
+                kind,
+                None,
+                None,
+            )
+            .unwrap();
+            arrow.text_element_id = Some(text_id);
+            let text = TextData {
+                text: "visible label".to_owned(),
+                width: 150.0,
+                height: 60.0,
+                ..TextData::default()
+            };
+            let mut model = DocumentModel::new();
+            let mut tx = Transaction::new("arrow and text");
+            tx.insert_arrow(owner, ElementMeta::default(), arrow.clone());
+            tx.insert_text(text_id, ElementMeta::default(), text.clone());
+            model.apply_transaction(tx).unwrap();
+            let mut cache = DocumentSceneCache::new();
+            cache.sync(&model, None);
+            arrow.y += 75.0;
+            arrow.opacity *= 0.5;
+            let presentation = EditorPresentationState {
+                preview_arrows: vec![SelectionArrowState {
+                    id: owner,
+                    arrow: arrow.clone(),
+                }],
+                active_text_draft: Some(ActiveTextDraftPresentation {
+                    target: ActiveTextDraftTarget::Existing(text_id),
+                    revision: 1,
+                    text: TextData {
+                        width: 210.0,
+                        height: 90.0,
+                        text: "draft label".to_owned(),
+                        ..text
+                    },
+                }),
+                ..EditorPresentationState::default()
+            };
+            let items = compose_scene_items(&cache, &model, &presentation, default_frame_view());
+            assert_eq!(items.len(), 2);
+            let SceneDisplayItem::Arrow(display) = &items[0] else {
+                panic!("arrow precedes label");
+            };
+            let SceneDisplayItem::Text(text) = &items[1] else {
+                panic!("exactly one label follows arrow");
+            };
+            assert_eq!(text.text, "draft label");
+            assert_eq!(text.center_y, 75.0);
+            assert_eq!(text.opacity, 0.5);
+            assert_eq!(display.label_bounds.unwrap().min_y, 30.0);
+            assert_eq!(display.bound_text_id, Some(display_item_id(text_id)));
+
+            // A narrow view can see the label while the line is entirely above it.
+            let mut view = default_frame_view();
+            view.surface = SurfaceSize {
+                width: 100,
+                height: 20,
+            };
+            view.camera.center = Point::new(0.0, 110.0);
+            let items = compose_scene_items(&cache, &model, &presentation, view);
+            assert!(
+                items
+                    .iter()
+                    .all(|item| !matches!(item, SceneDisplayItem::Arrow(_)))
+            );
+            assert_eq!(text_items(&items).len(), 1);
         }
     }
 

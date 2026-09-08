@@ -57,7 +57,9 @@ QString localShortcutKey(SettingsLocalShortcutScope scope, const QString& shortc
     const QString prefix =
         scope == SettingsLocalShortcutScope::Screenshot ? QStringLiteral("screenshot_shortcuts/")
         : scope == SettingsLocalShortcutScope::Drawing  ? QStringLiteral("drawing_shortcuts/")
-                                                       : QStringLiteral("pin_to_screen_shortcuts/");
+        : scope == SettingsLocalShortcutScope::ScreenRecording
+            ? QStringLiteral("screen_recording_shortcuts/")
+            : QStringLiteral("pin_to_screen_shortcuts/");
     return prefix + shortcutId;
 }
 
@@ -231,8 +233,6 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
         return storage::RecordingSettings().animatedImageClarity();
     case SettingsSelectBinding::AnimatedImageFrameRate:
         return storage::RecordingSettings().animatedImageFrameRate();
-    case SettingsSelectBinding::AnimatedImageFormat:
-        return storage::RecordingSettings().animatedImageFormat();
     case SettingsSelectBinding::ScreenRecordingEncoder:
         return storage::RecordingSettings().encoder();
     case SettingsSelectBinding::ScreenRecordingEncodingPreset:
@@ -334,8 +334,6 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
         return storage::RecordingSettings().setAnimatedImageClarity(value.toString());
     case SettingsSelectBinding::AnimatedImageFrameRate:
         return storage::RecordingSettings().setAnimatedImageFrameRate(value.toInt());
-    case SettingsSelectBinding::AnimatedImageFormat:
-        return storage::RecordingSettings().setAnimatedImageFormat(value.toString());
     case SettingsSelectBinding::ScreenRecordingEncoder:
         return storage::RecordingSettings().setEncoder(value.toString());
     case SettingsSelectBinding::ScreenRecordingEncodingPreset:
@@ -726,6 +724,9 @@ QStringList BuiltInSettingsBackend::localShortcuts(SettingsLocalShortcutScope sc
     if (scope == SettingsLocalShortcutScope::Drawing) {
         return storage::DrawingShortcutSettings().shortcuts(shortcutId);
     }
+    if (scope == SettingsLocalShortcutScope::ScreenRecording) {
+        return storage::ScreenRecordingShortcutSettings().shortcuts(shortcutId);
+    }
     return storage::PinToScreenShortcutSettings().shortcuts(shortcutId);
 }
 
@@ -739,6 +740,7 @@ GlobalShortcutValidationResult BuiltInSettingsBackend::validateLocalShortcut(
     }
     const QString canonical = normalized.value.toArray().first().toString();
     if (scope != SettingsLocalShortcutScope::PinToScreen &&
+        scope != SettingsLocalShortcutScope::ScreenRecording &&
         storage::ScreenshotShortcutSettings::isReservedShortcut(canonical) &&
         (scope != SettingsLocalShortcutScope::Screenshot ||
          !storage::ScreenshotShortcutSettings::isReservedShortcutAllowed(shortcutId, canonical))) {
@@ -748,6 +750,8 @@ GlobalShortcutValidationResult BuiltInSettingsBackend::validateLocalShortcut(
                          ? storage::ScreenshotShortcutSettings().allShortcuts()
                      : scope == SettingsLocalShortcutScope::Drawing
                          ? storage::DrawingShortcutSettings().allShortcuts()
+                     : scope == SettingsLocalShortcutScope::ScreenRecording
+                         ? storage::ScreenRecordingShortcutSettings().allShortcuts()
                          : storage::PinToScreenShortcutSettings().allShortcuts();
     for (auto it = all.cbegin(); it != all.cend(); ++it) {
         if (it.key() == shortcutId) {
@@ -777,6 +781,9 @@ bool BuiltInSettingsBackend::applyLocalShortcuts(SettingsLocalShortcutScope scop
     }
     if (scope == SettingsLocalShortcutScope::Drawing) {
         return storage::DrawingShortcutSettings().setShortcuts(shortcutId, shortcuts);
+    }
+    if (scope == SettingsLocalShortcutScope::ScreenRecording) {
+        return storage::ScreenRecordingShortcutSettings().setShortcuts(shortcutId, shortcuts);
     }
     return storage::PinToScreenShortcutSettings().setShortcuts(shortcutId, shortcuts);
 }
@@ -1104,6 +1111,14 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         }
         return storage::DrawingShortcutSettings().setAllShortcutsAtomic(defaults);
     }
+    case SettingsSectionReset::ScreenRecordingShortcuts: {
+        auto defaults = storage::ScreenRecordingShortcutSettings().allShortcuts();
+        for (auto it = defaults.begin(); it != defaults.end(); ++it) {
+            it.value() =
+                stringListDefault(QStringLiteral("screen_recording_shortcuts/") + it.key());
+        }
+        return storage::ScreenRecordingShortcutSettings().setAllShortcutsAtomic(defaults);
+    }
     case SettingsSectionReset::PinToScreenShortcuts: {
         QMap<QString, QStringList> defaults;
         for (const QString& actionId :
@@ -1181,9 +1196,21 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
             {QStringLiteral("screen_recording/animated_image_frame_rate"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/animated_image_frame_rate"))},
-            {QStringLiteral("screen_recording/animated_image_format"),
+            {QStringLiteral("screen_recording/output_format"),
              storage::ConfigurationSchema::defaultValue(
-                 QStringLiteral("screen_recording/animated_image_format"))},
+                 QStringLiteral("screen_recording/output_format"))},
+            {QStringLiteral("screen_recording/mouse_trail_color"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/mouse_trail_color"))},
+            {QStringLiteral("screen_recording/mouse_click_color"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/mouse_click_color"))},
+            {QStringLiteral("screen_recording/show_keyboard"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/show_keyboard"))},
+            {QStringLiteral("screen_recording/show_cursor"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("screen_recording/show_cursor"))},
             {QStringLiteral("screen_recording/encoder"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screen_recording/encoder"))},

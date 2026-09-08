@@ -186,6 +186,10 @@ ScreenshotImageFileFormat ScreenshotImageFileService::formatForKey(const QString
     return ScreenshotImageFileFormat::Png;
 }
 
+QString ScreenshotImageFileService::formatKey(ScreenshotImageFileFormat format) {
+    return format == ScreenshotImageFileFormat::Jpeg ? QStringLiteral("jpeg") : extension(format);
+}
+
 QString ScreenshotImageFileService::normalizedPath(QString path, ScreenshotImageFileFormat format) {
     path = QDir::cleanPath(path.trimmed());
     if (path.isEmpty()) {

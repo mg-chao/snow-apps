@@ -16,7 +16,15 @@ serde.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 zstd.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
+anyhow.workspace = true
 proptest = "1.11.0"
 symphonia = { version = "0.5.4", default-features = false, features = ["aac", "isomp4"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+windows = { workspace = true, features = [
+    "Win32_System_ProcessStatus",
+    "Win32_System_Threading",
+] }

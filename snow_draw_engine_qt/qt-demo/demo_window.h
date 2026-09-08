@@ -17,6 +17,9 @@ class DemoWindow : public QWidget {
   public:
     explicit DemoWindow(QWidget* parent = nullptr);
 
+  protected:
+    void changeEvent(QEvent* event) override;
+
   private:
     void initializeUi();
     void connectCanvasSignals();
@@ -49,6 +52,7 @@ class DemoWindow : public QWidget {
     QToolButton* m_undoToolButton = nullptr;
     QToolButton* m_redoToolButton = nullptr;
     QToolButton* m_createSerialTextToolButton = nullptr;
+    QToolButton* m_editArrowTextToolButton = nullptr;
     QToolButton* m_duplicateSelectionToolButton = nullptr;
     QToolButton* m_deleteSelectionToolButton = nullptr;
     QToolButton* m_decrementSerialNumberToolButton = nullptr;

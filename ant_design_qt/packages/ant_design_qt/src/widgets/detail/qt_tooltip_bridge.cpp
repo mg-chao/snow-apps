@@ -432,7 +432,8 @@ class QtTooltipBridge final : public QObject {
     PopupTooltipRoute* best = nullptr;
     for (PopupTooltipRoute& route : routes_) {
       if (!route.popupSurface || !route.popupSurface->isVisible() ||
-          !widgetInTree(widget, route.triggerRoot)) {
+          !widgetInTree(widget, route.triggerRoot) ||
+          route.triggerRoot->property(kPopupTriggerTooltipEnabledProperty).toBool()) {
         continue;
       }
       if (!best || route.activationOrder > best->activationOrder) {

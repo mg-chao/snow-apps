@@ -26,6 +26,7 @@ const QStringList kDrawingToolbarItemIds = {
 
 const QStringList kActionToolbarItemIds = {
     QStringLiteral("barcode-recognition"),  QStringLiteral("table-recognition"),
+    QStringLiteral("convert-to-markdown"),  QStringLiteral("convert-to-html"),
     QStringLiteral("record-screen"),        QStringLiteral("pin-to-screen"),
     QStringLiteral("text-recognition"),     QStringLiteral("text-translation"),
     QStringLiteral("scrolling-screenshot"), QStringLiteral("save-as-file"),
@@ -59,7 +60,8 @@ QVector<QStringList> defaultDrawingToolbarPositions() {
 
 QVector<QStringList> defaultActionToolbarPositions() {
     return {
-        {QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")},
+        {QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
+         QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")},
         {QStringLiteral("record-screen")},
         {QStringLiteral("pin-to-screen")},
         {QStringLiteral("text-recognition")},
@@ -128,6 +130,8 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
       QStringLiteral("ru"), QStringLiteral("tr"), QStringLiteral("zh-Hans"),
       QStringLiteral("zh-Hant")}},
     {QStringLiteral("screenshot_translation/model"), QString(), ConfigurationValueKind::String},
+    {QStringLiteral("screenshot_conversion/vision_model"), QString(),
+     ConfigurationValueKind::String},
     {QStringLiteral("screenshot_translation/original_image_translation"), true,
      ConfigurationValueKind::Boolean},
     {QStringLiteral("screenshot_translation/layout_processing"),
@@ -257,11 +261,18 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      {QStringLiteral("1080p"), QStringLiteral("720p"), QStringLiteral("480p")}},
     {QStringLiteral("screen_recording/animated_image_frame_rate"), 10,
      ConfigurationValueKind::Integer},
-    {QStringLiteral("screen_recording/animated_image_format"),
-     QStringLiteral("gif"),
+    {QStringLiteral("screen_recording/output_format"),
+     QStringLiteral("mp4"),
      ConfigurationValueKind::String,
      std::nullopt,
-     {QStringLiteral("gif"), QStringLiteral("apng"), QStringLiteral("webp")}},
+     {QStringLiteral("mp4"), QStringLiteral("gif"), QStringLiteral("apng"),
+      QStringLiteral("webp")}},
+    {QStringLiteral("screen_recording/mouse_trail_color"), QStringLiteral("#00000000"),
+     ConfigurationValueKind::String},
+    {QStringLiteral("screen_recording/mouse_click_color"), QStringLiteral("#00000000"),
+     ConfigurationValueKind::String},
+    {QStringLiteral("screen_recording/show_keyboard"), false, ConfigurationValueKind::Boolean},
+    {QStringLiteral("screen_recording/show_cursor"), true, ConfigurationValueKind::Boolean},
     {QStringLiteral("screen_recording/encoder"),
      QStringLiteral("h264_hw"),
      ConfigurationValueKind::String,
@@ -506,6 +517,30 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      std::nullopt,
      {},
      2},
+    {QStringLiteral("screen_recording_shortcuts/export"),
+     QJsonArray{QStringLiteral("Ctrl+E")},
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
+    {QStringLiteral("screen_recording_shortcuts/toggle_recording"),
+     QJsonArray{QStringLiteral("Ctrl+S")},
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
+    {QStringLiteral("screen_recording_shortcuts/copy_to_clipboard"),
+     QJsonArray{QStringLiteral("Ctrl+C")},
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
+    {QStringLiteral("screen_recording_shortcuts/end_recording"),
+     QJsonArray{QStringLiteral("Esc")},
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
     {QStringLiteral("pin_to_screen_shortcuts/copy_to_clipboard"),
      QJsonArray{QStringLiteral("Ctrl+C")},
      ConfigurationValueKind::StringList,
@@ -608,7 +643,8 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      QStringLiteral("hex"),
      ConfigurationValueKind::String,
      std::nullopt,
-     {QStringLiteral("hex"), QStringLiteral("rgb"), QStringLiteral("hsl")}},
+     {QStringLiteral("hex"), QStringLiteral("hex_without_hash"), QStringLiteral("rgb"),
+      QStringLiteral("hsl")}},
     {QStringLiteral("screenshot_ui/selection_mask_color"), QStringLiteral("#00000080"),
      ConfigurationValueKind::String},
     {QStringLiteral("screenshot_ui/shortcut_hint_opacity"), 100, ConfigurationValueKind::Integer,
@@ -719,6 +755,12 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      defaultOutputDirectory(QStandardPaths::PicturesLocation), ConfigurationValueKind::String},
     {QStringLiteral("screenshot/last_manual_save_directory"), QString(),
      ConfigurationValueKind::String},
+    {QStringLiteral("screenshot/last_manual_save_format"),
+     QStringLiteral("png"),
+     ConfigurationValueKind::String,
+     std::nullopt,
+     {QStringLiteral("png"), QStringLiteral("jpeg"), QStringLiteral("bmp"), QStringLiteral("webp"),
+      QStringLiteral("jxl"), QStringLiteral("avif")}},
     {QStringLiteral("screenshot/save_as_file_dialog"),
      QStringLiteral("system"),
      ConfigurationValueKind::String,
@@ -986,7 +1028,9 @@ bool isRgbaColorKey(const QString& key) {
            key == QStringLiteral("screenshot_ui/cursor_guide_line_color") ||
            key == QStringLiteral("screenshot_ui/monitor_center_guide_line_color") ||
            key == QStringLiteral("screenshot_ui/color_picker_center_guide_line_color") ||
-           key == QStringLiteral("pin_to_screen/border_color");
+           key == QStringLiteral("pin_to_screen/border_color") ||
+           key == QStringLiteral("screen_recording/mouse_trail_color") ||
+           key == QStringLiteral("screen_recording/mouse_click_color");
 }
 
 ConfigurationNormalization normalizeRgbaColor(const QJsonValue& value) {
@@ -1100,6 +1144,37 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
         return {};
     }
 
+    if (!positions.isEmpty() && known.contains(QStringLiteral("convert-to-markdown"))) {
+        // Fold the previous default's standalone conversions without changing custom placements.
+        auto previousDefault = defaultPositions;
+        previousDefault[0] = {QStringLiteral("barcode-recognition"),
+                              QStringLiteral("table-recognition")};
+        previousDefault.insert(1, QStringList{QStringLiteral("convert-to-markdown")});
+        previousDefault.insert(2, QStringList{QStringLiteral("convert-to-html")});
+        if (hidden.isEmpty() && positions == previousDefault) {
+            positions = defaultPositions;
+        }
+        qsizetype recognitionPosition = -1;
+        for (const QString& anchor :
+             {QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition")}) {
+            for (qsizetype index = 0; index < positions.size(); ++index) {
+                if (positions.at(index).contains(anchor)) {
+                    recognitionPosition = index;
+                    break;
+                }
+            }
+            if (recognitionPosition >= 0) {
+                break;
+            }
+        }
+        for (const QString& id :
+             {QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")}) {
+            if (recognitionPosition >= 0 && !positioned.contains(id) && !hiddenSet.contains(id)) {
+                positions[recognitionPosition].push_back(id);
+                positioned.insert(id);
+            }
+        }
+    }
     for (const QStringList& defaultPosition : defaultPositions) {
         QStringList missing;
         for (const QString& id : defaultPosition) {

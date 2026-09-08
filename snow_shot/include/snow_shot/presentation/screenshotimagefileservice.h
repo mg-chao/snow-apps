@@ -50,6 +50,7 @@ class ScreenshotImageFileService final {
                                                      const QString& configuredDirectory);
     [[nodiscard]] static QString extension(ScreenshotImageFileFormat format);
     [[nodiscard]] static ScreenshotImageFileFormat formatForKey(const QString& key);
+    [[nodiscard]] static QString formatKey(ScreenshotImageFileFormat format);
     [[nodiscard]] static QString normalizedPath(QString path, ScreenshotImageFileFormat format);
     [[nodiscard]] static std::optional<ScreenshotImageFileFormat>
     formatForPath(const QString& path);

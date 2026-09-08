@@ -208,6 +208,14 @@
     },
     {
       "variant": "outlined",
+      "symbol": "ExportSettings",
+      "name": "export-settings",
+      "source": "../src/presentation/components/icons/resources/export-settings.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "FillSolid",
       "name": "fill-solid",
       "source": "../src/presentation/components/icons/resources/fill-solid.svg",
@@ -264,9 +272,33 @@
     },
     {
       "variant": "outlined",
+      "symbol": "Html",
+      "name": "html",
+      "source": "../src/presentation/components/icons/resources/html.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "Keyboard",
       "name": "keyboard",
       "source": "../src/presentation/components/icons/resources/keyboard.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "LaserPointer",
+      "name": "laser-pointer",
+      "source": "../src/presentation/components/icons/resources/laser-pointer.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "Markdown",
+      "name": "markdown",
+      "source": "../src/presentation/components/icons/resources/markdown.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },
@@ -296,9 +328,33 @@
     },
     {
       "variant": "outlined",
+      "symbol": "QuickSave",
+      "name": "quick-save",
+      "source": "../src/presentation/components/icons/resources/quick-save.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "RecordScreen",
       "name": "record-screen",
       "source": "../src/presentation/components/icons/resources/record-screen.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "RecordingClick",
+      "name": "recording-click",
+      "source": "../src/presentation/components/icons/resources/recording-click.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "RecordingCursor",
+      "name": "recording-cursor",
+      "source": "../src/presentation/components/icons/resources/recording-cursor.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },
@@ -312,9 +368,25 @@
     },
     {
       "variant": "outlined",
+      "symbol": "RecordingKeyboard",
+      "name": "recording-keyboard",
+      "source": "../src/presentation/components/icons/resources/recording-keyboard.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
       "symbol": "RecordingMicrophone",
       "name": "recording-microphone",
       "source": "../src/presentation/components/icons/resources/recording-microphone.svg",
+      "colorModel": "monochrome",
+      "fit": "contain"
+    },
+    {
+      "variant": "outlined",
+      "symbol": "RecordingRender",
+      "name": "recording-render",
+      "source": "../src/presentation/components/icons/resources/recording-render.svg",
       "colorModel": "monochrome",
       "fit": "contain"
     },

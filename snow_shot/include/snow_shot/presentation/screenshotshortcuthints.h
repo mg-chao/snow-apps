@@ -42,8 +42,7 @@ struct ScreenshotShortcutHintRow {
 // they must be declared explicitly for lupdate.
 [[maybe_unused]] inline constexpr const char* kScreenshotShortcutHintTranslations[] = {
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Vertical scroll: mouse wheel"),
-    QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget",
-                      "Horizontal scroll: Shift + mouse wheel"),
+    QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Horizontal scroll: Shift + mouse wheel"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Switch element level: mouse wheel"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Switch color format: Shift"),
     QT_TRANSLATE_NOOP("ScreenshotShortcutHintsWidget", "Switch screenshot history"),
@@ -77,18 +76,19 @@ struct ScreenshotShortcutHintContext {
     bool smartSelectionEnabled = true;
 };
 
-[[nodiscard]] inline bool screenshotShortcutHintAreaIsObscured(
-    const QRectF& hintArea, const QRectF& selectionArea, const QPointF& cursorPosition) {
+[[nodiscard]] inline bool screenshotShortcutHintAreaIsObscured(const QRectF& hintArea,
+                                                               const QRectF& selectionArea,
+                                                               const QPointF& cursorPosition) {
     if (!hintArea.isValid() || hintArea.isEmpty()) {
         return false;
     }
-    const bool selectionOverlaps = selectionArea.isValid() && !selectionArea.isEmpty() &&
-                                   hintArea.intersects(selectionArea);
+    const bool selectionOverlaps =
+        selectionArea.isValid() && !selectionArea.isEmpty() && hintArea.intersects(selectionArea);
     return selectionOverlaps || hintArea.contains(cursorPosition);
 }
 
-[[nodiscard]] inline ScreenshotShortcutHintMode screenshotShortcutHintSelectionModeForContext(
-    const ScreenshotShortcutHintContext& context) {
+[[nodiscard]] inline ScreenshotShortcutHintMode
+screenshotShortcutHintSelectionModeForContext(const ScreenshotShortcutHintContext& context) {
     if (context.captureMode == ScreenshotCaptureMode::IntelligentSelecting) {
         return ScreenshotShortcutHintMode::SmartSelection;
     }
@@ -142,8 +142,7 @@ struct ScreenshotShortcutHintContext {
 }
 
 [[nodiscard]] inline QStringList screenshotConfiguredShortcutHintKeys(
-    const std::optional<QMap<QString, QStringList>>& configuredShortcuts,
-    const QString& actionId) {
+    const std::optional<QMap<QString, QStringList>>& configuredShortcuts, const QString& actionId) {
     if (configuredShortcuts.has_value()) {
         const auto configured = configuredShortcuts->find(actionId);
         if (configured != configuredShortcuts->cend()) {
@@ -154,8 +153,8 @@ struct ScreenshotShortcutHintContext {
 }
 
 [[nodiscard]] inline ScreenshotShortcutHintRow screenshotConfiguredShortcutHintRow(
-    const std::optional<QMap<QString, QStringList>>& configuredShortcuts,
-    const QString& actionId, const char* label) {
+    const std::optional<QMap<QString, QStringList>>& configuredShortcuts, const QString& actionId,
+    const char* label) {
     return {
         QCoreApplication::translate("SettingsCatalog", label),
         screenshotConfiguredShortcutHintKeys(configuredShortcuts, actionId)
@@ -166,8 +165,8 @@ struct ScreenshotShortcutHintContext {
 
 inline void appendScreenshotConfiguredShortcutHintRow(
     QVector<ScreenshotShortcutHintRow>& rows,
-    const std::optional<QMap<QString, QStringList>>& configuredShortcuts,
-    const QString& actionId, const char* label) {
+    const std::optional<QMap<QString, QStringList>>& configuredShortcuts, const QString& actionId,
+    const char* label) {
     ScreenshotShortcutHintRow row =
         screenshotConfiguredShortcutHintRow(configuredShortcuts, actionId, label);
     if (!row.shortcut.isEmpty()) {
@@ -179,25 +178,20 @@ inline void appendScreenshotCursorMovementShortcutHintRows(
     QVector<ScreenshotShortcutHintRow>& rows,
     const std::optional<QMap<QString, QStringList>>& configuredShortcuts) {
     appendScreenshotConfiguredShortcutHintRow(rows, configuredShortcuts,
-                                              QStringLiteral("move_cursor_up"),
-                                              "Move cursor up");
-    appendScreenshotConfiguredShortcutHintRow(rows, configuredShortcuts,
-                                              QStringLiteral("move_cursor_down"),
-                                              "Move cursor down");
-    appendScreenshotConfiguredShortcutHintRow(rows, configuredShortcuts,
-                                              QStringLiteral("move_cursor_left"),
-                                              "Move cursor left");
-    appendScreenshotConfiguredShortcutHintRow(rows, configuredShortcuts,
-                                              QStringLiteral("move_cursor_right"),
-                                              "Move cursor right");
+                                              QStringLiteral("move_cursor_up"), "Move cursor up");
+    appendScreenshotConfiguredShortcutHintRow(
+        rows, configuredShortcuts, QStringLiteral("move_cursor_down"), "Move cursor down");
+    appendScreenshotConfiguredShortcutHintRow(
+        rows, configuredShortcuts, QStringLiteral("move_cursor_left"), "Move cursor left");
+    appendScreenshotConfiguredShortcutHintRow(
+        rows, configuredShortcuts, QStringLiteral("move_cursor_right"), "Move cursor right");
 }
 
 [[nodiscard]] inline QVector<ScreenshotShortcutHintRow> screenshotShortcutHintRows(
     ScreenshotShortcutHintMode mode,
     const std::optional<QMap<QString, QStringList>>& configuredShortcuts = std::nullopt,
     bool smartSelectionEnabled = true) {
-    if (mode == ScreenshotShortcutHintMode::Hidden ||
-        mode == ScreenshotShortcutHintMode::Tool) {
+    if (mode == ScreenshotShortcutHintMode::Hidden || mode == ScreenshotShortcutHintMode::Tool) {
         return {};
     }
     if (mode == ScreenshotShortcutHintMode::Scrolling) {
@@ -221,17 +215,16 @@ inline void appendScreenshotCursorMovementShortcutHintRows(
                 "Select window/window sub-element");
         }
     } else {
+        appendScreenshotConfiguredShortcutHintRow(rows, configuredShortcuts,
+                                                  QStringLiteral("move_entire_selection"),
+                                                  "Move entire selection");
         appendScreenshotConfiguredShortcutHintRow(
-            rows, configuredShortcuts, QStringLiteral("move_entire_selection"),
-            "Move entire selection");
-        appendScreenshotConfiguredShortcutHintRow(
-            rows, configuredShortcuts,
-            QStringLiteral("keep_selection_width_and_height_consistent"),
+            rows, configuredShortcuts, QStringLiteral("keep_selection_width_and_height_consistent"),
             "Keep selection width and height consistent");
     }
-    appendScreenshotConfiguredShortcutHintRow(
-        rows, configuredShortcuts, QStringLiteral("select_previously_selected_area"),
-        "Select previously selected area");
+    appendScreenshotConfiguredShortcutHintRow(rows, configuredShortcuts,
+                                              QStringLiteral("select_previously_selected_area"),
+                                              "Select previously selected area");
     appendScreenshotConfiguredShortcutHintRow(rows, configuredShortcuts,
                                               QStringLiteral("copy_color"), "Copy color");
     rows.push_back(screenshotFixedShortcutHintRow("Switch color format: Shift"));
@@ -257,13 +250,14 @@ inline void appendScreenshotCursorMovementShortcutHintRows(
     return rows;
 }
 
-[[nodiscard]] inline bool screenshotShortcutHintToolIsQuickSelectionDisabled(
-    const ScreenshotShortcutHintContext& context, SnowCanvasTool tool) {
+[[nodiscard]] inline bool
+screenshotShortcutHintToolIsQuickSelectionDisabled(const ScreenshotShortcutHintContext& context,
+                                                   SnowCanvasTool tool) {
     return context.quickSelectionDisabledTools.contains(tool);
 }
 
-[[nodiscard]] inline QStringList screenshotShortcutHintLines(
-    const QVector<ScreenshotShortcutHintRow>& rows) {
+[[nodiscard]] inline QStringList
+screenshotShortcutHintLines(const QVector<ScreenshotShortcutHintRow>& rows) {
     QStringList lines;
     lines.reserve(rows.size());
     for (const ScreenshotShortcutHintRow& row : rows) {
@@ -316,6 +310,8 @@ screenshotShortcutHintRows(const ScreenshotShortcutHintContext& context) {
         context.activeTool != ScreenshotActiveTool::Ocr &&
         context.activeTool != ScreenshotActiveTool::Table &&
         context.activeTool != ScreenshotActiveTool::Qr &&
+        context.activeTool != ScreenshotActiveTool::Markdown &&
+        context.activeTool != ScreenshotActiveTool::Html &&
         context.activeTool != ScreenshotActiveTool::Move &&
         context.activeTool != ScreenshotActiveTool::Spotlight &&
         context.activeTool != ScreenshotActiveTool::Watermark) {
@@ -360,16 +356,14 @@ screenshotShortcutHintRows(const ScreenshotShortcutHintContext& context) {
         break;
     case ScreenshotActiveTool::RectangleHighlight:
         append(rows, "Maintain aspect ratio: Shift");
-        append(rows, "Fixed-angle rotation: Shift",
-               !disabled(SnowCanvasTool::RectangleHighlight));
+        append(rows, "Fixed-angle rotation: Shift", !disabled(SnowCanvasTool::RectangleHighlight));
         append(rows, "Scale from center: Alt");
         append(rows, "Auto-align: Ctrl");
         append(rows, "Delete selected elements: Delete",
                !disabled(SnowCanvasTool::RectangleHighlight));
         break;
     case ScreenshotActiveTool::PenHighlight:
-        append(rows, "Delete selected elements: Delete",
-               !disabled(SnowCanvasTool::PenHighlight));
+        append(rows, "Delete selected elements: Delete", !disabled(SnowCanvasTool::PenHighlight));
         break;
     case ScreenshotActiveTool::Text:
         append(rows, "Fixed-angle rotation: Shift", !disabled(SnowCanvasTool::Text));
@@ -381,8 +375,7 @@ screenshotShortcutHintRows(const ScreenshotShortcutHintContext& context) {
         append(rows, "Fixed-angle rotation: Shift", !disabled(SnowCanvasTool::SerialNumber));
         append(rows, "Scale from center: Alt", !disabled(SnowCanvasTool::SerialNumber));
         append(rows, "Auto-align: Ctrl", !disabled(SnowCanvasTool::SerialNumber));
-        append(rows, "Delete selected elements: Delete",
-               !disabled(SnowCanvasTool::SerialNumber));
+        append(rows, "Delete selected elements: Delete", !disabled(SnowCanvasTool::SerialNumber));
         break;
     case ScreenshotActiveTool::PenFilter:
         append(rows, "Draw straight line: Shift");
@@ -394,8 +387,7 @@ screenshotShortcutHintRows(const ScreenshotShortcutHintContext& context) {
         break;
     case ScreenshotActiveTool::RectangleFilter:
         append(rows, "Maintain aspect ratio: Shift");
-        append(rows, "Fixed-angle rotation: Shift",
-               !disabled(SnowCanvasTool::RectangleFilter));
+        append(rows, "Fixed-angle rotation: Shift", !disabled(SnowCanvasTool::RectangleFilter));
         append(rows, "Scale from center: Alt");
         append(rows, "Auto-align: Ctrl");
         append(rows, "Delete selected elements: Delete",
@@ -405,6 +397,8 @@ screenshotShortcutHintRows(const ScreenshotShortcutHintContext& context) {
     case ScreenshotActiveTool::Ocr:
     case ScreenshotActiveTool::Table:
     case ScreenshotActiveTool::Qr:
+    case ScreenshotActiveTool::Markdown:
+    case ScreenshotActiveTool::Html:
     case ScreenshotActiveTool::Move:
     case ScreenshotActiveTool::Spotlight:
     case ScreenshotActiveTool::Watermark:

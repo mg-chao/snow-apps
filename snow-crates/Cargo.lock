@@ -2904,6 +2904,7 @@ dependencies = [
 name = "snow-recording-export"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "crossbeam-channel",
  "ffmpeg-next",
  "num_cpus",
@@ -2915,6 +2916,8 @@ dependencies = [
  "symphonia",
  "tempfile",
  "thiserror 2.0.20",
+ "uuid",
+ "windows",
  "zstd",
 ]
 
@@ -2944,10 +2947,12 @@ dependencies = [
  "snow-core",
  "snow-cursor",
  "snow-pipeline",
+ "snow-recording-export",
  "snow-recording-model",
  "tempfile",
  "thiserror 2.0.20",
  "uuid",
+ "windows",
 ]
 
 [[package]]
