@@ -30,7 +30,7 @@ use crate::monitor::MonitorId;
 use crate::timing::{StageScope, attach_stage_timings, qpc_duration_between, stage_record};
 use crate::timing::{stage_checkpoint, stage_mark, stage_record_since};
 
-use super::cursor::decode_dxgi_pointer_shape;
+use super::cursor::{decode_dxgi_pointer_shape, update_dxgi_pointer_position};
 use super::d3d11;
 use super::dirty_rect::{
     self, DirtyCopyStrategy, DirtyCopyThresholds, DirtyRectDenseMergeThresholds,
@@ -2132,7 +2132,7 @@ impl OutputCapturer {
         duplication: &IDXGIOutputDuplication,
         frame_info: &DXGI_OUTDUPL_FRAME_INFO,
     ) {
-        self.last_pointer_position = Some(frame_info.PointerPosition);
+        update_dxgi_pointer_position(&mut self.last_pointer_position, frame_info);
 
         if frame_info.PointerShapeBufferSize == 0 {
             return;

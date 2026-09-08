@@ -733,7 +733,13 @@ impl LiveAudioMixer {
             })
         };
         *next_frame = Some(start_frame.saturating_add(u64::from(packet.frames)));
-        self.insert_samples(packet.source, start_frame, packet.frames, &packet.data);
+        self.insert_samples(
+            packet.source,
+            start_frame,
+            packet.frames,
+            &packet.data,
+            clock.active_elapsed_duration(Instant::now()),
+        );
     }
 
     fn insert_samples(
@@ -742,10 +748,13 @@ impl LiveAudioMixer {
         start_frame: u64,
         frames: u32,
         data: &[i16],
+        active_elapsed: Duration,
     ) {
         let channels = usize::from(AUDIO_CHANNELS);
-        let maximum_slot = self
-            .next_slot
+        // The recording worker drains captured audio before emitting it. Overlay rendering
+        // or video encoding can stall that worker, leaving next_slot behind valid queued
+        // packets. Bound future timestamps against the recording clock, not encoder progress.
+        let maximum_slot = (duration_to_audio_frames(active_elapsed) / self.slot_frames)
             .saturating_add(self.jitter_frames.div_ceil(self.slot_frames))
             .saturating_add(2);
         for source_frame in 0..u64::from(frames) {
@@ -1530,6 +1539,63 @@ mod tests {
     }
 
     #[test]
+    fn live_audio_mixer_preserves_backlog_after_recording_worker_stalls() {
+        // Overlay composition/encoding can delay the consumer while capture continues.
+        // All packets here fit in the capture queue, and none has been emitted yet.
+        let started_at = Instant::now() - Duration::from_secs(1);
+        let clock = RecordingClock::new(started_at);
+        for sources in [
+            vec![AudioSourceKind::System],
+            vec![AudioSourceKind::Microphone],
+            vec![AudioSourceKind::System, AudioSourceKind::Microphone],
+        ] {
+            let mut mixer = LiveAudioMixer::new(true, true);
+            for source in &sources {
+                for index in 0..20 {
+                    mixer.insert_packet(
+                        test_audio_packet(
+                            *source,
+                            started_at + Duration::from_millis((index + 1) * 10),
+                            index + 1,
+                            vec![index as i16 + 1; 960],
+                        ),
+                        &clock,
+                    );
+                }
+            }
+            assert_eq!(mixer.dropped_frames, 0, "queued PCM must not be discarded");
+            for index in 0..20 {
+                let actual = mix_audio_slot(mixer.slots.remove(&index).unwrap_or_default(), 960);
+                assert_eq!(actual, vec![(index as i16 + 1) * sources.len() as i16; 960]);
+            }
+        }
+    }
+
+    #[test]
+    fn live_audio_mixer_accepts_delayed_start_but_never_rewrites_emitted_audio() {
+        let mut mixer = LiveAudioMixer::new(true, false);
+        let samples = vec![1000; 960];
+        let elapsed = Duration::from_millis(500);
+        // A source can initialize after the worker starts, including at final drain.
+        mixer.insert_samples(AudioSourceKind::System, 23_520, 480, &samples, elapsed);
+        assert_eq!(mixer.dropped_frames, 0);
+        assert_eq!(
+            mix_audio_slot(mixer.slots.remove(&49).unwrap(), 960),
+            samples
+        );
+
+        mixer.next_slot = 50;
+        mixer.insert_samples(AudioSourceKind::System, 23_520, 480, &samples, elapsed);
+        assert!(mixer.slots.is_empty());
+        assert_eq!(mixer.dropped_frames, 480);
+
+        // A stalled consumer must not allow genuinely future timestamps either.
+        mixer.insert_samples(AudioSourceKind::System, 48_000, 480, &samples, elapsed);
+        assert!(mixer.slots.is_empty());
+        assert_eq!(mixer.dropped_frames, 960);
+    }
+
+    #[test]
     fn live_audio_mixer_preserves_contiguous_samples_despite_timestamp_jitter() {
         for source in [AudioSourceKind::System, AudioSourceKind::Microphone] {
             let started_at = Instant::now();
@@ -1686,13 +1752,25 @@ mod tests {
     fn live_audio_mixer_saturates_sources_and_bounds_future_slots() {
         let mut mixer = LiveAudioMixer::new(true, true);
         let samples = vec![24_000i16; 480 * 2];
-        mixer.insert_samples(AudioSourceKind::System, 0, 480, &samples);
-        mixer.insert_samples(AudioSourceKind::Microphone, 0, 480, &samples);
+        mixer.insert_samples(AudioSourceKind::System, 0, 480, &samples, Duration::ZERO);
+        mixer.insert_samples(
+            AudioSourceKind::Microphone,
+            0,
+            480,
+            &samples,
+            Duration::ZERO,
+        );
         let slot = mixer.slots.remove(&0).unwrap();
         let mixed = mix_audio_slot(slot, 480 * 2);
         assert!(mixed.iter().all(|sample| *sample == i16::MAX));
 
-        mixer.insert_samples(AudioSourceKind::System, 48_000, 480, &samples);
+        mixer.insert_samples(
+            AudioSourceKind::System,
+            48_000,
+            480,
+            &samples,
+            Duration::ZERO,
+        );
         assert!(mixer.slots.is_empty());
         assert_eq!(mixer.dropped_frames, 480);
     }
