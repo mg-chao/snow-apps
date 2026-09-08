@@ -28,6 +28,7 @@
 #include <QGridLayout>
 #include <QHash>
 #include <QImage>
+#include <QJsonObject>
 #include <QLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -6880,6 +6881,7 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
         snow_shot::presentation::screenshotCanvasStyleDefaults();
     expected.watermark = globalDefaults.watermark;
     expected.spotlight = globalDefaults.spotlight;
+    expected.serialNumber.number = globalDefaults.serialNumber.number;
     require(snow_shot::presentation::screenshotCanvasToolStyleDefaults() == expected,
             "persisted tool styles should round-trip independently without global styles");
 
@@ -6888,6 +6890,52 @@ void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
     require(!configuration.contains(QStringLiteral("drawing/watermark_style")) &&
                 !configuration.contains(QStringLiteral("drawing/spotlight_style")),
             "watermark and spotlight styles must not be added to persistent tool configuration");
+    const QString serialKey = QStringLiteral("drawing/serial_number_style");
+    QJsonObject savedSerialStyle = configuration.value(serialKey).toObject();
+    require(!savedSerialStyle.contains(QStringLiteral("number")),
+            "the current serial number must not be saved with its appearance");
+
+    savedSerialStyle.insert(QStringLiteral("number"), styles.serialNumber.number);
+    require(snow_shot::storage::ApplicationStorage::instance().configuration().setValue(
+                serialKey, savedSerialStyle),
+            "legacy serial-number settings should be accepted for the compatibility test");
+    require(snow_shot::presentation::screenshotCanvasToolStyleDefaults() == expected,
+            "legacy saved numbers should be ignored while restoring appearance settings");
+
+    ScreenshotToolPalette::Options options;
+    options.showSerialNumberTool = true;
+    options.showTextTool = true;
+    options.styleDefaults = snow_shot::presentation::screenshotCanvasToolStyleDefaults();
+    ScreenshotToolPalette palette(options);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::SerialNumber);
+    SnowCanvasStyleToolbarState state;
+    state.source = SnowCanvasStyleToolbarSource::DefaultSerialNumber;
+    state.serialNumberStyle = styles.serialNumber;
+    palette.setStyleToolbarState(state);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Text);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::SerialNumber);
+    require(palette.creationStyleDefaults().serialNumber == styles.serialNumber,
+            "switching tools should retain the current session's serial number");
+    require(
+        snow_shot::presentation::persistScreenshotCanvasToolStyles(palette.creationStyleDefaults()),
+        "the current session's appearance should save successfully");
+    require(palette.creationStyleDefaults().serialNumber == styles.serialNumber,
+            "saving appearance must not reset the current session's serial number");
+    require(!snow_shot::storage::ApplicationStorage::instance()
+                 .configuration()
+                 .value(serialKey)
+                 .toObject()
+                 .contains(QStringLiteral("number")),
+            "saving appearance should remove the legacy number field");
+
+    palette.resetStyleState();
+    palette.setCreationStyleDefaults(snow_shot::presentation::screenshotCanvasToolStyleDefaults());
+    require(palette.creationStyleDefaults().serialNumber == expected.serialNumber,
+            "a new capture should start at one and retain the saved appearance");
+    options.styleDefaults = snow_shot::presentation::screenshotCanvasToolStyleDefaults();
+    ScreenshotToolPalette newEditor(options);
+    require(newEditor.creationStyleDefaults().serialNumber == expected.serialNumber,
+            "a new editor should start at one and retain the saved appearance");
 }
 
 void fontFamilyListIsCachedForEditorBuilds() {
@@ -7100,5 +7148,6 @@ int main(int argc, char** argv) {
     arrowheadOptionsRetranslateInPlace();
     arrowAndLineUseConfiguredPopoverGroup();
     tableQrEntrySelectionPersistsAcrossPaletteInstances();
+    canvasToolStylesPersistIndependentlyWithoutGlobalStyles();
     return 0;
 }
