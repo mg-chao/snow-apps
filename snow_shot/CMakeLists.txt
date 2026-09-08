@@ -2501,6 +2501,19 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-pinned-window-tests
         COMMAND snow-shot-pinned-window-tests
     )
+    snow_shot_import_offscreen_platform(snow-shot-pinned-window-tests)
+    add_test(NAME snow-shot-pinned-middle-click-tests
+        COMMAND snow-shot-pinned-window-tests --middle-click-only)
+    add_test(NAME snow-shot-pinned-middle-click-offscreen-tests
+        COMMAND snow-shot-pinned-window-tests --middle-click-only)
+    set_tests_properties(snow-shot-pinned-middle-click-offscreen-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
+    add_test(NAME snow-shot-pinned-double-click-tests
+        COMMAND snow-shot-pinned-window-tests --double-click-only)
+    add_test(NAME snow-shot-pinned-double-click-offscreen-tests
+        COMMAND snow-shot-pinned-window-tests --double-click-only)
+    set_tests_properties(snow-shot-pinned-double-click-offscreen-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}")
     add_test(NAME snow-shot-pinned-save-dialog-tests
         COMMAND snow-shot-pinned-window-tests --save-dialog-only)
     set_tests_properties(snow-shot-pinned-save-dialog-tests PROPERTIES TIMEOUT 90)
@@ -2637,6 +2650,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --restore-wiring-only
     )
     set(_snow_shot_pinned_window_test_names
+        snow-shot-pinned-middle-click-tests
+        snow-shot-pinned-middle-click-offscreen-tests
+        snow-shot-pinned-double-click-tests
+        snow-shot-pinned-double-click-offscreen-tests
         snow-shot-pinned-window-tests
         snow-shot-pinned-translation-tests
         snow-shot-pinned-async-presentation-tests

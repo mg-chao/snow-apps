@@ -392,6 +392,11 @@ void settingsSchemaDefaultsAndValidationAreComplete() {
             "frame-rate settings must reject unsupported and non-integral values");
 
     const QMap<QString, QStringList> allowedStringValues{
+        {QStringLiteral("pin_to_screen/middle_mouse_button_action"),
+         {QStringLiteral("none"), QStringLiteral("reset_zoom"), QStringLiteral("thumbnail_mode"),
+          QStringLiteral("close")}},
+        {QStringLiteral("pin_to_screen/double_click_action"),
+         {QStringLiteral("none"), QStringLiteral("thumbnail_mode"), QStringLiteral("close")}},
         {QStringLiteral("text_recognition/fill_style"),
          {QStringLiteral("blur"), QStringLiteral("background_fill")}},
         {QStringLiteral("text_recognition/model_type"),
@@ -910,6 +915,26 @@ void settingsAdaptersRoundTripAndRejectInvalidValues() {
             "drawing exclusion adapter must use schema canonicalization");
 
     const storage::PinToScreenSettings pin;
+    require(pin.doubleClickAction() == QStringLiteral("thumbnail_mode"),
+            "pinned double-click must default to thumbnail mode");
+    for (const QString& action :
+         {QStringLiteral("none"), QStringLiteral("thumbnail_mode"), QStringLiteral("close")}) {
+        require(pin.setDoubleClickAction(action) && pin.doubleClickAction() == action,
+                "pinned double-click actions must round-trip through storage");
+    }
+    require(!pin.setDoubleClickAction(QStringLiteral("unsupported")) &&
+                pin.doubleClickAction() == QStringLiteral("close"),
+            "invalid pinned double-click actions must preserve the saved choice");
+    require(pin.middleMouseButtonAction() == QStringLiteral("reset_zoom"),
+            "pinned middle-click must default to reset zoom");
+    for (const QString& action : {QStringLiteral("none"), QStringLiteral("reset_zoom"),
+                                  QStringLiteral("thumbnail_mode"), QStringLiteral("close")}) {
+        require(pin.setMiddleMouseButtonAction(action) && pin.middleMouseButtonAction() == action,
+                "pinned middle-click actions must round-trip through storage");
+    }
+    require(!pin.setMiddleMouseButtonAction(QStringLiteral("unsupported")) &&
+                pin.middleMouseButtonAction() == QStringLiteral("close"),
+            "invalid pinned middle-click actions must preserve the saved choice");
     require(pin.mouseWheelZoomMode() == QStringLiteral("mouse_position") &&
                 pin.automaticTextRecognition() && pin.autoResizeWindow() &&
                 pin.setMouseWheelZoomMode(QStringLiteral("bottom_right")) &&

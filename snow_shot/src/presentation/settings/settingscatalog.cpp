@@ -688,8 +688,8 @@ SettingsItemDefinition screenshotOcrActionItem() {
             {QStringLiteral("quick_copy_text"),
              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Copy text (Global)"))},
             {QStringLiteral("quick_copy_text_and_end_screenshot"),
-             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
-                                            "Copy text and end screenshot (Global)"))},
+             settingsText(
+                 QT_TRANSLATE_NOOP("SettingsCatalog", "Copy text and end screenshot (Global)"))},
             {QStringLiteral("enable_edit_mode"),
              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Enable edit mode"))},
         });
@@ -837,6 +837,42 @@ SettingsItemDefinition pinZoomModeItem() {
              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Fix bottom-right corner"))},
             {QStringLiteral("center"),
              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Fix center point"))},
+        });
+}
+
+SettingsItemDefinition pinDoubleClickActionItem() {
+    return fixedSelectItem(
+        QStringLiteral("pin-to-screen.double-click-action"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Double-click Action"),
+        QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Choose the action for double-clicking a draggable area of a pinned screenshot"),
+        QStringLiteral("pin_to_screen/double_click_action"),
+        SettingsSelectBinding::PinDoubleClickAction,
+        {
+            {QStringLiteral("none"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "None"))},
+            {QStringLiteral("thumbnail_mode"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Thumbnail Mode"))},
+            {QStringLiteral("close"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Close"))},
+        });
+}
+
+SettingsItemDefinition pinMiddleClickActionItem() {
+    return fixedSelectItem(
+        QStringLiteral("pin-to-screen.middle-mouse-button-action"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Middle Mouse Button Action"),
+        QT_TRANSLATE_NOOP(
+            "SettingsCatalog",
+            "Choose the action for middle-clicking a draggable area of a pinned screenshot"),
+        QStringLiteral("pin_to_screen/middle_mouse_button_action"),
+        SettingsSelectBinding::PinMiddleClickAction,
+        {
+            {QStringLiteral("none"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "None"))},
+            {QStringLiteral("reset_zoom"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Reset Zoom"))},
+            {QStringLiteral("thumbnail_mode"),
+             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Thumbnail Mode"))},
+            {QStringLiteral("close"), settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Close"))},
         });
 }
 
@@ -1503,7 +1539,8 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
                                                    "Pinned screenshot window appearance settings")),
                     SettingsSectionReset::PinToScreenBehavior,
-                    {pinZoomModeItem(), pinAutomaticOcrItem(), pinAutoResizeItem()},
+                    {pinZoomModeItem(), pinDoubleClickActionItem(), pinMiddleClickActionItem(),
+                     pinAutomaticOcrItem(), pinAutoResizeItem()},
                 },
                 {
                     QStringLiteral("translation-settings"),
@@ -2427,6 +2464,12 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSelectBinding::ScreenshotMiddleClickAction:
                         expectedKey = QStringLiteral("screenshot/middle_mouse_button_action");
+                        break;
+                    case SettingsSelectBinding::PinMiddleClickAction:
+                        expectedKey = QStringLiteral("pin_to_screen/middle_mouse_button_action");
+                        break;
+                    case SettingsSelectBinding::PinDoubleClickAction:
+                        expectedKey = QStringLiteral("pin_to_screen/double_click_action");
                         break;
                     case SettingsSelectBinding::PinMouseWheelZoomMode:
                         expectedKey = QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode");

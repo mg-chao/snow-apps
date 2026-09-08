@@ -47,6 +47,12 @@ class CatalogTranslator final : public QTranslator {
             return {};
         }
         const QString source = QString::fromUtf8(sourceText);
+        if (source == QStringLiteral("Middle Mouse Button Action")) {
+            return QStringLiteral("Localized Middle Action");
+        }
+        if (source == QStringLiteral("Reset Zoom")) {
+            return QStringLiteral("Localized Zoom Reset");
+        }
         if (source == QStringLiteral("Theme")) {
             return QStringLiteral("Localized Theme");
         }
@@ -94,8 +100,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 32 && itemCount == 130,
-            "catalog must contain thirty-two sections and one hundred thirty items");
+    require(sectionCount == 32 && itemCount == 132,
+            "catalog must contain thirty-two sections and one hundred thirty-two items");
     const auto* history =
         catalog.section(QStringLiteral("storage-and-privacy"), QStringLiteral("history"));
     require(history != nullptr && history->items.size() >= 2 &&
@@ -290,6 +296,47 @@ void builtInCatalogIsCompleteAndValid() {
             catalog.item({QStringLiteral("function-settings"), QStringLiteral("tray-settings"),
                           QStringLiteral("tray.menu-options")}) != nullptr,
         "Function settings must own the moved Pin to screen, Drawing, and Tray controls");
+
+    const auto* pinDoubleClick =
+        catalog.item({QStringLiteral("function-settings"), QStringLiteral("pin-to-screen-settings"),
+                      QStringLiteral("pin-to-screen.double-click-action")});
+    require(pinDoubleClick != nullptr &&
+                pinDoubleClick->title.translated() == QStringLiteral("Double-click Action"),
+            "Pin to Screen must expose Double-click Action");
+    const auto& pinSelect = std::get<settings::SettingsSelectDefinition>(pinDoubleClick->payload);
+    require(pinSelect.binding == settings::SettingsSelectBinding::PinDoubleClickAction &&
+                pinSelect.options.size() == 3 &&
+                pinSelect.options[0].value == QStringLiteral("none") &&
+                pinSelect.options[0].label.translated() == QStringLiteral("None") &&
+                pinSelect.options[1].value == QStringLiteral("thumbnail_mode") &&
+                pinSelect.options[1].label.translated() == QStringLiteral("Thumbnail Mode") &&
+                pinSelect.options[2].value == QStringLiteral("close") &&
+                pinSelect.options[2].label.translated() == QStringLiteral("Close"),
+            "pinned double-click options must preserve the specified order, labels and values");
+    require(functionPage->sections.at(1).items.at(1).id == pinDoubleClick->id,
+            "pinned double-click must follow mouse wheel zoom mode");
+
+    const auto* pinMiddleClick =
+        catalog.item({QStringLiteral("function-settings"), QStringLiteral("pin-to-screen-settings"),
+                      QStringLiteral("pin-to-screen.middle-mouse-button-action")});
+    require(pinMiddleClick != nullptr &&
+                pinMiddleClick->title.translated() == QStringLiteral("Middle Mouse Button Action"),
+            "Pin to Screen must expose Middle Mouse Button Action");
+    const auto& middleSelect =
+        std::get<settings::SettingsSelectDefinition>(pinMiddleClick->payload);
+    require(middleSelect.binding == settings::SettingsSelectBinding::PinMiddleClickAction &&
+                middleSelect.options.size() == 4 &&
+                middleSelect.options[0].value == QStringLiteral("none") &&
+                middleSelect.options[0].label.translated() == QStringLiteral("None") &&
+                middleSelect.options[1].value == QStringLiteral("reset_zoom") &&
+                middleSelect.options[1].label.translated() == QStringLiteral("Reset Zoom") &&
+                middleSelect.options[2].value == QStringLiteral("thumbnail_mode") &&
+                middleSelect.options[2].label.translated() == QStringLiteral("Thumbnail Mode") &&
+                middleSelect.options[3].value == QStringLiteral("close") &&
+                middleSelect.options[3].label.translated() == QStringLiteral("Close"),
+            "pinned middle-click options must preserve the specified order, labels and values");
+    require(functionPage->sections.at(1).items.at(2).id == pinMiddleClick->id,
+            "pinned middle-click must follow double-click action");
 
     const auto* storagePage = catalog.page(QStringLiteral("storage-and-privacy"));
     const auto* imageFormat =
@@ -1015,8 +1062,12 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 170 && index.search(QString()).size() == 170,
+    require(index.entries().size() == 172 && index.search(QString()).size() == 172,
             "search must generate all catalog nodes in catalog order");
+    const auto middle = index.search(QStringLiteral("Reset Zoom"));
+    require(!middle.isEmpty() && middle.constFirst().location.itemId ==
+                                     QStringLiteral("pin-to-screen.middle-mouse-button-action"),
+            "search must find the pinned middle-click selector by its Reset Zoom option");
     const auto translation = index.search(QStringLiteral("original image translation"));
     require(!translation.isEmpty() && translation.constFirst().location.itemId ==
                                           QStringLiteral("translation.original-image"),
@@ -1047,7 +1098,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 8 && sections == 32 && items == 130,
+    require(pages == 8 && sections == 32 && items == 132,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));
@@ -1116,6 +1167,13 @@ void searchIndexRebuildsLocalizedFields() {
                 index.search(QStringLiteral("visual style")).constFirst().id ==
                     QStringLiteral("item:interface.theme"),
             "search rebuilds must replace localized aliases");
+    for (const QString& query :
+         {QStringLiteral("Localized Middle Action"), QStringLiteral("Localized Zoom Reset")}) {
+        const auto result = index.search(query);
+        require(!result.isEmpty() && result.constFirst().location.itemId ==
+                                         QStringLiteral("pin-to-screen.middle-mouse-button-action"),
+                "language changes must refresh middle-click titles and options in search");
+    }
     QCoreApplication::removeTranslator(&translator);
     index.rebuild();
     require(index.search(QStringLiteral("localized theme")).isEmpty(),

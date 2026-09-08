@@ -175,6 +175,7 @@ class ScreenshotPinnedWindow final : public QWidget {
     void moveEvent(QMoveEvent* event) override;
     void showEvent(QShowEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
 
@@ -272,6 +273,8 @@ class ScreenshotPinnedWindow final : public QWidget {
     void finishWindowMove();
     bool windowDragEnabled() const;
     bool windowDragEnabledAt(const QPoint& position) const;
+    bool handleDoubleClick(const QPoint& position);
+    bool handleMiddleClick(const QPoint& position);
     void updateWindowDragCursor(const QPoint& position);
     void setWindowDragCursor(Qt::CursorShape shape);
     void clearWindowDragCursor();

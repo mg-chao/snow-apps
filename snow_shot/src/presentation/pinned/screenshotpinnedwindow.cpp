@@ -1402,6 +1402,47 @@ bool ScreenshotPinnedWindow::nativeEvent(const QByteArray& eventType, void* mess
             return true;
         }
 
+        if (nativeMessage->message == WM_NCLBUTTONDBLCLK && nativeMessage->wParam == HTCAPTION) {
+            const QPoint nativePosition(GET_X_LPARAM(nativeMessage->lParam),
+                                        GET_Y_LPARAM(nativeMessage->lParam));
+            const QRect nativeGeometry = currentNativeGeometry();
+            if (nativeGeometry.isValid() && !nativeGeometry.isEmpty()) {
+                const QPoint position(qRound((nativePosition.x() - nativeGeometry.left()) *
+                                             static_cast<double>(width()) / nativeGeometry.width()),
+                                      qRound((nativePosition.y() - nativeGeometry.top()) *
+                                             static_cast<double>(height()) /
+                                             nativeGeometry.height()));
+                static_cast<void>(handleDoubleClick(position));
+            }
+            // The image is a synthetic caption. Never let USER32 maximize it,
+            // including when the configured action is None or dragging is disabled.
+            if (result != nullptr) {
+                *result = 0;
+            }
+            return true;
+        }
+
+        if ((nativeMessage->message == WM_NCMBUTTONDOWN ||
+             nativeMessage->message == WM_NCMBUTTONDBLCLK) &&
+            nativeMessage->wParam == HTCAPTION) {
+            const QPoint nativePosition(GET_X_LPARAM(nativeMessage->lParam),
+                                        GET_Y_LPARAM(nativeMessage->lParam));
+            const QRect nativeGeometry = currentNativeGeometry();
+            if (nativeGeometry.isValid() && !nativeGeometry.isEmpty()) {
+                const QPoint position(qRound((nativePosition.x() - nativeGeometry.left()) *
+                                             static_cast<double>(width()) / nativeGeometry.width()),
+                                      qRound((nativePosition.y() - nativeGeometry.top()) *
+                                             static_cast<double>(height()) /
+                                             nativeGeometry.height()));
+                static_cast<void>(handleMiddleClick(position));
+            }
+            // Consume the synthetic caption press so Qt cannot dispatch it again.
+            if (result != nullptr) {
+                *result = 0;
+            }
+            return true;
+        }
+
         if (nativeMessage->message == WM_NCRBUTTONDOWN && nativeMessage->wParam == HTCAPTION) {
             // The image surface is a synthetic native caption. Suppress the
             // default half of the non-client context interaction.
@@ -2243,6 +2284,22 @@ bool ScreenshotPinnedWindow::eventFilter(QObject* watched, QEvent* event) {
         contextEvent->accept();
         return true;
     }
+    if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseButtonDblClick) {
+        auto* mouseEvent = static_cast<QMouseEvent*>(event);
+        if (mouseEvent->button() == Qt::MiddleButton &&
+            handleMiddleClick(windowPositionForEvent(watched, mouseEvent->position()).toPoint())) {
+            mouseEvent->accept();
+            return true;
+        }
+    }
+    if (event->type() == QEvent::MouseButtonDblClick) {
+        auto* mouseEvent = static_cast<QMouseEvent*>(event);
+        if (mouseEvent->button() == Qt::LeftButton &&
+            handleDoubleClick(windowPositionForEvent(watched, mouseEvent->position()).toPoint())) {
+            mouseEvent->accept();
+            return true;
+        }
+    }
     if (windowDragEnabled() || m_windowDragActive) {
         if (event->type() == QEvent::MouseMove) {
             auto* mouseEvent = static_cast<QMouseEvent*>(event);
@@ -2448,12 +2505,31 @@ void ScreenshotPinnedWindow::mousePressEvent(QMouseEvent* event) {
         return;
     }
 
+    if (event != nullptr && event->button() == Qt::MiddleButton &&
+        handleMiddleClick(event->position().toPoint())) {
+        event->accept();
+        return;
+    }
     if (event != nullptr && event->button() == Qt::LeftButton &&
         windowDragEnabledAt(event->position().toPoint()) && startWindowMove()) {
         event->accept();
         return;
     }
     QWidget::mousePressEvent(event);
+}
+
+void ScreenshotPinnedWindow::mouseDoubleClickEvent(QMouseEvent* event) {
+    if (event != nullptr && event->button() == Qt::MiddleButton &&
+        handleMiddleClick(event->position().toPoint())) {
+        event->accept();
+        return;
+    }
+    if (event != nullptr && event->button() == Qt::LeftButton &&
+        handleDoubleClick(event->position().toPoint())) {
+        event->accept();
+        return;
+    }
+    QWidget::mouseDoubleClickEvent(event);
 }
 
 void ScreenshotPinnedWindow::mouseReleaseEvent(QMouseEvent* event) {
@@ -4860,6 +4936,41 @@ bool ScreenshotPinnedWindow::windowDragEnabledAt(const QPoint& position) const {
     return !m_ocrMode ||
            (m_recognitionContent != nullptr && m_recognitionContent->isVisible() &&
             m_recognitionContent->isOcrBackgroundAt(m_recognitionContent->mapFrom(this, position)));
+}
+
+bool ScreenshotPinnedWindow::handleDoubleClick(const QPoint& position) {
+    if (!windowDragEnabledAt(position)) {
+        return false;
+    }
+    static_cast<void>(finishNativeGeometryInteraction());
+    finishWindowMove();
+    const QString action = snow_shot::storage::PinToScreenSettings().doubleClickAction();
+    if (action == QStringLiteral("thumbnail_mode")) {
+        setThumbnailMode(!m_thumbnailMode);
+    } else if (action == QStringLiteral("close")) {
+        requestUserClose();
+    }
+    return true;
+}
+
+bool ScreenshotPinnedWindow::handleMiddleClick(const QPoint& position) {
+    if (!windowDragEnabledAt(position)) {
+        return false;
+    }
+    const QString action = snow_shot::storage::PinToScreenSettings().middleMouseButtonAction();
+    if (action == QStringLiteral("none")) {
+        return true;
+    }
+    static_cast<void>(finishNativeGeometryInteraction());
+    finishWindowMove();
+    if (action == QStringLiteral("reset_zoom")) {
+        applyScale(100);
+    } else if (action == QStringLiteral("thumbnail_mode")) {
+        setThumbnailMode(!m_thumbnailMode);
+    } else if (action == QStringLiteral("close")) {
+        requestUserClose();
+    }
+    return true;
 }
 
 void ScreenshotPinnedWindow::updateWindowDragCursor(const QPoint& position) {

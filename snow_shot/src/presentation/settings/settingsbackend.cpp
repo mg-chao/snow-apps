@@ -217,6 +217,10 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
         return storage::ScreenshotSettings().doubleClickAction();
     case SettingsSelectBinding::ScreenshotMiddleClickAction:
         return storage::ScreenshotSettings().middleMouseButtonAction();
+    case SettingsSelectBinding::PinDoubleClickAction:
+        return storage::PinToScreenSettings().doubleClickAction();
+    case SettingsSelectBinding::PinMiddleClickAction:
+        return storage::PinToScreenSettings().middleMouseButtonAction();
     case SettingsSelectBinding::PinMouseWheelZoomMode:
         return storage::PinToScreenSettings().mouseWheelZoomMode();
     case SettingsSelectBinding::ScreenRecordingClarity:
@@ -316,6 +320,10 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
         return storage::ScreenshotSettings().setDoubleClickAction(value.toString());
     case SettingsSelectBinding::ScreenshotMiddleClickAction:
         return storage::ScreenshotSettings().setMiddleMouseButtonAction(value.toString());
+    case SettingsSelectBinding::PinDoubleClickAction:
+        return storage::PinToScreenSettings().setDoubleClickAction(value.toString());
+    case SettingsSelectBinding::PinMiddleClickAction:
+        return storage::PinToScreenSettings().setMiddleMouseButtonAction(value.toString());
     case SettingsSelectBinding::PinMouseWheelZoomMode:
         return storage::PinToScreenSettings().setMouseWheelZoomMode(value.toString());
     case SettingsSelectBinding::ScreenRecordingClarity:
@@ -1118,6 +1126,12 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         });
     case SettingsSectionReset::PinToScreenBehavior:
         return storage::ApplicationStorage::instance().configuration().setValues({
+            {QStringLiteral("pin_to_screen/middle_mouse_button_action"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("pin_to_screen/middle_mouse_button_action"))},
+            {QStringLiteral("pin_to_screen/double_click_action"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("pin_to_screen/double_click_action"))},
             {QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode"),
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("pin_to_screen/mouse_wheel_zoom_mode"))},
