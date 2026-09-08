@@ -74,6 +74,7 @@ class ScreenshotToolbarCommandSink {
     virtual void setSelectedElementsOpacity(qreal) {}
     virtual void duplicateSelectedElements() {}
     virtual void deleteSelectedElements() {}
+    virtual void resetCanvas() {}
     virtual void repositionToolbarForContentChange() = 0;
     // Presentation changes may require placement while selection editing is unavailable.
     virtual void repositionToolbarForPresentationChange() {

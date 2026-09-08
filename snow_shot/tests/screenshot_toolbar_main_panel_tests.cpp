@@ -102,10 +102,9 @@ bool imageContainsColor(const QImage& image, const QColor& expected) {
 
 adqt::widgets::AdButton* buttonWithTooltip(ScreenshotToolPalette& palette, const QString& tooltip) {
     for (adqt::widgets::AdButton* button : palette.findChildren<adqt::widgets::AdButton*>()) {
-        if (button != nullptr &&
-            (button->toolTip() == tooltip ||
-             (button->toolTip().startsWith(tooltip + QStringLiteral(" (")) &&
-              button->toolTip().endsWith(')')))) {
+        if (button != nullptr && (button->toolTip() == tooltip ||
+                                  (button->toolTip().startsWith(tooltip + QStringLiteral(" (")) &&
+                                   button->toolTip().endsWith(')')))) {
             return button;
         }
     }
@@ -290,10 +289,11 @@ void cachedToolbarIconsFollowThemeColors() {
     auto* systemAudioButton =
         buttonWithTooltip(recordingToolbar, QStringLiteral("Record speakers"));
     auto* pauseButton = buttonWithTooltip(recordingToolbar, QStringLiteral("Pause recording"));
-    auto* copyGifButton =
-        buttonWithTooltip(recordingToolbar, QStringLiteral("Copy animated image"));
+    auto* copyRecordingButton =
+        buttonWithTooltip(recordingToolbar, QStringLiteral("Copy recording"));
     require(recordStartButton != nullptr && microphoneButton != nullptr &&
-                systemAudioButton != nullptr && pauseButton != nullptr && copyGifButton != nullptr,
+                systemAudioButton != nullptr && pauseButton != nullptr &&
+                copyRecordingButton != nullptr,
             "theme icon test should expose recording toolbar icon controls");
     recordingToolbar.setRecordingMicrophoneEnabled(true);
     recordingToolbar.setRecordingSystemAudioEnabled(false);
@@ -317,7 +317,7 @@ void cachedToolbarIconsFollowThemeColors() {
             "disabled system audio icon should use the light weak text color");
     require(buttonIconContainsColor(pauseButton, lightScheme.map.colorWarning),
             "active pause icon should use the light warning color");
-    require(buttonIconContainsColor(copyGifButton, lightScheme.map.colorPrimary),
+    require(buttonIconContainsColor(copyRecordingButton, lightScheme.map.colorPrimary),
             "enabled GIF copy icon should use the light primary color");
 
     themeManager.setThemeAppearance(snow_shot::presentation::styles::ThemeAppearance::Dark);
@@ -334,7 +334,7 @@ void cachedToolbarIconsFollowThemeColors() {
             buttonIconContainsColor(microphoneButton, darkScheme.map.colorSuccess) &&
             buttonIconContainsColor(systemAudioButton, darkScheme.map.colorTextQuaternary) &&
             buttonIconContainsColor(pauseButton, darkScheme.map.colorWarning) &&
-            buttonIconContainsColor(copyGifButton, darkScheme.map.colorPrimary),
+            buttonIconContainsColor(copyRecordingButton, darkScheme.map.colorPrimary),
         "cached toolbar icons should refresh to the dark theme colors");
 
     themeManager.setThemeAppearance(snow_shot::presentation::styles::ThemeAppearance::Light);
@@ -465,8 +465,8 @@ void mainToolbarSpacingUsesReferenceItemMetrics() {
     for (int index = 0; index < layout->count(); ++index) {
         QLayoutItem* item = layout->itemAt(index);
         referenceEdge += referenceWidths.at(index + 1);
-        const int expectedEdge = qRound(static_cast<qreal>(referenceEdge) * targetWidth /
-                                        referencePanelWidth);
+        const int expectedEdge =
+            qRound(static_cast<qreal>(referenceEdge) * targetWidth / referencePanelWidth);
         require(item->geometry().x() + item->geometry().width() == expectedEdge,
                 "main toolbar item edge was not allocated from cumulative reference widths");
         observedCumulativeRedistribution =
@@ -561,22 +561,19 @@ void visibleToolbarRowsDrivePaletteGeometry() {
         flushEvents();
         const ScreenshotToolbarPlacementSnapshot snapshot = toolbar.placementSnapshot();
         const QSize expectedPaletteSize =
-            snapshot.visibleContentSize +
-            QSize(shadowMargins.left() + shadowMargins.right(),
-                  shadowMargins.top() + shadowMargins.bottom());
+            snapshot.visibleContentSize + QSize(shadowMargins.left() + shadowMargins.right(),
+                                                shadowMargins.top() + shadowMargins.bottom());
         require(toolbar.size() == expectedPaletteSize &&
                     toolbar.contentSizeHint() == snapshot.visibleContentSize &&
                     toolbar.mainPanel()->size() == mainPanelSize &&
                     toolbar.mainToolbarContentRect() == snapshot.top.mainToolbarContentRect,
                 "visible toolbar rows should determine the palette geometry");
-        const QWidget* secondaryPanel = toolbar.actionToolbarVisible()
-                                             ? toolbar.actionPanel()
-                                             : toolbar.styleToolbarVisible() ? toolbar.stylePanel()
-                                                                             : nullptr;
+        const QWidget* secondaryPanel = toolbar.actionToolbarVisible()  ? toolbar.actionPanel()
+                                        : toolbar.styleToolbarVisible() ? toolbar.stylePanel()
+                                                                        : nullptr;
         require(secondaryPanel != nullptr,
                 "each inspected tool should expose its active secondary toolbar");
-        const QRect secondaryRect =
-            secondaryPanel->geometry().translated(-toolbar.contentOffset());
+        const QRect secondaryRect = secondaryPanel->geometry().translated(-toolbar.contentOffset());
         require(secondaryRect == snapshot.top.secondaryToolbarContentRect,
                 "the active secondary toolbar should match the placement snapshot");
         require(visibleContentChangeCount == previousChangeCount + 1,
@@ -590,10 +587,8 @@ void visibleToolbarRowsDrivePaletteGeometry() {
             toolbar.setActiveTool(tool);
             flushEvents();
             const ScreenshotToolbarPlacementSnapshot snapshot = toolbar.placementSnapshot();
-            const QSize currentShadowExtent =
-                toolbar.size() - toolbar.contentSizeHint();
-            const QSize expectedPaletteSize =
-                snapshot.visibleContentSize + currentShadowExtent;
+            const QSize currentShadowExtent = toolbar.size() - toolbar.contentSizeHint();
+            const QSize expectedPaletteSize = snapshot.visibleContentSize + currentShadowExtent;
             require(toolbar.size() == expectedPaletteSize,
                     "scaled visible rows should determine the palette extent without a reserve");
         }

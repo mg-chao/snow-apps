@@ -217,7 +217,7 @@ bool RuntimeSession::restoreDocumentHistoryPreservingEditorStyles(const QByteArr
 }
 
 bool RuntimeSession::clearDocumentPreservingViewports() {
-    if (m_runtime.get() == nullptr) {
+    if (m_runtime.get() == nullptr || !m_clients.resetEditingState()) {
         return false;
     }
 

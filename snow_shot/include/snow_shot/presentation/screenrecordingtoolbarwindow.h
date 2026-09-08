@@ -12,6 +12,7 @@ class ScreenRecordingToolbarWindow final : public ScreenshotFloatingToolPaletteW
     explicit ScreenRecordingToolbarWindow(QWidget* parent = nullptr);
 
     void placeForPhysicalRegion(const QRect& physicalRegion);
+    void showAndActivate();
 };
 
 #endif // SNOW_SHOT_PRESENTATION_SCREENRECORDINGTOOLBARWINDOW_H

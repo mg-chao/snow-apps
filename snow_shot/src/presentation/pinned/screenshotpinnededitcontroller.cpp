@@ -415,6 +415,8 @@ void ScreenshotPinnedEditController::ensureToolbar() {
                 [this]() { m_canvas.duplicateSelected(); });
         connect(toolbar, &ScreenshotToolPalette::deleteSelectionRequested, this,
                 [this]() { m_canvas.deleteSelected(); });
+        connect(toolbar, &ScreenshotToolPalette::resetCanvasRequested, this,
+                [this]() { m_canvas.clearDocument(); });
         connect(toolbar, &ScreenshotToolPalette::shapeStyleChanged, this,
                 &ScreenshotPinnedEditController::applyShapeStyleFromPalette);
         connect(toolbar, &ScreenshotToolPalette::textStyleChanged, this,

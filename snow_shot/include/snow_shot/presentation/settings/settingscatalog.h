@@ -89,7 +89,6 @@ enum class SettingsSelectBinding {
     ScreenRecordingFrameRate,
     AnimatedImageClarity,
     AnimatedImageFrameRate,
-    AnimatedImageFormat,
     ScreenRecordingEncoder,
     ScreenRecordingEncodingPreset,
     ScreenshotImageFormat,
@@ -236,6 +235,7 @@ enum class SettingsLocalShortcutScope {
     Screenshot,
     Drawing,
     PinToScreen,
+    ScreenRecording,
 };
 
 struct SettingsLocalShortcutDefinition {
@@ -355,6 +355,7 @@ enum class SettingsSectionReset {
     ScreenshotOtherShortcuts,
     DrawingShortcuts,
     PinToScreenShortcuts,
+    ScreenRecordingShortcuts,
     PinToScreen,
     PinToScreenBehavior,
     Tray,

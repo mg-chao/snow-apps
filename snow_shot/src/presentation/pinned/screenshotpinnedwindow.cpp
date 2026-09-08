@@ -750,7 +750,7 @@ void ScreenshotPinnedWindow::registerWindowShortcuts() {
         return localCommandsAllowed(context) && m_ocrAction != nullptr && m_ocrAction->isEnabled();
     };
     recognition.activate = [this](const auto&) {
-        m_ocrAction->setChecked(true);
+        m_ocrAction->trigger();
         return true;
     };
     m_pinnedShortcutBindings.insert(QStringLiteral("show_text_recognition_results"),

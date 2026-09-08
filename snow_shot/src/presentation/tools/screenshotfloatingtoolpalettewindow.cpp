@@ -1051,11 +1051,12 @@ bool ScreenshotFloatingToolPaletteWindow::handleToolbarWheel(QWheelEvent* event)
 void ScreenshotFloatingToolPaletteWindow::applyWindowAttributes() {
     setAttribute(Qt::WA_TranslucentBackground, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
-    setAttribute(Qt::WA_ShowWithoutActivating, true);
-    // This no-activate tool window must still dispatch tooltip events.
+    const bool acceptsFocus = !windowFlags().testFlag(Qt::WindowDoesNotAcceptFocus);
+    setAttribute(Qt::WA_ShowWithoutActivating, !acceptsFocus);
+    // Tool windows must still dispatch tooltip events.
     setAttribute(Qt::WA_AlwaysShowToolTips, true);
     setAutoFillBackground(false);
-    setFocusPolicy(Qt::NoFocus);
+    setFocusPolicy(acceptsFocus ? Qt::StrongFocus : Qt::NoFocus);
 }
 
 void ScreenshotFloatingToolPaletteWindow::prewarmScopeIcons(QWidget* scope) {
@@ -1159,11 +1160,12 @@ void ScreenshotFloatingToolPaletteWindow::endKeyboardFocusInteraction(QWidget* e
     }
 
     m_keyboardFocusInteractionActive = false;
+    const bool acceptsFocus = !windowFlags().testFlag(Qt::WindowDoesNotAcceptFocus);
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    static_cast<void>(native::setKeyboardFocusEnabled(winId(), false));
+    static_cast<void>(native::setKeyboardFocusEnabled(winId(), acceptsFocus));
 #else
     if (QWindow* handle = windowHandle()) {
-        handle->setFlag(Qt::WindowDoesNotAcceptFocus, true);
+        handle->setFlag(Qt::WindowDoesNotAcceptFocus, !acceptsFocus);
     }
 #endif
 

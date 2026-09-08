@@ -131,6 +131,24 @@ if ($LASTEXITCODE -ne 0) { throw "Localized CPack installer compilation failed."
 $scriptPath = Get-ChildItem -LiteralPath "$cpackBuild\_CPack_Packages" -Recurse -Filter project.nsi
 $generated = Get-Content -LiteralPath $scriptPath.FullName -Raw
 $init = [regex]::Match($generated, '(?s)Function \.onInit\r?\n.*?FunctionEnd').Value
+$optionsPage = [regex]::Match($generated, '(?s)Function InstallOptionsPage\r?\n.*?FunctionEnd').Value
+if ($optionsPage.Contains('Abort') -or
+    -not $optionsPage.Contains('MUI_INSTALLOPTIONS_DISPLAY "NSIS.InstallOptions.ini"') -or
+    -not $optionsPage.Contains('"Field 1" "Text" "$(SnowShotDesktopIcon)"') -or
+    $optionsPage.Contains('"State"')) {
+    throw "The shortcut option must be visible, localized, and preserve the user's selection."
+}
+foreach ($setting in '"Settings" "NumFields" "1"', '"Field 1" "Type" "CheckBox"',
+    '"Field 1" "State" "1"') {
+    if (-not $init.Contains($setting)) { throw "Missing shortcut initialization: $setting" }
+}
+if ($init.Contains('0 noOptionsPage') -or
+    -not $generated.Contains('MUI_INSTALLOPTIONS_READ $INSTALL_DESKTOP "NSIS.InstallOptions.ini" "Field 1" "State"') -or
+    $generated -notmatch 'StrCmp "\$INSTALL_DESKTOP" "1" 0 \+2\r?\n\s*CreateShortCut "\$DESKTOP\\Snow Shot.lnk" "\$INSTDIR\\bin\\snow_shot.exe"' -or
+    -not $generated.Contains('Delete "$DESKTOP\Snow Shot.lnk"')) {
+    throw "Desktop shortcut creation must honor the checkbox and support uninstall cleanup."
+}
+Write-Output "PASS: shortcut-only options default on, preserve selection, and gate desktop shortcut creation."
 if ($init.IndexOf('!insertmacro MUI_LANGDLL_DISPLAY') -lt 0 -or
     $init.IndexOf('!insertmacro MUI_LANGDLL_DISPLAY') -gt $init.IndexOf('Call SnowShotEnsureAppClosed')) {
     throw "Language selection must precede the running-app and upgrade prompts."

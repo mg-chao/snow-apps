@@ -864,6 +864,7 @@ set(PROJECT_HEADERS
     include/snow_shot/presentation/screenshotuipreferences.h
     include/snow_shot/presentation/screenrecordingareawindow.h
     include/snow_shot/presentation/screenrecordingcontroller.h
+    include/snow_shot/presentation/screenrecordingshortcutcontroller.h
     include/snow_shot/presentation/screenrecordingtoolbarwindow.h
     include/snow_shot/presentation/styles/mainwindowcomponenttoken.h
     include/snow_shot/presentation/styles/buttonborder.h
@@ -998,6 +999,7 @@ set(PROJECT_CXX_SOURCES
     src/presentation/toolbar/screenshottoolbarwindow.cpp
     src/presentation/recording/screenrecordingareawindow.cpp
     src/presentation/recording/screenrecordingcontroller.cpp
+    src/presentation/recording/screenrecordingshortcutcontroller.cpp
     src/presentation/recording/screenrecordinggeometry.cpp
     src/presentation/recording/screenrecordingtoolbarwindow.cpp
 )
@@ -1494,6 +1496,24 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+
+    add_executable(snow-shot-screen-recording-shortcut-settings-tests
+        tests/screen_recording_shortcut_settings_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp
+    )
+    target_link_libraries(snow-shot-screen-recording-shortcut-settings-tests PRIVATE
+        snow_shot_settings
+        snow_shot_image_codec
+    )
+    add_test(NAME snow-shot-screen-recording-shortcut-settings-tests
+             COMMAND snow-shot-screen-recording-shortcut-settings-tests)
+    set_tests_properties(snow-shot-screen-recording-shortcut-settings-tests PROPERTIES
+        TIMEOUT 30
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+    snow_shot_import_offscreen_platform(snow-shot-screen-recording-shortcut-settings-tests)
 
     add_executable(snow-shot-translation-settings-tests
         tests/translation_settings_tests.cpp
@@ -2553,6 +2573,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-pinned-movement-shortcut-tests
         COMMAND snow-shot-pinned-window-tests --movement-shortcut-only
     )
+    add_test(
+        NAME snow-shot-pinned-drawing-shortcut-toggle-tests
+        COMMAND snow-shot-pinned-window-tests --drawing-shortcut-toggle-only
+    )
     if(WIN32)
         add_test(
             NAME snow-shot-pinned-native-drag-shortcut-tests
@@ -2669,6 +2693,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests --invalid-ocr-restore-only)
     add_test(NAME snow-shot-pinned-cached-ocr-provider-tests
         COMMAND snow-shot-pinned-window-tests --cached-ocr-provider-only)
+    add_test(NAME snow-shot-pinned-recognition-shortcut-tests
+        COMMAND snow-shot-pinned-window-tests --recognition-shortcut-only)
+    add_test(NAME snow-shot-pinned-recognition-shortcut-offscreen-tests
+        COMMAND snow-shot-pinned-window-tests --recognition-shortcut-only -platform offscreen)
     add_test(NAME snow-shot-pinned-transformed-ocr-tests
         COMMAND snow-shot-pinned-window-tests --transformed-ocr-only)
     add_test(
@@ -2691,10 +2719,13 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-pinned-early-ocr-snapshot-tests
         snow-shot-pinned-invalid-ocr-restore-tests
         snow-shot-pinned-cached-ocr-provider-tests
+        snow-shot-pinned-recognition-shortcut-tests
+        snow-shot-pinned-recognition-shortcut-offscreen-tests
         snow-shot-pinned-transformed-ocr-tests
         snow-shot-pinned-restore-wiring-tests
         snow-shot-pinned-toolbar-parity-tests
         snow-shot-pinned-movement-shortcut-tests
+        snow-shot-pinned-drawing-shortcut-toggle-tests
     )
     if(WIN32)
         list(APPEND _snow_shot_pinned_window_test_names
@@ -2847,12 +2878,22 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-screenshot-tool-palette-tests --action-toolbar-layout-only
     )
     add_test(
+        NAME snow-shot-screenshot-tool-shortcut-toggle-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --tool-shortcuts-only
+    )
+    add_test(
+        NAME snow-shot-screenshot-selection-reset-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --selection-reset-only
+    )
+    add_test(
         NAME snow-shot-screen-recording-toolbar-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --recording-controls-only
     )
     set_tests_properties(
         snow-shot-screenshot-tool-palette-tests
         snow-shot-screenshot-action-toolbar-layout-tests
+        snow-shot-screenshot-tool-shortcut-toggle-tests
+        snow-shot-screenshot-selection-reset-tests
         snow-shot-screen-recording-toolbar-tests
         PROPERTIES
         ENVIRONMENT
@@ -3013,6 +3054,60 @@ if(SNOW_SHOT_BUILD_TESTS)
         )
     endif()
 
+    add_executable(snow-shot-screen-recording-shortcut-tests
+        tests/screen_recording_shortcut_tests.cpp
+        include/snow_shot/presentation/screenshotfloatingtoolpalettewindow.h
+        include/snow_shot/presentation/screenrecordingareawindow.h
+        include/snow_shot/presentation/screenrecordingtoolbarwindow.h
+        include/snow_shot/presentation/screenrecordingshortcutcontroller.h
+        src/presentation/recording/screenrecordingareawindow.cpp
+        src/presentation/recording/screenrecordingtoolbarwindow.cpp
+        src/presentation/recording/screenrecordingshortcutcontroller.cpp
+        src/presentation/recording/screenrecordinggeometry.cpp
+        include/snow_shot/presentation/screenshottoolpalette.h
+        include/snow_shot/presentation/screenshottoolpalettehost.h
+        include/snow_shot/presentation/styles/thememanager.h
+        src/presentation/components/icons/snowshoticons.cpp
+        src/presentation/core/screenshotgeometry.cpp
+        src/presentation/core/screenshotcanvastoolstyles.cpp
+        src/presentation/styles/thememanager.cpp
+        src/presentation/styles/themecolorscheme.cpp
+        src/presentation/tools/screenshotfloatingtoolpalettenative.cpp
+        src/presentation/tools/screenshotfloatingtoolpalettewindow.cpp
+        src/presentation/tools/screenshottoolbarmainpanel.cpp
+        src/presentation/tools/screenshottoolpalettebuttons.cpp
+        src/presentation/tools/screenshottoolpalettehost.cpp
+        src/presentation/tools/screenshottoolpalettestylecontrols.cpp
+        src/presentation/tools/screenshottoolpalettestylecomponents.cpp
+        src/presentation/tools/screenshottoolpalettestylemodel.cpp
+        src/presentation/tools/screenshottoolpalettestylepresets.cpp
+        src/presentation/tools/screenshottoolpalette.cpp
+    )
+    target_compile_definitions(snow-shot-screen-recording-shortcut-tests PRIVATE
+        SNOW_SHOT_TEST_HOOKS=1
+    )
+    target_include_directories(snow-shot-screen-recording-shortcut-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+    target_link_libraries(snow-shot-screen-recording-shortcut-tests PRIVATE
+        adqt_icon_core
+        ant_design_icons_qt
+        ant_design_qt
+        Qt6::Widgets
+        snow_draw_engine_qt_canvas
+        snow_shot_window_shortcuts
+        snow_shot_storage
+    )
+    if(WIN32)
+        target_link_libraries(snow-shot-screen-recording-shortcut-tests PRIVATE user32 comctl32)
+    endif()
+    add_test(NAME snow-shot-screen-recording-shortcut-tests
+        COMMAND snow-shot-screen-recording-shortcut-tests)
+    set_tests_properties(snow-shot-screen-recording-shortcut-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
     add_executable(snow-shot-floating-toolbar-drag-tests
         tests/screenshot_floating_toolbar_drag_tests.cpp
         include/snow_shot/presentation/screenshotfloatingtoolpalettewindow.h
@@ -3081,6 +3176,19 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-floating-toolbar-action-layout-tests
         COMMAND snow-shot-floating-toolbar-drag-tests --action-layout-only
     )
+    add_test(
+        NAME snow-shot-floating-toolbar-recording-hit-test-tests
+        COMMAND snow-shot-floating-toolbar-drag-tests --recording-hit-test-only
+    )
+    add_test(
+        NAME snow-shot-screenshot-selection-reset-command-tests
+        COMMAND snow-shot-floating-toolbar-drag-tests --selection-reset-only
+    )
+    set_tests_properties(snow-shot-screenshot-selection-reset-command-tests PROPERTIES
+        ENVIRONMENT "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
     set_tests_properties(snow-shot-floating-toolbar-drag-tests PROPERTIES
         RUN_SERIAL TRUE
         ENVIRONMENT_MODIFICATION
@@ -3099,6 +3207,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+    set_tests_properties(snow-shot-floating-toolbar-recording-hit-test-tests PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
     if(NOT WIN32)
         set_tests_properties(snow-shot-floating-toolbar-drag-tests PROPERTIES
             ENVIRONMENT
@@ -3113,6 +3225,10 @@ if(SNOW_SHOT_BUILD_TESTS)
                 "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         )
         set_tests_properties(snow-shot-floating-toolbar-action-layout-tests PROPERTIES
+            ENVIRONMENT
+                "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
+        )
+        set_tests_properties(snow-shot-floating-toolbar-recording-hit-test-tests PROPERTIES
             ENVIRONMENT
                 "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
         )
@@ -3372,6 +3488,38 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-screen-recording-geometry-tests
     )
     set_tests_properties(snow-shot-screen-recording-geometry-tests PROPERTIES
+        ENVIRONMENT
+            "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT};QT_SCALE_FACTOR=1.25"
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
+    add_executable(snow-shot-screen-recording-area-window-tests
+        tests/screen_recording_area_window_tests.cpp
+        include/snow_shot/presentation/screenrecordingareawindow.h
+        src/presentation/core/screenshotcanvastoolstyles.cpp
+        src/presentation/core/screenshotgeometry.cpp
+        src/presentation/recording/screenrecordingareawindow.cpp
+        src/presentation/recording/screenrecordinggeometry.cpp
+    )
+    target_include_directories(snow-shot-screen-recording-area-window-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    )
+    target_link_libraries(snow-shot-screen-recording-area-window-tests PRIVATE
+        adqt_icon_core
+        Qt6::Widgets
+        snow_draw_engine_qt_canvas
+        snow_shot_storage
+    )
+    if(WIN32)
+        target_link_libraries(snow-shot-screen-recording-area-window-tests PRIVATE user32)
+    endif()
+    add_test(
+        NAME snow-shot-screen-recording-area-window-tests
+        COMMAND snow-shot-screen-recording-area-window-tests
+    )
+    set_tests_properties(snow-shot-screen-recording-area-window-tests PROPERTIES
         ENVIRONMENT
             "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT};QT_SCALE_FACTOR=1.25"
         ENVIRONMENT_MODIFICATION
@@ -3713,6 +3861,7 @@ if(SNOW_SHOT_BUILD_TESTS)
     endif()
 
     foreach(_offscreen_qpa_test_target IN ITEMS
+        snow-shot-floating-toolbar-drag-tests
         snow-shot-language-manager-tests
         snow-shot-shortcut-key-row-tests
         snow-shot-form-layout-tests
@@ -3722,6 +3871,8 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-application-icon-tests
         snow-shot-toolbar-main-panel-tests
         snow-shot-screen-recording-geometry-tests
+        snow-shot-screen-recording-area-window-tests
+        snow-shot-screen-recording-shortcut-tests
         snow-shot-window-capture-exclusion-tests
         snow-shot-ocr-presentation-tests
     )
@@ -4042,6 +4193,32 @@ if(WIN32 AND SNOW_SHOT_BUILD_BENCHMARKS)
             "${CARGO_EXECUTABLE}" build --locked --release
             --target x86_64-pc-windows-msvc
             --package snow-ui-selector --example hit_bench
+        WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
+        USES_TERMINAL
+        VERBATIM
+    )
+
+    # Not registered with CTest: this generates final-container fixtures through
+    # the streaming encoder used by direct recording and reports Release metrics.
+    add_custom_target(snow-shot-direct-recording-performance-benchmark
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
+            "FFMPEG_DIR=${SNOW_FFMPEG_ROOT}"
+            "${CARGO_EXECUTABLE}" build --locked --release
+            --target x86_64-pc-windows-msvc
+            --package snow-recording-export --example direct_recording_benchmark
+        WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
+        USES_TERMINAL
+        VERBATIM
+    )
+
+    add_custom_target(snow-shot-keyboard-recording-performance-benchmark
+        COMMAND "${CMAKE_COMMAND}" -E env
+            "CARGO_TARGET_DIR=${SNOW_RUST_CARGO_TARGET_DIR}"
+            "FFMPEG_DIR=${SNOW_FFMPEG_ROOT}"
+            "${CARGO_EXECUTABLE}" build --locked --release
+            --target x86_64-pc-windows-msvc
+            --package snow-recording-runtime --example keyboard_overlay_benchmark
         WORKING_DIRECTORY "${SNOW_SHOT_CAPTURE_CRATES_DIR}"
         USES_TERMINAL
         VERBATIM

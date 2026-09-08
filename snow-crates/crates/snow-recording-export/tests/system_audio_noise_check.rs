@@ -22,10 +22,9 @@
 //! dev-dependency because the workspace ffmpeg build registers no audio
 //! decoders ("snow-shot-minimal" feature set).
 //!
-//! Scope note: this exercises the export side only (mix/limiter →
-//! libswresample → AAC → MP4 mux → decode). Capture-side WASAPI processing
-//! cannot be driven without real audio devices, so a clean result localizes
-//! any reported recording noise to the capture path instead of the exporter.
+//! Both the bundle exporter and the real-time streaming encoder are checked.
+//! These tests exercise PCM → AAC → MP4 mux → decode without audio devices;
+//! capture processing and live packet alignment need their own coverage.
 
 use std::fs::{self, File};
 use std::io::Write as _;
@@ -33,11 +32,14 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use ffmpeg_next as ffmpeg;
-use snow_recording_export::{EditingSession, ExportExecutionMode};
+use snow_recording_export::{
+    EditingSession, ExportExecutionMode, ExportFormat, SoftwareH264Priority, StreamingAudioConfig,
+    StreamingEncoder, StreamingEncoderConfig,
+};
 use snow_recording_model::{
     AudioSampleFormat, AudioTrackManifest, AudioTrackRole, BundleAssetKind,
     IntermediateRecordingProfile, LocalRecordingPaths, MouseStore, RecordingArtifact,
-    RecordingBundleAsset, SessionManifest, VideoEncodeConfig, write_mouse_records,
+    RecordingBundleAsset, SessionManifest, VideoCodec, VideoEncodeConfig, write_mouse_records,
     write_recording_bundle,
 };
 use tempfile::tempdir;
@@ -60,6 +62,84 @@ const VIDEO_FRAMES: u32 = 20;
 const MIN_SNR_DB: f64 = 20.0;
 const MAX_TAIL_RMS_DBFS: f64 = -60.0;
 const MAX_HEAD_PEAK_DBFS: f64 = -20.0;
+
+#[test]
+fn streaming_system_audio_does_not_add_noise_to_the_source() {
+    let source = read_wav_pcm16(Path::new(FIXTURE_WAV)).expect("WAV fixture should load");
+    let directory = tempdir().expect("temporary directory should be created");
+    // Exercise both the fixture rate and the live recorder's 48 kHz rate. The
+    // same PCM is the reference at each rate; no capture resampling is involved.
+    for sample_rate_hz in [source.sample_rate_hz, 48_000] {
+        let path = directory
+            .path()
+            .join(format!("streaming-{sample_rate_hz}.mp4"));
+        let mut encoder = StreamingEncoder::create(StreamingEncoderConfig {
+            output_path: path.clone(),
+            format: ExportFormat::Mp4,
+            width: 16,
+            height: 16,
+            fps: VIDEO_FPS,
+            codec: VideoCodec::H264,
+            prefer_hardware_h264: false,
+            execution_mode: ExportExecutionMode::SoftwareOnly,
+            software_h264_priority: SoftwareH264Priority::X264First,
+            video: VideoEncodeConfig::default(),
+            encode_threads: 1,
+            audio: Some(StreamingAudioConfig {
+                sample_rate_hz,
+                channels: source.channels,
+                bitrate_kbps: 160,
+            }),
+        })
+        .expect("streaming encoder should initialize");
+        let packet_samples = sample_rate_hz as usize / 100 * usize::from(source.channels);
+        for packet_index in 0..VIDEO_FRAMES as usize * 100 {
+            let timestamp_ms = packet_index as u64 * 10;
+            if packet_index % 100 == 0 {
+                encoder
+                    .push_rgba_frame(timestamp_ms, &[120, 120, 120, 255].repeat(16 * 16))
+                    .expect("streaming video should encode");
+            }
+            let start = (packet_index * packet_samples).min(source.samples.len());
+            let end = (start + packet_samples).min(source.samples.len());
+            let mut packet = vec![0; packet_samples];
+            packet[..end - start].copy_from_slice(&source.samples[start..end]);
+            encoder
+                .push_audio_pcm_i16(timestamp_ms, &packet)
+                .expect("streaming audio should encode");
+        }
+        let report = encoder.finish().expect("streaming MP4 should finalize");
+        assert_eq!(report.dropped_audio_frames, 0);
+        assert_eq!(report.inserted_silence_frames, 0);
+        let decoded = decode_exported_audio(&path).expect("streaming MP4 audio should decode");
+        assert_eq!(decoded.sample_rate_hz, sample_rate_hz);
+        assert_eq!(decoded.channels, source.channels);
+        let comparison = compare_with_alignment(
+            &source.samples,
+            &decoded.samples,
+            usize::from(source.channels),
+            sample_rate_hz,
+        );
+        println!(
+            "streaming {sample_rate_hz} Hz: SNR {:.2} dB, tail {:.2} dBFS, alignment {} frames",
+            comparison.snr_db, comparison.tail_rms_dbfs, comparison.lag_samples
+        );
+        assert_eq!(
+            comparison.overlap_frames,
+            source.samples.len() / usize::from(source.channels),
+            "the complete source must survive streaming export"
+        );
+        assert!(
+            comparison.snr_db >= MIN_SNR_DB,
+            "streaming export degraded {sample_rate_hz} Hz PCM: SNR {:.2} dB",
+            comparison.snr_db
+        );
+        assert!(comparison.tail_rms_dbfs <= MAX_TAIL_RMS_DBFS);
+        if let Some(peak) = comparison.head_peak_dbfs {
+            assert!(peak <= MAX_HEAD_PEAK_DBFS);
+        }
+    }
+}
 
 #[test]
 fn exported_system_audio_does_not_add_noise_to_the_source() {

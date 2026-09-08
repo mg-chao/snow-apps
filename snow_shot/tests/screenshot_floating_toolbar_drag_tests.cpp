@@ -76,6 +76,11 @@ class ScreenshotFloatingToolPaletteWindowTestAccess {
     static quint64 committedGeometryPassCount(const ScreenshotFloatingToolPaletteWindow& window) {
         return window.m_committedGeometryPassCount;
     }
+
+    static bool isPointInInteractiveContent(const ScreenshotFloatingToolPaletteWindow& window,
+                                            const QPoint& localPosition) {
+        return window.isPointInInteractiveContent(localPosition);
+    }
 };
 
 namespace {
@@ -119,6 +124,9 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
   public:
     void setMoveTool() override {}
     void setSelectTool() override {}
+    void resetCanvas() override {
+        ++resetCanvasCount;
+    }
     void setShapeTool() override {}
     void setArrowTool() override {}
     void setLineTool() override {}
@@ -161,6 +169,7 @@ class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
     void hideColorPickersForScreenshotUi() override {}
 
     int repositionCount = 0;
+    int resetCanvasCount = 0;
     int presentationRepositionCount = 0;
     int textTranslationToolCount = 0;
     int textTranslationToggleCount = 0;
@@ -454,6 +463,56 @@ ScreenshotToolPalette::Options recordingToolbarOptionsForPresetTest() {
     options.showRecordingControls = true;
     options.enableStyleToolbar = false;
     return options;
+}
+
+void settleQueuedRefreshes();
+
+void recordingExportSettingsParticipateInNativeHitTesting() {
+    ScreenshotToolPalette::Options options = recordingToolbarOptionsForPresetTest();
+    options.showShapeTool = true;
+    options.recordingDrawingMode = true;
+    options.enableStyleToolbar = true;
+
+    ScreenshotFloatingToolPaletteWindow window(options);
+    window.prepareForDisplay();
+    window.show();
+    settleQueuedRefreshes();
+
+    ScreenshotToolPalette* palette = window.palette();
+    auto* exportButton = palette != nullptr ? palette->findChild<adqt::widgets::AdButton*>(
+                                                  QStringLiteral("screenRecordingExportSettings"))
+                                            : nullptr;
+    require(exportButton != nullptr, "recording hit-test fixture should expose Export Settings");
+    exportButton->click();
+    settleQueuedRefreshes();
+    require(!palette->recordingExportSettingsVisible() &&
+                !palette->recordingExportSettingsPanel()->isVisible(),
+            "clicking active Export Settings should close the floating secondary toolbar");
+    exportButton->click();
+    settleQueuedRefreshes();
+
+    QWidget* exportPanel = palette->recordingExportSettingsPanel();
+    auto* format =
+        exportPanel != nullptr
+            ? exportPanel->findChild<QWidget*>(QStringLiteral("screenRecordingOutputFormat"))
+            : nullptr;
+    auto* cursor =
+        exportPanel != nullptr
+            ? exportPanel->findChild<QWidget*>(QStringLiteral("screenRecordingShowCursor"))
+            : nullptr;
+    require(exportPanel != nullptr && exportPanel->isVisible() &&
+                palette->recordingExportSettingsVisible() && format != nullptr && cursor != nullptr,
+            "opening Export Settings should expose its complete secondary toolbar");
+
+    const QPoint formatCenter =
+        format->mapTo(&window, QPoint(format->width() / 2, format->height() / 2));
+    const QPoint cursorCenter =
+        cursor->mapTo(&window, QPoint(cursor->width() / 2, cursor->height() / 2));
+    require(ScreenshotFloatingToolPaletteWindowTestAccess::isPointInInteractiveContent(
+                window, formatCenter) &&
+                ScreenshotFloatingToolPaletteWindowTestAccess::isPointInInteractiveContent(
+                    window, cursorCenter),
+            "native hit-testing should retain clicks over every Export Settings control");
 }
 
 void settleQueuedRefreshes() {
@@ -1763,6 +1822,21 @@ void mainTextTranslationButtonUsesTranslationPresentation() {
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     try {
+        if (app.arguments().contains(QStringLiteral("--selection-reset-only"))) {
+            NoOpToolbarCommands commands;
+            ScreenshotToolbarWindow window(commands);
+            auto* palette = window.palette();
+            require(palette != nullptr, "screenshot toolbar should expose its palette");
+            palette->setActiveTool(ScreenshotToolPalette::Tool::Select);
+            auto* reset = palette->findChild<adqt::widgets::AdButton*>(
+                QStringLiteral("screenshotResetCanvasButton"));
+            require(reset != nullptr && reset->isEnabled(),
+                    "screenshot reset should be enabled without selection");
+            reset->click();
+            require(commands.resetCanvasCount == 1,
+                    "screenshot reset should forward exactly one canvas command");
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--ocr-translation-toggle-only"))) {
             translateButtonRoutesEveryClickThroughTheToggleCommand();
             mainTextTranslationButtonUsesTranslationPresentation();
@@ -1775,6 +1849,10 @@ int main(int argc, char* argv[]) {
         }
         if (app.arguments().contains(QStringLiteral("--action-layout-only"))) {
             screenshotActionLayoutReloadIsWindowScopedAndFitsThePreset();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--recording-hit-test-only"))) {
+            recordingExportSettingsParticipateInNativeHitTesting();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--native-surface-lifecycle-only"))) {

@@ -411,6 +411,9 @@ void setScreenshotToolPaletteStyleRadioIcon(adqt::widgets::AdRadio* radio,
 void setScreenshotToolPaletteToolButtonIcon(adqt::widgets::AdButton* button,
                                             const adqt::icons::IconRef& iconRef);
 
+void setScreenshotToolPaletteToolButtonIconDisabled(adqt::widgets::AdButton* button,
+                                                    bool disabled);
+
 adqt::widgets::AdButton*
 createScreenshotToolPaletteToolButton(QWidget* parent, const char* tooltip,
                                       const adqt::icons::IconRef& iconRef,

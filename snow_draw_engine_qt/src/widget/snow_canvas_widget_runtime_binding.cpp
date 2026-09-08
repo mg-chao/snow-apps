@@ -36,6 +36,10 @@ bool SnowCanvasWidgetRuntimeBinding::hasViewport() const {
     return snow_canvas_lifecycle::hasViewport(m_engine, m_viewport);
 }
 
+bool SnowCanvasWidgetRuntimeBinding::clearDocumentPreservingViewports() {
+    return m_runtimeOwner != nullptr && m_runtimeOwner->clearDocumentPreservingViewports();
+}
+
 void SnowCanvasWidgetRuntimeBinding::registerClient(snow_canvas_runtime::Client& client) {
     if (m_runtimeOwner != nullptr) {
         snow_canvas_runtime::Access::registerClient(*m_runtimeOwner, client);

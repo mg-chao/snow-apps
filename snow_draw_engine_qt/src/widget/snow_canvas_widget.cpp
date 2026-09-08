@@ -409,13 +409,14 @@ struct SnowCanvasWidget::Impl : public snow_canvas_runtime::Client {
     bool undo();
     bool redo();
     bool deleteSelected();
+    bool clearDocument();
     bool duplicateSelected(const QPointF& offset);
     bool reorderSelected(SnowCanvasSelectionOrder order);
     bool setSelectedOpacity(double opacity);
     bool adjustSelectedSerialNumbers(qint64 delta);
     bool createSerialNumberText();
     bool beginArrowText(const QPointF& viewPosition, bool selected);
-    bool resetEditingState(bool restoreSelectTool);
+    bool resetEditingState(bool restoreSelectTool) override;
     bool cancelActiveTextEditing();
     bool hasActiveTextEditing() const;
     SnowCanvasWidgetTextInteraction::CommitResult commitText(bool refocusWidget = true,
@@ -1591,6 +1592,15 @@ bool SnowCanvasWidget::Impl::deleteSelected() {
 
 bool SnowCanvasWidget::deleteSelected() {
     return m_impl->deleteSelected();
+}
+
+bool SnowCanvasWidget::Impl::clearDocument() {
+    const SnowCanvasTool previousTool = canvasTool();
+    return runtimeBinding.clearDocumentPreservingViewports() && setCanvasTool(previousTool);
+}
+
+bool SnowCanvasWidget::clearDocument() {
+    return m_impl->clearDocument();
 }
 
 bool SnowCanvasWidget::Impl::duplicateSelected(const QPointF& offset) {

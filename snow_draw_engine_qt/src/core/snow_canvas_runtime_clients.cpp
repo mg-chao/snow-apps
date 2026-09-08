@@ -73,6 +73,16 @@ void ClientRegistry::clearRenderState() {
     }
 }
 
+bool ClientRegistry::resetEditingState() {
+    const QList<Client*> snapshot = m_clients;
+    for (Client* client : snapshot) {
+        if (client != nullptr && m_clients.contains(client) && !client->resetEditingState(false)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void ClientRegistry::syncChangedViewports(const std::vector<std::uint64_t>& changedViewportIds) {
     const QList<Client*> snapshot = m_clients;
     for (Client* client : snapshot) {

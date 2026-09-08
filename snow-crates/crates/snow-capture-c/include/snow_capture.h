@@ -252,6 +252,24 @@ typedef enum SnowCaptureRecordingState {
     SNOW_CAPTURE_RECORDING_STATE_STOPPED = 3,
 } SnowCaptureRecordingState;
 
+typedef enum SnowCaptureResult {
+    SNOW_CAPTURE_RESULT_OK = 0,
+    SNOW_CAPTURE_RESULT_INVALID_ARGUMENT = 1,
+    SNOW_CAPTURE_RESULT_INVALID_STATE = 2,
+    SNOW_CAPTURE_RESULT_CAPTURE_ERROR = 3,
+    SNOW_CAPTURE_RESULT_ENCODER_ERROR = 4,
+    SNOW_CAPTURE_RESULT_IO_ERROR = 5,
+    SNOW_CAPTURE_RESULT_CANCELED = 6,
+    SNOW_CAPTURE_RESULT_INTERNAL_ERROR = 255,
+} SnowCaptureResult;
+
+typedef enum SnowCaptureRecordingOutputFormat {
+    SNOW_CAPTURE_RECORDING_OUTPUT_FORMAT_MP4 = 0,
+    SNOW_CAPTURE_RECORDING_OUTPUT_FORMAT_GIF = 1,
+    SNOW_CAPTURE_RECORDING_OUTPUT_FORMAT_APNG = 2,
+    SNOW_CAPTURE_RECORDING_OUTPUT_FORMAT_WEBP = 3,
+} SnowCaptureRecordingOutputFormat;
+
 typedef enum SnowCaptureRecordingExportFormat {
     SNOW_CAPTURE_RECORDING_EXPORT_FORMAT_MP4 = 0,
     SNOW_CAPTURE_RECORDING_EXPORT_FORMAT_GIF = 1,
@@ -292,6 +310,50 @@ typedef struct SnowCaptureRecordingExportConfig {
     uint32_t encoder_preference;
     uint8_t reserved[32];
 } SnowCaptureRecordingExportConfig;
+
+#define SNOW_CAPTURE_DIRECT_RECORDING_CONFIG_VERSION 2u
+
+/* Strings are bounded UTF-8 key names, copied during session creation. */
+typedef struct SnowCaptureKeyboardLabel {
+    uint32_t key_code;
+    const uint8_t* utf8;
+    uint32_t utf8_len;
+} SnowCaptureKeyboardLabel;
+
+/* RGBA values use 0xRRGGBBAA packing. A zero alpha disables the effect. */
+typedef struct SnowCaptureDirectRecordingConfig {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t x;
+    int32_t y;
+    uint32_t width;
+    uint32_t height;
+    uint32_t capture_backend;
+    const char* output_file_utf8;
+    uint32_t output_format;
+    uint32_t capture_fps;
+    uint32_t output_fps;
+    uint32_t maximum_width;
+    uint32_t maximum_height;
+    uint32_t codec;
+    uint32_t preset;
+    uint32_t encoder_preference;
+    uint8_t enable_microphone;
+    uint8_t enable_system_audio;
+    uint8_t show_cursor;
+    uint8_t reserved0;
+    uint32_t mouse_trail_rgba;
+    uint32_t mouse_click_rgba;
+    uint8_t reserved[64];
+    /* Version 2 extension. Version 1 callers end before show_keyboard and remain supported. */
+    uint32_t show_keyboard;
+    uint32_t keyboard_background_rgba;
+    uint32_t keyboard_text_rgba;
+    uint32_t keyboard_border_rgba;
+    const SnowCaptureKeyboardLabel* keyboard_labels;
+    uint32_t keyboard_label_count;
+    uint32_t keyboard_reserved;
+} SnowCaptureDirectRecordingConfig;
 
 SnowCaptureDesktopSession* snow_capture_desktop_session_create(
     const SnowCaptureDesktopSessionConfig* config);
@@ -385,6 +447,9 @@ void snow_capture_frame_lease_release(SnowCaptureFrameLease* lease);
 
 SnowCaptureRecordingSession* snow_capture_recording_session_create(
     const SnowCaptureRecordingConfig* config);
+SnowCaptureResult snow_capture_recording_session_create_direct(
+    const SnowCaptureDirectRecordingConfig* config,
+    SnowCaptureRecordingSession** out_session);
 void snow_capture_recording_session_destroy(SnowCaptureRecordingSession* session);
 uint8_t snow_capture_recording_session_start(SnowCaptureRecordingSession* session);
 uint8_t snow_capture_recording_session_pause(SnowCaptureRecordingSession* session);
@@ -395,6 +460,7 @@ uint8_t snow_capture_recording_session_state(
 uint8_t snow_capture_recording_session_stop_and_export(
     SnowCaptureRecordingSession* session,
     const SnowCaptureRecordingExportConfig* config);
+SnowCaptureResult snow_capture_recording_session_stop(SnowCaptureRecordingSession* session);
 
 const char* snow_capture_last_error_message(void);
 

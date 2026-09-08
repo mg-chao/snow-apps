@@ -661,6 +661,8 @@ class SettingsPageWidget::Impl {
                             ? ShortcutKeyRowConfig::ValidationScope::ScreenshotShortcut
                         : payload.scope == settings::SettingsLocalShortcutScope::Drawing
                             ? ShortcutKeyRowConfig::ValidationScope::DrawingShortcut
+                        : payload.scope == settings::SettingsLocalShortcutScope::ScreenRecording
+                            ? ShortcutKeyRowConfig::ValidationScope::RecordingShortcut
                             : ShortcutKeyRowConfig::ValidationScope::PinnedWindowShortcut;
                     config.presentation = ShortcutKeyRowConfig::Presentation::CompactFormField;
                     auto* control = new ShortcutKeyRow(config, metric, mainWindowMetric, list);

@@ -70,6 +70,8 @@ class SnowCanvasWidget : public QWidget {
     bool undo();
     bool redo();
     bool deleteSelected();
+    // Clears all document elements and history, preserving viewports and creation styles.
+    bool clearDocument();
     bool duplicateSelected(const QPointF& offset = QPointF(12.0, 12.0));
     bool reorderSelected(SnowCanvasSelectionOrder order);
     bool setSelectedOpacity(double opacity);

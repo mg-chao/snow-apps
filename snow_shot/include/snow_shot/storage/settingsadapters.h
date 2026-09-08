@@ -186,6 +186,14 @@ class PinToScreenShortcutSettings final {
     bool setAllShortcutsAtomic(const QMap<QString, QStringList>& shortcutsByAction) const;
 };
 
+class ScreenRecordingShortcutSettings final {
+  public:
+    [[nodiscard]] QStringList shortcuts(const QString& actionId) const;
+    bool setShortcuts(const QString& actionId, const QStringList& shortcuts) const;
+    [[nodiscard]] QMap<QString, QStringList> allShortcuts() const;
+    bool setAllShortcutsAtomic(const QMap<QString, QStringList>& shortcutsByAction) const;
+};
+
 struct ScreenshotTranslationConfiguration {
     QString sourceLanguage;
     QString targetLanguage;
@@ -242,8 +250,16 @@ class RecordingSettings final {
     bool setAnimatedImageClarity(const QString& clarity) const;
     [[nodiscard]] int animatedImageFrameRate() const;
     bool setAnimatedImageFrameRate(int frameRate) const;
-    [[nodiscard]] QString animatedImageFormat() const;
-    bool setAnimatedImageFormat(const QString& format) const;
+    [[nodiscard]] QString outputFormat() const;
+    bool setOutputFormat(const QString& format) const;
+    [[nodiscard]] QColor mouseTrailColor() const;
+    bool setMouseTrailColor(const QColor& color) const;
+    [[nodiscard]] QColor mouseClickColor() const;
+    bool setMouseClickColor(const QColor& color) const;
+    [[nodiscard]] bool showKeyboard() const;
+    bool setShowKeyboard(bool show) const;
+    [[nodiscard]] bool showCursor() const;
+    bool setShowCursor(bool show) const;
     [[nodiscard]] QString encoder() const;
     bool setEncoder(const QString& encoder) const;
     [[nodiscard]] QString encodingPreset() const;
