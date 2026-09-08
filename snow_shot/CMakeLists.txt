@@ -1535,6 +1535,20 @@ if(SNOW_SHOT_BUILD_TESTS)
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
 
+    add_executable(snow-shot-button-border-tests
+        tests/button_border_tests.cpp
+        src/presentation/styles/buttonborder.cpp
+    )
+    target_include_directories(snow-shot-button-border-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+    target_link_libraries(snow-shot-button-border-tests PRIVATE Qt6::Gui)
+    add_test(NAME snow-shot-button-border-tests COMMAND snow-shot-button-border-tests)
+    set_tests_properties(snow-shot-button-border-tests PROPERTIES
+        ENVIRONMENT_MODIFICATION
+            "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+    )
+
     add_executable(snow-shot-global-mouse-page-tests
         tests/global_mouse_page_tests.cpp
         src/presentation/services/screenshotclipboardservice.cpp
