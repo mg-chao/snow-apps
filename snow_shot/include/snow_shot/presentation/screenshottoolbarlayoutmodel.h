@@ -192,7 +192,7 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
 
 [[nodiscard]] inline QVector<QStringList> actionDefaultPositions() {
     return {
-        {QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
+        {QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
          QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")},
         {QStringLiteral("record-screen")},
         {QStringLiteral("pin-to-screen")},
@@ -249,8 +249,8 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringLis
     if (!result.positions.isEmpty() && known.contains(QStringLiteral("convert-to-markdown"))) {
         // Fold the previous default's standalone conversions without changing custom placements.
         auto previousDefault = defaultLayout;
-        previousDefault[0].removeAll(QStringLiteral("convert-to-markdown"));
-        previousDefault[0].removeAll(QStringLiteral("convert-to-html"));
+        previousDefault[0] = {QStringLiteral("barcode-recognition"),
+                              QStringLiteral("table-recognition")};
         previousDefault.insert(1, QStringList{QStringLiteral("convert-to-markdown")});
         previousDefault.insert(2, QStringList{QStringLiteral("convert-to-html")});
         if (result.hidden.isEmpty() && result.positions == previousDefault) {

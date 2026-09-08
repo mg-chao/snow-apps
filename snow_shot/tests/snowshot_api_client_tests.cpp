@@ -122,6 +122,13 @@ void imageConversionUsesVisionAndRejectsIncompleteStreams() {
                                         ? QStringLiteral("GitHub-flavored Markdown")
                                         : QStringLiteral("semantic HTML")),
                 "conversion policy treats image instructions as data and identifies the format");
+        require(prompt.contains(QStringLiteral("[illegible]")) &&
+                    prompt.contains(QStringLiteral("empty response")) &&
+                    prompt.contains(QStringLiteral("destinations that are visible")) &&
+                    prompt.contains(format == SnowShotImageConversionFormat::Markdown
+                                        ? QStringLiteral("table-cell pipes")
+                                        : QStringLiteral("Escape literal &, <, and >")),
+                "conversion prompt specifies uncertainty, visible links, and format escaping");
         const auto content = messages.at(1).toObject().value(QStringLiteral("content")).toArray();
         const QString url = content.at(1)
                                 .toObject()

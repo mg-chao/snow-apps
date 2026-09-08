@@ -236,6 +236,55 @@ void conversionLifecycleAndSettings() {
     controller.deactivate();
 }
 
+void conversionSourceNormalization() {
+    using Format = SnowShotImageConversionFormat;
+    const auto check = [](const QString& input, Format format, const QString& expected) {
+        const QString actual = normalizedImageConversionSource(input, format);
+        require(actual == expected, "conversion normalization preserves document content");
+        require(normalizedImageConversionSource(actual, format) == actual,
+                "normalized document is stable on repeated normalization");
+    };
+    check(QStringLiteral("``` HTML\r\n<p>Hello</p>\r\n```  "), Format::Html,
+          QStringLiteral("<p>Hello</p>"));
+    check(QStringLiteral("~~~md\n# Hello\n~~~~"), Format::Markdown, QStringLiteral("# Hello"));
+    check(QStringLiteral("````markdown\n```cpp\nint x;\n```\n````"), Format::Markdown,
+          QStringLiteral("```cpp\nint x;\n```"));
+    check(QStringLiteral("```html\n```"), Format::Html, {});
+    check(QStringLiteral("~~~md\r\n  \r\n~~~"), Format::Markdown, QStringLiteral("  "));
+    check(QString(QChar(0xfeff)) + QStringLiteral("# Hello"), Format::Markdown,
+          QStringLiteral("# Hello"));
+    for (const QString& source :
+         {QStringLiteral("```cpp\ncode\n```"), QStringLiteral("```\n# Heading\n```"),
+          QStringLiteral("```markdown\n# One\n```\nText\n```markdown\n# Two\n```"),
+          QStringLiteral("```md\n# Missing closing fence"),
+          QStringLiteral("````md\n# Short closing fence\n```"),
+          QStringLiteral("```md\n# Heading\n```\nCommentary"),
+          QStringLiteral("  # Heading\n\n    indented code\n")}) {
+        check(source, Format::Markdown, source);
+    }
+    const QString wrongFormat = QStringLiteral("```html\n<p>Hello</p>\n```");
+    check(wrongFormat, Format::Markdown, wrongFormat);
+
+    ConversionServer server;
+    server.source = QStringLiteral("~~~markdown\r\n  \r\n~~~");
+    SnowShotApiClient api(server.url());
+    ScreenshotImageConversionController controller;
+    controller.setProvider(&api);
+    controller.activate(QStringLiteral("empty-wrapper"), sampleImage(), Format::Markdown);
+    until(
+        [&]() { return controller.state() == ScreenshotImageConversionController::State::Failed; });
+    require(controller.entries(QStringLiteral("empty-wrapper")).isEmpty(),
+            "empty normalized output is never cached as a completed conversion");
+    server.source = QStringLiteral("~~~md\n# Recovered\n~~~");
+    controller.retry();
+    until([&]() {
+        return controller.state() == ScreenshotImageConversionController::State::Completed;
+    });
+    require(controller.source() == QStringLiteral("# Recovered") &&
+                controller.entries(QStringLiteral("empty-wrapper")).size() == 1,
+            "retry replaces unusable output with a normalized completed result");
+}
+
 void renderingCopyAndPersistence() {
     using Format = SnowShotImageConversionFormat;
     const QString markdown = QStringLiteral("# Heading\n\nA **bold** paragraph.\n\n| A | B |\n| "
@@ -593,6 +642,7 @@ void runImageConversionTests() {
     adqt::theme::ThemeManager::instance().applyTo(*qApp);
 #endif
     conversionLifecycleAndSettings();
+    conversionSourceNormalization();
     renderingCopyAndPersistence();
     conversionSessionRoutesSourceAndClearsOldViews();
     conversionUsesRecognitionMessages();

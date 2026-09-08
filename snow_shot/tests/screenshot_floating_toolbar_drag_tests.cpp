@@ -1535,8 +1535,8 @@ void screenshotActionLayoutReloadIsWindowScopedAndFitsThePreset() {
 }
 
 void floatingToolbarsUseTheFixedWindowPreset() {
-    constexpr QSize normalPreset(1142, 142);
-    constexpr QSize smallPreset(914, 114);
+    constexpr QSize normalPreset(1242, 142);
+    constexpr QSize smallPreset(994, 114);
 
     NoOpToolbarCommands commands;
     ScreenshotToolbarWindow screenshotToolbar(commands);

@@ -593,7 +593,7 @@ void screenshotUiSchemaRepairsStructuredValues() {
                 {QStringLiteral("positions"),
                  QJsonArray{
                      QJsonArray{
-                         QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
+                         QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
                          QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")},
                      QJsonArray{QStringLiteral("record-screen")},
                      QJsonArray{QStringLiteral("pin-to-screen")},

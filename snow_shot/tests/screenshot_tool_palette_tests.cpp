@@ -3055,7 +3055,7 @@ void imageConversionToolsExposeOnlySettings() {
                 htmlSource->isHidden() && qr->isHidden() && !group->isHidden() &&
                 group->property("screenshotToolbarPositionItems").toStringList() ==
                     QStringList{
-                        QStringLiteral("barcode-recognition"), QStringLiteral("table-recognition"),
+                        QStringLiteral("table-recognition"), QStringLiteral("barcode-recognition"),
                         QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html")} &&
                 group->accessibleName() == QStringLiteral("Barcode recognition"),
             "one recognition group replaces standalone conversions and preserves the remembered QR "
