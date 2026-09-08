@@ -205,6 +205,16 @@ impl EditorSession {
         self.editor.capture_document_sync_snapshot(document)
     }
 
+    pub fn serial_number_follows_document(&self, document: &DocumentModel) -> bool {
+        self.editor.state.default_serial_number.number
+            == crate::document_ops::next_serial_number(document)
+    }
+
+    pub fn sync_serial_number_after_history_change(&mut self, document: &DocumentModel) {
+        self.editor.state.default_serial_number.number =
+            crate::document_ops::next_serial_number(document);
+    }
+
     pub fn sync_after_document_change(
         &mut self,
         document: &DocumentModel,

@@ -323,6 +323,7 @@ struct ScreenshotController::Impl final : public ScreenshotToolbarCommandSink,
     void applyTextPunctuation(const QString& value) override;
     void startScrollingScreenshot() override;
     void setScrollingScreenshotRecognitionMode(ScreenshotScrollingRecognitionMode mode) override;
+    void setScrollingScreenshotAutoScroll(bool enabled) override;
     void pinSelectionToScreen() override;
     void pinClipboardContentToScreen();
     void restorePinnedWindows();
@@ -2284,6 +2285,12 @@ void ScreenshotController::Impl::pinSelectionToScreen() {
     hideImageExportPresentation();
     SNOW_SHOT_PIN_PERF_MILESTONE("controller.presentation_hidden");
     detachCaptureForExport(ExportDetachMode::DeferredPresentation);
+}
+
+void ScreenshotController::Impl::setScrollingScreenshotAutoScroll(bool enabled) {
+    if (m_scrollingCaptureController != nullptr) {
+        m_scrollingCaptureController->setAutoScroll(enabled);
+    }
 }
 
 void ScreenshotController::Impl::setScrollingScreenshotRecognitionMode(

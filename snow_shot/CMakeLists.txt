@@ -863,6 +863,7 @@ set(PROJECT_CXX_SOURCES
     src/app/singleinstancecoordinator.cpp
     src/platform/physicalcursor.cpp
     src/platform/windows/windowchrome.cpp
+    src/platform/windows/scrollinput.cpp
     src/presentation/components/contentcardwidget.cpp
     src/presentation/components/maincontentheaderwidget.cpp
     src/presentation/components/sidebarwidget.cpp
@@ -2146,6 +2147,17 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/scrolling_capture_cadence_tests.cpp
         src/presentation/capture/adaptivescrollingcapturecadence.h
     )
+    add_executable(snow-shot-scrolling-auto-scroll-tests
+        tests/scrolling_auto_scroll_tests.cpp
+        src/platform/windows/scrollinput.cpp
+    )
+    target_include_directories(snow-shot-scrolling-auto-scroll-tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+    target_link_libraries(snow-shot-scrolling-auto-scroll-tests PRIVATE Qt6::Core Qt6::Gui)
+    add_test(NAME snow-shot-scrolling-auto-scroll-tests
+        COMMAND snow-shot-scrolling-auto-scroll-tests)
     target_include_directories(snow-shot-scrolling-capture-cadence-tests PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
     )

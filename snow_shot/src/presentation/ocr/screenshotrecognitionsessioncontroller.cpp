@@ -24,6 +24,7 @@
 #include "widgets/form.h"
 #include "widgets/modal.h"
 #include "widgets/select.h"
+#include "widgets/switch.h"
 
 #include <algorithm>
 #include <utility>
@@ -1213,6 +1214,11 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
     auto* source = new adqt::widgets::AdSelect(form);
     auto* target = new adqt::widgets::AdSelect(form);
     auto* service = new adqt::widgets::AdSelect(form);
+    auto* originalImage = new adqt::widgets::AdSwitch(form);
+    originalImage->setObjectName(QStringLiteral("screenshotTranslationOriginalImage"));
+    originalImage->setChecked(
+        snow_shot::storage::ScreenshotTranslationSettings().originalImageTranslationEnabled());
+    originalImage->setAccessibleName(tr("Original Image Translation"));
     source->setObjectName(QStringLiteral("screenshotTranslationSourceLanguage"));
     target->setObjectName(QStringLiteral("screenshotTranslationTargetLanguage"));
     source->setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
@@ -1248,6 +1254,8 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
     form->addField(tr("Source language"), source, QStringLiteral("source"));
     form->addField(tr("Target language"), target, QStringLiteral("target"));
     form->addField(tr("Translation service"), service, QStringLiteral("service"));
+    form->addField(tr("Original Image Translation"), originalImage,
+                   QStringLiteral("originalImage"));
     bodyLayout->addWidget(form);
 
     auto* modal = new adqt::widgets::AdModal(this);
@@ -1268,23 +1276,27 @@ void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
     modal->setContentWidget(body);
     modal->setInitialFocusWidget(source);
     m_translationSettingsModal = modal;
-    connect(modal, &adqt::widgets::AdModal::closeRequested, modal,
-            [modal, source, target, service](adqt::widgets::AdModal::CloseReason reason) {
-                if (reason != adqt::widgets::AdModal::CloseReason::OkAction) {
-                    modal->reject();
-                    return;
-                }
-                const snow_shot::storage::ScreenshotTranslationConfiguration selected{
-                    source->currentValue().toString(), target->currentValue().toString(),
-                    service->currentValue().toString(),
-                    snow_shot::storage::ScreenshotTranslationSettings().layoutProcessing()};
-                if (selected.sourceLanguage.isEmpty() || selected.targetLanguage.isEmpty() ||
-                    selected.modelId.isEmpty()) {
-                    return;
-                }
-                snow_shot::storage::ScreenshotTranslationSettings().setConfiguration(selected);
-                modal->accept();
-            });
+    connect(
+        modal, &adqt::widgets::AdModal::closeRequested, modal,
+        [modal, source, target, service,
+         originalImage](adqt::widgets::AdModal::CloseReason reason) {
+            if (reason != adqt::widgets::AdModal::CloseReason::OkAction) {
+                modal->reject();
+                return;
+            }
+            const snow_shot::storage::ScreenshotTranslationConfiguration selected{
+                source->currentValue().toString(), target->currentValue().toString(),
+                service->currentValue().toString(),
+                snow_shot::storage::ScreenshotTranslationSettings().layoutProcessing()};
+            if (selected.sourceLanguage.isEmpty() || selected.targetLanguage.isEmpty() ||
+                selected.modelId.isEmpty()) {
+                return;
+            }
+            snow_shot::storage::ScreenshotTranslationSettings().setConfiguration(selected);
+            snow_shot::storage::ScreenshotTranslationSettings().setOriginalImageTranslationEnabled(
+                originalImage->isChecked());
+            modal->accept();
+        });
     connect(modal, &adqt::widgets::AdModal::finished, modal,
             [this, modal](adqt::widgets::AdModal::DialogCode) {
                 if (m_settingsModelsRequestToken != 0 && m_tableRecognition != nullptr) {

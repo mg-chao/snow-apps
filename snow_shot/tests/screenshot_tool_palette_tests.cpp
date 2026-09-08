@@ -2116,8 +2116,62 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
                                  : nullptr;
     require(controls != nullptr &&
                 controls->findChild<adqt::widgets::AdRadioButtonGroup*>() == nullptr &&
-                modeButtons.size() == 2 && verticalButton != nullptr && horizontalButton != nullptr,
+                modeButtons.size() == 3 && verticalButton != nullptr && horizontalButton != nullptr,
             "scrolling screenshot should expose two independent mode buttons");
+    auto* autoScroll = controls->findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotScrollingAutoScrollButton"));
+    auto* separator =
+        controls->findChild<QWidget*>(QStringLiteral("screenshotScrollingAutoScrollSeparator"));
+    require(autoScroll != nullptr && separator != nullptr && !autoScroll->isCheckable() &&
+                !autoScroll->isChecked(),
+            "auto-scroll must use the same non-checkable action button as the axis controls");
+    const auto requireAutoScrollStyle = [&](bool active) {
+        require(!autoScroll->isCheckable() && !autoScroll->isChecked() &&
+                    autoScroll->buttonStyle() ==
+                        (active ? adqt::widgets::AdButton::ButtonStyle::Solid
+                                : adqt::widgets::AdButton::ButtonStyle::Text) &&
+                    autoScroll->accentRole() ==
+                        (active ? adqt::widgets::AdButton::AccentRole::Primary
+                                : adqt::widgets::AdButton::AccentRole::Neutral),
+                "auto-scroll must use palette-driven active styling like the axis controls");
+    };
+    requireAutoScrollStyle(false);
+    require(controls->layout()->itemAt(0)->widget() == autoScroll &&
+                controls->layout()->itemAt(2)->widget() == separator &&
+                controls->layout()->itemAt(4)->widget() == verticalButton,
+            "auto-scroll must be the leftmost control with a separator to its right");
+    const auto requireSeparatorSpacing = [&](int groupSpacing, int buttonSpacing) {
+        controls->layout()->activate();
+        require(separator->x() - (autoScroll->x() + autoScroll->width()) == groupSpacing &&
+                    verticalButton->x() - (separator->x() + separator->width()) == groupSpacing,
+                "scrolling separator must match the selection toolbar's spacing on both sides");
+        require(horizontalButton->x() - (verticalButton->x() + verticalButton->width()) ==
+                    buttonSpacing,
+                "axis buttons must retain their compact item spacing");
+    };
+    requireSeparatorSpacing(16, 4);
+    int autoScrollChanges = 0;
+    bool autoScrollEnabled = false;
+    QObject::connect(&palette, &ScreenshotToolPalette::scrollingAutoScrollChanged,
+                     [&](bool enabled) {
+                         ++autoScrollChanges;
+                         autoScrollEnabled = enabled;
+                     });
+    autoScroll->click();
+    require(autoScrollChanges == 1 && autoScrollEnabled,
+            "activating auto-scroll must emit once and show its active state");
+    requireAutoScrollStyle(true);
+    require(buttonBackgroundSample(*autoScroll) == buttonBackgroundSample(*verticalButton),
+            "active auto-scroll and axis buttons must use the same background");
+    require(
+        imageHasOpaqueLightPixel(
+            autoScroll->icon().pixmap(autoScroll->iconSize(), QIcon::Normal, QIcon::Off).toImage()),
+        "active auto-scroll must use the shared light icon foreground");
+    autoScroll->click();
+    require(autoScrollChanges == 2 && !autoScrollEnabled,
+            "deactivating auto-scroll must emit the stop command");
+    requireAutoScrollStyle(false);
+    autoScroll->click();
     require(!palette.actionPanel()->isHidden() && palette.stylePanel()->isHidden() &&
                 !controls->isHidden(),
             "scrolling recognition modes should occupy the attached action toolbar");
@@ -2150,6 +2204,7 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
     }
     require(palette.setPhysicalScale(1.5),
             "scrolling screenshot toolbar should accept a physical scale change");
+    requireSeparatorSpacing(24, 6);
     for (adqt::widgets::AdButton* button : modeButtons) {
         require(button->size() == QSize(48, 48) && button->iconSize() == QSize(36, 36),
                 "scrolling mode buttons should retain their enlarged metrics after scaling");
@@ -2158,6 +2213,9 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
     palette.setScrollingRecognitionMode(ScreenshotScrollingRecognitionMode::Vertical);
     require(changes == 0, "setting the current scrolling mode should be a no-op");
     horizontalButton->click();
+    require(autoScrollEnabled && autoScrollChanges == 3,
+            "switching the scroll axis must preserve auto-scroll activation");
+    requireAutoScrollStyle(true);
     require(changes == 1 && lastMode == ScreenshotScrollingRecognitionMode::Horizontal &&
                 verticalButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text &&
                 horizontalButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid,
@@ -2173,7 +2231,14 @@ void scrollingScreenshotExposesAxisRecognitionModes() {
             "clicking the active mode should keep it selected without another change");
 
     palette.setScrollingScreenshotMode(false);
+    require(!autoScrollEnabled && autoScrollChanges == 4,
+            "leaving scrolling capture must stop auto-scroll");
     palette.setScrollingScreenshotMode(true);
+    autoScroll = palette.findChild<adqt::widgets::AdButton*>(
+        QStringLiteral("screenshotScrollingAutoScrollButton"));
+    require(autoScroll != nullptr && !autoScroll->isChecked(),
+            "a new scrolling capture must reset auto-scroll activation");
+    requireAutoScrollStyle(false);
     controls = palette.findChild<QWidget*>(QStringLiteral("screenshotScrollingRecognitionMode"));
     verticalButton = controls != nullptr ? controls->findChild<adqt::widgets::AdButton*>(
                                                QStringLiteral("screenshotScrollingVerticalButton"))
@@ -2823,11 +2888,11 @@ void highlightVariantsUseConfiguredPopoverGroup() {
             "the Spotlight option should replace and activate the shared trigger");
 
     highlighterOption->click();
-    require(penRequests == 1 && rectangleRequests == 1 && spotlightRequests == 1 &&
-                palette.activeToolForTests() == ScreenshotToolPalette::Tool::PenHighlight &&
+    require(penRequests == 0 && rectangleRequests == 2 && spotlightRequests == 1 &&
+                palette.activeToolForTests() == ScreenshotToolPalette::Tool::RectangleHighlight &&
                 trigger->accessibleName() == QStringLiteral("Highlight") &&
                 highlighterOption->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid,
-            "the generic Highlight option should activate Pen highlight");
+            "the generic Highlight option should restore the last Rectangle highlight mode");
 
     palette.setActiveTool(ScreenshotToolPalette::Tool::FreeDraw);
     require(trigger->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text &&
@@ -2896,6 +2961,56 @@ void eraserToolIsDiscoverableAndHidesStyleControls() {
     SnowCanvasWidget canvas;
     require(canvas.setCanvasTool(SnowCanvasTool::Eraser), "canvas should accept Eraser");
     require(canvas.canvasTool() == SnowCanvasTool::Eraser, "canvas should retain Eraser identity");
+}
+
+void drawingModeSelectionsSurviveToolbarReentry() {
+    using Tool = ScreenshotToolPalette::Tool;
+    ScreenshotToolPalette::Options options;
+    options.showHighlightTool = true;
+    options.showFilterTool = true;
+    ScreenshotToolPalette palette(options);
+    auto* highlight =
+        qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Highlight"));
+    auto* filter = qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Filter"));
+    require(highlight != nullptr && filter != nullptr, "both drawing entries should exist");
+
+    const auto selectMode = [&palette](Tool current, Tool next) {
+        palette.setActiveTool(current);
+        for (auto* group : palette.findChildren<adqt::widgets::AdRadioButtonGroup*>()) {
+            if (group->button(static_cast<int>(next)) != nullptr) {
+                group->button(static_cast<int>(next))->click();
+                require(palette.activeToolForTests() == next, "mode selector should activate mode");
+                return;
+            }
+        }
+        require(false, "drawing mode selector should exist");
+    };
+    for (bool rectangle : {true, false}) {
+        const Tool highlightMode = rectangle ? Tool::RectangleHighlight : Tool::PenHighlight;
+        const Tool filterMode = rectangle ? Tool::PenFilter : Tool::RectangleFilter;
+        selectMode(rectangle ? Tool::PenHighlight : Tool::RectangleHighlight, highlightMode);
+        selectMode(rectangle ? Tool::RectangleFilter : Tool::PenFilter, filterMode);
+        palette.setActiveTool(Tool::Select);
+        highlight->click();
+        require(palette.activeToolForTests() == highlightMode,
+                "Highlight should restore its own last selected drawing mode");
+        filter->click();
+        require(palette.activeToolForTests() == filterMode,
+                "Filter should independently restore its last selected drawing mode");
+        filter->click();
+        require(palette.activeToolForTests() == Tool::Select,
+                "clicking the active remembered mode should still toggle to Select");
+        filter->click();
+        require(palette.activeToolForTests() == filterMode,
+                "toggling off should preserve the remembered drawing mode");
+        palette.setActiveTool(Tool::Select);
+        require(palette.activateDrawingShortcut(QStringLiteral("highlight")) &&
+                    palette.activeToolForTests() == highlightMode,
+                "Highlight shortcut should restore the remembered mode");
+        require(palette.activateDrawingShortcut(QStringLiteral("filter")) &&
+                    palette.activeToolForTests() == filterMode,
+                "Filter shortcut should restore the remembered mode");
+    }
 }
 
 void filterToolExposesTypeAndIntensityControls() {
@@ -6877,12 +6992,14 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--toolbar-layout-only"))) {
+        drawingModeSelectionsSurviveToolbarReentry();
         drawingGroupClicksActivateOnceAfterPointerReentry();
         configurableToolbarLayoutSupportsArbitraryPopoverGroups();
         arrowAndLineUseConfiguredPopoverGroup();
         highlightVariantsUseConfiguredPopoverGroup();
         drawingToolbarGroupsUseToolbarPopoverMetrics();
         spotlightControlsMatchMaskConfigurationBehavior();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--action-toolbar-layout-only"))) {
@@ -6891,6 +7008,12 @@ int main(int argc, char** argv) {
         tableQrPopoverSharesOneEntryAndRemembersTheSelectedMode();
         sharedToolbarLayoutModelOperationsAreDeterministic();
         configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--scrolling-only"))) {
+        scrollingScreenshotExposesAxisRecognitionModes();
+        scrollingScreenshotKeepsDrawingToolsAvailable();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -6935,6 +7058,7 @@ int main(int argc, char** argv) {
     highlightStyleToolbarWidthTracksActiveMode();
     eraserToolIsDiscoverableAndHidesStyleControls();
     filterToolExposesTypeAndIntensityControls();
+    drawingModeSelectionsSurviveToolbarReentry();
     filterStyleEditorsMatchShapeAndSpotlightMetrics();
     watermarkToolExposesSharedStyleControls();
     watermarkStyleEditorMatchesShapeHeight();

@@ -36,6 +36,7 @@ namespace outlined {
 [[nodiscard]] adqt::icons::IconRef ArrowheadStandard(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ArrowheadTriangle(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ArrowheadTriangleOutline(const adqt::icons::IconColors& colors = {});
+[[nodiscard]] adqt::icons::IconRef AutoScroll(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Blur(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef ColorPicker(const adqt::icons::IconColors& colors = {});
 [[nodiscard]] adqt::icons::IconRef Disabled(const adqt::icons::IconColors& colors = {});

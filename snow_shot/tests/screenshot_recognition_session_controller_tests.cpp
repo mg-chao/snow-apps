@@ -5,6 +5,7 @@
 
 #include "widgets/modal.h"
 #include "widgets/select.h"
+#include "widgets/switch.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -366,6 +367,14 @@ void translationLanguageSelectsUseCodePrefixGroups() {
                                             QStringLiteral("screenshotTranslationTargetLanguage"));
     require(source != nullptr && target != nullptr,
             "translation settings should expose source and target language selects");
+    auto* originalImage = content->findChild<adqt::widgets::AdSwitch*>(
+        QStringLiteral("screenshotTranslationOriginalImage"));
+    const bool previousOriginalImage = settings.originalImageTranslationEnabled();
+    require(originalImage != nullptr && originalImage->isChecked() == previousOriginalImage,
+            "translation settings should reflect the shared original image translation setting");
+    originalImage->setChecked(!previousOriginalImage);
+    require(settings.originalImageTranslationEnabled() == previousOriginalImage,
+            "editing the original image toggle should wait for OK before saving");
     require(source->popupLayerMode() == adqt::widgets::AdSelect::PopupLayerMode::QtTool &&
                 target->popupLayerMode() == adqt::widgets::AdSelect::PopupLayerMode::QtTool,
             "translation language selects should use Qt tool popups");
@@ -401,6 +410,23 @@ void translationLanguageSelectsUseCodePrefixGroups() {
                 settings.configuration().modelId == QStringLiteral("test-model"),
             "accepting translation languages preserves the separate layout processing choice");
     require(settings.setConfiguration(previousConfiguration), "restore translation configuration");
+    require(settings.originalImageTranslationEnabled() == !previousOriginalImage,
+            "OK should persist the original image translation toggle");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    controller->openTranslationSettings();
+    modal = controller->findChild<adqt::widgets::AdModal*>(
+        QStringLiteral("screenshotTranslationSettingsModal"));
+    require(modal != nullptr, "translation settings should reopen after accepting");
+    originalImage = modal->contentWidget()->findChild<adqt::widgets::AdSwitch*>(
+        QStringLiteral("screenshotTranslationOriginalImage"));
+    require(originalImage != nullptr && originalImage->isChecked() == !previousOriginalImage,
+            "reopening the popup should load the saved toggle");
+    originalImage->setChecked(previousOriginalImage);
+    modal->closeRequested(adqt::widgets::AdModal::CloseReason::CancelAction);
+    require(settings.originalImageTranslationEnabled() == !previousOriginalImage,
+            "Cancel should discard edits to the original image translation toggle");
+    require(settings.setOriginalImageTranslationEnabled(previousOriginalImage),
+            "restore original image translation setting");
     QCoreApplication::sendPostedEvents();
     QCoreApplication::processEvents();
 }

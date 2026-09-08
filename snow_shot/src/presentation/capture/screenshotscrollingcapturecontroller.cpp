@@ -12,6 +12,8 @@
 #endif
 
 #include "adaptivescrollingcapturecadence.h"
+#include "screenshotscrollingautoscroller.h"
+#include "snow_shot/platform/windows/scrollinput.h"
 #include "screenshotscrollingpipeline.h"
 #include "windowcaptureexclusion.h"
 #include "../pinned/screenshotpintoperfinstrumentation.h"
@@ -110,6 +112,7 @@ struct ScreenshotScrollingCaptureController::Impl {
         const QRect requestSelection = canvasSelection;
         const QRect requestPhysicalSelection =
             canvasSelection.translated(context.geometry.canvasOrigin());
+        autoScroller.start(requestPhysicalSelection, mode);
         const AdaptiveScrollCadence::Config requestCadenceConfig = cadenceConfig;
         pipeline->begin(requestGeneration, requestSelection.size(), mode,
                         nativeScrollingSource(requestPhysicalSelection, restoreOriginalColors),
@@ -138,6 +141,7 @@ struct ScreenshotScrollingCaptureController::Impl {
         // the generation drops work from the previous axis without briefly restoring the canvas.
         mode = requestedMode;
         ++generation;
+        autoScroller.setMode(mode);
         pendingResultRequestId.reset();
         if (pipeline)
             pipeline->reset(generation);
@@ -164,6 +168,7 @@ struct ScreenshotScrollingCaptureController::Impl {
     }
 
     void stop(bool restoreScreenshotPresentation) {
+        autoScroller.stop();
         const bool wasActive = active;
         if (wasActive) {
             snow_shot::diagnostics::logEvent(
@@ -245,6 +250,7 @@ struct ScreenshotScrollingCaptureController::Impl {
         if (!active || exportPaused || value != generation)
             return;
         qWarning("Scrolling capture stream failed: %s", qUtf8Printable(error));
+        autoScroller.setPaused(true);
         ++generation;
         pendingResultRequestId.reset();
         pipeline->reset(generation);
@@ -353,6 +359,7 @@ struct ScreenshotScrollingCaptureController::Impl {
         if (!active || exportPaused == paused)
             return;
         exportPaused = paused;
+        autoScroller.setPaused(paused);
         if (paused) {
             pipeline->pause(generation);
         } else {
@@ -365,6 +372,8 @@ struct ScreenshotScrollingCaptureController::Impl {
     }
 
     ScreenshotScrollingCaptureController& owner;
+    snow_shot::capture_detail::ScreenshotScrollingAutoScroller autoScroller{
+        snow_shot::platform::windows::sendScrollingWheelStep};
     bool exportPaused = false;
     ScreenshotScrollingCaptureControllerContext context;
     AdaptiveScrollCadence::Config cadenceConfig;
@@ -435,6 +444,10 @@ bool ScreenshotScrollingCaptureController::requestTrimmedSnapshot(SnapshotResult
 
 void ScreenshotScrollingCaptureController::setExportPaused(bool paused) {
     m_impl->setExportPaused(paused);
+}
+
+void ScreenshotScrollingCaptureController::setAutoScroll(bool enabled) {
+    m_impl->autoScroller.setEnabled(enabled && m_impl->active);
 }
 
 void ScreenshotScrollingCaptureController::detachPendingResultRequest() {

@@ -70,8 +70,8 @@ void everySnowShotEntryRenders() {
     const auto registered = icons::registerWith(renderer);
     require(registered.ok(), "Snow Shot pack registration should succeed");
     const adqt::icons::IconPack* staticPack = icons::pack().staticPack();
-    require(staticPack != nullptr && staticPack->entryCount == 76,
-            "Snow Shot pack should contain all 76 project-owned assets");
+    require(staticPack != nullptr && staticPack->entryCount == 78,
+            "Snow Shot pack should contain all 78 project-owned assets");
 
     adqt::icons::IconRenderRequest request;
     request.logicalSize = QSize(32, 32);
@@ -167,6 +167,10 @@ void scrollingIconsUseTheRequestedOrientations() {
     const auto colors = adqt::icons::IconColors::primary(tint);
     const auto horizontalRef = icons::outlined::ScrollingHorizontal(colors);
     const auto verticalRef = icons::outlined::ScrollingVertical(colors);
+    const auto autoScrollRef = icons::outlined::AutoScroll(colors);
+    require(adqt::icons::describeIcon(autoScrollRef).key.name == QStringLiteral("auto-scroll") &&
+                containsOpaqueColor(render(autoScrollRef, QSize(32, 32)).toImage(), tint),
+            "auto-scroll must render the supplied project asset with its requested color");
     const auto horizontalMetadata = adqt::icons::describeIcon(horizontalRef);
     const auto verticalMetadata = adqt::icons::describeIcon(verticalRef);
     const QImage horizontal = render(horizontalRef, QSize(64, 64)).toImage();

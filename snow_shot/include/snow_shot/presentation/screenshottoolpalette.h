@@ -271,6 +271,7 @@ class ScreenshotToolPalette final : public QWidget {
     void scrollingScreenshotRequested();
     void saveRequested();
     void scrollingRecognitionModeChanged(ScreenshotScrollingRecognitionMode mode);
+    void scrollingAutoScrollChanged(bool enabled);
     void screenRecordRequested();
     void serialNumberDecrementRequested();
     void serialNumberIncrementRequested();
@@ -345,6 +346,7 @@ class ScreenshotToolPalette final : public QWidget {
     void applyMainToolbarLayout(bool notify);
     adqt::widgets::AdButton* drawingToolButton(const QString& itemId) const;
     adqt::widgets::AdButton* drawingToolEntryButton(Tool tool) const;
+    Tool rememberedDrawingMode(Tool tool) const;
     void clearDrawingToolGroups();
     void activateToolFromToolbar(Tool tool, bool toggleVisibleButton = true);
     void activateDrawingTool(Tool tool);
@@ -592,6 +594,8 @@ class ScreenshotToolPalette final : public QWidget {
     QVector<QSpacerItem*> m_textActionSpacers;
     QVector<QSpacerItem*> m_tableActionSpacers;
     std::optional<Tool> m_activeTool;
+    Tool m_lastHighlightTool = Tool::PenHighlight;
+    Tool m_lastFilterTool = Tool::PenFilter;
     adqt::widgets::AdButton* m_activeToolButton = nullptr;
     QVector<QFrame*> m_styleSeparatorFrames;
     QVector<QFrame*> m_panelFrames;
@@ -613,6 +617,8 @@ class ScreenshotToolPalette final : public QWidget {
     bool m_selectionOpacityAvailable = false;
     bool m_selectionActionAvailabilityInitialized = false;
     bool m_scrollingScreenshotMode = false;
+    bool m_scrollingAutoScroll = false;
+    adqt::widgets::AdButton* m_scrollingAutoScrollButton = nullptr;
     ScreenshotScrollingRecognitionMode m_scrollingRecognitionMode =
         ScreenshotScrollingRecognitionMode::Vertical;
     RecordingState m_recordingState = RecordingState::Idle;
