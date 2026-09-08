@@ -69,7 +69,7 @@ class CatalogTranslator final : public QTranslator {
 void builtInCatalogIsCompleteAndValid() {
     const settings::SettingsCatalog& catalog = settings::builtInSettingsRegistry().catalog();
     require(catalog.validationErrors().isEmpty(), "built-in settings catalog must validate");
-    require(catalog.pages().size() == 9, "catalog must contain nine pages");
+    require(catalog.pages().size() == 10, "catalog must contain ten pages");
 
     qsizetype sectionCount = 0;
     qsizetype itemCount = 0;
@@ -412,8 +412,14 @@ void builtInCatalogIsCompleteAndValid() {
             modelTypeSelect->options.at(2).value == QStringLiteral("medium"),
         "System settings must expose the ordered OCR model and acceleration controls");
 
-    const auto* settingsGroup =
-        std::get_if<settings::SettingsNavigationGroupDefinition>(&catalog.navigation().at(3));
+    const settings::SettingsNavigationGroupDefinition* settingsGroup = nullptr;
+    for (const auto& node : catalog.navigation()) {
+        if (const auto* group = std::get_if<settings::SettingsNavigationGroupDefinition>(&node);
+            group != nullptr && group->id == QStringLiteral("nav.settings")) {
+            settingsGroup = group;
+            break;
+        }
+    }
     require(settingsGroup != nullptr && settingsGroup->pages.size() >= 2 &&
                 settingsGroup->pages.at(0).pageId == QStringLiteral("interface-settings") &&
                 settingsGroup->pages.at(1).pageId == QStringLiteral("function-settings"),
@@ -696,15 +702,20 @@ void globalMouseSettingsHaveStableContracts() {
     const auto* quick = std::get_if<settings::SettingsNavigationPageDefinition>(&navigation.at(0));
     const auto* globalMouse =
         std::get_if<settings::SettingsNavigationPageDefinition>(&navigation.at(1));
-    const auto* history =
+    const auto* translation =
         std::get_if<settings::SettingsNavigationPageDefinition>(&navigation.at(2));
-    require(quick != nullptr && quick->pageId == QStringLiteral("global-hotkeys") &&
-                globalMouse != nullptr && globalMouse->id == QStringLiteral("nav.global-mouse") &&
-                globalMouse->pageId == QStringLiteral("global-mouse") && globalMouse->iconFactory &&
-                globalMouse->iconFactory() ==
-                    snow_shot::presentation::icons::custom::outlined::WheelMouse() &&
-                history != nullptr && history->pageId == QStringLiteral("screenshot-history"),
-            "Global mouse navigation must immediately follow Global hotkeys");
+    const auto* history =
+        std::get_if<settings::SettingsNavigationPageDefinition>(&navigation.at(3));
+    require(
+        quick != nullptr && quick->pageId == QStringLiteral("global-hotkeys") &&
+            globalMouse != nullptr && globalMouse->id == QStringLiteral("nav.global-mouse") &&
+            globalMouse->pageId == QStringLiteral("global-mouse") && globalMouse->iconFactory &&
+            globalMouse->iconFactory() ==
+                snow_shot::presentation::icons::custom::outlined::WheelMouse() &&
+            translation != nullptr && translation->pageId == QStringLiteral("translation") &&
+            translation->iconFactory && history != nullptr &&
+            history->pageId == QStringLiteral("screenshot-history"),
+        "navigation order must be Global hotkeys, Global mouse, Translation, Screenshot history");
 
     for (qsizetype index = 0; index < std::size(expectations); ++index) {
         const auto& expected = expectations[index];
@@ -1038,12 +1049,20 @@ void invalidCatalogReportsAllConformanceErrors() {
     QVector<settings::SettingsPageDefinition> pages = builtIn.pages();
     QVector<settings::SettingsNavigationNode> navigation = builtIn.navigation();
 
-    pages[4].route = pages[0].route;
-    pages[4].sections[0].items[0].configurationKey = QStringLiteral("interface/language");
-    pages[4].sections[0].items[1].id = QStringLiteral("interface-theme");
-    pages[5].sections[0].items[1].configurationKey = QStringLiteral("missing/key");
+    const auto mutablePage = [&pages](const QString& id) -> settings::SettingsPageDefinition& {
+        const auto found = std::find_if(pages.begin(), pages.end(),
+                                        [&id](const auto& page) { return page.id == id; });
+        require(found != pages.end(), "validation fixture page must exist");
+        return *found;
+    };
+    auto& interfacePage = mutablePage(QStringLiteral("interface-settings"));
+    auto& storagePage = mutablePage(QStringLiteral("storage-and-privacy"));
+    interfacePage.route = pages[0].route;
+    interfacePage.sections[0].items[0].configurationKey = QStringLiteral("interface/language");
+    interfacePage.sections[0].items[1].id = QStringLiteral("interface-theme");
+    storagePage.sections[0].items[1].configurationKey = QStringLiteral("missing/key");
     auto& custom =
-        std::get<settings::SettingsCustomDefinition>(pages[5].sections[3].items[0].payload);
+        std::get<settings::SettingsCustomDefinition>(storagePage.sections[3].items[0].payload);
     custom.renderer = static_cast<settings::SettingsCustomRenderer>(999);
     pages.push_back({QStringLiteral("empty-page"),
                      QStringLiteral("relative-route"),
@@ -1051,7 +1070,14 @@ void invalidCatalogReportsAllConformanceErrors() {
                      text("Empty page description"),
                      {}});
 
-    auto* group = std::get_if<settings::SettingsNavigationGroupDefinition>(&navigation[3]);
+    settings::SettingsNavigationGroupDefinition* group = nullptr;
+    for (auto& node : navigation) {
+        if (auto* candidate = std::get_if<settings::SettingsNavigationGroupDefinition>(&node);
+            candidate != nullptr && candidate->id == QStringLiteral("nav.settings")) {
+            group = candidate;
+            break;
+        }
+    }
     require(group != nullptr, "built-in Settings navigation group must exist");
     group->pages[0].pageId = QStringLiteral("missing-page");
 
@@ -1081,7 +1107,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 177 && index.search(QString()).size() == 177,
+    require(index.entries().size() == 178 && index.search(QString()).size() == 178,
             "search must generate all catalog nodes in catalog order");
     const auto middle = index.search(QStringLiteral("Reset Zoom"));
     require(!middle.isEmpty() && middle.constFirst().location.itemId ==
@@ -1117,7 +1143,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 9 && sections == 33 && items == 135,
+    require(pages == 10 && sections == 33 && items == 135,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

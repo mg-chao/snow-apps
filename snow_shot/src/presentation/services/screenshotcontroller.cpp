@@ -876,13 +876,8 @@ bool ScreenshotController::Impl::ensureRecognitionFeature() {
         m_ocrRecognition = m_ownedOcrRecognition.get();
     }
     m_qrRecognition = std::make_unique<ScreenshotQrRecognitionService>(&owner);
-    QString tableApiUrl = QStringLiteral(SNOW_SHOT_API_BASE_URL);
-    const QString runtimeTableApiUrl =
-        QProcessEnvironment::systemEnvironment().value(QStringLiteral("SNOW_SHOT_API_BASE_URL"));
-    if (!runtimeTableApiUrl.trimmed().isEmpty()) {
-        tableApiUrl = runtimeTableApiUrl;
-    }
-    m_tableRecognition = std::make_unique<SnowShotApiClient>(tableApiUrl, &owner);
+    m_tableRecognition =
+        std::make_unique<SnowShotApiClient>(SnowShotApiClient::configuredBaseUrl(), &owner);
     m_tableRecognition->setUseSystemProxy(
         applicationStorage.configuration().value(QStringLiteral("network/proxy")).toString() ==
         QStringLiteral("system"));

@@ -40,6 +40,7 @@ class ContentCardWidget final : public QFrame {
     void retranslateUi();
 
   signals:
+    void hideWindowRequested();
     void routeChanged(const QString& route);
     void sectionListChanged();
     void locationChanged(const snow_shot::presentation::settings::SettingsLocation& location);
@@ -54,8 +55,8 @@ class ContentCardWidget final : public QFrame {
     void changeEvent(QEvent* event) override;
 
   private:
-    QWidget* createPage(
-        const snow_shot::presentation::settings::SettingsPageDefinition& definition);
+    QWidget*
+    createPage(const snow_shot::presentation::settings::SettingsPageDefinition& definition);
     void destroyActivePage();
     void handleCommand(const snow_shot::presentation::settings::SettingsCommand& command);
 

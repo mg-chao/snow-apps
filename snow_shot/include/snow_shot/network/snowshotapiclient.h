@@ -74,11 +74,13 @@ class SnowShotApiClient final : public QObject {
     explicit SnowShotApiClient(QString baseUrl, QObject* parent = nullptr);
     ~SnowShotApiClient() override;
 
+    [[nodiscard]] static QString configuredBaseUrl();
+
     [[nodiscard]] bool usesSystemProxy() const;
     void setUseSystemProxy(bool enabled);
     [[nodiscard]] const QVector<SnowShotChatModel>& cachedChatModels() const;
     [[nodiscard]] RequestToken extractTable(const QImage& image, QObject* receiver,
-                                             Completion completion);
+                                            Completion completion);
     [[nodiscard]] RequestToken fetchChatModels(const QString& locale, QObject* receiver,
                                                ChatModelsCompletion completion);
     [[nodiscard]] RequestToken streamTranslation(const SnowShotTranslationRequest& request,

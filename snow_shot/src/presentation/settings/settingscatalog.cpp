@@ -1534,6 +1534,14 @@ QVector<SettingsPageDefinition> builtInPages() {
             },
         },
         {
+            QStringLiteral("translation"),
+            QStringLiteral("/tools/translation"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Translation")),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Translate text between languages")),
+            {},
+            SettingsPageKind::Translation,
+        },
+        {
             QString::fromLatin1(FUNCTION_PAGE_ID),
             QStringLiteral("/settings/functionSettings"),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Function settings")),
@@ -1957,7 +1965,12 @@ QVector<SettingsNavigationNode> builtInNavigation() {
     about.pageId = QStringLiteral("about");
     about.iconFactory = []() { return outlined_icons::InfoCircle(); };
 
-    return {globalHotkeys, globalMouse, history, settingsGroup, about};
+    SettingsNavigationPageDefinition translation;
+    translation.id = QStringLiteral("nav.translation");
+    translation.pageId = QStringLiteral("translation");
+    translation.iconFactory = []() { return outlined_icons::Translation(); };
+
+    return {globalHotkeys, globalMouse, translation, history, settingsGroup, about};
 }
 
 QString locationText(const SettingsLocation& location) {
