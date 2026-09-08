@@ -15,6 +15,7 @@
 #include <QColor>
 #include <QImage>
 #include <QPainter>
+#include <QStringList>
 
 #include <algorithm>
 #include <array>
@@ -2033,6 +2034,72 @@ void filterSourceCacheKeepsOverlappingZBoundariesSeparate() {
     snow_canvas_filter_tile_cache::clear();
 }
 
+QStringList retainedFilterPaintWarnings;
+
+void retainedFilterTilesRenderWithoutReopeningAnActivePainter() {
+    const auto previousHandler = qInstallMessageHandler(
+        [](QtMsgType type, const QMessageLogContext&, const QString& message) {
+            if (type == QtWarningMsg && message.startsWith(QStringLiteral("QPainter::")))
+                retainedFilterPaintWarnings.append(message);
+        });
+    retainedFilterPaintWarnings.clear();
+    const QSize logicalSize(544, 288);
+    const QImage background = noisyPatternImage(logicalSize);
+    for (const qreal dpr : {1.0, 1.25, 2.0}) {
+        for (int effect = 0; effect < 4; ++effect) {
+            snow_canvas_filter_tile_cache::clear();
+            int namespaceToken = 0;
+            SceneDisplayInfo info{};
+            info.surface_width = logicalSize.width();
+            info.surface_height = logicalSize.height();
+            info.camera_zoom = 1.0;
+            SnowSceneDisplayItem raw{};
+            raw.kind = SNOW_SCENE_DISPLAY_ITEM_FILTER;
+            raw.element_id = SnowElementId{1, 1};
+            raw.width = 460.0;
+            raw.height = 240.0;
+            raw.opacity = 1.0;
+            raw.filter = snow_filter_render_spec_resolve(effect, 0.3);
+            const SnowCanvasSceneItem filter(raw);
+            const auto render = [&]() {
+                QImage image(
+                    QSize(qRound(logicalSize.width() * dpr), qRound(logicalSize.height() * dpr)),
+                    QImage::Format_ARGB32_Premultiplied);
+                image.setDevicePixelRatio(dpr);
+                image.fill(Qt::transparent);
+                QPainter painter(&image);
+                snow_canvas_renderer::SceneRenderRequest request;
+                request.painter = &painter;
+                request.displayInfo = &info;
+                request.sceneItems = &filter;
+                request.sceneItemCount = 1;
+                request.exposedRegion = QRegion(QRect(QPoint(), logicalSize));
+                request.backgroundImage = &background;
+                request.cacheNamespace = &namespaceToken;
+                snow_canvas_renderer::renderSceneItemsTiled(request);
+                painter.end();
+                return image;
+            };
+            const QImage cold = render();
+            for (int frame = 0; frame < 3; ++frame) {
+                require(render() == cold,
+                        "cached filter repaints must preserve cold-frame pixels at every DPR");
+                require(
+                    snow_canvas_renderer::filterRenderDiagnosticsForCurrentThread().sourceTileHits >
+                        0,
+                    "repeated frames must exercise retained filter-source tiles");
+            }
+        }
+    }
+    qInstallMessageHandler(previousHandler);
+    snow_canvas_filter_tile_cache::clear();
+    if (!retainedFilterPaintWarnings.isEmpty())
+        std::cerr << retainedFilterPaintWarnings.front().toStdString() << " ("
+                  << retainedFilterPaintWarnings.size() << " occurrences)\n";
+    require(retainedFilterPaintWarnings.isEmpty(),
+            "retained filter repaints must not begin an already active painter");
+}
+
 void penFilterHoverDrawsAPathContour() {
     QImage image(QSize(120, 120), QImage::Format_ARGB32_Premultiplied);
     image.fill(Qt::transparent);
@@ -2192,6 +2259,10 @@ void tiledRenderMatchesFullRender() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     snow_canvas_render_diagnostics::setEnabled(true);
+    if (application.arguments().contains(QStringLiteral("--retained-filter-paint-only"))) {
+        retainedFilterTilesRenderWithoutReopeningAnActivePainter();
+        return 0;
+    }
     publicRegionFilterApiRestrictsEffectsToTheRequestedRegion();
     regionFilterSupportPixelsMatchesGaussianPlan();
     croppedRegionFilterMatchesFullFrameRender();
@@ -2227,6 +2298,7 @@ int main(int argc, char** argv) {
     adjacentLayerBatchesEffectsAndKeepsSparseComponents();
     distantSameEffectFiltersUseIndependentSpatialGroups();
     filterSourceCacheKeepsOverlappingZBoundariesSeparate();
+    retainedFilterTilesRenderWithoutReopeningAnActivePainter();
     penFilterHoverDrawsAPathContour();
     return 0;
 }

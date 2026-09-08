@@ -791,9 +791,14 @@ void spotlightConfigSurvivesStyleRowEviction() {
     for (int iteration = 0; iteration < 8; ++iteration) {
         toolbar.setActiveTool(ScreenshotToolPalette::Tool::Spotlight);
         flushEvents();
-        QPointer<QWidget> oldSlider =
-            toolbar.findChild<QWidget*>(QStringLiteral("screenshotSpotlightOpacitySlider"));
+        QPointer<adqt::widgets::AdSlider> oldSlider = toolbar.findChild<adqt::widgets::AdSlider*>(
+            QStringLiteral("screenshotSpotlightOpacitySlider"));
         require(oldSlider != nullptr, "Spotlight must materialize its opacity slider");
+        // Leave value/geometry tooltip work queued when the style row is evicted.
+        // Queued tooltip work must not outlive the style row that owns the slider.
+        oldSlider->setTooltipEnabled(true);
+        oldSlider->setValue(17 + iteration);
+        oldSlider->resize(oldSlider->width() + 1, oldSlider->height());
         toolbar.setActiveTool(ScreenshotToolPalette::Tool::Arrow);
         require(oldSlider == nullptr, "changing tool must evict the old Spotlight slider");
         SnowCanvasSpotlightConfig config;

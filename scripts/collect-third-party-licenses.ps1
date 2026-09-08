@@ -4,7 +4,8 @@ param(
     [Parameter(Mandatory = $true)][string]$AllowedRoot,
     [Parameter(Mandatory = $true)][string]$VcpkgPrefix,
     [Parameter(Mandatory = $true)][string]$QtPrefix,
-    [Parameter(Mandatory = $true)][string]$CargoManifest,
+    [Parameter(Mandatory = $true)][string[]]$CargoManifest,
+    [hashtable]$CargoOptions = @{},
     [Parameter(Mandatory = $true)][string]$AntDesignNotice,
     [Parameter(Mandatory = $true)][string]$FallbackLicenseDirectory,
     [string]$CargoTarget = "x86_64-pc-windows-msvc"
@@ -55,7 +56,9 @@ if (-not $destinationPath.StartsWith(
 
 $vcpkgPrefixPath = Resolve-ExistingPath -Path $VcpkgPrefix -Description "vcpkg package prefix"
 $qtPrefixPath = Resolve-ExistingPath -Path $QtPrefix -Description "static Qt prefix"
-$cargoManifestPath = Resolve-ExistingPath -Path $CargoManifest -Description "Cargo manifest" -PathType Leaf
+$cargoManifestPaths = @($CargoManifest | ForEach-Object {
+    Resolve-ExistingPath -Path $_ -Description "Cargo manifest" -PathType Leaf
+})
 $antDesignNoticePath = Resolve-ExistingPath -Path $AntDesignNotice `
     -Description "Ant Design third-party notice" -PathType Leaf
 $fallbackLicenseDirectoryPath = Resolve-ExistingPath -Path $FallbackLicenseDirectory `
@@ -148,55 +151,47 @@ $cargoCommand = Get-Command cargo -ErrorAction SilentlyContinue
 if (-not $cargoCommand) {
     throw "cargo is required to collect Rust dependency licenses."
 }
-$metadataOutput = @(& $cargoCommand.Source metadata --locked --offline `
-    --filter-platform $CargoTarget --format-version 1 `
-    --manifest-path $cargoManifestPath)
-if ($LASTEXITCODE -ne 0) {
-    throw "cargo metadata failed while collecting Rust dependency licenses. Build the release first so all locked packages are available offline."
-}
-try {
-    $metadata = ($metadataOutput -join "`n") | ConvertFrom-Json
-}
-catch {
-    throw "cargo metadata returned invalid JSON: $($_.Exception.Message)"
-}
-
+# Metadata supplies license text locations; cargo tree selects each binary's
+# actual features. Metadata alone unions features from unselected workspace members.
 $packageById = @{}
-foreach ($package in $metadata.packages) {
-    $packageById[$package.id] = $package
+$reachable = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+$optionsByManifest = @{}
+foreach ($manifest in $CargoOptions.Keys) {
+    $path = Resolve-ExistingPath -Path $manifest -Description "Cargo options manifest" -PathType Leaf
+    $optionsByManifest[$path] = @($CargoOptions[$manifest])
 }
-$nodeById = @{}
-foreach ($node in $metadata.resolve.nodes) {
-    $nodeById[$node.id] = $node
-}
-$rootId = $metadata.resolve.root
-if ([string]::IsNullOrWhiteSpace($rootId)) {
-    $rootPackage = @($metadata.packages | Where-Object {
+foreach ($cargoManifestPath in $cargoManifestPaths) {
+    $options = if ($optionsByManifest.ContainsKey($cargoManifestPath)) {
+        $optionsByManifest[$cargoManifestPath]
+    } else { @() }
+    $metadataOutput = @(& $cargoCommand.Source metadata --locked --offline `
+        --filter-platform $CargoTarget --format-version 1 `
+        --manifest-path $cargoManifestPath @options)
+    if ($LASTEXITCODE -ne 0) { throw "cargo metadata failed for $cargoManifestPath" }
+    $metadata = ($metadataOutput -join "`n") | ConvertFrom-Json
+    $rootPackages = @($metadata.packages | Where-Object {
         [System.IO.Path]::GetFullPath($_.manifest_path) -eq $cargoManifestPath
     })
-    if ($rootPackage.Count -ne 1) {
-        throw "Could not identify the root Rust package for $cargoManifestPath"
+    if ($rootPackages.Count -ne 1) { throw "Expected one root package for $cargoManifestPath" }
+    $rootPackage = $rootPackages[0]
+    $packagesByNameVersion = @{}
+    foreach ($package in $metadata.packages) {
+        $packageById[$package.id] = $package
+        $key = "$($package.name) v$($package.version)"
+        if (!$packagesByNameVersion.ContainsKey($key)) { $packagesByNameVersion[$key] = @() }
+        $packagesByNameVersion[$key] += @($package)
     }
-    $rootId = $rootPackage[0].id
-}
-
-$reachable = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
-$pending = [System.Collections.Generic.Queue[string]]::new()
-$pending.Enqueue($rootId)
-while ($pending.Count -gt 0) {
-    $id = $pending.Dequeue()
-    if (-not $reachable.Add($id)) {
-        continue
-    }
-    $node = $nodeById[$id]
-    if (-not $node) {
-        throw "The Cargo resolve graph has no node for $id"
-    }
-    foreach ($dependency in @($node.deps)) {
-        $nonDevelopmentKinds = @($dependency.dep_kinds | Where-Object { $_.kind -ne "dev" })
-        if ($dependency.dep_kinds.Count -eq 0 -or $nonDevelopmentKinds.Count -gt 0) {
-            $pending.Enqueue([string]$dependency.pkg)
+    $tree = @(& $cargoCommand.Source tree --locked --offline --target $CargoTarget `
+        --manifest-path $cargoManifestPath --package $rootPackage.id `
+        --edges normal,build --prefix none --format '{p}' @options)
+    if ($LASTEXITCODE -ne 0) { throw "cargo tree failed for $cargoManifestPath" }
+    foreach ($entry in $tree) {
+        if ($entry -notmatch '^(\S+ v\S+)(?: |$)') { throw "Unexpected cargo tree entry: $entry" }
+        $candidates = $packagesByNameVersion[$Matches[1]]
+        if ($null -eq $candidates -or $candidates.Count -ne 1) {
+            throw "Missing or ambiguous package metadata for cargo tree entry: $entry"
         }
+        [void]$reachable.Add($candidates[0].id)
     }
 }
 

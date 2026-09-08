@@ -553,7 +553,9 @@ void nativeDibMaskColoredPixelsRemainPixels() {
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
-    liveSnapshotRetainsBitmapFallback();
+    if (!application.arguments().contains(QStringLiteral("--mime-data-only"))) {
+        liveSnapshotRetainsBitmapFallback();
+    }
     directImageWinsOverRichText();
     oversizedDirectImagesAreIgnored();
     encodedImageAndTextAreSupported();

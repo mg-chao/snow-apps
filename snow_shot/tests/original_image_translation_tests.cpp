@@ -13,6 +13,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMimeData>
+#include <QNetworkReply>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTextDocument>
@@ -46,7 +47,7 @@ namespace {
 void require(bool condition, const char* message) {
     if (!condition) {
         std::cerr << message << '\n';
-        std::exit(EXIT_FAILURE);
+        std::_Exit(EXIT_FAILURE);
     }
 }
 
@@ -74,6 +75,7 @@ class TranslationServer final : public QObject {
         QPointer<QTcpSocket> socket;
         QJsonObject body;
         QString text;
+        bool headersSent = false;
     };
 
     TranslationServer() {
@@ -116,6 +118,7 @@ class TranslationServer final : public QObject {
         const auto socket = streams.at(index).socket;
         require(socket != nullptr && socket->state() == QAbstractSocket::ConnectedState,
                 "stream should remain connected");
+        startStream(index);
         socket->write(data);
         socket->flush();
     }
@@ -134,6 +137,20 @@ class TranslationServer final : public QObject {
         send(index, QByteArrayLiteral("event: error\ndata: {\"message\":\"test failure\"}\n\n"));
     }
 
+    void rateLimit(int index) {
+        auto& stream = streams[index];
+        require(!stream.headersSent && stream.socket != nullptr,
+                "rate-limit response must precede stream headers");
+        const QByteArray body = QByteArrayLiteral("{\"detail\":\"rate limited\"}");
+        stream.headersSent = true;
+        stream.socket->write(
+            QByteArrayLiteral("HTTP/1.1 429 Too Many Requests\r\nRetry-After: 60\r\n"
+                              "Content-Type: application/json\r\nContent-Length: ") +
+            QByteArray::number(body.size()) + QByteArrayLiteral("\r\nConnection: close\r\n\r\n") +
+            body);
+        stream.socket->disconnectFromHost();
+    }
+
     bool disconnected(int index) const {
         const auto socket = streams.at(index).socket;
         return socket == nullptr || socket->state() == QAbstractSocket::UnconnectedState;
@@ -143,8 +160,19 @@ class TranslationServer final : public QObject {
     int modelRequests = 0;
     bool rejectModels = false;
     bool holdModels = false;
+    bool holdStreamHeaders = false;
 
   private:
+    void startStream(int index) {
+        auto& stream = streams[index];
+        if (stream.headersSent)
+            return;
+        stream.headersSent = true;
+        stream.socket->write(QByteArrayLiteral(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n"));
+        stream.socket->flush();
+    }
+
     void readRequest(QTcpSocket* socket) {
         if (socket->property("handled").toBool()) {
             return;
@@ -193,9 +221,8 @@ class TranslationServer final : public QObject {
         const QJsonArray messages = body.value(QStringLiteral("messages")).toArray();
         streams.push_back(
             {socket, body, messages.last().toObject().value(QStringLiteral("content")).toString()});
-        socket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
-                                        "Connection: close\r\n\r\n"));
-        socket->flush();
+        if (!holdStreamHeaders)
+            startStream(streams.size() - 1);
     }
 
     QTcpServer server;
@@ -475,6 +502,60 @@ void partialFailuresRetryOnlyFailedBoxes() {
     require(session.displayed->lines[0].text == QStringLiteral("retry 0") &&
                 session.errors.size() == 1,
             "retry replaces partial text and does not repeat a resolved failure summary");
+}
+
+void rateLimitingStopsQueuedBoxesAndRetryPreservesCompletedResults() {
+    configureTranslation();
+    TranslationServer server;
+    server.holdStreamHeaders = true;
+    SnowShotApiClient api(server.url());
+    SessionProbe session(&api, 8);
+    session.controller->beginTextTranslation();
+    server.waitForStreams(4);
+    server.delta(0, QStringLiteral("completed before limit"));
+    server.finish(0);
+    server.waitForStreams(5);
+    bool rateLimitHandled = false;
+    QObject completionObserver;
+    for (auto* reply : api.findChildren<QNetworkReply*>()) {
+        QObject::connect(reply, &QNetworkReply::finished, &completionObserver, [&, reply] {
+            if (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() == 429)
+                rateLimitHandled = true;
+        });
+    }
+    server.rateLimit(1);
+    waitUntil([&] { return rateLimitHandled; }, "client must observe the rate-limit response");
+    for (int index = 2; index < 5; ++index) {
+        server.delta(index, QStringLiteral("in flight %1").arg(index));
+        server.finish(index);
+    }
+    waitUntil([&] { return !session.streaming || server.streams.size() > 5; },
+              "rate-limited batch should stop after its in-flight work finishes");
+    require(server.streams.size() == 5, "HTTP 429 must stop dispatch of queued translation boxes");
+    require(!session.streaming && session.errors.size() == 1,
+            "rate-limited batch should leave busy state and report one failure");
+    require(session.displayed->lines[0].text == QStringLiteral("completed before limit") &&
+                session.displayed->lines[4].text == QStringLiteral("in flight 4") &&
+                session.displayed->lines[1].text == QStringLiteral("source 1") &&
+                session.displayed->lines[7].text == QStringLiteral("source 7"),
+            "rate limiting must retain translations and the original text of unsent boxes");
+    session.controller->endTextEditing();
+    session.controller->beginTextTranslation();
+    server.waitForStreams(9);
+    QStringList retried;
+    for (int index = 5; index < 9; ++index) {
+        retried.append(server.streams[index].text);
+        server.delta(index, QStringLiteral("retried %1").arg(server.streams[index].text));
+        server.finish(index);
+    }
+    require(retried == QStringList{QStringLiteral("source 1"), QStringLiteral("source 5"),
+                                   QStringLiteral("source 6"), QStringLiteral("source 7")},
+            "explicit retry must send only the rejected and previously unsent boxes");
+    waitUntil([&] { return !session.streaming; }, "explicit rate-limit retry should finish");
+    require(session.errors.size() == 1 &&
+                session.displayed->lines[0].text == QStringLiteral("completed before limit") &&
+                session.displayed->lines[7].text == QStringLiteral("retried source 7"),
+            "successful retry must retain earlier results and clear the failed batch state");
 }
 
 void backgroundWorkAndIndependentSessions() {
@@ -833,6 +914,7 @@ void runOriginalImageTranslationTests() {
     queueStreamsIndividualBoxesAndKeepsOriginals();
     fourBoxesAndOwnerClosure();
     partialFailuresRetryOnlyFailedBoxes();
+    rateLimitingStopsQueuedBoxesAndRetryPreservesCompletedResults();
     backgroundWorkAndIndependentSessions();
     backgroundFailuresAreReportedOnReturn();
     invalidationAndModeChangesCancelOldWork();

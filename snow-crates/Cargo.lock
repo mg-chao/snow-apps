@@ -1885,8 +1885,7 @@ dependencies = [
 [[package]]
 name = "ort"
 version = "2.0.0-rc.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4336a1e2b38848325241c72889086886004e589b7c74f335e60a8e8db5138a0b"
+source = "git+https://github.com/mg-chao/ort.git?rev=90018ee581fb1bb1baf8e82eba8e679728ff27dc#90018ee581fb1bb1baf8e82eba8e679728ff27dc"
 dependencies = [
  "libloading 0.9.0",
  "ndarray",
@@ -1899,8 +1898,7 @@ dependencies = [
 [[package]]
 name = "ort-sys"
 version = "2.0.0-rc.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf211e3776eea6aec988552fa118dd746d70e1b1e5e244058d1c98015f3e5872"
+source = "git+https://github.com/mg-chao/ort.git?rev=90018ee581fb1bb1baf8e82eba8e679728ff27dc#90018ee581fb1bb1baf8e82eba8e679728ff27dc"
 dependencies = [
  "hmac-sha256",
  "lzma-rust2",
@@ -2878,7 +2876,7 @@ dependencies = [
 
 [[package]]
 name = "snow-ocr-process"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "memmap2",
  "num_cpus",

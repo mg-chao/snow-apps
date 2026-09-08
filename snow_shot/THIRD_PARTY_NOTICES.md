@@ -19,6 +19,13 @@ Screen color restoration uses nalgebra (Apache-2.0) for fixed-size matrix
 inversion and validation. Its license and resolved dependencies are included
 in the generated Rust dependency notice bundle.
 
+The OCR worker uses `ort` and `ort-sys` 2.0.0-rc.13 (MIT OR Apache-2.0), pinned to
+revision `90018ee581fb1bb1baf8e82eba8e679728ff27dc` of
+https://github.com/mg-chao/ort with a native diagnostic-decoding and logger-category
+fix. Cargo retrieves their source and original license files from that fork.
+The release collector includes the selected Rust FFI and static OCR-worker
+dependency graphs, including these Git dependencies.
+
 Local crash diagnostics use Crashpad (Apache-2.0), pinned by the vcpkg baseline
 and the repository's Crashpad overlay. The client, helper, Chromium base code,
 and their bundled notices are included in the vcpkg license collection. The
