@@ -2893,16 +2893,51 @@ void AdSelect::setSemanticStyleResolver(SemanticStyleResolver resolver) {
   emit semanticStylesChanged();
 }
 
+AdSelect::SizeAdjustPolicy AdSelect::sizeAdjustPolicy() const { return sizeAdjustPolicy_; }
+
+void AdSelect::setSizeAdjustPolicy(SizeAdjustPolicy policy) {
+  if (sizeAdjustPolicy_ == policy) {
+    return;
+  }
+  sizeAdjustPolicy_ = policy;
+  updateGeometry();
+  emit sizeAdjustPolicyChanged(policy);
+}
+
 QSize AdSelect::sizeHint() const {
   int height = visualStyle_ ? visualStyle_->metrics.height : 32;
   if (mode_ != Mode::Single) {
     height = std::max(height, this->height());
+  }
+  if (sizeAdjustPolicy_ == SizeAdjustPolicy::AdjustToCurrentText && mode_ == Mode::Single &&
+      lineEdit_ && rootLayout_) {
+    const QString selectedLabel =
+        currentValueKey_.isEmpty()
+            ? QString()
+            : fallbackSelectedLabel(rawValueForSelectionKey(currentValueKey_));
+    const QString label = selectedLabel.isEmpty() ? placeholder_ : selectedLabel;
+    // Include QLineEdit's cursor and horizontal text inset, as well as the selector accessories.
+    int width = lineEdit_->fontMetrics().horizontalAdvance(label) + 4;
+    const auto margins = rootLayout_->contentsMargins();
+    width += margins.left() + margins.right();
+    if (suffixButton_ && !suffixButton_->isHidden()) {
+      width += suffixButton_->width() + rootLayout_->spacing();
+    }
+    if (prefixLabel_ && !prefixLabel_->isHidden()) {
+      width += prefixLabel_->sizeHint().width() + rootLayout_->spacing();
+    }
+    return QSize(std::max(1, width), qMax(1, qRound(height * controlScale_.logicalScale)));
   }
   return QSize(qMax(1, qRound(240 * controlScale_.logicalScale)),
                qMax(1, qRound(height * controlScale_.logicalScale)));
 }
 
 QSize AdSelect::minimumSizeHint() const {
+  if (sizeAdjustPolicy_ == SizeAdjustPolicy::AdjustToCurrentText && mode_ == Mode::Single) {
+    const QSize hint = sizeHint();
+    return QSize(std::min(hint.width(), qMax(1, qRound(120 * controlScale_.logicalScale))),
+                 hint.height());
+  }
   int height = visualStyle_ ? visualStyle_->metrics.height : 32;
   if (mode_ != Mode::Single) {
     height = std::max(height, this->height());
@@ -3397,8 +3432,10 @@ void AdSelect::changeEvent(QEvent* event) {
     updateSuffixVisual();
     update();
   } else if (event->type() == QEvent::EnabledChange || event->type() == QEvent::PaletteChange ||
-      event->type() == QEvent::ApplicationPaletteChange || event->type() == QEvent::FontChange ||
-      event->type() == QEvent::ApplicationFontChange || event->type() == QEvent::StyleChange) {
+             event->type() == QEvent::ApplicationPaletteChange ||
+             event->type() == QEvent::FontChange ||
+             event->type() == QEvent::ApplicationFontChange ||
+             event->type() == QEvent::StyleChange) {
     if (event->type() == QEvent::EnabledChange && disabled()) {
       hovered_ = false;
     }
@@ -4352,6 +4389,9 @@ void AdSelect::updateDisplay() {
   }
 
   suppressLineEditChange_ = false;
+  if (sizeAdjustPolicy_ == SizeAdjustPolicy::AdjustToCurrentText) {
+    updateGeometry();
+  }
   updateMultipleSelectorHeight();
 }
 
@@ -4482,11 +4522,17 @@ void AdSelect::updateAccessoryGeometry() {
   const int y = std::max(0, (height() - iconSize) / 2);
   clearButton_->move(x, y);
   clearButton_->raise();
+  if (sizeAdjustPolicy_ == SizeAdjustPolicy::AdjustToCurrentText) {
+    updateGeometry();
+  }
 }
 
 void AdSelect::updatePrefixVisual() {
   if (!prefixLabel_ || !visualStyle_) {
     return;
+  }
+  if (sizeAdjustPolicy_ == SizeAdjustPolicy::AdjustToCurrentText) {
+    updateGeometry();
   }
 
   const bool hasPrefixText = !prefixText_.trimmed().isEmpty();

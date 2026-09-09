@@ -610,6 +610,9 @@ void AdTextEdit::dropEvent(QDropEvent* event) {
 void AdTextEdit::resizeEvent(QResizeEvent* event) {
   QTextEdit::resizeEvent(event);
   updateLayoutMetrics();
+  if (heightMode_ == HeightMode::AutoGrow && event->size().width() != event->oldSize().width()) {
+    updateHeightConstraints();
+  }
   syncOverlayScrollBar();
   updateInteractionFocusOverlay();
 }
@@ -621,9 +624,9 @@ void AdTextEdit::changeEvent(QEvent* event) {
   }
 
   if (event->type() == QEvent::LanguageChange || event->type() == QEvent::EnabledChange ||
-      event->type() == QEvent::PaletteChange ||
-      event->type() == QEvent::ApplicationPaletteChange || event->type() == QEvent::FontChange ||
-      event->type() == QEvent::ApplicationFontChange || event->type() == QEvent::StyleChange) {
+      event->type() == QEvent::PaletteChange || event->type() == QEvent::ApplicationPaletteChange ||
+      event->type() == QEvent::FontChange || event->type() == QEvent::ApplicationFontChange ||
+      event->type() == QEvent::StyleChange) {
     refreshVisualState(true);
   }
 }

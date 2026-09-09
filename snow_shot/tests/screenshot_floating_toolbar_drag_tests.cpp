@@ -10,6 +10,7 @@
 #include "widgets/dpi_stable_window_controller.h"
 
 #include <QAbstractButton>
+#include <QAbstractNativeEventFilter>
 #include <QApplication>
 #include <QCoreApplication>
 #include <QCursor>
@@ -36,6 +37,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
@@ -103,6 +105,33 @@ class ScreenshotFloatingToolPaletteWindowTestAccess {
 };
 
 namespace {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+class LayeredSurfaceMonitor final : public QAbstractNativeEventFilter {
+  public:
+    explicit LayeredSurfaceMonitor(WId id) : m_id(id) {
+        qApp->installNativeEventFilter(this);
+    }
+    ~LayeredSurfaceMonitor() override {
+        qApp->removeNativeEventFilter(this);
+    }
+    int resets = 0;
+
+    bool nativeEventFilter(const QByteArray&, void* message, qintptr*) override {
+        const auto* msg = static_cast<MSG*>(message);
+        if (msg->hwnd == reinterpret_cast<HWND>(m_id) && msg->message == WM_STYLECHANGED &&
+            msg->wParam == static_cast<WPARAM>(GWL_EXSTYLE)) {
+            const auto* style = reinterpret_cast<const STYLESTRUCT*>(msg->lParam);
+            if ((style->styleOld & WS_EX_LAYERED) != 0 && (style->styleNew & WS_EX_LAYERED) == 0) {
+                ++resets;
+            }
+        }
+        return false;
+    }
+
+  private:
+    WId m_id;
+};
+#endif
 std::atomic_bool nativeGeometryWarningEmitted{false};
 std::atomic_bool nonFocusableActivationWarningEmitted{false};
 QtMessageHandler previousMessageHandler = nullptr;
@@ -145,6 +174,11 @@ class NativeGeometryWarningScope final {
 
 class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
   public:
+    int quickSaveCount = 0;
+    void quickSaveSelection() override {
+        ++quickSaveCount;
+    }
+
     void setMoveTool() override {}
     void setSelectTool() override {}
     void resetCanvas() override {
@@ -1180,6 +1214,122 @@ void slowSeamStraddlingDragKeepsToolbarContentUnmagnified() {
 #endif
 }
 
+class ToolbarPaintExtentMonitor final : public QObject {
+  public:
+    explicit ToolbarPaintExtentMonitor(ScreenshotFloatingToolPaletteWindow& window)
+        : m_window(window) {
+        window.installEventFilter(this);
+    }
+    bool painted = false;
+    bool clipped = false;
+
+  protected:
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (event->type() == QEvent::Paint) {
+            painted = true;
+            clipped |= !m_window.rect().contains(m_window.paletteHost()->geometry());
+        }
+        return false;
+    }
+
+  private:
+    ScreenshotFloatingToolPaletteWindow& m_window;
+};
+
+void dpiCommitReconcilesTheActualFrameBeforePainting() {
+    ScreenshotFloatingToolPaletteWindow window(testToolbarOptions());
+    window.prepareForDisplay();
+    window.show();
+    settleQueuedRefreshes();
+    auto* controller = window.findChild<adqt::widgets::AdDpiStableWindowController*>();
+    require(controller != nullptr, "toolbar must have a DPI controller");
+    ToolbarPaintExtentMonitor monitor(window);
+    const QSize expected = window.windowSizeHint();
+    // Model a native transition retaining an older, smaller frame while the
+    // pooled toolbar has already prepared the new capture's content extent.
+    window.resize(expected.width() / 2, expected.height());
+    controller->scaleCommitCompleted(adqt::widgets::AdControlScaleContext::fromDprs(
+                                         window.devicePixelRatioF(), window.devicePixelRatioF()),
+                                     window.size());
+    settleQueuedRefreshes();
+    require(window.size() == expected && window.rect().contains(window.paletteHost()->geometry()),
+            "a DPI commit must reconcile the actual frame with the prepared content");
+    require(monitor.painted && !monitor.clipped,
+            "the first repaint after a DPI commit must contain the complete toolbar");
+}
+
+void reusedToolbarFitsOnFirstShowAcrossScreens() {
+    QScreen* screenA = nullptr;
+    QScreen* screenB = nullptr;
+    for (QScreen* screen : QGuiApplication::screens()) {
+        if (qFuzzyCompare(screen->devicePixelRatio(), 1.5)) {
+            screenA = screen;
+        } else if (qFuzzyCompare(screen->devicePixelRatio(), 1.0)) {
+            screenB = screen;
+        }
+    }
+    require(screenA != nullptr && screenB != nullptr, "requires 150% and 100% screens");
+    require(screenB->geometry().right() + 1 == screenA->geometry().left(),
+            "requires 100% monitor B immediately left of 150% monitor A");
+    class Owner : public QWidget {
+      public:
+        void retire() {
+            hide();
+            destroy(true, true);
+        }
+    };
+    Owner ownerA;
+    Owner ownerB;
+    for (auto pair : {std::make_pair(&ownerA, screenA), std::make_pair(&ownerB, screenB)}) {
+        pair.first->setWindowFlags(Qt::Tool | Qt::FramelessWindowHint);
+        pair.first->setWindowOpacity(0.0);
+        pair.first->winId();
+        pair.first->windowHandle()->setScreen(pair.second);
+        pair.first->setGeometry(pair.second->geometry());
+        pair.first->show();
+    }
+    NoOpToolbarCommands commands;
+    ScreenshotToolbarWindow window(commands);
+    ToolbarPaintExtentMonitor monitor(window);
+    for (auto pair : {std::make_pair(&ownerB, screenB), std::make_pair(&ownerA, screenA),
+                      std::make_pair(&ownerB, screenB), std::make_pair(&ownerA, screenA)}) {
+        window.hide();
+        ownerA.retire();
+        ownerB.retire();
+        window.releaseNativeSurface();
+        for (auto ownerPair :
+             {std::make_pair(&ownerA, screenA), std::make_pair(&ownerB, screenB)}) {
+            ownerPair.first->winId();
+            ownerPair.first->windowHandle()->setScreen(ownerPair.second);
+            ownerPair.first->setGeometry(ownerPair.second->geometry());
+            ownerPair.first->show();
+        }
+        window.restoreNativeSurface();
+        window.resetForNewCapture();
+        // Capture preparation uses the first overlay before the selection's
+        // actual monitor is known. Omitting this step misses the regression.
+        window.setOwnerWindow(&ownerA);
+        window.prepareForDisplay();
+        settleQueuedRefreshes();
+        window.setPlacementContext(pair.second, pair.second->geometry(), QRect());
+        window.prepareForDisplay();
+        window.setOwnerWindow(pair.first);
+        window.setStyleToolbarAboveMain(false);
+        window.resetPositionForSelection(pair.second->geometry().topLeft() + QPoint(0, 300));
+        window.prepareForDisplay();
+        monitor.painted = false;
+        monitor.clipped = false;
+        window.show();
+        settleQueuedRefreshes();
+        require(window.rect().contains(window.paletteHost()->geometry()),
+                "reused toolbar must contain its host on the first show on another screen");
+        require(window.size() == window.windowSizeHint(),
+                "reused toolbar frame must match its preset on first show");
+        require(monitor.painted && !monitor.clipped,
+                "reused toolbar must not paint a clipped frame on its first show");
+    }
+}
+
 void dpiScaledSizeMessagePreservesThePhysicalWindowSize() {
 #if defined(Q_OS_WIN) || defined(_WIN32)
     ScreenshotFloatingToolPaletteWindow window(testToolbarOptions());
@@ -1494,6 +1644,28 @@ void keyboardFocusTransitionsKeepQtAndNativeStateConsistent() {
                 "focus transitions must not cause native geometry warnings");
     }
     storage.shutdown();
+}
+
+void qtFocusFlagChangeStillRequiresLayeredSurfacePreservation() {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    if (QGuiApplication::platformName() != QStringLiteral("windows")) {
+        return;
+    }
+    // Sentinel for Qt's applyWindowFlags()/initialize() layer reset. If Qt
+    // starts preserving the surface itself, retire the nativeEvent workaround.
+    QWidget window(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus);
+    window.setAttribute(Qt::WA_TranslucentBackground);
+    window.resize(80, 40);
+    window.show();
+    QCoreApplication::processEvents();
+    require((GetWindowLongPtr(reinterpret_cast<HWND>(window.winId()), GWL_EXSTYLE) &
+             WS_EX_LAYERED) != 0,
+            "Qt sentinel requires a layered window");
+    LayeredSurfaceMonitor surface(window.winId());
+    window.windowHandle()->setFlag(Qt::WindowDoesNotAcceptFocus, false);
+    require(surface.resets > 0,
+            "Qt now preserves layered surfaces: review and retire the focus-policy workaround");
+#endif
 }
 
 void screenshotActionLayoutReloadIsWindowScopedAndFitsThePreset() {
@@ -1933,11 +2105,33 @@ void floatingToolbarInputsAcquireKeyboardFocus() {
             }
         }
         require(input != nullptr, "floating toolbar should expose the active text input");
+#if defined(Q_OS_WIN) || defined(_WIN32)
+        const bool nativeWindows = QGuiApplication::platformName() == QStringLiteral("windows");
+        const auto hwnd = reinterpret_cast<HWND>(window.winId());
+        LayeredSurfaceMonitor surface(window.winId());
+        if (nativeWindows) {
+            require((GetWindowLongPtr(hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) != 0,
+                    "visible transparent toolbar must start with layered rendering");
+        }
+#endif
         click(input);
+#if defined(Q_OS_WIN) || defined(_WIN32)
+        if (nativeWindows) {
+            require(surface.resets == 0,
+                    "focusing a toolbar input must not discard the layered surface");
+            require((GetWindowLongPtr(hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) != 0,
+                    "focusing a toolbar input must preserve layered rendering before repaint");
+        }
+#endif
         QCoreApplication::processEvents();
         require(ScreenshotFloatingToolPaletteWindowTestAccess::keyboardFocusActive(window, input),
                 "clicking any floating toolbar input must enable its keyboard focus interaction");
         requireNativeFocus(input);
+        for (int repeat = 0; repeat < 3; ++repeat) {
+            click(input);
+            QCoreApplication::processEvents();
+            requireNativeFocus(input);
+        }
         input->selectAll();
         QKeyEvent key(QEvent::KeyPress, Qt::Key_4, Qt::NoModifier, QStringLiteral("42"));
         QApplication::sendEvent(input, &key);
@@ -1967,6 +2161,10 @@ void floatingToolbarInputsAcquireKeyboardFocus() {
         require(
             !ScreenshotFloatingToolPaletteWindowTestAccess::keyboardFocusActive(window, nullptr),
             "destroying an active input should not leave keyboard interaction enabled");
+#if defined(Q_OS_WIN) || defined(_WIN32)
+        require(surface.resets == 0,
+                "editing, repeated clicks, focus loss and input removal must preserve the surface");
+#endif
     }
     snow_shot::storage::ApplicationStorage::instance().shutdown();
 }
@@ -1974,7 +2172,28 @@ void floatingToolbarInputsAcquireKeyboardFocus() {
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     try {
+        if (app.arguments().contains(QStringLiteral("--dpi-frame-reconcile-only"))) {
+            dpiCommitReconcilesTheActualFrameBeforePainting();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--capture-screen-switch-only"))) {
+            reusedToolbarFitsOnFirstShowAcrossScreens();
+            return 0;
+        }
+        if (app.arguments().contains(QStringLiteral("--quick-save-only"))) {
+            NoOpToolbarCommands commands;
+            ScreenshotToolbarWindow window(commands);
+            require(window.palette(), "screenshot toolbar palette unavailable");
+            window.palette()->quickSaveRequested();
+            require(commands.quickSaveCount == 1,
+                    "screenshot Quick save must forward exactly one command");
+            window.palette()->saveRequested();
+            require(commands.quickSaveCount == 1,
+                    "manual Save must not dispatch the Quick save command");
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--keyboard-focus-only"))) {
+            qtFocusFlagChangeStillRequiresLayeredSurfacePreservation();
             keyboardFocusTransitionsKeepQtAndNativeStateConsistent();
             floatingToolbarInputsAcquireKeyboardFocus();
             return 0;

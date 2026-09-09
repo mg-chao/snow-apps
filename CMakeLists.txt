@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 4.2)
 
 project(snow_apps VERSION 0.2.0 LANGUAGES CXX)
 
-set(SNOW_SHOT_VERSION "0.8.1-beta")
+set(SNOW_SHOT_VERSION "1.0.0-beta")
 if(NOT SNOW_SHOT_VERSION MATCHES "^([0-9]+\\.[0-9]+\\.[0-9]+)(-[0-9A-Za-z.-]+)?$")
     message(FATAL_ERROR "SNOW_SHOT_VERSION must be a semantic version such as 0.8.0-dev")
 endif()
@@ -137,6 +137,7 @@ if(SNOW_APPS_BUILD_SNOW_SHOT)
     foreach(_snow_rust_ffi_target IN ITEMS
             snow_capture_c
             snow_ui_selector_c
+            snow_selected_text_c
             snow_stitch_images_c
             snow_draw_engine_c)
         add_library("${_snow_rust_ffi_target}" INTERFACE)
@@ -144,6 +145,8 @@ if(SNOW_APPS_BUILD_SNOW_SHOT)
             snow_shot_rust_ffi_bundle)
     endforeach()
     unset(_snow_rust_ffi_target)
+    target_include_directories(snow_selected_text_c INTERFACE
+        "${CMAKE_CURRENT_SOURCE_DIR}/snow-crates/crates/snow-selected-text-c/include")
 endif()
 
 if(SNOW_APPS_BUILD_IMAGE_VIEWER AND NOT SNOW_APPS_BUILD_SNOW_IMAGE)

@@ -600,7 +600,7 @@ void screenshotUiSchemaRepairsStructuredValues() {
                          QJsonArray{QStringLiteral("text-recognition")},
                          QJsonArray{QStringLiteral("text-translation")},
                          QJsonArray{QStringLiteral("scrolling-screenshot")},
-                         QJsonArray{QStringLiteral("save-as-file")},
+                         QJsonArray{QStringLiteral("quick-save"), QStringLiteral("save-as-file")},
                      }},
                     {QStringLiteral("hidden"), QJsonArray{}},
                 },
@@ -668,7 +668,8 @@ void screenshotUiSchemaRepairsStructuredValues() {
         normalizedActions.valid && normalizedActions.changed && actionLayout.size() == 2 &&
             actionLayout.value(QStringLiteral("positions")).toArray() ==
                 QJsonArray{
-                    QJsonArray{QStringLiteral("save-as-file"), QStringLiteral("table-recognition"),
+                    QJsonArray{QStringLiteral("quick-save"), QStringLiteral("save-as-file"),
+                               QStringLiteral("table-recognition"),
                                QStringLiteral("convert-to-markdown"),
                                QStringLiteral("convert-to-html")},
                     QJsonArray{QStringLiteral("record-screen")},
@@ -689,7 +690,8 @@ void screenshotUiSchemaRepairsStructuredValues() {
                     QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html"),
                     QStringLiteral("record-screen"), QStringLiteral("pin-to-screen"),
                     QStringLiteral("text-recognition"), QStringLiteral("text-translation"),
-                    QStringLiteral("scrolling-screenshot"), QStringLiteral("save-as-file")}},
+                    QStringLiteral("scrolling-screenshot"), QStringLiteral("quick-save"),
+                    QStringLiteral("save-as-file")}},
     };
     const auto normalizedAllHidden = storage::ConfigurationSchema::normalize(
         QStringLiteral("screenshot_toolbar/action_tools_layout"), allHiddenActionLayout);
@@ -744,7 +746,8 @@ void screenshotUiAdaptersRoundTripTypedValues() {
             "typed toolbar layout did not preserve normalized visible and hidden entries");
 
     const storage::ScreenshotToolbarLayout actionLayout{
-        {{QStringLiteral("save-as-file"), QStringLiteral("record-screen")},
+        {{QStringLiteral("quick-save"), QStringLiteral("save-as-file"),
+          QStringLiteral("record-screen")},
          {QStringLiteral("table-recognition")}},
         {QStringLiteral("barcode-recognition"), QStringLiteral("pin-to-screen"),
          QStringLiteral("convert-to-markdown"), QStringLiteral("convert-to-html"),
@@ -1574,6 +1577,12 @@ int main(int argc, char** argv) {
     QCoreApplication::setApplicationName(QStringLiteral("storage-tests"));
     if (application.arguments().contains(QStringLiteral("--quit-lifetime-only"))) {
         applicationQuitPreservesStorageForConsumerDestruction();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--toolbar-layout-only"))) {
+        screenshotUiSchemaRepairsStructuredValues();
+        screenshotUiAdaptersRoundTripTypedValues();
+        storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--image-conversion-only"))) {

@@ -980,6 +980,11 @@ ScreenshotPinnedWindow::~ScreenshotPinnedWindow() {
     m_materializationJob = {};
     m_fileSaveJob.cancel();
     m_fileSaveJob = {};
+    if (m_quickSaveArtifact) {
+        m_quickSaveArtifact->cancel();
+        m_quickSaveArtifact.reset();
+    }
+    m_quickSavePending = false;
     m_materializationCallbacks.clear();
     if (m_synchronizedResizeWindowId != 0) {
         native::removeSynchronizedResize(m_synchronizedResizeWindowId);
@@ -2465,6 +2470,11 @@ void ScreenshotPinnedWindow::closeEvent(QCloseEvent* event) {
     m_materializationCallbacks.clear();
     m_fileSaveJob.cancel();
     m_fileSaveJob = {};
+    if (m_quickSaveArtifact) {
+        m_quickSaveArtifact->cancel();
+        m_quickSaveArtifact.reset();
+    }
+    m_quickSavePending = false;
     if (m_synchronizedResizeWindowId != 0) {
         native::removeSynchronizedResize(m_synchronizedResizeWindowId);
         m_synchronizedResizeWindowId = 0;
@@ -3547,6 +3557,8 @@ void ScreenshotPinnedWindow::configureEditToolbar(
     }
 
     ScreenshotToolPalette* toolbar = toolbarWindow->palette();
+    connect(toolbar, &ScreenshotToolPalette::quickSaveRequested, this,
+            &ScreenshotPinnedWindow::quickSave);
     connect(toolbar, &ScreenshotToolPalette::saveRequested, this,
             &ScreenshotPinnedWindow::saveAsFile);
     connect(toolbar, &ScreenshotToolPalette::copyRequested, this,
@@ -4082,6 +4094,59 @@ void ScreenshotPinnedWindow::copyOriginalContent() {
         }
         showPinnedRecognitionMessage(
             this, translatePinnedText("The pinned image copy could not be started"), true);
+    }
+}
+
+void ScreenshotPinnedWindow::quickSave() {
+    if (m_closing || m_quickSavePending || property("saveDialogOpen").toBool())
+        return;
+    m_quickSavePending = true;
+    if (m_originalImage.isNull()) {
+        requestMaterializedImage([this](bool succeeded) {
+            m_quickSavePending = false;
+            if (succeeded && !m_closing) {
+                quickSave();
+            } else if (!succeeded && !m_closing) {
+                showPinnedRecognitionMessage(
+                    this, translatePinnedText("The pinned image could not be prepared"), true);
+            }
+        });
+        return;
+    }
+    if (m_transformedImage.isNull() || m_backgroundCanvasRect.isEmpty() ||
+        (m_canvas && !m_canvas->resetEditingStatePreservingTool())) {
+        m_quickSavePending = false;
+        return;
+    }
+    const qreal renderScale = m_transformedImage.width() / m_backgroundCanvasRect.width();
+    ScreenshotResultStyle style = m_resultStyle;
+    style.cornerRadius = qRound(style.cornerRadius * renderScale);
+    style.shadowWidth = qRound(style.shadowWidth * renderScale);
+    ScreenshotPinnedViewportExportSource request{m_runtime.serializeDocumentSession(),
+                                                 m_transformedImage, m_backgroundCanvasRect,
+                                                 m_transformedImage.size(), style};
+    auto artifact = std::make_shared<ScreenshotExportArtifact>(
+        ScreenshotExportSource::fromPinnedViewport(std::move(request)));
+    m_quickSaveArtifact = artifact;
+    const auto complete = [this, artifact](ScreenshotExportTaskResult result) {
+        if (m_closing || m_quickSaveArtifact != artifact)
+            return;
+        m_quickSaveArtifact.reset();
+        m_quickSavePending = false;
+        if (!result.succeeded() && result.failureStage != ScreenshotExportFailureStage::Cancelled) {
+            showPinnedRecognitionMessage(
+                this,
+                QCoreApplication::translate("ScreenshotController",
+                                            "The screenshot could not be saved: %1")
+                    .arg(result.error),
+                true);
+        }
+    };
+    if (!artifact->requestQuickSave(this, complete)) {
+        complete(ScreenshotExportTaskResult::failure(
+            ScreenshotExportFailureStage::Queue,
+            QCoreApplication::translate("ScreenshotController",
+                                        "The screenshot export queue is full")));
     }
 }
 

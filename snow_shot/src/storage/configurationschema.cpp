@@ -30,7 +30,8 @@ const QStringList kActionToolbarItemIds = {
     QStringLiteral("convert-to-markdown"),  QStringLiteral("convert-to-html"),
     QStringLiteral("record-screen"),        QStringLiteral("pin-to-screen"),
     QStringLiteral("text-recognition"),     QStringLiteral("text-translation"),
-    QStringLiteral("scrolling-screenshot"), QStringLiteral("save-as-file"),
+    QStringLiteral("scrolling-screenshot"), QStringLiteral("quick-save"),
+    QStringLiteral("save-as-file"),
 };
 
 QJsonArray jsonArray(const QStringList& values) {
@@ -68,7 +69,7 @@ QVector<QStringList> defaultActionToolbarPositions() {
         {QStringLiteral("text-recognition")},
         {QStringLiteral("text-translation")},
         {QStringLiteral("scrolling-screenshot")},
-        {QStringLiteral("save-as-file")},
+        {QStringLiteral("quick-save"), QStringLiteral("save-as-file")},
     };
 }
 
@@ -215,6 +216,12 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      {},
      2},
     {QStringLiteral("global_shortcuts/open_settings"),
+     QJsonArray(),
+     ConfigurationValueKind::StringList,
+     std::nullopt,
+     {},
+     2},
+    {QStringLiteral("global_shortcuts/translate_selected_text"),
      QJsonArray(),
      ConfigurationValueKind::StringList,
      std::nullopt,
@@ -709,10 +716,11 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
       QStringLiteral("quick.screenshot-full-screen"),
       QStringLiteral("quick.screenshot-focused-window"), QStringLiteral("quick.screen-record"),
       QStringLiteral("quick.screen-record-copy"), QStringLiteral("quick.open-capture-history"),
-      QStringLiteral("quick.pin-clipboard-content"), QStringLiteral("tray.window-grouping"),
+      QStringLiteral("quick.pin-clipboard-content"),
+      QStringLiteral("quick.translate-selected-text"), QStringLiteral("tray.window-grouping"),
       QStringLiteral("tray.disable-shortcut-functions"), QStringLiteral("tray.show-main-window"),
       QStringLiteral("tray.exit")},
-     16},
+     17},
     {QStringLiteral("screenshot_selection/previous_selection"), QJsonValue::Null,
      ConfigurationValueKind::Structured},
     {QStringLiteral("screenshot_selection/smart_selection"), true, ConfigurationValueKind::Boolean},
@@ -1147,6 +1155,23 @@ ConfigurationNormalization normalizeToolbarLayout(const QJsonValue& value,
         return {};
     }
 
+    if (known.contains(QStringLiteral("quick-save")) &&
+        !positioned.contains(QStringLiteral("quick-save")) &&
+        !hiddenSet.contains(QStringLiteral("quick-save"))) {
+        for (QStringList& position : positions) {
+            const qsizetype saveIndex = position.indexOf(QStringLiteral("save-as-file"));
+            if (saveIndex >= 0) {
+                position.insert(saveIndex, QStringLiteral("quick-save"));
+                positioned.insert(QStringLiteral("quick-save"));
+                break;
+            }
+        }
+        if (!positioned.contains(QStringLiteral("quick-save")) &&
+            hiddenSet.contains(QStringLiteral("save-as-file"))) {
+            hidden.push_back(QStringLiteral("quick-save"));
+            hiddenSet.insert(QStringLiteral("quick-save"));
+        }
+    }
     if (!positions.isEmpty() && known.contains(QStringLiteral("convert-to-markdown"))) {
         // Upgrade earlier defaults without changing custom placements.
         auto previousDefault = defaultPositions;

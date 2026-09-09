@@ -32,6 +32,12 @@ and their bundled notices are included in the vcpkg license collection. The
 Qt-independent OCR bridge and shared Rust panic hook are Apache-2.0 code under
 `snow-crates/`.
 
+Selected-text acquisition and its C bridge (`snow-selected-text` and
+`snow-selected-text-c`) are Apache-2.0 code under `snow-crates/`. They use the
+existing Microsoft windows-rs dependency (MIT OR Apache-2.0) for UI Automation,
+native edit controls, and clipboard interoperability. Their resolved notices
+are included in the generated Rust dependency bundle.
+
 The generated bundle is authoritative for a particular binary because its
 contents are produced from that build environment. Dependency licenses and
 copyright notices remain the property of their respective owners.

@@ -115,6 +115,7 @@ constexpr int TOOLBAR_ITEM_SPACING = 8;
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Full-width"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Scrolling screenshot"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Save as file"),
+    QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Quick save"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Cancel screenshot"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Copy to clipboard"),
     QT_TRANSLATE_NOOP("ScreenshotToolPalette", "Confirm edit"),
@@ -2491,9 +2492,11 @@ QMargins ScreenshotToolPalette::scaledPanelMargins(int horizontalMargin, int ver
     const int horizontal = scaledMetric(horizontalMargin);
     const int contentHeight = scaledMetric(baseContentHeight);
     const int totalHeight = scaledMetric(baseContentHeight + verticalMargin * 2);
-    const int top =
-        std::min(scaledMetric(verticalMargin), std::max(0, totalHeight - contentHeight));
-    const int bottom = std::max(0, totalHeight - contentHeight - top);
+    const int verticalSpace = std::max(0, totalHeight - contentHeight);
+    // Qt rounds the offset of shorter children down. Put an odd padding pixel
+    // above the row so those two rounding decisions do not accumulate upward.
+    const int top = (verticalSpace + 1) / 2;
+    const int bottom = verticalSpace - top;
     return QMargins(horizontal, top, horizontal, bottom);
 }
 
@@ -3657,8 +3660,11 @@ ScreenshotToolPalette::actionToolSourceButton(const QString& itemId) const {
     if (itemId == QStringLiteral("scrolling-screenshot")) {
         return m_scrollingScreenshotButton;
     }
-    if (itemId == QStringLiteral("save-as-file") && !m_options.saveButtonWithResultActions) {
+    if (itemId == QStringLiteral("save-as-file")) {
         return m_saveButton;
+    }
+    if (itemId == QStringLiteral("quick-save")) {
+        return m_quickSaveButton;
     }
     return nullptr;
 }
@@ -3721,6 +3727,8 @@ void ScreenshotToolPalette::activateActionTool(const QString& itemId, bool toggl
         activateToolFromToolbar(Tool::Html, toggleVisibleButton);
     } else if (itemId == QStringLiteral("scrolling-screenshot")) {
         activateToolFromToolbar(Tool::ScrollingScreenshot, toggleVisibleButton);
+    } else if (itemId == QStringLiteral("quick-save")) {
+        emit quickSaveRequested();
     } else if (itemId == QStringLiteral("save-as-file")) {
         emit saveRequested();
     }
@@ -3889,6 +3897,80 @@ void ScreenshotToolPalette::ensureTableQrPopover() {
     ensureActionToolGroupPopover(m_tableButton);
 }
 
+adqt::widgets::AdButton* ScreenshotToolPalette::createActionToolGroup(const QStringList& itemIds) {
+    const auto stack = toolbar_layout::stackPresentation(itemIds, [this](const QString& id) {
+        return toolbar_layout::actionDescriptor(id) != nullptr && actionToolAvailable(id);
+    });
+    const QStringList& availableItemIds = stack.itemIds;
+    if (availableItemIds.isEmpty())
+        return nullptr;
+    const QSet<QString> recognitionItems{QStringLiteral("barcode-recognition"),
+                                         QStringLiteral("table-recognition")};
+    ActionToolGroup group;
+    group.itemIds = availableItemIds;
+    group.entryItemId = stack.entryItemId();
+    group.popoverItemIds = stack.popoverItemIds;
+    const QSet<QString> items(availableItemIds.cbegin(), availableItemIds.cend());
+    const bool nativeRecognitionGroup =
+        items == recognitionItems && m_tableButton != nullptr && m_tableQrPopover != nullptr;
+    const bool recognitionNeedsIndependentTrigger =
+        availableItemIds.size() == 1 &&
+        (availableItemIds.constFirst() == QStringLiteral("barcode-recognition") ||
+         availableItemIds.constFirst() == QStringLiteral("table-recognition")) &&
+        m_options.showTableTool && m_options.showQrTool;
+
+    if (nativeRecognitionGroup) {
+        group.trigger = m_tableButton;
+        group.popover = m_tableQrPopover;
+        m_tableQrEntryTool =
+            group.entryItemId == QStringLiteral("barcode-recognition") ? Tool::Qr : Tool::Table;
+        refreshTableQrTrigger();
+    } else if (availableItemIds.size() == 1 && !recognitionNeedsIndependentTrigger) {
+        group.trigger = actionToolSourceButton(group.entryItemId);
+    } else {
+        const toolbar_layout::EditorDescriptor* descriptor =
+            toolbar_layout::actionDescriptor(group.entryItemId);
+        if (descriptor == nullptr) {
+            return nullptr;
+        }
+        group.trigger = createScreenshotToolPaletteToolButton(
+            m_mainPanel, descriptor->label, toolbar_layout::icon(descriptor->icon),
+            actionButtonMetrics(m_physicalScale));
+        group.ownsTrigger = true;
+        group.trigger->setObjectName(availableItemIds.size() == 1
+                                         ? (group.entryItemId == QStringLiteral("table-recognition")
+                                                ? QStringLiteral("screenshotTableRecognitionButton")
+                                                : QStringLiteral("screenshotQrRecognitionButton"))
+                                         : QStringLiteral("screenshotActionToolGroupButton%1")
+                                               .arg(m_actionToolGroups.size()));
+        if (availableItemIds.size() > 1) {
+            group.popover = createScreenshotToolPaletteOptionPopoverShell(group.trigger);
+            group.trigger->installEventFilter(this);
+            connect(group.popover, &adqt::widgets::AdPopover::visibilityRequested, this,
+                    [this, trigger = group.trigger](bool visible) {
+                        if (visible) {
+                            ensureActionToolGroupPopover(trigger);
+                        }
+                    });
+        }
+        connect(group.trigger, &adqt::widgets::AdButton::clicked, this,
+                [this, trigger = group.trigger]() {
+                    for (const ActionToolGroup& candidate : std::as_const(m_actionToolGroups)) {
+                        if (candidate.trigger == trigger) {
+                            activateActionTool(candidate.entryItemId);
+                            return;
+                        }
+                    }
+                });
+    }
+    if (group.trigger == nullptr) {
+        return nullptr;
+    }
+    m_actionToolGroups.push_back(group);
+    refreshActionToolGroup(m_actionToolGroups.size() - 1);
+    return group.trigger;
+}
+
 void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
     if (m_mainPanel == nullptr) {
         return;
@@ -4049,7 +4131,8 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
         m_ocrButton,
         m_textTranslationButton,
         m_scrollingScreenshotButton,
-        m_options.saveButtonWithResultActions ? nullptr : m_saveButton,
+        m_saveButton,
+        m_quickSaveButton,
     };
     for (adqt::widgets::AdButton* source : actionSources) {
         if (source != nullptr) {
@@ -4059,12 +4142,13 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
     }
 
     bool hasActionPositions = false;
-    const QSet<QString> recognitionItems{QStringLiteral("barcode-recognition"),
-                                         QStringLiteral("table-recognition")};
     for (const QStringList& position : std::as_const(m_actionToolsLayout.positions)) {
         const auto stack =
             toolbar_layout::stackPresentation(position, [this](const QString& itemId) {
                 return toolbar_layout::actionDescriptor(itemId) != nullptr &&
+                       !(m_options.saveButtonWithResultActions &&
+                         (itemId == QStringLiteral("save-as-file") ||
+                          itemId == QStringLiteral("quick-save"))) &&
                        actionToolAvailable(itemId);
             });
         const QStringList& availableItemIds = stack.itemIds;
@@ -4078,71 +4162,10 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
             addMainToolbarSpacing(TOOLBAR_ITEM_SPACING);
         }
 
-        ActionToolGroup group;
-        group.itemIds = availableItemIds;
-        group.entryItemId = stack.entryItemId();
-        group.popoverItemIds = stack.popoverItemIds;
-        const QSet<QString> items(availableItemIds.cbegin(), availableItemIds.cend());
-        const bool nativeRecognitionGroup =
-            items == recognitionItems && m_tableButton != nullptr && m_tableQrPopover != nullptr;
-        const bool recognitionNeedsIndependentTrigger =
-            availableItemIds.size() == 1 &&
-            (availableItemIds.constFirst() == QStringLiteral("barcode-recognition") ||
-             availableItemIds.constFirst() == QStringLiteral("table-recognition")) &&
-            m_options.showTableTool && m_options.showQrTool;
-
-        if (nativeRecognitionGroup) {
-            group.trigger = m_tableButton;
-            group.popover = m_tableQrPopover;
-            m_tableQrEntryTool =
-                group.entryItemId == QStringLiteral("barcode-recognition") ? Tool::Qr : Tool::Table;
-            refreshTableQrTrigger();
-        } else if (availableItemIds.size() == 1 && !recognitionNeedsIndependentTrigger) {
-            group.trigger = actionToolSourceButton(group.entryItemId);
-        } else {
-            const toolbar_layout::EditorDescriptor* descriptor =
-                toolbar_layout::actionDescriptor(group.entryItemId);
-            if (descriptor == nullptr) {
-                continue;
-            }
-            group.trigger = createScreenshotToolPaletteToolButton(
-                m_mainPanel, descriptor->label, toolbar_layout::icon(descriptor->icon),
-                actionButtonMetrics(m_physicalScale));
-            group.ownsTrigger = true;
-            group.trigger->setObjectName(
-                availableItemIds.size() == 1
-                    ? (group.entryItemId == QStringLiteral("table-recognition")
-                           ? QStringLiteral("screenshotTableRecognitionButton")
-                           : QStringLiteral("screenshotQrRecognitionButton"))
-                    : QStringLiteral("screenshotActionToolGroupButton%1")
-                          .arg(m_actionToolGroups.size()));
-            if (availableItemIds.size() > 1) {
-                group.popover = createScreenshotToolPaletteOptionPopoverShell(group.trigger);
-                group.trigger->installEventFilter(this);
-                connect(group.popover, &adqt::widgets::AdPopover::visibilityRequested, this,
-                        [this, trigger = group.trigger](bool visible) {
-                            if (visible) {
-                                ensureActionToolGroupPopover(trigger);
-                            }
-                        });
-            }
-            connect(group.trigger, &adqt::widgets::AdButton::clicked, this,
-                    [this, trigger = group.trigger]() {
-                        for (const ActionToolGroup& candidate : std::as_const(m_actionToolGroups)) {
-                            if (candidate.trigger == trigger) {
-                                activateActionTool(candidate.entryItemId);
-                                return;
-                            }
-                        }
-                    });
+        if (auto* trigger = createActionToolGroup(availableItemIds)) {
+            trigger->show();
+            layout->addWidget(trigger, 0, Qt::AlignBottom);
         }
-        if (group.trigger == nullptr) {
-            continue;
-        }
-        group.trigger->show();
-        layout->addWidget(group.trigger, 0, Qt::AlignBottom);
-        m_actionToolGroups.push_back(group);
-        refreshActionToolGroup(m_actionToolGroups.size() - 1);
         hasContent = true;
         separated = false;
         hasActionPositions = true;
@@ -4150,7 +4173,9 @@ void ScreenshotToolPalette::applyMainToolbarLayout(bool notify) {
 
     QVector<QWidget*> resultActions{
         m_cancelButton,
-        m_options.saveButtonWithResultActions ? m_saveButton : nullptr,
+        m_options.saveButtonWithResultActions
+            ? createActionToolGroup({QStringLiteral("quick-save"), QStringLiteral("save-as-file")})
+            : nullptr,
         m_copyButton,
         m_confirmButton,
     };
@@ -4517,6 +4542,11 @@ bool ScreenshotToolPalette::addMainSecondaryButtons(const Options& options, QBox
     }
 
     if (options.showSaveButton && !options.saveButtonWithResultActions) {
+        m_quickSaveButton = addActionButton("Quick save", custom_outlined_icons::QuickSave());
+        m_quickSaveButton->setObjectName(QStringLiteral("screenshotQuickSaveButton"));
+        m_quickSaveButton->hide();
+        connect(m_quickSaveButton, &adqt::widgets::AdButton::clicked, this,
+                &ScreenshotToolPalette::quickSaveRequested);
         m_saveButton = addActionButton("Save as file", custom_outlined_icons::Save());
         applyScreenshotShortcutTooltip(m_saveButton, QStringLiteral("Save as file"),
                                        QStringLiteral("save_as_file"));
@@ -4614,6 +4644,11 @@ void ScreenshotToolPalette::addMainActionButtons(const Options& options, QBoxLay
     }
 
     if (options.showSaveButton && options.saveButtonWithResultActions) {
+        m_quickSaveButton = addActionButton("Quick save", custom_outlined_icons::QuickSave());
+        m_quickSaveButton->setObjectName(QStringLiteral("screenshotQuickSaveButton"));
+        m_quickSaveButton->hide();
+        connect(m_quickSaveButton, &adqt::widgets::AdButton::clicked, this,
+                &ScreenshotToolPalette::quickSaveRequested);
         m_saveButton = addActionButton("Save as file", custom_outlined_icons::Save());
         applyScreenshotShortcutTooltip(m_saveButton, QStringLiteral("Save as file"),
                                        QStringLiteral("save_as_file"));

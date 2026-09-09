@@ -73,6 +73,7 @@ enum class Icon {
     TextTranslation,
     ScrollingScreenshot,
     SaveAsFile,
+    QuickSave,
     Markdown,
     Html,
 };
@@ -175,6 +176,8 @@ struct EditorDescriptor {
         {"scrolling-screenshot", "ScreenshotToolbarEditorSettingsWidget",
          QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Scrolling screenshot"),
          Icon::ScrollingScreenshot},
+        {"quick-save", "ScreenshotToolbarEditorSettingsWidget",
+         QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Quick save"), Icon::QuickSave},
         {"save-as-file", "ScreenshotToolbarEditorSettingsWidget",
          QT_TRANSLATE_NOOP("ScreenshotToolbarEditorSettingsWidget", "Save as file"),
          Icon::SaveAsFile},
@@ -224,7 +227,7 @@ editorDescriptors(storage::ScreenshotToolbarLayoutKind kind) {
         {QStringLiteral("text-recognition")},
         {QStringLiteral("text-translation")},
         {QStringLiteral("scrolling-screenshot")},
-        {QStringLiteral("save-as-file")},
+        {QStringLiteral("quick-save"), QStringLiteral("save-as-file")},
     };
 }
 
@@ -271,6 +274,23 @@ normalizedLayout(const storage::ScreenshotToolbarLayout& input, const QStringLis
         }
     }
 
+    if (known.contains(QStringLiteral("quick-save")) &&
+        !positioned.contains(QStringLiteral("quick-save")) &&
+        !hidden.contains(QStringLiteral("quick-save"))) {
+        for (QStringList& position : result.positions) {
+            const qsizetype saveIndex = position.indexOf(QStringLiteral("save-as-file"));
+            if (saveIndex >= 0) {
+                position.insert(saveIndex, QStringLiteral("quick-save"));
+                positioned.insert(QStringLiteral("quick-save"));
+                break;
+            }
+        }
+        if (!positioned.contains(QStringLiteral("quick-save")) &&
+            hidden.contains(QStringLiteral("save-as-file"))) {
+            result.hidden.push_back(QStringLiteral("quick-save"));
+            hidden.insert(QStringLiteral("quick-save"));
+        }
+    }
     if (!result.positions.isEmpty() && known.contains(QStringLiteral("convert-to-markdown"))) {
         // Upgrade earlier defaults without changing custom placements.
         auto previousDefault = defaultLayout;
@@ -492,6 +512,8 @@ moveItemToHidden(const storage::ScreenshotToolbarLayout& input,
         return custom::OcrTranslate();
     case Icon::ScrollingScreenshot:
         return custom::ScrollingScreenshot();
+    case Icon::QuickSave:
+        return custom::QuickSave();
     case Icon::SaveAsFile:
         return custom::Save();
     }

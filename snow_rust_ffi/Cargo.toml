@@ -13,6 +13,7 @@ snow-capture-c = { path = "../snow-crates/crates/snow-capture-c" }
 snow-draw-engine-c = { path = "../snow_draw_engine_qt/crates/snow-draw-engine-c" }
 snow-stitch-images-c = { path = "../snow-crates/crates/snow-stitch-images-c" }
 snow-ui-selector-c = { path = "../snow-crates/crates/snow-ui-selector-c" }
+snow-selected-text-c = { path = "../snow-crates/crates/snow-selected-text-c" }
 
 [features]
 perf-instrumentation = ["snow-stitch-images-c/perf-instrumentation"]

@@ -84,6 +84,8 @@ class ShortcutSettings final {
     bool setOpenSettings(const QStringList& shortcuts) const;
     [[nodiscard]] QStringList pinClipboardContent() const;
     bool setPinClipboardContent(const QStringList& shortcuts) const;
+    [[nodiscard]] QStringList translateSelectedText() const;
+    bool setTranslateSelectedText(const QStringList& shortcuts) const;
 };
 
 class GlobalShortcutSettings final {

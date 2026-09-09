@@ -60,9 +60,12 @@ SectionLayout sectionLayoutFor(const QRect& bounds, QWidget* indicator, int dotS
   const int textHeight =
       description.isEmpty() ? 0 : std::max(metrics.height(), textBounds.height());
   const int totalHeight = indicatorSize.height() + (textHeight > 0 ? gap + textHeight : 0);
-  const qreal top = bounds.center().y() - totalHeight / 2.0;
+  // QRect's inclusive integer center shifts tight indicators up and left.
+  // Use the same continuous bounds as the painter and indicator rectangles.
+  const QPointF center = QRectF(bounds).center();
+  const qreal top = center.y() - totalHeight / 2.0;
   SectionLayout layout;
-  layout.indicatorRect = QRectF(bounds.center().x() - indicatorSize.width() / 2.0, top,
+  layout.indicatorRect = QRectF(center.x() - indicatorSize.width() / 2.0, top,
                                 indicatorSize.width(), indicatorSize.height());
   if (textHeight > 0) {
     layout.descriptionRect =
@@ -1034,7 +1037,11 @@ void AdSpin::paintSurface(detail::SpinSurface* surface, QPainter* painter) {
       const qreal side = std::min(layout.indicatorRect.width(), layout.indicatorRect.height());
       const qreal spacing = std::max<qreal>(1.0, side * 0.025);
       const qreal itemSide = ((side - spacing * 2.0) / 2.0) * 0.75;
-      const qreal inset = (side / 2.0 - itemSide) / 2.0;
+      // At 45 degrees the dot centers reach their maximum axis distance.
+      // Keep the entire circular orbit, including each dot's radius, inside
+      // the advertised indicator bounds at every animation angle.
+      const qreal centerOffset = std::min(side / 4.0, (side - itemSide) / (2.0 * std::sqrt(2.0)));
+      const qreal inset = side / 2.0 - centerOffset - itemSide / 2.0;
       const QPointF center = layout.indicatorRect.center();
       const qreal rotationPeriod = std::max(1, d_->appearance.animationCycleMs);
       const bool motionEnabled =

@@ -189,7 +189,7 @@ class AdButton : public QPushButton, public AdControlScaleParticipant {
 
   // For subclasses that paint their own content but still want the standard
   // busy indicator visuals.
-  void drawSpinner(QPainter& painter, const QRect& iconRect, const QColor& color) const;
+  void drawSpinner(QPainter& painter, const QRectF& iconRect, const QColor& color) const;
 
  private:
   struct ContentLayout;

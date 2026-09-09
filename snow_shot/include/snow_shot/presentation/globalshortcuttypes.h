@@ -21,6 +21,7 @@ enum class GlobalShortcutAction {
     OpenCaptureHistory,
     OpenSettings,
     PinClipboardContent,
+    TranslateSelectedText,
 };
 
 enum class GlobalShortcutStatus {

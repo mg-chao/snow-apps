@@ -56,6 +56,8 @@ class AdSelect final : public QWidget,
   Q_OBJECT
 
   Q_PROPERTY(Mode mode READ mode WRITE setMode NOTIFY modeChanged)
+  Q_PROPERTY(SizeAdjustPolicy sizeAdjustPolicy READ sizeAdjustPolicy WRITE setSizeAdjustPolicy
+                 NOTIFY sizeAdjustPolicyChanged)
   Q_PROPERTY(
       ControlSize controlSize READ controlSize WRITE setControlSize NOTIFY controlSizeChanged)
   Q_PROPERTY(Variant variant READ variant WRITE setVariant NOTIFY variantChanged)
@@ -97,6 +99,12 @@ class AdSelect final : public QWidget,
     Tags,
   };
   Q_ENUM(Mode)
+
+  enum class SizeAdjustPolicy {
+    Fixed,
+    AdjustToCurrentText,
+  };
+  Q_ENUM(SizeAdjustPolicy)
 
   enum class ControlSize {
     Large,
@@ -349,11 +357,15 @@ class AdSelect final : public QWidget,
   void setSemanticStyleResolver(SemanticStyleResolver resolver);
 
   QSize sizeHint() const override;
+  // Content sizing applies to single selection; multiple/tag selection keeps its wrapping policy.
+  SizeAdjustPolicy sizeAdjustPolicy() const;
+  void setSizeAdjustPolicy(SizeAdjustPolicy policy);
   QSize minimumSizeHint() const override;
   void prepareControlScale(const AdControlScaleContext& context) override;
   void commitControlScale(const AdControlScaleContext& context) override;
 
  signals:
+  void sizeAdjustPolicyChanged(SizeAdjustPolicy policy);
   void modeChanged(Mode value);
   void controlSizeChanged(ControlSize value);
   void variantChanged(Variant value);
@@ -520,6 +532,7 @@ class AdSelect final : public QWidget,
   void popupRelayoutFromHost() override;
 
   Mode mode_ = Mode::Single;
+  SizeAdjustPolicy sizeAdjustPolicy_ = SizeAdjustPolicy::Fixed;
   ControlSize controlSize_ = ControlSize::Middle;
   Variant variant_ = Variant::Outlined;
   Status status_ = Status::None;

@@ -2176,6 +2176,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--shortcuts"))) {
+            shortcutPopupInteraction(owner, temp);
             shortcutsAndCancellation(owner, temp);
             shortcutWrappingAndLanguageChange(owner, temp);
             ScreenshotExportCoordinator::shared().shutdown();

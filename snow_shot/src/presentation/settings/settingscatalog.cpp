@@ -512,6 +512,16 @@ SettingsItemDefinition trayMenuOptionsItem() {
     };
 }
 
+SettingsItemDefinition translateSelectedTextItem() {
+    return quickActionItem(
+        QStringLiteral("quick.translate-selected-text"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Translate Selected Text"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Capture selected text and open it in Translation"),
+        {}, GlobalShortcutAction::TranslateSelectedText,
+        QStringLiteral("global_shortcuts/translate_selected_text"),
+        []() { return custom_outlined_icons::OcrTranslate(); });
+}
+
 SettingsItemDefinition pinClipboardContentItem() {
     return quickActionItem(
         QStringLiteral("quick.pin-clipboard-content"),
@@ -1464,6 +1474,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     {
                         openCaptureHistoryItem(),
                         pinClipboardContentItem(),
+                        translateSelectedTextItem(),
                     },
                 },
             },
@@ -1532,6 +1543,14 @@ QVector<SettingsPageDefinition> builtInPages() {
                     SettingsSectionItemLayout::VerticalList,
                 },
             },
+        },
+        {
+            QStringLiteral("translation"),
+            QStringLiteral("/tools/translation"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Translation")),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Translate text between languages")),
+            {},
+            SettingsPageKind::Translation,
         },
         {
             QString::fromLatin1(FUNCTION_PAGE_ID),
@@ -1984,7 +2003,12 @@ QVector<SettingsNavigationNode> builtInNavigation() {
     about.pageId = QStringLiteral("about");
     about.iconFactory = []() { return outlined_icons::InfoCircle(); };
 
-    return {globalHotkeys, globalMouse, history, settingsGroup, about};
+    SettingsNavigationPageDefinition translation;
+    translation.id = QStringLiteral("nav.translation");
+    translation.pageId = QStringLiteral("translation");
+    translation.iconFactory = []() { return outlined_icons::Translation(); };
+
+    return {globalHotkeys, globalMouse, history, translation, settingsGroup, about};
 }
 
 QString locationText(const SettingsLocation& location) {
@@ -2037,6 +2061,8 @@ QString shortcutConfigurationKey(GlobalShortcutAction action) {
         return QStringLiteral("global_shortcuts/open_settings");
     case GlobalShortcutAction::PinClipboardContent:
         return QStringLiteral("global_shortcuts/pin_clipboard_content");
+    case GlobalShortcutAction::TranslateSelectedText:
+        return QStringLiteral("global_shortcuts/translate_selected_text");
     }
     return {};
 }
@@ -2338,7 +2364,11 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
           quick(QStringLiteral("quick.pin-clipboard-content"),
                 QT_TRANSLATE_NOOP("SettingsCatalog", "Pin clipboard content to screen"),
                 GlobalShortcutAction::PinClipboardContent,
-                []() { return custom_outlined_icons::PinToScreen(); })}},
+                []() { return custom_outlined_icons::PinToScreen(); }),
+          quick(QStringLiteral("quick.translate-selected-text"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Translate Selected Text"),
+                GlobalShortcutAction::TranslateSelectedText,
+                []() { return custom_outlined_icons::OcrTranslate(); })}},
         {QStringLiteral("system"),
          {{QStringLiteral("tray.window-grouping"),
            {"SettingsCatalog", QT_TRANSLATE_NOOP("SettingsCatalog", "Window grouping")},

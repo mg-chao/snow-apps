@@ -6,6 +6,7 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QHash>
 #include <QTemporaryDir>
 
 #include <cstdlib>
@@ -16,6 +17,103 @@ void require(bool condition, const char* message) {
     if (!condition) {
         std::cerr << message << '\n';
         std::exit(EXIT_FAILURE);
+    }
+}
+class FakeTranslationHotkeyBackend final : public snow_shot::presentation::GlobalShortcutBackend {
+  public:
+    void setActivationHandler(ActivationHandler value) override {
+        handler = std::move(value);
+    }
+    snow_shot::presentation::GlobalShortcutValidationResult
+    validateShortcut(const QString& shortcut) const override {
+        return {shortcut, true, snow_shot::presentation::GlobalShortcutFailureReason::None};
+    }
+    snow_shot::presentation::GlobalShortcutBackendResult
+    registerShortcut(int id, const QString& shortcut) override {
+        if (registrations.values().contains(shortcut)) {
+            return {false, snow_shot::presentation::GlobalShortcutFailureReason::AlreadyInUse};
+        }
+        registrations.insert(id, shortcut);
+        return {true};
+    }
+    void unregisterShortcut(int id) override {
+        registrations.remove(id);
+    }
+    ActivationHandler handler;
+    QHash<int, QString> registrations;
+};
+
+void selectedTextShortcutSettings() {
+    using namespace snow_shot::presentation;
+    namespace storage = snow_shot::storage;
+    const auto action = GlobalShortcutAction::TranslateSelectedText;
+    const storage::ShortcutSettings persisted;
+    require(persisted.translateSelectedText().isEmpty(),
+            "selected text shortcut is unassigned by default");
+    const storage::TraySettings tray;
+    const QStringList defaultMenu = tray.menuOptions();
+    const QString menuId = QStringLiteral("quick.translate-selected-text");
+    require(!defaultMenu.contains(menuId), "selected text translation is optional in the tray");
+    QStringList menuWithTranslation = defaultMenu;
+    menuWithTranslation.append(menuId);
+    require(tray.setMenuOptions(menuWithTranslation) && tray.menuOptions().contains(menuId),
+            "tray settings allow the selected text translation action");
+    require(tray.setMenuOptions(defaultMenu), "restore default tray actions");
+    const QStringList keys{QStringLiteral("Ctrl+Alt+T"), QStringLiteral("Ctrl+Shift+T")};
+    {
+        auto native = std::make_unique<FakeTranslationHotkeyBackend>();
+        auto* input = native.get();
+        bool fullscreen = false;
+        GlobalShortcutManager manager(std::move(native), nullptr, [&]() { return fullscreen; });
+        settings::BuiltInSettingsBackend backend(manager);
+        settings::SettingsRuntimeSession session(settings::builtInSettingsRegistry(), backend);
+        manager.initialize();
+        require(manager.state(action).status == GlobalShortcutStatus::Unset,
+                "unassigned action does not register a native shortcut");
+        require(session.applyShortcuts(action, keys) && persisted.translateSelectedText() == keys &&
+                    manager.state(action).status == GlobalShortcutStatus::Registered,
+                "editing selected text bindings updates storage and native registrations");
+        int activations = 0;
+        QObject::connect(
+            &manager, &GlobalShortcutManager::activated, &manager,
+            [&](GlobalShortcutAction activated) { activations += activated == action; });
+        const int id = input->registrations.key(keys.first());
+        require(id != 0, "selected text shortcut has a native registration");
+        input->handler(id);
+        require(activations == 1, "native activation dispatches selected text translation");
+        manager.setGlobalHotkeysEnabled(false);
+        input->handler(id);
+        require(activations == 1, "disabled global hotkeys suppress selected text translation");
+        manager.setGlobalHotkeysEnabled(true);
+        auto& store = storage::ApplicationStorage::instance().configuration();
+        const QString fullscreenKey =
+            QStringLiteral("global_shortcuts/disable_on_focused_fullscreen_window");
+        const auto previousFullscreen = store.value(fullscreenKey);
+        require(store.setValue(fullscreenKey, true), "enable fullscreen suppression");
+        fullscreen = true;
+        input->handler(id);
+        require(activations == 1, "fullscreen suppression applies to selected text translation");
+        fullscreen = false;
+        require(store.setValue(fullscreenKey, previousFullscreen), "restore fullscreen preference");
+        manager.setShortcuts(action, {QStringLiteral("F3")});
+        require(manager.state(action).status == GlobalShortcutStatus::Failed &&
+                    manager.state(action).bindings.first().failureReason ==
+                        GlobalShortcutFailureReason::AlreadyInUse,
+                "selected text shortcut reports native conflicts through existing status");
+        require(session.reset(settings::SettingsSectionReset::OtherShortcuts) &&
+                    persisted.translateSelectedText().isEmpty() &&
+                    manager.state(action).status == GlobalShortcutStatus::Unset,
+                "Other reset clears selected text bindings and unregisters them");
+        require(session.applyShortcuts(action, keys), "prepare selected text bindings for reload");
+    }
+    {
+        GlobalShortcutManager reloaded(std::make_unique<FakeTranslationHotkeyBackend>(), nullptr,
+                                       []() { return false; });
+        reloaded.initialize();
+        require(reloaded.state(action).shortcuts == keys &&
+                    reloaded.state(action).status == GlobalShortcutStatus::Registered,
+                "a recreated shortcut manager loads both persisted selected text bindings");
+        reloaded.setShortcuts(action, {});
     }
 }
 } // namespace
@@ -31,6 +129,7 @@ int main(int argc, char** argv) {
     auto& applicationStorage = storage::ApplicationStorage::instance();
     require(applicationStorage.initialize({executable, temporary.path(), 60000}).success,
             "initialize translation settings storage");
+    selectedTextShortcutSettings();
     {
         snow_shot::presentation::GlobalShortcutManager shortcuts;
         settings::BuiltInSettingsBackend backend(shortcuts);
@@ -139,10 +238,16 @@ int main(int argc, char** argv) {
             "save pinned double-click action before restart");
     require(storage::PinToScreenSettings().setMiddleMouseButtonAction(QStringLiteral("none")),
             "save pinned middle-click action before restart");
+    const QStringList selectedTextKeys{QStringLiteral("Ctrl+Alt+T"),
+                                       QStringLiteral("Ctrl+Shift+T")};
+    require(storage::ShortcutSettings().setTranslateSelectedText(selectedTextKeys),
+            "save selected text shortcut bindings before restart");
     applicationStorage.shutdown();
     require(applicationStorage.initialize({executable, temporary.path(), 60000}).success &&
                 storage::PinToScreenSettings().doubleClickAction() == QStringLiteral("close"),
             "pinned double-click action must survive a storage restart");
+    require(storage::ShortcutSettings().translateSelectedText() == selectedTextKeys,
+            "both selected text shortcut bindings survive a storage restart");
     require(storage::PinToScreenSettings().middleMouseButtonAction() == QStringLiteral("none"),
             "pinned middle-click action must survive a storage restart");
     applicationStorage.shutdown();

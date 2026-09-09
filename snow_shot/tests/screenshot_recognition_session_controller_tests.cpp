@@ -350,6 +350,14 @@ void translationLanguageSelectsUseCodePrefixGroups() {
     QApplication::setQuitOnLastWindowClosed(false);
     QWidget owner;
     SnowShotApiClient apiClient(QStringLiteral("http://127.0.0.1:1"));
+    const snow_shot::CustomAiModelConfiguration model{
+        QStringLiteral("11111111-1111-4111-8111-111111111111"),
+        QStringLiteral("Test model"),
+        QStringLiteral("http://127.0.0.1:1"),
+        {},
+        QStringLiteral("test-model"),
+        true};
+    apiClient.setCustomModels({model});
     ScreenshotRecognitionSessionActions actions;
     actions.translationSettingsOwner = [&owner]() { return &owner; };
     auto controller = std::make_unique<ScreenshotRecognitionSessionController>(
@@ -402,13 +410,13 @@ void translationLanguageSelectsUseCodePrefixGroups() {
             service = select;
     }
     require(service != nullptr, "language settings include a service selector");
-    service->setOptions({{QStringLiteral("test-model"), QStringLiteral("Test model")}});
-    service->setCurrentValue(QStringLiteral("test-model"));
+    require(service->isEnabled(), "configured custom models enable the service selector");
+    service->setCurrentValue(model.selectionId());
     source->setCurrentValue(QStringLiteral("en"));
     target->setCurrentValue(QStringLiteral("zh-Hans"));
     modal->closeRequested(adqt::widgets::AdModal::CloseReason::OkAction);
     require(settings.layoutProcessing() == QStringLiteral("original") &&
-                settings.configuration().modelId == QStringLiteral("test-model"),
+                settings.configuration().modelId == model.selectionId(),
             "accepting translation languages preserves the separate layout processing choice");
     require(settings.setConfiguration(previousConfiguration), "restore translation configuration");
     require(settings.originalImageTranslationEnabled() == !previousOriginalImage,
