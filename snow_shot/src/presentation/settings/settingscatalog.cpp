@@ -168,7 +168,7 @@ SettingsItemDefinition screenRecordItem() {
 SettingsItemDefinition screenRecordCopyItem() {
     return quickActionItem(
         QStringLiteral("quick.screen-record-copy"),
-        QT_TRANSLATE_NOOP("SettingsCatalog", "Start screen recording / stop and copy recording"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Record/Copy Video"),
         QT_TRANSLATE_NOOP("SettingsCatalog",
                           "Start a screen recording, or stop and copy the current recording"),
         {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Copy recording")),
@@ -2352,8 +2352,7 @@ TrayCommandManifest buildBuiltInTrayCommandManifest() {
                 GlobalShortcutAction::ScreenRecord,
                 []() { return custom_outlined_icons::RecordScreen(); }),
           quick(QStringLiteral("quick.screen-record-copy"),
-                QT_TRANSLATE_NOOP("SettingsCatalog",
-                                  "Start screen recording / stop and copy recording"),
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Record/Copy Video"),
                 GlobalShortcutAction::ScreenRecordCopy,
                 []() { return custom_outlined_icons::ScreenshotCopy(); })}},
         {QStringLiteral("other"),
