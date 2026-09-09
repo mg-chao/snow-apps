@@ -3,10 +3,12 @@
 #include "snow_shot/presentation/screenshotgeometry.h"
 #include "snow_shot/presentation/screenshotcanvastoolstyles.h"
 #include "snow_shot/presentation/screenshottoolpalette.h"
+#include "snow_shot/presentation/screenshottoolpalettehost.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "screenrecordinggeometry.h"
 
 #include <QScreen>
+#include <QScopedValueRollback>
 
 namespace {
 constexpr int kToolbarGap = 4;
@@ -45,6 +47,15 @@ ScreenRecordingToolbarWindow::ScreenRecordingToolbarWindow(QWidget* parent)
     setFocusPolicy(Qt::StrongFocus);
     setAttribute(Qt::WA_DeleteOnClose, false);
     prepareForDisplay();
+    // Secondary rows can grow without changing the fixed native frame or the
+    // main-row anchor. Observe the committed host content, including those cases.
+    connect(paletteHost(), &ScreenshotToolPaletteHost::visibleContentChanged, this, [this]() {
+        if (!m_manuallyDragged) {
+            placeForPhysicalRegion(m_physicalRegion);
+        }
+    });
+    connect(paletteHost(), &ScreenshotToolPaletteHost::dragStarted, this,
+            [this](const QPoint&) { m_manuallyDragged = true; });
 }
 
 void ScreenRecordingToolbarWindow::showAndActivate() {
@@ -55,13 +66,18 @@ void ScreenRecordingToolbarWindow::showAndActivate() {
 }
 
 void ScreenRecordingToolbarWindow::placeForPhysicalRegion(const QRect& physicalRegion) {
-    if (!physicalRegion.isValid() || physicalRegion.isEmpty()) {
+    if (m_placing || !physicalRegion.isValid() || physicalRegion.isEmpty()) {
         return;
     }
     QScreen* screen = ScreenshotGeometryMapper::screenForPhysicalRect(physicalRegion);
     if (screen == nullptr) {
         return;
     }
+    // Preparing the layout and changing the row arrangement can emit content
+    // changes synchronously; the outer placement already accounts for them.
+    const QScopedValueRollback<bool> placing(m_placing, true);
+    m_physicalRegion = physicalRegion;
+    m_manuallyDragged = false;
     const QRect logicalBounds = screen->geometry();
     const QRect physicalBounds = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
     const QRectF logicalRegion =
