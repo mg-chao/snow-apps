@@ -1185,6 +1185,23 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     enable_testing()
 
+    if(WIN32)
+        add_executable(snow-shot-global-shortcut-manager-tests
+            tests/global_shortcut_manager_tests.cpp
+            include/snow_shot/presentation/globalshortcutmanager.h
+            src/presentation/services/globalshortcutmanager.cpp)
+        target_link_libraries(snow-shot-global-shortcut-manager-tests PRIVATE
+            snow_shot_global_mouse Qt6::Widgets)
+        add_test(NAME snow-shot-global-shortcut-manager-tests
+            COMMAND snow-shot-global-shortcut-manager-tests)
+        set_tests_properties(snow-shot-global-shortcut-manager-tests PROPERTIES
+            LABELS "unit;windows" TIMEOUT 60)
+        add_test(NAME snow-shot-global-shortcut-native-smoke-tests
+            COMMAND snow-shot-global-shortcut-manager-tests --native-registration-smoke)
+        set_tests_properties(snow-shot-global-shortcut-native-smoke-tests PROPERTIES
+            LABELS "interactive;windows" TIMEOUT 60)
+    endif()
+
     add_executable(snow-shot-global-mouse-tests tests/global_mouse_tests.cpp
         include/snow_shot/presentation/globalshortcutmanager.h
         src/presentation/services/globalshortcutmanager.cpp
