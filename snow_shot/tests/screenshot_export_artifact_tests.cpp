@@ -1,5 +1,9 @@
 #include "snow_shot/presentation/screenshotexportartifact.h"
 #include "snowimageqtcodec.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/storage/settingsadapters.h"
+#include <QDir>
+#include <QFileInfo>
 #include <QTemporaryDir>
 #include <QFile>
 
@@ -549,11 +553,128 @@ void pinnedViewportSourceRendersExpectedPixels() {
                     QColor(12, 24, 36, 255),
             "pinned viewport artifact did not return the rendered pixels");
 }
+
+void quickSaveUsesOnlyConfiguredOutput() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "quick save fixture unavailable");
+    const QString executable = directory.filePath(QStringLiteral("bin"));
+    require(QDir().mkpath(executable), "quick save fixture bin unavailable");
+    auto& storage = snow_shot::storage::ApplicationStorage::instance();
+    require(storage.initialize({executable, directory.path(), 60000}).success,
+            "quick save isolated settings unavailable");
+    const snow_shot::storage::ScreenshotSettings settings;
+    const QString output = directory.filePath(QStringLiteral("new/nested"));
+    require(settings.setImageSaveDirectory(output) &&
+                settings.setAutoSaveFilenameFormat(QStringLiteral("Quick_output")) &&
+                settings.setLastManualSaveDirectory(directory.path()) &&
+                settings.setLastManualSaveFormat(QStringLiteral("jpeg")),
+            "quick save settings setup failed");
+    QObject receiver;
+    const QImage image = testImage();
+    const auto save = [&](ScreenshotExportArtifact& artifact) {
+        std::optional<ScreenshotExportTaskResult> result;
+        require(
+            artifact.requestQuickSave(
+                &receiver, [&](ScreenshotExportTaskResult saved) { result = std::move(saved); }),
+            "quick save request was rejected");
+        processUntil([&] { return result.has_value(); });
+        return *result;
+    };
+    for (const QString& format :
+         {QStringLiteral("png"), QStringLiteral("jpeg"), QStringLiteral("bmp"),
+          QStringLiteral("webp"), QStringLiteral("jxl"), QStringLiteral("avif")}) {
+        require(settings.setImageFormat(format), "quick save format setup failed");
+        ScreenshotExportArtifact artifact(ScreenshotExportSource::fromImage(image));
+        const auto first = save(artifact);
+        require(first.succeeded() && QFileInfo(first.savedPath).absolutePath() == output &&
+                    QFileInfo(first.savedPath).baseName() == QStringLiteral("Quick_output") &&
+                    !first.savedPath.contains(QLatin1Char('{')) &&
+                    QFileInfo(first.savedPath).suffix() ==
+                        ScreenshotImageFileService::extension(
+                            ScreenshotImageFileService::formatForKey(format)),
+                "quick save must create the configured directory and use format/name settings");
+        const auto second = save(artifact);
+        require(second.succeeded() && first.savedPath != second.savedPath &&
+                    QFileInfo(second.savedPath).baseName().endsWith(QStringLiteral("_1")) &&
+                    QFileInfo::exists(first.savedPath),
+                "quick save must preserve existing files on collision");
+        if (format == QStringLiteral("png")) {
+            require(QImage(first.savedPath).convertToFormat(QImage::Format_RGBA8888) == image,
+                    "quick save must preserve composed source pixels");
+        }
+    }
+    require(settings.lastManualSaveDirectory() == directory.path() &&
+                settings.lastManualSaveFormat() == QStringLiteral("jpeg"),
+            "quick save must not update manual-save settings");
+
+    require(settings.setImageFormat(QStringLiteral("png")), "streaming format setup failed");
+    ScreenshotExportArtifact rows(
+        ScreenshotExportSource::fromProducer({}, [image](std::function<bool()> cancellation) {
+            return rowSourceFor(image, std::move(cancellation));
+        }));
+    const auto rowSave = save(rows);
+    require(rowSave.succeeded() &&
+                QImage(rowSave.savedPath).convertToFormat(QImage::Format_RGBA8888) == image,
+            "row-backed quick-save must export the complete source without losing pixels");
+    // Fill the bounded queue while retaining already encoded pixels so rejection tests the save
+    // job.
+    processUntil([] { return ScreenshotExportCoordinator::shared().pendingJobCount() == 0; });
+    auto release = std::make_shared<std::atomic_bool>(false);
+    std::vector<ScreenshotExportJobHandle> blockers;
+    for (int i = 0; i < 64; ++i) {
+        auto job = ScreenshotExportCoordinator::shared().submit(
+            &receiver, ScreenshotExportCoordinator::Priority::Background,
+            [release](const ScreenshotExportCancellation& cancellation) {
+                while (!release->load() && !cancellation.isCancellationRequested())
+                    QThread::msleep(1);
+                return ScreenshotExportTaskResult{};
+            },
+            [](ScreenshotExportTaskResult) {});
+        if (!job.isValid())
+            break;
+        blockers.push_back(job);
+    }
+    std::optional<ScreenshotExportTaskResult> rejected;
+    const bool accepted = rows.requestQuickSave(
+        &receiver, [&](ScreenshotExportTaskResult result) { rejected = std::move(result); });
+    release->store(true);
+    processUntil([] { return ScreenshotExportCoordinator::shared().pendingJobCount() == 0; });
+    require(accepted && rejected && !rejected->succeeded() &&
+                rejected->failureStage == ScreenshotExportFailureStage::Queue,
+            "a full export queue must report a save failure");
+    require(save(rows).succeeded(), "a rejected quick-save must allow retry");
+    QFile blocker(directory.filePath(QStringLiteral("blocked")));
+    require(blocker.open(QIODevice::WriteOnly) && blocker.write("unchanged") == 9,
+            "quick save failure fixture unavailable");
+    blocker.close();
+    for (const QString& invalid : {QString(), blocker.fileName() + QStringLiteral("/child")}) {
+        require(settings.setImageSaveDirectory(invalid), "invalid directory setup failed");
+        ScreenshotExportArtifact artifact(ScreenshotExportSource::fromImage(image));
+        const auto failed = save(artifact);
+        require(!failed.succeeded() && failed.savedPath.isEmpty() && !failed.error.isEmpty(),
+                "an unusable configured directory must fail without saving to a fallback");
+    }
+    ScreenshotExportArtifact cancelled(ScreenshotExportSource::fromImage(image));
+    int callbacks = 0;
+    require(cancelled.requestQuickSave(&receiver, [&](ScreenshotExportTaskResult) { ++callbacks; }),
+            "empty-directory request was rejected");
+    cancelled.cancel();
+    QCoreApplication::processEvents();
+    require(callbacks == 0 &&
+                !cancelled.requestQuickSave(&receiver, [](ScreenshotExportTaskResult) {}),
+            "cancelled quick saves must reject new requests and suppress pending callbacks");
+    storage.shutdown();
+}
 } // namespace
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     try {
+        if (application.arguments().contains(QStringLiteral("--quick-save-only"))) {
+            quickSaveUsesOnlyConfiguredOutput();
+            return EXIT_SUCCESS;
+        }
+        quickSaveUsesOnlyConfiguredOutput();
         clipboardAndSaveShareCanonicalEncoding();
         nonPngSaveReadsPixelsWithoutEncodingPng();
         imageRequestsShareOneAsyncLoad();

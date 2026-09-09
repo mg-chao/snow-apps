@@ -1471,7 +1471,8 @@ QList<adqt::widgets::AdButton*> mainActionToolbarButtons(ScreenshotToolPalette& 
         QStringLiteral("barcode-recognition"),  QStringLiteral("table-recognition"),
         QStringLiteral("record-screen"),        QStringLiteral("pin-to-screen"),
         QStringLiteral("text-recognition"),     QStringLiteral("text-translation"),
-        QStringLiteral("scrolling-screenshot"), QStringLiteral("save-as-file"),
+        QStringLiteral("scrolling-screenshot"), QStringLiteral("quick-save"),
+        QStringLiteral("save-as-file"),
     };
     QList<adqt::widgets::AdButton*> buttons;
     for (adqt::widgets::AdButton* button : mainToolbarButtons(palette)) {
@@ -2638,6 +2639,93 @@ void sharedToolbarLayoutModelOperationsAreDeterministic() {
              QStringLiteral("table-recognition"), QStringLiteral("record-screen"));
 }
 
+void quickSaveStacksAndLayoutMigration() {
+    using namespace snow_shot::presentation::toolbar_layout;
+    using snow_shot::storage::ScreenshotToolbarLayout;
+    using snow_shot::storage::ScreenshotToolbarLayoutKind;
+    const auto kind = ScreenshotToolbarLayoutKind::ActionTools;
+    const QString quick = QStringLiteral("quick-save");
+    const QString save = QStringLiteral("save-as-file");
+    auto legacy = normalizedLayout(ScreenshotToolbarLayout{}, kind);
+    for (auto& position : legacy.positions)
+        position.removeAll(quick);
+    const auto upgraded = normalizedLayout(legacy, kind);
+    require(upgraded.positions.constLast() == QStringList{quick, save} &&
+                normalizedLayout(upgraded, kind) == upgraded,
+            "legacy default saves must upgrade to an idempotent quick-save stack");
+    auto custom = legacy;
+    custom.positions.last().prepend(QStringLiteral("record-screen"));
+    custom.positions.removeAt(1);
+    require(normalizedLayout(custom, kind).positions.constLast() ==
+                QStringList{QStringLiteral("record-screen"), quick, save},
+            "custom save placements must gain Quick save immediately above Save");
+    legacy.positions.removeLast();
+    legacy.hidden = {save};
+    const auto hidden = normalizedLayout(legacy, kind);
+    require(hidden.hidden.contains(save) && hidden.hidden.contains(quick),
+            "hiding Save in a legacy layout must also hide the new Quick save action");
+    auto explicitLayout = upgraded;
+    explicitLayout.positions.last().removeAll(quick);
+    explicitLayout.hidden = {quick};
+    require(normalizedLayout(explicitLayout, kind) == explicitLayout,
+            "an explicitly hidden Quick save must stay hidden");
+    explicitLayout.hidden.clear();
+    explicitLayout.positions.prepend({quick});
+    require(normalizedLayout(explicitLayout, kind) == explicitLayout,
+            "an explicitly moved Quick save must keep its placement");
+    for (const bool pinned : {false, true}) {
+        ScreenshotToolPalette::Options options;
+        options.showSaveButton = true;
+        options.saveButtonWithResultActions = pinned;
+        options.actions = ScreenshotToolPalette::CopyAction | ScreenshotToolPalette::ConfirmAction;
+        options.actionToolsLayout = upgraded;
+        ScreenshotToolPalette palette(options);
+        palette.show();
+        QCoreApplication::processEvents();
+        adqt::widgets::AdButton* trigger = nullptr;
+        for (auto* button : mainToolbarButtons(palette)) {
+            if (button->property("screenshotToolbarPositionItems").toStringList() ==
+                QStringList{quick, save})
+                trigger = button;
+        }
+        require(trigger && trigger->accessibleName() == QStringLiteral("Save as file"),
+                "both toolbars must initially show Save as the save-stack trigger");
+        int saves = 0;
+        int quickSaves = 0;
+        QObject::connect(&palette, &ScreenshotToolPalette::saveRequested, [&] { ++saves; });
+        QObject::connect(&palette, &ScreenshotToolPalette::quickSaveRequested,
+                         [&] { ++quickSaves; });
+        trigger->click();
+        materializeLazyPopover(trigger);
+        auto* popover = popoverForTrigger(trigger);
+        auto* quickOption = popoverButtonWithTooltip(popover, "Quick save");
+        auto* saveOption = popoverButtonWithTooltip(popover, "Save as file");
+        require(quickOption && saveOption, "both save actions must be reachable in the popover");
+        quickOption->click();
+        require(saves == 1 && quickSaves == 1 &&
+                    trigger->accessibleName() == QStringLiteral("Quick save") &&
+                    adqt::icons::describeIcon(trigger->iconRef()).key.name == quick,
+                "selecting Quick save must dispatch once and replace the trigger/icon");
+        trigger->click();
+        require(quickSaves == 2 && saves == 1, "the selected trigger must continue to quick-save");
+        auto& language = snow_shot::presentation::LanguageManager::instance();
+        for (const auto& entry : {std::pair{QStringLiteral("zh_CN"), QStringLiteral("快速保存")},
+                                  std::pair{QStringLiteral("zh_TW"), QStringLiteral("快速儲存")}}) {
+            require(language.setLanguage(entry.first), "quick-save language setup failed");
+            QCoreApplication::processEvents();
+            require(trigger->accessibleName() == entry.second &&
+                        quickOption->accessibleName() == entry.second,
+                    "the current save trigger and materialized popover must retranslate");
+        }
+        require(language.setLanguage(QStringLiteral("en_US")), "restore quick-save test language");
+        QCoreApplication::processEvents();
+
+        saveOption->click();
+        require(saves == 2 && quickSaves == 2,
+                "selecting manual Save must not also dispatch Quick save");
+    }
+}
+
 void configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement() {
     require(snow_shot::storage::ScreenshotToolbarSettings().setTableQrTool(QStringLiteral("table")),
             "the configurable action toolbar fixture should start in Table mode");
@@ -2656,8 +2744,8 @@ void configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement
                       ScreenshotToolPalette::CopyAction;
     options.actionToolsLayout = snow_shot::storage::ScreenshotToolbarLayout{
         {
-            {QStringLiteral("record-screen"), QStringLiteral("save-as-file"),
-             QStringLiteral("table-recognition")},
+            {QStringLiteral("record-screen"), QStringLiteral("quick-save"),
+             QStringLiteral("save-as-file"), QStringLiteral("table-recognition")},
             {QStringLiteral("barcode-recognition")},
             {QStringLiteral("text-translation"), QStringLiteral("text-recognition")},
             {QStringLiteral("pin-to-screen")},
@@ -2680,7 +2768,8 @@ void configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement
                 mixedTrigger->accessibleName() == QStringLiteral("Table recognition") &&
                 mixedTrigger->toolTip() == QStringLiteral("Table recognition (Ctrl+X)") &&
                 mixedTrigger->property("screenshotToolbarPositionItems").toStringList() ==
-                    QStringList{QStringLiteral("record-screen"), QStringLiteral("save-as-file"),
+                    QStringList{QStringLiteral("record-screen"), QStringLiteral("quick-save"),
+                                QStringLiteral("save-as-file"),
                                 QStringLiteral("table-recognition")} &&
                 textTrigger->accessibleName() == QStringLiteral("Text recognition") &&
                 palette
@@ -2788,7 +2877,8 @@ void configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement
         {{QStringLiteral("table-recognition"), QStringLiteral("record-screen")}},
         {QStringLiteral("barcode-recognition"), QStringLiteral("pin-to-screen"),
          QStringLiteral("text-recognition"), QStringLiteral("text-translation"),
-         QStringLiteral("scrolling-screenshot"), QStringLiteral("save-as-file")},
+         QStringLiteral("scrolling-screenshot"), QStringLiteral("quick-save"),
+         QStringLiteral("save-as-file")},
     };
     ScreenshotToolPalette unavailablePalette(unavailableOptions);
     const QList<adqt::widgets::AdButton*> availableActions =
@@ -2803,7 +2893,8 @@ void configurableScreenshotActionLayoutSupportsStacksHidingAndRuntimeReplacement
         QStringLiteral("barcode-recognition"),  QStringLiteral("table-recognition"),
         QStringLiteral("record-screen"),        QStringLiteral("pin-to-screen"),
         QStringLiteral("text-recognition"),     QStringLiteral("text-translation"),
-        QStringLiteral("scrolling-screenshot"), QStringLiteral("save-as-file"),
+        QStringLiteral("scrolling-screenshot"), QStringLiteral("quick-save"),
+        QStringLiteral("save-as-file"),
     };
     ScreenshotToolPalette::Options hiddenOptions;
     hiddenOptions.showSelectTool = true;
@@ -2893,8 +2984,11 @@ void confirmActionRemainsSeparatedAndCallableForPinnedEditing() {
     options.actions = ScreenshotToolPalette::CopyAction | ScreenshotToolPalette::ConfirmAction;
 
     ScreenshotToolPalette palette(options);
-    auto* save =
-        qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Save as file"));
+    adqt::widgets::AdButton* save = nullptr;
+    for (auto* button : mainToolbarButtons(palette)) {
+        if (button->accessibleName() == QStringLiteral("Save as file"))
+            save = button;
+    }
     auto* copy =
         qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, "Copy to clipboard"));
     auto* confirm =
@@ -8390,6 +8484,11 @@ int main(int argc, char** argv) {
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
             "the font editor tests require a system TrueType font");
 #endif
+    if (application.arguments().contains(QStringLiteral("--quick-save-only"))) {
+        quickSaveStacksAndLayoutMigration();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--tool-shortcuts-only"))) {
         clickingActiveToolbarToolReturnsToSelect();
         repeatingDrawingShortcutsReturnsToSelect();

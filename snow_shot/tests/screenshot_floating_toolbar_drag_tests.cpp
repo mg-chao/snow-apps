@@ -173,6 +173,11 @@ class NativeGeometryWarningScope final {
 
 class NoOpToolbarCommands final : public ScreenshotToolbarCommandSink {
   public:
+    int quickSaveCount = 0;
+    void quickSaveSelection() override {
+        ++quickSaveCount;
+    }
+
     void setMoveTool() override {}
     void setSelectTool() override {}
     void resetCanvas() override {
@@ -2050,6 +2055,18 @@ void floatingToolbarInputsAcquireKeyboardFocus() {
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     try {
+        if (app.arguments().contains(QStringLiteral("--quick-save-only"))) {
+            NoOpToolbarCommands commands;
+            ScreenshotToolbarWindow window(commands);
+            require(window.palette(), "screenshot toolbar palette unavailable");
+            window.palette()->quickSaveRequested();
+            require(commands.quickSaveCount == 1,
+                    "screenshot Quick save must forward exactly one command");
+            window.palette()->saveRequested();
+            require(commands.quickSaveCount == 1,
+                    "manual Save must not dispatch the Quick save command");
+            return 0;
+        }
         if (app.arguments().contains(QStringLiteral("--keyboard-focus-only"))) {
             qtFocusFlagChangeStillRequiresLayeredSurfacePreservation();
             keyboardFocusTransitionsKeepQtAndNativeStateConsistent();

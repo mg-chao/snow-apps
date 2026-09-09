@@ -1,6 +1,7 @@
 #include "snow_shot/presentation/screenshotexportartifact.h"
 
 #include "snowimageqtcodec.h"
+#include "snow_shot/storage/settingsadapters.h"
 
 #include <QBuffer>
 #include <QCoreApplication>
@@ -701,6 +702,31 @@ bool ScreenshotExportArtifact::prepareClipboard(QObject* receiver, QByteArray ca
             if (!retained)
                 job.cancel();
         });
+}
+
+bool ScreenshotExportArtifact::requestQuickSave(QObject* receiver,
+                                                ScreenshotExportCoordinator::Completion callback) {
+    if (receiver == nullptr || !callback || isCancelled())
+        return false;
+    const snow_shot::storage::ScreenshotSettings settings;
+    const QString directory = settings.imageSaveDirectory().trimmed();
+    if (directory.isEmpty()) {
+        const QPointer<ScreenshotExportArtifact> guarded(this);
+        return QMetaObject::invokeMethod(
+            receiver,
+            [guarded, callback = std::move(callback)]() mutable {
+                if (guarded && !guarded->isCancelled()) {
+                    callback(ScreenshotExportTaskResult::failure(
+                        ScreenshotExportFailureStage::File,
+                        QCoreApplication::translate("ScreenshotExportArtifact",
+                                                    "The image save directory is not configured")));
+                }
+            },
+            Qt::QueuedConnection);
+    }
+    return requestAutomaticSave(receiver, {directory},
+                                ScreenshotImageFileService::formatForKey(settings.imageFormat()),
+                                settings.autoSaveFilenameFormat(), std::move(callback));
 }
 
 bool ScreenshotExportArtifact::requestAutomaticSave(
