@@ -31,6 +31,7 @@ namespace snow_shot::presentation {
 namespace {
 constexpr auto DEFAULT_TRAY_ICON = "default";
 constexpr auto DEFAULT_LEFT_CLICK_ACTION = "screenshot";
+constexpr auto DEFAULT_MIDDLE_CLICK_ACTION = "screenshot_fixed";
 
 namespace custom_outlined_icons = snow_shot::presentation::icons::custom::outlined;
 namespace outlined_icons = adqt::icons::antd::outlined;
@@ -39,10 +40,8 @@ const QHash<QString, QString>& bundledIconResources() {
     static const QHash<QString, QString> resources{
         {QStringLiteral("default"),
          QStringLiteral(":/snow-shot/app-icons/snow-shot-tray-default.png")},
-        {QStringLiteral("light"),
-         QStringLiteral(":/snow-shot/app-icons/snow-shot-tray-light.png")},
-        {QStringLiteral("dark"),
-         QStringLiteral(":/snow-shot/app-icons/snow-shot-tray-dark.png")},
+        {QStringLiteral("light"), QStringLiteral(":/snow-shot/app-icons/snow-shot-tray-light.png")},
+        {QStringLiteral("dark"), QStringLiteral(":/snow-shot/app-icons/snow-shot-tray-dark.png")},
         {QStringLiteral("snow-default"),
          QStringLiteral(":/snow-shot/app-icons/snow-shot-tray-snow-default.png")},
         {QStringLiteral("snow-light"),
@@ -62,10 +61,13 @@ QString bundledIconResource(const QString& selection) {
     return bundledIconResources().value(normalizedIconSelection(selection));
 }
 
-QString normalizedLeftClickAction(const QString& action) {
-    return action == QStringLiteral("show_main_window")
+QString normalizedClickAction(const QString& action, const char* defaultAction) {
+    return action == QStringLiteral("screenshot") || action == QStringLiteral("show_main_window") ||
+                   action == QStringLiteral("screenshot_copy") ||
+                   action == QStringLiteral("screenshot_fixed") ||
+                   action == QStringLiteral("open_function_settings")
                ? action
-               : QString::fromLatin1(DEFAULT_LEFT_CLICK_ACTION);
+               : QString::fromLatin1(defaultAction);
 }
 
 class TrayImageCache final {
@@ -148,19 +150,28 @@ class TrayImageCache final {
             return {};
         }
         if (image.width() > 256 || image.height() > 256) {
-            image = image.scaled(QSize(256, 256), Qt::KeepAspectRatio,
-                                 Qt::SmoothTransformation);
+            image = image.scaled(QSize(256, 256), Qt::KeepAspectRatio, Qt::SmoothTransformation);
         }
         QIcon icon(QPixmap::fromImage(image));
         remember(path, size, modified, icon, sourceSize, image.size());
         return icon;
     }
 
-    quint64 hitCount() const { return hitCount_; }
-    quint64 missCount() const { return missCount_; }
-    quint64 decodeCount() const { return decodeCount_; }
-    QSize sourcePixelSize() const { return sourcePixelSize_; }
-    QSize decodedPixelSize() const { return decodedPixelSize_; }
+    quint64 hitCount() const {
+        return hitCount_;
+    }
+    quint64 missCount() const {
+        return missCount_;
+    }
+    quint64 decodeCount() const {
+        return decodeCount_;
+    }
+    QSize sourcePixelSize() const {
+        return sourcePixelSize_;
+    }
+    QSize decodedPixelSize() const {
+        return decodedPixelSize_;
+    }
 
   private:
     void clearEntry() {
@@ -173,9 +184,8 @@ class TrayImageCache final {
         hasEntry_ = false;
     }
 
-    void remember(const QString& source, qint64 size, const QDateTime& modified,
-                  const QIcon& icon, const QSize& sourcePixelSize,
-                  const QSize& decodedPixelSize) {
+    void remember(const QString& source, qint64 size, const QDateTime& modified, const QIcon& icon,
+                  const QSize& sourcePixelSize, const QSize& decodedPixelSize) {
         source_ = source;
         sourceFileSize_ = size;
         sourceModified_ = modified;
@@ -204,8 +214,8 @@ class SystemTrayController::Impl {
     Impl(SystemTrayController& owner, const settings::TrayCommandManifest& sourceManifest,
          PinnedWindowGroupManager* groupManager)
         : q(owner), menu(std::make_unique<adqt::widgets::AdContextMenu>()),
-          trayIcon(new QSystemTrayIcon(&owner)), manifest(sourceManifest),
-          groups(manifest.groups), groupManager(groupManager) {
+          trayIcon(new QSystemTrayIcon(&owner)), manifest(sourceManifest), groups(manifest.groups),
+          groupManager(groupManager) {
         if (this->groupManager == nullptr) {
             ownedGroupManager = std::make_unique<PinnedWindowGroupManager>();
             this->groupManager = ownedGroupManager.get();
@@ -225,11 +235,9 @@ class SystemTrayController::Impl {
         QObject::connect(trayIcon, &QSystemTrayIcon::activated, &q,
                          [this](QSystemTrayIcon::ActivationReason reason) {
                              if (reason == QSystemTrayIcon::Trigger) {
-                                 if (leftClickAction == QStringLiteral("show_main_window")) {
-                                     emit q.showMainWindowRequested();
-                                 } else {
-                                     emit q.screenshotRequested();
-                                 }
+                                 dispatchClickAction(leftClickAction);
+                             } else if (reason == QSystemTrayIcon::MiddleClick) {
+                                 dispatchClickAction(middleClickAction);
                              }
                          });
         QObject::connect(&LanguageManager::instance(), &LanguageManager::languageChanged, &q,
@@ -242,6 +250,20 @@ class SystemTrayController::Impl {
         trayIcon->setContextMenu(nullptr);
     }
 
+    void dispatchClickAction(const QString& action) {
+        if (action == QStringLiteral("show_main_window")) {
+            emit q.showMainWindowRequested();
+        } else if (action == QStringLiteral("screenshot_copy")) {
+            emit q.quickActionRequested(GlobalShortcutAction::ScreenshotCopy);
+        } else if (action == QStringLiteral("screenshot_fixed")) {
+            emit q.quickActionRequested(GlobalShortcutAction::ScreenshotFixed);
+        } else if (action == QStringLiteral("open_function_settings")) {
+            emit q.openFunctionSettingsRequested();
+        } else {
+            emit q.screenshotRequested();
+        }
+    }
+
     void buildMenu() {
         separatorsBeforeGroup.resize(groups.size());
         QString windowGroupingOptionId;
@@ -249,8 +271,7 @@ class SystemTrayController::Impl {
             const settings::SettingsTrayMenuGroupDefinition& group = groups.at(groupIndex);
             if (groupIndex > 0) {
                 QAction* separator = menu->addSeparator();
-                separator->setObjectName(
-                    QStringLiteral("trayMenuSeparator-%1").arg(group.id));
+                separator->setObjectName(QStringLiteral("trayMenuSeparator-%1").arg(group.id));
                 separatorsBeforeGroup[groupIndex] = separator;
             }
             for (const settings::SettingsTrayMenuOptionDefinition& option : group.options) {
@@ -313,8 +334,7 @@ class SystemTrayController::Impl {
         } else if (showMainWindow != nullptr) {
             menu->insertAction(showMainWindow, groupMenuAction);
         }
-        QObject::connect(groupMenu, &QMenu::aboutToShow, &q,
-                         [this]() { rebuildGroupMenu(); });
+        QObject::connect(groupMenu, &QMenu::aboutToShow, &q, [this]() { rebuildGroupMenu(); });
         rebuildGroupMenu();
     }
 
@@ -332,9 +352,8 @@ class SystemTrayController::Impl {
             const int windowCount = groupManager->windowCount(group.id);
             hasDeletableEmptyGroups =
                 hasDeletableEmptyGroups || (!group.builtIn && windowCount == 0);
-            QAction* action = groupMenu->addItem(
-                QStringLiteral("%1\t%2").arg(groupManager->displayName(group.id),
-                                             QString::number(windowCount)));
+            QAction* action = groupMenu->addItem(QStringLiteral("%1\t%2").arg(
+                groupManager->displayName(group.id), QString::number(windowCount)));
             action->setObjectName(QStringLiteral("systemTrayGroupAction-%1").arg(group.id));
             action->setData(group.id);
             action->setCheckable(true);
@@ -373,18 +392,18 @@ class SystemTrayController::Impl {
         for (const settings::SettingsTrayMenuGroupDefinition& group : groups) {
             for (const settings::SettingsTrayMenuOptionDefinition& option : group.options) {
                 if (QAction* action = actions.value(option.id)) {
-                    const QString label = option.kind == settings::SettingsTrayMenuOptionKind::QuickAction
-                                              ? manifest.shortcutActionTitle(option.shortcutAction,
-                                                                             screenshotDelaySeconds)
-                                              : option.label.translated();
+                    const QString label =
+                        option.kind == settings::SettingsTrayMenuOptionKind::QuickAction
+                            ? manifest.shortcutActionTitle(option.shortcutAction,
+                                                           screenshotDelaySeconds)
+                            : option.label.translated();
                     Q_ASSERT(!label.isEmpty());
                     const QString shortcut =
                         option.kind == settings::SettingsTrayMenuOptionKind::QuickAction
                             ? shortcutText.value(option.shortcutAction)
                             : QString();
-                    action->setText(shortcut.isEmpty()
-                                        ? label
-                                        : label + QLatin1Char('\t') + shortcut);
+                    action->setText(shortcut.isEmpty() ? label
+                                                       : label + QLatin1Char('\t') + shortcut);
                 }
             }
         }
@@ -470,6 +489,7 @@ class SystemTrayController::Impl {
     QString iconSelection = QString::fromLatin1(DEFAULT_TRAY_ICON);
     QString customIconPath;
     QString leftClickAction = QString::fromLatin1(DEFAULT_LEFT_CLICK_ACTION);
+    QString middleClickAction = QString::fromLatin1(DEFAULT_MIDDLE_CLICK_ACTION);
     int screenshotDelaySeconds = 3;
     bool enabled = true;
 };
@@ -478,7 +498,7 @@ SystemTrayController::SystemTrayController(QObject* parent)
     : SystemTrayController(settings::builtInTrayCommandManifest(), nullptr, parent) {}
 
 SystemTrayController::SystemTrayController(const settings::TrayCommandManifest& manifest,
-                                            QObject* parent)
+                                           QObject* parent)
     : SystemTrayController(manifest, nullptr, parent) {}
 
 SystemTrayController::SystemTrayController(const settings::TrayCommandManifest& manifest,
@@ -575,11 +595,19 @@ QString SystemTrayController::customIconPath() const {
 }
 
 void SystemTrayController::setLeftClickAction(const QString& action) {
-    m_impl->leftClickAction = normalizedLeftClickAction(action);
+    m_impl->leftClickAction = normalizedClickAction(action, DEFAULT_LEFT_CLICK_ACTION);
 }
 
 QString SystemTrayController::leftClickAction() const {
     return m_impl->leftClickAction;
+}
+
+void SystemTrayController::setMiddleClickAction(const QString& action) {
+    m_impl->middleClickAction = normalizedClickAction(action, DEFAULT_MIDDLE_CLICK_ACTION);
+}
+
+QString SystemTrayController::middleClickAction() const {
+    return m_impl->middleClickAction;
 }
 
 void SystemTrayController::setScreenshotDelaySeconds(int seconds) {

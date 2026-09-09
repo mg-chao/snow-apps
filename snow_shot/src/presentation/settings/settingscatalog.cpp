@@ -916,18 +916,38 @@ SettingsItemDefinition originalImageTranslationItem() {
         SettingsSwitchBinding::OriginalImageTranslation);
 }
 
+QVector<SettingsOptionDefinition> trayClickActionOptions() {
+    return {
+        {QStringLiteral("screenshot"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot"))},
+        {QStringLiteral("show_main_window"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Show main window"))},
+        {QStringLiteral("screenshot_copy"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Copy to Clipboard"))},
+        {QStringLiteral("screenshot_fixed"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Pin to Screen"))},
+        {QStringLiteral("open_function_settings"),
+         settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Open Function Settings"))},
+    };
+}
+
 SettingsItemDefinition trayLeftClickItem() {
     return fixedSelectItem(
         QStringLiteral("tray.left-click-action"),
         QT_TRANSLATE_NOOP("SettingsCatalog", "Left-click action"),
         QT_TRANSLATE_NOOP("SettingsCatalog", "Choose what left-clicking the tray icon does"),
         QStringLiteral("tray/left_click_action"), SettingsSelectBinding::TrayLeftClickAction,
-        {
-            {QStringLiteral("screenshot"),
-             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Screenshot"))},
-            {QStringLiteral("show_main_window"),
-             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Show main window"))},
-        });
+        trayClickActionOptions());
+}
+
+SettingsItemDefinition trayMiddleClickItem() {
+    return fixedSelectItem(
+        QStringLiteral("tray.middle-click-action"),
+        QT_TRANSLATE_NOOP("SettingsCatalog", "Scroll-wheel click action"),
+        QT_TRANSLATE_NOOP("SettingsCatalog",
+                          "Choose what clicking the tray icon with the scroll wheel does"),
+        QStringLiteral("tray/middle_click_action"), SettingsSelectBinding::TrayMiddleClickAction,
+        trayClickActionOptions());
 }
 
 SettingsItemDefinition translationLayoutProcessingItem() {
@@ -1609,7 +1629,7 @@ QVector<SettingsPageDefinition> builtInPages() {
                     settingsText(QT_TRANSLATE_NOOP("SettingsCatalog",
                                                    "System tray availability and icon settings")),
                     SettingsSectionReset::TrayBehavior,
-                    {trayLeftClickItem(), trayMenuOptionsItem()},
+                    {trayLeftClickItem(), trayMiddleClickItem(), trayMenuOptionsItem()},
                 },
                 {
                     QStringLiteral("global-hotkeys"),
@@ -2596,6 +2616,9 @@ QStringList SettingsCatalog::validationErrors() const {
                         break;
                     case SettingsSelectBinding::TrayLeftClickAction:
                         expectedKey = QStringLiteral("tray/left_click_action");
+                        break;
+                    case SettingsSelectBinding::TrayMiddleClickAction:
+                        expectedKey = QStringLiteral("tray/middle_click_action");
                         break;
                     case SettingsSelectBinding::TranslationLayoutProcessing:
                         expectedKey = QStringLiteral("screenshot_translation/layout_processing");

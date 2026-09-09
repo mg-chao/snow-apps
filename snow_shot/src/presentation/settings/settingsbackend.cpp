@@ -243,6 +243,8 @@ QVariant BuiltInSettingsBackend::selectValue(SettingsSelectBinding binding) cons
         return storage::ScreenshotSettings().saveAsFileDialog();
     case SettingsSelectBinding::TrayLeftClickAction:
         return storage::TraySettings().leftClickAction();
+    case SettingsSelectBinding::TrayMiddleClickAction:
+        return storage::TraySettings().middleClickAction();
     }
     return {};
 }
@@ -344,6 +346,8 @@ bool BuiltInSettingsBackend::applySelectValue(SettingsSelectBinding binding,
         return storage::ScreenshotSettings().setSaveAsFileDialog(value.toString());
     case SettingsSelectBinding::TrayLeftClickAction:
         return storage::TraySettings().setLeftClickAction(value.toString());
+    case SettingsSelectBinding::TrayMiddleClickAction:
+        return storage::TraySettings().setMiddleClickAction(value.toString());
     }
     return false;
 }
@@ -1188,6 +1192,9 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
         return storage::ApplicationStorage::instance().configuration().setValues({
             {QStringLiteral("tray/left_click_action"),
              storage::ConfigurationSchema::defaultValue(QStringLiteral("tray/left_click_action"))},
+            {QStringLiteral("tray/middle_click_action"),
+             storage::ConfigurationSchema::defaultValue(
+                 QStringLiteral("tray/middle_click_action"))},
             {QStringLiteral("tray/menu_options"),
              storage::ConfigurationSchema::defaultValue(QStringLiteral("tray/menu_options"))},
         });

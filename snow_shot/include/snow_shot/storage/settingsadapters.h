@@ -323,6 +323,8 @@ class TraySettings final {
     [[nodiscard]] QString customIcon() const;
     bool setCustomIcon(const QString& path) const;
     [[nodiscard]] QString leftClickAction() const;
+    [[nodiscard]] QString middleClickAction() const;
+    bool setMiddleClickAction(const QString& action) const;
     bool setLeftClickAction(const QString& action) const;
     [[nodiscard]] QStringList menuOptions() const;
     bool setMenuOptions(const QStringList& options) const;

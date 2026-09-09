@@ -1276,6 +1276,14 @@ bool TraySettings::setLeftClickAction(const QString& action) const {
     return cache().setValue(QStringLiteral("tray/left_click_action"), action);
 }
 
+QString TraySettings::middleClickAction() const {
+    return cache().value(QStringLiteral("tray/middle_click_action")).toString();
+}
+
+bool TraySettings::setMiddleClickAction(const QString& action) const {
+    return cache().setValue(QStringLiteral("tray/middle_click_action"), action);
+}
+
 QStringList TraySettings::menuOptions() const {
     return stringList(cache().value(QStringLiteral("tray/menu_options")));
 }

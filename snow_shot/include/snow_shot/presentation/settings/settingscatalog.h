@@ -94,6 +94,7 @@ enum class SettingsSelectBinding {
     ScreenshotImageFormat,
     ScreenshotSaveAsFileDialog,
     TrayLeftClickAction,
+    TrayMiddleClickAction,
     TranslationLayoutProcessing,
 };
 

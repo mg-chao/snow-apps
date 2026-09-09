@@ -5247,6 +5247,31 @@
         <translation>Pen</translation>
     </message>
     <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="926"/>
+        <source>Copy to Clipboard</source>
+        <translation>Copy to Clipboard</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="928"/>
+        <source>Pin to Screen</source>
+        <translation>Pin to Screen</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="930"/>
+        <source>Open Function Settings</source>
+        <translation>Open Function Settings</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="946"/>
+        <source>Scroll-wheel click action</source>
+        <translation>Scroll-wheel click action</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="947"/>
+        <source>Choose what clicking the tray icon with the scroll wheel does</source>
+        <translation>Choose what clicking the tray icon with the scroll wheel does</translation>
+    </message>
+    <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="936"/>
         <source>Layout Processing</source>
         <translation>Layout Processing</translation>

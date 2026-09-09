@@ -5246,6 +5246,31 @@
         <translation>画笔</translation>
     </message>
     <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="926"/>
+        <source>Copy to Clipboard</source>
+        <translation>复制到剪贴板</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="928"/>
+        <source>Pin to Screen</source>
+        <translation>固定到屏幕</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="930"/>
+        <source>Open Function Settings</source>
+        <translation>打开功能设置</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="946"/>
+        <source>Scroll-wheel click action</source>
+        <translation>滚轮点击操作</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/settings/settingscatalog.cpp" line="947"/>
+        <source>Choose what clicking the tray icon with the scroll wheel does</source>
+        <translation>选择使用滚轮点击托盘图标时执行的操作</translation>
+    </message>
+    <message>
         <location filename="../src/presentation/settings/settingscatalog.cpp" line="936"/>
         <source>Layout Processing</source>
         <translation>排版处理</translation>

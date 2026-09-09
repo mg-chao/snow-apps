@@ -33,6 +33,7 @@ class MainWindow : public QMainWindow {
 
     void showAndActivate();
     void showInterfaceSettings();
+    void showFunctionSettings();
     void showScreenshotHistory();
     void showTranslation(const QString& text);
 

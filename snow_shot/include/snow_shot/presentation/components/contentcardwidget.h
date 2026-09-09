@@ -36,6 +36,7 @@ class ContentCardWidget final : public QFrame {
     void activateSection(const QString& sectionId);
     void navigateTo(const snow_shot::presentation::settings::SettingsLocation& location);
     void showInterfaceSettings();
+    void showFunctionSettings();
     void showTranslation(const QString& text);
     void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme);
     void retranslateUi();
