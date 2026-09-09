@@ -7,6 +7,7 @@
 #include "snow_shot/presentation/globalshortcuttypes.h"
 #include "snow_shot/presentation/globalmousetypes.h"
 
+class SnowShotApiClient;
 class QEvent;
 class QResizeEvent;
 class QWidget;
@@ -28,7 +29,7 @@ class MainWindow : public QMainWindow {
   public:
     MainWindow(const snow_shot::presentation::settings::SettingsRegistry& registry,
                snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession,
-               QWidget* parent = nullptr);
+               QWidget* parent = nullptr, SnowShotApiClient* translationClient = nullptr);
     ~MainWindow() override = default;
 
     void showAndActivate();
@@ -57,6 +58,7 @@ class MainWindow : public QMainWindow {
     void applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme);
     void syncTitleBarBottomShadowGeometry();
     void setupDwmShadow();
+    SnowShotApiClient* m_translationClient = nullptr;
     TitleBarWidget* m_titleBar = nullptr;
     SidebarWidget* m_sidebar = nullptr;
     MainContentHeaderWidget* m_contentHeader = nullptr;

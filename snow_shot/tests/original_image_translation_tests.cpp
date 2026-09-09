@@ -1,5 +1,7 @@
 #include "snow_shot/presentation/screenshotocrpresentation.h"
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
+#include "snow_shot/presentation/translationpagecontroller.h"
+#include "snow_shot/storage/applicationstorage.h"
 #include "snow_shot/storage/settingsadapters.h"
 #include "widgets/modal.h"
 #include "widgets/switch.h"
@@ -95,7 +97,8 @@ class TranslationServer final : public QObject {
     }
 
     void waitForStreams(int count) {
-        waitUntil([&]() { return streams.size() >= count; }, "expected translation requests");
+        waitUntil([&]() { return streams.size() >= count; },
+                  qPrintable(QStringLiteral("expected %1 translation requests").arg(count)));
         require(streams.size() == count, "translation queue must not dispatch extra requests");
         // Parallel HTTP connections can arrive in any order. Address each received batch
         // by its source text so response ordering is controlled by the test, not the OS.
@@ -303,6 +306,67 @@ struct SessionProbe {
         controller->activate(ScreenshotRecognitionSessionController::Mode::Text);
     }
 };
+
+void customModelPageAndScreenshotParity(bool originalImage) {
+    TranslationServer server;
+    server.holdModels = true;
+    snow_shot::CustomAiModelConfiguration model{
+        QStringLiteral("44444444-4444-4444-8444-444444444444"),
+        QStringLiteral("Shared custom translator"),
+        server.url() + QStringLiteral("/v1"),
+        {},
+        QStringLiteral("provider-model"),
+        true};
+    const snow_shot::storage::ApiConfigurationSettings apiSettings;
+    const auto previousModels = apiSettings.customModels();
+    require(apiSettings.setCustomModels({model}), "configure cross-view custom model");
+    configureTranslation(originalImage, model.selectionId());
+    SnowShotApiClient api(server.url());
+    SessionProbe screenshot(&api, 1);
+    snow_shot::presentation::TranslationPageController page(
+        api, snow_shot::storage::ApplicationStorage::instance().configuration(), QLocale::English,
+        nullptr, 0);
+    page.activate();
+    page.setSourceText(QStringLiteral("source 0"));
+    screenshot.controller->beginTextTranslation();
+    server.waitForStreams(2);
+    require(server.streams[0].body == server.streams[1].body &&
+                server.streams[0].body.value(QStringLiteral("model")) == model.model,
+            "page and screenshot use identical custom-provider payloads during held discovery");
+    for (int index = 0; index < 2; ++index)
+        server.delta(index, QStringLiteral("translated"));
+    waitUntil(
+        [&] {
+            return page.resultText() == QStringLiteral("translated") &&
+                   screenshot.controller->textDraft() == QStringLiteral("translated");
+        },
+        "both views display streamed custom translation");
+    model.name = QStringLiteral("Renamed translator");
+    model.supportsVision = false;
+    require(apiSettings.setCustomModels({model}), "edit custom model display metadata");
+    require(page.translating() && screenshot.streaming,
+            "metadata edits leave both translation views running");
+    for (int index = 0; index < 2; ++index)
+        server.finish(index);
+    waitUntil([&] { return !page.translating() && !screenshot.streaming; },
+              "both views complete custom translation");
+    model.model = QStringLiteral("updated-provider-model");
+    require(apiSettings.setCustomModels({model}), "edit shared custom connection");
+    QCoreApplication::processEvents();
+    require(page.resultText().isEmpty() && !page.errorText().isEmpty() &&
+                (originalImage ? screenshot.displayed->lines[0].text == QStringLiteral("source 0")
+                               : screenshot.controller->textDraft().isEmpty()) &&
+                !screenshot.errors.isEmpty() && !screenshot.streaming && server.streams.size() == 2,
+            "connection edits clear both completed views without automatic submission");
+    page.retry();
+    screenshot.controller->endTextEditing();
+    screenshot.controller->beginTextTranslation();
+    server.waitForStreams(4);
+    require(server.streams[2].body == server.streams[3].body &&
+                server.streams[2].body.value(QStringLiteral("model")) == model.model,
+            "explicit retries in both views use the updated custom connection");
+    require(apiSettings.setCustomModels(previousModels), "restore cross-view custom models");
+}
 
 void smartLayoutStreamsParagraphsAndSwitchesModes() {
     configureTranslation();
@@ -910,6 +974,8 @@ void fragmentedUnicodeStreamsUpdateOnlyCompleteEvents() {
 } // namespace
 
 void runOriginalImageTranslationTests() {
+    customModelPageAndScreenshotParity(false);
+    customModelPageAndScreenshotParity(true);
     translationSettingsSwitchKeepsReadableSize();
     confirmingTranslationDisplayModeRestartsTranslation();
     smartLayoutStreamsParagraphsAndSwitchesModes();

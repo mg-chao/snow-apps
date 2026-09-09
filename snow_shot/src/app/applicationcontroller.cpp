@@ -1,4 +1,6 @@
 #include "snow_shot/app/applicationcontroller.h"
+#include "snow_shot/translation/translationservice.h"
+#include "snow_shot/presentation/languagemanager.h"
 
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/globalmousemanager.h"
@@ -132,6 +134,16 @@ class ApplicationController::Impl {
         if (!applicationStorage.isInitialized()) {
             static_cast<void>(applicationStorage.initialize());
         }
+        translationClient =
+            std::make_unique<SnowShotApiClient>(SnowShotApiClient::configuredBaseUrl());
+        translationService = &translation::TranslationService::forClient(
+            *translationClient, applicationStorage.configuration(),
+            presentation::LanguageManager::instance().currentLocale());
+        QObject::connect(&presentation::LanguageManager::instance(),
+                         &presentation::LanguageManager::languageChanged, translationService,
+                         [this](const QString&, const QLocale& locale) {
+                             translationService->setLocale(locale);
+                         });
         // OCR process ownership is application-scoped. ScreenshotController
         // instances receive a consumer of this service instead of creating a
         // second child process for each controller.
@@ -200,8 +212,8 @@ class ApplicationController::Impl {
 
     ScreenshotController* ensureScreenshotController() {
         if (screenshotController == nullptr) {
-            screenshotController =
-                std::make_unique<ScreenshotController>(&q, &groupManager, ocrRecognition.get());
+            screenshotController = std::make_unique<ScreenshotController>(
+                &q, &groupManager, ocrRecognition.get(), translationClient.get());
             QObject::connect(screenshotController.get(),
                              &ScreenshotController::showMainWindowRequested, &q,
                              [this]() { showMainWindow(); });
@@ -250,7 +262,8 @@ class ApplicationController::Impl {
     MainWindow& ensureMainWindow() {
         if (mainWindow == nullptr) {
             ensureSettingsRuntime();
-            mainWindow = new MainWindow(*settingsRegistry, *runtimeSession);
+            mainWindow = new MainWindow(*settingsRegistry, *runtimeSession, nullptr,
+                                        translationClient.get());
             QObject::connect(mainWindow, &QObject::destroyed, &q,
                              [this]() { mainWindow = nullptr; });
             QObject::connect(mainWindow, &MainWindow::screenshotRequested, &q, [this]() {
@@ -413,6 +426,8 @@ class ApplicationController::Impl {
     std::unique_ptr<presentation::settings::SettingsRegistry> settingsRegistry;
     std::unique_ptr<presentation::settings::BuiltInSettingsBackend> settingsBackend;
     std::unique_ptr<presentation::settings::SettingsRuntimeSession> runtimeSession;
+    std::unique_ptr<SnowShotApiClient> translationClient;
+    translation::TranslationService* translationService = nullptr;
     std::unique_ptr<ScreenshotOcrRecognitionService> ocrRecognition;
     std::unique_ptr<ScreenshotController> screenshotController;
     std::unique_ptr<presentation::DirectCaptureController> directCaptureController;

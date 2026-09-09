@@ -1,4 +1,6 @@
 #include "translation_test_support.h"
+#include "snow_shot/presentation/components/screenshottranslationsettingsdialog.h"
+#include "widgets/modal.h"
 
 #include "snow_shot/presentation/components/contentcardwidget.h"
 #include "snow_shot/presentation/components/maincontentheaderwidget.h"
@@ -6,11 +8,13 @@
 #include "snow_shot/presentation/components/translationpagewidget.h"
 #include "snow_shot/presentation/globalshortcutmanager.h"
 #include "snow_shot/presentation/mainwindow.h"
+#include "snow_shot/presentation/languagemanager.h"
 #include "snow_shot/presentation/settings/settingsbackend.h"
 #include "snow_shot/presentation/settings/settingsruntimesession.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/translationpagecontroller.h"
 #include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/translation/translationlanguages.h"
 #include "widgets/button.h"
 #include "widgets/input_text_edit.h"
 #include "widgets/navigation_menu.h"
@@ -36,6 +40,7 @@
 #include <QScrollBar>
 #include <QTemporaryDir>
 #include <QTranslator>
+#include <memory>
 
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
@@ -62,6 +67,116 @@ void key(QWidget* widget, int value, Qt::KeyboardModifiers modifiers = Qt::NoMod
     QKeyEvent release(QEvent::KeyRelease, value, modifiers);
     QApplication::sendEvent(widget, &release);
     flushEvents();
+}
+
+void sharedServiceSelectors() {
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    const QString customKey = QStringLiteral("api_configuration/custom_models");
+    const auto previousModels = configuration.value(customKey);
+    auto previousPreferences = snow_shot::storage::ScreenshotTranslationSettings().configuration();
+    // The schema's unset default target is not a valid explicit selection to restore.
+    if (previousPreferences.targetLanguage.isEmpty())
+        previousPreferences.targetLanguage =
+            snow_shot::translation::defaultTranslationTargetLanguage(
+                snow_shot::presentation::LanguageManager::instance().currentLocale());
+    Server server;
+    server.holdModels = true;
+    snow_shot::CustomAiModelConfiguration model{
+        QStringLiteral("22222222-2222-4222-8222-222222222222"),
+        QStringLiteral("Custom vision translator"),
+        server.url() + QStringLiteral("/v1"),
+        {},
+        QStringLiteral("provider-model"),
+        true};
+    require(configuration.setValue(customKey, snow_shot::customAiModelsToJson({model})),
+            "configure custom vision model");
+    SnowShotApiClient client(server.url());
+    TranslationPageWidget page(nullptr, &client, 0);
+    auto& service = snow_shot::translation::TranslationService::forClient(client, configuration,
+                                                                          QLocale::English);
+    require(service.savePreferences(
+                {QStringLiteral("auto"), QStringLiteral("ja"), model.selectionId()}),
+            "select shared custom model");
+    auto* modal = snow_shot::presentation::createScreenshotTranslationSettingsDialog(service, &page,
+                                                                                     &page, {});
+    auto* pageSelect = child<AdSelect>(page, "translationService");
+    auto* screenshotSelect =
+        child<AdSelect>(*modal->contentWidget(), "screenshotTranslationService");
+    const auto compare = [&] {
+        const auto first = pageSelect->options();
+        const auto second = screenshotSelect->options();
+        require(first.size() == second.size(), "both translation views expose the same catalog");
+        for (int i = 0; i < first.size(); ++i)
+            require(first[i].value == second[i].value && first[i].label == second[i].label &&
+                        first[i].group == second[i].group,
+                    "service identity, label, and group match across views");
+    };
+    compare();
+    require(pageSelect->isEnabled() && screenshotSelect->isEnabled() &&
+                pageSelect->currentValue().toString() == model.selectionId() &&
+                screenshotSelect->currentValue().toString() == model.selectionId(),
+            "custom vision service is selectable in both views during builtin discovery");
+    model.name = QStringLiteral("Renamed custom translator");
+    require(configuration.setValue(customKey, snow_shot::customAiModelsToJson({model})),
+            "rename configured model");
+    compare();
+    require(pageSelect->options().first().label == model.name,
+            "open selectors reflect model edits");
+    waitUntil([&] { return server.modelRequests == 1; }, "both views share one pending discovery");
+    server.respondModels();
+    waitUntil([&] { return !service.loadingModels(); }, "finish discovery for both views");
+    compare();
+    require(service.savePreferences(
+                {QStringLiteral("en"), QStringLiteral("fr"), QStringLiteral("specialist")}),
+            "change shared preferences while the settings dialog is open");
+    require(pageSelect->currentValue() == screenshotSelect->currentValue() &&
+                child<AdSelect>(*modal->contentWidget(), "screenshotTranslationTargetLanguage")
+                        ->currentValue()
+                        .toString() == QStringLiteral("fr"),
+            "unedited dialog fields follow committed shared preferences");
+    require(service.savePreferences(
+                {QStringLiteral("auto"), QStringLiteral("ja"), model.selectionId()}),
+            "restore selected custom model before deletion");
+    require(configuration.setValue(customKey, QJsonArray{}), "remove selected model");
+    compare();
+    require(pageSelect->currentValue() == screenshotSelect->currentValue() &&
+                pageSelect->currentValue().toString() == QStringLiteral("general"),
+            "both views resolve the same fallback after deletion");
+    screenshotSelect->setCurrentValue(QStringLiteral("specialist"));
+    require(service.savePreferences(
+                {QStringLiteral("en"), QStringLiteral("de"), QStringLiteral("general")}),
+            "commit preferences while the screenshot dialog has a model draft");
+    require(screenshotSelect->currentValue().toString() == QStringLiteral("specialist") &&
+                pageSelect->currentValue().toString() == QStringLiteral("general"),
+            "an uncommitted dialog edit remains local until OK");
+    modal->reject();
+    flushEvents();
+    require(configuration.setValue(customKey, previousModels), "restore custom models");
+    require(
+        snow_shot::storage::ScreenshotTranslationSettings().setConfiguration(previousPreferences),
+        "restore shared preferences");
+}
+
+void screenshotSettingsProviderLifetime() {
+    auto& configuration = snow_shot::storage::ApplicationStorage::instance().configuration();
+    Server server;
+    auto client = std::make_unique<SnowShotApiClient>(server.url());
+    auto& service = snow_shot::translation::TranslationService::forClient(*client, configuration,
+                                                                          QLocale::English);
+    QWidget owner;
+    const QPointer<adqt::widgets::AdModal> modal =
+        snow_shot::presentation::createScreenshotTranslationSettingsDialog(service, &owner, &owner,
+                                                                           {});
+    auto* body = modal->contentWidget();
+    auto* retry = child<AdButton>(*body, "screenshotTranslationSettingsRetry");
+    client.reset();
+    QEvent languageChange(QEvent::LanguageChange);
+    QApplication::sendEvent(body, &languageChange);
+    retry->clicked();
+    modal->closeRequested(adqt::widgets::AdModal::CloseReason::OkAction);
+    flushEvents();
+    require(modal == nullptr,
+            "provider destruction safely disposes the screenshot settings dialog");
 }
 
 void snapshot(QWidget& window, const QString& name) {
@@ -864,6 +979,8 @@ int main(int argc, char** argv) {
     } else
 #endif
     {
+        sharedServiceSelectors();
+        screenshotSettingsProviderLifetime();
         selectedTextHandoff();
         selectedTextNavigation();
         editorContentGeometry();

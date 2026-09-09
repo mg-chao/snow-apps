@@ -5,6 +5,8 @@
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
 #include "snow_shot/presentation/screenshotrecognitionwindow.h"
 #include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/storage/applicationstorage.h"
+#include "snow_shot/translation/translationservice.h"
 #include "theme/theme_manager.h"
 #include "widgets/modal.h"
 #include "widgets/select.h"
@@ -281,7 +283,11 @@ void customModelWorkflows() {
     auto second = model;
     second.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     second.name = QStringLiteral("Other Model");
-    api.setCustomModels({model, second});
+    const snow_shot::storage::ApiConfigurationSettings apiSettings;
+    const auto previousModels = apiSettings.customModels();
+    require(apiSettings.setCustomModels({model, second}), "configure shared custom models");
+    snow_shot::translation::TranslationService::forClient(
+        api, snow_shot::storage::ApplicationStorage::instance().configuration(), QLocale::English);
     const snow_shot::storage::ScreenshotImageConversionSettings settings;
     settings.setVisionModel(model.selectionId());
     Controller controller;
@@ -294,12 +300,12 @@ void customModelWorkflows() {
     require(!cached.first().modelFingerprint.isEmpty(),
             "custom conversion records connection identity");
     model.name = QStringLiteral("Renamed Vision");
-    api.setCustomModels({model, second});
+    require(apiSettings.setCustomModels({model, second}), "rename shared custom model");
     controller.activate(QStringLiteral("custom-image"), sampleImage(), Format::Markdown);
     require(server.requests.size() == 1 && controller.state() == Controller::State::Completed,
             "rename preserves completed conversion");
     model.model = QStringLiteral("changed-provider-id");
-    api.setCustomModels({model, second});
+    require(apiSettings.setCustomModels({model, second}), "edit shared custom model connection");
     require(controller.entries(QStringLiteral("custom-image")).isEmpty() && !controller.busy(),
             "connection edit invalidates results without automatic request");
     controller.seed(QStringLiteral("custom-image"), cached);
@@ -320,7 +326,8 @@ void customModelWorkflows() {
     require(select && select->isEnabled() && select->options().size() == 2,
             "custom conversion choices available while builtin catalog loads");
     model.supportsVision = false;
-    api.setCustomModels({model, second});
+    require(apiSettings.setCustomModels({model, second}),
+            "update shared custom model capabilities");
     require(select->options().size() == 1 && settings.visionModel() == second.selectionId(),
             "vision removal updates open selector and shared fallback");
     modal->reject();
@@ -349,10 +356,11 @@ void customModelWorkflows() {
     controller.activate(QStringLiteral("active-one"), sampleImage(), Format::Html);
     other.activate(QStringLiteral("active-two"), sampleImage(), Format::Html);
     until([&]() { return server.requests.size() == 4; });
-    api.setCustomModels({model});
+    require(apiSettings.setCustomModels({model}), "delete shared custom model");
     require(!controller.busy() && !other.busy() && settings.visionModel().isEmpty(),
             "deletion cancels all active consumers and clears unavailable vision selection");
     settings.setVisionModel({});
+    require(apiSettings.setCustomModels(previousModels), "restore shared custom models");
 }
 
 void conversionSourceNormalization() {

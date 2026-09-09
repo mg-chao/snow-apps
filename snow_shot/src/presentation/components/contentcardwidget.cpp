@@ -16,8 +16,10 @@
 
 ContentCardWidget::ContentCardWidget(
     const snow_shot::presentation::settings::SettingsRegistry& registry,
-    snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession, QWidget* parent)
+    snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession, QWidget* parent,
+    SnowShotApiClient* translationClient)
     : QFrame(parent), m_registry(registry), m_runtimeSession(runtimeSession),
+      m_translationClient(translationClient),
       m_colorScheme(snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme()) {
     setFrameShape(QFrame::NoFrame);
     setLineWidth(0);
@@ -129,7 +131,7 @@ QWidget* ContentCardWidget::createPage(
         page = historyPage;
     } else if (definition.kind ==
                snow_shot::presentation::settings::SettingsPageKind::Translation) {
-        auto* translationPage = new TranslationPageWidget(m_stack);
+        auto* translationPage = new TranslationPageWidget(m_stack, m_translationClient);
         connect(translationPage, &TranslationPageWidget::closeWindowRequested, this,
                 &ContentCardWidget::closeWindowRequested);
         page = translationPage;

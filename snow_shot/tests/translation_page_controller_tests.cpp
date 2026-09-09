@@ -207,7 +207,9 @@ void modelFailureAndDestroyedReceiver(const QString& directory) {
             "vision-only catalog is unavailable for translation");
     controller.deactivate();
     server.holdModels = true;
-    auto* pending = new TranslationPageController(client, settings, QLocale::English, nullptr, 0);
+    SnowShotApiClient pendingClient(server.url());
+    auto* pending =
+        new TranslationPageController(pendingClient, settings, QLocale::English, nullptr, 0);
     pending->activate();
     waitUntil([&]() { return server.modelRequests == 3; },
               "hold model response for destroyed page");
@@ -248,6 +250,71 @@ void persistenceAndFailedWrites(const QString& directory) {
                 !controller.errorText().isEmpty(),
             "failed save restores committed preferences");
 }
+
+void independentConsumers(const QString& directory) {
+    Server server;
+    SnowShotApiClient client(server.url());
+    ConfigurationStore settings(directory + QStringLiteral("/independent.json"), true, true, 60000);
+    TranslationPageController first(client, settings, QLocale::English, nullptr, 0);
+    TranslationPageController second(client, settings, QLocale::English, nullptr, 0);
+    first.activate();
+    first.setSourceText(QStringLiteral("first"));
+    waitUntil([&] { return server.streams.size() == 1; }, "first consumer starts");
+    second.activate();
+    second.setSourceText(QStringLiteral("second"));
+    waitUntil([&] { return server.streams.size() == 2; }, "second consumer starts");
+    server.delta(0, QStringLiteral("first output"));
+    server.delta(1, QStringLiteral("second output"));
+    waitUntil([&] { return !first.resultText().isEmpty() && !second.resultText().isEmpty(); },
+              "both consumers receive independent output");
+    first.deactivate();
+    waitUntil([&] { return server.disconnected(0); }, "closing one consumer cancels its stream");
+    require(!server.disconnected(1) && second.translating(),
+            "closing one consumer leaves the other running");
+    server.finish(1);
+    waitUntil([&] { return !second.translating(); }, "remaining consumer finishes");
+    require(first.resultText().isEmpty() && second.resultText() == QStringLiteral("second output"),
+            "consumer results never mix");
+}
+
+void customModelEditStopsPendingDraft(const QString& directory) {
+    Server server;
+    server.streamPath = QByteArrayLiteral("/v1/chat/completions");
+    ConfigurationStore settings(directory + QStringLiteral("/pending-custom.json"), true, true,
+                                60000);
+    snow_shot::CustomAiModelConfiguration model{
+        QStringLiteral("33333333-3333-4333-8333-333333333333"),
+        QStringLiteral("Custom model"),
+        server.url() + QStringLiteral("/v1"),
+        {},
+        QStringLiteral("provider-model"),
+        true};
+    const QString key = QStringLiteral("api_configuration/custom_models");
+    require(settings.setValue(key, snow_shot::customAiModelsToJson({model})),
+            "configure the pending draft's custom model");
+    SnowShotApiClient client(QString{});
+    TranslationPageController controller(client, settings, QLocale::English, nullptr, 60000);
+    controller.activate();
+    controller.setSourceText(QStringLiteral("pending draft"));
+    model.apiKey = QStringLiteral("changed");
+    require(settings.setValue(key, snow_shot::customAiModelsToJson({model})),
+            "edit the model before the debounce expires");
+    require(!controller.translating() && !controller.errorText().isEmpty() &&
+                server.streams.isEmpty(),
+            "pending drafts require explicit retry after a model edit");
+    controller.retry();
+    waitUntil([&] { return server.streams.size() == 1; },
+              "explicit retry submits the pending draft");
+    require(server.streams.first().headers.contains("Authorization: Bearer changed"),
+            "the pending draft uses the updated configuration");
+    model.apiKey = QStringLiteral("changed-again");
+    require(settings.setValue(key, snow_shot::customAiModelsToJson({model})),
+            "invalidate the retried draft");
+    controller.deactivate();
+    controller.activate();
+    require(controller.sourceText().isEmpty() && controller.errorText().isEmpty(),
+            "reopening an empty page does not retain the discarded draft's retry error");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -259,5 +326,7 @@ int main(int argc, char** argv) {
     streamLifecycleAndSharedPreferences(directory.path());
     modelFailureAndDestroyedReceiver(directory.path());
     persistenceAndFailedWrites(directory.path());
+    independentConsumers(directory.path());
+    customModelEditStopsPendingDraft(directory.path());
     return 0;
 }

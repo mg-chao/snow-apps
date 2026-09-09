@@ -1,5 +1,5 @@
 #include "snow_shot/presentation/screenshotrecognitionsessioncontroller.h"
-#include "snow_shot/presentation/translationlanguages.h"
+#include "snow_shot/presentation/components/screenshottranslationsettingsdialog.h"
 #include "snow_shot/presentation/screenshotocrlayout.h"
 
 #include "snow_shot/presentation/screenshotocrpresentation.h"
@@ -71,25 +71,14 @@ bool translationMatchesSource(const ScreenshotOcrPresentation& translation,
                                               source.lines, source.selection.topLeft()));
 }
 
-using snow_shot::presentation::TranslationLanguage;
-using snow_shot::presentation::translationLanguageName;
-using snow_shot::presentation::translationModelIndex;
+using snow_shot::translation::TranslationJob;
+using snow_shot::translation::TranslationService;
 
 bool backgroundFillEnabled() {
     return snow_shot::storage::ApplicationStorage::instance()
                .configuration()
                .value(QStringLiteral("text_recognition/fill_style"))
                .toString() == QStringLiteral("background_fill");
-}
-
-adqt::widgets::AdSelect::Option translationLanguageOption(const TranslationLanguage& language) {
-    const QString code = QString::fromLatin1(language.code);
-    return {code, translationLanguageName(code), false, code.left(1).toUpper()};
-}
-
-QString defaultTargetLanguage() {
-    return snow_shot::presentation::defaultTranslationTargetLanguage(
-        snow_shot::presentation::LanguageManager::instance().currentLocale());
 }
 
 } // namespace
@@ -120,10 +109,7 @@ ScreenshotRecognitionSessionController::ScreenshotRecognitionSessionController(
                     }
                     return;
                 }
-                if (key != QStringLiteral("screenshot_translation/source_language") &&
-                    key != QStringLiteral("screenshot_translation/target_language") &&
-                    key != QStringLiteral("screenshot_translation/model") &&
-                    key != QStringLiteral("screenshot_translation/layout_processing")) {
+                if (key != QStringLiteral("screenshot_translation/layout_processing")) {
                     return;
                 }
                 const auto it = m_textCache.constFind(m_translationKey);
@@ -155,33 +141,45 @@ void ScreenshotRecognitionSessionController::setProviders(
     if (m_tableRecognition == nullptr && tableRecognition != nullptr) {
         m_tableRecognition = tableRecognition;
         m_conversion->setProvider(tableRecognition);
-        connect(tableRecognition, &SnowShotApiClient::customModelInvalidated, this,
-                [this](const QString& id, bool translation, bool) {
-                    if (!translation) {
+        m_translationService = &TranslationService::forClient(
+            *tableRecognition, snow_shot::storage::ApplicationStorage::instance().configuration(),
+            snow_shot::presentation::LanguageManager::instance().currentLocale());
+        connect(m_translationService, &TranslationService::preferencesChanged, this,
+                [this](TranslationService::ChangeReason reason) {
+                    if (reason != TranslationService::ChangeReason::UserPreferences)
                         return;
-                    }
-                    const auto active = m_textCache.constFind(
-                        m_translationKey.isEmpty() ? m_textCacheKey : m_translationKey);
-                    if (active != m_textCache.cend() &&
-                        active->translationConfiguration.modelId == id) {
+                    QTimer::singleShot(0, this, [this] {
+                        const auto entry = m_textCache.constFind(m_translationKey);
+                        if (entry != m_textCache.cend() && entry->hasTranslationConfiguration &&
+                            entry->translationConfiguration !=
+                                snow_shot::storage::ScreenshotTranslationSettings().configuration())
+                            invalidateCurrentTranslation(m_translating);
+                    });
+                });
+        connect(m_translationService, &TranslationService::modelInvalidated, this,
+                [this](const QString& id) {
+                    const auto active = m_textCache.constFind(m_translationKey);
+                    const bool affected = active != m_textCache.cend() &&
+                                          active->translationConfiguration.modelId == id;
+                    if (affected)
                         invalidateCurrentTranslation(false);
-                    }
                     for (auto& entry : m_textCache) {
-                        if (entry.translationConfiguration.modelId == id) {
-                            entry.hasTranslationConfiguration = false;
-                            entry.hasSuccessfulTranslation = false;
-                            entry.translationStatus = TextCacheEntry::TranslationStatus::Absent;
-                            entry.translationText.clear();
-                            entry.successfulTranslation.clear();
-                            entry.overlayTranslation = {};
+                        if (entry.translationConfiguration.modelId != id)
+                            continue;
+                        if (entry.translationJob != nullptr) {
+                            entry.translationJob->cancel();
+                            entry.translationJob->deleteLater();
+                            entry.translationJob = nullptr;
                         }
+                        entry.hasTranslationConfiguration = false;
+                        entry.hasSuccessfulTranslation = false;
+                        entry.translationStatus = TextCacheEntry::TranslationStatus::Absent;
+                        entry.translationText.clear();
+                        entry.successfulTranslation.clear();
+                        entry.overlayTranslation = {};
                     }
-                    auto settings = snow_shot::storage::ScreenshotTranslationSettings();
-                    auto configuration = settings.configuration();
-                    if (configuration.modelId == id && !m_tableRecognition->isCustomModel(id)) {
-                        configuration.modelId = m_tableRecognition->fallbackModel(false);
-                        settings.setConfiguration(configuration);
-                    }
+                    if (affected && m_translating)
+                        showStatus(TranslationService::modelConfigurationChangedText(), true);
                     emit recognitionResultsChanged();
                 });
         connect(tableRecognition, &QObject::destroyed, this,
@@ -520,6 +518,11 @@ void ScreenshotRecognitionSessionController::resetTargetState() {
         if (it->editingSession != nullptr) {
             it->editingSession->establishHistory(it->editingSession->originalText());
         }
+        if (it->translationJob != nullptr) {
+            it->translationJob->cancel();
+            it->translationJob->deleteLater();
+            it->translationJob = nullptr;
+        }
         it->translationSession.reset();
         it->overlayTranslation = {};
         it->hasTranslationConfiguration = false;
@@ -754,7 +757,8 @@ void ScreenshotRecognitionSessionController::beginTextTranslation() {
     }
     emit textEditingChanged(true);
     updateTextState();
-    if (it->translationStatus == TextCacheEntry::TranslationStatus::Absent) {
+    if (it->translationStatus == TextCacheEntry::TranslationStatus::Absent ||
+        it->translationStatus == TextCacheEntry::TranslationStatus::Failed) {
         startTranslation();
     }
 }
@@ -845,144 +849,126 @@ void ScreenshotRecognitionSessionController::resetTextEditing() {
 }
 
 void ScreenshotRecognitionSessionController::openTranslationSettings() {
-    if (m_tableRecognition == nullptr) {
+    if (m_translationService == nullptr) {
         showStatus(tr("Translation service is unavailable"), true);
         return;
     }
-    if (m_translationSettingsModal != nullptr) {
+    if (m_translationSettingsModal != nullptr)
         return;
-    }
-    showTranslationSettingsModal(m_tableRecognition->cachedChatModels());
+    QWidget* owner =
+        m_actions.translationSettingsOwner ? m_actions.translationSettingsOwner() : content();
+    if (owner == nullptr)
+        owner = content();
+    if (owner == nullptr)
+        return;
+    m_translationSettingsModal = snow_shot::presentation::createScreenshotTranslationSettingsDialog(
+        *m_translationService, owner, this,
+        [this, restart = std::make_shared<bool>(false)](bool before) {
+            if (before) {
+                *restart = m_translating;
+                if (*restart)
+                    endTextEditing();
+            } else if (*restart) {
+                invalidateCurrentTranslation(false);
+                beginTextTranslation();
+            }
+        });
+    connect(m_translationSettingsModal, &adqt::widgets::AdModal::finished, this,
+            [this] { m_translationSettingsModal = nullptr; });
 }
 
 void ScreenshotRecognitionSessionController::startTranslation() {
-    if (m_translationRequestToken != 0 || m_modelsRequestToken != 0 ||
-        !m_translationUnitRequests.isEmpty()) {
-        return;
-    }
     auto it = m_textCache.find(m_translationKey);
-    if (it == m_textCache.end()) {
+    if (it == m_textCache.end())
+        return;
+    if (it->translationJob != nullptr && it->translationJob->busy())
+        return;
+    if (m_translationService == nullptr) {
+        failTranslationPreparation(tr("Translation service is unavailable"));
         return;
     }
     it->translationConfiguration =
         snow_shot::storage::ScreenshotTranslationSettings().configuration();
     it->hasTranslationConfiguration = true;
-    if (m_translationInImage) {
-        auto& overlay = it->overlayTranslation;
-        m_nextTranslationUnit = 0;
-        overlay.failureReported = false;
-        bool pending = false;
-        for (auto& unit : overlay.units) {
-            if (unit.status != TextCacheEntry::TranslationUnit::Status::Completed) {
-                unit.status = TextCacheEntry::TranslationUnit::Status::Pending;
-                pending = true;
-            }
+    const QString key = m_translationKey;
+    const quint64 generation = ++m_translationGeneration;
+    const bool inImage = m_translationInImage;
+    if (inImage)
+        it->overlayTranslation.failureReported = false;
+    if (it->translationJob != nullptr && it->jobInImage != inImage) {
+        it->translationJob->cancel();
+        it->translationJob->deleteLater();
+        it->translationJob = nullptr;
+    }
+    if (it->translationJob == nullptr) {
+        QStringList texts;
+        if (inImage) {
+            for (const auto& line : it->overlayTranslation.presentation->lines)
+                texts.append(line.text);
+        } else {
+            texts.append(it->editingSession != nullptr ? it->editingSession->originalText()
+                                                       : QString());
+            it->translationText.clear();
+            if (it->translationSession != nullptr)
+                it->translationSession->replaceTextWithoutHistory({});
         }
-        overlay.status = pending ? TextCacheEntry::TranslationStatus::Streaming
-                                 : TextCacheEntry::TranslationStatus::Completed;
-        if (!pending) {
-            updateTextState();
+        it->translationJob = m_translationService->createJob(texts, this);
+        it->jobInImage = inImage;
+    }
+    auto* job = it->translationJob.data();
+    disconnect(job, nullptr, this, nullptr);
+    connect(job, &TranslationJob::unitChanged, this,
+            [this, job, key, generation, inImage](int index) {
+                if (generation != m_translationGeneration || key != m_translationKey)
+                    return;
+                auto entry = m_textCache.find(key);
+                if (entry == m_textCache.end())
+                    return;
+                const auto& text = job->units().at(index).text;
+                if (!inImage) {
+                    entry->translationText = text;
+                    if (entry->translationSession != nullptr)
+                        entry->translationSession->replaceTextWithoutHistory(text);
+                    return;
+                }
+                entry->overlayTranslation.presentation->setLineText(index, text);
+                if (m_active && m_mode == Mode::Text && originalImageTranslationActive() &&
+                    key == m_editingKey) {
+                    if (m_actions.updateOcrText)
+                        m_actions.updateOcrText(index, text);
+                    else if (content() != nullptr)
+                        content()->updateOcrText(index, text);
+                }
+            });
+    connect(job, &TranslationJob::stateChanged, this, [this, job, key, generation, inImage] {
+        if (generation != m_translationGeneration)
             return;
-        }
-    } else {
-        it->translationStatus = TextCacheEntry::TranslationStatus::Streaming;
-    }
-    if (m_tableRecognition == nullptr) {
-        failTranslationPreparation(tr("Translation service is unavailable"));
-        return;
-    }
-    ++m_translationGeneration;
-    if (content() != nullptr && m_translating && !m_translationInImage) {
-        content()->setTextEditorStreaming(true);
-    }
-    updateTextState();
-    if (m_tableRecognition->isCustomModel(
-            snow_shot::storage::ScreenshotTranslationSettings().configuration().modelId) ||
-        m_tableRecognition->hasBuiltInModels(m_tableRecognition->cachedChatModelsLocale())) {
-        startTranslationWithModels(m_tableRecognition->cachedChatModels());
-        return;
-    }
-    const QString key = m_translationKey;
-    const quint64 generation = m_translationGeneration;
-    m_modelsRequestToken = m_tableRecognition->fetchChatModels(
-        snow_shot::presentation::LanguageManager::instance().currentLocale().name(), this,
-        [this, generation, key](SnowShotChatModelsResult result) {
-            if (generation != m_translationGeneration || key != m_translationKey) {
-                return;
-            }
-            m_modelsRequestToken = 0;
-            if (!result.succeeded()) {
-                failTranslationPreparation(result.error);
-                return;
-            }
-            startTranslationWithModels(result.models);
-        });
-    if (m_modelsRequestToken == 0) {
-        failTranslationPreparation(tr("Translation service request could not be prepared"));
-    }
-}
-
-void ScreenshotRecognitionSessionController::startTranslationWithModels(
-    const QVector<SnowShotChatModel>& models) {
-    auto it = m_textCache.find(m_translationKey);
-    if (it == m_textCache.end() || m_tableRecognition == nullptr) {
-        return;
-    }
-    if (models.isEmpty()) {
-        failTranslationPreparation(tr("Translation service is unavailable"));
-        return;
-    }
-    auto settings = it->translationConfiguration;
-    if (settings.targetLanguage.isEmpty()) {
-        settings.targetLanguage = defaultTargetLanguage();
-    }
-    if (settings.sourceLanguage.isEmpty()) {
-        settings.sourceLanguage = QStringLiteral("auto");
-    }
-    const int modelIndex = translationModelIndex(models, settings.modelId);
-    if (modelIndex < 0) {
-        failTranslationPreparation(tr("Translation service is unavailable"));
-        return;
-    }
-    if (settings.modelId != models.at(modelIndex).id) {
-        settings.modelId = models.at(modelIndex).id;
-        it->translationConfiguration.modelId = settings.modelId;
-        auto persisted = snow_shot::storage::ScreenshotTranslationSettings().configuration();
-        persisted.modelId = settings.modelId;
-        snow_shot::storage::ScreenshotTranslationSettings().setConfiguration(persisted);
-    }
-    const auto effectiveModel = models.cbegin() + modelIndex;
-    const QString key = m_translationKey;
-    const quint64 generation = m_translationGeneration;
-    const bool usesQwenMt = effectiveModel != models.cend() &&
-                            effectiveModel->translationMode == QStringLiteral("qwen-mt");
-    m_translationRequest = SnowShotTranslationRequest{
-        settings.modelId,
-        usesQwenMt ? settings.sourceLanguage : translationLanguageName(settings.sourceLanguage),
-        usesQwenMt ? settings.targetLanguage : translationLanguageName(settings.targetLanguage),
-        it->editingSession != nullptr ? it->editingSession->originalText() : QString{},
-        effectiveModel != models.cend() ? effectiveModel->translationMode
-                                        : QStringLiteral("default")};
-    if (m_translationInImage) {
-        pumpTranslationQueue();
-        return;
-    }
-    if (it->translationSession == nullptr) {
-        return;
-    }
-    it->translationText.clear();
-    it->translationSession->replaceTextWithoutHistory(QString());
-    m_translationRequestToken = m_tableRecognition->streamTranslation(
-        m_translationRequest, this,
-        [this, generation, key](const QString& delta) {
-            handleTranslationDelta(generation, key, delta);
-        },
-        [this, generation, key](SnowShotTranslationResult result) {
-            handleTranslationFinished(generation, key, std::move(result));
-        });
-    if (m_translationRequestToken == 0) {
-        failTranslationPreparation(tr("Translation request could not be prepared"));
-    }
+        auto entry = m_textCache.find(key);
+        if (entry == m_textCache.end())
+            return;
+        const auto status = job->busy() ? TextCacheEntry::TranslationStatus::Streaming
+                            : job->state() == TranslationJob::State::Completed
+                                ? TextCacheEntry::TranslationStatus::Completed
+                                : TextCacheEntry::TranslationStatus::Failed;
+        if (inImage)
+            entry->overlayTranslation.status = status;
+        else
+            entry->translationStatus = status;
+        if (job->state() != TranslationJob::State::WaitingForModels)
+            entry->translationConfiguration.modelId = job->preferences().modelId;
+        if (content() != nullptr && m_translating && !inImage)
+            content()->setTextEditorStreaming(job->busy());
+        updateTextState();
+    });
+    connect(job, &TranslationJob::finished, this, [this, job, key, generation, inImage] {
+        if (generation != m_translationGeneration)
+            return;
+        if (inImage)
+            reportOverlayTranslationFailure();
+        else
+            handleTranslationFinished(generation, key, job->result());
+    });
+    job->retry();
 }
 
 void ScreenshotRecognitionSessionController::prepareOverlayTranslation(TextCacheEntry& entry) {
@@ -999,108 +985,6 @@ void ScreenshotRecognitionSessionController::prepareOverlayTranslation(TextCache
             : snow_shot::presentation::mergeOcrLayout(entry.presentation->lines,
                                                       entry.presentation->selection.topLeft());
     overlay.presentation->prepareForRendering();
-    overlay.units.resize(overlay.presentation->lines.size());
-    for (int index = 0; index < overlay.units.size(); ++index) {
-        overlay.units[index].sourceText = overlay.presentation->lines.at(index).text;
-        if (overlay.units[index].sourceText.trimmed().isEmpty()) {
-            overlay.units[index].status = TextCacheEntry::TranslationUnit::Status::Completed;
-        }
-    }
-}
-
-void ScreenshotRecognitionSessionController::pumpTranslationQueue() {
-    using UnitStatus = TextCacheEntry::TranslationUnit::Status;
-    const QString key = m_translationKey;
-    const quint64 generation = m_translationGeneration;
-    auto it = m_textCache.find(key);
-    if (!m_translationInImage || it == m_textCache.end() || m_tableRecognition == nullptr) {
-        return;
-    }
-    auto& overlay = it->overlayTranslation;
-    while (m_nextTranslationUnit < overlay.units.size() && m_translationUnitRequests.size() < 4) {
-        const int index = m_nextTranslationUnit++;
-        auto& unit = overlay.units[index];
-        if (unit.status != UnitStatus::Pending) {
-            continue;
-        }
-        unit.status = UnitStatus::Streaming;
-        unit.text.clear();
-        auto request = m_translationRequest;
-        request.text = unit.sourceText;
-        const auto token = m_tableRecognition->streamTranslation(
-            request, this,
-            [this, generation, key, index](const QString& delta) {
-                handleTranslationUnitDelta(generation, key, index, delta);
-            },
-            [this, generation, key, index](SnowShotTranslationResult result) {
-                handleTranslationUnitFinished(generation, key, index, std::move(result));
-            });
-        if (token == 0) {
-            unit.status = UnitStatus::Failed;
-        } else {
-            m_translationUnitRequests.insert(index, token);
-        }
-    }
-    if (m_translationUnitRequests.isEmpty()) {
-        const bool failed =
-            std::any_of(overlay.units.cbegin(), overlay.units.cend(),
-                        [](const auto& unit) { return unit.status == UnitStatus::Failed; });
-        overlay.status = failed ? TextCacheEntry::TranslationStatus::Failed
-                                : TextCacheEntry::TranslationStatus::Completed;
-    }
-    updateTextState();
-    reportOverlayTranslationFailure();
-}
-
-void ScreenshotRecognitionSessionController::handleTranslationUnitDelta(quint64 generation,
-                                                                        const QString& key,
-                                                                        int lineIndex,
-                                                                        const QString& delta) {
-    if (generation != m_translationGeneration || key != m_translationKey || delta.isEmpty()) {
-        return;
-    }
-    auto it = m_textCache.find(key);
-    if (it == m_textCache.end() || !m_translationUnitRequests.contains(lineIndex)) {
-        return;
-    }
-    auto& overlay = it->overlayTranslation;
-    auto& unit = overlay.units[lineIndex];
-    unit.text += delta;
-    overlay.presentation->setLineText(lineIndex, unit.text);
-    if (m_active && m_mode == Mode::Text && originalImageTranslationActive() &&
-        key == m_editingKey) {
-        if (m_actions.updateOcrText) {
-            m_actions.updateOcrText(lineIndex, unit.text);
-        } else if (content() != nullptr) {
-            content()->updateOcrText(lineIndex, unit.text);
-        }
-    }
-}
-
-void ScreenshotRecognitionSessionController::handleTranslationUnitFinished(
-    quint64 generation, const QString& key, int lineIndex, SnowShotTranslationResult result) {
-    if (generation != m_translationGeneration || key != m_translationKey) {
-        return;
-    }
-    auto it = m_textCache.find(key);
-    if (it == m_textCache.end() || !m_translationUnitRequests.remove(lineIndex)) {
-        return;
-    }
-    auto& unit = it->overlayTranslation.units[lineIndex];
-    unit.status = result.succeeded() && !unit.text.trimmed().isEmpty()
-                      ? TextCacheEntry::TranslationUnit::Status::Completed
-                      : TextCacheEntry::TranslationUnit::Status::Failed;
-    if (result.httpStatus == 429) {
-        // Rate limiting applies to the batch, not just this box. Preserve
-        // in-flight results, but leave unsent boxes for an explicit retry
-        // instead of immediately sending more work to the rejecting server.
-        for (auto& pending : it->overlayTranslation.units) {
-            if (pending.status == TextCacheEntry::TranslationUnit::Status::Pending)
-                pending.status = TextCacheEntry::TranslationUnit::Status::Failed;
-        }
-        m_nextTranslationUnit = it->overlayTranslation.units.size();
-    }
-    pumpTranslationQueue();
 }
 
 void ScreenshotRecognitionSessionController::reportOverlayTranslationFailure() {
@@ -1123,11 +1007,6 @@ void ScreenshotRecognitionSessionController::failTranslationPreparation(const QS
     }
     if (m_translationInImage) {
         it->overlayTranslation.status = TextCacheEntry::TranslationStatus::Failed;
-        for (auto& unit : it->overlayTranslation.units) {
-            if (unit.status != TextCacheEntry::TranslationUnit::Status::Completed) {
-                unit.status = TextCacheEntry::TranslationUnit::Status::Failed;
-            }
-        }
         reportOverlayTranslationFailure();
     } else {
         it->translationStatus = TextCacheEntry::TranslationStatus::Failed;
@@ -1143,48 +1022,17 @@ void ScreenshotRecognitionSessionController::failTranslationPreparation(const QS
 
 void ScreenshotRecognitionSessionController::cancelTranslationRequests() {
     ++m_translationGeneration;
-    if (m_tableRecognition != nullptr) {
-        if (m_modelsRequestToken != 0) {
-            m_tableRecognition->cancel(m_modelsRequestToken);
-        }
-        if (m_translationRequestToken != 0) {
-            m_tableRecognition->cancel(m_translationRequestToken);
-        }
-        for (const auto token : std::as_const(m_translationUnitRequests)) {
-            m_tableRecognition->cancel(token);
-        }
-    }
-    m_modelsRequestToken = 0;
-    m_translationRequestToken = 0;
-    m_translationUnitRequests.clear();
     auto it = m_textCache.find(m_translationKey);
-    if (it != m_textCache.end()) {
-        if (it->translationStatus == TextCacheEntry::TranslationStatus::Streaming) {
-            it->translationStatus = TextCacheEntry::TranslationStatus::Absent;
-        }
-        if (it->overlayTranslation.status == TextCacheEntry::TranslationStatus::Streaming) {
-            it->overlayTranslation.status = TextCacheEntry::TranslationStatus::Failed;
-            for (auto& unit : it->overlayTranslation.units) {
-                if (unit.status != TextCacheEntry::TranslationUnit::Status::Completed) {
-                    unit.status = TextCacheEntry::TranslationUnit::Status::Failed;
-                }
-            }
-        }
-    }
-}
-
-void ScreenshotRecognitionSessionController::handleTranslationDelta(quint64 generation,
-                                                                    const QString& key,
-                                                                    const QString& delta) {
-    if (generation != m_translationGeneration) {
+    if (it == m_textCache.end())
         return;
+    if (it->translationJob != nullptr) {
+        disconnect(it->translationJob, nullptr, this, nullptr);
+        it->translationJob->cancel();
     }
-    auto it = m_textCache.find(key);
-    if (it == m_textCache.end() || it->translationSession == nullptr) {
-        return;
-    }
-    it->translationText += delta;
-    it->translationSession->replaceTextWithoutHistory(it->translationText);
+    if (it->translationStatus == TextCacheEntry::TranslationStatus::Streaming)
+        it->translationStatus = TextCacheEntry::TranslationStatus::Absent;
+    if (it->overlayTranslation.status == TextCacheEntry::TranslationStatus::Streaming)
+        it->overlayTranslation.status = TextCacheEntry::TranslationStatus::Failed;
 }
 
 void ScreenshotRecognitionSessionController::handleTranslationFinished(
@@ -1192,7 +1040,6 @@ void ScreenshotRecognitionSessionController::handleTranslationFinished(
     if (generation != m_translationGeneration) {
         return;
     }
-    m_translationRequestToken = 0;
     auto it = m_textCache.find(key);
     if (it == m_textCache.end() || it->translationSession == nullptr) {
         return;
@@ -1215,267 +1062,16 @@ void ScreenshotRecognitionSessionController::handleTranslationFinished(
     updateTextState();
 }
 
-void ScreenshotRecognitionSessionController::showTranslationSettingsModal(
-    const QVector<SnowShotChatModel>& models) {
-    QWidget* owner =
-        m_actions.translationSettingsOwner ? m_actions.translationSettingsOwner() : content();
-    if (owner == nullptr) {
-        owner = content();
-    }
-    if (owner == nullptr || m_translationSettingsModal != nullptr) {
-        return;
-    }
-    auto current = snow_shot::storage::ScreenshotTranslationSettings().configuration();
-    if (current.sourceLanguage.isEmpty()) {
-        current.sourceLanguage = QStringLiteral("auto");
-    }
-    if (current.targetLanguage.isEmpty()) {
-        current.targetLanguage = defaultTargetLanguage();
-    }
-    if (const int index = translationModelIndex(models, current.modelId); index >= 0) {
-        current.modelId = models.at(index).id;
-    }
-
-    auto* body = new QWidget;
-    auto* bodyLayout = new QVBoxLayout(body);
-    bodyLayout->setContentsMargins(0, 0, 0, 0);
-    bodyLayout->setSpacing(12);
-
-    auto* errorAlert = new adqt::widgets::AdAlert(body);
-    errorAlert->setObjectName(QStringLiteral("screenshotTranslationSettingsError"));
-    errorAlert->setSeverity(adqt::widgets::AdAlert::Severity::Error);
-    errorAlert->setText(tr("Unable to load translation services"));
-    auto* retryButton = new adqt::widgets::AdButton(tr("Retry"), errorAlert);
-    retryButton->setObjectName(QStringLiteral("screenshotTranslationSettingsRetry"));
-    retryButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Text);
-    retryButton->setAccentRole(adqt::widgets::AdButton::AccentRole::Primary);
-    retryButton->setSizeClass(adqt::widgets::AdButton::SizeClass::Small);
-    errorAlert->setActionsWidget(retryButton);
-    errorAlert->hide();
-    bodyLayout->addWidget(errorAlert);
-
-    auto* form = new adqt::widgets::AdForm(body);
-    form->setFormLayout(adqt::widgets::AdForm::FormLayout::Vertical);
-    auto* source = new adqt::widgets::AdSelect(form);
-    auto* target = new adqt::widgets::AdSelect(form);
-    auto* service = new adqt::widgets::AdSelect(form);
-    // Keep the form's three-size enum from overriding the switch's two-size enum.
-    auto* originalImageRow = new QWidget(form);
-    auto* originalImageLayout = new QHBoxLayout(originalImageRow);
-    originalImageLayout->setContentsMargins(0, 0, 0, 0);
-    auto* originalImage = new adqt::widgets::AdSwitch(originalImageRow);
-    originalImage->setObjectName(QStringLiteral("screenshotTranslationOriginalImage"));
-    originalImage->setControlSize(adqt::widgets::AdSwitch::ControlSize::Medium);
-    originalImageLayout->addWidget(originalImage);
-    originalImageLayout->addStretch();
-    originalImage->setChecked(
-        snow_shot::storage::ScreenshotTranslationSettings().originalImageTranslationEnabled());
-    originalImage->setAccessibleName(tr("Original Image Translation"));
-    source->setObjectName(QStringLiteral("screenshotTranslationSourceLanguage"));
-    target->setObjectName(QStringLiteral("screenshotTranslationTargetLanguage"));
-    source->setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
-    target->setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
-    service->setPopupLayerMode(adqt::widgets::AdSelect::PopupLayerMode::QtTool);
-    QVector<adqt::widgets::AdSelect::Option> sourceOptions{
-        {QStringLiteral("auto"), tr("Auto-detect language")}};
-    QVector<adqt::widgets::AdSelect::Option> targetOptions;
-    for (const TranslationLanguage& language : snow_shot::presentation::translationLanguages()) {
-        const adqt::widgets::AdSelect::Option option = translationLanguageOption(language);
-        sourceOptions.push_back(option);
-        targetOptions.push_back(option);
-    }
-    QVector<adqt::widgets::AdSelect::Option> serviceOptions;
-    for (const SnowShotChatModel& model : models) {
-        if (!model.supportsTranslation()) {
-            continue;
-        }
-        serviceOptions.push_back({model.id, model.name, false,
-                                  model.translationMode == QStringLiteral("default")
-                                      ? tr("General Models")
-                                      : tr("Translation Models")});
-    }
-    source->setOptions(sourceOptions);
-    target->setOptions(targetOptions);
-    source->setCurrentValue(current.sourceLanguage);
-    target->setCurrentValue(current.targetLanguage);
-    if (!serviceOptions.isEmpty()) {
-        service->setOptions(serviceOptions);
-        service->setCurrentValue(current.modelId);
-    }
-    service->setEnabled(!serviceOptions.isEmpty());
-    form->addField(tr("Source language"), source, QStringLiteral("source"));
-    form->addField(tr("Target language"), target, QStringLiteral("target"));
-    form->addField(tr("Translation service"), service, QStringLiteral("service"));
-    form->addField(tr("Original Image Translation"), originalImageRow,
-                   QStringLiteral("originalImage"));
-    bodyLayout->addWidget(form);
-
-    auto* modal = new adqt::widgets::AdModal(this);
-    modal->setObjectName(QStringLiteral("screenshotTranslationSettingsModal"));
-    modal->setOwnerWindow(owner);
-    modal->setMode(adqt::widgets::AdModal::Mode::Window);
-    modal->setWindowModality(Qt::ApplicationModal);
-    modal->setWindowTitle(tr("Translation settings"));
-    modal->setCentered(true);
-    modal->setPreferredWidth(440);
-    modal->setMaskVisible(false);
-    modal->setCloseOnMaskClick(false);
-    modal->setClosePolicy(adqt::widgets::AdModal::ClosePolicy::Manual);
-    modal->setAcceptText(tr("OK"));
-    modal->setRejectText(tr("Cancel"));
-    modal->setStandardButtons(adqt::widgets::AdModal::StandardButton::Ok |
-                              adqt::widgets::AdModal::StandardButton::Cancel);
-    modal->setContentWidget(body);
-    modal->setInitialFocusWidget(source);
-    m_translationSettingsModal = modal;
-    connect(modal, &adqt::widgets::AdModal::closeRequested, modal,
-            [this, modal, source, target, service,
-             originalImage](adqt::widgets::AdModal::CloseReason reason) {
-                if (reason != adqt::widgets::AdModal::CloseReason::OkAction) {
-                    modal->reject();
-                    return;
-                }
-                const snow_shot::storage::ScreenshotTranslationConfiguration selected{
-                    source->currentValue().toString(), target->currentValue().toString(),
-                    service->currentValue().toString(),
-                    snow_shot::storage::ScreenshotTranslationSettings().layoutProcessing()};
-                if (!service->isEnabled() || selected.sourceLanguage.isEmpty() ||
-                    selected.targetLanguage.isEmpty() || selected.modelId.isEmpty()) {
-                    return;
-                }
-                const snow_shot::storage::ScreenshotTranslationSettings settings;
-                const bool restartTranslation =
-                    m_translating &&
-                    settings.originalImageTranslationEnabled() != originalImage->isChecked();
-                if (restartTranslation) {
-                    endTextEditing();
-                }
-                settings.setConfiguration(selected);
-                settings.setOriginalImageTranslationEnabled(originalImage->isChecked());
-                if (restartTranslation) {
-                    invalidateCurrentTranslation(false);
-                    beginTextTranslation();
-                }
-                modal->accept();
-            });
-    connect(modal, &adqt::widgets::AdModal::finished, modal,
-            [this, modal](adqt::widgets::AdModal::DialogCode) {
-                if (m_settingsModelsRequestToken != 0 && m_tableRecognition != nullptr) {
-                    m_tableRecognition->cancel(m_settingsModelsRequestToken);
-                    m_settingsModelsRequestToken = 0;
-                }
-                if (m_translationSettingsModal == modal) {
-                    m_translationSettingsModal = nullptr;
-                }
-                modal->deleteLater();
-            });
-    modal->open();
-
-    const auto applyModels = [form, service, errorAlert, modal,
-                              current](const QVector<SnowShotChatModel>& availableModels) {
-        QVector<adqt::widgets::AdSelect::Option> options;
-        options.reserve(availableModels.size());
-        for (const SnowShotChatModel& model : availableModels) {
-            if (!model.supportsTranslation()) {
-                continue;
-            }
-            options.push_back({model.id, model.name, false,
-                               model.translationMode == QStringLiteral("default")
-                                   ? tr("General Models")
-                                   : tr("Translation Models")});
-        }
-        if (modal->acceptButton() != nullptr) {
-            modal->acceptButton()->setEnabled(!options.isEmpty());
-        }
-        errorAlert->setVisible(options.isEmpty());
-        if (options.isEmpty()) {
-            service->setCurrentValue(QVariant());
-            errorAlert->setInformativeText(tr("Translation service is unavailable"));
-            service->setLoading(false);
-            service->setEnabled(false);
-            form->hide();
-            return;
-        }
-        const QString selectedId = service->currentValue().toString().isEmpty()
-                                       ? current.modelId
-                                       : service->currentValue().toString();
-        service->setOptions(options);
-        const int index = translationModelIndex(availableModels, selectedId);
-        service->setCurrentValue(availableModels.at(index).id);
-        service->setLoading(false);
-        service->setEnabled(true);
-        form->show();
-    };
-    connect(m_tableRecognition, &SnowShotApiClient::chatModelsChanged, modal,
-            [this, applyModels]() { applyModels(m_tableRecognition->cachedChatModels()); });
-    if (!models.isEmpty()) {
-        applyModels(models);
-    }
-    if (m_tableRecognition->hasBuiltInModels(
-            snow_shot::presentation::LanguageManager::instance().currentLocale().name())) {
-        return;
-    }
-
-    const QPointer<adqt::widgets::AdModal> modalGuard(modal);
-    const QPointer<adqt::widgets::AdAlert> alertGuard(errorAlert);
-    const QPointer<adqt::widgets::AdButton> retryGuard(retryButton);
-    const QPointer<adqt::widgets::AdSelect> serviceGuard(service);
-    const QPointer<adqt::widgets::AdForm> formGuard(form);
-    auto requestModels = std::make_shared<std::function<void()>>();
-    *requestModels = [this, modalGuard, alertGuard, retryGuard, serviceGuard, formGuard,
-                      applyModels]() {
-        if (modalGuard == nullptr || alertGuard == nullptr || retryGuard == nullptr ||
-            serviceGuard == nullptr || formGuard == nullptr || m_tableRecognition == nullptr ||
-            m_settingsModelsRequestToken != 0) {
-            return;
-        }
-        alertGuard->hide();
-        retryGuard->setBusy(true);
-        const bool hasLocalOptions = !m_tableRecognition->cachedChatModels().isEmpty();
-        serviceGuard->setLoading(!hasLocalOptions);
-        serviceGuard->setEnabled(hasLocalOptions);
-        m_settingsModelsRequestToken = m_tableRecognition->fetchChatModels(
-            snow_shot::presentation::LanguageManager::instance().currentLocale().name(), this,
-            [this, modalGuard, alertGuard, retryGuard, serviceGuard, formGuard,
-             applyModels](SnowShotChatModelsResult result) {
-                m_settingsModelsRequestToken = 0;
-                if (modalGuard == nullptr || alertGuard == nullptr || retryGuard == nullptr ||
-                    serviceGuard == nullptr || formGuard == nullptr) {
-                    return;
-                }
-                serviceGuard->setLoading(false);
-                retryGuard->setBusy(false);
-                if (!result.succeeded()) {
-                    serviceGuard->setEnabled(false);
-                    alertGuard->setInformativeText(result.error.isEmpty()
-                                                       ? tr("Translation service request failed")
-                                                       : result.error);
-                    formGuard->hide();
-                    alertGuard->show();
-                    return;
-                }
-                alertGuard->hide();
-                applyModels(result.models);
-            });
-        if (m_settingsModelsRequestToken == 0) {
-            serviceGuard->setLoading(false);
-            retryGuard->setBusy(false);
-            alertGuard->setInformativeText(tr("Translation service request could not be prepared"));
-            formGuard->hide();
-            alertGuard->show();
-        }
-    };
-    connect(retryButton, &adqt::widgets::AdButton::clicked, modal,
-            [requestModels]() { (*requestModels)(); });
-    (*requestModels)();
-}
-
 void ScreenshotRecognitionSessionController::invalidateCurrentTranslation(bool restartIfVisible) {
     auto it = m_textCache.find(m_translationKey.isEmpty() ? m_textCacheKey : m_translationKey);
     if (it == m_textCache.end()) {
         return;
     }
     cancelTranslationRequests();
+    if (it->translationJob != nullptr) {
+        it->translationJob->deleteLater();
+        it->translationJob = nullptr;
+    }
     it->translationStatus = TextCacheEntry::TranslationStatus::Absent;
     it->translationText.clear();
     it->successfulTranslation.clear();
@@ -2225,22 +1821,10 @@ void ScreenshotRecognitionSessionController::cancelOutstandingRequests() {
     if (m_tableRecognition != nullptr && m_tableRequestToken != 0) {
         m_tableRecognition->cancel(m_tableRequestToken);
     }
-    if (m_tableRecognition != nullptr && m_modelsRequestToken != 0) {
-        m_tableRecognition->cancel(m_modelsRequestToken);
-    }
-    if (m_tableRecognition != nullptr && m_settingsModelsRequestToken != 0) {
-        m_tableRecognition->cancel(m_settingsModelsRequestToken);
-    }
-    if (m_tableRecognition != nullptr && m_translationRequestToken != 0) {
-        m_tableRecognition->cancel(m_translationRequestToken);
-    }
     m_textRequestToken = 0;
     m_textRenderRequestToken = 0;
     m_qrRequestToken = 0;
     m_tableRequestToken = 0;
-    m_modelsRequestToken = 0;
-    m_settingsModelsRequestToken = 0;
-    m_translationRequestToken = 0;
     ++m_textRenderGeneration;
     hideModelDownloadMessage();
     m_textModelDownloadInProgress = false;
@@ -2269,14 +1853,8 @@ void ScreenshotRecognitionSessionController::handleRecognitionProviderDestroyed(
         ++m_textGeneration;
         break;
     case Mode::Table:
-        translationWasPending = m_modelsRequestToken != 0 || m_settingsModelsRequestToken != 0 ||
-                                m_translationRequestToken != 0;
-        requestWasPending = m_tableRequestToken != 0 || m_modelsRequestToken != 0 ||
-                            m_settingsModelsRequestToken != 0 || m_translationRequestToken != 0;
+        requestWasPending = m_tableRequestToken != 0;
         m_tableRequestToken = 0;
-        m_modelsRequestToken = 0;
-        m_settingsModelsRequestToken = 0;
-        m_translationRequestToken = 0;
         ++m_tableGeneration;
         ++m_translationGeneration;
         if (auto it = m_textCache.find(m_translationKey);

@@ -357,7 +357,9 @@ void translationLanguageSelectsUseCodePrefixGroups() {
         {},
         QStringLiteral("test-model"),
         true};
-    apiClient.setCustomModels({model});
+    const auto previousModels = snow_shot::storage::ApiConfigurationSettings().customModels();
+    require(snow_shot::storage::ApiConfigurationSettings().setCustomModels({model}),
+            "configure custom model through the shared settings boundary");
     ScreenshotRecognitionSessionActions actions;
     actions.translationSettingsOwner = [&owner]() { return &owner; };
     auto controller = std::make_unique<ScreenshotRecognitionSessionController>(
@@ -436,6 +438,8 @@ void translationLanguageSelectsUseCodePrefixGroups() {
             "Cancel should discard edits to the original image translation toggle");
     require(settings.setOriginalImageTranslationEnabled(previousOriginalImage),
             "restore original image translation setting");
+    require(snow_shot::storage::ApiConfigurationSettings().setCustomModels(previousModels),
+            "restore custom models");
     QCoreApplication::sendPostedEvents();
     QCoreApplication::processEvents();
 }

@@ -414,12 +414,8 @@ void TranslationPageWidget::syncState() {
     m_selects[1]->setCurrentValue(preferences.targetLanguage);
     QVector<AdSelect::Option> services;
     for (const auto& model : m_controller->models()) {
-        if (!model.supportsVision) {
-            services.push_back({model.id, model.name, false,
-                                model.translationMode == QStringLiteral("default")
-                                    ? tr("General Models")
-                                    : tr("Translation Models")});
-        }
+        services.push_back(
+            {model.id, model.name, false, snow_shot::translation::translationModelGroup(model)});
     }
     // Preserve an open selector's search and focus while output tokens arrive.
     const auto previousServices = m_selects[2]->options();
@@ -432,8 +428,8 @@ void TranslationPageWidget::syncState() {
         m_selects[2]->setOptions(services);
     }
     m_selects[2]->setCurrentValue(preferences.modelId);
-    m_selects[2]->setLoading(m_controller->loadingModels());
-    m_selects[2]->setEnabled(!services.isEmpty() && !m_controller->loadingModels());
+    m_selects[2]->setLoading(services.isEmpty() && m_controller->loadingModels());
+    m_selects[2]->setEnabled(!services.isEmpty());
     m_swap->setEnabled(preferences.sourceLanguage != QStringLiteral("auto") &&
                        preferences.sourceLanguage != preferences.targetLanguage);
     // Lifecycle changes clear stale output or flush final/error output synchronously.

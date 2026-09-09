@@ -59,8 +59,9 @@ class TitleBarBottomShadowWidget final : public QWidget {
 
 MainWindow::MainWindow(const snow_shot::presentation::settings::SettingsRegistry& registry,
                        snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession,
-                       QWidget* parent)
-    : QMainWindow(parent), m_settingsRegistry(registry), m_runtimeSession(runtimeSession) {
+                       QWidget* parent, SnowShotApiClient* translationClient)
+    : QMainWindow(parent), m_translationClient(translationClient), m_settingsRegistry(registry),
+      m_runtimeSession(runtimeSession) {
     setObjectName(QStringLiteral("snowShotMainWindow"));
     setAccessibleName(QStringLiteral("SnowShot"));
     setWindowTitle(QStringLiteral("SnowShot"));
@@ -171,7 +172,8 @@ void MainWindow::buildUi() {
     contentAreaLayout->setContentsMargins(metric.padding, metric.padding, metric.padding,
                                           metric.padding);
     contentAreaLayout->setSpacing(0);
-    auto* contentCard = new ContentCardWidget(m_settingsRegistry, m_runtimeSession, contentArea);
+    auto* contentCard = new ContentCardWidget(m_settingsRegistry, m_runtimeSession, contentArea,
+                                              m_translationClient);
     contentAreaLayout->addWidget(contentCard, 1);
     m_contentCard = contentCard;
     contentShellLayout->addWidget(contentArea, 1);
