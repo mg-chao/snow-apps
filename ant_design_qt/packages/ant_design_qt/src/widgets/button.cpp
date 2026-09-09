@@ -269,7 +269,7 @@ qreal snapToDevicePixel(qreal value, qreal dpr) {
   return qRound(value * dpr) / dpr;
 }
 
-void drawCenteredPixmap(QPainter& painter, const QRect& iconRect, const QPixmap& pixmap,
+void drawCenteredPixmap(QPainter& painter, const QRectF& iconRect, const QPixmap& pixmap,
                         qreal pixmapDpr, qreal rotationDegrees = 0.0) {
   if (pixmap.isNull()) {
     return;
@@ -295,7 +295,7 @@ void drawCenteredPixmap(QPainter& painter, const QRect& iconRect, const QPixmap&
   painter.drawPixmap(drawTopLeft, pixmap);
 }
 
-void drawRotatingTokenIcon(QPainter& painter, const QRect& iconRect,
+void drawRotatingTokenIcon(QPainter& painter, const QRectF& iconRect,
                            const adqt::icons::IconRef& token, qreal rotationDegrees) {
   if (!adqt::icons::isValid(token) || iconRect.isEmpty()) {
     return;
@@ -438,7 +438,7 @@ struct AdButton::ContentLayout {
   bool hasText = false;
   bool hasIcon = false;
   QString text;
-  QRect iconRect;
+  QRectF iconRect;
   QRect textRect;
 };
 
@@ -928,7 +928,7 @@ void AdButton::paintEvent(QPaintEvent* event) {
       } else {
         const qreal pixmapDpr = painter.device() ? painter.device()->devicePixelRatioF() : 1.0;
         adqt::icons::IconRenderRequest request;
-        request.logicalSize = layout.iconRect.size();
+        request.logicalSize = layout.iconRect.size().toSize();
         request.devicePixelRatio = pixmapDpr;
         const QPixmap pixmap = adqt::icons::renderIconPixmap(iconToRender, request);
         if (!pixmap.isNull()) {
@@ -941,10 +941,10 @@ void AdButton::paintEvent(QPaintEvent* event) {
               ? QIcon::Disabled
               : (isDown() ? QIcon::Selected : (d_->hovered ? QIcon::Active : QIcon::Normal));
       const QIcon::State fallbackIconState = isChecked() ? QIcon::On : QIcon::Off;
-      const QPixmap pixmap =
-          QAbstractButton::icon().pixmap(layout.iconRect.size(), iconMode, fallbackIconState);
+      const QPixmap pixmap = QAbstractButton::icon().pixmap(layout.iconRect.size().toSize(),
+                                                            iconMode, fallbackIconState);
       if (!pixmap.isNull()) {
-        drawCenteredPixmap(painter, layout.iconRect, pixmap, pixmap.devicePixelRatio());
+        drawCenteredPixmap(painter, layout.iconRect, pixmap, dpr);
       }
     }
   }
@@ -1558,7 +1558,7 @@ QRect AdButton::busyIndicatorRect() const {
   return computeContentLayout(contentRect, QSize(iconSide, iconSide), displayText, fm,
                               style.metrics.iconGap, style.metrics.font,
                               shouldApplyTwoCjkSpacing(displayText), mnemonicTextFlags(this))
-      .iconRect;
+      .iconRect.toRect();
 }
 
 QColor AdButton::busyIndicatorColor() const {
@@ -1852,23 +1852,24 @@ AdButton::ContentLayout AdButton::computeContentLayout(
                              : d_->iconPosition == IconPosition::Trailing;
 
   if (layout.hasIcon && layout.hasText) {
-    const int iconY = contentRect.top() + (contentRect.height() - iconSize.height()) / 2;
+    const qreal iconY = contentRect.top() + (contentRect.height() - iconSize.height()) / 2.0;
     const int textY = contentRect.top() + (contentRect.height() - textHeight) / 2;
     if (iconFirst) {
-      layout.iconRect = QRect(startX, iconY, iconSize.width(), iconSize.height());
-      layout.textRect = QRect(layout.iconRect.right() + 1 + gap, textY, textWidth, textHeight);
+      layout.iconRect = QRectF(startX, iconY, iconSize.width(), iconSize.height());
+      layout.textRect = QRect(startX + iconSize.width() + gap, textY, textWidth, textHeight);
     } else {
       layout.textRect = QRect(startX, textY, textWidth, textHeight);
       layout.iconRect =
-          QRect(layout.textRect.right() + 1 + gap, iconY, iconSize.width(), iconSize.height());
+          QRectF(layout.textRect.right() + 1 + gap, iconY, iconSize.width(), iconSize.height());
     }
     return layout;
   }
 
   if (layout.hasIcon) {
-    const int iconX = contentRect.left() + (contentRect.width() - iconSize.width()) / 2;
-    const int iconY = contentRect.top() + (contentRect.height() - iconSize.height()) / 2;
-    layout.iconRect = QRect(iconX, iconY, iconSize.width(), iconSize.height());
+    // Keep half-logical-pixel centers until rasterization on the actual device.
+    const qreal iconX = contentRect.left() + (contentRect.width() - iconSize.width()) / 2.0;
+    const qreal iconY = contentRect.top() + (contentRect.height() - iconSize.height()) / 2.0;
+    layout.iconRect = QRectF(iconX, iconY, iconSize.width(), iconSize.height());
   }
 
   if (layout.hasText) {
@@ -1880,8 +1881,8 @@ AdButton::ContentLayout AdButton::computeContentLayout(
   return layout;
 }
 
-void AdButton::drawSpinner(QPainter& painter, const QRect& iconRect, const QColor& color) const {
-  const int side = std::max(8, std::min(iconRect.width(), iconRect.height()) - 2);
+void AdButton::drawSpinner(QPainter& painter, const QRectF& iconRect, const QColor& color) const {
+  const qreal side = std::max(8.0, std::min(iconRect.width(), iconRect.height()) - 2.0);
   const QPointF center = QRectF(iconRect).center();
   const QRectF spinnerRect(center.x() - side / 2.0, center.y() - side / 2.0, side, side);
   const qreal strokeWidth = std::clamp(

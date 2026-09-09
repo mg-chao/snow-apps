@@ -4,9 +4,13 @@
 #include "../src/presentation/tools/screenshottoolpalettebuttons.h"
 
 #include "widgets/button.h"
+#include "widgets/control_scale.h"
+#include "widgets/color_picker.h"
 #include "widgets/radio.h"
+#include "widgets/select.h"
 #include "widgets/slider.h"
 #include "widgets/tooltip.h"
+#include "antd_icons.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -122,6 +126,83 @@ bool buttonIconContainsColor(const adqt::widgets::AdButton* button, const QColor
     request.devicePixelRatio = 1.0;
     return imageContainsColor(adqt::icons::renderIconPixmap(button->iconRef(), request).toImage(),
                               expected);
+}
+
+void smallToolbarIconStaysVerticallyCentered() {
+    ScreenshotToolbarMainPanel panel(ScreenshotToolbarMainPanel::Options{});
+    adqt::widgets::AdControlScaleScope scaleScope(&panel);
+    auto* button =
+        panel.createToolButton(nullptr, adqt::icons::antd::outlined::Border().withColors(
+                                            adqt::icons::IconColors::primary(Qt::magenta)));
+    scaleScope.publishScale(
+        adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(1.0, 1.0, 0.8));
+    panel.setPhysicalScale(0.8);
+    button->ensurePolished();
+    const qreal dpr = button->devicePixelRatioF();
+    QImage image(button->size() * dpr, QImage::Format_ARGB32_Premultiplied);
+    image.setDevicePixelRatio(dpr);
+    image.fill(Qt::transparent);
+    button->render(&image);
+    int top = image.height();
+    int bottom = -1;
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            const QColor color = image.pixelColor(x, y);
+            if (color.red() > 200 && color.blue() > 200 && color.green() < 100) {
+                top = qMin(top, y);
+                bottom = qMax(bottom, y);
+            }
+        }
+    }
+    require(bottom >= top, "the centering probe must render the toolbar icon");
+    require(qAbs(top - (image.height() - bottom - 1)) <= 1,
+            "Small toolbar icons must be centered at the rendering device pixel ratio");
+}
+
+void toolbarControlsStayVerticallyCentered() {
+    ScreenshotToolPalette toolbar(ScreenshotToolPalette::Options{});
+    adqt::widgets::AdControlScaleScope scaleScope(&toolbar);
+    prepare(toolbar);
+    toolbar.show();
+    bool centered = true;
+    for (const qreal scale : {1.0, 0.8, 0.64, 0.8 / 1.5, 0.4, 1.25, 0.8, 1.0}) {
+        scaleScope.publishScale(
+            adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(1.0, 1.0, scale));
+        toolbar.setPhysicalScale(scale);
+        for (const auto tool :
+             {ScreenshotToolPalette::Tool::Shape, ScreenshotToolPalette::Tool::Arrow,
+              ScreenshotToolPalette::Tool::Spotlight, ScreenshotToolPalette::Tool::Filter,
+              ScreenshotToolPalette::Tool::Text, ScreenshotToolPalette::Tool::Select}) {
+            toolbar.setActiveTool(tool);
+            flushEvents();
+            for (QWidget* panel :
+                 {toolbar.mainPanel(), toolbar.stylePanel(), toolbar.actionPanel()}) {
+                if (panel == nullptr || !panel->isVisible()) {
+                    continue;
+                }
+                for (QWidget* child : panel->findChildren<QWidget*>()) {
+                    if (!child->isVisible() || child->isWindow() ||
+                        (qobject_cast<adqt::widgets::AdButton*>(child) == nullptr &&
+                         qobject_cast<adqt::widgets::AdRadio*>(child) == nullptr &&
+                         qobject_cast<adqt::widgets::AdSlider*>(child) == nullptr &&
+                         qobject_cast<adqt::widgets::AdSelect*>(child) == nullptr &&
+                         qobject_cast<adqt::widgets::AdColorPicker*>(child) == nullptr)) {
+                        continue;
+                    }
+                    const int top = child->mapTo(panel, QPoint()).y();
+                    const int bottom = panel->height() - top - child->height();
+                    if (qAbs(top - bottom) > 1) {
+                        centered = false;
+                        std::cerr << "scale=" << scale
+                                  << " panel=" << panel->objectName().toStdString()
+                                  << " child=" << child->objectName().toStdString()
+                                  << " top=" << top << " bottom=" << bottom << '\n';
+                    }
+                }
+            }
+        }
+    }
+    require(centered, "toolbar controls must remain vertically centered at every size");
 }
 
 void historyButtonsFollowCanvasAvailability() {
@@ -830,10 +911,16 @@ void spotlightConfigSurvivesStyleRowEviction() {
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+    if (application.arguments().contains(QStringLiteral("--icon-centering-only"))) {
+        smallToolbarIconStaysVerticallyCentered();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--spotlight-eviction-only"))) {
         spotlightConfigSurvivesStyleRowEviction();
         return 0;
     }
+    smallToolbarIconStaysVerticallyCentered();
+    toolbarControlsStayVerticallyCentered();
     historyButtonsFollowCanvasAvailability();
     toolbarSurfacesFollowThemeBackground();
     toolbarSeparatorsKeepMinimumWidthAtCompactScale();
