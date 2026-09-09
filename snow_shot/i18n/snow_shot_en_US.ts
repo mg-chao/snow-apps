@@ -4,75 +4,195 @@
 <context>
     <name>AboutPageWidget</name>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="164"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="587"/>
         <source>About Snow Shot</source>
         <translation>About Snow Shot</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="165"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="135"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="588"/>
         <source>Snow Shot</source>
         <translation>Snow Shot</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="166"/>
-        <source>Capture, annotate, and share your screen.</source>
-        <translation>Capture, annotate, and share your screen.</translation>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="137"/>
+        <source>Make every moment clear.</source>
+        <translation>Make every moment clear.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="167"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="139"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="610"/>
+        <source>Text recognition</source>
+        <translation>Text recognition</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="140"/>
+        <source>Turn pixels into usable text</source>
+        <translation>Turn pixels into usable text</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="168"/>
+        <source>Screenshot selection, annotation tools, and recognized text</source>
+        <translation>Screenshot selection, annotation tools, and recognized text</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="589"/>
         <source>Snow Shot logo</source>
         <translation>Snow Shot logo</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="168"/>
-        <source>Installed version</source>
-        <translation>Installed version</translation>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="590"/>
+        <source>Free · Open source</source>
+        <translation>Free · Open source</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="169"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="607"/>
+        <source>Elegant screenshots</source>
+        <translation>Elegant screenshots</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="608"/>
+        <source>, excellent work.</source>
+        <translation>, excellent work.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="610"/>
+        <source>Capture, annotate, recognize text, and record your screen,
+so every moment on screen can be expressed clearly and shared easily.</source>
+        <translation>Capture, annotate, recognize text, and record your screen,
+so every moment on screen can be expressed clearly and shared easily.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="612"/>
+        <source>Screenshot capture</source>
+        <translation>Screenshot capture</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="612"/>
+        <source>Easy annotation</source>
+        <translation>Easy annotation</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="599"/>
+        <source>Screen recording</source>
+        <translation>Screen recording</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="600"/>
+        <source>Pin to screen</source>
+        <translation>Pin to screen</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="600"/>
+        <source>Screenshot history</source>
+        <translation>Screenshot history</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="604"/>
+        <source>Current version</source>
+        <translation>Current version</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="605"/>
         <source>Unavailable</source>
         <translation>Unavailable</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="170"/>
-        <source>Installed version: %1</source>
-        <translation>Installed version: %1</translation>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="607"/>
+        <source>Current version: %1</source>
+        <translation>Current version: %1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="172"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="608"/>
+        <source>Preview</source>
+        <translation>Preview</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="613"/>
         <source>Copied</source>
         <translation>Copied</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="172"/>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="173"/>
-        <source>Copy version</source>
-        <translation>Copy version</translation>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="614"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="615"/>
+        <source>Copy version number</source>
+        <translation>Copy version number</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="174"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="616"/>
         <source>Copy the version number to the clipboard</source>
         <translation>Copy the version number to the clipboard</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="177"/>
-        <source>License</source>
-        <translation>License</translation>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="619"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="620"/>
+        <source>Changelog</source>
+        <translation>Changelog</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="178"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="622"/>
+        <source>Official website</source>
+        <translation>Official website</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="623"/>
+        <source>Discover more features and ways to use it</source>
+        <translation>Discover more features and ways to use it</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="625"/>
+        <source>GitHub</source>
+        <translation>GitHub</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="625"/>
+        <source>View the source and improve it together</source>
+        <translation>View the source and improve it together</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="627"/>
+        <source>Feedback and suggestions</source>
+        <translation>Feedback and suggestions</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="628"/>
+        <source>Make the next experience better</source>
+        <translation>Make the next experience better</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="630"/>
+        <source>Built for daily work, and growing with the community.</source>
+        <translation>Built for daily work, and growing with the community.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="632"/>
+        <source>%1 · %2</source>
+        <translation>%1 · %2</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="638"/>
+        <source>Could not open the link. Open %1 in your browser.</source>
+        <translation>Could not open the link. Open %1 in your browser.</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="632"/>
         <source>GNU General Public License v3.0 or later</source>
         <translation>GNU General Public License v3.0 or later</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="179"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="633"/>
         <source>Free and open-source software. Distributed without any warranty.</source>
         <translation>Free and open-source software. Distributed without any warranty.</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="181"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="635"/>
         <source>Copyright © %1 %2</source>
         <translation>Copyright © %1 %2</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="650"/>
+        <source>Snow Shot · Make expression clearer</source>
+        <translation>Snow Shot · Make expression clearer</translation>
     </message>
 </context>
 <context>

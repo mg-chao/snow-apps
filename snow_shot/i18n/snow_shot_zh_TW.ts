@@ -4,75 +4,195 @@
 <context>
     <name>AboutPageWidget</name>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="164"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="587"/>
         <source>About Snow Shot</source>
         <translation>關於 Snow Shot</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="165"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="135"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="588"/>
         <source>Snow Shot</source>
         <translation>Snow Shot</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="166"/>
-        <source>Capture, annotate, and share your screen.</source>
-        <translation>擷取、標註並分享螢幕內容。</translation>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="137"/>
+        <source>Make every moment clear.</source>
+        <translation>每一刻，都能清晰表達。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="167"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="139"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="599"/>
+        <source>Text recognition</source>
+        <translation>文字辨識</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="140"/>
+        <source>Turn pixels into usable text</source>
+        <translation>把畫面變成可用文字</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="168"/>
+        <source>Screenshot selection, annotation tools, and recognized text</source>
+        <translation>截圖選取範圍、標註工具與辨識文字</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="589"/>
         <source>Snow Shot logo</source>
         <translation>Snow Shot 標誌</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="168"/>
-        <source>Installed version</source>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="590"/>
+        <source>Free · Open source</source>
+        <translation>自由 · 開源</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="607"/>
+        <source>Elegant screenshots</source>
+        <translation>優雅截圖</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="608"/>
+        <source>, excellent work.</source>
+        <translation>，出色工作。</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="610"/>
+        <source>Capture, annotate, recognize text, and record your screen,
+so every moment on screen can be expressed clearly and shared easily.</source>
+        <translation>截圖、標註、文字辨識和螢幕錄影，
+讓螢幕上的每一刻都能清晰表達、輕鬆分享。</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="612"/>
+        <source>Screenshot capture</source>
+        <translation>截圖擷取</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="612"/>
+        <source>Easy annotation</source>
+        <translation>輕鬆標註</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="599"/>
+        <source>Screen recording</source>
+        <translation>螢幕錄影</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="600"/>
+        <source>Pin to screen</source>
+        <translation>固定到螢幕</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="600"/>
+        <source>Screenshot history</source>
+        <translation>截圖歷史</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="604"/>
+        <source>Current version</source>
         <translation>目前版本</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="169"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="605"/>
         <source>Unavailable</source>
         <translation>無法使用</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="170"/>
-        <source>Installed version: %1</source>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="607"/>
+        <source>Current version: %1</source>
         <translation>目前版本：%1</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="172"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="608"/>
+        <source>Preview</source>
+        <translation>預覽版</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="613"/>
         <source>Copied</source>
         <translation>已複製</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="172"/>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="173"/>
-        <source>Copy version</source>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="614"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="615"/>
+        <source>Copy version number</source>
         <translation>複製版本號碼</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="174"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="616"/>
         <source>Copy the version number to the clipboard</source>
         <translation>將版本號碼複製到剪貼簿</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="177"/>
-        <source>License</source>
-        <translation>授權條款</translation>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="619"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="620"/>
+        <source>Changelog</source>
+        <translation>更新日誌</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="178"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="622"/>
+        <source>Official website</source>
+        <translation>官方網站</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="623"/>
+        <source>Discover more features and ways to use it</source>
+        <translation>探索更多功能與使用方式</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="625"/>
+        <source>GitHub</source>
+        <translation>GitHub</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="625"/>
+        <source>View the source and improve it together</source>
+        <translation>查看原始碼，一起改進</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="627"/>
+        <source>Feedback and suggestions</source>
+        <translation>回饋與建議</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="628"/>
+        <source>Make the next experience better</source>
+        <translation>讓下一次體驗更好</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="630"/>
+        <source>Built for daily work, and growing with the community.</source>
+        <translation>為日常工作打造，也在社群中持續成長。</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="632"/>
+        <source>%1 · %2</source>
+        <translation>%1 · %2</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="638"/>
+        <source>Could not open the link. Open %1 in your browser.</source>
+        <translation>無法開啟連結。請在瀏覽器中開啟 %1。</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="632"/>
         <source>GNU General Public License v3.0 or later</source>
         <translation>GNU 通用公共授權條款 v3.0 或更新版本</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="179"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="633"/>
         <source>Free and open-source software. Distributed without any warranty.</source>
         <translation>自由開源軟體，不提供任何擔保。</translation>
     </message>
     <message>
-        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="181"/>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="635"/>
         <source>Copyright © %1 %2</source>
         <translation>著作權所有 © %1 %2</translation>
+    </message>
+    <message>
+        <location filename="../src/presentation/components/aboutpagewidget.cpp" line="650"/>
+        <source>Snow Shot · Make expression clearer</source>
+        <translation>Snow Shot · 讓表達更清晰</translation>
     </message>
 </context>
 <context>

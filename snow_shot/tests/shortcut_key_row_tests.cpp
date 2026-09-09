@@ -3,6 +3,7 @@
 #include "snow_shot/presentation/components/infotooltipicon.h"
 #include "snow_shot/presentation/styles/mainwindowcomponenttoken.h"
 #include "snow_shot/presentation/styles/thememanager.h"
+#include "snow_shot/presentation/styles/actionrowstyle.h"
 
 #include "widgets/button.h"
 #include "widgets/modal.h"
@@ -17,6 +18,7 @@
 #include <QFontMetricsF>
 #include <QKeyEvent>
 #include <QKeySequence>
+#include <QImage>
 #include <QLabel>
 #include <QLayout>
 #include <QString>
@@ -41,6 +43,66 @@ void require(bool condition, const char* message) {
     if (!condition) {
         std::cerr << message << '\n';
         std::exit(1);
+    }
+}
+
+void actionRowBordersRetainEqualThicknessAtFractionalScale() {
+    styles::ThemeMapColorToken map;
+    map.colorBgContainer = Qt::transparent;
+    map.colorBorder = Qt::black;
+    for (const qreal dpr : {1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 3.0}) {
+        for (const QSize size : {QSize(600, 44), QSize(601, 45), QSize(602, 46), QSize(603, 47)}) {
+            for (const QPoint origin : {QPoint(0, 0), QPoint(1, 3), QPoint(3, 1)}) {
+                for (const int width : {1, 2}) {
+                    const QRect deviceBounds(
+                        QPoint(qRound(origin.x() * dpr), qRound(origin.y() * dpr)),
+                        QPoint(qRound((origin.x() + size.width()) * dpr) - 1,
+                               qRound((origin.y() + size.height()) * dpr) - 1));
+                    QImage image(deviceBounds.right() + 5, deviceBounds.bottom() + 5,
+                                 QImage::Format_ARGB32_Premultiplied);
+                    image.setDevicePixelRatio(dpr);
+                    image.fill(Qt::transparent);
+                    QPainter painter(&image);
+                    // Match the backing store's rounded clip at fractional child origins.
+                    painter.setClipRect(QRectF(deviceBounds.x() / dpr, deviceBounds.y() / dpr,
+                                               deviceBounds.width() / dpr,
+                                               deviceBounds.height() / dpr));
+                    painter.translate(origin);
+                    styles::paintActionRow(painter, size, map, {}, false, false, 8, width, true);
+                    painter.end();
+
+                    const int depth = qCeil((width + 2) * dpr);
+                    const auto coverage = [&](QPoint start, QPoint direction) {
+                        int alpha = 0;
+                        for (int i = 0; i < depth; ++i) {
+                            alpha += qAlpha(image.pixel(start + direction * i));
+                        }
+                        return alpha;
+                    };
+                    const int x = deviceBounds.center().x();
+                    const int y = deviceBounds.center().y();
+                    const std::array edges{
+                        coverage(QPoint(x, deviceBounds.top()), QPoint(0, 1)),
+                        coverage(QPoint(x, deviceBounds.bottom()), QPoint(0, -1)),
+                        coverage(QPoint(deviceBounds.left(), y), QPoint(1, 0)),
+                        coverage(QPoint(deviceBounds.right(), y), QPoint(-1, 0))};
+                    // Sum antialiased coverage, allowing only 8-bit rasterizer rounding;
+                    // counting nontransparent pixels alone misses partially clipped strokes.
+                    const int expectedCoverage = qRound(width * dpr * 255);
+                    for (const int edge : edges) {
+                        if (std::abs(edge - expectedCoverage) > 4) {
+                            std::cerr << "DPR=" << dpr << " size=" << size.width() << 'x'
+                                      << size.height() << " origin=" << origin.x() << ','
+                                      << origin.y() << " width=" << width << " coverage=" << edge
+                                      << " expected=" << expectedCoverage << '\n';
+                        }
+                        require(std::abs(edge - expectedCoverage) <= 4,
+                                "every action-row edge must retain the full border thickness, "
+                                "including fractional scales and child origins");
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1100,6 +1162,7 @@ int main(int argc, char** argv) {
     }
 
     keyDisplayUsesCanonicalLabels();
+    actionRowBordersRetainEqualThicknessAtFractionalScale();
     statusPresentationUsesSemanticTokens();
     recorderAcceptsOnlyBackendSupportedShortcuts();
     printScreenReleaseRecordsModifiers();

@@ -22,6 +22,9 @@ option(SNOW_SHOT_BUILD_BENCHMARKS "Build opt-in native Snow Shot benchmarks." OF
 option(SNOW_SHOT_SCROLLING_PERF_DETAIL "Compile detailed scrolling C++ and Rust timings." OFF)
 option(SNOW_SHOT_RELEASE_STATIC "Prefer static Snow Shot release linkage." OFF)
 option(SNOW_SHOT_QT_STATIC "Link Snow Shot against a static Qt build." OFF)
+set(SNOW_SHOT_WEBSITE_URL "https://snowshot.top" CACHE STRING "Public Snow Shot website URL.")
+set(SNOW_SHOT_PROJECT_URL "https://github.com/mg-chao/snow-apps" CACHE STRING
+    "Public Snow Shot source repository URL.")
 unset(SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE CACHE)
 set(
     SNOW_SHOT_CAMERA_SHUTTER_AUDIO_SOURCE
@@ -767,6 +770,16 @@ endif()
 unset(_snow_shot_history_source)
 unset(_snow_shot_history_global_pool_call)
 add_library(snow_shot_settings STATIC ${SNOW_SHOT_SETTINGS_SOURCES})
+qt_add_resources(snow_shot_settings "snow_shot_about_assets"
+    PREFIX "/snow_shot/about"
+    BASE "resources/about"
+    FILES resources/about/illustration.svg
+)
+target_compile_definitions(snow_shot_settings PRIVATE
+    SNOW_SHOT_WEBSITE_URL="${SNOW_SHOT_WEBSITE_URL}"
+    SNOW_SHOT_PROJECT_URL="${SNOW_SHOT_PROJECT_URL}"
+)
+target_link_libraries(snow_shot_settings PRIVATE Qt6::Svg)
 add_library(snow_shot_global_mouse STATIC
     include/snow_shot/presentation/globalmousemanager.h
     include/snow_shot/presentation/globalmousegesture.h
@@ -1576,6 +1589,8 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_compile_definitions(snow-shot-about-page-tests PRIVATE
         SNOW_SHOT_TEST_VERSION="${SNOW_SHOT_VERSION}"
         SNOW_SHOT_TEST_TRANSLATIONS_DIR="${CMAKE_CURRENT_BINARY_DIR}"
+        SNOW_SHOT_TEST_WEBSITE_URL="${SNOW_SHOT_WEBSITE_URL}"
+        SNOW_SHOT_TEST_PROJECT_URL="${SNOW_SHOT_PROJECT_URL}"
     )
     add_dependencies(snow-shot-about-page-tests snow_shot_release_translations)
     snow_shot_import_offscreen_platform(snow-shot-about-page-tests)

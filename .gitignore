@@ -2,6 +2,7 @@
 /.agents/
 /.codex/
 .zcode
+output
 
 # Rust build output
 **/target/
