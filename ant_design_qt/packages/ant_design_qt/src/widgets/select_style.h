@@ -94,6 +94,7 @@ struct SelectStyleInput {
   AdSelect::Status status = AdSelect::Status::None;
   bool disabled = false;
   QFont baseFont;
+  qreal logicalScale = 1.0;
   AdSelect::ComponentTokens componentTokens;
   AdSelect::SemanticStyles semanticStyles;
 };

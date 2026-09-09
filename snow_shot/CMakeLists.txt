@@ -3058,6 +3058,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-screen-recording-toolbar-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --recording-controls-only
     )
+    add_test(
+        NAME snow-shot-screenshot-toolbar-i18n-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --dynamic-i18n-only
+    )
     set_tests_properties(
         snow-shot-screenshot-tool-palette-tests
         snow-shot-screenshot-action-toolbar-layout-tests
@@ -3065,6 +3069,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-screenshot-shortcut-tooltip-tests
         snow-shot-screenshot-selection-reset-tests
         snow-shot-screen-recording-toolbar-tests
+        snow-shot-screenshot-toolbar-i18n-tests
         PROPERTIES
         ENVIRONMENT
             "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"
