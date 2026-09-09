@@ -2,11 +2,15 @@
 #include <QColor>
 #include <QCoreApplication>
 #include <QListView>
+#include <QLineEdit>
+#include <QLayout>
+#include <QToolButton>
 #include <QStringList>
 #include <QTest>
 #include <QWidget>
 
 #include "widgets/select.h"
+#include "widgets/control_scale.h"
 
 using adqt::widgets::AdSelect;
 
@@ -52,6 +56,69 @@ class SelectTest final : public QObject {
   Q_OBJECT
 
  private slots:
+  void controlScaleAppliesToContentAndSurvivesStyleRefresh() {
+    for (const auto size : {AdSelect::ControlSize::Small, AdSelect::ControlSize::Middle,
+                            AdSelect::ControlSize::Large}) {
+      AdSelect select;
+      select.setControlSize(size);
+      select.setVariant(AdSelect::Variant::Borderless);
+      select.setOptions({makeOption(QStringLiteral("a"), QStringLiteral("Alpha"))});
+      select.setCurrentValue(QStringLiteral("a"));
+      select.show();
+      QCoreApplication::processEvents();
+      auto* input = select.findChild<QLineEdit*>(QStringLiteral("adselect-input"));
+      auto* suffix = select.findChild<QToolButton*>(QStringLiteral("adselect-suffix"));
+      QVERIFY(input);
+      QVERIFY(suffix);
+      const int fontSize = input->font().pixelSize();
+      const int height = select.height();
+      const int iconSize = suffix->iconSize().height();
+      const int padding = select.layout()->contentsMargins().left();
+      const int rowHeight = select.view()->sizeHintForRow(0);
+      adqt::widgets::AdControlScaleScope scope(&select);
+      for (const qreal scale : {0.8, 0.64, 0.8 / 1.5, 1.25, 0.8, 1.0}) {
+        scope.publishScale(
+            adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(1, 1, scale));
+        // Hover, selection and theme changes all refresh the resolved style.
+        select.setStatus(AdSelect::Status::Warning);
+        select.setStatus(AdSelect::Status::None);
+        QCoreApplication::processEvents();
+        QCOMPARE(input->font().pixelSize(), qRound(fontSize * scale));
+        QCOMPARE(select.height(), qRound(height * scale));
+        QCOMPARE(select.sizeHint().height(), select.height());
+        QCOMPARE(select.minimumSizeHint().height(), select.height());
+        QCOMPARE(suffix->iconSize().height(), qRound(iconSize * scale));
+        QVERIFY(qAbs(select.layout()->contentsMargins().left() - qRound(padding * scale)) <= 1);
+        QCOMPARE(select.view()->sizeHintForRow(0), qRound(rowHeight * scale));
+      }
+    }
+  }
+
+  void scaledMultipleModesKeepTagsAndHintsConsistent() {
+    for (const auto mode : {AdSelect::Mode::Multiple, AdSelect::Mode::Tags}) {
+      AdSelect select;
+      select.setMode(mode);
+      select.setOptions({makeOption(QStringLiteral("a"), QStringLiteral("Alpha"))});
+      select.setCurrentValues({QStringLiteral("a")});
+      select.resize(300, select.sizeHint().height());
+      select.show();
+      QCoreApplication::processEvents();
+      const int height = select.height();
+      auto* input = select.findChild<QLineEdit*>(QStringLiteral("adselect-input"));
+      QVERIFY(input);
+      const int fontSize = input->font().pixelSize();
+      adqt::widgets::AdControlScaleScope scope(&select);
+      for (const qreal scale : {0.8, 0.64, 1.0}) {
+        scope.publishScale(
+            adqt::widgets::AdControlScaleContext::fromDprsAndContentScale(1, 1, scale));
+        QCoreApplication::processEvents();
+        QCOMPARE(input->font().pixelSize(), qRound(fontSize * scale));
+        QCOMPARE(select.height(), qRound(height * scale));
+        QCOMPARE(select.sizeHint().height(), select.height());
+      }
+    }
+  }
+
   void defaultPopupOrderMatchesInputOrder() {
     AdSelect select;
     select.setOptions({makeOption(QStringLiteral("z"), QStringLiteral("Zulu")),
@@ -103,8 +170,7 @@ class SelectTest final : public QObject {
 
     const QAbstractItemModel* model = select.view()->model();
     QVERIFY(model != nullptr);
-    QCOMPARE(model->index(0, 0).data(Qt::DisplayRole).toString(),
-             QStringLiteral("General Models"));
+    QCOMPARE(model->index(0, 0).data(Qt::DisplayRole).toString(), QStringLiteral("General Models"));
     const QColor headerColor = model->index(0, 0).data(Qt::ForegroundRole).value<QColor>();
     const QColor optionColor = model->index(1, 0).data(Qt::ForegroundRole).value<QColor>();
     QVERIFY(headerColor.isValid());

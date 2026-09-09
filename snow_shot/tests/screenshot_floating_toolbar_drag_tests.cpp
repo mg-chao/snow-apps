@@ -538,9 +538,9 @@ void recordingExportSettingsParticipateInNativeHitTesting() {
     require(exportButton != nullptr, "recording hit-test fixture should expose Export Settings");
     exportButton->click();
     settleQueuedRefreshes();
-    require(!palette->recordingExportSettingsVisible() &&
-                !palette->recordingExportSettingsPanel()->isVisible(),
-            "clicking active Export Settings should close the floating secondary toolbar");
+    require(palette->recordingExportSettingsVisible() &&
+                palette->recordingExportSettingsPanel()->isVisible(),
+            "clicking active Export Settings must retain the floating secondary toolbar");
     exportButton->click();
     settleQueuedRefreshes();
 

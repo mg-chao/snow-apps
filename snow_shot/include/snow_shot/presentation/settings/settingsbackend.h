@@ -91,6 +91,13 @@ class SettingsBackend : public QObject {
     applyToolbarLayout(storage::ScreenshotToolbarLayoutKind kind,
                        const storage::ScreenshotToolbarLayout& layout) = 0;
 
+    [[nodiscard]] virtual CustomAiModels customAiModels() const {
+        return {};
+    }
+    virtual bool applyCustomAiModels(const CustomAiModels&) {
+        return false;
+    }
+
     [[nodiscard]] virtual GlobalShortcutRegistrationState
     shortcutState(GlobalShortcutAction action) const = 0;
     [[nodiscard]] virtual GlobalShortcutValidationResult
@@ -206,6 +213,8 @@ class BuiltInSettingsBackend final : public SettingsBackend {
                                 const SettingsGlobalMouseCombination& combination) override;
     [[nodiscard]] SettingsActionState actionState(SettingsActionBinding binding) const override;
     [[nodiscard]] bool triggerAction(SettingsActionBinding binding) override;
+    [[nodiscard]] CustomAiModels customAiModels() const override;
+    bool applyCustomAiModels(const CustomAiModels& models) override;
     [[nodiscard]] storage::StorageStatus storageStatus() const override;
     void refreshStorageStatus() override;
     void refreshStorageStatusIfStale() override;

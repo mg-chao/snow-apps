@@ -57,6 +57,30 @@ stateFor(shortcuts::GlobalShortcutStatus status,
     return state;
 }
 
+void keyDisplayUsesCanonicalLabels() {
+    const auto scheme = styles::ThemeManager::instance().themeColorScheme();
+    const auto metrics = styles::buildMainWindowComponentMetricToken(scheme);
+    const QList<QPair<QString, QString>> cases{
+        {QStringLiteral("+"), QStringLiteral("Plus")},
+        {QStringLiteral("Ctrl++"), QStringLiteral("Ctrl+Plus")},
+        {QStringLiteral("Num+1"), QStringLiteral("Num 1")},
+        {QStringLiteral("Num++"), QStringLiteral("Num Plus")},
+        {QStringLiteral("Shift+Shift"), QStringLiteral("Shift")},
+        {QStringLiteral("Period"), QStringLiteral(".")},
+        {QStringLiteral("Comma"), QStringLiteral(",")},
+        {QStringLiteral("Meta+Shift+S"), QStringLiteral("Win+Shift+S")},
+    };
+    for (const auto& displayCase : cases) {
+        ShortcutKeyRowConfig config;
+        config.title = QStringLiteral("Screenshot");
+        config.shortcuts = {displayCase.first, QStringLiteral("F3")};
+        ShortcutKeyRow row(config, scheme.metricAlias, metrics);
+        auto* button = row.findChild<adqt::widgets::AdButton*>(QStringLiteral("shortcutKeyButton"));
+        require(button != nullptr && button->text() == displayCase.second + QStringLiteral(" / F3"),
+                "settings key names and alternatives must retain their canonical display");
+    }
+}
+
 void statusPresentationUsesSemanticTokens() {
     const styles::ThemeColorScheme scheme = styles::ThemeManager::instance().themeColorScheme();
     const auto mainWindowMetric = styles::buildMainWindowComponentMetricToken(scheme);
@@ -1075,6 +1099,7 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    keyDisplayUsesCanonicalLabels();
     statusPresentationUsesSemanticTokens();
     recorderAcceptsOnlyBackendSupportedShortcuts();
     printScreenReleaseRecordsModifiers();

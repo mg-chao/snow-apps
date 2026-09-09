@@ -26,6 +26,7 @@ encodeImageConversions(const ScreenshotRecognitionResults& results) {
                                       {QStringLiteral("model"), entry.model},
                                       {QStringLiteral("source"), entry.source},
                                       {QStringLiteral("prompt_version"), entry.promptVersion},
+                                      {QStringLiteral("model_fingerprint"), entry.modelFingerprint},
                                       {QStringLiteral("image"), entry.imageFingerprint}});
     }
     if (entries.isEmpty()) {
@@ -64,11 +65,13 @@ inline void decodeImageConversions(const QByteArray& bytes, ScreenshotRecognitio
         if (format < 0 || format > 1 || formats.contains(format)) {
             continue;
         }
-        ScreenshotImageConversionEntry entry{static_cast<SnowShotImageConversionFormat>(format),
-                                             item.value(QStringLiteral("model")).toString(),
-                                             item.value(QStringLiteral("source")).toString(),
-                                             item.value(QStringLiteral("prompt_version")).toInt(-1),
-                                             item.value(QStringLiteral("image")).toString()};
+        ScreenshotImageConversionEntry entry{
+            static_cast<SnowShotImageConversionFormat>(format),
+            item.value(QStringLiteral("model")).toString(),
+            item.value(QStringLiteral("source")).toString(),
+            item.value(QStringLiteral("prompt_version")).toInt(-1),
+            item.value(QStringLiteral("image")).toString(),
+            item.value(QStringLiteral("model_fingerprint")).toString()};
         if (entry.isValid()) {
             parsed.push_back(std::move(entry));
             formats.insert(format);

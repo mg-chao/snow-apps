@@ -1178,9 +1178,9 @@ class AdSelect::OptionListDelegate final : public QStyledItemDelegate {
 
       const int marginBlock = std::max(0, style.metrics.emptyStateMarginBlock);
       const int imageBottomMargin = std::max(0, style.metrics.emptyStateImageMarginBottom);
-      const int iconWidth = std::max(30, style.metrics.emptyStateIconWidth);
-      const int iconHeight = std::max(20, style.metrics.emptyStateIconHeight);
-      const int textHeight = std::max(12, style.metrics.emptyDescriptionLineHeight);
+      const int iconWidth = std::max(1, style.metrics.emptyStateIconWidth);
+      const int iconHeight = std::max(1, style.metrics.emptyStateIconHeight);
+      const int textHeight = std::max(1, style.metrics.emptyDescriptionLineHeight);
       const int top = contentRect.top() + marginBlock;
 
       const QRectF iconRect(contentRect.left() + (contentRect.width() - iconWidth) / 2.0, top,
@@ -1199,7 +1199,7 @@ class AdSelect::OptionListDelegate final : public QStyledItemDelegate {
 
       QFont textFont = style.metrics.optionFont;
       textFont.setWeight(QFont::Normal);
-      textFont.setPixelSize(std::max(12, style.metrics.emptyDescriptionFontSize));
+      textFont.setPixelSize(std::max(1, style.metrics.emptyDescriptionFontSize));
       painter->setFont(textFont);
       painter->setPen(style.emptyTextColor);
       const QFontMetrics metrics(textFont);
@@ -1271,7 +1271,7 @@ class AdSelect::OptionListDelegate final : public QStyledItemDelegate {
     const int horizontalPadding = std::max(0, style.metrics.optionPaddingHorizontal);
     const int verticalPadding = std::max(0, style.metrics.optionPaddingVertical);
     const bool showSelectedIcon = optionSelected && owner_->mode_ != AdSelect::Mode::Single;
-    const int selectedIconSize = std::max(10, style.metrics.iconSize);
+    const int selectedIconSize = std::max(1, style.metrics.iconSize);
     const int selectedStateGap = std::max(2, style.metrics.optionStateGap);
 
     QRect textRect = itemOption.rect.adjusted(horizontalPadding, verticalPadding,
@@ -2926,10 +2926,9 @@ QSize AdSelect::sizeHint() const {
     if (prefixLabel_ && !prefixLabel_->isHidden()) {
       width += prefixLabel_->sizeHint().width() + rootLayout_->spacing();
     }
-    return QSize(std::max(1, width), qMax(1, qRound(height * controlScale_.logicalScale)));
+    return QSize(std::max(1, width), qMax(1, height));
   }
-  return QSize(qMax(1, qRound(240 * controlScale_.logicalScale)),
-               qMax(1, qRound(height * controlScale_.logicalScale)));
+  return QSize(qMax(1, qRound(240 * controlScale_.logicalScale)), qMax(1, height));
 }
 
 QSize AdSelect::minimumSizeHint() const {
@@ -2942,8 +2941,7 @@ QSize AdSelect::minimumSizeHint() const {
   if (mode_ != Mode::Single) {
     height = std::max(height, this->height());
   }
-  return QSize(qMax(1, qRound(120 * controlScale_.logicalScale)),
-               qMax(1, qRound(height * controlScale_.logicalScale)));
+  return QSize(qMax(1, qRound(120 * controlScale_.logicalScale)), qMax(1, height));
 }
 
 void AdSelect::prepareControlScale(const AdControlScaleContext& context) { Q_UNUSED(context) }
@@ -2954,13 +2952,6 @@ void AdSelect::commitControlScale(const AdControlScaleContext& context) {
     referenceFontCaptured_ = true;
   }
   controlScale_ = context;
-  QFont scaledFont = referenceFont_;
-  if (scaledFont.pixelSize() > 0) {
-    scaledFont.setPixelSize(qMax(1, qRound(scaledFont.pixelSize() * context.logicalScale)));
-  } else if (scaledFont.pointSizeF() > 0.0) {
-    scaledFont.setPointSizeF(scaledFont.pointSizeF() * context.logicalScale);
-  }
-  setFont(scaledFont);
   applyVisualStyle();
   updateDisplay();
   if (popupIsVisible()) {
@@ -3863,7 +3854,7 @@ void AdSelect::rebuildTagWidgets() {
   constexpr int kFixedInputMinWidth = 4;
   const int maxTagItemWidth = std::max(kFixedInputMinWidth, contentWidth - kFixedInputMinWidth);
 
-  const int tagHeight = std::max(16, visualStyle_ ? visualStyle_->metrics.tagHeight : 20);
+  const int tagHeight = std::max(1, visualStyle_ ? visualStyle_->metrics.tagHeight : 20);
   const int tagRadius = std::max(0, visualStyle_ ? visualStyle_->metrics.tagBorderRadius : 4);
   const int tagBorderWidth = std::max(0, visualStyle_ ? visualStyle_->metrics.borderWidth : 1);
   const int tagItemMargin = std::max(0, visualStyle_ ? visualStyle_->metrics.tagItemMargin : 2);
@@ -4376,7 +4367,7 @@ void AdSelect::updateDisplay() {
     }
     const int cappedInputWidth = std::min(inputWidth, std::max(4, availableInputWidth));
     setWidgetFixedWidthIfChanged(lineEdit_, cappedInputWidth);
-    const int tagHeight = std::max(16, visualStyle_ ? visualStyle_->metrics.tagHeight : 20);
+    const int tagHeight = std::max(1, visualStyle_ ? visualStyle_->metrics.tagHeight : 20);
     const int tagItemMargin = std::max(0, visualStyle_ ? visualStyle_->metrics.tagItemMargin : 2);
     setWidgetFixedHeightIfChanged(lineEdit_, std::max(1, tagHeight + tagItemMargin * 2));
 
@@ -4419,7 +4410,7 @@ void AdSelect::updateMultipleSelectorHeight() {
   }
 
   const int minTagsHeight = std::max(
-      16, visualStyle_->metrics.tagHeight + std::max(0, visualStyle_->metrics.tagItemMargin) * 2);
+      1, visualStyle_->metrics.tagHeight + std::max(0, visualStyle_->metrics.tagItemMargin) * 2);
   tagsHeight = std::max(minTagsHeight, tagsHeight);
   setWidgetFixedHeightIfChanged(tagsContainer_, tagsHeight);
 
@@ -4469,7 +4460,7 @@ void AdSelect::updateClearVisual() {
     return;
   }
 
-  const int iconSize = std::max(10, visualStyle_->metrics.iconSize);
+  const int iconSize = std::max(1, visualStyle_->metrics.iconSize);
   clearButton_->setText(QString());
   QColor iconColor = visualStyle_->clearColor;
   if (clearButton_->isVisible() && clearHovered_ && !disabled()) {
@@ -4502,7 +4493,7 @@ void AdSelect::updateAccessoryGeometry() {
     return;
   }
 
-  const int iconSize = std::max(10, visualStyle_->metrics.iconSize);
+  const int iconSize = std::max(1, visualStyle_->metrics.iconSize);
   if (suffixButton_) {
     // Keep suffix footprint aligned with clear overlay, matching Ant Design:
     // clear is absolutely positioned over the suffix slot when it appears.
@@ -4553,7 +4544,7 @@ void AdSelect::updatePrefixVisual() {
   adqt::icons::IconRef icon = prefixIconRef_;
   icon = icon.withColors(adqt::icons::IconColors::primary(visualStyle_->prefixColor));
   const qreal dpr = devicePixelRatioF();
-  const int iconSize = std::max(10, visualStyle_->metrics.iconSize);
+  const int iconSize = std::max(1, visualStyle_->metrics.iconSize);
   const QPixmap pixmap = adqt::icons::renderIconPixmap(icon, {QSize(iconSize, iconSize), dpr});
   prefixLabel_->setText(QString());
   prefixLabel_->setPixmap(pixmap);
@@ -4627,7 +4618,7 @@ void AdSelect::updateSuffixVisual() {
 
   if (loading_) {
     const qreal dpr = devicePixelRatioF();
-    const int iconSize = std::max(10, visualStyle_->metrics.iconSize);
+    const int iconSize = std::max(1, visualStyle_->metrics.iconSize);
     const int cycleMs = detail::spinnerCycleDurationMs();
     int angle = 0;
     if (cycleMs > 0) {
@@ -4663,7 +4654,7 @@ void AdSelect::updateSuffixVisual() {
   if (adqt::icons::isValid(icon)) {
     icon = icon.withColors(adqt::icons::IconColors::primary(visualStyle_->suffixColor));
     const qreal dpr = devicePixelRatioF();
-    const int iconSize = std::max(10, visualStyle_->metrics.iconSize);
+    const int iconSize = std::max(1, visualStyle_->metrics.iconSize);
     const QPixmap pixmap = adqt::icons::renderIconPixmap(icon, {QSize(iconSize, iconSize), dpr});
     if (!pixmap.isNull()) {
       QPixmap suffixPixmap = pixmap;
@@ -4713,7 +4704,8 @@ void AdSelect::applyVisualStyle() {
   input.variant = variant_;
   input.status = status_;
   input.disabled = disabled();
-  input.baseFont = font();
+  input.baseFont = referenceFontCaptured_ ? referenceFont_ : font();
+  input.logicalScale = controlScale_.logicalScale;
   input.componentTokens = componentTokens_;
   input.semanticStyles = effectiveSemantic;
   const detail::SelectVisualStyle previousStyle = *visualStyle_;
@@ -5403,7 +5395,7 @@ int AdSelect::popupContentWidthHint() const {
 
   const detail::SelectMetrics& metrics = visualStyle_->metrics;
   const int horizontalPadding = std::max(0, metrics.optionPaddingHorizontal);
-  const int selectedIconSize = std::max(10, metrics.iconSize);
+  const int selectedIconSize = std::max(1, metrics.iconSize);
   const int selectedStateGap = std::max(2, metrics.optionStateGap);
 
   auto measureRowTextWidth = [horizontalPadding](const QString& text, const QFont& font) {
@@ -5418,11 +5410,11 @@ int AdSelect::popupContentWidthHint() const {
     if (row.empty) {
       QFont emptyFont = metrics.optionFont;
       emptyFont.setWeight(QFont::Normal);
-      emptyFont.setPixelSize(std::max(12, metrics.emptyDescriptionFontSize));
+      emptyFont.setPixelSize(std::max(1, metrics.emptyDescriptionFontSize));
 
       const QFontMetrics emptyMetrics(emptyFont);
       const int emptyTextWidth = emptyMetrics.horizontalAdvance(row.headerText);
-      const int emptyIconWidth = std::max(30, metrics.emptyStateIconWidth);
+      const int emptyIconWidth = std::max(1, metrics.emptyStateIconWidth);
       const int emptyInlineMargin = std::max(0, metrics.emptyStateMarginInline);
       const int emptyContentWidth =
           std::max(emptyTextWidth, emptyIconWidth) + emptyInlineMargin * 2;

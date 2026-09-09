@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/systemtraycontroller.h"
+#include "snow_shot/presentation/shortcutdisplaytext.h"
 #include "snow_shot/presentation/pinnedwindowgroupmanager.h"
 
 #include "snow_shot/presentation/languagemanager.h"
@@ -18,7 +19,6 @@
 #include <QImage>
 #include <QIcon>
 #include <QImageReader>
-#include <QKeySequence>
 #include <QPixmap>
 #include <QSet>
 #include <QSystemTrayIcon>
@@ -196,21 +196,6 @@ class TrayImageCache final {
     quint64 decodeCount_ = 0;
     bool hasEntry_ = false;
 };
-
-QString nativeShortcutText(const QStringList& shortcuts) {
-    QStringList nativeShortcuts;
-    for (const QString& shortcut : shortcuts) {
-        QKeySequence sequence = QKeySequence::fromString(shortcut, QKeySequence::PortableText);
-        if (sequence.isEmpty()) {
-            sequence = QKeySequence::fromString(shortcut, QKeySequence::NativeText);
-        }
-        const QString nativeShortcut = sequence.toString(QKeySequence::NativeText).trimmed();
-        if (!nativeShortcut.isEmpty() && !nativeShortcuts.contains(nativeShortcut)) {
-            nativeShortcuts.push_back(nativeShortcut);
-        }
-    }
-    return nativeShortcuts.join(QStringLiteral(" / "));
-}
 
 } // namespace
 
@@ -611,8 +596,8 @@ int SystemTrayController::screenshotDelaySeconds() const {
 }
 
 void SystemTrayController::setGlobalShortcuts(GlobalShortcutAction action,
-                                               const QStringList& shortcuts) {
-    const QString shortcutText = nativeShortcutText(shortcuts);
+                                              const QStringList& shortcuts) {
+    const QString shortcutText = snow_shot::presentation::formatShortcutListDisplayText(shortcuts);
     if (m_impl->shortcutText.value(action) == shortcutText) {
         return;
     }

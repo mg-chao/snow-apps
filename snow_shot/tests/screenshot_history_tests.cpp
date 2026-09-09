@@ -1870,11 +1870,6 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
     actions.localShortcutInputAllowed = [&localShortcutInputAllowed]() {
         return localShortcutInputAllowed;
     };
-    actions.activateMoveTool = [&interaction, &moveToolActivations]() {
-        ++moveToolActivations;
-        interaction.setMoveTool(true, false);
-        return true;
-    };
     actions.moveCursorOnePixel = [&cursorMoves,
                                   &cursorMoveHandles](PhysicalCursorDirection direction) {
         if (!cursorMoveHandles) {
@@ -1890,18 +1885,23 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
         ++drawingToolActivations;
         return true;
     };
-    actions.pinSelectionToScreen = [&pinActivations]() {
-        ++pinActivations;
-        return true;
-    };
-    actions.cancelCapture = [&cancelActivations]() { ++cancelActivations; };
-    actions.copySelectionToClipboard = [&copyActivations]() { ++copyActivations; };
-    actions.undo = [&undoActivations]() {
-        ++undoActivations;
-        return true;
-    };
-    actions.redo = [&redoActivations]() {
-        ++redoActivations;
+    actions.activateScreenshotShortcut = [&](const QString& actionId) {
+        if (actionId == QStringLiteral("move_tool")) {
+            ++moveToolActivations;
+            interaction.setMoveTool(true, false);
+        } else if (actionId == QStringLiteral("pin_to_screen")) {
+            ++pinActivations;
+        } else if (actionId == QStringLiteral("cancel_screenshot")) {
+            ++cancelActivations;
+        } else if (actionId == QStringLiteral("copy_to_clipboard")) {
+            ++copyActivations;
+        } else if (actionId == QStringLiteral("undo")) {
+            ++undoActivations;
+        } else if (actionId == QStringLiteral("redo")) {
+            ++redoActivations;
+        } else {
+            return false;
+        }
         return true;
     };
     ScreenshotOverlayInputHandler handler({
@@ -2049,6 +2049,75 @@ void configuredScreenshotShortcutsControlMoveAndCursorNavigation() {
             "restored cursor shortcut must use the persisted configuration");
 }
 
+void scrollingCaptureRoutesEveryToolbarShortcut() {
+    const storage::ScreenshotShortcutSettings settings;
+    const auto original = settings.allShortcuts();
+    const QStringList commands{
+        QStringLiteral("move_tool"),
+        QStringLiteral("table_recognition"),
+        QStringLiteral("qr_code_recognition"),
+        QStringLiteral("text_recognition"),
+        QStringLiteral("text_translation"),
+        QStringLiteral("video_recording"),
+        QStringLiteral("scrolling_screenshot"),
+        QStringLiteral("save_as_file"),
+        QStringLiteral("pin_to_screen"),
+        QStringLiteral("cancel_screenshot"),
+        QStringLiteral("copy_to_clipboard"),
+        QStringLiteral("undo"),
+        QStringLiteral("redo"),
+    };
+    ScreenshotCaptureState captureState;
+    ScreenshotDisplaySession displays;
+    ScreenshotGeometryMapper geometry;
+    ScreenshotSelectionModel selection;
+    ScreenshotIntelligentSelectionModel intelligent;
+    ScreenshotInteractionState interaction;
+    QWidget window;
+    snow_shot::presentation::WindowShortcutManager manager;
+    manager.addScopeWindow(&window);
+    QStringList dispatched;
+    bool inputAllowed = true;
+    bool commandEnabled = true;
+    ScreenshotOverlayInputActions actions;
+    actions.localShortcutInputAllowed = [&]() { return inputAllowed; };
+    actions.activateScreenshotShortcut = [&](const QString& id) {
+        if (!commandEnabled) {
+            return false;
+        }
+        dispatched.append(id);
+        return true;
+    };
+    ScreenshotOverlayInputHandler handler(
+        {captureState, interaction, selection, intelligent, geometry, displays, actions});
+    ScreenshotOverlayShortcutController controller(manager, handler, interaction, intelligent,
+                                                   actions);
+    for (const auto& command : commands) {
+        auto shortcuts = original;
+        for (auto& keys : shortcuts) {
+            keys.clear();
+        }
+        shortcuts[command] = {QStringLiteral("Ctrl+Alt+F12")};
+        require(settings.setAllShortcutsAtomic(shortcuts), "failed to bind toolbar command");
+        interaction.enterScrollingCapture();
+        dispatched.clear();
+        require(dispatchShortcut(window, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier) &&
+                    dispatched == QStringList{command},
+                "every scrolling toolbar shortcut must invoke the common command exactly once");
+        commandEnabled = false;
+        require(!dispatchShortcut(window, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier) &&
+                    dispatched.size() == 1,
+                "a declined toolbar command must not be replaced by a shortcut implementation");
+        commandEnabled = true;
+        inputAllowed = false;
+        require(!dispatchShortcut(window, Qt::Key_F12, Qt::ControlModifier | Qt::AltModifier) &&
+                    dispatched.size() == 1,
+                "text input must retain shortcuts while scrolling");
+        inputAllowed = true;
+    }
+    require(settings.setAllShortcutsAtomic(original), "failed to restore toolbar shortcuts");
+}
+
 void intelligentSelectionSupportsCursorMovementShortcuts() {
     ScreenshotCaptureState captureState;
     ScreenshotDisplaySession displays;
@@ -2182,7 +2251,10 @@ void hiddenToolbarDisablesToolSwitchShortcutsDuringSelectionResize() {
         ++showToolbarCount;
     };
     actions.mainToolbarVisible = [&mainToolbarVisible]() { return mainToolbarVisible; };
-    actions.activateMoveTool = [&interaction, &moveToolActivations]() {
+    actions.activateScreenshotShortcut = [&interaction, &moveToolActivations](const QString& id) {
+        if (id != QStringLiteral("move_tool")) {
+            return false;
+        }
         ++moveToolActivations;
         interaction.setMoveTool(true, false);
         return true;
@@ -2345,6 +2417,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (QCoreApplication::arguments().contains(QStringLiteral("--shortcut-input-only"))) {
+        scrollingCaptureRoutesEveryToolbarShortcut();
         externalSelectionSupportsHeldShortcuts();
         colorCopyEndsCaptureOnlyAfterSuccessfulCopy();
         sharedShiftShortcutChoosesResizeOrColorFormat();
@@ -2390,6 +2463,7 @@ int main(int argc, char** argv) {
     intelligentSelectionSupportsCursorMovementShortcuts();
     cursorMovementEligibilityFollowsInteractionState();
     configuredScreenshotShortcutsControlMoveAndCursorNavigation();
+    scrollingCaptureRoutesEveryToolbarShortcut();
     hiddenToolbarDisablesToolSwitchShortcutsDuringSelectionResize();
     canvasColorSamplingConsumesOneCanvasClick();
     storage::ApplicationStorage::instance().shutdown();

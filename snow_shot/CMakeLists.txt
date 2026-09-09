@@ -635,6 +635,7 @@ function(snow_shot_add_translations target)
         set(_lrelease_target snow_shot_release_translations)
         set(_translation_source_targets
             ${target}
+            snow_shot_storage
             snow_shot_settings_catalog
             snow_shot_settings_search
             snow_shot_settings
@@ -712,8 +713,10 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/presentation/components/pagecontainerwidget.h
     include/snow_shot/presentation/components/sectionheaderwidget.h
     include/snow_shot/presentation/components/screenshothistorypagewidget.h
+    include/snow_shot/presentation/components/customaimodelssettingswidget.h
     include/snow_shot/presentation/components/settingscustomwidget.h
     include/snow_shot/presentation/components/settingspagewidget.h
+    include/snow_shot/presentation/shortcutdisplaytext.h
     include/snow_shot/presentation/components/shortcutkeyrow.h
     include/snow_shot/presentation/components/shortcutconfigurationbutton.h
     include/snow_shot/presentation/components/storagestatussettingswidget.h
@@ -730,6 +733,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/presentation/components/pagecontainerwidget.cpp
     src/presentation/components/sectionheaderwidget.cpp
     src/presentation/components/screenshothistorypagewidget.cpp
+    src/presentation/components/customaimodelssettingswidget.cpp
     src/presentation/components/settingscustomwidget.cpp
     src/presentation/components/settingspagewidget.cpp
     src/presentation/components/shortcutkeyrow.cpp
@@ -1182,6 +1186,23 @@ if(SNOW_SHOT_BUILD_TESTS)
 
     enable_testing()
 
+    if(WIN32)
+        add_executable(snow-shot-global-shortcut-manager-tests
+            tests/global_shortcut_manager_tests.cpp
+            include/snow_shot/presentation/globalshortcutmanager.h
+            src/presentation/services/globalshortcutmanager.cpp)
+        target_link_libraries(snow-shot-global-shortcut-manager-tests PRIVATE
+            snow_shot_global_mouse Qt6::Widgets)
+        add_test(NAME snow-shot-global-shortcut-manager-tests
+            COMMAND snow-shot-global-shortcut-manager-tests)
+        set_tests_properties(snow-shot-global-shortcut-manager-tests PROPERTIES
+            LABELS "unit;windows" TIMEOUT 60)
+        add_test(NAME snow-shot-global-shortcut-native-smoke-tests
+            COMMAND snow-shot-global-shortcut-manager-tests --native-registration-smoke)
+        set_tests_properties(snow-shot-global-shortcut-native-smoke-tests PROPERTIES
+            LABELS "interactive;windows" TIMEOUT 60)
+    endif()
+
     add_executable(snow-shot-global-mouse-tests tests/global_mouse_tests.cpp
         include/snow_shot/presentation/globalshortcutmanager.h
         src/presentation/services/globalshortcutmanager.cpp
@@ -1301,6 +1322,14 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+
+    add_executable(snow-shot-custom-ai-models-tests tests/custom_ai_models_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-custom-ai-models-tests PRIVATE snow_shot_settings ant_design_qt Qt6::Widgets)
+    snow_shot_add_translations(snow-shot-custom-ai-models-tests)
+    snow_shot_import_offscreen_platform(snow-shot-custom-ai-models-tests)
+    add_test(NAME snow-shot-custom-ai-models-tests COMMAND snow-shot-custom-ai-models-tests -platform offscreen)
+    set_tests_properties(snow-shot-custom-ai-models-tests PROPERTIES TIMEOUT 60)
 
     add_executable(snow-shot-storage-status-widget-tests
         tests/storage_status_widget_tests.cpp
@@ -2618,6 +2647,29 @@ if(SNOW_SHOT_BUILD_TESTS)
         COMMAND snow-shot-pinned-window-tests
     )
     snow_shot_import_offscreen_platform(snow-shot-pinned-window-tests)
+    add_test(NAME snow-shot-pinned-shortcut-display-tests
+        COMMAND snow-shot-pinned-window-tests --shortcut-display-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-shortcut-display-tests PROPERTIES LABELS "unit")
+    foreach(_thumbnail_scenario IN ITEMS appearance dpi snapshot copy)
+        add_test(NAME snow-shot-pinned-thumbnail-${_thumbnail_scenario}-tests
+            COMMAND snow-shot-pinned-window-tests --thumbnail-${_thumbnail_scenario}-only -platform offscreen)
+        set_tests_properties(snow-shot-pinned-thumbnail-${_thumbnail_scenario}-tests PROPERTIES
+            TIMEOUT 30 RUN_SERIAL TRUE
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    endforeach()
+    set_tests_properties(snow-shot-pinned-thumbnail-copy-tests PROPERTIES
+        ENVIRONMENT "QT_SCALE_FACTOR=2")
+    add_test(NAME snow-shot-pinned-thumbnail-copy-fractional-tests
+        COMMAND snow-shot-pinned-window-tests --thumbnail-copy-only -platform offscreen)
+    set_tests_properties(snow-shot-pinned-thumbnail-copy-fractional-tests PROPERTIES
+        TIMEOUT 30 RUN_SERIAL TRUE ENVIRONMENT "QT_SCALE_FACTOR=1.25"
+        ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+    add_test(NAME snow-shot-pinned-thumbnail-background-tests
+        COMMAND snow-shot-pinned-window-tests --thumbnail-background-only)
+    add_test(NAME snow-shot-pinned-thumbnail-recreation-tests
+        COMMAND snow-shot-pinned-window-tests --thumbnail-recreation-only)
+    add_test(NAME snow-shot-pinned-thumbnail-reentry-tests
+        COMMAND snow-shot-pinned-window-tests --thumbnail-reentry-only)
     add_test(NAME snow-shot-pinned-middle-click-tests
         COMMAND snow-shot-pinned-window-tests --middle-click-only)
     add_test(NAME snow-shot-pinned-middle-click-offscreen-tests
@@ -2837,6 +2889,9 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-pinned-recognition-shortcut-offscreen-tests
         snow-shot-pinned-transformed-ocr-tests
         snow-shot-pinned-restore-wiring-tests
+        snow-shot-pinned-thumbnail-recreation-tests
+        snow-shot-pinned-thumbnail-reentry-tests
+        snow-shot-pinned-thumbnail-background-tests
         snow-shot-pinned-toolbar-parity-tests
         snow-shot-pinned-movement-shortcut-tests
         snow-shot-pinned-drawing-shortcut-toggle-tests
@@ -3018,6 +3073,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-screenshot-tool-shortcut-toggle-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --tool-shortcuts-only
     )
+    add_test(NAME snow-shot-screenshot-action-shortcut-display-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --screenshot-actions-tooltips-only
+            -platform offscreen)
+    set_tests_properties(snow-shot-screenshot-action-shortcut-display-tests PROPERTIES LABELS "unit")
     add_test(
         NAME snow-shot-screenshot-shortcut-tooltip-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --shortcut-tooltips-only
@@ -3030,6 +3089,10 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-screen-recording-toolbar-tests
         COMMAND snow-shot-screenshot-tool-palette-tests --recording-controls-only
     )
+    add_test(
+        NAME snow-shot-screenshot-toolbar-i18n-tests
+        COMMAND snow-shot-screenshot-tool-palette-tests --dynamic-i18n-only
+    )
     set_tests_properties(
         snow-shot-screenshot-tool-palette-tests
         snow-shot-screenshot-action-toolbar-layout-tests
@@ -3037,6 +3100,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         snow-shot-screenshot-shortcut-tooltip-tests
         snow-shot-screenshot-selection-reset-tests
         snow-shot-screen-recording-toolbar-tests
+        snow-shot-screenshot-toolbar-i18n-tests
         PROPERTIES
         ENVIRONMENT
             "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT}"

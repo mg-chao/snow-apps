@@ -885,6 +885,34 @@ bool ScreenshotController::Impl::ensureRecognitionFeature() {
     m_qrRecognition = std::make_unique<ScreenshotQrRecognitionService>(&owner);
     m_tableRecognition =
         std::make_unique<SnowShotApiClient>(SnowShotApiClient::configuredBaseUrl(), &owner);
+    m_tableRecognition->setCustomModels(
+        snow_shot::storage::ApiConfigurationSettings().customModels());
+    QObject::connect(
+        &applicationStorage.configuration(), &snow_shot::storage::ConfigurationStore::valueChanged,
+        m_tableRecognition.get(), [this](const QString& key, const QJsonValue&) {
+            if (key == QStringLiteral("api_configuration/custom_models")) {
+                m_tableRecognition->setCustomModels(
+                    snow_shot::storage::ApiConfigurationSettings().customModels());
+                auto translation =
+                    snow_shot::storage::ScreenshotTranslationSettings().configuration();
+                if (translation.modelId.startsWith(QStringLiteral("custom:")) &&
+                    !m_tableRecognition->isCustomModel(translation.modelId)) {
+                    translation.modelId = m_tableRecognition->fallbackModel(false);
+                    snow_shot::storage::ScreenshotTranslationSettings().setConfiguration(
+                        translation);
+                }
+                const auto conversion = snow_shot::storage::ScreenshotImageConversionSettings();
+                const QString visionId = conversion.visionModel();
+                if (visionId.startsWith(QStringLiteral("custom:")) &&
+                    std::none_of(m_tableRecognition->cachedChatModels().cbegin(),
+                                 m_tableRecognition->cachedChatModels().cend(),
+                                 [&visionId](const auto& model) {
+                                     return model.id == visionId && model.supportsVision;
+                                 })) {
+                    conversion.setVisionModel(m_tableRecognition->fallbackModel(true));
+                }
+            }
+        });
     m_tableRecognition->setUseSystemProxy(
         applicationStorage.configuration().value(QStringLiteral("network/proxy")).toString() ==
         QStringLiteral("system"));
@@ -1279,12 +1307,6 @@ void ScreenshotController::Impl::createDisplayConfigurationObserver() {
 }
 
 void ScreenshotController::Impl::createOverlayInputPipeline() {
-    const auto activateToolShortcut = [this](ScreenshotToolPalette::Tool tool) {
-        ScreenshotToolbarWindow* toolbar =
-            m_overlayCoordinator != nullptr ? m_overlayCoordinator->toolbar() : nullptr;
-        ScreenshotToolPalette* palette = toolbar != nullptr ? toolbar->palette() : nullptr;
-        return palette != nullptr && palette->activateToolShortcut(tool);
-    };
     ScreenshotOverlayInputActions actions{
         [this](const QPoint& physicalPoint) {
             return m_selectorWorkflow->returnToSelection(physicalPoint);
@@ -1336,8 +1358,10 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
                 });
             return allowed;
         },
-        [activateToolShortcut]() {
-            return activateToolShortcut(ScreenshotToolPalette::Tool::Move);
+        [this](const QString& actionId) {
+            ScreenshotToolbarWindow* toolbar = m_overlayCoordinator->ensureToolbar();
+            ScreenshotToolPalette* palette = toolbar != nullptr ? toolbar->palette() : nullptr;
+            return palette != nullptr && palette->activateScreenshotShortcut(actionId);
         },
         [this](const QString& toolId) {
             ScreenshotToolbarWindow* toolbar =
@@ -1424,37 +1448,6 @@ void ScreenshotController::Impl::createOverlayInputPipeline() {
         },
         [this](ScreenshotOverlayWindow* overlay, const QPointF& localPosition) {
             updateCanvasColorSamplingPreview(overlay, localPosition);
-        },
-        [activateToolShortcut]() { return activateToolShortcut(ScreenshotToolPalette::Tool::Ocr); },
-        [activateToolShortcut]() {
-            return activateToolShortcut(ScreenshotToolPalette::Tool::Table);
-        },
-        [activateToolShortcut]() { return activateToolShortcut(ScreenshotToolPalette::Tool::Qr); },
-        [this]() {
-            startScreenRecording();
-            return true;
-        },
-        [activateToolShortcut]() {
-            return activateToolShortcut(ScreenshotToolPalette::Tool::ScrollingScreenshot);
-        },
-        [this]() {
-            saveSelectionToFile();
-            return true;
-        },
-        [activateToolShortcut]() {
-            return activateToolShortcut(ScreenshotToolPalette::Tool::TextTranslation);
-        },
-        [this]() {
-            pinSelectionToScreen();
-            return true;
-        },
-        [this]() {
-            undoCanvasEdit();
-            return true;
-        },
-        [this]() {
-            redoCanvasEdit();
-            return true;
         },
         [this]() { return m_physicalCursor != nullptr && m_physicalCursor->isSupported(); },
         [this](ScreenshotIntelligentSelectionTarget target) {

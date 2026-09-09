@@ -453,7 +453,9 @@ class AdContextMenuStyle final : public QProxyStyle {
     const bool iconColumn = menuUsesIconColumn(menu);
     const bool submenuItem = menuOption->menuItemType == QStyleOptionMenuItem::SubMenu;
     const QFontMetrics metrics(visual.font);
-    const int shortcutWidth = maximumShortcutWidth(menu, metrics);
+    const QString shortcut = actionShortcutText(action, menuOption->text);
+    // Only this item's shortcut may reduce the space available for its label.
+    const int shortcutWidth = metrics.horizontalAdvance(shortcut);
     const QRect bounds = menuOption->rect;
 
     int left = bounds.left() + visual.horizontalPadding;
@@ -510,7 +512,6 @@ class AdContextMenuStyle final : public QProxyStyle {
     }
 
     const QString label = actionLabelText(menuOption->text);
-    const QString shortcut = actionShortcutText(action, menuOption->text);
     int textFlags = Qt::AlignVCenter | Qt::TextSingleLine | Qt::TextShowMnemonic;
     textFlags |= menuOption->direction == Qt::RightToLeft ? Qt::AlignRight : Qt::AlignLeft;
     if (styleHint(SH_UnderlineShortcut, menuOption, widget) == 0) {

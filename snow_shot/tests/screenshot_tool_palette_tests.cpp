@@ -79,6 +79,8 @@ void require(bool condition, const char* message) {
     }
 }
 
+QWidget* controlWithTooltip(ScreenshotToolPalette& palette, const char* tooltip);
+
 QImage renderButton(QWidget& button) {
     QImage image(button.size(), QImage::Format_RGBA8888);
     image.fill(Qt::transparent);
@@ -308,6 +310,7 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
     options.showHighlightTool = true;
     options.showPenHighlightTool = true;
     options.showSpotlightTool = true;
+    options.showEraserTool = true;
     options.showFilterTool = true;
     options.showRecordingControls = true;
     options.recordingDrawingMode = true;
@@ -887,6 +890,78 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
     verifyColorIconTooltips();
     require(trail->toolTip().isEmpty() && click->toolTip().isEmpty(),
             "retranslation should keep color picker tooltips on their icons");
+}
+
+void dynamicToolbarLabelsUseEveryTranslationCatalog() {
+    auto& language = snow_shot::presentation::LanguageManager::instance();
+    require(language.setLanguage(QStringLiteral("en_US")),
+            "English should be active before testing dynamic toolbar translations");
+
+    ScreenshotToolPalette::Options options;
+    options.showDragHandle = true;
+    options.showSelectTool = true;
+    options.showRecordingControls = true;
+    options.recordingDrawingMode = true;
+    ScreenshotToolPalette palette(options);
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Select);
+    require(palette.ensureStyleFamily(ScreenshotToolPalette::Tool::Arrow),
+            "arrow controls should materialize for translation coverage");
+
+    const QStringList objectNames{
+        QStringLiteral("screenshotToolbarDragHandle"),
+        QStringLiteral("screenRecordingShowKeyboard"),
+    };
+    QVector<QWidget*> controls;
+    for (const QString& objectName : objectNames) {
+        QWidget* control = palette.findChild<QWidget*>(objectName);
+        require(control != nullptr, "dynamic toolbar control should be present");
+        controls.push_back(control);
+    }
+    const char* sourceLabels[] = {
+        "Send to back",   "Send backward",          "Bring forward",
+        "Bring to front", "Copy selected elements", "Delete selected elements",
+        "Straight arrow", "Curved arrow",           "Elbow arrow",
+    };
+    for (const char* source : sourceLabels) {
+        QWidget* control = controlWithTooltip(palette, source);
+        require(control != nullptr, "dynamic toolbar source label should be present");
+        controls.push_back(control);
+    }
+
+    struct TranslationExpectation {
+        QString language;
+        QStringList labels;
+    };
+    const TranslationExpectation expectations[] = {
+        {QStringLiteral("zh_CN"),
+         {QStringLiteral("拖动工具栏"), QStringLiteral("在录制中显示按键"),
+          QStringLiteral("置于底层"), QStringLiteral("下移一层"), QStringLiteral("上移一层"),
+          QStringLiteral("置于顶层"), QStringLiteral("复制选中元素"),
+          QStringLiteral("删除选中元素"), QStringLiteral("直线箭头"), QStringLiteral("曲线箭头"),
+          QStringLiteral("折线箭头")}},
+        {QStringLiteral("zh_TW"),
+         {QStringLiteral("拖曳工具列"), QStringLiteral("在錄製中顯示按鍵"),
+          QStringLiteral("移至最下層"), QStringLiteral("下移一層"), QStringLiteral("上移一層"),
+          QStringLiteral("移至最上層"), QStringLiteral("複製選取的元素"),
+          QStringLiteral("刪除選取的元素"), QStringLiteral("直線箭頭"), QStringLiteral("曲線箭頭"),
+          QStringLiteral("折線箭頭")}},
+    };
+    for (const TranslationExpectation& expectation : expectations) {
+        require(language.setLanguage(expectation.language),
+                "dynamic toolbar language setup failed");
+        QCoreApplication::processEvents();
+        require(controls.size() == expectation.labels.size(),
+                "dynamic toolbar translation fixture should stay aligned");
+        for (int index = 0; index < controls.size(); ++index) {
+            require(controls.at(index)->toolTip() == expectation.labels.at(index) &&
+                        controls.at(index)->accessibleName() == expectation.labels.at(index),
+                    "dynamic toolbar labels must use the active translation catalog");
+        }
+    }
+
+    require(language.setLanguage(QStringLiteral("en_US")),
+            "English should be restorable after dynamic toolbar translations");
+    QCoreApplication::processEvents();
 }
 
 void numericStrokeWidthPreviewUsesLineWithinPreviewBounds() {
@@ -1777,16 +1852,16 @@ void screenshotToolbarUsesCanonicalOrderAndSectionSeparators() {
     ScreenshotToolPalette palette(options);
     const QList<adqt::widgets::AdButton*> buttons = mainToolbarButtons(palette);
     const QStringList expected{
-        QStringLiteral("Edit selection (M, Ctrl+E)"),
+        QStringLiteral("Edit selection (M / Ctrl+E)"),
         QStringLiteral("Select elements (V)"),
         QStringLiteral("Shape (1)"),
         QStringLiteral("Arrow (2)"),
-        QStringLiteral("Pen (3, P)"),
-        QStringLiteral("Highlight (4, H)"),
-        QStringLiteral("Text (5, T)"),
-        QStringLiteral("Serial number (6, N)"),
-        QStringLiteral("Filter (7, F)"),
-        QStringLiteral("Eraser (8, E)"),
+        QStringLiteral("Pen (3 / P)"),
+        QStringLiteral("Highlight (4 / H)"),
+        QStringLiteral("Text (5 / T)"),
+        QStringLiteral("Serial number (6 / N)"),
+        QStringLiteral("Filter (7 / F)"),
+        QStringLiteral("Eraser (8 / E)"),
         QStringLiteral("Watermark (9)"),
         QStringLiteral("Table recognition (Ctrl+X)"),
         QStringLiteral("Record screen (Ctrl+R)"),
@@ -1858,7 +1933,7 @@ void groupedDrawingOptionsShowShortcutTooltips() {
     const QMap<QString, QString> expectedTooltips{
         {QStringLiteral("arrow"), QStringLiteral("Arrow (2)")},
         {QStringLiteral("line"), QStringLiteral("Line")},
-        {QStringLiteral("highlighter"), QStringLiteral("Highlight (4, H)")},
+        {QStringLiteral("highlighter"), QStringLiteral("Highlight (4 / H)")},
         {QStringLiteral("spotlight"), QStringLiteral("Spotlight")},
     };
     for (const char* triggerName : {"screenshotArrowLineButton", "screenshotHighlightButton"}) {
@@ -2004,15 +2079,15 @@ void screenshotActionTooltipsUseConfiguredShortcuts() {
 
     const snow_shot::storage::ScreenshotShortcutSettings shortcutSettings;
     const QMap<QString, QStringList> originalShortcuts = shortcutSettings.allShortcuts();
-    require(
-        shortcutSettings.setShortcuts(QStringLiteral("pin_to_screen"), {QStringLiteral("Alt+F")}),
-        "pin shortcut fixture must support a non-default mapping");
+    require(shortcutSettings.setShortcuts(QStringLiteral("pin_to_screen"),
+                                          {QStringLiteral("Ctrl++"), QStringLiteral("Num+1")}),
+            "pin shortcut fixture must support a non-default mapping");
     require(shortcutSettings.shortcuts(QStringLiteral("pin_to_screen")) ==
-                QStringList{QStringLiteral("Alt+F")},
+                QStringList{QStringLiteral("Ctrl++"), QStringLiteral("Num+1")},
             "pin shortcut fixture must expose the updated mapping immediately");
     QEvent languageChange(QEvent::LanguageChange);
     QCoreApplication::sendEvent(&palette, &languageChange);
-    require(pin->toolTip() == QStringLiteral("Pin to screen (Alt+F)"),
+    require(pin->toolTip() == QStringLiteral("Pin to screen (Ctrl+Plus / Num 1)"),
             "screenshot toolbar shortcuts must survive runtime retranslation");
     require(shortcutSettings.setAllShortcutsAtomic(originalShortcuts),
             "pin shortcut fixture must restore the original mapping");
@@ -3682,6 +3757,13 @@ void clickingActiveToolbarToolReturnsToSelect() {
 void repeatingDrawingShortcutsReturnsToSelect() {
     using Tool = ScreenshotToolPalette::Tool;
     ScreenshotToolPalette::Options options;
+    options.showFreeDrawTool = true;
+    options.showHighlightTool = true;
+    options.showTextTool = true;
+    options.showSerialNumberTool = true;
+    options.showFilterTool = true;
+    options.showEraserTool = true;
+    options.showWatermarkTool = true;
     options.enableStyleToolbar = false;
     ScreenshotToolPalette palette(options);
     int selectRequests = 0;
@@ -3797,6 +3879,88 @@ void groupedToolShortcutsToggleOnlyTheRequestedTool() {
     require(!recordingPalette.activateDrawingShortcut(QStringLiteral("highlight")) &&
                 recordingPalette.activeToolForTests() == Tool::Shape,
             "unavailable recording shortcuts should leave the current tool unchanged");
+}
+
+void screenshotShortcutsShareButtonCommandsAndAvailability() {
+    using Tool = ScreenshotToolPalette::Tool;
+    ScreenshotToolPalette::Options options;
+    options.showMoveTool = true;
+    options.showHistoryActions = true;
+    options.showScreenRecordButton = true;
+    options.showSaveButton = true;
+    options.showOcrTool = true;
+    options.showTextTranslationTool = true;
+    options.showTableTool = true;
+    options.showQrTool = true;
+    options.showScrollingScreenshotTool = true;
+    options.enableStyleToolbar = false;
+    options.actions = ScreenshotToolPalette::PinAction | ScreenshotToolPalette::CancelAction |
+                      ScreenshotToolPalette::CopyAction;
+    ScreenshotToolPalette palette(options);
+    struct Command {
+        const char* id;
+        const char* label;
+        void (ScreenshotToolPalette::*signal)();
+    };
+    const Command commands[] = {
+        {"pin_to_screen", "Pin to screen", &ScreenshotToolPalette::pinRequested},
+        {"save_as_file", "Save as file", &ScreenshotToolPalette::saveRequested},
+        {"video_recording", "Record screen", &ScreenshotToolPalette::screenRecordRequested},
+        {"cancel_screenshot", "Cancel screenshot", &ScreenshotToolPalette::cancelRequested},
+        {"copy_to_clipboard", "Copy to clipboard", &ScreenshotToolPalette::copyRequested},
+        {"undo", "Undo", &ScreenshotToolPalette::undoRequested},
+        {"redo", "Redo", &ScreenshotToolPalette::redoRequested},
+        {"move_tool", "Edit selection", &ScreenshotToolPalette::moveRequested},
+        {"text_recognition", "Text recognition", &ScreenshotToolPalette::ocrRequested},
+        {"text_translation", "Text translation", &ScreenshotToolPalette::textTranslationRequested},
+        {"scrolling_screenshot", "Scrolling screenshot",
+         &ScreenshotToolPalette::scrollingScreenshotRequested},
+    };
+    for (const bool scrolling : {false, true}) {
+        palette.setScrollingScreenshotMode(scrolling);
+        for (const auto& command : commands) {
+            auto* button =
+                qobject_cast<adqt::widgets::AdButton*>(controlWithTooltip(palette, command.label));
+            require(button != nullptr, "command must have a real toolbar button");
+            int requests = 0;
+            const auto connection =
+                QObject::connect(&palette, command.signal, &palette, [&requests]() { ++requests; });
+            palette.setActiveTool(Tool::Select);
+            palette.setHistoryState({true, true});
+            button->click();
+            const auto clickedTool = palette.activeToolForTests();
+            require(requests == 1, "button must emit its command exactly once");
+            palette.setActiveTool(Tool::Select);
+            require(palette.activateScreenshotShortcut(QString::fromLatin1(command.id)) &&
+                        requests == 2 && palette.activeToolForTests() == clickedTool,
+                    "shortcut must produce the same command and active tool as a button click");
+            button->setEnabled(false);
+            button->click();
+            require(!palette.activateScreenshotShortcut(QString::fromLatin1(command.id)) &&
+                        requests == 2,
+                    "disabled button and shortcut must both reject the command");
+            button->setEnabled(true);
+            QObject::disconnect(connection);
+        }
+    }
+    palette.setTableEnabled(false);
+    palette.setQrEnabled(true);
+    require(!palette.activateScreenshotShortcut(QStringLiteral("table_recognition")) &&
+                palette.activateScreenshotShortcut(QStringLiteral("qr_code_recognition")) &&
+                palette.activeToolForTests() == Tool::Qr,
+            "shared recognition entries must respect each option's enabled state");
+    palette.setTableEnabled(true);
+    palette.setQrEnabled(false);
+    require(!palette.activateScreenshotShortcut(QStringLiteral("qr_code_recognition")) &&
+                palette.activateScreenshotShortcut(QStringLiteral("table_recognition")) &&
+                palette.activeToolForTests() == Tool::Table,
+            "the enabled recognition option must remain reachable through its shortcut");
+    palette.setTableEditingState(true, true, false, false, false, false);
+    require(palette.activateScreenshotShortcut(QStringLiteral("undo")) &&
+                !palette.activateScreenshotShortcut(QStringLiteral("redo")),
+            "recognition history shortcuts must use the toolbar's history availability");
+    require(!palette.activateScreenshotShortcut(QStringLiteral("unknown")),
+            "unknown command must not activate a toolbar action");
 }
 
 void tableToolExposesStructureActionsAndOwnHistoryState() {
@@ -8496,6 +8660,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--tool-shortcuts-only"))) {
+        screenshotShortcutsShareButtonCommandsAndAvailability();
         clickingActiveToolbarToolReturnsToSelect();
         repeatingDrawingShortcutsReturnsToSelect();
         repeatingActionShortcutsReturnsToSelect();
@@ -8512,6 +8677,11 @@ int main(int argc, char** argv) {
     if (application.arguments().contains(QStringLiteral("--recording-controls-only"))) {
         recordingControlsRemainLaidOutAcrossStateChanges();
         recordingExportSettingsAndDrawingAvailabilityFollowSessionState();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
+    if (application.arguments().contains(QStringLiteral("--dynamic-i18n-only"))) {
+        dynamicToolbarLabelsUseEveryTranslationCatalog();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
         return 0;
     }
@@ -8626,6 +8796,7 @@ int main(int argc, char** argv) {
     recordingControlsRemainLaidOutAcrossStateChanges();
     translucentColorSwatchesShowCheckerboardUnderlay();
     recordingExportSettingsAndDrawingAvailabilityFollowSessionState();
+    dynamicToolbarLabelsUseEveryTranslationCatalog();
     numericStrokeWidthPreviewUsesLineWithinPreviewBounds();
     secondaryControlsMaterializeOnlyForTheRequestedFamily();
     textAndHighlightStrokeWidthTriggersUseSharedPreviewButton();
@@ -8649,6 +8820,7 @@ int main(int argc, char** argv) {
     ocrControlReflectsLoadingState();
     ocrToolReplacesSelectionActionToolbarContents();
     clickingActiveToolbarToolReturnsToSelect();
+    screenshotShortcutsShareButtonCommandsAndAvailability();
     repeatingDrawingShortcutsReturnsToSelect();
     repeatingActionShortcutsReturnsToSelect();
     groupedToolShortcutsToggleOnlyTheRequestedTool();

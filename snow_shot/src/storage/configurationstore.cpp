@@ -1,4 +1,5 @@
 #include "snow_shot/storage/configurationstore.h"
+#include "snow_shot/customaimodelconfiguration.h"
 
 #include "snow_shot/storage/configurationschema.h"
 #include "snow_shot/storage/storagelogging.h"
@@ -321,6 +322,19 @@ void ConfigurationStore::load() {
                             insertPath(&document, entry.key, entry.defaultValue);
                             dirty = true;
                         }
+                        continue;
+                    }
+                    if (entry.key == QStringLiteral("api_configuration/custom_models")) {
+                        bool valid = false;
+                        loaded.insert(entry.key,
+                                      customAiModelsToJson(customAiModelsFromJson(raw, &valid)));
+                        if (!valid) {
+                            error = tr(
+                                "Some custom AI model configurations are invalid and were ignored");
+                            qCWarning(storageLog) << error;
+                        }
+                        // Preserve the original document until the user explicitly edits this
+                        // collection.
                         continue;
                     }
                     const ConfigurationNormalization normalized =

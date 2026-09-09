@@ -82,20 +82,8 @@ struct ScreenshotOverlayShortcutController::Impl {
         }
     }
 
-    [[nodiscard]] bool localShortcutState() const {
-        return (interaction.movingSelection() || interaction.modifyingSelection() ||
-                interaction.editing()) &&
-               actions.localShortcutInputAllowed();
-    }
-
     [[nodiscard]] bool toolbarToolShortcutState() const {
         return !inputHandler.externalDragActive() && actions.mainToolbarVisible() &&
-               localShortcutState();
-    }
-
-    [[nodiscard]] bool screenshotShortcutState() const {
-        return (interaction.manualSelecting() || interaction.movingSelection() ||
-                interaction.editing()) &&
                actions.localShortcutInputAllowed();
     }
 
@@ -195,20 +183,6 @@ struct ScreenshotOverlayShortcutController::Impl {
                     actionId == QStringLiteral("copy_to_clipboard")) {
                     return actions.localShortcutInputAllowed();
                 }
-                if (actionId == QStringLiteral("undo") || actionId == QStringLiteral("redo")) {
-                    return !recognitionTool(interaction.activeTool()) &&
-                           actions.mainToolbarVisible() && screenshotShortcutState();
-                }
-                if (actionId == QStringLiteral("table_recognition") ||
-                    actionId == QStringLiteral("qr_code_recognition") ||
-                    actionId == QStringLiteral("text_recognition") ||
-                    actionId == QStringLiteral("text_translation") ||
-                    actionId == QStringLiteral("video_recording") ||
-                    actionId == QStringLiteral("scrolling_screenshot") ||
-                    actionId == QStringLiteral("save_as_file") ||
-                    actionId == QStringLiteral("pin_to_screen")) {
-                    return toolbarToolShortcutState();
-                }
                 if (actionId == QStringLiteral("previous_screenshot_history") ||
                     actionId == QStringLiteral("next_screenshot_history")) {
                     return !recognitionTool(interaction.activeTool()) &&
@@ -239,13 +213,10 @@ struct ScreenshotOverlayShortcutController::Impl {
                 if (actionId == QStringLiteral("copy_color")) {
                     return interaction.moveToolActive() && actions.localShortcutInputAllowed();
                 }
-                if (actionId == QStringLiteral("move_tool")) {
-                    return actions.mainToolbarVisible() && screenshotShortcutState();
-                }
                 if (actionId.startsWith(QStringLiteral("move_cursor_"))) {
                     return cursorMovementShortcutState();
                 }
-                return false;
+                return toolbarToolShortcutState();
             };
             if (actionId.startsWith(QStringLiteral("move_cursor_"))) {
                 binding.canActivateOutsideScope = [this](const auto&) {
@@ -253,9 +224,6 @@ struct ScreenshotOverlayShortcutController::Impl {
                 };
             }
             binding.activate = [this, actionId](const auto& context) {
-                if (actionId == QStringLiteral("move_tool")) {
-                    return actions.activateMoveTool();
-                }
                 if (actionId == QStringLiteral("move_cursor_up")) {
                     return actions.moveCursorOnePixel(
                         snow_shot::platform::PhysicalCursorDirection::Up);
@@ -310,45 +278,7 @@ struct ScreenshotOverlayShortcutController::Impl {
                     actions.cancelCapture();
                     return true;
                 }
-                if (actionId == QStringLiteral("table_recognition")) {
-                    return actions.activateTableRecognition();
-                }
-                if (actionId == QStringLiteral("qr_code_recognition")) {
-                    return actions.activateQrRecognition();
-                }
-                if (actionId == QStringLiteral("text_recognition")) {
-                    return actions.activateTextRecognition();
-                }
-                if (actionId == QStringLiteral("text_translation")) {
-                    return actions.activateTextTranslation();
-                }
-                if (actionId == QStringLiteral("video_recording")) {
-                    return actions.startVideoRecording();
-                }
-                if (actionId == QStringLiteral("scrolling_screenshot")) {
-                    return actions.startScrollingScreenshot();
-                }
-                if (actionId == QStringLiteral("save_as_file")) {
-                    return actions.saveAsFile();
-                }
-                if (actionId == QStringLiteral("pin_to_screen")) {
-                    return actions.pinSelectionToScreen();
-                }
-                if (actionId == QStringLiteral("cancel_screenshot")) {
-                    actions.cancelCapture();
-                    return true;
-                }
-                if (actionId == QStringLiteral("copy_to_clipboard")) {
-                    actions.copySelectionToClipboard();
-                    return true;
-                }
-                if (actionId == QStringLiteral("undo")) {
-                    return actions.undo();
-                }
-                if (actionId == QStringLiteral("redo")) {
-                    return actions.redo();
-                }
-                return false;
+                return actions.activateScreenshotShortcut(actionId);
             };
             if (actionId == QStringLiteral("move_entire_selection")) {
                 binding.allowedAdditionalModifiers = Qt::ShiftModifier;

@@ -292,6 +292,40 @@ void recognitionVisibilityRoundTripsAndDefaultsToHidden() {
     require(loaded.has_value() && !loaded->recognitionVisible && !loaded->translationVisible,
             "records without recognition visibility must default to hidden");
 }
+void thumbnailStateSurvivesRestartAndExit() {
+    QTemporaryDir directory;
+    require(directory.isValid(), "temporary thumbnail storage is unavailable");
+    const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    auto record = recordWithId(id, patternedImage(QSize(400, 200), 3));
+    record.nativeGeometry = QRect(120, 80, 125, 125);
+    record.thumbnailMode = true;
+    record.preThumbnailNativeGeometry = QRect(50, 40, 800, 400);
+    record.screenDpi = 1.5;
+    record.scalePercent = 200.0;
+    {
+        storage::PinnedWindowRepository repository(directory.path());
+        require(repository.upsert(record).success && repository.flush().success,
+                "thumbnail state must be committed to disk");
+    }
+    {
+        storage::PinnedWindowRepository repository(directory.path());
+        const auto loaded = repository.loadRecord(id);
+        require(loaded.has_value() && loaded->thumbnailMode &&
+                    loaded->nativeGeometry == record.nativeGeometry &&
+                    loaded->preThumbnailNativeGeometry == record.preThumbnailNativeGeometry &&
+                    loaded->scalePercent == record.scalePercent,
+                "repository restart must retain the mode and both physical rectangles");
+        record.thumbnailMode = false;
+        record.nativeGeometry = record.preThumbnailNativeGeometry;
+        require(repository.updateState(record).success && repository.flush().success,
+                "leaving thumbnail mode must update persisted metadata");
+    }
+    storage::PinnedWindowRepository repository(directory.path());
+    const auto loaded = repository.loadRecord(id);
+    require(loaded.has_value() && !loaded->thumbnailMode &&
+                loaded->nativeGeometry == record.nativeGeometry,
+            "thumbnail exit must survive another repository restart");
+}
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -302,5 +336,6 @@ int main(int argc, char* argv[]) {
     changedPayloadsRecommitAndStayLazy();
     removedRecordsPruneTheirPayloads();
     recognitionVisibilityRoundTripsAndDefaultsToHidden();
+    thumbnailStateSurvivesRestartAndExit();
     return 0;
 }

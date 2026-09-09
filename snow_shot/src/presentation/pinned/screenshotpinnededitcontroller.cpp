@@ -276,18 +276,7 @@ void ScreenshotPinnedEditController::registerRecognitionShortcuts() {
                    m_toolbarWindow->palette() != nullptr;
         };
         binding.activate = [this, actionId](const auto&) {
-            if (actionId == QStringLiteral("table_recognition")) {
-                emit tableRecognitionRequested();
-            } else if (actionId == QStringLiteral("qr_code_recognition")) {
-                emit qrRecognitionRequested();
-            } else if (actionId == QStringLiteral("text_recognition")) {
-                emit textRecognitionRequested();
-            } else if (actionId == QStringLiteral("text_translation")) {
-                emit textTranslationRequested();
-            } else {
-                return false;
-            }
-            return true;
+            return m_toolbarWindow->palette()->activateScreenshotShortcut(actionId);
         };
         m_recognitionShortcutBindings.insert(
             actionId, m_shortcutManager.addBinding(this, std::move(binding)));
