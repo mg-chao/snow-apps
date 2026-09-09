@@ -771,9 +771,15 @@ void WatermarkPatternRenderer::render(QPainter& painter, const WatermarkRenderRe
         return;
     }
 
+    // Font size and spacing are canvas pixels, like the other annotations. Keep
+    // the pattern anchored to the view area, but project its dimensions through
+    // the camera before rasterizing for the paint device.
+    const double zoom = std::isfinite(configuration.camera_zoom) && configuration.camera_zoom > 0.0
+                            ? configuration.camera_zoom
+                            : 1.0;
     const QFont font = resolveFont(configuration, painter.font());
-    const int scaleX64 = quantizedScale64(deviceScaleX(request.effectiveDeviceTransform));
-    const int scaleY64 = quantizedScale64(deviceScaleY(request.effectiveDeviceTransform));
+    const int scaleX64 = quantizedScale64(deviceScaleX(request.effectiveDeviceTransform) * zoom);
+    const int scaleY64 = quantizedScale64(deviceScaleY(request.effectiveDeviceTransform) * zoom);
     const double scaleX = static_cast<double>(scaleX64) / kScaleQuantization;
     const double scaleY = static_cast<double>(scaleY64) / kScaleQuantization;
     const UnitKey key{
@@ -794,8 +800,9 @@ void WatermarkPatternRenderer::render(QPainter& painter, const WatermarkRenderRe
     const double horizontalStep = std::max(1.0, entry->shape->inkBounds.width() + gap);
     const double verticalStep = std::max(1.0, entry->shape->inkBounds.height() + gap);
     const QPointF center = anchorArea.center();
-    const QRectF localBounds =
+    const QRectF viewLocalBounds =
         inverseRotatedBounds(exposedRegion.boundingRect(), center, configuration.watermark_angle);
+    const QRectF localBounds(viewLocalBounds.topLeft() / zoom, viewLocalBounds.size() / zoom);
     if (localBounds.isEmpty()) {
         ++g_diagnostics.earlyExitCount;
         return;
@@ -825,6 +832,7 @@ void WatermarkPatternRenderer::render(QPainter& painter, const WatermarkRenderRe
     painter.setRenderHint(QPainter::TextAntialiasing, true);
     painter.translate(center);
     painter.rotate(configuration.watermark_angle);
+    painter.scale(zoom, zoom);
     QElapsedTimer compositionTimer;
     if (instrument) {
         compositionTimer.start();

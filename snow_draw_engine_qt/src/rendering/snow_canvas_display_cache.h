@@ -32,7 +32,7 @@ struct WatermarkDisplayInfo {
     SnowColorRgba8 watermark_color{};
     std::array<char, SNOW_WATERMARK_TEXT_CAPACITY> watermark_text{};
     std::uint16_t watermark_text_len = 0;
-    double watermark_font_size = 12.0;
+    double watermark_font_size = 16.0;
     std::array<char, SNOW_WATERMARK_FONT_FAMILY_CAPACITY> watermark_font_family{};
     std::uint16_t watermark_font_family_len = 0;
     double watermark_angle = 30.0;

@@ -37,7 +37,7 @@ impl Default for WatermarkConfig {
                 a: 0xff,
             },
             text: String::new(),
-            font_size: 12.0,
+            font_size: 16.0,
             font_family: String::new(),
             angle: 30.0,
             gap: 56.0,
@@ -1748,7 +1748,7 @@ mod tests {
                 default.gap,
                 default.opacity
             ),
-            (12.0, 30.0, 56.0, 0.16)
+            (16.0, 30.0, 56.0, 0.16)
         );
         assert!(!default.is_visible());
 

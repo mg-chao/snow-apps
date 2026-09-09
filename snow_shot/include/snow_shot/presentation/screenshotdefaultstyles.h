@@ -87,7 +87,7 @@ inline SnowCanvasStyleDefaults screenshotCanvasStyleDefaults() {
 
     defaults.watermark.color = QColor(0, 0, 0, 255);
     defaults.watermark.text.clear();
-    defaults.watermark.fontSize = 12.0;
+    defaults.watermark.fontSize = 16.0;
     defaults.watermark.fontFamily.clear();
     defaults.watermark.angle = 30.0;
     defaults.watermark.gap = 56.0;

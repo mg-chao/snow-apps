@@ -274,7 +274,7 @@ inline bool operator!=(const SnowCanvasShapeStyle& lhs, const SnowCanvasShapeSty
 struct SnowCanvasWatermarkConfig {
     QColor color = QColor(0, 0, 0, 255);
     QString text;
-    double fontSize = 12.0;
+    double fontSize = 16.0;
     QString fontFamily;
     double angle = 30.0;
     double gap = 56.0;
