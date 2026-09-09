@@ -3691,7 +3691,20 @@ if(SNOW_SHOT_BUILD_TESTS)
     target_compile_definitions(snow-shot-screen-recording-controller-tests PRIVATE
         snow_capture_last_error_message=test_recording_last_error_message)
     if(WIN32)
-        target_link_libraries(snow-shot-screen-recording-controller-tests PRIVATE user32 dwmapi)
+        target_link_libraries(snow-shot-screen-recording-controller-tests PRIVATE user32 dwmapi gdi32)
+        target_sources(snow-shot-screen-recording-controller-tests PRIVATE
+            tests/screen_recording_toolbar_display_tests.cpp)
+        add_test(NAME snow-shot-screen-recording-toolbar-display-tests
+            COMMAND snow-shot-screen-recording-controller-tests
+                --native-toolbar-display-only -platform windows)
+        add_test(NAME snow-shot-screen-recording-toolbar-ready-display-tests
+            COMMAND snow-shot-screen-recording-controller-tests
+                --native-toolbar-ready-display-only -platform windows)
+        set_tests_properties(snow-shot-screen-recording-toolbar-display-tests
+            snow-shot-screen-recording-toolbar-ready-display-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 30 SKIP_RETURN_CODE 77
+            ENVIRONMENT "QT_QPA_PLATFORM=windows"
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
     endif()
     add_test(NAME snow-shot-screen-recording-controller-tests
         COMMAND snow-shot-screen-recording-controller-tests)
@@ -3762,6 +3775,12 @@ if(SNOW_SHOT_BUILD_TESTS)
         NAME snow-shot-screen-recording-area-window-tests
         COMMAND snow-shot-screen-recording-area-window-tests
     )
+    if(WIN32)
+        add_test(NAME snow-shot-screen-recording-area-native-tests
+            COMMAND snow-shot-screen-recording-area-window-tests --native-geometry-only -platform windows)
+        set_tests_properties(snow-shot-screen-recording-area-native-tests PROPERTIES
+            LABELS "interactive;windows" RUN_SERIAL TRUE TIMEOUT 45)
+    endif()
     set_tests_properties(snow-shot-screen-recording-area-window-tests PROPERTIES
         ENVIRONMENT
             "${_SNOW_SHOT_OFFSCREEN_QPA_ENVIRONMENT};QT_SCALE_FACTOR=1.25"

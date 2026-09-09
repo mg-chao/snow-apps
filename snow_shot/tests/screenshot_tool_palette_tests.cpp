@@ -489,11 +489,11 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
                      });
     exportButton->click();
     QCoreApplication::processEvents();
-    require(!exportPanel->isVisible() && !palette.recordingExportSettingsVisible() &&
-                !palette.activeToolForTests().has_value() && !exportVisible &&
-                exportVisibilityChanges == 1 &&
-                exportButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text,
-            "clicking active Export Settings should deactivate it and notify the controller");
+    require(exportPanel->isVisible() && palette.recordingExportSettingsVisible() &&
+                !palette.activeToolForTests().has_value() && exportVisible &&
+                exportVisibilityChanges == 0 &&
+                exportButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid,
+            "clicking active Export Settings must be idempotent");
     exportButton->click();
     QCoreApplication::processEvents();
     require(exportPanel->isVisible() && palette.mainPanel()->geometry() == mainGeometry,
@@ -643,8 +643,8 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
     QObject::connect(&palette, &ScreenshotToolPalette::selectRequested, &palette,
                      [&]() { ++selectRequests; });
     exportButton->click();
-    require(!exportPanel->isVisible() && !palette.activeToolForTests().has_value(),
-            "clicking active Export Settings should clear its selection");
+    require(exportPanel->isVisible() && !palette.activeToolForTests().has_value(),
+            "clicking active Export Settings must retain its selection");
     shapeButton->click();
     require(!exportPanel->isVisible() &&
                 palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape,
@@ -663,11 +663,11 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
             "selecting an unavailable recording tool should leave the shared state unchanged");
     shapeButton->click();
     shapeButton->click();
-    require(!exportPanel->isVisible() && !palette.activeToolForTests().has_value() &&
+    require(exportPanel->isVisible() && !palette.activeToolForTests().has_value() &&
                 !palette.styleToolbarVisible() &&
                 shapeButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text &&
                 selectRequests == 2,
-            "clicking the active drawing button should deactivate drawing and close its tools");
+            "clicking the active drawing button must switch to Export Settings");
     exportButton->click();
 
     int formatChanges = 0;
@@ -830,17 +830,17 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
         verifyExportSettingsSelected(false);
         const int visibilityChangesBeforeClick = exportVisibilityChanges;
         exportButton->click();
-        require(!exportPanel->isVisible() && !palette.recordingExportSettingsVisible() &&
-                    !palette.activeToolForTests().has_value() && !exportVisible &&
-                    exportVisibilityChanges == visibilityChangesBeforeClick + 1,
-                "clicking active Export Settings during recording should deactivate it");
+        require(exportPanel->isVisible() && palette.recordingExportSettingsVisible() &&
+                    !palette.activeToolForTests().has_value() && exportVisible &&
+                    exportVisibilityChanges == visibilityChangesBeforeClick,
+                "clicking active Export Settings during recording must remain idempotent");
         shapeButton->click();
         const int selectRequestsBeforeClick = selectRequests;
         shapeButton->click();
         require(!palette.activeToolForTests().has_value() &&
-                    !palette.recordingExportSettingsVisible() && !palette.styleToolbarVisible() &&
+                    palette.recordingExportSettingsVisible() && !palette.styleToolbarVisible() &&
                     selectRequests == selectRequestsBeforeClick + 1,
-                "clicking active drawing during recording should return to pass-through mode");
+                "clicking active drawing during recording must return to Export Settings");
         shapeButton->click();
         require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape,
                 "a deactivated drawing tool should activate on the next click");
@@ -3786,8 +3786,14 @@ void groupedToolShortcutsToggleOnlyTheRequestedTool() {
     ScreenshotToolPalette recordingPalette(options);
     require(recordingPalette.activateDrawingShortcut(QStringLiteral("shape")) &&
                 recordingPalette.activateDrawingShortcut(QStringLiteral("shape")) &&
-                recordingPalette.activeToolForTests() == Tool::Shape,
-            "recording shortcuts should retain explicit tool activation");
+                !recordingPalette.activeToolForTests().has_value() &&
+                recordingPalette.recordingExportSettingsVisible(),
+            "repeated recording shortcuts must return to Export Settings");
+    recordingPalette.setActiveTool(Tool::Shape);
+    recordingPalette.setActiveTool(Tool::Shape);
+    require(recordingPalette.activeToolForTests() == Tool::Shape &&
+                !recordingPalette.recordingExportSettingsVisible(),
+            "programmatic recording tool synchronization must remain idempotent");
     require(!recordingPalette.activateDrawingShortcut(QStringLiteral("highlight")) &&
                 recordingPalette.activeToolForTests() == Tool::Shape,
             "unavailable recording shortcuts should leave the current tool unchanged");

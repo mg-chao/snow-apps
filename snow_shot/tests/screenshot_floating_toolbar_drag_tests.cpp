@@ -1258,6 +1258,35 @@ void dpiCommitReconcilesTheActualFrameBeforePainting() {
             "the first repaint after a DPI commit must contain the complete toolbar");
 }
 
+void dpiCommitPresentsContentWhenUpdatesResume() {
+    ScreenshotFloatingToolPaletteWindow window(testToolbarOptions());
+    window.prepareForDisplay();
+    window.show();
+    settleQueuedRefreshes();
+    auto* controller = window.findChild<adqt::widgets::AdDpiStableWindowController*>();
+    require(controller != nullptr, "toolbar must have a DPI controller");
+    ToolbarPaintExtentMonitor monitor(window);
+    for (const bool hiddenDuringCommit : {false, true}) {
+        if (hiddenDuringCommit) {
+            window.hide();
+        }
+        monitor.painted = false;
+        controller->scaleCommitCompleted(
+            adqt::widgets::AdControlScaleContext::fromDprs(window.devicePixelRatioF(),
+                                                           window.devicePixelRatioF()),
+            window.size());
+        if (hiddenDuringCommit) {
+            window.show();
+        }
+        // The frame is unchanged, as when logical toolbar dimensions stay the
+        // same across monitors. A resize must not be needed to refresh its pixels.
+        settleQueuedRefreshes();
+        require(window.updatesEnabled() && monitor.painted && !monitor.clipped,
+                "resuming updates after a DPI commit must present the complete toolbar "
+                "even when its logical frame is unchanged");
+    }
+}
+
 void reusedToolbarFitsOnFirstShowAcrossScreens() {
     QScreen* screenA = nullptr;
     QScreen* screenB = nullptr;
@@ -2174,6 +2203,7 @@ int main(int argc, char* argv[]) {
     try {
         if (app.arguments().contains(QStringLiteral("--dpi-frame-reconcile-only"))) {
             dpiCommitReconcilesTheActualFrameBeforePainting();
+            dpiCommitPresentsContentWhenUpdatesResume();
             return 0;
         }
         if (app.arguments().contains(QStringLiteral("--capture-screen-switch-only"))) {

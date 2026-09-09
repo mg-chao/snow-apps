@@ -3275,7 +3275,7 @@ void ScreenshotToolPalette::createMainToolbar(const Options& options) {
             QStringLiteral("screenRecordingExportSettings"));
         panelLayout->addWidget(m_recordExportSettingsButton);
         connect(m_recordExportSettingsButton, &adqt::widgets::AdButton::clicked, this,
-                [this]() { setRecordingExportSettingsVisible(!m_recordExportSettingsVisible); });
+                [this]() { setRecordingExportSettingsVisible(true); });
     }
 
     const bool hasEditingTools = addMainToolButtons(options, panelLayout);
@@ -3523,8 +3523,7 @@ void ScreenshotToolPalette::activateToolFromToolbar(Tool tool, bool toggleVisibl
         : requestedButton != nullptr ? m_activeToolButton == requestedButton
                                      : m_activeTool.has_value() && *m_activeTool == tool;
     if (alreadyActive && m_options.recordingDrawingMode) {
-        clearActiveTool();
-        emit selectRequested();
+        setRecordingExportSettingsVisible(true);
         return;
     }
     const Tool requestedTool = alreadyActive && tool != Tool::Select ? Tool::Select : tool;
@@ -4605,11 +4604,7 @@ bool ScreenshotToolPalette::activateToolShortcut(Tool tool) {
     if (isRecordingUnavailableTool(tool)) {
         return false;
     }
-    if (m_options.recordingDrawingMode) {
-        activateDrawingTool(tool);
-    } else {
-        activateToolFromToolbar(tool, false);
-    }
+    activateToolFromToolbar(tool, false);
     return true;
 }
 

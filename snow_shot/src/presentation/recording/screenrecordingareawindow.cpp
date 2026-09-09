@@ -15,6 +15,11 @@
 #include <QScreen>
 #include <QShowEvent>
 #include <QWheelEvent>
+#include <QWindow>
+#include <QMoveEvent>
+#include <QResizeEvent>
+#include <QCloseEvent>
+#include <QScopedValueRollback>
 
 #if defined(Q_OS_WIN) || defined(_WIN32)
 #ifndef NOMINMAX
@@ -28,11 +33,30 @@ constexpr QColor kIdleColor(0x40, 0x96, 0xff);
 constexpr QColor kRecordingColor(0xf5, 0x22, 0x2d);
 constexpr QColor kPausedColor(0xfa, 0xad, 0x14);
 constexpr qreal kResizeHitWidth = 6.0;
+constexpr int kFrameInset = snow_shot::presentation::recording::screenRecordingPhysicalFrameInset;
+
+QRect nativeClientGeometry(const QWidget& window) {
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    if (QGuiApplication::platformName() == QStringLiteral("windows") &&
+        window.internalWinId() != 0) {
+        const HWND handle = reinterpret_cast<HWND>(window.internalWinId());
+        RECT client{};
+        POINT origin{};
+        if (GetClientRect(handle, &client) && ClientToScreen(handle, &origin)) {
+            return QRect(origin.x, origin.y, client.right - client.left,
+                         client.bottom - client.top);
+        }
+    }
+#else
+    Q_UNUSED(window);
+#endif
+    return {};
+}
 } // namespace
 
 ScreenRecordingAreaWindow::ScreenRecordingAreaWindow(QWidget* parent)
     : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
-                          Qt::MSWindowsFixedSizeDialogHint | Qt::NoDropShadowWindowHint),
+                          Qt::NoDropShadowWindowHint),
       m_canvasRuntime(std::make_unique<SnowCanvasRuntime>()),
       m_canvas(new SnowCanvasWidget(*m_canvasRuntime, this)) {
     setAttribute(Qt::WA_TranslucentBackground, true);
@@ -47,6 +71,7 @@ ScreenRecordingAreaWindow::ScreenRecordingAreaWindow(QWidget* parent)
     m_canvas->setClearBackgroundEnabled(false);
     m_canvas->setWheelZoomEnabled(false);
     m_canvas->setCanvasContentVisible(true);
+    static_cast<void>(m_canvas->setCanvasTool(SnowCanvasTool::Select));
     m_canvas->installEventFilter(this);
     snow_shot::presentation::applyScreenshotCanvasToolStyles(
         *m_canvas, snow_shot::presentation::screenshotCanvasToolStyleDefaults());
@@ -60,9 +85,10 @@ QRect ScreenRecordingAreaWindow::physicalRegion() const {
 }
 
 void ScreenRecordingAreaWindow::setPhysicalRegion(const QRect& region) {
-    if (!region.isValid() || region.isEmpty()) {
+    if (region.width() < 2 || region.height() < 2) {
         return;
     }
+    const QScopedValueRollback<bool> settingRegion(m_settingRegion, true);
     const bool opensNewRegion = m_physicalRegion.isValid() && m_physicalRegion != region;
     m_physicalRegion = region;
     QScreen* screen = ScreenshotGeometryMapper::screenForPhysicalRect(region);
@@ -75,6 +101,25 @@ void ScreenRecordingAreaWindow::setPhysicalRegion(const QRect& region) {
     m_selectionRect = frameGeometry.selectionRect;
     m_paddingWidth = frameGeometry.paddingWidth;
     setGeometry(frameGeometry.windowGeometry);
+    m_physicalInsets = QMarginsF(m_selectionRect.left() * scale, m_selectionRect.top() * scale,
+                                 (width() - m_selectionRect.right()) * scale,
+                                 (height() - m_selectionRect.bottom()) * scale);
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    if (QGuiApplication::platformName() == QStringLiteral("windows") && screen != nullptr) {
+        // Qt owns even the initial native placement. Its integer logical geometry can
+        // add a physical pixel of outer padding at fractional DPI; keep that padding
+        // outside the exact screenshot selection instead of competing with Qt via SetWindowPos.
+        const QPoint logicalOrigin = screen->geometry().topLeft();
+        const QPoint physicalOrigin =
+            ScreenshotGeometryMapper::physicalRectForScreen(*screen).topLeft();
+        const QPoint windowOrigin(physicalOrigin.x() + qRound((x() - logicalOrigin.x()) * scale),
+                                  physicalOrigin.y() + qRound((y() - logicalOrigin.y()) * scale));
+        const QPoint inset = region.topLeft() - windowOrigin;
+        m_physicalInsets =
+            QMarginsF(inset.x(), inset.y(), qRound(width() * scale) - inset.x() - region.width(),
+                      qRound(height() * scale) - inset.y() - region.height());
+    }
+#endif
     if (m_canvas != nullptr) {
         m_canvas->setGeometry(m_selectionRect.toAlignedRect());
         m_canvas->raise();
@@ -90,7 +135,7 @@ void ScreenRecordingAreaWindow::setRecordingState(ScreenshotToolPalette::Recordi
         return;
     }
     m_state = state;
-    cancelRegionGesture();
+    cancelRegionInteraction();
     applyInputMode();
 }
 
@@ -100,7 +145,7 @@ void ScreenRecordingAreaWindow::setInputMode(InputMode mode) {
         return;
     }
     m_inputMode = mode;
-    cancelRegionGesture();
+    cancelRegionInteraction();
     m_gestureInProgress = false;
     applyInputMode();
 }
@@ -114,7 +159,7 @@ void ScreenRecordingAreaWindow::setDrawingBlocked(bool blocked) {
         return;
     }
     m_drawingBlocked = blocked;
-    cancelRegionGesture();
+    cancelRegionInteraction();
     m_gestureInProgress = false;
     applyInputMode();
 }
@@ -132,9 +177,8 @@ QRect ScreenRecordingAreaWindow::canvasGeometry() const {
 }
 
 bool ScreenRecordingAreaWindow::eventFilter(QObject* watched, QEvent* event) {
-    if ((watched == this || watched == m_canvas) && event != nullptr &&
-        handleRegionMouseEvent(watched, event)) {
-        return true;
+    if (watched == this && event != nullptr && event->type() == QEvent::Hide) {
+        cancelRegionInteraction();
     }
     if (watched != m_canvas || event == nullptr || m_inputMode != InputMode::Drawing ||
         m_drawingBlocked) {
@@ -194,6 +238,7 @@ bool ScreenRecordingAreaWindow::eventFilter(QObject* watched, QEvent* event) {
 void ScreenRecordingAreaWindow::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
     applyInputMode();
+    scheduleGeometrySynchronization();
 }
 
 void ScreenRecordingAreaWindow::applyInputMode() {
@@ -217,7 +262,8 @@ void ScreenRecordingAreaWindow::applyInputMode() {
 }
 
 bool ScreenRecordingAreaWindow::regionEditingEnabled() const {
-    return m_state == ScreenshotToolPalette::RecordingState::Idle && !m_drawingBlocked;
+    return m_inputMode == InputMode::RegionEditing &&
+           m_state == ScreenshotToolPalette::RecordingState::Idle && !m_drawingBlocked;
 }
 
 Qt::Edges ScreenRecordingAreaWindow::resizeEdgesAt(const QPointF& position) const {
@@ -225,8 +271,8 @@ Qt::Edges ScreenRecordingAreaWindow::resizeEdgesAt(const QPointF& position) cons
         return {};
     }
     Qt::Edges edges;
-    const qreal horizontalHitWidth = qMin(kResizeHitWidth, m_selectionRect.width() / 2.0);
-    const qreal verticalHitWidth = qMin(kResizeHitWidth, m_selectionRect.height() / 2.0);
+    const qreal horizontalHitWidth = qMin(kResizeHitWidth, m_selectionRect.width() / 4.0);
+    const qreal verticalHitWidth = qMin(kResizeHitWidth, m_selectionRect.height() / 4.0);
     if (position.x() <= m_selectionRect.left() + horizontalHitWidth) {
         edges |= Qt::LeftEdge;
     } else if (position.x() >= m_selectionRect.right() - horizontalHitWidth) {
@@ -240,144 +286,223 @@ Qt::Edges ScreenRecordingAreaWindow::resizeEdgesAt(const QPointF& position) cons
     return edges;
 }
 
-void ScreenRecordingAreaWindow::cancelRegionGesture() {
-    m_regionGestureInProgress = false;
-    m_resizeEdges = {};
-    if (QWidget::mouseGrabber() == this) {
-        releaseMouse();
+void ScreenRecordingAreaWindow::beginRegionInteraction() {
+    if (!regionEditingEnabled() || m_regionInteractionActive) {
+        return;
     }
-    unsetCursor();
-    if (m_canvas != nullptr) {
-        m_canvas->unsetCursor();
+    m_regionInteractionActive = true;
+    emit regionInteractionStarted();
+}
+
+void ScreenRecordingAreaWindow::cancelRegionInteraction() {
+    if (!m_regionInteractionActive) {
+        return;
+    }
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+        SendMessageW(reinterpret_cast<HWND>(internalWinId()), WM_CANCELMODE, 0, 0);
+        // The system loop owns completion, including cancellation. Keep the toolbar
+        // hidden until WM_EXITSIZEMOVE, after any final geometry has been applied.
+        return;
+    }
+#endif
+    finishRegionInteraction();
+}
+
+void ScreenRecordingAreaWindow::finishRegionInteraction() {
+    if (!m_regionInteractionActive) {
+        return;
+    }
+    synchronizeWindowGeometry();
+    m_regionInteractionActive = false;
+    emit regionInteractionFinished();
+}
+
+void ScreenRecordingAreaWindow::layoutSelection() {
+    const qreal scale = devicePixelRatioF();
+    QRectF selection = QRectF(rect()).marginsRemoved(
+        QMarginsF(m_physicalInsets.left() / scale, m_physicalInsets.top() / scale,
+                  m_physicalInsets.right() / scale, m_physicalInsets.bottom() / scale));
+    const qreal frameInset = kFrameInset / scale;
+    QRectF frame = selection.adjusted(-frameInset, -frameInset, frameInset, frameInset);
+    const qreal padding = 1.0 / scale;
+    const auto nativeGeometry = snow_shot::presentation::recording::screenRecordingObservedGeometry(
+        nativeClientGeometry(*this), scale, m_physicalInsets.toMargins());
+    if (nativeGeometry.physicalRegion.isValid()) {
+        selection = nativeGeometry.selectionRect;
+        frame = nativeGeometry.frameRect;
+    }
+    if (m_selectionRect == selection && m_frameRect == frame && m_paddingWidth == padding) {
+        return;
+    }
+    m_selectionRect = selection;
+    m_frameRect = frame;
+    m_paddingWidth = padding;
+    m_canvas->setGeometry(m_selectionRect.toAlignedRect());
+    update();
+}
+
+void ScreenRecordingAreaWindow::scheduleGeometrySynchronization() {
+    if (m_geometrySyncPending) {
+        return;
+    }
+    m_geometrySyncPending = true;
+    QMetaObject::invokeMethod(
+        this,
+        [this]() {
+            m_geometrySyncPending = false;
+            synchronizeWindowGeometry();
+        },
+        Qt::QueuedConnection);
+}
+
+void ScreenRecordingAreaWindow::synchronizeWindowGeometry() {
+    if (m_settingRegion || !m_physicalRegion.isValid()) {
+        return;
+    }
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    // QWidget delivers its initial move/resize before applying geometry to a hidden HWND.
+    // The deferred observation after Show/WM_WINDOWPOSCHANGED sees the committed client pixels.
+    if (QGuiApplication::platformName() == QStringLiteral("windows") &&
+        !IsWindowVisible(reinterpret_cast<HWND>(internalWinId()))) {
+        return;
+    }
+#endif
+    layoutSelection();
+    const qreal scale = devicePixelRatioF();
+    const QScreen* currentScreen = screen();
+    const QPoint logicalOrigin =
+        currentScreen != nullptr ? currentScreen->geometry().topLeft() : QPoint();
+    const QPoint physicalOrigin =
+        currentScreen != nullptr
+            ? ScreenshotGeometryMapper::physicalRectForScreen(*currentScreen).topLeft()
+            : QPoint();
+    const QPointF selectionOrigin = QPointF(mapToGlobal(QPoint())) + m_selectionRect.topLeft();
+    QRect region(physicalOrigin.x() + qRound((selectionOrigin.x() - logicalOrigin.x()) * scale),
+                 physicalOrigin.y() + qRound((selectionOrigin.y() - logicalOrigin.y()) * scale),
+                 qRound(m_selectionRect.width() * scale), qRound(m_selectionRect.height() * scale));
+    const auto nativeGeometry = snow_shot::presentation::recording::screenRecordingObservedGeometry(
+        nativeClientGeometry(*this), scale, m_physicalInsets.toMargins());
+    if (nativeGeometry.physicalRegion.isValid()) {
+        region = nativeGeometry.physicalRegion;
+    }
+    if (region.width() >= 2 && region.height() >= 2 && region != m_physicalRegion) {
+        m_physicalRegion = region;
+        emit physicalRegionChanged(region);
     }
 }
 
-bool ScreenRecordingAreaWindow::handleRegionMouseEvent(QObject* watched, QEvent* event) {
-    if (event->type() == QEvent::Hide || event->type() == QEvent::WindowDeactivate ||
-        event->type() == QEvent::UngrabMouse) {
-        cancelRegionGesture();
-        return false;
+bool ScreenRecordingAreaWindow::event(QEvent* event) {
+    const bool handled = QWidget::event(event);
+    // A translucent backing-store flush can round the native surface by one pixel
+    // after the last resize event, without delivering another logical resize.
+    if (event->type() == QEvent::UpdateRequest || event->type() == QEvent::DevicePixelRatioChange ||
+        event->type() == QEvent::ScreenChangeInternal) {
+        synchronizeWindowGeometry();
     }
-    if (event->type() != QEvent::MouseButtonPress && event->type() != QEvent::MouseMove &&
-        event->type() != QEvent::MouseButtonRelease) {
-        return false;
-    }
-    if (!regionEditingEnabled() || m_gestureInProgress) {
-        return false;
-    }
-    auto* mouse = static_cast<QMouseEvent*>(event);
-    const QPointF position =
-        mouse->position() + (watched == m_canvas ? QPointF(m_canvas->pos()) : QPointF());
-    const Qt::Edges edges = resizeEdgesAt(position);
-    const bool movable =
-        m_inputMode == InputMode::RegionEditing && m_selectionRect.contains(position);
-    if (event->type() == QEvent::MouseButtonPress && mouse->button() == Qt::LeftButton &&
-        (edges != Qt::Edges() || movable)) {
-        QScreen* screen = ScreenshotGeometryMapper::screenForPhysicalRect(m_physicalRegion);
-        if (screen == nullptr) {
-            return false;
-        }
-        m_regionGestureBounds = ScreenshotGeometryMapper::physicalRectForScreen(*screen);
-        if (!m_regionGestureBounds.contains(m_physicalRegion)) {
-            // Preserve editable selections spanning monitors, including their existing extent
-            // if the display topology changed after the selection was opened.
-            for (const QScreen* attachedScreen : QGuiApplication::screens()) {
-                m_regionGestureBounds = m_regionGestureBounds.united(
-                    ScreenshotGeometryMapper::physicalRectForScreen(*attachedScreen));
-            }
-            m_regionGestureBounds = m_regionGestureBounds.united(m_physicalRegion);
-        }
-        m_regionGestureScale = screen->devicePixelRatio();
-        m_regionGestureStart = mouse->globalPosition();
-        m_regionGestureRect = m_physicalRegion;
-        m_resizeEdges = edges;
-        m_regionGestureInProgress = true;
-        grabMouse();
-        mouse->accept();
-        return true;
-    }
-    if (m_regionGestureInProgress &&
-        (event->type() == QEvent::MouseMove ||
-         (event->type() == QEvent::MouseButtonRelease && mouse->button() == Qt::LeftButton))) {
-        const QPointF logicalDelta = mouse->globalPosition() - m_regionGestureStart;
-        const QPoint delta(qRound(logicalDelta.x() * m_regionGestureScale),
-                           qRound(logicalDelta.y() * m_regionGestureScale));
-        QRect region = m_regionGestureRect;
-        const QRect bounds = m_regionGestureBounds;
-        if (m_resizeEdges == Qt::Edges()) {
-            region.moveLeft(qBound(bounds.left(), region.left() + delta.x(),
-                                   bounds.right() - region.width() + 1));
-            region.moveTop(qBound(bounds.top(), region.top() + delta.y(),
-                                  bounds.bottom() - region.height() + 1));
-        } else {
-            if (m_resizeEdges.testFlag(Qt::LeftEdge)) {
-                region.setLeft(
-                    qBound(bounds.left(), region.left() + delta.x(), region.right() - 1));
-            }
-            if (m_resizeEdges.testFlag(Qt::RightEdge)) {
-                region.setRight(
-                    qBound(region.left() + 1, region.right() + delta.x(), bounds.right()));
-            }
-            if (m_resizeEdges.testFlag(Qt::TopEdge)) {
-                region.setTop(qBound(bounds.top(), region.top() + delta.y(), region.bottom() - 1));
-            }
-            if (m_resizeEdges.testFlag(Qt::BottomEdge)) {
-                region.setBottom(
-                    qBound(region.top() + 1, region.bottom() + delta.y(), bounds.bottom()));
-            }
-        }
-        if (region != m_physicalRegion) {
-            setPhysicalRegion(region);
-            emit physicalRegionChanged(region);
-        }
-        if (event->type() == QEvent::MouseButtonRelease) {
-            cancelRegionGesture();
-        }
-        mouse->accept();
-        return true;
-    }
-    if (event->type() == QEvent::MouseMove) {
-        Qt::CursorShape cursor = Qt::ArrowCursor;
-        if ((edges.testFlag(Qt::LeftEdge) && edges.testFlag(Qt::TopEdge)) ||
-            (edges.testFlag(Qt::RightEdge) && edges.testFlag(Qt::BottomEdge))) {
-            cursor = Qt::SizeFDiagCursor;
-        } else if ((edges.testFlag(Qt::RightEdge) && edges.testFlag(Qt::TopEdge)) ||
-                   (edges.testFlag(Qt::LeftEdge) && edges.testFlag(Qt::BottomEdge))) {
-            cursor = Qt::SizeBDiagCursor;
-        } else if (edges.testFlag(Qt::LeftEdge) || edges.testFlag(Qt::RightEdge)) {
-            cursor = Qt::SizeHorCursor;
-        } else if (edges.testFlag(Qt::TopEdge) || edges.testFlag(Qt::BottomEdge)) {
-            cursor = Qt::SizeVerCursor;
-        } else if (movable) {
-            cursor = Qt::SizeAllCursor;
-        }
-        if (edges != Qt::Edges() || movable) {
-            setCursor(cursor);
-            m_canvas->setCursor(cursor);
-            mouse->accept();
-            return true;
-        }
-        unsetCursor();
-        m_canvas->unsetCursor();
-    }
-    return false;
+    return handled;
+}
+
+void ScreenRecordingAreaWindow::moveEvent(QMoveEvent* event) {
+    QWidget::moveEvent(event);
+    synchronizeWindowGeometry();
+}
+
+void ScreenRecordingAreaWindow::resizeEvent(QResizeEvent* event) {
+    QWidget::resizeEvent(event);
+    synchronizeWindowGeometry();
+}
+
+void ScreenRecordingAreaWindow::closeEvent(QCloseEvent* event) {
+    event->ignore();
+    emit closeRequested();
 }
 
 bool ScreenRecordingAreaWindow::nativeEvent(const QByteArray& eventType, void* message,
                                             qintptr* result) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
-    const auto* nativeMessage = static_cast<MSG*>(message);
-    if (nativeMessage != nullptr && result != nullptr && nativeMessage->message == WM_NCHITTEST &&
-        m_inputMode == InputMode::PassThrough && regionEditingEnabled() &&
-        !m_regionGestureInProgress) {
-        RECT bounds{};
-        if (GetWindowRect(nativeMessage->hwnd, &bounds)) {
-            const int x = static_cast<short>(LOWORD(nativeMessage->lParam));
-            const int y = static_cast<short>(HIWORD(nativeMessage->lParam));
-            const QPointF local((x - bounds.left) / devicePixelRatioF(),
-                                (y - bounds.top) / devicePixelRatioF());
-            if (resizeEdgesAt(local) == Qt::Edges()) {
-                *result = HTTRANSPARENT;
+    const auto* msg = static_cast<MSG*>(message);
+    if (msg != nullptr && result != nullptr) {
+        if (msg->message == WM_WINDOWPOSCHANGED) {
+            scheduleGeometrySynchronization();
+        }
+        if (msg->message == WM_SYSCOMMAND && (!regionEditingEnabled() || !isVisible()) &&
+            ((msg->wParam & 0xfff0) == SC_MOVE || (msg->wParam & 0xfff0) == SC_SIZE)) {
+            *result = 0;
+            return true;
+        }
+        if (msg->message == WM_ENTERSIZEMOVE) {
+            beginRegionInteraction();
+        } else if (msg->message == WM_EXITSIZEMOVE) {
+            finishRegionInteraction();
+        } else if (msg->message == WM_GETMINMAXINFO && regionEditingEnabled()) {
+            auto* limits = reinterpret_cast<MINMAXINFO*>(msg->lParam);
+            limits->ptMinTrackSize = {
+                qRound(m_physicalInsets.left() + m_physicalInsets.right()) + 2,
+                qRound(m_physicalInsets.top() + m_physicalInsets.bottom()) + 2};
+            *result = 0;
+            return true;
+        } else if (msg->message == WM_NCHITTEST && !regionEditingEnabled()) {
+            *result =
+                m_inputMode == InputMode::Drawing && !m_drawingBlocked ? HTCLIENT : HTTRANSPARENT;
+            return true;
+        } else if (msg->message == WM_NCHITTEST && regionEditingEnabled()) {
+            POINT point{static_cast<short>(LOWORD(msg->lParam)),
+                        static_cast<short>(HIWORD(msg->lParam))};
+            ScreenToClient(msg->hwnd, &point);
+            const Qt::Edges edges = resizeEdgesAt(
+                QPointF(point.x / devicePixelRatioF(), point.y / devicePixelRatioF()));
+            const bool left = edges.testFlag(Qt::LeftEdge);
+            const bool right = edges.testFlag(Qt::RightEdge);
+            const bool top = edges.testFlag(Qt::TopEdge);
+            const bool bottom = edges.testFlag(Qt::BottomEdge);
+            *result = top      ? (left    ? HTTOPLEFT
+                                  : right ? HTTOPRIGHT
+                                          : HTTOP)
+                      : bottom ? (left    ? HTBOTTOMLEFT
+                                  : right ? HTBOTTOMRIGHT
+                                          : HTBOTTOM)
+                      : left   ? HTLEFT
+                      : right  ? HTRIGHT
+                               : HTCAPTION;
+            return true;
+        } else if (msg->message == WM_NCLBUTTONDOWN && regionEditingEnabled()) {
+            Qt::Edges edges;
+            switch (msg->wParam) {
+            case HTLEFT:
+                edges = Qt::LeftEdge;
+                break;
+            case HTRIGHT:
+                edges = Qt::RightEdge;
+                break;
+            case HTTOP:
+                edges = Qt::TopEdge;
+                break;
+            case HTBOTTOM:
+                edges = Qt::BottomEdge;
+                break;
+            case HTTOPLEFT:
+                edges = Qt::TopEdge | Qt::LeftEdge;
+                break;
+            case HTTOPRIGHT:
+                edges = Qt::TopEdge | Qt::RightEdge;
+                break;
+            case HTBOTTOMLEFT:
+                edges = Qt::BottomEdge | Qt::LeftEdge;
+                break;
+            case HTBOTTOMRIGHT:
+                edges = Qt::BottomEdge | Qt::RightEdge;
+                break;
+            default:
+                break;
+            }
+            if (windowHandle() != nullptr && (edges != Qt::Edges() || msg->wParam == HTCAPTION)) {
+                const bool started = edges != Qt::Edges() ? windowHandle()->startSystemResize(edges)
+                                                          : windowHandle()->startSystemMove();
+                if (!started) {
+                    finishRegionInteraction();
+                }
+                *result = 0;
                 return true;
             }
         }
@@ -388,6 +513,9 @@ bool ScreenRecordingAreaWindow::nativeEvent(const QByteArray& eventType, void* m
 
 void ScreenRecordingAreaWindow::applyNativePassThrough(bool enabled) {
 #if defined(Q_OS_WIN) || defined(_WIN32)
+    if (QGuiApplication::platformName() != QStringLiteral("windows")) {
+        return;
+    }
     const HWND handle = reinterpret_cast<HWND>(winId());
     if (handle == nullptr) {
         return;
@@ -422,13 +550,6 @@ void ScreenRecordingAreaWindow::paintEvent(QPaintEvent* event) {
         (m_inputMode == InputMode::RegionEditing && regionEditingEnabled())) {
         // Windows passes mouse input through zero-alpha pixels in layered windows.
         painter.fillRect(m_selectionRect, QColor(0, 0, 0, 2));
-    } else if (regionEditingEnabled()) {
-        // Keep a usable resize target while the center remains transparent to input.
-        const QRectF interior = m_selectionRect.adjusted(kResizeHitWidth, kResizeHitWidth,
-                                                         -kResizeHitWidth, -kResizeHitWidth);
-        painter.setClipRegion(QRegion(rect()) - QRegion(interior.toAlignedRect()));
-        painter.fillRect(m_selectionRect, QColor(0, 0, 0, 2));
-        painter.setClipping(false);
     }
     painter.setCompositionMode(QPainter::CompositionMode_SourceOver);
     painter.setRenderHint(QPainter::Antialiasing, false);
