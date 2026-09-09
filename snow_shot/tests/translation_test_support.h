@@ -44,6 +44,7 @@ class Server final : public QObject {
     struct Stream {
         QPointer<QTcpSocket> socket;
         QJsonObject body;
+        QByteArray headers;
     };
     Server() {
         require(m_server.listen(QHostAddress::LocalHost), "listen on local translation test port");
@@ -103,6 +104,7 @@ class Server final : public QObject {
         send(index, QByteArrayLiteral("event: error\ndata: {\"message\":\"test failure\"}\n\n"));
     }
 
+    QByteArray streamPath = QByteArrayLiteral("/api/v1/chat/completions");
     int modelRequests = 0;
     bool holdModels = false;
     bool rejectModels = false;
@@ -146,9 +148,11 @@ class Server final : public QObject {
                 respondModels();
             }
         } else {
-            require(bytes.startsWith("POST /api/v1/chat/completions"),
-                    "translation uses the existing chat endpoint");
-            streams.push_back({socket, QJsonDocument::fromJson(bytes.mid(end + 4)).object()});
+            require(
+                bytes.startsWith(QByteArrayLiteral("POST ") + streamPath + QByteArrayLiteral(" ")),
+                "translation uses the existing chat endpoint");
+            streams.push_back(
+                {socket, QJsonDocument::fromJson(bytes.mid(end + 4)).object(), bytes.left(end)});
             socket->write(QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n"
                                             "Connection: close\r\n\r\n"));
             socket->flush();

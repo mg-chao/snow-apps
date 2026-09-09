@@ -2,7 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_TRANSLATIONPAGECONTROLLER_H
 
 #include "snow_shot/network/snowshotapiclient.h"
-#include "snow_shot/storage/settingsadapters.h"
+#include "snow_shot/translation/translationservice.h"
 
 #include <QLocale>
 #include <QObject>
@@ -37,17 +37,19 @@ class TranslationPageController final : public QObject {
     [[nodiscard]] const QString& resultText() const {
         return m_result;
     }
-    [[nodiscard]] const storage::ScreenshotTranslationConfiguration& preferences() const {
-        return m_preferences;
+    [[nodiscard]] const translation::TranslationPreferences& preferences() const {
+        static const translation::TranslationPreferences empty;
+        return m_service != nullptr ? m_service->preferences() : empty;
     }
     [[nodiscard]] const QVector<SnowShotChatModel>& models() const {
-        return m_models;
+        static const QVector<SnowShotChatModel> empty;
+        return m_service != nullptr ? m_service->models() : empty;
     }
     [[nodiscard]] bool loadingModels() const {
-        return m_loadingModels;
+        return m_active && m_service != nullptr && m_service->loadingModels();
     }
     [[nodiscard]] bool translating() const {
-        return m_translating;
+        return m_job != nullptr && m_job->busy();
     }
     [[nodiscard]] bool active() const {
         return m_active;
@@ -60,35 +62,18 @@ class TranslationPageController final : public QObject {
     void stateChanged();
 
   private:
-    enum class Error { None, Models, Translation, Storage };
-    void syncPreferences();
-    void loadModels();
     void invalidateTranslation();
     void scheduleTranslation();
     void startTranslation();
-    void cancelRequest(SnowShotApiClient::RequestToken& token);
-
-    QPointer<SnowShotApiClient> m_client;
-    storage::ConfigurationStore& m_settings;
-    QLocale m_locale;
-    QString m_defaultTarget;
-    storage::ScreenshotTranslationConfiguration m_preferences;
-    QVector<SnowShotChatModel> m_models;
+    QPointer<translation::TranslationService> m_service;
+    QPointer<translation::TranslationJob> m_job;
     QTimer m_debounce;
-    QTimer m_settingsSync;
     QString m_source;
     QString m_result;
-    QString m_errorDetail;
-    Error m_error = Error::None;
-    SnowShotApiClient::RequestToken m_modelsToken = 0;
-    SnowShotApiClient::RequestToken m_translationToken = 0;
-    quint64 m_generation = 0;
-    quint64 m_modelsGeneration = 0;
     bool m_active = false;
     bool m_composing = false;
-    bool m_loadingModels = false;
-    bool m_translating = false;
     bool m_requestDue = false;
+    bool m_retryRequired = false;
 };
 } // namespace snow_shot::presentation
 

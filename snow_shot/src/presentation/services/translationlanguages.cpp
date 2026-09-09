@@ -1,8 +1,8 @@
-#include "snow_shot/presentation/translationlanguages.h"
+#include "snow_shot/translation/translationlanguages.h"
 
 #include <QCoreApplication>
 
-namespace snow_shot::presentation {
+namespace snow_shot::translation {
 const QVector<TranslationLanguage>& translationLanguages() {
     static const QVector<TranslationLanguage> languages{
         {"ar", QT_TRANSLATE_NOOP("TranslationLanguages", "Arabic")},
@@ -67,4 +67,9 @@ int translationModelIndex(const QVector<SnowShotChatModel>& models, const QStrin
     }
     return general >= 0 ? general : first;
 }
-} // namespace snow_shot::presentation
+QString translationModelGroup(const SnowShotChatModel& model) {
+    return model.translationMode == QStringLiteral("default")
+               ? QCoreApplication::translate("TranslationService", "General Models")
+               : QCoreApplication::translate("TranslationService", "Translation Models");
+}
+} // namespace snow_shot::translation

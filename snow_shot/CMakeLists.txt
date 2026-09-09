@@ -597,6 +597,9 @@ target_link_libraries(snow_shot_storage PUBLIC
 )
 
 add_library(snow_shot_translation STATIC
+    include/snow_shot/translation/translationservice.h
+    include/snow_shot/translation/translationlanguages.h
+    src/app/translationservice.cpp
     include/snow_shot/presentation/selectedtexttranslationcontroller.h
     src/presentation/services/selectedtexttranslationcontroller.cpp
     include/snow_shot/network/snowshotapiclient.h
@@ -4173,10 +4176,16 @@ if(SNOW_SHOT_BUILD_TESTS)
              COMMAND snow-shot-translation-page-controller-tests)
     set_tests_properties(snow-shot-translation-page-controller-tests PROPERTIES LABELS "unit")
 
+    add_executable(snow-shot-translation-service-tests tests/translation_service_tests.cpp)
+    target_link_libraries(snow-shot-translation-service-tests PRIVATE snow_shot_translation)
+    add_test(NAME snow-shot-translation-service-tests COMMAND snow-shot-translation-service-tests)
+    set_tests_properties(snow-shot-translation-service-tests PROPERTIES LABELS "unit")
+
     get_target_property(_translation_window_sources snow-shot-about-page-tests SOURCES)
     list(REMOVE_ITEM _translation_window_sources tests/about_page_tests.cpp)
     add_executable(snow-shot-translation-page-tests
         tests/translation_page_tests.cpp
+        src/presentation/components/screenshottranslationsettingsdialog.cpp
         tests/translation_test_support.h
         ${_translation_window_sources}
     )
@@ -5220,6 +5229,8 @@ foreach(_conversion_controller_target IN ITEMS snow_shot
         snow-shot-recognition-session-controller-tests snow-shot-pinned-window-tests)
     if(TARGET ${_conversion_controller_target})
         target_sources(${_conversion_controller_target} PRIVATE
+            include/snow_shot/presentation/components/screenshottranslationsettingsdialog.h
+            src/presentation/components/screenshottranslationsettingsdialog.cpp
             include/snow_shot/presentation/screenshotimageconversioncontroller.h
             src/presentation/ocr/screenshotimageconversioncontroller.cpp)
     endif()

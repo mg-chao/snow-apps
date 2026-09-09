@@ -12,6 +12,7 @@ namespace snow_shot::presentation {
 class PinnedWindowGroupManager;
 }
 class ScreenshotOcrRecognitionService;
+class SnowShotApiClient;
 
 class ScreenshotController : public QObject {
     Q_OBJECT
@@ -20,7 +21,8 @@ class ScreenshotController : public QObject {
     explicit ScreenshotController(
         QObject* parent = nullptr,
         snow_shot::presentation::PinnedWindowGroupManager* groupManager = nullptr,
-        ScreenshotOcrRecognitionService* sharedOcrRecognition = nullptr);
+        ScreenshotOcrRecognitionService* sharedOcrRecognition = nullptr,
+        SnowShotApiClient* sharedApiClient = nullptr);
     ~ScreenshotController() override;
     [[nodiscard]] bool captureAvailable() const;
     [[nodiscard]] bool

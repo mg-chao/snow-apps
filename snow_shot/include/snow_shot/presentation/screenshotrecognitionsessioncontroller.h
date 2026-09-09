@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_SCREENSHOTRECOGNITIONSESSIONCONTROLLER_H
 
 #include "snow_shot/network/snowshotapiclient.h"
+#include "snow_shot/translation/translationservice.h"
 #include "snow_shot/presentation/screenshotocrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotqrrecognitionservice.h"
 #include "snow_shot/presentation/screenshotrecognitionresults.h"
@@ -154,15 +155,8 @@ class ScreenshotRecognitionSessionController final : public QObject {
   private:
     struct TextCacheEntry {
         enum class TranslationStatus { Absent, Streaming, Completed, Failed };
-        struct TranslationUnit {
-            enum class Status { Pending, Streaming, Completed, Failed };
-            QString sourceText;
-            QString text;
-            Status status = Status::Pending;
-        };
         struct OverlayTranslation {
             std::shared_ptr<ScreenshotOcrPresentation> presentation;
-            QVector<TranslationUnit> units;
             TranslationStatus status = TranslationStatus::Absent;
             bool failureReported = false;
             bool captured = false;
@@ -173,6 +167,8 @@ class ScreenshotRecognitionSessionController final : public QObject {
         bool formatted = false;
         std::shared_ptr<ScreenshotOcrTextEditingSession> editingSession;
         std::shared_ptr<ScreenshotOcrTextEditingSession> translationSession;
+        QPointer<snow_shot::translation::TranslationJob> translationJob;
+        bool jobInImage = false;
         QString translationText;
         QString successfulTranslation;
         TranslationStatus translationStatus = TranslationStatus::Absent;
@@ -202,20 +198,12 @@ class ScreenshotRecognitionSessionController final : public QObject {
     void handleTextDocumentChanged(const QString& key);
     void handleTranslationDocumentChanged(const QString& key);
     void startTranslation();
-    void startTranslationWithModels(const QVector<SnowShotChatModel>& models);
     void prepareOverlayTranslation(TextCacheEntry& entry);
-    void pumpTranslationQueue();
-    void handleTranslationUnitDelta(quint64 generation, const QString& key, int lineIndex,
-                                    const QString& delta);
-    void handleTranslationUnitFinished(quint64 generation, const QString& key, int lineIndex,
-                                       SnowShotTranslationResult result);
     void reportOverlayTranslationFailure();
     void failTranslationPreparation(const QString& message);
     void cancelTranslationRequests();
-    void handleTranslationDelta(quint64 generation, const QString& key, const QString& delta);
     void handleTranslationFinished(quint64 generation, const QString& key,
                                    SnowShotTranslationResult result);
-    void showTranslationSettingsModal(const QVector<SnowShotChatModel>& models);
     void invalidateCurrentTranslation(bool restartIfVisible);
     void updateBusyState() const;
     void updateConversionState() const;
@@ -240,6 +228,7 @@ class ScreenshotRecognitionSessionController final : public QObject {
     QPointer<ScreenshotOcrRecognitionPort> m_recognition;
     QPointer<ScreenshotQrRecognitionPort> m_qrRecognition;
     QPointer<SnowShotApiClient> m_tableRecognition;
+    QPointer<snow_shot::translation::TranslationService> m_translationService;
     ScreenshotImageConversionController* m_conversion = nullptr;
     bool m_conversionMessageShown = false;
     ScreenshotRecognitionSessionActions m_actions;
@@ -262,12 +251,6 @@ class ScreenshotRecognitionSessionController final : public QObject {
     ScreenshotOcrRecognitionPort::RequestToken m_textRequestToken = 0;
     ScreenshotOcrRecognitionPort::RequestToken m_textRenderRequestToken = 0;
     SnowShotApiClient::RequestToken m_tableRequestToken = 0;
-    SnowShotApiClient::RequestToken m_modelsRequestToken = 0;
-    SnowShotApiClient::RequestToken m_settingsModelsRequestToken = 0;
-    SnowShotApiClient::RequestToken m_translationRequestToken = 0;
-    QHash<int, SnowShotApiClient::RequestToken> m_translationUnitRequests;
-    int m_nextTranslationUnit = 0;
-    SnowShotTranslationRequest m_translationRequest;
     ScreenshotQrRecognitionPort::RequestToken m_qrRequestToken = 0;
     quint64 m_textGeneration = 0;
     quint64 m_textRenderGeneration = 0;

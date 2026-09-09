@@ -9,6 +9,7 @@
 
 #include <memory>
 
+class SnowShotApiClient;
 class QEvent;
 class QPaintEvent;
 class QStackedWidget;
@@ -25,7 +26,7 @@ class ContentCardWidget final : public QFrame {
   public:
     ContentCardWidget(const snow_shot::presentation::settings::SettingsRegistry& registry,
                       snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession,
-                      QWidget* parent = nullptr);
+                      QWidget* parent = nullptr, SnowShotApiClient* translationClient = nullptr);
     ~ContentCardWidget() override;
 
     [[nodiscard]] QString currentRoute() const;
@@ -64,6 +65,7 @@ class ContentCardWidget final : public QFrame {
 
     const snow_shot::presentation::settings::SettingsRegistry& m_registry;
     snow_shot::presentation::settings::SettingsRuntimeSession& m_runtimeSession;
+    SnowShotApiClient* m_translationClient = nullptr;
     QStackedWidget* m_stack = nullptr;
     QPointer<QWidget> m_activePage;
     QString m_activePageId;
