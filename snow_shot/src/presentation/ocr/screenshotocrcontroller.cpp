@@ -228,6 +228,16 @@ ScreenshotOcrController::~ScreenshotOcrController() {
     invalidateSession();
 }
 
+std::optional<ScreenshotRecognitionImageSnapshot>
+ScreenshotOcrController::imageSnapshot(const ScreenshotResultStyle& style) const {
+    if (!m_active || !m_session->originalImageVisible() || m_recognitionWindow == nullptr ||
+        m_surfaceKey != currentCacheKey())
+        return std::nullopt;
+    return m_recognitionWindow->imageSnapshot(m_surfaceImage,
+                                              QRectF(m_context.selection.pixelSelection()),
+                                              m_filteredImage, m_filteredCanvasRect, style);
+}
+
 bool ScreenshotOcrController::active() const {
     return m_active;
 }
@@ -552,7 +562,19 @@ void ScreenshotOcrController::updateOverlays() const {
 
 void ScreenshotOcrController::applyOcrBackgroundToOverlays(
     const std::shared_ptr<ScreenshotOcrPresentation>& presentation, QImage filteredImage,
-    QRectF filteredImageCanvasRect) const {
+    QRectF filteredImageCanvasRect) {
+    if (m_backgroundPresentation != presentation) {
+        m_filteredImage = {};
+        m_filteredCanvasRect = {};
+        m_backgroundPresentation = presentation;
+    }
+    if (!filteredImage.isNull()) {
+        m_filteredImage = filteredImage;
+        m_filteredCanvasRect =
+            filteredImageCanvasRect.isValid() && !filteredImageCanvasRect.isEmpty()
+                ? filteredImageCanvasRect.normalized()
+                : (presentation != nullptr ? QRectF(presentation->selection) : QRectF());
+    }
     m_context.displaySession.forEachOverlay([&presentation, &filteredImage,
                                              &filteredImageCanvasRect](
                                                 qsizetype, ScreenshotOverlayWindow* overlay) {
@@ -569,7 +591,10 @@ void ScreenshotOcrController::applyOcrBackgroundToOverlays(
     });
 }
 
-void ScreenshotOcrController::clearOcrBackgroundFromOverlays() const {
+void ScreenshotOcrController::clearOcrBackgroundFromOverlays() {
+    m_filteredImage = {};
+    m_filteredCanvasRect = {};
+    m_backgroundPresentation.reset();
     m_context.displaySession.forEachOverlay([](qsizetype, ScreenshotOverlayWindow* overlay) {
         if (overlay != nullptr) {
             overlay->clearScreenshotOcrBackground();

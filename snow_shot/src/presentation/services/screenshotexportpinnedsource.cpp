@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/screenshotexportartifact.h"
+#include "snow_shot/presentation/screenshotrecognitionimage.h"
 
 #include "snow_shot/presentation/screenshotdefaultstyles.h"
 
@@ -47,5 +48,14 @@ ScreenshotExportSource::fromPinnedViewport(ScreenshotPinnedViewportExportSource 
     return fromProducer(
         [source = std::move(source)](const ScreenshotExportCancellation& cancellation) {
             return cancellation.isCancellationRequested() ? QImage{} : renderPinnedViewport(source);
+        });
+}
+
+ScreenshotExportSource
+ScreenshotExportSource::fromRecognitionImage(ScreenshotRecognitionImageSnapshot snapshot) {
+    return fromProducer(
+        [snapshot = std::move(snapshot)](const ScreenshotExportCancellation& cancellation) {
+            return renderScreenshotRecognitionImage(
+                snapshot, [&]() { return cancellation.isCancellationRequested(); });
         });
 }

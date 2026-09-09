@@ -200,8 +200,8 @@ void recognitionWindowCanExtendBeyondItsDpiScreen() {
     overlayHost.show();
 
     const QRect screenGeometry = screen->geometry();
-    const QRect crossScreenSelection(screenGeometry.right() - 100, screenGeometry.top() + 40,
-                                     240, 120);
+    const QRect crossScreenSelection(screenGeometry.right() - 100, screenGeometry.top() + 40, 240,
+                                     120);
     ScreenshotRecognitionWindow window(ScreenshotRecognitionWindowActions{});
     require(window.present(ScreenshotRecognitionWindow::Config{
                 screen,
@@ -309,9 +309,9 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
             "shared screenshot shortcut registration should succeed");
     require(shortcutManager.addBinding(&overlayHost, std::move(lowerPriorityCopy)) != 0,
             "lower-priority screenshot copy registration should succeed");
-    ScreenshotRecognitionWindow window(std::move(actions), nullptr,
-                                      ScreenshotRecognitionWindow::PresentationMode::TopLevelWindow,
-                                      &shortcutManager);
+    ScreenshotRecognitionWindow window(
+        std::move(actions), nullptr, ScreenshotRecognitionWindow::PresentationMode::TopLevelWindow,
+        &shortcutManager);
     require(window.present(ScreenshotRecognitionWindow::Config{
                 screen,
                 &overlayHost,
@@ -381,9 +381,8 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
     QApplication::sendEvent(&window, &recognitionPress);
     require(presentation->textSelectionActive(),
             "the recognition window should begin OCR selection without controller forwarding");
-    QMouseEvent recognitionMove(QEvent::MouseMove, localEnd,
-                                window.mapToGlobal(localEnd.toPoint()), Qt::NoButton,
-                                Qt::LeftButton, Qt::NoModifier);
+    QMouseEvent recognitionMove(QEvent::MouseMove, localEnd, window.mapToGlobal(localEnd.toPoint()),
+                                Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
     QApplication::sendEvent(&window, &recognitionMove);
     QMouseEvent recognitionRelease(QEvent::MouseButtonRelease, localEnd,
                                    window.mapToGlobal(localEnd.toPoint()), Qt::LeftButton,
@@ -411,8 +410,10 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
     QApplication::processEvents();
     const QRect actualNative = nativeClientGeometry(window);
     const POINT blankNativePosition{
-        actualNative.left() + qRound(blankLocalPosition.x() * actualNative.width() / window.width()),
-        actualNative.top() + qRound(blankLocalPosition.y() * actualNative.height() / window.height()),
+        actualNative.left() +
+            qRound(blankLocalPosition.x() * actualNative.width() / window.width()),
+        actualNative.top() +
+            qRound(blankLocalPosition.y() * actualNative.height() / window.height()),
     };
     const HWND blankOwner = windowAtPhysicalPoint(blankNativePosition);
     const HWND recognitionHwnd = reinterpret_cast<HWND>(window.winId());
@@ -467,21 +468,21 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
     QKeyEvent copyWholeDraft(QEvent::KeyPress, Qt::Key_C, Qt::ControlModifier);
     QApplication::sendEvent(textEditor, &copyWholeDraft);
     require(copyWholeDraft.isAccepted() &&
-                QGuiApplication::clipboard()->text() == QStringLiteral("Editable recognized text") &&
+                QGuiApplication::clipboard()->text() ==
+                    QStringLiteral("Editable recognized text") &&
                 recognitionCopyCalls == 2,
             "text-recognition edit mode should copy the complete draft when no text is selected "
             "and end the screenshot");
 
-    auto* overlayScrollBar = textEditor->findChild<QScrollBar*>(
-        QStringLiteral("adtextarea-overlay-vbar"));
+    auto* overlayScrollBar =
+        textEditor->findChild<QScrollBar*>(QStringLiteral("adtextarea-overlay-vbar"));
     require(overlayScrollBar != nullptr && textEditor->verticalScrollBar()->isHidden(),
             "the OCR text editor should use an overlay scrollbar without reserving layout width");
     const QRect viewportGeometry = textEditor->viewport()->geometry();
     const int viewportLeftInset = viewportGeometry.left();
     const int viewportRightInset = textEditor->width() - viewportGeometry.right() - 1;
     require(viewportLeftInset > 0 && viewportRightInset > 0 &&
-                viewportLeftInset == viewportRightInset &&
-                editableDocument.documentMargin() == 0.0,
+                viewportLeftInset == viewportRightInset && editableDocument.documentMargin() == 0.0,
             "the OCR text editor should use symmetric viewport content margins");
     const int viewportWidthBeforeOverflow = textEditor->viewport()->width();
     editableDocument.setPlainText(QString(5000, QLatin1Char('x')));
@@ -497,8 +498,8 @@ void recognitionWindowUsesOrdinaryQtWindowBehavior() {
 
     window.showTextEditor(&editableDocument, true, true);
     QApplication::processEvents();
-    auto* translationSpin = window.findChild<adqt::widgets::AdSpin*>(
-        QStringLiteral("screenshotOcrTranslationSpin"));
+    auto* translationSpin =
+        window.findChild<adqt::widgets::AdSpin*>(QStringLiteral("screenshotOcrTranslationSpin"));
     require(textEditor->isReadOnly() && translationSpin != nullptr &&
                 translationSpin->isVisible() && translationSpin->spinning(),
             "streaming translation should make the editor read-only and show its spinner");
@@ -733,8 +734,7 @@ QImage renderFormattedTextItem(QGraphicsTextItem* item, bool focused) {
     painter.translate(-bounds.topLeft());
     QStyleOptionGraphicsItem option;
     option.exposedRect = bounds;
-    option.state = focused ? QStyle::State_Enabled | QStyle::State_HasFocus
-                           : QStyle::State_Enabled;
+    option.state = focused ? QStyle::State_Enabled | QStyle::State_HasFocus : QStyle::State_Enabled;
     item->paint(&painter, &option, nullptr);
     return image;
 }
@@ -791,8 +791,7 @@ void shortRecognitionWindowPreservesExactSelectionGeometryAcrossModes() {
     window.setOcrPresentation(presentation);
     QApplication::processEvents();
 
-    auto* textLayer =
-        window.findChild<QGraphicsView*>(QStringLiteral("snowShotOcrTextLayer"));
+    auto* textLayer = window.findChild<QGraphicsView*>(QStringLiteral("snowShotOcrTextLayer"));
     require(window.geometry() == selectionGeometry && textLayer != nullptr &&
                 textLayer->geometry() == window.rect(),
             "OCR display mode must not enlarge a short screenshot selection");
@@ -865,8 +864,7 @@ void formattedClipboardTextUsesASelectableQtDocument() {
             "formatted clipboard text should retain its Qt document and allow direct selection");
     require(textItem->toPlainText().contains(QStringLiteral("Formatted clipboard text")),
             "the selectable clipboard surface should preserve document text");
-    require(renderFormattedTextItem(textItem, true) ==
-                renderFormattedTextItem(textItem, false),
+    require(renderFormattedTextItem(textItem, true) == renderFormattedTextItem(textItem, false),
             "formatted clipboard text should not paint Qt's dashed focus outline");
     require(std::abs(textLayer->transform().m11() - 0.5) < 0.001 &&
                 std::abs(textLayer->transform().m22() - 0.5) < 0.001 &&
@@ -876,8 +874,8 @@ void formattedClipboardTextUsesASelectableQtDocument() {
 
     QPoint requestedContextMenuPosition;
     int contextMenuRequestCount = 0;
-    QObject::connect(&window, &ScreenshotRecognitionWindow::embeddedContextMenuRequested,
-                     &window, [&](const QPoint& globalPosition) {
+    QObject::connect(&window, &ScreenshotRecognitionWindow::embeddedContextMenuRequested, &window,
+                     [&](const QPoint& globalPosition) {
                          requestedContextMenuPosition = globalPosition;
                          ++contextMenuRequestCount;
                      });
@@ -946,8 +944,9 @@ void qrContentsUseStrictRichTextLinksAndPreserveOrder() {
     ScreenshotRecognitionWindowActions actions;
     actions.handleCancel = [&recognitionCancelCalls]() { ++recognitionCancelCalls; };
     actions.handleCopy = [&recognitionCopyCalls]() { ++recognitionCopyCalls; };
-    actions.handleLinkActivated =
-        [&activatedLinks](const QUrl& url) { activatedLinks.push_back(url); };
+    actions.handleLinkActivated = [&activatedLinks](const QUrl& url) {
+        activatedLinks.push_back(url);
+    };
     snow_shot::presentation::WindowShortcutManager shortcutManager;
     shortcutManager.addScopeWindow(&overlayHost);
     int sessionShortcutCalls = 0;
@@ -979,8 +978,7 @@ void qrContentsUseStrictRichTextLinksAndPreserveOrder() {
     ScreenshotRecognitionWindow window(
         std::move(actions), nullptr, ScreenshotRecognitionWindow::PresentationMode::TopLevelWindow,
         &shortcutManager);
-    const QRect geometry(screen->availableGeometry().center() - QPoint(240, 90),
-                         QSize(480, 180));
+    const QRect geometry(screen->availableGeometry().center() - QPoint(240, 90), QSize(480, 180));
     require(window.present(ScreenshotRecognitionWindow::Config{
                 screen,
                 &overlayHost,
@@ -999,8 +997,7 @@ void qrContentsUseStrictRichTextLinksAndPreserveOrder() {
     window.showQrContents(contents);
     QApplication::processEvents();
 
-    auto* browser =
-        window.findChild<QTextBrowser*>(QStringLiteral("screenshotQrContents"));
+    auto* browser = window.findChild<QTextBrowser*>(QStringLiteral("screenshotQrContents"));
     require(browser != nullptr && browser->isVisible() && browser->isReadOnly() &&
                 !browser->openExternalLinks() && !browser->openLinks(),
             "QR contents should use a read-only browser with controller-owned navigation");
@@ -1098,11 +1095,56 @@ void emptyOcrResultCopiesEmptyText() {
                 recognitionCopyCalls == 1,
             "Ctrl+C should directly copy empty text for a completed OCR result with no lines");
 }
+void imageSnapshotTracksOnlyOriginalImageAndOwnsItsResult() {
+    ScreenshotRecognitionWindow window({});
+    QImage image(240, 120, QImage::Format_ARGB32_Premultiplied);
+    image.fill(Qt::white);
+    const QRectF rect(50, 30, 240, 120);
+    auto presentation = std::make_shared<ScreenshotOcrPresentation>();
+    presentation->selection = rect.toRect();
+    ScreenshotOcrLine line;
+    line.text = QStringLiteral("Visible translation");
+    line.quad = QPolygonF(QRectF(60, 40, 180, 40));
+    line.quad.removeLast();
+    presentation->lines.push_back(line);
+    window.setOcrPresentation(presentation);
+    presentation->selectAll();
+    auto snapshot = window.imageSnapshot(image, rect, {}, {}, {});
+    require(snapshot && snapshot->lines.size() == 1 && snapshot->canvasRect == rect,
+            "original-image surface yields a value snapshot in canvas coordinates");
+    presentation->setLineText(0, QStringLiteral("Later streaming result"));
+    image.fill(Qt::red);
+    require(snapshot->lines[0].text == QStringLiteral("Visible translation") &&
+                snapshot->image.pixelColor(0, 0) == QColor(Qt::white),
+            "later text/image changes cannot mutate the saved snapshot");
+    QTextDocument document;
+    document.setPlainText(QStringLiteral("Editor draft"));
+    window.showTextEditor(&document);
+    require(!window.imageSnapshot(image, rect, {}, {}, {}), "text editor is excluded");
+    window.showQrContents({QStringLiteral("https://example.com")});
+    require(!window.imageSnapshot(image, rect, {}, {}, {}), "QR surface is excluded");
+    auto formatted = std::make_shared<QTextDocument>();
+    formatted->setHtml(QStringLiteral("<p>Formatted recognition result</p>"));
+    window.showFormattedText(formatted);
+    require(!window.imageSnapshot(image, rect, {}, {}, {}), "formatted text surface is excluded");
+    window.setTableSession(std::make_shared<ScreenshotTableEditingSession>(
+        ScreenshotTableDocument::fromPlainText(QStringLiteral("A\tB\nC\tD"))));
+    require(!window.imageSnapshot(image, rect, {}, {}, {}), "table surface is excluded");
+    window.setOcrPresentation({});
+    snapshot = window.imageSnapshot(image, rect, {}, {}, {});
+    require(snapshot && snapshot->lines.isEmpty(),
+            "pending OCR snapshots the current image without waiting");
+}
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
     QApplication::setQuitOnLastWindowClosed(false);
+    if (application.arguments().contains(QStringLiteral("--image-snapshot-only"))) {
+        imageSnapshotTracksOnlyOriginalImageAndOwnsItsResult();
+        return 0;
+    }
+
     embeddedRecognitionWindowPreservesParentSurfaceWithVisibleTextLayer();
     recognitionWindowCanExtendBeyondItsDpiScreen();
     recognitionWindowUsesOrdinaryQtWindowBehavior();
@@ -1110,5 +1152,6 @@ int main(int argc, char** argv) {
     formattedClipboardTextUsesASelectableQtDocument();
     qrContentsUseStrictRichTextLinksAndPreserveOrder();
     emptyOcrResultCopiesEmptyText();
+    imageSnapshotTracksOnlyOriginalImageAndOwnsItsResult();
     return 0;
 }

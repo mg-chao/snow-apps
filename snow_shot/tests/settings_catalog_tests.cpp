@@ -103,8 +103,8 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 34 && itemCount == 138,
-            "catalog must contain thirty-four sections and one hundred thirty-eight items");
+    require(sectionCount == 35 && itemCount == 139,
+            "catalog must contain thirty-five sections and one hundred thirty-nine items");
     const auto* history =
         catalog.section(QStringLiteral("storage-and-privacy"), QStringLiteral("history"));
     require(history != nullptr && history->items.size() >= 2 &&
@@ -228,15 +228,30 @@ void builtInCatalogIsCompleteAndValid() {
                 std::get<settings::SettingsSwitchDefinition>(smartSelection->payload).binding ==
                     settings::SettingsSwitchBinding::SmartSelection,
             "Function settings must expose the persisted Smart selection switch");
-    require(functionPage->sections.size() == 7 &&
-                functionPage->sections.at(0).id == QStringLiteral("screenshot-settings") &&
-                functionPage->sections.at(1).id == QStringLiteral("pin-to-screen-settings") &&
-                functionPage->sections.at(2).id == QStringLiteral("translation-settings") &&
-                functionPage->sections.at(3).id == QStringLiteral("drawing-settings") &&
-                functionPage->sections.at(4).id == QStringLiteral("screen-recording-settings") &&
-                functionPage->sections.at(5).id == QStringLiteral("tray-settings") &&
-                functionPage->sections.at(6).id == QStringLiteral("global-hotkeys"),
-            "Function settings must place Translation immediately after Pin to screen");
+    const QStringList expectedSections{QStringLiteral("screenshot-settings"),
+                                       QStringLiteral("pin-to-screen-settings"),
+                                       QStringLiteral("text-recognition-settings"),
+                                       QStringLiteral("translation-settings"),
+                                       QStringLiteral("drawing-settings"),
+                                       QStringLiteral("screen-recording-settings"),
+                                       QStringLiteral("tray-settings"),
+                                       QStringLiteral("global-hotkeys")};
+    require(functionPage->sections.size() == expectedSections.size(), "function section count");
+    for (qsizetype i = 0; i < expectedSections.size(); ++i)
+        require(functionPage->sections.at(i).id == expectedSections.at(i),
+                "function section order");
+    const auto& recognition = functionPage->sections.at(2);
+    require(recognition.reset == settings::SettingsSectionReset::TextRecognitionBehavior &&
+                recognition.title.translated() == QStringLiteral("Text Recognition") &&
+                recognition.items.size() == 1,
+            "dedicated recognition save section");
+    const auto& recognitionSave = recognition.items.front();
+    require(
+        recognitionSave.title.translated() == QStringLiteral("Save recognition result as image") &&
+            std::get<settings::SettingsSwitchDefinition>(recognitionSave.payload).binding ==
+                settings::SettingsSwitchBinding::SaveRecognitionResultAsImage &&
+            storage::ConfigurationSchema::defaultValue(recognitionSave.configurationKey).toBool(),
+        "recognition save switch must default on");
     const auto* translation =
         catalog.item({QStringLiteral("function-settings"), QStringLiteral("translation-settings"),
                       QStringLiteral("translation.original-image")});
@@ -246,7 +261,7 @@ void builtInCatalogIsCompleteAndValid() {
                     QStringLiteral("screenshot_translation/original_image_translation") &&
                 std::get<settings::SettingsSwitchDefinition>(translation->payload).binding ==
                     settings::SettingsSwitchBinding::OriginalImageTranslation &&
-                functionPage->sections.at(2).reset == settings::SettingsSectionReset::Translation &&
+                functionPage->sections.at(3).reset == settings::SettingsSectionReset::Translation &&
                 storage::ConfigurationSchema::defaultValue(translation->configurationKey).toBool(),
             "Translation should expose its own default-on switch and section reset");
     const auto* layout =
@@ -300,7 +315,7 @@ void builtInCatalogIsCompleteAndValid() {
                           QStringLiteral("tray.menu-options")}) != nullptr,
         "Function settings must own the moved Pin to screen, Drawing, and Tray controls");
 
-    const auto& traySection = functionPage->sections.at(5);
+    const auto& traySection = functionPage->sections.at(6);
     require(traySection.items.size() == 3 &&
                 traySection.items.at(0).id == QStringLiteral("tray.left-click-action") &&
                 traySection.items.at(1).id == QStringLiteral("tray.middle-click-action") &&
@@ -1156,7 +1171,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 183 && index.search(QString()).size() == 183,
+    require(index.entries().size() == 185 && index.search(QString()).size() == 185,
             "search must generate all catalog nodes in catalog order");
     const auto selectedText = index.search(QStringLiteral("Translate Selected Text"));
     require(!selectedText.isEmpty() &&
@@ -1173,6 +1188,11 @@ void searchIndexIsGeneratedAndRanked() {
     require(!translation.isEmpty() && translation.constFirst().location.itemId ==
                                           QStringLiteral("translation.original-image"),
             "search should navigate directly to the original image translation toggle");
+    const auto recognition = index.search(QStringLiteral("Save recognition result as image"));
+    require(!recognition.isEmpty() &&
+                recognition.constFirst().location.itemId ==
+                    QStringLiteral("text-recognition.save-recognition-result-as-image"),
+            "search should navigate directly to the recognition image saving toggle");
 
     int pages = 0;
     int sections = 0;
@@ -1199,7 +1219,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 11 && sections == 34 && items == 138,
+    require(pages == 11 && sections == 35 && items == 139,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

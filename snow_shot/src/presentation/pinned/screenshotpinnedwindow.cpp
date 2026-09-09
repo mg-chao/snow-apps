@@ -3884,13 +3884,18 @@ void ScreenshotPinnedWindow::updateOcrPresentation() {
         ScreenshotOcrLine line = originalLine;
         line.quad.clear();
         line.quad.reserve(originalLine.quad.size());
-        for (const QPointF& point : originalLine.quad) {
+        const auto mapPoint = [&](const QPointF& point) {
             const QPointF imagePoint((point.x() - m_canvasSourceRect.left()) * originalScaleX,
                                      (point.y() - m_canvasSourceRect.top()) * originalScaleY);
             const QPointF transformed = m_imageTransform.map(imagePoint);
-            line.quad.push_back(
-                QPointF(m_backgroundCanvasRect.left() + transformed.x() * transformedScaleX,
-                        m_backgroundCanvasRect.top() + transformed.y() * transformedScaleY));
+            return QPointF(m_backgroundCanvasRect.left() + transformed.x() * transformedScaleX,
+                           m_backgroundCanvasRect.top() + transformed.y() * transformedScaleY);
+        };
+        for (const QPointF& point : originalLine.quad)
+            line.quad.push_back(mapPoint(point));
+        for (QPolygonF& sourceQuad : line.sourceLineQuads) {
+            for (QPointF& point : sourceQuad)
+                point = mapPoint(point);
         }
         presentation->lines.push_back(std::move(line));
     }
@@ -4084,6 +4089,30 @@ void ScreenshotPinnedWindow::copyOriginalContent() {
     }
 }
 
+std::shared_ptr<ScreenshotExportArtifact> ScreenshotPinnedWindow::fileSaveArtifact() {
+    if (m_transformedImage.isNull() || m_backgroundCanvasRect.isEmpty())
+        return {};
+    const qreal renderScale = m_transformedImage.width() / m_backgroundCanvasRect.width();
+    ScreenshotResultStyle style = m_resultStyle;
+    style.cornerRadius = qRound(style.cornerRadius * renderScale);
+    style.shadowWidth = qRound(style.shadowWidth * renderScale);
+    if (snow_shot::storage::TextRecognitionSettings().saveRecognitionResultAsImage() &&
+        m_recognitionSession != nullptr && m_recognitionSession->originalImageVisible() &&
+        m_recognitionContent != nullptr && m_screenshotRenderer != nullptr) {
+        auto snapshot = m_recognitionContent->imageSnapshot(
+            m_transformedImage, m_backgroundCanvasRect, m_screenshotRenderer->ocrFilteredImage(),
+            m_screenshotRenderer->ocrFilteredCanvasRect(), style);
+        if (snapshot)
+            return std::make_shared<ScreenshotExportArtifact>(
+                ScreenshotExportSource::fromRecognitionImage(std::move(*snapshot)));
+    }
+    ScreenshotPinnedViewportExportSource request{m_runtime.serializeDocumentSession(),
+                                                 m_transformedImage, m_backgroundCanvasRect,
+                                                 m_transformedImage.size(), style};
+    return std::make_shared<ScreenshotExportArtifact>(
+        ScreenshotExportSource::fromPinnedViewport(std::move(request)));
+}
+
 void ScreenshotPinnedWindow::quickSave() {
     if (m_closing || m_quickSavePending || property("saveDialogOpen").toBool())
         return;
@@ -4105,15 +4134,7 @@ void ScreenshotPinnedWindow::quickSave() {
         m_quickSavePending = false;
         return;
     }
-    const qreal renderScale = m_transformedImage.width() / m_backgroundCanvasRect.width();
-    ScreenshotResultStyle style = m_resultStyle;
-    style.cornerRadius = qRound(style.cornerRadius * renderScale);
-    style.shadowWidth = qRound(style.shadowWidth * renderScale);
-    ScreenshotPinnedViewportExportSource request{m_runtime.serializeDocumentSession(),
-                                                 m_transformedImage, m_backgroundCanvasRect,
-                                                 m_transformedImage.size(), style};
-    auto artifact = std::make_shared<ScreenshotExportArtifact>(
-        ScreenshotExportSource::fromPinnedViewport(std::move(request)));
+    auto artifact = fileSaveArtifact();
     m_quickSaveArtifact = artifact;
     const auto complete = [this, artifact](ScreenshotExportTaskResult result) {
         if (m_closing || m_quickSaveArtifact != artifact)
@@ -4155,21 +4176,13 @@ void ScreenshotPinnedWindow::saveAsFile() {
         return;
     }
 
+    if (m_canvas && !m_canvas->resetEditingStatePreservingTool())
+        return;
+    auto artifact = fileSaveArtifact();
+    if (artifact == nullptr)
+        return;
     const snow_shot::storage::ScreenshotSettings outputSettings;
     if (outputSettings.saveAsFileDialog() == QStringLiteral("snow_shot")) {
-        if (m_canvas && !m_canvas->resetEditingStatePreservingTool())
-            return;
-        const qreal renderScale = m_backgroundCanvasRect.width() > 0
-                                      ? m_transformedImage.width() / m_backgroundCanvasRect.width()
-                                      : 1.0;
-        ScreenshotResultStyle style = m_resultStyle;
-        style.cornerRadius = qRound(style.cornerRadius * renderScale);
-        style.shadowWidth = qRound(style.shadowWidth * renderScale);
-        ScreenshotPinnedViewportExportSource request{m_runtime.serializeDocumentSession(),
-                                                     m_transformedImage, m_backgroundCanvasRect,
-                                                     m_transformedImage.size(), style};
-        auto artifact = std::make_shared<ScreenshotExportArtifact>(
-            ScreenshotExportSource::fromPinnedViewport(std::move(request)));
         setProperty("saveDialogOpen", true);
         if (!ScreenshotSaveAsFileDialog::open(this, this, artifact, {}, [this](bool) {
                 setProperty("saveDialogOpen", false);
@@ -4190,9 +4203,16 @@ void ScreenshotPinnedWindow::saveAsFile() {
         ScreenshotImageFileService::suggestedBaseName(outputSettings.manualSaveFilenameFormat()) +
         QStringLiteral(".") + ScreenshotImageFileService::extension(initialFormat));
     QString selectedFilter = ScreenshotImageFileService::dialogFilter(initialFormat);
+    const QPointer<ScreenshotPinnedWindow> dialogLifetime(this);
+    setProperty("saveDialogOpen", true);
     const QString selectedPath = QFileDialog::getSaveFileName(
         this, translatePinnedText("Save as file"), initialPath,
         ScreenshotImageFileService::saveDialogFilter(), &selectedFilter);
+    if (!dialogLifetime)
+        return;
+    setProperty("saveDialogOpen", false);
+    if (m_closing)
+        return;
     if (selectedPath.isEmpty()) {
         return;
     }
@@ -4202,23 +4222,7 @@ void ScreenshotPinnedWindow::saveAsFile() {
     static_cast<void>(
         outputSettings.setLastManualSaveFormat(ScreenshotImageFileService::formatKey(format)));
     const QString outputPath = ScreenshotImageFileService::normalizedPath(selectedPath, format);
-    if (m_canvas != nullptr && !m_canvas->resetEditingStatePreservingTool()) {
-        return;
-    }
-    const QByteArray documentSession = m_runtime.serializeDocumentSession();
-    const qreal renderScale = m_backgroundCanvasRect.width() > 0.0
-                                  ? m_transformedImage.width() / m_backgroundCanvasRect.width()
-                                  : 1.0;
-    ScreenshotResultStyle scaledStyle = m_resultStyle;
-    scaledStyle.cornerRadius = qRound(scaledStyle.cornerRadius * renderScale);
-    scaledStyle.shadowWidth = qRound(scaledStyle.shadowWidth * renderScale);
-    ScreenshotPinnedViewportExportSource request{
-        documentSession,           m_transformedImage, m_backgroundCanvasRect,
-        m_transformedImage.size(), scaledStyle,
-    };
     invalidatePendingCopy();
-    auto artifact = std::make_shared<ScreenshotExportArtifact>(
-        ScreenshotExportSource::fromPinnedViewport(std::move(request)));
     m_exportArtifact = artifact;
     if (!artifact->requestImage(this, [this, artifact, outputPath,
                                        format](ScreenshotExportImageResult result) mutable {

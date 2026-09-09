@@ -331,6 +331,25 @@ bool ScreenshotRecognitionWindow::updateSelectionGeometry(const QRect& geometry,
     return true;
 }
 
+std::optional<ScreenshotRecognitionImageSnapshot>
+ScreenshotRecognitionWindow::imageSnapshot(QImage image, const QRectF& canvasRect,
+                                           QImage filteredImage, const QRectF& filteredCanvasRect,
+                                           const ScreenshotResultStyle& style) const {
+    if (m_stack->currentWidget() != m_textLayer || image.isNull())
+        return std::nullopt;
+    ScreenshotRecognitionImageSnapshot snapshot;
+    snapshot.image = std::move(image);
+    snapshot.canvasRect = canvasRect;
+    snapshot.filteredImage = std::move(filteredImage);
+    snapshot.filteredCanvasRect = filteredCanvasRect;
+    if (m_ocrPresentation != nullptr)
+        snapshot.lines = m_ocrPresentation->lines;
+    snapshot.font = QApplication::font();
+    snapshot.textColor = m_textLayer->textColor();
+    snapshot.resultStyle = style;
+    return snapshot;
+}
+
 void ScreenshotRecognitionWindow::setOcrPresentation(
     std::shared_ptr<ScreenshotOcrPresentation> presentation) {
     clearImageConversion();

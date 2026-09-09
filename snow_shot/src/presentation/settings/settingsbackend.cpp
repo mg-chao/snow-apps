@@ -380,6 +380,8 @@ bool BuiltInSettingsBackend::switchValue(SettingsSwitchBinding binding) const {
         return storage::ScreenshotSettings().restoreOriginalScreenColors();
     case SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard:
         return storage::ScreenshotSettings().copyImageFileToClipboard();
+    case SettingsSwitchBinding::SaveRecognitionResultAsImage:
+        return storage::TextRecognitionSettings().saveRecognitionResultAsImage();
     case SettingsSwitchBinding::PinAutomaticTextRecognition:
         return storage::PinToScreenSettings().automaticTextRecognition();
     case SettingsSwitchBinding::PinAutoResizeWindow:
@@ -442,6 +444,9 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     if (binding == SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard) {
         return storage::ScreenshotSettings().setCopyImageFileToClipboard(value);
     }
+    if (binding == SettingsSwitchBinding::SaveRecognitionResultAsImage) {
+        return storage::TextRecognitionSettings().setSaveRecognitionResultAsImage(value);
+    }
     if (binding == SettingsSwitchBinding::PinAutomaticTextRecognition) {
         return storage::PinToScreenSettings().setAutomaticTextRecognition(value);
     }
@@ -480,6 +485,7 @@ bool BuiltInSettingsBackend::applySwitchValue(SettingsSwitchBinding binding, boo
     case SettingsSwitchBinding::ScreenshotShutterSoundNotification:
     case SettingsSwitchBinding::ScreenshotRestoreOriginalScreenColors:
     case SettingsSwitchBinding::ScreenshotCopyImageFileToClipboard:
+    case SettingsSwitchBinding::SaveRecognitionResultAsImage:
     case SettingsSwitchBinding::PinAutomaticTextRecognition:
     case SettingsSwitchBinding::PinAutoResizeWindow:
     case SettingsSwitchBinding::OriginalImageTranslation:
@@ -1052,6 +1058,11 @@ bool BuiltInSettingsBackend::resetSection(SettingsSectionReset reset) {
              storage::ConfigurationSchema::defaultValue(
                  QStringLiteral("screenshot_toolbar/action_tools_layout"))},
         });
+    case SettingsSectionReset::TextRecognitionBehavior:
+        return storage::TextRecognitionSettings().setSaveRecognitionResultAsImage(
+            storage::ConfigurationSchema::defaultValue(
+                QStringLiteral("text_recognition/save_recognition_result_as_image"))
+                .toBool());
     case SettingsSectionReset::TextRecognitionInterfaceSettings:
         return storage::ApplicationStorage::instance().configuration().setValue(
             QStringLiteral("text_recognition/fill_style"),

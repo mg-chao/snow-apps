@@ -146,6 +146,8 @@ const QVector<ConfigurationSchemaEntry> kEntries = {
      std::nullopt,
      {QStringLiteral("smart_merge"), QStringLiteral("original")}},
     {QStringLiteral("interface/sidebar_collapsed"), false, ConfigurationValueKind::Boolean},
+    {QStringLiteral("text_recognition/save_recognition_result_as_image"), true,
+     ConfigurationValueKind::Boolean},
     {QStringLiteral("text_recognition/fill_style"),
      QStringLiteral("background_fill"),
      ConfigurationValueKind::String,
