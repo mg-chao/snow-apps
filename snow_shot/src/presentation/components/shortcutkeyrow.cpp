@@ -3,10 +3,7 @@
 
 #include "snow_shot/platform/windows/printscreenshortcutrecorder.h"
 #include "snow_shot/presentation/components/infotooltipicon.h"
-#include "snow_shot/presentation/components/icons/iconrenderutils.h"
 #include "snow_shot/presentation/components/shortcutconfigurationbutton.h"
-#include "snow_shot/presentation/styles/buttonborder.h"
-#include "snow_shot/presentation/styles/actionrowstyle.h"
 #include "snow_shot/presentation/styles/mainwindowcomponenttoken.h"
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/presentation/styles/themecolorscheme.h"
@@ -830,59 +827,28 @@ ShortcutKeyRow::ShortcutKeyRow(
     const snow_shot::presentation::styles::ThemeAliasMetricToken& metric,
     const snow_shot::presentation::styles::MainWindowComponentMetricToken& mainWindowMetric,
     QWidget* parent)
-    : adqt::widgets::AdButton(parent), m_rowState(config.rowState), m_baseTitle(config.title),
-      m_registrationState(config.registrationState),
+    : ActionRow({config.title, config.iconRef, config.rowState, config.useStableBorder,
+                 config.presentation == ShortcutKeyRowConfig::Presentation::CompactFormField,
+                 config.adjustableDelay},
+                metric, mainWindowMetric,
+                snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme(),
+                parent),
+      m_baseTitle(config.title), m_registrationState(config.registrationState),
       m_maxShortcutCount(std::max(1, config.maxShortcutCount)),
       m_shortcutValidator(config.shortcutValidator), m_adjustableDelay(config.adjustableDelay),
-      m_delaySeconds(std::clamp(config.delaySeconds, 1, 10)), m_delaySetter(config.delaySetter),
-      m_colorScheme(snow_shot::presentation::styles::ThemeManager::instance().themeColorScheme()) {
+      m_delaySeconds(std::clamp(config.delaySeconds, 1, 10)), m_delaySetter(config.delaySetter) {
     m_showRegistrationStatus = config.showRegistrationStatus;
-    m_compactPresentation =
-        config.presentation == ShortcutKeyRowConfig::Presentation::CompactFormField;
     m_validationScope = config.validationScope;
     if (m_registrationState.shortcuts.isEmpty() && !config.shortcuts.isEmpty()) {
         m_registrationState.shortcuts = config.shortcuts;
     }
 
-    setAccessibleName(config.title);
-    setButtonStyle(m_compactPresentation ? adqt::widgets::AdButton::ButtonStyle::Text
-                                         : adqt::widgets::AdButton::ButtonStyle::Outline);
-    setAccentRole(adqt::widgets::AdButton::AccentRole::Primary);
-    setShape(adqt::widgets::AdButton::Shape::Rounded);
-    setFixedHeight(m_compactPresentation ? metric.controlHeight
-                                         : metric.controlHeightLG + metric.paddingXXS);
-    setCursor(m_compactPresentation ? Qt::ArrowCursor : Qt::PointingHandCursor);
     if (m_adjustableDelay) {
         setToolTip(tr("Delay: %1 seconds").arg(m_delaySeconds));
     }
-    setFocusPolicy(Qt::NoFocus);
-    setCheckable(false);
-    setAttribute(Qt::WA_Hover, true);
-
-    m_useStableBorder = config.useStableBorder;
-    m_rowBorderWidth = metric.lineWidth;
-    m_rowBorderRadius = mainWindowMetric.cardRadius;
-    m_titleIconRef = config.iconRef;
-    m_titleIconSize = metric.fontSizeLG + metric.borderRadiusXS;
-
-    auto* rowLayout = new QHBoxLayout(this);
-    if (m_compactPresentation) {
-        rowLayout->setContentsMargins(0, 0, 0, 0);
-        rowLayout->setSpacing(metric.marginXS);
-    } else {
-        rowLayout->setContentsMargins(metric.padding, metric.paddingXXS, metric.padding,
-                                      metric.paddingXXS);
-        rowLayout->setSpacing(metric.marginXS + metric.borderRadiusXS);
-    }
-
-    auto* titleWrap = new QWidget(this);
-    titleWrap->setAttribute(Qt::WA_TransparentForMouseEvents, !m_adjustableDelay);
-    auto* titleLayout = new QHBoxLayout(titleWrap);
-    titleLayout->setContentsMargins(0, 0, 0, 0);
-    titleLayout->setSpacing(metric.marginXS);
 
     const QString initialTitle = delayDisplayTitle();
-    m_titleLabel = new QLabel(titleLabelText(), titleWrap);
+    m_titleLabel->setText(titleLabelText());
     m_titleLabel->setObjectName(m_adjustableDelay ? QStringLiteral("delayTitleLabel")
                                                   : QStringLiteral("shortcutTitleLabel"));
     setAccessibleName(initialTitle);
@@ -895,20 +861,6 @@ ShortcutKeyRow::ShortcutKeyRow(
         m_delayUnderline->setAttribute(Qt::WA_TransparentForMouseEvents, true);
         m_delayUnderline->hide();
     }
-    titleLayout->addWidget(m_titleLabel, 0, Qt::AlignVCenter);
-
-    if (!m_compactPresentation && adqt::icons::isValid(m_titleIconRef)) {
-        m_titleIcon = new QLabel(titleWrap);
-        m_titleIcon->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-        m_titleIcon->setFixedSize(m_titleIconSize, m_titleIconSize);
-        titleLayout->addWidget(m_titleIcon, 0, Qt::AlignVCenter);
-    }
-
-    if (!m_compactPresentation) {
-        titleLayout->addStretch(1);
-    }
-    rowLayout->addWidget(titleWrap, m_compactPresentation ? 0 : 1);
-
     auto* shortcutButton = new ShortcutConfigurationButton(
         metric,
         m_compactPresentation ? COMPACT_SHORTCUT_KEY_TEXT_MAX_WIDTH : SHORTCUT_KEY_TEXT_MAX_WIDTH,
@@ -919,32 +871,22 @@ ShortcutKeyRow::ShortcutKeyRow(
         shortcutButton->setButtonStyle(adqt::widgets::AdButton::ButtonStyle::Outline);
     }
     shortcutButton->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-    shortcutButton->installEventFilter(this);
     connect(shortcutButton, &QAbstractButton::clicked, this,
             &ShortcutKeyRow::openShortcutConfigDialog);
-    rowLayout->addWidget(shortcutButton, 0,
-                         m_compactPresentation ? Qt::AlignVCenter : Qt::AlignRight);
-    if (m_compactPresentation) {
-        rowLayout->addStretch(1);
-    }
     m_shortcutButton = shortcutButton;
-
-    const auto& themeManager = snow_shot::presentation::styles::ThemeManager::instance();
-    connect(&themeManager, &snow_shot::presentation::styles::ThemeManager::themeChanged, this,
-            &ShortcutKeyRow::applyTheme);
+    setConfigurationButton(shortcutButton);
 
     applyTheme(m_colorScheme);
 }
 
 void ShortcutKeyRow::applyTheme(const snow_shot::presentation::styles::ThemeColorScheme& scheme) {
-    m_colorScheme = scheme;
+    ActionRow::applyTheme(scheme);
 
     if (m_shortcutButton != nullptr) {
         auto* button = static_cast<ShortcutConfigurationButton*>(m_shortcutButton);
         button->setTheme(scheme);
     }
 
-    syncTitle();
     syncDelayUnderline();
     syncRegistrationStatus();
     update();
@@ -996,34 +938,13 @@ int ShortcutKeyRow::delaySeconds() const {
     return m_delaySeconds;
 }
 
-void ShortcutKeyRow::paintEvent(QPaintEvent* event) {
-    (void)event;
-
-    if (m_compactPresentation) {
-        return;
-    }
-
-    QPainter painter(this);
-    const bool shortcutButtonActive = isShortcutButtonActive();
-    snow_shot::presentation::styles::paintActionRow(
-        painter, size(), m_colorScheme.map, m_rowState, isDown() && !shortcutButtonActive,
-        underMouse() && !shortcutButtonActive, m_rowBorderRadius, m_rowBorderWidth,
-        m_useStableBorder);
-}
-
 bool ShortcutKeyRow::event(QEvent* event) {
-    const bool handled = adqt::widgets::AdButton::event(event);
+    const bool handled = ActionRow::event(event);
 
     const QEvent::Type type = event->type();
     if (type == QEvent::LanguageChange) {
         retranslateUi();
     }
-    if (type == QEvent::Enter || type == QEvent::Leave || type == QEvent::MouseButtonPress ||
-        type == QEvent::MouseButtonRelease) {
-        syncTitle();
-        update();
-    }
-
     return handled;
 }
 
@@ -1041,16 +962,7 @@ bool ShortcutKeyRow::eventFilter(QObject* watched, QEvent* event) {
         }
     }
 
-    if (watched == m_shortcutButton) {
-        const QEvent::Type type = event->type();
-        if (type == QEvent::Enter || type == QEvent::Leave || type == QEvent::MouseButtonPress ||
-            type == QEvent::MouseButtonRelease) {
-            syncTitle();
-            update();
-        }
-    }
-
-    return adqt::widgets::AdButton::eventFilter(watched, event);
+    return ActionRow::eventFilter(watched, event);
 }
 
 QString ShortcutKeyRow::delayDisplayTitle() const {
@@ -1176,48 +1088,6 @@ void ShortcutKeyRow::openShortcutConfigDialog() {
     });
 }
 
-void ShortcutKeyRow::syncTitle() {
-    const auto& map = m_colorScheme.map;
-    const bool shortcutButtonActive = isShortcutButtonActive();
-    const QColor textColor = m_compactPresentation
-                                 ? map.colorText
-                                 : snow_shot::presentation::styles::actionRowColor(
-                                       m_rowState, isDown() && !shortcutButtonActive,
-                                       underMouse() && !shortcutButtonActive, map);
-
-    syncTitleLabelColor(textColor);
-    syncTitleIcon(textColor);
-}
-
-void ShortcutKeyRow::syncTitleLabelColor(const QColor& textColor) {
-    if (m_titleLabel == nullptr) {
-        return;
-    }
-
-    m_titleLabel->setStyleSheet(QStringLiteral("color: %1;").arg(cssColor(textColor)));
-
-    QFont labelFont = m_titleLabel->font();
-    labelFont.setPixelSize(m_compactPresentation ? m_colorScheme.metricAlias.fontSize
-                                                 : m_colorScheme.metricAlias.fontSizeLG);
-    labelFont.setWeight(m_compactPresentation ? QFont::Normal : QFont::Medium);
-    m_titleLabel->setFont(labelFont);
-}
-
-void ShortcutKeyRow::syncTitleIcon(const QColor& iconColor) {
-    if (m_titleIcon == nullptr) {
-        return;
-    }
-
-    const QPixmap iconPixmap = snow_shot::presentation::icons::renderTintedIconPixmap(
-        m_titleIconRef, QSize(m_titleIconSize, m_titleIconSize), devicePixelRatioF(), iconColor);
-    if (iconPixmap.isNull()) {
-        m_titleIcon->clear();
-        return;
-    }
-
-    m_titleIcon->setPixmap(iconPixmap);
-}
-
 void ShortcutKeyRow::syncRegistrationStatus() {
     const QString shortcutText = formatShortcutListDisplayText(m_registrationState.shortcuts);
     const auto status =
@@ -1321,9 +1191,4 @@ QString ShortcutKeyRow::registrationTooltipText() const {
 
     return tr("No configured shortcut is available\n%1\nChange the shortcut and try again")
         .arg(failedShortcuts.join(QStringLiteral("\n")));
-}
-
-bool ShortcutKeyRow::isShortcutButtonActive() const {
-    return m_shortcutButton != nullptr &&
-           (m_shortcutButton->underMouse() || m_shortcutButton->isDown());
 }

@@ -36,6 +36,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <type_traits>
 
 namespace settings = snow_shot::presentation::settings;
 namespace presentation = snow_shot::presentation;
@@ -43,6 +44,9 @@ namespace styles = snow_shot::presentation::styles;
 namespace storage = snow_shot::storage;
 
 namespace {
+static_assert(std::is_base_of_v<ActionRow, GlobalMouseRow>);
+static_assert(std::is_base_of_v<ActionRow, ShortcutKeyRow>);
+
 void require(bool condition, const char* message) {
     if (!condition) {
         std::cerr << message << '\n';
@@ -306,9 +310,8 @@ void globalMousePageRendersActionButtons() {
                 "Global mouse action rows must be button containers");
         const bool correctlyOrdered =
             label != nullptr && icon != nullptr && button != nullptr && layout != nullptr &&
-            layout->count() == 4 && layout->itemAt(0)->widget() == label &&
-            layout->itemAt(1)->widget() == icon && layout->itemAt(2)->spacerItem() != nullptr &&
-            layout->itemAt(3)->widget() == button;
+            label->mapTo(row, QPoint()).x() + label->width() <= icon->mapTo(row, QPoint()).x() &&
+            icon->mapTo(row, QPoint()).x() + icon->width() <= button->x();
         if (!correctlyOrdered) {
             std::cerr << "row=" << row->objectName().toStdString()
                       << " label=" << (label != nullptr) << " button=" << (button != nullptr)
@@ -565,6 +568,87 @@ void globalMouseAndGlobalHotkeyRowsSharePresentation() {
     }
 }
 
+void globalMouseAndHotkeyTitlesRenderIdentically() {
+    const auto& registry = settings::builtInSettingsRegistry();
+    FakeSettingsBackend backend;
+    settings::SettingsRuntimeSession session(registry, backend);
+    auto scheme = styles::ThemeManager::instance().themeColorScheme();
+    GlobalMouseRow mouse(QStringLiteral("Copy to clipboard"),
+                         settings::SettingsGlobalMouseAction::ScreenshotCopy, session, scheme);
+    ShortcutKeyRowConfig config;
+    config.title = QStringLiteral("Copy to clipboard");
+    config.iconRef = presentation::icons::custom::outlined::ScreenshotCopy();
+    config.useStableBorder = true;
+    ShortcutKeyRow shortcut(config, scheme.metricAlias,
+                            styles::buildMainWindowComponentMetricToken(scheme));
+    auto* mouseTitle = mouse.findChild<QLabel*>(QStringLiteral("globalMouseActionLabel"));
+    auto* shortcutTitle = shortcut.findChild<QLabel*>(QStringLiteral("shortcutTitleLabel"));
+    auto* shortcutButton = shortcut.findChild<ShortcutConfigurationButton*>();
+    require(mouseTitle != nullptr && shortcutTitle != nullptr && shortcutButton != nullptr,
+            "Both action rows must expose a title and configuration button");
+    // Keep configuration widths equal, but retain their different icons and behavior.
+    mouse.configurationButton()->setFixedWidth(180);
+    shortcutButton->setFixedWidth(180);
+    mouse.resize(601, mouse.height());
+    shortcut.resize(mouse.size());
+    mouse.show();
+    shortcut.show();
+    flushEvents();
+
+    const auto sendHover = [](QWidget& widget, bool hovered) {
+        widget.setAttribute(Qt::WA_UnderMouse, hovered);
+        if (hovered) {
+            QEnterEvent event(QPointF(1, 1), QPointF(1, 1), QPointF(1, 1));
+            QApplication::sendEvent(&widget, &event);
+        } else {
+            QEvent event(QEvent::Leave);
+            QApplication::sendEvent(&widget, &event);
+        }
+    };
+    const auto renderTitleArea = [](QWidget& widget, qreal dpr) {
+        QImage image(QSize(qRound(widget.width() * dpr), qRound(widget.height() * dpr)),
+                     QImage::Format_ARGB32_Premultiplied);
+        image.setDevicePixelRatio(dpr);
+        image.fill(Qt::transparent);
+        widget.render(&image); // Include the title and icon child widgets.
+        return image.copy(0, 0, qRound(350 * dpr), image.height());
+    };
+    for (const bool dark : {false, true}) {
+        scheme.map.colorBgContainer = QColor(dark ? "#171d23" : "#f3f7fa");
+        scheme.map.colorText = QColor(dark ? "#f0f2f4" : "#17212a");
+        scheme.map.colorPrimaryHover = QColor(dark ? "#85beff" : "#246ac7");
+        scheme.map.colorPrimaryActive = QColor(dark ? "#549be8" : "#174b9a");
+        mouse.applyTheme(scheme);
+        shortcut.applyTheme(scheme);
+        for (const bool hovered : {false, true}) {
+            for (const bool pressed : {false, true}) {
+                for (const int configurationState : {0, 1, 2}) {
+                    mouse.setDown(pressed);
+                    shortcut.setDown(pressed);
+                    mouse.configurationButton()->setDown(configurationState == 2);
+                    shortcutButton->setDown(configurationState == 2);
+                    sendHover(*mouse.configurationButton(), configurationState == 1);
+                    sendHover(*shortcutButton, configurationState == 1);
+                    sendHover(mouse, hovered);
+                    sendHover(shortcut, hovered);
+                    const QColor expected = configurationState != 0 ? scheme.map.colorText
+                                            : pressed               ? scheme.map.colorPrimaryActive
+                                            : hovered               ? scheme.map.colorPrimaryHover
+                                                                    : scheme.map.colorText;
+                    require(mouseTitle->palette().color(QPalette::WindowText) == expected &&
+                                shortcutTitle->palette().color(QPalette::WindowText) == expected,
+                            "Both titles must use the hotkey color for every interaction state");
+                    for (const qreal dpr : {1.0, 1.25, 1.5, 1.75, 2.0}) {
+                        require(renderTitleArea(mouse, dpr) == renderTitleArea(shortcut, dpr),
+                                "Action titles, icons, and backgrounds must render identically "
+                                "across themes, hover/press states, and scale factors");
+                    }
+                }
+            }
+        }
+    }
+}
+
 void globalMouseLanguageAndThemeChangesRefreshOpenUi() {
     using Action = settings::SettingsGlobalMouseAction;
     const settings::SettingsRegistry& registry = settings::builtInSettingsRegistry();
@@ -758,6 +842,7 @@ int main(int argc, char** argv) {
     globalMousePageRendersActionButtons();
     noneClearsAssignedMouseBinding();
     globalMouseAndGlobalHotkeyRowsSharePresentation();
+    globalMouseAndHotkeyTitlesRenderIdentically();
     globalMouseModalEditsOnlyOnAcceptedUniquePairs();
     globalMouseLanguageAndThemeChangesRefreshOpenUi();
     globalMousePopupStaysAboveModalDuringLayout();

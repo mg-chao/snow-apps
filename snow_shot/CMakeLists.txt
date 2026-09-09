@@ -717,6 +717,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/presentation/components/settingscustomwidget.h
     include/snow_shot/presentation/components/settingspagewidget.h
     include/snow_shot/presentation/shortcutdisplaytext.h
+    include/snow_shot/presentation/components/actionrow.h
     include/snow_shot/presentation/components/shortcutkeyrow.h
     include/snow_shot/presentation/components/shortcutconfigurationbutton.h
     include/snow_shot/presentation/components/storagestatussettingswidget.h
@@ -736,6 +737,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/presentation/components/customaimodelssettingswidget.cpp
     src/presentation/components/settingscustomwidget.cpp
     src/presentation/components/settingspagewidget.cpp
+    src/presentation/components/actionrow.cpp
     src/presentation/components/shortcutkeyrow.cpp
     src/presentation/components/shortcutconfigurationbutton.cpp
     src/presentation/components/storagestatussettingswidget.cpp
@@ -1855,6 +1857,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         tests/shortcut_key_row_tests.cpp
         src/platform/windows/printscreenshortcutrecorder.cpp
         include/snow_shot/presentation/components/infotooltipicon.h
+        include/snow_shot/presentation/components/actionrow.h
         include/snow_shot/presentation/components/shortcutkeyrow.h
         include/snow_shot/presentation/components/shortcutconfigurationbutton.h
         include/snow_shot/presentation/styles/buttonborder.h
@@ -1863,6 +1866,7 @@ if(SNOW_SHOT_BUILD_TESTS)
         include/snow_shot/presentation/styles/themecolorscheme.h
         src/presentation/components/icons/snowshoticons.cpp
         src/presentation/components/infotooltipicon.cpp
+        src/presentation/components/actionrow.cpp
         src/presentation/components/shortcutkeyrow.cpp
         src/presentation/components/shortcutconfigurationbutton.cpp
         src/presentation/styles/buttonborder.cpp
