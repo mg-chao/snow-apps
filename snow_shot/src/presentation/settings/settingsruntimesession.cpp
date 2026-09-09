@@ -897,6 +897,8 @@ QVariant SettingsRuntimeSession::readValue(const SettingsFieldDescriptor& descri
                         m_backend.toolbarLayout(storage::ScreenshotToolbarLayoutKind::ActionTools));
                 case SettingsCustomRenderer::TrayMenuOptions:
                     return m_backend.multiSelectValue(SettingsMultiSelectBinding::TrayMenuOptions);
+                case SettingsCustomRenderer::CustomAiModels:
+                    return QVariant::fromValue(m_backend.customAiModels());
                 case SettingsCustomRenderer::StorageStatus:
                     return QVariant::fromValue(m_backend.storageStatus());
                 }
@@ -962,6 +964,9 @@ bool SettingsRuntimeSession::writeValue(const SettingsFieldDescriptor& descripto
                 case SettingsCustomRenderer::TrayMenuOptions:
                     return m_backend.applyMultiSelectValue(
                         SettingsMultiSelectBinding::TrayMenuOptions, value.toList());
+                case SettingsCustomRenderer::CustomAiModels:
+                    return value.canConvert<CustomAiModels>() &&
+                           m_backend.applyCustomAiModels(value.value<CustomAiModels>());
                 case SettingsCustomRenderer::StorageStatus:
                     return false;
                 }
@@ -1379,6 +1384,16 @@ SettingsActionState SettingsRuntimeSession::actionState(SettingsActionBinding bi
 
 bool SettingsRuntimeSession::triggerAction(SettingsActionBinding binding) {
     return m_backend.triggerAction(binding);
+}
+
+CustomAiModels SettingsRuntimeSession::customAiModels() const {
+    return state(QStringLiteral("api.custom-models")).acceptedValue.value<CustomAiModels>();
+}
+bool SettingsRuntimeSession::applyCustomAiModels(const CustomAiModels& models) {
+    bool valid = false;
+    const auto normalized = customAiModelsFromJson(customAiModelsToJson(models), &valid);
+    return submitDraft(QStringLiteral("api.custom-models"),
+                       QVariant::fromValue(valid ? normalized : models));
 }
 
 storage::StorageStatus SettingsRuntimeSession::storageStatus() const {

@@ -607,6 +607,7 @@ function(snow_shot_add_translations target)
         set(_lrelease_target snow_shot_release_translations)
         set(_translation_source_targets
             ${target}
+            snow_shot_storage
             snow_shot_settings_catalog
             snow_shot_settings_search
             snow_shot_settings
@@ -681,6 +682,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     include/snow_shot/presentation/components/pagecontainerwidget.h
     include/snow_shot/presentation/components/sectionheaderwidget.h
     include/snow_shot/presentation/components/screenshothistorypagewidget.h
+    include/snow_shot/presentation/components/customaimodelssettingswidget.h
     include/snow_shot/presentation/components/settingscustomwidget.h
     include/snow_shot/presentation/components/settingspagewidget.h
     include/snow_shot/presentation/components/shortcutkeyrow.h
@@ -699,6 +701,7 @@ set(SNOW_SHOT_SETTINGS_SOURCES
     src/presentation/components/pagecontainerwidget.cpp
     src/presentation/components/sectionheaderwidget.cpp
     src/presentation/components/screenshothistorypagewidget.cpp
+    src/presentation/components/customaimodelssettingswidget.cpp
     src/presentation/components/settingscustomwidget.cpp
     src/presentation/components/settingspagewidget.cpp
     src/presentation/components/shortcutkeyrow.cpp
@@ -1271,6 +1274,14 @@ if(SNOW_SHOT_BUILD_TESTS)
         ENVIRONMENT_MODIFICATION
             "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
     )
+
+    add_executable(snow-shot-custom-ai-models-tests tests/custom_ai_models_tests.cpp
+        src/presentation/services/screenshotclipboardservice.cpp)
+    target_link_libraries(snow-shot-custom-ai-models-tests PRIVATE snow_shot_settings ant_design_qt Qt6::Widgets)
+    snow_shot_add_translations(snow-shot-custom-ai-models-tests)
+    snow_shot_import_offscreen_platform(snow-shot-custom-ai-models-tests)
+    add_test(NAME snow-shot-custom-ai-models-tests COMMAND snow-shot-custom-ai-models-tests -platform offscreen)
+    set_tests_properties(snow-shot-custom-ai-models-tests PROPERTIES TIMEOUT 60)
 
     add_executable(snow-shot-storage-status-widget-tests
         tests/storage_status_widget_tests.cpp

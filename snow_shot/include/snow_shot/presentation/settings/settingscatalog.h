@@ -272,6 +272,7 @@ struct SettingsActionDefinition {
 };
 
 enum class SettingsCustomRenderer {
+    CustomAiModels,
     StorageStatus,
     DrawingToolbarEditor,
     ScreenshotToolbarEditor,

@@ -69,7 +69,7 @@ class CatalogTranslator final : public QTranslator {
 void builtInCatalogIsCompleteAndValid() {
     const settings::SettingsCatalog& catalog = settings::builtInSettingsRegistry().catalog();
     require(catalog.validationErrors().isEmpty(), "built-in settings catalog must validate");
-    require(catalog.pages().size() == 9, "catalog must contain nine pages");
+    require(catalog.pages().size() == 10, "catalog must contain ten pages");
 
     qsizetype sectionCount = 0;
     qsizetype itemCount = 0;
@@ -100,7 +100,7 @@ void builtInCatalogIsCompleteAndValid() {
             }
         }
     }
-    require(sectionCount == 33 && itemCount == 135,
+    require(sectionCount == 34 && itemCount == 136,
             "catalog must contain thirty-three sections and one hundred thirty-five items");
     const auto* history =
         catalog.section(QStringLiteral("storage-and-privacy"), QStringLiteral("history"));
@@ -419,7 +419,9 @@ void builtInCatalogIsCompleteAndValid() {
                 settingsGroup->pages.at(1).pageId == QStringLiteral("function-settings"),
             "Function settings must appear below Interface settings in the Settings navigation");
     require(settingsGroup->title.translated() == QStringLiteral("Settings") &&
-                settingsGroup->pages.size() == 5 &&
+                settingsGroup->pages.size() == 6 &&
+                settingsGroup->pages.at(3).pageId == QStringLiteral("storage-and-privacy") &&
+                settingsGroup->pages.at(4).pageId == QStringLiteral("api-configuration") &&
                 settingsGroup->pages.at(2).pageId == QStringLiteral("application-shortcuts") &&
                 settingsGroup->pages.constLast().pageId == QStringLiteral("system-settings"),
             "Settings navigation group must expose Application shortcuts and System settings");
@@ -1081,7 +1083,7 @@ void invalidCatalogReportsAllConformanceErrors() {
 
 void searchIndexIsGeneratedAndRanked() {
     settings::SettingsSearchIndex index(settings::builtInSettingsRegistry());
-    require(index.entries().size() == 177 && index.search(QString()).size() == 177,
+    require(index.entries().size() == 180 && index.search(QString()).size() == 180,
             "search must generate all catalog nodes in catalog order");
     const auto middle = index.search(QStringLiteral("Reset Zoom"));
     require(!middle.isEmpty() && middle.constFirst().location.itemId ==
@@ -1117,7 +1119,7 @@ void searchIndexIsGeneratedAndRanked() {
             break;
         }
     }
-    require(pages == 9 && sections == 33 && items == 135,
+    require(pages == 10 && sections == 34 && items == 136,
             "search node counts must match catalog page, section, and item counts");
 
     const auto captureCursor = index.search(QStringLiteral("Capture cursor"));

@@ -1,4 +1,5 @@
 #include "snow_shot/presentation/components/settingscustomwidget.h"
+#include "snow_shot/presentation/components/customaimodelssettingswidget.h"
 
 #include "snow_shot/presentation/components/toolbareditorsettingswidget.h"
 #include "snow_shot/presentation/components/storagestatussettingswidget.h"
@@ -1101,6 +1102,8 @@ SettingsCustomWidget* createSettingsCustomWidget(
     snow_shot::presentation::settings::SettingsRuntimeSession& runtimeSession, QWidget* parent) {
     using snow_shot::presentation::settings::SettingsCustomRenderer;
     switch (renderer) {
+    case SettingsCustomRenderer::CustomAiModels:
+        return new CustomAiModelsSettingsWidget(runtimeSession, parent);
     case SettingsCustomRenderer::StorageStatus:
         return new StorageStatusSettingsWidget(runtimeSession, parent);
     case SettingsCustomRenderer::DrawingToolbarEditor:

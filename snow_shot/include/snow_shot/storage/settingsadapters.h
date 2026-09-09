@@ -1,6 +1,8 @@
 #ifndef SNOW_SHOT_STORAGE_SETTINGSADAPTERS_H
 #define SNOW_SHOT_STORAGE_SETTINGSADAPTERS_H
 
+#include "snow_shot/customaimodelconfiguration.h"
+
 #include <QColor>
 #include <QMap>
 #include <QString>
@@ -37,6 +39,12 @@ enum class ScreenshotToolbarLayoutKind {
 
 [[nodiscard]] QColor colorFromRgbaString(const QString& value);
 [[nodiscard]] QString colorToRgbaString(const QColor& color);
+
+class ApiConfigurationSettings final {
+  public:
+    [[nodiscard]] CustomAiModels customModels() const;
+    bool setCustomModels(const CustomAiModels& models) const;
+};
 
 class InterfaceSettings final {
   public:

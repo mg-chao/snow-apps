@@ -57,6 +57,7 @@ class ScreenshotImageConversionController final : public QObject {
     QHash<QString, QVector<ScreenshotImageConversionEntry>> m_cache;
     QTimer m_previewTimer;
     QString m_key;
+    QString m_requestModel;
     QString m_fingerprint;
     QImage m_image;
     QString m_source;

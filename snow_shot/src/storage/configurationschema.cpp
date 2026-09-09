@@ -1,4 +1,5 @@
 #include "snow_shot/storage/configurationschema.h"
+#include "snow_shot/customaimodelconfiguration.h"
 
 #include "snow_shot/storage/capturehistorytypes.h"
 #include "snow_shot/storage/persistedselectioncodec.h"
@@ -85,6 +86,8 @@ QString defaultOutputDirectory(QStandardPaths::StandardLocation primary) {
 }
 
 const QVector<ConfigurationSchemaEntry> kEntries = {
+    {QStringLiteral("api_configuration/custom_models"), QJsonArray(),
+     ConfigurationValueKind::Structured},
     {QStringLiteral("storage/schema_version"), 1, ConfigurationValueKind::Integer,
      ConfigurationIntegerRange{1, 1, 1}},
     {QStringLiteral("interface/theme_mode"),
@@ -1284,6 +1287,12 @@ ConfigurationNormalization ConfigurationSchema::normalize(const QString& key,
     const ConfigurationSchemaEntry* schemaEntry = entry(key);
     if (schemaEntry == nullptr) {
         return {};
+    }
+    if (key == QStringLiteral("api_configuration/custom_models")) {
+        bool valid = false;
+        const auto models = customAiModelsFromJson(value, &valid);
+        const auto normalized = customAiModelsToJson(models);
+        return {normalized, valid, normalized != value};
     }
     if (key == QStringLiteral("interface/theme_mode")) {
         return normalizeTheme(value);

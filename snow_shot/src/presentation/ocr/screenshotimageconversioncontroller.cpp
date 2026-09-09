@@ -42,6 +42,32 @@ void ScreenshotImageConversionController::setProvider(SnowShotApiClient* provide
     }
     m_api = provider;
     if (provider != nullptr) {
+        connect(
+            provider, &SnowShotApiClient::customModelInvalidated, this,
+            [this](const QString& id, bool, bool vision) {
+                if (!vision) {
+                    return;
+                }
+                for (auto& entries : m_cache) {
+                    entries.removeIf([&id](const auto& entry) { return entry.model == id; });
+                }
+                if (Settings().visionModel() == id || (m_active && m_requestModel == id)) {
+                    cancelRequests();
+                    m_source.clear();
+                    if (Settings().visionModel() == id &&
+                        (!m_api->isCustomModel(id) ||
+                         std::none_of(m_api->cachedChatModels().cbegin(),
+                                      m_api->cachedChatModels().cend(), [&id](const auto& model) {
+                                          return model.id == id && model.supportsVision;
+                                      }))) {
+                        Settings().setVisionModel(m_api->fallbackModel(true));
+                    }
+                    if (m_active) {
+                        fail(tr("Model configuration changed. Retry to use the updated settings."));
+                    }
+                }
+                emit resultsChanged();
+            });
         connect(provider, &QObject::destroyed, this, [this]() {
             m_modelsToken = m_conversionToken = m_settingsToken = 0;
             if (busy()) {
@@ -67,7 +93,10 @@ void ScreenshotImageConversionController::activate(QString key, QImage image,
     const QString model = Settings().visionModel();
     for (const auto& entry : m_cache.value(m_key)) {
         if (entry.isValid() && entry.format == format && entry.model == model &&
-            entry.imageFingerprint == m_fingerprint) {
+            entry.imageFingerprint == m_fingerprint &&
+            (!model.startsWith(QStringLiteral("custom:")) ||
+             (m_api != nullptr && m_api->isCustomModel(model) &&
+              entry.modelFingerprint == m_api->modelFingerprint(model)))) {
             m_source = entry.source;
             m_state = State::Completed;
             emit changed();
@@ -121,6 +150,9 @@ void ScreenshotImageConversionController::seed(
     QVector<ScreenshotImageConversionEntry> valid;
     for (const auto& entry : entries) {
         if (entry.isValid() &&
+            (!entry.model.startsWith(QStringLiteral("custom:")) ||
+             (m_api != nullptr && m_api->isCustomModel(entry.model) &&
+              entry.modelFingerprint == m_api->modelFingerprint(entry.model))) &&
             std::none_of(valid.cbegin(), valid.cend(),
                          [&entry](const auto& saved) { return saved.format == entry.format; })) {
             valid.push_back(entry);
@@ -157,8 +189,8 @@ void ScreenshotImageConversionController::start(bool refreshModels) {
     }
     m_state = State::LoadingModels;
     emit changed();
-    if (!refreshModels && !m_api->cachedChatModels().isEmpty() &&
-        m_api->cachedChatModelsLocale() == currentLocale()) {
+    if (m_api->isCustomModel(Settings().visionModel()) ||
+        (!refreshModels && m_api->hasBuiltInModels(currentLocale()))) {
         startWithModels(m_api->cachedChatModels());
         return;
     }
@@ -195,6 +227,7 @@ void ScreenshotImageConversionController::startWithModels(
         return;
     }
     const QString model = selected->id;
+    m_requestModel = model;
     Settings().setVisionModel(model);
     m_state = State::Converting;
     emit changed();
@@ -231,6 +264,7 @@ void ScreenshotImageConversionController::startWithModels(
             m_source = normalizedImageConversionSource(m_source, m_format);
             ScreenshotImageConversionEntry entry{m_format, model, m_source};
             entry.imageFingerprint = m_fingerprint;
+            entry.modelFingerprint = m_api->modelFingerprint(model);
             if (!entry.isValid()) {
                 fail(tr("The model returned no usable content"));
                 return;
@@ -314,6 +348,8 @@ void ScreenshotImageConversionController::openSettings(QWidget* owner) {
                     return item.value.toString() == selected;
                 });
             select->setCurrentValue(found ? selected : options.first().value);
+        } else {
+            select->setCurrentValue(QVariant());
         }
         alert->setText(tr("No vision models are available"));
         alert->setVisible(!available);
@@ -330,12 +366,13 @@ void ScreenshotImageConversionController::openSettings(QWidget* owner) {
             m_api->cancel(m_settingsToken);
         }
         m_settingsToken = 0;
-        select->setEnabled(false);
-        select->setLoading(true);
+        const bool available = m_api != nullptr && !m_api->fallbackModel(true).isEmpty();
+        select->setEnabled(available);
+        select->setLoading(!available);
         retry->setBusy(true);
         alert->hide();
         if (guard->acceptButton() != nullptr) {
-            guard->acceptButton()->setEnabled(false);
+            guard->acceptButton()->setEnabled(available);
         }
         const auto failure = [select, alert, retry]() {
             select->setLoading(false);
@@ -368,6 +405,8 @@ void ScreenshotImageConversionController::openSettings(QWidget* owner) {
     connect(retry, &AdButton::clicked, modal, load);
     if (m_api != nullptr) {
         connect(m_api, &QObject::destroyed, modal, load);
+        connect(m_api, &SnowShotApiClient::chatModelsChanged, modal,
+                [this, apply]() { apply(m_api->cachedChatModels()); });
     }
     connect(owner, &QObject::destroyed, modal, [modal]() { modal->reject(); });
     connect(&snow_shot::presentation::LanguageManager::instance(),
@@ -402,10 +441,10 @@ void ScreenshotImageConversionController::openSettings(QWidget* owner) {
         modal->deleteLater();
     });
     // Establish the initial content before the modal measures and shows its window.
-    if (m_api != nullptr && !m_api->cachedChatModels().isEmpty() &&
-        m_api->cachedChatModelsLocale() == currentLocale()) {
+    if (m_api != nullptr) {
         apply(m_api->cachedChatModels());
-    } else {
+    }
+    if (m_api == nullptr || !m_api->hasBuiltInModels(currentLocale())) {
         load();
     }
     modal->open();

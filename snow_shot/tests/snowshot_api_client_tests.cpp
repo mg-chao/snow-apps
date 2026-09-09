@@ -605,6 +605,213 @@ void apiClientUsesModelCatalogAndStreamingChatContracts() {
 }
 } // namespace
 
+void customModelsUseIndependentOpenAiConnections() {
+    QTcpServer server;
+    require(server.listen(QHostAddress::LocalHost), "custom API fixture listens");
+    const QString base = QStringLiteral("http://127.0.0.1:%1/v1").arg(server.serverPort());
+    snow_shot::CustomAiModelConfiguration model{QUuid::createUuid().toString(QUuid::WithoutBraces),
+                                                QStringLiteral("Display Name"),
+                                                base,
+                                                QStringLiteral("test-secret"),
+                                                QStringLiteral("provider-model"),
+                                                true};
+    SnowShotApiClient client(QStringLiteral("http://127.0.0.1:1"));
+    client.setCustomModels({model});
+    require(client.cachedChatModels().size() == 1 &&
+                client.cachedChatModels().first().supportsTranslation() &&
+                client.cachedChatModels().first().supportsVision,
+            "custom vision models support both workflows");
+    require(!client.hasBuiltInModels(QStringLiteral("en_US")),
+            "custom models do not populate builtin cache");
+    require(client.fallbackModel(false) == model.selectionId() &&
+                client.fallbackModel(true) == model.selectionId(),
+            "custom fallback works without builtin catalog");
+    for (int variant = 0; variant < 3; ++variant) {
+        bool done = false;
+        QString text;
+        SnowShotTranslationResult result;
+        QEventLoop completion;
+        const auto finished = [&](SnowShotTranslationResult value) {
+            result = value;
+            done = true;
+            completion.quit();
+        };
+        if (variant == 2) {
+            model.apiKey.clear();
+            client.setCustomModels({model});
+        }
+        SnowShotApiClient::RequestToken token = 0;
+        if (variant == 1) {
+            QImage image(16, 16, QImage::Format_RGBA8888);
+            image.fill(Qt::white);
+            token = client.streamImageConversion(
+                {model.selectionId(), image}, &client, [&](const QString& value) { text += value; },
+                finished);
+        } else {
+            token = client.streamTranslation(
+                {model.selectionId(), QStringLiteral("English"), QStringLiteral("German"),
+                 QStringLiteral("Hello")},
+                &client, [&](const QString& value) { text += value; }, finished);
+        }
+        require(token != 0, "custom request starts");
+        const QByteArray body =
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Hallo\"}}]}\r\n\r\ndata: [DONE]\r\n\r\n";
+        const auto request = waitForHttpRequest(
+            server, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: " +
+                        QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+        if (!done) {
+            QTimer::singleShot(5000, &completion, &QEventLoop::quit);
+            completion.exec();
+        }
+        require(done && result.succeeded() && text == QStringLiteral("Hallo"),
+                "custom SSE streams successfully");
+        require(request.startsWith("POST /v1/chat/completions HTTP/1.1"),
+                "custom endpoint appends only chat/completions");
+        require(variant == 2 ? !request.contains("Authorization:")
+                             : request.contains("Authorization: Bearer test-secret"),
+                "authorization scoped to optional custom key");
+        const auto json =
+            QJsonDocument::fromJson(request.mid(request.indexOf("\r\n\r\n") + 4)).object();
+        require(json.value(QStringLiteral("model")) == model.model &&
+                    json.value(QStringLiteral("stream")).toBool(),
+                "wire request uses provider model ID and streaming");
+        require(!json.contains(QStringLiteral("enable_thinking")) &&
+                    !json.contains(QStringLiteral("temperature")) &&
+                    !json.contains(QStringLiteral("max_tokens")),
+                "custom requests omit provider-specific optional parameters");
+        require(!request.contains(model.selectionId().toUtf8()) &&
+                    !request.contains("Display Name"),
+                "local identity is not sent to provider");
+        require(variant != 1 || request.contains("data:image/webp;base64,"),
+                "vision request includes image content");
+        QObject::disconnect(&server, nullptr, nullptr, nullptr);
+    }
+    // Catalog outages must not hide local configurations.
+    bool catalogDone = false;
+    SnowShotChatModelsResult catalog;
+    QEventLoop catalogLoop;
+    const auto catalogToken = client.fetchChatModels(QStringLiteral("en_US"), &client,
+                                                     [&](SnowShotChatModelsResult value) {
+                                                         catalog = value;
+                                                         catalogDone = true;
+                                                         catalogLoop.quit();
+                                                     });
+    require(catalogToken != 0, "catalog request starts independently");
+    if (!catalogDone) {
+        QTimer::singleShot(5000, &catalogLoop, &QEventLoop::quit);
+        catalogLoop.exec();
+    }
+    require(catalogDone && catalog.succeeded() && catalog.models.first().id == model.selectionId(),
+            "catalog connection failure preserves custom options");
+    for (const int status : {401, 404, 429}) {
+        bool done = false;
+        SnowShotTranslationResult result;
+        QEventLoop completion;
+        require(client.streamTranslation(
+                    {model.selectionId(), {}, {}, QStringLiteral("Hello")}, &client,
+                    [](const QString&) {},
+                    [&](auto value) {
+                        result = value;
+                        done = true;
+                        completion.quit();
+                    }) != 0,
+                "error fixture starts");
+        const QByteArray body =
+            R"({"error":{"message":"Provider rejected request","code":"provider_error"}})";
+        waitForHttpRequest(
+            server, "HTTP/1.1 " + QByteArray::number(status) +
+                        " Error\r\nContent-Type: application/json\r\nContent-Length: " +
+                        QByteArray::number(body.size()) + "\r\nConnection: close\r\n\r\n" + body);
+        if (!done) {
+            QTimer::singleShot(5000, &completion, &QEventLoop::quit);
+            completion.exec();
+        }
+        require(done && !result.succeeded() && result.httpStatus == status &&
+                    result.code == QStringLiteral("provider_error") &&
+                    result.error.contains(QStringLiteral("Provider rejected request")),
+                "OpenAI error object reaches user with HTTP status");
+        QObject::disconnect(&server, nullptr, nullptr, nullptr);
+    }
+    {
+        QTcpServer destination;
+        require(destination.listen(QHostAddress::LocalHost), "redirect destination listens");
+        bool done = false;
+        SnowShotTranslationResult result;
+        QEventLoop completion;
+        model.apiKey = QStringLiteral("redirect-secret");
+        client.setCustomModels({model});
+        require(client.streamTranslation(
+                    {model.selectionId(), {}, {}, QStringLiteral("Hello")}, &client,
+                    [](const QString&) {},
+                    [&](auto value) {
+                        result = value;
+                        done = true;
+                        completion.quit();
+                    }) != 0,
+                "redirect fixture starts");
+        waitForHttpRequest(server,
+                           "HTTP/1.1 307 Temporary Redirect\r\nLocation: http://127.0.0.1:" +
+                               QByteArray::number(destination.serverPort()) +
+                               "/other\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        if (!done) {
+            QTimer::singleShot(5000, &completion, &QEventLoop::quit);
+            completion.exec();
+        }
+        require(done && !result.succeeded() && !destination.hasPendingConnections(),
+                "cross-origin redirect cannot receive custom credentials");
+        QObject::disconnect(&server, nullptr, nullptr, nullptr);
+    }
+    {
+        SnowShotApiClient builtIn(base);
+        builtIn.setCustomModels({model});
+        bool done = false;
+        QEventLoop completion;
+        require(builtIn.streamTranslation(
+                    {QStringLiteral("builtin-model"), {}, {}, QStringLiteral("Hello")}, &builtIn,
+                    [](const QString&) {},
+                    [&](auto) {
+                        done = true;
+                        completion.quit();
+                    }) != 0,
+                "builtin fixture starts");
+        const auto request = waitForHttpRequest(
+            server, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: "
+                    "14\r\nConnection: close\r\n\r\ndata: [DONE]\n\n");
+        if (!done) {
+            QTimer::singleShot(5000, &completion, &QEventLoop::quit);
+            completion.exec();
+        }
+        require(done && !request.contains("Authorization:") &&
+                    request.startsWith("POST /v1/api/v1/chat/completions "),
+                "builtin route never receives custom credentials");
+        QObject::disconnect(&server, nullptr, nullptr, nullptr);
+    }
+    int invalidations = 0;
+    QObject::connect(&client, &SnowShotApiClient::customModelInvalidated, &client,
+                     [&](const QString&, bool, bool) { ++invalidations; });
+    const auto fingerprint = client.modelFingerprint(model.selectionId());
+    model.name = QStringLiteral("Renamed");
+    client.setCustomModels({model});
+    require(invalidations == 0 && client.modelFingerprint(model.selectionId()) == fingerprint,
+            "renaming preserves cached identity");
+    model.apiKey = QStringLiteral("new-key");
+    client.setCustomModels({model});
+    require(invalidations == 1 && client.modelFingerprint(model.selectionId()) != fingerprint,
+            "key changes invalidate cached identity");
+    model.supportsVision = false;
+    client.setCustomModels({model});
+    QImage image(4, 4, QImage::Format_RGBA8888);
+    image.fill(Qt::white);
+    require(client.streamImageConversion(
+                {model.selectionId(), image}, &client, [](const QString&) {}, [](auto) {}) == 0,
+            "nonvision custom model cannot convert images");
+    client.setCustomModels({});
+    require(client.streamTranslation(
+                {model.selectionId(), {}, {}, QStringLiteral("Hello")}, &client,
+                [](const QString&) {}, [](auto) {}) == 0,
+            "deleted custom ID never routes to builtin service");
+}
+
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
 
@@ -635,6 +842,7 @@ int main(int argc, char** argv) {
     require(SnowShotApiClient::formatFailure(0, {}, QStringLiteral("  Connection\nfailed ")) ==
                 QStringLiteral("Connection failed"),
             "transport failures without a code should remain concise");
+    customModelsUseIndependentOpenAiConnections();
     apiClientUsesModelCatalogAndStreamingChatContracts();
     translationPromptPreservesEditorContract();
     failedRequestsIdentifyTheirKindWithoutContent();

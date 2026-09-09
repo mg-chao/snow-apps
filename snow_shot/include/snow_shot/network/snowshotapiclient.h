@@ -1,6 +1,8 @@
 #ifndef SNOW_SHOT_NETWORK_SNOWSHOTAPICLIENT_H
 #define SNOW_SHOT_NETWORK_SNOWSHOTAPICLIENT_H
 
+#include "snow_shot/customaimodelconfiguration.h"
+
 #include <QHash>
 #include <QImage>
 #include <QObject>
@@ -23,12 +25,18 @@ struct SnowShotTableResult {
     }
 };
 
+enum class SnowShotModelOrigin { BuiltIn, Custom };
+
 struct SnowShotChatModel {
     QString id;
     QString name;
     bool supportsReasoning = false;
     QString translationMode = QStringLiteral("default");
     bool supportsVision = false;
+    SnowShotModelOrigin origin = SnowShotModelOrigin::BuiltIn;
+    [[nodiscard]] bool supportsTranslation() const {
+        return origin == SnowShotModelOrigin::Custom || !supportsVision;
+    }
 };
 
 struct SnowShotChatModelsResult {
@@ -102,7 +110,17 @@ class SnowShotApiClient final : public QObject {
                           TranslationDelta delta,
                           std::function<void(SnowShotImageConversionResult)> completion);
     void cancel(RequestToken token);
+    void setCustomModels(const snow_shot::CustomAiModels& models);
+    [[nodiscard]] bool isCustomModel(const QString& id) const;
+    [[nodiscard]] QString fallbackModel(bool vision) const;
+    [[nodiscard]] bool hasBuiltInModels(const QString& locale) const;
+    [[nodiscard]] QString modelFingerprint(const QString& id) const;
 
+  signals:
+    void chatModelsChanged();
+    void customModelInvalidated(const QString& id, bool translation, bool vision);
+
+  public:
     [[nodiscard]] static QImage prepareImage(const QImage& image);
     [[nodiscard]] static QByteArray encodeWebp(const QImage& image);
     [[nodiscard]] static QString formatFailure(int httpStatus, const QString& failureCode,
@@ -116,7 +134,12 @@ class SnowShotApiClient final : public QObject {
     void finishTranslation(RequestToken token, SnowShotTranslationResult result);
     void startChatStream(RequestToken token, const QByteArray& body);
 
+    void rebuildAvailableModels();
+    const snow_shot::CustomAiModelConfiguration* customModel(const QString& id) const;
     QString m_baseUrl;
+    snow_shot::CustomAiModels m_customModels;
+    QVector<SnowShotChatModel> m_availableModels;
+
     bool m_useSystemProxy = false;
     RequestToken m_nextToken = 0;
     QHash<RequestToken, Request*> m_requests;

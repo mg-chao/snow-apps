@@ -215,6 +215,15 @@ QString colorToRgbaString(const QColor& color) {
         .toUpper();
 }
 
+CustomAiModels ApiConfigurationSettings::customModels() const {
+    return customAiModelsFromJson(cache().value(QStringLiteral("api_configuration/custom_models")));
+}
+
+bool ApiConfigurationSettings::setCustomModels(const CustomAiModels& models) const {
+    return cache().setValue(QStringLiteral("api_configuration/custom_models"),
+                            customAiModelsToJson(models));
+}
+
 QString InterfaceSettings::themeMode() const {
     return cache().value(QStringLiteral("interface/theme_mode")).toString();
 }

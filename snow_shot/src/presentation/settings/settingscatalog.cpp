@@ -1790,6 +1790,28 @@ QVector<SettingsPageDefinition> builtInPages() {
             },
         },
         {
+            QStringLiteral("api-configuration"),
+            QStringLiteral("/settings/apiConfiguration"),
+            settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "API Configuration")),
+            settingsText(
+                QT_TRANSLATE_NOOP("SettingsCatalog", "Configure custom AI model connections")),
+            {{QStringLiteral("ai-model"),
+              settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "AI Model")),
+              settingsText(QT_TRANSLATE_NOOP(
+                  "SettingsCatalog",
+                  "Custom OpenAI-compatible models for translation and image conversion")),
+              SettingsSectionReset::None,
+              {{QStringLiteral("api.custom-models"),
+                settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Custom Models")),
+                settingsText(
+                    QT_TRANSLATE_NOOP("SettingsCatalog", "OpenAI-compatible Chat Completions")),
+                {settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "API URL")),
+                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "API Key")),
+                 settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "Vision Support"))},
+                QStringLiteral("api_configuration/custom_models"),
+                SettingsCustomDefinition{SettingsCustomRenderer::CustomAiModels}}}}},
+        },
+        {
             QString::fromLatin1(SYSTEM_PAGE_ID),
             QStringLiteral("/settings/systemSettings"),
             settingsText(QT_TRANSLATE_NOOP("SettingsCatalog", "System settings")),
@@ -1944,6 +1966,11 @@ QVector<SettingsNavigationNode> builtInNavigation() {
             QStringLiteral("nav.storage-and-privacy"),
             QString::fromLatin1(STORAGE_PAGE_ID),
             []() { return outlined_icons::Lock(); },
+        },
+        {
+            QStringLiteral("nav.api-configuration"),
+            QStringLiteral("api-configuration"),
+            []() { return outlined_icons::Setting(); },
         },
         {
             QStringLiteral("nav.system-settings"),
@@ -2945,6 +2972,10 @@ QStringList SettingsCatalog::validationErrors() const {
                     storage::ConfigurationValueKind expectedKind =
                         storage::ConfigurationValueKind::Structured;
                     switch (custom->renderer) {
+                    case SettingsCustomRenderer::CustomAiModels:
+                        rendererSupported = true;
+                        expectedKey = QStringLiteral("api_configuration/custom_models");
+                        break;
                     case SettingsCustomRenderer::StorageStatus:
                         rendererSupported = true;
                         break;
