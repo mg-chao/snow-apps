@@ -130,7 +130,6 @@ SnowCanvasShapeStyle ScreenshotToolPaletteRectangleStyleModel::rectangleStyle() 
     SnowCanvasShapeStyle style = snow_shot::presentation::screenshotCanvasStyleDefaults().rectangle;
     style.strokeWidth = m_strokeWidth;
     style.stroke = m_strokeColor;
-    style.stroke.setAlpha(255);
     style.strokeStyle = m_strokeStyle;
     style.fill = m_fillColor;
     style.fillStyle = m_fillStyle;
@@ -145,9 +144,6 @@ void ScreenshotToolPaletteRectangleStyleModel::setRectangleStyle(
     const SnowCanvasShapeStyle& style) {
     m_strokeWidth = clampedStrokeWidth(style.strokeWidth);
     m_strokeColor = style.stroke;
-    if (m_strokeColor.alpha() == 0) {
-        m_strokeColor.setAlpha(255);
-    }
     m_strokeStyle = style.strokeStyle;
     m_fillColor = style.fill;
     m_fillStyle = style.fillStyle;

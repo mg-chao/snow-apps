@@ -4,6 +4,7 @@
 #include "snow_shot/presentation/screenshottoolpalette.h"
 
 #include <QRect>
+#include <QMarginsF>
 #include <QRectF>
 #include <QWidget>
 
@@ -39,10 +40,17 @@ class ScreenRecordingAreaWindow final : public QWidget {
 
   signals:
     void physicalRegionChanged(const QRect& region);
+    void regionInteractionStarted();
+    void regionInteractionFinished();
+    void closeRequested();
     void drawingDeactivationRequested();
     void drawingWheelRequested(int direction);
 
   protected:
+    bool event(QEvent* event) override;
+    void moveEvent(QMoveEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
+    void closeEvent(QCloseEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
     bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
     void paintEvent(QPaintEvent* event) override;
@@ -55,8 +63,12 @@ class ScreenRecordingAreaWindow final : public QWidget {
     void applyNativePassThrough(bool enabled);
     [[nodiscard]] bool regionEditingEnabled() const;
     [[nodiscard]] Qt::Edges resizeEdgesAt(const QPointF& position) const;
-    bool handleRegionMouseEvent(QObject* watched, QEvent* event);
-    void cancelRegionGesture();
+    void cancelRegionInteraction();
+    void finishRegionInteraction();
+    void beginRegionInteraction();
+    void synchronizeWindowGeometry();
+    void scheduleGeometrySynchronization();
+    void layoutSelection();
 
     QRectF m_frameRect;
     QRectF m_selectionRect;
@@ -66,12 +78,10 @@ class ScreenRecordingAreaWindow final : public QWidget {
     InputMode m_inputMode = InputMode::PassThrough;
     bool m_drawingBlocked = false;
     bool m_gestureInProgress = false;
-    bool m_regionGestureInProgress = false;
-    Qt::Edges m_resizeEdges;
-    QPointF m_regionGestureStart;
-    QRect m_regionGestureRect;
-    QRect m_regionGestureBounds;
-    qreal m_regionGestureScale = 1.0;
+    bool m_regionInteractionActive = false;
+    bool m_settingRegion = false;
+    bool m_geometrySyncPending = false;
+    QMarginsF m_physicalInsets;
     std::unique_ptr<SnowCanvasRuntime> m_canvasRuntime;
     SnowCanvasWidget* m_canvas = nullptr;
 };

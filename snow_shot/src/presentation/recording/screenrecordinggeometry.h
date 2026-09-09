@@ -2,6 +2,7 @@
 #define SNOW_SHOT_PRESENTATION_RECORDING_SCREENRECORDINGGEOMETRY_H
 
 #include <QRect>
+#include <QMargins>
 #include <QRectF>
 #include <QSize>
 #include <QString>
@@ -23,6 +24,20 @@ struct ScreenRecordingAreaBorderGeometry {
     QRectF right;
 };
 
+inline constexpr int screenRecordingPhysicalFrameInset = 3;
+
+struct ScreenRecordingObservedGeometry {
+    QRect physicalRegion;
+    QRectF frameRect;
+    QRectF selectionRect;
+    qreal paddingWidth = 0.0;
+};
+
+// The native client rectangle already uses virtual-desktop physical pixels.
+[[nodiscard]] ScreenRecordingObservedGeometry
+screenRecordingObservedGeometry(const QRect& physicalClientRect, qreal physicalScale,
+                                const QMargins& physicalInsets = QMargins(3, 3, 3, 3));
+
 [[nodiscard]] ScreenRecordingAreaFrameGeometry
 screenRecordingAreaFrameGeometry(const QRectF& logicalRegion, qreal physicalScale);
 
@@ -31,12 +46,12 @@ screenRecordingAreaBorderGeometry(const QRectF& frameRect, const QRectF& selecti
                                   qreal paddingWidth);
 
 [[nodiscard]] QRect screenRecordingCompatibleCaptureRegion(const QRect& selectedPhysicalRegion,
-                                                          const QRect& physicalBounds);
+                                                           const QRect& physicalBounds);
 
 [[nodiscard]] QSize screenRecordingMaximumSizeForClarity(const QString& clarity);
 
 [[nodiscard]] QSize screenRecordingOrientedMaximumSize(const QSize& maximumSize,
-                                                      const QSize& captureSize);
+                                                       const QSize& captureSize);
 } // namespace snow_shot::presentation::recording
 
 #endif // SNOW_SHOT_PRESENTATION_RECORDING_SCREENRECORDINGGEOMETRY_H

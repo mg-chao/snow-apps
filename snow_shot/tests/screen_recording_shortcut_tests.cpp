@@ -201,8 +201,9 @@ void recordingSelectionEditsAnnotationsAndPreservesPassThrough() {
         require(canvas.interactionEnabled(), "selection must resume after busy operations");
         select->click();
         require(!palette.activeTool().has_value() && !canvas.interactionEnabled() &&
-                    area.inputMode() == ScreenRecordingAreaWindow::InputMode::PassThrough,
-                "clicking active Select must return to pass-through mode");
+                    area.inputMode() == ScreenRecordingAreaWindow::InputMode::RegionEditing &&
+                    palette.recordingExportSettingsVisible(),
+                "clicking active Select must return to Export Settings");
         select->click();
         settings->click();
         require(!palette.activeTool().has_value() && palette.recordingExportSettingsVisible() &&
@@ -216,6 +217,16 @@ void recordingSelectionEditsAnnotationsAndPreservesPassThrough() {
         emit palette.selectRequested();
         require(area.inputMode() == ScreenRecordingAreaWindow::InputMode::PassThrough,
                 "deactivating drawing must keep the existing pass-through behavior");
+        require(palette.activateDrawingShortcut(QStringLiteral("shape")) &&
+                    palette.activeTool() == ScreenshotToolPalette::Tool::Shape,
+                "drawing shortcut must activate its tool");
+        require(palette.activateDrawingShortcut(QStringLiteral("shape")) &&
+                    !palette.activeTool().has_value() && palette.recordingExportSettingsVisible() &&
+                    area.inputMode() == ScreenRecordingAreaWindow::InputMode::RegionEditing,
+                "repeating a drawing shortcut must switch only to Export Settings");
+        settings->click();
+        require(palette.recordingExportSettingsVisible(),
+                "repeated Export Settings must stay selected");
     }
 
     select->click();
@@ -401,6 +412,7 @@ void recordingControlShortcutsFollowButtonsAndSettings() {
     press(toolbar, Qt::Key_E, Qt::ControlModifier);
     require(total() == before, "reconfiguration must remove the old binding immediately");
     press(toolbar, Qt::Key_F12);
+    palette.clearActiveTool();
     QWidget popup(&toolbar, Qt::Tool);
     emit palette.materializedScope(&popup);
     popup.show();
@@ -472,6 +484,7 @@ void recordingShortcutsFollowBothWindowsAndConfiguredKeys() {
     });
 
     auto shortcuts = std::make_unique<ScreenRecordingShortcutController>(area, toolbar);
+    area.setInputMode(ScreenRecordingAreaWindow::InputMode::RegionEditing);
     area.show();
     toolbar.show();
     focus(toolbar);
@@ -488,6 +501,7 @@ void recordingShortcutsFollowBothWindowsAndConfiguredKeys() {
         for (const auto mode : {ScreenRecordingAreaWindow::InputMode::PassThrough,
                                 ScreenRecordingAreaWindow::InputMode::RegionEditing,
                                 ScreenRecordingAreaWindow::InputMode::Drawing}) {
+            palette->clearActiveTool();
             area.setInputMode(mode);
             palette->clearActiveTool();
             focus(toolbar);
@@ -500,6 +514,7 @@ void recordingShortcutsFollowBothWindowsAndConfiguredKeys() {
     }
     for (const auto state : {ScreenshotToolPalette::RecordingState::Recording,
                              ScreenshotToolPalette::RecordingState::Paused}) {
+        palette->clearActiveTool();
         area.setRecordingState(state);
         area.setInputMode(ScreenRecordingAreaWindow::InputMode::PassThrough);
         palette->clearActiveTool();
@@ -540,6 +555,7 @@ void recordingShortcutsFollowBothWindowsAndConfiguredKeys() {
     require(history.setShortcuts(QStringLiteral("undo"), {QStringLiteral("F11")}) &&
                 drawing.setArrow({QStringLiteral("F11")}),
             "drawing and history shortcut collision should be configurable");
+    palette->clearActiveTool();
     const int arrowsBeforeUndo = arrows;
     press(toolbar, Qt::Key_F11);
     require(undos == 3 && arrows == arrowsBeforeUndo,
@@ -560,9 +576,11 @@ void recordingShortcutsFollowBothWindowsAndConfiguredKeys() {
     press(toolbar, Qt::Key_F10, Qt::NoModifier, true);
     require(shapes == before, "held drawing keys must not repeatedly activate tools");
     press(toolbar, Qt::Key_F10);
-    require(shapes == before && !palette->activeTool().has_value() &&
-                area.inputMode() == ScreenRecordingAreaWindow::InputMode::PassThrough,
-            "repeating a recording tool shortcut must deselect it like a button click");
+    require(
+        shapes == before && !palette->activeTool().has_value() &&
+            palette->recordingExportSettingsVisible() &&
+            area.inputMode() == ScreenRecordingAreaWindow::InputMode::RegionEditing,
+        "repeating a recording tool shortcut must return to Export Settings like a button click");
 
     area.setDrawingBlocked(true);
     press(toolbar, Qt::Key_F10);
@@ -579,7 +597,13 @@ void recordingShortcutsFollowBothWindowsAndConfiguredKeys() {
     require(shapes == before && undos == 3, "text editors must retain shortcut input");
     editor.setReadOnly(true);
     press(editor, Qt::Key_F10);
-    require(shapes == ++before, "read-only text controls should allow toolbar shortcuts");
+    require(shapes == ++before && palette->activeTool() == ScreenshotToolPalette::Tool::Shape,
+            "read-only text controls must allow drawing tool activation");
+    press(editor, Qt::Key_F10);
+    require(
+        shapes == before && palette->recordingExportSettingsVisible() &&
+            !palette->activeTool().has_value(),
+        "read-only text controls must allow the active-tool shortcut to return to Export Settings");
     editor.hide();
     focus(toolbar);
 
@@ -602,6 +626,7 @@ void recordingShortcutsFollowBothWindowsAndConfiguredKeys() {
     unrelated.show();
     press(unrelated, Qt::Key_F10);
     require(shapes == before, "unrelated windows must not dispatch recording shortcuts");
+    palette->clearActiveTool();
     QWidget popup(&toolbar, Qt::Tool);
     emit palette->materializedScope(&popup);
     popup.show();
@@ -619,6 +644,7 @@ void recordingShortcutsFollowBothWindowsAndConfiguredKeys() {
     shortcuts.reset();
     press(toolbar, Qt::Key_F10);
     require(shapes == before, "destroyed shortcut controller must release all bindings");
+    palette->clearActiveTool();
     shortcuts = std::make_unique<ScreenRecordingShortcutController>(area, toolbar);
     palette->clearActiveTool();
     press(toolbar, Qt::Key_F10);

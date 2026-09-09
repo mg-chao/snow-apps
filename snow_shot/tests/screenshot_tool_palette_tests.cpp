@@ -9,6 +9,7 @@
 #include "snow_shot/presentation/styles/thememanager.h"
 #include "snow_shot/storage/applicationstorage.h"
 #include "snow_draw_engine_qt/snow_canvas_widget.h"
+#include "snow_draw_engine_qt/snow_canvas_runtime.h"
 #include "../src/presentation/tools/screenshottoolpalettebuttons.h"
 #include "../src/presentation/tools/screenshottoolpalettestylecomponents.h"
 #include "../src/presentation/tools/screenshottoolpalettestylepresets.h"
@@ -22,6 +23,7 @@
 #include <QButtonGroup>
 #include <QBoxLayout>
 #include <QCoreApplication>
+#include <QClipboard>
 #include <QDir>
 #include <QEnterEvent>
 #include <QComboBox>
@@ -56,6 +58,7 @@
 #include "widgets/color_picker.h"
 #include "widgets/control_scale.h"
 #include "widgets/input_line_edit.h"
+#include "widgets/input_number.h"
 #include "widgets/popover.h"
 #include "widgets/radio.h"
 #include "widgets/radio_button_group.h"
@@ -310,6 +313,7 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
     options.showHighlightTool = true;
     options.showPenHighlightTool = true;
     options.showSpotlightTool = true;
+    options.showEraserTool = true;
     options.showFilterTool = true;
     options.showRecordingControls = true;
     options.recordingDrawingMode = true;
@@ -491,11 +495,11 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
                      });
     exportButton->click();
     QCoreApplication::processEvents();
-    require(!exportPanel->isVisible() && !palette.recordingExportSettingsVisible() &&
-                !palette.activeToolForTests().has_value() && !exportVisible &&
-                exportVisibilityChanges == 1 &&
-                exportButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text,
-            "clicking active Export Settings should deactivate it and notify the controller");
+    require(exportPanel->isVisible() && palette.recordingExportSettingsVisible() &&
+                !palette.activeToolForTests().has_value() && exportVisible &&
+                exportVisibilityChanges == 0 &&
+                exportButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Solid,
+            "clicking active Export Settings must be idempotent");
     exportButton->click();
     QCoreApplication::processEvents();
     require(exportPanel->isVisible() && palette.mainPanel()->geometry() == mainGeometry,
@@ -645,8 +649,8 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
     QObject::connect(&palette, &ScreenshotToolPalette::selectRequested, &palette,
                      [&]() { ++selectRequests; });
     exportButton->click();
-    require(!exportPanel->isVisible() && !palette.activeToolForTests().has_value(),
-            "clicking active Export Settings should clear its selection");
+    require(exportPanel->isVisible() && !palette.activeToolForTests().has_value(),
+            "clicking active Export Settings must retain its selection");
     shapeButton->click();
     require(!exportPanel->isVisible() &&
                 palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape,
@@ -665,11 +669,11 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
             "selecting an unavailable recording tool should leave the shared state unchanged");
     shapeButton->click();
     shapeButton->click();
-    require(!exportPanel->isVisible() && !palette.activeToolForTests().has_value() &&
+    require(exportPanel->isVisible() && !palette.activeToolForTests().has_value() &&
                 !palette.styleToolbarVisible() &&
                 shapeButton->buttonStyle() == adqt::widgets::AdButton::ButtonStyle::Text &&
                 selectRequests == 2,
-            "clicking the active drawing button should deactivate drawing and close its tools");
+            "clicking the active drawing button must switch to Export Settings");
     exportButton->click();
 
     int formatChanges = 0;
@@ -832,17 +836,17 @@ void recordingExportSettingsAndDrawingAvailabilityFollowSessionState() {
         verifyExportSettingsSelected(false);
         const int visibilityChangesBeforeClick = exportVisibilityChanges;
         exportButton->click();
-        require(!exportPanel->isVisible() && !palette.recordingExportSettingsVisible() &&
-                    !palette.activeToolForTests().has_value() && !exportVisible &&
-                    exportVisibilityChanges == visibilityChangesBeforeClick + 1,
-                "clicking active Export Settings during recording should deactivate it");
+        require(exportPanel->isVisible() && palette.recordingExportSettingsVisible() &&
+                    !palette.activeToolForTests().has_value() && exportVisible &&
+                    exportVisibilityChanges == visibilityChangesBeforeClick,
+                "clicking active Export Settings during recording must remain idempotent");
         shapeButton->click();
         const int selectRequestsBeforeClick = selectRequests;
         shapeButton->click();
         require(!palette.activeToolForTests().has_value() &&
-                    !palette.recordingExportSettingsVisible() && !palette.styleToolbarVisible() &&
+                    palette.recordingExportSettingsVisible() && !palette.styleToolbarVisible() &&
                     selectRequests == selectRequestsBeforeClick + 1,
-                "clicking active drawing during recording should return to pass-through mode");
+                "clicking active drawing during recording must return to Export Settings");
         shapeButton->click();
         require(palette.activeToolForTests() == ScreenshotToolPalette::Tool::Shape,
                 "a deactivated drawing tool should activate on the next click");
@@ -3867,10 +3871,16 @@ void groupedToolShortcutsToggleOnlyTheRequestedTool() {
     ScreenshotToolPalette recordingPalette(options);
     require(recordingPalette.activateDrawingShortcut(QStringLiteral("shape")) &&
                 recordingPalette.activateDrawingShortcut(QStringLiteral("shape")) &&
-                !recordingPalette.activeToolForTests().has_value(),
-            "recording shortcuts must toggle drawing off just like repeated button clicks");
+                !recordingPalette.activeToolForTests().has_value() &&
+                recordingPalette.recordingExportSettingsVisible(),
+            "repeated recording shortcuts must return to Export Settings");
+    recordingPalette.setActiveTool(Tool::Shape);
+    recordingPalette.setActiveTool(Tool::Shape);
+    require(recordingPalette.activeToolForTests() == Tool::Shape &&
+                !recordingPalette.recordingExportSettingsVisible(),
+            "programmatic recording tool synchronization must remain idempotent");
     require(!recordingPalette.activateDrawingShortcut(QStringLiteral("highlight")) &&
-                !recordingPalette.activeToolForTests().has_value(),
+                recordingPalette.activeToolForTests() == Tool::Shape,
             "unavailable recording shortcuts should leave the current tool unchanged");
 }
 
@@ -5026,7 +5036,7 @@ void watermarkToolExposesSharedStyleControls() {
     require(colorPicker->accessibleName() == QStringLiteral("Watermark color") &&
                 colorPicker->mode() == adqt::widgets::AdColorPicker::Mode::Solid &&
                 colorPicker->trigger() == adqt::widgets::AdColorPicker::Trigger::Hover &&
-                !colorPicker->triggerTextVisible() && !colorPicker->alphaChannelEnabled() &&
+                !colorPicker->triggerTextVisible() && colorPicker->alphaChannelEnabled() &&
                 !colorPicker->allowClear() &&
                 colorPicker->popupLayerMode() ==
                     adqt::widgets::AdColorPicker::PopupLayerMode::QtTool,
@@ -6110,7 +6120,7 @@ void textStyleControlsExposeAndEmitAllRequestedProperties() {
                     layoutWidgetIndex(textLayout, strokeRoot) + 1 &&
                 hasOnlySpacingBetween(textLayout, strokeRoot, fillRoot, 4),
             "text stroke color should have 4px spacing on its right");
-    require(!colorPicker->alphaChannelEnabled() && !strokePicker->alphaChannelEnabled() &&
+    require(colorPicker->alphaChannelEnabled() && strokePicker->alphaChannelEnabled() &&
                 fillPicker->alphaChannelEnabled(),
             "text color pickers should expose the requested alpha behavior");
     require(strokePicker->triggerContent() != nullptr &&
@@ -6390,7 +6400,7 @@ void serialNumberStyleControlsExposeAndEmitRequestedProperties() {
     adqt::widgets::AdColorPicker* fillColorPicker =
         colorPickerWithAccessibleName(palette, "Sequence number fill color");
     require(colorPicker != nullptr && fillColorPicker != nullptr &&
-                !colorPicker->alphaChannelEnabled() && fillColorPicker->alphaChannelEnabled(),
+                colorPicker->alphaChannelEnabled() && fillColorPicker->alphaChannelEnabled(),
             "sequence-number color should match text color alpha behavior");
     require(colorPicker->triggerContent() != nullptr &&
                 colorPicker->triggerContent()->sizeHint() == textColorTriggerSize,
@@ -6782,7 +6792,8 @@ void cornerRadiusButtonsRestoreTheDefaultValue() {
 
 void selectedStrokeColorDragKeepsPickerIndicatorInSync() {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-    SnowCanvasWidget canvas;
+    SnowCanvasRuntime runtime;
+    SnowCanvasWidget canvas(runtime);
     canvas.resize(320, 240);
     canvas.show();
 
@@ -6821,7 +6832,7 @@ void selectedStrokeColorDragKeepsPickerIndicatorInSync() {
     adqt::widgets::AdColorPicker* strokePicker = nullptr;
     for (adqt::widgets::AdColorPicker* picker :
          palette->findChildren<adqt::widgets::AdColorPicker*>()) {
-        if (picker != nullptr && !picker->alphaChannelEnabled()) {
+        if (picker != nullptr && picker->accessibleName() == QStringLiteral("Stroke color")) {
             strokePicker = picker;
             break;
         }
@@ -6836,6 +6847,32 @@ void selectedStrokeColorDragKeepsPickerIndicatorInSync() {
     QObject::connect(&canvas, &SnowCanvasWidget::styleToolbarStateChanged, [&canvas, palette]() {
         palette->setStyleToolbarState(canvas.canvasStyleToolbarState());
     });
+
+    const auto originalStyle = canvas.canvasStyleToolbarState().shapeStyle;
+    const auto exportedImage = [&runtime]() {
+        return runtime.renderToImage(QRectF(0, 0, 320, 240), QSize(320, 240), {});
+    };
+    const QImage originalImage = exportedImage();
+    for (const int alpha : {128, 0}) {
+        QColor color = originalStyle.stroke;
+        color.setAlpha(alpha);
+        strokePicker->commitValue(adqt::widgets::AdColorValue::solid(color));
+        require(canvas.canvasStyleToolbarState().shapeStyle.stroke == color,
+                "selected strokes must receive the picker alpha");
+        require(canvas.canvasStyleToolbarState().shapeStyle.fill == originalStyle.fill &&
+                    canvas.canvasStyleToolbarState().shapeStyle.opacity == originalStyle.opacity,
+                "stroke alpha must not change fill or overall opacity");
+        const QImage editedImage = exportedImage();
+        require(!editedImage.isNull() && (alpha == 255 || editedImage != originalImage),
+                "transparent stroke edits must affect exported pixels");
+        require(canvas.undo(), "stroke alpha edits must be undoable");
+        require(canvas.canvasStyleToolbarState().shapeStyle.stroke == originalStyle.stroke,
+                "undo must restore the original stroke alpha");
+        require(canvas.redo(), "stroke alpha edits must be redoable");
+        require(strokePicker->value().solidColor == color && exportedImage() == editedImage,
+                "redo must restore picker alpha and exported pixels");
+        require(canvas.undo(), "restore the original stroke before the next alpha edit");
+    }
 
     strokePicker->setPopupLayerMode(QApplication::platformName() == QStringLiteral("offscreen")
                                         ? adqt::widgets::AdColorPicker::PopupLayerMode::InWindow
@@ -7088,9 +7125,9 @@ void configurationDrivenStyleEditorsShareStructuralContracts() {
                     nullptr &&
                 dynamic_cast<StrokeWidthPreviewButton*>(widthColorPicker->triggerContent()) !=
                     nullptr &&
-                !colorPicker->alphaChannelEnabled() && fillPicker->alphaChannelEnabled() &&
-                !strokePicker->alphaChannelEnabled() && !widthColorPicker->alphaChannelEnabled(),
-            "picker configuration should preserve trigger and alpha differences");
+                colorPicker->alphaChannelEnabled() && fillPicker->alphaChannelEnabled() &&
+                strokePicker->alphaChannelEnabled() && widthColorPicker->alphaChannelEnabled(),
+            "picker configuration should preserve trigger differences and enable alpha");
     auto* fillTrigger = dynamic_cast<FillStylePreviewTrigger*>(fillPicker->triggerContent());
     auto* fillSampler = dynamic_cast<ColorPickerSamplerButton*>(fillPicker->previewContent());
     require(fillTrigger != nullptr && fillSampler != nullptr &&
@@ -8519,6 +8556,156 @@ void tableQrEntrySelectionPersistsAcrossPaletteInstances() {
             "toolbar entry preferences should flush to the configuration file");
 }
 
+void colorPickerChannelKeyboardInput() {
+    using Picker = adqt::widgets::AdColorPicker;
+    ScreenshotToolPalette palette(ScreenshotToolPalette::Options{});
+    palette.setActiveTool(ScreenshotToolPalette::Tool::Shape);
+    palette.show();
+    auto* picker = colorPickerWithAccessibleName(palette, "Stroke color");
+    require(picker != nullptr, "stroke picker must exist");
+    picker->setPopupLayerMode(Picker::PopupLayerMode::QtTool);
+    picker->setTrigger(Picker::Trigger::Click);
+    picker->setPopupVisible(true);
+    for (const auto format : {Picker::Format::Hsb, Picker::Format::Rgb, Picker::Format::Hex}) {
+        picker->setFormat(format);
+        picker->setValue(adqt::widgets::AdColorValue::solid(QColor(60, 120, 180, 128)));
+        QApplication::processEvents();
+        auto* content = picker->findChild<adqt::widgets::AdPopover*>()->contentWidget();
+        const auto editors = content->findChildren<QLineEdit*>();
+        int edited = 0;
+        for (auto* editor : editors) {
+            if (!editor->isVisible() || editor->isReadOnly()) {
+                continue;
+            }
+            ++edited;
+            editor->setFocus();
+            auto* receiver = QApplication::focusWidget();
+            require(receiver != nullptr, "color input must acquire keyboard focus");
+            const QColor before = picker->value().solidColor;
+            editor->selectAll();
+            QKeyEvent erase(QEvent::KeyPress, Qt::Key_Backspace, Qt::NoModifier);
+            QApplication::sendEvent(receiver, &erase);
+            require(picker->value().solidColor == before,
+                    "clearing a channel while typing must not replace it with zero");
+            const bool hex = editor->objectName() == QStringLiteral("ad-color-picker-hex-input");
+            const QString text = hex ? QStringLiteral("12345680") : QStringLiteral("42");
+            for (const QChar character : text) {
+                QKeyEvent key(QEvent::KeyPress, character.unicode(), Qt::NoModifier,
+                              QString(character));
+                QApplication::sendEvent(receiver, &key);
+                QApplication::processEvents();
+            }
+            QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+            QApplication::sendEvent(receiver, &enter);
+            QApplication::processEvents();
+            if (auto* number = qobject_cast<adqt::widgets::AdInputNumber*>(receiver)) {
+                require(number->hasValue() && number->value() == 42,
+                        "numeric channels must commit the complete typed value");
+                QKeyEvent up(QEvent::KeyPress, Qt::Key_Up, Qt::NoModifier);
+                QApplication::sendEvent(receiver, &up);
+                require(number->value() == 43, "Up must step the active numeric channel");
+                QKeyEvent down(QEvent::KeyPress, Qt::Key_Down, Qt::NoModifier);
+                QApplication::sendEvent(receiver, &down);
+                require(number->value() == 42, "Down must step the active numeric channel");
+                editor->selectAll();
+                QKeyEvent replacement(QEvent::KeyPress, Qt::Key_5, Qt::NoModifier,
+                                      QStringLiteral("51"));
+                QApplication::sendEvent(receiver, &replacement);
+                QKeyEvent tab(QEvent::KeyPress, Qt::Key_Tab, Qt::NoModifier);
+                QApplication::sendEvent(receiver, &tab);
+                QApplication::processEvents();
+                require(number->value() == 51, "Tab must commit pending text before moving focus");
+                editor->setFocus();
+                QKeyEvent selectAll(QEvent::KeyPress, Qt::Key_A, Qt::ControlModifier);
+                QApplication::sendEvent(receiver, &selectAll);
+                QApplication::clipboard()->setText(QStringLiteral("24"));
+                QKeyEvent paste(QEvent::KeyPress, Qt::Key_V, Qt::ControlModifier);
+                QApplication::sendEvent(receiver, &paste);
+                QKeyEvent keypadEnter(QEvent::KeyPress, Qt::Key_Enter, Qt::KeypadModifier);
+                QApplication::sendEvent(receiver, &keypadEnter);
+                require(number->value() == 24,
+                        "Select All, paste and keypad Enter must work in every numeric channel");
+            } else if (hex) {
+                require(picker->value().solidColor.rgba() == QColor(0x12, 0x34, 0x56, 0x80).rgba(),
+                        "HEX must accept all eight RGBA digits without overwriting partial input");
+            }
+            require(picker->value().solidColor.isValid(), "editing must keep a valid color");
+        }
+        require(edited == (format == Picker::Format::Hex ? 2 : 4),
+                "each format must expose all channels and alpha for keyboard editing");
+    }
+    picker->setPopupVisible(false);
+}
+
+void drawingColorsPreserveAlphaAcrossEditsAndToolSwitches() {
+    using Tool = ScreenshotToolPalette::Tool;
+    struct ColorCase {
+        Tool tool;
+        const char* name;
+        QColor& (*color)(SnowCanvasStyleDefaults&);
+    };
+    const ColorCase cases[]{
+        {Tool::Shape, "Stroke color",
+         [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.rectangle.stroke; }},
+        {Tool::Shape, "Fill color",
+         [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.rectangle.fill; }},
+        {Tool::Line, "Stroke color",
+         [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.line.stroke; }},
+        {Tool::FreeDraw, "Stroke color",
+         [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.freeDraw.stroke; }},
+        {Tool::Arrow, "Arrow stroke color",
+         [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.arrow.stroke; }},
+        {Tool::RectangleHighlight, "Highlight color",
+         [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.rectangleHighlight.fill; }},
+        {Tool::RectangleHighlight, "Highlight stroke width",
+         [](SnowCanvasStyleDefaults& styles) -> QColor& {
+             return styles.rectangleHighlight.stroke;
+         }},
+        {Tool::PenHighlight, "Pen highlight color",
+         [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.penHighlight.stroke; }},
+        {Tool::Text, "Text color",
+         [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.text.color; }},
+        {Tool::Text, "Text stroke width",
+         [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.text.stroke; }},
+        {Tool::Text, "Text fill color",
+         [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.text.fill; }},
+        {Tool::SerialNumber, "Sequence number color",
+         [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.serialNumber.color; }},
+        {Tool::SerialNumber, "Sequence number fill color",
+         [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.serialNumber.fill; }},
+        {Tool::Spotlight, "Mask color",
+         [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.spotlight.color; }},
+        {Tool::Watermark, "Watermark color",
+         [](SnowCanvasStyleDefaults& styles) -> QColor& { return styles.watermark.color; }},
+    };
+    for (const auto& test : cases) {
+        ScreenshotToolPalette::Options options;
+        options.showTextTool = true;
+        options.showSerialNumberTool = true;
+        test.color(options.styleDefaults) = QColor(23, 67, 109, 0);
+        ScreenshotToolPalette palette(options);
+        palette.setActiveTool(test.tool);
+        auto* picker = colorPickerWithAccessibleName(palette, test.name);
+        require(picker != nullptr && picker->alphaChannelEnabled(),
+                "every drawing color picker should enable alpha");
+        require(picker->value().solidColor == test.color(options.styleDefaults),
+                "loading a fully transparent color must retain RGB and alpha");
+        for (const int alpha : {128, 255, 0}) {
+            auto expected = palette.creationStyleDefaults();
+            const QColor color(23, 67, 109, alpha);
+            test.color(expected) = color;
+            picker->commitValue(adqt::widgets::AdColorValue::solid(color));
+            require(palette.creationStyleDefaults() == expected,
+                    "alpha-only edits must update only the chosen color");
+            palette.setActiveTool(test.tool == Tool::Shape ? Tool::Text : Tool::Shape);
+            palette.setActiveTool(test.tool);
+            picker = colorPickerWithAccessibleName(palette, test.name);
+            require(picker != nullptr && picker->value().solidColor == color,
+                    "tool switching must preserve the complete edited color");
+        }
+    }
+}
+
 void canvasToolStylesPersistIndependentlyWithoutGlobalStyles() {
     SnowCanvasStyleDefaults styles = snow_shot::presentation::screenshotCanvasStyleDefaults();
     styles.rectangle.stroke = QColor(1, 2, 3, 4);
@@ -8647,6 +8834,11 @@ int main(int argc, char** argv) {
     require(QFontDatabase::addApplicationFont(QStringLiteral("C:/Windows/Fonts/segoeui.ttf")) >= 0,
             "the font editor tests require a system TrueType font");
 #endif
+    if (application.arguments().contains(QStringLiteral("--color-input-only"))) {
+        colorPickerChannelKeyboardInput();
+        snow_shot::storage::ApplicationStorage::instance().shutdown();
+        return 0;
+    }
     if (application.arguments().contains(QStringLiteral("--quick-save-only"))) {
         quickSaveStacksAndLayoutMigration();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
@@ -8679,6 +8871,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--color-control-styles-only"))) {
+        drawingColorsPreserveAlphaAcrossEditsAndToolSwitches();
         translucentColorSwatchesShowCheckerboardUnderlay();
         configurationDrivenStyleEditorsShareStructuralContracts();
         mixedColorsKeepUniformStyleButtonsActive();
@@ -8699,6 +8892,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (application.arguments().contains(QStringLiteral("--stroke-editor-only"))) {
+        selectedStrokeColorDragKeepsPickerIndicatorInSync();
         textAndHighlightStrokeWidthTriggersUseSharedPreviewButton();
         shapeAndArrowStrokeEditorsShareThePresetCatalog();
         snow_shot::storage::ApplicationStorage::instance().shutdown();
@@ -8882,6 +9076,7 @@ int main(int argc, char** argv) {
     arrowheadOptionsRetranslateInPlace();
     arrowAndLineUseConfiguredPopoverGroup();
     tableQrEntrySelectionPersistsAcrossPaletteInstances();
+    drawingColorsPreserveAlphaAcrossEditsAndToolSwitches();
     canvasToolStylesPersistIndependentlyWithoutGlobalStyles();
     return 0;
 }

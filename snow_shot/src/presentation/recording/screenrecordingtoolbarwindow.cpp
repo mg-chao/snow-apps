@@ -8,6 +8,9 @@
 #include "screenrecordinggeometry.h"
 
 #include <QScreen>
+#include <QCloseEvent>
+#include "widgets/color_picker.h"
+#include "widgets/select.h"
 #include <QScopedValueRollback>
 
 namespace {
@@ -50,7 +53,7 @@ ScreenRecordingToolbarWindow::ScreenRecordingToolbarWindow(QWidget* parent)
     // Secondary rows can grow without changing the fixed native frame or the
     // main-row anchor. Observe the committed host content, including those cases.
     connect(paletteHost(), &ScreenshotToolPaletteHost::visibleContentChanged, this, [this]() {
-        if (!m_manuallyDragged) {
+        if (!m_manuallyDragged && !m_regionInteractionActive) {
             placeForPhysicalRegion(m_physicalRegion);
         }
     });
@@ -59,6 +62,10 @@ ScreenRecordingToolbarWindow::ScreenRecordingToolbarWindow(QWidget* parent)
 }
 
 void ScreenRecordingToolbarWindow::showAndActivate() {
+    if (m_regionInteractionActive) {
+        return;
+    }
+    prepareForDisplay();
     show();
     raise();
     activateWindow();
@@ -66,7 +73,8 @@ void ScreenRecordingToolbarWindow::showAndActivate() {
 }
 
 void ScreenRecordingToolbarWindow::placeForPhysicalRegion(const QRect& physicalRegion) {
-    if (m_placing || !physicalRegion.isValid() || physicalRegion.isEmpty()) {
+    if (m_regionInteractionActive || m_placing || !physicalRegion.isValid() ||
+        physicalRegion.isEmpty()) {
         return;
     }
     QScreen* screen = ScreenshotGeometryMapper::screenForPhysicalRect(physicalRegion);
@@ -99,6 +107,43 @@ void ScreenRecordingToolbarWindow::placeForPhysicalRegion(const QRect& physicalR
             QPoint(anchorRegion.left() + anchorRegion.width(), anchorRegion.top()),
             toolbarGeometry.bottom, toolbarGeometry.top, logicalBounds, kToolbarGap);
     setStyleToolbarAboveMain(placement.usesTopRightPlacement);
-    resetPhysicalSizeInvariant();
     moveContentTo(placement.contentPosition);
+    // As in screenshot toolbar presentation, reconcile the actual native frame
+    // after moving across displays before it can paint the prepared content.
+    prepareForDisplay();
+}
+
+void ScreenRecordingToolbarWindow::beginRegionInteraction() {
+    if (m_regionInteractionActive) {
+        return;
+    }
+    m_regionInteractionActive = true;
+    for (auto* picker : palette()->findChildren<adqt::widgets::AdColorPicker*>()) {
+        picker->setPopupVisible(false);
+    }
+    for (auto* select : palette()->findChildren<adqt::widgets::AdSelect*>()) {
+        select->setPopupVisible(false);
+    }
+    hide();
+    for (QWidget* child : findChildren<QWidget*>()) {
+        if (child->isWindow()) {
+            child->hide();
+        }
+    }
+}
+
+void ScreenRecordingToolbarWindow::endRegionInteraction(const QRect& physicalRegion) {
+    if (!m_regionInteractionActive) {
+        return;
+    }
+    m_regionInteractionActive = false;
+    placeForPhysicalRegion(physicalRegion);
+    prepareForDisplay();
+    show();
+    raise();
+}
+
+void ScreenRecordingToolbarWindow::closeEvent(QCloseEvent* event) {
+    event->ignore();
+    emit closeRequested();
 }

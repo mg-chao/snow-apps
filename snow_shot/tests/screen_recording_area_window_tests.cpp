@@ -12,9 +12,34 @@
 #include <QPainter>
 #include <QScreen>
 #include <QWheelEvent>
+#include <QTimer>
+#include <QDebug>
+#include "snow_draw_engine_qt/snow_canvas_runtime.h"
 
 #include <cstdlib>
 #include <iostream>
+#if defined(Q_OS_WIN) || defined(_WIN32)
+#include <qt_windows.h>
+#endif
+
+class ScreenRecordingAreaWindowTestAccess {
+  public:
+    static bool editable(const ScreenRecordingAreaWindow& area) {
+        return area.regionEditingEnabled();
+    }
+    static Qt::Edges edges(const ScreenRecordingAreaWindow& area, QPointF position) {
+        return area.resizeEdgesAt(position);
+    }
+    static void begin(ScreenRecordingAreaWindow& area) {
+        area.beginRegionInteraction();
+    }
+    static void finish(ScreenRecordingAreaWindow& area) {
+        area.finishRegionInteraction();
+    }
+    static QByteArray history(const ScreenRecordingAreaWindow& area) {
+        return area.m_canvasRuntime->serializeDocumentHistory();
+    }
+};
 
 namespace {
 void require(bool condition, const char* message) {
@@ -97,9 +122,9 @@ void inputModesOwnOnlyDrawingInputAndRestoreRequestedState() {
     SnowCanvasWidget* canvas = area.canvas();
     require(canvas != nullptr &&
                 area.inputMode() == ScreenRecordingAreaWindow::InputMode::PassThrough &&
-                !area.testAttribute(Qt::WA_TransparentForMouseEvents) &&
+                area.testAttribute(Qt::WA_TransparentForMouseEvents) &&
                 !canvas->interactionEnabled(),
-            "idle pass-through should retain resize input without enabling drawing");
+            "pass-through must disable both movement and resizing");
 
     area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
     require(!area.testAttribute(Qt::WA_TransparentForMouseEvents) && canvas->interactionEnabled(),
@@ -116,9 +141,9 @@ void inputModesOwnOnlyDrawingInputAndRestoreRequestedState() {
             "leaving a busy transition should restore drawing without recreating the window");
 
     area.setInputMode(ScreenRecordingAreaWindow::InputMode::PassThrough);
-    require(area.winId() == nativeId && !area.testAttribute(Qt::WA_TransparentForMouseEvents) &&
+    require(area.winId() == nativeId && area.testAttribute(Qt::WA_TransparentForMouseEvents) &&
                 !canvas->interactionEnabled(),
-            "deactivation should restore idle resize input on the existing native window");
+            "deactivation must release both movement and resize input");
     area.setRecordingState(ScreenshotToolPalette::RecordingState::Recording);
     require(area.testAttribute(Qt::WA_TransparentForMouseEvents),
             "recording pass-through should release the whole window's input");
@@ -241,216 +266,274 @@ void annotationsPersistAcrossStatesAndClearOnlyForANewRegion() {
             "opening a different recording region should clear the previous annotations once");
 }
 
-void sendRegionMouseEvent(QWidget& target, QEvent::Type type, const QPointF& global,
-                          Qt::MouseButton button, Qt::MouseButtons buttons) {
-    const QPointF local = global - QPointF(target.mapToGlobal(QPoint()));
-    QMouseEvent event(type, local, local, global, button, buttons, Qt::NoModifier);
-    QCoreApplication::sendEvent(&target, &event);
-}
-
-void dragRegion(ScreenRecordingAreaWindow& area, const QPointF& local, const QPointF& delta,
-                bool throughCanvas = false) {
-    QWidget& target = throughCanvas ? *static_cast<QWidget*>(area.canvas()) : area;
-    const QPointF start = QPointF(area.pos()) + local;
-    sendRegionMouseEvent(target, QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
-    sendRegionMouseEvent(target, QEvent::MouseMove, start + delta, Qt::NoButton, Qt::LeftButton);
-    sendRegionMouseEvent(target, QEvent::MouseButtonRelease, start + delta, Qt::LeftButton,
-                         Qt::NoButton);
-}
-
-void idleEdgesAndCornersResizePhysicalRegion() {
+void geometryEditingIsOneCapability() {
     ScreenRecordingAreaWindow area;
-    const QRect initial = testPhysicalRegion();
-    const qreal scale =
-        ScreenshotGeometryMapper::screenForPhysicalRect(initial)->devicePixelRatio();
-    const QPointF delta(13.0, 9.0);
-    const QPoint physicalDelta(qRound(delta.x() * scale), qRound(delta.y() * scale));
-    int changes = 0;
-    QObject::connect(
-        &area, &ScreenRecordingAreaWindow::physicalRegionChanged, &area, [&](const QRect& region) {
-            require(region == area.physicalRegion(),
-                    "region notification should contain the current physical selection");
-            ++changes;
-        });
+    area.setPhysicalRegion(testPhysicalRegion());
+    area.show();
     for (const auto mode : {ScreenRecordingAreaWindow::InputMode::PassThrough,
                             ScreenRecordingAreaWindow::InputMode::Drawing,
                             ScreenRecordingAreaWindow::InputMode::RegionEditing}) {
-        area.setInputMode(mode);
-        for (const Qt::Edges edges :
-             {Qt::Edges(Qt::LeftEdge), Qt::Edges(Qt::RightEdge), Qt::Edges(Qt::TopEdge),
-              Qt::Edges(Qt::BottomEdge), Qt::LeftEdge | Qt::TopEdge, Qt::RightEdge | Qt::TopEdge,
-              Qt::LeftEdge | Qt::BottomEdge, Qt::RightEdge | Qt::BottomEdge}) {
-            area.setPhysicalRegion(initial);
-            area.show();
-            QCoreApplication::processEvents();
-            const QRect selection = area.canvasGeometry();
-            QPointF start = selection.center();
-            QRect expected = initial;
-            if (edges.testFlag(Qt::LeftEdge)) {
-                start.setX(selection.left() + 1);
-                expected.setLeft(initial.left() + physicalDelta.x());
+        for (const auto state : {ScreenshotToolPalette::RecordingState::Idle,
+                                 ScreenshotToolPalette::RecordingState::Recording,
+                                 ScreenshotToolPalette::RecordingState::Paused}) {
+            for (const bool busy : {false, true}) {
+                area.setInputMode(mode);
+                area.setRecordingState(state);
+                area.setDrawingBlocked(busy);
+                const bool editable = mode == ScreenRecordingAreaWindow::InputMode::RegionEditing &&
+                                      state == ScreenshotToolPalette::RecordingState::Idle && !busy;
+                require(ScreenRecordingAreaWindowTestAccess::editable(area) == editable,
+                        "moving and resizing must share Export Settings idle eligibility");
+                require((ScreenRecordingAreaWindowTestAccess::edges(area, {1, 1}) != Qt::Edges()) ==
+                            editable,
+                        "resize hit targets must never outlive movement eligibility");
             }
-            if (edges.testFlag(Qt::RightEdge)) {
-                start.setX(selection.right() - 1);
-                expected.setRight(initial.right() + physicalDelta.x());
-            }
-            if (edges.testFlag(Qt::TopEdge)) {
-                start.setY(selection.top() + 1);
-                expected.setTop(initial.top() + physicalDelta.y());
-            }
-            if (edges.testFlag(Qt::BottomEdge)) {
-                start.setY(selection.bottom() - 1);
-                expected.setBottom(initial.bottom() + physicalDelta.y());
-            }
-            const int previousChanges = changes;
-            dragRegion(area, start, delta, true);
-            require(area.physicalRegion() == expected && changes == previousChanges + 1,
-                    "idle edges and corners should resize once using physical pixel deltas");
-            require(!area.canvas()->canvasHistoryState().canUndo,
-                    "resize gestures must not also create canvas annotations");
         }
     }
 }
 
-void exportSettingsMoveAndClampTheRegion() {
+void interactionBoundariesAreIdempotentAndCancelOnStateChanges() {
     ScreenRecordingAreaWindow area;
-    const QRect initial = testPhysicalRegion();
-    area.setPhysicalRegion(initial);
+    area.setPhysicalRegion(testPhysicalRegion());
     area.show();
-    QCoreApplication::processEvents();
-    dragRegion(area, area.canvasGeometry().center(), QPointF(20, 10), true);
-    require(area.physicalRegion() == initial,
-            "pass-through interior should not move the recording selection");
     area.setInputMode(ScreenRecordingAreaWindow::InputMode::RegionEditing);
-    const qreal scale =
-        ScreenshotGeometryMapper::screenForPhysicalRect(initial)->devicePixelRatio();
-    dragRegion(area, area.canvasGeometry().center(), QPointF(13, 9), true);
-    require(area.physicalRegion() == initial.translated(qRound(13 * scale), qRound(9 * scale)),
-            "export settings interior drag should move the region without changing its size");
-    require(!area.canvas()->interactionEnabled() && !area.canvas()->canvasHistoryState().canUndo,
-            "region movement should not enable or create drawing");
-    const QImage surface = renderWidget(area);
-    require(surface.pixelColor(area.canvasGeometry().center()).alpha() > 0,
-            "export settings should provide a native hit surface throughout the region");
-    const QRect bounds = ScreenshotGeometryMapper::physicalRectForScreen(
-        *ScreenshotGeometryMapper::screenForPhysicalRect(initial));
-    dragRegion(area, area.canvasGeometry().center(), QPointF(-10000, -10000), true);
-    require(area.physicalRegion().topLeft() == bounds.topLeft() &&
-                area.physicalRegion().size() == initial.size(),
-            "moving beyond the screen origin should clamp while preserving size");
-    dragRegion(area, area.canvasGeometry().center(), QPointF(10000, 10000), true);
-    require(area.physicalRegion().bottomRight() == bounds.bottomRight(),
-            "moving beyond the screen end should clamp while preserving size");
-
-    area.setPhysicalRegion(initial);
-    dragRegion(area, area.canvasGeometry().topLeft(), QPointF(10000, 10000));
-    require(area.physicalRegion().size() == QSize(2, 2) &&
-                area.physicalRegion().bottomRight() == initial.bottomRight(),
-            "resize should stop at two physical pixels without moving the opposite corner");
-    dragRegion(area, QPointF(area.width() - 1, area.height() - 1), QPointF(20, 20));
-    require(area.physicalRegion().width() > 2 && area.physicalRegion().height() > 2,
-            "a minimum-size region must still allow resizing from its bottom-right corner");
-
-    area.setPhysicalRegion(initial);
-    dragRegion(area, area.canvasGeometry().topLeft(), QPointF(-10000, -10000));
-    require(area.physicalRegion().topLeft() == bounds.topLeft() &&
-                area.physicalRegion().bottomRight() == initial.bottomRight(),
-            "resize should clamp to the screen while preserving the opposite corner");
-}
-
-void recordingAndBusyTransitionsCancelRegionGestures() {
-    for (int transition = 0; transition < 4; ++transition) {
-        ScreenRecordingAreaWindow area;
-        const QRect initial = testPhysicalRegion();
-        area.setPhysicalRegion(initial);
-        area.setInputMode(ScreenRecordingAreaWindow::InputMode::RegionEditing);
-        area.show();
-        QCoreApplication::processEvents();
-        const QPointF start = QPointF(area.pos()) + area.canvasGeometry().center();
-        sendRegionMouseEvent(area, QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
-        if (transition == 0) {
-            area.setRecordingState(ScreenshotToolPalette::RecordingState::Recording);
-        } else if (transition == 1) {
-            area.setRecordingState(ScreenshotToolPalette::RecordingState::Paused);
-        } else if (transition == 2) {
-            area.setDrawingBlocked(true);
-        } else {
-            area.setInputMode(ScreenRecordingAreaWindow::InputMode::PassThrough);
-        }
-        sendRegionMouseEvent(area, QEvent::MouseMove, start + QPointF(30, 20), Qt::NoButton,
-                             Qt::LeftButton);
-        sendRegionMouseEvent(area, QEvent::MouseButtonRelease, start + QPointF(30, 20),
-                             Qt::LeftButton, Qt::NoButton);
-        require(area.physicalRegion() == initial && QWidget::mouseGrabber() != &area,
-                "state, busy, and tool transitions should cancel a region gesture");
-        if (transition < 3) {
-            dragRegion(area, area.canvasGeometry().bottomRight(), QPointF(20, 20));
-            require(area.physicalRegion() == initial &&
-                        area.testAttribute(Qt::WA_TransparentForMouseEvents),
-                    "recording, paused, and busy states must lock region resizing and movement");
-        }
-        if (transition < 3) {
-            require(area.inputMode() == ScreenRecordingAreaWindow::InputMode::RegionEditing &&
-                        !area.canvas()->interactionEnabled(),
-                    "locked export settings must retain region editing mode without drawing input");
-        }
-        area.setRecordingState(ScreenshotToolPalette::RecordingState::Idle);
-        area.setDrawingBlocked(false);
-        dragRegion(area, area.canvasGeometry().bottomRight(), QPointF(20, 20));
-        require(area.physicalRegion() != initial, "returning to idle should restore edge resizing");
-    }
-}
-
-void existingSelectionsBeyondOneScreenRemainEditable() {
-    ScreenRecordingAreaWindow area;
-    const QRect bounds =
-        ScreenshotGeometryMapper::physicalRectForScreen(*QGuiApplication::primaryScreen());
-    const QRect initial(bounds.right() - 80, bounds.top() + 20, 160, 100);
-    area.setPhysicalRegion(initial);
-    area.setInputMode(ScreenRecordingAreaWindow::InputMode::RegionEditing);
+    int starts = 0;
+    int finishes = 0;
+    QObject::connect(&area, &ScreenRecordingAreaWindow::regionInteractionStarted, &area,
+                     [&]() { ++starts; });
+    QObject::connect(&area, &ScreenRecordingAreaWindow::regionInteractionFinished, &area,
+                     [&]() { ++finishes; });
+    ScreenRecordingAreaWindowTestAccess::begin(area);
+    ScreenRecordingAreaWindowTestAccess::begin(area);
+    require(starts == 1 && finishes == 0, "native entry must emit one start");
+    area.setDrawingBlocked(true);
+    require(finishes == 1, "busy transition must end an active operation");
+    ScreenRecordingAreaWindowTestAccess::begin(area);
+    require(starts == 1, "blocked input must not start an operation");
+    area.setDrawingBlocked(false);
+    ScreenRecordingAreaWindowTestAccess::begin(area);
+    area.hide();
+    ScreenRecordingAreaWindowTestAccess::finish(area);
+    require(starts == 2 && finishes == 2, "hide and duplicate native exit must finish only once");
     area.show();
-    QCoreApplication::processEvents();
-    dragRegion(area, area.canvasGeometry().center(), QPointF(-20, 0), true);
-    require(area.physicalRegion().left() < initial.left() &&
-                area.physicalRegion().size() == initial.size(),
-            "an existing selection spanning screen bounds should still be movable");
-    const QRect moved = area.physicalRegion();
-    dragRegion(area, area.canvasGeometry().bottomRight(), QPointF(-10, -10), true);
-    require(area.physicalRegion().width() < moved.width() &&
-                area.physicalRegion().height() < moved.height(),
-            "an existing selection spanning screen bounds should still be resizable");
+    area.setPhysicalRegion({40, 40, 2, 2});
+    require(ScreenRecordingAreaWindowTestAccess::edges(
+                area, QRectF(area.canvasGeometry()).center()) == Qt::Edges(),
+            "even a minimum-size region must retain an interior drag target");
 }
 
-void drawingAcrossResizeEdgesKeepsDrawingOwnership() {
+void drawingAcrossFrameEdgesRetainsDrawingOwnership() {
     ScreenRecordingAreaWindow area;
     const QRect initial = testPhysicalRegion();
     area.setPhysicalRegion(initial);
     area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
     area.show();
     QCoreApplication::processEvents();
-    drawRectangle(*area.canvas(), QPointF(20, 20),
-                  QPointF(area.canvas()->width() - 2, area.canvas()->height() - 2));
-    require(area.physicalRegion() == initial && area.canvas()->canvasHistoryState().canUndo,
-            "drawing into a resize edge should finish the annotation without editing the region");
-    area.setInputMode(ScreenRecordingAreaWindow::InputMode::PassThrough);
-    const QImage surface = renderWidget(area);
-    const QPoint edge = area.canvasGeometry().topLeft() + QPoint(1, 1);
-    require(surface.pixelColor(edge).alpha() > 0,
-            "idle resize edges must have a nonzero-alpha native hit surface");
+    drawRectangle(*area.canvas(), {20, 20},
+                  {static_cast<qreal>(area.canvas()->width() - 2),
+                   static_cast<qreal>(area.canvas()->height() - 2)});
+    require(
+        area.physicalRegion() == initial && area.canvas()->canvasHistoryState().canUndo,
+        "drawing through frame hit regions must complete the annotation without editing geometry");
 }
+
+void ordinaryWindowGeometryPreservesAnnotations() {
+    ScreenRecordingAreaWindow area;
+    area.setPhysicalRegion(testPhysicalRegion());
+    area.show();
+    area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
+    drawRectangle(*area.canvas(), {20, 20}, {70, 55});
+    const QByteArray history = ScreenRecordingAreaWindowTestAccess::history(area);
+    area.setInputMode(ScreenRecordingAreaWindow::InputMode::RegionEditing);
+    const QRect before = area.physicalRegion();
+    int changes = 0;
+    QObject::connect(
+        &area, &ScreenRecordingAreaWindow::physicalRegionChanged, &area, [&](const QRect& region) {
+            ++changes;
+            require(region == area.physicalRegion(), "notification must report committed geometry");
+        });
+    // Normal window events, including positions outside the starting screen, are authoritative.
+    area.move(-200, -100);
+    QCoreApplication::processEvents();
+    const QRect moved = area.physicalRegion();
+    require(moved.topLeft() != before.topLeft() && moved.size() == before.size() && changes > 0,
+            "ordinary movement must synchronize physical coordinates without clamping");
+    const QSize originalSize = area.size();
+    area.resize(originalSize - QSize(20, 10));
+    QCoreApplication::processEvents();
+    require(area.physicalRegion().width() < moved.width() &&
+                area.physicalRegion().height() < moved.height(),
+            "ordinary resize must synchronize physical dimensions");
+    area.resize(originalSize);
+    QCoreApplication::processEvents();
+    require(area.physicalRegion() == moved,
+            "shrinking and expanding must restore the same physical rectangle");
+    require(ScreenRecordingAreaWindowTestAccess::history(area) == history,
+            "window geometry changes must preserve annotation coordinates and history");
+}
+
+#if defined(Q_OS_WIN) || defined(_WIN32)
+void nativeWindowsGeometryAndInteraction() {
+    require(QGuiApplication::platformName() == QStringLiteral("windows"),
+            "native test requires Windows QPA");
+    ScreenRecordingAreaWindow area;
+    area.setInputMode(ScreenRecordingAreaWindow::InputMode::RegionEditing);
+    int starts = 0;
+    int finishes = 0;
+    QObject::connect(&area, &ScreenRecordingAreaWindow::regionInteractionStarted, &area,
+                     [&]() { ++starts; });
+    QObject::connect(&area, &ScreenRecordingAreaWindow::regionInteractionFinished, &area,
+                     [&]() { ++finishes; });
+    std::cout << "Native display count: " << QGuiApplication::screens().size() << '\n';
+    for (QScreen* display : QGuiApplication::screens()) {
+        const QRect bounds = ScreenshotGeometryMapper::physicalRectForScreen(*display);
+        const QRect selected(bounds.topLeft() + QPoint(40, 40), QSize(321, 241));
+        area.setPhysicalRegion(selected);
+        area.show();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        const HWND handle = reinterpret_cast<HWND>(area.winId());
+        qInfo() << display->name() << display->devicePixelRatio() << "expected" << selected
+                << "observed" << area.physicalRegion() << "logical" << area.geometry();
+        require(area.physicalRegion() == selected,
+                "opening on each display must preserve exact physical selection");
+        RECT initialClient{};
+        POINT initialOrigin{};
+        require(GetClientRect(handle, &initialClient) && ClientToScreen(handle, &initialOrigin),
+                "initial native geometry must exist");
+        const QMargins initialInsets(
+            selected.left() - initialOrigin.x, selected.top() - initialOrigin.y,
+            initialOrigin.x + initialClient.right - selected.x() - selected.width(),
+            initialOrigin.y + initialClient.bottom - selected.y() - selected.height());
+        const auto verifyClient = [&]() {
+            RECT client{};
+            POINT origin{};
+            require(GetClientRect(handle, &client) && ClientToScreen(handle, &origin),
+                    "native client geometry must be readable");
+            const QRect clientGeometry(origin.x, origin.y, client.right - client.left,
+                                       client.bottom - client.top);
+            if (area.physicalRegion() != clientGeometry.marginsRemoved(initialInsets)) {
+                qInfo() << "Geometry mismatch" << "client" << clientGeometry << "capture"
+                        << area.physicalRegion() << "insets" << initialInsets << "logical"
+                        << area.geometry();
+            }
+            require(area.physicalRegion() == clientGeometry.marginsRemoved(initialInsets),
+                    "native events must synchronize capture to actual client pixels");
+        };
+        verifyClient();
+        const QRect next(bounds.topLeft() + QPoint(60, 50), QSize(409, 307));
+        require(SetWindowPos(handle, nullptr, next.x(), next.y(), next.width(), next.height(),
+                             SWP_NOZORDER | SWP_NOACTIVATE) != 0,
+                "native resize must succeed");
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        verifyClient();
+        // Physical changes can round to the same QWidget size at fractional DPI.
+        for (const int nativeWidth : {410, 411, 409}) {
+            SetWindowPos(handle, nullptr, 0, 0, nativeWidth, next.height(),
+                         SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+            verifyClient();
+        }
+        MINMAXINFO limits{};
+        SendMessageW(handle, WM_GETMINMAXINFO, 0, reinterpret_cast<LPARAM>(&limits));
+        require(
+            limits.ptMinTrackSize.x - initialInsets.left() - initialInsets.right() == 2 &&
+                limits.ptMinTrackSize.y - initialInsets.top() - initialInsets.bottom() == 2,
+            "native minimum tracking size must preserve two capture pixels after frame padding");
+        const QRect physical = area.physicalRegion();
+        const int x = physical.center().x();
+        const int y = physical.center().y();
+        const auto hit = [&](QPoint position) {
+            return SendMessageW(handle, WM_NCHITTEST, 0, MAKELPARAM(position.x(), position.y()));
+        };
+        require(hit({x, y}) == HTCAPTION, "Export Settings center must delegate native movement");
+        const std::pair<QPoint, LRESULT> targets[] = {{{physical.left(), y}, HTLEFT},
+                                                      {{physical.right(), y}, HTRIGHT},
+                                                      {{x, physical.top()}, HTTOP},
+                                                      {{x, physical.bottom()}, HTBOTTOM},
+                                                      {physical.topLeft(), HTTOPLEFT},
+                                                      {physical.topRight(), HTTOPRIGHT},
+                                                      {physical.bottomLeft(), HTBOTTOMLEFT},
+                                                      {physical.bottomRight(), HTBOTTOMRIGHT},
+                                                      {{x, y}, HTCAPTION}};
+        for (const auto& [point, expected] : targets) {
+            require(hit(point) == expected,
+                    "all native hit targets must identify the correct operation");
+            const int previousStarts = starts;
+            const int previousFinishes = finishes;
+            POINT cursor{};
+            GetCursorPos(&cursor);
+            if (expected == HTCAPTION) {
+                // SC_DRAGMOVE requires a real held mouse button. Exercise the same
+                // system move loop through its keyboard command without injecting input.
+                PostMessageW(handle, WM_SYSCOMMAND, SC_MOVE, 0);
+            } else {
+                SendMessageW(handle, WM_NCLBUTTONDOWN, static_cast<WPARAM>(expected),
+                             MAKELPARAM(point.x(), point.y()));
+            }
+            QTimer cancel;
+            QObject::connect(&cancel, &QTimer::timeout, &area,
+                             [handle]() { SendMessageW(handle, WM_CANCELMODE, 0, 0); });
+            cancel.start(0);
+            PostMessageW(handle, WM_CANCELMODE, 0, 0);
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+            cancel.stop();
+            if (expected == HTCAPTION) {
+                SetCursorPos(cursor.x, cursor.y);
+            }
+            qInfo() << "Native interaction" << expected << "starts" << starts - previousStarts
+                    << "finishes" << finishes - previousFinishes;
+            require(starts == previousStarts + 1 && finishes == previousFinishes + 1,
+                    "system move/resize must have one balanced interaction lifecycle");
+            verifyClient();
+        }
+        area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
+        require(hit(physical.topLeft()) == HTCLIENT && hit({x, y}) == HTCLIENT,
+                "drawing must disable both native resize and move targets");
+        area.setInputMode(ScreenRecordingAreaWindow::InputMode::PassThrough);
+        require(hit(physical.topLeft()) == HTTRANSPARENT && hit({x, y}) == HTTRANSPARENT,
+                "pass-through must release both native resize and move targets");
+        area.setInputMode(ScreenRecordingAreaWindow::InputMode::Drawing);
+        drawRectangle(*area.canvas(), {20, 20}, {70, 55});
+        const QByteArray history = ScreenRecordingAreaWindowTestAccess::history(area);
+        area.setInputMode(ScreenRecordingAreaWindow::InputMode::RegionEditing);
+        for (QScreen* destination : QGuiApplication::screens()) {
+            if (destination == display) {
+                continue;
+            }
+            const QRect destinationBounds =
+                ScreenshotGeometryMapper::physicalRectForScreen(*destination);
+            SetWindowPos(handle, nullptr, destinationBounds.x() + 60, destinationBounds.y() + 60, 0,
+                         0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+            verifyClient();
+            require(area.screen() == destination &&
+                        area.physicalRegion().intersects(destinationBounds),
+                    "an existing native window must move onto another display without clamping");
+            require(ScreenRecordingAreaWindowTestAccess::history(area) == history,
+                    "native display transitions must preserve annotations");
+        }
+    }
+}
+#endif
+
 } // namespace
 
 int main(int argc, char** argv) {
     QApplication application(argc, argv);
+#if defined(Q_OS_WIN) || defined(_WIN32)
+    if (application.arguments().contains(QStringLiteral("--native-geometry-only"))) {
+        nativeWindowsGeometryAndInteraction();
+        return 0;
+    }
+#endif
     geometryAndTransparentCanvasFollowThePhysicalSelection();
     inputModesOwnOnlyDrawingInputAndRestoreRequestedState();
     drawingSurfaceFollowsEffectiveInputMode();
     wheelAndEscapeRespectDrawingOwnership();
     annotationsPersistAcrossStatesAndClearOnlyForANewRegion();
-    idleEdgesAndCornersResizePhysicalRegion();
-    exportSettingsMoveAndClampTheRegion();
-    recordingAndBusyTransitionsCancelRegionGestures();
-    existingSelectionsBeyondOneScreenRemainEditable();
-    drawingAcrossResizeEdgesKeepsDrawingOwnership();
+    geometryEditingIsOneCapability();
+    interactionBoundariesAreIdempotentAndCancelOnStateChanges();
+    ordinaryWindowGeometryPreservesAnnotations();
+    drawingAcrossFrameEdgesRetainsDrawingOwnership();
     return 0;
 }
